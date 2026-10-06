@@ -36,7 +36,7 @@ come from `Studio.routes`.
 |-------|---------|----------|
 | `designed` | Specified and startable | creating the task |
 | `building` | Claimed; a desk exists | `bin/task begin` |
-| `submitted` | PR open into `accepted`, CI green, `bin/dor-check` passed | `bin/ship` |
+| `submitted` | PR open into `accepted`, CI green, `bin/dor-check` passed | `bin/submit` |
 | `reviewed` | PR merged onto `accepted` | `pr-review` |
 | `assembled` | On the release candidate, QA green | `qa-release` |
 | `shipped` | On `main`, in production | `production-deploy` |

@@ -531,7 +531,7 @@ class ReviewClaimCli
 
   # Take the observation, unless the caller opted out. `--no-observe` is honest
   # rather than silent: it reports `:unobserved`, which says in as many words that a
-  # single read cannot tell renewing from dying. bin/ship uses it deliberately — it
+  # single read cannot tell renewing from dying. bin/submit uses it deliberately — it
   # wants the holder's NAME for a refusal, and a refusal is no place to spend a
   # renewal cycle waiting.
   def resolve(slug, first, started, flags)

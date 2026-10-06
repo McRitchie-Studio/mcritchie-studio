@@ -134,7 +134,7 @@ module TaskDerivedFacts
 
   # Fills a BLANK `devops.pr_url` with the derived one and returns the task's PR
   # url — the self-healing fill TaskPrUrlCacheJob runs for tasks#show (in the
-  # background, never in the request). This is what lets bin/ship skip its `--pr-url` write: the board
+  # background, never in the request). This is what lets bin/submit skip its `--pr-url` write: the board
   # finds the PR on the task branch and caches it, so every reader that still
   # keys on `devops.pr_url` (dor-check, the review gate, the CI meter) sees it.
   # Never overwrites a recorded url, and never raises: an unreadable GitHub

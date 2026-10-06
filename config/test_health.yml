@@ -161,7 +161,7 @@ frozen_size:
   # the ceiling asks: test/models/task_approval_window_test.rb, 302 lines covering the
   # request window and its boundary as one coherent property, needing nothing from
   # task_test.rb's harness. The end-to-end half is a second new file,
-  # test/integration/ship_preserves_approval_request_test.rb. The ceiling is now the
+  # test/integration/submit_preserves_approval_request_test.rb. The ceiling is now the
   # file's real size, so the next addition goes to a new file too.
   test/models/task_test.rb: 2023
   # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for

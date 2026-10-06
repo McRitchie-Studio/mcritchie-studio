@@ -120,7 +120,7 @@ Take the desk and claim the task:
   cd /Users/alex/projects/mcritchie-studio && bin/task begin <slug> --agent <your-soul>
 
 Then read docs/agents/modules/building-sop.md and follow it end to end. Write the
-test tiers your shape requires. Hand off with bin/ship <slug> -m "<message>" from
+test tiers your shape requires. Hand off with bin/submit <slug> -m "<message>" from
 your worktree — run it in the BACKGROUND, it takes ~12 minutes.
 
 STOP at submitted. Do not merge, deploy, or touch release/main.
@@ -146,7 +146,7 @@ Attribute what you relay: "Shannon reports X", not "X".
 ## Step 4 — Review in the gaps, because the work has phases
 
 A wave of builds is not a steady load. It is a burst of orchestration, then a
-long flat stretch where every builder is inside `bin/ship` waiting on CI — **about
+long flat stretch where every builder is inside `bin/submit` waiting on CI — **about
 twelve minutes each** — and you have nothing to do. That stretch is the review
 window, and using it is the whole reason this SOP leaves the call to you.
 
@@ -177,7 +177,7 @@ submitted` reaches **10 or more**, stop launching builders and review until it
 drains to 3 or fewer. That is [`process-backlog`](process-backlog.md)'s hard
 pivot and it applies here too — at that depth the bottleneck is downstream of
 you, and another build makes it worse. Do not kill in-flight builders to get
-there; a killed `bin/ship` strands a task in `building` with an open PR that the
+there; a killed `bin/submit` strands a task in `building` with an open PR that the
 review sweep will not pop.
 
 ---

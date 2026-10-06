@@ -210,7 +210,7 @@ class TaskBeginTest < Minitest::Test
     assert_includes out, "worktree: "
     assert_includes out, "port: 3004"
     assert_includes out, "task: http://127.0.0.1:", "the summary must print the task URL"
-    assert_includes out, "bin/ship #{SLUG}", "the summary must name the handoff twin"
+    assert_includes out, "bin/submit #{SLUG}", "the summary must name the handoff twin"
   end
 
   # [unit] begin invokes preflight against the WORKTREE root — the
@@ -239,17 +239,17 @@ class TaskBeginTest < Minitest::Test
   end
 
   # [integration] THE LAST LINE BEGIN PRINTS IS AN INSTRUCTION, AND IT MUST RESOLVE.
-  # begin used to close with `hand off with: bin/ship <slug>` — the BARE form, which
+  # begin used to close with `hand off with: bin/submit <slug>` — the BARE form, which
   # resolves only from a hub desk. Every fast-lane script lives in mcritchie-studio/bin
   # alone, so a builder on a turf-monster or rolio desk who followed the tool's own
-  # hint got `nohup: bin/ship: No such file or directory`. PR #1334 fixed the same
+  # hint got `nohup: bin/submit: No such file or directory`. PR #1334 fixed the same
   # sentence in the docs; this pins the half the TOOL speaks, which is the half that
   # wins, because it speaks last and at the moment of action.
   #
   # THE ASSERTION IS KEYED ON THE FILESYSTEM, NOT THE WORDING: whatever begin prints,
   # the script named must be an absolute path to an existing executable, and the desk
   # named must be the task's worktree — the cwd is the other half of the instruction
-  # (bin/ship roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
+  # (bin/submit roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
   # refusing, and dying with the root guard's refusal only when no desk resolves; the cert
   # WRITERS run by hand afterwards refuse ANY foreign root). FastLane.handoff_command's
   # own arms are unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and
@@ -278,9 +278,9 @@ class TaskBeginTest < Minitest::Test
            "begin printed #{ship}, which is not an executable file — the tool is naming " \
            "a script that does not exist"
 
-    bare = %r{(?<![\w/.-])bin/ship(?![\w-])}
-    refute_match bare, line, "begin printed a bare bin/ship — that is the defect"
-    assert_match bare, "hand off with: bin/ship #{SLUG}",
+    bare = %r{(?<![\w/.-])bin/submit(?![\w-])}
+    refute_match bare, line, "begin printed a bare bin/submit — that is the defect"
+    assert_match bare, "hand off with: bin/submit #{SLUG}",
                  "the bare pattern does not match the form it forbids, so this proves nothing"
   end
 
@@ -386,7 +386,7 @@ class TaskBeginTest < Minitest::Test
   end
 
   # --- the desk's git identity (turf-monster-git-identity-wrong) ----------------
-  # A hand commit in a desk never passes through bin/ship's per-commit author, so
+  # A hand commit in a desk never passes through bin/submit's per-commit author, so
   # begin stamps the desk itself: `new --soul` at the moment it is cut, then a
   # read-back of the RECORDED claim settles any case --agent did not name.
 
@@ -409,7 +409,7 @@ class TaskBeginTest < Minitest::Test
 
   def test_begin_without_agent_stamps_the_builder_the_claim_recorded
     # A resume with no --agent keeps the builder already on record (rule 2), so the
-    # desk must be stamped with THAT soul — the one bin/ship will author as.
+    # desk must be stamped with THAT soul — the one bin/submit will author as.
     existing = building_task
     existing["metadata"]["devops"]["built_by"] = "shannon"
 

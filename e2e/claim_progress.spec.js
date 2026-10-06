@@ -46,6 +46,6 @@ test("the board states a claim's progress, not just its liveness", async ({ page
 
   const workingChip = workingCard.locator("[data-test='task-card-claim-progress']");
   await expect(workingChip).toHaveAttribute("data-progress-quiet", "false");
-  await expect(workingChip).toContainText("g1_cert running");
+  await expect(workingChip).toContainText("dor running");
   await expect(workingChip).not.toHaveClass(/amber/);
 });

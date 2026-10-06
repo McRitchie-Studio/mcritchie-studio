@@ -855,7 +855,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # ── [unit] the cd hint the cert writers die! with ─────────────────────────
 
   def test_unit_the_cd_hint_respects_the_repo_preference
-    # bin/ship, bin/fast-check and bin/full-suite-check all die! with this text, so a
+    # bin/submit, bin/fast-check and bin/full-suite-check all die! with this text, so a
     # hint that ignores prefer_repo is wrong in four places at once — and it is advice
     # someone FOLLOWS, straight to another repo's desk.
     Dir.mktmpdir do |raw|

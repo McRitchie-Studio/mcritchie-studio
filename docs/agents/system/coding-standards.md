@@ -69,7 +69,7 @@
   row, read the log, curl the port.
 - **A probe that proves an absence must be able to find a presence.** `timeout` does
   not exist here, so a command wrapped in it never runs and reads as "found nothing".
-  Bound waits with the tool that waits (`run_in_background`, `bin/ship-wait`).
+  Bound waits with the tool that waits (`run_in_background`, `bin/submit-wait`).
 - **An empty read is not a value.** Test `[ -z "$x" ]` before comparing. A failing
   pipeline stage yields empty output that `>>` appends without error, and
   `out=$(grep -c x missing-file)` gives `""` while the substitution hides grep's

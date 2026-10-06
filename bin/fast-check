@@ -11,7 +11,7 @@
 # submit seam and review's gate-zero reads again. This script buys EARLINESS —
 # catch the obvious break in about a minute, long before the ~10-minute CI
 # round-trip reports — and nothing else. A red pre-flight is information for the
-# builder, never a gate: bin/ship runs it at step 5, after the push and the PR so
+# builder, never a gate: bin/submit runs it at step 5, after the push and the PR so
 # CI is already running, prints its verdict loudly, and carries on whatever it said.
 #
 # Until DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) this was the G1

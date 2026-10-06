@@ -49,7 +49,7 @@
 #   red / conflicted / ci_less / closed /
 #   merged                                 → refuses, both roles.
 #   pending                                → builder: WAITING (exit 1, its own
-#                                            headline — bin/ship waits for CI at
+#                                            headline — bin/submit waits for CI at
 #                                            step 6/8, so this is the rare case);
 #                                            review: refuses (the authoritative
 #                                            verdict, "defer until CI settles").
@@ -292,7 +292,7 @@ def agent_secret
     die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
-def token # a bearer bin/ship handed down (AGENT_API_TOKEN, TaskBoard#handed_token), else one minted here
+def token # a bearer bin/submit handed down (AGENT_API_TOKEN, TaskBoard#handed_token), else one minted here
   @token ||= TaskBoard.handed_token || api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
 end
 
@@ -669,7 +669,7 @@ end
 # GhAuthRetry.auth_failure? or CiStatus.unreadable_cause to read, which is why an auth
 # failure could not even be NAMED, let alone recovered. The read now goes through
 # CiStatus.gh_read_status: it joins stdout+stderr, mints a fresh App token and retries
-# ONCE on exactly this refusal (bin/ship and bin/pr-review already did; this gate was
+# ONCE on exactly this refusal (bin/submit and bin/pr-review already did; this gate was
 # the last holdout), and hands back the exit status so a failed read is never mistaken
 # for an empty one.
 #
@@ -2288,7 +2288,7 @@ exempt_ci_waiting = CiGate.waiting?(exempt_ci, review_role: review_role)
              "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
       elsif exempt_ci_waiting && exempt_errors == [exempt_ci_error]
         # THE WAIT, on the exempt path: nothing refuses but an unsettled CI, and the
-        # headline says so rather than "NOT met" — bin/ship's step 7 reads exit 1 either
+        # headline says so rather than "NOT met" — bin/submit's step 7 reads exit 1 either
         # way, so the wording is for the reader, and the reader's move is to come back.
         puts "⏳ #{gate_label} WAITING on CI for #{title.inspect} — the OBSERVED diff ships no behavior; the CI " \
              "verdict has not settled"
@@ -2569,7 +2569,7 @@ end
 # THE SUITE GATE: the PR's settled GREEN GitHub CI is the one form of evidence that
 # the full suite (test:system included) went green against the exact tree being
 # shipped. It blocks on every non-green state in BOTH roles; builder-side a
-# still-RUNNING CI is a WAIT rather than a failure (bin/ship holds at step 6/8 for
+# still-RUNNING CI is a WAIT rather than a failure (bin/submit holds at step 6/8 for
 # exactly this, so the ordinary handoff never sees it). The review gate-zero
 # (--gate-role review) is the authoritative verdict and defers a pending one.
 # The allow-list lives in bin/lib/ci_gate.rb.
@@ -3243,7 +3243,7 @@ end
 end
 
 # THE WAIT has its own headline: nothing refuses but an unsettled CI, so "NOT met"
-# would send the reader hunting for a defect. bin/ship's step 7 reads exit 1 either
+# would send the reader hunting for a defect. bin/submit's step 7 reads exit 1 either
 # way; the wording is for the reader, whose move is to come back once CI reports.
 waiting_only = ci_waiting && errors == [ci_error] && missing_meta.empty? && missing_tiers.empty?
 if waiting_only

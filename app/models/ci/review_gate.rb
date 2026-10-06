@@ -267,7 +267,7 @@ module Ci
     #
     # THE REGISTER IS ONLY AS COMPLETE AS WHAT WAS RECORDED, stated plainly because it
     # bounds everything above: `devops.pr_urls` is written by `bin/task update
-    # --pr-url-for <repo>=<url>` alone — `bin/ship` records only the primary — so a
+    # --pr-url-for <repo>=<url>` alone — `bin/submit` records only the primary — so a
     # two-repo task whose builder never ran that command is gated on its primary PR
     # and looks single-repo here. `also:` is what keeps that gap from reaching the
     # merge, since the armed action names its own repo whatever the register says.

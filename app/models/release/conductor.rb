@@ -6,15 +6,15 @@ class Release
   module Conductor
     module_function
 
-    # --- the sweep (Avi's self-healing qa-deploy, steps 1–3) --------------
+    # --- the sweep (Avi's self-healing qa-release, steps 1–3) --------------
 
-    # DETECT the work a qa-deploy run should sweep onto the next release: every
+    # DETECT the work a qa-release run should sweep onto the next release: every
     # `reviewed` task (whether or not its PR is merged yet — `merged` says which)
     # plus any `assembled` STRAGGLER — a member of no/another release (a prior RC
     # shipped/aborted without it) that must re-ride the current candidate. A PURE
     # read, so the CLI previews it under --dry-run. Returns
     # { "reviewed" => [tasks], "stragglers" => [tasks], "parked" => [tasks] } in
-    # board order. Both sweepable lists empty + no active release ⇒ qa-deploy is an
+    # board order. Both sweepable lists empty + no active release ⇒ qa-release is an
     # idempotent no-op.
     #
     # PARKED REPOS ARE HELD, NOT SWEPT. A task naming ANY repo the registry parks
@@ -113,7 +113,7 @@ class Release
       release.reload
     end
 
-    # The QA-GREEN flip (Avi's qa-deploy, step 6): QA booted + smoked green,
+    # The QA-GREEN flip (Avi's qa-release, step 6): QA booted + smoked green,
     # so every swept `reviewed` member flips to `assembled` (merged stays
     # "release" — matrix: assembled+release = QA-green, waiting on Avi) and the
     # release itself assembles. On a QA-deploy FAILURE this is simply never
@@ -227,7 +227,7 @@ class Release
     end
 
     # The sweep/assembly bookend: the assembly window OPENS when the task is swept
-    # onto the release train (Avi's qa-deploy), before QA-green concludes it.
+    # onto the release train (Avi's qa-release), before QA-green concludes it.
     # This gives analytics an explicit start timestamp for the assembly window
     # instead of relying only on the reviewed→assembled transition. Idempotent
     # through Task#record_intent_event.
@@ -284,7 +284,7 @@ class Release
       }
     end
 
-    # The SYNCHRONOUS record-side qa-deploy: sweep (curate!) then QA-green flip
+    # The SYNCHRONOUS record-side qa-release: sweep (curate!) then QA-green flip
     # (qa_green!) in one transaction — for model-driven flows and tests, where
     # there is no real QA deploy between the two halves. The production caller
     # `bin/release prepare` runs the halves SPLIT: curate! (sweep) → git merges +
@@ -303,7 +303,7 @@ class Release
       end
     end
 
-    # The SWEEP half of prepare! — steps 1–3 of the self-healing qa-deploy:
+    # The SWEEP half of prepare! — steps 1–3 of the self-healing qa-release:
     # detect the work (sweep_candidates), ensure a release exists, and sweep!
     # each detected task onto it (attach + `merged: "release"`; stages do NOT
     # move — qa_green! owns the flip). With explicit `task_slugs` the sweep is

@@ -224,8 +224,8 @@ SPEND the task's bounce** (Step 3).
 **The review is the task's G2 Review gate** ([`gates/g2-review.md`](gates/g2-review.md)):
 two lanes, `g2a_primary` + `g2b_light`, each closed from its own reviewer's scout
 report (`merge-ready` = passed). Carl's gate-zero runs with `--gate-role review`,
-so it opens+closes its own `dor_review` gate and never touches the builder's G1
-Cert or a G2 lane. `bin/pr-review` posts these markers; on a hand-run review Carl
+so it opens+closes its own `dor_review` gate and never touches the builder's
+`dor` gate or a G2 lane. `bin/pr-review` posts these markers; on a hand-run review Carl
 posts them with `bin/gate` (commands in the gate doc).
 
 **Each reviewer narrates as their own soul:**

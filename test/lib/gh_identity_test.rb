@@ -43,7 +43,7 @@ class GhIdentityTest < Minitest::Test
     assert_equal "agent", GhIdentity.resolve(nil, env: { "GH_APP_ITEM" => AGENT_ITEM })
   end
 
-  # A caller that names its lane outright still wins — bin/ship genuinely needs the
+  # A caller that names its lane outright still wins — bin/submit genuinely needs the
   # PR-writing App even if launched from a shell with a stale ship export.
   def test_an_explicit_identity_outranks_the_environment
     assert_equal "agent", GhIdentity.resolve("agent", env: { "GH_APP_ITEM" => DEPLOYER_ITEM })

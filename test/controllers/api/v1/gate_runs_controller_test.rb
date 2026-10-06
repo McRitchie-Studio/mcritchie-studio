@@ -11,20 +11,20 @@ module Api
       end
 
       test "requires a bearer token" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", as: :json
+        post "/api/v1/gates/task/#{@task.slug}/dor/open", as: :json
 
         assert_response :unauthorized
       end
 
       test "open creates an in-flight attempt with NO usage payload required" do
         assert_difference -> { GateRun.count }, 1 do
-          post "/api/v1/gates/task/#{@task.slug}/g1_cert/open",
+          post "/api/v1/gates/task/#{@task.slug}/dor/open",
                params: { gate: { actor: "carl" } }, headers: @headers, as: :json
         end
 
         assert_response :created
         run = GateRun.last
-        assert_equal "g1_cert", run.key
+        assert_equal "dor", run.key
         assert_equal 1, run.attempt
         assert run.in_flight?
         assert_equal "carl", run.actor
@@ -32,20 +32,20 @@ module Api
       end
 
       test "double-open reuses the in-flight attempt" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
+        post "/api/v1/gates/task/#{@task.slug}/dor/open", headers: @headers, as: :json
 
         assert_no_difference -> { GateRun.count } do
-          post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
+          post "/api/v1/gates/task/#{@task.slug}/dor/open", headers: @headers, as: :json
         end
         assert_response :created
       end
 
       test "open then sops then close is the happy path" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/sops",
+        post "/api/v1/gates/task/#{@task.slug}/dor/open", headers: @headers, as: :json
+        post "/api/v1/gates/task/#{@task.slug}/dor/sops",
              params: { gate: { sop: { sop: "full-suite", result: "pass", duration_ms: 8123 } } },
              headers: @headers, as: :json
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/close",
+        post "/api/v1/gates/task/#{@task.slug}/dor/close",
              params: { success: true, gate: { sops: [{ sop: "dor-check", result: "pass" }] } },
              headers: @headers, as: :json
 
@@ -56,23 +56,36 @@ module Api
       end
 
       test "close without success is rejected" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/close", headers: @headers, as: :json
+        post "/api/v1/gates/task/#{@task.slug}/dor/close", headers: @headers, as: :json
 
         assert_response :unprocessable_entity
         assert_equal "MISSING_SUCCESS", response.parsed_body["error_code"]
       end
 
       test "close with success=false records a failed attempt" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/close",
+        post "/api/v1/gates/task/#{@task.slug}/dor/close",
              params: { success: false }, headers: @headers, as: :json
 
         assert_response :created
         assert_equal "failed", GateRun.last.status
       end
 
+      test "the retired g1_cert key still opens a task row for the local-check indicator; an unknown key is refused" do
+        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
+        assert_response :created
+
+        assert_equal "task", GateRun.grain_for("g1_cert")
+
+        assert_no_difference -> { GateRun.count } do
+          post "/api/v1/gates/task/#{@task.slug}/g0_nothing/open", headers: @headers, as: :json
+        end
+        assert_equal "INVALID_GATE_KEY", response.parsed_body["error_code"]
+        assert_no_match(/g1_cert/, response.parsed_body["error"], "the refusal lists only the live gates")
+      end
+
       test "unknown subject 404s without minting rows" do
         assert_no_difference -> { GateRun.count } do
-          post "/api/v1/gates/task/not-a-task/g1_cert/open", headers: @headers, as: :json
+          post "/api/v1/gates/task/not-a-task/dor/open", headers: @headers, as: :json
         end
 
         assert_response :not_found
@@ -104,14 +117,14 @@ module Api
       end
 
       test "index lists a subject's runs chronologically" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
+        post "/api/v1/gates/task/#{@task.slug}/dor/open", headers: @headers, as: :json
         post "/api/v1/gates/task/#{@task.slug}/g2b_light/open", headers: @headers, as: :json
 
         get "/api/v1/gates/task/#{@task.slug}", headers: @headers, as: :json
 
         assert_response :ok
         keys = response.parsed_body["data"].map { |r| r["key"] }
-        assert_equal %w[g1_cert g2b_light], keys
+        assert_equal %w[dor g2b_light], keys
       end
     end
   end

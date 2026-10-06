@@ -215,7 +215,7 @@ module MigrationCollision
   # Both call sites already have their own shell helper, so the lib takes the OUTPUT
   # rather than running git itself. That keeps every line below testable with a
   # string, and keeps one grammar for parsing git in one place instead of two copies
-  # drifting in bin/ship and bin/session-preflight.
+  # drifting in bin/submit and bin/session-preflight.
 
   # `git ls-tree -r --name-only <ref> -- db/migrate`
   def parse_ls_tree(output)
@@ -251,7 +251,7 @@ module MigrationCollision
   # Every migration on a git REF, with provenance, in two calls. `runner` takes an
   # argv array (git's, minus the `git -C <root>` prefix) and returns stdout — empty
   # on failure, which `git grep` also returns for "no matches". Injected rather than
-  # shelled here so this module stays testable without a repo, and so bin/ship and
+  # shelled here so this module stays testable without a repo, and so bin/submit and
   # bin/session-preflight cannot drift into two spellings of one query.
   def ref_installs(ref, &runner)
     return [] if ref.to_s.strip.empty?

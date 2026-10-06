@@ -20,7 +20,7 @@
 # establish a version floor), and a history that names the wrong soul quietly
 # corrupts that method.
 #
-# ── TWO LAYERS: PER COMMIT FOR bin/ship, PER DESK FOR EVERYTHING ELSE ───────
+# ── TWO LAYERS: PER COMMIT FOR bin/submit, PER DESK FOR EVERYTHING ELSE ───────
 #
 # A plain `git config user.name` has no per-desk home. `git rev-parse --git-dir`
 # is .git/worktrees/<name>, but config resolves through --git-common-dir, so every
@@ -29,11 +29,11 @@
 # relic above got there in the first place — the obvious fix IS the defect.
 #
 # LAYER 1 — PER COMMIT (env_for / commit!). The environment outranks every config
-# file and matches the grain of a desk two souls take turns at, so bin/ship's
+# file and matches the grain of a desk two souls take turns at, so bin/submit's
 # commit is authored from `built_by` at the moment it is made.
 #
 # LAYER 2 — PER DESK (stamp_worktree!). Layer 1 covers exactly ONE commit: the one
-# bin/ship makes. Everything else a desk commits never passes through it — the
+# bin/submit makes. Everything else a desk commits never passes through it — the
 # builder's own mid-build commits, a merge-forward, a rebase's committer line.
 # Those inherited whatever the checkout carried. Measured 2026-09-16 on
 # turf-monster `origin/accepted` since layer 1 landed (2026-09-07): 131 non-merge
@@ -93,7 +93,7 @@
 # printed correctly: `bin/agent-worktree new` and `bin/task begin` announce an
 # UNSTAMPED desk and name the stamp command.
 #
-# Plain Ruby (no Rails) so the standalone bin/ship CLI can require_relative it.
+# Plain Ruby (no Rails) so the standalone bin/submit CLI can require_relative it.
 require "open3"
 
 module CommitIdentity
@@ -119,7 +119,7 @@ module CommitIdentity
   # no soul is on record. Pure — no git, no clock, no environment.
   #
   # Committer is set alongside author deliberately. In this system the soul both
-  # writes the change and runs `bin/ship`, so there is no second party to name;
+  # writes the change and runs `bin/submit`, so there is no second party to name;
   # leaving the committer unset would keep the relic ("Steffon (Claude)") on
   # `git log --format=%cn` and leave half the provenance still lying.
   def self.env_for(devops)
@@ -147,7 +147,7 @@ module CommitIdentity
 
   # Stage everything and commit it under the claiming soul.
   #
-  # THE ONLY COMMIT PATH bin/ship has. Keeping add+commit together here — rather
+  # THE ONLY COMMIT PATH bin/submit has. Keeping add+commit together here — rather
   # than exporting just the env and leaving the commit in ship — is what makes
   # the tested code and the shipped code the same code: a second commit site
   # would silently reopen the defect, and a test that scanned ship's source for

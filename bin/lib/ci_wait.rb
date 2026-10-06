@@ -2,7 +2,7 @@
 
 # bin/lib/ci_wait.rb — the handoff's CI settle wait.
 #
-# ONE job, stated narrowly on purpose: stop bin/ship from running the DoR verdict
+# ONE job, stated narrowly on purpose: stop bin/submit from running the DoR verdict
 # while the PR's CI is still RUNNING, when waiting can turn "pending" into a real
 # verdict. It changes WHEN bin/dor-check runs. It never changes WHETHER it runs,
 # and it never decides anything dor-check decides.
@@ -236,7 +236,7 @@ module CiWait
     end
   end
 
-  # The line bin/ship prints for a finished wait. Kept here so the wording lives
+  # The line bin/submit prints for a finished wait. Kept here so the wording lives
   # beside the semantics it describes.
   #
   # THE RULE: REPORT THE READ, NEVER THE REPO. This module observes exactly one thing

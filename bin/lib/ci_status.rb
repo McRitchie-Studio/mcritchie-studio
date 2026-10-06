@@ -734,7 +734,7 @@ module CiStatus
   # blind in the one place nobody re-reads. On 2026-08-13 it hit both review Carls in
   # a single wave and every dor-check run that day.
   #
-  # THE RECOVERY ALREADY EXISTED. bin/ship and bin/pr-review both mint-once-and-retry
+  # THE RECOVERY ALREADY EXISTED. bin/submit and bin/pr-review both mint-once-and-retry
   # through GhAuthRetry; this file never opted in — the module's own warning ("N
   # scripts meant N chances to forget") coming true — so the fix is WIRING, not a
   # third copy. ACQUISITION STAYS IN bin/gh-token: one shared two-slot on-disk cache

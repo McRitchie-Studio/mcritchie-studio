@@ -5,7 +5,7 @@ class GateRunTest < ActiveSupport::TestCase
     @task = tasks(:new_task)
   end
 
-  def open_gate(key: "g1_cert", **args)
+  def open_gate(key: "dor", **args)
     GateRun.open!(subject_type: "task", subject_slug: @task.slug, key: key, **args)
   end
 
@@ -30,10 +30,10 @@ class GateRunTest < ActiveSupport::TestCase
 
   test "close! records the verdict and merges sops onto the open attempt" do
     open_gate
-    GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+    GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "dor",
                         sop: { "sop" => "full-suite", "result" => "pass", "duration_ms" => "8123" })
 
-    run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+    run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor",
                          success: true, sops: [{ "sop" => "dor-check", "result" => "pass" }])
 
     assert_not run.in_flight?
@@ -46,7 +46,7 @@ class GateRunTest < ActiveSupport::TestCase
 
   test "open! after a close starts attempt n+1" do
     open_gate
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
 
     run = open_gate
 
@@ -62,7 +62,7 @@ class GateRunTest < ActiveSupport::TestCase
     calls = []
     DeploymentsBroadcaster.stub(:gate_run, ->(run) { calls << run.status }) do
       open_gate
-      GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+      GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: true)
     end
 
     assert_includes calls, "in_flight", "the OPEN (create commit) must broadcast"
@@ -70,7 +70,7 @@ class GateRunTest < ActiveSupport::TestCase
   end
 
   test "close! with no open attempt records a self-contained attempt" do
-    run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
+    run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
 
     assert_equal 1, run.attempt
     assert_equal "failed", run.status
@@ -87,7 +87,7 @@ class GateRunTest < ActiveSupport::TestCase
   end
 
   test "normalize_sop slices to the known keys" do
-    run = GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+    run = GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "dor",
                               sop: { "sop" => "rubocop", "result" => "pass", "sneaky" => "dropped" })
 
     entry = run.sops.first
@@ -108,9 +108,9 @@ class GateRunTest < ActiveSupport::TestCase
     assert_equal "McRitchie-Studio/rolio", entry["repo"]
   end
 
-  test "[unit] GATES include the two DoR gates in flow order between g1_cert and g2a" do
-    assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light g3_candidate g4_ship], GateRun::KEYS
-    assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light], GateRun::TASK_KEYS
+  test "[unit] GATES open with the two DoR gates, in flow order before g2a" do
+    assert_equal %w[dor dor_review g2a_primary g2b_light g3_candidate g4_ship], GateRun::KEYS
+    assert_equal %w[dor dor_review g2a_primary g2b_light], GateRun::TASK_KEYS
 
     %w[dor dor_review].each do |key|
       assert_equal "task", GateRun::GATES.dig(key, "grain")
@@ -124,7 +124,7 @@ class GateRunTest < ActiveSupport::TestCase
     assert_nil @task.g1_testing_started_at
 
     freeze_time do
-      open_gate
+      open_gate(key: "g1_cert")
       assert_equal Time.current, @task.reload.g1_testing_started_at
       assert_nil @task.g1_testing_finished_at
       assert_nil @task.g1_failed_at
@@ -132,7 +132,7 @@ class GateRunTest < ActiveSupport::TestCase
   end
 
   test "[unit] closing g1_cert --success stamps finished_at and leaves g1_failed_at nil" do
-    open_gate
+    open_gate(key: "g1_cert")
     GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
 
     @task.reload
@@ -142,11 +142,11 @@ class GateRunTest < ActiveSupport::TestCase
   end
 
   test "[unit] closing g1_cert --failed stamps g1_failed_at, a green retry clears it" do
-    open_gate
+    open_gate(key: "g1_cert")
     GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
     assert @task.reload.g1_failed_at.present?, "a red close sets g1_failed_at"
 
-    open_gate # attempt 2
+    open_gate(key: "g1_cert") # attempt 2
     GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
     assert_nil @task.reload.g1_failed_at, "a green retry clears g1_failed_at"
   end
@@ -161,8 +161,30 @@ class GateRunTest < ActiveSupport::TestCase
     assert_nil @task.g1_failed_at, "a red DoR close must NOT touch g1_failed_at"
   end
 
+  test "[unit] g1_cert is retired: no gate list offers it, bin/gate refuses it, its old rows still validate" do
+    assert_equal %w[g1_cert], GateRun::RETIRED_KEYS
+    GateRun::RETIRED_KEYS.each do |key|
+      assert_not_includes GateRun::GATES.keys, key
+      assert_not_includes GateRun::KEYS, key
+      assert_not_includes GateRun::TASK_KEYS, key
+    end
+
+    # bin/gate carries its own copy of the key list; it must be the live set exactly.
+    gate_keys = Rails.root.join("bin/gate").read[/^KEYS = %w\[([^\]]*)\]/, 1].to_s.split
+    assert_equal GateRun::KEYS, gate_keys, "bin/gate's KEYS drifted from GateRun::KEYS"
+
+    legacy = GateRun.new(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+                         attempt: 1, started_at: Time.current)
+    assert legacy.valid?, "a row written before the retirement must still validate: #{legacy.errors.full_messages}"
+
+    # Control: an unknown key is still refused, so the line above is not a vacuous pass.
+    unknown = GateRun.new(subject_type: "task", subject_slug: @task.slug, key: "g0_nothing",
+                          attempt: 1, started_at: Time.current)
+    assert_not unknown.valid?
+  end
+
   test "a task-grain key rejects a release subject and vice versa" do
-    release_grain = GateRun.new(subject_type: "release", subject_slug: "rel-x", key: "g1_cert",
+    release_grain = GateRun.new(subject_type: "release", subject_slug: "rel-x", key: "dor",
                                 attempt: 1, started_at: Time.current)
     task_grain = GateRun.new(subject_type: "task", subject_slug: @task.slug, key: "g3_candidate",
                              attempt: 1, started_at: Time.current)
@@ -184,13 +206,13 @@ class GateRunTest < ActiveSupport::TestCase
 
   test "latest_by_key returns the newest attempt per gate" do
     open_gate
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
     open_gate
     GateRun.open!(subject_type: "task", subject_slug: @task.slug, key: "g2b_light")
 
     latest = GateRun.latest_by_key(subject_type: "task", subject_slug: @task.slug)
 
-    assert_equal 2, latest["g1_cert"].attempt
+    assert_equal 2, latest["dor"].attempt
     assert_equal 1, latest["g2b_light"].attempt
     assert_nil latest["g2a_primary"]
   end
@@ -198,8 +220,8 @@ class GateRunTest < ActiveSupport::TestCase
   test "[unit] latest_by_key_for_subjects batches newest attempts per slug" do
     other = tasks(:queued_task)
     open_gate
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: true)
     GateRun.open!(subject_type: "task", subject_slug: other.slug, key: "g2a_primary")
 
     by_slug = GateRun.latest_by_key_for_subjects(
@@ -207,8 +229,8 @@ class GateRunTest < ActiveSupport::TestCase
       subject_slugs: [@task.slug, other.slug, "slug-with-no-runs"]
     )
 
-    assert_equal 2, by_slug[@task.slug]["g1_cert"].attempt, "newest attempt wins per key"
-    assert_equal "passed", by_slug[@task.slug]["g1_cert"].status
+    assert_equal 2, by_slug[@task.slug]["dor"].attempt, "newest attempt wins per key"
+    assert_equal "passed", by_slug[@task.slug]["dor"].status
     assert_equal "in_flight", by_slug[other.slug]["g2a_primary"].status
     assert_nil by_slug[@task.slug]["g2b_light"]
     assert_nil by_slug["slug-with-no-runs"], "a subject with no runs has no entry"
@@ -220,7 +242,7 @@ class GateRunTest < ActiveSupport::TestCase
 
     assert run.duration_seconds >= 90
 
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: true)
     assert run.reload.duration_seconds >= 90
   end
 
@@ -229,7 +251,7 @@ class GateRunTest < ActiveSupport::TestCase
 
     assert_raises(ActiveRecord::RecordNotUnique) do
       GateRun.insert_all!([{
-        subject_type: "task", subject_slug: @task.slug, key: "g1_cert", attempt: 5,
+        subject_type: "task", subject_slug: @task.slug, key: "dor", attempt: 5,
         started_at: Time.current, sops: [], metadata: {},
         created_at: Time.current, updated_at: Time.current
       }])

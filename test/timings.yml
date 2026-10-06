@@ -169,7 +169,7 @@ test/docs/review_handoff_mint_docs_test.rb: 0.07
 test/docs/review_lane_docs_test.rb: 3.63
 test/docs/share_insights_precondition_docs_test.rb: 0.24
 test/docs/ship_docs_sync_docs_test.rb: 0.94
-test/docs/ship_wait_docs_test.rb: 0.17
+test/docs/submit_wait_docs_test.rb: 0.17
 test/docs/sop_registry_docs_test.rb: 0.14
 test/docs/sop_registry_install_test.rb: 3.53
 test/docs/start_here_label_guard_test.rb: 0.15
@@ -297,7 +297,7 @@ test/integration/scratch_backup_cli_test.rb: 7.54
 test/integration/seal_retry_wiring_test.rb: 0.42
 test/integration/session_entry_launcher_test.rb: 0.38
 test/integration/sheet_build_job_discard_test.rb: 0.08
-test/integration/ship_preserves_approval_request_test.rb: 2.57
+test/integration/submit_preserves_approval_request_test.rb: 2.57
 test/integration/sidebar_agents_builders_link_test.rb: 3.87
 test/integration/signing_console_retired_test.rb: 0.17
 test/integration/site_footer_test.rb: 2.87
@@ -600,8 +600,8 @@ test/lib/session_markers_test.rb: 0.51
 test/lib/session_preflight_shape_note_test.rb: 2.99
 test/lib/shift_renewer_test.rb: 0.07
 test/lib/ship_authority_test.rb: 0.1
-test/lib/ship_test.rb: 133.43
-test/lib/ship_wait_script_test.rb: 14.64
+test/lib/submit_test.rb: 133.43
+test/lib/submit_wait_script_test.rb: 14.64
 test/lib/ship_wait_test.rb: 0.13
 test/lib/stacked_pr_test.rb: 0.11
 test/lib/stale_check_test.rb: 0.06

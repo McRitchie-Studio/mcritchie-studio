@@ -8,7 +8,7 @@ ship SHA was certified and deployed to production**. It is produced by Steffon's
 `production-deploy` act — `bin/release ship` opens it at the ship gate and
 closes it after the post-ship smoke seal.
 
-The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
+The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 [G3 Candidate](g3-candidate.md) → **G4 Ship** (this doc).
 
 ## What this gate verifies

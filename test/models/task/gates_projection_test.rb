@@ -5,11 +5,11 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
     @task = tasks(:new_task)
   end
 
-  def open_gate(key: "g1_cert", **args)
+  def open_gate(key: "dor", **args)
     GateRun.open!(subject_type: "task", subject_slug: @task.slug, key: key, **args)
   end
 
-  def close_gate(key: "g1_cert", success: true, **args)
+  def close_gate(key: "dor", success: true, **args)
     GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: key, success: success, **args)
   end
 
@@ -22,10 +22,10 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
 
     gates = Task::GatesProjection.build(@task).fetch("gates")
 
-    assert_equal 2, gates.dig("g1_cert", "attempt"), "attempt 2 supersedes the failed attempt 1"
-    assert_nil gates.dig("g1_cert", "success"), "in-flight attempt has no verdict yet"
-    assert gates.dig("g1_cert", "started_at").present?
-    assert_nil gates.dig("g1_cert", "finished_at")
+    assert_equal 2, gates.dig("dor", "attempt"), "attempt 2 supersedes the failed attempt 1"
+    assert_nil gates.dig("dor", "success"), "in-flight attempt has no verdict yet"
+    assert gates.dig("dor", "started_at").present?
+    assert_nil gates.dig("dor", "finished_at")
 
     assert_equal 1, gates.dig("g2a_primary", "attempt")
     assert_equal true, gates.dig("g2a_primary", "success")
@@ -42,8 +42,8 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] VERSION is bumped to 2 so cached 3-key projections self-heal" do
-    assert_equal 2, Task::GatesProjection::VERSION
+  test "[unit] VERSION is bumped to 3 so cached projections carrying the retired g1_cert self-heal" do
+    assert_equal 3, Task::GatesProjection::VERSION
   end
 
   test "[unit] the two DoR gates project as all-nil rows when unrun and carry attempts when run" do
@@ -79,7 +79,7 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
 
     assert_equal Task::GatesProjection::VERSION, @task.gates_version
     assert @task.gates_cached_at.present?
-    assert_equal true, @task.gates.dig("gates", "g1_cert", "success")
+    assert_equal true, @task.gates.dig("gates", "dor", "success")
   end
 
   test "[unit] cached_or_built serves the cache at the current version" do
@@ -94,7 +94,7 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
     @task.update_columns(gates: { "gates" => {} }, gates_version: 0)
 
     rebuilt = Task::GatesProjection.cached_or_built(@task.reload)
-    assert_equal true, rebuilt.dig("gates", "g1_cert", "success"), "version 0 -> rebuild from gate_runs"
+    assert_equal true, rebuilt.dig("gates", "dor", "success"), "version 0 -> rebuild from gate_runs"
   end
 
   test "[unit] cached_or_built returns a safe empty projection when build fails" do
@@ -103,7 +103,7 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
     Task::GatesProjection.stub(:build, ->(*) { raise "boom" }) do
       result = Task::GatesProjection.cached_or_built(@task.reload)
       assert_equal Task::GatesProjection::VERSION, result["cache_version"]
-      assert_nil result.dig("gates", "g1_cert", "attempt"), "degrades to all-empty, no raise"
+      assert_nil result.dig("gates", "dor", "attempt"), "degrades to all-empty, no raise"
     end
   end
 
@@ -112,18 +112,18 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
   # projection in step at every step.
   test "[integration] gate run writes refresh the parent task projection" do
     open_gate
-    assert_equal 1, @task.reload.gates.dig("gates", "g1_cert", "attempt"), "open! refreshes"
-    assert_nil @task.gates.dig("gates", "g1_cert", "success")
+    assert_equal 1, @task.reload.gates.dig("gates", "dor", "attempt"), "open! refreshes"
+    assert_nil @task.gates.dig("gates", "dor", "success")
 
-    GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+    GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "dor",
                         sop: { "sop" => "full-suite", "result" => "pass" })
-    assert_equal ["full-suite"], @task.reload.gates.dig("gates", "g1_cert", "sops").map { |s| s["sop"] },
+    assert_equal ["full-suite"], @task.reload.gates.dig("gates", "dor", "sops").map { |s| s["sop"] },
                  "append_sop! refreshes"
 
     close_gate(success: true)
     @task.reload
-    assert_equal true, @task.gates.dig("gates", "g1_cert", "success"), "close! refreshes with the verdict"
-    assert @task.gates.dig("gates", "g1_cert", "finished_at").present?
+    assert_equal true, @task.gates.dig("gates", "dor", "success"), "close! refreshes with the verdict"
+    assert @task.gates.dig("gates", "dor", "finished_at").present?
     assert_equal Task::GatesProjection::VERSION, @task.gates_version
   end
 

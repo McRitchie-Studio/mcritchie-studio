@@ -88,7 +88,7 @@ mentioning". Every hand-back.
 🚀 In Flight: 2:14 PM MDT
 ──────────────────────────────────────────────────────────────────
 carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
-bin/ship restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
+bin/submit restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
 sweep progress poller         ▰▱▰▱▰▱▰▱▰▱  armed · 5.5m tick  firm
 avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green CI
 ──────────────────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ progress against, even when the row can still quote a tick or an interval.
   right-hand confidence mark truncated to `(roug` / `(firm` — the one field he
   cannot infer. Hold the name column to 28 and elide longer names with `…`.
 - **One row per live thing** — each subagent, each backgrounded command, each
-  `bin/ship`, each deploy or QA sweep, each cron or watch you started.
+  `bin/submit`, each deploy or QA sweep, each cron or watch you started.
 - **Name the row by its slug or agent name**, per the slug rule above:
   `carl · review fix-cta-timing`, never `subagent 2`.
 - **Two numbers on every forecasting row: elapsed and remaining.** Elapsed is
@@ -158,7 +158,7 @@ Use these for the `firm` rows rather than guessing:
 | Work | Typical | Note |
 |------|---------|------|
 | `bin/fast-check <task>` | ~1 min | the builder's optional pre-flight |
-| `bin/ship <task>` (cold) | ~12 min | includes the CI wait; ~3 min with `SHIP_CI_WAIT=off` |
+| `bin/submit <task>` (cold) | ~12 min | includes the CI wait; ~3 min with `SHIP_CI_WAIT=off` |
 | CI full suite on a PR | ~9 min | the one verdict per tree |
 
 Everything else — a review agent, an exploration sweep, a research fan-out — is

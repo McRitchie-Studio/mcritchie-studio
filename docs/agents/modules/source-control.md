@@ -180,7 +180,7 @@ auth status` is not safe to paste into a transcript: it prints a token fragment.
 
 **Tools should not need a manual refresh.** `bin/lib/gh_auth_retry.rb` classifies
 an auth refusal and `bin/gh-token` supplies the replacement, one mint-and-retry per
-caller, each in its own lane. `bin/ship`, `bin/pr-review`, and
+caller, each in its own lane. `bin/submit`, `bin/pr-review`, and
 `bin/lib/ci_status.rb` route through it. **If a *tool* stops on auth, that tool is
 missing the wiring**: a bug, not a chore. The manual refresh is for a hand-run `gh`.
 
@@ -206,8 +206,8 @@ The transport view of a normal task. The lifecycle itself is
 | Step | Command | Lane | Identity |
 |------|---------|------|----------|
 | Cut a desk | `bin/agent-worktree new <app> <task>` | build | — (local) |
-| Push the branch | handled inside `bin/ship` | build | agent (git helper) |
-| Open the PR — **base `accepted`** | handled inside `bin/ship` | build | agent |
+| Push the branch | handled inside `bin/submit` | build | agent (git helper) |
+| Open the PR — **base `accepted`** | handled inside `bin/submit` | build | agent |
 | Read CI | `bin/lib/ci_status.rb` via the gates | build / review | agent |
 | Merge to `accepted` | `gh pr merge` in `pr-review` | review | agent |
 | Promote `accepted → release` | `bin/release prepare` | QA | agent |
@@ -222,10 +222,10 @@ first for that reason. A batch PR runs only when `release` has diverged, and
 
 Two rules that are about source control, not process:
 
-- **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/ship`
+- **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/submit`
   pins the base, except on a DELIBERATE STACK (the base is another OPEN PR's
   head), where it leaves the base alone and `bin/pr-review` refuses to merge. On
-  a base it cannot judge, `bin/ship` repairs and `bin/pr-review` REFUSES, because
+  a base it cannot judge, `bin/submit` repairs and `bin/pr-review` REFUSES, because
   review's next step is a merge.
 - **A pushed branch preserves code; `main` does not.** `main` is for shipped
   integration, not backup.
@@ -262,7 +262,7 @@ It reaches a commit through **two layers**, because a desk commits by two paths:
 
 | Commit path | Identity comes from | Set by |
 |---|---|---|
-| `bin/ship`'s 1/8 commit | The environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`), which outranks every config file | `CommitIdentity.commit!`, from `built_by` at that moment |
+| `bin/submit`'s 1/8 commit | The environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`), which outranks every config file | `CommitIdentity.commit!`, from `built_by` at that moment |
 | Every other desk commit: your own mid-build commits, a merge-forward, a rebase | The **desk's own** config file, `.git/worktrees/<desk>/config.worktree` | `bin/agent-worktree new --soul <soul>`, which `bin/task begin --agent <soul>` passes |
 
 **Layer 2 exists because layer 1 covers one commit.** Before it, desk hand
@@ -285,7 +285,7 @@ building --actor <soul>`) repoints `built_by` but not the desk, so stamp it too:
 /Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <app> <task-slug> <soul>
 ```
 
-**A task that names no builder is not given one.** `bin/ship` says so and commits
+**A task that names no builder is not given one.** `bin/submit` says so and commits
 under the checkout's own identity (the operator's global one), and `begin` leaves
 the desk unstamped. An unattributed commit that admits it is recoverable; one
 laundered under a guessed soul is not.

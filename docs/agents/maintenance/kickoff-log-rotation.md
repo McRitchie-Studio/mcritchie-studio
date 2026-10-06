@@ -192,7 +192,7 @@ the reason the sweep earns its place alongside rotation:
 
 Gem-repo specifics — studio-engine does NOT behave like an app:
 
-- **The fast lane does not work for gem repos.** `bin/task begin` / `bin/ship`
+- **The fast lane does not work for gem repos.** `bin/task begin` / `bin/submit`
   assume an app checkout. Use plain worktrees and the long-form commands.
 - **Gem-repo feature PRs target `accepted`**, like every other repo. This
   brief said `release`, which is false now and would misroute the PR. The

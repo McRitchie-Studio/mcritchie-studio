@@ -1,16 +1,16 @@
 require "test_helper"
 
-# [integration] `bin/ship` must not discard a pending operator-approval request.
+# [integration] `bin/submit` must not discard a pending operator-approval request.
 #
 # THE DEFECT, measured THREE TIMES IN ONE NIGHT on 2026-09-09 — turf PRs 644 (a
 # P1), 647 and 653. In each case a builder followed the documented build flow
 # exactly:
 #
 #   bin/task update <slug> --local-url http://localhost:<port>/<path> --approval waiting
-#   bin/ship <slug> -m "..."
+#   bin/submit <slug> -m "..."
 #
-# ...and `bin/ship`'s step 8/8 — which is literally `bin/task move <slug>
-# submitted`, the `--- 8/8 submit` block of bin/ship — settled the request to
+# ...and `bin/submit`'s step 8/8 — which is literally `bin/task move <slug>
+# submitted`, the `--- 8/8 submit` block of bin/submit — settled the request to
 # "none" on the way through. Ship
 # said so out loud (the drop warning added on 2026-09-08), so this was never a
 # silence bug. It was the two halves of the fast lane disagreeing: the documented
@@ -33,7 +33,7 @@ require "test_helper"
 # WHAT THIS FILE ASSERTS, and it is the PERSISTED FIELD, never the warning string:
 # a test that only checked the message would have passed against the shipped defect,
 # which printed a perfectly accurate warning about a request it was destroying.
-class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
+class SubmitPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
   LOCAL_URL = "http://localhost:3021/contests/demo".freeze
 
   def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
@@ -52,7 +52,7 @@ class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
           headers: auth, as: :json
   end
 
-  # Exactly what `bin/ship` step 8/8 sends — it shells out to `bin/task move <slug>
+  # Exactly what `bin/submit` step 8/8 sends — it shells out to `bin/task move <slug>
   # submitted`, which PATCHes the stage with a "cli"-sourced event and NO devops
   # (the whole-hash echo happens only on a move to `building`, bin/task:2871).
   def ship_handoff!(task)
@@ -85,7 +85,7 @@ class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
     # THE ASSERTION THE WHOLE FILE EXISTS FOR. Read off the reloaded record, not off
     # the response body and not off any warning text.
     assert_equal "waiting", task.approval_status,
-                 "bin/ship must carry the request into review, not discard it"
+                 "bin/submit must carry the request into review, not discard it"
     assert task.waiting_for_operator_approval?, "so the card still pulses"
     assert_equal LOCAL_URL, task.devops["local_url"],
                  "and the page the operator is being asked to open is still on the record"

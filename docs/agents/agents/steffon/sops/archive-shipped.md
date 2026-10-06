@@ -4,8 +4,7 @@
 
 This is Steffon's `archive-shipped` SOP. It closes out shipped work from prior
 release cycles, reclaims completed worktrees, and sweeps the regenerable disk
-those cycles left behind. `archive-completed` is the legacy name for this same
-act.
+those cycles left behind.
 
 ## Scope
 

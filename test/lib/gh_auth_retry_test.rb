@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] The mint-once-and-retry classifier behind bin/ship's gh calls.
+# [unit] The mint-once-and-retry classifier behind bin/submit's gh calls.
 #
 # The classifier is the load-bearing half: a WRONG "yes" wastes a mint and re-runs a
 # doomed command, while a wrong "no" leaves the operator hand-minting — which is
@@ -103,7 +103,7 @@ class GhAuthRetryTest < Minitest::Test
   # mint is only reached after gh refused a credential, so a cached token is the one
   # thing that cannot be assumed usable. Asking the broker WITHOUT --force returns the
   # refused token unchanged for as long as it is under the 50-minute freshness window
-  # — recovery dead, across processes, for bin/ship as well as bin/pr-review.
+  # — recovery dead, across processes, for bin/submit as well as bin/pr-review.
   def test_the_retry_forces_a_fresh_mint_rather_than_reusing_the_refused_cache
     Dir.mktmpdir do |dir|
       broker = File.join(dir, "gh-token-argv")
@@ -117,7 +117,7 @@ class GhAuthRetryTest < Minitest::Test
 
   # --- the lane the recovery re-authenticates as ------------------------------
   # This used to be a hardcoded `identity: "agent"` default that all three callers
-  # (bin/ship, bin/pr-review, bin/lib/ci_status.rb) took. No 403 ever resulted — both
+  # (bin/submit, bin/pr-review, bin/lib/ci_status.rb) took. No 403 ever resulted — both
   # Apps hold `checks: read` and the ship lane only reads check-runs — so the
   # BEHAVIOUR looked correct while the AUDIT TRAIL crossed lanes: a deployer session's
   # recovered reads were attributed to mcritchie-agent[bot]. The recovery now follows

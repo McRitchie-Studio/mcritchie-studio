@@ -680,7 +680,7 @@ module FastCert
   # worse than a slow one: the builder cannot tell which they are in. Observed
   # live on 2026-08-15 — a diff touching config/initializers/studio.rb mapped to
   # 48 test files and bin/fast-check was still running at 39m34s against a lane
-  # that g1-cert.md budgets at about one minute. bin/ship runs this by default, so
+  # that g1-cert.md budgets at about one minute. bin/submit runs this by default, so
   # every builder pays it.
   #
   # An initializer has no convention candidate, so it fell through to a grep — and

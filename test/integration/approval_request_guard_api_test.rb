@@ -19,8 +19,8 @@ require "test_helper"
 # in one night. So the refusal cases below are driven at `reviewed`, the first stage
 # past the request window. The rule under test is unchanged; only the boundary it is
 # evaluated at moved. The `submitted` half now lives in
-# test/integration/ship_preserves_approval_request_test.rb, which asserts the
-# request SURVIVES the very PATCH bin/ship issues.
+# test/integration/submit_preserves_approval_request_test.rb, which asserts the
+# request SURVIVES the very PATCH bin/submit issues.
 class ApprovalRequestGuardApiTest < ActionDispatch::IntegrationTest
   def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
 

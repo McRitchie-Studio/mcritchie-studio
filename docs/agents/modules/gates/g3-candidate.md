@@ -8,7 +8,7 @@ assembled candidate on `origin/release` is **deployable and QA-green**. It is
 produced by Avi's `qa-release` act — `bin/release prepare` opens it, runs
 everything inside its window, and closes it with the verdict.
 
-The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
+The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 **G3 Candidate** (this doc) → [G4 Ship](g4-ship.md).
 
 ## What this gate verifies

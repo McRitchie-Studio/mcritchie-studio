@@ -22,11 +22,11 @@ checks to `checks_run` as each stage completes.
 
 | Lane | Target | Mutates data | Blocks merge | Gate | When to run |
 |---|---|---:|---:|---|---|
-| PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
+| PR review gate | Local repo or CI | Usually no | Yes | DoR (the dor-check verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release`/`accepted` — the `playwright` job in `ci.yml`, which carries no branch condition of its own, so it follows the workflow's `push: branches:` list in full. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
 | E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the `executed` set `config/e2e_lane.yml` declares** — the one thing the `playwright` job cannot verify about itself |
 | Rails executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `rails_executed_set` job, after the four `rails` shards (`bin/rails-executed-set-check`). Asserts every committed file `config/rails_lane.yml` owns **ran at least one test, in exactly one shard**. Each receipt also names **the commit its shard ran**, and the gate refuses to audit across commits — see below |
-| Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
+| Local proof | Worktree URL | Local DB only | Usually yes | DoR (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
@@ -255,8 +255,8 @@ Owned by `bin/lib/client_surface_diff.rb`; proven by
 
 The Gate column names the branded testing gate whose attempt records that
 lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on
-the task gates card (G1/G2) and the /deployments columns (G3/G4). The four
-standalone gate docs live in [`gates/`](gates/g1-cert.md): `g1-cert.md`,
+the task gates card (DoR/G2) and the /deployments columns (G3/G4). The four
+standalone gate docs live in [`gates/`](gates/dor.md): `dor.md`,
 `g2-review.md`, `g3-candidate.md`, `g4-ship.md`.
 
 If a lane fails, record the classification in task `qa_feedback`:

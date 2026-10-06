@@ -5,18 +5,18 @@ require "test_helper"
 # Tripwire for the sentence that used to stop halfway (task
 # ship-wait-has-no-primitive, 2026-09-09).
 #
-# Four docs told the builder to run `bin/ship` in the BACKGROUND and then said
+# Four docs told the builder to run `bin/submit` in the BACKGROUND and then said
 # nothing about how to WAIT for it. That silence is not neutral: five builders in
-# one session each filled it with the same watcher, `while pgrep -f "bin/ship
+# one session each filled it with the same watcher, `while pgrep -f "bin/submit
 # <slug>"`, which can never fire once a sibling shell carries the pattern. So the
 # rule these tests hold is narrow and mechanical — **wherever a doc says "run it
 # in the background", the command to wait must be within reach on the same
-# page.** Delete `bin/ship-wait` from any of them and this file goes red.
+# page.** Delete `bin/submit-wait` from any of them and this file goes red.
 #
 # NOTE FOR THE RUNNER: `bin/fast-check` cannot see `test/docs` (its diff→test map
 # does not reach this directory), so this lane must be run explicitly:
-#   bin/rails test test/docs/ship_wait_docs_test.rb
-class ShipWaitDocsTest < ActiveSupport::TestCase
+#   bin/rails test test/docs/submit_wait_docs_test.rb
+class SubmitWaitDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
 
   # The places the "run it in the background" advice lives. claude.md and
@@ -37,19 +37,19 @@ class ShipWaitDocsTest < ActiveSupport::TestCase
     File.read(AGENTS.join(rel)).gsub(/[*`]/, "").gsub(/\s+/, " ")
   end
 
-  test "[static] every doc that says run it in the background names bin/ship-wait" do
+  test "[static] every doc that says run it in the background names bin/submit-wait" do
     BACKGROUND_DOCS.each do |rel|
       body = norm(rel)
       assert_match(/run it in the background/i, body,
         "#{rel} is listed here because it carries the background advice")
-      assert_match(/run it in the background[^.]{0,160}bin\/ship-wait/im, body,
+      assert_match(/run it in the background[^.]{0,160}bin\/submit-wait/im, body,
         "#{rel} must end the background sentence with the command, not stop at the advice")
     end
   end
 
-  test "[static] every one of those docs shows a runnable ship-wait invocation" do
+  test "[static] every one of those docs shows a runnable submit-wait invocation" do
     BACKGROUND_DOCS.each do |rel|
-      assert_match(/bin\/ship-wait <task-slug> --launch/, norm(rel),
+      assert_match(/bin\/submit-wait <task-slug> --launch/, norm(rel),
         "#{rel} must show the copy-pasteable form, not merely mention the script")
     end
   end
@@ -70,7 +70,7 @@ class ShipWaitDocsTest < ActiveSupport::TestCase
 
   test "[static] the canonical section documents the exit codes the caller branches on" do
     body = norm("modules/devops-task-board.md")
-    assert_match(/bin\/ship-wait/, body)
+    assert_match(/bin\/submit-wait/, body)
     { "0" => /SUCCEEDED/, "1" => /FAILED/, "2" => /TIMEOUT/, "3" => /USAGE/, "4" => /NO LOG/ }.each do |code, label|
       assert_match(/\| #{code} \|[^|]*#{label}/, body,
         "the exit-code table must carry #{code} → #{label.source}; the caller branches on it")
@@ -91,7 +91,7 @@ class ShipWaitDocsTest < ActiveSupport::TestCase
   test "[static] the primitive's own source carries no process-table pattern" do
     # The doc claims this; the claim is checked here too so the doc cannot go
     # stale against the code it describes.
-    %w[bin/ship-wait bin/lib/ship_wait.rb].each do |rel|
+    %w[bin/submit-wait bin/lib/ship_wait.rb].each do |rel|
       code = File.read(Rails.root.join(rel)).each_line.reject { |l| l.strip.start_with?("#") }.join
       refute_match(/\bpgrep\b|\bpkill\b/, code, "#{rel} must never read the process table by pattern")
     end

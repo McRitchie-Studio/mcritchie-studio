@@ -884,7 +884,7 @@ class Release < ApplicationRecord
       raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
 
       # Sweeping the task onto the RC means its PR merged onto the `release`
-      # branch — stamp the git-location (the qa-deploy heartbeat's crash-recovery
+      # branch — stamp the git-location (the qa-release heartbeat's crash-recovery
       # signal: an interrupted Steffon skips re-merging a `merged: "release"`
       # task). See Task::MERGED_STATES. Stage is untouched: `reviewed` members
       # flip to `assembled` only on QA-green.

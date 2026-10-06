@@ -44,7 +44,7 @@ Alex says `wrap-it-up` in the stuck session. Work these steps in order.
 
 - **File no new task, card or follow-up** from here on.
 - **Never stop inside a mutation.** If `bin/release prepare`, `bin/release ship`,
-  `bin/release archive` or a `bin/ship` is running, let it finish and read its
+  `bin/release archive` or a `bin/submit` is running, let it finish and read its
   verdict line. A session quit mid-release can leave the candidate half recorded.
 - Start nothing new: no builds, no reviews, no releases.
 
@@ -195,7 +195,7 @@ toward the goal, and the in-flight roster stamped from `TZ=America/Denver date`.
   `gh run rerun <id> --failed` once the version was live, then `bin/release prepare`.
 - **A ship's CI wait can give up while CI is only slow.** Four ships at once queued
   the runners past the 15-minute budget. Nothing was refused; wait and re-run
-  `bin/ship`.
+  `bin/submit`.
 - **Read the clock before stamping.** A roster time is a measurement.
 - **`task begin` refuses a gem repo** (`unknown app: studio-engine`). Cut the desk
   by hand per [`worktrees.md`](../../../modules/worktrees.md).

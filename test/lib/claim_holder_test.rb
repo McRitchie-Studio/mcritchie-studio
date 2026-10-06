@@ -309,7 +309,7 @@ class ClaimHolderTest < ActiveSupport::TestCase
       role: ClaimHolder.role(review_in_progress: review_in_progress,
                              review_claim_live: review_in_progress),
       steal_command: "bin/task begin probe-task --steal",
-      retry_command: "bin/ship probe-task",
+      retry_command: "bin/submit probe-task",
       reviewer: reviewer, reviewer_session: reviewer_session, now: MEASURED_NOW
     ).join("\n")
   end

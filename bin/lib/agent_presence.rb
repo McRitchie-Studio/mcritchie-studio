@@ -13,7 +13,7 @@ require_relative "process_table"
 # new ways to wedge a peer, so the worst case of this slice is *no change*.
 #
 # WHAT IT READS. The supervisor claims bin/lib/presence_claim.rb writes for
-# `bin/ship` and `bin/release` (the session-marker namespace), plus any cert
+# `bin/submit` and `bin/release` (the session-marker namespace), plus any cert
 # runlock (`cert-run.json`) an older desk still carries: until DevOps v3 phase 2b
 # the local certs wrote one at the instant a lane was spawned and cleared it once
 # the lane's process group was provably gone. Nothing writes that file any more
@@ -92,7 +92,7 @@ module AgentPresence
   UNKNOWN_WEIGHT = 1.0
 
   # A claim whose phase says it is WAITING consumes nothing — that is cost #4 in
-  # the design: two idle `bin/ship` processes parked in a CI wait read as competing
+  # the design: two idle `bin/submit` processes parked in a CI wait read as competing
   # certs and nearly held off a launch. No writer publishes `phase` yet (slice 3),
   # so today every runlock is `working`; honoring the field now means the reader is
   # already correct when one does.
@@ -118,7 +118,7 @@ module AgentPresence
   HEAVY_PATTERNS = [
     [:suite,   /\b(bin\/)?rails\s+test\b/],
     [:cert,    /\bbin\/(fast-check|dor-check)\b/],
-    [:ship,    /\bbin\/ship\b/],
+    [:ship,    /\bbin\/(submit|ship)\b/], # bin/ship is the alias of bin/submit
     [:sweep,   /\bbin\/release(\.rb)?\b/],
     [:suite,   /\brspec\b/],
     [:e2e,     /\bplaywright\b/]
@@ -343,14 +343,14 @@ module AgentPresence
 
   # Capacity consumed, with ONE workload counted ONCE.
   #
-  # THE DOUBLE COUNT this exists to prevent: `bin/ship` publishes `weight: suite`
+  # THE DOUBLE COUNT this exists to prevent: `bin/submit` publishes `weight: suite`
   # while it certifies, and moments later the bin/fast-check it spawned writes a
   # runlock of its own. Two claims, two units, one suite — and a headroom number
   # that double counts is a number somebody will eventually calibrate
   # SUITE_CAPACITY against.
   #
   # The rule, stated exactly: A SUPERVISOR CLAIM ADDS NO COST ON TOP OF A RUNNER
-  # ALREADY COUNTED INSIDE ITS OWN PROCESS GROUP. `bin/ship` spawns bin/fast-check
+  # ALREADY COUNTED INSIDE ITS OWN PROCESS GROUP. `bin/submit` spawns bin/fast-check
   # with `system` and no `pgroup:`, so the runner lives in the ship's group — which
   # is precisely how the two are recognised as one workload, using the resolution
   # the backstop already performs and needing no new field.
@@ -362,7 +362,7 @@ module AgentPresence
   # workload — a supervisor and something running inside it.
   #
   # And a supervisor whose runner has NOT yet appeared keeps its full weight. That
-  # window is real (~11s measured between `bin/ship`'s 2/8 and the lane's runlock),
+  # window is real (~11s measured between `bin/submit`'s 2/8 and the lane's runlock),
   # and it is the one moment where the supervisor's claim is the ONLY thing saying
   # a suite is starting.
   def consumed(claims, table: nil)
@@ -421,7 +421,7 @@ module AgentPresence
     # wrapper carries the whole command in its argv, so it matches the heavy patterns,
     # and without this it was reported as UNATTRIBUTED beside the very claim that names
     # its child. Resolving each claimed cert to its live row and taking THAT pgid folds
-    # the wrapper — and the `bin/ship` in the same group — back onto the claim covering it.
+    # the wrapper — and the `bin/submit` in the same group — back onto the claim covering it.
     counted.filter_map { |c| ProcessTable.live_process(table, c[:cert_pid]) }
            .each { |process| known_pgids << process[:pgid] }
 
