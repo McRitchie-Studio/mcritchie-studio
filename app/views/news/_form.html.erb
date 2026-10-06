@@ -1,11 +1,5 @@
 <div class="card p-6">
-  <% if news.errors.any? %>
-    <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-      <% news.errors.full_messages.each do |msg| %>
-        <p><%= msg %></p>
-      <% end %>
-    </div>
-  <% end %>
+  <%= render "shared/form_errors", record: news %>
 
   <%= form_with model: news, url: news.persisted? ? news_path(news.slug) : news_index_path do |f| %>
     <!-- Source (New stage) -->

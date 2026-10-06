@@ -74,11 +74,7 @@
     <!-- EDITOR FORM -->
     <div class="lg:w-2/5">
       <%= form_with model: @broadcast, url: broadcast_path(@broadcast), method: :patch do |f| %>
-        <% if @broadcast.errors.any? %>
-          <div class="card p-3 mb-4 text-sm text-red-300 bg-red-900/30">
-            <%= @broadcast.errors.full_messages.to_sentence %>
-          </div>
-        <% end %>
+        <%= render "shared/form_errors", record: @broadcast %>
 
         <div class="card p-5 space-y-4">
           <div>
