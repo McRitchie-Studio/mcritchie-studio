@@ -211,6 +211,32 @@ class ImageGeneration::OpenAITest < ActiveSupport::TestCase
     assert_nil result.seed, "recording a seed the vendor ignored would be a false determinism claim"
   end
 
+  # THE HEADER ROW'S SIZE, and only when asked. The sheet's measured request
+  # shape must stay byte-identical: no size key unless a caller passes one.
+  test "the tool size is sent only when a valid one is asked for" do
+    client = client_with_reference
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "p", reference_urls: ["https://example.com/a.png"], image_size: "1536x1024")
+    client.generate_and_wait(prompt: "p", reference_urls: ["https://example.com/a.png"])
+    client.generate_and_wait(prompt: "p", reference_urls: ["https://example.com/a.png"], image_size: "landscape_16_9")
+
+    assert_equal [{ "type" => "image_generation", "size" => "1536x1024" }], calls[0]["tools"]
+    assert_equal [{ "type" => "image_generation" }], calls[1]["tools"]
+    assert_equal [{ "type" => "image_generation" }], calls[2]["tools"], "a fal preset name is not this vendor's size"
+  end
+
+  test "an inline data URI reference is sent as given, without a download" do
+    client = ImageGeneration::OpenAI.new(@row, api_key: "sk-test")
+    client.define_singleton_method(:fetch_reference) { |_url| raise "an inline reference must not be fetched" }
+    calls = recording(client)
+    inline = "data:image/png;base64,#{Base64.strict_encode64(PNG)}"
+
+    client.generate_and_wait(prompt: "p", reference_urls: [inline])
+
+    assert_equal inline, calls.sole.dig("input", 0, "content", 0, "image_url")
+  end
+
   test "no reference refuses before it can spend" do
     client = client_with_reference
     calls = recording(client)
