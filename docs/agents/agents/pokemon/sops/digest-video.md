@@ -106,7 +106,9 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    from the real timeline.
 2. **Group people by visible cues** (outfit, hair, eyewear, jewelry) into
    Person 1..N, numbered by first appearance. **Never face recognition**, and
-   no names: naming is the operator's. Each sighting is a time and `clear` or
+   no names: naming is the operator's, in every artifact (prose, a desk
+   database, a test fixture; fixtures use synthetic artists). Credits read from
+   the video's own title or metadata are fine. Each sighting is a time and `clear` or
    `partial` (partly in frame, or background). Note what a sample cannot tell
    apart (two people always together, a mannequin, a figure too small).
 3. **Upload one still per person** to the same bucket as the source, at

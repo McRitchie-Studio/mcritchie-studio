@@ -263,6 +263,26 @@ This replaces the old trick of blanking the registry's `test_cmd`/`qa_test_cmd`.
 Do not do that: it **silently disarmed** this gate while printing "already green"
 (see above), and it no longer works.
 
+## Reading an interrupted ship
+
+- **A killed ship is an interruption, not an abort.** A background kill (a harness
+  timeout, a low-memory stop) lands most often in a satellite's `bin/deploy` local
+  suite, before anything reaches Heroku. Confirm no ship is alive
+  (`ps aux | grep "[r]elease\.rb"`), free memory if that was the cause, and re-run
+  `bin/release ship --yes`; it resumes. Run that `ps` check before every merge onto
+  `accepted` while a release is in flight, too: a running ship is easy to miss.
+- **A local-suite red with green CI on the same frozen SHA** is usually machine
+  load. turf-monster's `bin/deploy` deletes its test log on failure, so compare
+  `check-runs` for that SHA and `uptime`, then re-run at lower load.
+- **No seal line is not always a dead ship.** When the hub is not a member, the
+  seal prints `nothing to seal; skipped`, and a satellite-only release reaches
+  production with only its own health check. Read the line above before reporting.
+- **"primary left as-is (uncommitted/unpushed work)" is a guess.** It prints
+  whenever `restore-primary` refuses, including for a repo it does not know.
+  Measure before acting: `git status --porcelain`, then
+  `git merge-base --is-ancestor HEAD origin/main`. Clean and behind means
+  `git merge --ff-only origin/main`.
+
 ## Who runs it
 
 **Steffon**, via the `production-deploy` SOP

@@ -889,6 +889,50 @@ containment test's job is to stop a new *writer*. If you want a sweep for the ot
 stores, that is unbuilt work — say so plainly rather than implying coverage that
 does not exist.
 
+## Rules For A Test That Proves Something
+
+A green test is evidence only when it could have gone red for the reason it exists.
+UI, ERB, CSS and browser-verification traps live in
+[Shannon's review checklist](../agents/shannon/role.md#front-end-traps).
+
+**Prove it can fail.**
+- **See it red first.** Run a new regression test against the pre-fix code, or mutate the subject, and read the failing LINE: it must be your assertion. A pinned `assert_equal` over a collection fails first and shadows an absence assertion below it in the same method, so give the absence its own test.
+- **Prove the mutation landed.** Assert the fragment exists before replacing it and check `git diff --stat` after; a `sed` or `perl` that matched nothing exits 0. A red control is self-verifying, a green one is unproven. Run a no-mutation baseline that must be green, and clear `tmp/cache/bootsnap` between runs, because its compile cache keys on mtime and size and can serve a restored file's mutant.
+- **Read the result honestly.** Grade on the runner's exit code, never on a printed line. An error from the mutation's own syntax, a load failure or `setup` is not a kill; an error raised by the code under test at the guarded line is. Run one mutation per pass: the runner halts at the first failure, so a batched run proves only the first mutant and misattributes the counts.
+- **Mutate every behaviour and every member.** One mutation per behaviour a fix changes, one per member of a guarded loop, and negate or reorder rather than only delete. Two guards that each suffice survive any single mutation; mutate the combination. A control must model a change that can really happen, and one whose two states give the same reading (compare a slope, not a level) measures nothing.
+- **Commit before mutating.** A harness that restores with `git checkout` reverts uncommitted work and restores per path, so a test can survive while its code is reverted. Never `git add -A` on a desk another session may hold while a mutant is applied; restore with `bin/scratch-backup`. A mutation count typed into `checks_run` is a claim; a reviewer re-runs at least one.
+
+**Read the subject, not a proxy.**
+- **Scope the haystack.** `assert_select` and `response.body` read the whole document, layout included; scope to a `data-test` subtree. A string assertion can match a pre-existing sibling, a comment, a heading or a debug log; `grep -c` the pattern, and when it hits more than once, delete the rule itself in the control. Anchor on structure (`self.`, an attribute boundary) rather than a bare name.
+- **Execute, do not read.** A test that greps a source file passes over `if false`, an early `return` and an unrendered `<% if %>`. Assert on the rendered body or run each exit; put a script's decision in a unit and drive it with a spy.
+- **Assert the journey and the fact.** An end-state assertion cannot see an excursion an `ensure` undid; read the reflog, an event log or a spy. A derived flag is not the fact it advertises; assert both and mutate each half. A message built by interpolating a constant always contains that constant.
+- **An absence needs a presence.** The test env's `:null_store` makes every cache-absence assertion pass; install a `MemoryStore` and assert the key was present first. A read-only claim subscribes to `sql.active_record`, asserts zero writes, and asserts that queries ran. A file-scanning guard asserts a floor on its population, since an empty glob passes everything, and resolves something per member rather than once per lane.
+- **A scanner is proven on a known-positive tree.** Plant the defect in its ugliest form (trailing comment, wrapped line) and watch it go red. Strip comments before parsing. For prose, flatten first (drop comment markers, collapse whitespace) and substring-match; `\s+` fits a gap inside a phrase, `\s*` an optional anchor. Prove each regex alternative matches a real input. `git grep -E` has no `\b` and returns zero silently; use `-P`.
+
+**Doubles, fixtures and wiring.**
+- **A stub copies the outside world, not our code.** Shape it from the provider's docs or a captured payload. A double that emits more than reality hides bugs as well as one that emits less. A `**kwargs` double accepts misspelt parameters: keep one tier that drives the real client over a stubbed transport and asserts the request it built. When a change adds a field to an outbound request, assert the request asks for it.
+- **Read the setup adversarially.** A setup that performs the missing fix, a fixture value the writer cannot emit, or a fixture that never reaches the branch certifies nothing; assert the scenario's precondition. A stub that raises a gem's error class where the gem is `require: false` raises `NameError` instead; assert the class.
+- **Every flag, config key and registration owes a wiring test.** Delete the production line that supplies it; if the suite stays green, add a test that runs the real caller and asserts the value arrives. When a change is safe "because X already equals Y", pin that agreement with a test that reads both real sources.
+- **Watch what did not run.** A `def test_` below a class-level `private` never runs; use the `test "…" do` DSL or compare definitions with `--verbose` runs. A regression skip-gated on the predicate it tests can switch itself off, so watch the skip count. A `node:test` skip prints `ok … # SKIP`; read the skipped total.
+
+**Changing guards.**
+- **A guard pins the rule it encodes.** Make the prose complete before guarding it. Keep an old assertion until its replacement reds every case the old one caught; when replacing signal A with B, build the truth table over the cells where they disagree, and often AND both.
+- **A changed expected value is the highest-suspicion hunk.** Declare the flip, say why the old value was wrong, and rebuild the discrimination it carried.
+- **A baseline read from `origin/accepted` breaks after its own merge.** Pin an immutable SHA.
+- **A non-vacuity check that fails is never the bug.** Fix the setup or the observable (an inode number can repeat; byte revisions cannot), and force the condition rather than hope for it.
+- **Test a time boundary on the transition day itself.** A DST test four days after the change passes on code that is wrong on the day.
+
+**Authoring traps.**
+- A test class name must be unique across tiers (`…ViewTest`, `…SystemTest`); run a new file together with its same-named sibling.
+- Never name a Minitest helper `message`, `run`, `diff`, `skip` or `capture_io`; the framework calls them. `assert_select "sel", "text"` treats the string as a text match; put intent in a comment and constraints in `count:`/`text:`.
+- Parallel workers get their own database, never their own filesystem. Key every written path to the process and test, and tear down only what that test created.
+- A file added to a shared fixture builder reaches every sibling test; gate it on a parameter, and A/B by reverting the test file. Retuning a shared double's timing can leave a sibling spec passing through another code path; check its event still has a receiver.
+- A targeted run misses cross-file guards. When a diff adds or renames anything under `bin/`, `config/` or `docs/agents/`, run `test/lib test/commands test/docs` as directories. A test that spells a repo path or constant joins that source's `bin/fast-check` mapping and can trip the exact lists in `test/lib/fast_cert_subject_test.rb`; prefer the constant, and run that file. A file under a `frozen_size` ceiling in `config/test_health.yml` cannot grow past it, so a new concern gets a new file.
+- A spawned interactive shell (`zsh -i`, `bash -i`) writes the operator's real history; set `ZDOTDIR` and `HISTFILE` to the sandbox.
+- A Node shim must use `Object.defineProperty(globalThis, "navigator", …)` and check that it took; plain assignment is a no-op where `navigator` is built in.
+- `playwright.config.js` binds `E2E_PORT`, default 3000, and adopts any server already listening there, so pass a free port and restart the server after a view edit. A spec owns its fixtures: mint rows through the board API (`meta[name=e2e-api-token]`) and delete them in a `finally`, because a card added to `e2e/seed.rb` changes the input of specs that measure the board. After a merge, re-derive `config/e2e_lane.yml` from `npx playwright test --list` on the merged tree; never add the two deltas.
+- A red that errors before its assertion, in machinery the diff cannot reach, is environmental; a `result not reported` with no backtrace is a dead worker. Say both halves before re-running. A flake whose failure looks like its subject is urgent: wait on a postcondition, never a sleep.
+
 ## Test Suite Catalog
 
 `bin/devops-tests` reads `config/devops_test_suites.yml`. Each suite should

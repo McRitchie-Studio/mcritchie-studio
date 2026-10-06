@@ -8,7 +8,7 @@ Docs are part of the product surface for agents. When code changes behavior, upd
 - Ecosystem map and recovery: `mcritchie-studio/docs/ECOSYSTEM.md`, `docs/agents/system/house-burn-down.md`
 - Shared email operations: `mcritchie-studio/docs/agents/modules/email-operations.md`
 - App-specific behavior: the owning repo's README, runbook, and topic docs
-- Audit process: `mcritchie-studio/docs/agents/modules/audit-playbook.md`
+- Audit process, and the rules for correcting a claim in prose: `mcritchie-studio/docs/agents/modules/audit-playbook.md`
 - Historical audits and prompts: archive or ledger once their live facts are promoted
 
 ## Editing The Entry Docs (`AGENTS.md` / `CLAUDE.md`)

@@ -136,6 +136,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
    ([`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)) and
    stay merge-ready. Scope, style, and hardening ideas are notes:
    `bin/task note <task-slug> --comment "..." --agent carl`.
+   Nothing stops a light from running `bin/task block`, so re-read `bin/task
+   bounces <task-slug>` and the stage after it reports. If it already blocked, do
+   not re-block: add your findings as a note.
 
 5. **Record your scout report** (drop `--dry-run` once the payload looks right):
 
@@ -187,6 +190,8 @@ tasks. If anything is missing, note it as a finding; do not guess.
        base read failed, the probe could not be read, the base came back EMPTY,
        or you cannot tell which repo to probe, REFUSE. Five conditions refuse and
        only a proven-unclaimed base retargets (`bin/lib/stacked_pr.rb`).
+     - **`--merge`, never `--squash`.** An eject reverts with `git revert -m 1`,
+       which needs a two-parent merge commit.
      - **Order matters: merge → move**, so the task is `reviewed` **iff** its
        code is on `accepted`. If `gh pr merge` FAILS, leave the task `submitted`,
        resolve it on GitHub, and re-review.
@@ -213,7 +218,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
      it stands down while a live review claim is held.
      - Arming is REFUSED unless the task's **latest** scout report is
        `merge-ready`. To change your mind, record a later scout report; the armed
-       merge refuses at fire time. You do not have to disarm.
+       merge refuses at fire time. You do not have to disarm. The latest report
+       is anyone's, so a light's later `merge-ready` replaces your
+       `request-changes`: never arm while the lanes disagree.
      - Check or undo it: `bin/review-autopilot list`, `run <task>`, `disarm <task>`.
      - **Read the exit code.** Exit **2**: the tool declined (your verdict is not
        `merge-ready`, or bad flags). Exit **1**: it could not READ the board, so
@@ -259,7 +266,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
 
    **On an ARMED merge this release is load-bearing.** The autopilot stands down
    while a live claim is held, so an unreleased claim idles the merge out to the
-   TTL.
+   TTL. Then confirm it fired (`gh pr view <feat-pr> --json state,mergedAt`); on
+   `waiting: GitHub is still computing mergeability`, run `bin/review-autopilot run
+   <task-slug>` once more.
 
 8. **Close the activity with your verdict:**
 

@@ -861,6 +861,16 @@ Do not include unrelated PRs or new feature work in this rollout.
 - If another agent moved `origin/main`, rebase and rerun checks before PR.
 - If another agent changed the same files, let Git surface the conflict. Do not
   manually recreate or overwrite their work from memory.
+- **Peer sessions share one board and one desk per task.** A desk binds to the
+  task slug, not the session, so two sessions on one task edit one working tree.
+  Before dispatching a builder, check `bin/agent-worktree holder <slug>`. A desk
+  holding uncommitted work you did not write belongs to someone: save yours as a
+  patch, leave theirs untouched, and land on top after their ship exits. Never
+  steal or revert under a live peer.
+- **The soul stamp is not the session.** `builders` and `built_by` name a soul, and
+  every session runs the same souls. `devops.claimed_session` names the session
+  that last claimed; compare it with your own before telling a builder a task is
+  theirs.
 
 ## 100-Agent Scaling Notes
 

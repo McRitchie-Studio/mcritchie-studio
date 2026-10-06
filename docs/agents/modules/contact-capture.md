@@ -168,6 +168,10 @@ What the helper guarantees, so you do not have to:
   diff says `change` and Alex agreed, and *appends* to the note.
 - **`create` refuses on a match.** Pass `--allow-duplicate` only when Alex has
   said this person needs a separate card from the one `find` offered.
+- **iCloud is the one home for his contacts.** A card that lives only in another
+  account on the phone (a Google account, for one) does not sync to the Mac, so
+  `find` cannot see it. When Alex sees a card on his phone that `find` misses,
+  ask which list it is in before suspecting a sync bug.
 - **A slow Contacts is retried once, at the front.** Contacts can sit on a
   request until the app is activated (measured 2026-09-28: three timeouts, then
   an answer in under a second once activated). The helper retries once with

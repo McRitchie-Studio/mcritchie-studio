@@ -81,3 +81,43 @@ stripe listen --forward-to localhost:3100/webhooks/stripe
 ```
 
 If purchases stall locally, confirm the listener before assuming the Rails app is broken.
+
+## Reaching A Desk Stack
+
+- **A desk binds localhost only.** For a phone on the LAN, pass Rails' `BINDING`
+  through: `BINDING=0.0.0.0 bin/agent-worktree up <app> <task-slug>`, then confirm
+  `lsof -nP -iTCP:<port> -sTCP:LISTEN` shows `*:<port>`.
+- **Pin a browser or e2e run to your own port.** Playwright's `reuseExistingServer`
+  attaches to whatever answers on the default port, which may be a sibling desk's
+  tree. Set `PW_BASE_URL=http://127.0.0.1:<your-port>` and prove the server is yours
+  before believing a pass or a failure.
+- **Background commands die at two hours.** For a server Alex must use over time,
+  give him the one-line Terminal command, or start it only when he is ready to act,
+  and read its log before believing "done".
+
+## Processes On A Shared Machine
+
+Up to five builders share this machine, so a process command aimed at "mine" often
+reaches theirs.
+
+- **Kill by PID, never by pattern.** `pkill -f "<pattern>"` matches every sibling's
+  run, and never matches puma, which renames its process. Kill the PID you started
+  (`$!`) or the one `lsof -ti tcp:<port>` names, wait for the port to free, and
+  require a new PID before trusting a restart.
+- **Never kill a process by walking to its parent.** A stray `postgres` backend's
+  parent is the postmaster, and killing it takes down every desk, cert lane and
+  ship. Read the parent first: `ps -o pid,ppid,command -p <ppid>`.
+- **`Process.kill(0, pid)` succeeds for a zombie.** Read `ps -o state= -p <pid>`
+  (`Z`) to tell a dead child from a live one.
+- **A process near 100% CPU, hours old, with PPID 1 is an orphan**, often a load
+  fixture whose cleanup line never ran: `ps -eo pid,ppid,%cpu,etime,command | sort
+  -k3 -rn | head`. Save the command lines before reaping. A load fixture should stop
+  itself on a deadline.
+- **Do not list processes with `ps aux`, `ps -ef` or `pgrep -fl`.** A command line
+  can carry a secret. Use `pgrep -f` (PIDs only) or `ps -o pid,etime,comm -p <pid>`.
+- **`vm_stat` "Pages free" and swap usage look alarming on a healthy Mac.** Read
+  `memory_pressure` and name the top consumers before reporting a resource problem.
+- **An instant `getaddrinfo: nodename nor servname provided` is usually a poisoned
+  macOS DNS cache**, not a down service. Confirm with `dig` and `curl --resolve`,
+  keep working with `RUBYOPT="-rresolv-replace"`, and hand the flush
+  (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) to Alex.

@@ -302,6 +302,38 @@ the stamp cannot forge or silence the author set review excludes on. The one
 machine reader is the `Github::CommitFetcher` builder monitor, which counts fewer
 commits, since `<soul>@mcritchie.studio` resolves to no GitHub account.
 
+## Git And `gh` Traps
+
+Each of these succeeds while doing something other than what you read.
+
+- **Name the repo in the command.** `gh` resolves the repo from the cwd, PR numbers
+  collide across repos, and a `cd` from an earlier call persists. Pass
+  `--repo McRitchie-Studio/<repo>` on every `gh pr` that names a number, and
+  `git -C <path>` rather than trusting the shell's position. A wrong-repo write
+  (a PR comment) lands publicly on someone else's PR.
+- **Diff a desk with three dots:** `git diff origin/accepted...HEAD`. Two dots
+  compare endpoints, so everything `accepted` gained since the desk was cut reads
+  as a deletion the branch never made.
+- **Squash against the desk's own base:** `git reset --soft $(git merge-base HEAD
+  origin/accepted)`. Worktrees share refs, so any fetch moves `origin/accepted`
+  under the desk, and a soft reset to it reverts everything merged since. After a
+  push, check that the PR's file count matches the change.
+- **"When did this land" walks `--first-parent`.** Side-branch commits predate the
+  merge that landed them, so committer dates over a range answer wrongly.
+- **After a 5xx from `gh pr create`, list before re-opening.** The timeout usually
+  lost the response, not the PR: `gh pr list --repo <r> --head <branch> --state all`.
+- **`git grep -E` has no `\b`.** The pattern matches nothing and reports a clean
+  miss. Use `-P` or drop the boundary, and show a zero-hit search can hit.
+- **zsh eats `git show $ref:path`.** `:a`, `:l` are history modifiers, even inside
+  double quotes. Brace it: `git show "${ref}:path"`.
+- **`git rev-parse HEAD` on an unborn branch prints the literal `HEAD`.** Two such
+  values compare equal; use `--verify`, or assert the value is hex.
+- **`--match-head-commit` needs the full 40-character SHA**; a short one is refused.
+- **Commit messages and PR bodies go through a file** (`git commit -F <file>`,
+  `gh pr create --body-file`): double quotes do not stop backticks, so a quoted
+  identifier runs as a command and drops out of the message. Read it back with
+  `git log -1 --format=%B`.
+
 ## Where To Read Next
 
 | Need | Read |
