@@ -117,10 +117,10 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   // A card with nobody picked shows the search alone; nothing is chosen until the search says so.
   // (A retry may find it picked: Clear forgets the person.)
   const picker = recast(page, 1);
-  if ((await picker.getAttribute("data-state")) === "kept") await picker.locator("[data-test='keep-original-box']").uncheck();
+  if ((await picker.getAttribute("data-state")) === "kept") await picker.locator("[data-test='swap-back']").click();
   if ((await picker.getAttribute("data-state")) !== "none") await picker.locator("[data-test='swap-clear']").click();
   await expect(picker).toHaveAttribute("data-state", "none");
-  await expect(picker.locator("[data-test='keep-original']")).toBeHidden();
+  await expect(picker.locator("[data-test='keep-original-note']")).toBeHidden();
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
   await picker.getByRole("combobox").fill("demo");
   // The search row says what is saved for each person: the default look's sheet and name beside the count.

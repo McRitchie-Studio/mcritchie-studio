@@ -53,9 +53,9 @@ test("operator finds a look-less athlete in Replace with and is offered a first 
   await expect(chosen.locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
   await expect(chosen.locator("[data-test='swap-athlete-team']")).toHaveText("Test City Testers");
   await expect(chosen.locator("[data-test='search-row-headshot']")).toBeVisible();
-  // The search stays, emptied, for another pick; Keep Original appears, unchecked.
+  // The search stays, emptied, for another pick; with no look to preview, Keep Original stands under the look step.
   await expect(search(page)).toHaveValue("");
-  await expect(recast(page).locator("[data-test='keep-original-box']")).not.toBeChecked();
+  await expect(recast(page).locator("[data-test='keep-original-pending']")).toBeVisible();
   await expect(recast(page).locator("[data-test='recast-no-look']")).toContainText("Test Rookie Bravo has no look yet");
   await expect(recast(page).locator("[data-test='look-trigger']")).toBeHidden();
   await expect(recast(page).locator("[data-test='look-generate-form']")).toContainText("First look for Test Rookie Bravo");

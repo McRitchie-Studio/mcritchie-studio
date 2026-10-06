@@ -146,8 +146,10 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    "On screen" with the person's headshot, vocation and team, and a Change
    button; naming stays editable after the confirm, and the stored prompts
    follow each change.
-6. **The operator swaps**, on the same card, under **Replace with**: a people
-   search on every card, with no toggle to press first. A card with nobody
+6. **The operator swaps**, on the same card, under **Replace with**, which sits
+   at the top of the card, under the still and the "Person N" heading and above
+   the description and sightings: a people search on every card, with no toggle
+   to press first. A card with nobody
    picked shows only that search (a card saved under the old "Keep as is"
    reads the same). The search is a list wider than the card, three columns
    per row (the headshot; the name, vocation, team and looks count; the
@@ -164,13 +166,16 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    (ready, building, failed, none); picking a row saves that look, previewed
    large with a link to the look's own page. The arrow keys, Home, End, Enter,
    Space and Escape work the list.
-   Once someone is picked, a **Keep Original** checkbox shows, unchecked while
-   swapping. Checking it stops the swap and hides the chosen person and the
-   look dropdown, but **remembers** them (`recast_keep`): nothing reads them
-   while it is checked (prompts, swap target and hand-off treat the person as
-   kept). Unchecking it restores them with no re-pick (a remembered look since
-   retired falls back to "needs a look"). Picking someone else from the search,
-   which stays on the card, unchecks it and swaps to them. The card says
+   While swapping, a full-width **Keep Original** button sits directly under
+   the look's character-sheet preview (under the look step when the person has
+   no look yet). Pressing it stops the swap and hides the chosen person, the
+   look dropdown and the preview, but **remembers** them (`recast_keep`):
+   nothing reads them while kept (prompts, swap target and hand-off treat the
+   person as kept). The card then reads "Not swapped. <name> is remembered.
+   Swap back"; the name or **Swap back** restores them in one press with no
+   re-pick (a remembered look since retired falls back to "needs a look").
+   Picking someone else from the search, which stays on the card, swaps to
+   them. The card says
    Saving…, Saved, or Not saved with Retry; each change is a JSON `PATCH` to
    the recast endpoint, sent one at a time in the order made (a change made
    while one is in flight waits for it), so the server always ends where the

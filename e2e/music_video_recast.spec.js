@@ -2,9 +2,10 @@
 // toggle first. The operator searches an athlete in the wide three-column list,
 // and picking him IS the swap: it saves at once in his default look; switching
 // the look saves again; the chunk prompts below follow each save without a
-// reload. A dropped save says so and Retry sends it again. Keep Original
-// (unchecked while swapping) turns the swap off and hides it, remembering him;
-// unchecking restores him; picking someone else unchecks it. Saves land in the
+// reload. A dropped save says so and Retry sends it again. The Keep Original
+// button under the look's sheet turns the swap off and hides it, remembering
+// him; Swap back (or his name) restores him; picking someone else swaps to
+// them. Replace with sits at the top of the card. Saves land in the
 // order made, so a change made while one is in flight never leaves the server
 // behind the card. A cinematic video, so no prompt says "music video". Wholly
 // synthetic data, seeded by e2e/seed.rb from db/seeds/data/recast_video.rb:
@@ -17,11 +18,12 @@ const card = (page, n) => page.locator(`[data-test='performer-card'][data-ordina
 const recast = (page, n) => card(page, n).locator("[data-test='performer-recast']");
 // The swap search, not the look dropdown's trigger (also a combobox).
 const search = (page, n) => recast(page, n).locator("[data-test='recast-typeahead'] input[role='combobox']");
-const keepBox = (page, n) => recast(page, n).locator("[data-test='keep-original-box']");
+const keepButton = (page, n) => recast(page, n).locator("[data-test='keep-original']");
+const swapBack = (page, n) => recast(page, n).locator("[data-test='swap-back']");
 
 // Back to nobody picked, whatever a previous test or retry left on the card.
 async function clearCard(page, n) {
-  if ((await recast(page, n).getAttribute("data-state")) === "kept") await keepBox(page, n).uncheck();
+  if ((await recast(page, n).getAttribute("data-state")) === "kept") await swapBack(page, n).click();
   if ((await recast(page, n).getAttribute("data-state")) !== "none") {
     await recast(page, n).locator("[data-test='swap-clear']").click();
     await expect(recast(page, n).locator("[data-test='swap-saved']")).toBeVisible();
@@ -34,7 +36,7 @@ async function pick(page, n, query, name) {
   await recast(page, n).locator("[data-test='recast-option']").filter({ hasText: name }).first().click();
 }
 
-test("operator picks an athlete from Replace with, keeps the original, unchecks it, and picks another", async ({ page }) => {
+test("operator picks an athlete from Replace with, keeps the original, swaps back, and picks another", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto(VIDEO);
   await clearCard(page, 1);
@@ -45,7 +47,12 @@ test("operator picks an athlete from Replace with, keeps the original, unchecks 
   // Seeded under the old "keep as is" with nobody: only the search, no toggle, no hint, no Keep Original.
   const prompt = page.locator("#chunk-1 [data-test='chunk-prompt']");
   await expect(search(page, 1)).toBeVisible();
-  await expect(recast(page, 1).locator("[data-test='keep-original']")).toBeHidden();
+  await expect(keepButton(page, 1)).toBeHidden();
+  await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
+  // Replace with is at the top: above the sightings and the optional naming.
+  const top = async (sel) => (await card(page, 1).locator(sel).first().boundingBox()).y;
+  expect(await top("[data-test='performer-recast']")).toBeLessThan(await top("[data-test='sighting']"));
+  expect(await top("[data-test='performer-recast']")).toBeLessThan(await top("[data-test='performer-resolution']"));
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(recast(page, 1)).not.toContainText("Check to replace");
   await expect(recast(page, 1).locator("[role='switch']")).toHaveCount(0);
@@ -67,14 +74,17 @@ test("operator picks an athlete from Replace with, keeps the original, unchecks 
   expect(look.x).toBeGreaterThan(name.x);
   expect(Math.abs(look.y - name.y)).toBeLessThan(name.height * 2);
 
-  // The pick is the swap: saved at once in his default look, Keep Original shown unchecked, the chunks follow.
+  // The pick is the swap: saved at once in his default look, Keep Original under his sheet, the chunks follow.
   await option.click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Athlete Alpha");
   await expect(recast(page, 1).locator("[data-test='swap-athlete-utility']")).toContainText("athlete");
-  await expect(keepBox(page, 1)).toBeVisible();
-  await expect(keepBox(page, 1)).not.toBeChecked();
+  await expect(keepButton(page, 1)).toBeVisible();
+  const sheet = await recast(page, 1).locator("[data-test='look-preview']").boundingBox();
+  const button = await keepButton(page, 1).boundingBox();
+  expect(button.y).toBeGreaterThanOrEqual(sheet.y + sheet.height - 1);
+  expect(Math.abs(button.width - sheet.width)).toBeLessThan(2);
   await expect(combo).toHaveValue("");
   await expect(recast(page, 1).locator("[data-test='look-cast']")).toHaveCount(0);
   await expect(prompt).toContainText("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.");
@@ -106,12 +116,12 @@ test("operator picks an athlete from Replace with, keeps the original, unchecks 
   await expect(prompt).toContainText("(like the Home Blue model provided)");
   await page.unroute("**/performers/1/recast");
 
-  // A reload reads the save back: the athlete block, the look, Keep Original unchecked.
+  // A reload reads the save back: the athlete block, the look, Keep Original under the sheet.
   await page.reload();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Athlete Alpha");
   await expect(trigger).toHaveText("Home Blue");
-  await expect(keepBox(page, 1)).not.toBeChecked();
+  await expect(keepButton(page, 1)).toBeVisible();
 
   // The by-hand link lands on the athlete's look form, which knows the way back.
   await expect(recast(page, 1).locator("[data-test='recast-new-look']")).toHaveAttribute(
@@ -122,44 +132,52 @@ test("operator picks an athlete from Replace with, keeps the original, unchecks 
   await page.goBack();
 
   // Keep Original: the swap is off and hidden, he is remembered, and the blank comes back to the prompts.
-  await keepBox(page, 1).check();
+  await keepButton(page, 1).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(trigger).toBeHidden();
+  await expect(recast(page, 1).locator("[data-test='look-preview']")).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toHaveText(
-    "Not swapped. Test Athlete Alpha is remembered; uncheck to swap back.");
+    /Not swapped\.\s+Test Athlete Alpha\s+is remembered\.\s+Swap back/);
   await expect(search(page, 1)).toBeVisible();
   await expect(prompt).toContainText("with {athlete}, the football player");
   await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toHaveCount(0);
 
-  // A reload still reads kept; unchecking restores the same athlete and look with no re-pick.
+  // A reload still reads kept; Swap back restores the same athlete and look with no re-pick.
   await page.reload();
-  await expect(keepBox(page, 1)).toBeChecked();
+  await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
-  await keepBox(page, 1).uncheck();
+  await swapBack(page, 1).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Athlete Alpha");
   await expect(trigger).toHaveText("Home Blue");
   await expect(prompt).toContainText("(like the Home Blue model provided)");
 
-  // Kept again, then a pick from the search unchecks Keep Original and swaps to the new person.
-  await keepBox(page, 1).check();
+  // Kept again: the name restores him too.
+  await keepButton(page, 1).click();
+  await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
+  await recast(page, 1).locator("[data-test='swap-back-name']").click();
+  await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
+  await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
+
+  // Kept again, then a pick from the search ends the keep and swaps to the new person.
+  await keepButton(page, 1).click();
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await pick(page, 1, "rookie", "Test Rookie Bravo");
-  await expect(keepBox(page, 1)).not.toBeChecked();
+  await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await page.reload();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
-  await expect(keepBox(page, 1)).not.toBeChecked();
+  await expect(recast(page, 1)).not.toHaveAttribute("data-state", "kept");
 
   // Clear forgets the person: the card is back to the search alone.
   await recast(page, 1).locator("[data-test='swap-clear']").click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "none");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
-  await expect(recast(page, 1).locator("[data-test='keep-original']")).toBeHidden();
+  await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toBeHidden();
   await expect(search(page, 1)).toBeFocused();
   await page.reload();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "none");
@@ -202,7 +220,7 @@ test("changes made while a save is in flight land in order: the server ends wher
   await expect(recast(page, 1).locator("[data-test='swap-saving']")).toBeVisible();
   await recast(page, 1).locator("[data-test='look-trigger']").click();
   await recast(page, 1).locator("[data-test='look-option']").filter({ hasText: "Away White" }).click();
-  await keepBox(page, 1).check();
+  await keepButton(page, 1).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
   expect(sent.length).toBe(1);
 
@@ -216,7 +234,7 @@ test("changes made while a save is in flight land in order: the server ends wher
 
   await page.reload();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
-  await keepBox(page, 1).uncheck();
+  await swapBack(page, 1).click();
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='look-trigger']")).toHaveText("Away White");
   await clearCard(page, 1);
