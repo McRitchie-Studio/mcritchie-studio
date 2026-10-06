@@ -176,7 +176,11 @@
         const data = this.$root.dataset;
         this.savedPerson = data.savedPerson || ""; this.savedLook = data.savedLook || "";
         this.on = this.savedPerson !== "";
-        if (data.athlete) this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
+        if (data.athlete) {
+          this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
+          // An athlete saved with no look: nothing is previewed as if it were cast.
+          if (!this.savedLook && !data.freshLook) this.lookSlug = "";
+        }
         this.$watch("open", (open) => { if (open) this.$nextTick(() => this.fitList()); });
       },
       // off: not swapped. open: on, nobody saved yet. pending: an athlete with no look. recast: both saved.

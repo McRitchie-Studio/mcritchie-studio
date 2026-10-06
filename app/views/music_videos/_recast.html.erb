@@ -15,7 +15,7 @@
      data-save-url="<%= recast_path %>" data-search-url="<%= search_recast_athletes_path(format: :json) %>"
      data-looks-url="<%= looks_url %>" data-new-look-url="<%= new_look_url %>"
      data-saved-person="<%= performer.recast_person_slug %>" data-saved-look="<%= performer.recast_appearance_slug %>"
-     data-fresh-look="<%= local_assigns[:fresh_look] %>" data-athlete="<%= saved_athlete&.to_json %>">
+     data-fresh-look="<%= local_assigns[:fresh_look] %>"<% if saved_athlete %> data-athlete="<%= saved_athlete.to_json %>"<% end %>>
   <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
     <button type="button" role="switch" aria-checked="<%= on %>" :aria-checked="on ? 'true' : 'false'" @click="toggle()"
             class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors min-w-0
@@ -55,6 +55,12 @@
       </span>
       <button type="button" @click="changeAthlete()" class="btn btn-outline btn-sm shrink-0" data-test="swap-change">Change</button>
     </div>
+
+    <% if performer.recast_pending? && looks.fetch(athlete.slug, []).any? %>
+      <p x-show="state === 'pending' && looks.length > 0" class="text-sm text-warning-ink" data-test="recast-pending">
+        No look saved. Choose one of <%= athlete.full_name %>’s looks.
+      </p>
+    <% end %>
 
     <div x-show="!athlete || searching" <%= "x-cloak" if athlete %> class="relative min-w-0" @click.outside="open = false" data-test="recast-typeahead">
       <label class="sr-only" for="recast-search-<%= n %>">Who replaces <%= performer.name %>?</label>

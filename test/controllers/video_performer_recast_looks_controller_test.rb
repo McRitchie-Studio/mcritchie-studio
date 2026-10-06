@@ -91,7 +91,8 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     assert look.sheet_building?
     assert_equal 0, Artifact.joins(:subjects).where(artifact_subjects: { appearance_slug: look.slug }).count
     assert_equal [look.slug, "17"], enqueued_jobs.sole["arguments"].values_at(0, 2), "the typed jersey number rides the job"
-    assert performer(1).recast_pending?, "the athlete is taken; the look is still the operator's to cast"
+    assert_equal [@rookie.slug, look.slug], performer(1).values_at(:recast_person_slug, :recast_appearance_slug),
+                 "the card saves every pick: the athlete is cast in the look just made"
   end
 
   test "the card's poll reads building, then ready with the sheet once the job has run, and the look can be cast" do
@@ -125,7 +126,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     assert_match "is replaced by Demo Novice Echo > Broncos blue", flash[:notice]
   end
 
-  test "the landed card previews the new look, building, beside the athlete's other looks" do
+  test "the landed card is cast in the new look, building, beside the athlete's other looks" do
     log_in_as users(:alex)
 
     with_generator { generate(2, person_slug: @athlete.slug, descriptor: "Road Teal") }
@@ -134,9 +135,8 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
 
     assert_select "[data-ordinal='2'] [data-test='performer-recast'][data-state='recast']" do
-      assert_select "[data-test='recast-label']", "Demo Winger Delta > Home Orange", "the cast look stands"
-      assert_select "[data-test='recast-looks'][data-fresh-look=?]", look.slug
-      picker = css_select("[data-test='recast-looks']").first
+      assert_select "[data-test='performer-recast'][data-saved-look=?][data-fresh-look=?]", look.slug, look.slug
+      picker = css_select("[data-ordinal='2'] [data-test='performer-recast']").first
       rows = JSON.parse(picker["data-athlete"])["looks"]
       assert_equal [["Home Orange", "ready"], ["Away White", "empty"], ["Alternate Blue", "building"], ["Road Teal", "building"]],
                    rows.map { |row| row.values_at("descriptor", "state") }

@@ -29,7 +29,7 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "the page shows credits, unresolved credits, seven cards and a disabled confirm" do
+  test "the page shows credits, unresolved credits, seven unnamed cards and Cast confirmed ready to press" do
     log_in_as users(:alex)
     get music_video_path(@video)
 
@@ -38,21 +38,32 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='unresolved-credit']", /Steve Aoki/
     assert_select "[data-test='performer-card']", 7
     assert_select "[data-test='performer-still'] img[src*='person_01_0230.jpg'][src*='X-Amz-Signature']"
-    assert_select "[data-test='cast-resolved-count']", "0 of 7"
-    assert_select "[data-test='confirm-cast-form'] button[disabled]"
+    assert_select "[data-test='cast-swap-count']", "0 of 7"
+    assert_select "[data-test='cast-named-count']", /\ANobody named\. Naming is optional: it builds the artist rolodex\.\z/
+    assert_select "[data-test='performer-badge']", text: "Not named", count: 7
+    assert_select "[data-test='confirm-cast-form'] button:not([disabled])", "Cast confirmed"
   end
 
-  test "Cast confirmed refuses while anyone is unlabelled, and names who" do
+  test "Cast confirmed needs no names: with everyone unnamed it advances the stage" do
     log_in_as users(:alex)
-    (1..6).each { |n| label(n, extra: "1") }
 
     post confirm_cast_music_video_path(@video)
     assert_redirected_to music_video_path(@video)
-    assert_equal "Not yet: Person 7 is neither an artist nor an extra.", flash[:alert]
+    assert_equal "Cast confirmed.", flash[:notice]
+    assert_equal "cast_confirmed", @video.reload.stage
+    assert(@video.video_performers.all? { |p| p.artist_slug.nil? && !p.extra? })
+  end
+
+  test "Cast confirmed refuses a video with no performers yet" do
+    log_in_as users(:alex)
+    @video.video_performers.delete_all
+
+    post confirm_cast_music_video_path(@video)
+    assert_equal "Not yet: no performers yet: the vision pass has not posted any.", flash[:alert]
     assert_equal "digested", @video.reload.stage
   end
 
-  test "labelling everyone unlocks Cast confirmed, which advances the stage" do
+  test "labelling some, with extras, still confirms, which advances the stage" do
     log_in_as users(:alex)
     label(1, artist_slug: @artist.slug)
     (2..7).each { |n| label(n, extra: "1") }
@@ -91,13 +102,16 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to music_video_path(@video, anchor: "person-1")
   end
 
-  test "an extra can be cleared back to open, and an empty answer is refused" do
+  test "an extra can be cleared back to unnamed, and an empty answer is refused" do
     log_in_as users(:alex)
     label(3, extra: "1")
     assert @video.video_performers.find_by!(ordinal: 3).extra?
+    get music_video_path(@video)
+    assert_select "[data-test='cast-named-count']", /Nobody named \(1 marked extras\)/
 
     label(3, clear: "1")
-    assert_not @video.video_performers.find_by!(ordinal: 3).resolved?
+    assert_not @video.video_performers.find_by!(ordinal: 3).extra?
+    assert_not @video.video_performers.find_by!(ordinal: 3).named?
 
     label(3, artist_slug: "")
     assert_match "choose an artist", flash[:alert]
