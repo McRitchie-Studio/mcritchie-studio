@@ -16,7 +16,7 @@ class StudioInitializerTest < ActiveSupport::TestCase
     source = File.read(INITIALIZER)
 
     RETIRED.each do |key|
-      refute_match(/\b#{key}\b/, source, "#{INITIALIZER.relative_path_from(Rails.root)} still names #{key}")
+      refute source.match?(/\b#{key}\b/), "config/initializers/studio.rb still names #{key}"
     end
   end
 
