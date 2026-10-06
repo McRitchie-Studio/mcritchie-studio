@@ -27,8 +27,7 @@ class UserNamePartsTest < ActiveSupport::TestCase
   def user(**attrs)
     User.create!({
       email: "parts-#{SecureRandom.hex(4)}@example.com",
-      role: "viewer",
-      password: "password"
+      role: "viewer"
     }.merge(attrs))
   end
 

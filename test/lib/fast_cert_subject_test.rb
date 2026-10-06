@@ -523,9 +523,12 @@ class FastCertSubjectTest < Minitest::Test
     # (2513 → 1876). The hotspot file itself deliberately does NOT spell this config's
     # path: its note names its own ceiling in words instead, because a mention there
     # buys a reader nothing and costs this lane a file.
+    # 28 → 27 on 2026-10-06 (hub-drops-stale-password-digests), the first DECREMENT:
+    # test/lib/bcrypt_test_cost_test.rb, whose header cited this config, was deleted
+    # with the bcrypt gem when the hub User dropped has_secure_password.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    expected = ["config/test_health.yml (28)"]
+    expected = ["config/test_health.yml (27)"]
 
     # THE FAILURE NAMES THE SPELLING, not just the count — the half of this tripwire
     # that was missing when it fired for real. Measured 2026-09-22: a new test file
@@ -539,7 +542,7 @@ class FastCertSubjectTest < Minitest::Test
     # equals `expected` on green and the map below walks an empty array.
     assert_equal expected, over.map { |path, n| "#{path} (#{n})" },
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 28 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 27 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip" +
                  over.reject { |path, n| expected.include?("#{path} (#{n})") }
                      .map { |path, _| "\n\n#{spelling_diagnosis(path)}" }.join

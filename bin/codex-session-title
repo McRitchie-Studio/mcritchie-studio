@@ -24,8 +24,37 @@ CODEX_STATE_DB="${CODEX_STATE_DB:-$CODEX_HOME/state_5.sqlite}"
 LIVE_THREAD_NAME_SENTINEL="${CODEX_SESSION_TITLE_LIVE_SENTINEL:-$CODEX_HOME/mcritchie-live-thread-title.enabled}"
 # The projects root comes from the shared resolver (bin/lib/projects_root.rb), which
 # climbs out of a desk and out of the fixed-path tooling tree the hooks name this
-# script at; a bash copy of that climb stopped at the tooling directory.
-PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(ruby "$ROOT/bin/lib/projects_root.rb" "${BASH_SOURCE[0]}")}"
+# script at. When ruby is missing or fails, the same climb runs in bash so the hook
+# still exits 0: it resolves the script's directory physically (the fixed path is a
+# link into tooling/<sha>/bin) and mirrors ProjectsRoot.default_projects_dir case for
+# case.
+bash_projects_root() {
+  local repo candidate
+  repo="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  candidate="$(dirname "$repo")"
+  case "$(basename "$candidate")" in
+    .worktrees)
+      dirname "$(dirname "$candidate")"
+      ;;
+    tooling)
+      if [ -f "$repo/.complete" ]; then
+        dirname "$(dirname "$candidate")"
+      else
+        printf '%s\n' "$candidate"
+      fi
+      ;;
+    *)
+      printf '%s\n' "$candidate"
+      ;;
+  esac
+}
+resolve_projects_dir() {
+  local resolved
+  resolved="$(ruby "$ROOT/bin/lib/projects_root.rb" "${BASH_SOURCE[0]}" 2>/dev/null)" || resolved=""
+  [ -n "$resolved" ] || resolved="$(bash_projects_root)"
+  printf '%s\n' "$resolved"
+}
+PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(resolve_projects_dir)}"
 
 hook_input="$(cat 2>/dev/null || true)"
 payload_info="$(

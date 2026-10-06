@@ -251,7 +251,9 @@ collapses both and lets the generic `[credential] helper = osxkeychain` answer
 github.com. The pattern rewrites only this helper's own line, so the reset
 survives and a re-run converges on one value; on a config with no reset the
 installer adds the reset ahead of the helper. Until the first ship installs the
-tooling, the line names the hub primary's copy.
+tooling, the installer keeps any helper line already there (a
+`~/.mcritchie/git-credential` snapshot among them) and names the hub primary's
+copy only when the config has no helper line at all.
 
 `bin/install-git-credential-helper` is the by-hand alternative from before the
 fixed path: it snapshots the helper's closure into

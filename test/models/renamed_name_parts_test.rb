@@ -38,7 +38,7 @@ class RenamedNamePartsTest < ActiveSupport::TestCase
   # the roster that was in force THEN, so its halves are the ones that roster's
   # name derives. The callback puts them there; nothing here fakes them.
   def deployed(email, name:, role: "admin")
-    user = User.create!(name: name, email: email, password: "password")
+    user = User.create!(name: name, email: email)
     user.update_column(:role, role)
     user.reload
   end

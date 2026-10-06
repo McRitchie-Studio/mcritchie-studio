@@ -300,6 +300,41 @@ class CodexSessionTitleTest < Minitest::Test
   # Observed through the --projects-dir it hands bin/agent-marker, at both
   # spellings of the installed path.
   def test_integration_tooling_copy_resolves_the_projects_root_through_the_link
+    projects, tree = install_tooling_tree
+
+    [File.join(projects, ".agents", "bin", "codex-session-title"),
+     File.join(tree, "bin", "codex-session-title")].each do |installed|
+      assert_resolves_projects_root(installed, projects)
+    end
+  end
+
+  # A missing or failing ruby must not abort the hook under `set -euo pipefail`: the
+  # climb falls back to bash and lands on the same root the Ruby resolver names. The
+  # fake ruby first on PATH exits nonzero for every call, so the fallback is the only
+  # path to a correct --projects-dir.
+  def test_climbs_by_bash_when_ruby_exits_nonzero
+    projects, tree = install_tooling_tree
+    path = with_failing_ruby
+
+    [File.join(projects, ".agents", "bin", "codex-session-title"),
+     File.join(tree, "bin", "codex-session-title")].each do |installed|
+      assert_resolves_projects_root(installed, projects, "PATH" => path)
+    end
+  end
+
+  def test_climbs_out_of_a_desk_by_bash_when_ruby_exits_nonzero
+    projects = File.realpath(@tmp)
+    desk = File.join(projects, "mcritchie-studio", ".worktrees", "some-task")
+    FileUtils.mkdir_p(File.join(desk, "bin"))
+    FileUtils.cp(SCRIPT, File.join(desk, "bin", "codex-session-title"))
+
+    assert_resolves_projects_root(File.join(desk, "bin", "codex-session-title"), projects,
+                                  "PATH" => with_failing_ruby)
+  end
+
+  private
+
+  def install_tooling_tree
     projects = File.realpath(@tmp)
     tree = File.join(projects, ".agents", "tooling", "0123abc")
     FileUtils.mkdir_p(File.join(tree, "bin", "lib"))
@@ -307,17 +342,29 @@ class CodexSessionTitleTest < Minitest::Test
     FileUtils.cp(SCRIPT, File.join(tree, "bin", "codex-session-title"))
     FileUtils.cp(File.join(ROOT, "bin", "lib", "projects_root.rb"), File.join(tree, "bin", "lib"))
     File.symlink("tooling/0123abc/bin", File.join(projects, ".agents", "bin"))
+    [projects, tree]
+  end
 
+  # A PATH whose first entry holds a `ruby` that always exits 1; the rest of the
+  # ambient PATH stays so bash, sqlite3 and the coreutils still resolve.
+  def with_failing_ruby
+    dir = File.join(@tmp, "failing-ruby")
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, "ruby"), "#!/bin/sh\nexit 1\n")
+    FileUtils.chmod("+x", File.join(dir, "ruby"))
+    "#{dir}:#{ENV.fetch('PATH')}"
+  end
+
+  def assert_resolves_projects_root(installed, projects, env = {})
     marker_log = File.join(@tmp, "marker-args.log")
     marker = File.join(@tmp, "agent-marker")
     File.write(marker, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{marker_log}\n")
     FileUtils.chmod("+x", marker)
+    File.delete(marker_log) if File.exist?(marker_log)
 
-    [File.join(projects, ".agents", "bin", "codex-session-title"),
-     File.join(tree, "bin", "codex-session-title")].each do |installed|
-      File.delete(marker_log) if File.exist?(marker_log)
-      out, err, status = Open3.capture3(
-        SessionEnv.neutralized(
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized(
+        {
           "CODEX_THREAD_ID" => "thread-123",
           "CODEX_HOME" => @tmp,
           "CODEX_STATE_DB" => @db,
@@ -325,15 +372,16 @@ class CodexSessionTitleTest < Minitest::Test
           "AGENT_MARKER" => marker,
           "CLAUDE_PROJECTS_DIR" => nil,
           "CODEX_SESSION_TITLE_RETRY_DELAYS" => "none"
-        ),
-        installed, chdir: @tmp, stdin_data: ""
-      )
+        }.merge(env)
+      ),
+      installed, chdir: @tmp, stdin_data: ""
+    )
 
-      assert_silent_success out, err, status
-      # Anchored: `<projects>/.agents/tooling` CONTAINS `<projects>`, so a substring
-      # check passes on the wrong answer.
-      assert_match(/--projects-dir #{Regexp.escape(projects)}(?: |$)/, File.read(marker_log),
-                   "#{installed} must resolve the projects root the tooling tree was installed under")
-    end
+    assert_silent_success out, err, status
+    assert File.exist?(marker_log), "#{installed} never reached bin/agent-marker"
+    # Anchored: `<projects>/.agents/tooling` CONTAINS `<projects>`, so a substring
+    # check passes on the wrong answer.
+    assert_match(/--projects-dir #{Regexp.escape(projects)}(?: |$)/, File.read(marker_log),
+                 "#{installed} must resolve the projects root the tree was installed under")
   end
 end

@@ -1,11 +1,9 @@
 alex:
   name: Alex McRitchie
   email: alex@mcritchie.studio
-  password_digest: <%= BCrypt::Password.create("password") %>
   role: admin
 
 viewer:
   name: Viewer User
   email: viewer@example.com
-  password_digest: <%= BCrypt::Password.create("password") %>
   role: viewer

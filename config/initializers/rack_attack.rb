@@ -40,14 +40,19 @@ class Rack::Attack
 
   cache.store = counter_store
 
-  ### Throttle: login (engine route) — IP + email
-  throttle("login/ip", limit: 10, period: 1.minute) do |req|
-    req.ip if req.post? && req.path == "/login"
+  ### Throttle: sign-in (the engine's magic-link door) — IP + email
+  # POST /magic_link is the hub's one email sign-in door: it mints a link and
+  # mails it. The hub has no password sign-in (User has no has_secure_password),
+  # so POST /login is not a door to count; studio-engine stops drawing it for a
+  # passwordless app (PR 420). Per address it bounds a caller probing the door;
+  # per email it bounds the mail one inbox can be sent.
+  throttle("magic_link/ip", limit: 10, period: 1.minute) do |req|
+    req.ip if req.post? && req.path == "/magic_link"
   end
 
-  throttle("login/email", limit: 5, period: 1.minute) do |req|
-    if req.post? && req.path == "/login"
-      req.params["email"].to_s.downcase.presence
+  throttle("magic_link/email", limit: 5, period: 1.minute) do |req|
+    if req.post? && req.path == "/magic_link"
+      req.params["email"].to_s.strip.downcase.presence
     end
   end
 

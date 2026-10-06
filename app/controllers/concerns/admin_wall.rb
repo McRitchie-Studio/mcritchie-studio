@@ -39,7 +39,7 @@ module AdminWall
     # hands off to the desk's own sign-in (TasksController#local_review).
     "tasks" => %w[local_review],
     # Signing in, signing up and the magic-link doors.
-    "sessions" => %w[new create sso_continue sso_login destroy],
+    "sessions" => %w[new sso_continue sso_login destroy],
     "registrations" => %w[new create],
     "omniauth_callbacks" => %w[create failure],
     "magic_links" => %w[create],

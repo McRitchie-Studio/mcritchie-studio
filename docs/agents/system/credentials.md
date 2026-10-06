@@ -212,6 +212,6 @@ DNS verification, and runtime SMTP credentials move.
 - Never commit `.env` files or credential files
 - API is currently open (no auth) — suitable for local/trusted networks only
 - Google OAuth credentials must be configured per environment
-- Password hashing uses bcrypt via `has_secure_password`
+- The hub stores no passwords: sign-in is magic link or Google, and `User` has no `has_secure_password`
 - 1Password CLI: human/desktop mode requires biometric or password auth on each use; agent sessions use scoped service-account tokens — the agent lane sees the agent vault, the ship lane's separate token sees the admin vault (see `bin/lib/op_vaults.rb`) — credentials are never cached in plaintext either way
 - Private keys should only be stored in 1Password and `.env` files (gitignored), never in code or commits
