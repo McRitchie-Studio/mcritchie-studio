@@ -1,4 +1,4 @@
-<%# One person on the cast panel: stills, sightings, the optional artist name (the rolodex), and the Swap Person toggle. Nothing here has to be pressed before the cast is confirmed. %>
+<%# One person on the cast panel: stills, sightings, who is on screen (the optional artist name, the rolodex), then Replace with (the swap). Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
 <% named_row = performer.artist&.person_slug && local_assigns.fetch(:recast_rows, {})[performer.artist.person_slug] %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
@@ -86,10 +86,15 @@
               </div>
             </div>
           <% else %>
-            <p class="text-sm text-muted" data-test="performer-extra">Extra, not a named artist</p>
+            <%# Under the same On screen heading as a named artist, so its Change reads as renaming who is on screen, not the swap below. %>
+            <div class="min-w-0 flex-1">
+              <p class="label-upper mb-1.5">On screen</p>
+              <p class="text-sm text-body" data-test="performer-extra">An extra, not a named artist</p>
+            </div>
           <% end %>
           <%= button_to "Change", music_video_performer_path(video, performer.ordinal), method: :patch,
-                        params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0 self-end", data: { test: "performer-artist-change" } %>
+                        params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0 self-end",
+                        "aria-label": "Change who is on screen", data: { test: "performer-artist-change" } %>
         </div>
       <% else %>
         <%# Naming is optional and kept apart from the swap: collapsed behind a quiet link, under its own heading, and its search offers artists and non-sports People only (Artists::Search), so an athlete meant for Replace with is not picked as the person on screen. %>

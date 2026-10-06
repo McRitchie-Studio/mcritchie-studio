@@ -1,16 +1,18 @@
 module MusicVideos
-  # The operator's recast for one performer, as the Swap Person card sends it:
+  # The operator's recast for one performer, as the cast card's Replace with
+  # search and Keep Original checkbox send it:
   #
-  #   person_slug (+ appearance_slug)  swap on, to this athlete in this look.
+  #   person_slug (+ appearance_slug)  a pick: swap on, to this athlete in this
+  #                                    look, Keep Original unchecked.
   #                                    An athlete with no look yet is saved
   #                                    alone and stays pending
   #                                    (VideoPerformer#recast_pending?).
-  #   keep                             swap OFF: the athlete and look stay
+  #   keep                             Keep Original checked, swap OFF: the athlete and look stay
   #                                    remembered (recast_keep), read by nothing.
-  #   swap                             swap back ON with what is remembered. A
+  #   swap                             Keep Original unchecked: back ON with what is remembered. A
   #                                    remembered look that is gone falls back
   #                                    to the athlete alone (pending).
-  #   clear                            forget the recast entirely.
+  #   clear                            forget the recast entirely (the card's Clear).
   #
   # Allowed before and after the cast is confirmed, so every stored prompt of
   # the video is refreshed with each change.

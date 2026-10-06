@@ -1,11 +1,12 @@
-<%# Swap Person: one toggle per card, off by default. Off keeps the athlete and look last picked (recast_keep): turning it back on restores them with no re-pick, and nothing reads them while it is off. On with nobody picked yet asks who, and saves nothing until a pick. On, it reveals who replaces this performer: the chosen athlete (headshot, name, vocation and team) or the people search, then that athlete's look dropdown. Every pick saves at once through the JSON variant of the recast endpoint (window.swapCard): no Save or Cast button, a visible saving / saved / not saved state, and Retry. Editable after the cast is confirmed; the prompts below follow each save. %>
+<%# Replace with: the people search is on every card, no toggle first. Picking a person IS the swap: it saves at once in their default look and shows the chosen athlete (headshot, name, vocation and team) and their look dropdown. Once someone is remembered, a Keep Original checkbox (unchecked while swapping) turns the swap off: the athlete and look stay remembered (recast_keep), hidden and read by nothing, until it is unchecked or another person is picked from the search, which unchecks it. Clear on the chosen athlete forgets them. Every change saves through the JSON variant of the recast endpoint (window.swapCard), in order: a visible saving, saved or not saved state, and Retry. Editable after the cast is confirmed; the prompts below follow each save. %>
 <% athlete = performer.recast_person %>
 <% recast_path = music_video_performer_recast_path(video, performer.ordinal) %>
 <% looks_url = recast_athlete_looks_path("__slug__", format: :json) %>
 <% new_look_url = person_path("__slug__", return_to: "#{music_video_path(video)}#person-#{performer.ordinal}", anchor: "new-model") %>
 <% n = performer.ordinal %>
-<% on = performer.swap? %>
-<% state = if performer.recast? then "recast" elsif performer.recast_pending? then "pending" else "off" end %>
+<% state = performer.swap_state %>
+<% kept = state == "kept" %>
+<% swapping = athlete.present? && !kept %>
 <% named_person = performer.artist&.person %>
 <% offer = if named_person && looks.fetch(named_person.slug, []).any?
      named = local_assigns[:named_row] || People::SearchRows::BLANK
@@ -15,25 +16,14 @@
      row = local_assigns.fetch(:rows, {})[athlete.slug] || People::SearchRows::BLANK
      { slug: athlete.slug, name: athlete.full_name, **row.to_h, looks: looks.fetch(athlete.slug, []).map(&:to_h) }
    end %>
-<div x-data="swapCard()" class="pt-3 border-t border-subtle min-w-0" data-test="performer-recast"
+<div x-data="swapCard()" class="pt-3 border-t border-subtle min-w-0 space-y-2" data-test="performer-recast"
      data-state="<%= state %>" :data-state="state" :data-save="save"
      data-save-url="<%= recast_path %>" data-search-url="<%= search_recast_athletes_path(format: :json) %>"
      data-looks-url="<%= looks_url %>" data-new-look-url="<%= new_look_url %>"
-     data-saved-person="<%= performer.recast_person_slug %>" data-saved-look="<%= performer.recast_appearance_slug %>" data-swap-on="<%= on %>"
+     data-saved-person="<%= performer.recast_person_slug %>" data-saved-look="<%= performer.recast_appearance_slug %>" data-keep="<%= kept %>"
      data-fresh-look="<%= local_assigns[:fresh_look] %>"<% if saved_athlete %> data-athlete="<%= saved_athlete.to_json %>"<% end %><% if offer %> data-offer="<%= offer.to_json %>"<% end %>>
-  <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
-    <button type="button" role="switch" aria-checked="<%= on %>" :aria-checked="on ? 'true' : 'false'" @click="toggle()"
-            class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors min-w-0"
-            :class="on ? 'border-primary bg-primary/10 text-heading' : 'border-subtle bg-surface text-body'" data-test="swap-toggle">
-      <%# The on and off colours live only in :class: Alpine never removes a static class, so a static one would fight the bound one after a toggle. %>
-      <span class="w-5 h-5 shrink-0 rounded-md border-2 flex items-center justify-center"
-            :class="on ? 'bg-primary border-primary' : 'border-subtle bg-surface'" aria-hidden="true">
-        <svg x-show="on" <%= "x-cloak" unless on %> viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3" class="w-3.5 h-3.5 text-white">
-          <path d="m4.5 10.5 3.5 3.5 7.5-8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <span x-text="on ? 'Swap Person' : 'Don’t Swap Person'"><%= on ? "Swap Person" : "Don’t Swap Person" %></span>
-    </button>
+  <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-w-0">
+    <label class="label-upper" for="recast-search-<%= n %>">Replace with</label>
     <span role="status" aria-live="polite" class="text-xs min-w-0" data-test="swap-save-state">
       <span x-show="save === 'saving'" x-cloak class="text-muted" data-test="swap-saving">Saving…</span>
       <span x-show="save === 'saved'" x-cloak class="text-success-ink" data-test="swap-saved">Saved</span>
@@ -42,22 +32,52 @@
       </span>
     </span>
   </div>
-  <p x-show="save === 'failed' && error" x-cloak x-text="error" class="text-xs text-warning-ink mt-1 break-words" data-test="swap-error"></p>
+  <p x-show="save === 'failed' && error" x-cloak x-text="error" class="text-xs text-warning-ink break-words" data-test="swap-error"></p>
 
-  <p x-show="!on" <%= "x-cloak" if on %> class="text-xs text-muted mt-2" data-test="swap-off-note">Check to replace this person with an athlete and choose a look.</p>
+  <div class="relative min-w-0" @click.outside="open = false" @resize.window.debounce.100ms="if (open) fitList()" data-test="recast-typeahead">
+    <input id="recast-search-<%= n %>" x-ref="search" type="text" autocomplete="off" role="combobox"
+           aria-autocomplete="list" :aria-expanded="open" aria-controls="recast-results-<%= n %>"
+           placeholder="Search people by name"
+           class="input-field py-2 text-sm w-full min-w-0" x-model="query" @input.debounce.250ms="search()"
+           @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
+           @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
+
+    <%# Wider than the card on purpose: three columns per row. swapCard#fitList keeps it on screen. %>
+    <div x-show="open" x-cloak x-ref="results" id="recast-results-<%= n %>" role="listbox"
+         class="absolute z-30 left-0 mt-1 card shadow-lg max-h-96 overflow-y-auto p-1 w-[min(40rem,calc(100vw-2rem))]" data-test="recast-results">
+      <template x-for="(r, i) in results" :key="r.slug">
+        <%= render "music_videos/search_row", option_test: "recast-option", look: "r.default_look",
+                   badge: "r.hint",
+                   badge_class: "r.looks.length ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
+      </template>
+      <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
+      <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted" data-test="recast-no-match">
+        No person matches that name. Everyone we know is listed in
+        <%= link_to "People", people_path, class: "text-primary hover:underline" %>.
+      </p>
+    </div>
+  </div>
+
   <% if offer %>
-    <%# Named after someone who has looks: offered, never done for him. One click turns the swap on with them in their default look. %>
-    <button type="button" x-show="!on && (!athlete || athlete.slug !== '<%= j offer[:slug] %>')" <%= "x-cloak" if on %> @click="offerSwap()"
-            class="btn btn-outline btn-sm mt-2 max-w-full" data-test="swap-offer">
+    <%# Named after someone who has looks: offered, never done for him. One click picks them, in their default look. %>
+    <button type="button" x-show="!swapping || athlete.slug !== '<%= j offer[:slug] %>'" <%= "x-cloak" if swapping && athlete.slug == offer[:slug] %> @click="offerSwap()"
+            class="btn btn-outline btn-sm max-w-full" data-test="swap-offer">
       <span class="truncate">Swap with <%= offer[:name] %>?</span>
     </button>
   <% end %>
 
-  <div x-show="on" <%= "x-cloak" unless on %> class="mt-3 space-y-2 min-w-0" data-test="swap-body">
-    <p class="label-upper">Replace with</p>
+  <%# Shown once someone is remembered; unchecked while swapping. Checked hides the swap below and keeps the person for later. %>
+  <label x-show="athlete" <%= "x-cloak" unless athlete %> class="flex items-center gap-2 text-sm text-body cursor-pointer select-none min-w-0 w-fit" data-test="keep-original">
+    <input type="checkbox" class="w-4 h-4 shrink-0 rounded border-subtle accent-primary" :checked="keep" <%= "checked" if kept %>
+           @change="setKeep($event.target.checked)" data-test="keep-original-box">
+    <span class="font-semibold text-heading">Keep Original</span>
+  </label>
+  <p x-show="athlete && keep" <%= "x-cloak" unless kept %> class="text-xs text-muted break-words" data-test="keep-original-note">
+    Not swapped. <span x-text="athlete ? athlete.name : ''"><%= athlete&.full_name if kept %></span> is remembered; uncheck to swap back.
+  </p>
 
-    <div x-show="athlete && !searching" <%= "x-cloak" unless athlete %> class="flex items-center gap-3 min-w-0 rounded-lg border border-subtle bg-surface-alt p-2"
-         data-test="swap-athlete">
+  <div x-show="swapping" <%= "x-cloak" unless swapping %> class="space-y-2 min-w-0" data-test="swap-body">
+    <div class="flex items-center gap-3 min-w-0 rounded-lg border border-subtle bg-surface-alt p-2" data-test="swap-athlete">
       <%= render "music_videos/person_avatar", person: "athlete", size: "w-11 h-11", icon: "w-6 h-6", failed: "avatarFailed" %>
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-semibold text-heading truncate" x-text="athlete ? athlete.name : ''" data-test="swap-athlete-name"><%= athlete&.full_name %></span>
@@ -65,45 +85,14 @@
           <span class="text-body" x-text="athlete ? (athlete.vocation || 'person') : ''"></span><span x-show="athlete && athlete.team"> · <span x-text="athlete ? athlete.team : ''" data-test="swap-athlete-team"></span></span>
         </span>
       </span>
-      <button type="button" @click="changeAthlete()" class="btn btn-outline btn-sm shrink-0" data-test="swap-change">Change</button>
+      <button type="button" @click="clearPerson()" class="btn btn-outline btn-sm shrink-0" data-test="swap-clear"
+              :aria-label="athlete ? 'Clear ' + athlete.name : 'Clear'">Clear</button>
     </div>
 
-    <p x-show="on && !athlete" <%= "x-cloak" if athlete %> class="text-sm text-muted" data-test="swap-pick-note">
-      Pick who replaces them. Nothing is saved until you do.
-    </p>
     <p x-show="state === 'pending' && looks.length > 0" <%= "x-cloak" unless performer.recast_pending? && athlete && looks.fetch(athlete.slug, []).any? %>
        class="text-sm text-warning-ink" data-test="recast-pending">
       No look saved. Choose one of <span x-text="athlete ? athlete.name : ''"><%= athlete&.full_name %></span>’s looks.
     </p>
-
-    <div x-show="!athlete || searching" <%= "x-cloak" if athlete %> class="relative min-w-0" @click.outside="open = false"
-         @resize.window.debounce.100ms="if (open) fitList()" data-test="recast-typeahead">
-      <label class="sr-only" for="recast-search-<%= n %>">Who replaces <%= performer.name %>?</label>
-      <div class="flex items-center gap-2 min-w-0">
-        <input id="recast-search-<%= n %>" x-ref="search" type="text" autocomplete="off" role="combobox"
-               aria-autocomplete="list" :aria-expanded="open" aria-controls="recast-results-<%= n %>"
-               placeholder="Search people by name"
-               class="input-field py-2 text-sm flex-1 min-w-0" x-model="query" @input.debounce.250ms="search()"
-               @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
-               @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
-        <button type="button" x-show="athlete" x-cloak @click="searching = false; open = false" class="btn btn-outline btn-sm shrink-0" data-test="swap-change-cancel">Cancel</button>
-      </div>
-
-      <%# Wider than the card on purpose: three columns per row. swapCard#fitList keeps it on screen. %>
-      <div x-show="open" x-cloak x-ref="results" id="recast-results-<%= n %>" role="listbox"
-           class="absolute z-30 left-0 mt-1 card shadow-lg max-h-96 overflow-y-auto p-1 w-[min(40rem,calc(100vw-2rem))]" data-test="recast-results">
-        <template x-for="(r, i) in results" :key="r.slug">
-          <%= render "music_videos/search_row", option_test: "recast-option", look: "r.default_look",
-                     badge: "r.hint",
-                     badge_class: "r.looks.length ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
-        </template>
-        <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
-        <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted" data-test="recast-no-match">
-          No person matches that name. Everyone we know is listed in
-          <%= link_to "People", people_path, class: "text-primary hover:underline" %>.
-        </p>
-      </div>
-    </div>
 
     <%= render "music_videos/look_picker", performer: performer, video: video, sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
   </div>
