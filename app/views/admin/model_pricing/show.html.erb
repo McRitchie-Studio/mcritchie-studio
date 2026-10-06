@@ -45,15 +45,7 @@
   <section class="card p-5">
     <h2 class="text-heading font-semibold mb-4">Adjust rates</h2>
 
-    <% if @override&.errors&.any? %>
-      <div class="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3" data-test="rate-errors">
-        <ul class="text-sm text-red-400 list-disc list-inside">
-          <% @override.errors.full_messages.each do |message| %>
-            <li><%= message %></li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
+    <%= render "shared/form_errors", record: @override, test_id: "rate-errors" %>
 
     <%= form_with url: admin_model_pricing_model_path(@row.model), method: :patch, data: { turbo: false } do %>
       <div class="space-y-6">

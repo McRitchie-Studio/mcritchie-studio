@@ -176,17 +176,17 @@
                   <div class="flex items-center justify-between mb-1">
                     <span class="text-xs font-bold text-heading">Scene <%= scene["number"] || scene["scene_number"] %></span>
                     <% if scene["duration"] || scene["duration_seconds"] %>
-                      <span class="text-[10px] text-muted"><%= scene["duration"] || scene["duration_seconds"] %>s</span>
+                      <span class="text-3xs text-muted"><%= scene["duration"] || scene["duration_seconds"] %>s</span>
                     <% end %>
                   </div>
                   <% if scene["description"] %>
                     <p class="text-sm text-body"><%= scene["description"] %></p>
                   <% end %>
                   <% if scene["camera"] %>
-                    <p class="text-[10px] text-secondary mt-1"><%= scene["camera"] %></p>
+                    <p class="text-3xs text-secondary mt-1"><%= scene["camera"] %></p>
                   <% end %>
                   <% if scene["screen_direction"] %>
-                    <p class="text-[10px] text-secondary mt-1"><%= scene["screen_direction"] %></p>
+                    <p class="text-3xs text-secondary mt-1"><%= scene["screen_direction"] %></p>
                   <% end %>
                 </div>
               <% end %>
@@ -272,58 +272,58 @@
         <div class="space-y-3">
           <% if @content.source_type.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Source</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Source</p>
               <p class="text-heading text-sm"><%= @content.source_type.humanize %></p>
             </div>
           <% end %>
 
           <% if @content.source_news.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">From News</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">From News</p>
               <a href="<%= news_path(@content.source_news.slug) %>" class="text-primary text-sm hover:text-primary-300"><%= @content.source_news.title.truncate(40) %></a>
             </div>
           <% end %>
 
           <% if @content.rival_team.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Rival Team</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Rival Team</p>
               <p class="text-heading text-sm"><%= @content.rival_team.emoji %> <%= @content.rival_team.name %></p>
             </div>
           <% end %>
 
           <% if @content.duration_seconds.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Duration</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Duration</p>
               <p class="text-heading text-sm"><%= @content.duration_seconds %>s</p>
             </div>
           <% end %>
 
           <% if @content.platform.present? && (@content.stage == "posted" || @content.stage == "reviewed") %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Platform</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Platform</p>
               <p class="text-heading text-sm"><%= @content.platform.humanize %></p>
             </div>
           <% end %>
 
           <% if @content.views.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Performance</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Performance</p>
               <div class="grid grid-cols-2 gap-2 mt-1">
                 <div class="bg-surface-alt rounded p-2 text-center">
                   <p class="text-heading font-bold text-sm"><%= number_with_delimiter(@content.views) %></p>
-                  <p class="text-[10px] text-muted">Views</p>
+                  <p class="text-3xs text-muted">Views</p>
                 </div>
                 <div class="bg-surface-alt rounded p-2 text-center">
                   <p class="text-heading font-bold text-sm"><%= number_with_delimiter(@content.likes || 0) %></p>
-                  <p class="text-[10px] text-muted">Likes</p>
+                  <p class="text-3xs text-muted">Likes</p>
                 </div>
                 <div class="bg-surface-alt rounded p-2 text-center">
                   <p class="text-heading font-bold text-sm"><%= number_with_delimiter(@content.comments_count || 0) %></p>
-                  <p class="text-[10px] text-muted">Comments</p>
+                  <p class="text-3xs text-muted">Comments</p>
                 </div>
                 <div class="bg-surface-alt rounded p-2 text-center">
                   <p class="text-heading font-bold text-sm"><%= number_with_delimiter(@content.shares || 0) %></p>
-                  <p class="text-[10px] text-muted">Shares</p>
+                  <p class="text-3xs text-muted">Shares</p>
                 </div>
               </div>
             </div>
@@ -336,42 +336,42 @@
         <p class="label-upper mb-3">Timeline</p>
         <div class="space-y-2">
           <div class="bg-surface-alt rounded-lg p-3">
-            <p class="text-[10px] text-muted uppercase tracking-wider">Created</p>
+            <p class="text-3xs text-muted uppercase tracking-wider">Created</p>
             <p class="text-heading text-sm"><%= @content.created_at.strftime("%b %d, %H:%M") %></p>
           </div>
           <% if @content.hooked_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Hooked</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Hooked</p>
               <p class="text-heading text-sm"><%= @content.hooked_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @content.scripted_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Scripted</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Scripted</p>
               <p class="text-heading text-sm"><%= @content.scripted_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @content.asset_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Assets</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Assets</p>
               <p class="text-heading text-sm"><%= @content.asset_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @content.assembled_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Assembled</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Assembled</p>
               <p class="text-heading text-sm"><%= @content.assembled_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @content.posted_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Posted</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Posted</p>
               <p class="text-heading text-sm"><%= @content.posted_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @content.reviewed_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Reviewed</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Reviewed</p>
               <p class="text-heading text-sm"><%= @content.reviewed_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>

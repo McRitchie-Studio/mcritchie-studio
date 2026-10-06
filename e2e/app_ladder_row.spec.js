@@ -104,14 +104,14 @@ test("the fill colours mean what progress says, never what CI says", async ({ pa
   );
 
   for (const { state, progress, fill } of pairs) {
-    if (fill.includes("bg-emerald-500")) {
+    if (fill.split(/\s+/).includes("bg-success")) {
       // Emerald is now a PROGRESS claim ("the work moved through here"), so it may
       // only sit on a rung the work reached — and never on a failing one, because a
       // red rung takes the colour back off progress.
       expect(progress, "emerald claims the work moved through this rung").toBe("passed");
       expect(["red", "conflicted"], "a failing rung must never wear emerald").not.toContain(state);
     }
-    if (fill.includes("bg-amber-500")) {
+    if (fill.split(/\s+/).includes("bg-warning")) {
       expect(progress, "amber claims work is sitting on this rung").toBe("here");
     }
   }

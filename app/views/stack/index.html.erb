@@ -65,7 +65,7 @@
                   <%= client.tier_name %><%= " · #{client.package.free? ? 'Free' : number_to_currency(client.package.price_monthly, precision: 0) + '/mo'}" if client.package&.priced? %>
                 </span>
                 <% if client.notes.present? %>
-                  <p class="text-[11px] text-muted mt-1" data-test="stack-notes"><%= client.notes %></p>
+                  <p class="text-2xs text-muted mt-1" data-test="stack-notes"><%= client.notes %></p>
                 <% end %>
               <% end %>
             </td>
@@ -79,7 +79,7 @@
                     <% if icon %>
                       <%= image_tag icon, alt: label, class: "w-10 h-10" %>
                     <% else %>
-                      <span class="inline-flex w-10 h-10 items-center justify-center rounded-full bg-surface-alt text-[10px] text-muted"><%= software %></span>
+                      <span class="inline-flex w-10 h-10 items-center justify-center rounded-full bg-surface-alt text-3xs text-muted"><%= software %></span>
                     <% end %>
                   </li>
                 <% end %>
@@ -92,7 +92,7 @@
                 <span class="text-muted" title="Not recorded yet">—</span>
               <% end %>
               <% if (account = client.workspace_account) %>
-                <p class="text-[11px] whitespace-nowrap <%= account.active? ? 'text-green-400' : 'text-muted' %>">delegation · <%= account.status %></p>
+                <p class="text-2xs whitespace-nowrap <%= account.active? ? 'text-success-ink' : 'text-muted' %>">delegation · <%= account.status %></p>
               <% end %>
             </td>
             <td class="px-4 py-3" data-test="stack-resend" data-mode="<%= client.resend_mode %>">

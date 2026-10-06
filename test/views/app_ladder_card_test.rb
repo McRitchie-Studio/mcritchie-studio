@@ -69,7 +69,7 @@ class AppLadderCardTest < ActionView::TestCase
     render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
 
     assert_select "[data-test='app-ladder-rung'][data-state='green']", 3
-    assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 3
+    assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].bg-success", 3
     assert_select "[data-test='app-ladder-rung'][data-state='stale']", 0
   end
 
@@ -118,7 +118,7 @@ class AppLadderCardTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-progress='here']", 1
     assert_select "[data-test='app-ladder-rung'][data-branch='release'][data-progress='unreached']", 1
     assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-progress='unreached']", 1
-    assert_select "[data-test='app-ladder-rung'][data-progress='here'] [data-test='app-ladder-rung-fill'].bg-amber-500", 1
+    assert_select "[data-test='app-ladder-rung'][data-progress='here'] [data-test='app-ladder-rung-fill'].bg-warning", 1
   end
 
   test "promotion turns the rung behind the work green and lights the candidate" do
@@ -150,7 +150,7 @@ class AppLadderCardTest < ActionView::TestCase
 
     assert_select "[data-test='app-ladder-card'][data-furthest='main']", 1
     assert_select "[data-test='app-ladder-rung'][data-progress='passed']", 3
-    assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 3
+    assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].bg-success", 3
   end
 
   # `main` IS ARRIVAL, NOT WAITING — nothing ever parks there, so reaching it reads
@@ -171,7 +171,7 @@ class AppLadderCardTest < ActionView::TestCase
            locals: { card: card(%i[green green green], parked: [1, 0, 0]) }
 
     assert_select "[data-test='app-ladder-rung'][data-branch='release'][data-state='green'][data-progress='unreached']", 1
-    assert_select "[data-test='app-ladder-rung'][data-branch='release'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 0,
+    assert_select "[data-test='app-ladder-rung'][data-branch='release'] [data-test='app-ladder-rung-fill'].bg-success", 0,
                   "an empty rung must not wear the passed-through colour"
   end
 
@@ -182,7 +182,7 @@ class AppLadderCardTest < ActionView::TestCase
            locals: { card: card(%i[green green red], parked: [3, 0, 0]) }
 
     assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-progress='unreached'][data-state='red']" do
-      assert_select "[data-test='app-ladder-rung-fill'].bg-rose-500", 1
+      assert_select "[data-test='app-ladder-rung-fill'].bg-danger", 1
     end
   end
 
@@ -215,10 +215,10 @@ class AppLadderCardTest < ActionView::TestCase
            locals: { card: card(%i[pending green pending], parked: [2, 0, 0]) }
 
     assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-tone='here']" do
-      assert_select "[data-test='app-ladder-rung-fill'].bg-amber-500", 1
+      assert_select "[data-test='app-ladder-rung-fill'].bg-warning", 1
     end
     assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-tone='running']" do
-      assert_select "[data-test='app-ladder-rung-fill'].bg-amber-500", 0,
+      assert_select "[data-test='app-ladder-rung-fill'].bg-warning", 0,
                     "a running rung holds no work — it must not wear the parked wash"
     end
   end
@@ -242,7 +242,7 @@ class AppLadderCardTest < ActionView::TestCase
            locals: { card: card(%i[pending green green]) }
 
     assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-state='pending'][data-tone='passed']", 1
-    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 1
+    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'] [data-test='app-ladder-rung-fill'].bg-success", 1
   end
 
   # RED OUTRANKS THE LOT, unchanged — including on a rung that is both parked and

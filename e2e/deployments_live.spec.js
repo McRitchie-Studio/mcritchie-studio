@@ -291,7 +291,7 @@ test("a live block transition inserts a missing card into the Building column", 
   // the attribute that actually tracks Task#block_state.
   await expect(blockedCard).toHaveAttribute("data-stage", "building");
   await expect(blockedCard).toHaveAttribute("data-stage-glow", "blocked");
-  await expect(blockedCard).toHaveAttribute("class", /bg-red/);
+  await expect(blockedCard).toHaveAttribute("class", /(^|\s)bg-danger\/10(\s|$)/);
 
   expect(pageErrors, report()).toHaveLength(0);
 });
@@ -317,7 +317,7 @@ test("a live block transition keeps an already-visible Building card visible", a
   // Blocked stays on `building`; the block shows through data-stage-glow. See above.
   await expect(card).toHaveAttribute("data-stage", "building");
   await expect(card).toHaveAttribute("data-stage-glow", "blocked");
-  await expect(card).toHaveAttribute("class", /bg-red/);
+  await expect(card).toHaveAttribute("class", /(^|\s)bg-danger\/10(\s|$)/);
   await page.waitForTimeout(1_500);
   await expect(card).toBeVisible();
 
@@ -355,7 +355,7 @@ test("the tasks board updates a blocked card live in the Building column", async
   // the attribute that actually tracks Task#block_state.
   await expect(blockedCard).toHaveAttribute("data-stage", "building");
   await expect(blockedCard).toHaveAttribute("data-stage-glow", "blocked");
-  await expect(blockedCard).toHaveAttribute("class", /bg-red/);
+  await expect(blockedCard).toHaveAttribute("class", /(^|\s)bg-danger\/10(\s|$)/);
 
   expect(pageErrors, report()).toHaveLength(0);
 });

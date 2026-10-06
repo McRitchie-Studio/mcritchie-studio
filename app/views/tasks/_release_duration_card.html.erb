@@ -29,16 +29,16 @@
     <div class="rounded-lg border border-subtle bg-inset px-3 py-2"
          data-test="release-duration-wip" data-stage="wip"
          title="Open tasks: Designed + Building + Submitted + Reviewed + Assembled">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">WIP</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">WIP</p>
       <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= wip_count.nil? ? "—" : wip_count %></p>
-      <p class="mt-1 text-[11px] text-muted">tasks in flight</p>
+      <p class="mt-1 text-2xs text-muted">tasks in flight</p>
     </div>
     <% (Release::DEPLOYMENT_STAGES.map { |stage| [stage[:key], stage[:label]] } + [["total", "Total"]]).each do |key, label| %>
       <% row = stage_averages[key] || {} %>
       <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="release-duration-stage" data-stage="<%= key %>">
-        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold"><%= label %></p>
+        <p class="text-3xs uppercase tracking-wide text-muted font-semibold"><%= label %></p>
         <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= release_duration_label(row["average_seconds"]) %></p>
-        <p class="mt-1 text-[11px] text-muted"><%= row["sample_count"].to_i %> release<%= "s" unless row["sample_count"].to_i == 1 %></p>
+        <p class="mt-1 text-2xs text-muted"><%= row["sample_count"].to_i %> release<%= "s" unless row["sample_count"].to_i == 1 %></p>
       </div>
     <% end %>
   </div>

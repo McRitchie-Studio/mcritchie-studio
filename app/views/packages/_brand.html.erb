@@ -13,6 +13,6 @@
   <% if mark %>
     <%= image_tag mark, alt: "", class: "#{img} object-contain", aria: { hidden: true } %>
   <% else %>
-    <span class="text-[10px] font-bold uppercase leading-none tracking-tight text-slate-700" aria-hidden="true"><%= name.gsub(/[^[:alnum:]]/, "").first(2) %></span>
+    <span class="text-3xs font-bold uppercase leading-none tracking-tight text-slate-700" aria-hidden="true"><%= name.gsub(/[^[:alnum:]]/, "").first(2) %></span>
   <% end %>
 </span>

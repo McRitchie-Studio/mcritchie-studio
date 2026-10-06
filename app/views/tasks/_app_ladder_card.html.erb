@@ -63,7 +63,7 @@
 <% linked = run_url.present? %>
 
 <% card_classes = ["rounded-xl border bg-surface p-4 block min-w-0 transition-colors",
-                   attention ? "border-amber-500/40" : "border-subtle",
+                   attention ? "border-warning/40" : "border-subtle",
                    at_rest ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : nil,
                    local_assigns[:card_class]].compact.join(" ") %>
 <% card_classes += " group hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" if linked %>
@@ -80,7 +80,7 @@
 <%= content_tag(linked ? :a : :div, **card_options) do %>
   <div class="flex items-baseline justify-between gap-2 mb-0.5 min-w-0">
     <h3 class="text-sm font-semibold truncate"><%= card.repo %></h3>
-    <span class="flex items-center gap-1 shrink-0 text-[10px] uppercase tracking-wider text-muted">
+    <span class="flex items-center gap-1 shrink-0 text-3xs uppercase tracking-wider text-muted">
       <%= card.gem? ? "gem" : "app" %>
       <%# The affordance: an arrow that surfaces on hover, so the card reads as
           clickable without a permanent chrome element competing with the meter. %>
@@ -93,7 +93,7 @@
   <%# WHERE THIS APP IS IN THE DEVOPS PROCESS, in one word, under the name. The track
       below draws the same fact; this states it, so a glance down the row reads as a
       list of positions rather than five diagrams to decode. %>
-  <div class="mb-2 text-[10px] font-medium <%= app_ladder_position_tone(card) %>"
+  <div class="mb-2 text-3xs font-medium <%= app_ladder_position_tone(card) %>"
        data-test="app-ladder-position"
        data-position="<%= card.position %>"
        title="<%= app_ladder_position_sentence(card) %>"><%= app_ladder_position_label(card) %></div>
@@ -109,7 +109,7 @@
       precisions. The dimming is still safe: the fact simply moved one line down and
       got sharper. %>
   <% if at_rest %>
-    <div class="mb-2.5 rounded border border-subtle bg-inset px-2 py-1.5 text-[10px] text-muted"
+    <div class="mb-2.5 rounded border border-subtle bg-inset px-2 py-1.5 text-3xs text-muted"
          data-test="app-ladder-at-rest">
       nothing waiting
     </div>
@@ -129,7 +129,7 @@
             clock: true %>
     </div>
   <% else %>
-    <div class="mb-2.5 rounded border border-dashed border-subtle px-2 py-2 text-[10px] text-muted"
+    <div class="mb-2.5 rounded border border-dashed border-subtle px-2 py-2 text-3xs text-muted"
          data-test="app-ladder-ci-empty">
       no CI checks ingested for this app yet
     </div>
@@ -143,7 +143,7 @@
       Empty for every single-lane repo, where the meter's label already names it. %>
   <% others = at_rest ? [] : card.legend_lanes %>
   <% if others.any? %>
-    <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]"
+    <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-3xs"
          data-test="app-ladder-other-lanes">
       <span class="text-muted">lanes in this meter:</span>
       <% others.each do |lane| %>
@@ -184,7 +184,7 @@
       NEVER A GUESSED TIME. A repo whose last ship predates the scanned window renders
       an em dash and says so on hover; an invented stamp on a deploy board is worse
       than an admitted gap. %>
-  <div class="mt-1.5 flex items-baseline justify-between gap-2 text-[10px] leading-none"
+  <div class="mt-1.5 flex items-baseline justify-between gap-2 text-3xs leading-none"
        data-test="app-ladder-main-merge"
        data-at="<%= card.last_shipped_at&.iso8601 %>"
        title="<%= app_ladder_main_merge_title(card) %>">
@@ -223,12 +223,12 @@
        data-scanned="<%= roll.scanned %>"
        data-excluded="<%= roll.excluded %>"
        title="<%= app_ladder_review_title(roll) %>">
-    <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none">
+    <div class="flex items-baseline justify-between gap-2 text-3xs leading-none">
       <span class="font-semibold uppercase tracking-wide text-muted">review</span>
       <span class="shrink-0 tabular-nums font-medium <%= roll.any? ? "text-heading" : "text-muted" %>"
             data-test="app-ladder-review-value"><%= app_ladder_review_value(roll) %></span>
     </div>
-    <div class="mt-1 text-right text-[10px] text-muted"
+    <div class="mt-1 text-right text-3xs text-muted"
          data-test="app-ladder-review-note"><%= app_ladder_review_note(roll) %></div>
   </div>
 

@@ -271,8 +271,8 @@ function kanbanBoard(live, liveFx) {
           // Revert: drop the card back into its SOURCE zone, which always exists
           // (the zone is sourced from evt.from, never a card's stage).
           fromZone.insertBefore(card, fromZone.querySelector('.kanban-empty'));
-          card.classList.add('ring-2', 'ring-red-500');
-          setTimeout(() => card.classList.remove('ring-2', 'ring-red-500'), 1500);
+          card.classList.add('ring-2', 'ring-[color:var(--color-danger)]');
+          setTimeout(() => card.classList.remove('ring-2', 'ring-[color:var(--color-danger)]'), 1500);
           this.showToast(err.message || 'Move failed', 'error');
           this.updateCounts();
           return;
@@ -636,7 +636,7 @@ document.addEventListener('turbo:before-cache', function() {
             <% if stage == "submitted" && current_page != "deployments" %>
               <%= link_to "docs",
                     review_events_hub_path,
-                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
+                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
                     "data-test": "submitted-review-docs-link" %>
             <% end %>
             <%# A capped column counts what EXISTS, not what it drew — a badge reading
@@ -742,7 +742,7 @@ document.addEventListener('turbo:before-cache', function() {
            x-transition:leave="transition ease-in duration-200"
            x-transition:leave-start="opacity-100 translate-x-0"
            x-transition:leave-end="opacity-0 translate-x-8"
-           :class="toast.type === 'success' ? 'bg-mint-900/90 border-mint-700 text-mint-300' : 'bg-red-900/90 border-red-700 text-red-300'"
+           :class="toast.type === 'success' ? 'bg-success/10 border-success/40 text-success-ink' : 'bg-danger/10 border-danger/40 text-danger-ink'"
            class="px-4 py-2.5 rounded-lg border text-sm font-medium shadow-lg backdrop-blur-sm">
         <span x-text="toast.message"></span>
       </div>

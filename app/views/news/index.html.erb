@@ -12,11 +12,11 @@
 <% stage_agents = { "new" => "Intake", "reviewed" => "Mason", "processed" => "Mack", "refined" => "Alex", "concluded" => "Turf Monster", "archived" => "Alex" } %>
 <%# gap 2 — per-column count-chip colours (was an inline `case stage`). %>
 <% count_colors = {
-     "new" => "bg-blue-900/50 text-blue-300",
-     "reviewed" => "bg-yellow-900/50 text-yellow-300",
-     "processed" => "bg-mint-900/50 text-mint-300",
-     "refined" => "bg-green-900/50 text-green-300",
-     "concluded" => "bg-violet-900/50 text-violet-300",
+     "new" => "bg-primary/10 text-primary",
+     "reviewed" => "bg-warning/10 text-warning-ink",
+     "processed" => "bg-success/10 text-success-ink",
+     "refined" => "bg-success/10 text-success-ink",
+     "concluded" => "bg-primary/10 text-primary",
      "archived" => "bg-surface-alt text-muted"
    } %>
 
@@ -136,7 +136,7 @@ function newsBoardChrome() {
     # gap 5 — the per-column agent chip, pushed to the right of the column header.
     agent_chip = lambda do |stage|
       agent = stage_agents[stage]
-      agent ? %(<span class="text-[10px] text-muted ml-auto">#{agent}</span>).html_safe : nil
+      agent ? %(<span class="text-3xs text-muted ml-auto">#{agent}</span>).html_safe : nil
     end
     # gap 1 — the Archived toggle binds straight to the chrome-state home.
     archived_toggle = %(<button @click="toggleState('showArchived')" :class="state.showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'" class="px-3 py-2 rounded-lg text-sm font-medium transition" data-test="news-archived-toggle">Archived</button>).html_safe

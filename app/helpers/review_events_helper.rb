@@ -62,9 +62,9 @@ module ReviewEventsHelper
   def review_status_classes(status)
     case status.to_s
     when "completed"
-      "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200"
+      "border-success/40 bg-success/10 text-success-ink"
     when "failed"
-      "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-200"
+      "border-danger/40 bg-danger/10 text-danger-ink"
     when "started"
       "border-primary/40 bg-primary/10 text-primary"
     else
@@ -119,9 +119,9 @@ module ReviewEventsHelper
   def review_moment_duration_classes(timing)
     case timing&.status
     when "completed"
-      "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200"
+      "border-success/40 bg-success/10 text-success-ink"
     when "live"
-      "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+      "border-warning/40 bg-warning/10 text-warning-ink"
     when "skipped"
       "border-subtle bg-surface text-muted"
     else

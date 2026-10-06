@@ -58,7 +58,7 @@ function stallQuietLocalCheck(el, now) {
   if (label) label.textContent = label.dataset.stalledLabel || "Local check — stalled";
   root.querySelectorAll("[data-local-check-tone]").forEach((node) => {
     node.classList.remove("text-primary");
-    node.classList.add("text-amber-700", "dark:text-amber-300");
+    node.classList.add("text-warning-ink");
   });
 
   el.removeAttribute("data-release-ticker");

@@ -1,11 +1,5 @@
 <div class="card p-6">
-  <% if task.errors.any? %>
-    <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-      <% task.errors.full_messages.each do |msg| %>
-        <p><%= msg %></p>
-      <% end %>
-    </div>
-  <% end %>
+  <%= render "shared/form_errors", record: task %>
 
   <%= form_with model: task, url: task.persisted? ? task_path(task.slug) : tasks_path do |f| %>
     <div class="mb-5">

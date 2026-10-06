@@ -1019,7 +1019,7 @@ class ApplicationHelperTest < ActionView::TestCase
                              ended_at: now + 3.minutes, seconds: 3.minutes.to_i, status: "completed",
                              success: false, attempt: 1 } }
 
-    assert_select "[data-test='deployment-stage-failed'].text-rose-400", text: /✗ 3m/
+    assert_select "[data-test='deployment-stage-failed'].text-danger-ink", text: /✗ 3m/
     assert_select "[data-test='deployment-stage-attempts']", count: 0 # no retry badge on attempt 1
     # The timestamp range still renders — a failed attempt keeps its window.
     assert_select "[data-deployment-range][data-start='#{now.to_i}']"

@@ -748,7 +748,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # re-stamps to the viewer's clock — not a server-frozen string.
     assert_select "#last-release [data-test='release-state-badge'] time[data-at-stamp][data-at-epoch]", count: 1
     # the badge keeps the shipped (green) state color
-    assert_select "#last-release [data-test='release-state-badge'].bg-green-900\\/50", count: 1
+    assert_select "#last-release [data-test='release-state-badge'].bg-success\\/10", count: 1
     # the separate muted "shipped X ago" line is gone (was the only text-muted "ago" span)
     assert_select "#last-release span.text-muted", { text: /ago/, count: 0 },
                   "the redundant 'shipped X ago' line must be folded into the badge"
@@ -1141,7 +1141,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     [tasks_path, deployments_path].each do |path|
       get path
       assert_response :success
-      assert_select "#dropzone-building #card-#{blocked.slug}[class*=bg-red]", true,
+      assert_select "#dropzone-building #card-#{blocked.slug}.bg-danger\\/10", true,
                     "blocked card should ride the Building column with a red hue on #{path}"
     end
   end
@@ -1157,7 +1157,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # The generic UNRESOLVED QA label was dropped; the red block card-tone carries the
     # open feedback and the blocker's own summary rides a red bar linking to the detail.
     # The activity box still shows the latest note beneath it.
-    assert_select "#card-#{task.slug}[class*=bg-red-50]"
+    assert_select "#card-#{task.slug}.bg-danger\\/10"
     assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", count: 0
     assert_select "#card-#{task.slug} a[data-test='blocker-summary'][href='#{task_path(task.slug)}']",
                   text: "Needs rework before merge."

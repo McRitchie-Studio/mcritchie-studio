@@ -6,6 +6,7 @@ require "test_helper"
 # re-renders for a live push); the full-page and turbo-stream paths are pinned
 # by test/integration/board_window_chip_test.rb.
 class TaskWindowChipTest < ActionView::TestCase
+  include StatusToneHelper
   NOW = Time.utc(2026, 9, 24, 20, 0, 0)
 
   setup do
@@ -58,7 +59,7 @@ class TaskWindowChipTest < ActionView::TestCase
     assert_equal "", rendered.strip, "no empty slot, no stray markup"
   end
 
-  test "[component] every kind carries a light and a dark colour pair" do
+  test "[component] every kind wears its status tone, with no dark: twin" do
     windows = {
       "approval" => approval_window,
       "escalation" => Devops::Windows.escalation(blocked_at: NOW, block_kind: "dependency", summary: "Escalated: x"),
@@ -69,12 +70,9 @@ class TaskWindowChipTest < ActionView::TestCase
       chip = css_select("[data-test='task-window-chip'][data-window-kind='#{kind}']").first
       assert chip, "the #{kind} chip renders"
       classes = chip["class"].split
-      %w[bg text border].each do |utility|
-        light = classes.find { |c| c.start_with?("#{utility}-") && !c.start_with?("#{utility}-[") }
-        dark = classes.find { |c| c.start_with?("dark:#{utility}-") }
-        assert light, "the #{kind} chip needs a light-mode #{utility} colour"
-        assert dark, "the #{kind} chip needs a dark-mode #{utility} colour beside #{light}"
-      end
+      role = { "approval" => :warning, "escalation" => :danger, "production" => :primary }.fetch(kind)
+      status_tone(role).split.each { |klass| assert_includes classes, klass, "the #{kind} chip wears #{role}" }
+      assert_empty classes.grep(/\Adark:/), "the #{kind} chip's tokens already serve both themes"
     end
   end
 

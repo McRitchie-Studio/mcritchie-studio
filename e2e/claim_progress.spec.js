@@ -32,10 +32,10 @@ test("the board states a claim's progress, not just its liveness", async ({ page
   await expect(quietChip).toHaveAttribute("data-progress-quiet", "true");
   await expect(quietChip).toContainText(/progress \d+(\.\d+)?h ago/);
   await expect(quietChip).toContainText("cert started");
-  // The alarm tone is a light/dark PAIR — amber-700 carries the light theme, where a
-  // bare amber-300 washed out on the near-white surface.
-  await expect(quietChip).toHaveClass(/text-amber-700/);
-  await expect(quietChip).toHaveClass(/dark:text-amber-300/);
+  // The alarm tone is the warning ink, derived per theme so it stays legible on the
+  // near-white light surface as well as the dark one.
+  await expect(quietChip).toHaveClass(/(^|\s)text-warning-ink(\s|$)/);
+  await expect(quietChip).not.toHaveClass(/dark:text-/);
 
   // The desk is still held — a quiet chip is a report, never a reclaim.
   await expect(quietCard).toBeVisible();

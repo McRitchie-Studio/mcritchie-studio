@@ -14,7 +14,7 @@
     <%= render "epics/stage_counts", epic: epic %>
     <div class="min-w-0 space-y-1">
       <%= render "epics/progress_bar", epic: epic %>
-      <p class="text-[11px] text-muted" data-test="epic-row-activity">
+      <p class="text-2xs text-muted" data-test="epic-row-activity">
         started <%= compact_time_ago(epic.first_created_at) %> · last activity <%= compact_time_ago(epic.last_activity_at) %>
       </p>
     </div>

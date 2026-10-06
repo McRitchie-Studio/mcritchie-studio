@@ -53,8 +53,8 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     # Light-mode contrast (regression guard for the PR #207 QA block): the live
     # ticker must be a bounded, theme-aware pill — not bare text-green-200 that is
     # invisible on the white light-mode surface (light is the no-JS default).
-    assert_includes rendered, "text-green-700"
-    assert_includes rendered, "dark:text-green-200"
+    assert_includes rendered, "text-success-ink"
+    assert_no_match(/dark:text-/, rendered, "a token ink serves both themes")
   end
 
   test "renders active building on the Designed to Building card without appending a second build card" do
@@ -152,7 +152,7 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "XL"      # auto-derived actual_size
     # actual (xl) != PO forecast (medium) → estimate-miss flag, theme-aware amber
     assert_includes rendered, "forecast"
-    assert_includes rendered, "dark:text-yellow-400"
+    assert_includes rendered, "text-warning-ink"
   end
 
   test "omits the sizing strip when the task carries no sizes" do

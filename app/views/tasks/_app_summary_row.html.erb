@@ -30,7 +30,7 @@
     data-suite-at="<%= started&.iso8601 %>"
     title="<%= title %>">
   <span class="w-4 shrink-0 text-center text-xs leading-none" aria-hidden="true"><%= app_emoji(card.repo) %></span>
-  <span class="min-w-0 flex-1 truncate text-[11px] font-medium <%= card.needs_attention? ? app_ladder_position_tone(card) : "text-heading" %>"
+  <span class="min-w-0 flex-1 truncate text-2xs font-medium <%= card.needs_attention? ? app_ladder_position_tone(card) : "text-heading" %>"
         data-test="app-summary-name"><%= card.repo %></span>
   <% if rung %>
     <%# Shown only when the CARD has room for it (a container query on the card, not a

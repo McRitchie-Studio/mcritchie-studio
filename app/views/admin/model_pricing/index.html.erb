@@ -34,7 +34,7 @@
                 <%= heartbeat_model_short(row.model) %>
               <% end %>
               <% if row.overridden %>
-                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary align-middle">override</span>
+                <span class="ml-1 text-3xs px-1.5 py-0.5 rounded bg-primary/10 text-primary align-middle">override</span>
               <% end %>
             </td>
             <td class="py-2 px-3 text-right tabular-nums"><%= number_to_currency(row.input_rate, precision: 2) %></td>

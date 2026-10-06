@@ -20,7 +20,7 @@ class BoardClearedBlockCardTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{task.slug}.bg-amber-50"
+    assert_select "#card-#{task.slug}.bg-warning\\/10"
     assert_select "#card-#{task.slug} [data-test='cleared-feedback']", { count: 0 }, "the RE-REVIEW badge is dropped; the amber tone carries it"
     assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", count: 0
   end
@@ -32,7 +32,7 @@ class BoardClearedBlockCardTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{task.slug}.bg-red-50"
+    assert_select "#card-#{task.slug}.bg-danger\\/10"
     assert_select "#card-#{task.slug} [data-test='cleared-feedback']", count: 0
   end
 

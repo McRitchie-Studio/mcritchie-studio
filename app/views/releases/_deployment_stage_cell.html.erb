@@ -31,14 +31,14 @@
             data-since="<%= span[:started_at].to_i %>"
             title="In progress — counting up since this stage started">⏱ <%= format_elapsed_clock(elapsed) %></span>
     <% elsif failed %>
-      <span class="font-mono text-rose-400 tabular-nums leading-none"
+      <span class="font-mono text-danger-ink tabular-nums leading-none"
             data-test="deployment-stage-failed"
             title="Gate attempt failed">✗ <%= release_duration_label(span[:seconds]) %></span>
     <% else %>
       <span class="font-mono text-heading tabular-nums leading-none"><%= release_duration_label(span[:seconds]) %></span>
     <% end %>
     <% if attempts > 1 %>
-      <span class="ml-1 rounded bg-inset border border-subtle px-1 text-[10px] font-bold align-middle <%= failed ? "text-rose-400" : "text-muted" %>"
+      <span class="ml-1 rounded bg-inset border border-subtle px-1 text-3xs font-bold align-middle <%= failed ? "text-danger-ink" : "text-muted" %>"
             data-test="deployment-stage-attempts"
             title="<%= attempts %> attempts — retried gate runs are first-class signal">×<%= attempts %></span>
     <% end %>
@@ -51,7 +51,7 @@
            data-start="<%= span[:started_at].to_i %>"
            <% if span[:ended_at] %>data-end="<%= span[:ended_at].to_i %>"<% end %>>
         <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(span) %></span>
-        <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(span) %></span>
+        <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(span) %></span>
       </div>
     </div>
   <% else %>

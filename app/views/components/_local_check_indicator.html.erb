@@ -25,12 +25,12 @@
   through a Turbo morph of this slot with no re-wiring — same as the CI clock.
 %>
 <% tone = check.stalled? ?
-     { text: "text-amber-700 dark:text-amber-300", icon: "text-amber-600 dark:text-amber-400" } :
+     { text: "text-warning-ink", icon: "text-warning-ink" } :
      { text: "text-primary", icon: "text-primary" } %>
 <% summary = check.stalled? ?
      "Local check stalled — no heartbeat for #{compact_elapsed_short(check.seconds_since_heartbeat)}" :
      "Local check running: #{check.label}" %>
-<div class="local-check-indicator flex w-full items-center justify-between gap-2 text-[10px] leading-none"
+<div class="local-check-indicator flex w-full items-center justify-between gap-2 text-3xs leading-none"
      data-test="<%= test_id %>"
      data-local-check-state="<%= check.state %>"
      <% unless check.stalled? %>data-local-check-stale-at="<%= check.stale_at.to_i %>"<% end %>
@@ -51,7 +51,7 @@
       <%# Present but hidden so the installed ticker can flip an already-open
           card when the last heartbeat ages out; a killed runner emits no write
           that could otherwise morph the card. %>
-      <svg class="hidden h-2.5 w-2.5 shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+      <svg class="hidden h-2.5 w-2.5 shrink-0 text-warning-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
            data-test="<%= test_id %>-stalled-icon">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
       </svg>

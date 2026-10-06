@@ -16,7 +16,7 @@
     only the fill: a wash says work is PARKED on this rung, an outline says a suite is
     merely RUNNING about it. Nothing ever parks at `main`, so a wash there would draw a
     state the board cannot hold — and e2e/app_ladder_row.spec.js enforces exactly that,
-    asserting `bg-amber-500` only ever appears on `data-progress='here'`.
+    asserting `bg-warning` only ever appears on `data-progress='here'`.
 
     Everything is precomputed by Ci::AppLadder::Card#track and resolved to ONE tone name
     by app_ladder_segment_tone; this partial draws, it does not derive. `data-tone` is
@@ -66,13 +66,13 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18 18 6M6 6l12 12"/>
           </svg>
         <% end %>
-        <span class="truncate text-[10px] font-medium leading-none"><%= node[:branch] %></span>
+        <span class="truncate text-3xs font-medium leading-none"><%= node[:branch] %></span>
         <%# The count rides the segment it describes. The old footnote said "2 on
             release" in the smallest text on the card, under a badge that could not
             show it. The pinned strip drops it (compact:) — it keeps three rows and
             nothing else, and a number there would be the first thing to overflow. %>
         <% if count %>
-          <span class="shrink-0 rounded-sm bg-current/15 px-1 text-[10px] font-semibold leading-none tabular-nums"
+          <span class="shrink-0 rounded-sm bg-current/15 px-1 text-3xs font-semibold leading-none tabular-nums"
                 data-test="app-ladder-parked"
                 data-branch="<%= node[:branch] %>"><%= count %></span>
         <% end %>
