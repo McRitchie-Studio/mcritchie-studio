@@ -41,9 +41,6 @@ compromised: rotate first, then clean the copies.
   is empty (`Password item requires ps value`): set a placeholder with `op item edit`
   first.
 - `op item create "<label>[file]=<path>"` rejects a label with more than one period.
-- Never repoint the ambient `OP_SERVICE_ACCOUNT_TOKEN` at the admin token to get
-  unblocked. That hands every agent write access to every vault; prefix it to one
-  read, as shown below.
 
 ## Personal data in a public repo
 
