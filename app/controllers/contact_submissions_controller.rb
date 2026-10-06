@@ -68,8 +68,10 @@ class ContactSubmissionsController < ApplicationController
 
   private
 
+  # A re-rendered form keeps the render time the visitor's first page carried,
+  # so fixing one field and resubmitting quickly does not read as too fast.
   def form_proof
-    self.class.proof_for(Time.current)
+    self.class.proof_for(@proof_rendered_at || Time.current)
   end
 
   # nil for a person; otherwise why the submission looks like a bot.
@@ -77,6 +79,8 @@ class ContactSubmissionsController < ApplicationController
     written = params.dig(:contact_submission, PROOF_FIELD).to_s.reverse
     rendered_at = self.class.verifier.verified(written, purpose: PROOF_PURPOSE) if written.present?
     return "no_browser_proof" unless rendered_at.is_a?(Numeric)
+
+    @proof_rendered_at = Time.zone.at(rendered_at)
     return "too_fast" if Time.current.to_f - rendered_at < MIN_FILL_SECONDS
 
     nil

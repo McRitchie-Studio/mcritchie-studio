@@ -262,11 +262,15 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     refute ContactSubmission.recent.first.flagged?
   end
 
-  test "[integration] a refused submission re-renders with a fresh proof" do
-    submit(sms_care_consent: "1")
+  # A visitor who fixes one box and resubmits in a second has still spent their
+  # time on the form, so the re-rendered proof keeps the first render time.
+  test "[integration] a refused submission re-renders a proof that keeps the first render time" do
+    submit(sms_care_consent: "1", PROOF => browser_proof(20.seconds.ago))
 
     assert_response :unprocessable_entity
-    assert_select "input[data-test='contact-proof'][data-proof]", count: 1
+    input = css_select("input[data-test='contact-proof'][data-proof]").sole
+    rendered_at = ContactSubmissionsController.verifier.verified(input["data-proof"], purpose: :contact_form)
+    assert_in_delta 20.seconds.ago.to_f, rendered_at, 5
   end
 
   # The honeypot used to be `company_url`. A browser's address autofill matches
