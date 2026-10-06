@@ -413,7 +413,7 @@ class FastCertSubjectTest < Minitest::Test
 
     assert File.file?(File.join(REPO_ROOT, registry)),
            "#{registry} is the only mapped evidence a family-less bin script has"
-    assert_includes FastCert.select_tests(REPO_ROOT, ["bin/docker-entrypoint"]), registry
+    assert_includes FastCert.select_tests(REPO_ROOT, ["bin/island-background"]), registry
   end
 
   # THE WIRING INITIALIZER, which is the diff this whole clause exists for. Its class

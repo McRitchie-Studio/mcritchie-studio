@@ -11,6 +11,7 @@ The pages: [`user.md`](user.md). The ecosystem: `docs/ECOSYSTEM.md`.
 | Views | ERB; Tailwind compiled by `tailwindcss-rails`; Alpine.js, the Montserrat font and the light/dark theme come from `studio-engine`'s head partial |
 | JavaScript | Import maps, no build step: Turbo and Chart.js (`config/importmap.rb`) |
 | Jobs | Solid Queue (`worker: bin/jobs`) |
+| Rate limits | Rack::Attack (`config/initializers/rack_attack.rb`); production counts in Solid Cache on the primary database, so every dyno and every deploy share one count; the client address comes from X-Forwarded-For alone, never a client-written `Forwarded` header (`config/initializers/forwarded_headers.rb`) |
 | Storage | Active Storage on Cloudflare R2: `mcritchie-studio-production` in production, `mcritchie-studio-dev` on desks and QA (`config/storage.yml`) |
 | Email | Resend through `Studio::Email.deliver`; the durable outbox is `studio_email_deliveries` |
 | Auth | `studio-engine` passwordless sign-in: magic link and Google (`config.auth_methods` in `config/initializers/studio.rb`); no wallet auth, since the hub has no on-chain surface |
