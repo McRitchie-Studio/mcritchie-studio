@@ -6,7 +6,7 @@ require "test_helper"
 # Every per-IP throttle reads `req.ip`, and Rails reads `request.remote_ip`.
 # Both believe a `Forwarded` header the caller wrote unless the hub drops it
 # from Rack's priority list, because Rack 3 prefers it to X-Forwarded-For and
-# neither the Heroku router nor EdgeGuard touches it.
+# neither the Heroku router nor the edge middleware touches it.
 #
 # The requests here have the shape production's do: the app is reached from the
 # router's private address, and the router has appended the real client to the
