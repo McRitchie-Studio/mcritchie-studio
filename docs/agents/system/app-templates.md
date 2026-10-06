@@ -1,7 +1,7 @@
 # App Templates — the base app and the web3 bolt-on
 
 Every McRitchie app is built from one template; a Solana app adds a second on
-top. Decided by Alex on 2026-08-31 (fullest statement:
+top. Decided by Alex (fullest statement:
 [`gate-solana-routes-on-wallet`](https://mcritchie.studio/tasks/gate-solana-routes-on-wallet)),
 and enforced by a test in this repo since
 [`lint-web2-app-boundary`](https://mcritchie.studio/tasks/lint-web2-app-boundary).
@@ -96,7 +96,7 @@ heading you mean, and confirm against the chain. This page restates none of them
 
 The hub once carried `solana-studio` for an admin signing console and held the
 boundary's only allowlist entry. The console, the gem and the entry left together
-on 2026-09-04 ([`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console)).
+in [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console).
 The full record, with the losing argument, the console's freeze and removal, the
 signer-verification gap and the implementing tasks, is frozen verbatim in
 [`../archive/app-templates-2026-10-05.md`](../archive/app-templates-2026-10-05.md).

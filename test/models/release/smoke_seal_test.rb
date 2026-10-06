@@ -70,20 +70,21 @@ class Release
       assert_empty SmokeSeal.from_result(passed: true).rollback_commands
     end
 
-    test "[unit] rollback_commands surface the exact heroku/git/abandon recovery on red" do
+    test "[unit] rollback_commands surface bin/release rollback, plan first, on red" do
       cmds = SmokeSeal.from_result(passed: false).rollback_commands(
-        repo: "mcritchie-studio", heroku_app: "mcritchie-studio", deployed_sha: "abc1234"
+        repo: "mcritchie-studio", deployed_sha: "abc1234", release_slug: "rel-x"
       )
 
       assert_equal 3, cmds.size
-      assert_includes cmds[0], "heroku rollback --app mcritchie-studio"
-      assert_includes cmds[1], "git -C mcritchie-studio revert -m1 abc1234"
-      assert_includes cmds[2], "Release#abandon!"
+      assert cmds[0].start_with?("bin/release rollback rel-x   #"), "the first line is the plan, which deploys nothing"
+      assert_includes cmds[1], "bin/release rollback rel-x --mode ask"
+      assert_includes cmds[2], "revert abc1234 in mcritchie-studio on accepted"
     end
 
-    test "[unit] rollback_commands fall back to a placeholder SHA when none is known" do
+    test "[unit] rollback_commands fall back to placeholders when the SHA and release are unknown" do
       cmds = SmokeSeal.from_result(passed: false).rollback_commands(deployed_sha: nil)
-      assert_includes cmds[1], "<release-merge-sha>"
+      assert_includes cmds[0], "<release-slug>"
+      assert_includes cmds[2], "<release-merge-sha>"
     end
   end
 end

@@ -163,6 +163,13 @@ class Release
         consequence: "no smoke ran and the release's recorded seal is unchanged",
         bool: [], value: ["--slug"], allow_positional: true
       },
+      # Redeploy the previous shipped SHA per app (Release::RollbackPlan). A PLAN
+      # unless authority is given: --mode ask (confirm) or --mode auto / --yes.
+      "rollback" => {
+        synopsis: "bin/release rollback [<release>] [--slug REL] [--mode ask|auto] [--by NAME]",
+        consequence: "nothing was redeployed and nothing was recorded on the release",
+        bool: [], value: ["--slug", "--mode", "--by"], allow_positional: true
+      },
       "status" => {
         synopsis: "bin/release status [--clean-only] [--task SLUG]",
         # The sharpest one in the table. `status --clean-only` exits 0 to MEAN
@@ -197,7 +204,7 @@ class Release
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro|notes <release> [--post] [--force]} " \
+            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
 

@@ -1,11 +1,36 @@
 const { test, expect } = require("@playwright/test");
+const { VISITOR } = require("./helpers");
+
+// [e2e] The pipeline sits behind the admin wall (app/controllers/concerns/admin_wall.rb).
+// @qa-readonly: bin/prod-smoke runs this against QA and PRODUCTION as a visitor, so it
+// asserts the wall — a signed-out visitor is sent to sign-in and never sees the page.
+test.describe("xan pipeline admin wall", () => {
+  test.use({ storageState: VISITOR });
+
+  test("xan pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
+    const res = await request.get("/xan/pipeline", { maxRedirects: 0 });
+    expect(res.status()).toBe(302);
+    expect(new URL(res.headers()["location"], "http://host").pathname).toBe("/login");
+
+    await page.goto("/xan/pipeline");
+    expect(new URL(page.url()).pathname).toMatch(/^\/(login|signin)$/);
+    await expect(page.locator('input[name="email"]')).toBeVisible();
+    await expect(page.locator("[data-test='xan-pipeline']")).toHaveCount(0);
+  });
+});
 
 // [e2e] The OPSD distillation pipeline (/xan/pipeline) — three columns, left→right:
 // Activities (narrated AgentActivity rows) → Insights (Xan's banked grades) →
-// Confirmations (McRitchie's mcr grades). A public read surface; the happy path here
-// is the page rendering with all three columns and the nav's link out to the
-// cross-session All Activities view.
-test("xan pipeline renders the three distillation columns @qa-readonly", async ({ page }) => {
+// Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
+// page rendering, as the seeded admin, with all three columns and the nav's link out
+// to the cross-session All Activities view.
+//
+// The same visit then covers the A2 "Test runs" band (seeded): the release
+// test-scope verdicts, a pass and a fail pill, the phase/tier/host chips derived
+// from the scope registry, and a grade link; and a banked test-run grade surfaces
+// as a Column-2 insight with an ACTION Confirm button (confirm-of-action parity).
+// Seeded and signed in as the admin, so local lane only — NOT @qa-readonly.
+test("xan pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
   const res = await page.goto("/xan/pipeline");
   expect(res.ok()).toBe(true);
 
@@ -22,8 +47,7 @@ test("xan pipeline renders the three distillation columns @qa-readonly", async (
 
   // Column 1 lists the narrated activities (AgentActivity rows, each with a
   // category chip) — or, in a fresh env, its explicit "No activities yet."
-  // placeholder. @qa-readonly runs against live QA and prod (bin/prod-smoke),
-  // so assert the STRUCTURE either way — never seeded data.
+  // placeholder. Assert the STRUCTURE either way — never seeded data.
   const activityRows = page.locator("[data-test='pl-activity']");
   const emptyState = page.locator("#col-actions .pl-empty");
   await expect(activityRows.first().or(emptyState)).toBeVisible();
@@ -32,17 +56,8 @@ test("xan pipeline renders the three distillation columns @qa-readonly", async (
   const allActivities = page.locator("[data-test='hb-nav-all-spans']");
   await expect(allActivities).toBeVisible();
   await expect(allActivities).toHaveAttribute("href", "/xan/heartbeat/activities");
-});
 
-// [e2e] A2 happy path (seeded, local only — NOT @qa-readonly, since it asserts
-// seeded rows): the "Test runs" band renders the release test-scope verdicts, a
-// pass and a fail pill, the phase/tier/host chips derived from the scope
-// registry, and a grade link; and a banked test-run grade surfaces as a Column-2
-// insight with an ACTION Confirm button (confirm-of-action parity).
-test("xan pipeline shows the gradeable test-runs band", async ({ page }) => {
-  const res = await page.goto("/xan/pipeline");
-  expect(res.ok()).toBe(true);
-
+  // The A2 "Test runs" band.
   const band = page.locator("[data-test='pl-test-runs']");
   await expect(band).toBeVisible();
 

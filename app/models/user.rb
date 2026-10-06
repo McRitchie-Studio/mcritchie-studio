@@ -102,6 +102,20 @@ class User < ApplicationRecord
   before_validation :assign_parked_identity
   before_save :set_name_parts, if: -> { name_changed? }
 
+  # /cable checks admin and the session token only at connect, so every write
+  # that revokes either one also drops the user's open sockets
+  # (ApplicationCable::Connection.disconnect). A token rotation, a lost admin
+  # role and a destroy each mark the record; the drop happens after COMMIT, once,
+  # so a rolled-back write drops nothing. Every path that reaches a save is
+  # covered: the engine's email-change rotation, the seeds' role write,
+  # assign_parked_identity's demotion, a console `update!`. A callback-free write
+  # (update_column, update_all, raw SQL in a migration) is not, and must call
+  # ApplicationCable::Connection.disconnect itself.
+  after_save :mark_cable_revocation
+  after_destroy :mark_cable_revocation
+  after_commit :drop_cable_connections, if: :cable_revocation_pending?
+  after_rollback :clear_cable_revocation
+
   # --- Derived name halves ---------------------------------------------------
 
   # The halves `set_name_parts` would derive from `name`, as a hash ready for a
@@ -240,6 +254,29 @@ class User < ApplicationRecord
 
 
     changed_identity
+  end
+
+  def mark_cable_revocation
+    @cable_revocation_pending = true if destroyed? || revokes_cable_access?
+  end
+
+  def revokes_cable_access?
+    return false if previously_new_record?
+
+    saved_change_to_session_token? || (saved_change_to_role? && role_before_last_save == "admin" && !admin?)
+  end
+
+  def cable_revocation_pending?
+    @cable_revocation_pending == true
+  end
+
+  def clear_cable_revocation
+    @cable_revocation_pending = false
+  end
+
+  def drop_cable_connections
+    clear_cable_revocation
+    ApplicationCable::Connection.disconnect(self)
   end
 
   def has_authentication_method

@@ -81,19 +81,21 @@ class Release
       summary.empty? ? base : "#{base} — #{summary}"
     end
 
-    # The EXACT rollback commands to surface on a RED seal (an empty array on
-    # green). NON-BLOCKING — the seal never auto-rolls-back; this is purely "what
-    # to RUN if the operator decides to". Threads the real repo / heroku app /
-    # deployed SHA through so the printed commands are copy-paste exact.
-    def rollback_commands(repo: "mcritchie-studio", heroku_app: "mcritchie-studio", deployed_sha: nil)
+    # The rollback to surface on a RED seal (an empty array on green). NON-BLOCKING:
+    # the seal never rolls back on its own; these are what to RUN if the operator
+    # decides to. `bin/release rollback` plans first and deploys only with --mode,
+    # redeploying every app the release shipped at its previous SHA (main stays put).
+    def rollback_commands(repo: "mcritchie-studio", deployed_sha: nil, release_slug: nil)
       return [] if green?
 
       sha = deployed_sha.to_s.strip
       sha = "<release-merge-sha>" if sha.empty?
+      rel = release_slug.to_s.strip
+      rel = "<release-slug>" if rel.empty?
       [
-        "heroku rollback --app #{heroku_app}   # fastest: revert the dyno to the prior release",
-        "git -C #{repo} revert -m1 #{sha} && git -C #{repo} push heroku main   # durable: revert the merge + redeploy",
-        "Release#abandon!   # board-side: pull the RC's members back to reviewed (only while still active)"
+        "bin/release rollback #{rel}   # the plan: each app's previous shipped SHA and the schema check; deploys nothing",
+        "bin/release rollback #{rel} --mode ask   # redeploy each app at its previous SHA; main is untouched",
+        "then revert #{sha} in #{repo} on accepted through a task, or the next ship redeploys it"
       ]
     end
 

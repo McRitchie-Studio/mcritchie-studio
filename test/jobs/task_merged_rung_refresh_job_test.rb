@@ -83,6 +83,24 @@ class TaskMergedRungRefreshJobTest < ActiveJob::TestCase
     assert_equal "accepted", by_map.reload.merged
   end
 
+  # The lookup reads the indexed columns, not the jsonb path: the keys are stripped
+  # from the stored metadata, so only a column can match.
+  test "[integration] the webhook finds the task by its pr_url and branch columns" do
+    by_url = task(devops: { "pr_url" => PR_URL })
+    by_branch = task(devops: { "branch" => "agent/custom-branch" })
+    [by_url, by_branch].each do |t|
+      t.update_columns(metadata: { "devops" => t.devops.except("pr_url", "branch") }) # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+
+    assert_equal "accepted", by_url.reload.merged, "found by the pr_url column alone"
+    found = GithubWorkflowRunIngestJob.new.send(:tasks_for_pull_request, nil, "agent/custom-branch")
+    assert_equal [by_branch.id], found.map(&:id), "found by the branch column alone"
+  end
+
   test "[unit] an unmerged close, or any other action, refreshes nothing" do
     t = task(devops: { "pr_url" => PR_URL })
     fake = FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })

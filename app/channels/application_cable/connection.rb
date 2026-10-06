@@ -10,8 +10,38 @@ module ApplicationCable
   # session[Studio.session_key] names the user, and session[:session_token] must
   # match the user's rotating token (OPSEC-045), so a revoked session cannot keep a
   # socket the page itself would refuse.
+  #
+  # CONNECT IS THE ONLY CHECK, so a revocation must close the sockets it revokes.
+  # `Connection.disconnect(user)` does that: User calls it after commit when the
+  # token rotates, admin is lost, or the row is destroyed, and the hub's
+  # clear_app_session calls it on sign-out (/tasks/cable-drops-revoked-sockets).
   class Connection < ActionCable::Connection::Base
     identified_by :current_user
+
+    # Drops every open /cable socket identified as `user`, on every dyno.
+    #
+    # The message goes out on the connection's internal channel through the
+    # server's pubsub adapter, so with the Redis adapter (config/cable.yml) it
+    # reaches sockets held by any web dyno, and a rake task, console or job can
+    # send it too. It asks the client to RECONNECT, and reconnecting re-runs
+    # `connect`: a session that is still valid is back in a second, a revoked one
+    # is rejected. That is why over-disconnecting (a sign-out drops the user's
+    # other tabs for a moment) is safe and under-disconnecting is the leak.
+    #
+    # Never raises. It runs after a write has committed, so a Redis outage must
+    # not turn a durable rotation into a 500; the failure goes to ErrorLog.
+    def self.disconnect(user)
+      return if user.nil?
+
+      ActionCable.server.remote_connections.where(current_user: user).disconnect(reconnect: true)
+    rescue StandardError => e
+      Rails.logger.error("[cable] disconnect failed for user_id=#{user&.id}: #{e.class}: #{e.message}")
+      begin
+        ErrorLog.capture!(e)
+      rescue StandardError
+        nil
+      end
+    end
 
     def connect
       self.current_user = admin_from_session || reject_unauthorized_connection

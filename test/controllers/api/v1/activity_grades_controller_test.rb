@@ -5,7 +5,7 @@ module Api
     # [integration] the bearer AGENT grading path for the Xan heartbeat grade-events
     # loop: awaiting_grade lists resolved ungraded spans; grade upserts Xan's grade.
     # The grader is FORCED to xan — the mcr audit stays admin-browser-only.
-    class EventGradesControllerTest < ActionDispatch::IntegrationTest
+    class ActivityGradesControllerTest < ActionDispatch::IntegrationTest
       setup do
         @headers = {
           "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth)}"

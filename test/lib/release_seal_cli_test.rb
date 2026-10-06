@@ -143,7 +143,7 @@ class ReleaseSealCliTest < Minitest::Test
     refute(out.lines.any? { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") },
            "no red seal is written for specs that never ran")
     refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
-    refute_includes out, "heroku rollback", "nothing says prod is broken, so no rollback prompt"
+    refute_includes out, "bin/release rollback", "nothing says prod is broken, so no rollback prompt"
     assert_includes out, "bin/release reseal rel-seal", "the operator is handed the re-seal"
   end
 
@@ -181,7 +181,7 @@ class ReleaseSealCliTest < Minitest::Test
     assert_includes seal_write, "passed: true"
     assert_includes seal_write, "@qa-readonly green", "the green summary is unchanged"
     refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
-    refute_includes out, "heroku rollback", "no rollback guidance on a green seal"
+    refute_includes out, "bin/release rollback", "no rollback guidance on a green seal"
     assert_includes out, "SEAL-RETURNED"
   end
 
@@ -202,7 +202,7 @@ class ReleaseSealCliTest < Minitest::Test
     assert_includes seal_write, "passed: false"
     assert_includes seal_write, "see ship log", "a normal red run keeps its summary"
     assert_includes out, "PRODUCTION SMOKE SEAL FAILED"
-    assert_includes out, "heroku rollback"
+    assert_includes out, "bin/release rollback rel-seal", "the red seal hands over the rollback for THIS release"
     assert_includes out, "SEAL-RETURNED", "a red seal never aborts the ship"
   end
 
@@ -313,7 +313,7 @@ class ReleaseSealCliTest < Minitest::Test
 
       assert_includes out, "unsealed: could not run the shipped specs — the shipped tree has no bin/prod-smoke"
       refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
-      refute_includes out, "heroku rollback"
+      refute_includes out, "bin/release rollback"
     end
   end
 
