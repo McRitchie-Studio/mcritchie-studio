@@ -115,7 +115,7 @@ parser = OptionParser.new do |o|
   o.on("--launch", "start bin/submit detached first, capturing its PID") { options[:launch] = true }
   o.on("-m", "--message MSG", "commit message forwarded to bin/submit") { |v| options[:message] = v }
   o.on("--log PATH", "log file to read") { |v| options[:log] = v }
-  o.on("--pid PID", Integer, "PID of an already-launched ship") { |v| options[:pid] = v }
+  o.on("--pid PID", Integer, "PID of an already-launched submit") { |v| options[:pid] = v }
   o.on("--timeout SECONDS", Float, "bound on the wait") { |v| options[:timeout] = v }
   o.on("--interval SECONDS", Float, "poll interval") { |v| options[:interval] = v }
   o.on("--dir PATH", "state directory") { |v| options[:dir] = v }
@@ -176,7 +176,7 @@ if options[:launch]
   recorded = read_pidfile(pid_path)
   existing_log = read_log(log_path)
   if recorded && ShipWait.alive?(recorded["pid"]) && existing_log && !ShipWait.exited?(existing_log)
-    die!("a ship for #{slug} is ALREADY RUNNING (pid #{recorded["pid"]}, started #{recorded["started_at"]}). " \
+    die!("a submit for #{slug} is ALREADY RUNNING (pid #{recorded["pid"]}, started #{recorded["started_at"]}). " \
          "Attach to it instead: bin/submit-wait #{slug}. Two concurrent ships on one task race the same " \
          "branch and PR.", ShipWait::EXIT_USAGE)
   end
@@ -213,7 +213,7 @@ if watch_pid.nil?
 end
 
 if read_log(log_path).nil?
-  die!("no log to watch at #{log_path}. Either start the ship through this script " \
+  die!("no log to watch at #{log_path}. Either start the submit through this script " \
        "(bin/submit-wait #{slug} --launch -m \"…\") or point at the log you redirected to " \
        "(bin/submit-wait #{slug} --log <path>).", ShipWait::EXIT_NO_LOG)
 end

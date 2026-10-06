@@ -232,7 +232,7 @@ task_url = "#{BASE_URL}/tasks/#{slug}"
 branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
 
 if PAST_SUBMITTED.include?(stage)
-  say "#{slug} is already [#{stage}] — past the submitted seam; nothing to ship."
+  say "#{slug} is already [#{stage}] — past the submitted seam; nothing to submit."
   puts "Task: #{task_url}"
   exit 0
 end
@@ -244,7 +244,7 @@ end
 # usage baseline live — not be teleported designed→submitted by the handoff
 # wrapper. Asked before any side effect.
 unless %w[building submitted].include?(stage)
-  die!("#{slug} is [#{stage}] — ship hands off a BUILD (building → submitted). " \
+  die!("#{slug} is [#{stage}] — submit hands off a BUILD (building → submitted). " \
        "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
 end
 
@@ -425,7 +425,7 @@ unless pushed
     out, leased = git_push(root, branch, lease: true)
     unless leased
       die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
-           "your branch does not have. This is NOT a rebase, and ship never force-pushes over foreign work. " \
+           "your branch does not have. This is NOT a rebase, and submit never force-pushes over foreign work. " \
            "Reconcile first (git fetch origin #{branch}; git rebase origin/#{branch}), then re-run #{SHIP_CMD} #{slug}.\n#{out}")
     end
   else

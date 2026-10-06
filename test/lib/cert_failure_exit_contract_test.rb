@@ -77,8 +77,8 @@ class CertFailureExitContractTest < Minitest::Test
   def test_ship_exits_zero_on_a_genuine_no_op
     out, code = ship(cert_exit: 1, stage: "shipped")
 
-    assert_equal 0, code, "a task already past `submitted` is nothing to ship — that is not a failure"
-    assert_match(/nothing to ship/, out)
+    assert_equal 0, code, "a task already past `submitted` is nothing to submit — that is not a failure"
+    assert_match(/nothing to submit/, out)
   end
 
   # -------------------------------------------------------- bin/fast-check ----

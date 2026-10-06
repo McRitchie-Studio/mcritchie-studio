@@ -943,7 +943,7 @@ class SubmitTest < Minitest::Test
       _out, err, status, lines = run_ship(dir, show_json: task_record(stage: "designed"))
 
       refute status.success?, "a designed task must not be teleported past the building seam"
-      assert_includes err, "ship hands off a BUILD"
+      assert_includes err, "submit hands off a BUILD"
       assert_includes err, "bin/task begin #{SLUG}", "the refusal must name the claim path"
       assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on an unbuilt task"
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"

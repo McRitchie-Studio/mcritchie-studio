@@ -60,7 +60,7 @@ class ExecutableDocsInstallerTest < ActiveSupport::TestCase
   INDEX  = AGENTS.join("index.md")
 
   # Same shape the SOP registry uses (see sop_registry_docs_test.rb). The name class MUST
-  # admit spaces and capitals or the `Alex Heartbeat` rows silently drop out — and a
+  # admit spaces and capitals or the `Xan Heartbeat` rows silently drop out — and a
   # heartbeat is exactly the kind of launcher that would re-acquire an install step.
   ROW = /^\|\s*`([A-Za-z0-9][A-Za-z0-9 -]*)`[^|]*\|\s*([^|]+?)\s*\|\s*`mcritchie-studio\/(\S+?)`\s*\|/
 
@@ -141,7 +141,7 @@ class ExecutableDocsInstallerTest < ActiveSupport::TestCase
     assert_operator files.length, :>=, 20,
                     "swept only #{files.length} registered SOP file(s) — the registry table in " \
                     "docs/agents/index.md has ~29. The ROW regex has stopped matching (it must admit " \
-                    "SPACES and CAPITALS for the `Alex Heartbeat` rows), so this group is now asserting " \
+                    "SPACES and CAPITALS for the `Xan Heartbeat` rows), so this group is now asserting " \
                     "NOTHING. Fix the scan; do not lower this floor."
 
     # A COUNT FLOOR ALONE IS HALF THE GUARD, and the number above is why. Measured
