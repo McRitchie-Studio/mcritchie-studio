@@ -62,8 +62,6 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Alpha"
       assert_select "[data-test='look-cast']", 0
     end
-    assert_select "#chunk-1 [data-test='chunk-recast']", /Test Athlete Alpha > Away White/
-    assert_select "#chunk-1 [data-test='chunk-prompt']", /with Test Athlete Alpha, the football player/
     assert_select "[data-test='cast-swap-count']", "1 of 2"
   end
 

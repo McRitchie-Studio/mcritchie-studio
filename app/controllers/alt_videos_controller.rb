@@ -33,7 +33,9 @@ class AltVideosController < ApplicationController
     @alt_video = @video.alt_videos.includes(:stitches, clips: :versions).find_by!(number: params[:number])
     @alt_video.association(:music_video).target = @video
     @swaps = @alt_video.swap_set
+    # Loaded ON the association, so every clip's target reads the same rows.
     @performers = @video.video_performers.to_a
+    ActiveRecord::Associations::Preloader.new(records: @performers, associations: :artist).call
     @chunks = @video.video_chunks.to_a
     @chunks.each { |chunk| chunk.association(:music_video).target = @video }
     @clips = @alt_video.clips.to_a

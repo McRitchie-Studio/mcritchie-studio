@@ -214,6 +214,20 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the clip builder costs no query per clip or version" do
+    built = AltVideo.build_from!(@video)
+    log_in_as users(:alex)
+    count = lambda do
+      queries = []
+      ActiveSupport::Notifications.subscribed(->(*, payload) { queries << payload[:sql] unless payload[:name] == "SCHEMA" },
+                                              "sql.active_record") { get music_video_alt_video_path(@video, built) }
+      queries.size
+    end
+    bare = count.call
+    built.clips.each { |c| 2.times { |i| TiledVideo.version!(c, number: i + 1) } }
+    assert_equal bare, count.call, "eight versions over four clips render with the same queries as none"
+  end
+
   test "the admin links reach the index" do
     log_in_as users(:alex)
     get admin_links_path

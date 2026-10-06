@@ -272,4 +272,5 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def workflow_news_index_path = "/news/workflow"
   def merge_people_path = "/people/merge"
   def duplicates_people_path = "/people/duplicates"
+  def alt_videos_path = "/alt_videos"
 end
