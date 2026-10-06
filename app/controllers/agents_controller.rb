@@ -1,14 +1,12 @@
 class AgentsController < ApplicationController
-  # #index and #show stay public (cheap, bounded reads). #activities and
-  # #activities_filter DO NOT: the feed is an internal operator telemetry surface whose
-  # ?sessions= filter spans a combinatorial URL space (any subset of every captured
+  # Every action needs an admin (AdminWall). The activity feed is also why a public
+  # read here is dangerous: its ?sessions= filter spans a combinatorial URL space (any subset of every captured
   # session x page), each address rendering an uncacheable ~1.8 MB page. Left public it
   # is an unbounded crawl trap — on 2026-08-09 a distributed scraper swarm (2,258 unique
   # IPs, one request each, so per-IP throttling could not touch it) walked that space and
   # saturated all 3 Puma threads, taking the whole hub down with 2,270 H12 timeouts in
   # under three minutes: the board, the API, the GitHub webhook, and /up all queued out.
-  # Requiring a session turns each of those hits into a cheap login redirect.
-  skip_before_action :require_authentication, only: %i[index show]
+  # The wall turns each of those hits into a cheap login redirect.
 
   # The shared activity-feed read layer (session lists, pokemon/soul/grade/transition
   # bulk lookups) — the same queries the /xan/heartbeat surface uses.

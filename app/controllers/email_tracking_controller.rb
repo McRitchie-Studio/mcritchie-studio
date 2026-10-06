@@ -1,8 +1,6 @@
 # Public engagement endpoints hit from inside sent emails. No auth — they're
 # reached by recipients' mail clients/browsers, keyed by an opaque delivery token.
 class EmailTrackingController < ApplicationController
-  skip_before_action :require_authentication
-
   # 1x1 transparent GIF.
   PIXEL = Base64.decode64("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7").freeze
 

@@ -1,5 +1,4 @@
 class PeopleController < ApplicationController
-  skip_before_action :require_authentication, only: [:index, :show]
   # ADMIN, NOT MERELY A SESSION, on every action here that writes. Hub signup is
   # open, so a session costs a stranger one email address: it is no control over
   # who may file a look, move a default, plant a picture or merge two people.

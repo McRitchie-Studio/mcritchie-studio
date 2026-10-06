@@ -1,6 +1,4 @@
 class ContractsController < ApplicationController
-  skip_before_action :require_authentication
-
   # GET /nfl-contracts
   def index
     @sort_by = params[:sort].presence || "salary"

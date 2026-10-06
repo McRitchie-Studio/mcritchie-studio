@@ -1,6 +1,4 @@
 class GamesController < ApplicationController
-  skip_before_action :require_authentication
-
   # GET /games/:year
   # Season overview — grid of all weeks with kickoff date range, game count,
   # and a primetime teaser per week.
