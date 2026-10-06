@@ -19,9 +19,12 @@ require_relative "gh_auth_retry"
 #   * no open PR has it as its head;
 #   * no desk on this machine has it checked out (`git worktree list`).
 #
-# FAIL CLOSED: if the open-PR list or the board cannot be read, the plan refuses
-# and nothing is deleted. The delete itself pushes with a lease on the tip the plan
-# saw, so a branch that moved after planning is refused by the remote.
+# FAIL CLOSED: if any read fails (the agent token, the fetch, origin's branches,
+# the merged set, the desks from `git worktree list`, the open PRs or the board),
+# the plan refuses and nothing is deleted. A failed read never reads as empty: an
+# empty desk list would make a desk's branch deletable. The delete pushes with a
+# lease on the tip the plan saw, so a branch that moved after planning is refused
+# by the remote, and a push that fails is reported as a refusal.
 #
 # Every GitHub call runs as the agent App (GH_APP_ITEM and a token from bin/gh-token
 # --identity agent), whatever lane the calling shell is in.
@@ -76,26 +79,33 @@ module BranchPrune
     status.success? ? nil : "git fetch origin failed: #{err.strip}"
   end
 
+  # {branch name => tip sha} for origin. Returns [hash, refusal].
   def remote_branches(repo)
-    out, _err, status = git(repo, "for-each-ref", "--format=%(refname:lstrip=3) %(objectname)", "refs/remotes/origin")
-    return {} unless status.success?
+    out, err, status = git(repo, "for-each-ref", "--format=%(refname:lstrip=3) %(objectname)", "refs/remotes/origin")
+    return [nil, "origin's branches could not be read (git for-each-ref: #{err.strip})"] unless status.success?
 
-    out.lines.each_with_object({}) do |line, h|
+    branches = out.lines.each_with_object({}) do |line, h|
       name, sha = line.split
       h[name] = sha if name && sha && name != "HEAD"
     end
+    [branches, nil]
   end
 
+  # Branches whose tip is in origin/main. Returns [set, refusal].
   def merged_into_main(repo)
-    out, _err, status = git(repo, "branch", "-r", "--merged", "origin/main", "--format=%(refname:lstrip=3)")
-    status.success? ? Set.new(out.lines.map(&:strip).reject(&:empty?)) : Set.new
+    out, err, status = git(repo, "branch", "-r", "--merged", "origin/main", "--format=%(refname:lstrip=3)")
+    return [nil, "the merged set could not be read (git branch --merged origin/main: #{err.strip})"] unless status.success?
+
+    [Set.new(out.lines.map(&:strip).reject(&:empty?)), nil]
   end
 
+  # Branches checked out in a desk of this checkout. `git worktree list` is the
+  # source, not the registry snapshot, which lags. Returns [set, refusal].
   def desk_branches(repo)
-    out, _err, status = git(repo, "worktree", "list", "--porcelain")
-    return Set.new unless status.success?
+    out, err, status = git(repo, "worktree", "list", "--porcelain")
+    return [nil, "desks could not be read (git worktree list: #{err.strip})"] unless status.success?
 
-    Set.new(out.lines.filter_map { |l| l[%r{\Abranch refs/heads/(.+)\Z}, 1] })
+    [Set.new(out.lines.filter_map { |l| l[%r{\Abranch refs/heads/(.+)\Z}, 1] }), nil]
   end
 
   # owner/name from origin's URL, or nil when it is not a GitHub remote.
@@ -152,24 +162,30 @@ module BranchPrune
   # --- the delete ----------------------------------------------------------------
 
   # Delete the planned branches from origin, each leased on the tip the plan saw.
-  # Returns the names the remote reports deleted.
+  # Returns [names the remote reports deleted, refusal]. A batch whose push fails
+  # (a refused lease, auth, the network) makes the refusal; the names that did go
+  # are still reported.
   def apply!(plan, repo, env:)
-    plan.prune.each_slice(BATCH).flat_map do |batch|
+    failures = []
+    removed = plan.prune.each_slice(BATCH).flat_map do |batch|
       leases = batch.map { |b| "--force-with-lease=refs/heads/#{b[:name]}:#{b[:sha]}" }
       refspecs = batch.map { |b| ":refs/heads/#{b[:name]}" }
-      out, _err, _status = git(repo, "push", "--porcelain", *leases, "origin", *refspecs, env: env)
+      out, err, status = git(repo, "push", "--porcelain", *leases, "origin", *refspecs, env: env)
+      failures << "exit #{status.exitstatus}: #{err.strip.lines.last.to_s.strip}" unless status.success?
       out.lines.filter_map { |l| l[%r{\A-\t:refs/heads/(\S+)\t\[deleted\]}, 1] }
     end
+    refusal = failures.empty? ? nil : "the delete push failed (git push #{failures.join('; ')})"
+    [removed, refusal]
   end
 
-  def summary(plan, applied:, removed: nil)
+  def summary(plan, applied:, removed: nil, refusal: plan.refusal)
     {
       pruner: "branches",
       applied: applied,
       count: applied ? removed.to_a.size : plan.prune.size,
       skipped: plan.skipped,
       sample: (applied ? removed.to_a : plan.names).first(SAMPLE_SIZE),
-      refusal: plan.refusal
+      refusal: refusal
     }
   end
 

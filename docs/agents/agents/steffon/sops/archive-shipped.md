@@ -196,8 +196,9 @@ desk's `.agent-context.json` names it. With no process table it refuses.
 in `origin/main` and whose task is `shipped` or `archived` on the board. It never
 touches `main`, `release` or `accepted`, a branch with an open PR, or a branch a
 desk has checked out. It runs as the agent GitHub App, pushes each delete with a
-lease on the tip it planned against, and refuses outright when it cannot read the
-open PRs or the board. Logic and refusals: `bin/lib/marker_prune.rb`,
+lease on the tip it planned against, and refuses outright when any read fails:
+origin's branches, the merged set, the desks (`git worktree list`), the open PRs
+or the board. A failed delete push is reported as a refusal. Logic and refusals: `bin/lib/marker_prune.rb`,
 `bin/lib/branch_prune.rb`.
 
 ### The doc retirement (step 4 / step 10)

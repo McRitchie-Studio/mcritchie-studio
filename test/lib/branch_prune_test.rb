@@ -71,7 +71,9 @@ class BranchPruneTest < Minitest::Test
       git(work, "push", "-q", "origin", "feat/done")
 
       stale = BranchPrune::Plan.new(prune: [{ name: "feat/done", sha: sha }], skipped: {}, refusal: nil)
-      assert_empty BranchPrune.apply!(stale, work, env: {}), "a moved branch is refused by its lease"
+      removed, refusal = BranchPrune.apply!(stale, work, env: {})
+      assert_empty removed, "a moved branch is refused by its lease"
+      assert_match(/the delete push failed/, refusal, "a refused push is a refusal, not 'deleted 0'")
       assert_includes remote_heads(work), "feat/done"
     end
   end
@@ -90,6 +92,55 @@ class BranchPruneTest < Minitest::Test
     with_remote do |work, _origin|
       error = assert_raises(RuntimeError) { rev(work, "feat/no-such-branch") }
       assert_match(/feat\/no-such-branch.*#{Regexp.escape(work)}.*exit 128/, error.message)
+    end
+  end
+
+  # Each read refuses on failure rather than reading empty. A failed desk read that
+  # read as "no desks" would make a desk's checked-out branch deletable.
+  def test_unit_each_git_read_refuses_outside_a_repository
+    Dir.mktmpdir do |not_a_repo|
+      assert_match(/desks could not be read \(git worktree list/, BranchPrune.desk_branches(not_a_repo).last)
+      assert_match(/origin's branches could not be read/, BranchPrune.remote_branches(not_a_repo).last)
+      assert_match(/the merged set could not be read/, BranchPrune.merged_into_main(not_a_repo).last)
+      assert_nil BranchPrune.desk_branches(not_a_repo).first
+    end
+  end
+
+  def test_integration_cli_refuses_when_the_desk_read_fails
+    assert_cli_refuses_when_git_fails("worktree list", /desks could not be read \(git worktree list: stub failure/)
+  end
+
+  def test_integration_cli_refuses_when_origin_branches_cannot_be_read
+    assert_cli_refuses_when_git_fails("for-each-ref", /origin's branches could not be read/)
+  end
+
+  def test_integration_cli_refuses_when_the_merged_set_cannot_be_read
+    assert_cli_refuses_when_git_fails("--merged", /the merged set could not be read/)
+  end
+
+  def test_integration_cli_reports_a_failed_delete_push_as_a_refusal
+    with_remote do |work, _origin|
+      before = remote_heads(work)
+      out, status = run_cli(work, "--yes", git_fail: "push --porcelain")
+      refute status.success?, out
+      summary = BranchPrune.parse_summary(out)
+      assert summary[:applied]
+      assert_equal 0, summary[:count]
+      assert_match(/the delete push failed \(git push exit 1/, summary[:refusal])
+      assert_equal before, remote_heads(work)
+    end
+  end
+
+  def assert_cli_refuses_when_git_fails(pattern, refusal)
+    with_remote do |work, _origin|
+      before = remote_heads(work)
+      out, status = run_cli(work, "--yes", git_fail: pattern)
+      assert_equal 1, status.exitstatus, out
+      summary = BranchPrune.parse_summary(out)
+      assert_equal 0, summary[:count]
+      assert_empty summary[:sample]
+      assert_match(refusal, summary[:refusal])
+      assert_equal before, remote_heads(work), "a refused plan deletes nothing"
     end
   end
 
@@ -186,8 +237,21 @@ class BranchPruneTest < Minitest::Test
     end
   end
 
-  def run_cli(work, *args, gh_exit: 0, token: "stub-token")
+  REAL_GIT = Open3.capture2("sh", "-c", "command -v git").first.strip
+
+  # git_fail: a substring of the git arguments that makes the stub git fail; every
+  # other call runs the real git.
+  def run_cli(work, *args, gh_exit: 0, token: "stub-token", git_fail: nil)
     Dir.mktmpdir do |stubs|
+      if git_fail
+        write_stub(stubs, "git", <<~SH)
+          #!/bin/sh
+          case "$*" in
+            *"#{git_fail}"*) echo "stub failure" >&2; exit 1 ;;
+          esac
+          exec "#{REAL_GIT}" "$@"
+        SH
+      end
       write_stub(stubs, "gh", <<~SH)
         #!/bin/sh
         [ "#{gh_exit}" = "0" ] || { echo "gh: HTTP 401" >&2; exit #{gh_exit}; }

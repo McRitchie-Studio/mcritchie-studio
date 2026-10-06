@@ -54,6 +54,9 @@ end
 
 gh_env, refusal = BranchPrune.agent_env
 refusal ||= BranchPrune.fetch!(repo, env: gh_env || {})
+remote, refusal = BranchPrune.remote_branches(repo) unless refusal
+merged, refusal = BranchPrune.merged_into_main(repo) unless refusal
+desks, refusal = BranchPrune.desk_branches(repo) unless refusal
 heads, refusal = BranchPrune.open_pr_heads(repo, env: gh_env) unless refusal
 slugs, branches, refusal = BranchPrune.done_tasks(task_bin: task_bin) unless refusal
 
@@ -61,10 +64,7 @@ plan =
   if refusal
     refused(refusal)
   else
-    BranchPrune.plan(remote: BranchPrune.remote_branches(repo),
-                     merged: BranchPrune.merged_into_main(repo),
-                     open_pr_heads: heads,
-                     desk_branches: BranchPrune.desk_branches(repo),
+    BranchPrune.plan(remote: remote, merged: merged, open_pr_heads: heads, desk_branches: desks,
                      done_slugs: slugs, done_branches: branches)
   end
 
@@ -78,7 +78,10 @@ else
   puts "    …(+#{plan.prune.size - BranchPrune::SAMPLE_SIZE})" if plan.prune.size > BranchPrune::SAMPLE_SIZE
 end
 
-removed = apply && !plan.refusal ? BranchPrune.apply!(plan, repo, env: gh_env) : nil
+applying = apply && !plan.refusal
+removed, push_refusal = applying ? BranchPrune.apply!(plan, repo, env: gh_env) : [nil, nil]
 puts "  deleted #{removed.size} branch(es)" if removed
-puts BranchPrune.summary_line(BranchPrune.summary(plan, applied: apply && !plan.refusal, removed: removed))
-exit(plan.refusal ? 1 : 0)
+puts "  refused: #{push_refusal}" if push_refusal
+refusal = plan.refusal || push_refusal
+puts BranchPrune.summary_line(BranchPrune.summary(plan, applied: applying, removed: removed, refusal: refusal))
+exit(refusal ? 1 : 0)
