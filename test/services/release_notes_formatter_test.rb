@@ -50,10 +50,10 @@ module ReleaseNotes
       assert_includes message, "💎 Studio Engine\n• No deployed tasks", "a library's empty group still draws"
 
       task = tasks(:done_task)
-      task.update!(title: "Rolio wind-down", metadata: { "devops" => { "repositories" => ["rolio"] } })
+      task.update!(title: "Rolio wind-down notes", metadata: { "devops" => { "repositories" => ["rolio"] } })
       named = Formatter.new(app: "mcritchie-studio", environment: "production", release: "v72",
                             sha: "abc1234", url: "", tasks: [task]).message
-      assert_includes named, "📇 Rolio\n• [Rolio wind-down](https://mcritchie.studio/tasks/task-ddd444)"
+      assert_includes named, "📇 Rolio\n• [Rolio wind-down notes](https://mcritchie.studio/tasks/task-ddd444)"
     end
 
     test "uses selected app group for tasks without repository metadata" do
