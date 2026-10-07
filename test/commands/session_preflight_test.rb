@@ -333,6 +333,27 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+# [unit] Guard catalog row 4.7: BLOCKED is the normal state of a PR awaiting review,
+# so it is not a bad merge state. The control: DIRTY still is.
+def test_a_pr_awaiting_review_is_not_a_bad_merge_state
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+
+  out, err, status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh(merge_state: "BLOCKED")}:#{ENV.fetch("PATH", "")}" }
+  )
+  assert status.success?, "#{out}\n#{err}"
+  report = JSON.parse(out)
+  assert_equal "BLOCKED", report.fetch("pr").fetch("merge_state"), "FLOOR: the PR must have been read"
+  assert_empty report.fetch("errors").grep(/merge state/)
+
+  dirty_out, = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh(merge_state: "DIRTY")}:#{ENV.fetch("PATH", "")}" }
+  )
+  refute_empty JSON.parse(dirty_out).fetch("errors").grep(/PR merge state is DIRTY/)
+end
+
 # --- gh auth: no probe (guard catalog row 4.6) ---------------------------------
 
 # [unit] Guard catalog row 4.6: the preflight no longer probes gh auth. `begin`

@@ -52,7 +52,9 @@ CHECK_STATES = {
   "ACTION_REQUIRED" => "action_required",
   "SKIPPED" => "skipped"
 }.freeze
-BAD_MERGE_STATES = %w[DIRTY BEHIND BLOCKED].freeze
+# BLOCKED is not here (guard catalog row 4.7): it is the normal state of a PR
+# awaiting review, so a resumed desk with an open PR read it as a failure.
+BAD_MERGE_STATES = %w[DIRTY BEHIND].freeze
 # Kinds that MAY skip the shape/required-metadata gate — and the classifier that
 # decides whether this diff has EARNED that skip. Both come from bin/lib/code_diff.rb,
 # the single source of truth dor-check gates on. They used to be COPIES of
