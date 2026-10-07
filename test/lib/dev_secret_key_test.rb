@@ -188,4 +188,106 @@ class DevSecretKeyTest < Minitest::Test
     assert_equal %w[denied garbage empty], unread,
                  "a failed, unparseable or empty read is UNREAD, never a clean answer"
   end
+
+  # --- the production-only deny list (local-envs-drop-mainnet-keys) ---------------
+
+  ADMIN = "5" * 88 # stands in for a base58 Solana secret; never a real one
+
+  def test_deny_list_leads_with_the_mainnet_signer_and_spares_the_by_design_keys
+    assert_equal "SOLANA_ADMIN_KEY", DevSecretKey::PRODUCTION_ONLY_KEYS.first,
+                 "the key that signs money heads the list"
+    %w[CDP_API_KEY_ID CDP_API_KEY_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+       RESEND_API_KEY GITHUB_TOKEN].each do |key|
+      assert DevSecretKey.production_only?(key), key
+    end
+    # CONTROL: the keys local dev needs by design are NOT denied, so the filter
+    # below is not passing by dropping everything.
+    %w[RAILS_MASTER_KEY AGENT_API_SECRET SECRET_KEY_BASE SOLANA_RPC_URL].each do |key|
+      refute DevSecretKey.production_only?(key), key
+    end
+  end
+
+  def test_filter_drops_every_denied_line_and_keeps_the_rest_verbatim
+    dump = <<~ENV
+      AWS_REGION=us-east-2
+      SOLANA_ADMIN_KEY=#{ADMIN}
+      export CDP_API_KEY_ID='organizations/x/apiKeys/y'
+      RAILS_MASTER_KEY=#{PROD}
+      AWS_ACCESS_KEY_ID=AKIAEXAMPLE
+      AWS_SECRET_ACCESS_KEY="abc/def"
+      RESEND_API_KEY=re_example
+      GITHUB_TOKEN=ghp_example
+      AGENT_API_SECRET=keepme
+      SOLANA_ADMIN_KEY_PUBLIC=not-the-key
+    ENV
+
+    kept, dropped = DevSecretKey.filter_production_only(dump)
+
+    assert_equal %w[SOLANA_ADMIN_KEY CDP_API_KEY_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+                    RESEND_API_KEY GITHUB_TOKEN], dropped
+    assert_equal <<~ENV, kept
+      AWS_REGION=us-east-2
+      RAILS_MASTER_KEY=#{PROD}
+      AGENT_API_SECRET=keepme
+      SOLANA_ADMIN_KEY_PUBLIC=not-the-key
+    ENV
+    refute_includes dropped.join, ADMIN, "the names come back, never a value"
+  end
+
+  # A quoted multi-line value (a PEM, the way `heroku config --shell` prints one)
+  # is dropped whole: no tail line survives as a stray.
+  def test_filter_drops_a_multi_line_value_whole
+    dump = "A=1\nCDP_API_KEY_SECRET='-----BEGIN KEY-----\nline-two\n-----END KEY-----'\nB=2\n"
+    kept, dropped = DevSecretKey.filter_production_only(dump)
+    assert_equal "A=1\nB=2\n", kept
+    assert_equal %w[CDP_API_KEY_SECRET], dropped
+  end
+
+  def test_read_value_and_scan_take_any_key
+    within_tmp do |dir|
+      path = File.join(dir, ".env")
+      File.write(path, "SECRET_KEY_BASE=#{PROD}\nSOLANA_ADMIN_KEY=\"#{ADMIN}\"\nGITHUB_TOKEN=\n")
+      assert_equal ADMIN, DevSecretKey.read_value(path, "SOLANA_ADMIN_KEY")
+      assert_equal PROD, DevSecretKey.read_value(path), "the default key is still SECRET_KEY_BASE"
+
+      by_key = { "SOLANA_ADMIN_KEY" => { Digest::SHA256.hexdigest(ADMIN) => "turf-monster-mainnet" } }
+      rows = DevSecretKey.scan_production_only([path], by_key)
+      admin = rows.find { |r| r[:key] == "SOLANA_ADMIN_KEY" }
+      assert_equal :production, admin[:state]
+      assert_equal "turf-monster-mainnet", admin[:app]
+      assert_equal :empty, rows.find { |r| r[:key] == "GITHUB_TOKEN" }[:state]
+      refute(rows.any? { |r| r[:key] == "AWS_ACCESS_KEY_ID" }, "a key the file never sets is not a row")
+      refute_includes rows.inspect, ADMIN
+    end
+  end
+
+  def test_remove_key_drops_only_that_key_and_keeps_permissions
+    within_tmp do |dir|
+      path = File.join(dir, ".env")
+      File.write(path, "A=1\nSOLANA_ADMIN_KEY=#{ADMIN}\nexport SOLANA_ADMIN_KEY=#{ADMIN}\nB=2\n")
+      File.chmod(0o600, path)
+      assert_equal 2, DevSecretKey.remove_key(path, "SOLANA_ADMIN_KEY")
+      assert_equal "A=1\nB=2\n", File.read(path)
+      assert_equal 0o600, File.stat(path).mode & 0o777
+      assert_equal 0, DevSecretKey.remove_key(path, "SOLANA_ADMIN_KEY"), "idempotent"
+    end
+  end
+
+  def test_heroku_digests_by_key_reads_each_app_once_for_every_key
+    calls = Hash.new(0)
+    configs = {
+      "turf" => [%({"SOLANA_ADMIN_KEY":"#{ADMIN}","SECRET_KEY_BASE":"#{PROD}"}), true],
+      "denied" => ["", false]
+    }
+    runner = lambda do |app|
+      calls[app] += 1
+      configs.fetch(app)
+    end
+    by_key, unread = DevSecretKey.heroku_digests_by_key(configs.keys, runner: runner)
+    assert_equal({ Digest::SHA256.hexdigest(ADMIN) => "turf" }, by_key.fetch("SOLANA_ADMIN_KEY"))
+    assert_equal({ PROD_DIGEST => "turf" }, by_key.fetch("SECRET_KEY_BASE"))
+    assert_equal({}, by_key.fetch("GITHUB_TOKEN"))
+    assert_equal %w[denied], unread
+    assert_equal({ "turf" => 1, "denied" => 1 }, calls, "one config read per app, not one per key")
+  end
 end

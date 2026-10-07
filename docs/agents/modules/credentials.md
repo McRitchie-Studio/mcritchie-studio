@@ -60,6 +60,33 @@ No local flow needs the production key: Turf's managed-wallet encryption keys of
 `credentials.secret_key_base` (the master-key file), not the env value, and board
 tokens are minted by production from `AGENT_API_SECRET`.
 
+### Production-only keys
+
+**The same scan covers the deny list**, `DevSecretKey::PRODUCTION_ONLY_KEYS` in
+`bin/lib/dev_secret_key.rb`, the one place it lives: `SOLANA_ADMIN_KEY` (first),
+`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `RESEND_API_KEY` and `GITHUB_TOKEN`. The 2026-10-06 sweep
+found the old restore had copied each of them out of production `heroku config`
+into the primaries and every desk. `bin/ecosystem-build` now pipes its restore
+through `bin/dev-secret-key filter` and writes nothing when it cannot run the
+filter, and `scan` reports a production value for any listed key (exit 1); `fix`
+removes it.
+
+| Key | Why local dev does without it |
+|---|---|
+| `SOLANA_ADMIN_KEY` | mainnet `VaultState` signer (`8K81…`) and fee payer; turf QA holds the same key |
+| `CDP_API_KEY_*` | the production Coinbase key; only the ramp flows call it |
+| `AWS_*` | the production IAM key; local storage runs on R2 with QA keys (`.env.development`) |
+| `RESEND_API_KEY` | production mail; local stacks capture mail (`LOCAL_EMAIL_CAPTURE=1`) |
+| `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
+
+Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
+
+⚠ **`fix` removing `SOLANA_ADMIN_KEY` stops turf's local devnet admin signing**:
+the devnet `VaultState` seats only `8K81…`, Alex and Mason, so local dev has no
+devnet-only signer until one is seated (turf-monster
+`docs/qa-signing-key-rotation.md`, "What this ceremony does not fix").
+
 ## 1Password CLI quirks
 
 - `op item delete` (and `--archive`) refuses a Password-category item whose password
