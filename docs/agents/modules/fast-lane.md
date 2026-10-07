@@ -292,9 +292,10 @@ Before editing a single file:
    GitHub CI is the one verdict, and `bin/fast-check` is the optional pre-flight
    before it, never evidence the gate reads. Read "owes the CI gate" as "is not
    exempt", never as "must run the full suite locally".
-   **Shape by the files, never the hunk.** `bin/lib/code_diff.rb` classifies by
-   file type: a comment-only `.rb` edit is not `docs`, and `docs` admits prose plus
-   guard tests under `test/docs/` and nothing else. A studio-engine change a
+   **Shape by the files.** `bin/lib/code_diff.rb` classifies by file type, with one
+   exception: `docs` admits prose, guard tests (`test/docs/*_test.rb` or
+   `test/**/*_guard_test.rb`), and Ruby files whose edit changed only comments
+   (`bin/lib/ruby_comment_diff.rb`), and nothing else. A studio-engine change a
    consumer can assert on is `library`, not `ui-only`. A `.github/workflows` change
    is `backend`, and its honest `[integration]` line is the PR's own CI run of the
    changed workflow.

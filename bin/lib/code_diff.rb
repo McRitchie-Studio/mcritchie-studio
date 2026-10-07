@@ -36,12 +36,10 @@
 #   * Gemfile/Gemfile.lock — a dependency bump changes the resolved gem graph.
 #                          That IS behavior, and it is the change most likely to
 #                          go out untested because it "feels like a chore".
-#   * comment-only edits inside a code file — deciding "this hunk is only
-#                          comments" means trusting a parse of the diff, which is
-#                          another inference the gate can be talked out of. The
-#                          honest granularity is the FILE. Gating a comment-only
-#                          .rb edit costs one tier line naming the suite that
-#                          already covers it; mis-detecting one disarms the gate.
+#   * comment-only edits inside a code file — HERE. The `docs` shape's claim alone
+#                          reads a Ruby edit by its comment-free Ripper token
+#                          stream (bin/lib/ruby_comment_diff.rb, guard catalog row
+#                          2.4); every other caller still classifies by FILE.
 module CodeDiff
   # Kinds that MAY skip the shape/test-tier gate — but only ever on a diff that is
   # OBSERVED to be doc-only. The label alone buys nothing.
@@ -136,16 +134,24 @@ module CodeDiff
   # SUBJECT: a test under test/docs/ asserts about documentation, which is the
   # one kind of behavior a docs claim can carry without becoming a code claim.
   DOCS_GUARD_DIR = "test/docs/"
+  # A guard test BY NAME, under any test/ directory (guard catalog row 2.4): the
+  # house names its guards `*_guard_test.rb` (test/lib/devops_shift_argument_guard_test.rb
+  # is the case that split clean-up-sop-cut-down into two PRs).
+  GUARD_TEST_SUFFIX = "_guard_test.rb"
 
   def self.docs_guard_test?(path)
     file = path.to_s.strip.delete_prefix("./")
-    file.start_with?(DOCS_GUARD_DIR) && file.end_with?("_test.rb")
+    return true if file.start_with?(DOCS_GUARD_DIR) && file.end_with?("_test.rb")
+
+    file.start_with?("test/") && file.end_with?(GUARD_TEST_SUFFIX)
   end
 
   # The offender list for a docs-with-guards claim: behavioral files that are
-  # not docs-guard tests. Used to NAME what disqualified the claim.
-  def self.non_guard_code_files(files)
-    code_files(files).reject { |f| docs_guard_test?(f) }
+  # not docs-guard tests. Used to NAME what disqualified the claim. `comment_only`
+  # names files whose edit changed comments alone (RubyCommentDiff, measured by the
+  # caller against the base); they read as prose here.
+  def self.non_guard_code_files(files, comment_only: [])
+    code_files(files).reject { |f| docs_guard_test?(f) || comment_only.include?(f) }
   end
 
   # May this file list claim the docs shape? Prose (plus inert media) with any
@@ -155,12 +161,12 @@ module CodeDiff
   #   * a diff with NO prose refuses — guard tests alone are a test-only change,
   #     and test-only's STRICTER contract (full-suite cert + [control] line)
   #     must not be dodged by filing pure test code under a tierless docs claim.
-  def self.docs_with_guards?(files)
+  def self.docs_with_guards?(files, comment_only: [])
     list = Array(files).map { |f| f.to_s.strip }.reject(&:empty?)
     return false if list.empty?
-    return false if list.all? { |f| behavioral?(f) }
+    return false if list.all? { |f| behavioral?(f) && !comment_only.include?(f) }
 
-    non_guard_code_files(list).empty?
+    non_guard_code_files(list, comment_only: comment_only).empty?
   end
 
   # BOTH SIDES OF A RENAME. A rename has two paths, and every path-list view of a
