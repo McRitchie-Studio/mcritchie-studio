@@ -707,8 +707,9 @@ because it is arithmetic over what they publish.
     codex case above it needs no abandoned terminal: it fires whenever a subagent
     dies while its parent keeps working, which is the normal state of a conductor
     session. The worker-level seam is
-    `bin/lib/review_worker_pulse.rb`; it is ANDed beside the anchor check, never
-    in place of it.
+    `bin/lib/review_worker_pulse.rb`, a diagnostic `status` prints; the renewal
+    itself ends at the renew-loop's cap, which equals the pulse's SILENT bound
+    (guard catalog row 6.1).
   - **Beware the sampling trap when you diagnose one of these.** The renew
     interval is 30s, so reading `claim_expires_at` twice 20 seconds apart shows it
     frozen and proves nothing — in either direction. Sample across a full renewal

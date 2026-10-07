@@ -434,20 +434,15 @@ class ReviewClaimCli
       # evidence: it frees a dead reviewer's task after 3h25m whether the reviewer
       # died in minute one or minute two hundred. The seam answers from the session's
       # own marks instead, and the cap stays as the belt behind the braces.
-      alive:    both_alive(
-        AnchorHeartbeat.alive_check(
-          resident: -> { SessionIdentity.process_alive?(pid, start) },
-          signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
-        ),
-        # AND THE WORKER, which the anchor cannot see. A reviewer is a SUBAGENT, and a
-        # subagent carries no identity of its own — measured 2026-09-22: parent and
-        # subagent shells agree byte for byte on CLAUDE_CODE_SESSION_ID, CLAUDE_PID,
-        # ppid, SessionIdentity.nonce and the anchor pid+start. So every signal the
-        # line above reads is a TRUE POSITIVE about the session while saying nothing
-        # about the reviewer, and a conductor that keeps working keeps a dead
-        # reviewer's claim alive forever. See bin/lib/review_worker_pulse.rb.
-        ReviewWorkerPulse.alive_check(pulse: -> { worker_pulse_age(session_id, slug) })
+      alive:    AnchorHeartbeat.alive_check(
+        resident: -> { SessionIdentity.process_alive?(pid, start) },
+        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
       ),
+      # THE WORKER, which the anchor cannot see, is bounded by the cap below: a
+      # reviewer is a subagent with no identity of its own (bin/lib/review_worker_pulse.rb),
+      # and REVIEW_RENEW_WINDOW_SECONDS equals ReviewWorkerPulse::SILENT_AFTER_SECONDS,
+      # so the cap ends a dead reviewer's renewal where a pulse brake would
+      # (guard catalog row 6.1). `status` still reports the worker's pulse.
       finished: -> { review_over?(slug) },
       renew:    -> { renewed?(slug) },
       sleeper: @sleeper,
@@ -458,20 +453,6 @@ class ReviewClaimCli
       max_lifetime: REVIEW_RENEW_WINDOW_SECONDS
     )
     OK
-  end
-
-  # Two independent liveness reads, ANDed — the claim is held only while BOTH vouch.
-  #
-  # The conjunction is the whole shape of this fix. The session check is correct and
-  # load-bearing for the two faces AnchorHeartbeat was built for (no anchor; a dead
-  # anchor still resident), so it is not weakened, replaced, or made to answer a
-  # question it cannot. The worker check is ADDED beside it and answers the third face.
-  # Each keeps its own fail-safe posture — every uncertainty on either side HOLDS — so
-  # ANDing them can only ever stop a renewal on a POSITIVE reading from one of them.
-  #
-  # Short-circuits, so a stopped anchor never pays for a marker stat.
-  def both_alive(*checks)
-    -> { checks.all?(&:call) }
   end
 
   def release(slug)
