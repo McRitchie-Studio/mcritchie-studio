@@ -32,7 +32,7 @@ class ReleaseCliGemAwaitTest < Minitest::Test
   def run_release(call, env = {}, argv: ["--help"])
     script = %(ARGV.replace(#{argv.inspect}); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
              %(begin; #{call}; rescue SystemExit; puts "REFUSED"; end)
-    out, = Open3.capture2e({ "RELEASE_GEM_POLL_INTERVAL" => "0" }.merge(env), RbConfig.ruby, "-e", script)
+    out, = Open3.capture2e({ "RELEASE_GEM_POLL_INTERVAL" => "0", "RELEASE_GEM_INSTALLED" => "yes" }.merge(env), RbConfig.ruby, "-e", script)
     out
   end
 

@@ -4805,7 +4805,14 @@ GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
 GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
 GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
 
-# Is `version` of `gem_name` visible on the compact index bundler resolves from?
+# The .gem ARTIFACT the CDN serves, beside the compact index line. Both are needed
+# before a consumer can install: bundler RESOLVES through the index and then
+# DOWNLOADS this file. They are separate CDN objects, purged separately, so one
+# answering is not proof the other does.
+GEM_FILE_URL = "https://rubygems.org/gems/%s-%s.gem"
+
+# Is `version` of `gem_name` SERVED by the RubyGems CDN: listed on the compact
+# index bundler resolves from, AND its .gem artifact downloadable?
 #
 # RELEASE_GEM_INDEXED is the test seam, mirroring RELEASE_CI_STATUS: "yes"/"no" so
 # the meta-tests never touch the network.
@@ -4815,9 +4822,17 @@ def gem_version_indexed?(gem_name, version)
 
   out, status = Open3.capture2e("/usr/bin/curl", "-sf", format(GEM_INDEX_URL, gem_name))
   return false unless status.success?
+  return false unless gem_index_lists?(out, version)
 
-  # Compact-index lines are "<version> <deps>|<checksums>"; the version is field one.
-  out.lines.any? { |line| line.split(" ", 2).first.to_s.strip == version.to_s }
+  _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "-o", "/dev/null", format(GEM_FILE_URL, gem_name, version))
+  served.success?
+end
+
+# PURE. Does a compact-index body list `version`? Lines read
+# "<version> <deps>|<checksums>"; the version is field one, matched WHOLE, so 0.4
+# never satisfies a wait for 0.47.2.
+def gem_index_lists?(body, version)
+  body.to_s.lines.any? { |line| line.split(" ", 2).first.to_s.strip == version.to_s }
 end
 
 # PURE. Whether to keep waiting, given elapsed time and a timeout.
@@ -4825,20 +4840,72 @@ def gem_wait_expired?(elapsed, timeout = GEM_POLL_TIMEOUT)
   elapsed >= timeout
 end
 
-# Block until every just-published gem is installable, or ABORT before anything
-# commits. Refusing here is strictly better than letting CI discover it: nothing
-# has been bumped yet, so a re-run resumes cleanly instead of stranding a version.
+# --- THE LOCAL INSTALL ---------------------------------------------------------
+#
+# A published gem must also be INSTALLED on this machine before the sweep moves on.
+# Nothing else here installs it: `gem push` uploads, `bundle lock` resolves without
+# installing, and the next gem's `bin/release-check --build` boots ITS bundle
+# against a lock that already pins the version just published.
+#
+# THE INCIDENT, rel-20261007-f8453b (2026-10-07). solana-studio 0.12.3 was already
+# live (an idempotent re-run skipped its publish), studio-engine's lock pinned it,
+# and studio-engine's release-check died at boot: `Could not find solana-studio-0.12.3
+# in locally installed gems (Bundler::GemNotFound)`. The operator installed it by hand
+# and re-ran. So the install runs for an ALREADY-LIVE gem too, not only a fresh push.
+#
+# INTO EVERY RUBY THE SWEEP SPAWNS. publish_gem's release-check and `gem build` run
+# under the shell's ruby; the gate suites and ship workspaces run under mise's pinned
+# ruby (gate_env). On this machine those are brew and mise, two gem homes, and a gem
+# in one is invisible to the other (the rel-20260708-32701b split). So it installs
+# with each distinct overlay. `--conservative` makes an installed version a no-op.
+def gem_install_overlays
+  overlays = [{}]
+  pinned = Release::GateRuby.env(ruby_bin_dir: gate_ruby_bin_dir.to_s)
+  overlays << pinned unless pinned.empty?
+  overlays
+end
+
+# Install `version` of `gem_name` into every ruby the sweep spawns. True iff every
+# install exited zero.
+#
+# RELEASE_GEM_INSTALLED is the test seam ("yes"/"no"), armed "yes" by
+# test/support/outbound_seams.rb so no test ever runs a real `gem install`.
+def install_published_gem(gem_name, version)
+  injected = ENV["RELEASE_GEM_INSTALLED"].to_s
+  return injected == "yes" unless injected.empty?
+
+  gem_install_overlays.all? do |overlay|
+    _, ok = sh("gem", "install", gem_name, "-v", version.to_s, "--conservative", "--no-document",
+               capture: true, env: overlay)
+    ok
+  end
+end
+
+# Block until every just-published gem is SERVED by the CDN and INSTALLED here, or
+# ABORT before anything downstream reads it. Refusing here is strictly better than
+# letting CI or the next gem's release-check discover it: nothing has been bumped
+# yet, so a re-run resumes cleanly instead of stranding a version.
+#
+# One bounded budget per gem (RELEASE_GEM_POLL_TIMEOUT) covers both halves, in that
+# order: the install fetches from the same CDN, so it cannot succeed before the
+# index does. Called once per gem straight after its publish (so a later gem's
+# release-check finds it) and again by bump_consumer_locks_for_qa; the memo keeps
+# the second call to a lookup.
 def await_published_gems!(published_gems)
   return if published_gems.nil? || published_gems.empty?
 
-  step("await: each published gem must be FETCHABLE on the index before the lock bump triggers CI")
-  published_gems.each do |gem_name, version|
+  @gems_ready ||= {}
+  pending = published_gems.reject { |gem_name, version| @gems_ready[[gem_name, version.to_s]] }
+  return if pending.empty?
+
+  step("await: each published gem must be SERVED by the RubyGems CDN and INSTALLED here before anything reads it")
+  pending.each do |gem_name, version|
     elapsed = 0
     until gem_version_indexed?(gem_name, version)
       if gem_wait_expired?(elapsed)
-        abort!("published #{gem_name} #{version} but it is still not on the RubyGems compact index after " \
-               "#{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks are " \
-               "untouched, so `bin/release prepare` resumes cleanly once the index catches up. Bumping now " \
+        abort!("published #{gem_name} #{version} but the RubyGems CDN is still not serving it (compact index + " \
+               ".gem) after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks " \
+               "are untouched, so `bin/release prepare` resumes cleanly once the index catches up. Bumping now " \
                "would commit a lock CI cannot install (bundler exits 7 in `Set up Ruby`), redding a lane and " \
                "aborting the release AFTER the publish became irreversible.")
       end
@@ -4846,7 +4913,23 @@ def await_published_gems!(published_gems)
       sleep(GEM_POLL_INTERVAL)
       elapsed += GEM_POLL_INTERVAL
     end
-    say("  ✓ #{gem_name} #{version} is on the index — safe to bump consumer locks")
+    say("  ✓ #{gem_name} #{version} is on the index — the CDN serves it")
+
+    until install_published_gem(gem_name, version)
+      if gem_wait_expired?(elapsed)
+        abort!("published #{gem_name} #{version} and the CDN serves it, but `gem install #{gem_name} -v #{version}` " \
+               "still fails on this machine after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed. " \
+               "Install it by hand (`gem install #{gem_name} -v #{version}`, under the shell ruby AND " \
+               "`mise x ruby@#{Release::GateRuby::RUBY_PIN} -- gem install #{gem_name} -v #{version}`), then " \
+               "re-run `bin/release prepare`; the publish skips as already-live. Moving on would boot the next " \
+               "gem's release-check against a lock this machine cannot load (Bundler::GemNotFound).")
+      end
+
+      sleep(GEM_POLL_INTERVAL)
+      elapsed += GEM_POLL_INTERVAL
+    end
+    say("  ✓ #{gem_name} #{version} is installed locally — safe to bump consumer locks")
+    @gems_ready[[gem_name, version.to_s]] = true
   end
 end
 
@@ -6178,6 +6261,11 @@ def publish_gems_for_qa(gem_plan)
       # rescue arm) instead of implying the run left nothing behind.
       (@prepare_live ||= []) << "gem #{repo} #{gem['version']} PUBLISHED to RubyGems (cannot be un-pushed)"
     end
+    # SERVED and INSTALLED before the NEXT gem publishes. The plan is producer-first,
+    # so a later gem's release-check boots a lock pinning this one; and an
+    # already-live gem waits too, because a re-run is exactly when this machine is
+    # likeliest to lack it (see await_published_gems!).
+    await_published_gems!(repo => gem["version"]) unless DRY
     published[repo] = gem["version"]
   end
   published

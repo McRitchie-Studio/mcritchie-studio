@@ -305,5 +305,12 @@ module OutboundSeams
     # prevent. A test that wants the waiting or refusing path sets it to "no"
     # explicitly, which is exactly what test/lib/release_cli_gem_await_test.rb does.
     ENV["RELEASE_GEM_INDEXED"] = "yes"
+
+    # THE LOCAL INSTALL — the same wait's second half, added 2026-10-07. After the
+    # index serves a just-published gem, bin/release.rb `gem install`s it into every
+    # ruby the sweep spawns. A real install from a test would reach RubyGems and
+    # write the developer's gem home, so the default is the non-blocking answer, for
+    # the same reason as above. release_cli_gem_install_test.rb sets it per case.
+    ENV["RELEASE_GEM_INSTALLED"] = "yes"
   end
 end
