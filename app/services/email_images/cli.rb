@@ -79,8 +79,9 @@ module EmailImages
       0
     end
 
-    # THE BASE ASSETS, step 2 of the SOP: what the brand's headers are made from,
-    # on disk so the agent can open each one and show Alex.
+    # THE BASE ASSETS, step 1 of the SOP: what the brand's headers are made from
+    # (the YAML references and the ones added on the kit page), on disk so the
+    # agent can open each one and show Alex, and the kit page's URL.
     def assets
       opts = download_options
       kit = EmailImages::BrandKit.find!(positional!("name a brand kit (#{EmailImages::BrandKit.keys.join(', ')})"))
@@ -90,9 +91,11 @@ module EmailImages
       emit "kit", kit.key, label: kit.label, app: kit.app, font: kit.font
       kit.palette.each { |name, hex| emit "palette", name, hex: hex }
       items.each do |item|
-        emit item.kind, item.role, label: item.label, file: item.path || "-", url: printable(item.url),
-                                   source: item.source
+        fields = { label: item.label, file: item.path || "-", url: printable(item.url), source: item.source }
+        fields.merge!(origin: item.origin, note: item.note.presence || "-") if item.kind == "reference"
+        emit item.kind, item.role, **fields
       end
+      emit "page", nil, url: "#{EmailImages::BaseAssets.base_url}/email_images/brand_kits/#{kit.key}"
       emit "style", nil, text: kit.style
       emit "never", nil, text: kit.negative
       0

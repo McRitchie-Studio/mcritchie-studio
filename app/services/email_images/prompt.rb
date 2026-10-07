@@ -42,9 +42,12 @@ module EmailImages
 
     def self.clean_notes(notes) = notes.to_s.squish.truncate(MAX_NOTES).presence
 
-    def initialize(brief, round: nil, round_notes: nil)
+    # `references:` is the list the round sends, in order (EmailImages::Generate
+    # passes the one it cut for its row); left out, it is the kit's default cut.
+    def initialize(brief, round: nil, round_notes: nil, references: nil)
       @brief = brief
       @kit = brief.kit
+      @references = references || @kit.generator_references
       @preset = brief.preset_config
       @round = round
       @round_notes = self.class.clean_notes(round_notes)
@@ -70,14 +73,22 @@ module EmailImages
     def orientation = "landscape"
 
     # What the images it is shown are for, in the order the adapter sends them.
+    # An uploaded reference is named by its position, role and label, with the
+    # admin's note on how to use it ("use this pose").
     def references_sentence
-      roles = @kit.references.map(&:role)
+      roles = @references.map(&:role)
       parts = []
       parts << "The first reference image is the brand's mascot; draw that same character." if roles.first == "mascot"
       parts << "The first reference image is the brand's logo mark; feature it faithfully." if roles.first == "logo"
-      if roles.include?("style")
+      if @references.any? { |ref| ref.yaml? && ref.role == "style" }
         parts << "Another reference is an existing header from this brand: match its colours, " \
                  "lighting and illustration style, but do not copy its words or layout exactly."
+      end
+      @references.each_with_index do |ref, i|
+        next unless ref.upload?
+
+        line = %(Reference image #{i + 1} is a #{ref.role} reference, "#{ref.label.to_s.squish}")
+        parts << (ref.note.present? ? "#{line}: #{ref.note.to_s.squish}." : "#{line}.")
       end
       parts.join(" ")
     end

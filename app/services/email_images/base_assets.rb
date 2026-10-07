@@ -14,7 +14,7 @@ module EmailImages
   # (`heroku run`) the local files vanish with the dyno, and the agent fetches
   # the URLs instead.
   class BaseAssets
-    Item = Struct.new(:kind, :role, :label, :path, :url, :source, keyword_init: true)
+    Item = Struct.new(:kind, :role, :label, :path, :url, :source, :note, :origin, keyword_init: true)
 
     VIEWABLE = %w[jpg png].freeze
 
@@ -44,12 +44,20 @@ module EmailImages
 
     private
 
+    # The kit's merged references (EmailImages::BrandKit#references): the YAML
+    # ones from public/, then the active uploads from our bucket, newest first,
+    # each with its role, label and the admin's note on how to use it.
     def references
       @kit.references.map do |ref|
-        public_path = ref.path.delete_prefix("public/")
-        Item.new(kind: "reference", role: ref.role, label: File.basename(ref.path), source: ref.path,
-                 url: "#{@base_url}/#{public_path}",
-                 path: (copy_reference(ref) if @download && ref.exists?))
+        if ref.yaml?
+          Item.new(kind: "reference", role: ref.role, label: ref.label, source: ref.path, origin: "yaml",
+                   url: "#{@base_url}#{ref.display_url}",
+                   path: (copy_reference(ref) if @download && ref.exists?))
+        else
+          Item.new(kind: "reference", role: ref.role, label: ref.label, source: ref.source, origin: "upload",
+                   note: ref.note, url: ref.url,
+                   path: (fetch_to_file(ref.url, "#{ref.role}-#{ref.slug}") if @download))
+        end
       end
     end
 
