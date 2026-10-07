@@ -127,7 +127,8 @@ class DevopsReconcileCliTest < Minitest::Test
     env = {
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
-      "PATH" => "#{root}:#{ENV["PATH"]}"
+      "PATH" => "#{root}:#{ENV["PATH"]}",
+      "DEVOPS_RECONCILE_AUTOPILOT_BIN" => File.join(root, "bin", "review-autopilot")
     }
     Open3.capture3(env, RbConfig.ruby, BIN, *args, chdir: root)
   end
@@ -419,6 +420,35 @@ class DevopsReconcileCliTest < Minitest::Test
         assert_includes payload["unread"], "armed-action registry"
       end
     end
+  end
+
+  # Guard catalog row 5.6: the armed-state read resolves review-autopilot from the
+  # script's own bin/, never the cwd, so a run from outside the hub reads the registry
+  # instead of warning. Run from an empty cwd: the old relative path found nothing there.
+  def test_the_armed_registry_reads_from_any_cwd
+    with_shims(gh_json: GH_MERGED) do |root, _calls|
+      with_board({ "reviewed" => [] }) do |port|
+        Dir.mktmpdir("reconcile-elsewhere") do |elsewhere|
+          env = {
+            "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+            "AGENT_API_SECRET" => "test-secret",
+            "PATH" => "#{root}:#{ENV["PATH"]}",
+            "DEVOPS_RECONCILE_AUTOPILOT_BIN" => File.join(root, "bin", "review-autopilot")
+          }
+          out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, "--seam", "qa-release", "--json", chdir: elsewhere)
+
+          assert_equal 0, status.exitstatus, err
+          refute_includes JSON.parse(out).fetch("unread"), "armed-action registry", err
+        end
+      end
+    end
+  end
+
+  # [unit] Without the seam the default is the sibling script, an absolute path.
+  def test_the_default_autopilot_is_the_sibling_script
+    src = File.read(BIN)
+    assert_includes src, 'BinHelpers.bin_for("DEVOPS_RECONCILE_AUTOPILOT_BIN", "review-autopilot", dir: __dir__)'
+    refute_includes src, 'sh_full("bin/review-autopilot"'
   end
 
   # --- a failed read is not an empty one -------------------------------------
