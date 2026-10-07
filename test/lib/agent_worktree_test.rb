@@ -1985,6 +1985,12 @@ class AgentWorktreeTest < Minitest::Test
     def sh(*args); STEPS << :"git-\#{args.last(2).first}"; end
     APP = { "slug" => "mcritchie-studio", "repo" => "/repo" }.freeze
     RECORD = { app: APP, task: "_ship", dir: "/repo/.worktrees/_ship", branch: "release" }.freeze
+    # The tests below stub DeskLedger.file; the queue layer routes to it and queues nothing
+    # unless a test stubs file_or_queue itself (guard catalog row 5.5).
+    def desk_ledger_queue_path; "/nonexistent/desk-ledger-queue.jsonl"; end
+    module DeskLedger
+      def self.file_or_queue(queue:, **kw); file(**kw); end
+    end
   RUBY
 
   # THE PROPERTY. The ledger write is the FIRST thing teardown_worktree does. It used to sit
@@ -2010,13 +2016,14 @@ class AgentWorktreeTest < Minitest::Test
     assert_includes steps, :"git-remove", "…and the git worktree still goes, after the record"
   end
 
-  # FAIL CLOSED, and nothing half-done. A board this script cannot reach costs a retry, not
-  # an unrecorded removal — which is only true because the write comes first.
+  # A record that could be neither filed nor queued (the board answered with a refusal,
+  # or the queue could not be written) still refuses, with nothing half-done — which is
+  # only true because the write comes first.
   def test_a_failed_desk_record_aborts_the_teardown_with_nothing_destroyed
     out = run_in_script(<<~RUBY)
       #{TEARDOWN_HARNESS}
       module DeskLedger
-        def self.file(**_kw); Result.new(ok: false, error: "POST /api/v1/desk_records -> 500"); end
+        def self.file(**_kw); Result.new(ok: false, code: 422, error: "POST /api/v1/desk_records -> 422"); end
       end
       begin
         teardown_worktree(APP, RECORD[:dir], RECORD)
@@ -2040,18 +2047,42 @@ class AgentWorktreeTest < Minitest::Test
       load #{BIN.inspect}
       #{TEARDOWN_HARNESS}
       module DeskLedger
-        def self.file(**_kw); Result.new(ok: false, error: "POST /api/v1/desk_records -> 500"); end
+        def self.file(**_kw); Result.new(ok: false, code: 422, error: "POST /api/v1/desk_records -> 422"); end
       end
       teardown_worktree(APP, RECORD[:dir], RECORD)
     RUBY
     text = "#{out}#{err}"
 
     assert_includes text, "REFUSING to tear down"
-    assert_includes text, "-> 500", "the operator needs the board's own answer, not a summary of it"
+    assert_includes text, "-> 422", "the operator needs the board's own answer, not a summary of it"
     assert_includes text, "THIS DESK IS UNTOUCHED",
                     "precise in a BATCH too: earlier desks in the run were torn down, each " \
                     "with its own record filed first"
     assert_includes text, "bin/agent-worktree remove mcritchie-studio _ship --yes"
+  end
+
+  # Guard catalog row 5.5: a board that does not answer no longer blocks the teardown.
+  # The record is queued locally, the desk is torn down, and the closing write is owed.
+  def test_a_queued_desk_record_lets_the_teardown_proceed
+    out = run_in_script(<<~RUBY)
+      #{TEARDOWN_HARNESS}
+      module DeskLedger
+        def self.file_or_queue(queue:, status:, **_kw)
+          STEPS << [:queued, status]
+          Result.new(ok: false, queued: true, error: "POST /api/v1/desk_records -> 503")
+        end
+      end
+      def warn(*); end
+      def puts(*); end
+      teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stdout.print STEPS.inspect
+    RUBY
+
+    steps = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+    assert_equal [:queued, "removing"], steps.first, "the record is still made before anything is destroyed"
+    assert_includes steps, :"git-remove", "a board outage no longer blocks the teardown"
+    assert_equal [:queued, "removed"], steps.last, "and the closing write is queued too"
   end
 
   # THE OUTCOME IS WRITTEN LAST, on the episode the record-first write opened. The teardown

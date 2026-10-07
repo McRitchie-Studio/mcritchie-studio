@@ -3568,23 +3568,15 @@ def desk_ledger_actor
   value.empty? ? nil : value
 end
 
-# THE DESK LEDGER WRITE — and the one thing on this script's destroy path that may not
-# be best-effort.
+# THE DESK LEDGER WRITE. The write happens FIRST on the destroy path: teardown_worktree
+# files the record before it stops a stack, flushes a Redis DB, drops a database or
+# removes a git worktree, so no desk is destroyed without its record already made.
 #
-# IT FAILS CLOSED, DELIBERATELY, and the cost of that is close to zero because the write
-# happens FIRST: teardown_worktree posts the record before it stops a stack, flushes a
-# Redis DB, drops a database or removes a git worktree. A refused write therefore costs a
-# retry and nothing else — there is no half-torn-down desk to reconcile, and no desk is
-# ever destroyed without a durable record already committed.
-#
-# WHY NOT A LOCAL QUEUE. A spool that flushes "on next contact" re-introduces the exact
-# failure this replaces: a record that exists on one machine until somebody remembers.
-# The offline property the markdown file had was real, and this gives it up on purpose —
-# the automatic sweeps ALREADY withhold every bound desk when the board is unreadable
-# (see reclaim_evidence: an unverifiable desk is withheld everywhere), so a board outage
-# was never a window in which mass teardown was safe. All this closes is the explicit
-# single-desk `remove … --yes`, which the operator can simply run again.
-# The desk ledger payload, built ONCE for both postures below.
+# A BOARD THAT DOES NOT ANSWER QUEUES THE RECORD (guard catalog row 5.5). It used to
+# refuse the teardown, so a board outage blocked every explicit `remove`. The record now
+# goes to a local queue (DeskLedger.file_or_queue) that posts, in order, on the next write
+# that reaches the board. A board that ANSWERS with a refusal still refuses the teardown,
+# and so does a queue that cannot be written: then the record exists nowhere.
 #
 # The registry record goes over the wire VERBATIM — `stack_record_snapshot` is the same
 # hash `snapshot --write` writes — and the server owns the mapping onto columns
@@ -3592,7 +3584,8 @@ end
 # waiting to disagree with the first. The three narrative fields are the ones the SWEEP
 # owns and the registry does not carry.
 def desk_ledger_write(record, status:, source:, leaked_processes: nil)
-  DeskLedger.file(
+  result = DeskLedger.file_or_queue(
+    queue: desk_ledger_queue_path,
     desk: stack_record_snapshot(record, {}),
     status: status,
     source: source,
@@ -3603,34 +3596,41 @@ def desk_ledger_write(record, status:, source:, leaked_processes: nil)
     leaked_processes: leaked_processes,
     dotenv: File.join(HUB_DIR, ".env")
   )
+  if result.queued?
+    warn "note: the desk ledger at #{DeskLedger.base_url} did not take #{worktree_label(record)}'s `#{status}` " \
+         "record (#{result.error}); it is queued at #{desk_ledger_queue_path} and posts on the next ledger write."
+  end
+  result
+end
+
+# The local queue for records the board could not take: the projects root's .agents state,
+# never a checkout, so nothing ever needs committing.
+def desk_ledger_queue_path
+  override = ENV["DESK_LEDGER_QUEUE"].to_s.strip
+  path = override.empty? ? File.join(PROJECTS_DIR, ".agents", "desk-ledger-queue.jsonl") : File.expand_path(override)
+  TaskUsageSandbox.enforce!(path, store: "desk-ledger-queue")
 end
 
 def file_desk_record!(record, status:, source:)
   result = desk_ledger_write(record, status: status, source: source)
-  return result if result.ok?
+  return result if result.ok? || result.queued?
 
   refuse_unrecorded_teardown!(record, result)
 end
 
+# The board answered with a refusal, or the local queue could not be written: the record
+# exists nowhere, so the desk is not torn down.
 def refuse_unrecorded_teardown!(record, result)
   abort <<~MSG
-    agent-worktree: REFUSING to tear down #{worktree_label(record)} — the desk ledger write failed.
+    agent-worktree: REFUSING to tear down #{worktree_label(record)} — its desk ledger record could not be filed or queued.
 
       #{result.error}
 
-    THIS DESK IS UNTOUCHED — nothing was stopped, flushed, dropped or removed for it. The
-    record is written BEFORE the teardown precisely so a board this script cannot reach
-    costs a retry instead of an unrecorded removal. (In a BATCH sweep, desks torn down
-    earlier in this run each filed their own record first, so the audit trail is whole;
-    only this desk and the ones after it are left standing.)
+    THIS DESK IS UNTOUCHED — nothing was stopped, flushed, dropped or removed for it. (In a
+    BATCH sweep, desks torn down earlier in this run each filed their own record first, so
+    the audit trail is whole; only this desk and the ones after it are left standing.)
 
-    The ledger is #{DeskLedger.base_url}/deployments now, not a markdown file — it moved
-    because a row written into the primary checkout lands on `main` and can never be
-    committed (166 rows were stranded that way). There is no local queue on purpose: a
-    spool that flushes "on next contact" is the same "somebody must remember" this fix
-    removes.
-
-    Re-run the teardown once the board answers:
+    Re-run the teardown once the cause above is fixed:
       #{cleanup_command(record)}
   MSG
 end
@@ -3641,7 +3641,7 @@ end
 # buys something.
 def file_desk_record(record, status:, source:)
   result = desk_ledger_write(record, status: status, source: source)
-  warn "warning: desk ledger write failed for #{worktree_label(record)}: #{result.error}" unless result.ok?
+  warn "warning: desk ledger write failed for #{worktree_label(record)}: #{result.error}" unless result.ok? || result.queued?
   result
 end
 
@@ -3673,7 +3673,10 @@ def run_cleanup(app = nil, write: false)
   # rather than duplicating it, and a RECYCLED path whose earlier row is resolved opens a
   # fresh episode instead of being refused for the rest of time (the old substring dedupe
   # — does this path appear ANYWHERE in the file? — did exactly that).
-  filed = candidates.count { |record| file_desk_record(record, status: "candidate", source: "cleanup").ok? }
+  filed = candidates.count do |record|
+    result = file_desk_record(record, status: "candidate", source: "cleanup")
+    result.ok? || result.queued?
+  end
   puts "filed #{filed} of #{candidates.size} candidate(s) on the desk ledger: #{DeskLedger.base_url}/deployments"
   maybe_scale_in
 end
@@ -3761,8 +3764,8 @@ def teardown_worktree(app, dir, record)
   # RECORD FIRST, DESTROY SECOND. The ledger write used to sit in the middle of this
   # sequence, which was survivable while it was a local file append and is not while it
   # is a network call — a teardown that stopped the stack and then failed to record would
-  # be the defect with extra steps. open_teardown_record! aborts on a failed write, so the
-  # only thing a board outage can cost here is a re-run.
+  # be the defect with extra steps. open_teardown_record! files or queues the record
+  # first, and aborts only when it can do neither.
   #
   # OUTCOME LAST. Whether the stop spares a process is only known after that first write,
   # and a resolved record is immutable, so the first write opens the episode `removing`
@@ -3782,8 +3785,8 @@ def teardown_worktree(app, dir, record)
   spared
 end
 
-# The fail-closed first write. True when the board took `removing`, so the teardown owes it
-# a closing write.
+# The first write. True when the board took `removing` or it is queued, so the teardown
+# owes it a closing write.
 #
 # AN OLDER BOARD IS NOT AN OUTAGE. This CLI ships in worktrees and CI while the board
 # deploys on its own cadence, and a board that predates `removing` refuses it BY NAME.
@@ -3792,7 +3795,7 @@ end
 # closed) and reports any leak on the command line and in the exit code only.
 def open_teardown_record!(record)
   result = desk_ledger_write(record, status: "removing", source: "remove")
-  return true if result.ok?
+  return true if result.ok? || result.queued?
   refuse_unrecorded_teardown!(record, result) unless result.error.to_s.include?('unknown status "removing"')
 
   warn "note: the desk ledger at #{DeskLedger.base_url} predates the `removing` and `leaked` states, so " \
@@ -3808,7 +3811,7 @@ end
 def close_teardown_record(record, spared)
   status = spared.empty? ? "removed" : "leaked"
   result = desk_ledger_write(record, status: status, source: "remove", leaked_processes: spared.empty? ? nil : spared)
-  return if result.ok?
+  return if result.ok? || result.queued?
 
   warn <<~MSG
     warning: #{worktree_label(record)} is torn down, but the desk ledger could not close its record as `#{status}`.

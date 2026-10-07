@@ -122,8 +122,10 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   dry run is the approval packet.
 - `cleanup --write` files candidates on the **desk ledger** (`DeskRecord`, Desks panel on
   [/deployments](https://mcritchie.studio/deployments)). A teardown files its record
-  **before** destroying anything, so **when the board is unreachable the teardown
-  REFUSES**. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
+  **before** destroying anything. When the board does not answer, the record is queued
+  at `<projects>/.agents/desk-ledger-queue.jsonl` and posts, in order, on the next
+  ledger write; the teardown refuses only when the board answers with a refusal or the
+  queue cannot be written. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
 - The ledger tracks **managed desks only** (the root rule lives once, in `lib/desk_root.rb`).
   `snapshot` marks each desk `managed: true|false` and counts the rest as `unmanaged`; the
   board lists those but opens no ledger record for them, and closes an older open record

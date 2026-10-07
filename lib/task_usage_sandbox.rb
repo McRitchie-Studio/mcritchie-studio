@@ -102,6 +102,7 @@ module TaskUsageSandbox
     "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
     "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock
     "redis-capacity" => %w[AGENT_REDIS_CAPACITY_FILE PROJECTS_DIR], # bin/agent-worktree — the elastic Redis band
+    "desk-ledger-queue" => %w[DESK_LEDGER_QUEUE PROJECTS_DIR], # bin/agent-worktree — records the board could not take
     # bin/lib/op_meter.rb + bin/lib/op-meter.sh — the 1Password read-attribution
     # log. TWO WRITERS, ONE STORE, and the shell half cannot call this guard: it
     # re-derives RULE 1 inline (see the header there) and LAYER 3 of
