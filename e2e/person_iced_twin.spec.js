@@ -45,7 +45,9 @@ test("operator adds a ring, creates a look, and sees each look beside its iced t
 
   // The twin's page names its base and builds the iced sheet.
   await looks.filter({ hasText: `${name} · iced` }).locator("[data-test='character-model-link']").click();
-  await expect(page.locator("[data-test='iced-badge']")).toBeVisible();
+  await expect(page).toHaveURL(/\/people\/novice-icefixture\/models\/look-[0-9a-f]+$/);
+  await expect(page.locator("[data-test='twin-base']")).toBeVisible();
+  await expect(page.locator("[data-test='iced-badge']")).toHaveText("iced");
   await expect(page.locator("[data-test='twin-base']")).toContainText(`Iced-out twin of ${name}`);
   await expect(page.locator("[data-test='twin-base']")).toContainText("1 jewelry record");
 });
