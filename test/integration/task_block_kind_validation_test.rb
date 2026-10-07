@@ -49,4 +49,26 @@ class TaskBlockKindValidationTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "dependency", @task.reload.block_kind
   end
+
+  # Guard catalog row 4.2: `bin/task begin` on a blocked task clears the block at the
+  # claim, so the preflight has no "task is blocked" state left to fail on.
+  test "[integration] the unblock endpoint clears a live block and leaves the task building" do
+    @task.block!(by: "carl", kind: "rework")
+    assert @task.reload.blocked?, "FLOOR: the task must start blocked"
+
+    patch unblock_api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+    assert_response :success
+    @task.reload
+    refute @task.blocked?
+    assert_nil @task.block_kind
+    assert_equal "building", @task.stage
+  end
+
+  test "[integration] the unblock endpoint answers 200 on a task with no live block" do
+    patch unblock_api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+    assert_response :success
+    assert_nil @task.reload.blocked_at
+  end
 end

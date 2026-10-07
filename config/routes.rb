@@ -582,6 +582,8 @@ Rails.application.routes.draw do
           # Block is a `building` ATTRIBUTE, not a stage move — Task#block! stamps
           # the block columns and lands the task on building (no →blocked stage).
           patch :block
+          # Clears a live block (Task#unblock!); `bin/task begin` on a blocked task calls it.
+          patch :unblock
           post "review_events", to: "review_events#create", as: :review_events
           # Per-task REVIEW claim (per-task-pr-review-claim) — the review LANE's
           # per-task lease, so many pr-review sessions run in parallel and skip a

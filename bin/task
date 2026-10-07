@@ -2262,6 +2262,29 @@ rescue StandardError => e
         "#{worktree_bin} identity #{app} #{worktree_slug} <soul>")
 end
 
+# A BLOCKED TASK'S BEGIN IS THE ANSWER TO THE BLOCK (guard catalog row 4.2). A
+# rework block leaves the task on `building` with blocked_at set, and the builder
+# who resumes it is the one fixing it, so begin clears the block at the claim
+# (Task#unblock! via PATCH /api/v1/tasks/<slug>/unblock). The preflight that runs
+# next has no "task is blocked" state left to fail on; it prints the feedback the
+# block carried. Report-only: a board that cannot answer leaves the desk and the
+# claim standing and says how to clear it.
+def clear_block_at_begin(slug, task)
+  return if task["blocked_at"].to_s.strip.empty? || task["stage"].to_s != "building"
+
+  res = TaskBoard.request(:patch, "/api/v1/tasks/#{slug}/unblock", base_url: BASE_URL, token: token)
+  if res.code.to_i.between?(200, 299)
+    warn!("begin — #{slug} was blocked; this begin answers the block, so the block is cleared. " \
+          "Read the feedback the preflight prints before editing.")
+  else
+    warn!("begin — could not clear #{slug}'s block (PATCH /api/v1/tasks/#{slug}/unblock -> #{res.code}); " \
+          "the desk and the claim stand. Clear it from the task page's Resume control.")
+  end
+rescue StandardError => e
+  warn!("begin — could not clear #{slug}'s block (#{e.class}: #{e.message}); the desk and the claim stand. " \
+        "Clear it from the task page's Resume control.")
+end
+
 # One begin step that shells a tool: narrate, run, die with a RESUME hint on
 # failure — rerunning `bin/task begin <slug>` continues from the failed step.
 def begin_step!(label, slug, *cmd, chdir: nil)
@@ -2678,6 +2701,7 @@ when "begin"
     begin_step!("4/5 claim", slug, *move_cmd)
   end
 
+  clear_block_at_begin(slug, task)
   reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
 
   worktree_dir = TaskTree.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])

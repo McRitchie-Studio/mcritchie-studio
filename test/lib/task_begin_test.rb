@@ -140,6 +140,11 @@ class TaskBeginTest < Minitest::Test
                 "metadata" => { "devops" => (parsed["devops"] || {}).merge("worktree_slug" => parsed["slug"]) } }
       ["200 OK", JSON.generate("data" => @task)]
     when "PATCH"
+      if path.end_with?("/unblock")
+        @task.delete("blocked_at")
+        return ["200 OK", JSON.generate("data" => @task)]
+      end
+
       parsed = JSON.parse(body)
       @task["stage"] = parsed["stage"] if parsed["stage"]
       # Rule 1 of Task#builder_to_stamp, and ONLY rule 1: an explicit soul actor on
@@ -299,6 +304,27 @@ class TaskBeginTest < Minitest::Test
     steps = lines.map(&:first)
     assert_includes steps, "WORKTREE", "the worktree steps still run (they are idempotent)"
     assert_includes steps, "PREFLIGHT"
+  end
+
+  # [integration] Guard catalog row 4.2: begin on a blocked task is the answer to the
+  # block, so it clears it (PATCH .../unblock) and the begin completes.
+  def test_begin_on_a_blocked_task_clears_the_block
+    blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework")
+    requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+
+    assert status.success?, "a blocked task's begin must complete, got:\n#{err}"
+    assert(requests.any? { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/#{SLUG}/unblock" },
+           "begin must clear the block, got: #{requests.map { |r| "#{r[:method]} #{r[:path]}" }.inspect}")
+    assert_includes err, "this begin answers the block, so the block is cleared"
+    assert_nil @task["blocked_at"]
+  end
+
+  # [unit] The control: an unblocked task sends no unblock.
+  def test_begin_on_an_unblocked_task_sends_no_unblock
+    requests, _out, err, status, = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, err
+    refute(requests.any? { |r| r[:path].to_s.end_with?("/unblock") })
   end
 
   def test_begin_by_title_resumes_the_task_it_created_before

@@ -160,8 +160,8 @@ retract a wrong block, post `bin/task note <slug> --handoff "…" --resolves-fee
   cd /Users/alex/projects/mcritchie-studio/.worktrees/<slug>
   ```
 - **Fresh session, or taking over a held task** — reclaim the desk in one move.
-  `begin` re-creates/rebinds the worktree, moves the task back to `building`, and
-  preflights; `--steal` takes it over a stale **builder** claim (`bin/submit` has no
+  `begin` re-creates/rebinds the worktree, moves the task back to `building`,
+  clears the block (your begin is the answer to it), and preflights; `--steal` takes it over a stale **builder** claim (`bin/submit` has no
   `--steal`). If the holder is a REVIEWER, ask them to release it instead —
   `bin/task review-claim release <slug>` — because a steal mid-review strands the
   reviewer's verdict; the refusal you got names which holder you have:

@@ -21,8 +21,8 @@ module Api
       # API and the page can never disagree about which tasks an epic holds.
       INDEX_PARAMS = %w[stage agent_slug epic reviewable page per_page full].freeze
 
-      before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
-      before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
+      before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
+      before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock]
 
       def index
         return if reject_unsupported_index_params!
@@ -124,6 +124,19 @@ module Api
         rescue_and_log(target: @task) do
           @task.block!(by: params[:by].presence || Current.task_event_actor.presence,
                        kind: params[:kind].presence)
+          render_data(@task)
+        end
+      rescue StandardError => e
+        render_exception(e)
+      end
+
+      # Clear a live block, leaving the task on `building` (Task#unblock!). `bin/task
+      # begin <slug>` on a blocked task is the builder's answer to the block, so begin
+      # calls this at the claim (guard catalog row 4.2). Idempotent: a task with no
+      # live block answers 200 unchanged.
+      def unblock
+        rescue_and_log(target: @task) do
+          @task.unblock! if @task.blocked?
           render_data(@task)
         end
       rescue StandardError => e

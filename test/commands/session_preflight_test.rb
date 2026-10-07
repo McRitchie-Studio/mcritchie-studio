@@ -55,6 +55,19 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "pass", report.fetch("installed_docs").fetch("status")
   end
 
+  # [unit] Guard catalog row 4.2: a blocked task is not a preflight failure; begin
+  # clears the block at the claim and the preflight prints the feedback it carried.
+  def test_a_blocked_task_passes_the_preflight
+    path = File.join(@sandbox, "blocked.json")
+    payload = task_payload.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework")
+    File.write(path, JSON.generate("data" => payload))
+
+    out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "a blocked task must not fail the preflight:\n#{out}\n#{err}"
+    refute JSON.parse(out).fetch("errors").any? { |error| error.include?("blocked") }
+  end
+
   def test_branch_behind_release_is_a_blocker
     task = write_task
     git("checkout", "-q", "--detach", "origin/release")
