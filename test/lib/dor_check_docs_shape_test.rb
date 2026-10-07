@@ -168,7 +168,7 @@ class DorCheckDocsShapeTest < Minitest::Test
                  "and the shape's zero tiers plus waived suite cert were granted on a typed label\n#{out}"
     assert_match(%r{test/integration/open_pr_receipt_visibility_test\.rb}, out,
                  "the refusal must NAME the disqualifying file, or the builder is told 'something' was wrong")
-    assert_match(/may only be claimed on a diff that is prose plus docs-guard tests/, out)
+    assert_match(/may only be claimed on a diff that is prose .* plus guard tests/, out)
   end
 
   # The filing recorded a test file, but nothing about the hole was specific to

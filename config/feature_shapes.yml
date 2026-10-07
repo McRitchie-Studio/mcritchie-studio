@@ -141,9 +141,10 @@
 #     polarities — and in both, THE UNRECOGNIZED FILE BLOCKS THE CLAIM:
 #       test_only_diff → 100% test files (bin/lib/test_only_diff.rb, an ALLOWLIST:
 #         test/, tests/, e2e/ and nothing else).
-#       docs_with_guards_diff → provable prose plus, optionally, docs-guard tests
-#         (and nothing else) — *_test.rb under test/docs/, type AND location
-#         together — with at least one prose file (bin/lib/code_diff.rb, a DENYLIST at its core:
+#       docs_with_guards_diff → provable prose plus, optionally, guard tests
+#         (and nothing else) — *_test.rb under test/docs/, or *_guard_test.rb
+#         under any test/ directory — and Ruby files whose edit changed only
+#         comments (guard catalog row 2.4), with at least one prose file (bin/lib/code_diff.rb, a DENYLIST at its core:
 #         non-behavioral by file TYPE, so anything unrecognized is behavior; the
 #         guard-test carve-out is the one deliberate, doubly-qualified exception,
 #         widened from plain doc_only_diff on 2026-09-03).
@@ -153,8 +154,8 @@
 #     refused a behavioral `kind: docs` diff, and the `docs` SHAPE then granted the
 #     same exemption one step later. See the `docs` shape's notes for the measured
 #     case (PR #1172) and for what "doc-only" means at the edges.
-#     A `claimable_when` value bin/dor-check does not implement REFUSES the claim
-#     rather than falling through — an unrecognized guard must not be a free pass.
+#     A `claimable_when` value bin/dor-check does not implement fails the config
+#     check when bin/dor-check loads this file (CLAIM_RULES, guard catalog row 2.6).
 #
 #
 # This file is the single source of "how much testing is enough" per change
@@ -221,7 +222,7 @@ shapes:
       `onchain` above.
 
   docs:
-    description: Documentation change — SOP, runbook, agent-operating-model, or README — optionally shipping the registry-guard tests that pin it (test/docs/*_test.rb). No other code, no persistence.
+    description: Documentation change — SOP, runbook, agent-operating-model, or README — optionally shipping the guard tests that pin it (test/docs/*_test.rb or test/**/*_guard_test.rb) and comment-only Ruby edits. No other code, no persistence.
     dor_tiers: []
     claimable_when: docs_with_guards_diff
     required_metadata: [acceptance, repositories, risk_tags]
@@ -271,11 +272,11 @@ shapes:
           behavior.
         · A TEST FILE IS NOT DOC-ONLY. `test/` is executable; that is the case
           that motivated this guard, and `test-only` is the shape for it.
-        · A COMMENT-ONLY EDIT to a .yml or an .rb IS NOT DOC-ONLY. The
-          granularity is the FILE, never the hunk — "this hunk is only comments"
-          is a parse an author can talk the gate out of. Cost of the strict
-          answer: one tier line on another shape. Cost of the loose one: the
-          gate.
+        · A COMMENT-ONLY EDIT to a .yml IS NOT DOC-ONLY. A Ruby file (.rb, or a
+          ruby-shebang script) whose comment-free Ripper token stream equals the
+          merge base's MAY ride this shape (bin/lib/ruby_comment_diff.rb, guard
+          catalog row 2.4); a magic comment, a DATA section or source that does
+          not lex counts as code.
         · LOCATION BUYS NOTHING. `docs/agents/setup.sh` is mode 100755.
       Fail-closed both ways: a disqualifying file refuses the claim, and so does
       an UNOBSERVABLE diff (an empty view is the absence of evidence, not proof

@@ -65,7 +65,7 @@ Two corollaries worth knowing before you need them:
    **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
    against prod on ship, so a bare `db:seed` (loads all of `db/seeds.rb` →
    demo data + a non-idempotent abort) must be rejected for a narrow, idempotent
-   command; `bin/dor-check` enforces this, but read the metadata yourself.
+   command; the board refuses one on write, but read the metadata yourself.
    Carl classifies check failures by lane before deciding whether to merge the
    feat PR into `accepted` and move the task to `reviewed`, wait, or send `qa_feedback`.
 3. **Assemble + QA: `reviewed → assembled`** — Avi's `qa-release` sweep

@@ -3,8 +3,7 @@
 # CiGate — the DoR gate's CI decision, as a pure function. Since
 # /tasks/dor-reads-settled-ci-verdict it is ALSO the whole suite gate: bin/dor-check
 # credits ONE form of suite evidence, a settled GREEN GitHub CI verdict for the PR's
-# current head, and this module is where that verdict becomes a pass, a refusal, or
-# (builder-side, pending) a WAIT.
+# current head, and this module is where that verdict becomes a pass or a refusal.
 #
 # Two callers in bin/dor-check ask it: the ordinary gated path, and the EXEMPT
 # (doc-only) path, which until /tasks/gate-zero-skips-docs-ci never asked anything
@@ -142,14 +141,10 @@ module CiGate
   GATE_ROW_NO_VERDICT = [GATE_ROW_NO_CHECKS, GATE_ROW_UNREADABLE, GATE_ROW_UNVERIFIED,
                          GATE_ROW_NO_PR].freeze
 
-  # Is this verdict a WAIT rather than a refusal? Builder-side only, and only for a CI
-  # that is genuinely RUNNING: bin/submit holds at step 6/8 for exactly this, so the
-  # ordinary handoff never sees it, and a hand-run verdict that does is told to come
-  # back rather than told it failed. Review's gate-zero is the authoritative verdict,
-  # and an unsettled CI is a legitimate NO there.
-  def self.waiting?(ci, review_role:)
-    !review_role && ci.is_a?(Hash) && ci[:state] == :pending
-  end
+  # NO BUILDER-SIDE WAIT (guard catalog row 1.10). bin/submit runs this gate only
+  # after its CI wait settles, and stops at step 6/8 on a CI still running or never
+  # reported, so the handoff never meets :pending or :none here. Both roles therefore
+  # read one refusal for each; a hand-run verdict on an unsettled CI says "not yet".
 
   # The refusal for a CI that has NO VERDICT TO GIVE (the no-verdict family, a blank
   # pr_url, and any state this gate has never heard of) — one string, worded for the
@@ -185,7 +180,7 @@ module CiGate
       lead + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause],
                                         also_refused: also_refused, task: slug)
     when :none, :unverified
-      if review_role
+      if review_role || ci[:state] == :none
         # THE SUFFICIENCY CLAUSE IS DERIVED, for the reason unreadable_remedy's is:
         # "Green is the only thing that advances it" is the SAME promise PR #1225
         # falsified, in the same role, on the same path — it is simply reached with a
@@ -202,20 +197,14 @@ module CiGate
                                "ALSO refused by #{also_refused.join(' AND ')}, and no CI " \
                                "result clears that."
                            end
-        "GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
-          "verdict, so it must not advance on a CI it has not read. Defer this review until checks appear " \
-          "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back) — " \
-          "no local cert stands in for it: #{ONLY_EVIDENCE}. #{no_verdict_close}"
-      elsif ci[:state] == :none
-        # THE BUILDER'S HALF OF :none — the seconds after `gh pr ready`, or a workflow
-        # that never fired. Waiting is the remedy when the run is coming; a stale base
-        # is the one cause that makes it never come, so it is named.
+        # A stale base is the one cause that makes a run never come, so :none names it.
         base = ci[:base].to_s.strip
         rebase = base.empty? ? "merge the PR's base in" : "rebase onto origin/#{base}"
-        "GitHub CI has produced no verdict yet (none) — the PR reports no checks, and #{ONLY_EVIDENCE}, so " \
-          "there is nothing to advance on and no local cert stands in. Confirm the workflow triggered (a stale base branch runs " \
-          "nothing: #{rebase}), then re-run this verdict once it reports — bin/submit waits for exactly this " \
-          "at step 6/8 and resumes here."
+        trigger = ci[:state] == :none ? " Confirm the workflow triggered (a stale base runs nothing: #{rebase})." : ""
+        "GitHub CI has produced no verdict yet (#{ci[:state]}) — this gate IS the authoritative CI " \
+          "verdict, so it must not advance on a CI it has not read. Defer until checks appear " \
+          "and settle (bin/submit waits at step 6/8; review's defer machinery re-queries; a red finish " \
+          "bounces the task back) — no local cert stands in for it: #{ONLY_EVIDENCE}.#{trigger} #{no_verdict_close}"
       else
         # :unverified builder-side — gh missing, a 404, a transport error. NOT a
         # credential refusal, so the credential command fixes nothing and is not named.
@@ -261,7 +250,7 @@ module CiGate
   # Returns the refusal (a String), or nil to advance. There is no second value any
   # more: until /tasks/dor-reads-settled-ci-verdict the tuple carried `cert_clears`,
   # the flag that let a FULL local cert stand in for a no-verdict state, and a
-  # builder-side :pending travelled as a non-blocking note. Both are retired —
+  # builder-side :pending travelled as a non-blocking note, then as a WAIT. All are retired —
   # ONLY_EVIDENCE is the whole rule, and a note cannot carry a verdict.
   #
   # THE ROLE TABLE, measured by test/lib/dor_check_test.rb:
@@ -269,13 +258,13 @@ module CiGate
   #   ci state      builder                       review
   #   green         advances                      advances (unless the base drifted —
   #                                               bin/dor-check's own check)
-  #   pending       WAITING — refuses, worded     refuses: defer until CI settles
-  #                 as "come back", not "fail"
+  #   pending       refuses: defer (bin/submit    refuses: defer until CI settles
+  #                 never calls it on one)
   #   red           refuses                       refuses
   #   conflicted    refuses                       refuses
   #   ci_less       refuses                       refuses
   #   closed/merged refuses                       refuses
-  #   none          refuses (confirm the run)     refuses (defer)
+  #   none          refuses (defer; confirm run)  refuses (defer; confirm run)
   #   unverified    refuses (re-read gh)          refuses (defer)
   #   unreadable    refuses (the credential)      refuses (the credential)
   #   no_pr         refuses (open the PR)         refuses (record the PR)
@@ -308,21 +297,9 @@ module CiGate
         # bin/lib/ci_status.rb.
         CiStatus.ci_less_remedy(ci)
       when :pending
-        if review_role
-          "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
-            "review gate-zero is the authoritative CI verdict, so defer this review until CI settles (the " \
-            "supervisor's defer machinery re-queries); a red finish bounces the task back."
-        else
-          # THE WAIT. Builder-side a running CI used to be a non-blocking note beside a
-          # fast cert credited provisionally; with the cert gone there is nothing to
-          # credit, so the verdict is not ready — but it is not FAILED either, and the
-          # wording says which. bin/dor-check prints this under a WAITING headline when
-          # it is the only thing standing.
-          "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — WAITING for it to " \
-            "settle. #{ONLY_EVIDENCE.sub(/\Aa /, 'A ')}, so this verdict is not ready YET; nothing about " \
-            "the tree is refused. bin/submit waits for exactly this at step 6/8 and resumes here; re-run " \
-            "this verdict once the checks report (a red finish is refused, a green one advances)."
-        end
+        "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. This " \
+          "gate is the authoritative CI verdict, so defer until CI settles (bin/submit waits at step 6/8; " \
+          "review's defer machinery re-queries); a red finish bounces the task back."
       when :closed, :merged
         "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
           "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \

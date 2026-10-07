@@ -27,8 +27,9 @@
 # cert reads STALE (observed on solana-studio #29: the reviewer's zaps invalidated the
 # cert and dor-check correctly refused until he re-certified). That works ONLY when the
 # ref it hashes has actually seen the zap. `review_fingerprint` hashes `origin/<branch>`
-# (else the local `<branch>`) IN THE DESK, and **bin/dor-check never runs `git fetch`**
-# — verified 2026-09-02: every `fetch` in that script is prose in a remedy string. A
+# (else the local `<branch>`) IN THE DESK. Since guard catalog row 2.9 bin/dor-check's
+# review role FETCHES the branch there first, so the cases below describe the ref as
+# it stands before that fetch, and a :mismatch after it is reported, not refused. A
 # reviewer who zaps from the desk — or from ANY SIBLING WORKTREE of the same repo, which
 # is what the zap protocol's own recipes cut — moves origin/<branch> as a side effect of
 # pushing (every worktree of a repo shares ONE ref store), so the cert goes STALE exactly
@@ -55,8 +56,8 @@
 # The two checks are complementary, and only this one speaks in the dangerous case.
 #
 # So this asks the question the fingerprint cannot: does the commit this gate is about
-# to grade EQUAL the PR head? A mismatch is refused rather than reconciled, because the
-# gate has no business inventing a tree it cannot see.
+# to grade EQUAL the PR head? bin/dor-check fetches before asking, so a mismatch means
+# the fetch failed or a push landed mid-verdict.
 #
 # DIRECTION OF ERROR, stated plainly: a mismatch can only ever produce a FALSE REFUSAL
 # (an unfetched desk), never a false pass. The remedy for that refusal — fetch the

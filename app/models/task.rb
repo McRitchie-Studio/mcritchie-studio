@@ -252,6 +252,10 @@ class Task < ApplicationRecord
   # approval status above.
   validates :block_kind, inclusion: { in: BLOCK_KINDS, message: "must be one of #{BLOCK_KINDS.join(", ")}" },
                          allow_nil: true, if: :will_save_change_to_block_kind?
+  # bin/release runs devops.post_deploy_cmd VERBATIM against production, and a bare
+  # `db:seed` loads every db/seeds/*.rb. Refused on write (guard catalog row 2.8), so
+  # bin/dor-check never meets one. Gated on change, so a legacy row still saves.
+  validate :post_deploy_cmd_is_not_a_bare_seed, if: :post_deploy_cmd_changed?
 
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
@@ -2723,6 +2727,25 @@ class Task < ApplicationRecord
 
   # True when the normalized acceptance list differs from the stored one, so
   # untouched tasks and other devops updates are not re-validated.
+  # The rake TASK token `db:seed` (and `db:seed:replant` / any `db:seed:*`) as a
+  # standalone word: the COLON is the tell. The scoped `db/seeds/NN.rb` (slash) and a
+  # dedicated task like `pokemon:seed` do not match.
+  BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
+
+  def post_deploy_cmd_changed?
+    (metadata_was || {}).dig("devops", "post_deploy_cmd") != devops["post_deploy_cmd"]
+  end
+
+  def post_deploy_cmd_is_not_a_bare_seed
+    cmd = devops["post_deploy_cmd"].to_s
+    return unless BARE_SEED_TASK.match?(cmd)
+
+    errors.add(:base, "post_deploy_cmd #{cmd.inspect} is a bare full-suite seed — bin/release runs it " \
+                      "VERBATIM against PRODUCTION, and db:seed loads EVERY db/seeds/*.rb. Declare a narrow " \
+                      "command: a scoped single-file runner (rails runner 'load Rails.root.join(" \
+                      "\"db/seeds/NN_x.rb\").to_s') or a dedicated idempotent rake task (bin/rails pokemon:seed)")
+  end
+
   def acceptance_changed?
     previous = self.class.normalize_devops_list((metadata_was || {}).dig("devops", "acceptance"))
     previous != devops_acceptance

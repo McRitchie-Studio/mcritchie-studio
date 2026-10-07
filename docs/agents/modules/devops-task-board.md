@@ -526,7 +526,7 @@ Supported fields:
 | `acceptance` | Acceptance criteria, one item per line |
 | `test_plan` | Checks the feature agent expects to run, one item per line |
 | `checks_run` | Checks actually completed before the current handoff, one item per line |
-| `post_deploy_cmd` | Command `bin/release` runs **verbatim against the deployed app** (QA on `prepare`, prod on `ship`) after migrations, so a seed/backfill isn't run by hand. Must be **narrow, prod-safe, and idempotent** — **never a bare `db:seed`** (see safety rule below). Set to `none` to acknowledge a schema-only migration that needs no command. Two members declaring the same work **on the same app** run **once**: the plan folds the interchangeable runner spellings (`bundle exec` / `bin/` / `./` / `rails` / `rake`) and stamps the `[post-deploy]` check on both. **That prefix is the only thing normalised** — everything after the runner is compared **verbatim**, case and whitespace included, so a command differing by one space inside a quoted argument does NOT fold and runs twice. The bias is deliberate: a false split repeats idempotent work (merely slow), while a false merge silently skips declared work and still stamps that member's check green. |
+| `post_deploy_cmd` | Command `bin/release` runs **verbatim against the deployed app** (QA on `prepare`, prod on `ship`) after migrations, so a seed/backfill isn't run by hand. Must be **narrow, prod-safe, and idempotent** — **never a bare `db:seed`** (see safety rule below). A migrations-only diff defaults it to `none` (the release phase runs migrations); a seed sets a command or `none`. Two members declaring the same work **on the same app** run **once**: the plan folds the interchangeable runner spellings (`bundle exec` / `bin/` / `./` / `rails` / `rake`) and stamps the `[post-deploy]` check on both. **That prefix is the only thing normalised** — everything after the runner is compared **verbatim**, case and whitespace included, so a command differing by one space inside a quoted argument does NOT fold and runs twice. The bias is deliberate: a false split repeats idempotent work (merely slow), while a false merge silently skips declared work and still stamps that member's check green. |
 
 **The command's EXIT STATUS is its verdict — and the only thing that is.**
 `bin/release` runs it under `heroku run --exit-code` and decides pass/fail on
@@ -570,7 +570,7 @@ run where every single refresh raised printed `0`, exited 0, and satisfied
 `heroku run --exit-code` just the same.
 
 **`post_deploy_cmd` safety rule.** Because `bin/release` runs the command
-verbatim against PRODUCTION, `bin/dor-check` **rejects** a bare full-suite seed
+verbatim against PRODUCTION, the board **refuses** a bare full-suite seed on write
 (`bin/rails db:seed`, `rails db:seed`, `bundle exec rails db:seed`,
 `db:seed:replant`, `rake db:seed`): `db/seeds.rb` loads **every** `db/seeds/*.rb`,
 so it would inject demo News/Content/Tasks into prod and abort the release on the
@@ -685,7 +685,7 @@ worktree step: another live session's desk with uncommitted changes refuses, wit
 the desk named; `bin/task begin <task-slug> --steal` claims over it, and on the
 fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fast-check`
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
-record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
+record `pr_url` → `bin/dor-check` → `move submitted`):
 
 Paste the `next:` line `bin/task begin` prints. It names the desk and the absolute
 ship script, so no doc spells that path: `bin/lib/fast_lane.rb#handoff_command`
@@ -915,7 +915,7 @@ Production stays gated until Alex explicitly approves release work.
 
 **What review reads besides the diff.** `devops.post_deploy_cmd` runs verbatim
 against production on ship: reject a bare `db:seed` and require a narrow, idempotent
-command (`bin/dor-check` enforces this, but read it yourself). `risk_tags` decide
+command (the board refuses one on write, but read it yourself). `risk_tags` decide
 whether an infra gate (Steffon) is needed.
 
 **`bin/devops-cycle` is a read-only snapshot, not a review process.** It groups

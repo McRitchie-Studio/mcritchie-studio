@@ -7,7 +7,7 @@
 # Collapses the standing pre-handoff sequence — commit → push → NON-DRAFT PR into
 # `accepted` (body led by the task URL) → record pr_url → optional pre-flight
 # (bin/fast-check) → WAIT for CI to settle → DoR verdict (bin/dor-check) → move
-# `submitted` → read-back verify — into one idempotent, resumable command. Its
+# `submitted` — into one idempotent, resumable command. Its
 # inverse is `bin/task begin`, which collapses the session-start sequence.
 #
 # THE PUSH COMES BEFORE THE PRE-FLIGHT so GitHub CI starts the moment the PR
@@ -19,8 +19,9 @@
 # CI is still running, so `submitted` carries a GREEN CI — the one verdict per
 # tree that bin/dor-check reads. It decides nothing itself — see
 # bin/lib/ci_wait.rb for why that boundary is the whole design — and it is bounded
-# at both ends, falling through to the DoR verdict if CI never appears or never
-# finishes. Disarm with SHIP_CI_WAIT=off.
+# at both ends: a CI that never appears or never finishes stops the handoff before
+# the DoR verdict, which reads only a settled CI. Disarm the wait with
+# SHIP_CI_WAIT=off (CI is then read once).
 #
 # ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
 # gate still runs and still owns its verdict: bin/dor-check closes the DoR gate,
@@ -31,9 +32,8 @@
 # claim gate of its own (only move-to-building does), so ship asks two questions
 # BEFORE its first side effect:
 #
-#   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
-#     resume). Ship hands off a build; it never teleports a `designed` task
-#     past the claim/dev-size/baseline stamps the building move records.
+#   * the BUILD-STAGE SEAM — a `designed` task walks `bin/task move building`
+#     first, so the claim/dev-size/baseline stamps that move records still land.
 #   * HOLDER OWNERSHIP — the same desk rule the build gate enforces
 #     (bin/lib/desk_claim.rb): a task bound to a DIFFERENT live session's desk that
 #     has uncommitted changes refuses, naming the desk. Nothing else does: there is
@@ -54,7 +54,7 @@
 #                             reviewers and the sweep skips it — and
 #                             `gh pr edit --base` if mis-based), never duplicated
 #   * pr_url already equal  → record skipped
-#   * already `submitted`   → move skipped; the read-back verify still runs
+#   * already `submitted`   → move skipped
 #
 # ROOTING: run it from the task's worktree. From anywhere else it re-roots at
 # the task's worktree LOUDLY when that worktree exists on disk (the reader
@@ -74,7 +74,7 @@
 #   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
 #   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
 #   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
-#   SHIP_CI_WAIT          `off` disarms the CI settle wait (default: armed)
+#   SHIP_CI_WAIT          `off` reads CI once instead of waiting (default: armed)
 #   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default 900)
 #   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
 #   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
@@ -103,6 +103,7 @@ require_relative "lib/ci_wait"
 require_relative "lib/desk_claim"
 require_relative "lib/projects_root"
 require_relative "lib/task_board"
+require_relative "lib/ship_wait"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -181,6 +182,21 @@ end.parse!
 slug = ARGV.shift
 die!("usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
 
+# --- ONE TERMINAL LINE ON EVERY EXIT PATH (guard catalog row 3.4) -------------
+# bin/submit-wait reads the outcome from this line alone (bin/lib/ship_wait.rb):
+# the handoff, a task already past the seam, or anything else. The at_exit hook
+# prints the "not submitted" line for every path that did not print one first —
+# each die!, each refusal, an exception.
+TERMINAL = { stage: nil, printed: false }
+def terminal!(line)
+  return if TERMINAL[:printed]
+
+  TERMINAL[:printed] = true
+  $stdout.puts(line)
+  $stdout.flush
+end
+at_exit { terminal!(ShipWait.not_submitted_line(TERMINAL[:stage])) }
+
 # --- one board token per ship ------------------------------------------------
 # Every child board CLI (bin/task show/update/move, bin/dor-check, and the
 # bin/task reads inside bin/fast-check and bin/dor-check) mints its own 24h bearer
@@ -227,6 +243,7 @@ end
 task = fetch_task!(slug)
 devops = task.dig("metadata", "devops") || {}
 stage = task["stage"].to_s
+TERMINAL[:stage] = stage
 title = task["title"].to_s
 task_url = "#{BASE_URL}/tasks/#{slug}"
 branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
@@ -234,18 +251,8 @@ branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
 if PAST_SUBMITTED.include?(stage)
   say "#{slug} is already [#{stage}] — past the submitted seam; nothing to submit."
   puts "Task: #{task_url}"
+  terminal!(ShipWait.past_seam_line(stage))
   exit 0
-end
-
-# --- the build-stage seam ----------------------------------------------------
-# Ship hands off a BUILD; it never starts one. A task that was never claimed at
-# `building` (still `designed`) must walk the seam through `bin/task begin` /
-# `move building` — where the build-claim gate, the dev-size stamp, and the
-# usage baseline live — not be teleported designed→submitted by the handoff
-# wrapper. Asked before any side effect.
-unless %w[building submitted].include?(stage)
-  die!("#{slug} is [#{stage}] — submit hands off a BUILD (building → submitted). " \
-       "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
 end
 
 # --- builder ownership -------------------------------------------------------
@@ -368,6 +375,19 @@ def presence!(step)
   PRESENCE.publish(phase: phase, weight: weight, lane: lane)
 end
 
+# --- the build-stage seam, walked rather than refused (guard catalog row 3.1) --
+# A task still on `designed` walks `bin/task move <slug> building` here, after every
+# pre-check and before the first side effect, so the build-claim gate, the dev-size
+# stamp and the usage baseline that move records all still run. Submit never
+# teleports a task past them, and it never refuses a task for not having walked them.
+if stage == "designed"
+  say "0/8 claim — #{slug} is [designed]; #{TASK_CMD} move #{slug} building"
+  die!("the move to building failed — see above; re-run #{SHIP_CMD} #{slug}.") unless
+    system(TASK_BIN, "move", slug, "building")
+  stage = "building"
+  TERMINAL[:stage] = stage
+end
+
 # --- 1/8 commit --------------------------------------------------------------
 presence!(:commit)
 
@@ -377,8 +397,9 @@ if porcelain.empty?
   say "1/8 commit — working tree clean, nothing to commit."
 else
   message = options[:message].to_s.strip
+  # Every task has a title (the board validates it), so the default always exists
+  # (guard catalog row 3.2).
   message = title if message.empty?
-  die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
 
   say "1/8 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
 
@@ -678,8 +699,9 @@ end
 # (TaskPrUrlCacheJob → Task#cache_derived_pr_url!); the request itself never waits
 # on GitHub. A later show serves the cached url as `pr_url_or_derived`. When that
 # names the PR this run opened there is nothing to write. Ship still writes when the
-# board names a DIFFERENT PR (a stale or foreign url) or could not answer — the
-# read-back at 8/8 pins the exact URL either way.
+# board names a DIFFERENT PR (a stale or foreign url) or could not answer, and a
+# failed write is a note, not a refusal (guard catalog row 3.3): the board derives
+# the url from the branch either way.
 presence!(:record)
 
 # The board's answer, or "" when the show fails or predates the field: a failed
@@ -700,7 +722,9 @@ elsif board_pr_url(slug) == pr_url
   say "4/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
 else
   say "4/8 record — bin/task update #{slug} --pr-url #{pr_url}"
-  die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
+  unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
+    say "4/8 record — the --pr-url write failed; the board derives the url from the branch, carrying on."
+  end
 end
 
 # --- 5/8 pre-flight (bin/fast-check, optional) --------------------------------
@@ -740,46 +764,46 @@ end
 # a provisional one, and a red CI landing in the session that still has the
 # worktree warm instead of bouncing into a cold one.
 #
-# It is bounded on BOTH ends and degrades to the old behaviour: a run that never
-# appears (`:absent`), one that never finishes (`:timeout`), and a CI we could never
-# READ (`:unread`) all fall through to dor-check, which then applies precisely the
-# rules it applied before this step existed. The three are REPORTED separately —
-# see ci_wait.rb: a failed read is not evidence that the PR has no CI.
+# THE GATE READS ONLY A SETTLED CI (guard catalog row 1.10). The wait is bounded on
+# both ends, and a wait that gives up on a CI still RUNNING (`:timeout`) or never
+# reported (`:absent`) stops the handoff HERE, before the gate: bin/dor-check never
+# meets a pending or absent CI from this script, so it carries no builder-side
+# "waiting" verdict. Disarmed (SHIP_CI_WAIT=off) the wait still reads CI once, with
+# no budget, so the same rule holds. A CI we could never READ (`:unread`) or whose
+# read was REFUSED settles into the gate, which owns those remedies.
 
 presence!(:ci)
+cfg = CiWait.config(ENV)
 if CiWait.enabled?(ENV)
-  cfg = CiWait.config(ENV)
   say "6/8 ci — waiting for CI to settle on the PR (timeout #{cfg[:timeout_s]}s, poll #{cfg[:interval_s]}s)"
-  wait = CiWait.settle(
-    probe: -> { CiStatus.evaluate(pr_url, ENV["SHIP_CI_STATE"])[:state] },
-    timeout_s: cfg[:timeout_s], appearance_s: cfg[:appearance_s], interval_s: cfg[:interval_s],
-    reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
-  )
-  say "6/8 ci — #{CiWait.summary(wait)}"
-  # Named, not silent: every give-up path hands a NON-green state to dor-check, and
-  # the operator must be able to tell "CI said no" from "we stopped asking" from
-  # "we never got through" — three different facts with three different remedies.
-  if wait.timed_out?
-    say "6/8 ci — the DoR verdict below decides; re-run #{SHIP_CMD} #{slug} once CI reports."
-  elsif wait.unread?
-    # A failed READ, not an absent run — so the remedy is the credential/network, not
-    # the repo. Named separately because "re-run once CI reports" is useless advice
-    # when the problem is that nobody could ask.
-    say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
-        "token (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug}."
-  elsif wait.token_refused?
-    # THE INVERSION this branch closes (review of ship-waiter-misreports-ci): the
-    # advisory above fires on :unverified — a gh/network fault, which a re-run may
-    # well clear on its own — while :unreadable, ci_status.rb's name for a 401/403
-    # where the token IS the remedy, got no line at all. It settles rather than
-    # waiting because no amount of waiting mends a credential, and settling quietly
-    # is exactly how a blind read gets mistaken for a verdict.
-    say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
-        "refresh it (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug} " \
-        "if the DoR verdict below is blind too."
-  end
 else
-  say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); the DoR verdict grades whatever CI it finds."
+  say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); reading CI once"
+  cfg = cfg.merge(timeout_s: 0, appearance_s: 0)
+end
+wait = CiWait.settle(
+  probe: -> { CiStatus.evaluate(pr_url, ENV["SHIP_CI_STATE"])[:state] },
+  timeout_s: cfg[:timeout_s], appearance_s: cfg[:appearance_s], interval_s: cfg[:interval_s],
+  reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
+)
+say "6/8 ci — #{CiWait.summary(wait)}"
+if wait.timed_out?
+  die!("CI is still #{wait.state} on the PR, and the DoR verdict reads only a settled CI. Nothing about the " \
+       "tree is refused: re-run #{SHIP_CMD} #{slug} once CI reports (it resumes at 6/8).")
+elsif wait.absent?
+  die!("the PR reports no CI checks, and the DoR verdict reads only a settled CI. Confirm the workflow " \
+       "triggered (a stale base runs nothing: rebase onto origin/#{BASE_BRANCH}), then re-run " \
+       "#{SHIP_CMD} #{slug} (it resumes at 6/8).")
+elsif wait.unread?
+  # A failed READ, not an absent run — so the remedy is the credential/network, not
+  # the repo.
+  say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
+      "token (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug}."
+elsif wait.token_refused?
+  # :unreadable settles rather than waiting because no amount of waiting mends a
+  # credential, and settling quietly is how a blind read gets mistaken for a verdict.
+  say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
+      "refresh it (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug} " \
+      "if the DoR verdict below is blind too."
 end
 
 # --- 7/8 DoR verdict (bin/dor-check) -----------------------------------------
@@ -788,52 +812,29 @@ presence!(:dor)
 
 say "7/8 dor — running bin/dor-check #{slug}"
 unless system(DOR_CHECK_BIN, slug, chdir: root)
-  # The verdict is dor-check's: a RED CI means fix the failure and push; a CI still
-  # running (SHIP_CI_WAIT=off, or the settle timeout) means re-run once it reports.
-  # No local run stands in for it.
-  die!("bin/dor-check refused — read what it flagged above (a RED CI: fix and push; a CI still " \
-       "running: wait for it), then re-run #{SHIP_CMD} #{slug} (it resumes here).")
+  # The verdict is dor-check's, read on a settled CI: a RED CI means fix the failure
+  # and push. No local run stands in for it.
+  die!("bin/dor-check refused — read what it flagged above (a RED CI: fix and push), then re-run " \
+       "#{SHIP_CMD} #{slug} (it resumes here).")
 end
 
-# --- 8/8 submit + read-back verify -------------------------------------------
+# --- 8/8 submit --------------------------------------------------------------
+# bin/task move verifies the stage write itself, and the board derives the PR url
+# from the branch, so ship reads neither back (guard catalog row 3.3).
 presence!(:submit)
-# bin/task move already refuses a silently-non-persisting write; the fresh show
-# below is ship's own end-to-end read-back so the summary NEVER reports a stage
-# the board doesn't hold.
 
 if stage == "submitted"
-  say "8/8 submit — task already [submitted]; verifying."
+  say "8/8 submit — task already [submitted]."
 else
   say "8/8 submit — bin/task move #{slug} submitted"
   die!("the move to submitted failed — see above; re-run #{SHIP_CMD} #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
 end
 
-final = fetch_task!(slug)
-final_stage = final["stage"].to_s
-# The derived value when the board serves one (it is the recorded url when one is
-# recorded), else the raw column — an older board has no `pr_url_or_derived`.
-final_pr = final["pr_url_or_derived"].to_s
-final_pr = final.dig("metadata", "devops", "pr_url").to_s if final_pr.empty?
-unless final_stage == "submitted"
-  die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
-       "re-run #{SHIP_CMD} #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
-end
-# Pin the EXACT URL this run recorded — never accept any non-empty value. A
-# stale/foreign pr_url left on the board (with the --pr-url write silently
-# dropped) once passed here as "persisted", and the summary handed review the
-# WRONG PR. Equality subsumes the old blank check.
-unless final_pr == pr_url
-  die!("read-back verify FAILED: the board holds pr_url #{final_pr.empty? ? "(blank)" : final_pr} — " \
-       "not the PR this run recorded (#{pr_url}). The --pr-url write did not land, or a stale/foreign " \
-       "URL sits on the task. Do not hand off; re-run #{SHIP_CMD} #{slug} " \
-       "(if it recurs the board write is failing server-side — check ErrorLog).")
-end
-
 say "shipped to the submitted seam — review picks it up from here."
 # Close the cycle's activity trail with the real handoff outcome (twin of begin's
 # orient open) — names the submitted stage and the PR so the trail reads end-to-end.
-narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{final_pr}")
+narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{pr_url}")
 puts "Task: #{task_url}"
-puts "PR: #{final_pr}"
+puts "PR: #{pr_url}"
 puts "branch: #{branch}"
-puts "stage: submitted (read back verified)"
+terminal!(ShipWait::SUCCESS_LINE)
