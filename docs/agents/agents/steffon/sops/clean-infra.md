@@ -94,7 +94,7 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   mid-task. The reclaim now also withholds a desk younger than 1h29m, one written
   to inside that window, or one whose holder has a gate in flight (a cert writes
   nothing into its desk for up to 94 minutes). **Expect a bound desk to stand until
-  its task reaches `shipped` or `archived`** — a full release cycle, per the stage
+  its task reaches a stage in `bin/agent-worktree#RECLAIMABLE_STAGES`** — a full release cycle, per the stage
   rule below; 1h29m is the floor, and it is the whole wait only for an unbound
   desk. That is the trade, and it is deliberate. Use `bin/agent-worktree
   remove <app> <task-slug> --yes` when you need a specific one gone now.
@@ -103,13 +103,13 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   a reviewer works a builder's desk without ever taking the build claim. Both are
   channels of the same gate.
 - **A task the pipeline has not finished with withholds its desk, whatever git
-  says.** The gate reads the bound task's **board stage** and frees a desk only at
-  `shipped` or `archived`. Everything else — `designed`, `building`, `submitted`,
-  `reviewed`, `assembled` — is withheld, and the hold prints the stage. This is the
+  says.** The gate reads the bound task's **board stage** and frees a desk only at a
+  stage in `bin/agent-worktree#RECLAIMABLE_STAGES`. Every other stage is withheld,
+  and the hold prints the stage. This is the
   only channel that can see the rungs above `accepted`: a `reviewed` task IS merged
   onto accepted (that is what `reviewed` means), its PR was closed on the way there,
-  its builder's lease lapsed at the handoff and its reviewer has finished — so all
-  five other channels read honestly clear while its release is still assembling. On
+  its builder's lease lapsed at the handoff and its reviewer has finished — so every
+  other channel reads honestly clear while its release is still assembling. On
   2026-09-20 that was 5 of 19 candidates, every one riding `rel-20260920-b16744`,
   and `--yes` would have taken all five. **So `cleanup --reclaim --yes` is usable
   during a live release again** — the mid-flight desks name themselves.

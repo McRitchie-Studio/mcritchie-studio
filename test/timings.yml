@@ -153,7 +153,6 @@ test/docs/citation_resolution_guard_test.rb: 17.98
 test/docs/credential_rotation_shell_guard_test.rb: 1.74
 test/docs/credential_shell_orphan_guard_test.rb: 0.19
 test/docs/fast_lane_hub_path_docs_test.rb: 0.1
-test/docs/reclaim_stage_channel_docs_test.rb: 0.96
 test/docs/review_handoff_mint_docs_test.rb: 0.07
 test/docs/review_lane_docs_test.rb: 3.63
 test/docs/sop_registry_docs_test.rb: 0.14

@@ -48,7 +48,7 @@ Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/aut
 ```
 
 The request survives `bin/submit`; the window closes at `reviewed`. **The desk is NOT yet
-reclaimable there** — `RECLAIMABLE_STAGES` is `%w[shipped archived]`. Then commit, `finish`,
+reclaimable there** — the free set is `bin/agent-worktree#RECLAIMABLE_STAGES`. Then commit, `finish`,
 record the PR and `checks_run`, and move to `submitted`. Exceptions: read-only audits, the
 deploy owner, and emergencies (say why).
 
@@ -97,8 +97,8 @@ bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceil
                                              # bounces every running stack
 ```
 
-The reclaim withholds any desk bound to a task the board does not yet show as
-`shipped` or `archived`, so a band full of merged-but-unshipped desks reclaims
+The reclaim withholds any desk bound to a task the board does not yet show at a stage in
+`bin/agent-worktree#RECLAIMABLE_STAGES`, so a band full of merged-but-unshipped desks reclaims
 nothing. Free one of those by hand, once you know its work is safe on `accepted`:
 `bin/agent-worktree remove <app> <task-slug> --yes`.
 
@@ -135,8 +135,9 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 ### The reclaim safety rule
 
 A fresh desk and a merged one are **git-identical**, so git alone never frees a desk.
-**Six independent channels** decide, through ONE decision every path shares
-(`reclaim_verdict`), as an `||` chain, in order:
+Independent channels decide, through ONE decision every path shares
+(`bin/agent-worktree#reclaim_verdict`), as the `||` chain in
+`bin/agent-worktree#reclaim_hold`, in order:
 
 1. **ORIGIN** (`origin_hold`) — a gone or unreachable remote withholds.
 2. **CLAIM** (`claim_hold`) — an old lease row, if any; `_ship`/`_gate` are held by ANY live
@@ -150,7 +151,7 @@ A fresh desk and a merged one are **git-identical**, so git alone never frees a 
    `_ship`/`_gate` workspaces are always withheld. **A gem desk has no board stage**, so it
    gets no mid-release hold: it frees once its HEAD is merged and pushed and it has sat idle.
    A "merged PR" counts only when that PR's head commit is the desk's HEAD.
-3. **STAGE** (`stage_hold`) — frees a bound desk only at `shipped` or `archived`, failing
+3. **STAGE** (`stage_hold`) — frees a bound desk only at a stage in `RECLAIMABLE_STAGES`, failing
    closed on an unreadable board (withholding defers; freeing is irreversible).
 4. **REVIEW** (`review_hold`) — a reviewer on the task (`review_in_progress`) holds it.
 5. **DESK** (`desk_hold`) — desk age under `ClaimLease::DESK_IDLE_SECONDS` (1h29m), recent
@@ -165,8 +166,8 @@ never nominated; remove it deliberately. And a desk every channel cleared is sti
 `git status` cannot see it. Regenerable paths (`tmp/`, `log/`, `node_modules/`, builds) and
 the env files this script writes do not count.
 
-So a desk is `reclaimable?` only when clean, merged, and cleared by all six — its task at
-`shipped` or `archived` included. `quiet` never frees a desk, and no lane fails open. **The
+So a desk is `reclaimable?` only when clean, merged, and cleared by every channel — its task
+at a terminal stage included. `quiet` never frees a desk, and no lane fails open. **The
 cost:** a bound desk stands through the whole release cycle.
 
 - `cleanup --reclaim --yes` tears each candidate down like `remove`, re-verifying under the
