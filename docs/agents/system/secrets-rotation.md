@@ -62,7 +62,79 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Direct login still works in each app.
 
-**Warning:** Rotating session secrets logs users out. Apps that opt into shared SSO need compatible secrets; Turf Monster currently isolates its money-app cookie and uses direct login.
+**Warning:** Rotating session secrets logs users out unless the old key is kept readable; the hub's procedure is [Hub `SECRET_KEY_BASE`](#hub-secret_key_base). Apps that opt into shared SSO need compatible secrets; Turf Monster currently isolates its money-app cookie and uses direct login.
+
+---
+
+## Hub `SECRET_KEY_BASE`
+
+**Store:** Heroku config on `mcritchie-studio` only. It has no 1Password home (see the rotation log). Turf Monster and every other app carry their own key; the 2026-10-07 fleet sweep found no app sharing the hub's.
+
+**What derives from it, and what a swap does to each** (measured against studio-engine 0.92.0 and Rails 8.1, task [`hub-rotates-secret-key-base`](https://mcritchie.studio/tasks/hub-rotates-secret-key-base)):
+
+| Consumer | At the swap |
+|----------|-------------|
+| Session cookie and every signed or encrypted cookie | **Survives** while `OLD_SECRET_KEY_BASE` holds the old key (`config/initializers/secret_key_base_rotation.rb`). Rails re-writes each one under the new key on the visitor's next request |
+| Board API tokens (`message_verifier("api_auth")`) | **Breaks.** Every outstanding token answers 401. `bin/lib/agent_api.rb` callers drop the cache on a 401 and re-mint; `bin/session-insights` never does, so delete the cache (below). An in-flight `bin/submit` holds its own `AGENT_API_TOKEN`, so swap with no ship or release running |
+| Contact-form proof (`message_verifier(:contact_form)`, 1-day TTL) | **Breaks** for a form loaded before the swap: the row saves flagged `no_browser_proof`, and Alex is not notified |
+| Active Storage signed ids (`/rails/active_storage/...` URLs, direct-upload ids) | **Breaks** for URLs minted before the swap. The hub renders none in its own views (link previews use the service URL, `blob.url`), so the exposure is an in-flight direct upload |
+| `Studio::SessionFingerprint` (`key_generator`, `studio/session-fingerprint`) | Changes once: open tabs read session drift and rehydrate. Nobody is signed out |
+| `Studio::Link` magic links and referrals | **Survive.** They are random tokens stored in `studio_links`, not verifier blobs (the MessageVerifier store was retired in engine 0.31.0) |
+| Active Record encryption, signed Global IDs, Action Text, `generates_token_for` | Not used by the hub |
+| `RAILS_MASTER_KEY` credentials, CSRF tokens (held in the session) | Independent of the key / survive with the session |
+
+Message verifiers are deliberately **not** rotated: the old key is the leaked one, and a verifier rotation would let its holder keep minting board tokens or signed blob ids (sequential, so any file) for the whole window. For the same reason the cookie window is the exposure: while `OLD_SECRET_KEY_BASE` is set, the old key can still forge a session. Close it as soon as active sessions have migrated.
+
+**Procedure.** Three steps, each its own card.
+
+1. **Ship the rotation code** (`hub-rotates-secret-key-base`). With `OLD_SECRET_KEY_BASE` unset it is a no-op.
+2. **Swap**, in one config change, only after step 1 runs in production. The release lane runs this, in a shell holding the `credential-rotation` SOP's `digest()` helper and `HEROKU_API_KEY`. No value is ever printed.
+
+   ```bash
+   APP=mcritchie-studio
+   API="https://api.heroku.com/apps/$APP/config-vars"
+   hk() { curl -sS --fail-with-body -H "Accept: application/vnd.heroku+json; version=3" \
+            -H @<(printf 'Authorization: Bearer %s\n' "$HEROKU_API_KEY") "$@"; }
+
+   # Gate 0: the code is live, nothing is in flight, and the old key is the one we expect.
+   heroku run --exit-code --app "$APP" -- bin/rails runner \
+     'abort "ROTATION CODE MISSING" unless defined?(SecretKeyBaseRotation); puts "ROTATION CODE PRESENT"'
+   /Users/alex/projects/.agents/bin/release status        # no release or ship mid-run
+   hk "$API" | jq 'has("OLD_SECRET_KEY_BASE")'            # false
+   OLD=$(hk "$API" | jq -r '.SECRET_KEY_BASE // empty')
+   printf '%s' "$OLD" | digest                            # starts 81febe43 (the leaked key); EMPTY = stop
+   NEW=$(ruby -rsecurerandom -e 'print SecureRandom.hex(64)')
+   printf '%s' "$NEW" | digest                            # differs from the line above
+
+   # The swap: ONE PATCH, so ONE release and ONE restart. Values travel by env and stdin, never argv.
+   OLD="$OLD" NEW="$NEW" jq -n '{OLD_SECRET_KEY_BASE: env.OLD, SECRET_KEY_BASE: env.NEW}' |
+     hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'   # 200
+   ```
+
+   **Checks**, in order:
+   - `heroku releases --app mcritchie-studio -n 1` shows one release setting both vars.
+   - Stored: `hk "$API" | jq -r .SECRET_KEY_BASE | digest` equals the `NEW` digest; `hk "$API" | jq -r .OLD_SECRET_KEY_BASE | digest` starts `81febe43`.
+   - Live: `heroku run --exit-code --app mcritchie-studio -- bin/rails secret_key_base:verify_rotation` prints `runtime=` the `NEW` digest, `old=81febe43…`, `rotations signed=1 encrypted=1`, then `PASS`, and exits 0.
+   - `curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/up` and `/login` answer 200.
+   - Board tokens: the cached token now 401s (`curl -s -o /dev/null -w '%{http_code}\n' -H @<(printf 'Authorization: Bearer %s\n' "$(jq -r .token /Users/alex/projects/.agents/atomic-capture/token.json)") https://mcritchie.studio/api/v1/tasks`); then `rm -f /Users/alex/projects/.agents/atomic-capture/token.json` and `/Users/alex/projects/.agents/bin/task show hub-rotates-secret-key-base` succeeds on a fresh mint.
+   - Sign-in persists: a browser signed in before the swap loads `https://mcritchie.studio/tasks` without a login (Alex's own session is the check at his next visit).
+   - Watch `ErrorLog` and Sentry for 15 minutes for `InvalidSignature` or `InvalidMessage` spikes.
+   - `unset OLD NEW`.
+
+   **Rollback** (symmetric, one PATCH, so sessions written under either key keep reading):
+
+   ```bash
+   CUR=$(hk "$API" | jq -r '.SECRET_KEY_BASE // empty'); PREV=$(hk "$API" | jq -r '.OLD_SECRET_KEY_BASE // empty')
+   printf '%s' "$PREV" | digest                           # starts 81febe43; EMPTY = stop
+   CUR="$CUR" PREV="$PREV" jq -n '{SECRET_KEY_BASE: env.PREV, OLD_SECRET_KEY_BASE: env.CUR}' |
+     hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'
+   unset CUR PREV
+   ```
+
+   Re-run the checks with the digests swapped. If the app will not boot at all, `heroku releases:rollback --app mcritchie-studio` restores the prior config (old key, no `OLD_SECRET_KEY_BASE`). Sessions written during the window are then lost; everyone from before is fine.
+3. **Close the window** (its own card): `jq -n '{OLD_SECRET_KEY_BASE: null}' | hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'`. No code change is needed, since the initializer is a no-op when the var is unset; removing it is optional cleanup. Every day the var stays set is a day the leaked key can still forge a session, so prefer days to weeks.
+
+**Last rotation:** none yet. Log it below when step 2 runs.
 
 ---
 

@@ -75,7 +75,9 @@ export GH_TOKEN="$(GH_APP_ITEM=github.mcritchie-admin /Users/alex/projects/mcrit
 ## Phase 2 — The data question
 
 What did the old value authenticate or ENCRYPT, and does it survive? A key that only authenticates
-costs nothing extra. `SECRET_KEY_BASE` logs everyone out and kills magic links: announce it. A
+costs nothing extra. A bare `SECRET_KEY_BASE` swap logs everyone out and 401s every board token;
+on the hub, run it with `OLD_SECRET_KEY_BASE` per `secrets-rotation.md` § Hub `SECRET_KEY_BASE`
+(sessions survive; magic links are `studio_links` rows and survive either way). A
 registered public half (a Solana key, a webhook secret) moves first (Phase 3).
 `MANAGED_WALLET_ENCRYPTION_KEY` is §2.1 (it replaces 4.1 to 4.5). `RAILS_MASTER_KEY` re-encrypts:
 `EDITOR='code --wait' bin/rails credentials:edit`, copy the plaintext to
