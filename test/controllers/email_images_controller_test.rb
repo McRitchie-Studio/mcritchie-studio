@@ -129,6 +129,8 @@ class EmailImagesControllerTest < ActionDispatch::IntegrationTest
     post approve_candidate_email_image_path(brief, artifact_slug: a.slug)
     assert_equal a.slug, brief.reload.approved_artifact_slug
     assert_equal @admin.email, a.reload.approved_by
+    get email_image_path(brief)
+    assert_select "[data-test='approved-by']", text: @admin.email
 
     post approve_candidate_email_image_path(brief, artifact_slug: b.slug)
     assert_equal b.slug, brief.reload.approved_artifact_slug
