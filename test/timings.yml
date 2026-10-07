@@ -149,7 +149,6 @@ test/controllers/webhooks/resend_inbound_controller_test.rb: 0.08
 test/db/add_vocations_to_people_test.rb: 0.05
 test/db/remap_package_tiers_test.rb: 0.14
 test/db/timeline_views_test.rb: 0.1
-test/docs/approval_drop_warning_docs_test.rb: 4.29
 test/docs/citation_resolution_guard_test.rb: 17.98
 test/docs/credential_rotation_shell_guard_test.rb: 1.74
 test/docs/credential_rotation_sop_docs_test.rb: 0.06

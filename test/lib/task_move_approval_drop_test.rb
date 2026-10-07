@@ -321,11 +321,19 @@ class TaskMoveApprovalDropTest < Minitest::Test
     assert_equal 2, commands.size,
                  "expected 2 runnable commands, got #{commands.inspect} from: #{err}"
 
+    # Each runs where a stranded operator stands, `reviewed`, and must record the
+    # answer in place: the task never moves backwards.
     commands.each do |argv|
-      _r, _o, cmd_err, cmd_status = run_task(argv)
+      reqs, _o, cmd_err, cmd_status = run_task(argv, stub_stage: "reviewed")
       assert cmd_status.success?,
              "the warning tells the reader to run `bin/task #{argv.join(" ")}`, " \
              "which the CLI itself rejects: #{cmd_err}"
+      assert_equal "reviewed", @persisted_stage, "`bin/task #{argv.join(" ")}` moved the task"
+      patch = reqs.find { |r| r[:method] == "PATCH" }
+      assert patch, "`bin/task #{argv.join(" ")}` wrote nothing"
+      assert_equal argv[argv.index("--approval") + 1],
+                   JSON.parse(patch[:body]).dig("devops", "approval_status"),
+                   "`bin/task #{argv.join(" ")}` must put the operator's answer on the record"
     end
   end
 
@@ -513,10 +521,25 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # In the racing-writer cells the drop is the PREMISE rather than something the stub
   # performs — a writer set "waiting" inside this move's window and the PATCH settled
   # it — and what the stub reproduces is exactly what the CLI can OBSERVE of that:
-  # the two reads it gets, before and after. Completeness across all nine board
-  # states lives in test/docs/approval_drop_warning_docs_test.rb; this file drives
-  # the residual cells and the one that would make a fourth.
+  # the two reads it gets, before and after. The matrix holds EVERY drop cell the
+  # board can present, announced and silent alike, so a residual appearing in any of
+  # them turns this red; the cells with no drop are the quiet-move tests above.
   RESIDUAL_MATRIX = {
+    # Announced: the pre-read saw "waiting", with and without a receipt.
+    pre_read_waiting_and_receipt: {
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    },
+    pre_read_waiting_and_no_receipt: {
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
+      stub_stamps_drop_receipt: false
+    },
+    # Announced: a racing writer whose fresh stamp differs from the prior one.
+    racing_writer_and_moved_stamp: {
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => ANCIENT_STAMP },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => SAME_SECOND_STAMP }
+    },
     # (i) nothing to predict from, and nothing to compare.
     unreadable_pre_read_and_no_receipt: {
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
@@ -572,8 +595,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
     assert_equal EXPECTED_RESIDUALS.sort, silent.sort,
                  "the drops bin/task cannot see changed — bring the residual list in bin/task's " \
-                 "verdict comment, this list, and the approval_request_dropped_at row in " \
-                 "docs/agents/modules/devops-task-board.md back into agreement"
+                 "verdict comment and this list back into agreement"
   end
 
   # The comment block the residuals live in. Anchored on CONTENT, never a line

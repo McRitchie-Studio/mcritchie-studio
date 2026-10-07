@@ -1107,12 +1107,11 @@ end
 # be quiet on the common state and loud on the rare one. What a reader must take
 # from this: a quiet move is weak evidence, never a receipt.
 #
-# Pinned in TWO places, and it takes both. test/lib/task_move_approval_drop_test.rb
-# drives the three cells above plus the would-be fourth, checks that THIS list still
-# names what it measured, and proves the half-1/half-2 attribution with a controlled
-# pair. test/docs/approval_drop_warning_docs_test.rb drives the FULL nine-cell
-# matrix, so a residual appearing in a cell the first file does not drive still turns
-# something red. Close a residual and both ask this note to say so.
+# Pinned by test/lib/task_move_approval_drop_test.rb: it drives the three cells above
+# plus the would-be fourth, every announced cell, checks that THIS list still names
+# what it measured, and proves the half-1/half-2 attribution with a controlled pair.
+# docs/agents/modules/devops-task-board.md cites this note by seam rather than
+# restating it, so closing a residual means editing this note alone.
 #
 # A destination that CAN hold a request never reaches here at all — the `settleable`
 # test at the call site is the single place that decision is made, so the message can

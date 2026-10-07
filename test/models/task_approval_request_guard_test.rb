@@ -104,9 +104,8 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   # WHAT THIS FILE CANNOT DECIDE, stated plainly: the message carries a `<task-slug>`
   # placeholder, because the guard is a class method with no task in scope — so these
   # commands cannot be shelled out and RUN from here. The identical pair IS executed end
-  # to end against a stub board that enforces this very guard:
-  # test/docs/approval_drop_warning_docs_test.rb,
-  # test_the_recovery_step_prints_commands_that_actually_run.
+  # to end, at `reviewed`, by test/lib/task_move_approval_drop_test.rb,
+  # test_every_command_the_warning_prints_actually_runs.
   REMEDY = "Record the operator's answer where you stand: bin/task update <task-slug> " \
            "--approval approved, or bin/task update <task-slug> --approval changes_requested " \
            "— both are legal at every stage. If you still need his eyes on merged work, point " \
@@ -380,19 +379,13 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   end
   # --- the copies of this rule that live OUTSIDE the model ---
   #
-  # [unit] APPROVAL_REQUEST_STAGES is the settle's whole trigger, and THREE places
-  # outside app/models/task.rb now decide behaviour from their own copy of it:
+  # [unit] APPROVAL_REQUEST_STAGES is the settle's whole trigger, and TWO places
+  # outside app/models/task.rb decide behaviour from their own copy of it:
   # bin/task, whose move warning refuses to announce a drop on a destination that
-  # can HOLD a request, and the stub board in EACH of the two CLI-driving test files
-  # (test/lib/task_move_approval_drop_test.rb and test/docs/approval_drop_warning_docs_test.rb),
-  # which model the settle so a drop can be told apart from a stamp already on the
-  # record. A copy that drifts does not fail loudly — it silently certifies a rule
-  # the board no longer holds.
-  #
-  # The docs-matrix copy went UNPINNED until 2026-09-09, found while moving the seam
-  # from `submitted` to `reviewed`: two of the three copies were pinned and the note
-  # here said "two places", so the count itself read as complete. A drift guard that
-  # covers all but one copy is the worst of both — it certifies that the copies agree.
+  # can HOLD a request, and the stub board in the CLI-driving test file
+  # (test/lib/task_move_approval_drop_test.rb), which models the settle so a drop can
+  # be told apart from a stamp already on the record. A copy that drifts does not
+  # fail loudly — it silently certifies a rule the board no longer holds.
   #
   # Pinned HERE rather than beside either copy because test/lib/task_move_approval_drop_test.rb
   # is deliberately standalone (no Rails, no network) and cannot see Task at all: the
@@ -408,12 +401,6 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   def test_the_cli_stub_board_models_the_real_approval_request_stages
     assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
                  stage_literal_in("test/lib/task_move_approval_drop_test.rb",
-                                 /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
-  end
-
-  def test_the_docs_matrix_stub_board_models_the_real_approval_request_stages
-    assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
-                 stage_literal_in("test/docs/approval_drop_warning_docs_test.rb",
                                  /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
   end
 
