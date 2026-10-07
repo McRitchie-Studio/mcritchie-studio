@@ -339,7 +339,7 @@ public, and the log records WHAT and WHEN, never what the value is.
 
 | Date (UTC) | 1Password item | Reason | Stores updated | How verified | Old value revoked | Task |
 |------------|----------------|--------|----------------|--------------|-------------------|------|
-| _(no rotation recorded since the log was added 2026-09-09)_ | | | | | | |
+| 2026-10-07 | _(none: `SECRET_KEY_BASE` has no 1Password home; Heroku config is its only store)_ | `tax-studio` shared the hub's `SECRET_KEY_BASE`, so either app could forge or read the other's cookies and message verifiers | Heroku `tax-studio` (release v29); hub key untouched | env digests of `tax-studio` and `mcritchie-studio` now differ; the runtime `secret_key_base` matches the new env value; `/up` 200, `/login` 200; a fleet sweep of 18 apps (env and runtime digests) found no other shared pair | n/a: the old value is the hub's live key, still in service | https://mcritchie.studio/tasks/split-tax-studio-secret-key |
 
 ---
 
