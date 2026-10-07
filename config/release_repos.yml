@@ -181,9 +181,9 @@ apps:
     # docs/MAINNET_LAUNCH.md). A conductor must never attempt that act, so ship
     # advances main and records no deploy target.
     #
-    # ⛔ NO test_cmd, NO qa_test_cmd. Both gates prepare a Rails workspace
-    # (`bin/rails db:test:prepare test:prepare`) before the command, and this repo
-    # has no bin/rails. Its own gate is `release_check` below.
+    # ⛔ NO test_cmd, NO qa_test_cmd. Each names a suite CI ran, and its ci.yml runs
+    # no Rails suite; its gate is `release_check` below. The QA exemption also
+    # requires qa_test_cmd absent (repos_test checks both).
     #
     # QA-evidence exempt: QA does not apply (no dyno, no URL, no deploy), so no run
     # can produce QA evidence for it, and without this key every member naming it
