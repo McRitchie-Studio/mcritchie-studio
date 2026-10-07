@@ -97,8 +97,10 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
             -H @<(printf 'Authorization: Bearer %s\n' "$HEROKU_API_KEY") "$@"; }
 
    # Gate 0: the code is live, nothing is in flight, and the old key is the one we expect.
+   # HASH_DIGEST_CLASS exists only in the SHA256 fix (rotation-derives-old-key-sha256);
+   # the defective SHA1 build defines SecretKeyBaseRotation too, so the module alone proves nothing.
    heroku run --exit-code --app "$APP" -- bin/rails runner \
-     'abort "ROTATION CODE MISSING" unless defined?(SecretKeyBaseRotation); puts "ROTATION CODE PRESENT"'
+     'abort "ROTATION CODE MISSING" unless defined?(SecretKeyBaseRotation::HASH_DIGEST_CLASS); puts "ROTATION CODE PRESENT"'
    /Users/alex/projects/.agents/bin/release status        # no release or ship mid-run
    hk "$API" | jq 'has("OLD_SECRET_KEY_BASE")'            # false
    OLD=$(hk "$API" | jq -r '.SECRET_KEY_BASE // empty')
