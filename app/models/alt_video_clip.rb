@@ -6,17 +6,31 @@
 # all kept; exactly one is primary whenever any exists (the latest
 # primary_since). The primary is what the full-video preview and the stitch use.
 # A clip can be flagged for a regenerate, which the next upload clears.
+#
+# Its slug (piece 19) is the name the operator hands to an SOP, shown on the
+# card: "<alt video slug>-clip-<NN>", e.g. bigxthaplug-6wa-alt-3-clip-03. It is
+# derived from the alt video and the ordinal, which never change, so it is
+# stable; the migration backfilled existing clips with the same rule.
 class AltVideoClip < ApplicationRecord
   REGENERATE_NOTE_MAX = 280
 
   belongs_to :alt_video, foreign_key: :alt_video_slug, primary_key: :slug, inverse_of: :clips
   has_many :versions, -> { order(:number) }, class_name: "AltVideoClipVersion", inverse_of: :clip,
            dependent: :destroy
+  # Every attempt to put this clip in the operator's TikTok drafts, kept.
+  has_many :tiktok_drafts, -> { order(:created_at, :id) }, foreign_key: :clip_slug, primary_key: :slug,
+           inverse_of: :clip, dependent: :restrict_with_exception
+
+  before_validation :assign_slug, on: :create
 
   validates :chunk_ordinal, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :alt_video_slug }
   validates :start_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :end_ms, numericality: { only_integer: true, greater_than: :start_ms }
   validates :regenerate_note, length: { maximum: REGENERATE_NOTE_MAX }
+  validates :slug, presence: true, uniqueness: true
+  validate :slug_names_the_alt_video_and_ordinal
+
+  def self.slug_for(alt_video_slug, ordinal) = format("%<alt>s-clip-%<n>02d", alt: alt_video_slug, n: ordinal)
 
   # Timeline windows (MusicVideos::StitchTimeline) read ordinal, start_ms, end_ms.
   def ordinal = chunk_ordinal
@@ -40,4 +54,17 @@ class AltVideoClip < ApplicationRecord
   end
 
   def clear_regenerate! = update!(regenerate_requested_at: nil, regenerate_note: nil)
+
+  private
+
+  def assign_slug
+    self.slug ||= self.class.slug_for(alt_video_slug, chunk_ordinal) if alt_video_slug.present? && chunk_ordinal.present?
+  end
+
+  def slug_names_the_alt_video_and_ordinal
+    return if alt_video_slug.blank? || chunk_ordinal.blank?
+
+    expected = self.class.slug_for(alt_video_slug, chunk_ordinal)
+    errors.add(:slug, "must be #{expected}") unless slug == expected
+  end
 end
