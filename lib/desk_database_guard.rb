@@ -17,12 +17,19 @@
 # every throwaway — and only the primary checkout, whose `.git` is the repository itself,
 # is exempt. ALLOW_SHARED_DEV_DB=1 stays the one override.
 require "uri"
+require_relative "../bin/lib/remedy"
 
 module DeskDatabaseGuard
   OVERRIDE = "ALLOW_SHARED_DEV_DB"
   DESK_ROOT = %r{/\.worktrees/(?<slug>[^/]+)/?\z}
 
   module_function
+
+  # The re-provision command these refusals hand over (bin/lib/remedy.rb). Built on the
+  # refusal path only, never at boot: this file loads from an initializer in every env.
+  def agent_worktree_cmd
+    Remedy.command("agent-worktree", File.expand_path("../bin", __dir__))
+  end
 
   # -> nil (proceed) or the refusal message.
   # `linked_worktree:` is linked_worktree?(root), passed in so this stays pure.
@@ -41,7 +48,7 @@ module DeskDatabaseGuard
       ✗ refusing to run against the SHARED development database (#{shared_database}) from desk #{slug}.
         #{why(database_url)}
         Write the desk's own pointer with:
-          bin/agent-worktree new mcritchie-studio #{slug}
+          #{agent_worktree_cmd} new mcritchie-studio #{slug}
         (Test work needs no pointer: prefix it with RAILS_ENV=test. Meant it? #{OVERRIDE}=1.)
     MSG
   end
@@ -54,7 +61,7 @@ module DeskDatabaseGuard
         scratch worktree #{root}.
         #{why(database_url).sub("This desk", "This worktree")}
         A throwaway is for tests: prefix every rails command with RAILS_ENV=test.
-        (Need a development env? Provision a desk: bin/agent-worktree new mcritchie-studio <slug>.
+        (Need a development env? Provision a desk: #{agent_worktree_cmd} new mcritchie-studio <slug>.
         Meant it? #{OVERRIDE}=1.)
     MSG
   end

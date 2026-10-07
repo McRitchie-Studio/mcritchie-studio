@@ -2,6 +2,7 @@
 
 require_relative "../../lib/claim_lease"
 require_relative "session_markers"
+require_relative "remedy"
 
 # ReviewWorkerPulse — the WORKER-level half of "is this review still being done",
 # and the answer to a reviewer that dies inside a session that does not.
@@ -89,6 +90,8 @@ require_relative "session_markers"
 # Pure and injectable — `verdict` reads no clock, no disk and no process table, so the
 # decision is tested as arithmetic. The IO methods are thin and rescued.
 module ReviewWorkerPulse
+  # The absolute bin/task the release remedy hands over (bin/lib/remedy.rb).
+  TASK_CMD = Remedy.command("task", File.expand_path("..", __dir__)).freeze
   # How long a review may go without a foreground touch before `status` calls the
   # worker SILENT. Derived, not chosen: ClaimLease::REVIEW_TTL_SECONDS is the longest
   # continuous review ever measured, cleared by half again, and it is the same
@@ -300,7 +303,7 @@ module ReviewWorkerPulse
     "→ #{lead} — the holder is THIS session, so there is nobody else to ask. A live " \
       "reviewer and a dead one read the same from here: a subagent shares its session's " \
       "id, nonce and anchor, so the renewer cannot tell them apart. You can. If your " \
-      "reviewer for #{slug} is gone, release it: bin/task review-claim release #{slug}. " \
+      "reviewer for #{slug} is gone, release it: #{TASK_CMD} review-claim release #{slug}. " \
       "If it is still working, leave it alone."
   end
 end

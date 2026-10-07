@@ -222,7 +222,7 @@ class ConductorTest < Minitest::Test
 
     assert_includes out, "assembled → QA then SHIP"
     assert_includes out, "bin/release prepare"
-    assert_includes out, "QA workflow handoff: bin/release ship --by conductor"
+    assert_match %r{QA workflow handoff: /\S*/bin/release ship --by conductor}, out
     assert_includes out, "autonomous workflow: bin/conductor ship --run"
   end
 

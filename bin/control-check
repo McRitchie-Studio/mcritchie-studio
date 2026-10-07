@@ -59,9 +59,12 @@ require_relative "lib/tree_fingerprint"
 require_relative "lib/control_replay"
 require_relative "lib/board_checks"
 require_relative "lib/task_tree"
+require_relative "lib/remedy"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("CONTROL_CHECK_TASK_BIN", File.expand_path("task", __dir__))
+# The absolute bin/task the record-by-hand remedies hand over (bin/lib/remedy.rb).
+TASK_CMD = Remedy.command("task", __dir__).freeze
 
 def die(msg)
   warn "control-check: #{msg}"
@@ -90,21 +93,21 @@ end
 def record_line!(slug, line)
   if BoardChecks.fetch(TASK_BIN, slug).nil?
     warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
-         "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+         "cannot be verified. Not writing. Re-run, or record by hand: #{TASK_CMD} update #{slug} " \
          "--checks #{Shellwords.escape(line)}"
     exit 1
   end
 
   unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: File::NULL)
     warn "control-check: ran, but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run, " \
-         "or record by hand: bin/task update #{slug} --checks #{Shellwords.escape(line)}"
+         "or record by hand: #{TASK_CMD} update #{slug} --checks #{Shellwords.escape(line)}"
     exit 1
   end
 
   missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
   if missing && !missing.empty?
     warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
-         "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \
+         "Verify: #{TASK_CMD} show #{slug} -v, then record by hand: #{TASK_CMD} update #{slug} " \
          "--checks #{Shellwords.escape(line)}"
     exit 1
   end

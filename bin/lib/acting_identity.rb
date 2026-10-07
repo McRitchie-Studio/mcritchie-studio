@@ -61,6 +61,7 @@
 # ask whether it is blank, and reports identities and logins, never credentials.
 require "json"
 require "open3"
+require_relative "remedy"
 
 module ActingIdentity
   # An App installation token — the only identity permitted to merge.
@@ -174,7 +175,7 @@ module ActingIdentity
     "`gh` is authenticated as #{who} — a PERSON, not a GitHub App installation. Refusing to " \
       "merge: `agent` merges and a human does not, and a merge performed with a personal " \
       "credential is attributed to that human forever. Export an agent App token " \
-      "(eval \"$(bin/gh-auth-refresh --export)\") and re-run."
+      "(#{Remedy.gh_auth_refresh(File.expand_path("..", __dir__))}) and re-run."
   end
 
   def unknown_message(detail = nil)

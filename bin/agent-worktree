@@ -71,6 +71,11 @@ require_relative "lib/desk_context"
 # The same module bin/submit authors its commit from, so a desk stamp and a ship
 # commit spell a soul identically ("Carl <carl@mcritchie.studio>").
 require_relative "../lib/commit_identity"
+# Every command this script hands its reader comes through the one remedy helper.
+require_relative "lib/remedy"
+
+# This script, absolute, for the remedies it prints (bin/lib/remedy.rb).
+AGENT_WORKTREE_CMD = Remedy.command("agent-worktree", __dir__).freeze
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
@@ -769,8 +774,8 @@ def allocate_redis_db
 
       abort <<~MSG.strip
         no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
-        Free a slot:   bin/agent-worktree cleanup   (then remove merged worktrees)
-        Raise ceiling: bin/agent-worktree scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
+        Free a slot:   #{AGENT_WORKTREE_CMD} cleanup   (then remove merged worktrees)
+        Raise ceiling: #{AGENT_WORKTREE_CMD} scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
       MSG
     end
   end
@@ -917,7 +922,7 @@ end
 
 def load_stack_env(app, task)
   path = stack_env_path(app, task)
-  abort "missing #{path}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless File.exist?(path)
+  abort "missing #{path}\nRun: #{AGENT_WORKTREE_CMD} new #{app.fetch("slug")} #{task}" unless File.exist?(path)
   local_email_values.merge(parse_env(path))
 end
 
@@ -1029,14 +1034,14 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "redis:    db #{redis_db}"
   puts "session:  #{app.fetch("session_env")}=#{values.fetch(app.fetch("session_env"))}"
   puts
-  puts "start:    bin/agent-worktree up #{app.fetch("slug")} #{task}"
-  puts "stop:     bin/agent-worktree down #{app.fetch("slug")} #{task}"
+  puts "start:    #{AGENT_WORKTREE_CMD} up #{app.fetch("slug")} #{task}"
+  puts "stop:     #{AGENT_WORKTREE_CMD} down #{app.fetch("slug")} #{task}"
   puts
   physical = redis_physical_count
   if redis_db.to_i >= physical
     puts "warning: Redis db #{redis_db} is at/beyond the physical Redis ceiling (databases=#{physical})."
     puts "         The soft band grows restart-free, but only DBs 0-#{physical - 1} physically exist."
-    puts "         Run: bin/agent-worktree scale --provision  to raise capacity, or cleanup/remove a stack."
+    puts "         Run: #{AGENT_WORKTREE_CMD} scale --provision  to raise capacity, or cleanup/remove a stack."
     puts
   end
   puts "callback-heavy flows stay on primary http://localhost:#{app.fetch("primary_port")} unless providers are configured for this port."
@@ -1155,8 +1160,8 @@ def preflight_capacity!(app, task)
       Refusing BEFORE creating anything: a desk cut now would be rolled back seconds later,
       and a rollback is best-effort. Free a slot instead.
 
-      Free a slot:   bin/agent-worktree cleanup   (then remove merged worktrees)
-      Raise ceiling: bin/agent-worktree scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
+      Free a slot:   #{AGENT_WORKTREE_CMD} cleanup   (then remove merged worktrees)
+      Raise ceiling: #{AGENT_WORKTREE_CMD} scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
     MSG
   end
 end
@@ -2098,7 +2103,7 @@ def run_whereami(app = nil, task = nil, json: false, shell: false)
       write_context_marker(app, task, values, dir, record: record)
     else
       path = find_context_path
-      abort "no #{CONTEXT_FILE} found from #{Dir.pwd}; run bin/agent-worktree whereami <app> <task-slug> or recreate the stack with bin/agent-worktree new." unless path
+      abort "no #{CONTEXT_FILE} found from #{Dir.pwd}; run #{AGENT_WORKTREE_CMD} whereami <app> <task-slug> or recreate the stack with #{AGENT_WORKTREE_CMD} new." unless path
       read_context(path)
     end
 
@@ -2156,7 +2161,7 @@ def print_holders(task_slug, session_id, matches, scanned)
   if matches.empty?
     puts "no desk holds #{subject} (#{scanned} desk(s) scanned)"
     puts "  a desk written before the session join reports schema 1 — refresh it with:"
-    puts "    bin/agent-worktree status <app> <task-slug>"
+    puts "    #{AGENT_WORKTREE_CMD} status <app> <task-slug>"
     return
   end
 
@@ -2209,7 +2214,7 @@ end
 def run_bind_task(app, task, reference)
   values = load_stack_env(app, task)
   dir = worktree_dir(app, task)
-  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+  abort "missing worktree: #{dir}\nRun: #{AGENT_WORKTREE_CMD} new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
 
   record_slug, url = parse_task_reference(reference)
   values["TASK_RECORD_SLUG"] = record_slug
@@ -3510,8 +3515,17 @@ def cleanup_safety_label(record)
   record[:merged] ? "merged" : "base-equivalent"
 end
 
+# The teardown command as RECORD text: it lands in the desk ledger's
+# safe_delete_condition, durable shared content, so it stays the bare repo-relative
+# form rather than stamping one laptop's layout into the record.
 def cleanup_command(record)
   "bin/agent-worktree remove #{record[:app].fetch("slug")} #{record[:task]} --yes"
+end
+
+# The same teardown as a REMEDY printed to the reader's terminal: absolute, through
+# the one helper, so it runs from any desk.
+def cleanup_remedy(record)
+  Remedy.command("agent-worktree", __dir__, "remove", record[:app].fetch("slug"), record[:task], "--yes")
 end
 
 def print_cleanup_candidate(record)
@@ -3529,7 +3543,7 @@ def print_cleanup_candidate(record)
   puts "    rationale: #{reclaim_evidence(record)[:rationale]}"
   puts "    branch: #{record[:branch]} @ #{record[:head]}"
   puts "    stack: #{stack_health(record)} /up=#{record[:code]} pid=#{record[:pidfile_state]} redis=#{record[:redis_db]} db=#{cleanup_database_summary(record)}"
-  puts "    remove: #{cleanup_command(record)}"
+  puts "    remove: #{cleanup_remedy(record)}"
 end
 
 # The "Safe-delete condition" the ledger has always carried: what must be true before
@@ -3632,7 +3646,7 @@ def refuse_unrecorded_teardown!(record, result)
     the audit trail is whole; only this desk and the ones after it are left standing.)
 
     Re-run the teardown once the cause above is fixed:
-      #{cleanup_command(record)}
+      #{cleanup_remedy(record)}
   MSG
 end
 
@@ -3951,7 +3965,7 @@ def resolve_desk_dir(app, raw)
   # checkout as a remove candidate.
   if raw.include?("/") && matches.empty?
     abort "not a desk of #{app.fetch("slug")}: #{raw}\n" \
-          "Pass a desk name or path from `bin/agent-worktree list #{app.fetch("slug")}`."
+          "Pass a desk name or path from `#{AGENT_WORKTREE_CMD} list #{app.fetch("slug")}`."
   end
 
   dir = matches.first || worktree_dir(app, clean_slug(raw))
@@ -5085,9 +5099,9 @@ end
 # the one path that matters most. A record with no :app still gets a usable sentence.
 def remove_command_hint(record)
   app = record[:app]
-  return cleanup_command(record) if app.is_a?(Hash) && app["slug"]
+  return cleanup_remedy(record) if app.is_a?(Hash) && app["slug"]
 
-  "bin/agent-worktree remove <app> #{record[:task]} --yes"
+  "#{AGENT_WORKTREE_CMD} remove <app> #{record[:task]} --yes"
 end
 
 # --- the rationale: why a nominated desk was judged free --------------------------------
@@ -5583,7 +5597,7 @@ def run_scale_status
   puts
   puts "  warning: band (#{current} slots) exceeds physical room (#{room} slots);"
   puts "           only redis DBs #{redis_db_min}-#{[band_top, physical_top].min} are usable."
-  puts "           run: bin/agent-worktree scale --provision  to raise Redis databases to #{redis_physical_target}."
+  puts "           run: #{AGENT_WORKTREE_CMD} scale --provision  to raise Redis databases to #{redis_physical_target}."
 end
 
 def run_scale_out
@@ -5912,7 +5926,7 @@ if $PROGRAM_NAME == __FILE__
     app = app_for(app_name)
     task = clean_slug(raw_task)
     dir = worktree_dir(app, task)
-    abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+    abort "missing worktree: #{dir}\nRun: #{AGENT_WORKTREE_CMD} new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
     values = load_stack_env(app, task)
     app.fetch("stack") == "tm" ? start_tm(dir, app, values) : start_generic_rails(dir, app, values)
     code = wait_for_url(values.fetch("APP_PORT"))
@@ -5929,7 +5943,7 @@ if $PROGRAM_NAME == __FILE__
     app = app_for(app_name)
     task = clean_slug(raw_task)
     dir = worktree_dir(app, task)
-    abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+    abort "missing worktree: #{dir}\nRun: #{AGENT_WORKTREE_CMD} new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
     run_worktree_tests(dir, app, load_stack_env(app, task), rest)
   when "status"
     app_name, raw_task = ARGV

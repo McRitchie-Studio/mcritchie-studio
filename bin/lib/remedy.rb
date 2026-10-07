@@ -15,7 +15,7 @@
 #
 #   1. A hint is always absolute. resolve_bin returns an absolute path whatever it
 #      is given; there is no bare form to fall back to.
-#   2. A hint names only a real script. The script must be an executable in the bin/
+#   2. A hint names only a real script. The script must be a file in the bin/
 #      directory beside this file, the same tree the speaking script runs from. A
 #      renamed or retired script raises UnknownScript when the hint is built, and most
 #      hints are built as constants when their script loads, so a stale name fails
@@ -51,7 +51,9 @@
 # A dir inside the fixed-path tooling install is named by its stable link (see
 # stable_bin_dir), so a pasted hint does not pin a SHA the next ship prunes.
 module Remedy
-  # The bin/ this file ships in. Its executables are the scripts a hint may name.
+  # The bin/ this file ships in. Its scripts are the ones a hint may name. Presence,
+  # not the mode bit, decides membership: a deploy that drops the mode must not turn
+  # a boot-time constant into a crash. resolve_bin still prefers an executable copy.
   HOME_BIN = File.expand_path("..", __dir__)
 
   # A hint named a script that does not exist in this tree.
@@ -59,22 +61,19 @@ module Remedy
 
   module_function
 
-  # The executables a hint may name: every runnable file directly in HOME_BIN.
-  # Read from the disk, so adding or retiring a script needs no edit here.
+  # The scripts a hint may name: every file directly in HOME_BIN. Read from the
+  # disk, so adding or retiring a script needs no edit here.
   def scripts
-    Dir.children(HOME_BIN).select do |name|
-      path = File.join(HOME_BIN, name)
-      File.file?(path) && File.executable?(path)
-    end.sort
+    Dir.children(HOME_BIN).select { |name| File.file?(File.join(HOME_BIN, name)) }.sort
   end
 
-  # Raises UnknownScript unless +script+ is an executable in HOME_BIN.
+  # Raises UnknownScript unless +script+ is a file in HOME_BIN.
   def known!(script)
     name = script.to_s
     path = File.join(HOME_BIN, name)
-    return name if !name.empty? && !name.include?("/") && File.file?(path) && File.executable?(path)
+    return name if !name.empty? && !name.include?("/") && File.file?(path)
 
-    raise UnknownScript, "no executable bin/#{name} in #{HOME_BIN}; a remedy must name a real script"
+    raise UnknownScript, "no bin/#{name} in #{HOME_BIN}; a remedy must name a real script"
   end
 
   # The absolute path of +script+ in the first of +bin_dirs+ that carries it, else

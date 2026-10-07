@@ -80,6 +80,7 @@ require "time"
 
 require_relative "lib/repo_root"
 require_relative "lib/ship_wait"
+require_relative "lib/remedy"
 
 PROGRAM = "submit-wait"
 # The script's own repo — the state-dir fallback when cwd is not in a git work tree.
@@ -263,7 +264,7 @@ when :failed
   status = ShipWait.sentinel_status(text)
   say "FAILED — #{slug} did NOT reach the submitted seam (#{took}#{status ? ", ship exited #{status}" : ""})."
   say "last line: #{ShipWait.last_report(text)}"
-  say "read the whole log: #{log_path} — then re-run bin/submit #{slug} (it resumes)."
+  say "read the whole log: #{log_path} — then re-run #{Remedy.command("submit", __dir__, slug)} (it resumes)."
   exit ShipWait::EXIT_FAILED
 else
   say "TIMEOUT — #{slug} is STILL RUNNING after #{took}. This is not a failure; the budget ran out."

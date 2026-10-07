@@ -10,6 +10,7 @@ require "open3"
 # Referencing ::Release first makes the path-load below a harmless reopen.
 ::Release if defined?(Rails) && Rails.respond_to?(:application) && Rails.application
 require_relative "../../app/models/release/gate_workspace"
+require_relative "remedy"
 
 # DeskGuard — refuse a CERT lane in a worktree DESK whose test database is not its own.
 #
@@ -307,7 +308,7 @@ module DeskGuard
           This is an ENV issue with the DESK, not a regression in your diff. Re-provision it
           (bringup is idempotent and repairs the missing pieces):
 
-            bin/agent-worktree new #{app} #{slug}
+            #{Remedy.command("agent-worktree", File.expand_path("..", __dir__), "new", app, slug)}
         MSG
       else
         <<~MSG

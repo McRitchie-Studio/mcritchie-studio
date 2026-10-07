@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "remedy"
+
 # The LOUD block a reviewer sees before merging a task that still carries an open
 # operator-approval request (approval_status `waiting`).
 #
@@ -14,6 +16,8 @@
 # exit status it had before. Pure Ruby with no Rails, so bin/task, bin/pr-review and
 # bin/review-autopilot can all load it.
 module ApprovalRequestNotice
+  # The absolute bin/task the answer remedy hands over (bin/lib/remedy.rb).
+  TASK_CMD = Remedy.command("task", File.expand_path("..", __dir__)).freeze
   WAITING = "waiting"
   NOTE_LIMIT = 280
   # The caller never read the handoff note. Distinct from nil (read, none found), so
@@ -49,7 +53,7 @@ module ApprovalRequestNotice
       "   local demo: #{present(devops["local_url"]) || "none recorded"}",
       "   the note that asked: #{note_text(note, slug)}",
       "   Merging settles it to none and leaves a note addressed to the setter.",
-      "   Mr. McRitchie can still answer: bin/task update #{slug} --approval approved " \
+      "   Mr. McRitchie can still answer: #{TASK_CMD} update #{slug} --approval approved " \
       "(or --approval changes_requested)."
     ]
   end

@@ -184,6 +184,10 @@ require_relative "../app/models/release/cli"
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
+# Every command a refusal here hands the operator comes through the one remedy helper.
+require_relative "lib/remedy"
+RELEASE_SELF_CMD = Remedy.command("release", __dir__).freeze
+RELEASE_TASK_CMD = Remedy.command("task", __dir__).freeze
 # Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
 # (task gem-gate-outwaits-consumer-ci). Pure and Rails-free; see ci_poll_budget_for.
 require_relative "lib/ci_poll_budget"
@@ -1538,7 +1542,7 @@ def run_post_deploy(repos, target:)
     # In ship, add successful runs to the partial-ship "what's live" trail.
     @ship_live << "post-deploy `#{cmd}` on #{app} (#{label})" if ok && defined?(@ship_live) && @ship_live
     abort!("post-deploy command failed for #{label} on #{app}: `#{cmd}` — fix it, then re-run " \
-           "`bin/release #{subcmd}` (the command is idempotent; a re-run resumes)") unless ok
+           "`#{RELEASE_SELF_CMD} #{subcmd}` (the command is idempotent; a re-run resumes)") unless ok
   end
 end
 
@@ -2205,7 +2209,7 @@ def merge
            "#{named.join('; ')}. Promoting now would carry only the repo(s) with a PR and still stamp " \
            "the task assembled/shipped for the rest — the 2026-08-13 half-ship. NOTHING was promoted " \
            "or recorded. Record the missing PR " \
-           "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
+           "(`#{RELEASE_TASK_CMD} update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
            "devops.repositories if it carries no work, then re-run `bin/release merge`.")
   end
 
@@ -3122,7 +3126,7 @@ def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
     named = Array(ci[:failing]).join(", ")
     "pre-QA gate FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
       "regression is riding origin/#{RELEASE_BRANCH}. Identify the offending task, eject it " \
-      "(`bin/release eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
+      "(`#{RELEASE_SELF_CMD} eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
       "(git revert -m 1 <merge-sha>; push), then re-run `bin/release prepare` — the sweep self-heals and the " \
       "REST of the RC rides on."
   when :unreadable
@@ -3554,7 +3558,7 @@ def prepare
            "#{named.join('; ')}. Promoting now would carry only the repo(s) with a PR and still stamp " \
            "the task assembled/shipped for the rest — the 2026-08-13 half-ship. NOTHING was promoted, " \
            "recorded or deployed. Record the missing PR " \
-           "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
+           "(`#{RELEASE_TASK_CMD} update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
            "devops.repositories if it carries no work, then re-run `bin/release prepare`.")
   end
 
@@ -3677,7 +3681,7 @@ def prepare
              "— the 2026-08-13 half-ship, where turf-monster sat +2 and production ran the unpatched code. " \
              "NOTHING was promoted, recorded or deployed. A member names #{uncovered.join(', ')} but is not " \
              "landing it: either its `merged` stamp says its code is already past `accepted` when that " \
-             "repo's is not (a PARTIAL earlier promote — land it with `bin/release merge <slug>`, which " \
+             "repo's is not (a PARTIAL earlier promote — land it with `#{RELEASE_SELF_CMD} merge <slug>`, which " \
              "now fans out over every repo a task names), or the task should not name " \
              "#{uncovered.join(', ')} at all (drop it from devops.repositories). `bin/release status` " \
              "prints both signals side by side. NOTE: a repo NO member names is out of scope here by " \
@@ -5375,7 +5379,7 @@ def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
   ci   = verdict[:ci]
   read = ci_detail(ci)
   override = "To ship past a verdict you believe is a false negative, use " \
-             "`bin/release ship --skip-test-gate --reason \"…\"` (records a RED gate)."
+             "`#{RELEASE_SELF_CMD} ship --skip-test-gate --reason \"…\"` (records a RED gate)."
   case kind
   when :red
     named = Array(ci[:failing]).join(", ")
@@ -5392,12 +5396,12 @@ def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
       "#{ACCEPTED_BRANCH} head (#{verdict[:diagnostic]}), so no earlier green could vouch for its tree — and its " \
       "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{ci_poll_timeout}s. " \
       "The ship gate FAILS CLOSED on anything but green. Let CI conclude on the frozen SHA (or widen " \
-      "RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release ship`. #{override}"
+      "RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   else
     "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after " \
       "polling ~#{ci_poll_timeout}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
       "CI's verdict and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING. Let CI " \
-      "conclude on the frozen SHA (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release ship`. #{override}"
+      "conclude on the frozen SHA (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   end
 end
 
@@ -7824,7 +7828,7 @@ def record_unsealed_seal(rel_slug, reason)
   say("")
   say("⚪ PRODUCTION SMOKE SEAL NOT RECORDED — #{summary}")
   say("   This is NOT a red seal: the shipped specs never ran, so nothing was judged.")
-  say("   Re-seal once the cause is fixed: bin/release reseal #{rel_slug}")
+  say("   Re-seal once the cause is fixed: #{RELEASE_SELF_CMD} reseal #{rel_slug}")
   say("")
   Release::SealTree::UNSEALED
 end
@@ -8532,7 +8536,7 @@ def reclaim_outside_count(out)
   out.to_s.scan(RECLAIM_OUTSIDE_ROOT_LINE).size
 end
 
-RECLAIM_RERUN = "bin/agent-worktree cleanup --reclaim --yes"
+RECLAIM_RERUN = Remedy.command("agent-worktree", __dir__, "cleanup", "--reclaim", "--yes").freeze
 
 # The line that CLOSES an archive whose reclaim failed. The mid-run warning scrolls away
 # above the artifact sweep, the doc retirement and the summary; this is the one the operator
@@ -9303,7 +9307,7 @@ def rollback(slug = nil)
   if authority == "plan"
     say("")
     say("✓ Plan only — nothing deployed, nothing recorded. Run it with --mode ask (confirm at the prompt) " \
-        "or --mode auto: bin/release rollback #{rel_slug} --mode ask")
+        "or --mode auto: #{RELEASE_SELF_CMD} rollback #{rel_slug} --mode ask")
     return
   end
 
@@ -9538,7 +9542,7 @@ def notes
   end
   if result["notes_refused"]
     say("  ⚠ #{slug}'s release notes were already delivered — nothing posted.")
-    say("  post them again anyway with: bin/release notes #{slug} --post --force")
+    say("  post them again anyway with: #{RELEASE_SELF_CMD} notes #{slug} --post --force")
     exit 1
   end
   say("  ⚠ #{slug}'s release notes were already delivered#{force ? ' — posting again (--force)' : ''}.") if result["notes_already_delivered"]
@@ -9549,7 +9553,7 @@ def notes
     say("")
     say(result["message"].to_s)
     say("")
-    say("✓ Previewed #{slug} — nothing posted. Send it with: bin/release notes #{slug} --post")
+    say("✓ Previewed #{slug} — nothing posted. Send it with: #{RELEASE_SELF_CMD} notes #{slug} --post")
   end
 end
 

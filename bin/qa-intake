@@ -16,8 +16,11 @@ require "shellwords"
 require "time"
 require "yaml"
 require_relative "lib/projects_root"
+require_relative "lib/remedy"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
+# The absolute bin/agent-worktree the remedies below hand over (bin/lib/remedy.rb).
+AGENT_WORKTREE_CMD = Remedy.command("agent-worktree", __dir__).freeze
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 DEFAULT_REGISTRY = File.join(PROJECTS_DIR, ".agents", "worktree-registry.json")
@@ -61,7 +64,7 @@ def refresh_registry(path, warnings)
 end
 
 def read_registry(path)
-  abort "missing worktree registry: #{path}\nRun: bin/agent-worktree snapshot --write" unless File.exist?(path)
+  abort "missing worktree registry: #{path}\nRun: #{AGENT_WORKTREE_CMD} snapshot --write" unless File.exist?(path)
 
   JSON.parse(File.read(path))
 rescue JSON::ParserError => e
@@ -343,7 +346,7 @@ def attention_action(worktree)
   withheld = worktree["withheld_reason"]
   return "leave this desk alone — #{withheld}" if withheld.is_a?(String) && !withheld.strip.empty?
   return "run cleanup workflow after approval; branch is already contained in `#{base}`" if truthy?(worktree["cleanup_candidate"])
-  return "remove stale pidfiles or restart the stack with `bin/agent-worktree up #{worktree.fetch("app")} #{worktree.fetch("task")}`" if issues.include?("stale")
+  return "remove stale pidfiles or restart the stack with `#{AGENT_WORKTREE_CMD} up #{worktree.fetch("app")} #{worktree.fetch("task")}`" if issues.include?("stale")
   return "rebase this worktree on `#{base}` before QA handoff" if issues.match?(BEHIND_BASE_ISSUE)
   return "commit or intentionally clear uncommitted changes" if issues.include?("dirty worktree")
   return "fix stack env/database/port health, then rerun intake" if issues.match?(/missing|database|port|Redis|LOCAL_EMAIL_CAPTURE/)
@@ -352,7 +355,7 @@ def attention_action(worktree)
 end
 
 def cleanup_action(worktree)
-  "remove after approval with `bin/agent-worktree remove #{worktree.fetch("app")} #{worktree.fetch("task")} --yes`; the command ledgers, stops, removes, deletes the local branch, and refreshes the registry"
+  "remove after approval with `#{AGENT_WORKTREE_CMD} remove #{worktree.fetch("app")} #{worktree.fetch("task")} --yes`; the command ledgers, stops, removes, deletes the local branch, and refreshes the registry"
 end
 
 # The occupied desk's one correct treatment, whichever withhold case applies: leave it
@@ -533,7 +536,7 @@ def print_cleanup(worktrees)
     puts "  action: #{worktree.fetch("action") { cleanup_action(worktree) }}"
   end
   puts
-  puts "Removal remains approval-gated. Use bin/agent-worktree remove <app> <task> --yes only after approval."
+  puts "Removal remains approval-gated. Use #{AGENT_WORKTREE_CMD} remove <app> <task> --yes only after approval."
 end
 
 def parse_options!
