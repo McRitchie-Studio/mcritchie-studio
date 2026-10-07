@@ -1466,35 +1466,40 @@ class AgentWorktreeTest < Minitest::Test
   # --- identity's missing-desk remedy: a command that can actually cut the desk --
   #
   # `identity` resolves through sweep_app_for, so it reaches repos `new` cannot desk:
-  # `new` resolves through app_for, the registry, and answers "unknown app" for a gem
-  # lane (studio-engine, solana-studio, turf-vault). A missing gem-lane desk was told to
-  # run `new` anyway, the one remedy guaranteed to fail on the lanes whose docs send
-  # builders to `identity`. The lane is read off the registry lookup `new` uses, so a
-  # registered app keeps `new` and anything else gets the `git worktree add` that cuts
-  # the desk where identity looks, sibling tree included.
+  # `new` resolves registered apps and, since gem-repos-get-desks, the gems
+  # (studio-engine, solana-studio); it answers "unknown app" for anything else, such as
+  # turf-vault. A missing desk there was told to run `new` anyway, the one remedy
+  # guaranteed to fail. The lane is read off the lookups `new` uses, so a registered app
+  # or a gem keeps `new` and anything else gets the `git worktree add` that cuts the desk
+  # where identity looks, sibling tree included.
   def test_missing_desk_remedy_follows_the_registry_new_resolves_through
     Dir.mktmpdir do |root|
       out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        vault = { "slug" => "turf-vault", "repo" => File.join(PROJECTS_DIR, "turf-vault") }
+        sibling = vault.merge("slug" => "turf-vault.sibling",
+                              "worktrees_dir" => File.join(PROJECTS_DIR, "turf-vault.worktrees"))
         gem = { "slug" => "studio-engine", "repo" => File.join(PROJECTS_DIR, "studio-engine") }
-        sibling = gem.merge("slug" => "studio-engine.sibling",
-                            "worktrees_dir" => File.join(PROJECTS_DIR, "studio-engine.worktrees"))
         print [missing_desk_remedy(apps.fetch("mcritchie-studio"), "t", "carl"),
-               missing_desk_remedy(gem, "t", "carl"),
-               missing_desk_remedy(sibling, "t", "carl")].join("|||")
+               missing_desk_remedy(vault, "t", "carl"),
+               missing_desk_remedy(sibling, "t", "carl"),
+               missing_desk_remedy(gem, "t", "carl")].join("|||")
       RUBY
-      app, gem, sibling = out.split("|||")
+      app, vault, sibling, gem = out.split("|||")
 
       assert_includes app, "agent-worktree new mcritchie-studio t --soul carl",
                       "control: a registered app keeps `new`, which can cut its desk"
       refute_includes app, "worktree add"
 
-      assert_includes gem, "git -C #{root}/studio-engine worktree add #{root}/studio-engine/.worktrees/t " \
-                           "-b feat/t origin/accepted"
-      assert_includes gem, "agent-worktree identity studio-engine t carl", "the remedy re-runs identity"
-      refute_includes gem, " new ", "`new` answers unknown app for an unregistered repo"
+      assert_includes vault, "git -C #{root}/turf-vault worktree add #{root}/turf-vault/.worktrees/t " \
+                             "-b feat/t origin/accepted"
+      assert_includes vault, "agent-worktree identity turf-vault t carl", "the remedy re-runs identity"
+      refute_includes vault, " new ", "`new` answers unknown app for a repo that is not an app or a gem"
 
-      assert_includes sibling, "worktree add #{root}/studio-engine.worktrees/t -b feat/t",
+      assert_includes sibling, "worktree add #{root}/turf-vault.worktrees/t -b feat/t",
                       "the path is the one identity resolves, not a hard-coded layout"
+
+      assert_includes gem, "agent-worktree new studio-engine t --soul carl", "a gem desk is cut by `new`"
+      refute_includes gem, "worktree add"
     end
   end
 
@@ -1941,8 +1946,10 @@ class AgentWorktreeTest < Minitest::Test
         out, err, _status = Open3.capture3(env, "ruby", BIN, command, "studio-engine")
         [command, "#{out}#{err}".include?("unknown app")]
       end
-      out, err, _status = Open3.capture3(env, "ruby", BIN, "up", "studio-engine", "a-desk")
-      lifecycle_refused = "#{out}#{err}".include?("unknown app")
+      out, err, status = Open3.capture3(env, "ruby", BIN, "up", "studio-engine", "a-desk")
+      # A gem's refusal names the gem lane rather than "unknown app" (gem-repos-get-desks);
+      # it is the same refusal: `up` still has no port range or stack to hand a gem.
+      lifecycle_refused = !status.success? && "#{out}#{err}".include?("is a gem repo")
 
       assert_equal({ "doctor" => false, "snapshot" => false, "list" => false }, inspection,
                    "an inspection command must resolve a repo the sweep already covers, or it " \

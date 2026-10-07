@@ -154,9 +154,10 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # WHICH REPOS THE FAST LANE CAN DESK, read off the registry rather than listed here.
   # bin/agent-worktree manages the hub plus every entry in config/satellites.yml (that is
   # exactly what `bin/agent-worktree apps` prints); everything else in the release
-  # registry — the gems, and turf-vault — cannot be desked, so `bin/task begin` answers
-  # `unknown app` there. Onboard a gem and this set changes, which is precisely when the
-  # docs' table must be revisited.
+  # registry sits in the no-lane row: turf-vault, where `bin/task begin` answers
+  # `unknown app`, and the gems, which `begin` desks with no port or stack but which
+  # still have no `ship` (gem-repos-get-desks). Onboard an app and this set changes,
+  # which is precisely when the docs' table must be revisited.
   MANAGED_REPOS = (
     ["mcritchie-studio"] +
     YAML.load_file(Rails.root.join("config/satellites.yml")).fetch("satellites").map { |s| s.fetch("slug") }
