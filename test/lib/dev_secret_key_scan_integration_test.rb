@@ -210,6 +210,7 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
   AWS = "aws-secret-" + ("9" * 30)
   MASTER = "e" * 32
   LOCAL_AWS = "a-local-only-aws-key-#{"1" * 20}"
+  QA_WALLET = "qa-wallet-key-#{"7" * 30}"
 
   ONLY_LAYOUT = {
     "turf-monster/.env" => "SOLANA_ADMIN_KEY=#{ADMIN}\nRAILS_MASTER_KEY=#{MASTER}\n",
@@ -219,7 +220,10 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
     # CONTROLS: a deny-listed key on a NON-production value, and a by-design key on
     # a production value. Neither is a production-only match, so neither is touched.
     "mcritchie-studio/.worktrees/desk-one/.env" => "AWS_SECRET_ACCESS_KEY=#{LOCAL_AWS}\n",
-    "rolio/.env" => "RAILS_MASTER_KEY=#{MASTER}\n"
+    "rolio/.env" => "RAILS_MASTER_KEY=#{MASTER}\n",
+    # CONTROL: QA's managed-wallet key, which local turf shares on purpose. A QA
+    # app's production-only value is not a production match, so it stays.
+    "turf-monster/.worktrees/desk-four/.env" => "MANAGED_WALLET_ENCRYPTION_KEY=#{QA_WALLET}\n"
   }.freeze
 
   ONLY_FLAGGED = %w[
@@ -246,7 +250,10 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
     Dir.mktmpdir("stub-bin") do |stub|
       File.write(File.join(stub, "heroku"), <<~SH)
         #!/bin/sh
-        echo '{"SOLANA_ADMIN_KEY":"#{ADMIN}","AWS_SECRET_ACCESS_KEY":"#{AWS}","RAILS_MASTER_KEY":"#{MASTER}"}'
+        case "$*" in
+          *turf-monster-qa*) echo '{"MANAGED_WALLET_ENCRYPTION_KEY":"#{QA_WALLET}","SOLANA_ADMIN_KEY":"#{ADMIN}"}' ;;
+          *) echo '{"SOLANA_ADMIN_KEY":"#{ADMIN}","AWS_SECRET_ACCESS_KEY":"#{AWS}","RAILS_MASTER_KEY":"#{MASTER}"}' ;;
+        esac
       SH
       File.chmod(0o755, File.join(stub, "heroku"))
       yield({ "PATH" => "#{stub}:#{ENV.fetch("PATH")}" })
@@ -258,23 +265,25 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
       with_prod_heroku do |env|
         before = ONLY_LAYOUT.keys.to_h { |rel| [rel, File.read(File.join(dir, rel))] }
 
-        out, err, code = cli("scan", "--projects", dir, "--app", "turf-monster-mainnet", env: env)
+        out, err, code = cli("scan", "--projects", dir, "--app", "turf-monster-mainnet", "--app", "turf-monster-qa", env: env)
         assert_equal 1, code, "a production-only value on disk is a failing scan\n#{out}#{err}"
         assert_equal ONLY_FLAGGED, flagged_paths(out, dir)
         assert_match(%r{turf-monster/\.env\s+SOLANA_ADMIN_KEY\s+\h{8}\s+PRODUCTION \(turf-monster-mainnet\)}, out)
         assert_match(%r{desk-one/\.env\s+AWS_SECRET_ACCESS_KEY\s+\h{8}\s+dev}, out,
                      "control: a deny-listed key on a local value is reported, not flagged")
-        assert_match(/production-only keys: 5 set, 4 hold a production value \(SOLANA_ADMIN_KEY,/, out)
+        assert_match(%r{desk-four/\.env\s+MANAGED_WALLET_ENCRYPTION_KEY\s+\h{8}\s+dev}, out,
+                     "control: a QA app's wallet key is not a production match")
+        assert_match(/production-only keys: 6 set, 4 hold a production value \(SOLANA_ADMIN_KEY,/, out)
         [ADMIN, AWS, MASTER, LOCAL_AWS].each { |v| refute_includes out + err, v, "no value is ever printed" }
 
-        out, err, code = cli("fix", "--projects", dir, "--app", "turf-monster-mainnet", env: env)
+        out, err, code = cli("fix", "--projects", dir, "--app", "turf-monster-mainnet", "--app", "turf-monster-qa", env: env)
         assert_equal 0, code, "#{out}#{err}"
         assert_match(/production-only keys: 4 production value\(s\), 4 removed, 0 still production/, out)
 
-        rescan, rescan_err, rescan_code = cli("scan", "--projects", dir, "--app", "turf-monster-mainnet", env: env)
+        rescan, rescan_err, rescan_code = cli("scan", "--projects", dir, "--app", "turf-monster-mainnet", "--app", "turf-monster-qa", env: env)
         assert_equal 0, rescan_code, "#{rescan}#{rescan_err}"
         assert_empty flagged_paths(rescan, dir), "zero production matches after the fix"
-        assert_match(/production-only keys: 1 set, 0 hold a production value/, rescan)
+        assert_match(/production-only keys: 2 set, 0 hold a production value/, rescan)
 
         ONLY_FLAGGED.each do |rel|
           body = File.read(File.join(dir, rel))
@@ -283,7 +292,7 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
         assert_includes File.read(File.join(dir, "turf-monster/.env")), "RAILS_MASTER_KEY=#{MASTER}",
                         "a by-design key survives the fix beside a removed one"
         assert_equal "A=1\n", File.read(File.join(dir, "turf-monster/.worktrees/desk-three/.env"))
-        %w[mcritchie-studio/.worktrees/desk-one/.env rolio/.env].each do |rel|
+        %w[mcritchie-studio/.worktrees/desk-one/.env rolio/.env turf-monster/.worktrees/desk-four/.env].each do |rel|
           assert_equal before[rel], File.read(File.join(dir, rel)), "control #{rel} was not touched"
         end
       end
@@ -300,6 +309,7 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
         #!/bin/sh
         printf '%s\\n' "SOLANA_ADMIN_KEY=#{ADMIN}" "AWS_ACCESS_KEY_ID=AKIAEXAMPLE" "AWS_SECRET_ACCESS_KEY=#{AWS}" \\
           "RESEND_API_KEY=re_x" "GITHUB_TOKEN=ghp_x" "CDP_API_KEY_ID=cdp_x" "CDP_API_KEY_SECRET=cdp_s" \\
+          "MANAGED_WALLET_ENCRYPTION_KEY=mw_x" "STRIPE_SECRET_KEY=sk_live_x" "STRIPE_WEBHOOK_SECRET=whsec_x" \\
           "RAILS_MASTER_KEY=#{MASTER}" "AGENT_API_SECRET=agent_x" "SOLANA_NETWORK=devnet"
       SH
       File.chmod(0o755, File.join(stub, "heroku"))

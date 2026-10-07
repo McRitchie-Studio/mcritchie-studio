@@ -290,4 +290,42 @@ class DevSecretKeyTest < Minitest::Test
     assert_equal %w[denied], unread
     assert_equal({ "turf" => 1, "denied" => 1 }, calls, "one config read per app, not one per key")
   end
+
+  # Carl's bounce (2026-10-07): a turf restore also carried the mainnet
+  # managed-wallet key and live Stripe.
+  def test_deny_list_covers_the_mainnet_wallet_key_and_live_stripe
+    %w[MANAGED_WALLET_ENCRYPTION_KEY MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS
+       STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET].each do |key|
+      assert DevSecretKey.production_only?(key), key
+    end
+    kept, dropped = DevSecretKey.filter_production_only(
+      "MANAGED_WALLET_ENCRYPTION_KEY=w\nSTRIPE_SECRET_KEY=sk_live_x\nSTRIPE_PUBLISHABLE_KEY=pk\n"
+    )
+    assert_equal "STRIPE_PUBLISHABLE_KEY=pk\n", kept, "control: a non-secret sibling is kept"
+    assert_equal %w[MANAGED_WALLET_ENCRYPTION_KEY STRIPE_SECRET_KEY], dropped
+  end
+
+  # QA values are left alone: local turf shares QA's wallet key on purpose. A QA
+  # app's SECRET_KEY_BASE is still recorded (control), its production-only values not.
+  def test_production_only_digests_come_from_production_apps_only
+    configs = {
+      "turf-monster-mainnet" => [%({"MANAGED_WALLET_ENCRYPTION_KEY":"mainnet-w"}), true],
+      "turf-monster-qa" => [%({"MANAGED_WALLET_ENCRYPTION_KEY":"qa-w","SECRET_KEY_BASE":"#{PROD}"}), true]
+    }
+    by_key, = DevSecretKey.heroku_digests_by_key(configs.keys, runner: ->(app) { configs.fetch(app) })
+    assert_equal({ Digest::SHA256.hexdigest("mainnet-w") => "turf-monster-mainnet" },
+                 by_key.fetch("MANAGED_WALLET_ENCRYPTION_KEY"))
+    assert_equal({ PROD_DIGEST => "turf-monster-qa" }, by_key.fetch("SECRET_KEY_BASE"))
+  end
+
+  def test_strip_production_only_rewrites_only_when_something_is_denied
+    within_tmp do |dir|
+      path = File.join(dir, ".env")
+      File.write(path, "A=1\nSTRIPE_WEBHOOK_SECRET=whsec\n")
+      assert_equal %w[STRIPE_WEBHOOK_SECRET], DevSecretKey.strip_production_only(path)
+      assert_equal "A=1\n", File.read(path)
+      assert_empty DevSecretKey.strip_production_only(path)
+      assert_empty DevSecretKey.strip_production_only(File.join(dir, "missing"))
+    end
+  end
 end

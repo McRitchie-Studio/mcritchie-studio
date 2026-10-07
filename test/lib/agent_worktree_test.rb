@@ -155,6 +155,28 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
+  # [unit] Nor does a desk inherit a production-only key the primary still holds
+  # (local-envs-drop-mainnet-keys): the turf primary's held SOLANA_ADMIN_KEY had
+  # reached 8 desks by copy. The primary itself is left alone.
+  def test_copy_primary_env_files_drops_production_only_keys_from_the_desk
+    Dir.mktmpdir do |root|
+      admin = "5" * 88 # stands in for a base58 Solana secret; never a real one
+      primary = File.join(root, "primary")
+      desk = File.join(root, "desk")
+      FileUtils.mkdir_p([primary, desk])
+      primary_body = "A=1\nSOLANA_ADMIN_KEY=#{admin}\nSTRIPE_SECRET_KEY=sk_x\nRAILS_MASTER_KEY=m\n"
+      File.write(File.join(primary, ".env"), primary_body)
+      out = run_in_script(<<~RUBY)
+        copy_primary_env_files(#{primary.inspect}, #{desk.inspect})
+      RUBY
+      assert_equal "A=1\nRAILS_MASTER_KEY=m\n", File.read(File.join(desk, ".env")),
+                   "denied keys are gone; a by-design key (control) is copied"
+      assert_equal "copied .env (dropped production-only SOLANA_ADMIN_KEY, STRIPE_SECRET_KEY)", out
+      refute_includes out, admin
+      assert_equal primary_body, File.read(File.join(primary, ".env")), "the primary is not touched"
+    end
+  end
+
   def test_tool_written_env_files_are_not_held_as_work
     out = run_in_script('print IGNORED_TOOL_FILES.include?(".env.development")')
     assert_equal "true", out, "a desk's copied .env.development must not hold its teardown"

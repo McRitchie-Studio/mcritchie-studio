@@ -65,12 +65,17 @@ tokens are minted by production from `AGENT_API_SECRET`.
 **The same scan covers the deny list**, `DevSecretKey::PRODUCTION_ONLY_KEYS` in
 `bin/lib/dev_secret_key.rb`, the one place it lives: `SOLANA_ADMIN_KEY` (first),
 `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, `RESEND_API_KEY` and `GITHUB_TOKEN`. The 2026-10-06 sweep
-found the old restore had copied each of them out of production `heroku config`
-into the primaries and every desk. `bin/ecosystem-build` now pipes its restore
+`AWS_SECRET_ACCESS_KEY`, `RESEND_API_KEY`, `GITHUB_TOKEN`,
+`MANAGED_WALLET_ENCRYPTION_KEY`, `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS`,
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. The 2026-10-06 sweep found the
+old restore had copied each of them out of production `heroku config` into the
+primaries and every desk. `bin/ecosystem-build` now pipes its restore
 through `bin/dev-secret-key filter` and writes nothing when it cannot run the
-filter, and `scan` reports a production value for any listed key (exit 1); `fix`
-removes it.
+filter, `bin/agent-worktree` drops them from the `.env` it copies into a new desk,
+and `scan` reports a production value for any listed key (exit 1); `fix` removes
+it. "Production" excludes the QA apps (`DevSecretKey::QA_HEROKU_APPS`): local turf
+shares QA's managed-wallet key on purpose, so a QA value is reported `dev` and
+left alone.
 
 | Key | Why local dev does without it |
 |---|---|
@@ -79,6 +84,8 @@ removes it.
 | `AWS_*` | the production IAM key; local storage runs on R2 with QA keys (`.env.development`) |
 | `RESEND_API_KEY` | production mail; local stacks capture mail (`LOCAL_EMAIL_CAPTURE=1`) |
 | `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
+| `MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)` | mainnet's opens every custodial mainnet wallet; development falls back to `secret_key_base` |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | live Stripe on `turf-monster-mainnet`; local runs test mode |
 
 Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
 

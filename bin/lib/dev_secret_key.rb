@@ -61,6 +61,17 @@ module DevSecretKey
   #   RESEND_API_KEY        production mail; local stacks capture mail instead
   #                         (LOCAL_EMAIL_CAPTURE=1, /_studio/local_emails)
   #   GITHUB_TOKEN          the hub's static fallback PAT; answered 401 on 2026-10-06
+  #   MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)
+  #                         on turf-monster-mainnet it opens every custodial
+  #                         mainnet wallet; development falls back to
+  #                         secret_key_base (Solana::Keypair.current_encryptor)
+  #   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
+  #                         live Stripe on turf-monster-mainnet; local uses test mode
+  #
+  # PRODUCTION means the apps outside QA_HEROKU_APPS. A local file holding a QA
+  # app's value for one of these keys is not flagged: local turf deliberately
+  # shares QA's managed-wallet key, and QA's Stripe is test mode. The restore
+  # filter is by NAME, so a production restore drops these whatever their value.
   #
   # Kept by design, NOT listed: RAILS_MASTER_KEY (decrypts the committed
   # credentials) and AGENT_API_SECRET (verifies board tokens).
@@ -72,7 +83,15 @@ module DevSecretKey
     AWS_SECRET_ACCESS_KEY
     RESEND_API_KEY
     GITHUB_TOKEN
+    MANAGED_WALLET_ENCRYPTION_KEY
+    MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS
+    STRIPE_SECRET_KEY
+    STRIPE_WEBHOOK_SECRET
   ].freeze
+
+  # The QA apps on HEROKU_APPS. Their SECRET_KEY_BASE is still flagged (a QA key
+  # is not a development key), but their production-only values are not.
+  QA_HEROKU_APPS = %w[mcritchie-studio-qa turf-monster-qa mcritchie-industries-qa rolio-qa].freeze
 
   # The key a dotenv/`heroku config --shell` line sets, or nil for a comment or blank.
   ANY_LINE = /\A\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)\z/m
@@ -134,6 +153,17 @@ module DevSecretKey
       kept << line
     end
     [kept.join, dropped.uniq]
+  end
+
+  # Desk provisioning's hook: drop every PRODUCTION_ONLY_KEYS line from a COPIED
+  # env file, so a desk never inherits a production-only key the primary still
+  # holds. Returns the dropped key names (never a value); [] leaves the file as is.
+  def strip_production_only(path)
+    return [] unless File.file?(path)
+
+    kept, dropped = filter_production_only(File.read(path))
+    atomic_write(path, kept) unless dropped.empty?
+    dropped
   end
 
   # Remove every line that sets `key` from `path` (atomic, permissions kept).
@@ -237,7 +267,7 @@ module DevSecretKey
   end
 
   # {key => {full_digest => app}} for each of `keys`, from ONE config read per
-  # app, plus the unread apps. Same contract as heroku_digests: values are hashed
+  # app, plus the unread apps. A production-only key records no QA app's digest. Same contract as heroku_digests: values are hashed
   # in-process and dropped.
   def heroku_digests_by_key(apps = HEROKU_APPS, keys = [KEY] + PRODUCTION_ONLY_KEYS,
                             runner: method(:heroku_config_json))
@@ -251,6 +281,8 @@ module DevSecretKey
         next
       end
       keys.each do |key|
+        next if production_only?(key) && QA_HEROKU_APPS.include?(app)
+
         value = config[key].to_s
         by_key[key][digest(value)] = app unless value.empty?
       end
