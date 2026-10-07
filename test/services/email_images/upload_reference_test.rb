@@ -38,11 +38,19 @@ class EmailImages::UploadReferenceTest < ActiveSupport::TestCase
     end
   end
 
-  test "dimensions come from the header, so a PNG declaring 40000x40000 is never decoded" do
+  test "dimensions come from the header (identify -ping), so a PNG bomb is never decoded" do
     chunk = ->(type, data) { [data.bytesize].pack("N") + type.b + data + [Zlib.crc32(type.b + data)].pack("N") }
-    bomb = "\x89PNG\r\n\x1a\n".b + chunk.("IHDR", [40_000, 40_000, 8, 0, 0, 0, 0].pack("NNCCCCC")) +
-           chunk.("IDAT", Zlib::Deflate.deflate("\0" * 40_001)) + chunk.("IEND", "".b) # one row: a decode fails
-    with_recording_store { assert_equal [40_000, 40_000], upload(uploaded(bomb, name: "b.png")).values_at(:width, :height) }
+    z = Zlib::Deflate.new(Zlib::BEST_SPEED)
+    idat = +"".b
+    20_000.times { idat << z.deflate("\0".b * 2_501) }
+    bomb = "\x89PNG\r\n\x1a\n".b + chunk.("IHDR", [20_000, 20_000, 1, 0, 0, 0, 0].pack("NNCCCCC")) +
+           chunk.("IDAT", idat << z.finish) + chunk.("IEND", "".b) # 218 KB; a full decode took 3 GB
+    log = StringIO.new
+    MiniMagick.stub(:logger, Logger.new(log)) do
+      with_recording_store { assert_equal [20_000, 20_000], upload(uploaded(bomb, name: "b.png")).values_at(:width, :height) }
+    end
+    assert_match(/identify -ping/, log.string)
+    assert_no_match(/identify(?! -ping)/, log.string)
   end
 
   test "the type is read from the content: a PNG named .jpg is a PNG" do
