@@ -9,8 +9,10 @@ module Api
     # A studio login is presented with the machine credential, which today is the
     # shared secret's token: a session cannot mint another session. The login names
     # the soul the desk commits as and the task it claimed; the task must be building
-    # (task_claim) or submitted (review_claim). Admin sessions are granted by the
-    # operator, not here.
+    # (task_claim) or submitted (review_claim), and the task record must entitle the
+    # soul to it (AgentSession.studio_login_refusal): the builder the claim stamped,
+    # or a reviewer the task names. Any other soul answers 403 with the reason. Admin
+    # sessions are granted by the operator, not here.
     class AgentSessionsController < BaseController
       # The stage a task must be in for each kind of studio login.
       CLAIM_STAGES = { "task_claim" => "building", "review_claim" => "submitted" }.freeze
@@ -31,6 +33,13 @@ module Api
         issued_by = params[:issued_by].presence || "task_claim"
         refusal = claim_refusal(task, issued_by)
         return render_error(refusal, status: :conflict, error_code: "NOT_CLAIMABLE") if refusal
+
+        # A soul that is no soul falls through to the model's 422; any other soul must
+        # be one the task record entitles to this login.
+        if AgentSession.tier_for_soul(params[:soul])
+          entitlement = AgentSession.studio_login_refusal(soul: params[:soul], task: task, issued_by: issued_by)
+          return render_session_refusal(entitlement) if entitlement
+        end
 
         session = AgentSession.issue_studio!(
           soul: params[:soul].to_s, task: task, issued_by: issued_by,

@@ -147,4 +147,29 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert_equal %w[pokemon studio], [session.soul, session.tier]
     assert_equal @task.slug, session.task_slug
   end
+  # The mint endpoint asks this before it issues a studio login: the task record,
+  # not the request, names the souls a login is for.
+  test "a task_claim login is for the soul the claim stamped, and no other" do
+    @task.update_column(:metadata, { "devops" => { "built_by" => "pokemon", "builders" => %w[pokemon jasper] } })
+
+    assert_nil AgentSession.studio_login_refusal(soul: "pokemon", task: @task, issued_by: "task_claim")
+    assert_nil AgentSession.studio_login_refusal(soul: "jasper", task: @task, issued_by: "task_claim")
+    assert_match(/carl is not #{@task.slug}'s builder/,
+                 AgentSession.studio_login_refusal(soul: "carl", task: @task, issued_by: "task_claim"))
+  end
+
+  test "a task with no recorded builder entitles no task_claim login" do
+    assert_match(/the claim recorded none/,
+                 AgentSession.studio_login_refusal(soul: "pokemon", task: @task, issued_by: "task_claim"))
+  end
+
+  test "a review_claim login is for a named reviewer who did not build the task" do
+    @task.update_column(:metadata, { "devops" => { "built_by" => "pokemon" },
+                                     "reviewers" => [{ "slug" => "carl", "weight" => "primary" }] })
+
+    assert_nil AgentSession.studio_login_refusal(soul: "carl", task: @task, issued_by: "review_claim")
+    assert_match(/not a reviewer/, AgentSession.studio_login_refusal(soul: "steffon", task: @task, issued_by: "review_claim"))
+    assert_match(/built #{@task.slug}/,
+                 AgentSession.studio_login_refusal(soul: "pokemon", task: @task, issued_by: "review_claim"))
+  end
 end
