@@ -82,7 +82,7 @@ module ChromeProfiles
   # THE VAULT NAME IS NOT A LITERAL HERE, and the first draft of this file got
   # that wrong twice — once as an `ENV.fetch(...)` with its own default beside
   # this line, and once as a reference spelled out in a header comment. CI caught
-  # the second (test/lib/credential_isolation_claims_test.rb) and the first only
+  # the second (test/lib/credential_vault_resolution_test.rb) and the first only
   # looked innocent: it is a SECOND SOURCE for the same value, which is precisely
   # the shape that broke eleven call sites at once when the vault was renamed on
   # 2026-08-28. bin/lib/op_vaults.rb owns it; read it from there, at call time,

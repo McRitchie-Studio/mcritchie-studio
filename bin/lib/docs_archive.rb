@@ -18,10 +18,13 @@ require "set"
 # dead end — and mirroring the subdirectory keeps sibling cross-links (the
 # prelaunch cluster links to itself by bare filename) resolving after the move.
 #
-# ONE BAD MOVE ABORTS THE WHOLE ROLL — IT IS NOT SKIPPED. `git mv` fails with
-# "fatal: destination exists" when the archive already holds that filename (a
-# commit that added an archive copy while leaving the live copy tracked does it),
-# and apply_moves! neither rescues nor continues: DocsArchive::CommandFailed
+# A DESTINATION THAT ALREADY EXISTS IS NEVER PLANNED. `plan` leaves a doc whose
+# archive path is taken (a commit that added an archive copy while leaving the
+# live copy tracked does it) in place and reports it, so `git mv` is never asked
+# for a move it would refuse with "fatal: destination exists".
+#
+# ANY OTHER FAILED MOVE STILL ABORTS THE WHOLE ROLL — IT IS NOT SKIPPED.
+# apply_moves! neither rescues nor continues: DocsArchive::CommandFailed
 # propagates out of bin/archive-docs and the run dies on the spot. A reader of the
 # paragraph above would reasonably expect the one bad file to be passed over and the
 # rest to retire. It does not work that way, and the difference matters, because the
@@ -119,9 +122,13 @@ module DocsArchive
     moves = []
     skipped = []
     set.each do |path|
-      pinned = referrers(repo, path, lookup)
+      to = archive_path_for(path)
+      # A destination that already exists is LEFT IN PLACE, never moved onto:
+      # `git mv` would refuse it and abort the whole roll. The duplicate is
+      # reported every roll until someone keeps one copy.
+      pinned = File.exist?(File.join(repo, to)) ? ["#{to} (already in the archive)"] : referrers(repo, path, lookup)
       if pinned.empty?
-        moves << { from: path, to: archive_path_for(path) }
+        moves << { from: path, to: to }
       else
         skipped << { path: path, referrers: pinned }
       end

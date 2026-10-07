@@ -176,4 +176,22 @@ class ReviewHopTest < Minitest::Test
     assert ReviewHop.loopback?("127.0.0.1")
     refute ReviewHop.loopback?("qa.mcritchie.studio")
   end
+
+  # [unit] the printed Magic Link is the in-request mint the CTA leg accepts
+  def test_mint_url_is_the_in_request_mint_the_cta_leg_accepts
+    url = ReviewHop.mint_url("http://localhost:3016/", "%2Fadmin%2Fstyle")
+
+    assert_equal MINT, url
+    assert ReviewHop.cta(status: 302, location: url).ok?
+    assert_equal "http://localhost:3016/_studio/local_review?return_to=/",
+                 ReviewHop.mint_url("http://localhost:3016")
+  end
+
+  # [unit] `bin/task begin` prints the Magic Link from this helper, so no doc spells it
+  def test_task_begin_prints_the_magic_link_from_mint_url
+    source = File.read(File.expand_path("../../bin/task", __dir__))
+
+    assert_includes source, %(require_relative "lib/review_hop")
+    assert_match(/puts "magic link: \#\{ReviewHop\.mint_url\(context\["local_url"\]\)\}"/, source)
+  end
 end

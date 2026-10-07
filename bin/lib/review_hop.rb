@@ -73,6 +73,14 @@ module ReviewHop
       LOOPBACK_HOSTS.include?(host.to_s.downcase)
     end
 
+    # The Magic Link a builder hands Alex: the stack's own in-request mint, which
+    # signs him in against the database the desk server serves. `bin/task begin`
+    # prints it, so no doc spells the URL and no agent mints a token in a console
+    # (a console binds the shared development database and the link 302s to /login).
+    def mint_url(local_url, return_to = "/")
+      "#{local_url.to_s.chomp("/")}#{MINT_PATH}?return_to=#{return_to}"
+    end
+
     # LEG 1 — the board's WAITING APPROVAL CTA (GET /tasks/:slug/local_review).
     #
     # The leg that historically broke, and the one a hand-written curl recipe

@@ -227,7 +227,7 @@ end
 # reason there is.
 #
 #   1. WRONG VARIABLE. That command's entire stdout is `export GH_TOKEN='…'`
-#      (bin/gh-auth-refresh:209). The read that just failed is THIS process's —
+#      (bin/gh-auth-refresh#export). The read that just failed is THIS process's —
 #      Task#derived_authors_probe → Github::TaskDerivation → Github::Client →
 #      Github::AppToken — and with App creds absent (the local case) AppToken
 #      returns ENV[FALLBACK_TOKEN_ENV], i.e. GITHUB_TOKEN. Nothing on that path
@@ -240,7 +240,7 @@ end
 #      is a false causal claim for four of those five, and bin/dor-check already
 #      holds the opposite standard — `refute_match(/gh-auth-refresh/, out, "there
 #      is no credential to refresh on a transport fault")`,
-#      test/lib/dor_check_test.rb:1847. Release::GhFailure.credential_failure? is
+#      test/lib/dor_check_test.rb#test_gh_or_network_error_refuses_without_naming_a_credential. Release::GhFailure.credential_failure? is
 #      the house classifier for this (enumerated spellings, deliberately narrow:
 #      a 403 is also how GitHub reports a rate limit and branch protection), and
 #      bin/release already loads it standalone.

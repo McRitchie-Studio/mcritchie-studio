@@ -1,0 +1,13 @@
+# The two GitHub App identities and their numeric app ids. An app id is public
+# metadata, not a credential: the private key is the `.pem` FILE attachment on
+# the 1Password item and lives nowhere else. The ids live here so the hand-mint
+# fallback for a 1Password outage needs no 1Password: `bin/gh-app-mint-token`
+# reads `GH_APP_IDENTITY=agent|deployer` against this file when GH_APP_ID is unset.
+agent:
+  item: github.mcritchie-agent
+  vault: studio-agents
+  app_id: 4431410
+deployer:
+  item: github.mcritchie-admin
+  vault: studio-agents-admin
+  app_id: 4431542

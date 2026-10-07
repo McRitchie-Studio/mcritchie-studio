@@ -450,18 +450,9 @@ demands an up-to-date branch, and `UNKNOWN` is passed over in silence.
 
 **ON A `test-only` PR THE CONTROL STALES — and only `bin/control-check` clears
 it.** `bin/dor-check` grades the recorded `[control@<fp>]` stamp against the tree
-hash (`control_evidence_status` calls `CertEvidence.lane_status`), so one moved
-head flips the gate from PASS on a count a green CI does not clear:
-
-```text
-the recorded control is STALE (it was run against different code)
-```
-
-Measured live at the G2 review of fixture-rev-helper-hides-failure (PR #1505):
-one reviewer zap flipped `bin/dor-check` from PASS to "DoR-to-Merge NOT met", and
-a reviewer who re-ran the (since retired) cert watched this error stay exactly
-where it was — the cert never touched the control. The recovery is **two steps,
-in this order**:
+hash (`bin/dor-check#control_evidence_status`), so one moved head flips the gate
+from PASS on a count a green CI does not clear, and the refusal says the recorded
+control is STALE. The recovery is **two steps, in this order**:
 
 ```bash
 git -C <desk> merge --ff-only origin/<branch>   # move the desk onto the zapped head
@@ -469,18 +460,18 @@ cd <desk> && /Users/alex/projects/mcritchie-studio/bin/control-check <task>
 ```
 
 **Scope, so you do not go looking for this on a PR that cannot have it.** The
-control lane is required only where the shape declares
-`required_evidence: [control]`, and `config/feature_shapes.yml` declares it on
-**`test-only` alone**. On every other shape a zap moves nothing the gate grades
+control lane is required only on a shape whose
+`config/feature_shapes.yml#required_evidence` lists `control`; read that file
+for the shapes that do. On every other shape a zap moves nothing the gate grades
 but the head.
 
 **The re-run belongs in the DESK, and the two runners punish a wrong root
-differently — one loudly, one silently.** `bin/fast-check` takes
-`TaskTree.refusal` and **exits 1** from a tree that is not the task's, with **no
+differently — one loudly, one silently.** `bin/fast-check` refuses
+(`bin/fast-check#wrong_root`) and **exits 1** from a tree that is not the task's, with **no
 reviewer override**: a reviewer standing in the throwaway `zap-<slug>`
 desk this protocol told them to cut cannot pre-flight from it, and that refusal
 is the guard working. `bin/control-check` has no such refusal — it roots at the
-cwd's git toplevel (`RepoRoot.code_root`, overridable with `CONTROL_CHECK_ROOT`)
+cwd's git toplevel (`bin/control-check#root`, overridable with `CONTROL_CHECK_ROOT`)
 and fingerprints whatever tree it finds, so run from the wrong one it **succeeds**
 and stamps a `[control@<fp>]` the gate can never match. You learn about that at
 the next `bin/dor-check`, reading as a control that is still STALE for no visible

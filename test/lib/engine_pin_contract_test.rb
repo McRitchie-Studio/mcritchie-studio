@@ -35,7 +35,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
   #          (config.draw_admin_emails_routes), and UserMailer calls
   #          Studio::Banner.for(name:) plus EmailCatalog.subject_for.
   #   0.43 — EmailCatalog grows the email BELOW the banner: .body, .cta_text,
-  #          .cta_color and .cta_enabled?, which app/mailers/user_mailer.rb:44-46
+  #          .cta_color and .cta_enabled?, which app/mailers/user_mailer.rb#magic_link
   #          calls on every magic-link send, and the studio_email_settings
   #          columns behind them.
   #

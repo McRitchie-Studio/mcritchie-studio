@@ -8900,7 +8900,7 @@ def archive
   artifact_paths = [File.join(hub, DocsArchive::LEDGER), File.join(hub, DocsArchive::LEDGER_ARCHIVE)]
   # BOTH SIDES of every move: the archive copy AND the live source's removal. Naming
   # only the destination is how rel-20261006-f6a119 left a retired doc on `release`
-  # at two paths (e8f121d4) and reddened ArchivePathCollisionTest on the next candidate.
+  # at two paths (e8f121d4).
   artifact_paths += docs[:moved_paths].to_a.flat_map do |rel|
     [File.join(hub, DocsArchive.archive_path_for(rel)), File.join(hub, rel)]
   end

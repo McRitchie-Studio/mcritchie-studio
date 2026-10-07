@@ -232,12 +232,9 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`).
   4. Restore the primary checkouts.
   5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
-     hub's **ship workspace** (`mcritchie-studio/.worktrees/_ship`, pinned at the
-     SHA that just shipped; non-fatal, never aborts a completed ship). The hub
-     **primary is the fallback, not the source** — taken only when that workspace
-     holds no installer, because step 4's restore is best-effort. **Steffon owns
-     this step and its mechanism**; if it warns, run the installer path the warn
-     line prints, not the primary's copy.
+     tree that shipped (`bin/release.rb#sync_agent_docs` picks it; non-fatal, never
+     aborts a completed ship). **Steffon owns this step and its mechanism**; if it
+     warns, run the installer path the warn line prints, not the primary's copy.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
   slug. An interrupted run re-runs safely: published gems skip, ffs no-op,
   re-pins are idempotent.

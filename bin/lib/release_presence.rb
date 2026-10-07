@@ -148,7 +148,7 @@ module ReleasePresence
   # work, `qa`/`production` mean the work runs on a Heroku dyno while the conductor holds
   # a socket open. It is not sufficient, because `host` names the TARGET, not the payer —
   # `prod_smoke_seal` is `host: production` and runs `npx playwright test` LOCALLY
-  # (`bin/prod-smoke:77`), against a production URL. So the rule reads BOTH fields and is
+  # (the `npx playwright test` call beside `bin/prod-smoke#env`), against a production URL. So the rule reads BOTH fields and is
   # written to fail toward `suite`:
   #
   #   a scope is cheap  ⟺  its host is `ci` (a GitHub Actions runner ran it; this box

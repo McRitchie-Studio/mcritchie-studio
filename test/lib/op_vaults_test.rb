@@ -189,6 +189,20 @@ class OpVaultsTest < Minitest::Test
                     "`op` authenticates with OP_SERVICE_ACCOUNT_TOKEN, so it cannot run here"
   end
 
+  # Every lane, provisioned or not: a remedy may never require the token it reports
+  # missing, and `op` authenticates with exactly that token.
+  def test_a_missing_token_is_never_told_to_run_op_on_any_lane
+    %i[agent deployer].each do |lane|
+      ENV.delete(OpVaults.token_env(lane))
+      [true, false].each do |provisioned|
+        message = with_provisioned(provisioned) { OpVaults.diagnose(lane) }
+        refute_includes message, "op vault list",
+                        "#{lane}/provisioned=#{provisioned}: `op` cannot run without the token " \
+                        "this message reports missing"
+      end
+    end
+  end
+
   def test_an_unprovisioned_agent_machine_is_told_to_install_the_agent_token
     ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
     message = with_provisioned(false) { OpVaults.diagnose(:agent) }

@@ -6,7 +6,8 @@
 # command-substitute it); every failure aborts loudly on stderr instead.
 #
 # Env contract (both REQUIRED):
-#   GH_APP_ID   — the GitHub App's numeric app id (1Password field `app-id`).
+#   GH_APP_ID   — the GitHub App's numeric app id (1Password field `app-id`), or
+#                 GH_APP_IDENTITY=agent|deployer to read it from config/github_apps.yml.
 #   GH_APP_PEM  — the app's RSA private key as PEM text. In 1Password the key is
 #                 the `.pem` FILE ATTACHMENT on the item — the concealed
 #                 `private key` field is NOT the key.
@@ -32,13 +33,28 @@ require "base64"
 require "json"
 require "net/http"
 require "uri"
+require "yaml"
 
 def die(message)
   abort("gh-app-mint-token: #{message}")
 end
 
-app_id = ENV["GH_APP_ID"].to_s.strip
-die("GH_APP_ID is required (the app's numeric id — 1Password field `app-id`)") if app_id.empty?
+GITHUB_APPS = File.expand_path("../config/github_apps.yml", __dir__)
+
+# The app id: GH_APP_ID when set, else the GH_APP_IDENTITY row of config/github_apps.yml.
+def resolve_app_id(env)
+  explicit = env["GH_APP_ID"].to_s.strip
+  return explicit unless explicit.empty?
+
+  identity = env["GH_APP_IDENTITY"].to_s.strip
+  die("GH_APP_ID or GH_APP_IDENTITY is required (the app's numeric id, or agent|deployer)") if identity.empty?
+
+  apps = YAML.safe_load_file(GITHUB_APPS)
+  row = apps[identity] or die("GH_APP_IDENTITY #{identity.inspect} is not one of #{apps.keys.join(", ")} (config/github_apps.yml)")
+  row.fetch("app_id").to_s
+end
+
+app_id = resolve_app_id(ENV)
 die("GH_APP_ID must be numeric, got #{app_id.inspect}") unless app_id.match?(/\A\d+\z/)
 
 pem = ENV["GH_APP_PEM"].to_s

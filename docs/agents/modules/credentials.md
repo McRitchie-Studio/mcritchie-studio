@@ -108,12 +108,9 @@ that maps a lane to its vault and token; no other file should name a vault.
 
 Install the admin one with `bin/setup-1pass-token --admin`; ship lanes then
 `source ~/.zprofile.admin`. It is deliberately NOT auto-loaded, so an ordinary
-agent shell cannot MINT an admin credential: the 1Password read is the step that
-is structurally blocked. That a shell does not come to HOLD one is a **separate**
-mechanism, in `bin/gh-token`: it refuses to cache a deployer token
-(`CACHEABLE_IDENTITIES`), checks that before the cache read, and purges any slot
-an older version left behind. Both hold today; they are worth naming apart,
-because only the first is enforced here. A
+agent shell cannot read the admin vault (`bin/lib/op_vaults.rb#LANES`). Not
+caching a deployer token is a separate mechanism
+(`bin/gh-token#CACHEABLE_IDENTITIES`). A
 machine whose vaults are named differently sets `MCR_OP_VAULT_AGENT` /
 `MCR_OP_VAULT_ADMIN` rather than editing any script.
 

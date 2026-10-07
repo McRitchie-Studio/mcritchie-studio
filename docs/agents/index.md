@@ -103,7 +103,7 @@ Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style
 
 1. **Idea first:** lead with the outcome in plain words, three sentences at most.
 2. **Then specifics:** a table or list with every handle: task URL, slug, path, branch, PR URL, command.
-3. **Labels:** `Task:`, `Magic Link:` (the stack's `/_studio/local_review?return_to=/<path>` mint URL), `Local Demo:`, `Local Inbox:`.
+3. **Labels:** `Task:`, `Magic Link:` (the `magic link:` line `bin/task begin` prints, `return_to` set to the page), `Local Demo:`, `Local Inbox:`.
 4. **Name work by its task slug**; PR numbers and SHAs are plumbing.
 5. **End a chat hand-back with the in-flight roster**, stamped in Denver time, even when nothing runs.
 

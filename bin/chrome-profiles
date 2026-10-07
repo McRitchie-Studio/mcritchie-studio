@@ -22,7 +22,7 @@
 # carries this script, the SOP, and config/chrome_profiles.yml.example. The
 # vault is resolved through OpVaults and is deliberately not spelled out here:
 # a reference in a comment is still a second source, and CI enforces that
-# (test/lib/credential_isolation_claims_test.rb).
+# (test/lib/credential_vault_resolution_test.rb).
 #
 # THE ROSTER IS KEYED BY ACCOUNT EMAIL, NEVER BY PROFILE DIRECTORY. Chrome hands
 # out directories in sign-in order, so they differ on a rebuilt Mac. A

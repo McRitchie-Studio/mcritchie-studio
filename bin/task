@@ -293,6 +293,7 @@ require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
+require_relative "lib/review_hop"
 require_relative "lib/desk_claim"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
@@ -996,6 +997,12 @@ APPROVAL_STATUSES = %w[waiting approved changes_requested none].freeze
 # value, and a literal there reads as an incidental string rather than the rule.
 APPROVAL_WAITING = "waiting"
 
+# Printed by `intent --to reviewed`, which records the review-lane intent with no
+# claim behind it. Two sessions once selected one PR that way.
+REVIEWED_INTENT_NOTE = "note: `intent --to reviewed` takes no review claim, so another " \
+                       "session can select this task too. Review with `bin/task review-claim " \
+                       "acquire <task>` instead; it writes the reviewed intent and the claim together."
+
 def warn!(msg)
   $stderr.puts(msg)
 end
@@ -1107,12 +1114,11 @@ end
 # be quiet on the common state and loud on the rare one. What a reader must take
 # from this: a quiet move is weak evidence, never a receipt.
 #
-# Pinned in TWO places, and it takes both. test/lib/task_move_approval_drop_test.rb
-# drives the three cells above plus the would-be fourth, checks that THIS list still
-# names what it measured, and proves the half-1/half-2 attribution with a controlled
-# pair. test/docs/approval_drop_warning_docs_test.rb drives the FULL nine-cell
-# matrix, so a residual appearing in a cell the first file does not drive still turns
-# something red. Close a residual and both ask this note to say so.
+# Pinned by test/lib/task_move_approval_drop_test.rb: it drives the three cells above
+# plus the would-be fourth, every announced cell, checks that THIS list still names
+# what it measured, and proves the half-1/half-2 attribution with a controlled pair.
+# docs/agents/modules/devops-task-board.md cites this note by seam rather than
+# restating it, so closing a residual means editing this note alone.
 #
 # A destination that CAN hold a request never reaches here at all — the `settleable`
 # test at the call site is the single place that decision is made, so the message can
@@ -2774,6 +2780,7 @@ when "begin"
   puts "worktree: #{worktree_dir}"
   puts "port: #{context["app_port"]}" if context["app_port"]
   puts "url: #{context["local_url"]}" if context["local_url"]
+  puts "magic link: #{ReviewHop.mint_url(context["local_url"])}" if context["local_url"]
   puts "task: #{BASE_URL}/tasks/#{slug}"
   # Absolute script + the desk to run it from, on its own line so it is
   # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
@@ -3009,6 +3016,10 @@ when "intent"
   end
   die!("usage: #{$PROGRAM_NAME} intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
   validate_stage!(to_stage)
+  # The review lane's intent comes from the CLAIM: TaskReviewClaim.acquire writes it
+  # with the reservation in one write. This write touches no claim, so the command
+  # itself says so, rather than every doc having to forbid it.
+  warn!(REVIEWED_INTENT_NOTE) if to_stage == "reviewed"
   body = { "to_stage" => to_stage, "event" => { "source" => "cli" } }
   body["actor"] = actor if actor
   body["reviewers"] = reviewers if reviewers.any?

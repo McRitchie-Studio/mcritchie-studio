@@ -215,7 +215,8 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    If you still need his eyes on merged work, point him at the QA candidate once
    the `qa-release` sweep deploys it. `--approval waiting` at `reviewed` or later is
    refused (a 422 naming the stage and the value). This is the same remedy `bin/task
-   move` prints when it announces a discarded request.
+   move` prints when it announces a discarded request
+   (`bin/task#warn_dropped_approval_request!`; its test runs both commands).
 
 ## Operator windows
 
@@ -515,7 +516,7 @@ Supported fields:
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
 | `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal wherever the local demo it points at can still be served: `designed`, `building` and `submitted`. **Asking for it at `reviewed` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Ask before the work merges; a request set at `building` SURVIVES `bin/submit` and keeps pulsing through review (fixed 2026-09-09 — the seam used to sit at `submitted`, so the documented ship discarded it). A `waiting` request the task carries into `reviewed` never blocks the merge; it settles to `none` (never a fabricated `approved`) and the board posts a comment on the task addressed to whoever asked, saying the work merged with the request unanswered — a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
-| `approval_request_dropped_at` | Server-stamped ISO8601 timestamp of the LAST time a pending `waiting` request was discarded by a save past the request stages. **Merging destroys a pending request** — a request that survived the handoff is settled to `none` when review moves the task to `reviewed`. That is deliberate (the work has merged and the desk serving the local demo is reclaimable, so the request points at a page nobody can open), but it used to be silent, so the agent believed it had asked and nobody had been. Until 2026-09-09 the HANDOFF dropped it too, which is the defect this row previously described. `bin/task move` prints a loud warning naming the discarded request, and this stamp is the durable receipt it compares. The warning asks whether **THIS move** dropped it — the request read `waiting` going in and the destination cannot hold one, or this stamp moved across the write — never how OLD the stamp is. So a move **into** `designed`/`building`/`submitted` (a rework resume, `bin/task begin <slug> --steal`, or the ship handoff, which no longer drops anything) is silent, one drop is announced exactly once, and a re-run of a move past the window does not re-announce it. Unknowns resolve to warning wherever either half can still see the drop — an unreadable pre-read is announced by the stamp moving. It is SILENT on a real drop only when NEITHER half sees it: the pre-read did not show `waiting` (the board was unreadable, or a writer set it after the read) **and** the stamp reads the same on both sides of the write (the board is too old to write one at all, or the fresh stamp renders in the same second as the last). Those states are indistinguishable to the CLI from a move that dropped nothing, and after the move `approval_status` reads `none` either way — so a quiet move is weak evidence, never a receipt. **Get the operator's eyes BEFORE the work merges** |
+| `approval_request_dropped_at` | Server-stamped ISO8601 timestamp of the LAST time a pending `waiting` request was discarded by a save past the request stages. **Merging destroys a pending request**: a request that survives the handoff is settled to `none` when review moves the task to `reviewed`. That is deliberate (the work has merged and the desk serving the local demo is reclaimable, so the request points at a page nobody can open). `bin/task move` prints a loud warning naming the discarded request, and this stamp is the durable receipt it compares. The warning asks whether **THIS move** dropped it, never how OLD the stamp is, so a move **into** `designed`/`building`/`submitted` is silent and one drop is announced exactly once. The verdict is `bin/task#move_dropped_approval_request?`; the note above `bin/task#APPROVAL_REQUEST_STAGES` names the real drops it cannot see, and `test/lib/task_move_approval_drop_test.rb` drives each of them. After the move `approval_status` reads `none` either way, so a quiet move is weak evidence, never a receipt. **Get the operator's eyes BEFORE the work merges** |
 | `approval_requested_by` | Server-stamped soul slug of whoever FIRST opened the request: the write's soul actor, else `built_by`, `persona`, or the assignee. Blank when none is a known soul, never a session id. A caller-supplied value wins, and a re-request keeps the first setter. The settle's note at `reviewed` is addressed to this soul |
 | `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`. Any lane may record the grant — the board UI, or an agent writing down an approval the operator gave in words (`bin/task update <task> --approval approved`) |
 | `qa_url` | Stable QA URL or specific QA route |
@@ -686,13 +687,12 @@ fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fa
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
-```bash
-cd <desk>                            # the worktree begin printed
-<ship> <task-slug>                   # <ship> = the absolute path begin printed
-<ship> <task-slug> -m "Commit message"   # message defaults to the task title
-```
+Paste the `next:` line `bin/task begin` prints. It names the desk and the absolute
+ship script, so no doc spells that path: `bin/lib/fast_lane.rb#handoff_command`
+builds it, and `test/lib/fast_lane_test.rb` proves it resolves to an executable.
+Add `-m "Commit message"` to override the default message, the task title.
 
-**Both halves of that are load-bearing, and `begin` now prints them for you.**
+**Both halves of that line are load-bearing.**
 The PATH picks the script: every fast-lane script — `bin/task`, `bin/submit`,
 `bin/fast-check`, `bin/dor-check` — lives in
 mcritchie-studio/bin ALONE, so a bare `bin/submit` on a turf-monster or rolio desk
@@ -820,15 +820,9 @@ hub's absolute path stays a working fallback for one release. The desk-handoff
 re-exec (`MCR_SKIP_DESK_HANDOFF`) and the hub-move diagnosis that used to paper over
 the window are deleted.
 
-**Exit codes — branch on these, never re-parse the log:**
-
-| Code | Means | Do |
-|------|-------|----|
-| `0` | SUCCEEDED — the log carries `stage: submitted (read back verified)` | hand off |
-| `1` | FAILED — the run ended without that line | read the log, re-run `bin/submit` (it resumes) |
-| `2` | TIMEOUT — still running when `--timeout` elapsed | nothing is wrong; wait again |
-| `3` | USAGE — bad invocation, or a ship for that slug is already running | read the refusal |
-| `4` | NO LOG — nothing to watch, and `--launch` was not given | `--launch`, or point `--log` at your redirect |
+**Exit codes: branch on them, never re-parse the log.** `bin/submit-wait --help`
+prints the table from `bin/lib/ship_wait.rb#EXIT_CODES`; 0 alone means the ship
+reached `submitted`.
 
 **Four properties, and each one is a mistake somebody already made:**
 
@@ -1021,21 +1015,12 @@ bin/task update <slug> --depends-on none                # clear it
 bin/task field <slug> dependencies                      # read back, one slug per line
 ```
 
-`Release::Ordering.producer_first` sorts gems before apps on its own, so declare
-an edge only for a sequence that heuristic cannot infer — one app that must
-deploy before another. Three properties decide whether it does anything:
-
-- A dependency on a task **outside the release** does not hold this one back.
-  That is deliberate (it cannot be ordered here), and it is also why a **typo is
-  invisible** — the pass cannot tell an unresolvable slug from no dependency at
-  all. So the write refuses a slug naming no task, rather than storing a
-  declaration that would never fire.
-- It **replaces** the list, like `--checks`. Pass the whole set in one call.
-- A `devops` write to the name is refused with a 422 naming the column
-  (`Task::DEVOPS_COLUMN_KEYS`) — same rule as `release_slug` above, for the same
-  reason: two docs told agents to declare this field, in a bracketed literal
-  syntax nothing parsed, months before anything could write it at all. The
-  devops namespace is exactly where that habit points.
+`bin/task --help` prints the flag's whole rule (when to reach for it, that it
+replaces the list, that an out-of-release dependency is tolerated and an unknown
+slug refused); the flag is `bin/task#TOP_LIST_FLAGS`, and `Release::Ordering`
+(`app/models/release/ordering.rb#producer_first`) is what reads the column. A
+`devops` write to the name is refused with a 422 naming the column
+(`app/models/task.rb#DEVOPS_COLUMN_KEYS`), the same rule as `release_slug` above.
 
 ## Epic Slug — the epic a task belongs to
 

@@ -54,7 +54,7 @@ class SubmitPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
 
   # Exactly what `bin/submit` step 8/8 sends — it shells out to `bin/task move <slug>
   # submitted`, which PATCHes the stage with a "cli"-sourced event and NO devops
-  # (the whole-hash echo happens only on a move to `building`, bin/task:2871).
+  # (the whole-hash echo happens only on a move to `building`, bin/task#stamp_session).
   def ship_handoff!(task)
     patch "/api/v1/tasks/#{task.slug}",
           params: { stage: "submitted", event: { source: "cli" } },

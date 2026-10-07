@@ -472,6 +472,23 @@ case "$MODE" in
   *) echo "ERROR: unknown mode: $MODE" >&2; usage >&2; exit 64 ;;
 esac
 
+# A FEATURE DESK CANNOT PUBLISH. The installer writes global, shared targets, so an
+# install from a desk pushes unshipped mid-branch text to every session on the
+# machine. The ship installs from its own workspace (`.worktrees/_ship`, see
+# app/models/release/gate_workspace.rb#path); a run that pins PROJECTS_DIR is a
+# sandbox. Every other desk is refused here, before anything is written, so no doc
+# can talk an agent into the publish: the command answers with the rule itself.
+case "$ROOT" in
+  */.worktrees/_ship) ;;
+  */.worktrees/*)
+    if [ "$MODE" = "install" ] && [ -z "$PROJECTS_DIR_PINNED" ]; then
+      echo "install-agent-docs: refusing to publish from the desk $ROOT — NOTHING was written." >&2
+      echo "The entry docs, skills and hooks are published by the ship's owned sync_agent_docs step (\`bin/release ship\`) from the tree that shipped. Drift between a docs merge and the next ship is expected and is not yours to fix." >&2
+      exit 2
+    fi
+    ;;
+esac
+
 for pair in "${PAIRS[@]}"; do
   src="${pair%%:*}"
   if [ ! -f "$src" ]; then

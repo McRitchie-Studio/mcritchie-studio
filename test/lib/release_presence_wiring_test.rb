@@ -154,7 +154,7 @@ class ReleasePresenceWiringTest < Minitest::Test
 
   # `host:` names the TARGET, not the payer — and the rule has to know the difference.
   # `prod_smoke_seal` is `host: production` and runs `npx playwright test` on THIS box
-  # (bin/prod-smoke:77), so it costs a full suite. A rule keyed on `host` alone would get
+  # (the `npx playwright test` call beside bin/prod-smoke#env), so it costs a full suite. A rule keyed on `host` alone would get
   # this one backwards, which is why the derivation reads `tier` too.
   def test_a_locally_driven_suite_against_a_remote_target_still_costs_this_box
     setup = PRELUDE + sweep_open(kind: "SHIP", lane: "release:ship") + <<~RUBY

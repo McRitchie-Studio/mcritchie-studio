@@ -127,7 +127,7 @@ not — by design.
 
 Both flows share one bearer lane: `POST /api/v1/auth` with the shared
 `AGENT_API_SECRET` returns a 24-hour token
-(`app/controllers/api/v1/auth_controller.rb:12-16`). Measured 2026-09-24: the
+(`app/controllers/api/v1/auth_controller.rb#create`). Measured 2026-09-24: the
 secret is present on both `mcritchie-studio` and `turf-monster-mainnet`.
 
 **`STUDIO_API_BASE` is a turf-monster-side override, not a shared one.** Both of

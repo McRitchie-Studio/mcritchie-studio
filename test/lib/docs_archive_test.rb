@@ -134,6 +134,39 @@ class DocsArchiveTest < Minitest::Test
     end
   end
 
+  # A doc tracked at both its live and its archive path is never planned as a move:
+  # `git mv` onto a taken destination aborts the whole roll. Applying the plan must
+  # succeed, retire the other doc, and leave the duplicate reported in place.
+  def test_a_taken_archive_destination_is_skipped_and_the_roll_still_applies
+    with_repo do |repo|
+      write(repo, "docs/agents/maintenance/dup-2026-08-26.md")
+      write(repo, "docs/agents/archive/maintenance/dup-2026-08-26.md")
+      write(repo, "docs/agents/maintenance/other-2026-08-26.md")
+      commit_all(repo)
+
+      plan = DocsArchive.plan(repo)
+
+      assert_equal ["docs/agents/maintenance/other-2026-08-26.md"], plan[:moves].map { |m| m[:from] }
+      assert_equal ["docs/agents/maintenance/dup-2026-08-26.md"], plan[:skipped].map { |s| s[:path] }
+      assert_match(/already in the archive/, plan[:skipped].first[:referrers].first)
+      assert_equal 1, DocsArchive.apply_moves!(repo, plan[:moves])
+      assert File.exist?(File.join(repo, "docs/agents/archive/maintenance/other-2026-08-26.md"))
+    end
+  end
+
+  # CONTROL: the same move, forced past the plan, is the refusal the skip avoids.
+  def test_a_move_onto_a_taken_destination_is_what_git_refuses
+    with_repo do |repo|
+      write(repo, "docs/agents/maintenance/dup-2026-08-26.md")
+      write(repo, "docs/agents/archive/maintenance/dup-2026-08-26.md")
+      commit_all(repo)
+
+      move = { from: "docs/agents/maintenance/dup-2026-08-26.md",
+               to: "docs/agents/archive/maintenance/dup-2026-08-26.md" }
+      assert_raises(DocsArchive::CommandFailed) { DocsArchive.apply_moves!(repo, [move]) }
+    end
+  end
+
   # --- where files land ----------------------------------------------------
 
   def test_the_source_subdirectory_is_mirrored_under_the_archive

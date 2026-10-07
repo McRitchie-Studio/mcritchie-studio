@@ -146,9 +146,9 @@ moment review kicks off. Pass **`--no-record`** / `--dry` for an advisory previe
 that claims nothing and writes nothing. (`--record` is a back-compat no-op.)
 
 **So preview with `--no-record`, never with a bare run.** A bare "preview" takes
-the task's review claim: a **~3h25m lease** (`ClaimLease::REVIEW_TTL_SECONDS =
-12275`) with **no renewer behind it**. A live claim row drops the task out of
-`Task.reviewable` (`app/models/task.rb`) and therefore out of `bin/task
+the task's review claim: a lease of `lib/claim_lease.rb#REVIEW_TTL_SECONDS` with
+**no renewer behind it**. A live claim row drops the task out of
+the `Task.reviewable` scope (`app/models/task.rb`) and therefore out of `bin/task
 claim-next-review` for the whole TTL. From the session that popped the task the
 claim is already yours (`same_instance`); it is the bare run from a FRESH session
 that strands the task.
@@ -161,8 +161,8 @@ On any exit 10, `bin/reviewer-select`'s stderr is the authority:
 
 | Arm | What it means | The move |
 |-----|---------------|----------|
-| **held** (`refuse_held!`) | a DIFFERENT live session already holds this task's review claim; the message NAMES the holder | Review another task — `bin/task claim-next-review`. Read a suspect lease with `bin/task review-claim status <task>`; ask the holder to `bin/task review-claim release <task>` rather than taking it from them |
-| **self-review** (`refuse_self_review!`) | the board refused the claim because the primary is in this task's AUTHOR SET. It names NO holder | Reconcile the author set, do not retry: `bin/task show <task> --verbose`, then `bin/task move <task> building --actor <the-real-builder>` |
+| **held** (`bin/reviewer-select#refuse_held!`) | a DIFFERENT live session already holds this task's review claim; the message NAMES the holder | Review another task — `bin/task claim-next-review`. Read a suspect lease with `bin/task review-claim status <task>`; ask the holder to `bin/task review-claim release <task>` rather than taking it from them |
+| **self-review** (`bin/reviewer-select#refuse_self_review!`) | the board refused the claim because the primary is in this task's AUTHOR SET. It names NO holder | Reconcile the author set, do not retry: `bin/task show <task> --verbose`, then `bin/task move <task> building --actor <the-real-builder>` |
 
 Two more states are **degraded, not refusals**: no agent session (a plain shell or
 CI) and an unreadable board. Both print the pick as ADVISORY and record nothing.

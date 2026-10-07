@@ -61,7 +61,7 @@ require_relative "projects_root"
 # downtime when the account-wide daily quota ran out. It survives: bin/gh-token
 # resolves `PROJECTS` from CLAUDE_PROJECTS_DIR, else `~/projects` — a HOME-based
 # default, not a `__dir__`-based one — so a snapshot at any path still reads and
-# writes the operator's one shared cache. Verified 2026-09-13 (bin/gh-token:130).
+# writes the operator's one shared cache. See bin/gh-token#PROJECTS.
 #
 # WHAT DOES MOVE: `ProjectsRoot::REPO_ROOT` is `__dir__`-based, so inside a
 # snapshot it names the snapshot, and the closure has TWO consumers of it — not
@@ -85,8 +85,8 @@ require_relative "projects_root"
 #      the Ruby half is where the shared token session spends its quota. FIXED, not recorded: `install!` stamps the
 #      resolved projects root into the snapshot as
 #      `bin/snapshot-env.sh` (SNAPSHOT_ENV_RELATIVE), which the helper sources,
-#      and both meters already honour `MCR_OP_READS_LOG` (bin/lib/op-meter.sh:70,
-#      bin/lib/op_meter.rb:283). The stamp DEFAULT-assigns, so a caller's own
+#      and both meters already honour `MCR_OP_READS_LOG` (bin/lib/op-meter.sh#op_meter_resolve_log,
+#      bin/lib/op_meter.rb#log_path). The stamp DEFAULT-assigns, so a caller's own
 #      value still wins, and it is written per install — move the projects
 #      directory and reinstall.
 #   2. `TaskUsageSandbox.real_state_dir` names the snapshot root rather than
@@ -99,7 +99,7 @@ require_relative "projects_root"
 #
 # THE TWO ARE COUPLED, and were written here as if they were not (corrected
 # 2026-09-13). The stamp in (1) sets MCR_OP_READS_LOG on every snapshot
-# invocation, and `op_meter_refused` (bin/lib/op-meter.sh:91) proceeds whenever
+# invocation, and `op_meter_refused` (bin/lib/op-meter.sh#op_meter_refused) proceeds whenever
 # that is set — so the BASH meter's rule 1 can no longer fire from a snapshot,
 # and (2) is why rule 2 does not fire there either. What keeps a sandboxed run
 # off the operator's real log is therefore not the guard but the fact that a

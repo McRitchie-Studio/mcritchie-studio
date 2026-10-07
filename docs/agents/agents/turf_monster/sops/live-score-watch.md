@@ -70,17 +70,14 @@ This act writes `Goal` rows, and those rows settle contests people paid to
 enter, so getting the target wrong is not a slow day — it is twelve hours of a
 report that describes the wrong database and reads exactly like a correct one.
 
-**You are not the only thing polling, and this SOP claimed you were until
-2026-09-30.** turf-monster's `config/schedule.yml` carries two NFL entries now —
-`nfl_live_poll` (`Nfl::LivePollJob`, `*/5 * * * *`, all week, unconditionally)
-and `nfl_silent_gap_check` (`Nfl::SilentGapCheckJob`, `37 */6 * * *`), both
-`active_job: true` — so `bin/nfl-live-poll` is no longer the only non-test
-caller of `Nfl::LiveScores::PollCycle`, and production contests re-score whether
-or not anybody runs this act. Read the file, not this paragraph:
-`config/schedule.yml#nfl_live_poll` in turf-monster.
+**You are not the only thing polling.** turf-monster's scheduler runs the same
+cycle on its own clock, so production contests re-score whether or not anybody
+runs this act. The jobs and their cadence live in turf-monster's
+`config/schedule.yml#nfl_live_poll` and `config/schedule.yml#nfl_silent_gap_check`;
+read them there rather than from a copy here.
 
-**The cron is a FLOOR ON LATENCY, not a replacement for the watch** — five
-minutes is the worst case for an unwatched slate, never a target, and
+**The cron is a FLOOR ON LATENCY, not a replacement for the watch** — its
+interval is the worst case for an unwatched slate, never a target, and
 `Nfl::LivePollJob` says so itself. An operator watching a live contest still
 wants the 30-second cadence below, the per-play readout, and a human reading
 anomalies as they land, so this act keeps its whole purpose. What changed is the
@@ -289,10 +286,13 @@ exactly like a healthy loop. Poller timestamps are UTC.
 
 ## Anomalies — the part that needs judgment
 
-The cycle REPORTS rather than stops, for every kind below, and the table is the
-complete set it can raise. It carried a COUNT until 2026-10-01 ("seven kinds"),
-which was wrong by three: a hand-kept tally of another repo's constants has no
-feedback loop. Deciding which anomaly deserves a human is your job.
+The cycle REPORTS rather than stops, for every kind it raises. The source is
+the set: every `kind:` in turf-monster's
+`app/services/nfl/live_scores/poll_cycle.rb#call` and the methods it calls. The
+table below is the judgment for each kind, not the list of them; **a kind the
+cycle reports that this table does not name is new, so escalate it** with the
+game slug and the detail line. Deciding which anomaly deserves a human is your
+job.
 
 | Kind | What it means | What to do |
 |---|---|---|

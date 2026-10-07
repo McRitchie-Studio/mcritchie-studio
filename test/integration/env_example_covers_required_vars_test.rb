@@ -4,12 +4,9 @@ require "test_helper"
 # machine actually crosses: `.env.example` is copied to `.env`, the operator
 # fills it in, and a service boots off what it found.
 #
-# The tripwire in test/lib/env_example_credential_pointers_test.rb checks the
-# template against the credential INVENTORY — that a pointer names a live item.
-# This checks the other side: that the template DECLARES every variable a
-# service refuses to boot without. The two failures are different and neither
-# guard sees the other's: a template can name a perfectly live 1Password item
-# for a variable the code stopped reading, or omit a variable the code requires.
+# The credential INVENTORY (docs/agents/modules/credential-inventory.md) holds
+# which 1Password item backs each variable; the template names none. This checks
+# that the template DECLARES every variable a service refuses to boot without.
 #
 # Higgsfield is the one exercised here because it is the one that just moved,
 # and because its client raises on a blank value rather than degrading — so an

@@ -238,7 +238,7 @@ the single source for their mechanics. Run it in full, and supply what only this
 
 Two of its rules decide most judgement calls here. **Clean + merged is not
 sufficient**: a new worktree is git-identical to a merged one, so a bound desk
-stands until its task reaches `shipped` or `archived`. **Trust the safety gate over
+stands until its task reaches a stage in `bin/agent-worktree#RECLAIMABLE_STAGES`. **Trust the safety gate over
 the description**: if Alex says three worktrees and the dry run finds seventeen,
 surface it and believe the gate. File anything uncertain on the desk ledger
 (`bin/agent-worktree cleanup --write`) rather than deleting it.

@@ -68,10 +68,10 @@ at day 0.
 
 ## Phase 1 — Clean the list before anyone mails it
 
-Never mail an unverified imported list. Cyvasse's first 101 unverified sends
-bounced 12.9% (13 of 101). Resend's bounce limit is 4%
-(`app/services/broadcasts/analytics.rb#BOUNCE`), so one unverified batch of
-2,000 would have tripped it three times over.
+Never mail an unverified imported list. Cyvasse's first unverified batch
+bounced far past Resend's 4% limit
+(`app/services/broadcasts/analytics.rb#BOUNCE`); the figure is recorded once, at
+`app/models/broadcast.rb#VERIFIED_AUDIENCES`.
 
 | # | Step | Tag |
 |---|---|---|
@@ -209,7 +209,7 @@ weekly [`content-sprint`](content-sprint.md).
 | What | Number |
 |---|---|
 | List | 18,745 legacy players imported, tagged `cyvasse-legacy` |
-| First unverified batch | 101 sends, 13 bounced (12.9%) |
+| First unverified batch | recorded at `app/models/broadcast.rb#VERIFIED_AUDIENCES` |
 | Verification of 10,000 | 81% kept (valid, catch-all or unknown), 16% invalid, 1.5% abuse, 1.3% do-not-mail, 1 spam trap |
 | Verified batches | 100 → 1,000 → 2,000, then larger, to 8,239 sends by 2026-09-30; bounce 0.8–2.4%, oldest addresses highest |
 | Complaints | 0 across 8,239 sends |
