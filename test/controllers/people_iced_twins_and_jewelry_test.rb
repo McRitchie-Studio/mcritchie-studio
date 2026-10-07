@@ -113,6 +113,17 @@ class PeopleIcedTwinsAndJewelryTest < ActionDispatch::IntegrationTest
     assert_select "#look-#{other.slug} form[action='#{create_iced_twin_person_path(@person.slug)}']", 1
   end
 
+  test "a merge moves the source's jewelry to the survivor rather than destroying it" do
+    source = Person.create!(first_name: "Novise", last_name: "Icebox")
+    ring = source.jewelries.create!(jewelry_params[:person_jewelry])
+    log_in_as users(:alex)
+
+    assert_no_difference -> { PersonJewelry.count } do
+      post merge_people_path, params: { keep_slug: @person.slug, merge_slug: source.slug }
+    end
+    assert_equal @person.slug, ring.reload.person_slug
+  end
+
   test "a person with no jewelry says so" do
     log_in_as users(:alex)
     get person_path(@person.slug)

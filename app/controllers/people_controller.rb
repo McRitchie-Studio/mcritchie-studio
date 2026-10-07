@@ -294,7 +294,11 @@ class PeopleController < ApplicationController
     # 7. Move the source's LOOKS and ARTIFACT CAST to the survivor
     relocate_looks_and_cast!(keep, source)
 
-    # 8. Delete merged person
+    # 8. Move the source's JEWELRY, which the destroy below would otherwise take
+    # with it (Person has_many :jewelries, dependent: :destroy).
+    PersonJewelry.where(person_slug: source.slug).update_all(person_slug: keep.slug, updated_at: Time.current)
+
+    # 9. Delete merged person
     source.destroy!
   end
 
