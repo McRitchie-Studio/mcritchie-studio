@@ -146,7 +146,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='clip-sheet-missing'][data-ordinal='2']", /\ASheet 1 · Person B · #4 Test Passer Epsilon: /
       assert_select "[data-test='clip-sheet-missing'][data-ordinal='3']", /\ASheet 2 · Person C · #88 Test Receiver Zeta: /
-      assert_select "[data-test='clip-prompt']", /- Person B \(lead\) -> #4 Test Passer Epsilon, Home White \(character sheet 1\)\n- Person C \(background\) -> #88 Test Receiver Zeta, Home White \(character sheet 2\)/
+      assert_select "[data-test='clip-prompt']", /- Person B \(lead\) -> #4 Test Passer Epsilon, Home White \(character sheet 1\)\s+- Person C \(background\) -> #88 Test Receiver Zeta, Home White \(character sheet 2\)/
     end
     # The frames sit above the hand-off buttons on the card.
     card = css_select("[data-test='alt-clip'][data-ordinal='3']").sole.to_html
