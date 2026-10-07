@@ -62,7 +62,10 @@ module Api
         # tell from a pre-gender draw. bin/agent-worktree writes it into the desk
         # context so bin/statusline can show ⚥. Derived per read, never stored, and
         # on show only (one row), so the index pays no per-task Pokémon read.
-        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task)))
+        # `agent_session` is the soul logged in to this task (the newest live studio
+        # session), or nil when only the Pokémon holds it.
+        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task),
+                                                    "agent_session" => live_agent_session_json(@task)))
       end
 
       def create
@@ -166,6 +169,11 @@ module Api
       end
 
       # The task mascot's display gender — see #show. nil for no mascot or a persona.
+      def live_agent_session_json(task)
+        AgentSession.unrevoked.unexpired.for_task(task.slug).where(tier: "studio")
+                    .order(issued_at: :desc).first&.summary
+      end
+
       def mascot_display_gender(task)
         slug = task.devops["mascot"].presence
         pokemon = slug && Pokemon.find_by(slug: slug)
