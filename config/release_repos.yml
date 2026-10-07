@@ -1,240 +1,126 @@
-# Release repo registry — the producer/consumer classification for the Deploy
-# workflow (Workflow 2). Single source of truth read by `Release::Repos`.
+# Release repo registry: how each repo rides the Deploy workflow. Read by
+# Release::Repos (kind, gem?, app?, gem_meta), Release::Conductor.member_plan (gem
+# or app per member), bin/release (publishes gems, merges app branches) and
+# Task#release_repo / #gem_release? (the board's gem badge and ordering).
 #
-# The Deploy workflow ships a release PRODUCER-FIRST: a gem (a *producer*) is
-# published to RubyGems BEFORE the apps (its *consumers*) that depend on it
-# deploy, so a consuming app always builds against the just-published version.
-# `bin/release prepare` (Avi's qa-release sweep) publishes every gem member
-# at QA assembly — after a fail-closed preflight over ALL swept gems, BEFORE
-# the pre-QA gate and any QA deploy — and commits each consumer's lock bump
-# onto origin/release. `bin/release ship` ("Run Deployment") re-verifies each
-# gem idempotently (already-live → skip) before the app deploys.
+# PRODUCER-FIRST. `bin/release prepare` publishes every gem member to RubyGems at
+# QA assembly, after a fail-closed preflight over all swept gems and before the
+# pre-QA gate and any QA deploy, then commits each consumer app's lock bump onto
+# origin/release. `bin/release ship` re-verifies each gem (already live: skip)
+# before the apps deploy, so an app always builds against the published version.
 #
-# A GEM IS A CONSUMER TOO, and the two halves of this file do not say so on
-# their own. studio-engine is registered below as a `gem` (it publishes) while
-# its Gemfile declares solana-studio (it consumes). The consumer bump above
-# walks `app` members ONLY, so it never reached the engine, and every publish
-# left the engine's lock trailing until its own CI reddened every open PR.
-# bump_producer_locks_for_accepted handles that half — keyed off THIS REGISTRY'S
-# gems list rather than the candidate's members, and committing onto `accepted`
-# rather than `release`. Do NOT "fix" it by moving a gem into the apps half:
-# validate_gems_for_qa treats a non-empty apps list as its no-consumer QUORUM,
-# so a producer sitting there would let a gem publish with nothing deployable
-# ever QA'ing it.
-#
-# Read by:
-#   * Release::Repos (app/models/release/repos.rb) — kind/gem?/app?/gem_meta
-#   * Release::Conductor.member_plan — tags each release member gem vs app
-#   * bin/release — skips the branch-merge for gem members; publishes them first
-#   * Task#release_repo / #gem_release? — board 💎 gem badge + ordering
+# A GEM IS A CONSUMER TOO: studio-engine depends on solana-studio. The consumer
+# bump walks `apps` only, so bump_producer_locks_for_accepted bumps the gems'
+# locks from this file's `gems` list, onto `accepted`. Never move a gem into
+# `apps` to reach it: validate_gems_for_qa reads a non-empty `apps` list as the
+# quorum that QAs a gem, so a producer there lets a gem publish unQA'd.
 #
 # Two member kinds:
-#   gems — published to RubyGems. They have NO app branch in mcritchie-studio;
-#          their PR/branch lives in the gem's own repo. They ride the release as
-#          a record, are published at prepare (BEFORE the pre-QA gate + QA
-#          deploy; ship re-verifies idempotently), and are QA'd via a consuming
-#          app's bumped Gemfile.lock.
-#   apps — deployed. A HASH keyed by repo slug; each app carries a `prod_deploy`
-#          adapter describing HOW it ships to production (the multi-repo conductor
-#          reads this so one release can drive heterogeneous deploys). They have a
-#          branch merged onto the release branch.
+#   gems: published to RubyGems. No app branch here; the PR lives in the gem's own
+#         repo. Published at prepare, re-verified at ship, QA'd through a
+#         consuming app's bumped Gemfile.lock.
+#   apps: deployed. Keyed by repo slug; each carries an optional `prod_deploy`
+#         adapter, and its branch merges onto the release branch.
 #
-# prod_deploy is OPTIONAL. An app that has no production deployment target
-# omits it entirely, and ship advances its main and records `no production
-# deploy target — nothing dispatched`. NEVER paper over a missing target with a
-# no-op deploy script: that makes ship report a deploy that did not happen.
-# A declared adapter is a PROMISE that its `command` exists on disk — repos_test
-# asserts exactly that, so a command that never existed fails at test time
-# instead of at G4 with main already advanced.
+# prod_deploy is OPTIONAL. With none, ship advances main and records `no
+# production deploy target — nothing dispatched`. Never stand in a no-op deploy
+# script: ship would report a deploy that did not happen. A declared adapter
+# promises its `command` exists on disk, and repos_test asserts it.
 #
-# prod_deploy adapters (the `strategy` selects the deploy mechanic):
-#   git_push_heroku — push the release/main branch to a Heroku git remote.
-#       remote    — the git remote name or Heroku git URL to push to (e.g. heroku).
-#       branch    — the branch the remote deploys (e.g. main).
-#       smoke_url — the production URL to smoke-test after the push.
-#   github_actions — dispatch a GitHub Actions workflow and WATCH it to completion
-#                 (DevOps v2 Phase 2 — the HUB). The workflow does the Heroku push
-#                 AND the hard /up smoke server-side. The `production` Environment's
-#                 required-reviewer approval was removed 2026-07-20, so the dispatched
-#                 run deploys straight through — the ship-confirm is launching
-#                 bin/release ship. The conductor runs NO curl-smoke of its own for
-#                 this adapter — the workflow owns it.
-#       workflow  — the .github/workflows filename to dispatch (e.g. prod-deploy.yml).
-#       smoke_url — the production URL, KEPT for the board/deploy record even though
-#                 the workflow (not the conductor) runs the smoke.
-#     The QA-deploy twin is a fixed `qa-deploy.yml`, dispatched by `bin/release
-#     prepare` for this adapter instead of `bin/qa-server deploy`.
-#   repo_script — shell out to a deploy script that lives IN the app repo (the
-#                 repo owns its own deploy logic; the conductor just invokes it).
-#       command — the repo-relative deploy script (e.g. bin/deploy).
-#       args    — argv passed to the script (e.g. ["--yes"] to skip prompts).
-#     CONTRACT (read before registering a new one). The script runs with cwd = the
-#     repo's SHIP WORKSPACE (<repo>/.worktrees/_ship): a private worktree with a
-#     DETACHED HEAD at the QA-frozen SHA, a clean tree, and the repo's shared git
-#     config/remotes. So:
-#       * `git rev-parse --abbrev-ref HEAD` is the literal "HEAD", not "main" — a
-#         script that pushes must use a refspec that works detached (turf's
-#         `PUSH_SPEC="$BRANCH:main"` becomes `HEAD:main`, which pushes the frozen
-#         commit — exactly right).
-#       * GITIGNORED artifacts are NOT there on a fresh workspace (no node_modules,
-#         no app/assets/builds, no .env beyond the one the conductor mirrors in).
-#         Verify the script's own test/build steps survive that.
-#       * The ONLY env the conductor adds is DATABASE_URL, pointing at the
-#         workspace's private test DB (<app>_ship_test) so the script's pre-prod
-#         suite can't collide with a concurrent one. It is NOT test-scoped (a Rails
-#         builtin): a deploy script must not run a development-env rails command and
-#         expect its dev database. RAILS_ENV is deliberately NOT set — precompiling
-#         assets under RAILS_ENV=test would build the wrong artifact and ship it.
+# prod_deploy strategies:
+#   git_push_heroku: push the release's main to a Heroku git remote.
+#       remote    — the git remote name or Heroku git URL.
+#       branch    — the branch the remote deploys (main).
+#       smoke_url — the production HOST; ship smokes `<smoke_url>/up` after the
+#                   push, so the value never ends in /up.
+#   github_actions: dispatch a workflow and watch it to completion (the hub). The
+#                 workflow pushes to Heroku and runs the /up smoke; the
+#                 `production` Environment has no required reviewer, so launching
+#                 `bin/release ship` is the confirmation. The conductor runs no
+#                 smoke of its own here.
+#       workflow  — the .github/workflows file to dispatch (prod-deploy.yml).
+#       smoke_url — kept for the board and the deploy record.
+#     Its QA twin is the fixed `qa-deploy.yml`, which prepare dispatches instead
+#     of `bin/qa-server deploy`.
+#   repo_script: run a deploy script the app repo owns.
+#       command — the repo-relative script (bin/deploy).
+#       args    — its argv (["--yes"] skips prompts).
+#     The script runs in the repo's SHIP WORKSPACE (<repo>/.worktrees/_ship): a
+#     clean worktree with a DETACHED HEAD at the QA-frozen SHA. So a push uses a
+#     refspec that works detached (`HEAD:main`); gitignored artifacts
+#     (node_modules, app/assets/builds, .env beyond the mirrored one) are absent;
+#     and the only env added is DATABASE_URL for the workspace's private test DB
+#     (<app>_ship_test). RAILS_ENV stays unset, so a precompile builds the
+#     production artifact.
 #
-# Optional per-app `qa_deploy: { app: <qa-server-key> }` overrides the qa-server
-# target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.
+# Optional `qa_deploy: { app: <qa-server-key> }` overrides the qa-server target;
+# absent, `Release::Repos.qa_app` uses the repo slug.
 #
-# Optional per-app `test_cmd` is the conductor's pre-prod gate SWITCH (G4 Ship):
-# when set, `bin/release ship` READS GitHub CI's settled verdict for the app's
-# QA-frozen SHA's tree right before the irreversible prod deploy — the SHA's own
-# run polled to a conclusion, or a same-SHA / same-tree green credited from the
-# accepted head, exactly as the G3 gate resolves the release tip — and
-# scoped-aborts on anything but green. NOTHING RUNS ON THE CONDUCTOR'S MACHINE:
-# the command names the suite CI ran and is recorded on the gate SOP beside the
-# verdict's source (devops-v3 §5, one tree earns one verdict). Set it where the
-# repo's own deploy does NOT run the suite: the hub deploys via github_actions (a
-# workflow that runs NO test step, just the Heroku push + smoke), so it carries
-# `test_cmd: bin/rails db:test:prepare test test:system`. The `repo_script`
-# satellites SELF-GATE — their bin/deploy runs their own tests, in the ship
-# workspace — so they leave `test_cmd` UNSET, which makes the ship gate skip them.
-# There is no self-skip against G3's record any more (that spared a local suite
-# nothing re-runs); the read is the verdict.
+# GATES. Both commands NAME a suite CI ran; nothing runs on the conductor's
+# machine. Each is Shellwords-parsed into an argv (no shell), and an unbalanced
+# quote aborts the run naming the string.
+#   test_cmd    — G4, the ship gate. Right before the irreversible deploy, ship
+#                 reads CI's settled verdict for the QA-frozen SHA's tree (its own
+#                 run, or a same-tree green credited from the accepted head) and
+#                 aborts on anything but green.
+#   qa_test_cmd — G3, the pre-QA gate. Prepare reads CI's verdict on
+#                 origin/release before any QA deploy; red aborts prepare while
+#                 every member is still `reviewed`.
+# UNSET means the repo self-gates (its own deploy runs its suite) and the gate
+# skips it. Never blank one to pass a red gate: that silently disarms it. The
+# loud override is `bin/release ship --skip-test-gate --reason "…"`, which
+# records a red gate SOP.
 #
-# DO NOT blank `test_cmd`/`qa_test_cmd` to bypass a red gate. A blank reads as
-# "self-gates" and skips the READ — it silently disarms the last gate before
-# production. The supported override is ship-side and loud:
-# `bin/release ship --skip-test-gate --reason "…"` (records a RED gate SOP).
+# WHAT TO REGISTER turns on whether the repo's DEPLOY runs the suite:
+#   * It does (turf-monster's bin/deploy): qa_test_cmd is the integration subset,
+#     `bin/rails test test/integration`, and test_cmd stays unset.
+#   * It does not (git_push_heroku, github_actions): both commands are CI's FULL
+#     suite, verbatim from the repo's ci.yml, because they are the last gate
+#     before production. A subset here leaves every skipped tier ungated.
+#     repos_test parses each repo's ci.yml and asserts the match.
 #
-# Optional per-app `qa_test_cmd` is Avi's PRE-QA gate (G3 Candidate):
-# `bin/release prepare` reads GitHub CI's verdict for it on origin/release BEFORE
-# any QA deploy — the tier prepare owns (Release::STEP_TEST_TIERS). A red gate
-# aborts prepare with eject guidance while every swept member is still `reviewed`
-# (nothing flipped, nothing deployed). UNSET = the repo self-gates at its own
-# deploy and the gate skips it. Nothing runs locally here either.
+# THE RAKE-PATH SHAPE IS LOAD-BEARING: `bin/rails db:test:prepare test
+# test:system`. `bin/rails test` alone skips test/system, and
+# `bin/rails test test:system` dies with `LoadError: cannot load such file --
+# <root>/test:system`, because `test` is a rails command that reads the next
+# word as a path. A leading rake task (`db:test:prepare`) routes the whole line
+# through rake, where `test` and `test:system` are two tasks. Keep it first. An
+# app without ActiveRecord has no `db:test:prepare`, so it splits its tiers
+# across two CI jobs instead (dads-app).
 #
-# THE SHIP WORKSPACE (Release::GateWorkspace, role `ship`) still exists — a private
-# detached worktree pinned at the frozen SHA, under its own lock, with a test DB the
-# conductor PROVES is private before `db:test:prepare` — but it serves the gem
-# build, the consumer lock bump / re-pin, and a `repo_script` satellite's own deploy
-# (turf's bin/deploy runs its suite there), never a gate. Its env is prepared
-# (`bin/rails db:test:prepare test:prepare`, one boot) so that deploy suite runs
-# with its assets built whatever shape the repo's deploy takes.
+# The Playwright e2e tier does not belong in either gate: it needs a booted
+# server. Prepare's post-deploy `/up` wait against QA is that smoke.
 #
-# WHAT to register as qa_test_cmd — the question is NOT "hub or satellite", it is
-# "does this repo's DEPLOY run the suite?":
-#   * a repo whose OWN DEPLOY runs the full suite (turf-monster: bin/deploy) — the
-#     integration SUBSET (`bin/rails test test/integration`): review owns the base
-#     tier, and their ship test_cmd / own deploy owns the full pre-prod run
-#     (registering the same full suite twice would re-run it every ship, since
-#     their SHAs routinely drift via re-pins).
-#   * a repo whose deploy runs NO test step (ROLIO via git_push_heroku, the HUB via
-#     github_actions — its workflow only pushes + smokes) — the registered command
-#     IS the last gate before prod and must be
-#     CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test test:system`), at
-#     BOTH gates. CI runs that suite ONCE per tree; G3 reads its verdict for the
-#     release tip and G4 reads it again for the frozen ship SHA (credited from the
-#     accepted head when the tree is identical, else the SHA's own run), so the
-#     suite never runs twice and never runs here. Registering the SUBSET for one of
-#     these leaves prod ungated for every tier the subset skips — exactly how
-#     rolio's system tier went uncovered.
-#
-# THESE GATES INCLUDE THE SYSTEM TIER, and the exact SHAPE is load-bearing.
-# `bin/rails test` alone SKIPS test/system — so a system-test regression used to
-# ride the release branch straight into QA ungated, which is the hole this closes.
-# The gate must run what CI runs, so each registers ITS OWN ci.yml command verbatim
-# (repos_test.rb parses both ci.yml files and asserts the match):
-#
-#   * DO NOT "simplify" it to `bin/rails test test:system`. That shape is BROKEN:
-#     `test` is a real rails COMMAND, so `test:system` is parsed as a PATH and the
-#     run dies with `LoadError: cannot load such file -- <root>/test:system`. It
-#     works in ci.yml only because the FIRST arg (`db:test:prepare`) is NOT a rails
-#     command, which routes the whole line through RAKE — where `test` and
-#     `test:system` are two separate rake tasks. Keep db:test:prepare first.
-#   * The leading `db:test:prepare` is therefore what selects the rake path. It is
-#     also harmless to re-run: the gate already ran it in prepare_gate_workspace!,
-#     against a test DB it PROVED private first, so the re-purge (~2s) hits only
-#     the gate's own DB.
-#   * Assets need NO setup step in the gate's virgin worktree — but the reason is
-#     PER-APP, so do not carry one app's mechanism over to the other:
-#       - the HUB self-heals: `rails test`/`rails test:system` each call
-#         run_prepare_task -> rake `test:prepare`, which tailwindcss-rails enhances
-#         with `tailwindcss:build`, so the gitignored app/assets/builds/tailwind.css
-#         is BUILT on demand (a bare `db:test:prepare` does NOT build it — the gem
-#         hooks test:prepare, not db:).
-#       - ROLIO needs no build at all: it is sprockets + importmap and leaves
-#         `config.assets.compile` at its default TRUE in test (it is set false only
-#         in production.rb), so `stylesheet_link_tag "application"` COMPILES AT
-#         REQUEST TIME from the tracked sources in app/assets/stylesheets/. There is
-#         no tailwindcss-rails hook here to rely on, and none is needed.
-#   * The BROWSER is driven headless by Selenium Manager, which fetches a chromedriver
-#     matched to the installed Chrome (same reason ci.yml installs NO chromedriver).
-#     This suite no longer runs at the gate — since DevOps v2 Phase 4 GitHub CI is the
-#     G3/G4 verdict — so there is no local no-Chrome pre-check: CI's Actions runner
-#     always has Chrome, and a browserless dev host never gates this command.
-#
-# NOT to be confused with the PLAYWRIGHT e2e tier, which still does NOT belong
-# here: Rails system tests boot their OWN Puma in-process (Capybara), so they run
-# fine in the gate workspace, whereas a Playwright run needs an already-booted
-# SERVER. The e2e-smoke half of prepare's tier remains prepare's own built-in
-# post-deploy `/up` boot wait against QA — the QA deploy IS that smoke.
-#
-# PARSING: both test_cmd and qa_test_cmd are Shellwords-parsed into an argv
-# (bin/release's test_cmd_argv — no shell interpolation), so quoted/spaced args
-# survive as single elements: `bin/rails test "test/integration/a b_test.rb"`.
-# Plain flag-style commands split exactly as before. An unbalanced quote aborts
-# the run naming the offending string instead of executing a garbled command.
+# The ship workspace (Release::GateWorkspace, role `ship`) is a private detached
+# worktree at the frozen SHA, under its own lock, with a test DB proved private
+# before `db:test:prepare`. It serves the gem build, the consumer lock bump and
+# a repo_script deploy, never a gate.
 #
 # gem fields:
-#   version_file — path (inside the gem repo) declaring the version to publish.
-#                  Read for the producer-first publish + the board indicator.
-#                    studio-engine → lib/studio/version.rb  (VERSION = "x.y.z")
-#                    solana-studio → lib/solana_studio/version.rb (VERSION = "x.y.z")
-#   gemspec      — the .gemspec `gem build` packages (defaults to <repo>.gemspec).
-#   build_cmd    — human-readable build command (documentation; bin/release
-#                  drives release_check/gem build directly).
+#   version_file — the file in the gem repo that declares the version to publish.
+#   gemspec      — the .gemspec `gem build` packages (default <repo>.gemspec).
+#   build_cmd    — the human-readable build command; bin/release drives the
+#                  build itself.
 #
-# cert fields — READ FOR A ROW IN EITHER SECTION:
-#   release_check — THE REPO'S OWN DECLARED GATE COMMAND, and the one key whose
-#                  readers are deliberately scoped two different ways. Read the
-#                  split before adding one to an `apps` row:
-#                    * THE PRE-FLIGHT READER IS SECTION-BLIND. ReleaseRegistry.release_check_cmd
-#                      flattens `apps` + `gems`, so ANY row that declares one gets a
-#                      LOCAL PRE-FLIGHT LANE: bin/fast-check runs that command as the
-#                      whole mapped lane and skips the Rails test-prepare it implies (see
-#                      turf-vault below, which is an `apps` row using exactly this).
-#                    * THE PUBLISH READERS ARE GEMS-ONLY. bin/release.rb's
-#                      `bin/release.rb#gem_meta_for` / `bin/release.rb#self_gated_gem?`
-#                      and `app/models/release/repos.rb#gem_meta` each read the `gems`
-#                      section and nothing else — the first two by `dig("gems", repo)`,
-#                      the third by `config.fetch("gems", {})`. So declaring this on an `apps` row
-#                      CANNOT make the repo self-gated and CANNOT push it to RubyGems.
-#                  For a GEM it is additionally the pre-publish gate run with
-#                  `--build` (syntax + unit + build) before the artifact is pushed.
-#                  The command is spawned as a STRING, so a `&&` chain is honoured
-#                  by the shell — a repo that ships no single gate script can still
-#                  declare its real lanes. NO ROW DOES TODAY, and the one that did
-#                  is why the capability is described rather than recommended:
-#                  turf-vault declared its CI lanes here as a chain for one day
-#                  (2026-09-14) before growing its own `bin/release-check`, and a
-#                  chain in this file is a COPY of another repo's CI that drifts
-#                  from it. Prefer a script the repo owns; reach for the chain only
-#                  to unblock a repo that cannot take one yet.
-#                  DECLARED, NEVER INFERRED, the same rule
-#                  lint_lane states below: nothing probes a tree for a test runner.
-#   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop.
-#                  Since the local full-suite cert retired (2026-09-24) no script
-#                  reads it: bin/fast-check omits the rubocop lane for every
-#                  registry-gated repo by construction. The declaration stays as
-#                  the reviewable statement of that fact. DECLARED, NEVER INFERRED.
+# cert fields (either section):
+#   release_check — the repo's own declared gate command, spawned as a string.
+#                   The pre-flight reader is section-blind:
+#                   ReleaseRegistry.release_check_cmd flattens both sections, so
+#                   any row that declares one gets bin/fast-check's whole-gate
+#                   lane (turf-vault does). The publish readers are gems-only
+#                   (bin/release.rb#gem_meta_for, bin/release.rb#self_gated_gem?,
+#                   app/models/release/repos.rb#gem_meta), so on an `apps` row it
+#                   cannot make a repo self-gated or publish it. For a gem it is
+#                   also the pre-publish gate, run with `--build`. Name a script
+#                   the repo owns; a `&&` chain here copies another repo's CI and
+#                   drifts from it.
+#   lint_lane     — `none` declares that the repo ships no rubocop. No script
+#                   reads it; it stays as the reviewable statement of that fact.
+# Both are DECLARED, never inferred: nothing probes a tree for a runner.
 #
-# The gem repos are checked out as SIBLINGS of this app (the projects root):
-#   /Users/alex/projects/<repo>. `bin/release` resolves them relative to the
-#   app root's parent, so run ship from a PRIMARY checkout, not a worktree.
+# The gem repos are checked out as siblings of this app
+# (/Users/alex/projects/<repo>), resolved from the app root's parent, so run
+# ship from a primary checkout, not a worktree.
 
 gems:
   studio-engine:
@@ -243,378 +129,87 @@ gems:
     gemspec: studio-engine.gemspec
     release_check: bin/release-check
     build_cmd: bin/release-check --build
-    # lint_lane: none — THIS REPO SHIPS NO RUBOCOP, and the cert gate must be told
-    # rather than left to guess. There is no rubocop in the Gemfile, none in the
-    # gemspec, no .rubocop.yml, and `bundle exec rubocop` fails outright. Its
-    # static gate is `ruby -c` over the tree, run inside bin/release-check, which
-    # the `release_check` key above already names.
-    #
-    # DECLARED, NEVER INFERRED. Nothing probes for a rubocop binary. A repo opting
-    # out of a lint lane must be a visible, reviewable diff line, which is what
-    # this is.
-    #
-    # WHY IT WAS NEEDED (2026-08-24): the (since retired) local cert demanded a
-    # full-suite AND a rubocop line per NAMED repo, so a task naming studio-engine
-    # could never be certified. The cert retired on 2026-09-24; the line stays as
-    # the statement of fact. If the engine ever GAINS rubocop, delete it.
+    # No rubocop: none in the Gemfile or gemspec, no .rubocop.yml. Its static gate
+    # is `ruby -c` inside bin/release-check. Delete this line if it gains rubocop.
     lint_lane: none
   solana-studio:
     ladder: three-rung
-    # Was `solana-studio.gemspec` until 2026-08-20. bin/dor-check refuses a PR
-    # that edits the registered version_file, matching on PATH — so pointing it
-    # at the gemspec made the WHOLE gemspec release-owned: spec.files, the
-    # runtime dependencies and the metadata, none of which the conductor writes
-    # and none of which had another writer. The manifest was un-editable through
-    # the normal cycle, which surfaced the first time the gem needed to ship a
-    # new directory (its Rails engine's app/). Split to a dedicated version file,
-    # the shape studio-engine already uses, so each file has its real owner:
-    # this one the release, the gemspec the PR.
+    # A dedicated version file, not the gemspec: bin/dor-check refuses a PR that
+    # edits version_file, so the gemspec stays editable through the normal cycle.
     version_file: lib/solana_studio/version.rb
     gemspec: solana-studio.gemspec
-    # The gem grew a suite runner with its engine. Registering it here gives the
-    # publish a pre-artifact gate instead of pushing on membership alone.
     release_check: bin/release-check
     build_cmd: bin/release-check --build
-    # lint_lane: none — SAME FACT AS studio-engine ABOVE, and verified against
-    # origin/accepted on 2026-08-31 rather than assumed: `git ls-tree -r` matches
-    # nothing named rubocop (no .rubocop.yml, no bin/rubocop — bin/ holds only
-    # release-check, e2e-executed-set-check and lib/), and rubocop appears nowhere
-    # in the Gemfile, the gemspec or Gemfile.lock. Its static gate is bin/release-check,
-    # which the `release_check` key above already names, and which is exactly what CI
-    # runs here.
-    #
-    # WHY IT WAS NEEDED (found 2026-08-31 by carl, reviewing solana-studio #9):
-    # the (since retired) local full-suite cert ran `bin/rubocop` anyway, got
-    # COULD NOT RUN, and discarded the green suite lane with it, so the full cert
-    # could never go green in this repo. The cert retired on 2026-09-24; the line
-    # stays as the statement of fact. If this repo ever GAINS a lint toolchain,
-    # delete it.
+    # No rubocop anywhere in the tree, Gemfile, gemspec or lock; bin/release-check
+    # is its static gate and what CI runs. Delete this line if it gains a linter.
     lint_lane: none
 
 apps:
   mcritchie-studio:
     ladder: three-rung
-    # Hub: github_actions deploys via a workflow that runs NO test step (just the
-    # Heroku push + /up smoke), so gate prod here — the G4 ship gate READS CI's
-    # settled verdict for the frozen tree (the suite this command names ran in
-    # CI; nothing runs locally). Kept equal to qa_test_cmd so the two gates name
-    # the same suite CI ran, not because any skip compares them.
+    # The hub's deploy workflow runs no tests, so both gates name CI's full
+    # `test` job suite, verbatim; repos_test holds them to ci.yml.
     test_cmd: bin/rails db:test:prepare test test:system
-    # Pre-QA gate (G3): the hub certifies CI's FULL suite — the base tier AND the
-    # SYSTEM tier — on the release batch. This string is ci.yml's `test` job
-    # command VERBATIM, and repos_test.rb parses ci.yml and asserts they match,
-    # so the gate cannot silently drift out from under CI again.
     qa_test_cmd: bin/rails db:test:prepare test test:system
-    # DevOps v2 Phase 2: the hub deploys through GitHub Actions (prod-deploy.yml),
-    # NOT a local git push. The workflow does the Heroku push + hard /up smoke;
-    # smoke_url stays for the board/deploy record. QA goes through qa-deploy.yml
-    # (dispatched by `bin/release prepare` for this adapter). rolio + turf are
-    # unchanged.
+    # QA deploys through qa-deploy.yml, dispatched by prepare.
     prod_deploy:
       strategy: github_actions
       workflow: prod-deploy.yml
       smoke_url: https://mcritchie.studio
   turf-monster:
     ladder: three-rung
-    # Self-gates at SHIP (bin/deploy runs the full suite pre-prod) — but nothing
-    # gated the QA deploy, so the prepare-owned integration tier runs here.
+    # bin/deploy runs the full suite before production, so test_cmd stays unset;
+    # the integration tier gates the QA deploy.
     qa_test_cmd: bin/rails test test/integration
     prod_deploy:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
-      # WHAT PROVES THE DEPLOY LANDED. A repo_script adapter names only a command,
-      # so nothing here tells the hub where the deploy ends up — and without that,
-      # `bin/release ship --finalize-only` cannot confirm a killed ship's deploy and
-      # makes this app, whose deploy is the LONG one, re-run its whole suite. A
-      # git_push_heroku row needs no key: its `remote:` already names the app.
-      # VERIFIED against the script that deploys it — turf-monster/bin/deploy sets
-      # HEROKU_APP="turf-monster-mainnet" and pushes to its heroku-mainnet remote.
+      # The app bin/deploy pushes to, so `bin/release ship --finalize-only` can
+      # confirm a killed ship's deploy instead of re-running the suite.
       heroku_app: turf-monster-mainnet
-      # AND WITHOUT THIS, heroku_app ABOVE IS INERT. bin/release.rb#deploy_live_verdict
-      # gates EVERY strategy on `up_ok` (Release::ShipSequence#deploy_already_succeeded?
-      # opens with `return false unless up_ok == true`), and it sources that from
-      # #group_smoke_url — which answers "" for a NON-HUB app with no smoke_url, after
-      # which #prod_up_ok? returns false WITHOUT PROBING ANYTHING. So a turf-monster
-      # deploy could never be confirmed however healthy it was, and the refusal blamed
-      # a /up probe that was never made. Measured 2026-09-22: GET
-      # https://turfmonster.media/up → 200 (controls: www.mcritchie.industries/up → 200,
-      # mcritchie.studio/up → 200).
-      #
-      # THE VALUE IS NOT NEW — it is the one the hub already resolves for this app.
-      # Release::ProdSmoke.base_url_for tries this key FIRST and falls back to
-      # config/qa_environments.yml → qa_environments.turf-monster.production_url, which
-      # is the identical https://turfmonster.media. So declaring it changes ProdSmoke's
-      # answer not at all; it only stops #group_smoke_url returning blank. It also adds
-      # NO post-deploy smoke: that step (bin/release.rb, "smoke: GET …/up") lives in the
-      # `when :git_push_heroku` arm, and this row is repo_script.
+      # Required beside heroku_app: deploy confirmation needs a /up probe, and a
+      # repo_script row has no other URL. It adds no post-deploy smoke step.
       smoke_url: https://turfmonster.media
   turf-vault:
-    # THE ANCHOR PROGRAM. Registered 2026-08-31 after
-    # Release::Conductor#validate_member_repos_known! aborted a live sweep
-    # (rel-20260831-6f1ed1) with "can't deploy unknown repo(s):
-    # mainnet-launch-doc-vault-rename (turf-vault), turf-vault-needs-ci
-    # (turf-vault)". THE GUARD WAS RIGHT — it refuses to build a release naming a
-    # repo the conductor has no plan for. The defect was this missing entry.
-    #
-    # WHY IT ONLY BIT THEN: turf-vault had never had a task reach `reviewed`.
-    # /tasks/turf-vault-needs-ci gave the repo its first CI, which unblocked
-    # /tasks/mainnet-launch-doc-vault-rename after FOUR held sweeps — and the
-    # moment two turf-vault tasks became eligible members, the absence became a
-    # hard abort.
-    #
-    # FILED UNDER `apps`, NOT `gems`, and the distinction is load-bearing: a
-    # `gems` row makes the conductor PUBLISH the repo to RubyGems producer-first.
-    # turf-vault has no gemspec and no business on RubyGems. `apps` + no
-    # prod_deploy is the chain-ops shape — a first-class case, not a gap.
-    #
-    # LADDER: three-rung, VERIFIED not assumed. `git ls-remote` returns all three
-    # refs (accepted b1648706, release f7be9680, main 0479fc8f, 2026-08-31), and
-    # the local checkout carries origin/accepted + origin/release, which is what
-    # repos_test's "every three-rung repo really has both rungs" actually reads.
-    # The sweep had ALREADY promoted this repo successfully (PR #8, accepted →
-    # release, 6 commits) before it aborted at the record step, so the promote
-    # mechanic is proven on it rather than hoped for. Anything but three-rung
-    # would be a false declaration AND would strand future turf-vault work on
-    # `accepted` forever: Release::Ladder.sweepable is three-rung only.
+    # The Anchor program. Under `apps`, not `gems`: a gems row would publish it to
+    # RubyGems, and it has no gemspec.
     ladder: three-rung
     #
-    # ⛔ NO prod_deploy — DELIBERATE, AND A SAFETY BOUNDARY, NOT AN OMISSION.
+    # ⛔ NO prod_deploy — a safety boundary. The program custodies real USDC and is
+    # upgraded by hand through a Squads multisig (scripts/squad-upgrade.js, gated by
+    # docs/MAINNET_LAUNCH.md). A conductor must never attempt that act, so ship
+    # advances main and records no deploy target.
     #
-    # turf-vault is an Anchor program custodying real USDC in live contest
-    # vaults. It is not a deployable app and there is no automated path that has
-    # EVER deployed it: nothing in bin/ or app/ contains `anchor deploy` or
-    # `program deploy`. The program is upgraded by hand through
-    # scripts/squad-upgrade.js against a Squads multisig, gated by
-    # docs/MAINNET_LAUNCH.md and docs/VERIFICATION_MATRIX.md — a human, multi-
-    # signer act that a release conductor must never attempt on its own.
+    # ⛔ NO test_cmd, NO qa_test_cmd. Both gates prepare a Rails workspace
+    # (`bin/rails db:test:prepare test:prepare`) before the command, and this repo
+    # has no bin/rails. Its own gate is `release_check` below.
     #
-    # Declaring ANY adapter here would make `bin/release ship` try to execute
-    # that act. With no adapter, ship advances main and records `no production
-    # deploy target — nothing dispatched`, which is the truth. Do NOT "fix" the
-    # absence with a no-op deploy script — that makes ship REPORT a deploy that
-    # never happened, the exact foot-gun chain-ops' entry documents below.
-    #
-    # ⛔ NO test_cmd, NO qa_test_cmd — ALSO DELIBERATE.
-    #
-    # Both gate commands run inside a Rails GATE WORKSPACE, and
-    # Release::GateWorkspace#prepare_gate_workspace! runs `bin/rails
-    # db:test:prepare test:prepare` there BEFORE the registered command. This
-    # repo is Rust/Anchor and has no bin/rails, so registering EITHER key arms a
-    # Rails gate against a repo that cannot run one — it would fail on ENOENT at
-    # G3 (aborting an unrelated batch sweep) or at G4 (after push_frozen_main has
-    # already advanced origin/main, the way chain-ops' phantom bin/deploy wedged
-    # a ship on 2026-08-22). UNSET is the correct declaration: the pre-QA gate
-    # and the ship gate both skip a repo that registers no command.
-    #
-    # THE RAILS GATE WORKSPACE IS THE WHOLE REASON, and it is not "there is no
-    # command to run" — the `release_check:` key below registers this repo's own
-    # gate script, so such a command demonstrably exists. The difference is WHO RUNS
-    # IT: `release_check` is spawned in the checkout by bin/fast-check, while
-    # `test_cmd`/`qa_test_cmd` are spawned by
-    # Release::GateWorkspace#prepare_gate_workspace!, which runs `bin/rails
-    # db:test:prepare test:prepare` FIRST and dies on ENOENT before reaching the
-    # registered command. Do not "fix" that by copying the gate into these keys.
-    #
-    # NO qa_deploy / QA ENV, and none is needed. Release::Repos.qa_app defaults
-    # the key to the repo slug, turf-vault is absent from
-    # config/qa_environments.yml, and `bin/release prepare` warns + skips the QA
-    # deploy for an app with no registered QA environment — bin/release.rb#prepare
-    # gates that deploy on bin/release.rb#qa_registered? — the same path tax-studio
-    # and chain-ops take. An Anchor program has no dyno
-    # to boot and no /up to smoke.
-    #
-    # ⛔ AND THEREFORE — DECLARED QA-EVIDENCE EXEMPT. Read this before deleting it.
-    #
-    # The two skips above are REAL, and until 2026-09-06 they were also SILENT:
-    # the pre-QA gate wrote no metadata["qa_gates"] entry for this repo and the QA
-    # deploy loop `next`s before `qa_shas[repo] = sha`, so a candidate carrying
-    # turf-vault recorded ZERO QA evidence for it. Release#unproven_members then
-    # held every member naming turf-vault at `reviewed` forever —
-    # rel-20260905-d6c266 held sharpen-update-signers-recipe and
-    # document-signer-rotation-path; rel-20260906-90c443 held
-    # qualify-vault-authority-by-cluster. Re-running the sweep never cleared it,
-    # because the cause was structural: no run can produce evidence for a step
-    # that is skipped by design.
-    #
-    # THE FIX IS THIS KEY, NOT A LOOSER GUARD. The tempting repair — teach the
-    # guard to ignore any repo with no QA config — would disarm it for EVERY repo,
-    # including a Rails app whose QA env someone simply forgot to register. That
-    # is a far worse defect than the one it closes: the guard exists because on
-    # 2026-08-13 a member was stamped `assembled` for a repo the candidate never
-    # touched. So the exemption is DECLARED here, per repo, and the guard reads
-    # the declaration. Absent this key a repo is `required` — fail-closed, held.
-    #
-    # WHY EXEMPT RATHER THAN "OWES OTHER EVIDENCE": QA evidence answers one
-    # question — did this candidate's code get DEPLOYED somewhere a human can
-    # review it before production? For an Anchor program the honest answer is that
-    # the question does not apply: there is no dyno, no URL, and no deploy of any
-    # kind (the program is upgraded by hand through a Squads multisig).
-    # This repo's `cargo check` / `clippy` / doc-op lanes DO run — on every push
-    # to accepted, release and main — but they are CI, and the sweep already reads
-    # them at the accepted rung through Release::AcceptedCertification (see SUITE
-    # CERTIFICATION below). Re-badging that CI as "QA evidence" would not add a
-    # check; it would only make an unreviewable repo LOOK reviewed.
-    #
-    # SCOPE — QA ONLY. This key does NOT exempt turf-vault from SHIP evidence, and
-    # must not be widened to. `bin/release ship` really does fast-forward this
-    # repo's `release → main`, and records the sha at the push chokepoint
-    # (bin/release.rb#push_frozen_main) whether or not a deploy adapter fires. So
-    # metadata["shipped_shas"] carries a truthful turf-vault entry, the `shipped`
-    # stamp is backed by real evidence, and exempting it there would disarm a
-    # guard that currently works.
-    #
-    # THE DECLARATION IS CHECKED, NOT TRUSTED (repos_test.rb), the same way
-    # `ladder: planned` expires: a repo declared exempt must have NO qa_test_cmd
-    # and NO qa_environments.yml entry. The day turf-vault gains either, that test
-    # goes red and this key must come out so the guard re-arms.
+    # QA-evidence exempt: QA does not apply (no dyno, no URL, no deploy), so no run
+    # can produce QA evidence for it, and without this key every member naming it
+    # holds at `reviewed`. The exemption is declared per repo so the guard stays
+    # fail-closed for a repo whose QA env was merely forgotten. QA only: ship still
+    # records its release -> main SHA. repos_test checks the declaration: an exempt
+    # repo has no qa_test_cmd and no qa_environments.yml entry.
     qa_evidence: exempt
     #
-    # SUITE CERTIFICATION WORKS AS-IS. Release::AcceptedCertification resolves a
-    # non-gem repo to DEFAULT_SUITE_WORKFLOW ("CI"), and this repo's
-    # .github/workflows/ci.yml declares `name: CI` on push to
-    # [main, release, accepted] with no path filter — so the sweep's accepted-rung
-    # guard can certify it. That is why no workflow override belongs here.
+    # Its ci.yml is named `CI` and runs on push to main, release and accepted with no
+    # path filter, so Release::AcceptedCertification certifies it with no override.
     #
-    # ✅ THE LOCAL CERT LANE, DECLARED — and it is this `release_check:` key.
-    #
-    # Until 2026-09-14 this entry recorded the ABSENCE as a known gap and routed
-    # readers to a task to decide it. That task (/tasks/turf-vault-needs-ci) had
-    # already shipped the repo's FIRST CI WORKFLOW and been archived, so the gap it
-    # was cited for had no owner and every turf-vault builder was sent to a terminal
-    # task. The gap is now closed here instead of re-pointed.
-    #
-    # WHAT MADE IT CLOSABLE. The blocker was never "this repo has no tests" — it has
-    # FIVE real CI lanes and a suite of 171 node:test cases behind one of them — three
-    # of which self-skip when `node_modules` is absent, so a green run there reads
-    # `pass 168 / skipped 3` — plus
-    # 60 Rust tests (re-derive, never re-copy: `bin/release-check --list` prints the
-    # lane table, `npm run test:scripts` and `cargo test --workspace --locked` print
-    # their own totals). This sentence said "four lanes / 61 cases" until 2026-09-22
-    # and was wrong on both: `cargo test` joined the table 2026-09-15. The
-    # blocker was that the whole-gate branch in bin/fast-check keyed on SECTION
-    # MEMBERSHIP (gem_repo?) rather than on a declared command, so an `apps` row could
-    # not reach it. That is now keyed on the DECLARATION
-    # (ReleaseRegistry.registry_gated?), which is what this key supplies. One registry
-    # entry plus that generalisation, not a new subsystem.
-    #
-    # THE VALUE IS A SCRIPT THE REPO OWNS, which is the whole point of the key and was
-    # not true for its first day. Until 2026-09-14 this row spelled turf-vault's
-    # lanes out as a `&&` chain, because the repo shipped no bin/ directory to point
-    # at. That was a hub-side COPY of another repo's CI, and copies drift: if ci.yml
-    # gained or renamed a lane, the string here did not follow, and the local cert
-    # quietly covered less than the CI verdict it is credited against. turf-vault now
-    # ships `bin/release-check` (its PR #34), so this row names it — the same shape
-    # studio-engine and solana-studio use under `gems:` — and the gate's definition
-    # lives beside the code it gates.
-    #
-    # WHAT THE SCRIPT RUNS, and who keeps that true. Exactly the lanes
-    # .github/workflows/ci.yml runs, cheapest-first and fail-fast: the two pure-Node
-    # guards, then the THREE Rust lanes — check:doc-op-refs, test:scripts, cargo check,
-    # cargo clippy, cargo test (but the SCRIPT is the authority here, not this
-    # sentence: `bin/release-check --list` prints the table). It read "the two Rust
-    # lanes" until 2026-09-22, which was true only until `cargo test` joined on
-    # 2026-09-15. BUDGET THE COLD NUMBER: 76s on a fresh tree with an empty `target/`
-    # (measured 2026-09-22 against origin/accepted at 09cdfb3), not the ~1s a RE-RUN
-    # pays — this line quoted the warm figure alone and that is what makes an honest
-    # lane look broken. The parity is ENFORCED, in turf-vault, by
-    # scripts/tests/release-check-covers-ci.test.js: it executes `bin/release-check
-    # --list`, extracts every gate lane from that workflow, and fails in either
-    # direction. That guard is pure node:test, so it runs inside turf-vault's own
-    # `guards` job on every push and PR — a real gate, where the hub-side tripwire it
-    # replaces could only fire for someone with turf-vault checked out beside this
-    # repo. test/lib/release_registry_test.rb pins the hub's end: turf-vault is
-    # registry-gated and declares this repo-owned script.
+    # The repo-owned script that runs exactly ci.yml's lanes; turf-vault's
+    # scripts/tests/release-check-covers-ci.test.js holds the parity, and
+    # `bin/release-check --list` prints the lanes. Budget about 76s cold.
     release_check: bin/release-check
     #
-    # AND THE LINT LANE IS DECLARED ABSENT. bin/fast-check omits rubocop on this
-    # branch by construction; the (since retired) local full-suite cert ran a lint
-    # lane for EVERY repo and consulted this key first, which is why the line was
-    # needed (measured 2026-09-14). It stays as the statement of fact.
-    #
-    # VERIFIED, NOT ASSUMED, because the script's own message warns against using this to
-    # dodge a rubocop that merely fails: turf-vault ships NO Ruby at all — no .rubocop.yml,
-    # no Gemfile, no gemspec, and not one `.rb` file in the tree. Its bin/ directory holds
-    # exactly one entry, the bash `bin/release-check` this row names (re-verified
-    # 2026-09-14, when that directory came into existence). It
-    # lints JavaScript with prettier (`npm run lint`), which is not this lane. Same
-    # DECLARED-never-inferred rule as everywhere else here; studio-engine and solana-studio
-    # are the existing cases.
+    # No Ruby in the tree at all; JavaScript lints with prettier, which is not this lane.
     lint_lane: none
-    #
-    # WHAT THIS KEY DOES NOT DO, stated because the same word means two things here.
-    # `release_check` is ALSO the gems' pre-publish gate and the thing that makes a gem
-    # SELF-GATED — but both of those readers are gems-ONLY, reaching the registry
-    # through a `dig("gems", repo)` helper rather than the flattened view
-    # (`gem_meta_for` / `self_gated_gem?` in bin/release.rb, `Release::Repos.gem_meta`
-    # and its `self_gated_gem?` in app/models/release/repos.rb). On this `apps` row the
-    # key is read by exactly one consumer, ReleaseRegistry.release_check_cmd, and it
-    # CANNOT make turf-vault self-gated, cannot publish it to RubyGems, and does not
-    # touch the `test_cmd` / `qa_test_cmd` gate workspace refused above — those still
-    # run `bin/rails` first and must stay unset. See the `cert fields` note at the top.
-    #
-    # NOT A BYPASS. The full-suite bypass hatch — an author's reasoned checks_run
-    # line that bin/dor-check once honoured — retired with the local certs on
-    # 2026-09-24, and this entry must not describe the declared lane as one: it did
-    # until 2026-09-08, naming the wrong receipt AND the wrong mechanism.
   rolio:
-    # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
-    # GitHub remote no longer resolves for the agent identity, so a sweep that
-    # reached it would fail on the fetch. `dormant` EXCLUDES it from the
-    # conductor's repo list rather than leaving that failure to surface inside an
-    # unrelated `bin/release status`. It also has no `accepted` rung.
+    # Archived; its GitHub remote no longer resolves for the agent identity, and it
+    # has no `accepted` rung. `dormant` keeps it out of the conductor's repo list.
     ladder: dormant
-    # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
-    #
-    # ROLIO GATES LIKE THE HUB, NOT LIKE TURF-MONSTER — read this before narrowing
-    # it back to the "satellite" integration subset. The subset is only safe for a
-    # repo whose DEPLOY runs the suite (turf-monster's bin/deploy does). Rolio
-    # deploys via git_push_heroku, which has NO test step — so test_cmd below is
-    # LITERALLY THE LAST GATE before rolio production. It therefore registers CI's
-    # FULL suite, verbatim, at BOTH gates, exactly as the hub does.
-    #
-    # It once did not, and that was a live hole: rolio HAS system tests
-    # (test/system/) and its ci.yml runs them, but these commands were `bin/rails
-    # test` (G4) and `bin/rails test test/integration` (G3) — BOTH of which SKIP
-    # test/system. A system-test regression could reach rolio prod completely
-    # ungated. repos_test.rb now parses rolio's OWN .github/workflows/ci.yml (at
-    # origin/release, not the working tree) and asserts this command matches it, so
-    # the two cannot drift apart again.
-    #
-    # ⚠ PREREQUISITE — this gate is only safe once rolio carries a system-suite
-    # WAIT BUDGET sized for THIS host (rolio task `size-rolio-system-wait-budget`,
-    # McRitchie-Studio/rolio#23). Rolio's suite ran on Capybara's 2s default, which is
-    # calibrated for an IDLE CI runner; the gate host is a SHARED dev Mac where the
-    # browser stack was measured ~18x slower under concurrent-agent load (4.6s idle
-    # -> 85s loaded). At 2s the FIRST drive of this gate came back RED ON GREEN CODE
-    # (CI green on the same SHA), which pre_qa_gate reports as "a regression is
-    # riding origin/release — eject it, revert its merge commit". The budget fix is
-    # a SEQUENCED prerequisite: the sweep lands rolio#23 into rolio's release
-    # FIRST, so this widened gate never drives a 2s-budget suite.
-    #
-    # DRIVEN, not assumed (the gate was run in rolio's isolated workspace before
-    # this was widened — a gate that has never been driven is how you start
-    # false-failing green code and ejecting good PRs):
-    #   * SQLite passes the private-DB invariant. database_url_for returns nil for
-    #     it (no postgres overlay — that would be a live trap); the test DB is
-    #     `storage/test.sqlite3`, a FILE INSIDE the gate worktree, which
-    #     GateWorkspace.private_db? qualifies via its file_backed? branch.
-    #   * No asset build step is needed, and the MECHANISM is not the hub's: rolio
-    #     is sprockets + importmap and leaves `config.assets.compile` at its default
-    #     TRUE in test (it is set false only in production.rb), so
-    #     `stylesheet_link_tag "application"` COMPILES AT REQUEST TIME from the
-    #     tracked sources in app/assets/stylesheets/. Nothing is precompiled into
-    #     public/assets (only landing.css + store.js are tracked there — there is NO
-    #     public/assets/app.css, the .gitignore merely un-ignores that NAME), and
-    #     there is no tailwindcss-rails `test:prepare` hook here to depend on.
-    #   * Chrome: test/application_system_test_case.rb is `driven_by :selenium,
-    #     using: :headless_chrome`, so this command needs a browser — but it now runs
-    #     only on GitHub CI (since DevOps v2 Phase 4 CI is the gate verdict), whose
-    #     Actions runner always has Chrome; no local browserless pre-check is needed.
-    #
-    # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry), and
-    # keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs name the
-    # one suite CI ran (no skip compares them; repos_test.rb pins the equality).
+    # Rails/SQLite, no studio-engine. git_push_heroku runs no tests, so both gates
+    # name CI's full suite, verbatim (repos_test reads rolio's ci.yml at
+    # origin/release), and the two strings stay equal.
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
@@ -624,21 +219,9 @@ apps:
       smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
   mcritchie-industries:
     ladder: three-rung
-    # Managed studio-engine satellite (successor to the retired
-    # acquisition-studio prototype). Deploys via git_push_heroku, which has NO
-    # test step — so, per this file's header, the registered command IS the
-    # last gate before production and must be CI's FULL suite, VERBATIM, at
-    # BOTH gates.
-    #
-    # This repo's ci.yml runs `bin/rails db:test:prepare test test:system`, so
-    # both gate commands do too — repos_test.rb asserts this entry matches the
-    # repo's ci.yml at origin/release, and drifting either side alone fails at
-    # the seam (which is how this drift surfaced: ci.yml grew `test:system`
-    # while these two strings stayed on plain `test`).
-    #
-    # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry),
-    # and keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs
-    # name the one suite CI ran (no skip compares them).
+    # Managed studio-engine satellite. git_push_heroku runs no tests, so both gates
+    # name CI's full suite, verbatim (repos_test reads its ci.yml at origin/release),
+    # and the two strings stay equal.
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
@@ -649,201 +232,56 @@ apps:
   cyvasse:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
-    # Managed studio-engine satellite (epic cyvasse-revival, registered
-    # 2026-09-25): Alex's first app (2014-15), rebuilt fresh on Rails 8.1.
-    # McRitchie-Studio/cyvasse was created with main + accepted + release, so it
-    # is three-rung from birth and the rung guard holds it to that.
-    #
-    # PRODUCTION: the Heroku app `cyvasse` (company account, heroku-26,
-    # Postgres essential-0), wired 2026-09-25 by wire-cyvasse-production-deploy.
-    # git_push_heroku, modelled on mcritchie-industries. Migrations ride the
-    # repo's Procfile `release: bin/rails db:migrate`, so schema needs no
-    # post_deploy_cmd. A member's declared command (the scaffold's
-    # `users:seed_identities`) is skipped at QA and runs on `cyvasse` at ship.
-    #
-    # smoke_url is the herokuapp host, NOT cyvasse.mcritchie.studio, on purpose:
-    # the custom domain is attached with ACM but its CNAME is Alex's Squarespace
-    # step, and until that record resolves a smoke against it would abort the
-    # ship AFTER the push. The herokuapp host always resolves, and cyvasse's
-    # production.rb leaves host authorization off, so /up answers on it. Switch
-    # this to https://cyvasse.mcritchie.studio once that host serves /up 200.
+    # Managed studio-engine satellite (epic cyvasse-revival). Migrations ride the
+    # Procfile's `release: bin/rails db:migrate`. A member's post_deploy_cmd is
+    # skipped at QA and runs on `cyvasse` at ship.
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/cyvasse.git
       branch: main
+      # The herokuapp host always resolves; production.rb leaves host
+      # authorization off, so /up answers on it.
       smoke_url: https://cyvasse-614ed5f7e99d.herokuapp.com
     #
-    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
-    # step, so this IS the last gate before production). repos_test.rb holds it
-    # against cyvasse's own ci.yml. CI's `static` and `javascript` jobs are not
-    # lost: the gate reads the whole CI workflow's verdict on the frozen SHA.
+    # CI's `test` job suite, verbatim; the gate reads the whole workflow's verdict,
+    # so the `static` and `javascript` jobs gate too.
     test_cmd: bin/rails db:test:prepare test test:system
     #
-    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
-    # EXEMPT. Read this before copying it to another app.
-    #
-    # This exemption is NOT turf-vault's. turf-vault is exempt because QA does not
-    # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
-    # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
-    #
-    #   Alex, 2026-09-25 (verbatim, typo kept; HISTORY since 2026-09-28):
-    #   "No cyvasse-qa unless there is a free teir we can use"
-    #   Heroku has no free tier (a QA copy is ~$12/mo), so there is no
-    #   `cyvasse-qa` app.
-    #
-    # WHAT THAT COSTS, said plainly: a cyvasse change reaches production without a
-    # human-reviewable QA deploy. Its gates are CI (every rung, full suite) and
-    # review. Without this key a sweep would hold every cyvasse member at the QA
-    # stamp forever — no run can evidence a QA env that does not exist — so the
-    # choice is exempt-by-decision or never ship.
-    #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb requires
-    # every exempt repo that HAS a prod_deploy (i.e. could have had a QA copy) to
-    # carry a cited operator decision: since 2026-09-28 cyvasse is on profile
-    # standalone-heroku, whose fleet decision (config/app_profiles.yml →
-    # qa_decision, this quote kept under history) is that grant. The day cyvasse gains a
-    # qa_test_cmd or a qa_environments entry, the "exempt repo really has no QA
-    # target" test goes red and this key must come out. The exemption is QA-only:
-    # the `shipped` stamp still needs cyvasse's real release -> main record.
+    # QA-evidence exempt on cost, by operator decision: no QA copy without a free
+    # tier (the standalone-heroku profile's qa_decision in config/app_profiles.yml,
+    # which repos_test checks). A change reaches production gated by CI and review
+    # only. Unlike turf-vault's, this exemption is a choice, not an absence. QA only:
+    # `shipped` still needs the release -> main record.
     qa_evidence: exempt
   dads-app:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
-    # RELEASE-MANAGED STANDALONE (epic dads-app, registered 2026-09-26): a public
-    # photo slideshow of Greig McRitchie, Alex's dad, at greigmcritchie.com. It
-    # succeeds the 2015 gift `amcritchie/grieg_mcritchie` on the dead personal
-    # Heroku app `vast-chamber-8478`. NOT a managed satellite: no studio-engine,
-    # no database (Rails 8.1 without ActiveRecord), and config/satellites.yml
-    # holds only a `status: reserved` row for its 3700-3799 port block.
-    # McRitchie-Studio/dads-app was created with main + accepted + release, so it
-    # is three-rung from birth and the rung guard holds it to that.
-    #
-    # PRODUCTION: the Heroku app `dads-app` (company account, heroku-26, no
-    # add-ons), on ONE Eco dyno. git_push_heroku, modelled on cyvasse. There is
-    # no database, so there are no migrations and no post_deploy_cmd; a member
-    # that declares one anyway is skipped at QA (exempt, below) and runs on
-    # `dads-app` at ship.
-    #
-    # smoke_url is the custom host since 2026-09-26, when the Name.com records
-    # resolved and ACM issued its certificate (https://greigmcritchie.com/up
-    # answered 200). It is the HOST, not /up: the ship smokes `<smoke_url>/up`
-    # itself (bin/release.rb), so a value ending in /up would probe /up/up.
+    # Release-managed standalone (epic dads-app): a public photo slideshow at
+    # greigmcritchie.com. No studio-engine, no database (Rails 8.1 without
+    # ActiveRecord), so no migrations; one Eco dyno.
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/dads-app.git
       branch: main
       smoke_url: https://greigmcritchie.com
     #
-    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
-    # step, so this IS the last gate before production; G4 reads CI's settled
-    # verdict for the frozen tree, and nothing runs it locally). There is NO
-    # `db:test:prepare` in it, unlike every other app here: with no ActiveRecord
-    # the task does not exist.
-    #
-    # dads-app SPLITS its suite across two CI jobs (the Rails 8.1 generator
-    # default, dads-app PR #1, on its accepted at 8a2483c): `test` runs
-    # `bin/rails test` and `system-test` runs `bin/rails test:system`. This
-    # string is the `test` job's command VERBATIM; the system tier lives in the
-    # `system-test` job and is NOT lost, because the ship gate reads CI's full
-    # settled verdict for the frozen SHA, all five jobs (lint, scan_ruby,
-    # scan_js, test, system-test), not this string. repos_test.rb holds BOTH
-    # jobs: `test` equal to this string and `system-test` running
-    # `bin/rails test:system`, so dropping or narrowing either goes red.
-    #
-    # Do NOT "fix" the split by joining it here as `bin/rails test test:system`:
-    # the hub's spelling works only because its FIRST word is the rake task
-    # `db:test:prepare`. Without it Rails 8.1's TestCommand loads `test:system`
-    # as a FILE PATH and dies with `LoadError: cannot load such file --
-    # <root>/test:system` (measured 2026-09-26).
+    # CI's `test` job command, verbatim. No `db:test:prepare` (no ActiveRecord), so
+    # the system tier runs in its own `system-test` job, and the gate reads CI's
+    # whole verdict. repos_test holds both jobs. Never join them as
+    # `bin/rails test test:system` (the rake-path note above).
     test_cmd: bin/rails test
     #
-    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
-    # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
-    # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
-    #
-    #   Alex's decision, verbatim (chat, 2026-09-26; HISTORY since
-    #   2026-09-28, see caveat 1). Asking for the hosting: "anyway we can get it cheaper than $12/m"
-    #   Offered A (GitHub Pages), B (inside moms-app) or C, he replied: "C"
-    #   (the epic plan, .agents/epics/dads-app.md, records "Alex chose option C
-    #   (Heroku Eco dyno)"). Option C was ONE Eco dyno, about $5/month, no database and no QA copy,
-    #   over GitHub Pages ($0) and hosting inside moms-app. It applies the
-    #   standing rule Alex set for cyvasse the day before (quoted verbatim there):
-    #   no QA copy unless there is a free tier.
-    #
-    # HONEST CAVEATS. (1) Alex's words choose the Eco dyno on cost; "no QA
-    # copy" is that choice read through his cyvasse rule, not a separate
-    # sentence of his. Since 2026-09-28 this quote is HISTORY: dads-app is on
-    # profile standalone-heroku, whose single fleet decision (config/app_profiles.yml
-    # → qa_decision) is the grant repos_test.rb checks; the quote is kept there too,
-    # under history. (2) Eco
-    # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
-    # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
-    # key comes out and dads-app earns QA evidence like any app.
-    #
-    # WHAT THE EXEMPTION COSTS, said plainly: a dads-app change reaches
-    # production without a human-reviewable QA deploy. Its gates are CI (every
-    # rung, full suite) and review. Without this key a sweep would hold every
-    # dads-app member at the QA stamp forever, since no run can evidence a QA
-    # env that does not exist.
-    #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb requires
-    # each exempt repo with a prod_deploy to carry a cited operator decision;
-    # dads-app's is its profile's qa_decision in config/app_profiles.yml. The
-    # exemption is QA-only: the `shipped` stamp still needs dads-app's real
-    # release -> main record.
+    # QA-evidence exempt on cost, by operator decision, as cyvasse: the profile's
+    # qa_decision. Gated by CI and review only; QA only.
     qa_evidence: exempt
-  # --- THE FOUR SHOWCASE APPS (registered 2026-09-26, task register-showcase-apps)
-  #
-  # prisoners-dilemma, weekly-lock, rantly and portfolio are showcase rebuilds
-  # built from /build, each a RELEASE-MANAGED STANDALONE registered exactly the
-  # way dads-app is (read its block above for the long form): no studio-engine,
-  # no database (Rails 8.1 without ActiveRecord), a `status: reserved` row in
-  # config/satellites.yml for the port block only, and public repos in
-  # McRitchie-Studio created with main + accepted + release, so each is
-  # three-rung from birth and the rung guard holds it to that.
-  #
-  # PRODUCTION: a Heroku app `mcr-<repo>` on the company account, deployed by
-  # git_push_heroku. No database means no migrations and no post_deploy_cmd; a
-  # member that declares one anyway is skipped at QA (exempt, below) and runs on
-  # the production app at ship.
-  #
-  # smoke_url is each app's custom domain, https://<repo>.mcritchie.studio: its
-  # CNAME points at the app's herokudns target and ACM has issued its
-  # certificate (task showcase-smoke-custom-domains, 2026-09-26). The ship
-  # smokes it from the machine running `bin/release ship`, AFTER the push, so a
-  # host that machine cannot resolve to Heroku with a valid certificate aborts
-  # a live deploy. It is the HOST, not /up: the ship smokes `<smoke_url>/up`
-  # itself (bin/release.rb).
-  #
-  # test_cmd is each app's CI `test` job command VERBATIM (git_push_heroku has
-  # NO test step, so this IS the last gate before production; G4 reads CI's
-  # settled verdict for the frozen tree). Like dads-app, each SPLITS its suite:
-  # `test` runs `bin/rails test` and `system-test` runs `bin/rails
-  # test:system`; the ship gate reads CI's full verdict for the frozen SHA, so
-  # the system tier (and prisoners-dilemma's Node `test_js` job) gates too.
-  # repos_test.rb holds both jobs against each app's own ci.yml. No
-  # `db:test:prepare` (no ActiveRecord), and do NOT join the tiers as
-  # `bin/rails test test:system` (see dads-app: `test:system` loads as a path).
-  #
-  # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
-  # EXEMPT, BY OPERATOR DECISION. This is cyvasse's and dads-app's kind of
-  # exemption, not turf-vault's: each is a deployable app and a QA copy could
-  # exist.
-  #
-  #   Alex's decision (chat, 2026-09-26). Asked in an AskUserQuestion prompt
-  #   "Should the four showcase apps get QA copies, or ship straight to
-  #   production like Cyvasse and dads-app?", he selected the option
-  #   "No QA copies (Recommended)".
-  #   The option text was written by the agent; the choice was his. Since
-  #   2026-09-28 this is HISTORY: these apps are on profile standalone-heroku,
-  #   whose fleet decision (config/app_profiles.yml → qa_decision) is the grant
-  #   repos_test.rb checks; this selection is kept there under history.
-  #
-  # WHAT THE EXEMPTION COSTS, said plainly: a change to any of the four reaches
-  # production without a human-reviewable QA deploy. Its gates are CI (every
-  # rung, full suite) and review. Without this key a sweep would hold every
-  # member at the QA stamp forever. The exemption is QA-only: the `shipped`
-  # stamp still needs each app's real release -> main record.
+  # --- SHOWCASE APPS: prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5,
+  # search-position. Release-managed standalones registered as dads-app is: a
+  # Heroku app `mcr-<repo>` on git_push_heroku, test_cmd = CI's `test` job
+  # verbatim with the system tier in its own job (repos_test holds both), and
+  # QA-evidence exempt under the standalone-heroku profile's qa_decision.
+  # smoke_url is https://<repo>.mcritchie.studio once that host serves /up with a
+  # valid certificate, the herokuapp host until then: ship smokes after the push,
+  # so an unresolvable host aborts a live deploy.
   prisoners-dilemma:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
@@ -853,7 +291,6 @@ apps:
       branch: main
       smoke_url: https://prisoners-dilemma.mcritchie.studio
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   weekly-lock:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
@@ -864,7 +301,6 @@ apps:
       branch: main
       smoke_url: https://weekly-lock.mcritchie.studio
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   rantly:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
@@ -875,7 +311,6 @@ apps:
       branch: main
       smoke_url: https://rantly.mcritchie.studio
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   portfolio:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
@@ -886,39 +321,7 @@ apps:
       branch: main
       smoke_url: https://portfolio.mcritchie.studio
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
-  # --- TWO MORE SHOWCASE APPS (registered 2026-09-26, task
-  # register-two-more-showcase-apps)
-  #
-  # 10and5 (10&5 Hospitality, a restaurant mystery-shopper platform; showcase
-  # rebuild of amcritchie/garret-app, 2015-17) and search-position (a Google
-  # search position checker; showcase rebuild of amcritchie/google-search-position,
-  # 2015) are registered EXACTLY like the four above: read that block for the
-  # long form. Release-managed standalones, no studio-engine, no database, a
-  # `status: reserved` row in config/satellites.yml for the port block, public
-  # McRitchie-Studio repos with main + accepted + release (three-rung from
-  # birth), git_push_heroku to `mcr-<repo>` on one Eco dyno, and test_cmd = CI's
-  # `test` job verbatim.
-  #
-  # smoke_url is the herokuapp HOST, not <repo>.mcritchie.studio, on purpose:
-  # the custom domains wait on Alex's DNS records (CNAMEs to each app's
-  # herokudns target) and ACM, and until they resolve a smoke against them
-  # would abort the ship AFTER the push. Each app's production.rb leaves host
-  # authorization off, so /up answers on the herokuapp host. Switch each to
-  # https://<repo>.mcritchie.studio once that host serves /up 200, as task
-  # showcase-smoke-custom-domains did for the four. It is the HOST, not /up:
-  # the ship smokes `<smoke_url>/up` itself (bin/release.rb).
-  #
-  # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
-  # EXEMPT under the SAME operator decision as the four: Alex selected
-  # "No QA copies (Recommended)" for the showcase apps, and on 2026-09-26 asked
-  # for these two to be migrated the same way. No new decision was taken. Since
-  # 2026-09-28 both are on profile standalone-heroku, whose fleet decision
-  # (config/app_profiles.yml → qa_decision) is the grant repos_test.rb checks.
-  # The cost is the four's: a change
-  # reaches production without a human-reviewable QA deploy, gated by CI and
-  # review, and the `shipped` stamp still needs each app's release -> main record.
   10and5:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
@@ -926,10 +329,8 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-10and5.git
       branch: main
-      # Moves to https://10and5.mcritchie.studio once DNS + ACM land.
       smoke_url: https://mcr-10and5-eb8feab2def8.herokuapp.com
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the four's block above).
     qa_evidence: exempt
   search-position:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
@@ -938,77 +339,34 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-search-position.git
       branch: main
-      # Moves to https://search-position.mcritchie.studio once DNS + ACM land.
       smoke_url: https://mcr-search-position-3c91e0b95f46.herokuapp.com
     test_cmd: bin/rails test
-    # Alex selected "No QA copies (Recommended)" (see the four's block above).
     qa_evidence: exempt
   tax-studio:
-    # PLANNED — no repo yet. The guard asserts no checkout exists, so this
-    # exemption expires the day one does.
+    # No repo yet; the guard asserts no checkout exists, so `planned` expires the
+    # day one does. Register its integration tier as qa_test_cmd then: a registered
+    # command whose repo is missing aborts prepare.
     ladder: planned
-    # Planned app, no sibling checkout yet — qa_test_cmd stays UNSET (the gate
-    # aborts prepare if a registered command's repo is missing). Register the
-    # integration tier when the repo lands.
     prod_deploy:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
-    # BLOCKED — and the ORIGINAL blocker is now GONE, so read the current one.
-    # RESOLVED 2026-08-21: the repo was migrated to McRitchie-Studio, both Apps
-    # have access, the 403 is gone, and it now carries accepted + release + main.
-    #
-    # ⛔ DO NOT FLIP THIS TO THREE-RUNG YET. The remaining blocker is NOT the
-    # migration and NOT the unset qa_test_cmd (that one is a non-issue —
-    # pre_qa_gate self-gates and skips, and a missing QA env warns and skips).
-    # It is the missing production TARGET: chain-ops has no production app, so
-    # there is nothing for a `prod_deploy` adapter to name. The one it used to
-    # declare named `command: bin/deploy`, which chain-ops does not have; that
-    # entry is gone (the NO prod_deploy note below records what it cost).
-    #
-    # Re-declaring a target like that would NOT wedge G4 mid-ship today. Ship
-    # probes every registered repo_script command at the frozen SHA and refuses
-    # before any ref is pushed — the deploy-target preflight inside
-    # bin/release.rb#ship (app/models/release/ship_sequence.rb#missing_deploy_commands),
-    # which runs ahead of bin/release.rb#deploy_app and the
-    # bin/release.rb#push_frozen_main that advances origin/main. Its abort says
-    # so in as many words: "Nothing has moved."
-    #
-    # What flipping the ladder still buys is a repo riding G4 with nothing to
-    # deploy and no G4 suite: chain-ops has no test_cmd either.
-    #
-    # To enroll, IN THIS ORDER: give chain-ops a real production deployment
-    # target (a Heroku app + a prod_deploy adapter that names it) → register a
-    # test_cmd → THEN flip.
+    # No production app, so no prod_deploy and no test_cmd. To enroll, in order:
+    # give it a real Heroku app and an adapter naming it, register a test_cmd, then
+    # flip the ladder. `blocked` only stops `bin/release init` creating rungs;
+    # membership is by task, so a chain-ops task that reaches `reviewed` still
+    # rides. Ship probes every repo_script command at the frozen SHA before pushing
+    # any ref, so a missing command aborts with nothing moved. qa_test_cmd stays
+    # unset until test/integration has tests.
     ladder: blocked
-    #
-    # NO prod_deploy — DELIBERATE, not an omission. chain-ops has no production
-    # app to deploy to, so declaring an adapter was the bug: the entry named
-    # `command: bin/deploy` and chain-ops/bin/deploy does not exist. On
-    # 2026-08-22 `bin/release ship` ran it inside rel-20260822-ae1cc1, it
-    # failed, and the ship aborted — AFTER push_frozen_main had advanced
-    # chain-ops' origin/main to 749b38c — which wedged G4 and blocked
-    # turf-monster from shipping in the same release.
-    #
-    # ⛔ Do NOT "fix" this by adding a no-op bin/deploy. That makes ship REPORT
-    # a deploy that never happened. An app with no prod_deploy is a first-class
-    # case: ship advances its main and records `no production deploy target —
-    # nothing dispatched`, which is the truth.
-    #
-    # ladder: blocked does NOT keep a repo out of a release. It only stops
-    # `bin/release init` creating rungs; release MEMBERSHIP is by TASK. The
-    # moment a chain-ops task reaches `reviewed`, chain-ops rides.
-    #
-    # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
-    # until it has a real integration tier to run.
   moms-app:
     # Registered by bin/register-app on profile standalone-heroku. The contract, the
     # QA decision and how to leave the profile: config/app_profiles.yml and the
     # app-deploy-standard SOP. To change it, edit it by hand; repos_test.rb
     # fails if this entry drifts from the profile.
-    # Consumes studio-engine 0.77.3: a release that publishes the engine bumps this
-    # app's lock to the published version (bin/release.rb#bump_consumer_locks_for_qa).
+    # Consumes studio-engine: a release that publishes the engine bumps this app's
+    # lock to the published version (bin/release.rb#bump_consumer_locks_for_qa).
     profile: standalone-heroku
     ladder: three-rung
     prod_deploy:

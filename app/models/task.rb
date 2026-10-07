@@ -1863,6 +1863,8 @@ class Task < ApplicationRecord
     self.class.repo_from_pr_url(devops_url("pr"))
   end
 
+  # Reads without split_commas: the write already split identifier keys on commas,
+  # so a comma left in a stored entry is prose and stays in it.
   def devops_list(key)
     self.class.normalize_devops_list(devops.fetch(key.to_s, []))
   end
