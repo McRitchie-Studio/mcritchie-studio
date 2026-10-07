@@ -378,8 +378,9 @@ if porcelain.empty?
   say "1/8 commit — working tree clean, nothing to commit."
 else
   message = options[:message].to_s.strip
+  # Every task has a title (the board validates it), so the default always exists
+  # (guard catalog row 3.2).
   message = title if message.empty?
-  die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
 
   say "1/8 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
 
