@@ -342,9 +342,9 @@ def select_reviewers(slug)
   # OPPOSITE remedies (held: a different live session has it, move on; self-review: the
   # picked primary is in the AUTHOR SET, nobody has it, and moving on repeats it). This
   # used to hard-code the HELD sentence for both, sending a self-review refusal at a fix
-  # that cannot work. ReviewerSelectSkip reads the arm off reviewer-select's own refusal
-  # and names it; DO NOT split exit 10 into a second code — ReviewClaimCli::SKIPPED
-  # shares it on purpose. Naming it a SKIP rather than a failure is deliberate too: a
+  # that cannot work. ReviewerSelectSkip reads the arm from the skip code reviewer-select
+  # prints on stdout under --json (guard catalog row 6.2) and names it; the exit status
+  # stays 10 for both — ReviewClaimCli::SKIPPED shares it on purpose. Naming it a SKIP rather than a failure is deliberate too: a
   # generic "failed" reads as something to retry, and neither arm is retryable.
   if status&.exitstatus == 10
     raise ReviewerSelectSkip.message(slug, [err, out].join("\n"))

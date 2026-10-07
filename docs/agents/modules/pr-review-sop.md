@@ -155,8 +155,9 @@ that strands the task.
 
 **Exit 10 is a SKIP, and it has TWO arms with opposite remedies.** Both print to
 stderr, select nothing and record nothing. `bin/pr-review` reads exit 10 as a skip
-and NAMES the arm (`ReviewerSelectSkip`, `bin/lib/reviewer_select_skip.rb`); a
-refusal matching neither phrase is reported as unclassified, naming BOTH arms.
+and NAMES the arm from the skip code each arm prints on stdout under `--json`
+(`ReviewerSelectSkip`, `bin/lib/reviewer_select_skip.rb`); a refusal with no code
+is reported as unclassified, naming BOTH arms.
 On any exit 10, `bin/reviewer-select`'s stderr is the authority:
 
 | Arm | What it means | The move |

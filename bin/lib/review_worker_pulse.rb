@@ -70,62 +70,31 @@ require_relative "session_markers"
 #                alive — every time, and most confidently in exactly the case the
 #                reader is trying to diagnose.
 #
-# ═══ THE AGE IS THE DIAGNOSTIC; THE VERDICT IS THE BRAKE ═══
+# ═══ THE AGE IS THE DIAGNOSTIC, AND NOTHING HERE STOPS A RENEWAL ═══
 #
-# These are separate on purpose, because they are wanted on different timescales.
+# The conductor in the incident needed an answer in MINUTES, and the honest answer
+# available in minutes is the AGE itself: "nothing in this session has acted on this
+# review for 38m; only the detached renewer is keeping it alive." That sentence is true
+# the moment it is printed and it names the one party who can resolve it.
 #
-# The conductor in the incident needed an answer in MINUTES — and the honest answer
-# available in minutes is not a verdict but the AGE itself: "nothing in this session
-# has acted on this review for 38m; only the detached renewer is keeping it alive."
-# That sentence is TRUE the moment it is printed and it names the one party who can
-# resolve it. A verdict on that timescale would be a guess.
+# The renewal is bounded by the renew-loop's own cap (`max_lifetime:
+# ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS`), which equals SILENT_AFTER_SECONDS, so
+# the cap is the one brake and the verdicts below feed `status` only (guard catalog
+# row 6.1).
 #
-# The VERDICT — the thing that stops a renewal — keeps the conservative bound below,
-# because stopping a renewal on a live review is the expensive direction.
-#
-# EVERY UNCERTAINTY KEEPS THE CLAIM, the same posture AnchorHeartbeat takes and for
-# the same reason: this file can only ever STOP a renewal, so its failure mode is
-# dropping a live reviewer's lease. A missing marker, an unreadable store, a blank
-# session, a raised exception — all answer :unverified, which HOLDS.
-#
-# THAT ALSO SELF-LIMITS THE SCOPE, usefully. The marker is written by the instance
-# that acquired the claim, so it exists only for a claim THIS machine's session holds.
-# Asked about ANOTHER session's claim there is no marker, the answer is :unverified,
-# and this file says nothing — so it can never free a lease belonging to a session it
-# cannot observe. The narrower answer is the sound one.
+# The marker is written by the instance that acquired the claim, so it exists only for
+# a claim THIS machine's session holds. Asked about ANOTHER session's claim there is no
+# marker, the answer is :unverified, and this file says nothing.
 #
 # Pure and injectable — `verdict` reads no clock, no disk and no process table, so the
 # decision is tested as arithmetic. The IO methods are thin and rescued.
 module ReviewWorkerPulse
-  # HOW LONG A REVIEW MAY GO WITHOUT A FOREGROUND TOUCH BEFORE THE CLAIM STOPS.
-  #
-  # DERIVED, NOT CHOSEN, and deliberately not a new number.
-  # ClaimLease::REVIEW_TTL_SECONDS is the longest CONTINUOUS review ever measured,
-  # cleared by half again, agreed by two independent instruments (1233 review windows;
-  # 259 g2a_primary lane runs). A worker silent for longer than the longest review ever
-  # observed has outlasted every live review in the corpus.
-  #
-  # It is the SAME constant ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS already bounds
-  # this lane with, and the renewer's existing cap is a TIMEOUT measured from the
-  # renewer's own start, so it frees a dead reviewer's task at 3h25m whether the
-  # reviewer died in minute one or minute two hundred.
-  #
-  # DO NOT READ THAT AS "THE PULSE MAKES THE BOUND MOVABLE" — it does not, and an
-  # earlier revision of this comment said it did. MEASURED at review, 2026-09-22:
-  # SILENT_AFTER_SECONDS == REVIEW_RENEW_WINDOW_SECONDS == 12275, and renew_loop still
-  # passes `max_lifetime: REVIEW_RENEW_WINDOW_SECONDS` unchanged. So with no beat
-  # :silent fires a few seconds BEFORE the cap (the claim marker predates the
-  # renewer's own start, so pulse_age > elapsed) — and WITH a beat :silent never
-  # fires at all, while the cap still drops the claim at 12275 regardless. A live
-  # worker that beats does NOT push the bound forward today.
-  #
-  # What the beat buys is therefore the DIAGNOSTIC, not the lifetime: `status` can
-  # tell a live reviewer from an abandoned one, which is the defect this file was
-  # filed for and which it does deliver. Making the bound genuinely movable means
-  # raising or removing the renew_loop cap, which is a separate decision with its own
-  # false-positive cost — whoever takes it should know the pulse is not already doing
-  # it. Same cost in the false-positive direction as today, strictly more evidence
-  # behind it.
+  # How long a review may go without a foreground touch before `status` calls the
+  # worker SILENT. Derived, not chosen: ClaimLease::REVIEW_TTL_SECONDS is the longest
+  # continuous review ever measured, cleared by half again, and it is the same
+  # constant as ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS, the renew-loop's cap. So a
+  # worker that reads SILENT is one whose renewer has reached, or is about to reach,
+  # the cap that ends it.
   SILENT_AFTER_SECONDS = ClaimLease::REVIEW_TTL_SECONDS
 
   # The suffix base of the per-(session, slug) claim marker whose mtime IS the pulse.
@@ -156,22 +125,20 @@ module ReviewWorkerPulse
   # copy it. "claim-" and "beat-" cannot prefix-collide, so no slug can reach it.
   BEAT_MARKER = ".task-review-beat"
 
-  # The verdicts. Exactly one of them stops a renewal.
+  # The verdicts `status` prints. None of them stops a renewal.
   #
   #   :active     — a foreground command acted on this review AFTER it was claimed.
   #                 A real beat: a tool call a dead subagent could not have made.
   #   :claimed_only — the ONLY foreground touch is the acquisition itself. Nothing has
-  #                 happened in the foreground since. HOLDS — a review claimed two
-  #                 minutes ago has legitimately had no beat yet — but it must SAY so,
+  #                 happened in the foreground since. A review claimed two minutes
+  #                 ago has legitimately had no beat yet, but it must SAY so,
   #                 because "active" here would assert a heartbeat that never happened.
   #                 This is the reading the live 2026-09-22 claim actually produced.
   #   :unverified — nothing can vouch either way (no marker, unreadable store, blank
-  #                 session, another machine's claim). HOLDS: no evidence is not
-  #                 evidence, and this file never frees a lease on silence it cannot
-  #                 attribute.
+  #                 session, another machine's claim). No evidence is not
+  #                 evidence, so this reports nothing about the worker.
   #   :silent     — the claim is being kept alive with no foreground touch for longer
-  #                 than the longest review ever measured. STOPS renewing.
-  STOPS_RENEWING = %i[silent].freeze
+  #                 than the longest review ever measured; the renew-loop's cap ends it.
 
   module_function
 
@@ -180,8 +147,8 @@ module ReviewWorkerPulse
   # +pulse_age+ — seconds since a foreground command last acted on this review, or nil
   #               for UNKNOWN. nil and a number are different answers and must stay
   #               different: folding nil to a large number would turn "we could not
-  #               look" into "nobody has touched it in ages", which frees leases on no
-  #               evidence at all.
+  #               look" into "nobody has touched it in ages", which reports a dead worker on
+  #               no evidence at all.
   # +beaten+ — has a foreground `renew` ever beaten this claim? An EXISTENCE fact read
   #            from the beat marker, never inferred from a clock. False means the only
   #            foreground touch on record is the acquisition itself.
@@ -192,9 +159,6 @@ module ReviewWorkerPulse
 
     :active
   end
-
-  # Only :silent stops a renewal.
-  def holding?(verdict) = !STOPS_RENEWING.include?(verdict)
 
   # The per-(session, slug) marker suffix. Slugs are kebab-case (validated on the
   # board), so already filesystem-safe; sanitize defensively anyway. Kept here rather
@@ -338,19 +302,5 @@ module ReviewWorkerPulse
       "id, nonce and anchor, so the renewer cannot tell them apart. You can. If your " \
       "reviewer for #{slug} is gone, release it: bin/task review-claim release #{slug}. " \
       "If it is still working, leave it alone."
-  end
-
-  # The `alive:` companion for the renew-loop: STOP only on a positive :silent reading.
-  # Rescues everything to HOLDING, because an exception here would drop a live
-  # reviewer's lease — strictly worse than the defect being fixed.
-  #
-  # +pulse+ is a callable returning the pulse age (or nil) so the lane's IO stays
-  # injectable and this stays testable without a marker store.
-  def alive_check(pulse:, silent_after: SILENT_AFTER_SECONDS)
-    lambda do
-      holding?(verdict(pulse_age: pulse.call, silent_after: silent_after))
-    rescue StandardError
-      true
-    end
   end
 end

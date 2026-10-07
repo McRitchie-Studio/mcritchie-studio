@@ -62,14 +62,10 @@ class ReviewWorkerPulseTest < Minitest::Test
     verdict = ReviewWorkerPulse.verdict(pulse_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 1)
 
     assert_equal :silent, verdict
-    refute ReviewWorkerPulse.holding?(verdict), "a silent worker must stop renewing its claim"
   end
 
-  def test_unit_a_recent_foreground_touch_keeps_the_claim
-    verdict = ReviewWorkerPulse.verdict(pulse_age: 30, beaten: true)
-
-    assert_equal :active, verdict
-    assert ReviewWorkerPulse.holding?(verdict)
+  def test_unit_a_recent_foreground_touch_reads_as_active
+    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 30, beaten: true)
   end
 
   # ── A BEAT IS NOT THE ACQUISITION ──────────────────────────────────────────
@@ -85,10 +81,8 @@ class ReviewWorkerPulseTest < Minitest::Test
   def test_unit_a_pulse_that_is_only_the_acquisition_is_not_a_beat
     verdict = ReviewWorkerPulse.verdict(pulse_age: 5800, beaten: false)
 
-    assert_equal :claimed_only, verdict
-    assert ReviewWorkerPulse.holding?(verdict),
-           "a review claimed minutes ago has legitimately not beaten yet — this must " \
-           "SAY so without freeing the claim"
+    assert_equal :claimed_only, verdict,
+                 "a review claimed minutes ago has legitimately not beaten yet — this must SAY so"
   end
 
   def test_unit_a_touch_well_after_the_acquisition_is_a_real_beat
@@ -123,13 +117,9 @@ class ReviewWorkerPulseTest < Minitest::Test
                                            beaten: true)
   end
 
-  def test_unit_no_pulse_at_all_holds_the_claim_rather_than_freeing_it
-    # The same asymmetry AnchorHeartbeat turns on: nil is "we could not look", never
-    # "nobody has touched it in ages". Only a POSITIVE reading may cost a lease.
-    verdict = ReviewWorkerPulse.verdict(pulse_age: nil)
-
-    assert_equal :unverified, verdict
-    assert ReviewWorkerPulse.holding?(verdict), "no evidence must never free a claim"
+  def test_unit_no_pulse_at_all_reads_as_unverified_not_silent
+    # nil is "we could not look", never "nobody has touched it in ages".
+    assert_equal :unverified, ReviewWorkerPulse.verdict(pulse_age: nil)
   end
 
   def test_unit_the_boundary_second_still_counts_as_active
@@ -138,13 +128,6 @@ class ReviewWorkerPulseTest < Minitest::Test
                                          beaten: true)
 
     assert_equal :active, on_bound
-  end
-
-  def test_unit_only_silent_stops_a_renewal
-    assert_equal %i[silent], ReviewWorkerPulse::STOPS_RENEWING.to_a
-    %i[active claimed_only unverified].each do |verdict|
-      assert ReviewWorkerPulse.holding?(verdict), "#{verdict} must not stop a renewal"
-    end
   end
 
   def test_unit_the_silent_bound_is_the_lanes_derived_ceiling_not_a_new_number
@@ -186,25 +169,52 @@ class ReviewWorkerPulseTest < Minitest::Test
     refute ReviewWorkerPulse.mine?(holder_session: nil, session: SESSION)
   end
 
-  # ── The alive: lambda the renew-loop passes ────────────────────────────────
+  # ── The renew-loop's one brake is its cap (guard catalog row 6.1) ─────────
+  #
+  # The pulse no longer stops a renewal: the cap ends a dead reviewer's renewal at the
+  # same bound. These pin both halves, so a pulse brake cannot come back unnoticed and
+  # the cap cannot drift from the bound `status` reports.
 
-  def test_unit_the_alive_check_stops_a_claim_whose_worker_has_gone_silent
-    check = ReviewWorkerPulse.alive_check(pulse: -> { ReviewWorkerPulse::SILENT_AFTER_SECONDS + 60 })
-
-    refute check.call
+  def test_unit_the_pulse_carries_no_renewal_brake
+    %i[alive_check holding?].each do |name|
+      refute_respond_to ReviewWorkerPulse, name, "the renew-loop's cap is the one brake"
+    end
+    refute ReviewWorkerPulse.const_defined?(:STOPS_RENEWING)
   end
 
-  def test_unit_the_alive_check_keeps_a_claim_whose_worker_is_beating
-    assert ReviewWorkerPulse.alive_check(pulse: -> { 10 }).call
-  end
+  def test_integration_the_renew_loop_is_capped_at_the_silent_bound_and_reads_no_pulse
+    captured = nil
+    pulse_reads = 0
+    cli = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION },
+                             out: StringIO.new, err: StringIO.new)
+    cli.define_singleton_method(:worker_pulse_age) { |*| pulse_reads += 1 }
+    # A resident, narrating anchor, so AnchorHeartbeat's check holds and cannot
+    # short-circuit past a pulse check.
+    identity = SessionIdentity.singleton_class
+    original_alive = SessionIdentity.method(:process_alive?)
+    identity.send(:define_method, :process_alive?) { |*| true }
+    heartbeat = AnchorHeartbeat.singleton_class
+    original_signal = AnchorHeartbeat.method(:signal_age)
+    heartbeat.send(:define_method, :signal_age) { |**| 5 }
+    renewer = ShiftRenewer.singleton_class
+    original = ShiftRenewer.method(:run)
+    renewer.send(:define_method, :run) do |**kwargs|
+      captured = kwargs
+      kwargs[:alive].call
+      :max_lifetime
+    end
+    begin
+      cli.run(["renew-loop", SLUG, "--anchor-pid", "999999", "--anchor-start", "never"])
+    ensure
+      renewer.send(:define_method, :run, original)
+      identity.send(:define_method, :process_alive?, original_alive)
+      heartbeat.send(:define_method, :signal_age, original_signal)
+    end
 
-  def test_unit_a_pulse_read_that_raises_leaves_the_claim_held
-    # ShiftRenewer does not rescue alive.call: an exception escaping here would kill
-    # the renewer outright and drop a LIVE reviewer's lease — strictly worse than the
-    # defect being fixed.
-    check = ReviewWorkerPulse.alive_check(pulse: -> { raise "store on fire" })
-
-    assert check.call, "a failed pulse read must not cost a holder its claim"
+    refute_nil captured, "renew-loop must hand the lease to ShiftRenewer"
+    assert_equal ReviewWorkerPulse::SILENT_AFTER_SECONDS, captured[:max_lifetime],
+                 "the cap is the bound a SILENT worker is judged by"
+    assert_equal 0, pulse_reads, "the liveness check reads the anchor, never the worker pulse"
   end
 
   # ── The pulse over a real marker store ─────────────────────────────────────

@@ -18,9 +18,8 @@
 # here, where it can be DRIVEN. The script keeps only the wiring, pinned below.
 #
 # THE OTHER HALF OF THE COVERAGE is test/lib/reviewer_select_test.rb, which drives the
-# REAL bin/reviewer-select into BOTH refusals and asserts these markers classify its
-# ACTUAL stderr. That is the cross-file coupling: this file proves the classifier reads
-# the markers; that file proves the markers are what reviewer-select still prints.
+# REAL bin/reviewer-select into BOTH refusals and asserts the skip code it prints
+# classifies as the right arm (guard catalog row 6.2: each arm carries its own code).
 #
 # Run directly:  ruby -Itest test/lib/reviewer_select_skip_test.rb
 
@@ -31,10 +30,11 @@ class ReviewerSelectSkipTest < Minitest::Test
   SLUG = "sample-task-slug"
   PR_REVIEW_SRC = File.read(File.expand_path("../../bin/pr-review", __dir__))
 
-  # Abridged transcripts of the two refusals, each keeping its real lead phrase and
-  # real remedy block. The LIVE text is asserted in reviewer_select_test.rb; these
-  # stand in here so the arms can be driven without a board.
+  # Abridged transcripts of the two refusals, each with the skip-code line --json
+  # prints and the real remedy block. The LIVE output is asserted in
+  # reviewer_select_test.rb; these stand in here so the arms can be driven without a board.
   HELD_STDERR = <<~ERR
+    {"skipped":true,"skip_code":"held","task":"#{SLUG}"}
     reviewer-select REFUSED to select for task=#{SLUG} — ALREADY UNDER REVIEW.
       Held by: carl · pr-review · session aaaaaaaa since 2026-09-22T20:15:00Z
       Move to the next reviewable task — the board picks and claims one atomically:
@@ -42,14 +42,14 @@ class ReviewerSelectSkipTest < Minitest::Test
   ERR
 
   SELF_REVIEW_STDERR = <<~ERR
+    {"skipped":true,"skip_code":"self_review","task":"#{SLUG}"}
     reviewer-select REFUSED to select for task=#{SLUG} — THE PRIMARY BUILT IT.
       The board refused the review claim for carl: that soul is in this task's
       AUTHOR SET, so seating them is a self-review. Nothing was recorded.
         bin/task move #{SLUG} building --actor <the-real-builder>
   ERR
 
-  # A refusal whose lead phrase this classifier does not know — what a REWORDED
-  # reviewer-select produces. Deliberately carries neither marker.
+  # A refusal with no skip code — what reviewer-select prints without --json.
   UNKNOWN_STDERR = "reviewer-select REFUSED to select for task=#{SLUG} — for reasons of its own.\n"
 
   # --- the arms, read off the refusal ----------------------------------------
@@ -57,6 +57,24 @@ class ReviewerSelectSkipTest < Minitest::Test
   def test_the_two_arms_are_classified_apart
     assert_equal :held, ReviewerSelectSkip.arm(HELD_STDERR)
     assert_equal :self_review, ReviewerSelectSkip.arm(SELF_REVIEW_STDERR)
+  end
+
+  # BY CONSTRUCTION (row 6.2): the arm is the code, so the prose cannot move it. A
+  # refusal reworded to read like the OTHER arm still classifies by its code, and the
+  # old lead phrase with no code classifies as nothing.
+  def test_the_code_decides_the_arm_whatever_the_prose_says
+    reworded = HELD_STDERR.sub("ALREADY UNDER REVIEW.", "THE PRIMARY BUILT IT.")
+    assert_equal :held, ReviewerSelectSkip.arm(reworded)
+
+    phrase_only = SELF_REVIEW_STDERR.lines.drop(1).join
+    assert_equal :unrecognized, ReviewerSelectSkip.arm(phrase_only),
+                 "a lead phrase with no skip code must not classify — the phrase is not the signal"
+  end
+
+  def test_the_skip_line_is_not_quoted_back_to_the_reader
+    message = ReviewerSelectSkip.message(SLUG, SELF_REVIEW_STDERR)
+
+    refute_includes message, "skip_code", "the code is for the caller; the reader gets the refusal"
   end
 
   # THE CARD'S HEADLINE. Two refusals sharing exit 10 must not share one sentence:
@@ -107,20 +125,19 @@ class ReviewerSelectSkipTest < Minitest::Test
 
   # --- a refusal this classifier cannot read ---------------------------------
 
-  # The arm is read from reviewer-select's LEAD PHRASE, which is a cross-file coupling:
-  # a rewording there reaches here. Defaulting to the common arm would resume the exact
-  # defect silently, so an unreadable refusal names BOTH arms and guesses neither.
+  # A refusal with no skip code. Defaulting to the common arm would send half the
+  # readers at the wrong remedy, so it names BOTH arms and guesses neither.
   def test_an_unrecognized_refusal_names_both_arms_instead_of_guessing
     assert_equal :unrecognized, ReviewerSelectSkip.arm(UNKNOWN_STDERR)
 
     message = ReviewerSelectSkip.message(SLUG, UNKNOWN_STDERR)
 
-    assert_includes message, "could NOT tell WHICH",
+    assert_includes message, "will not guess",
                     "an unreadable refusal must SAY it could not classify — a confident wrong " \
                     "arm is worse than an honest unknown"
-    assert_includes message, ReviewerSelectSkip::HELD_MARKER,
+    assert_includes message, "ALREADY UNDER REVIEW",
                     "and name the held arm, with its remedy, so the reader can match it by eye"
-    assert_includes message, ReviewerSelectSkip::SELF_REVIEW_MARKER,
+    assert_includes message, "THE PRIMARY BUILT IT",
                     "and the self-review arm too — both, because it does not know which"
     assert_includes message, "--actor",
                     "including the author-set remedy, which is the one a held-arm default would lose"
@@ -152,7 +169,8 @@ class ReviewerSelectSkipTest < Minitest::Test
   # of what is below. Dropping it would trade one loss of information for another.
   def test_the_refusal_itself_is_carried_below_every_lead
     [HELD_STDERR, SELF_REVIEW_STDERR, UNKNOWN_STDERR].each do |detail|
-      assert_includes ReviewerSelectSkip.message(SLUG, detail), detail.strip,
+      refusal = detail.lines.reject { |line| line.start_with?("{") }.join.strip
+      assert_includes ReviewerSelectSkip.message(SLUG, detail), refusal,
                       "reviewer-select's own refusal must survive intact below the lead — it " \
                       "is what names the holder, the reviewer, and the exact commands"
     end
@@ -174,13 +192,13 @@ class ReviewerSelectSkipTest < Minitest::Test
                     "belongs in ReviewerSelectSkip.held_lead, where the self-review arm has its own"
   end
 
-  # Exit 10 must stay ONE code. ReviewClaimCli::SKIPPED shares the number on purpose, so
-  # a caller that split it would desynchronize two tools to solve a wording problem.
+  # The EXIT STATUS stays one number. ReviewClaimCli::SKIPPED shares 10 on purpose; the
+  # arm rides in the skip code on stdout instead.
   def test_the_wiring_still_branches_on_one_exit_code
     body = PR_REVIEW_SRC[/def select_reviewers\b.*?\nend\n/m]
 
     assert_includes body, "status&.exitstatus == 10",
-                    "the arm is read from the refusal TEXT, not from a new exit code — " \
+                    "the arm is read from the skip code, not from a new exit status — " \
                     "ReviewClaimCli::SKIPPED shares 10 deliberately"
   end
 end

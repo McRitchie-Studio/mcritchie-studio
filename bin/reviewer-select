@@ -288,6 +288,19 @@ end
 # number ReviewClaimCli::SKIPPED uses for the same situation, on purpose.
 REVIEW_CLAIM_SKIPPED = 10
 
+# Each exit-10 arm carries its own code (guard catalog row 6.2). Under --json the
+# refusal prints one line on stdout, {"skipped":true,"skip_code":<code>,"task":<slug>},
+# before it exits, so a caller branches on the code and never on the prose. The
+# exit status stays 10 for both arms. ReviewerSelectSkip reads these codes.
+SKIP_CODE_HELD = "held"
+SKIP_CODE_SELF_REVIEW = "self_review"
+
+def emit_skip_code(code, slug, json:)
+  return unless json
+
+  $stdout.puts(JSON.generate({ "skipped" => true, "skip_code" => code, "task" => slug.to_s }))
+end
+
 # THE SELECT→ACQUIRE SEAM (two-primaries-reviewed-one-pr).
 #
 # Recording the pair used to be the WHOLE of what selection wrote, and an INTENT is
@@ -355,7 +368,8 @@ def holder_line(holder)
   "#{who}#{since.empty? ? "" : " since #{since}"}#{age.nil? ? "" : ", last heartbeat ~#{age}s ago"}"
 end
 
-def refuse_held!(slug, holder)
+def refuse_held!(slug, holder, json: false)
+  emit_skip_code(SKIP_CODE_HELD, slug, json: json)
   warn!("reviewer-select REFUSED to select for task=#{slug} — ALREADY UNDER REVIEW.")
   warn!("  Held by: #{holder_line(holder)}")
   warn!("  A SECOND pair on one PR is exactly the bug this refuses: two primaries can reach")
@@ -370,7 +384,8 @@ def refuse_held!(slug, holder)
   exit REVIEW_CLAIM_SKIPPED
 end
 
-def refuse_self_review!(slug, reviewer)
+def refuse_self_review!(slug, reviewer, json: false)
+  emit_skip_code(SKIP_CODE_SELF_REVIEW, slug, json: json)
   warn!("reviewer-select REFUSED to select for task=#{slug} — THE PRIMARY BUILT IT.")
   warn!("  The board refused the review claim for #{reviewer}: that soul is in this task's")
   warn!("  AUTHOR SET, so seating them is a self-review. Nothing was recorded.")
@@ -947,9 +962,9 @@ if options[:record]
     state, claim = acquire_review_claim(slug, primary["slug"])
     case state
     when :held
-      refuse_held!(slug, (claim["holder"] || {}).to_h)
+      refuse_held!(slug, (claim["holder"] || {}).to_h, json: options[:json])
     when :self_review
-      refuse_self_review!(slug, primary["slug"])
+      refuse_self_review!(slug, primary["slug"], json: options[:json])
     when :no_session
       # No CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID: a plain shell or CI. A lease is a
       # claim by a LIVE INSTANCE, and this run cannot name one — so it must not take a

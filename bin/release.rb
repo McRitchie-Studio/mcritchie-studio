@@ -4023,12 +4023,11 @@ def prepare
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
     say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
     say("    (the sweep skips the already-merged PRs): #{boot_failures.map { |d| d['repo'] }.join(', ')}")
-    # THE EXIT CODE IS NEVER THE VERDICT. prepare returns NORMALLY from this path —
-    # a NOT-green QA is a reported outcome, not a crash — so the wrapper that runs it
-    # prints `PREPARE EXIT: 0` over a release that assembled nothing. A conductor
-    # reading the exit code instead of this block calls a failed sweep a success.
-    # Said here, next to the failure, because that is where it is read.
-    say("    NOTE: prepare EXITS 0 on this path — the exit code is NEVER the QA verdict; this block is.")
+    # THE EXIT STATUS IS THE VERDICT (guard catalog row 7.5). prepare returns
+    # :qa_not_green from this path and the dispatcher exits
+    # Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, so a wrapper reading the exit code
+    # reads the same verdict as this block.
+    say("    prepare exits #{Release::Cli::PREPARE_QA_NOT_GREEN_EXIT}: QA is not green.")
   else
     # 8a. Post-deploy hooks on the booted QA app(s): run each member's declared
     #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
@@ -4100,6 +4099,7 @@ def prepare
   # lease TTL. Best-effort — see release_conductor_claim!.
   release_conductor_claim!
   close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
+  qa_green ? :assembled : :qa_not_green
 rescue SystemExit
   # G3 close-fail wrapper: an abort INSIDE the gate window (a red pre_qa_gate,
   # a QA-deploy/checkout abort, a post-deploy hook failure) IS the gate failing —
@@ -9553,6 +9553,15 @@ def notes
   end
 end
 
+# prepare's outcome as the process exit status: a NOT-green QA exits
+# Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, anything else returns normally (exit 0).
+# Outside prepare on purpose: an exit inside it would land in prepare's own
+# `rescue SystemExit`, which reports an ABORT.
+def exit_after_prepare(outcome)
+  status = Release::Cli.prepare_exit_status(outcome)
+  exit(status) unless status.zero?
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   # BEFORE the dispatcher, always. Every mutation this CLI can perform is reached
@@ -9564,7 +9573,7 @@ if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge
-  when "prepare"  then prepare
+  when "prepare"  then exit_after_prepare(prepare)
   when "eject"    then eject
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)
