@@ -11,6 +11,16 @@ module Api
   #   require_admin_session an admin-tier write (releases, conductor lanes, agent
   #                         updates): admin only
   #
+  # One gate does NOT wave the shared secret's token through:
+  #
+  #   require_admin_session_only  an act that must name an admin and that no
+  #                               installed hook or sibling app performs (a TikTok
+  #                               draft on the operator's phone): an admin session,
+  #                               and nothing else. The shared token sits in every
+  #                               agent shell, so passing it would gate nothing.
+  #                               A controller may say how to get the session in
+  #                               admin_session_hint.
+  #
   # Every board write that records an actor takes it from session_actor: tasks,
   # task and review events, gate runs, release events, desk records, activities and
   # agent activities. Agent actions record a lane, not a soul, and pin it to `agent`.
@@ -26,6 +36,10 @@ module Api
 
       def require_admin_session(**options)
         before_action :require_admin_session!, **options
+      end
+
+      def require_admin_session_only(**options)
+        before_action :require_admin_session_only!, **options
       end
     end
 
@@ -64,6 +78,20 @@ module Api
       return if session.nil? || session.admin?
 
       render_session_refusal("this endpoint needs an admin session; #{session.soul} holds a #{session.tier} session")
+    end
+
+    def require_admin_session_only!
+      session = current_agent_session
+      return if session&.admin?
+
+      holder = session ? "#{session.soul} holds a #{session.tier} session" : "the shared token carries no session"
+      render_session_refusal(["this endpoint needs an admin session; #{holder}", admin_session_hint.presence].compact.join(". "))
+    end
+
+    # How a caller gets the admin session this endpoint needs, as one sentence
+    # for the refusal. Controllers override it.
+    def admin_session_hint
+      nil
     end
 
     def render_session_refusal(reason)

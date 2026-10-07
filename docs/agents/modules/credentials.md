@@ -114,7 +114,17 @@ The board API takes two bearers (design:
   Monster's two endpoints and installed hooks keep running.
 
 Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after
-8 hours; the operator grant that issues them is not built yet. Every refusal answers
+8 hours. One is granted from a shell on the hub, which is the grant; the Approve
+tap is not built yet. The task prints the token on stdout and nothing else, so
+take it into the environment without reading it, and never paste or file it:
+
+```bash
+export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"   # SOUL=steffon, HOURS=1 to narrow it
+```
+
+Most admin-tier endpoints still pass the shared token for one release. An
+endpoint declared `require_admin_session_only` does not: today that is the TikTok
+draft create, which `bin/tiktok-draft` reaches with the variable above. Every refusal answers
 401 (the session ended: revoked, expired, or the task moved on) or 403 (tier or
 scope) with the reason. `GET /api/v1/agent_sessions/current` says who a bearer is;
 `DELETE` on the same path logs out.

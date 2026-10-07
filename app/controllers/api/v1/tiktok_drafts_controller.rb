@@ -9,7 +9,19 @@ module Api
     #                                                      dry_run=true answers the preview and writes nothing
     #   POST /api/v1/tiktok_drafts/:id/refresh             read TikTok's status once more
     #   GET  /api/v1/tiktok/creator_info                   which TikTok account the server's keys post as
+    #
+    # CREATING A DRAFT NEEDS AN ADMIN SESSION (piece 22). It puts a video on the
+    # operator's phone, so a bearer that merely proves "an agent" is not enough:
+    # the shared secret's token and a studio session both answer 403, and the
+    # refusal says how the admin session is granted. bin/tiktok-draft's --yes is
+    # a prompt for the agent; this is the guard. Reading (the index, a dry run,
+    # a status refresh, the probe) stays open to any board bearer.
     class TiktokDraftsController < BaseController
+      ADMIN_SESSION_HINT = "An admin soul (xan or steffon) is granted one from a shell on this hub: " \
+                           "`bin/rails agent_sessions:grant_admin` prints its token, and bin/tiktok-draft reads it " \
+                           "from AGENT_ADMIN_SESSION_TOKEN. The clip card's Draft to TikTok button is the other door".freeze
+
+      require_admin_session_only only: :create, unless: :dry_run?
       before_action :set_clip, only: %i[index create]
 
       def index
@@ -18,12 +30,17 @@ module Api
 
       def create
         service = Tiktok::DraftClip.new
-        if ActiveModel::Type::Boolean.new.cast(params[:dry_run])
-          return render_data({ "clip" => clip_data, "preview" => present(service.preview(@clip)), "dry_run" => true })
-        end
+        return render_data({ "clip" => clip_data, "preview" => present(service.preview(@clip)), "dry_run" => true }) if dry_run?
 
         preview = service.check!(@clip) # a refusal is an answer, not an ErrorLog
-        draft = rescue_and_log(target: @clip) { service.record!(preview, by: params[:requested_by].presence || "bin/tiktok-draft") }
+        refusal = nil
+        draft = rescue_and_log(target: @clip) do
+          service.record!(preview, by: requested_by)
+        rescue Tiktok::DraftClip::Refused => e # the second of two requests, refused under the lock
+          refusal = e
+        end
+        raise refusal if refusal
+
         render_data(draft.as_report, status: :created)
       rescue Tiktok::DraftClip::Refused => e
         render_error(e.message, status: :conflict, error_code: "NOT_DRAFTABLE")
@@ -50,6 +67,17 @@ module Api
       end
 
       private
+
+      # The gate and the action read this ONE predicate, so a request is either a
+      # dry run (the preview, nothing written) or a gated draft, never between.
+      def dry_run? = ActiveModel::Type::Boolean.new.cast(params[:dry_run]) == true
+
+      # Who asked: the admin session's soul, with the door it came through.
+      def requested_by
+        [current_agent_session&.soul, params[:requested_by].presence || "bin/tiktok-draft"].compact.join(" via ")
+      end
+
+      def admin_session_hint = ADMIN_SESSION_HINT
 
       def set_clip
         @clip = AltVideoClip.includes(:versions, :tiktok_drafts, alt_video: :music_video).find_by!(slug: params[:alt_video_clip_slug])

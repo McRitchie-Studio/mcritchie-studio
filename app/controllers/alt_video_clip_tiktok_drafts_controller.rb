@@ -17,7 +17,14 @@ class AltVideoClipTiktokDraftsController < ApplicationController
   def create
     service = Tiktok::DraftClip.new
     preview = service.check!(@clip) # a refusal is an answer, not an ErrorLog
-    draft = rescue_and_log(target: @video) { service.record!(preview, by: current_user&.email) }
+    refusal = nil
+    draft = rescue_and_log(target: @video) do
+      service.record!(preview, by: current_user&.email)
+    rescue Tiktok::DraftClip::Refused => e # the second of two presses, refused under the lock
+      refusal = e
+    end
+    raise refusal if refusal
+
     back(notice: "#{@clip.name} is on its way to your TikTok drafts (attempt #{draft.id}). Paste the caption when you post.")
   rescue Tiktok::DraftClip::Refused => e
     back(alert: "#{@clip.name} not drafted: #{e.message}.")
@@ -26,6 +33,6 @@ class AltVideoClipTiktokDraftsController < ApplicationController
   def refresh
     draft = @clip.tiktok_drafts.find(params[:id])
     rescue_and_log(target: @video) { Tiktok::DraftClip.new.refresh(draft) }
-    back(notice: "#{@clip.name}, attempt #{draft.id}: #{draft.state_label}.")
+    back(notice: "#{@clip.name}, attempt #{draft.id}: #{draft.state_label}.#{' Check your TikTok drafts.' if draft.state == 'unknown'}")
   end
 end

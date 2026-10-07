@@ -26,6 +26,10 @@ There are two doors into the same machine (`Tiktok::DraftClip`):
 **The card needs no agent on a normal day.** You run this SOP for the chat
 door, and for a card whose attempt failed.
 
+**One press makes one draft.** The server takes a lock on the clip before it
+records an attempt, so a double click, or the card and chat together, leaves
+one. The second is told `a draft of <slug> is already …`.
+
 ## The split — read this before running anything
 
 | Alex | The code | You |
@@ -113,20 +117,29 @@ caption exactly as printed.
 
 ### 3. Draft
 
+Creating a draft needs an **admin session**: the hub refuses the shared token
+and a builder's session on this one request. Steps 0, 1 and 4 need none. Get
+one first ([The admin session](#the-admin-session)), then, in the same shell:
+
 ```bash
 bin/tiktok-draft <clip-slug> --production --yes
 ```
 
-`--yes` is his word, not yours to add early. It records an attempt, the server
-uploads the version, and the command waits up to 150 seconds for TikTok. It
-ends on one of:
+`--yes` is his word, not yours to add early, and it is required on every hub
+that is not this machine, `--api <url>` included. It records an attempt, the
+server uploads the version, and the command waits up to 150 seconds for TikTok.
+It ends on one of:
 
 | It prints | Meaning | Action |
 |---|---|---|
 | `attempt N: Version V · In your TikTok drafts · …` | TikTok says the draft is in his inbox | Tell Alex to open TikTok's inbox, and give him the caption |
 | `still processing after 150s` | TikTok has the bytes and is still working | Run step 4 in a minute |
-| `attempt N failed: …` | TikTok refused, or the upload broke | Report TikTok's words. A retry is a new attempt, on his word |
+| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok drafts. Run step 4. **Do not draft again** until he has looked |
+| `attempt N failed: …` | TikTok refused, or the upload broke before it finished | Report TikTok's words. A retry is a new attempt, on his word |
 | `a draft of <slug> is already …` | An attempt is in flight | Run step 4. Do not draft twice |
+| `AGENT_ADMIN_SESSION_TOKEN is not set` | This shell holds no admin session | [The admin session](#the-admin-session) |
+| `API 403: SESSION_FORBIDDEN …` | The token is not an admin session's | [The admin session](#the-admin-session) |
+| `API 401: SESSION_ENDED …` | The admin session expired or was revoked | Grant a fresh one |
 
 **TikTok takes no caption with a draft.** Its inbox upload accepts the file
 alone, so the caption does not travel. Give Alex the caption in chat; the
@@ -138,10 +151,35 @@ clip's card also shows it with **Copy caption**.
 bin/tiktok-draft <clip-slug> --production --status
 ```
 
-It lists every attempt for the clip and re-reads TikTok for one still
-processing. A failed attempt carries TikTok's reason on the row and on the
-card. Fix what TikTok named, then draft again on Alex's word; every attempt is
-kept.
+It lists every attempt for the clip and re-reads TikTok for one whose bytes
+TikTok holds: still processing, or uploaded with its status unknown. A failed
+attempt carries TikTok's reason on the row and on the card. Fix what TikTok
+named, then draft again on Alex's word; every attempt is kept.
+
+An attempt reads **Failed** only when TikTok said so or the upload broke before
+the last byte. Once the upload finished, nothing on our side fails it: it reads
+**Uploaded, status unknown** until a status read settles it, and it blocks a
+new draft of that clip for 15 minutes.
+
+### The admin session
+
+An admin session belongs to an admin soul (Xan or Steffon), lasts 8 hours, and
+is granted from a shell on the hub the draft goes to. The grant prints the
+token on stdout and nothing else, so take it straight into the shell's
+environment, where the command reads it:
+
+```bash
+# production (the deployer's Heroku access is the grant)
+export AGENT_ADMIN_SESSION_TOKEN="$(heroku run --no-tty -a mcritchie-studio -- bin/rails agent_sessions:grant_admin 2>/dev/null)"
+
+# a local or desk hub
+export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"
+```
+
+`SOUL=steffon` names the other admin soul; `HOURS=1` shortens the session.
+Never print the token, paste it into chat, or write it to a file: it opens
+every admin-tier endpoint until it ends. If you hold no shell on the hub, you
+hold no admin lane: stop and say so, and Alex uses the card.
 
 ## Door two: the card
 
@@ -150,7 +188,9 @@ versions: **Draft to TikTok**. It is off, with the reason beside it, when the
 clip has no generated version or the server has no TikTok keys. After a click
 the card shows the attempt: its state, the version sent, the caption with
 **Copy caption**, the rule that chose the team, TikTok's publish id, and any
-error. **Check TikTok** re-reads the status of an attempt still processing.
+error. The button turns itself off as it submits. **Check TikTok** re-reads the
+status of an attempt still processing, or uploaded with its status unknown.
+The card is open to a signed-in admin only, and needs no agent session.
 
 ## What good looks like
 
@@ -221,6 +261,18 @@ the R2 host is not one. Chunk rules, limits and the status words are in
 number and its object, the caption, the facts it rests on, TikTok's
 `publish_id` and status, and the error. The job is never retried, because a
 retried upload is a second draft on the phone; a retry is a new attempt.
+
+**Why a draft cannot double.** Three guards, each against a different way to
+get two: the clip's row lock around the record (`Tiktok::DraftClip#record!`),
+against two requests at once; the job's claim of the `queued` row and its
+`discard_on`, against a job run twice; and the `unknown` state, against a
+finished upload that looked failed and was drafted again.
+
+**Why the API door needs an admin session.** `--yes` is checked by the command,
+so anything holding a board token could call the endpoint without it. The
+server now holds the line (`Api::AgentSessionGate#require_admin_session_only!`).
+The grant is a rake task because the Approve tap of
+`mcritchie-studio/docs/agents/system/agent-sessions-design.md` is not built.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
 TikTok and the bucket itself and marks every attempt "stand-in". It never runs

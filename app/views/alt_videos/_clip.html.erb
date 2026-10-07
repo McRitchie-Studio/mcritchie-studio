@@ -52,7 +52,7 @@
                   title="Copy this clip's slug, the name the tiktok-draft SOP takes">
             <span x-text="copied ? 'Copied' : 'Copy slug'">Copy slug</span>
           </button>
-          <span x-show="manual" x-cloak class="text-xs text-warning-ink">Selected: press ⌘C.</span>
+          <span x-show="manual" x-cloak class="text-xs text-warning-ink">Selected: copy it from here.</span>
         </div>
         <p class="text-sm text-body font-mono tabular-nums" data-test="clip-window">
           <%= video_timecode(clip.start_ms) %>–<%= video_timecode(clip.end_ms) %>
@@ -122,7 +122,7 @@
           </div>
           <p x-ref="prompt" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
              data-test="clip-prompt"><%= prompt %></p>
-          <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="clip-copy-manual">Copy is blocked here: the prompt is selected, press ⌘C.</p>
+          <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="clip-copy-manual">Copy is blocked here: the prompt is selected, so copy it from there.</p>
         </div>
       <% end %>
 

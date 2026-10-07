@@ -27,8 +27,8 @@
   };
 
   // A copy control for one piece of text on a clip card (its slug, a TikTok
-  // caption): copies the x-ref="text" element's text, or selects it for
-  // Cmd+C when the browser blocks the clipboard.
+  // caption): copies the x-ref="text" element's text, or selects it so the
+  // operator can copy it by hand when the browser blocks the clipboard.
   window.copyField = function () {
     return {
       copied: false, manual: false,
