@@ -381,7 +381,7 @@ end
 # stamp and the usage baseline that move records all still run. Submit never
 # teleports a task past them, and it never refuses a task for not having walked them.
 if stage == "designed"
-  say "0/8 claim — #{slug} is [designed]; bin/task move #{slug} building"
+  say "0/8 claim — #{slug} is [designed]; #{TASK_CMD} move #{slug} building"
   die!("the move to building failed — see above; re-run #{SHIP_CMD} #{slug}.") unless
     system(TASK_BIN, "move", slug, "building")
   stage = "building"
