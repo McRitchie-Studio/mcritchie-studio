@@ -56,4 +56,11 @@ class ContactFlaggedDigestJobTest < ActiveJob::TestCase
     assert_equal "ContactFlaggedDigestJob", entry["class"]
     assert_equal "0 7 * * * America/Denver", entry["schedule"]
   end
+
+  test "[unit] the window starts at the previous 07:00 Denver, across DST and a late run" do
+    # Fall-back day: the 07:00 runs are 25 hours apart, so a 24h window misses one.
+    assert_equal Time.utc(2026, 10, 31, 13), ContactFlaggedDigestJob.window_start(Time.utc(2026, 11, 1, 14, 0, 5))
+    # A run that lands 40s late still starts where yesterday's on-time run did.
+    assert_equal Time.utc(2026, 10, 6, 13), ContactFlaggedDigestJob.window_start(Time.utc(2026, 10, 7, 13, 0, 40))
+  end
 end
