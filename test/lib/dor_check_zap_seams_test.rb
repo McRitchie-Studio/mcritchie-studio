@@ -11,8 +11,8 @@
 #
 # THE TWO SEVERITIES ARE THE SUBJECT, not an implementation detail, and both directions
 # are pinned below:
-#   seam 1 (graded tree ≠ PR head)  REFUSES — a mismatch can only be a false refusal,
-#                                   never a false pass, and its remedy is a fetch.
+#   seam 1 (graded tree ≠ PR head)  FETCHED — the review fetches the branch first
+#                                   (guard catalog row 2.9); a leftover mismatch reports.
 #   seam 2 (the base has moved)     REPORTS — `accepted` moves constantly, and refusing
 #                                   every review whose base gained a commit would wedge
 #                                   the lane for a fact that is usually harmless.
@@ -150,50 +150,45 @@ class DorCheckZapSeamsTest < Minitest::Test
 
   # ==== SEAM 1 — the gate must not grade a pre-zap tree ==========================
 
-  # THE SEAM. The reviewer zapped from a checkout whose refs are INDEPENDENT of the desk's
-  # (a separate clone), so the desk's origin/feat/x is still at the pre-zap commit while
-  # the PR head has moved. Before this guard, the verdict
-  # read clean: the cert fingerprint hashes that very ref, so it matched, and nothing
-  # else compared the two.
-  def test_integration_review_refuses_when_the_desk_is_behind_the_pr_head
+  # THE SEAM, CLOSED BY CONSTRUCTION (guard catalog row 2.9). The reviewer zapped from
+  # a checkout whose refs are INDEPENDENT of the desk's (a separate clone), so the desk's
+  # origin/feat/x is behind the PR head. The review fetches the branch before it reads
+  # the ref, so it grades the PR head and refuses nothing.
+  def test_integration_review_fetches_a_desk_that_is_behind_the_pr_head
     with_desk do |dir, desk_head|
-      zapped = "9137d57ac0ffee1234567890abcdef1234567890"
-      refute_equal desk_head, zapped, "fixture: the two commits must differ or this proves nothing"
+      remote = File.join(File.dirname(dir), "#{File.basename(dir)}-remote.git")
+      git!(dir, "init", "-q", "--bare", remote)
+      git!(dir, "remote", "add", "origin", remote)
+      git!(dir, "push", "-q", "origin", "feat/x", "accepted")
+      clone = "#{remote}-clone"
+      git!(dir, "clone", "-q", "-b", "feat/x", remote, clone)
+      git!(clone, "config", "user.email", "z@t.co")
+      git!(clone, "config", "user.name", "Z")
+      write(clone, "app/services/widget.rb", "class Widget; def zap; end; end\n")
+      git!(clone, "commit", "-qam", "zap")
+      git!(clone, "push", "-q", "origin", "feat/x")
+      zapped = git_out(clone, "rev-parse", "HEAD")
+      git!(dir, "update-ref", "refs/remotes/origin/feat/x", desk_head)
+      refute_equal desk_head, zapped, "fixture: the desk must start behind the PR head"
 
       verdict, code = check(dir, pr_head: zapped)
 
-      refute_equal 0, code,
-                   "a review gate whose tree is one commit behind the PR head returned READY — the verdict " \
-                   "describes a tree that is not the one merging\n#{verdict.inspect}"
-      assert_match(/NOT the PR head/, errors_of(verdict))
-      assert_match(/#{desk_head[0, 12]}/, errors_of(verdict),
-                   "the refusal must name the commit it actually graded")
-      assert_match(/#{zapped[0, 12]}/, errors_of(verdict),
-                   "…and the PR head it was measured against, so a reviewer can verify by hand")
-      # THE REMEDY MUST NAME THE TREE IT ACTS ON (/tasks/remedy-command-lacks-directory).
-      # This assertion used to accept a BARE `git fetch origin feat/x`, and once the
-      # remedy grew a `git merge --ff-only` beside it that acceptance became a hazard:
-      # bin/dor-check#review_fingerprint says that lane runs from the
-      # PRIMARY checkout, which sits on release or main by SOP, so an unscoped fast-forward
-      # pasted from there moves THAT checkout onto the feature head — exit 0, and a
-      # "Fast-forward" success message. Measured in test/docs/zap_cert_freshness_docs_test.rb.
-      #
-      # Pinned against the root the refusal's own DIAGNOSIS names, rather than against
-      # `dir`, because that comparison is the defect stated exactly: the message always
-      # knew which tree it was talking about, and printed a command that did not say so.
-      graded = errors_of(verdict)[/origin\/feat\/x in (\S+) is at/, 1]
-      refute_nil graded,
-                 "the refusal no longer names the graded checkout in its diagnosis — re-point this guard; " \
-                 "whether its printed commands act on that same tree is still the live question"
-      assert_match(/git -C #{Regexp.escape(graded)} fetch origin feat\/x/, errors_of(verdict),
-                   "a refusal whose remedy is one command must print that command — and scope it to the tree " \
-                   "the sentence around it is about")
-      assert_match(/git -C #{Regexp.escape(graded)} merge --ff-only origin\/feat\/x/, errors_of(verdict),
-                   "the MUTATING half of the remedy is unscoped. This is the one that costs something: run " \
-                   "from the primary it fast-forwards release or main onto the feature head and reports " \
-                   "success, poisoning every later gate and every bin/release read off that checkout")
-      refute_match(/(?<!-C #{Regexp.escape(graded)} )\bgit merge --ff-only/, errors_of(verdict),
-                   "some copy of the fast-forward is still printed without a directory")
+      assert_equal 0, code, verdict.inspect
+      refute_match(/NOT the PR head/, errors_of(verdict))
+      assert_equal zapped, git_out(dir, "rev-parse", "origin/feat/x"), "the review must have fetched the PR head"
+    ensure
+      FileUtils.rm_rf([remote, clone].compact) if remote
+    end
+  end
+
+  # A fetch that cannot reach the PR head (no remote here) leaves a mismatch, which is
+  # reported, never refused: it can only ever have been a false refusal.
+  def test_integration_an_unfetchable_mismatch_is_reported_not_refused
+    with_desk do |dir|
+      verdict, code = check(dir, pr_head: "9137d57ac0ffee1234567890abcdef1234567890")
+
+      assert_equal 0, code, verdict.inspect
+      assert_match(/the fetch could not bring origin\/feat\/x/, suggestions_of(verdict))
     end
   end
 

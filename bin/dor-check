@@ -2535,53 +2535,35 @@ if gate != "build"
   # opposite: the machinery AROUND a zap assumed nobody pushed, which made zapping
   # quietly riskier than bouncing and pushed reviewers toward the expensive action.
   #
-  # Both checks are LOCAL-REF reads (this gate never fetches — deliberately: a fetch
-  # inside a verdict would mutate the tree it is grading). ReviewTreeGuard's header
-  # carries the error-direction argument for each; the two severities below follow
-  # from it and are NOT interchangeable.
+  # Both checks are LOCAL-REF reads. ReviewTreeGuard's header carries the
+  # error-direction argument for each; the two severities below follow from it.
   zap_branch = review_branch(devops, task["slug"] || slug)
 
-  # SEAM 1 — REFUSES, because the gate would otherwise describe a tree that is not
-  # the one merging. `--gate-role review` re-roots to the BUILDER'S DESK, which sits
-  # wherever the builder left it; measured on turf #519, that was 262059b while the
-  # merged commit was 9137d57. DISTANCE IS NOT THE TEST, REF SHARING IS: a zap pushed
-  # from a SIBLING WORKTREE moves origin/<branch> (every worktree of a repo shares one
-  # ref store), so the desk's ref follows the push and this check stays quiet; a zap
-  # pushed from INDEPENDENT refs — a separate clone, another machine, GitHub's
-  # Update-branch button — does not move it, and this check is the only thing that
-  # asks. Measured 2026-09-09 in the real house geometry and pinned by
-  # test/docs/zap_cert_freshness_docs_test.rb. (The cert fingerprint used to be the
-  # other reader of this ref: it caught the sibling-worktree case by going STALE and
-  # read FRESH over a separate-clone push, which only this check catches — and it
-  # retired with the receipts; the CI verdict is read for the PR head wherever it is,
-  # so this check is now what ties the graded DIFF to that head.)
-  #
-  # A mismatch can only ever be a FALSE REFUSAL (an unfetched desk), never a false
-  # pass, and the remedy for the harmless case is the same `git fetch` that fixes the
-  # real one. That is why this one is allowed to block.
+  # SEAM 1 — FETCHED, BY CONSTRUCTION (guard catalog row 2.9). `--gate-role review`
+  # re-roots to the BUILDER'S DESK, whose origin/<branch> only follows pushes that
+  # share its ref store: a zap from a separate clone, another machine or GitHub's
+  # Update-branch button leaves it behind the PR head (turf #519: 262059b against the
+  # merged 9137d57). So the review fetches the branch before it reads the ref. A fetch
+  # moves only the remote-tracking ref, never the working tree, and afterwards the ref,
+  # the control fingerprint (control_fingerprint hashes origin/<branch> in this lane)
+  # and the CI verdict all describe the PR head. The refusal that stood here, "the
+  # graded tree is NOT the PR head", could only ever be a false refusal on an unfetched
+  # desk, and the fetch removes that state.
+  if review_role && !zap_branch.to_s.strip.empty?
+    system({ "GIT_TERMINAL_PROMPT" => "0" }, "git", "-C", diff_root.to_s, "fetch", "--quiet", "origin", zap_branch.to_s,
+           out: File::NULL, err: File::NULL)
+  end
   head_check = ReviewTreeGuard.head_assessment(
     root: diff_root, branch: zap_branch,
     pr_head: ENV["DOR_CHECK_PR_HEAD"] || (ci && ci[:head_oid])
   )
 if review_role && head_check[:state] == :mismatch
-  errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
-    "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
-    "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF and the file contents " \
-    "this gate read describe a tree that is not the one merging — while the CI verdict beside them describes " \
-    "the PR head, which is the tree the suite evidence is about. REF SHARING decides which pushes reach " \
-    "origin/#{zap_branch} here at all: one from a SIBLING WORKTREE does (worktrees share one ref store), one " \
-    "from INDEPENDENT refs — a separate clone, another machine, GitHub's Update-branch button — does not. " \
-    "Fetch the branch (git -C #{diff_root} fetch origin #{zap_branch}) and re-run — that alone clears THIS " \
-    "refusal. KEEP THE -C: this gate re-roots to the graded checkout, so a reviewer running it from the " \
-    "repo's primary is standing somewhere else, and a bare `git merge` pasted there fast-forwards whatever " \
-    "the primary has checked out — release or main by SOP — with exit 0 and a success message. If the " \
-    "desk is yours and you want it ON the pushed head, git -C #{diff_root} merge --ff-only " \
-    "origin/#{zap_branch}; IF THAT MERGE REFUSES (`Not possible to fast-forward`), #{diff_root} carries a " \
-    "commit origin/#{zap_branch} does not — read what is at stake (git -C #{diff_root} log --oneline " \
-    "origin/#{zap_branch}..HEAD): if that commit belongs on this PR, land it as a zap (rebase onto " \
-    "origin/#{zap_branch}, then push) so it BECOMES the head; if it does not and the desk is yours, " \
-    "git -C #{diff_root} reset --hard origin/#{zap_branch} DISCARDS it. If the desk is NOT yours, discard " \
-    "nothing — grade on the CI green for this exact head and say so in your report."
+  # Reachable only when the fetch above failed or a push landed during this verdict.
+  # Reported, not refused: the CI verdict is read for the PR head wherever it is.
+  suggestions << "the fetch could not bring #{head_check[:ref]} in #{diff_root} to the PR head (it is at " \
+    "#{head_check[:local_sha][0, 12]}, the PR head is #{head_check[:pr_head][0, 12]}): a push landed during " \
+    "this verdict, or `git -C #{diff_root} fetch origin #{zap_branch}` failed. Local reads (a test-only " \
+    "control stamp) describe the older commit; re-run once the fetch works."
   elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
     # NOT a refusal: with no head from GitHub the question could not be asked, and the
     # CI gate above already owns "we could not read this PR". Say which check went

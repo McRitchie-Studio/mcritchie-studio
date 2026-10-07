@@ -312,7 +312,7 @@ because they happened to re-verify by hand.
 | Fact | Re-checked after your push? |
 |---|---|
 | GitHub CI verdict | **Yes** — checks re-run on the new head. |
-| The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
+| The tree `bin/dor-check --gate-role review` grades | **Yes.** It re-roots to the *builder's desk* and fetches the PR branch there before it reads `origin/<branch>`. |
 | The `[control@<fp>]` stamp (`test-only` PRs only) | **Moves with the tree — two cases, below.** Clearing it is a SECOND command, `bin/control-check`; a green CI does not touch it. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
 | The PR's AUTHOR SET (who may review it next) | **Yes, since 2026-09-09** — `bin/pr-review` records the head move as a fix-forward. Before that it did **not**, and the gap seated a reviewer on his own commit. See below. |
@@ -356,24 +356,19 @@ reviewer. Your soul joins `devops.builders`; `built_by` is left alone.
 Where the pusher cannot be attributed, nothing is recorded: the commit still
 carries its git author, which the author set derives from.
 
-**The gate now refuses a stale tree rather than grading one.** `--gate-role
-review` re-roots to the builder's desk, and on turf #519 that desk sat at
-`262059b` while the merged commit was `9137d57`. `bin/dor-check` now compares the
-commit it is about to grade against the PR head and refuses on a mismatch,
-naming both SHAs. The remedy is one command:
+**The review fetches the branch before it grades it.** `--gate-role review`
+re-roots to the builder's desk, and on turf #519 that desk sat at `262059b` while
+the merged commit was `9137d57`. `bin/dor-check` now runs `git fetch origin
+<branch>` in that checkout before it reads `origin/<branch>`, so the ref it
+grades is the PR head (guard catalog row 2.9). A fetch moves the remote-tracking
+ref, never the desk's files.
 
-```bash
-git fetch origin <branch>     # then re-run dor-check
-```
-
-**Expect the control stamp to go STALE — and know the one case where it does not.**
-On a `test-only` PR the `[control@<fp>]` stamp is bound to a git *tree* hash, so a
-zap changes the tree and the stamp stops matching. `bin/dor-check --gate-role
-review` recomputes that hash as `origin/<branch>^{tree}` **in the builder's desk**
-— or in the repo's primary checkout when that repo has no desk for the task — and
-it never runs `git fetch`. So the whole question is whether the checkout you push
-from writes the copy of `refs/remotes/origin/<branch>` that the gate reads.
-Distance is not the test; **ref sharing** is:
+**Expect the control stamp to go STALE after any zap.** On a `test-only` PR the
+`[control@<fp>]` stamp is bound to a git *tree* hash, so a zap changes the tree
+and the stamp stops matching. `bin/dor-check --gate-role review` recomputes that
+hash as `origin/<branch>^{tree}` **in the builder's desk** — or in the repo's
+primary checkout when that repo has no desk for the task — after its fetch. Ref
+sharing decides only whether the desk sees your push before that fetch:
 
 - **A worktree SHARES that ref, so the stamp correctly goes STALE.** Every
   worktree of a repo keeps ONE ref store, in the common git dir (`git rev-parse
@@ -389,24 +384,20 @@ Distance is not the test; **ref sharing** is:
   stands re-stamps the tree that was already there and the lane reads STALE
   again. Move first, then stamp: `git -C <desk> merge --ff-only origin/<branch>`,
   then `bin/control-check <task>`.
-- **A separate CLONE keeps its own refs, so the stamp reads FRESH — the dangerous
-  reading.** A distinct clone, a push from another machine, or GitHub's
-  **Update branch** button never touches the desk's `origin/<branch>`. The hash
-  still matches the recorded stamp and the lane reads FRESH over a tree that is no
-  longer the PR head: a green that is evidence of nothing. Only the head check
-  above — the stale-tree refusal in this section — catches that one, by comparing
-  the graded commit to the PR head. **Re-run the control here too, with more
-  reason than in the worktree case:** `git -C <desk> fetch origin <branch>`, then
-  `git -C <desk> merge --ff-only origin/<branch>`, then `bin/control-check
-  <task>`. Do not stop after the fetch: it moves the ref and not your files, so a
-  stamp taken between those two commands binds the tree you already had and the
-  lane stays STALE. A STALE lane is the gate telling you the stamp is out of date;
-  this FRESH is the stamp being wrong while looking right, so nothing prompts you
-  if you skip it.
+- **A separate CLONE keeps its own refs; the review's fetch makes the stamp go STALE too.**
+  A distinct clone, a push from another machine, or GitHub's **Update branch**
+  button never touches the desk's `origin/<branch>` by itself. Before the review
+  fetched, the hash still matched the recorded stamp and the lane read FRESH over a
+  tree that was no longer the PR head; the fetch moves the ref, so the lane reads
+  STALE here as well. Re-run the control the same way: `git -C <desk> fetch origin
+  <branch>`, then `git -C <desk> merge --ff-only origin/<branch>`, then
+  `bin/control-check <task>`. Do not stop after the fetch: it moves the ref and not
+  your files, so a stamp taken between those two commands binds the tree you
+  already had and the lane stays STALE.
 
 **`<desk>` is the checkout the gate grades** — the builder's desk, or the repo's
-primary when that repo has no desk for the task; `bin/dor-check`'s refusal prints
-the path. **Keep the `-C`.** A reviewer runs `--gate-role review` from the primary
+primary when that repo has no desk for the task; `bin/dor-check`'s STALE refusal
+names the task. **Keep the `-C`.** A reviewer runs `--gate-role review` from the primary
 checkout, which sits on `release` or `main` by SOP, and `bin/control-check`
 fingerprints whatever tree it is run in — so the move and the re-run both belong
 in `<desk>`, not wherever you are standing. Drop the `-C` and paste the move from
@@ -433,10 +424,9 @@ the control stamp, which moves by the same mechanism): a push from a sibling
 worktree moved the reading checkout's `origin/<branch>^{tree}` with no fetch,
 while the identical push from a separate clone left it unchanged until that
 checkout fetched. Measured again 2026-09-09 on the **remedy**: after a clone-side
-zap, `git fetch` alone cleared the head refusal but left the lane STALE, and
-re-stamping at that point left it STALE — only moving the checkout onto the
-fetched head first read FRESH. `bin/dor-check`'s own refusal prints that
-three-step remedy, pinned by `test_the_printed_remedy_clears_the_state_it_is_printed_into`.
+zap, `git fetch` alone left the lane STALE, and re-stamping at that point left it
+STALE — only moving the checkout onto the fetched head first read FRESH, pinned by
+`test_the_printed_remedy_clears_the_state_it_is_printed_into`.
 
 **A base that moves mid-review is reported, not refused.** `accepted` moves
 constantly and blocking every review after any merge would wedge the lane, so
