@@ -76,7 +76,7 @@ end
 def qa_environments
   abort "missing QA registry: #{QA_CONFIG}" unless File.exist?(QA_CONFIG)
 
-  YAML.load_file(QA_CONFIG).fetch("qa_environments")
+  QaServerCli.with_qa_marker(YAML.load_file(QA_CONFIG).fetch("qa_environments"))
 end
 
 def qa_for(name)

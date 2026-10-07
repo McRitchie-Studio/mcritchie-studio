@@ -461,7 +461,7 @@ class FastCertSubjectTest < Minitest::Test
     assert File.file?(File.join(REPO_ROOT, contract)), "#{contract} is the subject here"
     assert_includes FastCert.select_tests(REPO_ROOT, ["config/rails_lane.yml"]), contract
 
-    guard = "test/lib/qa_registry_declares_qa_env_test.rb"
+    guard = "test/lib/qa_registry_app_host_test.rb"
 
     assert File.file?(File.join(REPO_ROOT, guard)), "#{guard} is the subject here"
     assert_includes FastCert.select_tests(REPO_ROOT, ["config/qa_environments.yml"]), guard
