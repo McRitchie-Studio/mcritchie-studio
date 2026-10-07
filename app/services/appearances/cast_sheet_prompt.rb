@@ -72,7 +72,12 @@ module Appearances
       ["#{lead}:", *views].join("\n")
     end
 
-    def personality = @character&.personality.to_s.squish.truncate(240).presence
+    # The profile's personality, minus an editor's bracketed marker such as the
+    # seed's "[Draft for Alex]", and without its closing full stop (the line
+    # ends in a colon).
+    def personality
+      @character&.personality.to_s.squish.sub(/\A\[[^\]]*\]\s*/, "").truncate(240).delete_suffix(".").presence
+    end
 
     def closing
       "The SAME character in every panel. Match the illustration style of the reference images. " \
