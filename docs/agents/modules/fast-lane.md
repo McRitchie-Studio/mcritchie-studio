@@ -89,13 +89,14 @@ load-bearing, and the two writers disagree about what a wrong cwd costs you:
 |------|--------------------------|
 | `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
 | `turf-monster` · `rolio` · `mcritchie-industries` · `cyvasse` · `dads-app` · `prisoners-dilemma` · `weekly-lock` · `rantly` · `portfolio` · `10and5` · `search-position` · `moms-app` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
-| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` — create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. All three still get the pre-flight; see below |
+| `studio-engine` · `solana-studio` | **`begin` works; no `ship`.** They are gems (`gems:` in `config/release_repos.yml`), so `bin/task begin --repo <gem>` cuts the desk at `<repo>/.worktrees/<slug>`, binds it and stamps its identity, with no port, Redis slot or database. The plan it prints names the suite (`bin/release-check`). Run the handoff steps by hand. Both still get the pre-flight; see below |
+| `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app`. Create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. It still gets the pre-flight; see below |
 
 Row 2 is the REGISTRY, not the machine: it names every satellite in
 `config/satellites.yml`, including `tax-studio`, which has no checkout yet.
 
-**Row 3 is a missing WORKTREE lane — NOT a missing test lane.** From a plain
-`git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
+**Rows 3 and 4 are about the desk and the handoff, NOT a missing test lane.** From a
+gem desk or a plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
 DECLARED gate (`ReleaseRegistry.release_check_cmd`) as the whole mapped lane.
 All three repos declare `bin/release-check` in `config/release_repos.yml`: a
 script each repo owns. If a repo ever hits `COULD NOT RUN` here, the remedy is a
