@@ -111,13 +111,12 @@ module StackedPr
   #
   # `list`, `edit` and `say` are the caller's own gh reader, gh writer, and printer.
   # => :proceed | :refused | :retargeted | :retarget_failed
-  # THE TWO DEFAULTS ARE ASYMMETRIC ON PURPOSE. `base_read_ok:` defaults TRUE and
-  # `repo_scope:` defaults NIL (which refuses), and that is not an oversight: a caller that
-  # omits base_read_ok is one that read the base and has nothing to report, while a caller
-  # that omits repo_scope has told us nothing about WHICH repo to probe — and probing the
-  # wrong one answers :not_stacked with ok=true, a false NEGATIVE that never surfaces. The
-  # permissive default is the harmless one; the closed default guards the silent failure.
-  def guard_base(base:, accepted:, slug:, pr_url:, list:, edit:, say:, base_read_ok: true, repo_scope: nil)
+  # `repo_scope:` IS REQUIRED (guard catalog row 1.12): a caller cannot omit WHICH repo to
+  # probe, because probing the wrong one answers :not_stacked with ok=true, a false NEGATIVE
+  # that never surfaces. `base_read_ok:` defaults TRUE: a caller that omits it read the base
+  # and has nothing to report. A scope the caller derived but came back BLANK (a PR URL its
+  # regex could not parse) still refuses below; a required keyword cannot see a blank value.
+  def guard_base(base:, accepted:, slug:, pr_url:, list:, edit:, say:, repo_scope:, base_read_ok: true)
     branch = base.to_s.strip
 
     unless base_read_ok
