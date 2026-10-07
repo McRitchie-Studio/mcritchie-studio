@@ -499,6 +499,11 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       post "auth", to: "auth#create"
+      # Agent logins (agent-sessions phase one): a studio session at a task claim,
+      # whoami, and log out. Api::V1::AgentSessionsController.
+      post   "agent_sessions", to: "agent_sessions#create"
+      get    "agent_sessions/current", to: "agent_sessions#show"
+      delete "agent_sessions/current", to: "agent_sessions#destroy"
       post "release_notes", to: "release_notes#create"
       # Finished-game push from turf-monster (Nfl::LiveScores::PollCycle#finalise).
       # Creates the Content idea a faceless recap video is built from. Idempotent:

@@ -11,6 +11,8 @@ module Api
     # stale claim can never strand a global lane. Role travels in the body/param.
     # Authed like the rest of the API (Bearer).
     class ReleaseConductorClaimsController < BaseController
+      require_admin_session except: [:show, :live]
+
       # GET /api/v1/releases/:slug/conductor_claim?role=assembler — the "who (if
       # anyone) is assembling/deploying this release" read (CLI `status`, dashboard).
       # 200 { holder: <info> | null, release_state: <state> | null }; `holder` is null

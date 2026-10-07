@@ -55,6 +55,10 @@ class Current < ActiveSupport::CurrentAttributes
   # ship!) drains it onto the release via Release#stamp_conductor_mascot!, so the
   # deployment wears the SESSION's Pokémon mascot — the agent working it.
   attribute :conductor_session_id
+  # The AgentSession the API request authenticated with, or nil for the shared
+  # secret's token. Set by Api::V1::BaseController#authenticate_api!; when present
+  # it, not a request param, names the actor on every board write.
+  attribute :agent_session
 
   # Set the per-transition usage attributes from a captured-usage hash for the
   # duration of the block, then clear them — so a conductor/release flip that

@@ -2,6 +2,7 @@ module Api
   module V1
     class BaseController < ActionController::API
       include Api::Paginatable
+      include Api::AgentSessionGate
 
       before_action :authenticate_api!
 
@@ -16,21 +17,50 @@ module Api
 
       private
 
-      # A token must verify AND carry an expiry. MessageVerifier enforces an
-      # expiry when one is present, but a token minted without `expires_in`
-      # verifies forever, so a leaked one would never die. Every live minter
-      # (AuthController#create, which stamps 24 hours) already sets one; this
-      # check refuses anything minted some other way.
+      # Two bearers are accepted:
+      #
+      # - An agent session's token (AgentSession#token): the row is read on every
+      #   call, so a revoked or expired session, or a studio session whose task left
+      #   building and review, answers 401 with the reason. A client session answers
+      #   403: no board endpoint serves the client tier yet. The session then sets
+      #   Current.agent_session, which names the actor and drives the tier gates
+      #   (Api::AgentSessionGate).
+      # - The shared secret's token (POST /api/v1/auth), kept for one release so Turf
+      #   Monster's two endpoints and installed hooks keep working. It must verify
+      #   AND carry an expiry: MessageVerifier enforces an expiry when one is
+      #   present, but a token minted without `expires_in` verifies forever. Each use
+      #   is logged as legacy.
       def authenticate_api!
         token = request.headers["Authorization"]&.sub(/\ABearer\s+/, "")
         return render_error("Missing token", status: :unauthorized, error_code: "UNAUTHORIZED") unless token.present?
-        message_verifier.verify(token, purpose: :api_auth)
-        return if self.class.token_expiry(token)
+        return authenticate_legacy_token!(token) if message_verifier.verified(token, purpose: :api_auth)
 
-        render_error("Token carries no expiry; mint a fresh one at POST /api/v1/auth",
-                     status: :unauthorized, error_code: "UNAUTHORIZED")
-      rescue ActiveSupport::MessageVerifier::InvalidSignature
-        render_error("Invalid or expired token", status: :unauthorized, error_code: "UNAUTHORIZED")
+        authenticate_agent_session!(token)
+      end
+
+      def authenticate_legacy_token!(token)
+        unless self.class.token_expiry(token)
+          return render_error("Token carries no expiry; mint a fresh one at POST /api/v1/auth",
+                              status: :unauthorized, error_code: "UNAUTHORIZED")
+        end
+
+        Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}")
+      end
+
+      def authenticate_agent_session!(token)
+        session = AgentSession.from_token(token)
+        unless session
+          return render_error("Invalid or expired token", status: :unauthorized, error_code: "UNAUTHORIZED")
+        end
+
+        reason = session.refusal_reason
+        return render_error(reason, status: :unauthorized, error_code: "SESSION_ENDED") if reason
+        if session.client?
+          return render_error("a client session reaches no board endpoint", status: :forbidden,
+                                                                             error_code: "SESSION_FORBIDDEN")
+        end
+
+        Current.agent_session = session
       end
 
       # The `exp` a verified api_auth token carries, or nil when it has none. Call

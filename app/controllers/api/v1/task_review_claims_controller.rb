@@ -8,6 +8,8 @@ module Api
     # review lands. The role-lease (DevopsShiftsController) one level down: lane →
     # task. Authed like the rest of the API (Bearer).
     class TaskReviewClaimsController < BaseController
+      require_task_scope only: [:acquire, :renew, :release]
+
       # GET /api/v1/tasks/:slug/review_claim — the "who (if anyone) is reviewing
       # this task" read (CLI `status`, dashboard). 200 { holder: <info> | null };
       # `holder` is null when no claim row exists yet. Mirrors the DevopsShift index

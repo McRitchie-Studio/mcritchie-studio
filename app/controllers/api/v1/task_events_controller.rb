@@ -14,6 +14,7 @@ module Api
       }.freeze
 
       before_action :set_task
+      require_task_scope
 
       def start
         event =
@@ -142,6 +143,7 @@ module Api
 
       def event_attributes
         attrs = event_payload.to_h.symbolize_keys
+        attrs[:actor] = session_actor(attrs[:actor])
         attrs[:source] = attrs[:source].presence || "api"
         attrs[:tokens_in] = attrs[:tokens_in].presence&.to_i
         attrs[:tokens_out] = attrs[:tokens_out].presence&.to_i

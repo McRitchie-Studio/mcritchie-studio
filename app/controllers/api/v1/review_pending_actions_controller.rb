@@ -10,6 +10,8 @@ module Api
     # webhook runs. A caller cannot talk this endpoint into a merge no reviewer
     # authorised. Authed like the rest of the API (Bearer).
     class ReviewPendingActionsController < BaseController
+      require_task_scope only: [:create, :execute, :destroy]
+
       # GET /api/v1/review_pending_actions[?state=pending&task_slug=…]
       #
       # The operator's read: what is armed right now, pinned to what, expiring
