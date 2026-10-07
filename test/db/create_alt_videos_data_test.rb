@@ -17,6 +17,9 @@ class CreateAltVideosDataTest < ActiveSupport::TestCase
     # Before the migration video_stitches had no alt_video_slug. Postgres DDL is
     # transactional, so the test's rollback puts the NOT NULL back.
     ActiveRecord::Base.connection.change_column_null(:video_stitches, :alt_video_slug, true)
+    # Likewise alt_video_clips had no slug until piece 19's migration, which
+    # backfills the rows this step makes; the step itself writes none.
+    ActiveRecord::Base.connection.change_column_null(:alt_video_clips, :slug, true)
     @video = TiledVideo.seed!
     @athlete = RecastVideo.athlete!
     @look = @athlete.appearances.live.find_by!(descriptor: "Home Blue")
