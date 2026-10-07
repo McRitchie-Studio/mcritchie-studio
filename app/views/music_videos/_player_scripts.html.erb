@@ -38,9 +38,9 @@
   // either (its own controls or the shared scrub) and the other follows. The
   // version is the clock; while playing, the original is nudged back onto it
   // (playback rate 0.95/1.05 past 40 ms, about a frame; a hard seek past
-  // 250 ms), so they stay within a frame or two.
+  // 100 ms, which also closes the head start one player gets at Play both), so they stay within a frame or two.
   window.clipPair = function () {
-    const NUDGE = 0.04, JUMP = 0.25;
+    const NUDGE = 0.04, JUMP = 0.1, SEEK_LEAD = 0.05;
     return {
       linked: false, started: false, playing: false, blocked: false,
       t: 0, duration: 0, frame: null, failed: { original: false, version: false },
@@ -57,10 +57,17 @@
           video.addEventListener("loadedmetadata", firstFrame);
           video.addEventListener("play", () => { this.started = true; this.follow(video, "play"); });
           video.addEventListener("pause", () => this.follow(video, "pause"));
-          video.addEventListener("seeking", () => this.follow(video, "seek"));
+          video.addEventListener("seeking", () => { if (performance.now() > (video.__quietUntil || 0)) this.follow(video, "seek"); });
         });
       },
       destroy() { cancelAnimationFrame(this.frame); },
+      // A seek made here (start, scrub, a peer following, a drift fix) is not
+      // the operator's: its seeking event must not move the other player, or
+      // fixing the muted original would drag the version's sound along.
+      seekTo(video, at) {
+        video.__quietUntil = performance.now() + 400;
+        video.currentTime = at;
+      },
       other(video) { return video === this.$refs.original ? this.$refs.version : this.$refs.original; },
       measure() {
         const lengths = this.pair.map((v) => v.duration).filter(Number.isFinite);
@@ -77,7 +84,7 @@
         const peer = this.other(video);
         if (!peer) return;
         if (what === "play") {
-          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) peer.currentTime = video.currentTime;
+          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) this.seekTo(peer, video.currentTime);
           if (peer.paused && !peer.ended) peer.play().catch(() => {});
           this.playing = true;
           this.loop();
@@ -87,7 +94,7 @@
           if (!peer.paused) peer.pause();
           this.playing = false;
         } else if (what === "seek") {
-          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) peer.currentTime = video.currentTime;
+          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) this.seekTo(peer, video.currentTime);
           this.t = video.currentTime;
         }
       },
@@ -99,7 +106,7 @@
         original.muted = true;
         version.muted = false;
         original.playbackRate = 1;
-        original.currentTime = 0; version.currentTime = 0; this.t = 0;
+        this.seekTo(original, 0); this.seekTo(version, 0); this.t = 0;
         this.playing = true;
         Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
         this.loop();
@@ -108,7 +115,7 @@
         const [original, version] = [this.$refs.original, this.$refs.version];
         original.muted = true;
         if (version.ended) { this.start(); return; }
-        original.currentTime = version.currentTime;
+        this.seekTo(original, version.currentTime);
         this.playing = true;
         Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
         this.loop();
@@ -126,7 +133,7 @@
       scrub(value) {
         const at = Number(value);
         this.t = at;
-        this.pair.forEach((v) => { v.currentTime = Number.isFinite(v.duration) ? Math.min(at, v.duration) : at; });
+        this.pair.forEach((v) => this.seekTo(v, Number.isFinite(v.duration) ? Math.min(at, v.duration) : at));
       },
       // Single preview (no version yet): play the source chunk.
       playOriginal() {
@@ -142,7 +149,8 @@
           this.t = version.currentTime;
           if (!original.paused && !original.ended && !original.seeking && !version.seeking) {
             const drift = original.currentTime - version.currentTime;
-            if (Math.abs(drift) > JUMP) original.currentTime = version.currentTime;
+            // Aim a little ahead: the seek itself takes a few frames.
+            if (Math.abs(drift) > JUMP) this.seekTo(original, version.currentTime + SEEK_LEAD);
             else if (Math.abs(drift) > NUDGE) original.playbackRate = drift > 0 ? 0.95 : 1.05;
             else if (original.playbackRate !== 1) original.playbackRate = 1;
           }

@@ -97,6 +97,23 @@ test("Play both runs the primary beside the original, sound from the version onl
   await button.click();
   await expect(compare).toHaveAttribute("data-state", "paused");
   expect((await players(compare)).map((p) => p.playing)).toEqual([false, false]);
+  // Seeking one with its own control moves the other. A seek the pair makes
+  // itself (the drift fix on the muted original) must NOT move the version:
+  // that would drag the only sound along (a bug found measuring real Chrome).
+  const times = () => compare.locator("video").evaluateAll((vs) => vs.map((v) => Math.round(v.currentTime * 1000) / 1000));
+  await compare.evaluate((root) => {
+    const original = root.querySelector("[data-test='clip-player']");
+    original.currentTime = 3;
+    original.dispatchEvent(new Event("seeking"));
+  });
+  await expect.poll(times).toEqual([3, 3]);
+  await compare.evaluate((root) => {
+    const original = root.querySelector("[data-test='clip-player']");
+    window.Alpine.$data(root).seekTo(original, 7);
+    original.dispatchEvent(new Event("seeking"));
+  });
+  await expect.poll(times).toEqual([7, 3]);
+
   await compare.locator("[data-test='clip-play-both-restart']").click();
   await expect(compare).toHaveAttribute("data-state", "playing");
   state = await players(compare);
