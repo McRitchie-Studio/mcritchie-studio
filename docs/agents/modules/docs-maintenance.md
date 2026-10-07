@@ -71,34 +71,14 @@ the Ruby PATH block to `~/.zprofile`. Every one of those targets is **global and
 shared** — the operator's live login profile, git config and editor settings
 included.
 
-`test/docs/executable_docs_installer_test.rb` holds the set to the two above. It
-sweeps the docs an agent **executes** — every registered SOP in the invocation
-table, the `maintenance/kickoff-*.md` briefs, and everything under
-`docs/agents/skills/` — treating *any* mention of the installer as a hit that
-owes an explicit exemption. Descriptive docs under `system/` and `modules/` are
-**not swept**: they name the installer legitimately and constantly (this file
-does), so the any-mention rule would drown there. That limit is deliberate, and
-it is no longer a blanket amnesty for design docs — see the scope guard next.
-
-**Where the command is printed, the scope is printed with it.**
-`test/docs/installer_command_scope_test.rb` sweeps **all** of `docs/agents/**`,
-`system/` and `modules/` included, and asks a different question: not "is the
-installer mentioned" but "is the reader being handed a command to run". Every
-fenced `bin/agent-runtime install` / `bin/install-agent-docs` command line must
-carry the bringup scope — on the line itself, or in the prose that introduces
-the block. Three sites qualify today, and the predicate draws **zero** false
-positives across 123 live docs, because a copyable command line is a different
-object from a prose mention. It pairs that with an imperative-mood directive
-sweep and a per-site pin on
-[`../system/bootstrap.md`](../system/bootstrap.md), whose unscoped invitation to
-run the installer by hand is the defect it was written for.
-
-**Its limit, stated so nobody over-trusts it in turn:** it sees command
-*presentations* and the imperative mood — not every sentence that could talk a
-reader into a run. A third-person rationale is still caught only where it names
-the wrong source tree (`test/docs/ship_docs_sync_docs_test.rb`). Three guards,
-three predicates: any mention in an **executed** doc, the wrong **source tree**
-anywhere, and an **unscoped command** anywhere.
+**A feature desk cannot publish.** `bin/install-agent-docs install` refuses, before
+it writes anything, when it runs from a desk under `.worktrees/` other than the
+ship's own workspace and `PROJECTS_DIR` is not pinned to a sandbox, and it prints
+this rule as its answer. So a doc that names the installer cannot talk anyone into
+the worktree publish; `check` still runs from any desk, read-only.
+`test/commands/install_agent_docs_desk_refusal_test.rb` holds the refusal. A run
+from a primary is not refused, because bringup runs there; the closed list above
+is what keeps it to bringup.
 
 ## What A Doc Guard Scans
 
