@@ -664,6 +664,7 @@ end
     # "none" would be a lie for a shape that owes a control, so say what it owes.
     owed = tiers.empty? && evidence.any? ? "no tiers; evidence: #{evidence.join(', ')}" : tiers.join(", ")
     puts "Required tiers: #{shape["shape"] || "none"} => #{owed}"
+    puts "  unknown shape: bin/dor-check refuses it at ship; fix it with bin/task update --shape" if shape["shape"] && shape["description"].nil?
     if shape["claimable_when"] == "test_only_diff"
       # This note prints at the moment a builder decides what to run. test-only is
       # NOT EXEMPT from the CI gate, and that gate has ONE form of evidence for
@@ -857,29 +858,15 @@ stale_hits = stale_scan(options[:root], scan_files).first(40)
 errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
 
 shape = shape_report(task, warnings)
-# An EXEMPT kind (EXEMPT_KINDS) skips the shape/required-metadata gate only when
-# the OBSERVED diff ships no behavior — exactly as bin/dor-check gates it, via the
-# same CodeDiff classifier. The label alone never earns the skip. (Preflight runs
-# BEFORE the code exists, so an empty diff is expected here and stays exempt; the
-# merge gate is the one that fails closed on an unobservable diff.)
+# The shape preview is INFORMATION (guard catalog row 4.4): `bin/task begin` refuses
+# a create with a missing or unknown shape or short of its metadata, so nothing here
+# is learned after the claim. An EXEMPT kind (EXEMPT_KINDS) skips the shape lines only
+# when the OBSERVED diff ships no behavior, via the same CodeDiff classifier
+# bin/dor-check gates on; the merge gate is the one that refuses.
 kind = devops["kind"].to_s.strip.downcase
 code_files = CodeDiff.code_files(changed)
 shape["kind"] = kind.empty? ? nil : kind
 shape["exempt"] = EXEMPT_KINDS.include?(kind) && code_files.empty?
-if shape["exempt"]
-  # Nothing to gate: chore/cleanup/docs with a doc-only (or empty) diff.
-elsif shape["shape"].nil?
-  message = "devops.shape is missing; required tiers cannot be selected"
-  if EXEMPT_KINDS.include?(kind)
-    message += " (kind #{kind} ships code — #{code_files.first(3).join(", ")} — so there is no size exemption)"
-  end
-  errors << message
-elsif shape["description"].nil?
-  errors << "unknown devops.shape #{shape["shape"].inspect}"
-end
-unless shape["exempt"] || shape["missing_metadata"].empty?
-  errors << "required metadata missing: #{shape["missing_metadata"].join(", ")}"
-end
 
 task_url = task["task_url"] || task.dig("devops", "task_url")
 task_url ||= "https://mcritchie.studio/tasks/#{task["slug"]}" if task["slug"]

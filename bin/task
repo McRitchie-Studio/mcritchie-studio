@@ -297,6 +297,7 @@ require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 require_relative "lib/review_hop"
 require_relative "lib/desk_claim"
+require_relative "lib/code_diff"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
@@ -2262,6 +2263,43 @@ rescue StandardError => e
         "#{worktree_bin} identity #{app} #{worktree_slug} <soul>")
 end
 
+# THE SHAPE AND ITS METADATA ARE DECIDED AT CREATE (guard catalog row 4.4). The
+# preflight used to learn a missing or unknown shape, or a shape short of its
+# required metadata, only after the claim. `begin` now refuses that create before
+# anything is written, so a task begin made always carries a known shape and the
+# metadata it owes. A kind in CodeDiff::EXEMPT_KINDS may omit --shape: its diff is
+# not known yet, and bin/dor-check decides at ship whether it ships code. local_url
+# is produced during the build (a live candidate), so bin/dor-check owns it.
+BEGIN_SHAPES_PATH = ENV.fetch("TASK_BEGIN_SHAPES_PATH", File.expand_path("../config/feature_shapes.yml", __dir__))
+BEGIN_DEFERRED_METADATA = %w[local_url].freeze
+
+def validate_begin_create!(scalars, lists)
+  config = YAML.safe_load(File.read(BEGIN_SHAPES_PATH)) || {}
+  shapes = config.fetch("shapes", {})
+  kind = scalars.fetch("kind", "feature").to_s
+  shape = scalars["shape"].to_s.strip
+  if shape.empty?
+    return if CodeDiff::EXEMPT_KINDS.include?(kind)
+
+    die!("begin creates a #{kind} task only with --shape, one of: #{shapes.keys.join(", ")}. Nothing was written.")
+  end
+  unless shapes.key?(shape)
+    die!("unknown --shape #{shape.inspect}; one of: #{shapes.keys.join(", ")}. Nothing was written.")
+  end
+
+  required = shapes.fetch(shape).fetch("required_metadata", config.dig("defaults", "required_metadata") || [])
+  flag_for = DevopsListFlags::FLAGS.invert
+  missing = (required - BEGIN_DEFERRED_METADATA).reject do |field|
+    Array(lists[field]).any? { |value| !value.to_s.strip.empty? }
+  end
+  return if missing.empty?
+
+  die!("shape #{shape} needs #{missing.map { |field| flag_for.fetch(field, field) }.join(", ")} at create. " \
+       "Nothing was written.")
+rescue Errno::ENOENT, Psych::Exception => e
+  die!("could not read the shapes at #{BEGIN_SHAPES_PATH} (#{e.class}: #{e.message}). Nothing was written.")
+end
+
 # A BLOCKED TASK'S BEGIN IS THE ANSWER TO THE BLOCK (guard catalog row 4.2). A
 # rework block leaves the task on `building` with blocked_at set, and the builder
 # who resumes it is the one fixing it, so begin clears the block at the claim
@@ -2598,6 +2636,7 @@ when "begin"
   if task.nil?
     die!("no task #{slug.inspect} to resume — pass --title to create one") unless top["title"]
     scalars["kind"] = "feature" unless scalars.key?("kind")
+    validate_begin_create!(scalars, lists)
     devops = stamp_session(build_devops({}, scalars, lists))
     body = top_body(top.merge("slug" => slug))
     body["devops"] = devops unless devops.empty?

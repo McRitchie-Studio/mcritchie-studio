@@ -30,6 +30,8 @@ class TaskBeginTest < Minitest::Test
   # The resuming instance's identity (opt-in per test — the harness env is
   # session-neutralized) and a rival's. The harness pins TASK_CLAIM_NONCE to
   # "inst-default", so a foreign INSTANCE is any other nonce/session pair.
+  # The metadata every shape requires at create (guard catalog row 4.4).
+  CREATE_METADATA = ["--risk", "devops", "--accept", "Widget cache answers", "--test", "[unit] cache hit"].freeze
   SESSION = "sess-begin-resume-1111"
   FOREIGN_SESSION = "sess-begin-foreign-2222"
 
@@ -182,7 +184,7 @@ class TaskBeginTest < Minitest::Test
 
   def test_begin_creates_claims_and_preflights_in_one_command
     requests, out, err, status, lines =
-      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP])
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA])
 
     assert status.success?, "expected green begin, got:\n#{err}\n#{out}"
 
@@ -287,6 +289,47 @@ class TaskBeginTest < Minitest::Test
     refute_match bare, line, "begin printed a bare bin/submit — that is the defect"
     assert_match bare, "hand off with: bin/submit #{SLUG}",
                  "the bare pattern does not match the form it forbids, so this proves nothing"
+  end
+
+  # --- guard catalog row 4.4: the shape is decided at create --------------------
+  # Each refusal writes nothing: no POST, no worktree step, no claim.
+
+  def assert_create_refused(args, message)
+    requests, _out, err, status, lines = run_begin(["--title", "Add Widget Cache", *args])
+
+    refute status.success?, "begin must refuse this create:\n#{err}"
+    assert_includes err, message
+    assert_includes err, "Nothing was written."
+    refute(requests.any? { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }, "nothing may be created")
+    assert_empty lines, "no worktree or preflight step may run"
+  end
+
+  def test_begin_refuses_a_create_with_no_shape
+    assert_create_refused(["--repo", APP, *CREATE_METADATA], "begin creates a feature task only with --shape")
+  end
+
+  def test_begin_refuses_a_create_with_an_unknown_shape
+    assert_create_refused(["--shape", "bogus", "--repo", APP, *CREATE_METADATA], 'unknown --shape "bogus"')
+  end
+
+  def test_begin_refuses_a_create_short_of_its_metadata
+    assert_create_refused(["--shape", "backend", "--repo", APP], "shape backend needs --accept, --risk, --test")
+  end
+
+  # local_url is produced during the build, so a ui shape is created without it.
+  def test_begin_creates_a_ui_shape_without_a_local_url
+    _requests, out, err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "ui-only", "--repo", APP,
+                                              *CREATE_METADATA])
+
+    assert status.success?, "#{err}\n#{out}"
+  end
+
+  # An exempt kind's diff is not known at create; dor-check decides at ship.
+  def test_begin_creates_an_exempt_kind_without_a_shape
+    requests, out, err, status, = run_begin(["--title", "Add Widget Cache", "--kind", "docs", "--repo", APP])
+
+    assert status.success?, "#{err}\n#{out}"
+    assert(requests.any? { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" })
   end
 
   # --- resume ------------------------------------------------------------------
@@ -422,7 +465,7 @@ class TaskBeginTest < Minitest::Test
 
   def test_begin_with_agent_stamps_the_desk_as_it_is_cut
     _requests, _out, err, status, lines =
-      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, "--agent", "carl"])
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA, "--agent", "carl"])
 
     assert status.success?, "expected green begin, got:\n#{err}"
     new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }

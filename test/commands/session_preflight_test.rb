@@ -654,27 +654,32 @@ end
 
   # [unit] The preflight shares bin/lib/code_diff.rb with dor-check, so the
   # behavioral files the old ALLOWLIST couldn't see (.github/, Gemfile, test/…)
-  # lose the exemption HERE too — preflight is where the builder learns it, hours
-  # before the merge gate says no. It used to preview "Shape gate: n/a" for a
-  # chore shipping a CI workflow, teaching the same wrong lesson as PR #512.
+  # lose the exemption HERE too, and the preview says so. Since guard catalog row
+  # 4.4 the preview is information: `bin/task begin` validates the shape at create
+  # and bin/dor-check refuses at ship, so the preflight passes either way.
   def test_chore_shipping_a_ci_workflow_loses_the_exemption
     task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
     write_file(".github/workflows/ci.yml", "name: CI\non: [push]\n")
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "the shape preview is information:\n#{out}\n#{err}"
 
     report = JSON.parse(out)
     assert_equal false, report.dig("shape", "exempt")
-    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+    refute report.fetch("errors").any? { |error| error.include?("shape") }, report.fetch("errors").inspect
+
+    human, = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch")
+    assert_includes human, "Required tiers: none"
+    refute_includes human, "Shape gate: n/a"
   end
 
   def test_chore_shipping_a_gemfile_bump_loses_the_exemption
     task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
     write_file("Gemfile.lock", "GEM\n  specs:\n    rails (8.0.1)\n")
 
-    _out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?
+    assert_equal false, JSON.parse(out).dig("shape", "exempt")
   end
 
   def test_docs_kind_shipping_code_loses_the_exemption
@@ -682,11 +687,24 @@ end
     write_file("lib/shipped_code.rb", "# real behavioral code, not prose\n")
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?
 
     report = JSON.parse(out)
     assert_equal false, report.dig("shape", "exempt")
-    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+    assert_empty report.fetch("errors")
+  end
+
+  # [unit] Guard catalog row 4.4: a shape short of its metadata is reported, never a
+  # failure; begin validates it at create and dor-check at ship.
+  def test_missing_metadata_is_reported_not_failed
+    task = write_task(devops: default_devops.reject { |key, _| key == "test_plan" })
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "#{out}\n#{err}"
+    report = JSON.parse(out)
+    assert_includes report.dig("shape", "missing_metadata"), "test_plan", "FLOOR: the gap must have been read"
+    assert_empty report.fetch("errors")
   end
 
   def test_chore_kind_doc_only_diff_keeps_the_exemption

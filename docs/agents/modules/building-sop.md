@@ -59,7 +59,11 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
 - **Classify the shape**; it selects the tests you owe
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
   `onchain` · `onchain-vertical` · `docs` · `test-only`. Shape by the files, never
-  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)).
+  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)). `begin` refuses
+  a create, writing nothing, when the shape is missing or unknown or the shape's
+  metadata (`--accept`, `--repo`, `--risk`, `--test`) is short; a `chore`,
+  `cleanup` or `docs` kind may omit `--shape`. `local_url` comes later, from the
+  build.
 - **`test-only`** is for a diff that is entirely test code. It has no tiers, but
   it is not the easy option:
   1. It is claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`,
