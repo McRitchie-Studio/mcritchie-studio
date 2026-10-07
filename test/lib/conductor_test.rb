@@ -117,7 +117,7 @@ class ConductorTest < Minitest::Test
       #!/bin/bash
       echo "$*" >> "$RELEASE_CALL_LOG"
       echo "release-fake: $*"
-      exit 0
+      exit "${RELEASE_EXIT:-0}"
     SH
     # reviewer-select --json: canned primary+light pair.
     write_exec("reviewer-select", <<~SH)
@@ -294,6 +294,47 @@ class ConductorTest < Minitest::Test
     assert status.success?
     assert_includes out, "bin/release prepare"
     assert_empty release_log
+  end
+
+  # --- a drive passes the child's exit status through, unchanged ------------
+  #
+  # bin/release prepare's exit status IS its verdict: 0 assembled (or nothing to
+  # do), 1 an abort, 2 an argument refusal, 3 QA not green
+  # (Release::Cli::PREPARE_QA_NOT_GREEN_EXIT). Conductor used to fold every
+  # non-zero into 1, so a wrapper reading `conductor qa --run` could not tell
+  # "QA did not come up, re-run once it boots" from an abort.
+
+  def test_qa_run_exits_3_when_prepare_exits_3
+    _out, _err, status = run_conductor("qa", "--run", env: { "RELEASE_EXIT" => "3" })
+
+    assert_includes release_log, "prepare"
+    assert_equal 3, status.exitstatus, "QA-not-green (prepare exit 3) must reach the caller as 3, not 1"
+  end
+
+  def test_qa_run_passes_every_prepare_exit_status_through
+    { "0" => 0, "1" => 1, "2" => 2 }.each do |child, expected|
+      _out, _err, status = run_conductor("qa", "--run", env: { "RELEASE_EXIT" => child })
+
+      assert_equal expected, status.exitstatus, "prepare exit #{child} must reach the caller unchanged"
+    end
+  end
+
+  def test_ship_run_passes_a_stand_down_exit_through
+    _out, _err, status = run_conductor("ship", "--run", env: { "RELEASE_EXIT" => "10" })
+
+    assert_equal 10, status.exitstatus, "a stood-down ship (exit 10) must not read as a generic failure"
+  end
+
+  def test_merge_run_passes_the_release_exit_through
+    _out, _err, status = run_conductor("merge", "--run", env: { "RELEASE_EXIT" => "2" })
+
+    assert_equal 2, status.exitstatus
+  end
+
+  def test_a_release_binary_that_cannot_launch_exits_non_zero
+    _out, _err, status = run_conductor("qa", "--run", env: { "RELEASE_BIN" => File.join(@dir, "no-such-release") })
+
+    refute status.success?, "a release binary that never ran is not a green prepare"
   end
 
   # --- A FAILED READ IS NOT AN EMPTY ONE -----------------------------------
