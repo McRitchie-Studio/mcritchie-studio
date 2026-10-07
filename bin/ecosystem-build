@@ -51,11 +51,35 @@ DEPLOY_PROVIDERS=(heroku)  # index-aligned with RAILS_APPS — drives provider-s
 # the env key, so a restored production key signs cookies and magic links that
 # production accepts. Until 2026-10-06 every primary and desk held the hub's
 # production key this way (bin/lib/dev_secret_key.rb).
+#
+# Every PRODUCTION-ONLY key is dropped too, by `bin/dev-secret-key filter`, whose
+# deny list (DevSecretKey::PRODUCTION_ONLY_KEYS) is the one place it lives;
+# SOLANA_ADMIN_KEY is its first entry. The same day found the old restore had
+# put turf-monster-mainnet's SOLANA_ADMIN_KEY (a mainnet vault signer) into the
+# turf primary and every turf desk.
+#
+# FAIL CLOSED: without ruby or the filter, nothing is written, because an
+# unfiltered restore is the leak. The file is created 0600 under umask 077, and
+# a failed pipe leaves no partial .env behind (the caller restores only into a
+# missing or empty one, so the next run retries).
 restore_env_from_heroku() {
   local heroku_app="$1" env_path="$2"
-  heroku config --app "$heroku_app" --shell 2>/dev/null \
-    | grep -vE "^(export )?(DATABASE_URL|RAILS_SERVE_STATIC_FILES|REDIS_URL|SECRET_KEY_BASE)=" \
-    > "$env_path"
+  local tool
+  tool="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dev-secret-key"
+  if [ ! -f "$tool" ] || ! command -v ruby >/dev/null 2>&1; then
+    log_fail "$(basename "$(dirname "$env_path")")/.env not restored" \
+             "the production-only key filter needs ruby and bin/dev-secret-key; re-run after Phase 2"
+    return 1
+  fi
+  if ! ( umask 077
+         heroku config --app "$heroku_app" --shell 2>/dev/null \
+           | grep -vE "^(export )?(DATABASE_URL|RAILS_SERVE_STATIC_FILES|REDIS_URL|SECRET_KEY_BASE)=" \
+           | ruby "$tool" filter 2>/dev/null \
+           > "$env_path" ); then
+    rm -f "$env_path"
+    log_fail "$(basename "$(dirname "$env_path")")/.env not restored" "heroku config read or the filter failed"
+    return 1
+  fi
   chmod 600 "$env_path"
   restore_dev_secret_key "$env_path"
 }
@@ -378,11 +402,12 @@ phase_secrets() {
   # header, and both went stale while the sentences around them still read as
   # true. Non-comment expansions of MCR_OP_VAULT_AGENT measured 3 at 9c518e57
   # (2026-08-30), 2 at 60eda368 (2026-09-15, SOLANA_ADMIN_KEY moved to the admin
-  # vault), and 4 at 5da94bbb seven hours later (it moved back — see the note
-  # above the op_secrets map). The grep is the enumeration.
+  # vault), and 4 at 5da94bbb seven hours later (it moved back). The op_secrets
+  # map that held one of them was retired 2026-10-06 (see the note where it
+  # stood, below). The grep is the enumeration.
   #
   # The guard's verdict is about the VAULT, not about any item in it: a green
-  # guard says nothing about whether the op_secrets reads below will land.
+  # guard says nothing about whether a later read from it will land.
   #
   # THREE OUTCOMES, NOT TWO. Splitting "op/jq missing" out of "vault not
   # visible" is the point of the case below: the old single else-branch sent
@@ -462,68 +487,18 @@ phase_secrets() {
     log_ok "$app/.env" "$count env vars"
   done
 
-  # 1Password-only secrets that aren't in Heroku config but the app needs for full
-  # functionality. Mapping: env_var_name -> "vault/item/field". Always re-fetched
-  # (cheap) so rotated tokens propagate without manual intervention.
-  #
-  # SOLANA_ADMIN_KEY READS THE AGENT VAULT AGAIN as of 2026-09-15. The turf keys
-  # were recreated under unique, role-specific titles, all three in the AGENT
-  # vault and all three readable by an ordinary agent service account:
-  #
-  #   solana.turf.admin          BLSBw8fX…  agent governance identity   <- this one
-  #   solana.turf.system         7auwTLSv…  server operational key, MAINNET
-  #   solana.turf.system.devnet  2eGs8G3w…  server operational key, devnet/QA
-  #
-  # THE FIELD LABEL IS HYPHENATED ("private-key"), verified against the item on
-  # 2026-09-15. The older agent.* items in the same vault spell it with a SPACE,
-  # so this is not a detail that can be copied from a neighbouring line — and
-  # `op` fails the whole read on one wrong label rather than falling back.
-  #
-  # THE ADMIN-VAULT BRANCH WENT WITH IT. This table was the only thing in this
-  # script that reached studio-agents-admin, so a fresh Mac no longer needs
-  # `source ~/.zprofile.admin` to finish Phase 4. That is scoped to THIS SCRIPT
-  # and is not a claim about the vault: studio-agents-admin still holds
-  # github.mcritchie-admin, AWS and heroku.studio.admin, and the ship and
-  # provisioning lanes still need the admin token to read them.
-  #
-  # ⚠ THIS IS NOT WHAT PRODUCTION SIGNS WITH. turf-monster-mainnet's
-  # SOLANA_ADMIN_KEY is still Xan (8K81…, agent.xan.solana, admin vault), and
-  # the on-chain VaultState signer set is unchanged: 2-of-3, 8K81… still seated,
-  # on both clusters (read at finalized 2026-09-16). NAME THE AUTHORITY whenever
-  # this is repeated. The Squads multisig — the program's UPGRADE authority — is
-  # a different one, and its membership DID change: 8K81… is no longer a mainnet
-  # Squads member. Re-read both rather than trusting this note: turf-vault's
-  # scripts/check-signer-slots.js (VaultState) and scripts/squad-inventory.js
-  # (Squads). Moving prod onto solana.turf.system is
-  # a separate task gated on funding that wallet. READ THE BALANCE rather than a
-  # number in this comment: it read 0 SOL on mainnet at 09:12 on 2026-09-15 and
-  # was funded at 09:20 the same morning (1.0000 SOL at finalized later that
-  # day). The cutover turns on whether it is sufficient for SUSTAINED fee
-  # payment, not merely non-zero, and an underfunded fee payer breaks
-  # settlement. Local .env and the
-  # dyno differ on purpose; do not "reconcile" them here.
-  local op_secrets=(
-    "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-studio-agents}/solana.turf.admin/private-key"
-  )
-  for entry in "${op_secrets[@]}"; do
-    IFS='|' read -r app var ref <<< "$entry"
-    local env_path="$PROJECTS_DIR/$app/.env"
-    [ -f "$env_path" ] || continue
-    local value
-    value=$(op_metered op read "op://$ref" 2>/dev/null)
-    if [ -z "$value" ]; then
-      # Every ref in the table above is in the AGENT vault now, so there is no
-      # longer an "you need the admin token" case to distinguish here. A failure
-      # is a real one: a missing grant, a spent quota, or a refiled item.
-      log_fail "$var (op://$ref)" \
-               "not retrievable — check the token has read on that vault, that the item title still exists (\`op item list --vault ${MCR_OP_VAULT_AGENT:-studio-agents}\`), and that the field label matches"
-      continue
-    fi
-    sed -i '' "/^$var=/d" "$env_path"
-    echo "$var=$value" >> "$env_path"
-    chmod 600 "$env_path"
-    log_ok "$app/$var" "from op://$ref"
-  done
+  # NO 1PASSWORD SECRET IS WRITTEN INTO A LOCAL .env ANY MORE. Until 2026-10-06
+  # an op_secrets table here re-fetched SOLANA_ADMIN_KEY from
+  # studio-agents/solana.turf.admin (BLSBw8fX…) into turf-monster/.env on every
+  # run. That key holds a seat on the MAINNET Squads multisig (the program's
+  # upgrade authority), so it is a mainnet-signing key, and SOLANA_ADMIN_KEY is
+  # first on the production-only deny list (DevSecretKey::PRODUCTION_ONLY_KEYS).
+  # It was not even the key local dev signs with: it is not in the devnet
+  # VaultState signer set, so every admin instruction it signed failed
+  # Unauthorized. Local turf has no devnet-only signer of its own until one is
+  # seated on the devnet VaultState (turf-monster docs/qa-signing-key-rotation.md,
+  # "What this ceremony does not fix"). The QA rehearsal reads its keys from
+  # 1Password directly (lib/turf_monster/qa_rehearsal/key_store.rb), not from .env.
 }
 
 # ─── Phase 5: Sibling repos ─────────────────────────────────────────────────

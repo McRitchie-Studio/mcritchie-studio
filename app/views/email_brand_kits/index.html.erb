@@ -1,0 +1,42 @@
+<%# EMAIL BRAND KITS: one card per kit in config/email_brand_kits.yml, with its
+    lead reference, palette and counts. Admin only (EmailBrandKitsController). %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold">Brand kits</span>
+  </nav>
+
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-heading">Brand kits</h1>
+    <p class="text-sm text-secondary">What each brand's email headers are made from. Open a kit before a round and add references there.</p>
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-test="brand-kits">
+    <% @kits.each do |kit| %>
+      <% lead = kit.base_references.first %>
+      <%= link_to email_brand_kit_path(kit.key), class: "card p-4 space-y-3 block hover:border-primary min-w-0",
+                  data: { test: "brand-kit-card", kit: kit.key } do %>
+        <div class="aspect-[2/1] rounded-lg bg-surface-alt border border-subtle flex items-center justify-center overflow-hidden">
+          <% if lead %>
+            <img src="<%= lead.display_url %>" alt="<%= kit.label %> <%= lead.role %>" class="max-h-full max-w-full object-contain" loading="lazy">
+          <% end %>
+        </div>
+        <div class="min-w-0">
+          <h2 class="text-sm font-bold text-heading truncate"><%= kit.label %></h2>
+          <p class="text-3xs text-muted font-mono truncate"><%= kit.key %></p>
+        </div>
+        <div class="flex h-4 rounded overflow-hidden border border-subtle" aria-hidden="true">
+          <% kit.palette.each_value do |hex| %>
+            <span class="flex-1" style="background-color: <%= hex %>"></span>
+          <% end %>
+        </div>
+        <p class="text-3xs text-muted">
+          <%= pluralize(kit.base_references.size + @upload_counts.fetch(kit.key, 0), "reference") %> &middot;
+          <%= @approved_counts.fetch(kit.key, 0) %> approved &middot;
+          <%= pluralize(@open_counts.fetch(kit.key, 0), "open brief") %>
+        </p>
+      <% end %>
+    <% end %>
+  </div>
+</div>

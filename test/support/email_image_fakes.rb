@@ -56,6 +56,33 @@ module EmailImageFakes
     end
   end
 
+  # A tiny real PNG (the E2E placeholder's shape), for upload tests.
+  def self.small_png
+    @small_png ||= begin
+      image = MiniMagick::Image.open(Rails.root.join("public/email_brand/turf-monster-style-anchor.jpg"))
+      image.resize("48x32!")
+      image.format("png")
+      image.to_blob
+    end
+  end
+
+  # An uploaded reference row, without the upload: the kit-merge and
+  # selection tests only need the row.
+  def brand_reference(**attrs)
+    EmailBrandReference.create!({ brand_kit: "turf-monster", role: "mascot", label: "Gator, arms raised",
+                                  image_url: "https://assets.example.test/email_brand/turf-monster/refs/a.png",
+                                  content_type: "image/png", byte_size: 1_000 }.merge(attrs))
+  end
+
+  # An uploaded file the way a multipart request hands it to the controller.
+  def uploaded(bytes, name:, type: "image/png")
+    file = Tempfile.new(["upload", File.extname(name)])
+    file.binmode
+    file.write(bytes)
+    file.rewind
+    Rack::Test::UploadedFile.new(file.path, type, true, original_filename: name)
+  end
+
   def turf_brief(**attrs)
     EmailImageBrief.create!({ app: "turf-monster", email_key: "drop_signup_confirmation", variant: "new_player",
                               brand_kit: "turf-monster", headline: "You're In!" }.merge(attrs))

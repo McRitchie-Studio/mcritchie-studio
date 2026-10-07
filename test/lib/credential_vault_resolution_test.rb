@@ -133,46 +133,37 @@ class CredentialVaultResolutionTest < Minitest::Test
     end
   end
 
-  # THE LITERAL THE op:// SCAN CANNOT SEE. bin/ecosystem-build keeps its
-  # 1Password-only secrets in a `vault/item/field` table and only later builds
-  # `op read "op://$ref"` — so the vault name lives in a data string with no
+  # THE LITERAL THE op:// SCAN CANNOT SEE. bin/ecosystem-build kept its
+  # 1Password-only secrets in a `vault/item/field` table and only later built
+  # `op read "op://$ref"` — so the vault name lived in a data string with no
   # `op://` and no `--vault` anywhere near it. It read `agents/agent.alex.solana`
   # until 2026-08-29 and was verified BROKEN against the real service account that
-  # day, while every scheme-shaped scan reported the file clean. Measured: mutating
-  # it back killed nothing until this test existed.
-  def test_the_bringup_secret_map_resolves_its_vault_from_the_override
+  # day, while every scheme-shaped scan reported the file clean.
+  #
+  # The table's one entry wrote SOLANA_ADMIN_KEY (a mainnet Squads seat) into the
+  # turf .env, and it was RETIRED on 2026-10-06 (local-envs-drop-mainnet-keys):
+  # SOLANA_ADMIN_KEY heads the production-only deny list. So the guard now has
+  # two halves. If a table comes back, every ref must still resolve its vault
+  # through an MCR_OP_VAULT_* override, AND it may never carry a deny-listed key.
+  def test_the_bringup_secret_map_resolves_its_vault_and_writes_no_production_only_key
+    require_relative "../../bin/lib/dev_secret_key"
     body = File.read(File.join(ROOT, "bin/ecosystem-build"))
     block = body[/local op_secrets=\(\n(.*?)\n\s*\)/m, 1]
 
-    assert block, "bin/ecosystem-build must still declare its 1Password-only secrets as op_secrets=(...)"
+    unless block
+      refute_match(/^[^#\n]*op read "op:\/\/\$ref"/, body,
+                   "an op:// read of a table ref with no op_secrets=(...) table is a map this guard cannot see")
+      return
+    end
 
     entries = block.each_line.map(&:strip).reject { |l| l.empty? || l.start_with?("#") }
-
     refute_empty entries, "an empty map would pass this test vacuously"
     entries.each do |entry|
-      ref = entry.delete('"').split("|")[2].to_s
-      vault = ref.split("/").first.to_s
+      _app, var, ref = entry.delete('"').split("|")
+      refute_includes DevSecretKey::PRODUCTION_ONLY_KEYS, var,
+                      "op_secrets may not write a production-only key into a local .env"
+      vault = ref.to_s.split("/").first.to_s
 
-      # THE FORM, NOT A BLESSED SPELLING — which is what the sibling guard above
-      # already asks of every script, and what this one meant all along. It used
-      # to demand the AGENT override literally, and that was fine only while
-      # every bringup secret lived in one vault.
-      #
-      # SOLANA_ADMIN_KEY spent one day breaking that assumption: on 2026-09-15
-      # the Xan key moved to the ADMIN vault, and demanding the agent override
-      # would have forced the map to lie about where the item was. Later the
-      # same day the turf keys were refiled agent-readable and the map went back
-      # to the agent vault, so every entry names it again TODAY. The loosened
-      # check stays anyway — it was correct on the day it was needed, and
-      # re-tightening it to one blessed vault would re-create exactly the bind
-      # that made it necessary. Asking for the form costs nothing and survives
-      # the next move.
-      #
-      # Two shapes pass, and a bare literal still fails either way:
-      #   ${MCR_OP_VAULT_<NAME>:-default}/...   — resolved inline
-      #   $var/...                              — resolved by a binding above,
-      #                                           which must itself come from an
-      #                                           MCR_OP_VAULT_* override
       if (m = vault.match(/\A\$([A-Za-z_][A-Za-z0-9_]*)\z/))
         binding_line = /(?:local\s+)?#{Regexp.escape(m[1])}="\$\{MCR_OP_VAULT_[A-Z_]+:-[^}]+\}"/
         assert_match binding_line, body,
