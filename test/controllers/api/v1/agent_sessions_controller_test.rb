@@ -26,6 +26,16 @@ module Api
 
       def error = JSON.parse(response.body)["error"]
 
+      def capture_log
+        io = StringIO.new
+        original = Rails.logger
+        Rails.logger = ActiveSupport::Logger.new(io)
+        yield
+        io.string
+      ensure
+        Rails.logger = original
+      end
+
       test "a studio login at the claim mints a scoped session token" do
         assert_difference -> { AgentSession.count }, 1 do
           login(harness_session_id: "harness-1")
@@ -73,6 +83,43 @@ module Api
 
         assert_response :forbidden
         assert_match(/needs an admin session; pokemon holds a studio session/, error)
+      end
+
+      # Carl's gap on phase one: the refusal above must not catch the shared token. A
+      # legacy bearer carries no session, so an admin-only release endpoint still
+      # serves it for the one release it stays accepted.
+      test "the shared token still reaches an admin-only release endpoint" do
+        release = Release.open!
+        path = "/api/v1/releases/#{release.slug}/events/ship_gate/start"
+
+        assert_difference -> { ReleaseEvent.count }, 1 do
+          post path, params: { event: { actor: "avi" } }, headers: @legacy, as: :json
+        end
+        assert_response :created
+        assert_equal "avi", release.release_events.last.actor
+
+        # The control: the same call with a studio session is refused.
+        session = AgentSession.issue_studio!(soul: "pokemon", task: @task, issued_by: "task_claim")
+        assert_no_difference -> { ReleaseEvent.count } do
+          post path, params: { event: { actor: "avi" } }, headers: bearer(session), as: :json
+        end
+        assert_response :forbidden
+      end
+
+      # A desk that dropped its session falls back to the shared token and names the
+      # dropped slug (bin/lib/desk_session.rb), so the legacy log line points at the desk.
+      test "a legacy-token log line names the dropped desk session, and ignores a header that is not a slug" do
+        lines = capture_log do
+          checkpoint(@task, @legacy.merge("X-Agent-Session-Dropped" => "sess-0123abcd"))
+          checkpoint(@task, @legacy)
+          checkpoint(@task, @legacy.merge("X-Agent-Session-Dropped" => "x\n[agent-auth] forged"))
+        end.lines.grep(/\[agent-auth\] legacy/)
+
+        assert_equal 3, lines.size, lines.inspect
+        assert_includes lines[0], "(dropped desk session sess-0123abcd)"
+        refute_includes lines[1], "dropped desk session"
+        refute_includes lines[2], "dropped desk session"
+        refute_includes lines[2], "forged"
       end
 
       test "an admin session is unscoped: it writes any task" do

@@ -44,7 +44,20 @@ module Api
                               status: :unauthorized, error_code: "UNAUTHORIZED")
         end
 
-        Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}")
+        Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}" \
+                          "#{dropped_session_note}")
+      end
+
+      # A desk whose agent session was dropped (or expired) falls back to the shared
+      # token and names the dropped session's slug in this header (bin/lib/desk_session.rb),
+      # so the legacy log line still points at the desk. Client-asserted and used for the
+      # log only, so anything that is not a plain slug is ignored.
+      DROPPED_SESSION_HEADER = "X-Agent-Session-Dropped"
+      DROPPED_SESSION_SLUG = /\A[a-z0-9][a-z0-9-]{0,63}\z/
+
+      def dropped_session_note
+        slug = request.headers[DROPPED_SESSION_HEADER].to_s.strip
+        slug.match?(DROPPED_SESSION_SLUG) ? " (dropped desk session #{slug})" : ""
       end
 
       def authenticate_agent_session!(token)
