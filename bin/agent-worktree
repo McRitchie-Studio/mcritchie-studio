@@ -61,6 +61,9 @@ require_relative "lib/projects_root"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/dev_secret_key"
 require_relative "lib/agent_worktree_cli"
+# Which repos are gems (config/release_repos.yml `gems:`): the desk lane that cuts a
+# desk with no port, Redis slot or database. See gem_desk_config.
+require_relative "lib/release_registry"
 # The SESSION half of the context marker, and the reverse lookup it enables. The
 # marker knew the task and not the session; the session record knows the session
 # and stops recording the task the moment it moves to a desk. Neither could say
@@ -419,9 +422,98 @@ end
 def app_for(name)
   slug = ALIASES.fetch(name, name)
   config = apps[slug]
+  abort gem_lane_refusal(slug) if config.nil? && gem_desk_config(slug)
   abort "unknown app: #{name}\nRun: bin/agent-worktree apps" unless config
   abort "repo missing: #{config.fetch("repo")}" unless Dir.exist?(config.fetch("repo"))
   config
+end
+
+# THE GEM DESK LANE (gem-repos-get-desks). studio-engine and solana-studio are not
+# apps: no port block, no Redis slot, no database, no server. So `new` refused them
+# as "unknown app" and engine builders cut their desks by hand with `git worktree
+# add`, which skipped the identity stamp, the context marker and the task binding.
+#
+# A gem is whatever config/release_repos.yml files under `gems:` (ReleaseRegistry),
+# never a list of slugs here: that file already decides how a gem ships and which
+# command is its suite, so the desk lane follows the same declaration. turf-vault is
+# an `apps` row there and not a gem, so it keeps the hand-cut remedy.
+#
+# The config carries the key set a registered app's config carries (a caller that
+# uses app.fetch must not hit a KeyError), with the stack inert and "lane" => "gem"
+# as the one field that tells new/bind-task to skip the port, Redis and database
+# steps. "status" stays out of "discovered" on purpose: the sweep's reclaim hold
+# reads that value, and this lane changes nothing about how a sweep treats a desk.
+def gem_desk_config(name)
+  slug = ALIASES.fetch(name, name)
+  return nil if apps.key?(slug) || !ReleaseRegistry.gem_repo?(slug)
+
+  {
+    "slug" => slug,
+    "display_name" => slug,
+    "repo" => File.join(PROJECTS_DIR, slug),
+    "lane" => "gem",
+    "stack" => STACKLESS_STACK,
+    "status" => "gem",
+    "sidekiq" => false,
+    "ruby_path" => nil,
+    "primary_port" => nil,
+    "range_start" => nil,
+    "range_end" => nil,
+    "session_env" => "#{slug.tr("-", "_").upcase}_SESSION_KEY",
+    "session_key" => "_#{slug.tr("-", "_")}_session",
+    "reserved_ports" => []
+  }
+end
+
+def gem_desk?(app)
+  app.is_a?(Hash) && app["lane"] == "gem"
+end
+
+# The resolver for the commands that cut or bind a desk (`new`, `bind-task`): a
+# registered app as before, or a gem repo. Every other lifecycle command stays on
+# app_for, which names the gem lane when it refuses one.
+def desk_app_for(name)
+  config = gem_desk_config(name)
+  return app_for(name) unless config
+
+  abort "repo missing: #{config.fetch("repo")}" unless Dir.exist?(config.fetch("repo"))
+  config
+end
+
+# What app_for says to a gem repo: not "unknown app" (that sent builders to cut desks
+# by hand), but which commands DO apply and how to run the gem's own suite.
+def gem_lane_refusal(slug)
+  suite = ReleaseRegistry.release_check_cmd(slug) || "bundle exec rake test"
+  <<~MSG.chomp
+    #{slug} is a gem repo: its desk has no port, server or database, so this command does not apply to it.
+    Cut or re-bind its desk: #{AGENT_WORKTREE_CMD} new #{slug} <task-slug>   (bin/task begin --repo #{slug} does this for you)
+    Run its suite in the desk: #{suite}
+  MSG
+end
+
+# A gem desk's stack env: the task binding and nothing allocated. No APP_PORT, no
+# REDIS_URL, no DATABASE_URL, so nothing in the port or Redis allocators counts it
+# and write_dev_env_local writes no database pointer.
+def gem_stack_values(app, task)
+  {
+    "AGENT_WORKTREE" => "1",
+    "APP_SLUG" => app.fetch("slug"),
+    "TASK_SLUG" => task,
+    "TASK_RECORD_SLUG" => ENV.fetch("TASK_RECORD_SLUG", ""),
+    "TASK_URL" => ENV.fetch("TASK_URL", "")
+  }
+end
+
+def print_gem_plan(app, task, values, dir = worktree_dir(app, task))
+  suite = ReleaseRegistry.release_check_cmd(app.fetch("slug")) || "bundle exec rake test"
+  puts "app:      #{app.fetch("display_name", app.fetch("slug"))} (gem)"
+  puts "repo:     #{app.fetch("repo")}"
+  puts "task:     #{task_line_value(task_url(values))}"
+  puts "worktree: #{dir}"
+  puts "branch:   #{git_branch(dir)} off origin/#{base_branch_for(app.fetch("repo"))}"
+  puts "port:     none (a gem desk runs no server)"
+  puts "db:       none provisioned (a gem suite needs no desk database)"
+  puts "test:     #{suite}   (run in the worktree)"
 end
 
 # app_for, widened to the repos the SWEEP can see.
@@ -1004,14 +1096,15 @@ end
 # "unknown app" for every one of them. The docs send gem-lane builders to `identity`, so
 # the one remedy printed there was the one guaranteed to fail.
 #
-# The lane is read off the same registry lookup `new` uses, not a list of gem slugs: a
-# repo `new` can resolve keeps `new` (it also allocates the port and stack an app desk
-# needs), and any other repo gets the plain `git worktree add` that cuts the desk at the
-# path identity resolves, the sibling tree included, then the identity re-run.
+# The lane is read off the same lookups `new` uses, not a list of gem slugs: a repo
+# `new` can resolve keeps `new` (a registered app, which it also gives a port and a
+# stack, or a gem repo since gem-repos-get-desks), and any other repo (turf-vault)
+# gets the plain `git worktree add` that cuts the desk at the path identity
+# resolves, the sibling tree included, then the identity re-run.
 def missing_desk_remedy(app, task, soul)
   script = File.join(__dir__, "agent-worktree")
   slug = app.fetch("slug")
-  return "Run: #{script} new #{slug} #{task} --soul #{soul}" if apps.key?(slug)
+  return "Run: #{script} new #{slug} #{task} --soul #{soul}" if apps.key?(slug) || gem_desk_config(slug)
 
   <<~REMEDY.chomp
     `new` cannot cut this desk: #{slug} is not a registered app, so it answers "unknown app". Cut it with git, then re-run identity:
@@ -1702,6 +1795,12 @@ def parse_task_reference(value)
 end
 
 def ensure_context_file_excluded(dir)
+  ensure_desk_file_excluded(dir, CONTEXT_FILE, "Local agent session context; generated by bin/agent-worktree.")
+end
+
+# Add one generated file name to the repo's info/exclude (shared by every worktree of
+# the repo), once. Best-effort: a checkout git cannot describe is left as it is.
+def ensure_desk_file_excluded(dir, name, comment)
   ok, out, = capture_status("git", "rev-parse", "--git-path", "info/exclude", chdir: dir)
   return unless ok
 
@@ -1710,12 +1809,12 @@ def ensure_context_file_excluded(dir)
 
   FileUtils.mkdir_p(File.dirname(exclude_path))
   existing = File.exist?(exclude_path) ? File.read(exclude_path) : ""
-  return if existing.lines.map(&:strip).include?(CONTEXT_FILE)
+  return if existing.lines.map(&:strip).include?(name)
 
   File.open(exclude_path, "a") do |file|
     file.puts
-    file.puts "# Local agent session context; generated by bin/agent-worktree."
-    file.puts CONTEXT_FILE
+    file.puts "# #{comment}"
+    file.puts name
   end
 end
 
@@ -5780,14 +5879,18 @@ if $PROGRAM_NAME == __FILE__
     soul = take_soul_flag!(ARGV)
     app_name, raw_task, maybe_type, *rest = ARGV
     usage unless app_name && raw_task
-    app = app_for(app_name)
+    # desk_app_for, not app_for: a gem repo (studio-engine, solana-studio) gets a desk
+    # here too, with no port, Redis slot or database. See gem_desk_config.
+    app = desk_app_for(app_name)
+    gem = gem_desk?(app)
     task = clean_slug(raw_task)
     type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
     start = ARGV.include?("--start")
 
     # Refuse before the FIRST side effect, so the failure we know is coming never
-    # creates anything to unwind. Skipped for an already-provisioned desk (a resume).
-    preflight_capacity!(app, task)
+    # creates anything to unwind. Skipped for an already-provisioned desk (a resume),
+    # and for a gem desk, which takes no Redis slot.
+    preflight_capacity!(app, task) unless gem
 
     # SIGINT (Ctrl-C) already raises Interrupt, which the rescue below unwinds — but
     # SIGTERM and SIGHUP do NOT. Their default disposition kills the process outright
@@ -5816,9 +5919,17 @@ if $PROGRAM_NAME == __FILE__
 
       env_pre_existing = File.exist?(stack_env_path(app, task))
       capacity_before = load_current_capacity
+      # A gem repo's .gitignore does not cover the stack env the way an app's `/.env*`
+      # does, and bin/submit stages the whole tree, so the env is excluded before it
+      # is written. One line in the repo's shared info/exclude; never unwound.
+      ensure_desk_file_excluded(dir, STACK_ENV, "Desk stack env; generated by bin/agent-worktree.") if gem
       values, path = with_worktree_lock do
         existing = parse_env(stack_env_path(app, task))
-        resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
+        resolved = if gem
+                     existing.empty? ? gem_stack_values(app, task) : existing
+                   else
+                     existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
+                   end
         [resolved, write_stack_env(app, task, resolved)]
       end
       # allocate_redis_db GROWS the persisted band (restart-free) when the current one
@@ -5873,6 +5984,15 @@ if $PROGRAM_NAME == __FILE__
     # a desk that is otherwise whole. Runs on a resume too, which is what lets
     # `bin/task begin <slug> --agent <soul> --steal` re-point an existing desk.
     report_desk_identity(app, task, dir, soul)
+    if gem
+      # A gem desk stops here: no test database to provision, no assets to build and
+      # no server for --start to boot. Its suite is the registry's release_check.
+      record_ignored_baseline(dir) if cut_here
+      puts
+      print_gem_plan(app, task, values, dir)
+      warn "agent-worktree: --start ignored; a gem desk runs no server." if start
+      exit 0
+    end
     # Provision the isolated TEST DB, write .env.test.local, and BUILD the bundled
     # assets now, so a fresh worktree runs `bin/rails test` — and bin/fast-check, whose
     # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
@@ -5904,7 +6024,8 @@ if $PROGRAM_NAME == __FILE__
   when "bind-task"
     app_name, raw_task, reference = ARGV
     usage unless app_name && raw_task && reference
-    app = app_for(app_name)
+    # desk_app_for: bin/task begin binds a gem desk right after `new` cuts it.
+    app = desk_app_for(app_name)
     task = clean_slug(raw_task)
     run_bind_task(app, task, reference)
   when "identity"

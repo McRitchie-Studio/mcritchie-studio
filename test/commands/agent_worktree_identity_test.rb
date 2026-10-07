@@ -92,27 +92,29 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
     assert_includes err, "bin/agent-worktree identity mcritchie-studio #{TASK} <soul>"
   end
 
-  # identity-hint-for-gem-desks. `identity` reaches a gem-lane repo (it resolves through
-  # sweep_app_for), but a MISSING desk there was told to run `new`, which answers
-  # "unknown app" for studio-engine, solana-studio and turf-vault. The remedy printed
-  # must be one that runs: this test pastes it, then re-runs identity on the desk it cut.
-  test "[integration] a missing gem-lane desk names git worktree add, and pasting it lets identity stamp" do
-    gem_repo = init_gem_repo("studio-engine")
+  # identity-hint-for-gem-desks. `identity` reaches a repo the registry does not list (it
+  # resolves through sweep_app_for), but a MISSING desk there was told to run `new`, which
+  # answered "unknown app". Since gem-repos-get-desks `new` cuts studio-engine and
+  # solana-studio desks (agent_worktree_gem_desk_test.rb); turf-vault is no gem, so its
+  # remedy is still the hand cut. It must be one that runs: this test pastes it, then
+  # re-runs identity on the desk it cut.
+  test "[integration] a missing non-gem desk names git worktree add, and pasting it lets identity stamp" do
+    gem_repo = init_gem_repo("turf-vault")
     missing = File.join(gem_repo, ".worktrees", GEM_TASK)
 
-    out, err, status = agent_worktree("identity", "studio-engine", GEM_TASK, "carl", env: scratch_git_env)
+    out, err, status = agent_worktree("identity", "turf-vault", GEM_TASK, "carl", env: scratch_git_env)
 
     refute status.success?, "a missing desk must exit non-zero:\n#{out}"
     assert_includes err, "missing worktree: #{missing}"
     remedy = err.lines.map(&:strip).find { |line| line.start_with?("git -C ") }
     assert_equal "git -C #{gem_repo} worktree add #{missing} -b feat/#{GEM_TASK} origin/accepted", remedy,
                  "a gem-lane desk is cut with git, at the path identity resolves:\n#{err}"
-    refute_includes err, "agent-worktree new studio-engine", "`new` answers unknown app for a gem lane"
-    assert_includes err, "agent-worktree identity studio-engine #{GEM_TASK} carl"
+    refute_includes err, "agent-worktree new turf-vault", "`new` answers unknown app for a repo that is not an app or a gem"
+    assert_includes err, "agent-worktree identity turf-vault #{GEM_TASK} carl"
 
     # Pasted as printed (`-C` and all), from a directory that is not itself a repo.
     git_out(@projects_dir, *Shellwords.split(remedy).drop(1), env: scratch_git_env)
-    out, err, status = agent_worktree("identity", "studio-engine", GEM_TASK, "carl", env: scratch_git_env)
+    out, err, status = agent_worktree("identity", "turf-vault", GEM_TASK, "carl", env: scratch_git_env)
 
     assert status.success?, "the pasted remedy must leave a desk identity can stamp:\n#{out}\n#{err}"
     assert_equal "Carl <carl@mcritchie.studio>", author_ident(missing, env: scratch_git_env)
