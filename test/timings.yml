@@ -177,7 +177,6 @@ test/docs/task_dependencies_writer_docs_test.rb: 0.09
 test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb: 0.23
 test/docs/token_session_mechanism_claims_test.rb: 0.09
 test/docs/zap_cert_freshness_docs_test.rb: 2.31
-test/docs/zap_throwaway_artifacts_docs_test.rb: 0.06
 test/helpers/appearances_helper_test.rb: 0.26
 test/helpers/application_helper_test.rb: 3.94
 test/helpers/contents_helper_test.rb: 0.01

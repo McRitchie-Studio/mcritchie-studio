@@ -261,7 +261,9 @@ git worktree add "$MUT" --detach <pr-head> &&
   git leaves a `vanished` ghost on the Desks panel. One already cut there comes down with
   `bin/agent-worktree remove <app> <name> --yes`.
 - **`bin/rails test:prepare` builds the gitignored assets**; without it a mutant reads as
-  caught when the tree only lacks `tailwind.css`.
+  caught when the tree only lacks `tailwind.css`. It is the same call
+  `bin/agent-worktree#prepare_test_env` makes for a real desk, and
+  `test/lib/tasks/test_prepare_asset_hook_test.rb` pins the hook that makes it build.
 
 One mutator on an idle desk: the throwaway above. Two mutators, or a busy desk: a real desk
 each (`bin/agent-worktree new <app> <slug>`), since copies of one `.env.test.local` share a DB.
