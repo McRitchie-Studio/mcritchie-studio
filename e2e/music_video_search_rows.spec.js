@@ -77,13 +77,15 @@ test("operator finds a look-less athlete in Replace with and is offered a first 
   await expect(recast(page).locator("[data-test='recast-pending']")).toContainText("No look saved");
   await expect(recast(page).locator("[data-test='look-trigger']")).toHaveText("Choose a look");
   await recast(page).locator("[data-test='look-trigger']").click();
-  await recast(page).locator("[data-test='look-option']").filter({ hasText: "Training Grey" }).click();
+  // The look and its iced twin are both listed; pick the look itself.
+  await expect(recast(page).locator("[data-test='look-option-name']")).toHaveText(["Training Grey", "Training Grey · iced"]);
+  await recast(page).locator("[data-test='look-option']").first().click();
   await expect(recast(page)).toHaveAttribute("data-state", "recast");
   await expect(recast(page).locator("[data-test='recast-pending']")).toBeHidden();
   await expect(recast(page).locator("[data-test='look-preview-label']")).toHaveText("Test Rookie Bravo > Training Grey");
   // The search beside the chosen athlete still finds him, with his look now; Escape leaves him chosen.
   await search(page).fill("rookie");
-  await expect(row(swapList(page), "Test Rookie Bravo").locator("[data-test='search-row-badge']")).toHaveText("1 look");
+  await expect(row(swapList(page), "Test Rookie Bravo").locator("[data-test='search-row-badge']")).toHaveText("2 looks");
   await search(page).press("Escape");
   await expect(recast(page).locator("[data-test='recast-results']")).toBeHidden();
   await expect(recast(page).locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
