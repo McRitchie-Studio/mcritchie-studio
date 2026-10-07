@@ -32,6 +32,15 @@ module Api
         { "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth, expires_in: 1.hour)}" }
       end
 
+      # The shared secret's token: a valid bearer that carries no session.
+      def shared_headers = auth_headers
+
+      def session_headers(session) = { "Authorization" => "Bearer #{session.token}" }
+
+      def admin_headers
+        session_headers(AgentSession.create!(soul: "xan", tier: "admin", issued_by: "operator_grant"))
+      end
+
       def data = JSON.parse(response.body).fetch("data")
 
       def path(clip = @clip) = api_v1_alt_video_clip_tiktok_drafts_path(clip.slug)
@@ -58,7 +67,7 @@ module Api
       end
 
       test "a draft records the attempt, uploads to the inbox and records TikTok's publish id" do
-        assert_enqueued_jobs(1, only: TiktokDraftJob) { post path, headers: auth_headers, as: :json }
+        assert_enqueued_jobs(1, only: TiktokDraftJob) { post path, headers: admin_headers, as: :json }
 
         assert_response :created
         assert_equal ["queued", 1, "bin/tiktok-draft"], data.values_at("state", "version_number", "requested_by")
@@ -72,7 +81,7 @@ module Api
       end
 
       test "a clip that cannot be drafted answers 409 with the reason" do
-        post path(@alt.clips.second), headers: auth_headers, as: :json
+        post path(@alt.clips.second), headers: admin_headers, as: :json
 
         assert_response :conflict
         body = JSON.parse(response.body)
@@ -108,6 +117,106 @@ module Api
         post path, as: :json
         assert_response :unauthorized
         assert_equal 0, TiktokDraft.count
+      end
+
+      # ── Hardening (piece 22) ─────────────────────────────────────────────────
+
+      def refused_for_want_of_an_admin_session
+        assert_response :forbidden
+        body = JSON.parse(response.body)
+        assert_equal "SESSION_FORBIDDEN", body["error_code"]
+        assert_match(/needs an admin session/, body["error"])
+        assert_match(/agent_sessions:grant_admin/, body["error"], "the refusal says how to get one")
+        assert_match(/AGENT_ADMIN_SESSION_TOKEN/, body["error"], "and where bin/tiktok-draft reads it")
+        assert_equal 0, TiktokDraft.count
+        body
+      end
+
+      test "the shared token, which carries no session, cannot create a draft" do
+        assert_no_enqueued_jobs { post path, headers: shared_headers, as: :json }
+
+        assert_match(/the shared token carries no session/, refused_for_want_of_an_admin_session["error"])
+      end
+
+      test "an agent bearer without an admin session is refused on draft create" do
+        task = Task.create!(title: "Synthetic Build", slug: "synthetic-build", stage: "building",
+                            metadata: { "devops" => { "built_by" => "pokemon" } })
+        studio = AgentSession.issue_studio!(soul: "pokemon", task:, issued_by: "task_claim")
+        assert_no_enqueued_jobs { post path, headers: session_headers(studio), as: :json }
+
+        assert_match(/pokemon holds a studio session/, refused_for_want_of_an_admin_session["error"])
+      end
+
+      test "an admin session creates the draft; a revoked one is a 401" do
+        session = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
+        assert_enqueued_jobs(1, only: TiktokDraftJob) { post path, headers: session_headers(session), as: :json }
+        assert_response :created
+
+        TiktokDraft.update_all(state: "failed")
+        session.revoke!(by: "test")
+        assert_no_enqueued_jobs { post path, headers: session_headers(session), as: :json }
+        assert_response :unauthorized
+        assert_equal 1, TiktokDraft.count
+      end
+
+      test "reading stays open to the shared token: the index, a dry run and a refresh" do
+        get path, headers: shared_headers
+        assert_response :success
+
+        post path, params: { dry_run: true }, headers: shared_headers, as: :json
+        assert_response :success
+        assert_equal true, data["dry_run"]
+
+        draft = TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k", caption: "c", state: "unknown", publish_id: "p1")
+        post refresh_api_v1_tiktok_draft_path(draft), headers: shared_headers, as: :json
+        assert_response :success
+        assert_equal "delivered", data["state"]
+      end
+
+      test "dry_run spelled any way but true is a real draft, and needs the admin session" do
+        %w[false 0 no].each do |spelling|
+          post path, params: { dry_run: spelling }, headers: shared_headers, as: :json
+          refused_for_want_of_an_admin_session
+        end
+      end
+
+      [OpenSSL::SSL::SSLError.new("SSL_connect returned=1"), EOFError.new("end of file reached"), Net::OpenTimeout.new].each do |boom|
+        test "ESPN down with #{boom.class} answers 409, not a 500, and records nothing" do
+          Tiktok::DraftClip.fetch = ->(_url) { raise boom }
+          assert_no_enqueued_jobs { post path, headers: admin_headers, as: :json }
+
+          assert_response :conflict
+          body = JSON.parse(response.body)
+          assert_equal "NOT_DRAFTABLE", body["error_code"]
+          assert_match(/could not read ESPN/, body["error"])
+          assert_equal 0, TiktokDraft.count
+
+          post path, params: { dry_run: true }, headers: shared_headers, as: :json
+          assert_response :conflict
+
+          get path, headers: shared_headers
+          assert_response :success
+          assert_match(/could not read ESPN/, data.dig("preview", "refused"))
+        end
+      end
+
+      test "a second request that lands while the first reads ESPN answers 409 and leaves one draft" do
+        espn = TiktokDraftFakes.espn
+        landed = false
+        Tiktok::DraftClip.fetch = lambda do |url|
+          unless landed
+            landed = true
+            TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "the other request", state: "queued")
+          end
+          espn.call(url)
+        end
+        errors = ErrorLog.count
+        assert_no_enqueued_jobs { post path, headers: admin_headers, as: :json }
+
+        assert_response :conflict
+        assert_equal "NOT_DRAFTABLE", JSON.parse(response.body)["error_code"]
+        assert_equal ["the other request"], TiktokDraft.pluck(:caption)
+        assert_equal errors, ErrorLog.count, "a refusal is an answer, not an ErrorLog"
       end
     end
   end

@@ -130,4 +130,147 @@ class Tiktok::DraftClipTest < ActiveSupport::TestCase
     assert_equal 0, TiktokDraft.count
     assert_empty @uploader.uploads
   end
+
+  # ── Hardening (piece 22) ───────────────────────────────────────────────────
+
+  # ESPN that answers, then lets a second press land before the first records:
+  # the double press as one connection can express it.
+  def espn_with_a_press_landing_mid_read
+    espn = TiktokDraftFakes.espn
+    landed = false
+    lambda do |url|
+      unless landed
+        landed = true
+        TiktokDraft.create!(clip: @clip, version_number: 2, version_object_key: @v2.object_key, caption: "the other press", state: "queued")
+      end
+      espn.call(url)
+    end
+  end
+
+  test "a press that lands while this one reads ESPN is seen again under the lock: one draft" do
+    racing = Tiktok::DraftClip.new(uploader: @uploader, reader: @reader, fetch: espn_with_a_press_landing_mid_read, sleeper: ->(_) { })
+    error = with_available { assert_raises(Tiktok::DraftClip::Refused) { racing.request!(@clip.reload) } }
+
+    assert_match(/already queued \(attempt #{TiktokDraft.sole.id}\)/, error.message)
+    assert_equal ["the other press"], TiktokDraft.pluck(:caption)
+    assert_no_enqueued_jobs
+  end
+
+  # A clock that runs 30 s a read, so a poll that never settles runs out.
+  def ticking
+    clock = Time.current
+    -> { clock += 30 }
+  end
+
+  # TikTok that took every byte, then cannot be asked how it went.
+  class StatusBreaks < TiktokDraftFakes::Uploader
+    def initialize(error, times: Float::INFINITY, **opts)
+      super(**opts)
+      @error = error
+      @times = times
+    end
+
+    def status(publish_id)
+      if @times.positive?
+        @times -= 1
+        @status_reads += 1
+        raise @error
+      end
+      super
+    end
+  end
+
+  [OpenSSL::SSL::SSLError.new("SSL_read: unexpected eof"), EOFError.new("end of file reached"),
+   Net::ReadTimeout.new, NoMethodError.new("undefined method `[]' for nil")].each do |boom|
+    test "a #{boom.class} from the status poll after the upload finished never fails the attempt" do
+      broken = StatusBreaks.new(boom)
+      draft = with_available { service.request!(@clip.reload) }
+      service(uploader: broken, now: ticking).run(draft)
+      draft.reload
+
+      assert_equal 1, broken.uploads.size, "the bytes are with TikTok"
+      assert_equal "unknown", draft.state, "a finished upload is never marked failed by a poll error"
+      refute draft.failed?
+      assert_equal ["v_inbox_file~synthetic.1", "Uploaded, status unknown"], [draft.publish_id, draft.state_label]
+      assert draft.uploaded_at
+      assert_nil draft.finished_at
+      assert_match(/check your TikTok drafts/i, draft.error)
+      assert_includes draft.error, boom.class.name
+    end
+  end
+
+  test "an attempt uploaded with its status unknown blocks a second draft, and is never sent again" do
+    broken = StatusBreaks.new(EOFError.new("end of file reached"))
+    draft = with_available { service.request!(@clip.reload) }
+    service(uploader: broken, now: ticking).run(draft)
+
+    error = with_available { assert_raises(Tiktok::DraftClip::Refused) { service.request!(@clip.reload) } }
+    assert_match(/already uploaded, status unknown \(attempt #{draft.id}\)/, error.message)
+
+    service(uploader: broken).run(draft.reload) # a re-delivered job
+    assert_equal 1, broken.uploads.size
+    assert_equal 1, TiktokDraft.count
+  end
+
+  test "a poll that breaks once keeps reading inside its window and settles on TikTok's word" do
+    flaky = StatusBreaks.new(OpenSSL::SSL::SSLError.new("SSL_read"), times: 1)
+    draft = with_available { service.request!(@clip.reload) }
+    service(uploader: flaky).run(draft)
+
+    assert_equal ["delivered", "SEND_TO_USER_INBOX", nil], draft.reload.values_at(:state, :tiktok_status, :error)
+    assert_equal 2, flaky.status_reads
+  end
+
+  test "Check TikTok re-polls an attempt whose status is unknown and settles it" do
+    draft = with_available { service.request!(@clip.reload) }
+    service(uploader: StatusBreaks.new(EOFError.new("end of file reached")), now: ticking).run(draft)
+    assert_equal "unknown", draft.reload.state
+
+    service(uploader: TiktokDraftFakes::Uploader.new).refresh(draft)
+    assert_equal ["delivered", nil], draft.reload.values_at(:state, :error)
+    assert draft.finished_at
+  end
+
+  test "a record write that breaks after the upload finished leaves the attempt unknown, never failed" do
+    draft = with_available { service.request!(@clip.reload) }
+    writes = 0
+    # run writes the publish id when TikTok opens the upload (1), then the
+    # finished upload (2): that second write is the one that breaks.
+    flaky_write = lambda do |attrs|
+      writes += 1
+      raise ActiveRecord::ConnectionTimeoutError, "could not obtain a connection" if writes == 2
+
+      draft.assign_attributes(attrs)
+      draft.save!
+    end
+
+    draft.stub(:update!, flaky_write) { assert_raises(ActiveRecord::ConnectionTimeoutError) { service.run(draft) } }
+
+    assert_equal 1, @uploader.uploads.size, "the bytes are with TikTok"
+    assert_equal ["unknown", "v_inbox_file~synthetic.1"], draft.reload.values_at(:state, :publish_id)
+    assert_match(/check your TikTok drafts/i, draft.error)
+  end
+
+  test "an upload that breaks before every byte is sent still fails, so a retry is right" do
+    draft = with_available { service.request!(@clip.reload) }
+    reader = TiktokDraftFakes::Reader.new
+    reader.define_singleton_method(:read) { |*| raise EOFError, "end of file reached" }
+
+    assert_raises(EOFError) { Tiktok::DraftClip.new(uploader: @uploader, reader:, fetch: TiktokDraftFakes.espn, sleeper: ->(_) { }).run(draft) }
+    assert_equal "failed", draft.reload.state
+    assert_empty @uploader.uploads
+  end
+
+  [OpenSSL::SSL::SSLError.new("SSL_connect returned=1"), EOFError.new("end of file reached"), Net::OpenTimeout.new,
+   Net::ReadTimeout.new, Errno::ECONNRESET.new, SocketError.new("getaddrinfo")].each do |boom|
+    test "ESPN down with #{boom.class} is a refusal: nothing recorded, nothing queued" do
+      down = Tiktok::DraftClip.new(uploader: @uploader, reader: @reader, fetch: ->(_url) { raise boom }, sleeper: ->(_) { })
+      error = with_available { assert_raises(Tiktok::DraftClip::Refused) { down.request!(@clip.reload) } }
+
+      assert_match(/could not read ESPN/, error.message)
+      assert_includes error.message, boom.class.name
+      assert_equal 0, TiktokDraft.count
+      assert_no_enqueued_jobs
+    end
+  end
 end

@@ -143,4 +143,99 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     @alt.clips.each { |c| TiktokDraft.create!(clip: c, version_number: 1, version_object_key: "k", caption: "c", state: "failed") }
     assert_equal bare, count.call
   end
+
+  # ── Hardening (piece 22) ───────────────────────────────────────────────────
+
+  test "a POST with the TikTok keys absent is refused: nothing recorded, nothing queued" do
+    Tiktok::DraftClip.uploader = nil
+    log_in_as users(:alex)
+    assert_no_enqueued_jobs { draft! }
+
+    assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+    assert_match(/Clip 1 not drafted: the TikTok keys are not set on this server/, flash[:alert])
+    assert_equal 0, TiktokDraft.count
+  end
+
+  [OpenSSL::SSL::SSLError.new("SSL_connect returned=1"), EOFError.new("end of file reached"), Net::ReadTimeout.new].each do |boom|
+    test "ESPN down with #{boom.class} answers a flash on the card, not a 500, and records nothing" do
+      Tiktok::DraftClip.fetch = ->(_url) { raise boom }
+      log_in_as users(:alex)
+      assert_no_enqueued_jobs { draft! }
+
+      assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+      assert_match(/Clip 1 not drafted: could not read ESPN/, flash[:alert])
+      assert_equal 0, TiktokDraft.count
+      assert_equal 0, ErrorLog.where("message LIKE ?", "%ESPN%").count, "a refusal is an answer, not an ErrorLog"
+    end
+  end
+
+  test "a second press that lands while the first reads ESPN leaves one draft and logs no error" do
+    espn = TiktokDraftFakes.espn
+    landed = false
+    Tiktok::DraftClip.fetch = lambda do |url|
+      unless landed
+        landed = true
+        TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "the other press", state: "queued")
+      end
+      espn.call(url)
+    end
+    log_in_as users(:alex)
+    errors = ErrorLog.count
+    assert_no_enqueued_jobs { draft! }
+
+    assert_equal ["the other press"], TiktokDraft.pluck(:caption)
+    assert_match(/Clip 1 not drafted: a draft of #{@clip.slug} is already queued/, flash[:alert])
+    assert_equal errors, ErrorLog.count, "a refusal is an answer, not an ErrorLog"
+  end
+
+  test "the button turns itself off on submit, and stays off for a clip it was off for" do
+    log_in_as users(:alex)
+    page
+
+    assert_select "#{card(1)} form[data-test='clip-tiktok-draft'][x-data*='blocked: false'][x-on\\:submit]" do
+      assert_select "button[x-bind\\:disabled='sending || blocked']:not([disabled])"
+      assert_select "button [x-text]", "Draft to TikTok"
+    end
+    assert_select "#{card(2)} form[data-test='clip-tiktok-draft'][x-data*='blocked: true']" do
+      assert_select "button[x-bind\\:disabled='sending || blocked'][disabled]"
+    end
+  end
+
+  test "an attempt uploaded with its status unknown says to check TikTok and offers the re-poll, never Failed" do
+    draft = TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "Bills 3-2", state: "unknown",
+                                publish_id: "v_inbox_file~p", uploaded_at: 1.minute.ago,
+                                error: "The upload reached TikTok, but its status could not be read (EOFError). Check your TikTok drafts.")
+    log_in_as users(:alex)
+    page
+
+    assert_select "#{card(1)} [data-test='clip-tiktok-latest'][data-state='unknown']" do
+      assert_select "[data-test='clip-tiktok-state']", "Uploaded, status unknown"
+      assert_select "[data-test='clip-tiktok-error']", /Check your TikTok drafts/
+      assert_select "[data-test='clip-tiktok-refresh']"
+    end
+
+    post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
+    assert_equal ["delivered", nil], draft.reload.values_at(:state, :error)
+  end
+
+  test "Check TikTok that cannot reach TikTok answers on the card and never fails the attempt" do
+    draft = TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "c", state: "processing",
+                                publish_id: "v_inbox_file~p", uploaded_at: 1.minute.ago)
+    @uploader.define_singleton_method(:status) { |_id| raise EOFError, "end of file reached" }
+    log_in_as users(:alex)
+    post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
+
+    assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+    assert_equal "unknown", draft.reload.state
+    assert_match(/Uploaded, status unknown/, flash[:notice])
+  end
+
+  test "the copy fallback names no key, so it reads right off a Mac" do
+    TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "Bills 3-2", state: "delivered")
+    log_in_as users(:alex)
+    page
+
+    assert_select "#{card(1)}", text: /⌘/, count: 0
+    assert_select "#{card(1)} [data-test='clip-tiktok-copy-manual']", /the caption is selected/
+  end
 end
