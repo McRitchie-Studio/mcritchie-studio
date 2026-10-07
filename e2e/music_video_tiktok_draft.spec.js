@@ -1,7 +1,8 @@
 // [e2e] Draft to TikTok, as the operator meets it on an alt video's clip
 // builder: every clip card shows its slug with a copy control; the button is
 // off for a clip with no generated version; pressing it on a clip with a
-// primary version records an attempt, and the card then shows the attempt
+// primary version submits once however often it is pressed and records one
+// attempt, and the card then shows the attempt
 // settle to "In your TikTok drafts" with the caption the code wrote, its Copy,
 // and TikTok's publish id. Wholly synthetic data, seeded by e2e/seed.rb from
 // db/seeds/data/tiktok_draft_video.rb: its own video, so this never meets the
@@ -42,8 +43,35 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   await expect(tiktok(2).getByRole("button", { name: "Draft to TikTok" })).toBeDisabled();
   await expect(tiktok(2).locator("[data-test='clip-tiktok-blocker']")).toContainText("No generated version yet");
 
-  // Clip 1 has a primary version: draft it.
+  // Clip 1 has a primary version. First, the press guard, measured in the page
+  // with the submit caught before it leaves (a listener added after Alpine's
+  // runs after it and sees what Alpine let through): one press submits and
+  // turns the button off, a second press does nothing, and a submit that gets
+  // past the button (Enter, a script) is stopped by the form itself. It is
+  // measured here, not by a double click, because Chromium folds two submits
+  // made in one tick into a single navigation: a dblclick sends one request
+  // with or without the guard.
   await expect(tiktok(1)).toHaveAttribute("data-attempts", "0");
+  const form = tiktok(1).locator("form[data-test='clip-tiktok-draft']");
+  const presses = await form.evaluate(async (el) => {
+    const button = el.querySelector("button");
+    let submitted = 0;
+    const count = (event) => { if (!event.defaultPrevented) submitted += 1; event.preventDefault(); };
+    el.addEventListener("submit", count);
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const afterFirst = { disabled: button.disabled, label: button.textContent.trim() };
+    button.click();
+    el.requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    el.removeEventListener("submit", count);
+    window.Alpine.$data(el).sending = false; // hand the form back as it was
+    return { submitted, afterFirst };
+  });
+  expect(presses).toEqual({ submitted: 1, afterFirst: { disabled: true, label: "Sending…" } });
+
+  // Now the real press: one attempt.
+  await expect(tiktok(1).getByRole("button", { name: "Draft to TikTok" })).toBeEnabled();
   await tiktok(1).getByRole("button", { name: "Draft to TikTok" }).click();
   await expect(page.locator("body")).toContainText("Clip 1 is on its way to your TikTok drafts");
   await expect(tiktok(1)).toHaveAttribute("data-attempts", "1");
