@@ -205,15 +205,19 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
   # ── [unit] every workflow dispatch_and_watch drives declares the run-name ───
 
   # The set is read from where the dispatches come from: the literal workflow names
-  # bin/release.rb hands dispatch_and_watch, plus every github_actions adapter in
-  # config/release_repos.yml (ship and rollback dispatch `adapter["workflow"]`).
+  # bin/release.rb hands dispatch_and_watch, plus every github_actions adapter in the
+  # repo registry (ship and rollback dispatch `adapter["workflow"]`). The registry is
+  # read through the script's own RELEASE_REPOS rather than by path: spelling the
+  # config's path here would widen its fast-check mapped lane (FastCertSubjectTest).
   def driven_workflows
     literals = File.read(BIN).scan(/dispatch_and_watch\("([\w.-]+\.ya?ml)"/).flatten
-    repos = YAML.load_file(File.join(ROOT, "config/release_repos.yml"))
-    adapters = (repos["apps"] || {}).values.filter_map do |app|
-      deploy = app.is_a?(Hash) ? app["prod_deploy"] : nil
-      deploy["workflow"] if deploy.is_a?(Hash) && deploy["strategy"] == "github_actions"
-    end
+    call = <<~'RUBY'
+      (RELEASE_REPOS["apps"] || {}).each_value do |app|
+        deploy = app.is_a?(Hash) ? app["prod_deploy"] : nil
+        puts("ADAPTER #{deploy['workflow']}") if deploy.is_a?(Hash) && deploy["strategy"] == "github_actions"
+      end
+    RUBY
+    adapters = run_release("", call).scan(/^ADAPTER (\S+)$/).flatten
     (literals + adapters).uniq
   end
 
