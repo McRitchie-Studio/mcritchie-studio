@@ -3,13 +3,10 @@
 # [integration] test for the test-only SHAPE NOTE that bin/session-preflight
 # PRINTS — the sentence a builder reads at the moment they decide what to run.
 #
-# WHY THIS EXISTS AS A RUN, not another source grep. Its sibling assertion in
-# test/docs/zap_control_lane_docs_test.rb reads this script's SOURCE and refuses
-# the falsified wording there. That pins the string but not the path: the note is
-# printed from inside a `claimable_when == "test_only_diff"` branch, so a source
-# that says the right thing still proves nothing about whether this shape reaches
-# it. This drives the real script with a real task record and reads what came out
-# of the branch.
+# WHY THIS EXISTS AS A RUN, not a source grep. The note is printed from inside a
+# `claimable_when == "test_only_diff"` branch, so a source that says the right
+# thing proves nothing about whether this shape reaches it. This drives the real
+# script with a real task record and reads what came out of the branch.
 #
 # WHAT IT IS GUARDING AGAINST, measured 2026-09-22. The script is NOT untested —
 # test/commands/session_preflight_test.rb has covered it for a long time, 36 cases
