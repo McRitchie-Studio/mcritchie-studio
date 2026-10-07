@@ -1,0 +1,25 @@
+<%# The iced-out twin pairing (Appearances::IcedTwin): an iced look names the
+    look it was made from; a base look names its twin, or offers to make one
+    (free: a row, no sheet). Shared by the look page and the person page. %>
+<% if look.iced? %>
+  <p class="text-xs text-muted mt-2" data-test="twin-base">
+    Iced-out twin of
+    <% if (base = look.base_appearance) %>
+      <%= link_to base.descriptor, person_appearance_path(person.slug, base.slug), class: "text-primary hover:underline" %>.
+    <% else %>
+      a look that is gone.
+    <% end %>
+    Its sheet adds shades, a chain, a watch, a bracelet, a grill and rings<%= " (#{pluralize(person.jewelries.size, 'jewelry record')})" if person.jewelries.any? %>.
+  </p>
+<% elsif !look.music_video_look? %>
+  <% if (twin = look.iced_twin) %>
+    <p class="text-xs text-muted mt-2" data-test="twin-link">
+      Iced twin:
+      <%= link_to twin.descriptor, person_appearance_path(person.slug, twin.slug), class: "text-primary hover:underline" %>
+    </p>
+  <% elsif admin? %>
+    <%= button_to "Create iced twin", create_iced_twin_person_path(person.slug),
+          method: :post, params: { appearance_slug: look.slug },
+          form: { class: "mt-2" }, class: "btn btn-sm btn-outline", data: { test: "create-iced-twin" } %>
+  <% end %>
+<% end %>

@@ -36,6 +36,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
   end
 
   def performer(ordinal) = @video.video_performers.find_by!(ordinal:)
+  def base_look(person) = person.appearances.find_by!(iced: false)
   def card(ordinal = 1, look: nil) = music_video_path(@video, look: look&.slug, anchor: "person-#{ordinal}")
 
   def looks_json(person)
@@ -78,16 +79,17 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     with_generator do
       FakeAdapter.stub(:instance, -> { flunk "the request must not call the generator" }) do
         assert_enqueued_jobs 1, only: SheetBuildJob do
-          assert_difference -> { @rookie.appearances.count } => 1, -> { ErrorLog.count } => 0 do
+          assert_difference -> { @rookie.appearances.count } => 2, -> { ErrorLog.count } => 0 do
             generate(number: "17")
           end
         end
       end
     end
 
-    look = @rookie.appearances.sole
+    look = base_look(@rookie)
     assert_redirected_to card(look:)
-    assert_match "Broncos blue made for Demo Novice Echo. Its character sheet is building", flash[:notice]
+    assert_match "Broncos blue made for Demo Novice Echo, with its iced twin. Building the character sheet in the background (one paid build)", flash[:notice]
+    assert_not look.iced_twin.sheet_building?, "the default choice builds the look's own sheet only"
     assert look.sheet_building?
     assert_equal 0, Artifact.joins(:subjects).where(artifact_subjects: { appearance_slug: look.slug }).count
     assert_equal [look.slug, "17"], enqueued_jobs.sole["arguments"].values_at(0, 2), "the typed jersey number rides the job"
@@ -100,14 +102,18 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
 
     with_generator do
       generate
-      look = @rookie.appearances.sole
-      assert_equal [[look.slug, "Broncos blue", true, nil, "building"]],
+      look = base_look(@rookie)
+      assert_equal [[look.slug, "Broncos blue", true, nil, "building"],
+                    [look.iced_twin.slug, "Broncos blue · iced", false, nil, "empty"]],
                    looks_json(@rookie).map { |row| row.values_at("slug", "descriptor", "default", "image_url", "state") }
 
       perform_enqueued_jobs
-      assert_equal [[STORED_URL, "ready", "/people/demo-novice-echo/models/#{look.slug}"]],
-                   looks_json(@rookie).map { |row| row.values_at("image_url", "state", "url") }
-      assert_includes Artifact.find_by!(generator: "openai_gpt5_sheet").prompt, "Broncos blue game uniform", "the look's name is the uniform the sheet is asked for"
+      assert_equal [STORED_URL, "ready", "/people/demo-novice-echo/models/#{look.slug}"],
+                   looks_json(@rookie).first.then { |row| row.values_at("image_url", "state", "url") }
+      assert_equal "empty", looks_json(@rookie).last["state"], "the twin's sheet was not built"
+      prompt = Artifact.find_by!(generator: "openai_gpt5_sheet").prompt
+      assert_includes prompt, "Broncos blue game uniform", "the look's name is the uniform the sheet is asked for"
+      assert_not_includes prompt, "ICED-OUT", "the base look builds the standard sheet"
 
       patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
       assert_equal "Demo Novice Echo > Broncos blue", performer(1).recast_label
@@ -118,7 +124,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
 
     with_generator { generate }
-    look = @rookie.appearances.sole
+    look = base_look(@rookie)
     assert look.sheet_building?
     patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
 
@@ -138,7 +144,8 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='performer-recast'][data-saved-look=?][data-fresh-look=?]", look.slug, look.slug
       picker = css_select("[data-ordinal='2'] [data-test='performer-recast']").first
       rows = JSON.parse(picker["data-athlete"])["looks"]
-      assert_equal [["Home Orange", "ready"], ["Away White", "empty"], ["Alternate Blue", "building"], ["Road Teal", "building"]],
+      assert_equal [["Home Orange", "ready"], ["Away White", "empty"], ["Alternate Blue", "building"], ["Road Teal", "building"],
+                    ["Road Teal · iced", "empty"]],
                    rows.map { |row| row.values_at("descriptor", "state") }
     end
   end
@@ -148,17 +155,17 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
 
     with_env("OPENAI_API_KEY", nil) do
       assert_no_enqueued_jobs only: SheetBuildJob do
-        assert_difference -> { @rookie.appearances.count } => 1, -> { ErrorLog.count } => 0 do
+        assert_difference -> { @rookie.appearances.count } => 2, -> { ErrorLog.count } => 0 do
           generate
         end
       end
     end
 
-    look = @rookie.appearances.sole
+    look = base_look(@rookie)
     assert_redirected_to card(look:)
-    assert_match(/Broncos blue was made for Demo Novice Echo, but its character sheet did not start: .*nothing was spent/, flash[:alert])
+    assert_match(/Broncos blue made for Demo Novice Echo, with its iced twin. Its character sheet did not start: .*nothing was spent/, flash[:alert])
     assert_nil look.sheet_build_state
-    assert_equal ["empty"], looks_json(@rookie).pluck("state")
+    assert_equal %w[empty empty], looks_json(@rookie).pluck("state")
   end
 
   test "a person with no headshot and no reference photo gets the look and the reason the sheet cannot start" do
@@ -169,8 +176,8 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
       assert_no_enqueued_jobs(only: SheetBuildJob) { generate(person_slug: stranger.slug, descriptor: "Navy suit") }
     end
 
-    assert_equal "Navy suit", stranger.appearances.sole.descriptor
-    assert_match(/Navy suit was made for Test Actor Eta, but its character sheet did not start: Test Actor Eta cannot be built/, flash[:alert])
+    assert_equal ["Navy suit", "Navy suit · iced"], stranger.appearances.order(:id).pluck(:descriptor)
+    assert_match(/Navy suit made for Test Actor Eta, with its iced twin. Its character sheet did not start: Test Actor Eta cannot be built/, flash[:alert])
   end
 
   test "the refusals make nothing, start nothing and log nothing" do
@@ -205,8 +212,52 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_match "already has a look named Broncos blue", flash[:alert]
-    assert_equal 1, @rookie.appearances.count
+    assert_equal 2, @rookie.appearances.count, "the look and its iced twin, once"
     assert_enqueued_jobs 1, only: SheetBuildJob
+  end
+
+  # The operator's pick of sheets, each a paid build: never two unless "both".
+  test "Both sheets starts two builds, the iced one from the iced prompt, and says it is two" do
+    log_in_as users(:alex)
+
+    with_generator do
+      assert_enqueued_jobs 2, only: SheetBuildJob do
+        generate(sheets: "both", number: "9")
+      end
+      look = base_look(@rookie)
+      twin = look.iced_twin
+      assert look.sheet_building?
+      assert twin.sheet_building?
+      assert_match "Building the character sheet and the iced sheet in the background (2 paid builds)", flash[:notice]
+      assert_equal [look.slug, twin.slug], enqueued_jobs.select { |job| job["job_class"] == "SheetBuildJob" }.map { |job| job["arguments"][0] }
+
+      perform_enqueued_jobs
+      prompts = Artifact.joins(:subjects).pluck("artifact_subjects.appearance_slug", :prompt).to_h
+      assert_not_includes prompts.fetch(look.slug), "ICED-OUT"
+      assert_includes prompts.fetch(twin.slug), "ICED-OUT LOOK"
+      assert_includes prompts.fetch(twin.slug), "Broncos blue game uniform, jersey number 9"
+      assert_includes prompts.fetch(twin.slug), "GRILL SHOT"
+    end
+    assert_equal performer(1).recast_appearance_slug, base_look(@rookie).slug, "the base look is the one cast"
+  end
+
+  test "Iced sheet only builds the twin; No sheet yet builds nothing; an unknown choice builds the one sheet" do
+    log_in_as users(:alex)
+
+    with_generator do
+      assert_enqueued_jobs(1, only: SheetBuildJob) { generate(sheets: "iced") }
+      look = base_look(@rookie)
+      assert_not look.sheet_building?
+      assert look.iced_twin.sheet_building?
+      assert_match "Building the iced sheet in the background (one paid build)", flash[:notice]
+
+      assert_no_enqueued_jobs(only: SheetBuildJob) { generate(2, descriptor: "Broncos orange", sheets: "none") }
+      assert_match "No sheet was built", flash[:notice]
+      assert_equal 4, @rookie.appearances.count
+
+      assert_enqueued_jobs(1, only: SheetBuildJob) { generate(3, descriptor: "Broncos white", sheets: "everything") }
+      assert @rookie.appearances.find_by!(descriptor: "Broncos white").sheet_building?
+    end
   end
 
   test "the typeahead rows carry each look's image, state and page for the dropdown" do

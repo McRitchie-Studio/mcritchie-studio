@@ -1638,3 +1638,9 @@ LookPickerVideo.seed!
 # test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s
 NightCallLooks.seed!
+# /people/novice-icefixture — a synthetic athlete with one look made before iced
+# twins existed and no jewelry (e2e/person_iced_twin.spec.js). Destroyed first,
+# so a retry starts from no twin and no rings.
+Person.where(last_name: "Icefixture").destroy_all
+ice_person = Person.create!(first_name: "Novice", last_name: "Icefixture", slug: "novice-icefixture", athlete: true)
+Appearance.create!(person_slug: ice_person.slug, descriptor: "Comets white")
