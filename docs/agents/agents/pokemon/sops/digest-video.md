@@ -425,6 +425,12 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    most, checked in the browser before the upload and again on the server.
    The file rides the web request, so on a slow uplink a large file can pass
    Heroku's 30-second window: upload from the local hub then.
+   Once a clip has a primary, the card shows it beside the source chunk
+   (**Original** and **Version N (primary)**, side by side on a desktop,
+   stacked on a phone), each on its first frame. **Play both** runs the two
+   from the start together with the original muted, so the only sound is the
+   version's; pausing, playing or seeking either moves both, and one scrub
+   drives the pair. A clip with no version keeps the single source preview.
 4. **Request a regenerate** on a clip whose primary will not do, with an
    optional note. The flagged clips are listed at the top. The next upload
    for that clip clears its flag; **Clear** removes it by hand.

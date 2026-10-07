@@ -11,6 +11,17 @@ module MusicVideosHelper
   # 12_582_912 -> "12.0 MB"
   def take_size(bytes) = number_to_human_size(bytes, precision: 1, significant: false, strip_insignificant_zeros: false)
 
+  # A video src that opens on its first frame instead of a black box: the
+  # media fragment starts the element a millisecond in, so a browser paints
+  # frame 1 once it has the metadata (iOS Safari only paints with it). The
+  # fragment never reaches the server, so a signed URL's signature still holds;
+  # clipPair() seeks the same millisecond for any browser that ignores it.
+  def first_frame_src(url)
+    return url if url.blank? || url.include?("#")
+
+    "#{url}#t=0.001"
+  end
+
   # What the Watch full video player reads for an alt video: when each clip
   # is on screen (MusicVideos::StitchTimeline, handover mid-overlap) and the
   # file it plays there, its primary version or, with none, the source chunk.

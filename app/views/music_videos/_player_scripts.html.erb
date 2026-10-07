@@ -26,6 +26,141 @@
     };
   };
 
+  // An alt video clip's players: the source chunk (x-ref original) and, once
+  // the clip has a primary version, that version (x-ref version) beside it.
+  // Each opens on its first frame: preload="metadata" fetches only the head
+  // of the file, the src's #t=0.001 fragment (first_frame_src) starts it a
+  // millisecond in, and a browser that ignores the fragment is seeked there
+  // here, which is what makes it paint frame 1 instead of a black box.
+  //
+  // Play both: both from the start, the original MUTED so the only sound is
+  // the version's. From then on the two are linked: play, pause or seek
+  // either (its own controls or the shared scrub) and the other follows. The
+  // version is the clock; while playing, the original is nudged back onto it
+  // (playback rate 0.95/1.05 past 40 ms, about a frame; a hard seek past
+  // 100 ms, which also closes the head start one player gets at Play both), so they stay within a frame or two.
+  window.clipPair = function () {
+    const NUDGE = 0.04, JUMP = 0.1, SEEK_LEAD = 0.05;
+    return {
+      linked: false, started: false, playing: false, blocked: false,
+      t: 0, duration: 0, frame: null, failed: { original: false, version: false },
+      get pair() { return [this.$refs.original, this.$refs.version].filter(Boolean); },
+      get state() { return this.playing ? "playing" : (this.linked ? "paused" : "idle"); },
+      get label() { return this.playing ? "Pause both" : (this.linked ? "Resume both" : "Play both"); },
+      init() {
+        this.pair.forEach((video) => {
+          const firstFrame = () => {
+            if (video.paused && video.currentTime === 0) video.currentTime = 0.001;
+            this.measure();
+          };
+          if (video.readyState >= 1) firstFrame();
+          video.addEventListener("loadedmetadata", firstFrame);
+          video.addEventListener("play", () => { this.started = true; this.follow(video, "play"); });
+          video.addEventListener("pause", () => this.follow(video, "pause"));
+          video.addEventListener("seeking", () => { if (performance.now() > (video.__quietUntil || 0)) this.follow(video, "seek"); });
+        });
+      },
+      destroy() { cancelAnimationFrame(this.frame); },
+      // A seek made here (start, scrub, a peer following, a drift fix) is not
+      // the operator's: its seeking event must not move the other player, or
+      // fixing the muted original would drag the version's sound along.
+      seekTo(video, at) {
+        video.__quietUntil = performance.now() + 400;
+        video.currentTime = at;
+      },
+      other(video) { return video === this.$refs.original ? this.$refs.version : this.$refs.original; },
+      measure() {
+        const lengths = this.pair.map((v) => v.duration).filter(Number.isFinite);
+        this.duration = lengths.length ? Math.max(...lengths) : 0;
+      },
+      fmt(seconds) {
+        const s = Math.floor(Number(seconds) || 0);
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      },
+      // One player moved; while linked, the other does the same. Every branch
+      // is a no-op when the other is already there, so the echo stops at once.
+      follow(video, what) {
+        if (!this.linked) return;
+        const peer = this.other(video);
+        if (!peer) return;
+        if (what === "play") {
+          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) this.seekTo(peer, video.currentTime);
+          if (peer.paused && !peer.ended) peer.play().catch(() => {});
+          this.playing = true;
+          this.loop();
+        } else if (what === "pause") {
+          // A shorter original holds its last frame while the version plays on.
+          if (video === this.$refs.original && video.ended) return;
+          if (!peer.paused) peer.pause();
+          this.playing = false;
+        } else if (what === "seek") {
+          if (Math.abs(peer.currentTime - video.currentTime) > NUDGE) this.seekTo(peer, video.currentTime);
+          this.t = video.currentTime;
+        }
+      },
+      // Play both from the start: the original muted, sound from the version.
+      start() {
+        const [original, version] = [this.$refs.original, this.$refs.version];
+        if (!original || !version) return;
+        this.linked = true; this.blocked = false; this.started = true;
+        original.muted = true;
+        version.muted = false;
+        original.playbackRate = 1;
+        this.seekTo(original, 0); this.seekTo(version, 0); this.t = 0;
+        this.playing = true;
+        Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
+        this.loop();
+      },
+      resume() {
+        const [original, version] = [this.$refs.original, this.$refs.version];
+        original.muted = true;
+        if (version.ended) { this.start(); return; }
+        this.seekTo(original, version.currentTime);
+        this.playing = true;
+        Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
+        this.loop();
+      },
+      pause() {
+        this.playing = false;
+        cancelAnimationFrame(this.frame);
+        this.pair.forEach((v) => { if (!v.paused) v.pause(); });
+      },
+      toggle() {
+        if (this.playing) this.pause();
+        else if (this.linked) this.resume();
+        else this.start();
+      },
+      scrub(value) {
+        const at = Number(value);
+        this.t = at;
+        this.pair.forEach((v) => this.seekTo(v, Number.isFinite(v.duration) ? Math.min(at, v.duration) : at));
+      },
+      // Single preview (no version yet): play the source chunk.
+      playOriginal() {
+        this.started = true;
+        this.$refs.original.play().catch(() => {});
+      },
+      // While playing: keep the original on the version's clock.
+      loop() {
+        cancelAnimationFrame(this.frame);
+        const step = () => {
+          const [original, version] = [this.$refs.original, this.$refs.version];
+          if (!this.playing || !version) return;
+          this.t = version.currentTime;
+          if (!original.paused && !original.ended && !original.seeking && !version.seeking) {
+            const drift = original.currentTime - version.currentTime;
+            // Aim a little ahead: the seek itself takes a few frames.
+            if (Math.abs(drift) > JUMP) this.seekTo(original, version.currentTime + SEEK_LEAD);
+            else if (Math.abs(drift) > NUDGE) original.playbackRate = drift > 0 ? 0.95 : 1.05;
+            else if (original.playbackRate !== 1) original.playbackRate = 1;
+          }
+          this.frame = requestAnimationFrame(step);
+        };
+        this.frame = requestAnimationFrame(step);
+      },
+    };
+  };
+
   // Watch full video: plays an alt video's clips back to back as if stitched,
   // without a stitched file. The server sends when each clip is on screen
   // (MusicVideos::StitchTimeline: handover at the middle of each overlap) and
