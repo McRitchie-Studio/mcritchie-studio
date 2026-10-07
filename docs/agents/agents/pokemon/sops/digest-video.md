@@ -393,6 +393,29 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    the sheets to Higgsfield in their numbered order: the prompt names them as
    "character sheet 1", "character sheet 2". With no sheet the card says so
    and links to the athlete.
+
+   **Or take it as a zip.** **Download all assets**, at the top of the page
+   beside the title, downloads every clip's hand-off in one zip; **Download
+   clip assets**, on each card's hand-off row, downloads one clip's. Inside:
+
+   ```text
+   <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, anything missing
+   <video>_alt_<n>/clip_03_0040-0105/source_clip.mp4   the 25 s source chunk
+   .../prompt.txt                                      the card's prompt, byte for byte (built at download from the alt video's swaps and current jersey numbers)
+   .../frames/frame_1_ABC_0045.jpg                     lettered frames in card order: number, letters, time
+   .../sheets/sheet_1_B_04_<person>_<look>.png         sheets in the prompt's order: number, letter, jersey, person, look
+   ```
+
+   A clip zip holds its one folder plus `README.txt`. Generated versions are
+   not included. A file that cannot be fetched (a missing R2 object, a sheet
+   with no build, a sheet image not on an https public host) is left out and
+   listed under **NOT INCLUDED** in the README, which is written last; the
+   zip never fails for it. The zip streams (zip_kit, stored entries, read
+   straight from R2), so it starts at once and a ~330 MB zip of 7 x 40 MB
+   chunks needs no time limit. Measured locally on 2026-10-07: first byte in
+   0.25-0.5 s, 327 MB in 14-21 s from the dev bucket, and the process's
+   memory rose about 100 MB and then held flat, the same for 312 MB as for
+   936 MB written. Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
 3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
    click it to choose the file; it uploads at once. Each upload is a numbered
    **version**, kept and never overwritten, at
