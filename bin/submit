@@ -103,6 +103,7 @@ require_relative "lib/ci_wait"
 require_relative "lib/desk_claim"
 require_relative "lib/projects_root"
 require_relative "lib/task_board"
+require_relative "lib/ship_wait"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -181,6 +182,21 @@ end.parse!
 slug = ARGV.shift
 die!("usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
 
+# --- ONE TERMINAL LINE ON EVERY EXIT PATH (guard catalog row 3.4) -------------
+# bin/submit-wait reads the outcome from this line alone (bin/lib/ship_wait.rb):
+# the handoff, a task already past the seam, or anything else. The at_exit hook
+# prints the "not submitted" line for every path that did not print one first —
+# each die!, each refusal, an exception.
+TERMINAL = { stage: nil, printed: false }
+def terminal!(line)
+  return if TERMINAL[:printed]
+
+  TERMINAL[:printed] = true
+  $stdout.puts(line)
+  $stdout.flush
+end
+at_exit { terminal!(ShipWait.not_submitted_line(TERMINAL[:stage])) }
+
 # --- one board token per ship ------------------------------------------------
 # Every child board CLI (bin/task show/update/move, bin/dor-check, and the
 # bin/task reads inside bin/fast-check and bin/dor-check) mints its own 24h bearer
@@ -227,6 +243,7 @@ end
 task = fetch_task!(slug)
 devops = task.dig("metadata", "devops") || {}
 stage = task["stage"].to_s
+TERMINAL[:stage] = stage
 title = task["title"].to_s
 task_url = "#{BASE_URL}/tasks/#{slug}"
 branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
@@ -234,6 +251,7 @@ branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
 if PAST_SUBMITTED.include?(stage)
   say "#{slug} is already [#{stage}] — past the submitted seam; nothing to submit."
   puts "Task: #{task_url}"
+  terminal!(ShipWait.past_seam_line(stage))
   exit 0
 end
 
@@ -367,6 +385,7 @@ if stage == "designed"
   die!("the move to building failed — see above; re-run #{SHIP_CMD} #{slug}.") unless
     system(TASK_BIN, "move", slug, "building")
   stage = "building"
+  TERMINAL[:stage] = stage
 end
 
 # --- 1/8 commit --------------------------------------------------------------
@@ -818,4 +837,4 @@ narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{pr_url}")
 puts "Task: #{task_url}"
 puts "PR: #{pr_url}"
 puts "branch: #{branch}"
-puts "stage: submitted (read back verified)"
+terminal!(ShipWait::SUCCESS_LINE)

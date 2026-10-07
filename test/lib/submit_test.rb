@@ -13,6 +13,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require_relative "../../bin/lib/ship_wait"
 require "json"
 require "open3"
 require "socket"
@@ -1085,6 +1086,20 @@ class SubmitTest < Minitest::Test
       assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on a past-seam task"
       assert_includes out, "Task: #{TASK_URL}"
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"
+      # Guard catalog row 3.4: the past-seam exit prints its own terminal line, which
+      # bin/submit-wait reads as a success.
+      assert_equal "stage: reviewed (past the submitted seam)", out.lines.last.strip
+      assert_equal :succeeded, ShipWait.verdict(out, ended: true)
+    end
+  end
+
+  def test_every_refusal_ends_on_the_not_submitted_terminal_line
+    with_repo do |dir|
+      out, _err, status, = run_ship(dir, extra_env: { "FAIL_DOR" => "1" })
+
+      refute status.success?
+      assert_equal "stage: building (not submitted)", out.lines.last.strip
+      assert_equal :failed, ShipWait.verdict(out, ended: true)
     end
   end
 

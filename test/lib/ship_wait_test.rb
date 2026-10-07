@@ -27,6 +27,15 @@ class ShipWaitTest < Minitest::Test
 
   # --- the success line ------------------------------------------------------
 
+  # Guard catalog row 3.4: a task already past the seam ends on its own terminal
+  # line, which is a success; "not submitted" is the failure line.
+  def test_the_past_seam_terminal_line_is_a_success_and_not_submitted_is_not
+    assert_equal :succeeded, ShipWait.verdict(log("x", ShipWait.past_seam_line("reviewed"), SENTINEL_OK))
+    assert_equal :failed, ShipWait.verdict(log("x", ShipWait.not_submitted_line("building"), SENTINEL_BAD))
+    assert_equal "stage: unknown (not submitted)", ShipWait.not_submitted_line(nil)
+    refute ShipWait.success_line?("stage: building (past the submitted seam)"), "only a past stage is past the seam"
+  end
+
   def test_succeeded_on_ships_own_read_back_line
     assert ShipWait.succeeded?(log("ship: 8/8 submit", SUCCESS))
   end
