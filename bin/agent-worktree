@@ -14,7 +14,6 @@
 #   bin/agent-worktree shell-hook zsh
 #   bin/agent-worktree up turf-monster docs-stack
 #   bin/agent-worktree status turf-monster docs-stack
-#   bin/agent-worktree finish turf-monster docs-stack
 #   bin/agent-worktree doctor
 #   bin/agent-worktree snapshot
 #   bin/agent-worktree cleanup
@@ -1635,10 +1634,6 @@ def merged_pr_at_head(prs, head)
 
   match = prs.find { |pr| pr.is_a?(Hash) && pr["headRefOid"].to_s == head.to_s }
   match && match["number"]&.to_s
-end
-
-def human_title(slug)
-  slug.split("-").map(&:capitalize).join(" ")
 end
 
 def compact_value(value)
@@ -3976,25 +3971,6 @@ def run_remove(app, raw_task, yes: false, force: false)
   exit TEARDOWN_LEAK_EXIT
 end
 
-def graduation_blockers(record)
-  blockers = []
-  branch = record[:branch]
-  base = record[:base_ref] || "origin/main"
-
-  blockers << "missing #{STACK_ENV}" unless record[:env_exists]
-  blockers << "worktree has uncommitted changes; commit or intentionally revert them before QA handoff" if record[:dirty]
-  blockers << "branch is #{branch.inspect}; feature work must not graduate from an integration branch (main/master/release)" if %w[main master release].include?(branch)
-  blockers << "branch has no commits ahead of #{base}" if record[:ahead].to_s == "0"
-  blockers << "branch is #{record[:behind]} commit(s) behind #{base}; rebase before PR" if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
-  blockers << "branch content is already represented on #{base}; use cleanup/remove instead of finish" if cleanup_ready?(record)
-
-  blockers
-end
-
-def task_bound?(values)
-  task_record_slug(values) && task_url(values)
-end
-
 # The task's board record as a Hash, or NIL when the read itself FAILED.
 #
 # nil vs {} is the load-bearing distinction: {} is a task we READ successfully that simply
@@ -5366,67 +5342,6 @@ def worktree_label(record)
   [slug, record[:task]].compact.join("/")
 end
 
-def list_from_task_devops(devops, key)
-  raw = devops[key]
-  case raw
-  when Array
-    raw.map(&:to_s).map(&:strip).reject(&:empty?)
-  else
-    raw.to_s.split(/\r?\n/).map(&:strip).reject(&:empty?)
-  end
-end
-
-def bullet_lines(items, fallback)
-  lines = Array(items).map(&:to_s).map(&:strip).reject(&:empty?)
-  lines = [fallback] if lines.empty?
-  lines.map { |line| "- #{line}" }.join("\n")
-end
-
-def pr_summary_lines(task_record)
-  devops = task_devops_for_pr(task_record)
-  acceptance = list_from_task_devops(devops, "acceptance")
-  return acceptance if acceptance.any?
-
-  title = task_record.is_a?(Hash) ? task_record["title"].to_s.strip : ""
-  title.empty? ? [] : ["Implements #{title}."]
-end
-
-def pr_verification_lines(task_record)
-  list_from_task_devops(task_devops_for_pr(task_record), "checks_run")
-end
-
-def pr_body(record)
-  url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"
-  email_url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"
-  task_record = task_record_slug(record[:env])
-  task_record_url = task_url(record[:env])
-  task_line = task_record_url ? "#{task_record_url} (`#{task_record}`)" : "`#{record[:task]}` worktree slug; bind the production task with `bin/agent-worktree bind-task #{record[:app].fetch("slug")} #{record[:task]} task-...` before PR review."
-  task_metadata = task_record_for_pr(record)
-  <<~BODY
-    ## Summary
-    #{bullet_lines(pr_summary_lines(task_metadata), "Scope is recorded on the linked task.")}
-
-    ## Task
-    - McRitchie Studio task: #{task_line}
-
-    ## Local Proof
-    - App: #{record[:app].fetch("display_name", record[:app].fetch("slug"))}
-    - Worktree slug: #{record[:task]}
-    - Worktree: `#{record[:dir]}`
-    - Review URL: #{url}
-    - Local inbox: #{email_url}
-    - Stack health: #{stack_health(record)} (/up #{record[:code]})
-
-    ## Verification
-    #{bullet_lines(pr_verification_lines(task_metadata), "No checks_run recorded on the linked task yet.")}
-
-    ## QA Notes
-    - Carl: verify scope/spec match and merge safety.
-    - Avi: run QA checks when risk warrants.
-    - Do not delete this branch/worktree until the PR is merged or intentionally abandoned.
-  BODY
-end
-
 # --- restore-primary: return a primary checkout to a clean canonical `main` ---
 #
 # The COMPLEMENT of Release::ShipSequence.preflight_offenders. The conductor's
@@ -5461,7 +5376,7 @@ def run_restore_primary(app, dry: false)
   label = app.fetch("slug")
 
   # Fetch is best-effort: an offline/unreachable origin still lets us restore to
-  # the last-known origin/main ref (mirrors run_finish/run_remove's allow_fail
+  # the last-known origin/main ref (mirrors run_remove's allow_fail
   # fetch). A failure only means "may not be the very latest origin/main".
   unless sh("git", "fetch", "origin", "--quiet", chdir: repo, allow_fail: true)
     log_fail("#{label}: git fetch origin failed — restoring against the last-known origin/main")
@@ -5512,12 +5427,6 @@ def run_restore_primary(app, dry: false)
   true
 end
 
-# The created PR's URL, parsed from `gh pr create` output (gh prints it on
-# stdout, warnings and all). Nil when no PR URL is present.
-def pr_url_from_output(output)
-  output.to_s[%r{https://github\.com/\S+/pull/\d+}]
-end
-
 # The task CLI every HUB-side board call in this script goes through — the pr_url
 # stamp below, and the best-effort mascot reads (record_mascot,
 # record_mascot_field, run_bind_task).
@@ -5540,96 +5449,6 @@ end
 def task_cli_path
   override = ENV["AGENT_WORKTREE_TASK_BIN"].to_s.strip
   override.empty? ? File.join(__dir__, "task") : override
-end
-
-# Best-effort devops.pr_url stamp on the bound task — the same `bin/task`
-# board-write path the handoff already uses (bind-task, mascot reads). A board
-# blip must NEVER fail the finish: failures warn with the manual command and
-# return false.
-def stamp_task_pr_url(record_slug, pr_url)
-  slug = compact_value(record_slug)
-  url = compact_value(pr_url)
-  return false unless slug && url
-
-  ok = system(task_cli_path, "update", slug, "--pr-url", url, out: File::NULL, err: File::NULL)
-  warn "warning: could not stamp pr_url on task #{slug}; run: bin/task update #{slug} --pr-url #{url}" unless ok
-  !!ok
-end
-
-# Open the graduation draft PR and stamp its URL onto the bound task record
-# (devops.pr_url) in the same handoff. Regression guard: finish --pr used to
-# open the PR without stamping, so bin/dor-check's CI gate reported NO_PR until
-# someone ran `bin/task update --pr-url` by hand. Returns the PR URL (nil when
-# it could not be parsed).
-def open_draft_pr(record, dir, task)
-  title = human_title(task)
-  body = pr_body(record)
-  # Feature PRs target the persistent `accepted` branch (falling back down the
-  # ladder for repos without one) so review can merge them; never base on `main`.
-  ok, out, err = capture_status("gh", "pr", "create", "--draft", "--base", record[:base_branch],
-                                "--head", record[:branch], "--title", title, "--body", body, chdir: dir)
-  $stderr.print err unless err.to_s.empty?
-  print out
-  abort "command failed in #{dir}: gh pr create" unless ok
-
-  puts "opened PR base: #{record[:base_branch]}"
-  pr_url = pr_url_from_output(out)
-  slug = task_record_slug(record[:env])
-  if pr_url.nil?
-    warn "warning: could not parse the PR URL from gh output; stamp it manually: bin/task update #{slug || task} --pr-url <url>"
-  elsif stamp_task_pr_url(slug, pr_url)
-    puts "stamped:  pr_url -> #{pr_url}"
-  end
-  pr_url
-end
-
-def run_finish(app, task, push: false, pr: false)
-  dir = worktree_dir(app, task)
-  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
-  load_stack_env(app, task)
-
-  fetch_ok, _fetch_out, fetch_err = capture_status("git", "fetch", "origin", "--quiet", chdir: dir)
-  record = stack_record(app, dir)
-  warn "warning: git fetch failed; using local #{record[:base_ref]} state: #{fetch_err.lines.first.to_s.strip}" unless fetch_ok
-  compare_url = github_compare_url(record)
-  blockers = graduation_blockers(record)
-  blockers << "worktree is not bound to a production McRitchie Studio task; run `bin/agent-worktree bind-task #{app.fetch("slug")} #{task} task-...` before `finish --push --pr`" if pr && !task_bound?(record[:env])
-
-  puts "feature graduation packet"
-  puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"
-  puts "task:     #{task_url(record[:env]) || "not bound"}"
-  puts "worktree: #{task}"
-  puts "branch:   #{record[:branch]}"
-  puts "head:     #{record[:head]} #{record[:commit_subject]}"
-  puts "path:     #{dir}"
-  puts "url:      #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"}"
-  puts "email:    #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"}"
-  puts "health:   #{stack_health(record)} (/up #{record[:code]})"
-  puts "base:     #{record[:base_ref]} (PR base #{record[:base_branch]})"
-  puts "git:      #{record[:dirty] ? "dirty" : "clean"} #{record[:merged] ? "merged" : "unmerged"} +#{record[:ahead]}/-#{record[:behind]}"
-  puts "compare:  #{compare_url || "unknown remote"}"
-  puts
-
-  if blockers.any?
-    puts "not ready for QA:"
-    blockers.each { |blocker| puts "  - #{blocker}" }
-    exit 1
-  end
-
-  if push || pr
-    sh("git", "push", "-u", "origin", record[:branch], chdir: dir)
-    puts "pushed:   #{record[:branch]}"
-  end
-
-  if pr
-    abort "gh CLI is not available; pushed branch, then open #{compare_url}" unless command_available?("gh")
-
-    open_draft_pr(record, dir, task)
-  else
-    puts "ready for QA. Open a draft PR with this body:"
-    puts
-    puts pr_body(record)
-  end
 end
 
 # Flush a worktree's Redis DB on removal so a reused DB number cannot inherit
@@ -6081,13 +5900,20 @@ if $PROGRAM_NAME == __FILE__
     usage unless shell && ARGV.empty?
     run_shell_hook(shell)
   when "finish"
-    push = ARGV.delete("--push")
-    pr = ARGV.delete("--pr")
+    # RETIRED (guard catalog row 5.2). bin/submit is the handoff: it commits, pushes,
+    # opens the PR into accepted, waits for CI and moves the task to submitted. The old
+    # call still parses, does nothing, and names the command that replaced it.
+    ARGV.delete("--push")
+    ARGV.delete("--pr")
     app_name, raw_task = ARGV
     usage unless app_name && raw_task
     app = app_for(app_name)
     task = clean_slug(raw_task)
-    run_finish(app, task, push: !!push, pr: !!pr)
+    dir = worktree_dir(app, task)
+    slug = task_record_slug(parse_env(File.join(dir, STACK_ENV))) || task
+    warn "agent-worktree finish is retired: nothing was pushed and no PR was opened. bin/submit is the handoff:"
+    warn "  cd #{dir} && #{File.join(__dir__, "submit-wait")} #{slug} --launch -m \"<message>\""
+    exit 2
   when "restore-primary"
     dry = ARGV.delete("--dry-run")
     app_name = ARGV[0]

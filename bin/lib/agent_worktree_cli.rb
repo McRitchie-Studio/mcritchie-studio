@@ -108,7 +108,7 @@ module AgentWorktreeCli
       up <app> <task-slug>
       test <app> <task-slug> [-- rails-test-args]
       status <app> <task-slug>
-      finish <app> <task-slug> [--push] [--pr]
+      finish <app> <task-slug>   (retired: names the bin/submit handoff)
       restore-primary <app> [--dry-run]
       doctor [app]
       snapshot [app] [--write]

@@ -105,8 +105,7 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 ## Lifecycle
 
 - `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.
-- `finish` blocks dirty, empty, stale or already-merged branches. `--push --pr` opens a draft
-  PR on the base branch and stamps `devops.pr_url` on the bound task.
+- `finish` is retired: it does nothing and names the handoff, `bin/submit-wait`.
 - `list`, `doctor`, `snapshot` and the sweeps see **every worktree git registered** for a
   repo (`git worktree list`), wherever it lives: `<repo>/.worktrees/`, a sibling
   `<repo>.worktrees/`, `<projects>/.worktrees/<repo>/`, a scratchpad. Each is labelled with

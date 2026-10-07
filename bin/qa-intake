@@ -319,7 +319,7 @@ def local_action(worktree)
   if truthy?(worktree["cleanup_candidate"])
     cleanup_action(worktree)
   elsif worktree_ready_for_avi?(worktree)
-    "open a draft PR with `bin/agent-worktree finish #{worktree.fetch("app")} #{worktree.fetch("task")} --push --pr`"
+    "ship it from the desk with `bin/submit-wait <task-slug> --launch -m \"<message>\"`"
   elsif truthy?(worktree["dirty"])
     "commit, stash, or intentionally discard local edits before QA handoff"
   elsif !zeroish?(worktree["behind_origin_main"])

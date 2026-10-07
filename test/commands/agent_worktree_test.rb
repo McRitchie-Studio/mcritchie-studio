@@ -203,98 +203,15 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_match %r{/compare/accepted\.\.\.}, record.fetch("compare_url")
   end
 
-  test "finish push pr blocks without a bound production task" do
+  # Guard catalog row 5.2: `finish` is retired with its blockers and gh calls. The old
+  # call still parses, pushes nothing, opens no PR, and names the bin/submit handoff.
+  test "[integration] finish is retired: it does nothing and names bin/submit" do
     out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
 
-    assert_not status.success?
-    combined = "#{out}\n#{err}"
-    assert_includes combined, "not ready for QA"
-    assert_includes combined, "worktree is not bound to a production McRitchie Studio task"
-  end
-
-  test "[unit] pr body fills summary and verification from task metadata" do
-    task_json = {
-      "title" => "PR Handoff Autofill",
-      "metadata" => {
-        "devops" => {
-          "acceptance" => ["Fill PR summary from task metadata", "Keep release as default PR base"],
-          "checks_run" => ["[unit] bin/rails test test/commands/agent_worktree_test.rb"]
-        }
-      }
-    }
-    snippet = <<~RUBY
-      ENV["AGENT_WORKTREE_TASK_JSON"] = #{JSON.generate(task_json).inspect}
-      record = {
-        task: "pr-handoff-autofill",
-        port: "39999",
-        dir: #{@worktree_dir.inspect},
-        code: "000",
-        env_exists: true,
-        port_pid: "",
-        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
-        env: {
-          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
-          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
-        }
-      }
-      puts pr_body(record)
-    RUBY
-
-    body = script_eval(snippet)
-
-    assert_includes body, "- Fill PR summary from task metadata"
-    assert_includes body, "- Keep release as default PR base"
-    assert_includes body, "- [unit] bin/rails test test/commands/agent_worktree_test.rb"
-    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
-  end
-
-  test "[unit] pr body falls back without blank bullets when task metadata is unavailable" do
-    snippet = <<~RUBY
-      record = {
-        task: "pr-handoff-autofill",
-        port: "39999",
-        dir: #{@worktree_dir.inspect},
-        code: "000",
-        env_exists: true,
-        port_pid: "",
-        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
-        env: {
-          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
-          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
-        }
-      }
-      puts pr_body(record)
-    RUBY
-
-    body = script_eval(snippet)
-
-    assert_includes body, "- Scope is recorded on the linked task."
-    assert_includes body, "- No checks_run recorded on the linked task yet."
-    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
-  end
-
-  test "[integration] finish prints a complete generated PR body" do
-    agent_worktree!("bind-task", "mcritchie-studio", @task, "pr-handoff-autofill")
-    task_json = {
-      "title" => "PR Handoff Autofill",
-      "metadata" => {
-        "devops" => {
-          "acceptance" => ["Fill PR summary from task metadata"],
-          "checks_run" => ["[integration] bin/agent-worktree finish prints body"]
-        }
-      }
-    }
-
-    out, err, status = agent_worktree(
-      "finish", "mcritchie-studio", @task,
-      env: { "AGENT_WORKTREE_TASK_JSON" => JSON.generate(task_json) }
-    )
-
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "ready for QA. Open a draft PR with this body:"
-    assert_includes out, "- Fill PR summary from task metadata"
-    assert_includes out, "- [integration] bin/agent-worktree finish prints body"
-    refute_match(/^-\\s*$/m, out, "finish must not print blank PR body bullets")
+    assert_equal 2, status.exitstatus, "#{out}\n#{err}"
+    assert_includes err, "agent-worktree finish is retired: nothing was pushed and no PR was opened"
+    assert_match(%r{cd \S+ && \S+/submit-wait \S+ --launch -m}, err)
+    refute_match(/feature graduation packet|ready for QA/, out)
   end
 
   test "qa-intake PR metadata includes bound task fields" do
@@ -1755,19 +1672,18 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   # THE SSH PIN. setup_repo gives the fixture a REAL origin
   # (git@github.com:McRitchie-Studio/mcritchie-studio.git) so github_repo_slug can
-  # resolve, and run_finish fetches it before the blocker check this asserts on.
-  # That fetch used to leave the machine, because this call site passed no env at
-  # all while its siblings pinned GIT_SSH_COMMAND by hand.
+  # resolve, and `restore-primary --dry-run` fetches it. That fetch used to leave the
+  # machine when a call site passed no env while its siblings pinned GIT_SSH_COMMAND
+  # by hand.
   test "[integration] the ssh pin intercepts the fixture's real github remote" do
     OutboundSeams.reset!
 
-    out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
+    out, err, _status = agent_worktree("restore-primary", "mcritchie-studio", "--dry-run")
 
-    assert_not status.success?, "#{out}\n#{err}"
-    assert_includes "#{out}\n#{err}", "worktree is not bound to a production McRitchie Studio task"
     attempts = OutboundSeams.calls_to("ssh")
     refute_empty attempts,
-                 "`finish --push --pr` fetched origin and NOTHING intercepted it, so the fetch " \
+                 "`restore-primary --dry-run` fetched origin and NOTHING intercepted it, so the fetch " \
+                 "(#{out}\n#{err}) " \
                  "used the machine's real ssh against #{"git@github.com:McRitchie-Studio/mcritchie-studio.git".inspect}. " \
                  "GIT_SSH_COMMAND must be pinned by command_env, for every spawn, not per test."
     assert(attempts.any? { |line| line.include?("github.com") },
