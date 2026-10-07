@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -208,9 +208,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.integer "end_ms", null: false
     t.string "regenerate_note"
     t.datetime "regenerate_requested_at"
+    t.string "slug", null: false
     t.integer "start_ms", null: false
     t.datetime "updated_at", null: false
     t.index ["alt_video_slug", "chunk_ordinal"], name: "index_alt_video_clips_on_alt_video_slug_and_chunk_ordinal", unique: true
+    t.index ["slug"], name: "index_alt_video_clips_on_slug", unique: true
   end
 
   create_table "alt_videos", force: :cascade do |t|
@@ -2130,6 +2132,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
   end
 
+  create_table "tiktok_drafts", force: :cascade do |t|
+    t.bigint "byte_size"
+    t.text "caption", null: false
+    t.integer "chunk_count"
+    t.string "clip_slug", null: false
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.jsonb "facts", default: {}, null: false
+    t.string "fail_reason"
+    t.datetime "finished_at"
+    t.datetime "polled_at"
+    t.string "publish_id"
+    t.string "requested_by"
+    t.string "state", default: "queued", null: false
+    t.string "tiktok_status"
+    t.datetime "updated_at", null: false
+    t.datetime "uploaded_at"
+    t.integer "version_number", null: false
+    t.string "version_object_key", null: false
+    t.index ["clip_slug", "created_at"], name: "index_tiktok_drafts_on_clip_slug_and_created_at"
+    t.index ["publish_id"], name: "index_tiktok_drafts_on_publish_id", unique: true, where: "(publish_id IS NOT NULL)"
+    t.index ["state"], name: "index_tiktok_drafts_on_state"
+  end
+
   create_table "tracked_github_builder_repos", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
@@ -2423,6 +2449,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
   add_foreign_key "team_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "team_rankings", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "teams", "arenas", column: "home_arena_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "tiktok_drafts", "alt_video_clips", column: "clip_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "triage_findings", "tasks", column: "promoted_task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "usages", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
