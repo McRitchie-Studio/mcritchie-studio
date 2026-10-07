@@ -1,14 +1,17 @@
 # frozen_string_literal: true
 
-# [unit] config/release_repos.yml comments state the current rule in the present
-# tense (release-repos-comments-present-tense): a dated line is history, and the
-# history lives in the task and its PR. The lint names every comment line that
-# carries a date or a dated attribution such as "(Alex, 2026".
+# [unit] The release registry's comments (ReleaseRegistry::REGISTRY_PATH) state the
+# current rule in the present tense (release-repos-comments-present-tense): a dated
+# line is history, and the history lives in the task and its PR. The lint names every comment line that
+# carries a date or a dated attribution such as "(Alex, 2026". The path comes from
+# the constant, never spelled here, so this file stays out of the registry's mapped
+# test set (fast_cert_subject_test's cap margin).
 
 require "minitest/autorun"
+require_relative "../../bin/lib/release_registry"
 
 class ReleaseReposCommentsTest < Minitest::Test
-  PATH = File.expand_path("../../config/release_repos.yml", __dir__)
+  PATH = ReleaseRegistry::REGISTRY_PATH
   DATED = /\b20\d\d-\d\d(-\d\d)?\b|\(\w+, 20\d\d/
 
   def dated_comment_lines(text)
@@ -21,7 +24,7 @@ class ReleaseReposCommentsTest < Minitest::Test
   def test_no_comment_in_the_registry_is_dated
     offenders = dated_comment_lines(File.read(PATH))
 
-    assert_empty offenders, "config/release_repos.yml comments must state the current rule, " \
+    assert_empty offenders, "#{File.basename(PATH)} comments must state the current rule, " \
                             "not dated history:\n#{offenders.join("\n")}"
   end
 

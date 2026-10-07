@@ -39,6 +39,10 @@ require_relative "../support/outbound_seams"
 
 class DorCheckDocsShapeTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
+  # Production code that no branch can edit: absent from the tree, so dor-check's
+  # comment-only read fails closed and grades it code. A real model would read as
+  # prose on any branch that edits only its comments.
+  PRODUCTION_FIXTURE = "app/models/docs_shape_production_fixture.rb"
 
   # The session scrub plus the network floor — the child must not reach GitHub, `op`,
   # or the board. See dor_check_test.rb's dor_env for what that floor closed (a plain
@@ -175,10 +179,10 @@ class DorCheckDocsShapeTest < Minitest::Test
   # tests: production code rode it identically. Pinning this separately, because a
   # fix scoped to `test/` would pass the test above and leave the larger hole open.
   def test_integration_docs_is_refused_when_the_diff_carries_production_code
-    out, code = with_changed_files("docs/agents/note.md\napp/models/task.rb") { check(DOCS_CONTRACT) }
+    out, code = with_changed_files("docs/agents/note.md\n#{PRODUCTION_FIXTURE}") { check(DOCS_CONTRACT) }
 
     refute_equal 0, code, out
-    assert_match(%r{app/models/task\.rb}, out)
+    assert_match(%r{#{Regexp.escape(PRODUCTION_FIXTURE)}}, out)
   end
 
   # The three edges config/feature_shapes.yml PROMISES the next reader, pinned at
@@ -222,10 +226,10 @@ class DorCheckDocsShapeTest < Minitest::Test
   # … but an OBSERVABLE build-gate diff carrying code still errors, because the
   # earlier the shape is corrected the less work is thrown away.
   def test_integration_docs_at_the_build_gate_still_refuses_an_observed_code_diff
-    out, code = with_changed_files("app/models/task.rb") { check(DOCS_CONTRACT, "--gate", "build") }
+    out, code = with_changed_files(PRODUCTION_FIXTURE) { check(DOCS_CONTRACT, "--gate", "build") }
 
     refute_equal 0, code, out
-    assert_match(%r{app/models/task\.rb}, out)
+    assert_match(%r{#{Regexp.escape(PRODUCTION_FIXTURE)}}, out)
   end
 
   # ==== against a REAL git tree, not the injection seam ================================
