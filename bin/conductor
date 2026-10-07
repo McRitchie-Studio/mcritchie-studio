@@ -177,10 +177,14 @@ def read_board(bin, *args, what:, answered: [])
   status.success? ? out : nil
 end
 
-# Stream a helper binary's output straight to the terminal (drive subcommands).
-# Returns the child's success boolean.
+# Stream a drive's bin/release subcommand to the terminal and return ITS exit status, unchanged.
+# bin/release's exit status is its verdict (prepare: 0 assembled or nothing to do,
+# 1 abort, 2 argument refusal, 3 QA not green — Release::Cli), so a drive must hand
+# it to its caller as-is rather than fold every failure into 1. A binary that never
+# launched reads 127 (Ruby's $?); a child killed by a signal has no exitstatus: 1.
 def exec_bin(bin, *args)
   system(bin, *args)
+  $?&.exitstatus || 1
 end
 
 # --- bin/task reads --------------------------------------------------------
@@ -471,8 +475,7 @@ def drive_merge(run:)
 
   if run
     puts "→ bin/release merge #{slugs.join(' ')}"
-    ok = exec_bin(RELEASE_BIN, "merge", *slugs)
-    exit(ok ? 0 : 1)
+    exit(exec_bin(RELEASE_BIN, "merge", *slugs))
   else
     puts "#{RELEASE_CMD} merge #{slugs.join(' ')}"
     puts "(dry — re-run with --run to execute; bin/release applies the review-gate guard + overlap order)"
@@ -483,8 +486,7 @@ end
 def drive_qa(run:)
   if run
     puts "→ bin/release prepare"
-    ok = exec_bin(RELEASE_BIN, "prepare")
-    exit(ok ? 0 : 1)
+    exit(exec_bin(RELEASE_BIN, "prepare"))
   else
     puts "#{RELEASE_CMD} prepare"
     puts "(dry — re-run with --run to execute)"
@@ -496,8 +498,7 @@ end
 def drive_ship(run:)
   if run
     puts "→ bin/release ship --by conductor --yes"
-    ok = exec_bin(RELEASE_BIN, "ship", "--by", "conductor", "--yes")
-    exit(ok ? 0 : 1)
+    exit(exec_bin(RELEASE_BIN, "ship", "--by", "conductor", "--yes"))
   else
     puts "#{RELEASE_CMD} ship --by conductor"
     puts "(dry — qa-release stops here at QA; the full-cycle launcher uses `bin/conductor ship --run`)"
@@ -517,6 +518,9 @@ def usage
       ship  [--run]     dry by default; --run executes autonomous production ship.
 
       --no-health       skip the prod health curl (survey/plan).
+
+    A --run drive exits with bin/release's own status, unchanged: for qa,
+    0 assembled, 1 abort, 2 argument refusal, 3 QA not green.
 
     Board defaults to PROD (via bin/task / bin/release). Tests override the helper
     binaries with TASK_BIN / RELEASE_BIN / REVIEWER_SELECT_BIN / CURL_BIN.

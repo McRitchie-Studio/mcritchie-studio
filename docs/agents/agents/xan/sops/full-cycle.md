@@ -77,9 +77,10 @@ serial*.
    **Recovery — diagnose before you re-run.** If the sweep was **INTERRUPTED** (no
    verdict — it detached, crashed, timed out): **re-run `bin/release prepare
    --yes`**; it is self-healing, and only a live terminal can run it. If it
-   **ABORTED** (a verdict — red pre-QA gate, failed QA boot): **fix or eject the
-   offender FIRST**, because a bare re-run re-deploys the same member code and goes
-   red again. The full abort table is in
+   **ABORTED** (exit 1 — a verdict such as a red pre-QA gate) or came back **NOT
+   GREEN** (exit 3 — a QA app never booted, members stay `reviewed`): **fix or
+   eject the offender FIRST**, because a bare re-run re-deploys the same member
+   code and goes red again. The exit table and the full abort table are in
    [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md).
 3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
    session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
