@@ -182,11 +182,12 @@ lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
 (`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
 `--actor`. A RESUME HONOURS SIX FLAGS — `--slug`, `--repo`, `--agent`,
 `--dev-size`, `--steal`, and `--title` itself — and refuses every OTHER create
-flag with the `bin/task update` remedy rather than dropping it. The first five
-are `BEGIN_RESUME_FLAGS`; `--title` is legal only when you re-run the create line
-on a task that already exists, because it is how that re-run NAMES the task. So
-re-running the create line resumes cleanly, and only the OTHER create flags on it
-(say `--shape`) are refused.
+flag on `begin <slug>` with the `bin/task update` remedy rather than dropping it.
+The first five are `BEGIN_RESUME_FLAGS`; `--title` is legal only when you re-run
+the create line on a task that already exists, because it is how that re-run
+NAMES the task. Re-running the create line resumes cleanly, and its OTHER create
+flags (say `--shape`) are forwarded to `bin/task update <slug>` (guard catalog
+row 3.7).
 
 ### What the wrappers run
 

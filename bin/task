@@ -2172,6 +2172,38 @@ def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], u
   end
 end
 
+# DOOR 2's construction (guard catalog row 3.7): a create flag re-run against a task
+# that already exists is FORWARDED to `bin/task update <slug>`, which is where the
+# refusal used to send the caller. The resume flags (and their values) stay with
+# begin; everything else is the update's to parse and, if it must, to refuse.
+BEGIN_RESUME_VALUE_FLAGS = %w[--slug --repo --agent --dev-size --title].freeze
+
+def forward_create_flags_to_update!(raw_argv, slug)
+  forward = []
+  i = 0
+  while i < raw_argv.length
+    arg = raw_argv[i].to_s
+    if BEGIN_RESUME_VALUE_FLAGS.include?(arg)
+      i += 2
+    elsif BOOL_FLAGS.key?(arg)
+      forward << arg
+      i += 1
+    elsif arg.start_with?("--") && arg != "--steal"
+      forward.concat(raw_argv[i, 2])
+      i += 2
+    else
+      i += 1 # the positional slug, or --steal: begin's own
+    end
+  end
+  return if forward.empty?
+
+  warn!("begin 1/5 task — #{slug} already exists; forwarding #{forward.grep(/\A--/).join(" ")} to " \
+        "#{SELF_CMD} update #{slug}")
+  return if system(RbConfig.ruby, File.expand_path(__FILE__), "update", slug, *forward)
+
+  die!("the forwarded update of #{slug} failed — see above; nothing else ran.")
+end
+
 # The task record for `begin`'s resume decision: the data on 2xx, nil on the
 # board's POSITIVE "task not found" (create it), die on everything else — a
 # failed read must never be read as "no such task" (that is the same contract
@@ -2553,24 +2585,11 @@ when "begin"
     write_feature_marker(task)
     warn!("begin 1/5 task — created #{slug} [designed]")
   else
-    # ⛔ DOOR 2 — THE TASK ALREADY EXISTS, so this is a RESUME and every create
-    # flag is inert, --title or no --title. Door 1 catches only the blank-title
-    # spelling; what actually makes a create flag inert is the task EXISTING.
-    # `begin --title "Some Existing Title" --shape backend` walked straight past
-    # door 1 and dropped --shape in silence — on the DOCUMENTED re-run path, since
-    # `begin` is advertised as resumable. Refuse it here instead, naming the task
-    # so the remedy is copy-pasteable. --title stays legal: it is what named the
-    # task whose slug we just resolved, not an attempt to re-create it.
-    # THE REFUSAL MUST LEAVE A WAY FORWARD. Re-running the whole create line is a
-    # real habit — the fast lane prints it and `begin` is advertised as resumable
-    # — so a refusal that only says "no" trades a silent drop for a dead end. Name
-    # both moves: where the value DOES belong, and how to resume without it.
-    refuse_inert_create_flags!(
-      raw_argv, also_valid: %w[--title], update_target: slug,
-      because: "#{slug} already exists",
-      hint_lead: "begin RESUMES an existing task and never re-shapes it",
-      tail: ", then resume with `#{ClaimHolder::TASK_COMMAND} begin #{slug}`"
-    )
+    # DOOR 2 — THE TASK ALREADY EXISTS, so this is a RESUME. Re-running the
+    # documented create line is a real habit, so its create flags (--shape, --risk,
+    # --accept …) are forwarded to `update` rather than refused (guard catalog row
+    # 3.7). --title stays begin's: it named the task whose slug was just resolved.
+    forward_create_flags_to_update!(raw_argv, slug)
     warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
   end
 
