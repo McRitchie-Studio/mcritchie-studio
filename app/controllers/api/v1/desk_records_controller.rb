@@ -135,8 +135,11 @@ module Api
         leaked_processes
       ].freeze
 
+      # The session's soul is the actor when a session is present (the param is ignored).
       def overrides
-        desk_params.to_h.symbolize_keys.slice(*OVERRIDE_FIELDS).compact_blank
+        fields = desk_params.to_h.symbolize_keys.slice(*OVERRIDE_FIELDS)
+        fields[:actor] = session_actor(fields[:actor])
+        fields.compact_blank
       end
 
       def registry_attributes

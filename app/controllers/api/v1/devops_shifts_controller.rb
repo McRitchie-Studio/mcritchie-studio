@@ -5,7 +5,13 @@ module Api
     # DIFFERENT live instance already holds it, the response says so and the SOP tells
     # the caller to stand down. `renew` is the heartbeat, `release` the clean drop,
     # `index` the "who's on shift" read. Authed like the rest of the API (Bearer).
+    #
+    # The conductor lanes are admin-tier writes: a studio session answers 403 with
+    # the reason (Api::AgentSessionGate). The shared secret's token passes, as it
+    # does on every gate, for the one release it stays accepted.
     class DevopsShiftsController < BaseController
+      require_admin_session only: %i[acquire renew release]
+
       # GET /api/v1/devops_shifts — every lane's current holder (dashboard + CLI status).
       def index
         render_data(DevopsShift.status)
