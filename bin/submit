@@ -32,9 +32,8 @@
 # claim gate of its own (only move-to-building does), so ship asks two questions
 # BEFORE its first side effect:
 #
-#   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
-#     resume). Ship hands off a build; it never teleports a `designed` task
-#     past the claim/dev-size/baseline stamps the building move records.
+#   * the BUILD-STAGE SEAM — a `designed` task walks `bin/task move building`
+#     first, so the claim/dev-size/baseline stamps that move records still land.
 #   * HOLDER OWNERSHIP — the same desk rule the build gate enforces
 #     (bin/lib/desk_claim.rb): a task bound to a DIFFERENT live session's desk that
 #     has uncommitted changes refuses, naming the desk. Nothing else does: there is
@@ -238,17 +237,6 @@ if PAST_SUBMITTED.include?(stage)
   exit 0
 end
 
-# --- the build-stage seam ----------------------------------------------------
-# Ship hands off a BUILD; it never starts one. A task that was never claimed at
-# `building` (still `designed`) must walk the seam through `bin/task begin` /
-# `move building` — where the build-claim gate, the dev-size stamp, and the
-# usage baseline live — not be teleported designed→submitted by the handoff
-# wrapper. Asked before any side effect.
-unless %w[building submitted].include?(stage)
-  die!("#{slug} is [#{stage}] — submit hands off a BUILD (building → submitted). " \
-       "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
-end
-
 # --- builder ownership -------------------------------------------------------
 # The desk is the build claim (bin/lib/desk_claim.rb), asked BEFORE the first side
 # effect (commit/push/PR/move): the move-to-submitted path has no claim gate of its
@@ -367,6 +355,18 @@ at_exit { PRESENCE.clear }
 def presence!(step)
   lane, phase, weight = PRESENCE_PHASES.fetch(step)
   PRESENCE.publish(phase: phase, weight: weight, lane: lane)
+end
+
+# --- the build-stage seam, walked rather than refused (guard catalog row 3.1) --
+# A task still on `designed` walks `bin/task move <slug> building` here, after every
+# pre-check and before the first side effect, so the build-claim gate, the dev-size
+# stamp and the usage baseline that move records all still run. Submit never
+# teleports a task past them, and it never refuses a task for not having walked them.
+if stage == "designed"
+  say "0/8 claim — #{slug} is [designed]; bin/task move #{slug} building"
+  die!("the move to building failed — see above; re-run #{SHIP_CMD} #{slug}.") unless
+    system(TASK_BIN, "move", slug, "building")
+  stage = "building"
 end
 
 # --- 1/8 commit --------------------------------------------------------------

@@ -963,15 +963,19 @@ class SubmitTest < Minitest::Test
   # any side effect (commit/push/PR/move). The green-path tests above double as
   # the session-less degrade vector (the harness env is session-neutralized).
 
-  def test_ship_refuses_an_unbuilt_designed_task
+  # Guard catalog row 3.1: a designed task walks the building move itself, before the
+  # first side effect, instead of being refused.
+  def test_ship_walks_a_designed_task_to_building_before_committing
     with_repo do |dir|
       _out, err, status, lines = run_ship(dir, show_json: task_record(stage: "designed"))
 
-      refute status.success?, "a designed task must not be teleported past the building seam"
-      assert_includes err, "submit hands off a BUILD"
-      assert_includes err, "bin/task begin #{SLUG}", "the refusal must name the claim path"
-      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on an unbuilt task"
-      refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"
+      assert status.success?, err
+      kinds = lines.map { |l| l[0, 3] }
+      move_building = kinds.index(["TASK", "move", SLUG])
+      assert move_building, "the building move must run"
+      assert_equal "building", lines[move_building][3], "the first move is to building"
+      assert_includes err, "0/8 claim"
+      assert_equal "", `git -C #{dir} status --porcelain`.strip, "the run then commits as usual"
     end
   end
 
