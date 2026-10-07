@@ -182,7 +182,8 @@ class AgentWorktreeGemDeskTest < ActiveSupport::TestCase
       assert status.success?, "#{out}\n#{err}"
       refute_includes err, "unknown app"
       assert_includes out, "worktree: #{desk}"
-      refute_match(/^port:/, out, "a gem desk prints no port")
+      refute_match(/^port: \d/, out, "a gem desk prints no port")
+      assert_includes out, "port:     none"
       refute_match(/^magic link:/, out, "nor a local review link, since nothing serves one")
       assert_equal "feat/#{TASK}", git_out(desk, "rev-parse", "--abbrev-ref", "HEAD")
       context = JSON.parse(File.read(File.join(desk, ".agent-context.json")))

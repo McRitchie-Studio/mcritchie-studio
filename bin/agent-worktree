@@ -6036,7 +6036,9 @@ if $PROGRAM_NAME == __FILE__
     # or stack — so a discovered repo's desk (studio-engine, turf-vault) is in reach.
     app_name, raw_task, soul, *extra = ARGV
     usage unless app_name && raw_task && soul && extra.empty?
-    app = sweep_app_for(app_name)
+    # A gem repo resolves through the gem lane first: a fresh clone has no .worktrees
+    # tree yet, so discovery cannot see it, and `new` (its remedy) can cut it.
+    app = gem_desk_config(app_name) ? desk_app_for(app_name) : sweep_app_for(app_name)
     task = clean_slug(raw_task)
     dir = worktree_dir(app, task)
     abort "missing worktree: #{dir}\n#{missing_desk_remedy(app, task, soul)}" unless Dir.exist?(dir)
