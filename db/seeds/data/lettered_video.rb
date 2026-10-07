@@ -1,4 +1,5 @@
 require_relative "tiled_video"
+require_relative "look_picker_video"
 
 # A 72 s cinematic video for lettered clip references (recast pipeline, piece
 # 16): three people, two of them swapped in alt video 1, each look with a
@@ -33,11 +34,17 @@ module LetteredVideo
   TAGS = { "A" => [0.18, 0.55], "B" => [0.5, 0.5], "C" => [0.8, 0.42] }.freeze
   FRAMES = [[45_000, %w[A B C]], [54_000, %w[A B C]]].freeze
 
-  # [[person, look]] for Person B and Person C.
+  # [[person, look]] for Person B and Person C, each look with a synthetic
+  # character sheet (LookPickerVideo.sheet_image), so the card offers both.
   def self.athletes!
     ATHLETES.map do |name, descriptor, number|
       person = Person.find_by(name) || Person.create!(athlete: true, **name)
-      [person, person.appearances.live.find_or_create_by!(descriptor:) { |look| look.jersey_number = number }]
+      look = person.appearances.live.find_or_create_by!(descriptor:) { |l| l.jersey_number = number }
+      unless Artifact.newest_character_sheets([look.slug]).key?(look.slug)
+        sheet = Artifact.create!(kind: "character_sheet", image_url: LookPickerVideo.sheet_image(descriptor, jersey: "#f4f4f4"), source: "seed")
+        sheet.subjects.create!(person_slug: person.slug, appearance_slug: look.slug, ordinal: 1)
+      end
+      [person, look]
     end
   end
 

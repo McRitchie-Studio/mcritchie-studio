@@ -126,8 +126,8 @@
                   <% else %>
                     <div class="w-full aspect-video rounded-md border border-subtle bg-inset flex items-center justify-center text-3xs text-muted p-1 text-center">Frame not reachable</div>
                   <% end %>
-                  <figcaption class="flex items-center justify-between gap-1 mt-1 text-xs min-w-0">
-                    <span class="text-muted font-mono tabular-nums truncate"><%= video_timecode(frame["t_ms"]) %> · <%= frame["letters"].join(" ") %></span>
+                  <figcaption class="flex flex-wrap items-center justify-between gap-x-2 mt-1 text-xs min-w-0">
+                    <span class="text-muted font-mono tabular-nums"><%= video_timecode(frame["t_ms"]) %> · <%= frame["letters"].join(" ") %></span>
                     <% if (frame_download = downloads[frame["object_key"]]) %>
                       <%= link_to "Download", frame_download, download: frame["object_key"].split("/").last,
                                   class: "text-primary hover:underline shrink-0", data: { test: "clip-frame-download" } %>
@@ -158,7 +158,7 @@
               <%= link_to sheet.image_url, target: "_blank", rel: "noopener", download: "#{entry.appearance_slug}_character_sheet",
                           title: entry.label, class: "btn btn-outline btn-sm min-w-0",
                           data: { test: "clip-sheet", look: entry.appearance_slug, ordinal: entry.performer_ordinal, sheet: row.sheet } do %>
-                <span class="truncate"><%= sheet_label %></span>
+                <span class="whitespace-normal break-words"><%= sheet_label %></span>
               <% end %>
             <% else %>
               <span class="text-sm text-warning-ink min-w-0 break-words" data-test="clip-sheet-missing" data-ordinal="<%= entry.performer_ordinal %>">

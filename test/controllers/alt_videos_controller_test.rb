@@ -144,8 +144,8 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
         assert_select "[data-test='clip-frame'][data-letters='A,B,C']", 2
         assert_select "[data-test='clip-frame']", /0:45 · A B C/
       end
-      assert_select "[data-test='clip-sheet-missing'][data-ordinal='2']", /\ASheet 1 · Person B · #4 Test Passer Epsilon: /
-      assert_select "[data-test='clip-sheet-missing'][data-ordinal='3']", /\ASheet 2 · Person C · #88 Test Receiver Zeta: /
+      assert_select "[data-test='clip-sheet'][data-sheet='1'][data-ordinal='2']", "Sheet 1 · Person B · #4 Test Passer Epsilon"
+      assert_select "[data-test='clip-sheet'][data-sheet='2'][data-ordinal='3']", "Sheet 2 · Person C · #88 Test Receiver Zeta"
       assert_select "[data-test='clip-prompt']", /- Person B \(lead\) -> #4 Test Passer Epsilon, Home White \(character sheet 1\)\s+- Person C \(background\) -> #88 Test Receiver Zeta, Home White \(character sheet 2\)/
     end
     # The frames sit above the hand-off buttons on the card.
@@ -158,20 +158,17 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='performer-card'][data-ordinal='2'] [data-test='performer-letter']", "B"
   end
 
-  test "a clip card labels a found sheet by number, letter and player" do
+  test "a swapped person with no sheet keeps the number in the card's label" do
     video = LetteredVideo.seed!
     alt = video.alt_videos.first
-    look = Appearance.find_by!(slug: alt.swap_set[2].appearance_slug)
-    sheet = Struct.new(:image_url).new("https://img.example/sheet.png")
-    real = Artifact.method(:newest_character_sheets)
-    Artifact.define_singleton_method(:newest_character_sheets) { |_slugs| { look.slug => sheet } }
+    ArtifactSubject.where(appearance_slug: alt.swap_set[3].appearance_slug).destroy_all
     log_in_as users(:alex)
     get music_video_alt_video_path(video, alt)
 
-    assert_select "[data-test='alt-clip'][data-ordinal='3'] [data-test='clip-sheet'][data-sheet='1'][data-ordinal='2']",
-                  "Sheet 1 · Person B · #4 Test Passer Epsilon"
-  ensure
-    Artifact.define_singleton_method(:newest_character_sheets, real) if real
+    assert_select "[data-test='alt-clip'][data-ordinal='3']" do
+      assert_select "[data-test='clip-sheet'][data-sheet='1']", "Sheet 1 · Person B · #4 Test Passer Epsilon"
+      assert_select "[data-test='clip-sheet-missing'][data-ordinal='3']", /\ASheet 2 · Person C · #88 Test Receiver Zeta: no character sheet/
+    end
   end
 
   test "an upload becomes the primary version; an older one can be put back" do
