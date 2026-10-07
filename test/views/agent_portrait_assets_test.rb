@@ -13,12 +13,12 @@ require "test_helper"
 # _agent_avatar.html.erb carries onerror="this.remove()", which means a 404
 # portrait degrades to the initials bubble with no error anywhere.
 class AgentPortraitAssetsTest < ActiveSupport::TestCase
-  SEED = Rails.root.join("db/seeds/02_agents.rb")
-  AVATAR_PATHS = File.read(SEED).scan(%r{avatar:\s*"(/agents/[^"]+)"}).flatten.freeze
+  SOULS = Rails.root.join("config/souls.yml")
+  AVATAR_PATHS = YAML.safe_load_file(SOULS).fetch("souls").filter_map { |soul| soul["avatar"] }.freeze
 
   test "[component] the seed names at least one portrait per soul" do
     assert_operator AVATAR_PATHS.length, :>=, 9,
-                    "db/seeds/02_agents.rb should still seed a face per soul; found #{AVATAR_PATHS.length}"
+                    "config/souls.yml should still give a face per soul; found #{AVATAR_PATHS.length}"
   end
 
   test "[component] every seeded avatar path resolves to a file that exists" do

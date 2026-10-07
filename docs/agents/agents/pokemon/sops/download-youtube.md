@@ -1,4 +1,5 @@
 # Download YouTube
+<!-- registry: yt-dlp H.264 download of a YouTube video or section -->
 
 ## Status: Active
 

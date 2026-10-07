@@ -38,11 +38,11 @@
 # narrowed `testDir`, a deleted file, a dropped shard, or next year's flag that nobody in
 # this repo has heard of. They all land on the same line of arithmetic:
 #
-#     executed == total_specs - quarantined            (config/e2e_lane.yml)
+#     executed == committed - quarantined     (bin/lib/e2e_spec_census.rb, over e2e/)
 #
 # A guard that enumerates spellings must be right every time. A guard that counts what ran
-# has to be beaten by ARITHMETIC — and to move the arithmetic you must edit config/e2e_lane.yml,
-# which is a reviewable diff line with a comment attached.
+# has to be beaten by ARITHMETIC, and the arithmetic is computed from the committed spec
+# files, not written by the author whose run it judges.
 #
 # WHAT THIS DELIBERATELY DOES NOT ASSERT: whether the specs PASSED. A failing spec is a red
 # `playwright` job already; that verdict is not this gate's business. This gate answers the
@@ -50,6 +50,7 @@
 
 require "json"
 require "yaml"
+require_relative "e2e_spec_census"
 
 class E2eExecutedSet
   # Playwright statuses. A test is EXECUTED if it reached a verdict — pass, fail, or flake.
@@ -76,14 +77,17 @@ class E2eExecutedSet
     end
   end
 
-  def initialize(contract:, reports:)
+  # `census` is the committed suite's count (E2eSpecCensus.count over e2e/); `contract` is
+  # config/e2e_lane.yml, which supplies the quarantine tag.
+  def initialize(contract:, reports:, census:)
     @contract = contract
     @reports = reports
+    @census = census
   end
 
-  attr_reader :contract, :reports
+  attr_reader :contract, :reports, :census
 
-  def expected_executed = contract.fetch("executed")
+  def expected_executed = census.executed
   def quarantine_tag = contract.fetch("quarantine_tag")
 
   # Walk the report's suite tree. Playwright nests suites per file and per describe-block, so
@@ -138,8 +142,8 @@ class E2eExecutedSet
 
   def summary
     "#{executed_tests.size} executed · #{skipped_tests.size} skipped · " \
-      "#{reports.size} shard report(s) · contract: #{expected_executed} executed " \
-      "(#{contract.fetch("total_specs")} committed − #{contract.fetch("quarantined")} quarantined)"
+      "#{reports.size} shard report(s) · census: #{expected_executed} executed " \
+      "(#{census.total} committed − #{census.quarantined} quarantined)"
   end
 
   private
@@ -221,8 +225,8 @@ class E2eExecutedSet
     return [] if leaked.empty?
 
     ["#{leaked.size} executed spec(s) carry #{quarantine_tag} in the title. The exclusion and " \
-     "the contract have drifted apart: either the CI command lost its `--grep-invert`, or a " \
-     "tag was added without lowering `executed` in config/e2e_lane.yml."]
+     "the census have drifted apart: the CI command lost its `--grep-invert`, or the tag is " \
+     "spelled in a way the census does not read."]
   end
 
   # THE ARITHMETIC. Everything above is a named diagnosis; this is the catch-all that fires
@@ -234,18 +238,17 @@ class E2eExecutedSet
     delta = actual - expected_executed
     direction = delta.negative? ? "FEWER" : "MORE"
 
-    ["the lane EXECUTED #{actual} spec(s); config/e2e_lane.yml pins it at #{expected_executed} " \
-     "(#{delta.abs} #{direction} than the contract).\n" \
+    ["the lane EXECUTED #{actual} spec(s); the committed suite under e2e/ counts " \
+     "#{expected_executed} (#{delta.abs} #{direction} than the census).\n" \
      "The green `playwright` check now covers a DIFFERENT SET than the one this repo signed " \
      "off on, and the source may look completely innocent — this assertion is deliberately " \
      "blind to HOW the set changed, because every previous version of this guard was defeated " \
      "by a HOW it had not enumerated.\n" \
-     "If specs LEFT the lane, find out why before you touch this number. The known ways, none " \
+     "If specs LEFT the lane, find out why. The known ways, none " \
      "of which change the spec count in the source: a widened `--grep-invert` in " \
      ".github/workflows/ci.yml (`@quarantine|board` drops 8), a `--only-changed` or " \
      "`--last-failed` flag, a `--max-failures` early exit, a narrowed `testDir`/`testIgnore`, " \
-     "a dropped shard, or a runtime skip.\n" \
-     "If you legitimately ADDED specs: raise `total_specs` AND `executed` in " \
-     "config/e2e_lane.yml in the same commit, and confirm with `npx playwright test --list`."]
+     "a dropped shard, or a runtime skip. The census reads bare `test(` declarations, so a " \
+     "spec declared some other way also lands here: declare it bare."]
   end
 end

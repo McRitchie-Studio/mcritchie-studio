@@ -1,4 +1,5 @@
 # Workspace Signup
+<!-- registry: Google Workspace, alex@ + team@ -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # Chrome Profiles
+<!-- registry: avatar-menu roster, fresh Mac -->
 
 ## Status: Active
 

@@ -2856,7 +2856,7 @@ if review_role && head_check[:state] == :mismatch
       "#{base_check[:base_sha][0, 12]}#{behind ? " (#{behind} commit(s) ahead of this branch)" : ""}, and it " \
       "is not an ancestor of #{base_check[:branch_ref]}. Every check that ran against the old merge describes " \
       "a tree this merge will not produce — including the e2e DECLARED-vs-EXECUTED set, whose expected count " \
-      "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
+      "is counted from the e2e/ specs the very merge that moved the base can change. Re-run the lane " \
       "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
       "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
       "not a measure of it.#{base_movement_detail(movement, base_branch, ambiguous_clock: ci_clock_ambiguous)}"

@@ -1,4 +1,5 @@
 # Workspace Icon SOP (Steffon)
+<!-- registry: badged software icons per client, /credentials matrix, 1Password vault icons -->
 
 ## Status: Active
 

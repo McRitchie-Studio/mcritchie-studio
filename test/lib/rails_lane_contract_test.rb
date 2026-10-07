@@ -101,17 +101,22 @@ class RailsLaneContractTest < Minitest::Test
 
   # ---- THE CONTRACT AND THE WORKFLOW MUST AGREE ---------------------------------
 
-  def test_integration_the_matrix_size_matches_the_declared_shard_count
-    ci = YAML.safe_load_file(CI_YML, aliases: true)
-    matrix = ci.dig("jobs", "rails", "strategy", "matrix", "shard")
+  # The matrix is READ from the contract, not written beside it: `rails_plan` prints
+  # bin/ci-shard --matrix and the `rails` job's matrix is that output.
+  def test_unit_the_matrix_is_one_through_the_declared_shard_count
+    assert_equal [1, 2, 3], TestShard.matrix(shards: 3)
+    assert_equal (1..contract[:shards]).to_a, TestShard.matrix(contract)
+  end
 
-    refute_nil matrix, "ci.yml has no `rails` job with a shard matrix — the sharded lane moved or vanished"
-    assert_equal contract[:shards], matrix.length,
-                 "ci.yml's matrix runs #{matrix.length} shard(s) while #{CONTRACT_PATH} declares " \
-                 "#{contract[:shards]}. bin/ci-shard aborts on that mismatch at RUNTIME; catching it " \
-                 "here costs a second instead of a whole CI run."
-    assert_equal (1..contract[:shards]).to_a, matrix,
-                 "the matrix must be 1..#{contract[:shards]} — bin/ci-shard indexes buckets from 1"
+  def test_integration_the_workflow_reads_its_shard_matrix_from_the_contract
+    ci = YAML.safe_load_file(CI_YML, aliases: true)
+    plan = ci.dig("jobs", "rails_plan")
+
+    refute_nil plan, "ci.yml has no `rails_plan` job to read the shard matrix from config/rails_lane.yml"
+    assert_includes plan.fetch("steps").map { |step| step["run"].to_s }.join("\n"), "bin/ci-shard --matrix"
+    assert_equal "rails_plan", ci.dig("jobs", "rails", "needs")
+    assert_equal "${{ fromJSON(needs.rails_plan.outputs.shards) }}", ci.dig("jobs", "rails", "strategy", "matrix", "shard"),
+                 "the rails job's matrix must be the plan's output, not a second copy of the count"
   end
 
   def test_integration_the_shard_matrix_does_not_fail_fast

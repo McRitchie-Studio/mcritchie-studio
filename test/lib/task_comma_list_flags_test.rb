@@ -17,9 +17,9 @@
 # against test/lib/task_cli_test.rb's private stub server (what actually goes on
 # the wire, and the prose controls proving `--accept` survives unsplit) stay
 # there, because a copy of that 261-line harness would be testing its own copy.
-# Everything here needs NO harness: the guard's SHAPE, read out of the script,
-# and its ORDERING, proved against an unroutable board. config/test_health.yml
-# asks for exactly that division.
+# Everything here needs NO harness: the guard's wiring, read out of the script,
+# and its ORDERING, proved against an unroutable board. The guarded set is the
+# key map, lib/devops_list_flags.rb (test/lib/devops_list_flags_test.rb).
 #
 #   ruby -Itest test/lib/task_comma_list_flags_test.rb
 
@@ -58,42 +58,7 @@ class TaskCommaListFlagsTest < Minitest::Test
     [err, status]
   end
 
-  # ── the guarded set ────────────────────────────────────────────────────────
-
-  # The whole design rests on this constant naming the identifier flags and
-  # NOTHING else. Read it out of the script rather than restating it: a hand that
-  # added `--accept` here would start refusing legitimate acceptance criteria, and
-  # only this assertion would notice.
-  def test_the_guard_covers_identifier_flags_and_never_prose
-    literal = SOURCE[/^COMMA_FREE_LIST_FLAGS = (%w\[[^\]]*\])\.freeze$/, 1]
-    refute_nil literal, "COMMA_FREE_LIST_FLAGS must be a single-line %w[] constant"
-    guarded = literal.scan(/--[a-z-]+/)
-
-    assert_equal %w[--repo --risk], guarded,
-                 "only the identifier flags are guarded — a repo name and a risk tag can never " \
-                 "contain a comma, and prose can"
-    %w[--accept --test --checks].each do |prose|
-      refute_includes guarded, prose,
-                      "#{prose} is free prose; guarding it would refuse legitimate copy, which is a " \
-                      "worse defect than the one this guard fixes"
-    end
-  end
-
-  # A guarded flag that is not a LIST_FLAGS key guards nothing — the branch that
-  # consults this constant only runs for a real list flag, so a typo would be
-  # inert and silent, the exact failure mode under repair.
-  def test_every_guarded_flag_is_a_real_list_flag
-    list_literal = SOURCE[/^LIST_FLAGS = (\{[^\n]*\})\.freeze$/, 1]
-    refute_nil list_literal, "LIST_FLAGS must be a single-line hash literal"
-    known = list_literal.scan(/"(--[a-z-]+)"/).flatten
-    guarded = SOURCE[/^COMMA_FREE_LIST_FLAGS = (%w\[[^\]]*\])\.freeze$/, 1].scan(/--[a-z-]+/)
-
-    assert_equal %w[--repo --risk --accept --test --checks], known,
-                 "extraction sanity — LIST_FLAGS reached real content, and only it"
-    assert_empty guarded - known,
-                 "a guarded flag that is not a LIST_FLAGS key is never consulted: the guard would be " \
-                 "dead code and the comma would go on being accepted"
-  end
+  # ── the wiring (the guarded set itself is lib/devops_list_flags.rb) ───────
 
   # A constant nobody reads is a dead guard. Both doors must call the refusal:
   # the LIST branch (`--repo` / `--risk`) and the MAP branch, whose repo KEY

@@ -1,4 +1,5 @@
 # Roster Sync
+<!-- registry: refresh players/teams before a season -->
 
 ## Status: PENDING — do not run steps 2 and 3 yet
 

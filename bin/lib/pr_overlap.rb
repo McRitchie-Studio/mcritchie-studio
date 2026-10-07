@@ -73,7 +73,7 @@ module PrOverlap
     "version.rb" => "a VERSION both PRs set merges clean and silently — if they ship in " \
                     "separate releases the stranded-work guard aborts the whole sweep. Batch them, or bump past.",
     "CHANGELOG.md" => "two sections for one version — reconcile to a single dated entry.",
-    "e2e_lane.yml" => "a spec COUNTER — the second PR to land must re-run the lister and re-cert."
+    "e2e_lane.yml" => "the quarantine CEILING — the second PR to land must re-count the tagged specs and re-cert."
   }.freeze
 
   def ledger_hint(files)

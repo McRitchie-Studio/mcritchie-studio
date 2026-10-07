@@ -99,10 +99,8 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   # --- degraded mode: the STATIC FLOOR must name them -------------------------
   #
   # Task.soul_roster rescues to SOUL_ROSTER on any DB error, and the guarantee that
-  # buys is "degrading never turns a real soul into an unknown". A soul added only to
-  # db/seeds/02_agents.rb would void that guarantee for exactly the new names — it
-  # would resolve while the Agent table is readable and become an unknown the moment
-  # it is not, which is the one condition the floor exists for.
+  # buys is "degrading never turns a real soul into an unknown". The floor and the
+  # seed both read config/souls.yml, so every seeded soul is on it.
 
   test "the new souls survive an unreadable Agent table" do
     Current.soul_roster = nil

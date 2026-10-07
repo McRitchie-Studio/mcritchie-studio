@@ -1,258 +1,14 @@
-# Agent registry seed.
+# Agent registry seed: one Agent row per soul in config/souls.yml, the roster's
+# one source (Task::SOUL_ROSTER reads the same file).
 #
-# Idempotent upsert: safe to run on every deploy (release → QA/prod). Each soul
-# carries the Deploy-flow redesign roles + the metadata the `ReviewerSelector`
-# reads when Carl summons a review light (see
-# docs/agents/system/devops-cycle-design.md §1.2):
+# Idempotent upsert: safe to run on every deploy (release → QA/prod). The field
+# meanings, including the metadata ReviewerSelector reads, are in that file's
+# header.
 #
-#   metadata["reviewer"]       — true if in the senior review pool
-#   metadata["review_role"]    — "owner" | "reviewer" | "orchestrator" | nil
-#   metadata["domains"]        — areas/repos this soul reviews (domain-fit input)
-#   metadata["review_weight"]  — NUMERIC review weight (higher = wins the single
-#                                LIGHT seat when two specialists tie on domain fit).
-#                                Stored as a number, NOT the "heavy"/"light" label
-#                                a bare String#to_f would silently zero (see
-#                                ReviewerSelector::WEIGHT_LABELS). The specialists
-#                                share the heavy weight; the light falls to fit then
-#                                the logged roll. ReviewerSelector::WEIGHT_LABELS
-#                                maps heavy->2.0 / light->1.0 for legacy label rows.
-#
-# Carl is the LEAD ARCHITECT and STANDING PRIMARY — the deep reviewer + OWNER on
-# EVERY PR (there is no Avi supervisor). He summons ONE domain LIGHT from the
-# specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Xan=Documentation}. After the 2026-07-22 reslot **Avi** is the `qa_owner` (he runs
-# qa-release: the accepted→release sweep + QA), so he is kept out of the light pool —
-# no soul both reviews AND QAs the same change (no self-gating). Steffon moved to
-# production-deploy and rejoined the light specialist pool. See
-# docs/agents/agents/carl/sops/pr-review.md and app/services/reviewer_selector.rb.
-#
-# THE ORCHESTRATOR SEAT IS `xan` (renamed from `alex` on 2026-09-24 — the human
-# operator takes the name Alex, so a soul slug reading `alex` would name the
-# owner). The Solana signing identity `agent.xan.solana` already carried the name
-# and is unrelated to this row. The rename-in-place block below the roster keeps
-# the row's id and history; Task::SOUL_ALIASES reads `alex` as `xan` for one release.
-agents_data = [
-  {
-    name: "Xan",
-    slug: "xan",
-    status: "active",
-    agent_type: "orchestrator",
-    title: "Lead Orchestrator",
-    description: "Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool's Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.",
-    avatar: "/agents/xan.webp",
-    position: 0,
-    metadata: {
-      "review_role" => "reviewer",
-      "reviewer" => true,
-      "domains" => ["documentation", "docs", "runbooks", "agent-operating-model", "readme"],
-      "review_weight" => 2.0
-    }
-  },
-  {
-    name: "Avi",
-    slug: "avi",
-    status: "active",
-    agent_type: "product",
-    title: "Product Owner",
-    description: "Product Owner and Deploy-flow assembler. Refines tickets, sets po_size, and owns the qa-release sweep: promote the accepted → release batch PR, run the pre-QA gate, deploy QA, and flip members assembled on QA-green. Review is Carl's; the ship is Steffon's.",
-    avatar: "/agents/avi.webp",
-    position: 3,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false,
-      "assembler" => true,
-      "qa_owner" => true,
-      "responsibilities" => ["ticket-refinement", "sizing", "qa-release", "qa-deploy"]
-    }
-  },
-  {
-    name: "Carl",
-    slug: "carl",
-    status: "active",
-    agent_type: "specialist",
-    title: "Lead Architect",
-    description: "Lead Architect and owner of PR review. Crack Rails dev — controllers, models, migrations, background jobs, ActiveRecord performance, and the studio-engine internals. The STANDING PRIMARY on every PR: the deep reviewer who owns the gates, summons a domain light specialist at his discretion, drives the verdict, and merges approved work into the accepted branch.",
-    avatar: "/agents/carl.webp",
-    position: 4,
-    metadata: {
-      "review_role" => "owner",
-      "reviewer" => true,
-      "standing_primary" => true,
-      "domains" => ["backend", "models", "controllers", "migrations", "jobs", "studio-engine"],
-      "review_weight" => 2.0
-    }
-  },
-  {
-    name: "Shannon",
-    slug: "shannon",
-    status: "active",
-    agent_type: "specialist",
-    title: "Dev UI Expert",
-    description: "UI specialist. Owns frontend development across the ecosystem — ERB views, Tailwind, Alpine.js, theme system, and studio-engine UI primitives. Senior reviewer for UI PRs in the Deploy-flow review pool.",
-    avatar: "/agents/shannon.webp",
-    position: 5,
-    metadata: {
-      "review_role" => "reviewer",
-      "reviewer" => true,
-      "domains" => ["ui", "views", "tailwind", "alpine", "theme", "studio-engine-ui"],
-      "review_weight" => 2.0
-    }
-  },
-  {
-    name: "Jasper",
-    slug: "jasper",
-    status: "active",
-    agent_type: "specialist",
-    title: "Dev Blockchain Expert",
-    description: "Blockchain specialist. Owns the Solana surface: turf-vault Anchor program, solana-studio Ruby client, and all on-chain integration. Senior reviewer for Web3 / on-chain PRs in the Deploy-flow review pool.",
-    avatar: "/agents/jasper.webp",
-    position: 6,
-    metadata: {
-      "review_role" => "reviewer",
-      "reviewer" => true,
-      "domains" => ["web3", "solana", "turf-vault", "solana-studio", "on-chain", "anchor"],
-      "review_weight" => 2.0
-    }
-  },
-  {
-    name: "Steffon",
-    slug: "steffon",
-    status: "active",
-    agent_type: "specialist",
-    title: "Platform Engineer",
-    description: "Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. After the reslot the reviewer-select QA-owner exclusion keys on Avi (who runs qa-release), not on Steffon, so Steffon is back in the light pool.",
-    avatar: "/agents/steffon.webp",
-    position: 7,
-    metadata: {
-      "review_role" => "reviewer",
-      "reviewer" => true,
-      "domains" => ["devops", "release", "infrastructure", "ci", "observability", "heroku"],
-      "review_weight" => 2.0,
-      "ship_gate" => true
-    }
-  },
-  {
-    name: "Turf Monster",
-    slug: "turf-monster",
-    status: "active",
-    agent_type: "specialist",
-    title: "Sports Domain Specialist",
-    description: "Specializes in sports data, pick'em games, and the Turf Monster app. Expert in World Cup props and player stats.",
-    avatar: "/agents/turf-monster.webp",
-    position: 1,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  },
-  {
-    name: "Mack",
-    slug: "mack",
-    status: "active",
-    agent_type: "worker",
-    title: "General Worker",
-    description: "Versatile worker agent handling data scraping, processing, and general-purpose tasks. Reliable and efficient.",
-    avatar: "/agents/mack.webp",
-    position: 8,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  },
-  {
-    name: "Mason",
-    slug: "mason",
-    status: "active",
-    agent_type: "specialist",
-    title: "Marketing",
-    description: "Runs marketing — brand voice, launch comms, social, funnels, copy. (Previously held Infrastructure; that surface now belongs to Steffon.)",
-    avatar: "/agents/mason.webp",
-    position: 2,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  },
-  # The general BUILDER, and the ecosystem's most prolific author — the operating
-  # model routes every task through it. Seeded so the author set can name it:
-  # `--agent pokemon` used to pass the CLI's shape check and die at the roster,
-  # leaving the task `builders: NOT STAMPED` and `bin/reviewer-select` refusing.
-  # It is legion (each task wears its own mascot, recorded per-task in
-  # devops.mascot) but ONE soul, so the slug is stable and the costume is not.
-  # `reviewer => false` and absent from ReviewerSelector::POOL: it builds, it never
-  # reviews, so naming it as the author excludes nobody and frees no seat. It
-  # replaces the `--agent mack` placeholder, which borrowed a real soul's slug and
-  # made genuine Mack authorship indistinguishable from a Pokémon build.
-  {
-    name: "Pokémon",
-    slug: "pokemon",
-    status: "active",
-    agent_type: "worker",
-    title: "General Builder",
-    description: "The builder. Every task is built by one, and it is legion: each task gets its own mascot, and every mascot is the same soul. Builds whatever the task needs — UI, backend, Google Workspace, a shared gem, an on-chain instruction — to the standards the specialists review to. Builds; never reviews, releases, or deploys.",
-    # Pikachu is the general soul's face; each task still wears its own mascot.
-    avatar: "/agents/pokemon.webp",
-    position: 9,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  },
-  # The CMO. A launcher, a docs directory, a HEARTBEAT and two registered SOPs
-  # (constraint-diagnosis, content-sprint) — a fully established soul that was never
-  # on the register. Measured 2026-09-24: zero attributed rows, so this gap was
-  # LATENT rather than live; it would have fired silently the first time Rex
-  # authored anything, exactly as Pokémon's did. Non-reviewing, like Mason.
-  {
-    name: "Rex",
-    slug: "rex",
-    status: "active",
-    agent_type: "specialist",
-    title: "Chief Marketing Officer",
-    description: "Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics stay with Mason.",
-    avatar: nil,
-    position: 10,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  },
-  # Cyvasse's house player (task tyrion-fleet-onboarding): client-facing, plays
-  # and talks with visitors, and by design holds no credential beyond his own
-  # game token (docs/agents/agents/tyrion/role.md). Tywin is Cyvasse's admin;
-  # Tyrion is the face. Non-reviewing.
-  {
-    name: "Tyrion",
-    slug: "tyrion",
-    status: "active",
-    agent_type: "specialist",
-    title: "Cyvasse House Player",
-    description: "Cyvasse's client-facing player: plays visitors, talks with them across the board, and teaches the game. Holds no credentials beyond his own game token, so nothing can be talked out of him. Runs on an isolated machine; Tywin runs the place.",
-    avatar: nil,
-    position: 11,
-    metadata: {
-      "review_role" => nil,
-      "reviewer" => false
-    }
-  }
-]
-
-# Each soul's status-line identity — glyph + tint — shown by bin/statusline when a
-# session "acts as" this agent (a task persona) in place of its Pokémon. Read by
-# Agent#emoji / Agent#status_color. Explicit colors so two souls never collide on
-# the 8-bucket deterministic avatar palette (status_color falls back to it).
-AGENT_EMOJI = {
-  "xan" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
-  "jasper" => "🧪", "steffon" => "🚀", "turf-monster" => "🐲",
-  "mack" => "📦", "mason" => "📣", "pokemon" => "⚡", "rex" => "📈",
-  "tyrion" => "🦁"
-}.freeze
-AGENT_COLOR = {
-  "xan" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
-  "jasper" => "#9945FF", "steffon" => "#06B6D4", "turf-monster" => "#84CC16",
-  "mack" => "#9CA3AF", "mason" => "#EF4444", "pokemon" => "#FACC15", "rex" => "#14B8A6",
-  "tyrion" => "#B45309"
-}.freeze
+# THE ORCHESTRATOR SEAT IS `xan` (renamed from `alex`: a soul slug reading `alex`
+# would name the human owner). The rename-in-place block below keeps the row's id
+# and history; Task::SOUL_ALIASES reads `alex` as `xan`.
+agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
 
 # `alex` → `xan`, IN PLACE. db/migrate/20260924210000_rename_alex_soul_to_xan.rb
 # repoints the row and every stored soul-slug value at migrate time, and on a
@@ -286,20 +42,20 @@ if (legacy = Agent.find_by(slug: "alex"))
 end
 
 agents_data.each do |data|
-  agent = Agent.find_or_initialize_by(slug: data[:slug])
+  agent = Agent.find_or_initialize_by(slug: data.fetch("slug"))
   # Merge (not replace) metadata so any runtime-written keys survive a re-seed;
   # the keys this seed owns are still authoritatively set/overwritten.
-  merged_metadata = (agent.metadata || {}).merge(data.fetch(:metadata, {}))
-  merged_metadata["emoji"] = AGENT_EMOJI[data[:slug]] if AGENT_EMOJI.key?(data[:slug])
-  merged_metadata["color"] = AGENT_COLOR[data[:slug]] if AGENT_COLOR.key?(data[:slug])
+  merged_metadata = (agent.metadata || {}).merge(data.fetch("metadata", nil) || {})
+  merged_metadata["emoji"] = data["emoji"] if data["emoji"]
+  merged_metadata["color"] = data["color"] if data["color"]
   agent.assign_attributes(
-    name: data[:name],
-    status: data[:status],
-    agent_type: data[:agent_type],
-    title: data[:title],
-    description: data[:description],
-    avatar: data[:avatar],
-    position: data[:position],
+    name: data["name"],
+    status: data["status"],
+    agent_type: data["agent_type"],
+    title: data["title"],
+    description: data["description"],
+    avatar: data["avatar"],
+    position: data["position"],
     metadata: merged_metadata
   )
   agent.save! if agent.new_record? || agent.changed?

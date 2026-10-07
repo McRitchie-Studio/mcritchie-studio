@@ -1,4 +1,5 @@
 # Email Image
+<!-- registry: make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export -->
 
 ## Status: Active
 

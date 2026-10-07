@@ -1,4 +1,5 @@
 # Arbitrate Block
+<!-- registry: a builder contested a review block; Avi rules -->
 
 ## Status: Active
 

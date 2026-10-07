@@ -455,7 +455,7 @@ module ClientSurfaceDiff
   # The second clause is the whole strength of the definition, and it is borrowed
   # rather than invented. config/e2e_lane.yml already runs a RUNTIME executed-set
   # gate: bin/e2e-executed-set-check reads Playwright's OWN report after the lane
-  # runs and asserts `executed == total_specs - quarantined`. That gate exists
+  # runs and asserts it ran the census's `committed - quarantined`. That gate exists
   # because static counting cannot answer "how many specs RAN", and every escape
   # hatch — testInfo.skip(), a widened --grep-invert, --only-changed, a file never
   # collected — lives in the gap between the two questions.

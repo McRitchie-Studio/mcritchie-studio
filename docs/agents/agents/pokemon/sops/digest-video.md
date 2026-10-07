@@ -1,4 +1,5 @@
 # Digest Video
+<!-- registry: download, store and record a music video; stage 1 of pipeline 3 -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # Entry Forfeit
+<!-- registry: withdraw one entrant, forfeit fee -->
 
 ## Status: Active
 

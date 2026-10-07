@@ -42,7 +42,7 @@ class Agent < ApplicationRecord
   # Status-line persona identity. When a session "acts as" a soul (a task with a
   # persona), bin/statusline shows the agent's emoji + name + color in place of the
   # session's Pokémon — see Task#sync_app_identity / #persona_identity. `emoji` is
-  # the agent's glyph (seeded in db/seeds/02_agents.rb); `status_color` falls back
+  # the agent's glyph (config/souls.yml, seeded by db/seeds/02_agents.rb); `status_color` falls back
   # to the deterministic avatar hue when an explicit color isn't seeded.
   def emoji
     metadata&.dig("emoji").presence

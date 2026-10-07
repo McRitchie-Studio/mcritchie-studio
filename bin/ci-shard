@@ -8,6 +8,7 @@
 #   bin/ci-shard --print 2/4      print that shard's file list; run nothing
 #   bin/ci-shard --manifest       print every file the lane owns, one per line
 #   bin/ci-shard --explain        print all buckets with their projected seconds
+#   bin/ci-shard --matrix         print the CI shard matrix as JSON ([1, 2, …, shards])
 #
 # WHY CI USES THE `--shard=` SPELLING AND NOT THE BARE ONE. A BARE interpolated token
 # (`bin/ci-shard ${{ matrix.shard }}/…`) stands alone in argument position, where a
@@ -34,11 +35,10 @@
 # is not present in the asset pipeline` (the same trap bin/fast-check documents). Keeping
 # both inside this one command means a shard cannot be run un-prepared.
 #
-# THE DENOMINATOR IS CHECKED, NOT TRUSTED. CI passes `strategy.job-total`; the contract
-# declares `shards`. If someone widens the matrix and forgets the contract — or the
-# reverse — the buckets the gate expects and the buckets that ran are different cuts of
-# the same tree, and the arithmetic would fail confusingly one job later. So a mismatch
-# aborts HERE, where the message can name both numbers.
+# THE MATRIX COMES FROM THE CONTRACT. ci.yml's `rails_plan` job runs `--matrix`, so the
+# workflow's shard list is read from config/rails_lane.yml rather than written twice.
+# The denominator is still checked: CI passes `strategy.job-total`, and a mismatch with
+# the contract's `shards` aborts HERE, where the message can name both numbers.
 
 require_relative "lib/test_shard"
 
@@ -53,6 +53,7 @@ def usage!(status = 1)
            bin/ci-shard --print <index>/<total>
            bin/ci-shard --manifest
            bin/ci-shard --explain
+           bin/ci-shard --matrix
   USAGE
   exit status
 end
@@ -67,6 +68,7 @@ until args.empty?
   when "--print" then mode = :print
   when "--manifest" then mode = :manifest
   when "--explain" then mode = :explain
+  when "--matrix" then mode = :matrix
   when "-h", "--help" then usage!(0)
   when %r{\A(?:--shard=)?(\d+)/(\d+)\z} then spec = [ Regexp.last_match(1).to_i, Regexp.last_match(2).to_i ]
   else
@@ -76,6 +78,10 @@ until args.empty?
 end
 
 contract = TestShard.load_contract(CONTRACT_PATH)
+if mode == :matrix
+  puts TestShard.matrix(contract).inspect
+  exit 0
+end
 timings = TestShard.load_timings(TIMINGS_PATH)
 files = TestShard.candidate_files(
   root: ROOT,

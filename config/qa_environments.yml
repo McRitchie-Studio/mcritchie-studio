@@ -10,6 +10,10 @@
 #   bin/qa-server provision <app> --yes
 #   bin/qa-server status <app>
 #
+# QA_ENV is not declared here: bin/qa-server's loader (QaServerCli.with_qa_marker)
+# stamps QA_ENV=true into every entry's required_config, because every entry is a
+# QA app booting RAILS_ENV=production.
+#
 # Never put secret values in this file. Put secret names/purposes here and pull
 # values through 1Password/Heroku during approved provisioning.
 
@@ -35,7 +39,6 @@ qa_environments:
       APP_HOST: qa.mcritchie.studio
       MAILER_HOST: qa.mcritchie.studio
       DYNO_HOST: "${HEROKU_HOST}"
-      QA_ENV: "true"
       MAIL_TRANSPORT: resend
       RESEND_MAILER_FROM: "McRitchie QA <team@mcritchie.studio>"
     required_secrets:
@@ -64,7 +67,6 @@ qa_environments:
       APP_HOST: qa.turfmonster.media
       MAILER_HOST: qa.turfmonster.media
       DYNO_HOST: "${HEROKU_HOST}"
-      QA_ENV: "true"
       MAIL_TRANSPORT: resend
       RESEND_MAILER_FROM: "Turf Monster QA <team@mcritchie.studio>"
       PAYMENT_PROVIDER: none
@@ -103,18 +105,6 @@ qa_environments:
       # qa.mcritchie.industries, so the 2026-07-29 "unset" note this replaced is
       # stale.
       APP_HOST: qa.mcritchie.industries
-      # Neither Heroku app sets RAILS_ENV, so mcritchie-industries-qa boots as
-      # RAILS_ENV=production exactly like real production. QA_ENV is the ONLY
-      # signal that separates them, and mcritchie-industries' config/storage.yml
-      # keys its bucket choice off it.
-      #
-      # WITHOUT THIS MARKER, QA resolved bucket mcritchie-industries-production
-      # while carrying the mcr-mcritchie-industries-dev key — whose PutObject
-      # there is AccessDenied. Active Storage uploads from QA failed SILENTLY.
-      # Verified 2026-09-02: QA_ENV was empty on the live app, and this was the
-      # ONLY qa_environments entry missing it (mcritchie-studio, turf-monster
-      # and rolio all declare it).
-      QA_ENV: "true"
       # DECLARED VALUE CORRECTED 2026-09-03. It read "McRitchie Studio", which was
       # wrong twice: the wrong PRODUCT (this is Industries), and missing the QA
       # marker its siblings carry ("McRitchie QA", "Turf Monster QA"). The live app
@@ -147,6 +137,5 @@ qa_environments:
       RAILS_LOG_TO_STDOUT: "1"
       RAILS_SERVE_STATIC_FILES: "1"
       SQLITE_DATABASE: storage/production.sqlite3
-      QA_ENV: "true"
     required_secrets:
       - SECRET_KEY_BASE

@@ -1,4 +1,5 @@
 # Contact Capture — offer a contact from a forwarded email's signature
+<!-- registry: offer Alex a create or update of an Apple Contacts card from a forwarded email's signature -->
 
 ## Status: Active
 

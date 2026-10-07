@@ -1,4 +1,5 @@
 # Gmail Capture — reading one mailbox into the funnel, read-only
+<!-- registry: read-only mailbox pull into the desk queue -->
 
 ## Status: Active
 

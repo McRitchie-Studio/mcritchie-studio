@@ -7,7 +7,7 @@
 # that is the one question a test lane structurally cannot answer about itself, and it is the
 # question three rounds of review used to defeat this PR's guards. So this runs AFTER the
 # shards, over the JSON reports THEY emitted, and asserts the executed set against the
-# contract in config/e2e_lane.yml.
+# census of the committed suite (bin/lib/e2e_spec_census.rb over e2e/).
 #
 #   Usage:  bin/e2e-executed-set-check <reports-dir> [--contract config/e2e_lane.yml]
 #
@@ -54,7 +54,8 @@ if reports.empty?
   exit 1
 end
 
-gate = E2eExecutedSet.new(contract: contract, reports: reports)
+census = E2eSpecCensus.count(File.join(root, "e2e"), quarantine_tag: contract.fetch("quarantine_tag"))
+gate = E2eExecutedSet.new(contract: contract, reports: reports, census: census)
 failures = gate.failures
 
 if failures.empty?

@@ -1,4 +1,5 @@
 # Clean Infra
+<!-- registry: worktrees, disk, "no space" -->
 
 ## Status: Active
 
