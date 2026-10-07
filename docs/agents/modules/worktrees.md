@@ -105,8 +105,7 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 ## Lifecycle
 
 - `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.
-- `finish` blocks dirty, empty, stale or already-merged branches. `--push --pr` opens a draft
-  PR on the base branch and stamps `devops.pr_url` on the bound task.
+- `finish` is retired: it does nothing and names the handoff, `bin/submit-wait`.
 - `list`, `doctor`, `snapshot` and the sweeps see **every worktree git registered** for a
   repo (`git worktree list`), wherever it lives: `<repo>/.worktrees/`, a sibling
   `<repo>.worktrees/`, `<projects>/.worktrees/<repo>/`, a scratchpad. Each is labelled with
@@ -123,8 +122,10 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   dry run is the approval packet.
 - `cleanup --write` files candidates on the **desk ledger** (`DeskRecord`, Desks panel on
   [/deployments](https://mcritchie.studio/deployments)). A teardown files its record
-  **before** destroying anything, so **when the board is unreachable the teardown
-  REFUSES**. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
+  **before** destroying anything. When the board does not answer, the record is queued
+  at `<projects>/.agents/desk-ledger-queue.jsonl` and posts, in order, on the next
+  ledger write; the teardown refuses only when the board answers with a refusal or the
+  queue cannot be written. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
 - The ledger tracks **managed desks only** (the root rule lives once, in `lib/desk_root.rb`).
   `snapshot` marks each desk `managed: true|false` and counts the rest as `unmanaged`; the
   board lists those but opens no ledger record for them, and closes an older open record
@@ -163,8 +164,12 @@ Two checks sit outside the chain. A desk **outside a managed root** (`<repo>/.wo
 `<repo>.worktrees/`), such as `.claude/worktrees/*` or a scratchpad checkout, is listed but
 never nominated; remove it deliberately. And a desk every channel cleared is still held when
 **gitignored work** (an edited `.env.local`, say) changed after the desk was cut, because
-`git status` cannot see it. Regenerable paths (`tmp/`, `log/`, `node_modules/`, builds) and
-the env files this script writes do not count.
+`git status` cannot see it. `new` records a digest of every hand-written ignored path when it
+cuts the desk, and the hold compares contents with that record, so a file copied in at the
+cut (`config/master.key`) never holds. Regenerable paths (`tmp/`, `log/`, `node_modules/`,
+builds, `test/dummy/public/`, `playwright/.auth/`, an ignored `Gemfile.lock`) and the env
+files this script writes are never compared. A desk cut before the record existed keeps the
+older rule: any ignored path written after the cut holds it.
 
 So a desk is `reclaimable?` only when clean, merged, and cleared by every channel — its task
 at a terminal stage included. `quiet` never frees a desk, and no lane fails open. **The

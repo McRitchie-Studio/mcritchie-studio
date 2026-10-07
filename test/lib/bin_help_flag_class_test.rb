@@ -117,7 +117,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # from the 1 that means "vulnerabilities found", so CI cannot read a typo as
     # a security finding.
     "importmap-audit-ci"     => :optparse,
-    "reap-cert-databases"    => :cli_arg_guard,
     # Generate enqueues a PAID image round; the guard runs before the Rails boot.
     "email-image"            => :cli_arg_guard,
     # COPIES the credential helper's whole closure to disk and repoints a symlink,
@@ -545,7 +544,6 @@ class BinHelpFlagClassTest < Minitest::Test
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",
     "control-check"       => "ControlReplay.partition",
-    "reap-cert-databases" => "CertDatabaseReaper.reap!",
     # Not a single call but the DISPATCHER: every mutation bin/release can perform
     # — promote, merge, board write, prod deploy, gem publish — is reached through
     # `case ARGV.shift`, so that line is the seam the guard has to precede. The
@@ -701,16 +699,6 @@ class BinHelpFlagClassTest < Minitest::Test
                       "bin/#{name} reads its subcommand BEFORE calling its guard — the rest of " \
                       "the line is then on the floor, which IS the defect this family closes"
     end
-  end
-
-  # reap-cert-databases boots Rails to reach its databases. A probe must not pay for
-  # that boot, and more importantly must answer on a machine where the test database
-  # is unreachable — so the guard sits ahead of the environment require.
-  def test_reap_cert_databases_guards_before_it_boots_rails
-    src = code_only("reap-cert-databases")
-
-    assert_operator src.index("CliArgGuard.guard!"), :<, src.index("config/environment"),
-                    "the guard must run before the Rails boot, so --help answers without a database"
   end
 
   def test_the_shell_scripts_answer_help_without_acting

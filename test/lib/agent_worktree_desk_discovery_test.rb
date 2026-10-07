@@ -223,6 +223,55 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
     assert_includes out, "FREE gem-lib/tmp-only", "regenerable ignored paths (tmp/) never hold a desk"
   end
 
+  # Guard catalog row 5.4: a desk records its gitignored digests at the cut, and the hold
+  # compares only hand-written paths. Every file below is written NOW, after a stubbed
+  # 2h-old cut, so the old mtime rule would hold all four desks: that is the control.
+  def test_a_desk_with_a_baseline_holds_only_hand_written_paths_changed_since_the_cut
+    gem = repo_with_origin("gem-lib",
+                           ignore: ".env*\nconfig/master.key\nGemfile.lock\nplaywright/.auth/\ntest/dummy/public/\n")
+    # The parents are tracked, as in a real repo, so git lists the ignored paths themselves.
+    { "config/application.rb" => "", "playwright/playwright.config.js" => "", "test/dummy/config.ru" => "" }.each do |rel, body|
+      FileUtils.mkdir_p(File.dirname(File.join(gem, rel)))
+      File.write(File.join(gem, rel), body)
+    end
+    git!(gem, "add", "-A")
+    git!(gem, "commit", "-q", "-m", "tracked parents")
+    git!(gem, "push", "-q", "origin", "main")
+    key = ->(dir, body) { FileUtils.mkdir_p(File.join(dir, "config")) && File.write(File.join(dir, "config", "master.key"), body) }
+    copied = desk(gem, "copied-at-cut") { |dir| key.call(dir, "k") }
+    edited = desk(gem, "edited-after-cut") { |dir| key.call(dir, "k") }
+    added = desk(gem, "added-after-cut") { |_dir| nil }
+    regenerated = desk(gem, "regenerated") { |_dir| nil }
+    [copied, edited, added, regenerated].each do |dir|
+      assert_equal "true", run_in_script("print record_ignored_baseline(#{dir.inspect})"), "FLOOR: #{dir} recorded"
+    end
+
+    key.call(copied, "k") # rewritten with the same content: a new mtime, the same digest
+    key.call(edited, "changed by hand")
+    File.write(File.join(added, ".env.local"), "SECRET=mine")
+    File.write(File.join(regenerated, "Gemfile.lock"), "GEM\n")
+    FileUtils.mkdir_p(File.join(regenerated, "playwright", ".auth"))
+    File.write(File.join(regenerated, "playwright", ".auth", "state.json"), "{}")
+    FileUtils.mkdir_p(File.join(regenerated, "test", "dummy", "public"))
+    File.write(File.join(regenerated, "test", "dummy", "public", "app.css"), "body{}")
+
+    out = partition(idle: true, age: 2 * 3600)
+
+    assert_includes out, "FREE gem-lib/copied-at-cut", "a file copied in at the cut matches its own digest"
+    assert_match %r{HELD gem-lib/edited-after-cut: gitignored work changed since the desk was cut \(config/master\.key\)}, out
+    assert_match %r{HELD gem-lib/added-after-cut: gitignored work changed since the desk was cut \(\.env\.local\)}, out
+    assert_includes out, "FREE gem-lib/regenerated", "regenerable output never holds a desk"
+  end
+
+  # The wiring: `new` records the baseline only for a desk it cut in this run, so a resume
+  # (begin re-runs `new` every time) never blesses edits made since the cut.
+  def test_new_records_the_baseline_only_for_a_desk_it_cut
+    body = File.read(BIN)[/when "new"(.*?)\n  when "/m, 1]
+    refute_nil body, "could not isolate the new block"
+    assert_match(/ensure_git_worktree\(app, task, type\) do \|cut_dir, cut_branch\|\n\s+cut_here = true/, body)
+    assert_includes body, "record_ignored_baseline(dir) if cut_here"
+  end
+
   # --- 3. remove finds the desk by its real name first ---------------------------------
 
   def test_remove_resolves_a_desk_whose_slug_holds_an_underscore

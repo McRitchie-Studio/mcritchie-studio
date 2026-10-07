@@ -203,98 +203,15 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_match %r{/compare/accepted\.\.\.}, record.fetch("compare_url")
   end
 
-  test "finish push pr blocks without a bound production task" do
+  # Guard catalog row 5.2: `finish` is retired with its blockers and gh calls. The old
+  # call still parses, pushes nothing, opens no PR, and names the bin/submit handoff.
+  test "[integration] finish is retired: it does nothing and names bin/submit" do
     out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
 
-    assert_not status.success?
-    combined = "#{out}\n#{err}"
-    assert_includes combined, "not ready for QA"
-    assert_includes combined, "worktree is not bound to a production McRitchie Studio task"
-  end
-
-  test "[unit] pr body fills summary and verification from task metadata" do
-    task_json = {
-      "title" => "PR Handoff Autofill",
-      "metadata" => {
-        "devops" => {
-          "acceptance" => ["Fill PR summary from task metadata", "Keep release as default PR base"],
-          "checks_run" => ["[unit] bin/rails test test/commands/agent_worktree_test.rb"]
-        }
-      }
-    }
-    snippet = <<~RUBY
-      ENV["AGENT_WORKTREE_TASK_JSON"] = #{JSON.generate(task_json).inspect}
-      record = {
-        task: "pr-handoff-autofill",
-        port: "39999",
-        dir: #{@worktree_dir.inspect},
-        code: "000",
-        env_exists: true,
-        port_pid: "",
-        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
-        env: {
-          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
-          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
-        }
-      }
-      puts pr_body(record)
-    RUBY
-
-    body = script_eval(snippet)
-
-    assert_includes body, "- Fill PR summary from task metadata"
-    assert_includes body, "- Keep release as default PR base"
-    assert_includes body, "- [unit] bin/rails test test/commands/agent_worktree_test.rb"
-    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
-  end
-
-  test "[unit] pr body falls back without blank bullets when task metadata is unavailable" do
-    snippet = <<~RUBY
-      record = {
-        task: "pr-handoff-autofill",
-        port: "39999",
-        dir: #{@worktree_dir.inspect},
-        code: "000",
-        env_exists: true,
-        port_pid: "",
-        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
-        env: {
-          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
-          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
-        }
-      }
-      puts pr_body(record)
-    RUBY
-
-    body = script_eval(snippet)
-
-    assert_includes body, "- Scope is recorded on the linked task."
-    assert_includes body, "- No checks_run recorded on the linked task yet."
-    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
-  end
-
-  test "[integration] finish prints a complete generated PR body" do
-    agent_worktree!("bind-task", "mcritchie-studio", @task, "pr-handoff-autofill")
-    task_json = {
-      "title" => "PR Handoff Autofill",
-      "metadata" => {
-        "devops" => {
-          "acceptance" => ["Fill PR summary from task metadata"],
-          "checks_run" => ["[integration] bin/agent-worktree finish prints body"]
-        }
-      }
-    }
-
-    out, err, status = agent_worktree(
-      "finish", "mcritchie-studio", @task,
-      env: { "AGENT_WORKTREE_TASK_JSON" => JSON.generate(task_json) }
-    )
-
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "ready for QA. Open a draft PR with this body:"
-    assert_includes out, "- Fill PR summary from task metadata"
-    assert_includes out, "- [integration] bin/agent-worktree finish prints body"
-    refute_match(/^-\\s*$/m, out, "finish must not print blank PR body bullets")
+    assert_equal 2, status.exitstatus, "#{out}\n#{err}"
+    assert_includes err, "agent-worktree finish is retired: nothing was pushed and no PR was opened"
+    assert_match(%r{cd \S+ && \S+/submit-wait \S+ --launch -m}, err)
+    refute_match(/feature graduation packet|ready for QA/, out)
   end
 
   test "qa-intake PR metadata includes bound task fields" do
@@ -455,65 +372,32 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal @worktree_dir, desk.dig("registry", "worktree")
   end
 
-  test "[integration] cleanup withholds a live-claimed worktree and says WHY" do
+  # Guard catalog row 5.1: the legacy build-lease hold is gone. Nothing writes those
+  # leases since the desk became the build claim, so a lease on the board no longer
+  # withholds a cold, merged desk; the desk, stage, review and PR channels judge it.
+  test "[integration] a legacy build lease no longer withholds a cold merged desk" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
+    abandon_desk!
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio",
                                       env: { "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
 
     assert status.success?, err
-    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a legacy build lease"
-    assert_match(/lease renewed \d+s ago/, out, "the heartbeat age makes the hold checkable")
-    # The old copy ("no clean merged or base-equivalent candidates") was a LIE here: the
-    # desk IS clean and IS base-equivalent — it is simply occupied.
-    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
-    refute_includes out, "cleanup candidates:"
-  end
-
-  # THE CORRUPT FOURTH STATE. A claim whose expiry is present but unparseable is unverifiable:
-  # withheld (an outage-grade "I cannot tell", not a free desk), but the reason must be HONEST.
-  # Before the corrupt_expiry? branch this printed "held by a legacy build lease … heartbeat  s
-  # ago" — a builder that was never confirmed, plus a nil-age interpolation. This asserts the
-  # honest "claim expiry unverifiable" copy propagates through report_withheld.
-  test "[integration] cleanup withholds a corrupt-claim worktree as expiry-unverifiable, not a live builder" do
-    mark_worktree_merged_to_origin_main
-    bind_task_slug("desk-task")
-
-    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
-                                      env: { "AGENT_WORKTREE_TASK_JSON" => corrupt_claim_json })
-
-    assert status.success?, err
-    assert_includes out, "withheld mcritchie-studio/terminal-context: claim expiry unverifiable"
-    refute_includes out, "held by a legacy build lease",
-                    "a corrupt lease is NOT a confirmed builder — the hold must not misattribute one"
-    refute_match(/heartbeat\s+s ago/, out, "the garbled nil-age interpolation must be gone")
-    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
-  end
-
-  test "[integration] reclaim dry-run withholds a live-claimed worktree" do
-    mark_worktree_merged_to_origin_main
-    bind_task_slug("desk-task")
-
-    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
-                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
-
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a legacy build lease"
-    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
-    refute_includes out, "reclaim candidates:"
+    refute_includes out, "legacy build lease"
+    assert_includes out, "cleanup candidates:", "a cold merged desk with a stale lease is a candidate:\n#{out}"
   end
 
   # THE DESTRUCTIVE TIER — the REFUSAL half. Its positive counterpart (the desk that IS torn
   # down) is above; both halves are needed, because this guard fails in two directions:
   # fail-open destroys a live desk, fail-closed silently wedges the sweep.
-  test "[integration] reclaim --yes REFUSES to tear down a live-claimed desk" do
+  test "[integration] reclaim --yes REFUSES to tear down a fresh desk" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
     assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
-                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
 
     assert status.success?, "#{out}\n#{err}"
     assert Dir.exist?(@worktree_dir), "the desk MUST still be on disk — the teardown is irreversible"
@@ -538,7 +422,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert status.success?, "#{out}\n#{err}"
     assert Dir.exist?(@worktree_dir),
            "a builder who claimed the task AFTER selection must not have their desk destroyed"
-    assert_includes out, "skipping mcritchie-studio/terminal-context: held by a legacy build lease"
+    assert_includes out, "skipping mcritchie-studio/terminal-context: the bound task mid-sweep-task is at board stage `building`"
     refute_includes out, "reclaimed mcritchie-studio/terminal-context"
   end
 
@@ -685,44 +569,21 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # section straight off `cleanup_candidate` and prints a `remove … --yes` for each. It must
   # agree with the sweep, or everyone believes the desk is protected while the front door
   # still recommends tearing it down.
-  test "[integration] the registry does not nominate a live-claimed desk" do
+  test "[integration] the registry does not nominate a held desk" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
     registry = File.join(@projects_dir, "registry.json")
 
     _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
                                        env: { "AGENT_WORKTREE_REGISTRY" => registry,
-                                              "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
+                                              "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
 
     assert status.success?, err
     payload = JSON.parse(File.read(registry))
     worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
     refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
-    assert_match(/legacy build lease/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
+    assert_match(/the desk is only/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
     assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
-    assert_equal 1, payload.dig("summary", "withheld")
-  end
-
-  # The registry's `withheld_reason` is the field bin/qa-intake reads to bucket occupied desks
-  # (withheld_reason_for). For a corrupt claim it must carry the honest "claim expiry
-  # unverifiable" reason, NOT a misattributed live-builder line — so the conductor's front door
-  # tells the operator to inspect the task, not that a phantom builder is sitting there.
-  test "[integration] the registry names a corrupt claim as expiry-unverifiable, not a live builder" do
-    mark_worktree_merged_to_origin_main
-    bind_task_slug("desk-task")
-    registry = File.join(@projects_dir, "registry.json")
-
-    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
-                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
-                                              "AGENT_WORKTREE_TASK_JSON" => corrupt_claim_json })
-
-    assert status.success?, err
-    payload = JSON.parse(File.read(registry))
-    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
-    refute worktree.fetch("cleanup_candidate"), "an unverifiable desk must not be nominated for teardown"
-    reason = worktree.fetch("withheld_reason")
-    assert_match(/expiry unverifiable/, reason, "the field the conductor reads must state the honest reason")
-    refute_match(/live builder/, reason, "…and must not misattribute a builder we never confirmed")
     assert_equal 1, payload.dig("summary", "withheld")
   end
 
@@ -741,7 +602,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
 
     assert status.success?, err
-    assert_match(/has no bound task, so no build lease can be checked/, err,
+    assert_match(/has no bound task, so no board record can be checked/, err,
                  "the desk we actually lost must not fail open in silence")
     refute_includes out, "cleanup candidates:",
                     "a desk with no claim to check is the one the sweep ate — the desk channel " \
@@ -1543,10 +1404,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     pg_env = pg_conn_env(template_uri)
     drop_test_db = ->(name) { system(pg_env, "dropdb", "--if-exists", name, out: File::NULL, err: File::NULL) }
-    # Lease the UNIQUE per-run DB before provisioning it: the `ensure` drops it on a
-    # clean exit, but a SIGKILL runs no `ensure`, and this lease is what lets the next
-    # run's CertDatabaseReaper drop the database this one stranded. See the reaper.
-    CertDatabaseReaper.register(test_name)
+    # The `ensure` drops the UNIQUE per-run DB. A SIGKILL strands one test database,
+    # which harms nothing (guard catalog row 5.3 deleted the reaper).
     begin
       out, err, status = Open3.capture3(
         SessionEnv.neutralized(
@@ -1568,7 +1427,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       assert_equal "1", found.strip,
         "the provisioned test DB must be findable by its full literal name (no truncation drift)"
     ensure
-      CertDatabaseReaper.release(test_name, drop: drop_test_db)
+      drop_test_db.call(test_name)
     end
   end
 
@@ -1811,19 +1670,18 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   # THE SSH PIN. setup_repo gives the fixture a REAL origin
   # (git@github.com:McRitchie-Studio/mcritchie-studio.git) so github_repo_slug can
-  # resolve, and run_finish fetches it before the blocker check this asserts on.
-  # That fetch used to leave the machine, because this call site passed no env at
-  # all while its siblings pinned GIT_SSH_COMMAND by hand.
+  # resolve, and `restore-primary --dry-run` fetches it. That fetch used to leave the
+  # machine when a call site passed no env while its siblings pinned GIT_SSH_COMMAND
+  # by hand.
   test "[integration] the ssh pin intercepts the fixture's real github remote" do
     OutboundSeams.reset!
 
-    out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
+    out, err, _status = agent_worktree("restore-primary", "mcritchie-studio", "--dry-run")
 
-    assert_not status.success?, "#{out}\n#{err}"
-    assert_includes "#{out}\n#{err}", "worktree is not bound to a production McRitchie Studio task"
     attempts = OutboundSeams.calls_to("ssh")
     refute_empty attempts,
-                 "`finish --push --pr` fetched origin and NOTHING intercepted it, so the fetch " \
+                 "`restore-primary --dry-run` fetched origin and NOTHING intercepted it, so the fetch " \
+                 "(#{out}\n#{err}) " \
                  "used the machine's real ssh against #{"git@github.com:McRitchie-Studio/mcritchie-studio.git".inspect}. " \
                  "GIT_SSH_COMMAND must be pinned by command_env, for every spawn, not per test."
     assert(attempts.any? { |line| line.include?("github.com") },

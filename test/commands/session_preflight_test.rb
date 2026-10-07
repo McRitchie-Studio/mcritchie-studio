@@ -55,19 +55,57 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "pass", report.fetch("installed_docs").fetch("status")
   end
 
-  def test_branch_behind_release_is_a_blocker
+  # [unit] Row 3.8: a task the preflight cannot read is exit 2, so begin refuses
+  # the claim on it.
+  def test_an_unreadable_task_is_exit_two
+    path = File.join(@sandbox, "broken.json")
+    File.write(path, "not json")
+
+    _out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert_equal 2, status.exitstatus, err
+    assert_includes err, "could not parse task JSON"
+  end
+
+  # [unit] A crash describes nothing, so it is exit 2 too, never the findings code.
+  def test_a_crash_is_exit_two
+    path = File.join(@sandbox, "crash.json")
+    File.write(path, JSON.generate("data" => task_payload.merge("metadata" => "not a hash")))
+
+    _out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert_equal 2, status.exitstatus, err
+    assert_includes err, "session-preflight crashed"
+  end
+
+  # [unit] Guard catalog row 4.2: a blocked task is not a preflight failure; begin
+  # clears the block at the claim and the preflight prints the feedback it carried.
+  def test_a_blocked_task_passes_the_preflight
+    path = File.join(@sandbox, "blocked.json")
+    payload = task_payload.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework")
+    File.write(path, JSON.generate("data" => payload))
+
+    out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "a blocked task must not fail the preflight:\n#{out}\n#{err}"
+    refute JSON.parse(out).fetch("errors").any? { |error| error.include?("blocked") }
+  end
+
+  # [unit] Guard catalog row 4.5: a branch behind its base is reported, never a
+  # blocker. No gate needs a rebase and CI tests the merge ref.
+  def test_branch_behind_release_is_reported_not_a_blocker
     task = write_task
     git("checkout", "-q", "--detach", "origin/release")
     release_commit = commit_file("docs/release.md", "release\n", "release moves")
     git("update-ref", "refs/remotes/origin/release", release_commit)
     git("checkout", "-q", "feat/session-preflight")
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
 
     report = JSON.parse(out)
-    assert_equal 1, report.fetch("branch").fetch("behind")
-    assert report.fetch("errors").any? { |error| error.include?("behind origin/release") }, report.fetch("errors").inspect
+    assert_equal 1, report.fetch("branch").fetch("behind"), "FLOOR: the drift must have been measured"
+    refute report.fetch("errors").any? { |error| error.include?("behind") }, report.fetch("errors").inspect
   end
 
   # [unit] The base ladder is accepted → release → main, mirroring
@@ -86,7 +124,7 @@ class SessionPreflightTest < Minitest::Test
     assert_equal 0, report.fetch("branch").fetch("behind")
   end
 
-  def test_behind_accepted_blocker_names_the_compared_ref
+  def test_behind_accepted_report_names_the_compared_ref
     task = write_task
     git("update-ref", "refs/remotes/origin/accepted", head)
     git("checkout", "-q", "--detach", "origin/accepted")
@@ -95,12 +133,14 @@ class SessionPreflightTest < Minitest::Test
     git("checkout", "-q", "feat/session-preflight")
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?
 
     report = JSON.parse(out)
     assert_equal "origin/accepted", report.fetch("branch").fetch("base")
     assert_equal 1, report.fetch("branch").fetch("behind")
-    assert report.fetch("errors").any? { |error| error.include?("behind origin/accepted") }, report.fetch("errors").inspect
+    human, = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch")
+    assert_includes human, "vs origin/accepted"
+    assert_includes human, "ahead 0, behind 1"
   end
 
   # [unit] SELF-DEFENSE for begin-preflight-wrong-root: a preflight is only
@@ -115,11 +155,8 @@ class SessionPreflightTest < Minitest::Test
     task = write_task # devops.branch = feat/session-preflight
     git("update-ref", "refs/remotes/origin/accepted", head)
     git("checkout", "-q", "-b", "feat/some-other-desk") # a DIFFERENT branch than the task's
-    # Put the wrong branch genuinely BEHIND accepted so the drift-suppression path is
-    # exercised NON-vacuously: without the wrong_checkout guard a "behind" blocker
-    # would fire; with it, that meaningless drift number for the wrong tree must be
-    # suppressed. (An at-tip wrong branch would make the suppression assertion pass
-    # trivially — there would be no drift to suppress.)
+    # The wrong branch sits BEHIND accepted, so the report carries a drift number for
+    # a tree that is not this task's; the refusal is what makes it meaningless.
     git("checkout", "-q", "--detach", "origin/accepted")
     accepted_commit = commit_file("docs/accepted.md", "moved\n", "accepted moves ahead")
     git("update-ref", "refs/remotes/origin/accepted", accepted_commit)
@@ -127,14 +164,12 @@ class SessionPreflightTest < Minitest::Test
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
     refute status.success?, "a root on the wrong branch must be refused"
+    assert_equal 2, status.exitstatus, "the wrong checkout is exit 2: begin refuses the claim on it (row 3.8)"
 
     report = JSON.parse(out)
-    assert_equal 1, report.fetch("branch").fetch("behind"),
-                 "the wrong branch IS behind accepted — so the suppression below is non-vacuous"
+    assert_equal 1, report.fetch("branch").fetch("behind")
     assert report.fetch("errors").any? { |error| error.downcase.include?("wrong checkout") },
            "must name the wrong-checkout blocker, got: #{report.fetch("errors").inspect}"
-    refute report.fetch("errors").any? { |error| error.include?("behind") },
-           "a real-but-meaningless drift number for the wrong tree must be SUPPRESSED, not surfaced"
   end
 
   # [unit] The self-defense must NOT fire when the inspected checkout IS the task's
@@ -212,6 +247,7 @@ class SessionPreflightTest < Minitest::Test
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
     refute status.success?
+    assert_equal 1, status.exitstatus, "a finding is exit 1: begin reports it and claims (row 3.8)"
 
     report = JSON.parse(out)
     hit = report.fetch("stale_terms").first
@@ -219,16 +255,40 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "legacy queued stage query", hit.fetch("label")
   end
 
-  def test_installed_docs_drift_blocks_preflight
+  # [unit] Guard catalog row 4.1: a desk measures nothing it cannot fix. A desk cut
+  # after a docs merge, with the installer reporting drift, passes; the drift is a
+  # line of information. The FLOOR assertions prove the stub's drift really landed.
+  # [unit] Guard catalog row 4.3: the scan reads only the branch's own changes, so a
+  # stale word already on the base is not this desk's failure. The control is the
+  # test above: the same word in a changed file still fails.
+  def test_stale_terminology_on_the_base_is_not_scanned
+    write_file("docs/agents/modules/stale.md", "Use GET /api/v1/tasks?stage=queued here.\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "stale word on the base")
+    git("update-ref", "refs/remotes/origin/accepted", head)
+    task = write_task
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "a stale word on the base must not fail the desk:\n#{out}\n#{err}"
+    assert_empty JSON.parse(out).fetch("stale_terms")
+  end
+
+  def test_installed_docs_drift_is_information_and_the_preflight_passes
     write_installer(status: 1, stderr: "ERROR: /Users/alex/projects/AGENTS.md is out of date\n")
     task = write_task
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
-    refute status.success?
-
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
     report = JSON.parse(out)
-    assert_equal "fail", report.fetch("installed_docs").fetch("status")
-    assert report.fetch("errors").any? { |error| error.include?("installed docs/skills drift") }
+    assert_equal "drift", report.fetch("installed_docs").fetch("status"), "FLOOR: the drift must have been read"
+    assert_includes report.fetch("installed_docs").fetch("message"), "AGENTS.md"
+
+    assert status.success?, "installed-docs drift must not fail the preflight: #{report["errors"].inspect}\n#{err}"
+    refute report.fetch("errors").any? { |error| error.include?("installed docs") }
+
+    human, = run_preflight("--file", task, "--no-gh", "--no-fetch")
+    assert_includes human, "Installed docs: drift (information only"
+    assert_includes human, "OK session preflight passed"
   end
 
   # [integration] The drift REPORT must carry the installer's guidance, which is the
@@ -248,14 +308,14 @@ class SessionPreflightTest < Minitest::Test
     task = write_task
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?, "drift is information, never a blocker"
 
     report = JSON.parse(out)
     message = report.fetch("installed_docs").fetch("message")
 
     # FLOOR: the stub really ran and its drift really landed, so the assertions below
     # are reading a populated message rather than an empty string.
-    assert_equal "fail", report.fetch("installed_docs").fetch("status")
+    assert_equal "drift", report.fetch("installed_docs").fetch("status")
     assert_includes message, "doc-1.md", "the drift report must still name what drifted"
 
     [
@@ -292,21 +352,33 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
-# --- gh auth freshness -------------------------------------------------------
-#
-# WHY THIS EXISTS. App installation tokens live ~1h and nothing refreshes gh's
-# ambient credential on its own, so the credential a desk was cut with is routinely
-# dead by the time that desk ships. Before this check the failure surfaced mid-wave
-# — and surfaced WRONG: an expired token makes `gh pr view` fail, which preflight
-# reported as "PR: not found". Agents read that as "no PR yet" and escalated the
-# credential to Mr. McRitchie, which is both the terminal chore the operating model
-# forbids and a step that cannot work (`gh` refuses to store a credential while
-# GH_TOKEN is set). These two tiers pin the probe and the remedy text.
+# [unit] Guard catalog row 4.7: BLOCKED is the normal state of a PR awaiting review,
+# so it is not a bad merge state. The control: DIRTY still is.
+def test_a_pr_awaiting_review_is_not_a_bad_merge_state
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
 
-# [unit] The remedy is SELF-SERVICE and names the one command that actually works.
-# Asserted on the message itself because the message IS the fix: an agent that reads
-# it must not come away thinking `gh auth login` or an escalation is the answer.
-def test_stale_gh_auth_blocks_preflight_and_prescribes_self_service_recovery
+  out, err, status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh(merge_state: "BLOCKED")}:#{ENV.fetch("PATH", "")}" }
+  )
+  assert status.success?, "#{out}\n#{err}"
+  report = JSON.parse(out)
+  assert_equal "BLOCKED", report.fetch("pr").fetch("merge_state"), "FLOOR: the PR must have been read"
+  assert_empty report.fetch("errors").grep(/merge state/)
+
+  dirty_out, = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh(merge_state: "DIRTY")}:#{ENV.fetch("PATH", "")}" }
+  )
+  refute_empty JSON.parse(dirty_out).fetch("errors").grep(/PR merge state is DIRTY/)
+end
+
+# --- gh auth: no probe (guard catalog row 4.6) ---------------------------------
+
+# [unit] Guard catalog row 4.6: the preflight no longer probes gh auth. `begin`
+# never calls gh, and bin/submit mints and retries its own credential, so a dead
+# credential here is not a blocker; the PR read reports gh's own error instead.
+def test_a_dead_gh_credential_is_not_a_preflight_blocker
   task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
   fake_bin = write_fake_gh(auth_ok: false)
 
@@ -314,188 +386,36 @@ def test_stale_gh_auth_blocks_preflight_and_prescribes_self_service_recovery
     "--file", task, "--no-install-docs", "--no-fetch", "--json",
     env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
   )
-  refute status.success?, "a dead credential must block the desk: #{out}\n#{err}"
 
+  assert status.success?, "#{out}\n#{err}"
   report = JSON.parse(out)
-  assert_equal "stale", report.fetch("gh_auth").fetch("status")
-  assert_equal "agent", report.fetch("gh_auth").fetch("lane")
-
-  blocker = report.fetch("errors").find { |e| e.include?("gh auth is STALE") }
-  refute_nil blocker, "expected a gh auth blocker in #{report.fetch("errors").inspect}"
-  # ABSOLUTE, AND ASKED OF THE DISK. remedy-hints-second-wave routed this through
-  # FastLane.remedy_command: a builder reaches this preflight by its ABSOLUTE path
-  # from a satellite or gem desk (`bin/task begin` passes --root), and the bare form
-  # is exactly what such a desk cannot run — at the moment they are already blocked.
-  # Not a substring check, because an absolute path CONTAINS the bare form and would
-  # satisfy one either way.
-  refresh = blocker[/eval "\$\((\S+) --export\)"/, 1]
-
-  refute_nil refresh, "the blocker must still prescribe the gh-auth-refresh eval: #{blocker}"
-  assert_equal File.expand_path(refresh), refresh,
-               "the self-service remedy must be ABSOLUTE — this preflight is routinely invoked " \
-               "by absolute path from a desk that carries no bin/gh-auth-refresh: #{blocker}"
-  assert File.executable?(refresh), "#{refresh.inspect} is not an executable on this disk: #{blocker}"
-  assert_equal "gh-auth-refresh", File.basename(refresh), blocker
-  assert_includes blocker, "NOT an escalation"
-  assert_includes blocker, "Do NOT use `gh auth login`"
-  assert_includes blocker, "docs/agents/modules/source-control.md"
+  refute report.key?("gh_auth"), "the probe is gone"
+  assert_empty report.fetch("errors").grep(/gh auth/i)
 end
 
-# [unit] The lane comes from GH_APP_ITEM, so a ship session is told it is the ship
-# session. Naming the wrong lane here would send a deployer to re-mint the AGENT
-# App — the one holding the `pull_requests` grant the deployer is denied on purpose.
-def test_gh_auth_lane_is_read_from_gh_app_item
-  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-  fake_bin = write_fake_gh
-
-  out, err, status = run_preflight(
-    "--file", task, "--no-install-docs", "--no-fetch", "--json",
-    env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}",
-           "GH_APP_ITEM" => "github.mcritchie-admin" }
-  )
-  assert status.success?, "#{out}\n#{err}"
-
-  gh_auth = JSON.parse(out).fetch("gh_auth")
-  assert_equal "ok", gh_auth.fetch("status")
-  assert_equal "deployer", gh_auth.fetch("lane")
-end
-
-# [unit] The retired item name (the App was renamed 2026-09-26) is NOT the ship
-# lane any more: it is reported verbatim, so the operator sees the stale export.
-def test_gh_auth_lane_reports_the_retired_item_verbatim
-  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-  fake_bin = write_fake_gh
-
-  out, err, status = run_preflight(
-    "--file", task, "--no-install-docs", "--no-fetch", "--json",
-    env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}",
-           "GH_APP_ITEM" => "github.mcritchie-deployer" }
-  )
-  assert status.success?, "#{out}\n#{err}"
-  assert_equal "github.mcritchie-deployer", JSON.parse(out).fetch("gh_auth").fetch("lane")
-end
-
-# [integration] The whole path through the real script: a live credential reports ok
-# and leaves the PR read intact, and a dead one is diagnosed as AUTH rather than as
-# the absent PR it superficially resembles. This is the misdiagnosis the check exists
-# to stop, so it is asserted end-to-end rather than on the helper.
-def test_gh_auth_verdict_separates_a_dead_credential_from_a_missing_pr
-  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-
-  live_out, live_err, live_status = run_preflight(
-    "--file", task, "--no-install-docs", "--no-fetch", "--json",
-    env: { "PATH" => "#{write_fake_gh}:#{ENV.fetch("PATH", "")}" }
-  )
-  assert live_status.success?, "#{live_out}\n#{live_err}"
-  live = JSON.parse(live_out)
-  assert_equal "ok", live.fetch("gh_auth").fetch("status")
-  assert_equal "found", live.fetch("pr").fetch("status"), "a live credential still reads the PR"
-
-  dead_out, = run_preflight(
-    "--file", task, "--no-install-docs", "--no-fetch", "--json",
-    env: { "PATH" => "#{write_fake_gh(auth_ok: false)}:#{ENV.fetch("PATH", "")}" }
-  )
-  dead = JSON.parse(dead_out)
-  assert_equal "stale", dead.fetch("gh_auth").fetch("status")
-  refute_empty dead.fetch("errors").grep(/gh auth is STALE/),
-               "the credential fault must be named as a credential fault"
-end
-
-# [unit] --no-gh stays fully offline: no probe, no blocker, no network.
-def test_no_gh_skips_the_auth_probe_entirely
-  task = write_task
-
-  out, err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
-  assert status.success?, "#{out}\n#{err}"
-
-  gh_auth = JSON.parse(out).fetch("gh_auth")
-  assert_equal "skipped", gh_auth.fetch("status")
-  assert_empty JSON.parse(out).fetch("errors").grep(/gh auth/)
-end
-
-  # --- duplicate migration installs -------------------------------------------
+  # --- duplicate migration installs: not the preflight's (guard catalog row 4.8) ----
   #
-  # [integration] THE DEFECT, through the real script. Two branches install ONE engine
-  # migration under two host timestamps; the FILES do not conflict (different names),
-  # so git merges both cleanly and Rails then raises DuplicateMigrationNameError on
-  # every db:migrate, including the Heroku release phase. The same-file overlap check
-  # above cannot see it — it intersects FILENAMES, and these differ by construction.
-  # Three live incidents on 2026-08-13/14 (turf #312/#313, hub #853/#848, turf #312
-  # against turf's already-merged copy).
+  # At begin the branch has no commits, so the preflight compared the base with
+  # itself. bin/submit and bin/dor-check run the real check on the final diff and the
+  # open sibling PRs (bin/lib/migration_collision.rb; test/lib/dor_check_migration_
+  # collision_test.rb). The preflight neither checks nor reports it.
 
   ENGINE_MIGRATION_ORIGINAL = "20260813220000"
   BASE_INSTALL = "db/migrate/20260813221100_add_standard_user_profile_columns.studio_engine.rb"
   SECOND_INSTALL = "db/migrate/20260813223520_add_standard_user_profile_columns.studio_engine.rb"
 
-  # The copy already on the base ref is the turf #312-vs-merged-copy shape, and it needs
-  # no GitHub at all — which is why this leg still speaks under --no-gh.
-  def test_a_second_install_of_a_base_ref_migration_blocks_preflight
+  def test_a_duplicate_migration_install_is_left_to_the_ship
     task = write_task
     advance_base_with(BASE_INSTALL, engine_migration, "engine install lands on the base")
     commit_file(SECOND_INSTALL, engine_migration, "the same migration, a new timestamp")
 
     out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?, "a duplicate install must BLOCK:\n#{out}\n#{err}"
 
+    assert status.success?, "#{out}\n#{err}"
     report = JSON.parse(out)
-    item = report.fetch("migration_collisions").fetch("items").fetch(0)
-    assert_equal "class", item.fetch("key"), "Rails groups by class name, so that is the key"
-    assert_equal SECOND_INSTALL, item.fetch("mine").fetch("path")
-    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
-    assert_equal "AddStandardUserProfileColumns", item.fetch("mine").fetch("class_name")
-    assert report.fetch("errors").any? { |e| e.include?("duplicate migration install") },
-           report.fetch("errors").inspect
-    # The same-file check is blind to this by construction — proving WHY the new one exists.
-    assert_empty report.fetch("overlap").fetch("items"),
-                 "filename intersection cannot see two differently-named copies"
-  end
-
-  # turf #312 vs #313: the other copy is on a sibling OPEN PR, so only its PATHS are
-  # available. The class key is derivable from a filename alone, which is what makes
-  # this leg affordable.
-  def test_a_sibling_open_pr_installing_the_same_migration_blocks_preflight
-    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-    commit_file(SECOND_INSTALL, engine_migration, "our install")
-    fake_bin = write_fake_gh(sibling_files: [BASE_INSTALL])
-
-    out, err, status = run_preflight(
-      "--file", task, "--no-install-docs", "--no-fetch", "--json",
-      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
-    )
-    refute status.success?, "#{out}\n#{err}"
-
-    report = JSON.parse(out)
-    item = report.fetch("migration_collisions").fetch("items").fetch(0)
-    assert_equal "pr", item.fetch("kind")
-    assert_equal 6, item.fetch("number"), "the COLLIDING PR must be named"
-    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
-  end
-
-  # THE NEGATIVE CONTROL, and it matters more than the detection above: a check that
-  # flagged an ordinary install would wedge every migration-bearing task in the shop.
-  # The branch installs a genuinely NEW engine migration while the base and a sibling PR
-  # each carry a different one — nothing may fire, and `installs` proves the check
-  # LOOKED rather than skipped.
-  def test_a_legitimate_single_install_does_not_block_preflight
-    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-    advance_base_with(BASE_INSTALL, engine_migration, "an unrelated engine install on the base")
-    commit_file("db/migrate/20260814094500_add_widget_prefs_to_studio_users.studio_engine.rb",
-                engine_migration(original: "20260814090000", klass: "AddWidgetPrefsToStudioUsers"),
-                "a brand new engine migration")
-    fake_bin = write_fake_gh(
-      sibling_files: ["db/migrate/20260810120000_create_studio_email_settings.studio_engine.rb"]
-    )
-
-    out, err, status = run_preflight(
-      "--file", task, "--no-install-docs", "--no-fetch", "--json",
-      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
-    )
-    assert status.success?, "a normal install must NOT block:\n#{out}\n#{err}"
-
-    report = JSON.parse(out)
-    assert_empty report.fetch("migration_collisions").fetch("items")
-    assert_equal 1, report.fetch("migration_collisions").fetch("installs"),
-                 "the check must have SEEN the install — silence from a blind check proves nothing"
+    assert_includes report.fetch("changed_files"), SECOND_INSTALL, "FLOOR: the install must be in the diff"
+    refute report.key?("migration_collisions")
+    assert_empty report.fetch("errors").grep(/migration/)
   end
 
   # [integration] The THIRD CI state at the preflight tier (task
@@ -617,27 +537,32 @@ end
 
   # [unit] The preflight shares bin/lib/code_diff.rb with dor-check, so the
   # behavioral files the old ALLOWLIST couldn't see (.github/, Gemfile, test/…)
-  # lose the exemption HERE too — preflight is where the builder learns it, hours
-  # before the merge gate says no. It used to preview "Shape gate: n/a" for a
-  # chore shipping a CI workflow, teaching the same wrong lesson as PR #512.
+  # lose the exemption HERE too, and the preview says so. Since guard catalog row
+  # 4.4 the preview is information: `bin/task begin` validates the shape at create
+  # and bin/dor-check refuses at ship, so the preflight passes either way.
   def test_chore_shipping_a_ci_workflow_loses_the_exemption
     task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
     write_file(".github/workflows/ci.yml", "name: CI\non: [push]\n")
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "the shape preview is information:\n#{out}\n#{err}"
 
     report = JSON.parse(out)
     assert_equal false, report.dig("shape", "exempt")
-    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+    refute report.fetch("errors").any? { |error| error.include?("shape") }, report.fetch("errors").inspect
+
+    human, = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch")
+    assert_includes human, "Required tiers: none"
+    refute_includes human, "Shape gate: n/a"
   end
 
   def test_chore_shipping_a_gemfile_bump_loses_the_exemption
     task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
     write_file("Gemfile.lock", "GEM\n  specs:\n    rails (8.0.1)\n")
 
-    _out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?
+    assert_equal false, JSON.parse(out).dig("shape", "exempt")
   end
 
   def test_docs_kind_shipping_code_loses_the_exemption
@@ -645,11 +570,24 @@ end
     write_file("lib/shipped_code.rb", "# real behavioral code, not prose\n")
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?
 
     report = JSON.parse(out)
     assert_equal false, report.dig("shape", "exempt")
-    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+    assert_empty report.fetch("errors")
+  end
+
+  # [unit] Guard catalog row 4.4: a shape short of its metadata is reported, never a
+  # failure; begin validates it at create and dor-check at ship.
+  def test_missing_metadata_is_reported_not_failed
+    task = write_task(devops: default_devops.reject { |key, _| key == "test_plan" })
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "#{out}\n#{err}"
+    report = JSON.parse(out)
+    assert_includes report.dig("shape", "missing_metadata"), "test_plan", "FLOOR: the gap must have been read"
+    assert_empty report.fetch("errors")
   end
 
   def test_chore_kind_doc_only_diff_keeps_the_exemption

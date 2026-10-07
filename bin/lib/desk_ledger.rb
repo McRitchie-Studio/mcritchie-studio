@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "json"
 require_relative "task_board"
 
@@ -16,22 +17,24 @@ require_relative "task_board"
 #
 # TWO POSTURES, AND THE CALLER PICKS BY WHAT IT IS ABOUT TO DO.
 #
-#   file!  — the DESTROY path (`remove`, `cleanup --reclaim --yes`, `cleanup --write`).
-#            Returns a Result; a failure MUST abort the teardown. bin/agent-worktree
-#            calls this BEFORE it stops a stack or drops a worktree, so a refusal costs
-#            a retry and nothing else. This is the FAIL-CLOSED half. The teardown's
-#            SECOND write (closing its `removing` episode `removed` or `leaked`) comes
-#            after the desk is gone, so it warns on failure rather than aborting.
+#   file_or_queue — the DESTROY path (`remove`, `cleanup --reclaim --yes`, `cleanup
+#            --write`). bin/agent-worktree calls it BEFORE it stops a stack or drops a
+#            worktree. A record the board does not take is queued (below); only a board
+#            that answers with a refusal, or a queue that cannot be written, aborts the
+#            teardown. The teardown's SECOND write (closing its `removing` episode
+#            `removed` or `leaked`) comes after the desk is gone and is queued the same way.
 #   sync   — the READ-ONLY refresh (`snapshot --write`). Best-effort: the local registry
 #            file is still written, nothing is destroyed, so a board outage degrades to
 #            a loud warning rather than blocking an operator who is only looking.
 #
-# WHY NO LOCAL QUEUE. A spool that flushes "on next contact" re-introduces the exact
-# failure this replaces — a record that exists only on one machine until somebody
-# remembers. Fail-closed costs nothing on the destroy path because the write happens
-# FIRST, and the automatic sweeps already withhold every bound desk when the board is
-# unreadable (bin/agent-worktree#reclaim_evidence), so a board outage was never a window
-# in which mass teardown was safe to begin with.
+# THE QUEUE (guard catalog row 5.5). A board that does not answer used to refuse every
+# teardown, so a board outage blocked an operator's explicit `remove`. Now `file_or_queue`
+# appends a record the board could not take to a local queue file, and every later write
+# through it posts the queue first, in order, so the record reaches the board the next
+# time anything writes to it. The markdown ledger stranded rows because it lived in a
+# primary checkout nobody could commit from; the queue lives in the projects root's
+# .agents state and empties itself. A board that ANSWERS with a refusal (a 4xx other than
+# auth) is not queued: that is the board's verdict, and the caller keeps its posture.
 module DeskLedger
   # Bounded on both ends. A teardown is interactive and a hung socket must not look like
   # a hung sweep; 10s is longer than the board's p99 and far shorter than an operator's
@@ -45,9 +48,16 @@ module DeskLedger
   # created — 201 (the board WROTE a row) vs 200 (it already held it). Carried so an
   #           idempotent import can report what it actually did: a second harvest that
   #           counted 200s as successes would claim 166 writes it never performed.
-  Result = Struct.new(:ok, :record, :error, :created, keyword_init: true) do
+  # code    — the HTTP status when the board answered, nil when it did not
+  # queued  — the record could not be posted and is waiting in the local queue
+  Result = Struct.new(:ok, :record, :error, :created, :code, :queued, keyword_init: true) do
     def ok? = !!ok
+    def queued? = !!queued
   end
+
+  # Statuses that mean "the board did not take it, try again later": auth (the token or
+  # secret), timeouts, rate limits and every 5xx. Any other 4xx is the board's answer.
+  RETRYABLE_CODES = [401, 403, 408, 429].freeze
 
   module_function
 
@@ -60,9 +70,104 @@ module DeskLedger
   # `bin/agent-worktree snapshot` builds — so the mapping onto columns lives once, on
   # the server (DeskRecord.registry_attributes). `leaked_processes` is the evidence a
   # `leaked` close carries: each process the teardown spared.
-  def file(desk:, status:, source:, dotenv: nil, env: ENV, resolved_on: nil,
-           actor: nil, safety: nil, reason: nil, safe_delete_condition: nil, leaked_processes: nil)
-    body = {
+  def file(desk:, status:, source:, dotenv: nil, env: ENV, **narrative)
+    post("/api/v1/desk_records", desk_body(desk: desk, status: status, source: source, **narrative),
+         dotenv: dotenv, env: env)
+  end
+
+  # File ONE desk record, or queue it when the board does not answer. Posts the queue
+  # first, so records reach the board in the order they were made; while anything is
+  # still queued this record joins the back of the queue. Returns the post's Result, or
+  # one with `queued: true`. A queue that cannot be written comes back not ok and not
+  # queued, and the caller decides.
+  def file_or_queue(queue:, dotenv: nil, env: ENV, **record)
+    flush(queue: queue, dotenv: dotenv, env: env)
+    body = desk_body(**record)
+    unless pending(queue).empty?
+      return enqueue(queue, body, "earlier records are still queued for #{base_url(env)}")
+    end
+
+    result = post("/api/v1/desk_records", body, dotenv: dotenv, env: env)
+    return result if result.ok? || !retryable?(result)
+
+    enqueue(queue, body, result.error)
+  end
+
+  # Post every queued record in order, stopping at the first the board does not take.
+  # A record the board answers with a refusal is dropped with a warning: retrying it
+  # would hold the queue forever. Returns the number posted.
+  def flush(queue:, dotenv: nil, env: ENV)
+    posted = 0
+    with_queue_lock(queue) do
+      bodies = queued_bodies(queue)
+      remaining = bodies.drop_while do |body|
+        result = post("/api/v1/desk_records", body, dotenv: dotenv, env: env)
+        if result.ok?
+          posted += 1
+        elsif !retryable?(result)
+          warn "desk ledger: dropped a queued record the board refused (#{result.error})"
+        end
+        result.ok? || !retryable?(result)
+      end
+      write_queue(queue, remaining) unless remaining.size == bodies.size
+    end
+    posted
+  rescue SystemCallError
+    posted
+  end
+
+  def pending(queue)
+    File.file?(queue) ? File.readlines(queue).reject { |line| line.strip.empty? } : []
+  rescue SystemCallError
+    []
+  end
+
+  def retryable?(result)
+    result.code.nil? || result.code >= 500 || RETRYABLE_CODES.include?(result.code)
+  end
+
+  def enqueue(queue, body, reason)
+    with_queue_lock(queue) do
+      write_queue(queue, queued_bodies(queue) + [body])
+    end
+    Result.new(ok: false, queued: true, error: reason)
+  rescue SystemCallError => e
+    Result.new(ok: false, error: "#{reason}; and the local queue #{queue} could not be written (#{e.class}: #{e.message})")
+  end
+
+  # The lock is a sibling file, because the queue itself is replaced by rename: a lock
+  # held on the old inode would not exclude a writer that opens the new one.
+  def with_queue_lock(queue)
+    FileUtils.mkdir_p(File.dirname(queue))
+    File.open("#{queue}.lock", File::RDWR | File::CREAT, 0o600) do |lock|
+      lock.flock(File::LOCK_EX)
+      yield
+    end
+  end
+
+  def queued_bodies(queue)
+    return [] unless File.file?(queue)
+
+    File.readlines(queue).filter_map { |line| JSON.parse(line) rescue nil }
+  end
+
+  # Temp file plus rename(2): a crash mid-write leaves the old queue or the new one,
+  # never a truncated half of either.
+  def write_queue(queue, bodies)
+    temp = "#{queue}.tmp-#{Process.pid}"
+    File.open(temp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+      bodies.each { |body| file.puts(JSON.generate(body)) }
+      file.flush
+      file.fsync
+    end
+    File.rename(temp, queue)
+  ensure
+    FileUtils.rm_f(temp) if temp && File.exist?(temp)
+  end
+
+  def desk_body(desk:, status:, source:, resolved_on: nil, actor: nil, safety: nil, reason: nil,
+                safe_delete_condition: nil, leaked_processes: nil)
+    {
       desk: {
         worktree_path: desk["worktree"],
         registry: desk,
@@ -76,8 +181,6 @@ module DeskLedger
         leaked_processes: leaked_processes
       }.compact
     }
-
-    post("/api/v1/desk_records", body, dotenv: dotenv, env: env)
   end
 
   # Import ONE stranded ledger row. Distinct from `file` because that path resolves an
@@ -108,10 +211,10 @@ module DeskLedger
                                          body: body, read_timeout: READ_TIMEOUT)
     parsed = TaskBoard.parse_body(res)
     if res.code.to_i.between?(200, 299)
-      return Result.new(ok: true, record: parsed["data"], created: res.code.to_i == 201)
+      return Result.new(ok: true, record: parsed["data"], created: res.code.to_i == 201, code: res.code.to_i)
     end
 
-    Result.new(ok: false,
+    Result.new(ok: false, code: res.code.to_i,
                error: "POST #{path} -> #{res.code}: #{parsed["error"] || res.body.to_s[0, 200]}")
   rescue StandardError => e
     Result.new(ok: false, error: "POST #{path} failed: #{e.class}: #{e.message}")

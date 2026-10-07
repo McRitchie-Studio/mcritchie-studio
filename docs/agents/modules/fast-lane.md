@@ -55,7 +55,7 @@ The tooling tree is deliberately **not a Rails app** — no `Gemfile`, no `app/a
 no `db/` — so any `bin/` script that boots the application is installed there as a
 **shim that execs the hub primary's copy**, never as a copy. The set is derived at
 install time by grepping `bin/`, so it grows on its own; today it is `rails`, `rake`,
-`jobs`, `reviewer-select` and `reap-cert-databases`. Call them at the fixed path like
+`jobs` and `reviewer-select`. Call them at the fixed path like
 any other script and they delegate — **but only from a tree the shims were installed
 into, and that happens at a production ship.** Until the next one, those scripts are
 still plain copies there and die with `Bundler::GemfileNotFound` naming the tooling
@@ -341,9 +341,9 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
-allocates the isolated worktree on an allocated port, claims the task, and
-preflights (pinning the worktree via --root). Read the preflight output and fix
-any blockers before implementation.
+allocates the isolated worktree on an allocated port, preflights it (pinning the
+worktree via --root), and claims the task. Read the preflight output and fix what
+it reports before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url http://localhost:<port>/<path>

@@ -30,6 +30,8 @@ class TaskBeginTest < Minitest::Test
   # The resuming instance's identity (opt-in per test — the harness env is
   # session-neutralized) and a rival's. The harness pins TASK_CLAIM_NONCE to
   # "inst-default", so a foreign INSTANCE is any other nonce/session pair.
+  # The metadata every shape requires at create (guard catalog row 4.4).
+  CREATE_METADATA = ["--risk", "devops", "--accept", "Widget cache answers", "--test", "[unit] cache hit"].freeze
   SESSION = "sess-begin-resume-1111"
   FOREIGN_SESSION = "sess-begin-foreign-2222"
 
@@ -61,7 +63,7 @@ class TaskBeginTest < Minitest::Test
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV, Dir.pwd].join("\\t")) }
-      exit(ENV["FAIL_#{marker}"] == "1" ? 1 : 0)
+      exit(Integer(ENV.fetch("FAIL_#{marker}", "0")))
     RUBY
     FileUtils.chmod("+x", stub)
     stub
@@ -140,6 +142,15 @@ class TaskBeginTest < Minitest::Test
                 "metadata" => { "devops" => (parsed["devops"] || {}).merge("worktree_slug" => parsed["slug"]) } }
       ["200 OK", JSON.generate("data" => @task)]
     when "PATCH"
+      if path.end_with?("/unblock")
+        # The board refuses an escalation 409 (Task#builder_unblock_refusal).
+        return ["409 Conflict", JSON.generate("error" => "carries an escalation, which only Alex answers")] if @task["escalated"]
+
+        @unblocked_by = JSON.parse(body)["by"]
+        @task.delete("blocked_at")
+        return ["200 OK", JSON.generate("data" => @task)]
+      end
+
       parsed = JSON.parse(body)
       @task["stage"] = parsed["stage"] if parsed["stage"]
       # Rule 1 of Task#builder_to_stamp, and ONLY rule 1: an explicit soul actor on
@@ -177,7 +188,7 @@ class TaskBeginTest < Minitest::Test
 
   def test_begin_creates_claims_and_preflights_in_one_command
     requests, out, err, status, lines =
-      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP])
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA])
 
     assert status.success?, "expected green begin, got:\n#{err}\n#{out}"
 
@@ -284,6 +295,47 @@ class TaskBeginTest < Minitest::Test
                  "the bare pattern does not match the form it forbids, so this proves nothing"
   end
 
+  # --- guard catalog row 4.4: the shape is decided at create --------------------
+  # Each refusal writes nothing: no POST, no worktree step, no claim.
+
+  def assert_create_refused(args, message)
+    requests, _out, err, status, lines = run_begin(["--title", "Add Widget Cache", *args])
+
+    refute status.success?, "begin must refuse this create:\n#{err}"
+    assert_includes err, message
+    assert_includes err, "Nothing was written."
+    refute(requests.any? { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }, "nothing may be created")
+    assert_empty lines, "no worktree or preflight step may run"
+  end
+
+  def test_begin_refuses_a_create_with_no_shape
+    assert_create_refused(["--repo", APP, *CREATE_METADATA], "begin creates a feature task only with --shape")
+  end
+
+  def test_begin_refuses_a_create_with_an_unknown_shape
+    assert_create_refused(["--shape", "bogus", "--repo", APP, *CREATE_METADATA], 'unknown --shape "bogus"')
+  end
+
+  def test_begin_refuses_a_create_short_of_its_metadata
+    assert_create_refused(["--shape", "backend", "--repo", APP], "shape backend needs --accept, --risk, --test")
+  end
+
+  # local_url is produced during the build, so a ui shape is created without it.
+  def test_begin_creates_a_ui_shape_without_a_local_url
+    _requests, out, err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "ui-only", "--repo", APP,
+                                              *CREATE_METADATA])
+
+    assert status.success?, "#{err}\n#{out}"
+  end
+
+  # An exempt kind's diff is not known at create; dor-check decides at ship.
+  def test_begin_creates_an_exempt_kind_without_a_shape
+    requests, out, err, status, = run_begin(["--title", "Add Widget Cache", "--kind", "docs", "--repo", APP])
+
+    assert status.success?, "#{err}\n#{out}"
+    assert(requests.any? { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" })
+  end
+
   # --- resume ------------------------------------------------------------------
 
   def test_begin_resumes_an_existing_building_task_without_duplicating
@@ -299,6 +351,52 @@ class TaskBeginTest < Minitest::Test
     steps = lines.map(&:first)
     assert_includes steps, "WORKTREE", "the worktree steps still run (they are idempotent)"
     assert_includes steps, "PREFLIGHT"
+  end
+
+  # [integration] Guard catalog row 4.2, scoped by decision 6: begin on a REWORK-blocked
+  # task is the answer to the block, so it clears it (PATCH .../unblock, naming who).
+  def test_begin_on_a_rework_blocked_task_clears_the_block_and_names_who
+    blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework")
+    requests, _out, err, status, = run_begin([SLUG, "--agent", "pokemon"], existing: blocked)
+
+    assert status.success?, "a blocked task's begin must complete, got:\n#{err}"
+    assert(requests.any? { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/#{SLUG}/unblock" },
+           "begin must clear the block, got: #{requests.map { |r| "#{r[:method]} #{r[:path]}" }.inspect}")
+    assert_equal "pokemon", @unblocked_by, "the clear names who made it"
+    assert_includes err, "rework block is cleared by this begin (recorded as pokemon)"
+    assert_nil @task["blocked_at"]
+  end
+
+  # Environment and dependency blocks wait on something outside the desk: no unblock.
+  def test_begin_leaves_a_dependency_or_environment_block_standing
+    %w[dependency environment].each do |kind|
+      blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => kind)
+      requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+
+      assert status.success?, err
+      refute(requests.any? { |r| r[:path].to_s.end_with?("/unblock") }, "a #{kind} block must not be cleared")
+      assert_includes err, "carries a #{kind} block, which this begin does not clear"
+      assert_equal "2026-10-07T08:00:00Z", @task["blocked_at"]
+    end
+  end
+
+  # An escalation the board refuses (409) stands, and begin says so and completes.
+  def test_begin_reports_a_refused_escalation_and_completes
+    blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework", "escalated" => true)
+    _requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+
+    assert status.success?, err
+    assert_includes err, "block stands"
+    assert_includes err, "only Alex answers"
+    assert_equal "2026-10-07T08:00:00Z", @task["blocked_at"]
+  end
+
+  # [unit] The control: an unblocked task sends no unblock.
+  def test_begin_on_an_unblocked_task_sends_no_unblock
+    requests, _out, err, status, = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, err
+    refute(requests.any? { |r| r[:path].to_s.end_with?("/unblock") })
   end
 
   def test_begin_by_title_resumes_the_task_it_created_before
@@ -396,7 +494,7 @@ class TaskBeginTest < Minitest::Test
 
   def test_begin_with_agent_stamps_the_desk_as_it_is_cut
     _requests, _out, err, status, lines =
-      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, "--agent", "carl"])
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA, "--agent", "carl"])
 
     assert status.success?, "expected green begin, got:\n#{err}"
     new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }
@@ -514,17 +612,47 @@ class TaskBeginTest < Minitest::Test
     assert_equal BIN, banner, "the banner must echo the invocation it was reached by:\n#{err}"
   end
 
-  def test_begin_preflight_failure_names_the_resume
-    _requests, _out, err, status, lines =
-      run_begin([SLUG], existing: building_task, env: { "FAIL_PREFLIGHT" => "1" })
+  # Guard catalog row 3.8: the preflight runs BEFORE the claim. When it cannot
+  # describe the desk (exit 2) nothing is claimed, and the refusal names the resume.
+  def test_begin_preflight_that_cannot_describe_the_desk_refuses_before_the_claim
+    requests, _out, err, status, lines =
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA],
+                env: { "FAIL_PREFLIGHT" => "2" })
 
-    refute status.success?, "a red preflight must fail the begin"
+    refute status.success?, "a preflight that cannot describe the desk must refuse the claim"
     # Filesystem-keyed for the reason test/lib/remedy_hint_guard_test.rb spells out:
     # an absolute path CONTAINS "bin/task begin <slug>", so a substring assertion
     # here passes the bare form as readily as the fixed one.
     resume = err[%r{re-run: (\S*/bin/task) begin #{SLUG}}, 1]
     refute_nil resume, "the failure must name the resume:\n#{err}"
     assert File.executable?(resume), "the resume must name a runnable script, got #{resume.inspect}"
+    assert_includes err, "nothing was claimed"
     assert(lines.any? { |l| l[0] == "PREFLIGHT" }, "the preflight must have been attempted")
+    refute(patches_of(requests).any? { |r| JSON.parse(r[:body])["stage"] == "building" },
+           "no claim may be written before a preflight that could not describe the desk")
+    assert_equal "designed", @task["stage"]
+  end
+
+  # Findings (exit 1) are a report: the claim proceeds and begin completes.
+  def test_begin_preflight_findings_are_a_report_and_the_claim_proceeds
+    requests, out, err, status, = run_begin(
+      ["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA],
+      env: { "FAIL_PREFLIGHT" => "1" }
+    )
+
+    assert status.success?, "findings must not fail begin:\n#{err}\n#{out}"
+    assert_includes err, "found work for this desk"
+    assert(patches_of(requests).any? { |r| JSON.parse(r[:body])["stage"] == "building" }, "the claim must land")
+    assert_equal "building", @task["stage"]
+  end
+
+  # The order itself: the preflight is logged before the claim's child move.
+  def test_begin_runs_the_preflight_before_the_claim
+    _requests, _out, err, status, = run_begin(
+      ["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA]
+    )
+
+    assert status.success?, err
+    assert_operator err.index("begin 4/5 preflight"), :<, err.index("begin 5/5 claim"), err
   end
 end

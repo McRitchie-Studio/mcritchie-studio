@@ -116,7 +116,9 @@
 #   bin/task begin --title T [--repo APP] [--agent SOUL] [--steal] [same flags as create]
 #   bin/task begin <slug> [--agent SOUL] [--dev-size S] [--steal]   # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
-#       bind-task + move building + session-preflight in ONE command, printing
+#       bind-task + session-preflight + move building in ONE command (the
+#       preflight runs before the claim and refuses it only when it cannot
+#       describe the desk; its findings are a report), printing
 #       the worktree path, port, and task URL. The slug is derived from the
 #       title CLIENT-side and passed explicitly, so rerunning the same begin —
 #       or `begin <slug>` — RESUMES after a partial failure instead of minting
@@ -297,6 +299,7 @@ require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 require_relative "lib/review_hop"
 require_relative "lib/desk_claim"
+require_relative "lib/code_diff"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
@@ -2234,21 +2237,21 @@ def reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped:)
   remedy = "#{worktree_bin} identity #{app} #{worktree_slug} <soul>"
   res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
   unless res.code.to_i.between?(200, 299)
-    warn!("begin 4/5 identity — could not read #{slug}'s builder back (HTTP #{res.code}), so the desk keeps " \
+    warn!("begin 5/5 identity — could not read #{slug}'s builder back (HTTP #{res.code}), so the desk keeps " \
           "whatever identity `new` printed above. Once the board answers: #{remedy}")
     return
   end
 
   soul = CommitIdentity.soul_of(TaskBoard.parse_body(res).dig("data", "metadata", "devops"))
   if soul.nil?
-    warn!("begin 4/5 identity — #{slug} names NO builder (devops.built_by is blank), so the desk is UNSTAMPED: " \
+    warn!("begin 5/5 identity — #{slug} names NO builder (devops.built_by is blank), so the desk is UNSTAMPED: " \
           "a hand-run git commit there names no soul. Claim it with --agent <soul>, or stamp it: #{remedy}")
     return
   end
   # `new --soul` already stamped exactly this soul and printed the result.
   return if soul == stamped
 
-  warn!("begin 4/5 identity — #{worktree_bin} identity #{app} #{worktree_slug} #{soul}   (the claim recorded #{soul})")
+  warn!("begin 5/5 identity — #{worktree_bin} identity #{app} #{worktree_slug} #{soul}   (the claim recorded #{soul})")
   return if system(worktree_bin, "identity", app, worktree_slug, soul)
 
   warn!("  ✗ the desk identity did not land — hand commits there will not name #{soul}. " \
@@ -2257,9 +2260,79 @@ rescue StandardError => e
   # A board read that RAISES (connection refused, timeout) is the same non-answer as
   # a non-2xx — and must be just as non-fatal, or a network blip past the claim kills
   # a begin whose desk and claim are both already whole.
-  warn!("begin 4/5 identity — could not read #{slug}'s builder back (#{e.class}: #{e.message}); " \
+  warn!("begin 5/5 identity — could not read #{slug}'s builder back (#{e.class}: #{e.message}); " \
         "the desk keeps whatever identity `new` printed above. Once the board answers: " \
         "#{worktree_bin} identity #{app} #{worktree_slug} <soul>")
+end
+
+# THE SHAPE AND ITS METADATA ARE DECIDED AT CREATE (guard catalog row 4.4). The
+# preflight used to learn a missing or unknown shape, or a shape short of its
+# required metadata, only after the claim. `begin` now refuses that create before
+# anything is written, so a task begin made always carries a known shape and the
+# metadata it owes. A kind in CodeDiff::EXEMPT_KINDS may omit --shape: its diff is
+# not known yet, and bin/dor-check decides at ship whether it ships code. local_url
+# is produced during the build (a live candidate), so bin/dor-check owns it.
+BEGIN_SHAPES_PATH = ENV.fetch("TASK_BEGIN_SHAPES_PATH", File.expand_path("../config/feature_shapes.yml", __dir__))
+BEGIN_DEFERRED_METADATA = %w[local_url].freeze
+
+def validate_begin_create!(scalars, lists)
+  config = YAML.safe_load(File.read(BEGIN_SHAPES_PATH)) || {}
+  shapes = config.fetch("shapes", {})
+  kind = scalars.fetch("kind", "feature").to_s
+  shape = scalars["shape"].to_s.strip
+  if shape.empty?
+    return if CodeDiff::EXEMPT_KINDS.include?(kind)
+
+    die!("begin creates a #{kind} task only with --shape, one of: #{shapes.keys.join(", ")}. Nothing was written.")
+  end
+  unless shapes.key?(shape)
+    die!("unknown --shape #{shape.inspect}; one of: #{shapes.keys.join(", ")}. Nothing was written.")
+  end
+
+  required = shapes.fetch(shape).fetch("required_metadata", config.dig("defaults", "required_metadata") || [])
+  flag_for = DevopsListFlags::FLAGS.invert
+  missing = (required - BEGIN_DEFERRED_METADATA).reject do |field|
+    Array(lists[field]).any? { |value| !value.to_s.strip.empty? }
+  end
+  return if missing.empty?
+
+  die!("shape #{shape} needs #{missing.map { |field| flag_for.fetch(field, field) }.join(", ")} at create. " \
+       "Nothing was written.")
+rescue Errno::ENOENT, Psych::Exception => e
+  die!("could not read the shapes at #{BEGIN_SHAPES_PATH} (#{e.class}: #{e.message}). Nothing was written.")
+end
+
+# A REWORK BLOCK'S BEGIN IS THE ANSWER TO IT (guard catalog row 4.2, scoped by
+# decision 6). A rework block leaves the task on `building` with blocked_at set, and
+# the builder who resumes it is the one fixing it, so begin clears it at the claim
+# through PATCH /api/v1/tasks/<slug>/unblock, naming who (`by`); the board writes the
+# audit row (Task#builder_unblock!). Any other block (environment, dependency) waits on
+# something outside the desk, and an `Escalated:` block waits on Alex: begin leaves
+# those standing, and the server refuses them 409 if asked. Report-only: the desk and
+# the claim stand either way.
+def clear_block_at_begin(slug, task, by:)
+  return if task["blocked_at"].to_s.strip.empty? || task["stage"].to_s != "building"
+
+  kind = task["block_kind"].to_s
+  unless kind == "rework"
+    warn!("begin — #{slug} carries a #{kind.empty? ? "kindless" : kind} block, which this begin does not clear: it " \
+          "waits on something outside the desk. Read the feedback the preflight printed.")
+    return
+  end
+
+  res = TaskBoard.request(:patch, "/api/v1/tasks/#{slug}/unblock", base_url: BASE_URL, token: token,
+                                                                   body: { "by" => by })
+  if res.code.to_i.between?(200, 299)
+    warn!("begin — #{slug}'s rework block is cleared by this begin (recorded as #{by}). " \
+          "Read the feedback the preflight printed before editing.")
+  else
+    reason = TaskBoard.parse_body(res)["error"] || res.code
+    warn!("begin — #{slug}'s block stands (PATCH /api/v1/tasks/#{slug}/unblock -> #{res.code}: #{reason}); " \
+          "the desk and the claim stand.")
+  end
+rescue StandardError => e
+  warn!("begin — could not clear #{slug}'s block (#{e.class}: #{e.message}); the desk and the claim stand. " \
+        "Clear it from the task page's Resume control.")
 end
 
 # One begin step that shells a tool: narrate, run, die with a RESUME hint on
@@ -2575,6 +2648,7 @@ when "begin"
   if task.nil?
     die!("no task #{slug.inspect} to resume — pass --title to create one") unless top["title"]
     scalars["kind"] = "feature" unless scalars.key?("kind")
+    validate_begin_create!(scalars, lists)
     devops = stamp_session(build_devops({}, scalars, lists))
     body = top_body(top.merge("slug" => slug))
     body["devops"] = devops unless devops.empty?
@@ -2638,9 +2712,33 @@ when "begin"
   begin_step!("2/5 worktree", slug, *new_cmd)
   begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
 
+  # THE PREFLIGHT RUNS BEFORE THE CLAIM, AND AFTER IT BEGIN ONLY REPORTS (guard
+  # catalog row 3.8). It used to run last, so any finding exited begin 1 after the
+  # claim had landed. Now it inspects the desk first: exit 2 (it cannot describe this
+  # desk: the wrong checkout, an unreadable task) refuses before anything is claimed;
+  # exit 1 (findings to work on in the desk) is printed above and the claim proceeds.
+  worktree_dir = TaskTree.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
+  die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
+  preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
+  # Pin the inspected root to the worktree. session-preflight resolves its own
+  # root from __dir__, so `chdir` alone left the primary's copy inspecting the
+  # PRIMARY (begin-preflight-wrong-root). --root names the desk explicitly;
+  # session-preflight self-defends that it really is this task's.
+  preflight_cmd = [preflight_bin, slug, "--root", worktree_dir]
+  warn!("begin 4/5 preflight — #{preflight_cmd.join(" ")} (from #{worktree_dir})")
+  system(*preflight_cmd, chdir: worktree_dir)
+  preflight_status = $?.exitstatus
+  if preflight_status.nil? || preflight_status >= 2
+    die!("4/5 preflight could not describe this desk, so nothing was claimed — fix what it printed above, " \
+         "then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
+  end
+  if preflight_status == 1
+    warn!("begin 4/5 preflight — found work for this desk (printed above); the claim proceeds and the desk is yours to fix it in.")
+  end
+
   if stage == "building"
     if mover_session.nil?
-      warn!("begin 4/5 claim — already [building]; no session identity, leaving the claim as-is")
+      warn!("begin 5/5 claim — already [building]; no session identity, leaving the claim as-is")
     else
       # The gate above admitted this session — now record the CLAIM so the builder
       # stamp runs. The desk bound in step 3 IS the claim; this write carries no
@@ -2659,7 +2757,7 @@ when "begin"
       api(:patch, "/api/v1/tasks/#{slug}", resume_claim)
       seed_usage_baseline(slug)
       write_feature_marker(current.merge("metadata" => { "devops" => merged }))
-      warn!("begin 4/5 claim — already [building]; claimed from this desk")
+      warn!("begin 5/5 claim — already [building]; claimed from this desk")
     end
   else
     # An explicit child `move building` so the build claim, --dev-size stamp,
@@ -2675,20 +2773,11 @@ when "begin"
     # rule 4 cannot either. That is the whole of why begin had no path to built_by.
     move_cmd += ["--actor", builder] unless builder.empty?
     move_cmd << "--steal" if steal
-    begin_step!("4/5 claim", slug, *move_cmd)
+    begin_step!("5/5 claim", slug, *move_cmd)
   end
 
+  clear_block_at_begin(slug, task, by: [builder, mover_session.to_s, "begin"].find { |v| !v.to_s.strip.empty? })
   reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
-
-  worktree_dir = TaskTree.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
-  die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
-  preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
-  # Pin the inspected root to the worktree. session-preflight resolves its own
-  # root from __dir__, so `chdir` alone left the primary's copy inspecting the
-  # PRIMARY (begin-preflight-wrong-root): a false GREEN, and a false RED that
-  # exited begin whenever the primary drifted behind accepted. --root names the
-  # desk explicitly; session-preflight self-defends that it really is this task's.
-  begin_step!("5/5 preflight", slug, preflight_bin, slug, "--root", worktree_dir, chdir: worktree_dir)
 
   context = begin
     JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))

@@ -24,17 +24,17 @@ there is silently reverted by the next install.
 production ship (Steffon, G4 Ship); that method picks the tree it installs from.
 It runs unconditionally, is idempotent, is non-fatal, and heals prior drift.
 
-So `installed docs/skills drift` between a docs merge and the next production
-ship is an **expected state, not a chore anyone owes**. It closes itself on the
-next ship. Acting on it is wrong from either tree: a run from a feature worktree
-publishes unshipped mid-branch text to every session on the machine, and a run
-from a primary republishes a `main` that can sit a release behind what shipped
-(the ship's restore is best-effort and refuses a primary holding a live
-session's work). Such a run does not CLOSE the drift, it MOVES it — because
-`bin/session-preflight` measures the shared roots against ITS OWN checkout's
-sources, publishing from one tree clears that tree's report and turns every
-other session's report red. Verify with `bin/install-agent-docs check`
-(read-only) at any time.
+So a docs merge does not make the installed copies wrong: they lag until the
+next production ship, and nobody owes that ship's work. `bin/install-agent-docs
+check` (read-only) compares the installed copies with the tree the last ship
+published, the SHA the fixed path `/Users/alex/projects/.agents/bin` names, so a
+docs merge since then leaves it green. A mismatch it reports means the ship's own
+step did not land, and the next ship heals it. `bin/session-preflight` prints the
+result as information and never fails on it. Acting on it is wrong from either
+tree: a run from a feature worktree publishes unshipped mid-branch text to every
+session on the machine, and a run from a primary republishes a `main` that can sit
+a release behind what shipped (the ship's restore is best-effort and refuses a
+primary holding a live session's work).
 
 Two runs stay legitimate, and neither is a response to a drift report:
 `bin/agent-runtime install` at **bringup** — a machine with no roots installed,

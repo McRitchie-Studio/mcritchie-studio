@@ -734,6 +734,8 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
       stub(dir, "move-stub", "exit 0")
       stub(dir, "worktree-stub", "echo #{dir}")
       stub(dir, "preflight-stub", "exit 0")
+      # The desk the preflight inspects BEFORE the claim (guard catalog row 3.8).
+      FileUtils.mkdir_p(File.join(dir, "mcritchie-studio", ".worktrees", "probe-task"))
       err = status = nil
 
       with_board_sink(dir, writes: writes) do |base|
@@ -796,6 +798,8 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
       stub(dir, "move-stub", "printf '%s\n' \"$@\" > #{move_log}")
       stub(dir, "worktree-stub", "echo #{dir}")
       stub(dir, "preflight-stub", "exit 0")
+      # The desk the preflight inspects BEFORE the claim (guard catalog row 3.8).
+      FileUtils.mkdir_p(File.join(dir, "mcritchie-studio", ".worktrees", "probe-task"))
 
       with_board_sink(dir) do |base|
         Open3.capture3(
@@ -831,6 +835,8 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
       stub(dir, "move-stub", "exit 0")
       stub(dir, "worktree-stub", "echo #{dir}")
       stub(dir, "preflight-stub", "exit 0")
+      # The desk the preflight inspects BEFORE the claim (guard catalog row 3.8).
+      FileUtils.mkdir_p(File.join(dir, "mcritchie-studio", ".worktrees", "probe-task"))
       writes = []
 
       with_board_sink(dir, stage: stage, writes: writes) do |base|

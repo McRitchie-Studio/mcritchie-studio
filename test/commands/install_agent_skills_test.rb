@@ -366,10 +366,9 @@ class InstallAgentSkillsTest < Minitest::Test
   # is idempotent, is non-fatal by construction, and HEALS PRIOR DRIFT. So drift
   # between a docs merge and the next ship is an EXPECTED state that closes itself.
   #
-  # A hand-run is wrong from either tree AND cannot even close what the reader sees:
-  # the check compares the installed roots against THIS $ROOT's sources, so installing
-  # from a primary republishes a `main` that can be a release behind and leaves a
-  # worktree's drift exactly where it was.
+  # A hand-run is wrong from either tree: the check compares the installed roots with
+  # the tree the last ship published (guard catalog row 4.1), so installing from a
+  # primary or a desk publishes text that tree does not hold and turns the report red.
   #
   # BOUNDARY (checked, not missed): two hand-runs stay legitimate and are NOT
   # drift reports — `bin/agent-runtime install` during fresh-machine bringup
@@ -507,7 +506,9 @@ class InstallAgentSkillsTest < Minitest::Test
       File.write(path, "#{File.read(path)}\nlocal drift\n")
       _out, err, status = run_installer("check")
       refute status.success?, "check must fail when a local skill drifts from the source"
-      assert_includes err, "ERROR: #{path} is out of date with #{WRAP_SRC}"
+      # After an install the fixed path names this tree's HEAD, so the check reads the
+      # source from that published tree (guard catalog row 4.1) and names it by path.
+      assert_includes err, "ERROR: #{path} is out of date with docs/agents/skills/wrap/SKILL.md"
     end
   end
 

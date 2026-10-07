@@ -8,6 +8,7 @@
 # leave a half-torn-down desk — the failure mode the fail-closed rule exists to prevent.
 # Every failure must therefore come back as a Result carrying a reason a human can act on.
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../support/session_env"
 require_relative "../../bin/lib/desk_ledger"
 
@@ -179,5 +180,61 @@ class DeskLedgerTest < Minitest::Test
     yield
   rescue StandardError => e
     flunk "expected no exception, got #{e.class}: #{e.message}"
+  end
+
+  public
+
+  # ---- [unit] guard catalog row 5.5: the queue ------------------------------------
+
+  def queue_path
+    @queue_path ||= File.join(Dir.mktmpdir("desk-ledger-queue"), "queue.jsonl")
+  end
+
+  def test_a_board_that_does_not_answer_queues_the_record
+    with_transport([AUTH_OK, Response.new("503", '{"error":"down"}')]) do
+      result = DeskLedger.file_or_queue(queue: queue_path, desk: DESK, status: "removing", source: "remove")
+
+      assert_predicate result, :queued?
+      refute_predicate result, :ok?
+      assert_equal 1, DeskLedger.pending(queue_path).size
+      assert_equal %w[queue.jsonl queue.jsonl.lock], Dir.children(File.dirname(queue_path)).sort,
+                   "written by temp file and rename: no temp file is left behind"
+    end
+  end
+
+  def test_the_next_write_posts_the_queue_first_in_order
+    with_transport([AUTH_OK, Response.new("503", "{}")]) do
+      DeskLedger.file_or_queue(queue: queue_path, desk: DESK, status: "removing", source: "remove")
+    end
+    DeskLedger.instance_variable_set(:@token, nil)
+    with_transport([AUTH_OK, Response.new("201", "{}"), Response.new("201", "{}")]) do |calls|
+      result = DeskLedger.file_or_queue(queue: queue_path, desk: DESK, status: "removed", source: "remove")
+
+      assert_predicate result, :ok?
+      statuses = calls.select { |c| c[:path] == "/api/v1/desk_records" }.map { |c| c[:body].dig("desk", "status") || c[:body].dig(:desk, :status) }
+      assert_equal %w[removing removed], statuses
+      assert_empty DeskLedger.pending(queue_path)
+    end
+  end
+
+  # A board that ANSWERS with a refusal is not queued: retrying it would hold the queue.
+  def test_a_refusal_the_board_answered_is_not_queued
+    with_transport([AUTH_OK, Response.new("422", '{"error":"unknown status"}')]) do
+      result = DeskLedger.file_or_queue(queue: queue_path, desk: DESK, status: "removing", source: "remove")
+
+      refute_predicate result, :queued?
+      assert_equal 422, result.code
+      assert_empty DeskLedger.pending(queue_path)
+    end
+  end
+
+  def test_an_unwritable_queue_is_neither_ok_nor_queued
+    with_transport([AUTH_OK, Response.new("503", "{}")]) do
+      result = DeskLedger.file_or_queue(queue: "/dev/null/nope/queue.jsonl", desk: DESK, status: "removing", source: "remove")
+
+      refute_predicate result, :queued?
+      refute_predicate result, :ok?
+      assert_includes result.error, "could not be written"
+    end
   end
 end

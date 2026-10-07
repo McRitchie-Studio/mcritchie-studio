@@ -37,8 +37,8 @@ workflows that meet at `submitted`:
 
 ## Step 1 — Claim: task + worktree + preflight
 
-One command creates the task, cuts a desk on an allocated port, claims the task,
-and preflights. Skip it when a focus session already made your desk.
+One command creates the task, cuts a desk on an allocated port, preflights the
+desk, and claims the task. Skip it when a focus session already made your desk.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -59,7 +59,11 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
 - **Classify the shape**; it selects the tests you owe
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
   `onchain` · `onchain-vertical` · `docs` · `test-only`. Shape by the files, never
-  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)).
+  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)). `begin` refuses
+  a create, writing nothing, when the shape is missing or unknown or the shape's
+  metadata (`--accept`, `--repo`, `--risk`, `--test`) is short; a `chore`,
+  `cleanup` or `docs` kind may omit `--shape`. `local_url` comes later, from the
+  build.
 - **`test-only`** is for a diff that is entirely test code. It has no tiers, but
   it is not the easy option:
   1. It is claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`,
@@ -83,24 +87,23 @@ every session: `<app-slug> · <feature-slug> · <task URL>`.
 To resume a held or blocked task instead:
 
 ```bash
-bin/task begin <slug>              # re-creates/rebinds the desk, moves to building, preflights
+bin/task begin <slug>              # re-creates/rebinds the desk, preflights, moves to building
 ```
 
 The desk is the build claim. `begin` refuses only when another live session's
 desk is bound to the task with uncommitted changes, and names it. Add `--steal`
 only for that case.
 
-**Read the preflight output and fix what it flags before writing code**: branch
-drift vs `accepted`, blocker feedback, same-file PR overlap, duplicate migration
-installs, generated-doc drift, stale terminology, required test tiers. A missing
-`test_plan` or `local_url` is expected at this point, not a blocker.
-
-**Installed an engine migration? Re-run the preflight after the install.** At
-claim time the branch has no commits, so the migration check has nothing to read.
-A duplicate install BLOCKS, because it merges cleanly and then raises
-`ActiveRecord::DuplicateMigrationNameError` on every `db:migrate`, including the
-Heroku release phase. The task that OWNS the migration keeps its copy; the other
-drops it. Mechanism: `bin/lib/migration_collision.rb`.
+**Read the preflight output before writing code.** `begin` runs it on the desk
+before the claim, and after the claim it only reports. It prints the latest
+feedback, the branch's distance from `accepted`, the PR's merge and check state,
+same-file overlap with other PRs, stale terminology in your own changed docs, the
+installed entry docs (information: the ship publishes them), and the tiers your
+shape owes. `begin` clears a rework block (and records who did); an environment, dependency or
+`Escalated:` block stands. Read the feedback first.
+Duplicate migration installs are checked by `bin/submit` and the merge gate on the
+final diff (mechanism: `bin/lib/migration_collision.rb`): the task that owns an
+engine migration keeps its copy, and the other drops it.
 
 ## Step 2 — Build in the worktree
 

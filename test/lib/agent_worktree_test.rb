@@ -298,10 +298,16 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
   end
 
-  def test_claim_hold_withholds_for_a_non_expired_claim
-    assert_equal "true",
+  # Guard catalog row 5.1: the legacy build-lease hold is gone. Nothing writes those
+  # leases since the desk became the build claim, so a lease on a readable record holds
+  # nothing; the board read itself stays (test_bound_but_unreadable_is_withheld_everywhere).
+  def test_claim_hold_ignores_a_legacy_lease
+    assert_equal "false",
                  live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2099-01-01T00:00:00Z" })),
-                 "a builder actively renewing its claim protects the desk"
+                 "a legacy lease no longer withholds a desk"
+    assert_equal "false",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" })),
+                 "nor does a corrupt one"
   end
 
   def test_claim_hold_frees_a_lapsed_claim
@@ -348,43 +354,6 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "nil", out
   end
 
-  # The HOLD REASON is what the destructive paths print instead of a silent skip — it must
-  # name the hold and carry the builder's heartbeat age so the operator can check it.
-  def test_claim_hold_reason_names_the_live_builder_and_its_heartbeat_age
-    expires = (Time.now + 110).utc.iso8601
-    out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false)
-        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
-      end
-      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
-    RUBY
-    assert_match(/held by a legacy build lease \(busy-task\)/, out)
-    assert_match(/lease renewed \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
-  end
-
-  # A CORRUPT claim — the lease is PRESENT but its expiry is unparseable, so liveness cannot be
-  # verified. live? merges it into "possibly live" (the desk is still WITHHELD, which is right),
-  # but the honest reason is NOT "a builder is here" — it is "we could not check". Before this
-  # branch existed the corrupt case fell through to the live-builder message and interpolated a
-  # nil heartbeat age ("builder heartbeat  s ago"), both misattributing the hold AND printing
-  # garbage. ClaimLease.corrupt_expiry? exists precisely to split this out.
-  def test_claim_hold_reason_for_a_corrupt_claim_says_expiry_unverifiable_not_live_builder
-    out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false)
-        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" } } }
-      end
-      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
-    RUBY
-    assert_match(/expiry unverifiable/, out,
-                 "a corrupt lease means we could not check liveness — the hold must say so")
-    assert_match(/busy-task/, out, "name the task so the operator can inspect it")
-    refute_match(/live builder/, out,
-                 "a corrupt claim must NOT be misattributed to a confirmed live builder")
-    refute_match(/heartbeat/, out,
-                 "no heartbeat age is knowable from an unparseable lease — the garbled " \
-                 "'heartbeat  s ago' interpolation must be gone entirely")
-  end
-
   def test_claim_hold_is_nil_when_free
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
@@ -402,7 +371,7 @@ class AgentWorktreeTest < Minitest::Test
     # git-eligible + unheld → free, no reason
     assert_equal "[true, nil]", verdict_for(held: false, dirty: false)
     # git-eligible but HELD → withheld, WITH a reason to print
-    assert_match(/\A\[false, "held by a legacy build lease/, verdict_for(held: true, dirty: false))
+    assert_match(/\A\[false, "the bound task t is at board stage `building`/, verdict_for(held: true, dirty: false))
     # not git-eligible → never a candidate, and NOT "withheld" (nothing to narrate)
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
@@ -425,10 +394,10 @@ class AgentWorktreeTest < Minitest::Test
   RUBY
 
   def verdict_for(held:, dirty:)
-    devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
+    stage = held ? "building" : "shipped"
     run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
-      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => #{devops} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => #{stage.inspect}, "metadata" => { "devops" => {} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
       print reclaim_verdict(record).inspect
@@ -1179,7 +1148,7 @@ class AgentWorktreeTest < Minitest::Test
 
     assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
     assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
-    assert_match(/no legacy build lease on t/, out, "the claim channel")
+    assert_match(/the board answered for t/, out, "the claim channel")
     assert_match(/board stage `shipped`/, out, "the board-stage channel")
     assert_match(/no review in progress/, out, "the review channel")
     assert_match(/desk idle/, out, "the desk channel")
@@ -1416,86 +1385,6 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/forced-subprocess-failure/, error.message,
                  "the swallowed subprocess stderr must surface in the failure message")
     assert_match(/no usable output/, error.message)
-  end
-
-  # --- regression: finish --pr must stamp the created PR's URL on the task ------
-  #
-  # finish --pr opened the PR (gh prints the URL) but never wrote devops.pr_url,
-  # so bin/dor-check's CI gate reported NO_PR until someone ran
-  # `bin/task update --pr-url` by hand. The fix parses the URL from `gh pr create`
-  # output and stamps it through the same best-effort `bin/task` board-write path
-  # the handoff already uses — a board blip must never fail the finish.
-
-  def test_pr_url_from_output_extracts_the_created_pr_url
-    out = run_in_script(<<~RUBY)
-      noisy = "Warning: 1 uncommitted change\\nhttps://github.com/McRitchie-Studio/mcritchie-studio/pull/999\\n"
-      print [pr_url_from_output(noisy), pr_url_from_output("no url here")].inspect
-    RUBY
-    assert_equal '["https://github.com/McRitchie-Studio/mcritchie-studio/pull/999", nil]', out
-  end
-
-  def test_open_draft_pr_stamps_the_created_pr_url_on_the_bound_task
-    out = run_in_script(<<~RUBY)
-      def capture_status(*_cmd, chdir: nil, env: {})
-        [true, "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999\\n", ""]
-      end
-      def human_title(_task); "Finish stamps PR url"; end
-      def pr_body(_record); "body"; end
-      STAMPS = []
-      def stamp_task_pr_url(slug, url); STAMPS << [slug, url]; true; end
-      record = { env: { "TASK_RECORD_SLUG" => "finish-stamps-pr-url" },
-                 base_branch: "release", branch: "feat/finish-stamps-pr-url" }
-      open_draft_pr(record, "/tmp/wt", "finish-stamps-pr-url")
-      print "STAMPED=" + STAMPS.inspect
-    RUBY
-    assert_match(
-      'STAMPED=[["finish-stamps-pr-url", "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"]]',
-      out,
-      "the created PR URL must be stamped on the bound task record"
-    )
-  end
-
-  def test_open_draft_pr_survives_a_failed_board_stamp
-    # Best-effort guarantee: a failed stamp warns; the finish still completes and
-    # the URL is still returned (the operator can stamp manually).
-    out = run_in_script(<<~RUBY)
-      def capture_status(*_cmd, chdir: nil, env: {})
-        [true, "https://github.com/x/y/pull/1\\n", ""]
-      end
-      def human_title(_task); "t"; end
-      def pr_body(_record); "b"; end
-      def stamp_task_pr_url(_slug, _url); false; end
-      url = open_draft_pr({ env: {}, base_branch: "release", branch: "b" }, "/tmp/wt", "t")
-      print "RETURNED=" + url.to_s
-    RUBY
-    assert_match "RETURNED=https://github.com/x/y/pull/1", out
-  end
-
-  def test_stamp_task_pr_url_returns_false_on_a_board_blip_instead_of_raising
-    out = run_in_script(<<~RUBY)
-      def system(*_argv, **_opts); false; end
-      $stderr.reopen(File::NULL) # the warn is expected; keep the child's stderr clean
-      print stamp_task_pr_url("some-task", "https://github.com/x/y/pull/1").inspect
-    RUBY
-    assert_equal "false", out
-  end
-
-  # Integration: the stamp crosses the real process boundary through the task CLI
-  # seam (`task_cli_path`), with the board mocked at the executable edge — a fake
-  # `task` script records the argv it was invoked with.
-  def test_stamp_task_pr_url_writes_through_the_task_cli_boundary
-    out = run_in_script(<<~RUBY)
-      require "tmpdir"
-      DIR = Dir.mktmpdir
-      ARGV_FILE = File.join(DIR, "argv")
-      FAKE = File.join(DIR, "task")
-      File.write(FAKE, "#!/bin/sh\\necho \\"$@\\" > \#{ARGV_FILE.inspect}\\n")
-      File.chmod(0o755, FAKE)
-      def task_cli_path; FAKE; end
-      ok = stamp_task_pr_url("finish-stamps-pr-url", "https://github.com/x/y/pull/9")
-      print [ok, File.read(ARGV_FILE).strip].inspect
-    RUBY
-    assert_equal '[true, "update finish-stamps-pr-url --pr-url https://github.com/x/y/pull/9"]', out
   end
 
   # Regression (build-assets-on-worktree-bringup): `new` provisions the isolated test DB
@@ -2096,6 +1985,12 @@ class AgentWorktreeTest < Minitest::Test
     def sh(*args); STEPS << :"git-\#{args.last(2).first}"; end
     APP = { "slug" => "mcritchie-studio", "repo" => "/repo" }.freeze
     RECORD = { app: APP, task: "_ship", dir: "/repo/.worktrees/_ship", branch: "release" }.freeze
+    # The tests below stub DeskLedger.file; the queue layer routes to it and queues nothing
+    # unless a test stubs file_or_queue itself (guard catalog row 5.5).
+    def desk_ledger_queue_path; "/nonexistent/desk-ledger-queue.jsonl"; end
+    module DeskLedger
+      def self.file_or_queue(queue:, **kw); file(**kw); end
+    end
   RUBY
 
   # THE PROPERTY. The ledger write is the FIRST thing teardown_worktree does. It used to sit
@@ -2121,13 +2016,14 @@ class AgentWorktreeTest < Minitest::Test
     assert_includes steps, :"git-remove", "…and the git worktree still goes, after the record"
   end
 
-  # FAIL CLOSED, and nothing half-done. A board this script cannot reach costs a retry, not
-  # an unrecorded removal — which is only true because the write comes first.
+  # A record that could be neither filed nor queued (the board answered with a refusal,
+  # or the queue could not be written) still refuses, with nothing half-done — which is
+  # only true because the write comes first.
   def test_a_failed_desk_record_aborts_the_teardown_with_nothing_destroyed
     out = run_in_script(<<~RUBY)
       #{TEARDOWN_HARNESS}
       module DeskLedger
-        def self.file(**_kw); Result.new(ok: false, error: "POST /api/v1/desk_records -> 500"); end
+        def self.file(**_kw); Result.new(ok: false, code: 422, error: "POST /api/v1/desk_records -> 422"); end
       end
       begin
         teardown_worktree(APP, RECORD[:dir], RECORD)
@@ -2151,18 +2047,42 @@ class AgentWorktreeTest < Minitest::Test
       load #{BIN.inspect}
       #{TEARDOWN_HARNESS}
       module DeskLedger
-        def self.file(**_kw); Result.new(ok: false, error: "POST /api/v1/desk_records -> 500"); end
+        def self.file(**_kw); Result.new(ok: false, code: 422, error: "POST /api/v1/desk_records -> 422"); end
       end
       teardown_worktree(APP, RECORD[:dir], RECORD)
     RUBY
     text = "#{out}#{err}"
 
     assert_includes text, "REFUSING to tear down"
-    assert_includes text, "-> 500", "the operator needs the board's own answer, not a summary of it"
+    assert_includes text, "-> 422", "the operator needs the board's own answer, not a summary of it"
     assert_includes text, "THIS DESK IS UNTOUCHED",
                     "precise in a BATCH too: earlier desks in the run were torn down, each " \
                     "with its own record filed first"
     assert_includes text, "bin/agent-worktree remove mcritchie-studio _ship --yes"
+  end
+
+  # Guard catalog row 5.5: a board that does not answer no longer blocks the teardown.
+  # The record is queued locally, the desk is torn down, and the closing write is owed.
+  def test_a_queued_desk_record_lets_the_teardown_proceed
+    out = run_in_script(<<~RUBY)
+      #{TEARDOWN_HARNESS}
+      module DeskLedger
+        def self.file_or_queue(queue:, status:, **_kw)
+          STEPS << [:queued, status]
+          Result.new(ok: false, queued: true, error: "POST /api/v1/desk_records -> 503")
+        end
+      end
+      def warn(*); end
+      def puts(*); end
+      teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stdout.print STEPS.inspect
+    RUBY
+
+    steps = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+    assert_equal [:queued, "removing"], steps.first, "the record is still made before anything is destroyed"
+    assert_includes steps, :"git-remove", "a board outage no longer blocks the teardown"
+    assert_equal [:queued, "removed"], steps.last, "and the closing write is queued too"
   end
 
   # THE OUTCOME IS WRITTEN LAST, on the episode the record-first write opened. The teardown

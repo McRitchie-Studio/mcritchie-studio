@@ -126,17 +126,10 @@ Default feature sessions are Feature lane only.
 7. **Update** the task-board item with local URL, branch, PR URL when opened,
    `checks_run`, and any acceptance-criteria changes.
 8. **Commit** coherent work on the feature branch.
-9. **Graduate** through the launcher:
-
-   ```bash
-   bin/agent-worktree finish <app> <task-slug>
-   bin/agent-worktree finish <app> <task-slug> --push
-   bin/agent-worktree finish <app> <task-slug> --push --pr
-   ```
-
-   `--push --pr` is only valid after `bind-task` has stored the production
-   McRitchie Studio task slug/URL on the worktree. The command blocks unbound
-   worktrees so PR review always leads back to the task board.
+9. **Ship** from the desk with `bin/submit-wait <task-slug> --launch -m "<message>"`
+   ([`building-sop.md`](building-sop.md) Step 6). It commits, pushes, opens the
+   PR into `accepted` led by the task URL, waits for CI and moves the task to
+   `submitted`. (`bin/agent-worktree finish` is retired; it names this command.)
 
 10. **Hand off** the PR/QA packet by moving the task to `submitted`. The PR
    body and final handoff should lead with the task URL, and the task should
@@ -159,11 +152,7 @@ Before a branch is ready for QA, it must be:
 - pushed to GitHub before the worktree is considered safe to clean up
 - accompanied by a local proof URL or a clear explanation of why no URL applies
 
-`bin/agent-worktree finish` enforces the obvious checks and prints the PR body.
-It blocks dirty worktrees, branches with no commits, branches already merged to
-`origin/main`, and branches behind `origin/main`. When called with
-`--push --pr`, it also blocks worktrees that are not bound to a production
-McRitchie Studio task record.
+`bin/submit` and `bin/dor-check` hold these at the handoff.
 
 ## PR Review — Carl (one Carl per PR)
 
@@ -633,7 +622,7 @@ Status labels mean:
 - `missing-local-branch`: GitHub has an open PR, but the current machine has no
   matching local worktree.
 - `ready-to-open-pr`: local branch has no matching open PR and is clean,
-  current with `origin/main`, and ready for `bin/agent-worktree finish`.
+  current with `origin/main`, and ready for `bin/submit`.
 - `occupied`: the worktree registry withheld this desk from reclaim
   (`withheld_reason` — the hold reason the first refusing channel of
   `bin/agent-worktree#reclaim_hold` printed). These desks print in their own
@@ -658,8 +647,8 @@ Action lines mean:
 - `recreate a local worktree...`: the machine cannot inspect the branch safely;
   fetch/recreate it or ask the branch owner for a handoff. If another active
   agent owns the PR, do not take it over unless Alex assigns that lane.
-- `open a draft PR...`: run the printed finish command from the worktree owner
-  lane, then let Avi review.
+- `ship it from the desk...`: the worktree owner runs `bin/submit-wait`, then
+  review takes it.
 
 For each PR, Avi checks:
 
@@ -921,8 +910,7 @@ Use the parallel-agent protocol:
 - keep all edits inside the task worktree
 - update docs if behavior, workflow, env, ports, auth, email, or deploys change
 - commit your work on the feature branch
-- run bin/agent-worktree finish before handoff
-- push the branch and open/prepare a PR for Avi QA
+- ship with bin/submit-wait <task-slug> --launch -m "<message>" (it pushes and opens the PR)
 - update task devops.checks_run with completed checks and move the task to submitted
 
 Do not merge to main, publish gems, deploy, force-push, delete branches, or

@@ -21,8 +21,8 @@ module Api
       # API and the page can never disagree about which tasks an epic holds.
       INDEX_PARAMS = %w[stage agent_slug epic reviewable page per_page full].freeze
 
-      before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
-      before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
+      before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
+      before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock]
 
       def index
         return if reject_unsupported_index_params!
@@ -124,6 +124,28 @@ module Api
         rescue_and_log(target: @task) do
           @task.block!(by: params[:by].presence || Current.task_event_actor.presence,
                        kind: params[:kind].presence)
+          render_data(@task)
+        end
+      rescue StandardError => e
+        render_exception(e)
+      end
+
+      # The builder's unblock (Task#builder_unblock!). `bin/task begin <slug>` on a
+      # REWORK-blocked task is the builder's answer to it, so begin calls this at the
+      # claim (guard catalog row 4.2). Any other block, and every `Escalated:` block,
+      # answers 409 with the reason and stays. `by` names who cleared it, and the clear
+      # writes an audit Activity. Idempotent: a task with no live block answers 200.
+      def unblock
+        by = params[:by].presence || Current.task_event_actor.presence
+        if by.blank?
+          return render_error("by is required: name who is clearing the block", status: :unprocessable_entity,
+                                                                                  error_code: "MISSING_PARAM")
+        end
+        refusal = @task.builder_unblock_refusal
+        return render_error(refusal, status: :conflict, error_code: "UNBLOCK_REFUSED") if refusal
+
+        rescue_and_log(target: @task) do
+          @task.builder_unblock!(by: by)
           render_data(@task)
         end
       rescue StandardError => e

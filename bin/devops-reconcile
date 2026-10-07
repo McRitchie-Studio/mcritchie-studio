@@ -34,6 +34,7 @@ require "open3"
 
 require_relative "../lib/seam_reconcile"
 require_relative "../lib/open_pr_guard"
+require_relative "lib/bin_helpers"
 require_relative "lib/board_read"
 require_relative "lib/task_board"
 require_relative "lib/task_column_fields"
@@ -244,14 +245,12 @@ end
 # could not read: :unknown. Reporting the gap honestly is the fix; wedging the lane
 # is not.
 def armed_states
-  # NOTE (carl, review 2026-09-23): this is RELATIVE, so it resolves against the
-  # cwd and cannot be read from a non-hub directory — the tool then warns
-  # forever, and the warning means "wrong directory" rather than "unreadable
-  # registry". Left relative deliberately: the CLI tests shim bin/review-autopilot
-  # through the cwd, so anchoring it to __dir__ bypasses the shim and reds two of
-  # them (measured). The real fix is BinHelpers.bin_for with an env override, as
-  # bin/conductor already does — a follow-up, not a zap.
-  raw, status, err = sh_full("bin/review-autopilot", "list", "--all")
+  # The sibling script, resolved from THIS script's own bin/ (guard catalog row 5.6),
+  # so the read works from any cwd. A relative `bin/review-autopilot` resolved against
+  # the cwd and warned on every run outside the hub. DEVOPS_RECONCILE_AUTOPILOT_BIN is
+  # the test seam.
+  autopilot = BinHelpers.bin_for("DEVOPS_RECONCILE_AUTOPILOT_BIN", "review-autopilot", dir: __dir__)
+  raw, status, err = sh_full(autopilot, "list", "--all")
   refusal = BoardRead.shell_refusal(status, err, what: "the armed-action registry")
   if refusal
     warn("devops-reconcile: #{refusal}")

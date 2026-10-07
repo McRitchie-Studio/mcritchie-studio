@@ -1653,6 +1653,54 @@ class Task < ApplicationRecord
     update!(blocked_at: nil, blocked_by: nil, block_kind: nil, blocked_from: nil)
   end
 
+  # THE BUILDER'S UNBLOCK (guard catalog row 4.2, scoped by decision 6). `bin/task begin`
+  # on a blocked task answers a REWORK block, and only that: an environment or
+  # dependency block waits on something outside the desk, and an `Escalated:` block
+  # waits on Alex, whose answer a fresh begin must never forge (wait-window would read
+  # the cleared block as answered). Raised with the reason; the API answers it 409.
+  class UnblockRefused < StandardError; end
+
+  BUILDER_CLEARABLE_BLOCK_KINDS = %w[rework].freeze
+
+  # Why the builder may not clear this block, or nil when it may (or there is none).
+  def builder_unblock_refusal
+    return nil unless blocked?
+
+    unless BUILDER_CLEARABLE_BLOCK_KINDS.include?(block_kind.to_s)
+      return "#{slug} carries a #{block_kind.presence || "kindless"} block, which waits on something outside " \
+             "the desk; only a rework block is cleared by its builder's begin. Clear it from the task page's " \
+             "Resume control once its cause is resolved."
+    end
+
+    summary = unresolved_feedback_activity&.block_summary.to_s
+    return nil unless summary.lstrip.start_with?(Devops::Windows::ESCALATION_PREFIX)
+
+    "#{slug} carries an escalation (#{summary.strip.truncate(80)}), which only Alex answers; a builder's " \
+      "begin never clears it."
+  end
+
+  # Clear a rework block as its builder's answer, and record who cleared what. Returns
+  # false when there is no live block; raises UnblockRefused for any other block.
+  def builder_unblock!(by:)
+    return false unless blocked?
+
+    refusal = builder_unblock_refusal
+    raise UnblockRefused, refusal if refusal
+
+    cleared = { "kind" => "block_cleared", "cleared_by" => by.to_s, "block_kind" => block_kind,
+                "blocked_by" => blocked_by, "blocked_from" => blocked_from,
+                "blocked_at" => blocked_at&.iso8601, "summary" => unresolved_feedback_activity&.block_summary }
+    transaction do
+      unblock!
+      Activity.create!(task_slug: slug, activity_type: "comment",
+                       agent_slug: (by.to_s if self.class.soul?(by.to_s)),
+                       description: "#{by} cleared the #{cleared["block_kind"]} block#{" from #{cleared["blocked_by"]}" if cleared["blocked_by"].present?} " \
+                                    "by resuming the build (bin/task begin).",
+                       metadata: cleared.compact)
+    end
+    true
+  end
+
   def archive!
     update!(stage: "archived")
   end

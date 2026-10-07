@@ -25,9 +25,9 @@ cd ~/projects/mcritchie-studio
 bin/agent-worktree new <app> <task-slug>
 ```
 
-Graduate when done:
+Ship when done, from the desk:
 ```
-bin/agent-worktree finish <app> <task-slug> --push --pr
+bin/submit-wait <task-slug> --launch -m "<message>"
 ```
 
 Remove only after the PR is merged or intentionally abandoned:

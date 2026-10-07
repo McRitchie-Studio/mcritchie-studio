@@ -14,6 +14,8 @@
 #   bin/session-preflight <task-slug>
 #   bin/session-preflight <task-slug> --json
 #   bin/session-preflight --file task.json --no-gh --no-install-docs --no-fetch
+#
+# Exit 0 passed, 1 findings to work on in the desk, 2 cannot describe the desk.
 
 require "json"
 require "net/http"
@@ -25,10 +27,7 @@ require "uri"
 require "yaml"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
-require_relative "lib/gh_identity"
-require_relative "lib/migration_collision"
 require_relative "lib/task_board"
-require_relative "lib/fast_lane"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
 # HUB HELPERS RESOLVE FROM THE SCRIPT, NEVER FROM --root (task
@@ -43,10 +42,6 @@ DEFAULT_ROOT = File.expand_path("..", __dir__)
 # SAME config the merge gate enforces. The env overrides are the test seam,
 # exactly as in dor-check.
 TASK_BIN = ENV.fetch("SESSION_PREFLIGHT_TASK_BIN", File.expand_path("task", __dir__))
-# The credential fix the gh-auth blocker prescribes, absolute so it pastes from a
-# satellite or gem desk — this preflight is routinely invoked by absolute path from
-# one (`bin/task begin` passes --root). Policy: FastLane.remedy_command.
-GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__).freeze
 SHAPES_PATH = ENV.fetch("SESSION_PREFLIGHT_SHAPES_PATH", File.join(DEFAULT_ROOT, "config", "feature_shapes.yml"))
 TASK_API_BASE = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff clarification].freeze
@@ -58,7 +53,9 @@ CHECK_STATES = {
   "ACTION_REQUIRED" => "action_required",
   "SKIPPED" => "skipped"
 }.freeze
-BAD_MERGE_STATES = %w[DIRTY BEHIND BLOCKED].freeze
+# BLOCKED is not here (guard catalog row 4.7): it is the normal state of a PR
+# awaiting review, so a resumed desk with an open PR read it as a failure.
+BAD_MERGE_STATES = %w[DIRTY BEHIND].freeze
 # Kinds that MAY skip the shape/required-metadata gate — and the classifier that
 # decides whether this diff has EARNED that skip. Both come from bin/lib/code_diff.rb,
 # the single source of truth dor-check gates on. They used to be COPIES of
@@ -82,9 +79,28 @@ def warn!(message)
   $stderr.puts(message)
 end
 
+# EXIT CODES. 0: passed. 1: findings for the builder to work on in this desk (a PR
+# conflict, no CI, a red check, stale terminology the branch added). 2: this command
+# could not describe the task's desk at all (a usage error, an unreadable task, the
+# wrong checkout). `bin/task begin` runs the preflight before the claim and refuses
+# the claim only on 2 (guard catalog row 3.8); 1 is a report.
+EXIT_FINDINGS = 1
+EXIT_CANNOT_DESCRIBE = 2
+
 def die!(message)
   warn!("error: #{message}")
-  exit 1
+  exit EXIT_CANNOT_DESCRIBE
+end
+
+# A CRASH describes nothing, so it is exit 2 as well: Ruby's own uncaught-exception
+# exit is 1, which `bin/task begin` would read as findings and claim over.
+at_exit do
+  error = $!
+  next if error.nil? || error.is_a?(SystemExit)
+
+  warn!("error: session-preflight crashed: #{error.class}: #{error.message}")
+  Array(error.backtrace).first(5).each { |line| warn!("  #{line}") }
+  exit! EXIT_CANNOT_DESCRIBE
 end
 
 def capture(*cmd, chdir: nil, env: {})
@@ -306,46 +322,6 @@ def ci_less?(gh_pr, checks)
   CiStatus.mergeability(JSON.generate(gh_pr)) == :refuted
 end
 
-# GH AUTH FRESHNESS — probe the credential `gh` will ACTUALLY use, at desk time.
-#
-# WHY AT PREFLIGHT. App installation tokens live ~1h and NOTHING refreshes gh's
-# ambient credential on its own (docs/agents/modules/source-control.md § Three
-# stores, and they rank). So a desk cut an hour ago ships fine and a desk cut now
-# dies at `bin/submit`, `gh pr view`, or the first CI read — mid-wave, in the session
-# least able to absorb it. One probe here moves that discovery to the cheapest
-# moment and hands over the exact fix, which is SELF-SERVICE and never an
-# escalation to Mr. McRitchie.
-#
-# IT ALSO STOPS A MISDIAGNOSIS. This runs BEFORE the PR block deliberately: an
-# expired token makes `gh pr view` fail, which preflight otherwise reports as
-# "PR: not found" — sending a builder to re-open a PR that already exists.
-#
-# THE PROBE IS `gh api rate_limit`, NOT `gh api user`. An App installation token
-# CANNOT call /user at all — Apps are forbidden from it by design — so a perfectly
-# healthy token answers 403 there. Reading that as a fault sends the session
-# chasing a grant that cannot exist.
-def gh_auth_report(root)
-  return { "status" => "skipped", "message" => "gh CLI is unavailable" } unless command_available?("gh")
-
-  # The LANE, not the item's suffix: since the 2026-09-26 rename the ship lane's
-  # item is github.mcritchie-admin, and stripping the prefix would report "admin"
-  # for a lane every doc and flag calls `deployer`. An unknown item is reported
-  # verbatim so the operator sees what was exported.
-  item = ENV["GH_APP_ITEM"].to_s.strip
-  lane = GhIdentity.resolve(nil) || item
-  ok, _out, err = capture("gh", "api", "rate_limit", chdir: root)
-  return { "status" => "ok", "lane" => lane } if ok
-
-  { "status" => "stale", "lane" => lane, "message" => compact_lines(err).first.to_s }
-end
-
-GH_AUTH_REMEDY = "this is YOURS to fix, NOT an escalation: run " \
-                 "eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\" and READ ITS STDERR " \
-                 "(eval hides the exit code), then re-run this preflight. " \
-                 "Do NOT use `gh auth login`: gh refuses to store a credential while GH_TOKEN is " \
-                 "set, and GH_TOKEN outranks the keyring it would write to. " \
-                 "See docs/agents/modules/source-control.md."
-
 def gh_pr_view(ref, root)
   fields = "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup"
   ok, out, err = capture("gh", "pr", "view", ref.to_s, "--json", fields, chdir: root)
@@ -377,7 +353,7 @@ rescue JSON::ParserError => e
 end
 
 def overlap_report(root, current_files, current_pr_number)
-  return [{ "items" => [], "warnings" => ["no branch files to compare"] }, [], []] if current_files.empty?
+  return [{ "items" => [], "warnings" => ["no branch files to compare"] }, []] if current_files.empty?
 
   warnings = []
   candidates = []
@@ -388,13 +364,11 @@ def overlap_report(root, current_files, current_pr_number)
   end
 
   items = []
-  fetched = []
   candidates.each do |pr|
     next if current_pr_number && pr["number"].to_i == current_pr_number.to_i
 
     files, warning = gh_pr_files(root, pr["number"])
     warnings << "PR ##{pr["number"]} files: #{warning}" if warning
-    fetched << pr.merge("files" => files)
     overlap = current_files & files
     next if overlap.empty?
 
@@ -406,93 +380,18 @@ def overlap_report(root, current_files, current_pr_number)
       "files" => overlap.sort
     }
   end
-  # The third return is the RAW candidate set with every file, not just the shared
-  # ones — the duplicate-migration check needs each PR's whole migration list, and
-  # re-fetching it would double this report's network cost for data already in hand.
-  [{ "items" => items, "warnings" => warnings }, warnings, fetched]
+  [{ "items" => items, "warnings" => warnings }, warnings]
 end
 
-# Ladder branches whose PRs carry every merged file by construction (the release
-# train's `accepted → release` batch promote). Excluded from the migration check so a
-# release window does not make it collide with everything. Mirrors bin/submit.
-RELEASE_BATCH_HEADS = %w[accepted release].freeze
-
-def first_line(path)
-  File.open(path, &:gets)
-rescue SystemCallError
-  nil
-end
-
-# DUPLICATE MIGRATION INSTALL — the gap that cost three incidents on 2026-08-13/14.
-# The same-file overlap above keys on `current_files & files`, a FILENAME
-# intersection, and two installs of one engine migration have different filenames by
-# construction. See bin/lib/migration_collision.rb for the mechanism and the keys.
+# Entry-doc drift, surfaced from bin/install-agent-docs' own `check`, as
+# INFORMATION (guard catalog row 4.1, worked example A). A desk measures nothing it
+# cannot fix: the installed copies have one writer, the ship's sync_agent_docs step,
+# and the installer's `check` compares them with the tree that ship published. So
+# the line reports and never adds an error; status is "pass", "drift" or "skipped".
 #
-# Two legs: the migrations already on the base ref (local, works with no gh), and
-# every OTHER OPEN PR's migration paths (from the overlap fetch above, so it costs no
-# extra call). Merged PRs are deliberately NOT a third leg — their files are already
-# on the base ref, so the local leg reports them once instead of twice; they are used
-# only to ATTRIBUTE a base-ref copy to the PR that put it there.
-def migration_collision_report(root, base, changed, candidates)
-  ours = MigrationCollision.local_installs(changed) { |path| first_line(File.join(root, path)) }
-  return { "items" => [], "installs" => 0 } if ours.empty?
-
-  sources = []
-  if base
-    sources << { "label" => "already on #{base}", "kind" => "branch",
-                 "installs" => ref_installs(root, base) }
-  end
-  Array(candidates).each do |pr|
-    next unless pr["state"].to_s == "open"
-    next if RELEASE_BATCH_HEADS.include?(pr["headRefName"].to_s)
-
-    sources << { "label" => pr["title"].to_s, "kind" => "pr", "number" => pr["number"],
-                 "url" => pr["url"].to_s,
-                 "installs" => MigrationCollision.installs(Array(pr["files"])) }
-  end
-  # A branch can collide with ITSELF — two installs in one diff, which is what a
-  # mis-resolved rebase leaves behind.
-  sources << { "label" => "this branch", "kind" => "self", "installs" => ours }
-
-  items = MigrationCollision.report(ours, sources)
-  { "items" => attribute_merged(items, candidates), "installs" => ours.size }
-end
-
-def ref_installs(root, base)
-  MigrationCollision.ref_installs(base) do |args|
-    _ok, out, = capture("git", "-C", root, *args)
-    out
-  end
-end
-
-# Name the merged PR that put the other copy on the base ref, when one of the merged
-# candidates carries that exact path. "It is already on accepted" is true but leaves
-# the reader digging; "PR #313 put it there" is the sentence they can act on.
-def attribute_merged(items, candidates)
-  merged = Array(candidates).select { |pr| pr["state"].to_s == "merged" }
-  return items if merged.empty?
-
-  items.map do |item|
-    next item unless item["kind"] == "branch"
-
-    owner = merged.find { |pr| Array(pr["files"]).include?(item["theirs"]["path"]) }
-    next item unless owner
-
-    item.merge("label" => "#{item["label"]} via PR ##{owner["number"]} #{owner["url"]}")
-  end
-end
-
-# Entry-doc drift, surfaced from bin/install-agent-docs' own `check`.
-#
-# On a FAIL the part that MUST survive is the installer's guidance — it is what
-# says WHO closes the drift (sync_agent_docs, an owned step of `bin/release ship`)
-# and WHEN, so the reader does not take it for a chore they owe. The installer
-# emits that guidance LAST, after one ERROR line per drifted pair, and the old
-# `max: 8` counted the passing `OK:` lines against that budget: enough drifted
-# pairs and the guidance was the half that truncated away, leaving only the
-# accusation. So a FAIL drops the `OK:` lines (noise in a failure report) and
-# keeps a cap with real headroom over every ERROR line the installer can emit.
-# A PASS is unchanged. Task preflight-invites-wrong-fix.
+# On drift the part that must survive is the installer's guidance, which says WHO
+# closes it and WHEN. The installer prints it after one ERROR line per drifted pair,
+# so the `OK:` lines are dropped and the cap leaves room for every ERROR line.
 def install_docs_check(root)
   script = File.join(root, "bin", "install-agent-docs")
   return { "status" => "skipped", "message" => "missing #{script}" } unless File.executable?(script)
@@ -501,30 +400,21 @@ def install_docs_check(root)
   return { "status" => "pass", "message" => compact_lines(out, max: 8).join("; ") } if ok
 
   lines = compact_lines([err, out].join("\n"), max: 64).reject { |line| line.start_with?("OK:") }
-  { "status" => "fail", "message" => lines.first(16).join("; ") }
+  { "status" => "drift", "message" => lines.first(16).join("; ") }
 end
 
+# The stale scan reads only this branch's own changed docs and config (guard
+# catalog row 4.3): a stale word already on the base is not this desk's to fix, so
+# scanning the whole tree failed desks over text they never touched. Audit and
+# maintenance records keep their history and are never scanned.
 def active_stale_scan_files(root, changed)
-  globs = [
-    "docs/agents/index.md",
-    "docs/agents/claude.md",
-    "docs/agents/modules/**/*.md",
-    "docs/agents/system/**/*.md",
-    "docs/agents/skills/**/*.md",
-    "docs/topics/**/*.md",
-    "config/feature_shapes.yml"
-  ]
-  files = globs.flat_map { |glob| Dir.glob(File.join(root, glob)) }
-  changed.each do |rel|
-    next unless rel.start_with?("docs/", "config/")
-
-    files << File.join(root, rel)
-  end
-  files.select { |path| File.file?(path) }
-       .reject { |path| path.include?("/docs/agents/audits/") || path.include?("/docs/agents/maintenance/") }
-       .reject { |path| File.basename(path).match?(/audit-\d{4}-\d{2}-\d{2}/) }
-       .uniq
-       .sort
+  changed.select { |rel| rel.start_with?("docs/", "config/") }
+         .map { |rel| File.join(root, rel) }
+         .select { |path| File.file?(path) }
+         .reject { |path| path.include?("/docs/agents/audits/") || path.include?("/docs/agents/maintenance/") }
+         .reject { |path| File.basename(path).match?(/audit-\d{4}-\d{2}-\d{2}/) }
+         .uniq
+         .sort
 end
 
 def stale_scan(root, files)
@@ -617,13 +507,6 @@ def print_human(report)
   end
   puts "  WARN working tree has uncommitted changes" if drift["dirty"]
 
-gh_auth = report["gh_auth"] || { "status" => "skipped", "message" => "not probed" }
-case gh_auth["status"]
-when "ok"    then puts "gh auth: ok (#{gh_auth["lane"]} lane)"
-when "stale" then puts "gh auth: STALE (#{gh_auth["lane"]} lane) -> eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\""
-else              puts "gh auth: skipped (#{gh_auth["message"]})"
-end
-
   pr = report["pr"]
   if pr["status"] == "skipped"
     puts "PR: skipped (#{pr["message"]})"
@@ -645,15 +528,9 @@ end
     end
   end
 
-  migrations = report["migration_collisions"] || { "items" => [], "installs" => 0 }
-  if migrations["items"].empty?
-    puts "Migration collisions: none (#{migrations["installs"].to_i} migration(s) added by this branch)"
-  else
-    MigrationCollision.lines(migrations["items"]).each { |line| puts line }
-  end
-
   docs = report["installed_docs"]
-  puts "Installed docs: #{docs["status"]}#{docs["message"].to_s.empty? ? "" : " - #{docs["message"]}"}"
+  status = docs["status"] == "drift" ? "drift (information only: the ship publishes these, not this desk)" : docs["status"]
+  puts "Installed docs: #{status}#{docs["message"].to_s.empty? ? "" : " - #{docs["message"]}"}"
 
   stale = report["stale_terms"]
   if stale.empty?
@@ -674,6 +551,7 @@ end
     # "none" would be a lie for a shape that owes a control, so say what it owes.
     owed = tiers.empty? && evidence.any? ? "no tiers; evidence: #{evidence.join(', ')}" : tiers.join(", ")
     puts "Required tiers: #{shape["shape"] || "none"} => #{owed}"
+    puts "  unknown shape: the merge gate refuses it at ship" if shape["shape"] && shape["description"].nil?
     if shape["claimable_when"] == "test_only_diff"
       # This note prints at the moment a builder decides what to run. test-only is
       # NOT EXEMPT from the CI gate, and that gate has ONE form of evidence for
@@ -741,12 +619,6 @@ devops = task_devops(task)
 errors = []
 warnings = []
 
-# A block is a `building` attribute now (blocked_at set while building), not a
-# stage — re-derive the "currently blocked" warning from the marker column.
-if task["blocked_at"].to_s.strip != "" && task["stage"].to_s == "building"
-  errors << "task is blocked; read latest feedback before editing"
-end
-
 if options[:fetch]
   ok, message = git_fetch_ladder(options[:root])
   warnings << "git fetch origin accepted/release/main all failed: #{message}" unless ok
@@ -761,8 +633,7 @@ branch["dirty"] = working_tree_dirty?(options[:root])
 # root carries the task's branch — rather than trusting the caller's --root. The
 # classic failure is a report that silently describes the PRIMARY (its drift, its
 # PRs, its overlap) when the task lives on a worktree; every number below is then
-# about the wrong tree. On a mismatch REFUSE and say so, and SUPPRESS the drift
-# blocker (its count is meaningless for a tree that isn't this task's). Skipped
+# about the wrong tree. On a mismatch REFUSE and say so. Skipped
 # only when the fact is unknowable: no task branch to expect, or the root has no
 # resolvable branch (a non-git root → blank). A DETACHED HEAD is NOT skipped —
 # `git rev-parse --abbrev-ref HEAD` returns the literal "HEAD", which is never the
@@ -777,7 +648,6 @@ if branch["wrong_checkout"]
             "PR/overlap here describe the wrong tree. Run bin/session-preflight from the task's worktree, or pass " \
             "--root <worktree>."
 end
-errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; rebase before work or handoff" if !branch["wrong_checkout"] && branch["behind"].to_i.positive?
 warnings << "working tree has uncommitted changes" if branch["dirty"]
 changed = changed_files(options[:root], base)
 
@@ -786,15 +656,6 @@ if !options[:file] && activity_with_description(task["latest_activity"]).nil?
   activity_slug = task["slug"].to_s.empty? ? slug : task["slug"]
   fallback_activity, warning = fetch_latest_task_activity(activity_slug)
   warnings << "latest task activity fallback failed: #{warning}" if warning
-end
-
-gh_auth = if options[:gh]
-  gh_auth_report(options[:root])
-else
-  { "status" => "skipped", "message" => "GitHub checks disabled" }
-end
-if gh_auth["status"] == "stale"
-  errors << "gh auth is STALE on the #{gh_auth["lane"]} lane — #{GH_AUTH_REMEDY}"
 end
 
 pr = { "status" => "skipped", "message" => "GitHub checks disabled" }
@@ -837,26 +698,11 @@ if options[:gh]
 end
 
 overlap = { "items" => [], "warnings" => [] }
-overlap_candidates = []
 if options[:gh] && command_available?("gh")
   current_pr_number = pr["number"]
-  overlap, overlap_warnings, overlap_candidates = overlap_report(options[:root], changed, current_pr_number)
+  overlap, overlap_warnings = overlap_report(options[:root], changed, current_pr_number)
   overlap_warnings.each { |warning| warnings << warning }
   warnings << "same-file PR overlap found" unless overlap["items"].empty?
-end
-
-# DUPLICATE MIGRATION INSTALL — a BLOCKER, not a warning. Same-file overlap is normal
-# in a parallel shop; two migrations sharing one class name are never intended and
-# raise on EVERY db:migrate, including the Heroku release phase. The local leg (vs the
-# base ref) runs even with --no-gh, so this never degrades to silence.
-migrations = migration_collision_report(options[:root], base, changed, overlap_candidates)
-unless migrations["items"].empty?
-  errors << "duplicate migration install: #{migrations["items"].size} collision(s) — " \
-            "see the DUPLICATE MIGRATION INSTALL block above"
-end
-if migrations["installs"].to_i.positive? && !(options[:gh] && command_available?("gh"))
-  warnings << "migration collision checked against #{base || "no base ref"} only " \
-              "(gh unavailable) — a sibling OPEN PR installing the same migration would not be seen"
 end
 
 installed_docs = if options[:install_docs]
@@ -864,7 +710,6 @@ installed_docs = if options[:install_docs]
 else
   { "status" => "skipped", "message" => "disabled by --no-install-docs" }
 end
-errors << "installed docs/skills drift: #{installed_docs["message"]}" if installed_docs["status"] == "fail"
 
 scan_files = active_stale_scan_files(options[:root], changed)
 options[:stale_paths].each do |path|
@@ -874,29 +719,15 @@ stale_hits = stale_scan(options[:root], scan_files).first(40)
 errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
 
 shape = shape_report(task, warnings)
-# An EXEMPT kind (EXEMPT_KINDS) skips the shape/required-metadata gate only when
-# the OBSERVED diff ships no behavior — exactly as bin/dor-check gates it, via the
-# same CodeDiff classifier. The label alone never earns the skip. (Preflight runs
-# BEFORE the code exists, so an empty diff is expected here and stays exempt; the
-# merge gate is the one that fails closed on an unobservable diff.)
+# The shape preview is INFORMATION (guard catalog row 4.4): `bin/task begin` refuses
+# a create with a missing or unknown shape or short of its metadata, so nothing here
+# is learned after the claim. An EXEMPT kind (EXEMPT_KINDS) skips the shape lines only
+# when the OBSERVED diff ships no behavior, via the same CodeDiff classifier
+# bin/dor-check gates on; the merge gate is the one that refuses.
 kind = devops["kind"].to_s.strip.downcase
 code_files = CodeDiff.code_files(changed)
 shape["kind"] = kind.empty? ? nil : kind
 shape["exempt"] = EXEMPT_KINDS.include?(kind) && code_files.empty?
-if shape["exempt"]
-  # Nothing to gate: chore/cleanup/docs with a doc-only (or empty) diff.
-elsif shape["shape"].nil?
-  message = "devops.shape is missing; required tiers cannot be selected"
-  if EXEMPT_KINDS.include?(kind)
-    message += " (kind #{kind} ships code — #{code_files.first(3).join(", ")} — so there is no size exemption)"
-  end
-  errors << message
-elsif shape["description"].nil?
-  errors << "unknown devops.shape #{shape["shape"].inspect}"
-end
-unless shape["exempt"] || shape["missing_metadata"].empty?
-  errors << "required metadata missing: #{shape["missing_metadata"].join(", ")}"
-end
 
 task_url = task["task_url"] || task.dig("devops", "task_url")
 task_url ||= "https://mcritchie.studio/tasks/#{task["slug"]}" if task["slug"]
@@ -912,10 +743,8 @@ report = {
   "latest_feedback" => latest_feedback(task, fallback_activity: fallback_activity),
   "branch" => branch,
   "changed_files" => changed,
-  "gh_auth" => gh_auth,
   "pr" => pr,
   "overlap" => overlap,
-  "migration_collisions" => migrations,
   "installed_docs" => installed_docs,
   "stale_terms" => stale_hits,
   "shape" => shape,
@@ -929,4 +758,5 @@ else
   print_human(report)
 end
 
-exit(report["ok"] ? 0 : 1)
+exit(0) if report["ok"]
+exit(branch["wrong_checkout"] ? EXIT_CANNOT_DESCRIBE : EXIT_FINDINGS)
