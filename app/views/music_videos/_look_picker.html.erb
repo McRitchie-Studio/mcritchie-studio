@@ -115,7 +115,7 @@
             <label class="flex items-center gap-2 rounded-lg border border-subtle bg-surface px-2 py-1.5 text-sm text-body min-w-0">
               <input type="radio" name="sheets" value="<%= value %>" class="shrink-0" <%= "checked" if value == "standard" %>
                      data-test="look-sheets-<%= value %>">
-              <span class="min-w-0 truncate"><%= label %> <span class="text-3xs text-muted">· <%= cost %></span></span>
+              <span class="min-w-0 break-words"><%= label %> <span class="text-3xs text-muted">· <%= cost %></span></span>
             </label>
           <% end %>
         </div>

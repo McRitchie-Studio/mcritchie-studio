@@ -401,6 +401,8 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='look-sheets-choice'] input[checked]", 1
     assert_select "[data-test='look-sheets-choice'] label", /Both sheets\s*· 2 paid builds/
     assert_select "[data-test='look-sheets-choice'] label", /No sheet yet\s*· nothing spent/
+    # The cost wraps rather than truncates: a narrow card must never cut "2 paid builds" off.
+    assert_select "[data-test='look-sheets-choice'] .truncate", 0
 
     render_card(sheet_row: row, sheet_ready: false)
     assert_select "[data-test='look-cost-hint']", /is not configured here, so the look is made without a character sheet and nothing is spent/
