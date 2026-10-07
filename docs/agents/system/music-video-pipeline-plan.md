@@ -135,7 +135,9 @@ swaps:)` fed the snapshot, who is on screen read from the chunk), and takes the
 generated MP4 by drag and drop. Each upload is a numbered version in
 `alt_video_clip_versions`, kept; the latest `primary_since` is the primary, so
 exactly one holds by construction. Versions are their own table because a clip
-exists before any version and keeps every upload. A clip can be flagged
+exists before any version and keeps every upload. Once a clip has a primary
+the card plays it beside the source chunk, both on their first frame, with
+**Play both** (original muted, the version the clock; `clipPair()`, piece 18). A clip can be flagged
 "request regenerate"; the next upload clears it. **Watch full video** opens a
 modal that plays the primaries back to back as if stitched
 (`MusicVideos::StitchTimeline`, handover mid-overlap, source audio, the source
