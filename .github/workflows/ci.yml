@@ -428,6 +428,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: false
+
       - name: Read the shard matrix from config/rails_lane.yml
         id: plan
         run: echo "shards=$(bin/ci-shard --matrix)" >> "$GITHUB_OUTPUT"
