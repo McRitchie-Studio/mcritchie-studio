@@ -4,8 +4,7 @@ require "test_helper"
 
 # [unit] The orphan-database sweep must never nominate a LIVE desk.
 #
-# THE TRAP THIS EXISTS FOR, from test/support/cert_database_reaper.rb: "a pattern
-# is not an identity". bounded_db_slug truncates an over-long slug and suffixes it
+# THE TRAP THIS EXISTS FOR: "a pattern is not an identity". bounded_db_slug truncates an over-long slug and suffixes it
 # with a hash, so a REAL, LIVE desk with a long name owns a database of exactly
 # the shape a stranded one has. There is no pattern that separates them. A sweep
 # that drops "everything matching the per-desk pattern" WILL eventually drop a

@@ -55,7 +55,7 @@ The tooling tree is deliberately **not a Rails app** — no `Gemfile`, no `app/a
 no `db/` — so any `bin/` script that boots the application is installed there as a
 **shim that execs the hub primary's copy**, never as a copy. The set is derived at
 install time by grepping `bin/`, so it grows on its own; today it is `rails`, `rake`,
-`jobs`, `reviewer-select` and `reap-cert-databases`. Call them at the fixed path like
+`jobs` and `reviewer-select`. Call them at the fixed path like
 any other script and they delegate — **but only from a tree the shims were installed
 into, and that happens at a production ship.** Until the next one, those scripts are
 still plain copies there and die with `Bundler::GemfileNotFound` naming the tooling

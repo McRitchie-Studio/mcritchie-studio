@@ -357,7 +357,7 @@ module FastCert
   # "session-kickoff")` — while the registries that ENUMERATE bin/ write the bare
   # command name as a quoted literal: test/lib/bin_help_flag_class_test.rb holds
   # `"register-satellite" => :optparse` for every script in the tree. Without the
-  # quoted form, scripts such as bin/register-satellite, bin/reap-cert-databases,
+  # quoted form, scripts such as bin/register-satellite,
   # bin/island-background and bin/devops-tests map to no test at all, and that one
   # file is a self-checking registry — the kind of test this whole family exists to
   # reach.

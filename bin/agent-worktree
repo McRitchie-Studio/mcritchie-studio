@@ -2295,8 +2295,7 @@ end
 # a sweep; leaving an orphan is recoverable, dropping a live database is not.
 # A desk database is `<app>_development_<slug>` with a NON-EMPTY slug.
 #
-# STRUCTURAL GUARD, borrowed from test/support/cert_database_reaper.rb's doctrine:
-# prove the name is a PER-DESK database before touching it, as a positive
+# STRUCTURAL GUARD: prove the name is a PER-DESK database before touching it, as a positive
 # invariant rather than a blacklist of forbidden spellings. A malformed or empty
 # record would otherwise let `<app>_development` — the SHARED development
 # database — through, and an earlier cut at a related sweep in this repo "once
@@ -2316,9 +2315,8 @@ end
 # INDISTINGUISHABLE BY SHAPE from a live desk's: bounded_db_slug truncates any
 # over-long slug and suffixes it with a hash, so a real, live, long-named desk
 # owns a database of exactly the "orphan" shape. Dropping everything that matches
-# the per-desk pattern WILL eventually drop a live desk — test/support/
-# cert_database_reaper.rb records that an earlier cut at a related purge "once
-# bricked every release", and its doctrine is the rule here: A PATTERN IS NOT AN
+# the per-desk pattern WILL eventually drop a live desk; an earlier cut at a
+# related purge "once bricked every release". The rule: A PATTERN IS NOT AN
 # IDENTITY.
 #
 # SO THIS IS AN INVERTED CLOSED SET, never a pattern match. Enumerate every LIVE

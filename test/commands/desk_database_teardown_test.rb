@@ -13,7 +13,7 @@ require "securerandom"
 # called" would pass against code that drops the shared development database, so
 # these mint throwaway databases and assert on the cluster afterwards.
 #
-# SAFETY DOCTRINE, inherited from test/support/cert_database_reaper.rb: a pattern is
+# SAFETY DOCTRINE: a pattern is
 # not an identity, and every uncertain answer must resolve toward "alive". The
 # teardown drop derives its names from the desk's OWN registry record rather than
 # sweeping a pattern, refuses on any unreadable answer, and re-proves the structural

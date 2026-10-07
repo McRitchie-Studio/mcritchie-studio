@@ -1404,10 +1404,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     pg_env = pg_conn_env(template_uri)
     drop_test_db = ->(name) { system(pg_env, "dropdb", "--if-exists", name, out: File::NULL, err: File::NULL) }
-    # Lease the UNIQUE per-run DB before provisioning it: the `ensure` drops it on a
-    # clean exit, but a SIGKILL runs no `ensure`, and this lease is what lets the next
-    # run's CertDatabaseReaper drop the database this one stranded. See the reaper.
-    CertDatabaseReaper.register(test_name)
+    # The `ensure` drops the UNIQUE per-run DB. A SIGKILL strands one test database,
+    # which harms nothing (guard catalog row 5.3 deleted the reaper).
     begin
       out, err, status = Open3.capture3(
         SessionEnv.neutralized(
@@ -1429,7 +1427,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       assert_equal "1", found.strip,
         "the provisioned test DB must be findable by its full literal name (no truncation drift)"
     ensure
-      CertDatabaseReaper.release(test_name, drop: drop_test_db)
+      drop_test_db.call(test_name)
     end
   end
 
