@@ -383,6 +383,48 @@ multi-megabyte data URI cannot be the value of `artifacts.image_url`; and a vend
 CDN link is not a library — one that 404s in a month is not something the operator
 can compare across generators.
 
+#### The iced-out twin and a person's jewelry
+
+Every look a person is given gets an **iced-out twin** (the operator's ask,
+2026-10-06: "create Dak model" makes the Dak model and an iced-out Dak model).
+
+- **The twin is its own look**: an `Appearance` with `iced = true` and
+  `base_appearance_slug` naming the look it was made from (one live twin per base,
+  a partial unique index). Its descriptor is the base's plus ` · iced`, so the
+  recast picker and the look dropdown list it as a look of its own
+  ("Cowboys white · iced"). It copies the base's team, reference URL and notes,
+  never the colorway (`Appearance.file_for_colorway!` must keep finding the base);
+  the prompt reads the uniform through the base. It never takes the default.
+- **Who makes it**: `Appearances::IcedTwin`, called by both look-creation paths
+  (`PeopleController#create_appearance` and the cast card's
+  `MusicVideos::CreateRecastLook`) in the same transaction. A look made before
+  twins existed gets one from **Create iced twin** on the person page or the look
+  page. There is no backfill. Making a twin is a free row.
+- **The prompt**: one builder, `Appearances::CharacterSheetPrompt`, with `iced:`
+  (defaulting to the look's flag, so `Appearances::GenerateArtifact` is unchanged).
+  The grid, the identity rule and the pads clause are the standard sheet's. On top:
+  one named pair of designer sunglasses and a jewelry set (a chain, a watch on the
+  left wrist, a bracelet on the right, a grill, rings), a consistency clause, and the
+  per-panel suffix `ICED_PANEL_SUFFIX` on all eight panels (the repetition rule
+  above). Two head views change: "three-quarter looking up" becomes the **rings
+  shot** (hands raised to the camera) and "front smiling" becomes the **grill shot**
+  (a big smile).
+- **Jewelry is a person's record**, `person_jewelries` (`PersonJewelry`): `kind`
+  (`super_bowl_ring`, `championship_ring`, `chain`, `watch`, `bracelet`, `grill`,
+  `other`), `name`, `year` (required for the two ring kinds), `description` (the
+  text the prompt uses), an optional `image_url` (https on a public host) and
+  `source`. Admins add, edit and remove them on the person page. The iced prompt
+  names and describes the person's ring records; with none it asks for generic
+  diamond rings. Any other kind with a record replaces its generic piece; `other`
+  pieces are added. Nothing seeds real people's jewelry.
+- **Builds stay explicit, because each sheet is a paid image.** Creating a look
+  builds no twin sheet on its own. The cast card's Generate-a-look form asks which
+  sheets to build: **Character sheet** (one build, the default), **Iced sheet
+  only** (one), **Both sheets** (two, and it says so) or **No sheet yet**. The look
+  page builds its own sheet; a base look with an idle twin also offers **Generate
+  both: this and <twin> (2 paid builds)**. Each build is its own claim and job in
+  `Appearances::SheetBuild`.
+
 #### Where it lives in the app
 
 | Piece | File |
@@ -394,7 +436,9 @@ can compare across generators.
 | Choosing the class | `ImageGeneration::Adapter.for(row)` |
 | Shared failure type | `ImageGeneration::GenerationFailed` |
 | Normalised answer | `ImageGeneration::Result` |
-| The prompt | `Appearances::CharacterSheetPrompt` |
+| The prompt | `Appearances::CharacterSheetPrompt` (`iced:` for the iced-out variant) |
+| The iced twin | `Appearances::IcedTwin`; `appearances.iced`, `appearances.base_appearance_slug` |
+| A person's jewelry | `PersonJewelry` (`person_jewelries`), `PersonJewelriesController` — `require_admin` |
 | The use case | `Appearances::GenerateArtifact` |
 | The reference set it sends | `Appearances::ReferenceSet#generation_urls` (floor first) |
 | How many of them go | `reference_arity` on the row, honoured by both adapters |

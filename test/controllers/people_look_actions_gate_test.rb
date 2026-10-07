@@ -100,11 +100,12 @@ class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
   test "an admin creates a look, sets the default and attaches a sheet" do
     log_in_as users(:alex)
 
-    assert_difference -> { @person.appearances.count } => 1 do
+    assert_difference -> { @person.appearances.count } => 2 do
       post create_appearance_person_path(@person.slug), params: { appearance: { descriptor: "Third Kit" } }
     end
     assert_redirected_to person_path(@person.slug)
     assert_match "Third Kit saved", flash[:notice]
+    assert_match "with its iced twin Third Kit · iced", flash[:notice]
 
     make_default!
     assert_redirected_to person_path(@person.slug)

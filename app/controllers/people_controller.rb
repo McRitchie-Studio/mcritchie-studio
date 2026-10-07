@@ -3,9 +3,10 @@ class PeopleController < ApplicationController
   # open, so a session costs a stranger one email address: it is no control over
   # who may file a look, move a default, plant a picture or merge two people.
   # Before set_person, so a refused request costs no lookup.
-  before_action :require_admin, only: [:create_appearance, :make_default_appearance, :attach_artifact,
+  before_action :require_admin, only: [:create_appearance, :create_iced_twin, :make_default_appearance, :attach_artifact,
                                        :update_vocations, :merge_execute]
-  before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact, :update_vocations]
+  before_action :set_person, only: [:show, :create_appearance, :create_iced_twin, :make_default_appearance,
+                                    :attach_artifact, :update_vocations]
 
   def index
     # Most-recently-touched first: creating or editing a model bumps a person,
@@ -30,7 +31,9 @@ class PeopleController < ApplicationController
   # with someone else, which is why this reads through the subject join rather
   # than off the person.
   def show
-    @appearances = @person.appearances.live.order(:created_at)
+    @appearances = twins_beside_bases(@person.appearances.live.order(:created_at).to_a)
+    @twinned_slugs = @appearances.filter_map { |look| look.base_appearance_slug if look.iced? }.to_set
+    @jewelries = @person.jewelries.to_a
     @artifacts = Artifact.live
                          .joins(:subjects)
                          .where(artifact_subjects: { person_slug: @person.slug })
@@ -46,15 +49,38 @@ class PeopleController < ApplicationController
   # way. A look that goes away releases the slot and a merge re-resolves it on
   # the survivor, so "looks but no default" is an invariant the model holds
   # rather than a state these two paths merely happen to avoid.
+  #
+  # EVERY NEW LOOK GETS ITS ICED-OUT TWIN (Appearances::IcedTwin), in the same
+  # transaction. Only the rows: neither sheet is built here, so nothing spends.
   def create_appearance
     appearance = @person.appearances.new(appearance_params)
     rescue_and_log(target: @person) do
-      appearance.save!
+      twin = Appearance.transaction do
+        appearance.save!
+        Appearances::IcedTwin.create!(appearance)
+      end
       redirect_to recast_return_path || person_path(@person.slug),
-                  notice: "#{appearance.descriptor} saved#{appearance.default? ? ' and set as default' : ''}."
+                  notice: "#{appearance.descriptor} saved#{appearance.default? ? ' and set as default' : ''}, " \
+                          "with its iced twin #{twin.descriptor}. No sheet was built."
     end
   rescue ActiveRecord::RecordInvalid => e
     redirect_to person_path(@person.slug, return_to: recast_return_path), alert: e.message
+  end
+
+  # "Create iced twin" on a look made before twins existed (no backfill). Free:
+  # a row, no sheet. Idempotent, so a second press finds the first twin.
+  def create_iced_twin
+    base = @person.appearances.live.find_by(slug: params[:appearance_slug])
+    return redirect_to(person_path(@person.slug), alert: "No such look.") unless base
+
+    refusal = Appearances::IcedTwin.refusal(base)
+    return redirect_to(person_path(@person.slug), alert: "No iced twin made: #{refusal}.") if refusal
+
+    rescue_and_log(target: base) do
+      twin = Appearances::IcedTwin.create!(base)
+      redirect_to person_path(@person.slug, anchor: "look-#{twin.slug}"),
+                  notice: "#{twin.descriptor} is #{base.descriptor}'s iced twin. Build its sheet on its page."
+    end
   end
 
   def make_default_appearance
@@ -137,6 +163,13 @@ class PeopleController < ApplicationController
 
   def recast_return_path
     params[:return_to].to_s[RECAST_RETURN]
+  end
+
+  # Each iced twin listed straight after its base look; a twin whose base is
+  # gone keeps its own place at the end.
+  def twins_beside_bases(looks)
+    twins = looks.select(&:iced?).group_by(&:base_appearance_slug)
+    looks.reject(&:iced?).flat_map { |look| [look, *twins.delete(look.slug)] } + twins.values.flatten
   end
 
   def vocations_notice
@@ -261,7 +294,11 @@ class PeopleController < ApplicationController
     # 7. Move the source's LOOKS and ARTIFACT CAST to the survivor
     relocate_looks_and_cast!(keep, source)
 
-    # 8. Delete merged person
+    # 8. Move the source's JEWELRY, which the destroy below would otherwise take
+    # with it (Person has_many :jewelries, dependent: :destroy).
+    PersonJewelry.where(person_slug: source.slug).update_all(person_slug: keep.slug, updated_at: Time.current)
+
+    # 9. Delete merged person
     source.destroy!
   end
 
@@ -359,6 +396,9 @@ class PeopleController < ApplicationController
       if twin
         ArtifactSubject.where(appearance_slug: look.slug).update_all(appearance_slug: twin.slug)
         VideoPerformer.where(recast_appearance_slug: look.slug).update_all(recast_appearance_slug: twin.slug)
+        # Its iced twin follows it to the survivor's look, unless that look
+        # already has one (then the source's twin goes unlinked, not lost).
+        Appearance.where(base_appearance_slug: look.slug).update_all(base_appearance_slug: twin.slug) unless twin.iced_twin
         look.destroy!
       else
         look.update!(person_slug: keep.slug)

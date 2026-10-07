@@ -101,4 +101,94 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "SAME individual in every panel"
     assert_includes prompt, "faithful to the reference photograph"
   end
+
+  # ── THE ICED VARIANT (piece 15). Synthetic jewelry only. ──
+
+  def iced_prompt(look = @look, **kwargs) = Appearances::CharacterSheetPrompt.call(look, iced: true, **kwargs)
+
+  test "the standard sheet is untouched: no shades, no jewelry, the original head views" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look)
+
+    assert_not_includes prompt, "sunglasses"
+    assert_not_includes prompt, "ICED-OUT"
+    assert_includes prompt, "  - front smiling#{Appearances::CharacterSheetPrompt::PANEL_SUFFIX}."
+    assert_includes prompt, "  - three-quarter looking up#{Appearances::CharacterSheetPrompt::PANEL_SUFFIX}."
+  end
+
+  test "the iced sheet keeps the grid, the identity rule and the pads in every panel" do
+    prompt = iced_prompt
+
+    assert_includes prompt, "5-column by 2-row grid"
+    assert_includes prompt, "SAME individual in every panel"
+    assert_includes prompt, "fifteen degrees"
+    assert_operator prompt.scan(Appearances::CharacterSheetPrompt::PADS_CLAUSE).length, :>=, 9
+  end
+
+  # The operator asked for the SAME shades in every panel. Per the file's rule a
+  # must-hold attribute is repeated per panel, so count the panels carrying it.
+  test "the same shades and jewelry set are demanded inside every panel" do
+    prompt = iced_prompt
+
+    assert_includes prompt, Appearances::CharacterSheetPrompt::SHADES
+    assert_equal 8, prompt.scan(Appearances::CharacterSheetPrompt::ICED_PANEL_SUFFIX).length,
+                 "two full-body columns and six head views each carry the consistency suffix"
+    assert_includes prompt, "CONSISTENCY: the sunglasses and every piece of jewelry are ONE fixed set"
+  end
+
+  test "two head views become the rings shot and the grill shot; the other four stay" do
+    prompt = iced_prompt
+    views = Appearances::CharacterSheetPrompt::ICED_HEAD_VIEWS
+
+    assert_equal 6, views.length
+    assert_includes views, Appearances::CharacterSheetPrompt::RINGS_VIEW
+    assert_includes views, Appearances::CharacterSheetPrompt::GRILL_VIEW
+    assert_not_includes views, "front smiling"
+    assert_not_includes views, "three-quarter looking up"
+    ["front neutral", "three-quarter left", "right profile", "rear view of the head"].each { |v| assert_includes views, v }
+    assert_includes prompt, "GRILL SHOT: front, a big wide open smile"
+    assert_includes prompt, "RINGS SHOT: facing the camera, both hands raised"
+  end
+
+  test "with no jewelry on file every piece is generic, rings included" do
+    prompt = iced_prompt
+
+    generic = Appearances::CharacterSheetPrompt::GENERIC_PIECES
+    assert_includes prompt, "chain: #{generic['chain']}"
+    assert_includes prompt, "watch on his LEFT wrist: #{generic['watch']}"
+    assert_includes prompt, "bracelet on his RIGHT wrist (the hand without the watch): #{generic['bracelet']}"
+    assert_includes prompt, "grill: #{generic['grill']}"
+    assert_includes prompt, "rings: #{generic['rings']}"
+  end
+
+  test "the person's ring records replace the generic rings, named and described" do
+    ringer = Person.create!(first_name: "Novice", last_name: "Ringer")
+    look = Appearance.create!(person_slug: ringer.slug, descriptor: "Comets home")
+    PersonJewelry.create!(person_slug: ringer.slug, kind: "super_bowl_ring", name: "Big Game XC ring", year: 2031,
+                          description: "white gold, a pavé comet on a blue stone face")
+    PersonJewelry.create!(person_slug: ringer.slug, kind: "championship_ring", name: "Conference ring", year: 2030,
+                          description: "yellow gold, red stones around the bezel")
+    PersonJewelry.create!(person_slug: ringer.slug, kind: "watch", name: "Moon dial", description: "rose gold, baguette bezel")
+    PersonJewelry.create!(person_slug: ringer.slug, kind: "other", name: "Ear studs", description: "two square diamond studs")
+
+    prompt = iced_prompt(look)
+
+    assert_includes prompt, "rings: his own championship rings, each rendered faithfully - " \
+                            "2031 Big Game XC ring: white gold, a pavé comet on a blue stone face; " \
+                            "2030 Conference ring: yellow gold, red stones around the bezel"
+    assert_not_includes prompt, Appearances::CharacterSheetPrompt::GENERIC_PIECES["rings"]
+    assert_includes prompt, "watch on his LEFT wrist: Moon dial: rose gold, baguette bezel"
+    assert_includes prompt, "also: Ear studs: two square diamond studs"
+    assert_includes prompt, "chain: #{Appearances::CharacterSheetPrompt::GENERIC_PIECES['chain']}",
+                    "a kind with no record stays generic"
+  end
+
+  test "an iced twin reads the iced prompt by default and its base's uniform" do
+    twin = Appearances::IcedTwin.create!(@look)
+    prompt = Appearances::CharacterSheetPrompt.call(twin, number: "14")
+
+    assert_includes prompt, "ICED-OUT LOOK"
+    assert_includes prompt, "Bills home game uniform, jersey number 14"
+    assert_not_includes prompt, "· iced game uniform"
+    assert_not_includes Appearances::CharacterSheetPrompt.call(@look), "ICED-OUT LOOK"
+  end
 end

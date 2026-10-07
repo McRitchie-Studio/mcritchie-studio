@@ -1,0 +1,39 @@
+<%# One jewelry record's fields, for add (a new record) and edit (a saved one).
+    The year is required for a Super Bowl or championship ring; the server says
+    so when it is missing. %>
+<% url = jewel.persisted? ? person_jewelry_path(person.slug, jewel.slug) : person_jewelries_path(person.slug) %>
+<%= form_with model: jewel, url: url, method: (jewel.persisted? ? :patch : :post), scope: :person_jewelry,
+              local: true, namespace: (jewel.slug || "new-jewelry"), class: "mt-3 space-y-2", data: { test: (jewel.persisted? ? "jewelry-edit-form" : "jewelry-form") } do |f| %>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+    <div class="min-w-0">
+      <%= f.label :kind, "Kind", class: "block text-xs text-muted mb-1" %>
+      <%= f.select :kind, PersonJewelry::KINDS.map { |k| [k.humanize, k] }, {}, class: "input-field py-2 text-sm w-full" %>
+    </div>
+    <div class="min-w-0 sm:col-span-1">
+      <%= f.label :name, "Name", class: "block text-xs text-muted mb-1" %>
+      <%= f.text_field :name, required: true, maxlength: 120, placeholder: "Super Bowl LXXX ring",
+            class: "input-field py-2 text-sm w-full" %>
+    </div>
+    <div class="min-w-0">
+      <%= f.label :year, "Year (rings)", class: "block text-xs text-muted mb-1" %>
+      <%= f.number_field :year, min: 1901, max: 2199, placeholder: "2030", class: "input-field py-2 text-sm w-full" %>
+    </div>
+  </div>
+  <div>
+    <%= f.label :description, "What it looks like (the prompt uses this text)", class: "block text-xs text-muted mb-1" %>
+    <%= f.text_area :description, rows: 2, required: true, maxlength: 600,
+          placeholder: "White gold, a large team logo in pavé diamonds on the face, red stones around the bezel",
+          class: "input-field text-sm w-full" %>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <div class="min-w-0">
+      <%= f.label :image_url, "Image URL (optional, https)", class: "block text-xs text-muted mb-1" %>
+      <%= f.text_field :image_url, placeholder: "https://", class: "input-field py-2 text-sm w-full" %>
+    </div>
+    <div class="min-w-0">
+      <%= f.label :source, "Source (optional)", class: "block text-xs text-muted mb-1" %>
+      <%= f.text_field :source, placeholder: "Where the description came from", class: "input-field py-2 text-sm w-full" %>
+    </div>
+  </div>
+  <%= f.submit (jewel.persisted? ? "Save" : "Add jewelry"), class: "btn btn-sm btn-primary" %>
+<% end %>
