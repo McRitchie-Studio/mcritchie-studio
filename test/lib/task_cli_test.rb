@@ -2547,59 +2547,20 @@ class TaskCliTest < Minitest::Test
     assert_match(/unknown flag "--bogus"/, err)
   end
 
-  # --- A comma inside a repeatable IDENTIFIER flag ----------------------------
-  # `--repo` and `--risk` are REPEATABLE (`--repo a --repo b`), so `--repo a,b`
-  # used to store a ONE-ELEMENT array holding the joined string. Nothing refused
-  # it and nothing rendered it differently — `bin/task show` prints
-  # `repos: a,b` for the joined entry and the correct pair alike — so the record
-  # read right up until a reader tried to resolve an entry.
-  #
-  # MEASURED 2026-09-15 against the production board (2066 tasks):
-  #   repositories — the LOUD reader. Release::Conductor resolves each entry to a
-  #     repo, finds a phantom with no PR, and REFUSES at step 3a. It aborted a
-  #     live QA sweep on /tasks/sweep-stale-signer-claims: nothing promoted,
-  #     recorded or deployed.
-  #   risk_tags — the SILENT one, and there were 1117 of them. The reader
-  #     matches EXACTLY, so a joined entry fails OPEN: 464 tasks would have
-  #     pulled a ReviewerSelector::RISK_DOMAINS reviewer light and did not.
-  #
-  # The refusal must fire in parse_flags — before auth, before any request — so a
-  # rejected line leaves no half-written record behind it.
+  # --- A comma inside a repeatable IDENTIFIER flag: SPLIT (guard catalog row 3.6)
+  # No repo name or risk tag contains a comma, so `--repo a,b` means two entries;
+  # it used to be refused, and a joined entry aborted a QA sweep (2026-09-15).
 
-  def test_create_refuses_a_comma_joined_repo_value
+  def test_create_splits_comma_joined_repo_and_risk_values
     requests, _out, err, status = run_task(
-      ["create", "--title", "Two repo task", "--repo", "turf-monster,mcritchie-studio"]
+      ["create", "--title", "Two repo task", "--repo", "turf-monster,mcritchie-studio",
+       "--risk", "devops, release"]
     )
 
-    refute status.success?, "a comma-joined --repo must exit nonzero, not store one joined entry"
-    assert_empty requests, "the refusal precedes every request — no task is created"
-    assert_match(/--repo/, err, "the error names the offending flag")
-    assert_match(/repeatable/i, err, "and teaches that the flag is repeatable")
-    assert_match(/--repo turf-monster --repo mcritchie-studio/, err,
-                 "and spells the corrected line out of the value actually given")
-  end
-
-  def test_create_refuses_a_comma_joined_risk_value
-    requests, _out, err, status = run_task(
-      ["create", "--title", "Risky joined task", "--risk", "devops,release,data-integrity"]
-    )
-
-    refute status.success?, "a joined risk tag matches no blocked tag and pulls no reviewer light"
-    assert_empty requests
-    assert_match(/--risk devops --risk release --risk data-integrity/, err)
-  end
-
-  # The same value arriving by `update` is the same defect — it is the command
-  # the two instances found on 2026-09-15 were REPAIRED with, so it must not be
-  # able to re-create the shape it is repairing.
-  def test_update_refuses_a_comma_joined_repo_value
-    requests, _out, err, status = run_task(
-      ["update", "demo-task", "--repo", "turf-monster,mcritchie-studio"]
-    )
-
-    refute status.success?
-    assert_empty requests, "no PATCH — the joined list never reaches the board"
-    assert_match(/--repo turf-monster --repo mcritchie-studio/, err)
+    assert status.success?, err
+    devops = devops_of(requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" })
+    assert_equal %w[turf-monster mcritchie-studio], devops["repositories"]
+    assert_equal %w[devops release], devops["risk_tags"]
   end
 
   # `--pr-url-for <repo>=<url>` is repo-keyed, and Task#release_repos folds its

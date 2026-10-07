@@ -145,26 +145,25 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                      "the documented fast lane for every resumed task"
   end
 
-  # SHAPE, NOT MEMBERSHIP. The CLI holds no Rails constants and cannot see the
-  # Agent table — and a missing Agent row is NOT what breaks the stamp (every soul
-  # is seeded). What breaks it is a value outside SOUL_SLUG, which
-  # Task#builder_to_stamp tests before it writes built_by. `--agent Steffon` and
-  # `--agent turf_monster` are the realistic spellings that silently no-op.
-  test "an agent value that could never stamp is refused at the door" do
-    ["Steffon", "turf_monster", "carl2"].each do |bad|
+  # NORMALIZED, THEN MEMBERSHIP (guard catalog row 3.6). `--agent Steffon` and
+  # `--agent turf_monster` fold to the soul they mean; only a slug no soul in
+  # config/souls.yml matches is refused, because it could never stamp built_by.
+  test "an agent value that names no soul is refused at the door" do
+    ["carl2", "stefon"].each do |bad|
       _out, err, status = run_task("create", "--title", "Probe Three Words", "--agent", bad)
 
-      refute status.success?, "#{bad.inspect} cannot match SOUL_SLUG, so it must not be accepted"
-      assert_includes err, "must be a soul slug", "the refusal must say what shape is required"
+      refute status.success?, "#{bad.inspect} names no soul, so it must not be accepted"
+      assert_includes err, "names no soul"
       assert_includes err, "built_by", "and why it matters — the stamp is the whole point"
     end
   end
 
-  test "a soul-shaped agent value passes validation" do
-    _out, err, _status = run_task("create", "--title", "Probe Three Words", "--agent", "turf-monster")
+  test "an agent value in another case or separator is normalized, not refused" do
+    ["Steffon", "turf_monster", "Turf Monster", "turf-monster"].each do |spelling|
+      _out, err, _status = run_task("create", "--title", "Probe Three Words", "--agent", spelling)
 
-    refute_includes err, "must be a soul slug",
-                     "a hyphenated soul is the shape Task::SOUL_SLUG accepts"
+      refute_includes err, "names no soul", "#{spelling.inspect} names a soul in another spelling"
+    end
   end
 
   # GUARD THE MIRROR. bin/task carries its own copy of SOUL_SLUG because it holds

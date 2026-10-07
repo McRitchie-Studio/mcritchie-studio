@@ -273,6 +273,7 @@ require "time"
 require "fileutils"
 require "shellwords"
 require "rbconfig"
+require "yaml"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
@@ -743,12 +744,10 @@ SCALAR_FLAGS = {
   # from --agent, which sets the task OWNER (agent_slug).
   "--persona" => "persona"
 }.freeze
-# The repeatable devops list flags and the identifier flags that refuse a comma
-# come from ONE key map, lib/devops_list_flags.rb, which Task reads too: the server
-# splits a joined identifier entry from a raw API caller, and this CLI refuses it
-# first, where a human can still retype the line. Refusing rather than splitting
-# keeps the lesson honest: an agent whose `--repo a,b` quietly worked would next
-# type `--accept "one thing, then another"` expecting two criteria.
+# The repeatable devops list flags and the identifier flags whose commas split come
+# from ONE key map, lib/devops_list_flags.rb, which Task reads too: the server splits
+# a joined identifier entry from a raw API caller, and this CLI splits it the same
+# way (guard catalog row 3.6). Prose flags (--accept, --test, --checks) never split.
 LIST_FLAGS = DevopsListFlags::FLAGS
 COMMA_FREE_LIST_FLAGS = DevopsListFlags::COMMA_FREE_FLAGS
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
@@ -810,8 +809,8 @@ SIZES = %w[small medium large xl].freeze
 # board (agent_slug is a free-form column, `belongs_to :agent, optional: true`),
 # stored, and then SILENTLY skipped by the stamp — so `--agent Steffon` or
 # `--agent turf_monster` records an assignee whose only job was to feed
-# `devops.built_by` and feeds it nothing. Refuse it here, where a human can still
-# fix it, exactly as --po-size and --gem-bump are refused.
+# `devops.built_by` and feeds it nothing. normalize_agent_slug! folds those spellings
+# and checks the roster; this shape is its floor when the roster cannot be read.
 SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
@@ -1195,20 +1194,30 @@ def validate_size!(flag, value)
   die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
 end
 
-# The task's assigned soul. Validated for SHAPE only — the CLI cannot see the
-# Agent table, and a missing Agent row is NOT what breaks the stamp (checked:
-# db/seeds/02_agents.rb seeds every soul). What breaks it is a value outside
-# SOUL_SLUG, which `Task#builder_to_stamp` rules 1 and 4 both test before they
-# stamp `devops.built_by`. reviewer-select reads ONLY that key and REFUSES an
-# unknown builder (bin/reviewer-select), so a dropped stamp does not fail the
-# review — it stalls it, and a hand-picked reviewer once turned out to be the PR's
-# own author. A flag whose whole purpose is stamping must never no-op quietly.
-def validate_agent_slug!(flag, value)
-  return if value.to_s.match?(SOUL_SLUG)
+# The task's assigned soul, NORMALIZED rather than refused (guard catalog row 3.6):
+# `--agent Steffon` and `--agent "turf monster"` mean steffon and turf-monster, so
+# the case and separators are folded. What still refuses is a slug NO soul matches —
+# the roster in config/souls.yml, which db/seeds/02_agents.rb seeds the Agent table
+# from and Task::SOUL_ROSTER reads — because `Task#builder_to_stamp` stamps
+# devops.built_by only for a soul, reviewer-select reads only that key, and a
+# dropped stamp once seated a PR's own author as its reviewer.
+SOUL_ROSTER_PATH = File.expand_path("../config/souls.yml", __dir__)
+SOUL_ALIASES = { "alex" => "xan" }.freeze
 
-  die!("#{flag} must be a soul slug — lowercase letters and single hyphens " \
-       "(e.g. steffon, turf-monster) — got #{value.inspect}. " \
-       "Anything else is stored but never stamped onto devops.built_by, " \
+def soul_roster
+  @soul_roster ||= YAML.safe_load_file(SOUL_ROSTER_PATH).fetch("souls").map { |soul| soul.fetch("slug").to_s }
+rescue StandardError
+  []
+end
+
+def normalize_agent_slug!(flag, value)
+  slug = value.to_s.strip.downcase.gsub(/[\s_]+/, "-")
+  slug = SOUL_ALIASES.fetch(slug, slug)
+  roster = soul_roster
+  return slug if roster.include?(slug) || (roster.empty? && slug.match?(SOUL_SLUG))
+
+  die!("#{flag} #{value.inspect} names no soul — one of: #{roster.join(", ")}. " \
+       "A value that is not a soul is never stamped onto devops.built_by, " \
        "which is what bin/reviewer-select reads to keep a soul off their own PR.")
 end
 
@@ -1340,8 +1349,15 @@ def parse_flags(argv, context: nil)
       value = argv[i + 1] || die!("#{arg} needs a value")
       # Identifier flags only (COMMA_FREE_LIST_FLAGS) — the prose flags keep their
       # commas. A no-op for the other three, so the branch keeps one shape.
-      refuse_comma_list!(arg, value) if COMMA_FREE_LIST_FLAGS.include?(arg)
-      lists[LIST_FLAGS[arg]] << value; i += 2
+      # SPLIT, not refused (guard catalog row 3.6): no repo name or risk tag
+      # contains a comma, so `--repo a,b` means two entries. The prose flags keep
+      # their commas.
+      if COMMA_FREE_LIST_FLAGS.include?(arg)
+        lists[LIST_FLAGS[arg]].concat(value.split(",").map(&:strip).reject(&:empty?))
+      else
+        lists[LIST_FLAGS[arg]] << value
+      end
+      i += 2
     elsif MAP_FLAGS.key?(arg)
       # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
       # query string could. A malformed pair dies here rather than writing half a
@@ -1375,7 +1391,7 @@ def parse_flags(argv, context: nil)
       value = argv[i + 1] || die!("#{arg} needs a value")
       # The assignee is the stamp's rule-4 input; a non-soul value is a silent
       # no-op downstream, so it dies here instead.
-      validate_agent_slug!(arg, value) if key == "agent"
+      value = normalize_agent_slug!(arg, value) if key == "agent"
       top[key] = value; i += 2
     elsif BOOL_FLAGS.key?(arg)
       # Valueless — consumes ONE token. Storing the boolean (including `false`)
