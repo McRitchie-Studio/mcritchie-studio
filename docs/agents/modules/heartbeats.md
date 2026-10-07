@@ -14,9 +14,9 @@ a **prompt-like row 1** plus **copyable action rows**:
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
   - **Xan** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle`
-  - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
+  - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal` · `📣 post-to-x`
 
-  Seven registered acts are deliberately NOT chips; each stays invocable by name:
+  Six registered acts are deliberately NOT chips; each stays invocable by name:
   - `archive-shipped` — `production-deploy` runs it as its final step, so the
     keycap sequence ends at `3️⃣`; `clean-infra` took the slot but is off-sequence.
   - `sleeper-auction-watch` — calendar-bound (one draft evening a year), and at 21
@@ -27,8 +27,6 @@ a **prompt-like row 1** plus **copyable action rows**:
   - `collect-vault-revenue` — operator-triggered, and it moves money: it runs
     when Alex asks for the revenue, and its second hop is three approvals in
     Squads' own UI.
-  - `post-to-x` — operator-triggered, and it publishes: it runs when Alex has
-    put videos on the board, and every batch waits on his approval.
 
   A chip does not imply a cadence (`clean-infra`, `deploy-with-task` and
   `contest-rehearsal` are chips and are direct-invoke); do not restate that
@@ -52,7 +50,7 @@ cross-soul map. History cut from it lives in
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Xan** (`xan`) | `Xan Heartbeat` | `share-insights`, `full-cycle`; `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
-| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise), `collect-vault-revenue` (registered, not a chip — operator-triggered and it moves money), `post-to-x` (registered, not a chip — operator-triggered and it publishes) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `post-to-x` (a chip since 2026-10-06: Alex copies it and pastes it into a fresh session with an MP4 path), `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise), `collect-vault-revenue` (registered, not a chip — operator-triggered and it moves money) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat

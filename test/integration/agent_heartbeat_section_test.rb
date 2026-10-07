@@ -131,7 +131,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='archive-shipped']", count: 0
   end
 
-  test "Turf Monster is a heartbeat soul and renders both of its acts" do
+  test "Turf Monster is a heartbeat soul and renders all three of its acts" do
     get agent_path("turf-monster")
     assert_response :success
 
@@ -145,11 +145,15 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     # between, not a queue. Both occupy a session for a long stretch, so you run
     # one or the other — which is exactly why they sit side by side rather than
     # one being composed into the other.
-    assert_select "[data-test='action']", count: 2
+    # A THIRD since 2026-10-06: post-to-x is short and the opposite of long-running,
+    # and it is on the card to be COPIED into a fresh session beside an MP4 path.
+    assert_select "[data-test='action']", count: 3
     assert_select "[data-test='action'][data-action='live-score-watch'][data-clip='live-score-watch']"
     assert_select "[data-test='action'][data-action='contest-rehearsal'][data-clip='contest-rehearsal']"
+    assert_select "[data-test='action'][data-action='post-to-x'][data-clip='post-to-x']"
     assert_match "Watch a live NFL slot", response.body
     assert_match "Rehearse a whole contest on QA", response.body
+    assert_match "Post an MP4 to X", response.body
   end
 
   # The general Pokémon owns an SOP but no HEARTBEAT: its page lists the
