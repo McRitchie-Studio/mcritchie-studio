@@ -1,4 +1,5 @@
 # Launch Build Queue SOP
+<!-- registry: work /build app requests: claim, build, point the subdomain, mark live -->
 
 ## Status: Active
 

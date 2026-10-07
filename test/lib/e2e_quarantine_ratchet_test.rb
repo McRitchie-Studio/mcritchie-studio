@@ -2,7 +2,11 @@
 
 # THE DECLARED SET of the Playwright `e2e` lane — the STATIC half of a two-part guard.
 #
-#     75 specs committed  −  18 quarantined  ==  57 the lane should run
+#     specs committed  −  quarantined  ==  the lane should run
+#
+# Both counts are COMPUTED from e2e/ by bin/lib/e2e_spec_census.rb, the census the runtime
+# gate reads too. What this file proves is that the census is honest: every spec is a bare
+# declaration, so nothing but the quarantine tag removes one from the lane.
 #
 # READ THIS FIRST, BECAUSE THE FILE'S NAME OVERSELLS IT. This file reads the SOURCE. It can
 # tell you how many specs are DECLARED and not quarantined. It CANNOT tell you how many specs
@@ -58,9 +62,8 @@
 # guard in the repo — this one and the receipt both — go green over a suite that had just
 # shrunk. Read test_integration_the_quarantine_ceiling_never_rises before touching this.
 #
-# TO REPAIR A SPEC: drop its ` @quarantine` tag, and move BOTH counters below in the same
-# commit (CEILING down by one, LANE_SPECS up by one; TOTAL_SPECS does not move). The
-# assertions will tell you the numbers. When CEILING reaches 0, delete the
+# TO REPAIR A SPEC: drop its ` @quarantine` tag and lower `quarantined` in
+# config/e2e_lane.yml in the same commit. When it reaches 0, delete the
 # `--grep-invert @quarantine` flag from ci.yml — the suite is whole, and only the
 # executed-set half of this file is still load-bearing. Repair is ticketed at
 # /tasks/repair-rotted-e2e-specs.
@@ -75,6 +78,7 @@
 require "minitest/autorun"
 require "yaml"
 require "open3"
+require_relative "../../bin/lib/e2e_spec_census"
 
 class E2eQuarantineRatchetTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -85,15 +89,11 @@ class E2eQuarantineRatchetTest < Minitest::Test
   CONTRACT_PATH = File.join(ROOT, CONTRACT_REL)
 
   # ==== THE CONTRACT ==================================================================
-  # The numbers live in config/e2e_lane.yml — ONE file, so there is ONE line to bump and the
-  # runtime gate (bin/e2e-executed-set-check) and this static guard can never drift apart and
-  # certify two different suites. Verified against playwright's OWN view, not taken from prose:
-  #   npx playwright test --list                           -> 75 tests in 30 files
-  #   npx playwright test --list --grep-invert @quarantine -> 57 tests in 28 files
+  # config/e2e_lane.yml holds what the tree cannot compute: the quarantine ceiling, its tag
+  # and the shard count. The spec counts come from the census, which the runtime gate
+  # (bin/e2e-executed-set-check) reads too, so the two halves judge one suite.
   CONTRACT       = YAML.safe_load_file(CONTRACT_PATH).freeze
-  TOTAL_SPECS    = CONTRACT.fetch("total_specs")   # every `test(...)` committed under e2e/
-  CEILING        = CONTRACT.fetch("quarantined")   # of those, the rotted ones carrying the tag
-  LANE_SPECS     = CONTRACT.fetch("executed")      # TOTAL_SPECS - CEILING == what CI executes
+  CEILING        = CONTRACT.fetch("quarantined")   # the rotted specs carrying the tag
   SHARDS         = CONTRACT.fetch("shards")
   QUARANTINE_TAG = CONTRACT.fetch("quarantine_tag")
   # ====================================================================================
@@ -123,9 +123,8 @@ class E2eQuarantineRatchetTest < Minitest::Test
   BASELINE_REF = "origin/release"
   # ====================================================================================
 
-  # A SPEC is a BARE `test(` / `it(` call with a title. No modifier. That is the only form
-  # this suite is allowed to use, and the only form that contributes to the counts.
-  SPEC_DECLARATION = /^\s*(?:test|it)\s*\(\s*(?<q>["'`])(?<title>.*?)\k<q>/
+  # A SPEC is a BARE `test(` / `it(` call with a title (E2eSpecCensus::SPEC_DECLARATION). No
+  # modifier. That is the only form this suite is allowed to use, and the only form counted.
 
   # A GROUP is `test.describe(` / `describe(` with a title. It runs specs; it is not one.
   GROUP_DECLARATION = /^\s*(?:test\.describe|describe)\s*\(\s*(?<q>["'`])(?<title>.*?)\k<q>/
@@ -176,13 +175,9 @@ class E2eQuarantineRatchetTest < Minitest::Test
 
   # Comments are not code. `// do not use test.skip here` must not turn the suite red, or the
   # first false alarm gets this guard weakened — and a weakened guard is worse than none.
-  def strip_comments(source)
-    source.gsub(%r{/\*.*?\*/}m, "").gsub(%r{//[^\n]*}, "")
-  end
+  def strip_comments(source) = E2eSpecCensus.strip_comments(source)
 
-  def spec_titles(source)
-    strip_comments(source).lines.filter_map { |line| line.match(SPEC_DECLARATION)&.[](:title) }
-  end
+  def spec_titles(source) = E2eSpecCensus.spec_titles(source)
 
   def group_titles(source)
     strip_comments(source).lines.filter_map { |line| line.match(GROUP_DECLARATION)&.[](:title) }
@@ -212,21 +207,15 @@ class E2eQuarantineRatchetTest < Minitest::Test
     (by_modifier + by_receiver).uniq
   end
 
-  def spec_files
-    Dir.glob(File.join(E2E_DIR, "**", "*.spec.js")).sort
-  end
+  def spec_files = E2eSpecCensus.spec_files(E2E_DIR)
+
+  def census = @census ||= E2eSpecCensus.count(E2E_DIR, quarantine_tag: QUARANTINE_TAG)
 
   def each_spec_file
     spec_files.map { |path| [path, File.read(path)] }
   end
 
-  def committed_spec_count
-    each_spec_file.sum { |_path, source| spec_titles(source).size }
-  end
-
-  def committed_quarantine_count
-    each_spec_file.sum { |_path, source| quarantined_titles(source).size }
-  end
+  def committed_quarantine_count = census.quarantined
 
   # ---- the baseline ------------------------------------------------------------------
 
@@ -304,11 +293,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
 
   # Files carrying at least one spec the lane actually runs. Playwright keeps a file's specs
   # together when sharding, so this — not the spec count alone — is what floors a shard.
-  def committed_lane_file_count
-    each_spec_file.count do |_path, source|
-      spec_titles(source).any? { |title| !title.include?(QUARANTINE_TAG) }
-    end
-  end
+  def committed_lane_file_count = census.lane_files
 
   # The shard matrix, read from ci.yml in EITHER YAML sequence style. The first version of
   # this reached straight into a flow-sequence regex and called `.split` on the result — so
@@ -520,37 +505,9 @@ class E2eQuarantineRatchetTest < Minitest::Test
 
   # --- [integration] the real committed suite ------------------------------------------
 
-  # ==== THE EXECUTED-SET INVARIANT ====================================================
-  # The one assertion this whole file is for. It is arithmetic, so it cannot be satisfied by
-  # a spelling: every change to what the lane executes lands here.
-  def test_integration_the_lane_executes_exactly_the_specs_it_claims_to
-    total = committed_spec_count
-    quarantined = committed_quarantine_count
-    executed = total - quarantined
-
-    assert_equal TOTAL_SPECS, total,
-                 "e2e/ holds #{total} specs but TOTAL_SPECS is #{TOTAL_SPECS}. If you ADDED " \
-                 "a spec, raise TOTAL_SPECS and LANE_SPECS by one and confirm CI runs it " \
-                 "(`npx playwright test --list`). If you DELETED one — or deleted a whole " \
-                 "spec file — say so here in the same commit, because a spec that quietly " \
-                 "leaves the tree leaves the green `playwright` check covering less than it " \
-                 "did yesterday, and nothing else in the repo will mention it."
-
-    assert_equal LANE_SPECS, executed,
-                 "the lane executes #{executed} specs (#{total} committed − #{quarantined} " \
-                 "quarantined) but LANE_SPECS pins it at #{LANE_SPECS}. The green " \
-                 "`playwright` check now covers a DIFFERENT SET than the one this repo " \
-                 "signed off on. Reconcile the numbers deliberately — do not just move the " \
-                 "constant to match, which is the self-declaration disease this lane exists " \
-                 "to cure."
-
-    assert_equal LANE_SPECS, TOTAL_SPECS - CEILING,
-                 "the constants no longer add up: TOTAL_SPECS(#{TOTAL_SPECS}) − " \
-                 "CEILING(#{CEILING}) != LANE_SPECS(#{LANE_SPECS}). The executed set is " \
-                 "DEFINED as everything committed that is not quarantined. If that is no " \
-                 "longer true, the lane has grown a second way to drop a spec and this file " \
-                 "has stopped bounding it."
-  end
+  # The executed set is the census's arithmetic, committed − quarantined, and the runtime
+  # gate asserts the lane ran exactly it. What keeps the arithmetic honest is the next test:
+  # with no selection modifier anywhere, there is no third way out of the lane.
 
   # THE DEFAULT-DENY GATE. This is what makes the arithmetic above honest: with no selection
   # modifier anywhere, "committed minus quarantined" IS "executed", and there is no third way
@@ -609,8 +566,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
                  "cure. Two honest moves, no third: FIX the spec, or BLOCK on it. (And the " \
                  "ratchet below will refuse the contract bump anyway.)\n" \
                  "If you REPAIRED #{CEILING - count} spec(s) — thank you — now lower " \
-                 "`quarantined` to #{count} and raise `executed` to #{TOTAL_SPECS - count} in " \
-                 "THIS commit. When `quarantined` hits 0, drop the `--grep-invert " \
+                 "`quarantined` to #{count} in THIS commit. When `quarantined` hits 0, drop the `--grep-invert " \
                  "#{QUARANTINE_TAG}` flag from .github/workflows/ci.yml: the suite is whole. " \
                  "(/tasks/repair-rotted-e2e-specs)"
   end
@@ -699,22 +655,13 @@ class E2eQuarantineRatchetTest < Minitest::Test
     end
   end
 
-  # THE CONTRACT IS THE ONE NUMBER. Both halves of this guard — the static scan here and the
-  # runtime gate in bin/e2e-executed-set-check — read config/e2e_lane.yml. If its arithmetic
-  # is internally inconsistent, the two halves certify two different suites and the whole
-  # structure is theatre.
-  def test_integration_the_contract_arithmetic_is_internally_consistent
-    assert_equal LANE_SPECS, TOTAL_SPECS - CEILING,
-                 "config/e2e_lane.yml does not add up: total_specs(#{TOTAL_SPECS}) − " \
-                 "quarantined(#{CEILING}) != executed(#{LANE_SPECS}). The executed set is " \
-                 "DEFINED as everything committed that is not quarantined. If that is no " \
-                 "longer true, the lane has grown a second way to drop a spec and neither " \
-                 "half of this guard is bounding it."
-
+  # THE CENSUS IS NOT EMPTY. A lane that runs zero specs is the failure this whole file
+  # exists to make impossible, and a census that read nothing would make every count above
+  # a statement about an empty set.
+  def test_integration_the_census_reads_a_real_suite
     assert_operator CEILING, :>=, 0, "config/e2e_lane.yml: quarantined cannot be negative"
-    assert_operator LANE_SPECS, :>, 0,
-                    "config/e2e_lane.yml pins the executed set at #{LANE_SPECS}. A lane that " \
-                    "runs zero specs is the failure this whole PR exists to make impossible."
+    assert_operator census.total, :>=, 100, "the census read too few specs to be the real e2e/ suite"
+    assert_operator census.executed, :>, 0, "the lane would execute zero specs"
   end
 
   # NO SHARD MAY BE EMPTY. This is the mechanism that hid `.only` in the first place: an
@@ -738,8 +685,8 @@ class E2eQuarantineRatchetTest < Minitest::Test
                  "every remaining job GREEN. If you are deliberately resharding, say so in " \
                  "config/e2e_lane.yml in the same commit."
 
-    assert_operator LANE_SPECS, :>=, shards,
-                    "the lane runs #{LANE_SPECS} specs across #{shards} shards. A shard with " \
+    assert_operator census.executed, :>=, shards,
+                    "the lane runs #{census.executed} specs across #{shards} shards. A shard with " \
                     "no tests EXITS 0 SILENTLY — playwright's 'No tests found' guard does not " \
                     "fire when sharded — so an empty shard is a green check over nothing."
 

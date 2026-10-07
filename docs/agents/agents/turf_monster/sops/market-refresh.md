@@ -1,4 +1,5 @@
 # Market Refresh
+<!-- registry: rebuild a span's benchmarks from fresh lines -->
 
 ## Status: Active — check the environment before the first run
 

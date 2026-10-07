@@ -16,8 +16,10 @@
 #
 # WHY COUNT SKIPS AT ALL. A skip is a test that has been switched off without being
 # deleted, so the suite keeps its name and loses its coverage. That is precisely the
-# state 18 of 100 e2e specs are already in, un-tracked for the Ruby side until now.
-# The ratchet does NOT demand the number go down — it forbids it going UP silently.
+# state a quarantined e2e spec is in. The ratchet does NOT demand the number go down —
+# it forbids it rising above the merge base's count.
+require "open3"
+
 module TestHealth
   # A test opener in either dialect: `test "name" do` (declarative) or `def test_x`.
   TEST_OPENER = /^(\s*)(?:test\s+["']|def\s+test_)/
@@ -59,19 +61,99 @@ module TestHealth
     0
   end
 
-  # Files that have OUTGROWN their ceiling: [{file:, lines:, ceiling:}, ...].
+  # ---- the merge base: the one copy of the numbers a diff cannot move ----------
   #
-  # `frozen` is the contract's map of path => max lines. A missing file is NOT an
-  # offender — a frozen file that someone deletes or renames should not fail the build
-  # on its way out; the stale entry is noise for a reviewer to sweep, not a refusal.
-  def oversized(root, frozen)
-    (frozen || {}).filter_map do |path, ceiling|
+  # The skip count and the frozen hotspots' sizes are compared with the same counts at
+  # the merge base, not with numbers stored in config/test_health.yml. A stored number
+  # needs an edit on every legitimate move in either direction; the merge base needs
+  # none, and it is the one copy the author's own diff cannot reach.
+  #
+  # TEST_HEALTH_BASE names the base explicitly (the hermetic integration test uses it);
+  # otherwise it is `git merge-base HEAD origin/accepted`, the branch every PR merges
+  # into. nil means the base cannot be read, and the callers fail closed on nil.
+  BASE_BRANCH = "origin/accepted"
+
+  def base_ref(root)
+    explicit = ENV["TEST_HEALTH_BASE"].to_s.strip
+    sha = if explicit.empty?
+            git(root, "merge-base", "HEAD", BASE_BRANCH)
+          else
+            git(root, "rev-parse", "--verify", "--quiet", "#{explicit}^{commit}")
+          end
+    sha.to_s.empty? ? nil : sha
+  end
+
+  # Stripped stdout on success (possibly empty), nil on failure.
+  def git(root, *args)
+    out, _err, status = Open3.capture3("git", "-C", root.to_s, *args)
+    status.success? ? out.strip : nil
+  rescue SystemCallError
+    nil
+  end
+
+  # { "test/a_test.rb" => source } for every *_test.rb under test/ at `ref`, read in one
+  # `git cat-file --batch` pass so a thousand files cost one process.
+  def test_sources_at(root, ref)
+    listing = git(root, "ls-tree", "-r", "--name-only", ref, "--", "test")
+    return nil if listing.nil?
+
+    paths = listing.lines.map(&:strip).select { |path| path.end_with?("_test.rb") }
+    blobs(root, paths.map { |path| "#{ref}:#{path}" }).then { |bodies| paths.zip(bodies).to_h }
+  end
+
+  # Skip call sites at `ref`, or nil when the ref cannot be read.
+  def skips_at(root, ref)
+    sources = test_sources_at(root, ref)
+    sources&.values&.sum { |source| skips_in(source.to_s) }
+  end
+
+  # Line count of `path` at `ref`, or nil when the file is not there.
+  def lines_at(root, ref, path)
+    blobs(root, ["#{ref}:#{path}"]).first&.lines&.count
+  end
+
+  # Frozen files that GREW past their size at the merge base: [{file:, lines:, base:}].
+  # A file missing now (deleted or renamed) or absent at the base (new) is not an
+  # offender: shrinking and splitting are always allowed.
+  def grown(root, frozen, ref)
+    Array(frozen).filter_map do |path|
       full = File.join(root.to_s, path)
       next unless File.exist?(full)
 
+      base = lines_at(root, ref, path)
+      next if base.nil?
+
       lines = File.foreach(full).count
-      { file: path, lines: lines, ceiling: ceiling } if lines > ceiling
+      { file: path, lines: lines, base: base } if lines > base
     end
+  end
+
+  # The bodies of `specs` (each "<ref>:<path>"), nil for one that does not exist.
+  def blobs(root, specs)
+    return [] if specs.empty?
+
+    out, status = Open3.capture2("git", "-C", root.to_s, "cat-file", "--batch", stdin_data: specs.join("\n") + "\n",
+                                 binmode: true)
+    return Array.new(specs.size) unless status.success?
+
+    bodies = []
+    cursor = 0
+    specs.size.times do
+      header_end = out.index("\n", cursor)
+      header = out[cursor...header_end]
+      cursor = header_end + 1
+      if header.end_with?(" missing")
+        bodies << nil
+        next
+      end
+
+      size = header.split(" ").last.to_i
+      bodies << out.byteslice(cursor, size).force_encoding(Encoding::UTF_8)
+      cursor += size + 1
+    end
+    bodies
+  rescue SystemCallError
+    Array.new(specs.size)
   end
 
   # PURE. Which lines of `source` are CODE — i.e. not inside a heredoc body.

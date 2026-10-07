@@ -461,7 +461,7 @@ class FastCertSubjectTest < Minitest::Test
     assert File.file?(File.join(REPO_ROOT, contract)), "#{contract} is the subject here"
     assert_includes FastCert.select_tests(REPO_ROOT, ["config/rails_lane.yml"]), contract
 
-    guard = "test/lib/qa_registry_declares_qa_env_test.rb"
+    guard = "test/lib/qa_registry_app_host_test.rb"
 
     assert File.file?(File.join(REPO_ROOT, guard)), "#{guard} is the subject here"
     assert_includes FastCert.select_tests(REPO_ROOT, ["config/qa_environments.yml"]), guard
@@ -526,9 +526,13 @@ class FastCertSubjectTest < Minitest::Test
     # 28 → 27 on 2026-10-06 (hub-drops-stale-password-digests), the first DECREMENT:
     # test/lib/bcrypt_test_cost_test.rb, whose header cited this config, was deleted
     # with the bcrypt gem when the hub User dropped has_secure_password.
+    # 27 → 24 on 2026-10-06 (guards-registries-and-ratchets): the headers of
+    # test/models/task_open_intents_test.rb, test/models/task_devops_identifier_lists_test.rb
+    # and test/lib/task_comma_list_flags_test.rb stopped citing this config when the
+    # guards they explained became constructions.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    expected = ["config/test_health.yml (27)"]
+    expected = ["config/test_health.yml (24)"]
 
     # THE FAILURE NAMES THE SPELLING, not just the count — the half of this tripwire
     # that was missing when it fired for real. Measured 2026-09-22: a new test file
@@ -542,7 +546,7 @@ class FastCertSubjectTest < Minitest::Test
     # equals `expected` on green and the map below walks an empty array.
     assert_equal expected, over.map { |path, n| "#{path} (#{n})" },
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 27 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 24 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip" +
                  over.reject { |path, n| expected.include?("#{path} (#{n})") }
                      .map { |path, _| "\n\n#{spelling_diagnosis(path)}" }.join

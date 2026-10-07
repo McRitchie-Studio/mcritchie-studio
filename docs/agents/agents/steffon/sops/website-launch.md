@@ -1,4 +1,5 @@
 # Website Launch
+<!-- registry: hosted site: Squarespace or our app -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # Address a Blocker — recontextualize, fix, resubmit
+<!-- registry: recontextualize, fix, resubmit -->
 
 A task came back **blocked**. Something the pipeline expected did not hold, and
 the work sits on `building` with an open `qa_feedback` note and a red card. This

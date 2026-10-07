@@ -1,4 +1,5 @@
 # Slack Capture — connecting, reading, and categorizing a channel
+<!-- registry: connect, read, categorize a channel -->
 
 ## Status: Active
 

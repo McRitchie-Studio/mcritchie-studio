@@ -124,9 +124,9 @@ module CodeDiff
 
   # ── The docs+guard pattern (/tasks/docs-shape-rejects-guard-test) ──────────
   #
-  # Every SOP added to this repo wants the registry-guard test that pins its
-  # rows (test/docs/sop_registry_docs_test.rb), and doc_only? correctly refuses
-  # a diff that ships one — a test file is behavior. That left an author two
+  # A docs change often ships with the docs guard test that pins it (for example
+  # test/docs/sop_registry_generated_test.rb), and doc_only? correctly refuses a
+  # diff that ships one — a test file is behavior. That left an author two
   # exits, both worse than the gate's purpose: delete a good test, or mislabel
   # the shape. These predicates give that PAIRED change an honest home.
   #

@@ -1,4 +1,5 @@
 # Credential Issues — log it, keep building
+<!-- registry: log it privately, triage rotate-now vs weekly -->
 
 ## Status: Active
 

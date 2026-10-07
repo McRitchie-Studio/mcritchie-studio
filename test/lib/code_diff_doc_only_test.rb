@@ -131,7 +131,7 @@ class CodeDiffDocOnlyTest < Minitest::Test
   def test_prose_plus_a_docs_guard_test_claims_docs_with_guards
     files = ["docs/agents/agents/steffon/sops/credential-filing.md",
              "docs/agents/index.md",
-             "test/docs/sop_registry_docs_test.rb"]
+             "test/docs/sop_registry_generated_test.rb"]
 
     assert CodeDiff.docs_with_guards?(files)
     refute CodeDiff.doc_only?(files), "doc_only? must still refuse — the two predicates differ EXACTLY here"
@@ -158,14 +158,14 @@ class CodeDiffDocOnlyTest < Minitest::Test
   # Guard tests with NO prose are test-only's stricter business (full-suite cert
   # + [control] line) — a tierless docs claim must not become the cheap door.
   def test_guard_tests_alone_do_not_claim_docs_with_guards
-    refute CodeDiff.docs_with_guards?(["test/docs/sop_registry_docs_test.rb"])
+    refute CodeDiff.docs_with_guards?(["test/docs/sop_registry_generated_test.rb"])
   end
 
   # The doctrine's own counterexample: an executable filed under docs/ still
   # disqualifies, exactly as it does for doc_only?.
   def test_an_executable_under_docs_disqualifies_docs_with_guards
     refute CodeDiff.docs_with_guards?(["docs/agents/setup.sh", "docs/agents/note.md",
-                                       "test/docs/sop_registry_docs_test.rb"])
+                                       "test/docs/sop_registry_generated_test.rb"])
   end
 
   def test_an_empty_diff_is_not_docs_with_guards

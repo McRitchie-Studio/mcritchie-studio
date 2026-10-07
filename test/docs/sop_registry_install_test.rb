@@ -3,6 +3,7 @@
 require "test_helper"
 require "open3"
 require "tmpdir"
+require_relative "../../bin/lib/sop_registry"
 
 # INTEGRATION tier for the SOP registry, across the boundary that actually
 # matters: GENERATION.
@@ -13,9 +14,9 @@ require "tmpdir"
 # are produced by bin/install-agent-docs, and until that runs, a newly registered
 # SOP is invisible to every agent no matter how correct the source is.
 #
-# That is a real, repeated failure in this ecosystem: the doc change lands, nobody
-# runs the installer, and the next session cannot resolve the SOP name. The unit
-# test (sop_registry_docs_test.rb) pins the SOURCE; this one pins the OUTPUT.
+# The registry table itself is generated from the SOP files (bin/sop-registry,
+# test/docs/sop_registry_generated_test.rb); this file pins that the installer carries
+# that generated block into AGENTS.md, and that the installer stays in its sandbox.
 #
 # SANDBOXED: bin/install-agent-docs writes to $PROJECTS_DIR *and* to $HOME/.claude
 # and $HOME/.codex (user-global skills). We point BOTH at temp dirs, so the real
@@ -32,7 +33,7 @@ require "tmpdir"
 # asserts not one escapes the sandbox — a deterministic property that owes nothing to
 # what the runtime did to the real dirs meanwhile.
 class SopRegistryInstallTest < ActiveSupport::TestCase
-  test "install-agent-docs generates AGENTS.md and CLAUDE.md that can resolve clean-up" do
+  test "install-agent-docs carries the generated SOP registry into AGENTS.md" do
     Dir.mktmpdir("sop-install") do |sandbox|
       projects = File.join(sandbox, "projects")
       home     = File.join(sandbox, "home")
@@ -48,20 +49,12 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       assert_path_exists agents
       assert_path_exists claude
 
-      agents_body = File.read(agents)
-
-      # The registry row an agent resolves `clean-up` through must survive generation.
-      assert_match(/\|\s*`clean-up`\s*\|\s*Xan\s*\|.*xan\/sops\/clean-up\.md/, agents_body,
-                   "the generated AGENTS.md carries no `clean-up` registry row — an agent told to run " \
-                   "clean-up could not resolve the name")
-
-      # And the file it points at must be reachable from the repo.
-      assert_path_exists Rails.root.join("docs/agents/agents/xan/sops/clean-up.md")
-
-      # Claude Code auto-loads CLAUDE.md; if it never names the SOP, Claude is the
-      # least likely of the two runtimes to resolve it.
-      assert_match(/`clean-up`/, File.read(claude),
-                   "the generated CLAUDE.md never names `clean-up`")
+      # The installed AGENTS.md carries the generated registry block verbatim, so what
+      # bin/sop-registry wrote is what an agent resolves an invocation through.
+      registry = Rails.root.join("docs/agents/index.md").read
+      block = registry[/#{Regexp.escape(SopRegistry.begin_marker)}.*?#{Regexp.escape(SopRegistry.end_marker)}/m]
+      refute_nil block, "docs/agents/index.md lost its generated SOP registry block"
+      assert_includes File.read(agents), block, "the installed AGENTS.md does not carry the generated registry"
 
       # ATTRIBUTABLE sandbox proof (replaces the differential digest of the runtime-
       # written skills dirs). Ask the installer, in dry-run manifest mode under the SAME
@@ -137,7 +130,7 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
   # assertion could pass while checking NOTHING. Both reviewers defeated it by adding a
   # write path to the operator's real ~/.claude/skills in the script's own house style.
   #
-  # The rule this violated is written one file over, in sop_registry_docs_test.rb:
+  # The rule this violated holds across this suite:
   # "A subset assertion over an EMPTY set passes trivially — the exact way this family of
   # test fails open." Hence: capture BOTH names independently, and assert a floor.
   test "every overridable write destination in install-agent-docs is pinned by this test" do
@@ -176,7 +169,7 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
     pinned = sandbox_env("/s", "/p", "/h").keys + %w[PATH]
 
     # THE FLOOR. A subset assertion over an EMPTY set passes trivially — the exact way this
-    # family of test fails open (see the same rule in sop_registry_docs_test.rb). If the scan
+    # family of test fails open. If the scan
     # stops seeing the script's idiom, go RED rather than quietly assert nothing.
     assert_operator hatches.length, :>=, 5,
                     "the escape-hatch scan matched only #{hatches.length} `${VAR:-…}` override(s) in " \

@@ -1,4 +1,5 @@
 # Focus Session — hold an epic, file just-in-time, build wide, review your own PRs
+<!-- registry: hold an epic, file just-in-time, build wide, review your own PRs -->
 
 You are the session Alex is working with on an epic: a body of work larger than
 one task. This module is the standing procedure for running it. You hold the

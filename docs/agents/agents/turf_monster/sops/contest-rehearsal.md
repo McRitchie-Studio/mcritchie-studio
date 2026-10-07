@@ -1,4 +1,5 @@
 # QA Contest Rehearsal
+<!-- registry: QA devnet lifecycle -->
 
 ## Status: Active
 

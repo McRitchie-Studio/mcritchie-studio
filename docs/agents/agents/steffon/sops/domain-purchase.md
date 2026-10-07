@@ -1,4 +1,5 @@
 # Domain Purchase
+<!-- registry: buy on Squarespace, prove ownership -->
 
 ## Status: Active
 

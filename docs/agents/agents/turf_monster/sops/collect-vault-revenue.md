@@ -1,4 +1,5 @@
 # Collect Vault Revenue
+<!-- registry: sweep entry fees out, then Squads to a wallet -->
 
 ## Status: Active — mainnet runs turf-vault v0.25 today, and the signer count rises at v0.26
 

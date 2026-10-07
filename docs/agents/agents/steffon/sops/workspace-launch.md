@@ -1,4 +1,5 @@
 # Workspace Launch
+<!-- registry: new domain to first draft, walks the operator -->
 
 ## Status: Active
 

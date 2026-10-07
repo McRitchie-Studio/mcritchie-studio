@@ -223,7 +223,7 @@ class ReviewerSelector
   def self.light_role = reviewer_roles.last
 
   # Fallback domain tags per soul when an Agent row has no metadata["domains"].
-  # Keep aligned with the seeded `domains` in db/seeds/02_agents.rb.
+  # Keep aligned with the `domains` in config/souls.yml.
   DEFAULT_DOMAINS = {
     "shannon" => %w[ui],
     "carl"    => %w[backend],

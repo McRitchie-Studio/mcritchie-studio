@@ -383,8 +383,8 @@ module FastCert
   #
   #   config/rails_lane.yml       lost test/lib/rails_lane_contract_test.rb, the file
   #                               that exists to assert that config's contract
-  #   config/qa_environments.yml  lost test/lib/qa_registry_declares_qa_env_test.rb,
-  #                               "THE PERMANENT GUARD over config/qa_environments.yml"
+  #   config/qa_environments.yml  lost its own registry guard (today
+  #                               test/lib/qa_registry_app_host_test.rb)
   #   config/initializers/edge_guard.rb  mapped to ZERO — losing BOTH edge-guard tests
   #   config/e2e_lane.yml         lost test/lib/review_tree_guard_test.rb
   #

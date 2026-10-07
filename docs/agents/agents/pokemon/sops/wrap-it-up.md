@@ -1,4 +1,5 @@
 # Wrap It Up
+<!-- registry: hand a stuck session to a fresh one, then clear its board -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # Rex Heartbeat
+<!-- registry: CMO -->
 
 ## Status: Active
 
