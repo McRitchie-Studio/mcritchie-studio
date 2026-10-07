@@ -425,8 +425,14 @@ jobs:
       shards: ${{ steps.plan.outputs.shards }}
 
     steps:
+      # `ref: github.sha` on the plan, every shard and the executed-set gate: one commit
+      # for the whole lane, so the gate never audits receipts from another tree (guard
+      # catalog row 1.6; test/lib/rails_lane_checkout_pin_test.rb). A pull_request's
+      # default ref is the merge ref GitHub recomputes when the base moves.
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -482,6 +488,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install packages
@@ -572,6 +579,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

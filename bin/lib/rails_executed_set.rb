@@ -29,18 +29,6 @@ module RailsExecutedSet
 
   module_function
 
-  # The commit a tree is sitting on, or nil when that cannot be told. Nil is a real
-  # answer here and means "make no claim" — see `commit_problems`.
-  def tree_commit(root)
-    out = IO.popen([ "git", "-C", root.to_s, "rev-parse", "HEAD" ], err: File::NULL, &:read)
-    return nil unless $?&.success?
-
-    value = out.to_s.strip
-    value.empty? ? nil : value
-  rescue StandardError
-    nil
-  end
-
   def load_reports(dir)
     Dir.glob(File.join(dir, "**", "*.json")).sort.filter_map do |path|
       parsed = begin
@@ -105,11 +93,7 @@ module RailsExecutedSet
   # Every problem the gate can find, as a list of human-readable lines. Empty == green.
   # Returned rather than printed so the unit tests can assert on the findings instead of
   # on stdout.
-  #
-  # `tree_commit` is the commit of the tree `expected` was derived from. Pass nil when it
-  # cannot be determined; the gate then makes no claim about commit identity rather than
-  # inventing one.
-  def problems(reports:, expected:, contract:, tree_commit: nil)
+  def problems(reports:, expected:, contract:)
     problems = []
 
     if reports.empty?
@@ -141,31 +125,13 @@ module RailsExecutedSet
                   "the arithmetic below cannot account for them"
     end
 
-    # ── IS THE EXPECTED SET EVEN COMPARABLE TO THE EXECUTED ONE? ───────────────────
+    # ── ONE COMMIT FOR THE WHOLE LANE (guard catalog row 1.6) ──────────────────────
     #
-    # `expected` is re-derived from a tree this process checked out; the receipts were
-    # written by shards that checked out their own. When those are the same commit the
-    # arithmetic below is the whole point of this gate. When they are NOT, it compares
-    # two different trees and every answer it gives is about the DIFF BETWEEN BRANCHES
-    # rather than about coverage.
-    #
-    # THIS IS NOT HYPOTHETICAL, AND ITS FALSE VERDICT IS INDISTINGUISHABLE FROM A TRUE
-    # ONE. On 2026-08-21 the engine's consumer lane (run 32495361932) reported
-    # `test/docs/agent_portrait_extension_docs_test.rb` and
-    # `test/lib/agent_avatar_generator_test.rb` as committed files that "executed
-    # NOTHING". Both had run, green, in the hub's own lane on the same named branch
-    # minutes earlier. The shards had checked out `accepted` at 15:02:17 and the gate at
-    # 15:06:17; hub PR #979 merged f9a440e5 at 15:04:07, adding exactly those two files.
-    # The receipts' union was byte-identical to the lane's file set at f9a440e5^. Nothing
-    # had failed to run — two files had not yet existed.
-    #
-    # A branch name is a moving target, and a gate that reads one at two different
-    # moments is reading two different trees. So the commit identity is now part of the
-    # receipt, and a mismatch is reported AS a mismatch — loudly, and still RED, because
-    # the honest verdict is "this cannot be audited", not "this is fine". The file-level
-    # findings are withheld rather than guessed: a coverage hole and a four-minute race
-    # produce the same list, and printing it under the wrong headline is what sent the
-    # last reader hunting for skips that were never there.
+    # The plan, every shard and this gate check out `github.sha` (.github/workflows/ci.yml;
+    # the engine's consumer lane pins each consumer to one resolved SHA), so the tree this
+    # process re-derives `expected` from IS the tree the receipts ran. The receipt-vs-tree
+    # "checkout race" refusal that stood here is gone with the race. Shards that disagree
+    # among themselves still mean a union no single tree contained, so that stays RED.
     claimed = claimed_commits(reports)
 
     if claimed.length > 1
@@ -173,20 +139,12 @@ module RailsExecutedSet
                   "their receipts describe DIFFERENT TREES, so their union is not a run of any one of them"
     end
 
-    skewed = claimed.length == 1 && !tree_commit.nil? && claimed.first != tree_commit
-    if skewed
-      problems << "the receipts were produced against #{short(claimed.first)} but this tree is " \
-                  "#{short(tree_commit)} — the lane's file list moved between the shards' checkout and " \
-                  "this one, so the executed set cannot be audited against it. This is a CHECKOUT RACE, " \
-                  "not a coverage hole: pin both checkouts to one commit and re-run"
-    end
-
     executed = executed_files(reports)
     ran = executed.select { |_, runs| runs.positive? }.keys.sort
 
-    # Withheld under skew, for the reason above — never silently: the skew line is
-    # already in `problems`, so the run is RED and says why.
-    if claimed.length <= 1 && !skewed
+    # Withheld when the shards disagree — never silently: that line is already in
+    # `problems`, so the run is RED and says why.
+    if claimed.length <= 1
       never_ran = expected - ran
       if never_ran.any?
         problems << "#{never_ran.length} committed test file(s) executed NOTHING: " \
