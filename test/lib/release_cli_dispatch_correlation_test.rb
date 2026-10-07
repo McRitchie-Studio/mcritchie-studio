@@ -146,7 +146,7 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
     refute S.correlation_input_rejected?(nil)
   end
 
-  # ── [unit] dispatch_and_watch against a GitHub with a concurrent dispatcher ──
+  # ── [integration] dispatch_and_watch against a GitHub with a concurrent dispatcher ──
 
   def test_dispatch_and_watch_watches_its_own_run_not_a_newer_concurrent_one
     # Ours registers as 101, then a concurrent dispatch registers 102. Both are newer
@@ -173,7 +173,7 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
                     "the answered poll found no run carrying our marker: the never-created abort"
   end
 
-  # ── [unit] the one-release bridge ───────────────────────────────────────────
+  # ── [integration] the one-release bridge ───────────────────────────────────────────
 
   def test_a_default_branch_workflow_without_the_input_is_redispatched_once_without_it
     gh = github(<<~RUBY)
