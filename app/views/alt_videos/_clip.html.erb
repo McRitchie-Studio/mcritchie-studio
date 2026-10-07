@@ -1,4 +1,4 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview and window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
@@ -8,24 +8,31 @@
 <% lettered = chunk ? MusicVideos::ClipPrompts.lettered(chunk, swaps: swaps, numbers: numbers) : [] %>
 <% frames = chunk ? chunk.reference_frame_list : [] %>
 <% prompt = chunk && MusicVideos::ClipPrompts.for(chunk, swaps: swaps, numbers: numbers) %>
+<% version_url = primary && urls[primary.object_key] %>
+<% compare = url.present? && version_url.present? %>
 <article id="clip-<%= clip.chunk_ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
          x-data="clipRow()" data-src="<%= url %>"
          data-test="alt-clip" data-ordinal="<%= clip.chunk_ordinal %>"
-         data-primary="<%= primary&.number %>" data-flagged="<%= clip.regenerate_requested? %>">
-  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+         data-primary="<%= primary&.number %>" data-flagged="<%= clip.regenerate_requested? %>" data-compare="<%= compare %>">
+  <div class="grid grid-cols-1 <%= compare ? "" : "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" %>">
+    <% if compare %>
+      <%= render "alt_videos/clip_compare", clip: clip, chunk: chunk, primary: primary, url: url, version_url: version_url %>
+    <% else %>
     <div class="relative bg-inset aspect-video" data-test="clip-preview" data-key="<%= chunk&.object_key %>">
       <% if url %>
-        <video x-ref="player" x-show="open" x-cloak controls playsinline preload="none"
-               class="absolute inset-0 w-full h-full bg-black" data-test="clip-player"
-               @error="failed = true"></video>
-        <button type="button" x-show="!open" @click="preview()"
-                class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-heading hover:text-primary"
-                data-test="clip-preview-button">
-          <svg class="w-10 h-10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-          <span class="text-sm font-semibold">Preview the source chunk</span>
-        </button>
-        <p x-show="failed" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
-           data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
+        <div x-data="clipPair()" class="absolute inset-0" data-test="clip-solo">
+          <video x-ref="original" src="<%= first_frame_src(url) %>" controls playsinline preload="metadata"
+                 class="absolute inset-0 w-full h-full bg-black" data-test="clip-player"
+                 @error="failed.original = true"></video>
+          <button type="button" x-show="!started" @click="playOriginal()"
+                  class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 rounded-full px-4 py-2 bg-surface/90 text-heading shadow hover:text-primary"
+                  data-test="clip-preview-button">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            <span class="text-sm font-semibold">Preview the source chunk</span>
+          </button>
+          <p x-show="failed.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+             data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
+        </div>
       <% elsif chunk %>
         <p class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"
            data-test="clip-unreachable">Source chunk not reachable: <%= chunk.object_key.split("/").last %></p>
@@ -34,6 +41,7 @@
            data-test="clip-no-chunk">The source is no longer cut at this window: it was re-tiled after this alt video was built.</p>
       <% end %>
     </div>
+    <% end %>
 
     <div class="p-4 flex flex-col gap-3 min-w-0">
       <header class="min-w-0">
