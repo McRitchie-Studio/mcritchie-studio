@@ -576,9 +576,9 @@ attempt n+1.
     `bin/dor-check` discarded the only flag that could honour it, so adding the
     cert produced a **byte-identical refusal** and an operator who followed the
     instruction burned a full-suite run for nothing
-    (`/tasks/exempt-refusal-prints-dead-remedy`). The route parameter that split
-    the two paths (`cert_route:`) now prints one task-grain denial for every value,
-    and `test/lib/dor_check_exempt_ci_test.rb` reads the printed refusal, confirms
+    (`/tasks/exempt-refusal-prints-dead-remedy`). Every task-grain
+    caller now prints one denial (`CiStatus.unreadable_remedy`; only
+    `release_grain: true` differs, for the release gates), and `test/lib/dor_check_exempt_ci_test.rb` reads the printed refusal, confirms
     it denies rather than offers, and confirms a recorded full cert leaves it
     byte-identical on both paths.
   - **What clears a refusal is the state changing, never a cert**: `red`,
