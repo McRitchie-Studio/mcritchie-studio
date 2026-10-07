@@ -234,7 +234,7 @@ fallback).
 
 ### 11. Ship
 
-The image and its registration ride the email's task: `/Users/alex/projects/.agents/bin/ship-wait <task>
+The image and its registration ride the email's task: `bin/submit-wait <task>
 --launch -m "…"` from that desk, per `building-sop`. Shannon reviews the
 visual.
 
