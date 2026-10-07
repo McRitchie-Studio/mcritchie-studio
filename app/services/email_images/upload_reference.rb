@@ -37,7 +37,7 @@ module EmailImages
       file_errors(bytes, content_type).each { |message| @record.errors.add(:file, message) }
       return @record if @record.errors.any?
 
-      @record.width, @record.height = dimensions(bytes)
+      @record.width, @record.height = dimensions(bytes, content_type)
       @record.image_url = store(bytes, content_type)
       @record.save!
       @record
@@ -66,11 +66,14 @@ module EmailImages
       []
     end
 
-    # Width and height for the page; a file MiniMagick cannot read still
-    # uploads (its type was already proven by its bytes) with no dimensions.
-    def dimensions(bytes)
-      image = MiniMagick::Image.read(bytes)
-      [image.width, image.height]
+    # Width and height from the HEADER (`identify -ping`, the coder the bytes proved), never a
+    # full decode: a 1 MB PNG declaring 40000x40000 took 7 GB. An unreadable one has no size.
+    def dimensions(bytes, content_type)
+      coder = EmailBrandReference::CONTENT_TYPES.key(content_type)
+      Tempfile.create(["ref", ".#{coder}"], binmode: true) do |f|
+        f.write(bytes) && f.flush
+        MiniMagick.identify { |b| b.ping.format("%w %h") << "#{coder}:#{f.path}[0]" }.split.map { Integer(_1) }
+      end
     rescue StandardError
       [nil, nil]
     end

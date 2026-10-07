@@ -38,6 +38,13 @@ class EmailImages::UploadReferenceTest < ActiveSupport::TestCase
     end
   end
 
+  test "dimensions come from the header, so a PNG declaring 40000x40000 is never decoded" do
+    chunk = ->(type, data) { [data.bytesize].pack("N") + type.b + data + [Zlib.crc32(type.b + data)].pack("N") }
+    bomb = "\x89PNG\r\n\x1a\n".b + chunk.("IHDR", [40_000, 40_000, 8, 0, 0, 0, 0].pack("NNCCCCC")) +
+           chunk.("IDAT", Zlib::Deflate.deflate("\0" * 40_001)) + chunk.("IEND", "".b) # one row: a decode fails
+    with_recording_store { assert_equal [40_000, 40_000], upload(uploaded(bomb, name: "b.png")).values_at(:width, :height) }
+  end
+
   test "the type is read from the content: a PNG named .jpg is a PNG" do
     with_recording_store do
       ref = upload(uploaded(EmailImageFakes.small_png, name: "gator.jpg", type: "image/jpeg"))
