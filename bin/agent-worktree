@@ -3607,8 +3607,9 @@ end
 # never a checkout, so nothing ever needs committing.
 def desk_ledger_queue_path
   override = ENV["DESK_LEDGER_QUEUE"].to_s.strip
-  path = override.empty? ? File.join(PROJECTS_DIR, ".agents", "desk-ledger-queue.jsonl") : File.expand_path(override)
-  TaskUsageSandbox.enforce!(path, store: "desk-ledger-queue")
+  return TaskUsageSandbox.enforce!(File.expand_path(override), store: "desk-ledger-queue") unless override.empty?
+
+  TaskUsageSandbox.enforce!(File.join(PROJECTS_DIR, ".agents", "desk-ledger-queue.jsonl"), store: "desk-ledger-queue")
 end
 
 def file_desk_record!(record, status:, source:)
