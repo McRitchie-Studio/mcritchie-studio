@@ -25,7 +25,7 @@ class AddClipSlugsAndTiktokDrafts < ActiveRecord::Migration[8.1]
     add_column :alt_video_clips, :slug, :string
     execute <<~SQL.squish
       UPDATE alt_video_clips
-         SET slug = alt_video_slug || '-clip-' || lpad(chunk_ordinal::text, 2, '0')
+         SET slug = alt_video_slug || '-clip-' || lpad(chunk_ordinal::text, greatest(2, length(chunk_ordinal::text)), '0')
        WHERE slug IS NULL
     SQL
     change_column_null :alt_video_clips, :slug, false
