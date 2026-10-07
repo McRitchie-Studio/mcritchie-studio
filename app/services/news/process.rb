@@ -24,12 +24,14 @@ class News
       create_contract(primary_person_record, primary_team_record) if primary_person_record && primary_team_record
       create_contract(secondary_person_record, secondary_team_record) if secondary_person_record && secondary_team_record
 
-      # Update slugs on News record — use actual person slug (may differ from parameterized name)
+      # Update slugs on News record from the records found: a person's slug may
+      # differ from the parameterized name, and a team the hub does not hold leaves
+      # its slug blank (the columns carry foreign keys; created_records names the miss).
       @news.update!(
         primary_person_slug: primary_person_record&.slug,
-        primary_team_slug: primary_team_slug,
+        primary_team_slug: primary_team_record&.slug,
         secondary_person_slug: secondary_person_record&.slug,
-        secondary_team_slug: secondary_team_slug
+        secondary_team_slug: secondary_team_record&.slug
       )
       @news.process_news!
       @news

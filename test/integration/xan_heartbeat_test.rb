@@ -255,6 +255,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   # A span whose task changed STAGE during the span's window badges as the new stage
   # (board pill + color), not the generic "done" — the operator's stage-change signal.
   test "[integration] a span whose task transitioned in-window badges as the new stage" do
+    task_rows!("ship-it")
     event(seq: 0, session: "sess-S", task_slug: "ship-it",
           at: 3.minutes.ago, closed_at: 1.minute.ago, outcome_slug: "moved to submitted")
     TaskEvent.create!(task_slug: "ship-it", from_stage: "building", to_stage: "submitted",
@@ -270,6 +271,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   # Detection is kind:"transition" only — an INTENT row in the same window must not
   # restage the badge (it is a "who is on it" marker, not a completed stage change).
   test "[integration] an intent event in-window does not restage the badge" do
+    task_rows!("review-it")
     event(seq: 0, session: "sess-I", task_slug: "review-it",
           at: 3.minutes.ago, closed_at: 1.minute.ago, outcome_slug: "done")
     TaskEvent.create!(task_slug: "review-it", to_stage: "reviewed", kind: "intent",
@@ -285,6 +287,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   # The stage spine loads in ONE query for every visible span (grouped by task_slug),
   # never per-row — the bulk-load contract the controller owns.
   test "[integration] stage transitions bulk-load for all spans in a single query (no N+1)" do
+    task_rows!("task-one", "task-two", "task-three")
     %w[task-one task-two task-three].each_with_index do |slug, i|
       event(seq: i, session: "sess-N", task_slug: slug,
             at: (10 - i).minutes.ago, closed_at: (9 - i).minutes.ago, outcome_slug: "moved")

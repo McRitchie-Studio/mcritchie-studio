@@ -327,6 +327,20 @@ module ActiveSupport
       slugs.map { |slug| Agent.find_or_create_by!(slug: slug) { |agent| agent.name = slug.titleize } }
     end
 
+    # Likewise for a task named by slug (task_events, activities, desk records).
+    def task_rows!(*slugs)
+      slugs.map { |slug| Task.find_by(slug: slug) || Task.create!(title: "Test task for #{slug}", slug: slug) }
+    end
+
+    # Takes one slug foreign key off for this test; DDL is transactional in
+    # Postgres, so the test's rollback puts it back. For a test about a row that
+    # names no parent: a state only a row written before the keys can be in.
+    def without_slug_key(table, column)
+      connection = ActiveRecord::Base.connection
+      key = connection.foreign_keys(table.to_s).find { |fk| fk.column == column.to_s }
+      connection.remove_foreign_key(table.to_s, name: key.name) if key
+    end
+
     # Likewise for a release named by slug (tasks.release_slug, release_events).
     def release_rows!(*slugs)
       slugs.map { |slug| Release.find_or_create_by!(slug: slug) { |release| release.state = Release::STATES.first } }
