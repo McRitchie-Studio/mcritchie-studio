@@ -502,27 +502,18 @@ def install_docs_check(root)
   { "status" => "drift", "message" => lines.first(16).join("; ") }
 end
 
+# The stale scan reads only this branch's own changed docs and config (guard
+# catalog row 4.3): a stale word already on the base is not this desk's to fix, so
+# scanning the whole tree failed desks over text they never touched. Audit and
+# maintenance records keep their history and are never scanned.
 def active_stale_scan_files(root, changed)
-  globs = [
-    "docs/agents/index.md",
-    "docs/agents/claude.md",
-    "docs/agents/modules/**/*.md",
-    "docs/agents/system/**/*.md",
-    "docs/agents/skills/**/*.md",
-    "docs/topics/**/*.md",
-    "config/feature_shapes.yml"
-  ]
-  files = globs.flat_map { |glob| Dir.glob(File.join(root, glob)) }
-  changed.each do |rel|
-    next unless rel.start_with?("docs/", "config/")
-
-    files << File.join(root, rel)
-  end
-  files.select { |path| File.file?(path) }
-       .reject { |path| path.include?("/docs/agents/audits/") || path.include?("/docs/agents/maintenance/") }
-       .reject { |path| File.basename(path).match?(/audit-\d{4}-\d{2}-\d{2}/) }
-       .uniq
-       .sort
+  changed.select { |rel| rel.start_with?("docs/", "config/") }
+         .map { |rel| File.join(root, rel) }
+         .select { |path| File.file?(path) }
+         .reject { |path| path.include?("/docs/agents/audits/") || path.include?("/docs/agents/maintenance/") }
+         .reject { |path| File.basename(path).match?(/audit-\d{4}-\d{2}-\d{2}/) }
+         .uniq
+         .sort
 end
 
 def stale_scan(root, files)

@@ -235,6 +235,22 @@ class SessionPreflightTest < Minitest::Test
   # [unit] Guard catalog row 4.1: a desk measures nothing it cannot fix. A desk cut
   # after a docs merge, with the installer reporting drift, passes; the drift is a
   # line of information. The FLOOR assertions prove the stub's drift really landed.
+  # [unit] Guard catalog row 4.3: the scan reads only the branch's own changes, so a
+  # stale word already on the base is not this desk's failure. The control is the
+  # test above: the same word in a changed file still fails.
+  def test_stale_terminology_on_the_base_is_not_scanned
+    write_file("docs/agents/modules/stale.md", "Use GET /api/v1/tasks?stage=queued here.\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "stale word on the base")
+    git("update-ref", "refs/remotes/origin/accepted", head)
+    task = write_task
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert status.success?, "a stale word on the base must not fail the desk:\n#{out}\n#{err}"
+    assert_empty JSON.parse(out).fetch("stale_terms")
+  end
+
   def test_installed_docs_drift_is_information_and_the_preflight_passes
     write_installer(status: 1, stderr: "ERROR: /Users/alex/projects/AGENTS.md is out of date\n")
     task = write_task
