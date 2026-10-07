@@ -112,6 +112,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
   test "[component] the details column stacks start+status, end+count, then the issue slug" do
     opened = Time.utc(2026, 7, 11, 1, 45)
     closed = Time.utc(2026, 7, 11, 1, 52)
+    task_rows!("agents-activities-page-redesign")
     ev = activity(opened_at: opened, closed_at: closed, outcome_slug: "done",
                   task_slug: "agents-activities-page-redesign")
     a1 = action(agent_activity_id: ev.id, seq: 0)

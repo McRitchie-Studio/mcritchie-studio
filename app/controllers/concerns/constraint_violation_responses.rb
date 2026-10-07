@@ -4,8 +4,11 @@
 # is already taken all reach here when no model validation caught them first.
 #
 # HTML goes back where it came from with the reason as the alert; JSON gets
-# `{ error:, error_code: "CONSTRAINT_VIOLATION" }`. Include it after the
-# StandardError catch-all, since rescue_from tries the last declaration first.
+# `{ error:, error_code: "CONSTRAINT_VIOLATION" }`. A RecordNotUnique on any index
+# but a record's own `slug` (a taken slug is an expected refusal) is also an
+# ErrorLog row: it is a race or a missing validation, and a 422 alone would hide it.
+# Include it after the StandardError catch-all, since rescue_from tries the last
+# declaration first.
 module ConstraintViolationResponses
   extend ActiveSupport::Concern
 
@@ -13,10 +16,20 @@ module ConstraintViolationResponses
     rescue_from ActiveRecord::InvalidForeignKey, ActiveRecord::RecordNotUnique, with: :handle_constraint_violation
   end
 
+  # The database's own account of the refusal ("Key (slug)=(x) already exists.").
+  def self.detail_for(exception)
+    detail = exception.cause.respond_to?(:result) ? exception.cause.result&.error_field(PG::PG_DIAG_MESSAGE_DETAIL) : nil
+    detail.to_s.strip
+  end
+
+  # True for a unique refusal on a record's own slug column.
+  def self.slug_write?(exception)
+    exception.is_a?(ActiveRecord::RecordNotUnique) && detail_for(exception).start_with?("Key (slug)=")
+  end
+
   # The reason a person can act on, from the database's own account of the refusal.
   def self.reason_for(exception)
-    detail = exception.cause.respond_to?(:result) ? exception.cause.result&.error_field(PG::PG_DIAG_MESSAGE_DETAIL) : nil
-    detail = detail.to_s.strip
+    detail = detail_for(exception)
 
     case exception
     when ActiveRecord::InvalidForeignKey
@@ -41,6 +54,10 @@ module ConstraintViolationResponses
   def handle_constraint_violation(exception)
     reason = ConstraintViolationResponses.reason_for(exception)
     Rails.logger.warn("[constraint] #{exception.class}: #{reason}")
+    if exception.is_a?(ActiveRecord::RecordNotUnique) && !ConstraintViolationResponses.slug_write?(exception) && !@_error_logged
+      ErrorLog.capture!(exception)
+      @_error_logged = true
+    end
 
     if is_a?(ActionController::API)
       render json: { error: reason, error_code: "CONSTRAINT_VIOLATION" }, status: :unprocessable_entity

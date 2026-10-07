@@ -328,8 +328,12 @@ module ActiveSupport
     end
 
     # Likewise for a task named by slug (task_events, activities, desk records).
+    # Inserted past the callbacks, so the row brings no events or mascot of its own.
     def task_rows!(*slugs)
-      slugs.map { |slug| Task.find_by(slug: slug) || Task.create!(title: "Test task for #{slug}", slug: slug) }
+      now = Time.current
+      missing = slugs - Task.where(slug: slugs).pluck(:slug)
+      Task.insert_all!(missing.map { |slug| { slug: slug, title: "Test task for #{slug}", stage: "designed", created_at: now, updated_at: now } }) if missing.any?
+      Task.where(slug: slugs).to_a
     end
 
     # Takes one slug foreign key off for this test; DDL is transactional in

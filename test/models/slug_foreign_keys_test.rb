@@ -1,4 +1,5 @@
 require "test_helper"
+require "rake"
 require Rails.root.join("db/migrate/20261007210100_validate_slug_foreign_keys")
 
 # [integration] The slug foreign keys against the census: every resolved column
@@ -107,7 +108,16 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
       tasks(:new_task).update_columns(agent_slug: "Xan")
     end
 
-    migration.up
+    assert_no_changes -> { [note.reload.agent_slug, action.reload.task_slug, desk.reload.app_slug] } do
+      migration.up
+    end
+    assert_not validated?("activities", "agent_slug"), "the migration writes no rows and leaves a dirty key NOT VALID"
+    assert_not validated?("agent_actions", "task_slug")
+
+    report = SlugKeyCleanup.new.run
+    assert_empty report.left_not_valid
+    assert_includes report.validated, "activities.agent_slug"
+    assert report.lines.none? { |line| line.include?("charmander") }, "the report carries counts, never values"
 
     note.reload
     assert_nil note.agent_slug
@@ -120,6 +130,25 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     %w[activities.agent_slug activities.task_slug agent_actions.task_slug desk_records.app_slug tasks.agent_slug].each do |name|
       assert validated?(*name.split(".")), "#{name} is still NOT VALID"
     end
+    second = SlugKeyCleanup.new.run
+    assert_empty second.counts, "a second run has nothing to clean"
+    assert_empty second.validated
+  end
+
+  test "[integration] the migration validates a clean key itself" do
+    with_keys_not_valid(%w[usages agent_slug agents restrict]) { nil }
+
+    migration.up
+
+    assert validated?("usages", "agent_slug")
+  end
+
+  test "[integration] slug_keys:clean prints counts and validates" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("slug_keys:clean")
+    Rake::Task["slug_keys:clean"].reenable
+    out, = capture_io { Rake::Task["slug_keys:clean"].invoke }
+
+    assert_includes out, "nothing to clean"
   end
 
   test "[integration] a dangling slug in a NOT NULL column stops the validate step with its name" do

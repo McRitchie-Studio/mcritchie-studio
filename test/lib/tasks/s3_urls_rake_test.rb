@@ -15,6 +15,7 @@ class S3UrlsRakeTest < ActiveSupport::TestCase
                                avatar_url: "#{PATH_STYLE}/pokemon/25-pikachu-cropped.png",
                                shiny_female_sprite_url: "#{PATH_STYLE}/pokemon/25-pikachu-shiny-female-sprite.png",
                                avatar_fallback_url: "https://raw.githubusercontent.com/PokeAPI/sprites/x.png")
+    task_rows!("s3-rewrite-fixture")
     @event = TaskEvent.create!(task_slug: "s3-rewrite-fixture", to_stage: "building", occurred_at: Time.current,
                                metadata: { "mascot" => { "slug" => "pikachu", "avatar" => "#{PATH_STYLE}/pokemon/25-pikachu-cropped.png" },
                                            "note" => "#{PATH_STYLE}/pokemon/history.png" })

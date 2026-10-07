@@ -34,11 +34,16 @@
   without one are listed with their reasons in `SlugCensus::UNCONSTRAINED`, and
   `test/models/slug_foreign_keys_test.rb` holds both lists to the schema. A new
   slug column takes its key in the migration that adds it.
+- A key lands NOT VALID, and a migration that validates writes no rows: rows from
+  before the key that dangle are cleaned after the deploy by an idempotent rake
+  task (`bin/rails slug_keys:clean`, `SlugKeyCleanup`), which prints counts only
+  and validates what it cleaned.
 - A writer that passes whatever handle its caller holds (telemetry, task notes,
   the desk inventory) declares `clears_unknown_slug` (`ClearsUnknownSlug`), so a
   slug no parent holds is cleared, or kept in metadata, rather than refused.
 - A refusal the database makes (`InvalidForeignKey`, `RecordNotUnique`) answers 422
-  with the reason through `ConstraintViolationResponses`, on the web and the API.
+  with the reason through `ConstraintViolationResponses`, on the web and the API;
+  a unique refusal on any index but a record's own `slug` is also an ErrorLog row.
 
 ## Error Handling
 - `ErrorLog.capture!(exception, target:, parent:)` for structured error logging
