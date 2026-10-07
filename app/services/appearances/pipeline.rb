@@ -56,7 +56,9 @@ module Appearances
     def self.build(...) = new(...).build
 
     def initialize(scope: nil)
-      @scope = scope || Appearance.live
+      # PERSON-OWNED ONLY: the board walks the likeness pipeline (headshot, search,
+      # identity), which a character's look never enters. Characters live on /characters.
+      @scope = scope || Appearance.live.person_owned
     end
 
     def build

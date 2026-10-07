@@ -1,5 +1,6 @@
 class Person < ApplicationRecord
   include Sluggable
+  include HoldsDefaultAppearance
 
   has_one :athlete_profile, class_name: "Athlete", foreign_key: :person_slug, primary_key: :slug
   has_many :appearances, foreign_key: :person_slug, primary_key: :slug, inverse_of: :person, dependent: :destroy
@@ -53,33 +54,8 @@ class Person < ApplicationRecord
   # videos' prompts stop naming them.
   before_destroy :release_recasts, prepend: true
 
-  # RE-RESOLVE THE DEFAULT POINTER AGAINST REALITY.
-  #
-  # `default_appearance_slug` is a plain string column with NO foreign key, and
-  # for a long time exactly one callback wrote it — an after_CREATE. So every
-  # transition that is not a create left it describing a world that had moved:
-  # destroy the look it names and the column still names it, so
-  # #default_appearance returns nil while the person plainly has looks, and
-  # because Appearance#become_default_if_first only ever fired on a BLANK
-  # pointer, nothing could refill it. "Has looks, resolves no default" was
-  # permanent, and had nothing to grep for.
-  #
-  # Keeps a pointer that still names a LIVE look, otherwise takes the oldest
-  # live look, otherwise blanks the column. Returns the slug it settled on.
-  #
-  # Writes with update_columns deliberately: this is pointer hygiene run from
-  # inside other people's callbacks (a look being destroyed, a merge handing
-  # looks to a survivor), and it must not re-enter validation or bump
-  # updated_at on a person nobody edited.
-  def resolve_default_appearance!
-    current = default_appearance_slug
-    return current if current.present? && appearances.live.exists?(slug: current)
-
-    settled = appearances.live.order(:created_at, :id).first&.slug
-    update_columns(default_appearance_slug: settled) if persisted? && !destroyed?
-    self.default_appearance_slug = settled
-    settled
-  end
+  # The default-look pointer's resolve and release rules live in
+  # HoldsDefaultAppearance, shared with Character.
 
   def vocation?(name) = vocations.include?(name.to_s)
 

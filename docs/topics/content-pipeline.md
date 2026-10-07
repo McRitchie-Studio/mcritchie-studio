@@ -447,6 +447,37 @@ Every look a person is given gets an **iced-out twin** (the operator's ask,
 | Suite traps | `OPENAI_NO_LIVE_CALLS=1`, `FAL_NO_LIVE_CALLS=1`, armed in `test/test_helper.rb` |
 | Autoload | `open_ai.rb` needs the inflection in `config/initializers/inflections.rb` |
 
+#### Characters: looks owned by our fictional cast
+
+A look (`Appearance`) belongs to **exactly one** owner: a `Person` (a real human)
+or a `Character` (our cast: a `mascot` or a `puppet`, e.g. Turf Monster). The
+`appearances_exactly_one_owner` and `artifact_subjects_exactly_one_owner` CHECK
+constraints hold it in the database; `Appearance#owner` and `#owner_name` answer
+either. Both owners resolve and release their default look through one concern,
+`HoldsDefaultAppearance`.
+
+- **Owner-generic:** the default-look pointer, `ArtifactSubject` (a character's
+  sheet files `character_slug`), `Appearances::SheetBuild` /
+  `Appearances::GenerateArtifact` (a character's anchor is its own reference art;
+  its prompt is `Appearances::CastSheetPrompt`, with no person or likeness
+  wording; its sheet is stored under `character-sheets/characters/<slug>/`),
+  `Artifact.newest_character_sheets`, `AppearanceReferencePhoto` (source `upload`
+  is character art and is never face-judged).
+- **Person-only:** the model pipeline board (`Appearance.person_owned`), every
+  recast picker (`Appearance.recastable`), the people pages and their model
+  thumbnails, the content cast and reuse key, `Appearance.file_for_colorway!`,
+  the iced twin (refused for a character), the Higgsfield identity mint (refused
+  for a character) and the likeness search (a character has no person name, so
+  it searches nothing).
+- **Pages:** `/characters` and `/characters/:slug` (`CharactersController`,
+  `require_admin`): the cast, a profile, its looks with art and sheet status, art
+  uploads (`Characters::UploadLookArt`, PNG/JPEG/WebP read from the bytes, 5 MB,
+  stored under `characters/<slug>/refs/`) and a paid **Build sheet** button. A
+  brand kit page links its live character (`Character.featured_for`).
+- **Seed:** `bin/rails characters:seed_turf_monster` (idempotent, never
+  overwrites an edit, generates nothing) creates Turf Monster and his default
+  "Classic" look from the Turf kit's references.
+
 **The identity photo reads the STORED `s3_key`, never a rebuilt path.**
 `Athlete#headshot_url` resolves the `ImageCache` row and calls `ImageCache#url`;
 `Athlete#headshot_key_prefix` is a WRITE-time builder. `Athletes::RekeyHeadshots`

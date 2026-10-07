@@ -1,0 +1,24 @@
+<%# THE CAST: every live character, as a card with its avatar, name, kind,
+    brand and number of looks. Admin only (CharactersController). %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading">Characters</h1>
+      <p class="text-sm text-secondary">Our cast of mascots and puppets: how each one looks, sounds and behaves, for videos, emails and everything else.</p>
+    </div>
+    <%= link_to "New character", new_character_path, class: "btn btn-sm btn-primary", data: { test: "new-character" } %>
+  </div>
+
+  <% if @characters.empty? %>
+    <div class="card p-6 text-sm text-muted" data-test="cast-empty">
+      No characters yet. Run <span class="font-mono">bin/rails characters:seed_turf_monster</span> or add one.
+    </div>
+  <% else %>
+    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" data-test="cast">
+      <% @characters.each do |character| %>
+        <%= render "characters/cast_card", character: character,
+                   avatar_url: @avatars[character.slug], look_count: @look_counts.fetch(character.slug, 0) %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

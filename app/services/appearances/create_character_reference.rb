@@ -65,6 +65,13 @@ module Appearances
       existing = @appearance.higgsfield_reference_id
       return existing if existing.present? && !force
 
+      # A CHARACTER IS FICTIONAL: there is no likeness to train an identity on, so
+      # no identity machinery runs for one, free or paid.
+      if @appearance.character_owned?
+        raise NoReferenceImages, "#{@appearance.owner_name} is one of our characters, not a person; " \
+                                 "a character's look has no identity to mint. Nothing was spent."
+      end
+
       # NO ANCHOR, NO MINT — whatever the injected list holds.
       refusal = Content::ArtifactPlan::ModelInputs.new(@appearance).refusal_for(:identity)
       raise NoReferenceImages, refusal if refusal

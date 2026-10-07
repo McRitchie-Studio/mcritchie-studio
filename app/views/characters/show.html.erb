@@ -1,0 +1,85 @@
+<%# ONE CHARACTER: the profile, every look (art, sheet status, newest sheet),
+    the add-a-look form and every image the character appears in. Admin only
+    (CharactersController#show; #create_look re-renders it with errors). %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Characters", characters_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono break-all"><%= @character.slug %></span>
+  </nav>
+
+  <%= render "characters/profile", character: @character, kit: @kit,
+             avatar_url: @character.avatar_url.presence || @sheets[@character.default_appearance_slug]&.image_url %>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="character-looks">
+    <div class="flex flex-wrap items-baseline gap-2">
+      <h2 class="text-sm font-bold text-heading">Looks</h2>
+      <p class="text-3xs text-muted">How <%= @character.name %> is drawn. A sheet build sends the look's art as its references; a character never gets a likeness search or an identity.</p>
+    </div>
+    <% if @looks.empty? %>
+      <p class="text-2xs text-muted" data-test="no-looks">No looks yet. Add the first one below; it becomes the default.</p>
+    <% else %>
+      <div class="grid gap-4 lg:grid-cols-2">
+        <% @looks.each do |look| %>
+          <%= render "characters/look", character: @character, look: look,
+                     art: @art_by_look.fetch(look.slug, []), sheet: @sheets[look.slug] %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="add-look">
+    <h2 class="text-sm font-bold text-heading">Add a look</h2>
+    <%= render "shared/form_errors", record: @look, spacing: "mb-3" %>
+    <%= form_with model: @look, url: looks_character_path(@character), scope: :appearance, multipart: true,
+                  class: "space-y-3", data: { test: "look-form" } do |f| %>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <%= f.label :descriptor, "Name of the look", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_field :descriptor, required: true, placeholder: "Classic", class: "input-field w-full text-sm" %>
+        </div>
+        <div>
+          <%= f.label :colorway, "Colourway (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_field :colorway, placeholder: "home green", class: "input-field w-full text-sm" %>
+        </div>
+        <div class="sm:col-span-2">
+          <%= f.label :generation_notes, "Notes for the artist (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_area :generation_notes, rows: 2, placeholder: "Outfit, props, what must never change.", class: "input-field w-full text-sm" %>
+        </div>
+        <div>
+          <%= f.label :art, "Reference art (PNG, JPEG or WebP, 5 MB)", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.file_field :art, accept: "image/png,image/jpeg,image/webp", class: "input-field w-full text-xs" %>
+        </div>
+        <div>
+          <%= f.label :art_label, "Art label (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_field :art_label, maxlength: 120, class: "input-field w-full text-sm" %>
+        </div>
+      </div>
+      <p class="text-3xs text-muted">Our own characters only: never a photograph of a real person.</p>
+      <%= f.submit "Add look", class: "btn btn-sm btn-primary" %>
+    <% end %>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="character-artifacts">
+    <h2 class="text-sm font-bold text-heading">Appears in</h2>
+    <% if @artifacts.empty? %>
+      <p class="text-2xs text-muted" data-test="no-artifacts">No images yet. A sheet build files its result here.</p>
+    <% else %>
+      <div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+        <% @artifacts.each do |artifact| %>
+          <% subject = artifact.subjects.find { |s| s.character_slug == @character.slug } %>
+          <figure class="rounded-lg border border-subtle bg-surface p-2 space-y-1 min-w-0" data-test="character-artifact" data-artifact="<%= artifact.slug %>">
+            <a href="<%= artifact.image_url %>" target="_blank" rel="noopener" class="block aspect-square rounded bg-surface-alt overflow-hidden">
+              <img src="<%= artifact.image_url %>" alt="<%= subject&.role.presence || artifact.kind.humanize %>" class="w-full h-full object-contain" loading="lazy">
+            </a>
+            <figcaption class="text-3xs text-muted break-words">
+              <%= artifact.kind.humanize %><% if subject&.appearance %> &middot; <%= subject.appearance.descriptor %><% end %>
+              &middot; <%= artifact.created_at.to_date.to_fs(:long) %>
+              <% if artifact.approved? %><span class="badge text-3xs bg-success/10 text-success-ink border-success/40">approved</span><% end %>
+            </figcaption>
+          </figure>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>

@@ -1,0 +1,11 @@
+<%# A new character for the cast. Admin only. %>
+<div class="max-w-3xl mx-auto px-4 py-6 space-y-4">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Characters", characters_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold">New</span>
+  </nav>
+  <h1 class="text-xl font-bold text-heading">New character</h1>
+  <p class="text-2xs text-muted">Characters are our own fictional cast. A real human belongs on the people page, never here.</p>
+  <%= render "characters/form", character: @character %>
+</div>
