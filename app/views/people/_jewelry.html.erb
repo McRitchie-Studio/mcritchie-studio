@@ -1,0 +1,52 @@
+<%# WHAT THIS PERSON WEARS (PersonJewelry): the source the iced-out sheet's prompt
+    reads, so a champion is drawn in his own rings. Listed for everyone who can
+    see the page; added, edited and removed by an admin only, like the action. %>
+<div id="jewelry" class="card p-6 space-y-4 scroll-mt-24" data-test="jewelry-card">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <p class="label-upper text-primary">💎 Jewelry</p>
+    <span class="text-xs text-muted">the iced sheet draws these; with no rings here it draws generic diamond rings</span>
+  </div>
+
+  <% if jewelries.any? %>
+    <ul class="space-y-2">
+      <% jewelries.each do |jewel| %>
+        <li class="rounded-lg border border-subtle p-3 space-y-2 min-w-0" data-test="jewelry-row" data-kind="<%= jewel.kind %>">
+          <div class="flex items-start gap-3 min-w-0">
+            <% if jewel.image_url.present? %>
+              <%= image_tag jewel.image_url, alt: jewel.name, class: "w-14 h-14 shrink-0 rounded-md object-cover border border-subtle" %>
+            <% end %>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-bold text-heading break-words">
+                <%= [jewel.year, jewel.name].compact.join(" ") %>
+                <span class="badge text-3xs bg-surface-alt text-secondary border-subtle align-middle ml-1"><%= jewel.kind_label %></span>
+              </p>
+              <p class="text-xs text-body break-words"><%= jewel.description %></p>
+              <% if jewel.source.present? %>
+                <p class="text-3xs text-muted break-words">Source: <%= jewel.source %></p>
+              <% end %>
+            </div>
+          </div>
+
+          <% if admin? %>
+            <details class="rounded-md bg-surface-alt p-3">
+              <summary class="cursor-pointer text-xs font-bold text-heading">Edit</summary>
+              <%= render "people/jewelry_form", person: person, jewel: jewel %>
+              <%= button_to "Remove", person_jewelry_path(person.slug, jewel.slug), method: :delete,
+                    form: { class: "mt-2", data: { turbo_confirm: "Remove #{jewel.name}?" } },
+                    class: "btn btn-sm btn-outline text-danger-ink", data: { test: "jewelry-remove" } %>
+            </details>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <p class="text-sm text-muted" data-test="jewelry-empty">No jewelry on file for <%= person.full_name %>.</p>
+  <% end %>
+
+  <% if admin? %>
+    <details class="rounded-lg bg-surface-alt p-4" data-test="jewelry-new">
+      <summary class="cursor-pointer text-sm font-bold text-heading">+ Add jewelry</summary>
+      <%= render "people/jewelry_form", person: person, jewel: PersonJewelry.new(person_slug: person.slug) %>
+    </details>
+  <% end %>
+</div>

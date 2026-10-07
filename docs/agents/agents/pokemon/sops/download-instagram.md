@@ -61,7 +61,7 @@ cookies. Alex answers that prompt; an agent cannot.
 |---|---|---|
 | `/share/reel/<token>` | It carries no post code, and yt-dlp does not read it | Open it and paste the `/reel/` or `/p/` URL it lands on (UNMEASURED: no real share link has been tried) |
 | A post with several videos | yt-dlp returns a playlist, one file per video | Ask Alex which video; a digest takes one |
-| A profile, a story or a tag page | It names no single post | Paste the post's own URL |
+| A profile, a story, a tag page or a sound's page (`/reels/audio/<id>/`) | It names no single post | Paste the post's own URL |
 
 ## 4. Check the codec
 
@@ -85,8 +85,10 @@ description, so neither is stored:
 - The source URL is the post's own page, `https://www.instagram.com/<reel|p|tv>/<code>/`,
   without the handle prefix or the tracking query (`?igsh=…`).
 - Credits are the creator's display name (`uploader`, else the handle in
-  `channel`) as primary, then any `feat.`, `ft.` or `(with …)` names in the
-  caption's first line, by the rules in [`download-tiktok`](download-tiktok.md)
+  `channel`) as primary. A display name with no Latin letters or digits
+  (emoji-only, Japanese, …) cannot name an R2 folder, so the handle is taken
+  instead and the display name is not sent. After the primary come any `feat.`,
+  `ft.` or `(with …)` names in the caption's first line, by the rules in [`download-tiktok`](download-tiktok.md)
   step 3. The hub files each name that matches no artist, or more than one,
   under `unresolved_credits`.
 - The stored `.info.json` keeps the TikTok allowlist: the YouTube one without

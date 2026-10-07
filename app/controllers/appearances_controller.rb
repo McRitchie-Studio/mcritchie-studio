@@ -148,13 +148,28 @@ class AppearancesController < ApplicationController
   # EXPECTED refusals (no generator, no headshot, a build already running) are
   # states, not failures, and get no ErrorLog row. The paid call runs in
   # SheetBuildJob; this only claims the look and enqueues.
+  #
+  # "Generate both" (`with_twin`) is the one press that starts TWO paid builds,
+  # this look's and its iced twin's, and its label says so. Each build is its own
+  # claim; a refusal on the twin is reported and leaves this look's build running.
   def generate_artifact
     Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
-    redirect_to appearance_path, notice: Appearances::SheetBuild::STARTED_NOTICE
+    redirect_to appearance_path, notice: [Appearances::SheetBuild::STARTED_NOTICE, twin_build_sentence].compact.join(" ")
   rescue Appearances::GenerateArtifact::NoGenerator,
          Appearances::GenerateArtifact::NoIdentityPhoto,
          Appearances::SheetBuild::Busy => e
     redirect_to appearance_path, alert: e.message
+  end
+
+  def twin_build_sentence
+    return nil unless params[:with_twin].present? && (twin = @appearance.iced_twin)
+
+    Appearances::SheetBuild.start!(twin, number: params[:number].presence)
+    "The iced twin's sheet (#{twin.descriptor}) is building too: two paid builds in all."
+  rescue Appearances::GenerateArtifact::NoGenerator,
+         Appearances::GenerateArtifact::NoIdentityPhoto,
+         Appearances::SheetBuild::Busy => e
+    "The iced twin's sheet did not start: #{e.message}"
   end
 
   # "NOTHING TO POLL YET" IS ALSO A STATE RATHER THAN A FAILURE, so it answers here

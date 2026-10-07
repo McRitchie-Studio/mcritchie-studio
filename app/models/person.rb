@@ -4,6 +4,9 @@ class Person < ApplicationRecord
   has_one :athlete_profile, class_name: "Athlete", foreign_key: :person_slug, primary_key: :slug
   has_many :appearances, foreign_key: :person_slug, primary_key: :slug, inverse_of: :person, dependent: :destroy
   has_many :artifact_subjects, class_name: "ArtifactSubject", foreign_key: :person_slug, primary_key: :slug, dependent: :destroy
+  # What they wear that the iced-out sheet can name (PersonJewelry).
+  has_many :jewelries, -> { ordered }, class_name: "PersonJewelry", foreign_key: :person_slug, primary_key: :slug,
+           inverse_of: :person, dependent: :destroy
   has_many :artifacts, through: :artifact_subjects
   # The look every read falls back to when nothing names one. Most flows never
   # name an appearance at all and simply get this one.

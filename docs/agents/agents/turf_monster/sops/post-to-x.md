@@ -48,6 +48,20 @@ no release lane.
 
 ## Entry
 
+**From the chip.** Alex copies `post-to-x` from the Turf Monster launcher on
+`/deployments` and pastes it into a fresh session with the rest of his input:
+
+```text
+post-to-x /Users/alex/Downloads/clip.mp4 Vikings win
+post-to-x /Users/alex/Downloads/clip.mp4 Bijan eating, joke about every B. Robinson eating
+```
+
+Read it as: the MP4 path, then the team or the context. That is the chat
+door below. Several paths in one message are one batch. No path at all means
+the board door: look for cards that need you.
+
+Then, before anything else:
+
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/x-post whoami
