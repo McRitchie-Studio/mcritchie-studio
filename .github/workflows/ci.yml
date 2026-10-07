@@ -312,9 +312,9 @@ jobs:
       #      exactly `@quarantine`. Widening it to `@quarantine|board` — dropping 8 specs to
       #      43, every guard formerly green — is now a test failure.
       #   2. THE DECLARED SET. test/lib/e2e_quarantine_ratchet_test.rb reads the committed
-      #      specs: total_specs − quarantined == executed, and every selection modifier is
-      #      refused on ANY receiver. The NUMBERS live in config/e2e_lane.yml and are not
-      #      repeated here — every copy of them in prose has rotted within days.
+      #      specs and refuses every selection modifier on ANY receiver, so the census
+      #      (bin/lib/e2e_spec_census.rb: committed − quarantined) is the executed set. The
+      #      counts are computed from e2e/; only the quarantine ceiling is written down.
       #   3. THE EXECUTED SET — the receipt, below. Guards 1 and 2 read the SOURCE, and a
       #      source-level guard can only refuse the spellings someone thought to refuse.
       #      Three rounds of review proved that by finding a fourth, every time: `.only`
