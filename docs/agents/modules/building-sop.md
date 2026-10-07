@@ -196,17 +196,15 @@ In chat, return the review handoff with exact top-level labels (recipe:
 
 ```text
 Task: https://mcritchie.studio/tasks/<slug>
-Magic Link: http://localhost:<port>/_studio/local_review?return_to=/<path>
+Magic Link: <the magic link line bin/task begin printed, return_to=/<path>>
 Local Demo: http://localhost:<port>/<path>
 ```
 
 Hand over the stack's own MINT URL, never a token minted in a console: a console
 mint binds the SHARED development database, and the desk server bounces him to
-`/login`. The mint URL is REUSABLE, since each click mints a fresh token:
-
-```bash
-http://localhost:<port>/_studio/local_review?return_to=/<path>
-```
+`/login`. `bin/task begin` prints the mint URL as its `magic link:` line
+(`bin/lib/review_hop.rb#mint_url`); set `return_to` to the page. The mint URL is
+REUSABLE, since each click mints a fresh token.
 
 For email or auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (desks default to

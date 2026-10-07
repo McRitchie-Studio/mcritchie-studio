@@ -186,11 +186,12 @@ the exact page to evaluate — on the running local stack
 **Hand him a MINT URL, not a minted token.** The stack mints in-request, when he
 clicks — so the token is born on the server that is about to serve it.
 
-```bash
-# Every app has this endpoint: it ships in studio-engine, is loopback-only,
-# and 404s in production. Build the URL against the port your stack runs on.
-http://localhost:<port>/_studio/local_review?return_to=/<path>
+`bin/task begin` prints it as its `magic link:` line, built by
+`bin/lib/review_hop.rb#mint_url` against the desk's own port; set `return_to` to the
+page under review. The endpoint ships in studio-engine, is loopback-only, and 404s
+in production.
 
+```bash
 # turf-monster wraps it — reads the port from .env.agent-stack, encodes the
 # path, proves the link answers, and only then prints it:
 bin/review-link /<path>
@@ -200,7 +201,7 @@ Labels in the handoff:
 
 ```text
 Task: https://mcritchie.studio/tasks/<slug>
-Magic Link: http://localhost:<port>/_studio/local_review?return_to=/<path>
+Magic Link: <the magic link line bin/task begin printed, return_to=/<path>>
 Local Demo: http://localhost:<port>/<path>
 ```
 

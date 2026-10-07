@@ -293,6 +293,7 @@ require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
+require_relative "lib/review_hop"
 require_relative "lib/desk_claim"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
@@ -2779,6 +2780,7 @@ when "begin"
   puts "worktree: #{worktree_dir}"
   puts "port: #{context["app_port"]}" if context["app_port"]
   puts "url: #{context["local_url"]}" if context["local_url"]
+  puts "magic link: #{ReviewHop.mint_url(context["local_url"])}" if context["local_url"]
   puts "task: #{BASE_URL}/tasks/#{slug}"
   # Absolute script + the desk to run it from, on its own line so it is
   # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
