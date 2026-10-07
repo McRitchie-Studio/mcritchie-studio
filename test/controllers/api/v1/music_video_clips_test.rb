@@ -11,7 +11,7 @@ module Api
       setup { @video = NightCallClips.video! }
 
       def auth_headers
-        { "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth)}" }
+        { "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth, expires_in: 1.hour)}" }
       end
 
       def post_clips(clips, video: @video, headers: auth_headers)

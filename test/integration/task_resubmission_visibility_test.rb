@@ -166,7 +166,7 @@ class TaskResubmissionVisibilityTest < ActionDispatch::IntegrationTest
   private
 
   def api_headers
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
     { "Authorization" => "Bearer #{token}" }
   end
 

@@ -36,7 +36,7 @@ require "test_helper"
 class SubmitPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
   LOCAL_URL = "http://localhost:3021/contests/demo".freeze
 
-  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
   def auth = { "Authorization" => "Bearer #{token}" }
 

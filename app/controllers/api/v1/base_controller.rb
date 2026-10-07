@@ -16,12 +16,36 @@ module Api
 
       private
 
+      # A token must verify AND carry an expiry. MessageVerifier enforces an
+      # expiry when one is present, but a token minted without `expires_in`
+      # verifies forever, so a leaked one would never die. Every live minter
+      # (AuthController#create, which stamps 24 hours) already sets one; this
+      # check refuses anything minted some other way.
       def authenticate_api!
         token = request.headers["Authorization"]&.sub(/\ABearer\s+/, "")
         return render_error("Missing token", status: :unauthorized, error_code: "UNAUTHORIZED") unless token.present?
         message_verifier.verify(token, purpose: :api_auth)
+        return if self.class.token_expiry(token)
+
+        render_error("Token carries no expiry; mint a fresh one at POST /api/v1/auth",
+                     status: :unauthorized, error_code: "UNAUTHORIZED")
       rescue ActiveSupport::MessageVerifier::InvalidSignature
         render_error("Invalid or expired token", status: :unauthorized, error_code: "UNAUTHORIZED")
+      end
+
+      # The `exp` a verified api_auth token carries, or nil when it has none. Call
+      # it only AFTER verify: it reads the envelope Rails signed
+      # ({"_rails":{"data":…,"exp":…,"pur":…}}, base64 before the "--" digest)
+      # and trusts it because the signature already did. Anything it cannot read
+      # as that envelope (a Marshal payload, a malformed message) is nil, which
+      # refuses: this fails closed.
+      def self.token_expiry(token)
+        encoded = token.to_s.split("--", 2).first.to_s
+        envelope = JSON.parse(Base64.strict_decode64(encoded))
+        exp = envelope.is_a?(Hash) ? envelope.dig("_rails", "exp") : nil
+        exp.presence
+      rescue ArgumentError, TypeError, JSON::ParserError
+        nil
       end
 
       def message_verifier

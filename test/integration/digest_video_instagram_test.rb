@@ -43,7 +43,7 @@ class DigestVideoInstagramIntegrationTest < ActionDispatch::IntegrationTest
     def authenticate = true
 
     def create(payload)
-      token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+      token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
       session.post "/api/v1/music_videos", params: { music_video: payload }, as: :json,
                                            headers: { "Authorization" => "Bearer #{token}" }
 JSON.parse(session.response.body).fetch("data")

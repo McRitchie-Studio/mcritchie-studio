@@ -6,7 +6,7 @@ module Api
       setup do
         @task = Task.create!(title: "review api task", stage: "submitted")
         @headers = {
-          "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)}"
+          "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}"
         }
       end
 

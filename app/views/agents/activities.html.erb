@@ -18,7 +18,7 @@
 <%# TEST-ONLY: the e2e spec reads this to POST a real activity/action and assert the
     live update — never rendered outside test (it is a valid api_auth token). %>
 <% if Rails.env.test? %>
-  <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
+  <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour) %>">
 <% end %>
 
 <% active_sessions = @active_session_chips %>

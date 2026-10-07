@@ -278,6 +278,6 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
   end
 
   def api_token
-    @api_token ||= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    @api_token ||= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
   end
 end

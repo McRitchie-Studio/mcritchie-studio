@@ -22,7 +22,7 @@ require "test_helper"
 # test/integration/submit_preserves_approval_request_test.rb, which asserts the
 # request SURVIVES the very PATCH bin/submit issues.
 class ApprovalRequestGuardApiTest < ActionDispatch::IntegrationTest
-  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
   # Exactly the shape `bin/task update <slug> --approval <value>` sends.
   def update_approval!(task, value, extra = {})

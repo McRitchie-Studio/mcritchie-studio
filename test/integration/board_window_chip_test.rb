@@ -20,7 +20,7 @@ class BoardWindowChipTest < ActionDispatch::IntegrationTest
                             metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3011/tasks" } })
     @quiet = Task.create!(title: "Window quiet board task", stage: "building")
     @headers = {
-      "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)}"
+      "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}"
     }
   end
 
