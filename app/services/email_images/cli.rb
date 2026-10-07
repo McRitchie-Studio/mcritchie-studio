@@ -95,7 +95,7 @@ module EmailImages
         fields.merge!(origin: item.origin, note: item.note.presence || "-") if item.kind == "reference"
         emit item.kind, item.role, **fields
       end
-      emit "page", nil, url: "#{EmailImages::BaseAssets.base_url}/email_images/brand_kits/#{kit.key}"
+      emit "page", kit.key, url: "#{EmailImages::BaseAssets.base_url}/email_images/brand_kits/#{kit.key}"
       emit "style", nil, text: kit.style
       emit "never", nil, text: kit.negative
       0
