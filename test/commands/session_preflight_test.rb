@@ -67,6 +67,17 @@ class SessionPreflightTest < Minitest::Test
     assert_includes err, "could not parse task JSON"
   end
 
+  # [unit] A crash describes nothing, so it is exit 2 too, never the findings code.
+  def test_a_crash_is_exit_two
+    path = File.join(@sandbox, "crash.json")
+    File.write(path, JSON.generate("data" => task_payload.merge("metadata" => "not a hash")))
+
+    _out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert_equal 2, status.exitstatus, err
+    assert_includes err, "session-preflight crashed"
+  end
+
   # [unit] Guard catalog row 4.2: a blocked task is not a preflight failure; begin
   # clears the block at the claim and the preflight prints the feedback it carried.
   def test_a_blocked_task_passes_the_preflight

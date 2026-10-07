@@ -92,6 +92,17 @@ def die!(message)
   exit EXIT_CANNOT_DESCRIBE
 end
 
+# A CRASH describes nothing, so it is exit 2 as well: Ruby's own uncaught-exception
+# exit is 1, which `bin/task begin` would read as findings and claim over.
+at_exit do
+  error = $!
+  next if error.nil? || error.is_a?(SystemExit)
+
+  warn!("error: session-preflight crashed: #{error.class}: #{error.message}")
+  Array(error.backtrace).first(5).each { |line| warn!("  #{line}") }
+  exit! EXIT_CANNOT_DESCRIBE
+end
+
 def capture(*cmd, chdir: nil, env: {})
   kwargs = {}
   kwargs[:chdir] = chdir if chdir
