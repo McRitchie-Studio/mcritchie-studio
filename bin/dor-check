@@ -2348,16 +2348,6 @@ if claim_rule
     offender_help = "Test content means test/, tests/ or e2e/ — a workflow, a Gemfile, a playwright.config.js " \
       "or an app/ file is a behavioral change whose tests are evidence FOR it, which is what the other shapes " \
       "are for."
-  when "doc_only_diff"
-    offenders = CodeDiff.code_files(observed)
-    proven = CodeDiff.doc_only?(observed)
-    must_be = "ENTIRELY prose"
-    proven_label = "doc-only"
-    offender_help = "Prose is decided by the file's TYPE (.md/.markdown/.mdx/.rdoc, inert media, LICENSE-class " \
-      "basenames) — not by where it was filed, and not by whether the hunk was only comments. A test file, a " \
-      "workflow, a .yml or an app/ file ships behavior. This is the SAME classifier that already denies an " \
-      "exempt kind (chore/cleanup/docs) its doc-only exemption on this very diff, so a shape that could still " \
-      "claim it here would be one observation answered two ways."
   when "docs_with_guards_diff"
     # docs + the registry-guard test that pins them (/tasks/docs-shape-rejects-
     # guard-test): the pattern this repo's culture rewards finally has a shape
@@ -2396,7 +2386,7 @@ if claim_rule
     proven_label = nil
     errors << "shape #{shape.inspect} declares claimable_when: #{claim_rule.inspect}, a claim rule bin/dor-check " \
       "does not implement — so the shape's lighter contract is REFUSED rather than granted by an unrecognized " \
-      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / doc_only_diff / docs_with_guards_diff), " \
+      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / docs_with_guards_diff), " \
       "or fix the value in config/feature_shapes.yml"
   end
 

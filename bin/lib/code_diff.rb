@@ -96,11 +96,10 @@ module CodeDiff
     Array(files).map { |f| f.to_s.strip }.reject(&:empty?).select { |f| behavioral?(f) }
   end
 
-  # May this file list claim a doc-only contract? The positive form of code_files,
-  # and the predicate behind `claimable_when: doc_only_diff` — which no shape
-  # declares any more (the `docs` shape moved to `docs_with_guards_diff` on
-  # 2026-09-03). The rule and its dor-check arm are KEPT deliberately as an
-  # orphan: doc_only? is the reusable statement of the rule the exempt-KIND gate
+  # Is this file list prose only? The positive form of code_files. No shape claims
+  # on it (the `docs` shape claims `docs_with_guards_diff`, and bin/dor-check's
+  # `doc_only_diff` arm is gone, guard catalog row 2.5); doc_only? stays as the
+  # reusable statement of the rule the exempt-KIND gate
   # re-derives inline (CodeDiff.code_files plus its own `indeterminate` branch),
   # the unit suite pins the two against each other, and docs_with_guards? is its
   # behavioural superset — neither one calls it.
