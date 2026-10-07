@@ -139,18 +139,19 @@ class ControlCheckTest < Minitest::Test
     end
   end
 
-  # --- the tree is restored, and PROVEN restored -----------------------------
+  # --- the desk is never written (guard catalog row 1.1) ---------------------
 
-  def test_the_harness_restores_the_working_tree
+  def test_the_replay_runs_in_a_throwaway_worktree_and_leaves_none_behind
     with_repo(base: { "test/models/a_test.rb" => "OLD\n" },
               head: { "test/models/a_test.rb" => "NEWMARKER\n" }) do |dir|
       out, code, = run_control(dir)
 
       assert_equal 0, code, out
-      assert_empty git_status(dir), "the harness left the working tree dirty"
-      assert_equal "NEWMARKER\n", File.read(File.join(dir, "test/models/a_test.rb")),
-                   "the harness left PRE-CHANGE content on disk — the builder's tree would be silently corrupted"
-      assert_includes out, "tree restored and verified"
+      assert_includes out, "in a worktree at"
+      assert_empty git_status(dir), "the harness wrote the desk"
+      assert_equal "NEWMARKER\n", File.read(File.join(dir, "test/models/a_test.rb"))
+      worktrees = IO.popen(["git", "-C", dir, "worktree", "list", "--porcelain"], &:read).scan(/^worktree /).size
+      assert_equal 1, worktrees, "the throwaway worktree must be removed"
     end
   end
 
@@ -163,7 +164,7 @@ class ControlCheckTest < Minitest::Test
       assert_includes out, "VERDICT: NECESSARY"
       assert_includes recorded.first, "test/models/a_test.rb"
       refute File.exist?(File.join(dir, "test/models/a_test.rb")),
-             "a file this diff DELETED must not survive the replay — the harness recreated it and must remove it"
+             "a file this diff DELETED must not appear in the desk — the replay ran it elsewhere"
       assert_empty git_status(dir)
     end
   end
@@ -195,21 +196,22 @@ class ControlCheckTest < Minitest::Test
     end
   end
 
-  # --- refusals that protect the builder -------------------------------------
+  # --- a dirty desk is safe, because nothing writes it ----------------------
 
-  def test_refuses_a_dirty_tree_rather_than_destroying_uncommitted_work
+  def test_uncommitted_work_survives_a_replay_untouched
     with_repo(base: { "test/models/a_test.rb" => "OLD\n" },
               head: { "test/models/a_test.rb" => "NEWMARKER\n" }) do |dir|
-      File.write(File.join(dir, "test/models/a_test.rb"), "UNCOMMITTED WORK\n")
-      out, code, recorded = run_control(dir)
+      File.write(File.join(dir, "test/models/a_test.rb"), "NEWMARKER UNCOMMITTED WORK\n")
+      out, code, = run_control(dir)
 
-      assert_equal 1, code
-      assert_includes out, "working tree is dirty"
-      assert_empty recorded
-      assert_equal "UNCOMMITTED WORK\n", File.read(File.join(dir, "test/models/a_test.rb")),
-                   "refusing must not touch the work it refused to run over"
+      assert_equal 0, code, out
+      assert_includes out, "VERDICT: NECESSARY", "the replay still ran the pre-change file"
+      assert_equal "NEWMARKER UNCOMMITTED WORK\n", File.read(File.join(dir, "test/models/a_test.rb")),
+                   "the desk's uncommitted work must be untouched"
     end
   end
+
+  # --- refusals that remain ---------------------------------------------------
 
   def test_refuses_an_unresolvable_diff_base
     with_repo(base: { "test/models/a_test.rb" => "OLD\n" },

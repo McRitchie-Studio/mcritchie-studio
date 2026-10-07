@@ -73,7 +73,8 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
      you for that sentence.
   4. `bin/submit` never runs it. Run it after your last commit (the stamp is bound
-     to the tree) and never beside a ship (it swaps test files in place).
+     to the tree). It replays the pre-change files in a throwaway worktree, so it
+     never writes your desk.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session: `<app-slug> · <feature-slug> · <task URL>`.
