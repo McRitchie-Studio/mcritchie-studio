@@ -26,8 +26,8 @@ class VideoPerformerRecastLooksController < ApplicationController
   end
 
   def look_params
-    p = params.permit(:person_slug, :descriptor, :reference_url)
-    { person_slug: p[:person_slug], descriptor: p[:descriptor], reference_url: p[:reference_url] }
+    p = params.permit(:person_slug, :descriptor, :reference_url, :number)
+    { person_slug: p[:person_slug], descriptor: p[:descriptor], reference_url: p[:reference_url], jersey_number: p[:number] }
   end
 
   # look: the card previews the look just made.

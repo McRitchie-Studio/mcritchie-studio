@@ -111,6 +111,14 @@ class AppearancesController < ApplicationController
 
   private
 
+  def keep_jersey_number
+    number = Appearance.jersey_from(params[:number])
+    return unless number.is_a?(Integer) && number != @appearance.jersey_number
+
+    @appearance.jersey_number = number
+    @appearance.save! if @appearance.valid?
+  end
+
   def run_search
     summary = Appearances::GatherReferencePhotos.call(@appearance)
 
@@ -148,7 +156,11 @@ class AppearancesController < ApplicationController
   # EXPECTED refusals (no generator, no headshot, a build already running) are
   # states, not failures, and get no ErrorLog row. The paid call runs in
   # SheetBuildJob; this only claims the look and enqueues.
+  #
+  # A jersey number typed here is also KEPT on the look (piece 16): the clip
+  # prompts name the player by it. A blank leaves the stored number alone.
   def generate_artifact
+    keep_jersey_number
     Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
     redirect_to appearance_path, notice: Appearances::SheetBuild::STARTED_NOTICE
   rescue Appearances::GenerateArtifact::NoGenerator,

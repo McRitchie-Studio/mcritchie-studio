@@ -3,9 +3,10 @@ class PeopleController < ApplicationController
   # open, so a session costs a stranger one email address: it is no control over
   # who may file a look, move a default, plant a picture or merge two people.
   # Before set_person, so a refused request costs no lookup.
-  before_action :require_admin, only: [:create_appearance, :make_default_appearance, :attach_artifact,
+  before_action :require_admin, only: [:create_appearance, :update_appearance, :make_default_appearance, :attach_artifact,
                                        :update_vocations, :merge_execute]
-  before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact, :update_vocations]
+  before_action :set_person, only: [:show, :create_appearance, :update_appearance, :make_default_appearance,
+                                    :attach_artifact, :update_vocations]
 
   def index
     # Most-recently-touched first: creating or editing a model bumps a person,
@@ -55,6 +56,24 @@ class PeopleController < ApplicationController
     end
   rescue ActiveRecord::RecordInvalid => e
     redirect_to person_path(@person.slug, return_to: recast_return_path), alert: e.message
+  end
+
+  # Edit one look's jersey number (piece 16), the number clip prompts name the
+  # player by. Blank clears it. The stored prompts of every source that casts
+  # this look are refilled; an alt video's prompts are built when shown.
+  def update_appearance
+    look = @person.appearances.live.find_by(slug: params[:appearance_slug])
+    return redirect_to(person_path(@person.slug), alert: "No such look.") unless look
+
+    look.jersey_number = Appearance.jersey_from(params.dig(:appearance, :jersey_number))
+    return redirect_to(person_path(@person.slug), alert: look.errors.full_messages.to_sentence) unless look.valid?
+
+    rescue_and_log(target: look) do
+      look.save!
+      MusicVideos::ClipPrompts.refresh_casting!(look)
+    end
+    redirect_to person_path(@person.slug),
+                notice: "#{look.descriptor}: #{look.jersey_label ? "wears #{look.jersey_label}" : 'no jersey number'}."
   end
 
   def make_default_appearance
@@ -147,7 +166,9 @@ class PeopleController < ApplicationController
   end
 
   def appearance_params
-    params.require(:appearance).permit(:descriptor, :team_slug, :colorway, :reference_url, :generation_notes)
+    permitted = params.require(:appearance).permit(:descriptor, :team_slug, :colorway, :reference_url, :generation_notes,
+                                                   :jersey_number)
+    permitted.merge(jersey_number: Appearance.jersey_from(permitted[:jersey_number]))
   end
 
   public
