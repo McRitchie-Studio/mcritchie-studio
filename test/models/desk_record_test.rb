@@ -191,6 +191,7 @@ class DeskRecordTest < ActiveSupport::TestCase
   }.freeze
 
   test "[unit] the registry record maps onto columns without losing the raw payload" do
+    task_rows!("ship-it")
     record = DeskRecord.file!(**DeskRecord.registry_attributes(REGISTRY_DESK), status: "live")
 
     assert_equal SHIP, record.worktree_path

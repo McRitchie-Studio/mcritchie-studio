@@ -26,6 +26,12 @@ class Person < ApplicationRecord
   has_many :teams, through: :contracts
   has_many :roster_spots, foreign_key: :person_slug, primary_key: :slug
   has_many :coaches, foreign_key: :person_slug, primary_key: :slug
+  # Columns that hold a person slug with no association here. rename_slug!
+  # rewrites them; the census pin (test/models/slug_children_test.rb) keeps the
+  # list whole.
+  has_slug_children "artists" => :person_slug,
+                    "depth_chart_entries" => :person_slug,
+                    "news" => %i[primary_person_slug secondary_person_slug]
 
   # WHAT A PERSON DOES. A person holds any number of these and exactly one
   # primary, which is the one the UI shows (a search row, the person page).

@@ -48,18 +48,20 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
     probe_case(&body).new(:test_probe).run
   end
 
-  # The bug, exactly as it was written: create a Task (whose `after_create
-  # :record_genesis_event` writes a TaskEvent), then clean up with `delete_all`,
-  # which skips `dependent: :destroy` and leaves the event behind. Returns the
-  # orphan count so a caller can assert the leak really happened — a probe that
-  # silently wrote nothing would make every "the guard fired" assertion vacuous.
+  # A non-transactional test that writes a row and never removes it. The original
+  # shape (a Task's genesis TaskEvent left behind by `Task.delete_all`) can no
+  # longer happen: task_events.task_slug carries a foreign key, so the delete is
+  # refused. An agent_actions row needs no parent, so it leaks the same way.
+  # Returns the leaked count so a caller can assert the leak really happened — a
+  # probe that silently wrote nothing would make every "the guard fired" assertion
+  # vacuous.
   #
   # A class method so the probe cases (a different object, running their own
   # lifecycle) and the unit tests below drive the SAME shape from one definition.
-  def self.leak_a_task_event!
-    Task.create!(title: "Leak Guard Probe", slug: SLUG, stage: "submitted")
-    Task.where(slug: SLUG).delete_all
-    TaskEvent.where(task_slug: SLUG).count
+  def self.leak_a_row!
+    AgentAction.create!(session_id: SLUG, kind: "probe", summary: "leak", seq: 0, outcome: "ok",
+                        actor: "agent", occurred_at: Time.current)
+    AgentAction.where(session_id: SLUG).count
   end
 
   def unfixtured_rows
@@ -71,7 +73,7 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
 
   test "[integration] a test that orphans a row FAILS, and the failure names the table" do
     result = run_probe do
-      assert_equal 1, TestDatabaseLeakGuardTest.leak_a_task_event!,
+      assert_equal 1, TestDatabaseLeakGuardTest.leak_a_row!,
                    "the probe must really orphan an event, or the guard has nothing to catch"
     end
 
@@ -80,7 +82,7 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
     assert_kind_of Minitest::Assertion, failure,
                    "it must be reported as a FAILURE (a raised error would read as a broken test)"
     assert_match(/LEAKED ROWS/, failure.message)
-    assert_match(/task_events: 1 row\(s\)/, failure.message,
+    assert_match(/agent_actions: 1 row\(s\)/, failure.message,
                  "the message must name the table and the count — that is the whole diagnosis")
     assert_match(/dependent: :destroy/, failure.message,
                  "and it must name the cause that produced it, so the fix is obvious")
@@ -91,10 +93,9 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
     # delete the children explicitly. If this went red the guard would be a blanket
     # failure rather than a leak detector.
     result = run_probe do
-      Task.create!(title: "Leak Guard Probe", slug: SLUG, stage: "submitted")
-      TaskEvent.where(task_slug: SLUG).delete_all
-      Task.where(slug: SLUG).delete_all
-      assert_equal 0, TaskEvent.where(task_slug: SLUG).count
+      TestDatabaseLeakGuardTest.leak_a_row!
+      AgentAction.where(session_id: SLUG).delete_all
+      assert_equal 0, AgentAction.where(session_id: SLUG).count
     end
 
     assert_empty result.failures, "a test that cleans up completely must be left alone"
@@ -103,9 +104,9 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
   test "[integration] a leak is CONTAINED, so the NEXT test still starts empty" do
     # This is the half that makes the hermeticity invariant order-independent: the
     # leak is truncated at the polluter's teardown, so no later test can inherit it.
-    # Asserted against the un-fixtured tables as a whole, not against task_events,
+    # Asserted against the un-fixtured tables as a whole, not against agent_actions,
     # for the same reason the invariant is written that way.
-    run_probe { assert_equal 1, TestDatabaseLeakGuardTest.leak_a_task_event! }
+    run_probe { assert_equal 1, TestDatabaseLeakGuardTest.leak_a_row! }
 
     assert_empty unfixtured_rows,
                  "the guard must clean up after the test it failed — otherwise the next test pays too"
@@ -121,21 +122,21 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
       def self.name = "LeakGuardBareProbeCase"
 
       define_method(:test_probe) do
-        assert_equal 1, TestDatabaseLeakGuardTest.leak_a_task_event!
+        assert_equal 1, TestDatabaseLeakGuardTest.leak_a_row!
       end
     end
 
     result = bare.new(:test_probe).run
 
     assert_equal 1, result.failures.size, "a bare minitest test must be held to the same rule"
-    assert_match(/task_events: 1 row\(s\)/, result.failures.first.message)
+    assert_match(/agent_actions: 1 row\(s\)/, result.failures.first.message)
   end
 
   test "[integration] an already-failing test is contained but not double-reported" do
     # A test that blew up mid-way never got to clean up, and burying its real failure
     # under a leak report would make the diagnosis worse, not better.
     result = run_probe do
-      TestDatabaseLeakGuardTest.leak_a_task_event!
+      TestDatabaseLeakGuardTest.leak_a_row!
       flunk "the real failure"
     end
 
@@ -148,11 +149,11 @@ class TestDatabaseLeakGuardTest < ActiveSupport::TestCase
   # ── the sweep itself ───────────────────────────────────────────────────────
 
   test "[unit] sweep! reports every leaked table with its count, then empties it" do
-    assert_equal 1, TestDatabaseLeakGuardTest.leak_a_task_event!
+    assert_equal 1, TestDatabaseLeakGuardTest.leak_a_row!
 
     counts = TestDatabaseLeakGuard.sweep!(ActiveRecord::Base.connection)
 
-    assert_equal({ "task_events" => 1 }, counts, "the counts are the report the failure prints")
+    assert_equal({ "agent_actions" => 1 }, counts, "the counts are the report the failure prints")
     assert_empty unfixtured_rows, "and the tables are empty afterwards"
   end
 

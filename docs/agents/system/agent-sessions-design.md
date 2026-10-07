@@ -160,7 +160,11 @@ and a ship recovery read it as they do now.
 1. **Sessions beside the secret.** Add the session table and
    `POST /api/v1/agent_sessions`; `bin/task begin` and `claim-next-review` log in;
    the server stamps the actor from the session when one is present and from the
-   param when not. The board shows the soul. Nothing that works today breaks.
+   param when not, on every board write that records an actor. The login is
+   for a soul the task record entitles (the builder the claim stamped, or a
+   reviewer the task names); any other soul answers 403 with the reason.
+   Release writes, conductor lanes and agent updates need an admin session. The
+   board shows the soul. Nothing that works today breaks.
 2. **Capabilities move server-side.** The GitHub token mint (scoped by repo) and
    credential metadata become endpoints; the agent vault token leaves
    `~/.zprofile`; `AGENT_API_SECRET` shrinks to a machine key that can claim and

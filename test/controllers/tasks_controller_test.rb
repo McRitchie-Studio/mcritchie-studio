@@ -589,6 +589,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   # quietly under-report how much work is open.
   test "[integration] the agent filter narrows the board columns but not the WIP tile" do
     Task.delete_all
+    agent_rows!("avi")
     Task.create!(title: "wip filter xan task", stage: "building", agent_slug: "xan")
     Task.create!(title: "wip filter other task", stage: "building", agent_slug: "avi")
     Task.create!(title: "wip filter third task", stage: "submitted", agent_slug: "avi")
@@ -2272,6 +2273,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] a board devops release_slug write is refused, not silently dropped" do
     log_in_as(@admin)
+    release_rows!("rel-2026-08-12-real")
     @new_task.update!(release_slug: "rel-2026-08-12-real")
 
     patch task_path(@new_task.slug),

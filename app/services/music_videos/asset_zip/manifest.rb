@@ -22,7 +22,7 @@ module MusicVideos
 
       SHEET_EXTENSIONS = %w[.png .jpg .jpeg .webp].freeze
 
-      attr_reader :root, :entries, :missing
+      attr_reader :root, :entries, :missing, :alt_video
 
       # The manifest of one alt video (only: a chunk ordinal for one clip's zip).
       # Every row it reads is loaded here, in a fixed number of queries

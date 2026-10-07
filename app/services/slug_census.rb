@@ -15,6 +15,25 @@ class SlugCensus
   PERSONAL_TARGETS = %w[people users contacts].freeze
   SAMPLE_LIMIT = 5
 
+  # Resolved columns that carry no foreign key, each with its reason. Every other
+  # resolved column has one with ON UPDATE CASCADE, which
+  # test/models/slug_foreign_keys_test.rb pins. A rename still rewrites these
+  # through the parent's slug_children; only the database guarantee is missing.
+  TEAMS_NOT_LOADED = "production holds no teams rows yet, and this column is filled by an import " \
+                     "or a form before the teams import runs; constrain it once teams are loaded".freeze
+  TURF_RECAP = "a game recap arrives from Turf Monster naming Turf's games and teams, " \
+               "which the hub's games and teams tables do not hold".freeze
+  UNCONSTRAINED = {
+    "athletes.team_slug" => TEAMS_NOT_LOADED,
+    "appearances.team_slug" => TEAMS_NOT_LOADED,
+    "pff_stats.team_slug" => TEAMS_NOT_LOADED,
+    "contents.game_slug" => TURF_RECAP,
+    "contents.team_slug" => TURF_RECAP,
+    "contents.rival_team_slug" => TURF_RECAP,
+    "release_conductor_claims.release_slug" => "a new qa-release claims the sentinel `__forming__` " \
+                                               "before its release row exists; release slugs never change"
+  }.freeze
+
   Row = Struct.new(:table, :column, :target_table, :target_column, :via, :total, :filled, :orphans, :samples,
                    :samples_withheld, keyword_init: true) do
     def name = "#{table}.#{column}"

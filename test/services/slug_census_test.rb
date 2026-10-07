@@ -8,6 +8,13 @@ require "rake"
 # transaction, and all of them execute while writes are prevented.
 class SlugCensusTest < ActiveSupport::TestCase
   setup do
+    # Orphans cannot be written under the slug foreign keys, so the keys on the
+    # three columns this test dangles come off first. DDL is transactional in
+    # Postgres: the test's rollback puts them back.
+    connection = ActiveRecord::Base.connection
+    connection.remove_foreign_key(:skill_assignments, :skills, column: :skill_slug)
+    connection.remove_foreign_key(:skill_assignments, :agents, column: :agent_slug)
+    connection.remove_foreign_key(:athletes, :people, column: :person_slug)
     now = Time.current
     SkillAssignment.insert_all!([
       { agent_slug: agents(:xan_agent).slug, skill_slug: "no-such-skill", created_at: now, updated_at: now },

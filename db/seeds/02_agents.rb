@@ -29,14 +29,8 @@ if (legacy = Agent.find_by(slug: "alex"))
       puts "Agent: alex row still has children — db:migrate (RenameAlexSoulToXan) retires it"
     end
   else
-    Agent.transaction do
-      # The by-slug children first, so the rename never strands them.
-      Activity.where(agent_slug: "alex").update_all(agent_slug: "xan")
-      Usage.where(agent_slug: "alex").update_all(agent_slug: "xan")
-      SkillAssignment.where(agent_slug: "alex").update_all(agent_slug: "xan")
-      Task.where(agent_slug: "alex").update_all(agent_slug: "xan")
-      legacy.update!(slug: "xan")
-    end
+    # rename_slug! moves every child with the row (the agent_slug keys cascade too).
+    legacy.rename_slug!("xan")
     puts "Agent: renamed alex → xan in place (same row, history kept)"
   end
 end

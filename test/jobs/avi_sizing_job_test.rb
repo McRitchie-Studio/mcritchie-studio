@@ -18,6 +18,7 @@ class AviSizingJobTest < ActiveJob::TestCase
   end
 
   test "sets po_size from Avi's answer and records a task-scoped Activity when there's no session" do
+    agent_rows!("avi") # activities.agent_slug carries a foreign key
     task = designed_unsized_task
 
     Avi::Sizer.stub(:new, ->(*) { StubSizer.new("large") }) do

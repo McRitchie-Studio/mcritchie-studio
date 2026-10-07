@@ -30,12 +30,16 @@ class CreateCharacters < ActiveRecord::Migration[8.1]
     add_index :characters, :slug, unique: true
     add_index :characters, :brand
     add_check_constraint :characters, "kind IN ('mascot', 'puppet')", name: "characters_kind_known"
+    # The same key people.default_appearance_slug carries (AddSlugForeignKeys):
+    # a deleted look clears the pointer, and Appearance re-points the holder.
+    add_foreign_key :characters, :appearances, column: :default_appearance_slug, primary_key: :slug,
+                                               on_update: :cascade, on_delete: :nullify
 
     add_column :appearances, :character_slug, :string
     add_index :appearances, :character_slug
     add_index :appearances, %i[character_slug descriptor], unique: true, where: "retired_at IS NULL",
                                                            name: "index_appearances_live_per_character"
-    add_foreign_key :appearances, :characters, column: :character_slug, primary_key: :slug
+    add_foreign_key :appearances, :characters, column: :character_slug, primary_key: :slug, on_update: :cascade
     change_column_null :appearances, :person_slug, true
     add_check_constraint :appearances, "num_nonnulls(person_slug, character_slug) = 1",
                          name: "appearances_exactly_one_owner"
@@ -45,7 +49,7 @@ class CreateCharacters < ActiveRecord::Migration[8.1]
     add_index :artifact_subjects, %i[artifact_slug character_slug], unique: true,
                                                                      where: "character_slug IS NOT NULL",
                                                                      name: "index_artifact_subjects_on_artifact_and_character"
-    add_foreign_key :artifact_subjects, :characters, column: :character_slug, primary_key: :slug
+    add_foreign_key :artifact_subjects, :characters, column: :character_slug, primary_key: :slug, on_update: :cascade
     change_column_null :artifact_subjects, :person_slug, true
     add_check_constraint :artifact_subjects, "num_nonnulls(person_slug, character_slug) = 1",
                          name: "artifact_subjects_exactly_one_owner"

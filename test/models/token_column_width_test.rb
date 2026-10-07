@@ -100,7 +100,7 @@ class TokenColumnWidthTest < ActiveSupport::TestCase
 
   test "a Usage rollup stores token totals above int4 max" do
     usage = Usage.create!(
-      agent_slug: "carl",
+      agent_slug: agent_rows!("carl").first.slug,
       period_date: Date.current,
       period_type: "day",
       model: "claude-opus-5",

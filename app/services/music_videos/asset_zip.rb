@@ -18,7 +18,9 @@ module MusicVideos
   #   Fetcher   the bytes of one entry, as a stream: R2 objects through
   #             Studio::S3, sheet images over https from public hosts only.
   #   Writer    walks the manifest into a ZipKit::Streamer, store-only, and
-  #             turns any entry it cannot read into a README line.
+  #             turns any entry it cannot read into a README line; stops at
+  #             once when the client goes away (Puma::ConnectionError), and
+  #             records any other unnamed failure in ErrorLog once per zip.
   #
   # WHY STREAMED, not built by a job into R2: a full zip is about 7 x 10-40 MB
   # of MP4 plus images. Streamed, the dyno holds one network chunk at a time

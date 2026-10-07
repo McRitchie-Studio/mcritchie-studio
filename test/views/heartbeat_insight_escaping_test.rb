@@ -25,14 +25,21 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
   IMG_PAYLOAD    = %(<img src=x onerror=alert("slug")>).freeze
   MIDDOT         = "·".freeze
 
-  def action(**attrs)
-    AgentAction.create!({ session_id: "xss", kind: "edit", outcome: "ok", actor: "agent",
-                          seq: 7, occurred_at: Time.current }.merge(attrs))
+  # The payloads ride task_slug, which names no task: the keys come off and the
+  # slug is written past the model, the shape of a row from before the keys.
+  setup do
+    without_slug_key(:agent_actions, :task_slug)
+    without_slug_key(:agent_activities, :task_slug)
   end
 
-  def activity(**attrs)
+  def action(task_slug: nil, **attrs)
+    AgentAction.create!({ session_id: "xss", kind: "edit", outcome: "ok", actor: "agent",
+                          seq: 7, occurred_at: Time.current }.merge(attrs)).tap { |a| a.update_columns(task_slug: task_slug) }
+  end
+
+  def activity(task_slug: nil, **attrs)
     AgentActivity.create!({ session_id: "xss", category: "Edit", reason_slug: "prove the escape",
-                            seq: 9, opened_at: Time.current }.merge(attrs))
+                            seq: 9, opened_at: Time.current }.merge(attrs)).tap { |a| a.update_columns(task_slug: task_slug) }
   end
 
   def render_insight(grade)

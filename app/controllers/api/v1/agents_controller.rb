@@ -1,6 +1,11 @@
 module Api
   module V1
+    # An agent update writes its config and metadata, so it is an admin-tier write:
+    # a studio session answers 403 with the reason (Api::AgentSessionGate). Reads
+    # stay open to every bearer.
     class AgentsController < BaseController
+      require_admin_session only: :update
+
       def index
         agents = Agent.all.order(:position)
         result = paginate(agents)

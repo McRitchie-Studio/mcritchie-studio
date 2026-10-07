@@ -57,6 +57,7 @@ class TaskBoardScopeTest < ActiveSupport::TestCase
 
   test "[unit] board_capped_stage_totals counts through the scope it is given" do
     Task.delete_all
+    agent_rows!("carl", "avi")
     (Task::BOARD_SHIPPED_LIMIT + 5).times do |i|
       Task.create!(title: "scoped totals shipped #{i}", stage: "shipped",
                    agent_slug: i.zero? ? "carl" : "avi")

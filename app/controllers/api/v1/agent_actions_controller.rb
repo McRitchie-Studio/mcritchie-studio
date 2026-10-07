@@ -49,6 +49,10 @@ module Api
         %i[tokens_in tokens_out cache_read_tokens].each do |key|
           attrs[key] = attrs[key].to_i if attrs.key?(key)
         end
+        # `actor` is a lane, not a soul. An agent session is an agent, so it records
+        # the agent lane and cannot claim the harness, board or operator lane; the
+        # param counts only on the shared secret's token.
+        attrs[:actor] = AgentAction::AGENT if current_agent_session
         attrs
       end
 

@@ -10,7 +10,9 @@ module Api
       # attribute server-side to that open activity (see AgentAction.capture), and
       # it CLOSEs the activity with a result. One activity is open per session lane.
       #
-      # Authed exactly like AgentActionsController — a Bearer api_auth token.
+      # Authed exactly like AgentActionsController — a Bearer api_auth token. Under an
+      # agent session the session's soul is the lane (`agent`) on open and close, and
+      # the param is ignored (Api::AgentSessionGate#session_actor).
 
       # POST /api/v1/agent_activities
       #
@@ -29,7 +31,7 @@ module Api
           task_slug:          open_params[:task_slug],
           mascot:             open_params[:mascot],
           stage:              open_params[:stage],
-          agent:              open_params[:agent],
+          agent:              session_actor(open_params[:agent]),
           supervisor_agent:   open_params[:supervisor].presence || open_params[:supervisor_agent],
           prior_outcome_slug: open_params[:prior_outcome],
           prior_key_method:      open_params[:prior_key_method],
@@ -53,7 +55,7 @@ module Api
       def close
         activity = AgentActivity.close_activity!(
           session_id:      close_params[:session_id],
-          agent:           close_params[:agent],
+          agent:           session_actor(close_params[:agent]),
           outcome_slug:    close_params[:outcome],
           key_method:      close_params[:key_method],
           key_method_lang: close_params[:key_method_lang],

@@ -1,4 +1,6 @@
 require "test_helper"
+require "socket"
+require "puma/client"
 
 # [unit] The asset zip's streaming half (piece 17): the Writer stores each
 # entry as it is read, rolls a file that fails part way out of the archive and
@@ -13,6 +15,10 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
   # A manifest stand-in: the Writer reads entries, missing, readme_path, readme.
   FakeManifest = Struct.new(:entries, :missing) do
     def readme_path = "v_alt_1/README.txt"
+
+    def filename = "v_alt_1.zip"
+
+    def alt_video = nil
 
     def readme(also = []) = "README\n#{(missing + also).map { |m| "#{m.path}: #{m.reason}" }.join("\n")}\n"
   end
@@ -82,6 +88,95 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
     assert_equal 65_536, fetcher.peak
   end
 
+  # --- Disconnects and ErrorLog (piece 20) -------------------------------
+
+  # Records every entry it starts. On "gone" it raises what Puma raises into
+  # the body's sink once the browser has gone away (proved over a real socket
+  # in test/integration/asset_zip_client_disconnect_test.rb); on "surprise"
+  # an error nobody named.
+  class RecordingFetcher
+    attr_reader :started
+
+    def initialize = @started = []
+
+    def each_chunk(entry)
+      @started << entry.source
+      yield "x".b * 100
+      raise Puma::ConnectionError, "Socket timeout writing data" if entry.source == "gone"
+      raise ArgumentError, "surprise #{entry.source}" if entry.source.start_with?("surprise")
+      raise FetchFailed, "not in storage" if entry.source == "absent"
+
+      yield "y".b * 100
+    end
+  end
+
+  def entry(source, kind: :object) = Entry.new(path: "v_alt_1/c/#{source}.bin", kind:, source:, label: source)
+
+  test "a client that goes away stops the zip at once: no further fetch, no README, nothing in ErrorLog" do
+    fetcher = RecordingFetcher.new
+    log = StringIO.new
+    out = StringIO.new("".b)
+    zip = ZipKit::Streamer.new(out)
+    writer = MusicVideos::AssetZip::Writer.new(FakeManifest.new([entry("a"), entry("gone"), entry("later"), entry("prompt", kind: :text),
+                                                                 entry("later-sheet", kind: :url)], []),
+                                               fetcher:, logger: Logger.new(log))
+    assert_no_difference -> { ErrorLog.count } do
+      assert_raises(Puma::ConnectionError) { writer.write(zip) }
+    end
+    assert_equal %w[a gone], fetcher.started, "nothing is fetched after the client has gone"
+    assert_not_includes out.string, "README.txt", "nothing more is written after the client has gone"
+    assert_no_match(/WARN|ERROR/, log.string, "a disconnect is not an error")
+    assert_match(/client went away after 1 of 5 files/, log.string)
+  end
+
+  test "failures other than a disconnect are recorded in ErrorLog once per download, and the zip still finishes" do
+    fetcher = RecordingFetcher.new
+    entries, io, result = nil
+    assert_difference -> { ErrorLog.count }, 1 do
+      entries, io, result = write([entry("surprise-1"), entry("absent"), entry("surprise-2"), entry("fine")], fetcher:)
+    end
+    assert_equal %w[surprise-1 absent surprise-2 fine], fetcher.started
+    assert_equal %w[v_alt_1/c/fine.bin v_alt_1/README.txt], entries.map(&:filename)
+    readme = body(io, entries.last)
+    assert_includes readme, "v_alt_1/c/surprise-1.bin: could not be read (ArgumentError)"
+    assert_includes readme, "v_alt_1/c/surprise-2.bin: could not be read (ArgumentError)"
+    assert_includes readme, "v_alt_1/c/absent.bin: not in storage"
+    assert_equal 3, result.missing.size
+    error = ErrorLog.order(:id).last
+    assert_equal "surprise surprise-1", error.message
+    assert_equal "v_alt_1.zip", error.target_name
+  end
+
+  test "a named fetch failure is a README line, not an ErrorLog row" do
+    assert_no_difference -> { ErrorLog.count } do
+      write([entry("absent"), entry("fine")], fetcher: RecordingFetcher.new)
+    end
+  end
+
+  # A Streamer whose README write fails: an error that ends the stream itself.
+  class BrokenReadmeZip < SimpleDelegator
+    def write_stored_file(path, &)
+      raise IOError, "the zip could not be finished" if path.end_with?("README.txt")
+
+      __getobj__.write_stored_file(path, &)
+    end
+  end
+
+  test "an error that ends the stream is recorded once, with any per-file failure, and still raised" do
+    zip = BrokenReadmeZip.new(ZipKit::Streamer.new(ZipKit::NullWriter))
+    writer = MusicVideos::AssetZip::Writer.new(FakeManifest.new([entry("fine")], []), fetcher: RecordingFetcher.new, logger: nil)
+    assert_difference -> { ErrorLog.count }, 1 do
+      assert_raises(IOError) { writer.write(zip) }
+    end
+    assert_equal "the zip could not be finished", ErrorLog.order(:id).last.message
+
+    zip = BrokenReadmeZip.new(ZipKit::Streamer.new(ZipKit::NullWriter))
+    writer = MusicVideos::AssetZip::Writer.new(FakeManifest.new([entry("surprise-1")], []), fetcher: RecordingFetcher.new, logger: nil)
+    assert_difference -> { ErrorLog.count }, 1, "once per download, not once per failure" do
+      assert_raises(IOError) { writer.write(zip) }
+    end
+  end
+
   # --- Fetcher -----------------------------------------------------------
 
   def r2_fetcher(client) = MusicVideos::AssetZip::Fetcher.new(client:, bucket: "test-bucket")
@@ -104,6 +199,45 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
       r2_fetcher(stub_client(get_object: "AccessDenied")).each_chunk(Entry.new(path: "x", kind: :object, source: "k.mp4", label: "x")) { flunk }
     end
     assert_equal "storage read failed (AccessDenied)", error.message
+  end
+
+  # A real HTTP socket stands in for R2 (stub_responses skips the transport),
+  # so this shows what Seahorse does with an error raised from the read's
+  # block: it finishes the session (the socket closes) and signals the error
+  # as not retryable, so it reaches the Writer as itself, not as a reason.
+  test "a disconnect inside an R2 read closes the read and is neither retried nor turned into a reason" do
+    server = TCPServer.new("127.0.0.1", 0)
+    requests = Thread::Queue.new
+    closed = Thread::Queue.new
+    thread = Thread.new do
+      loop do
+        conn = server.accept
+        requests << :request
+        head = +""
+        head << conn.readpartial(4096) until head.include?("\r\n\r\n")
+        conn.write("HTTP/1.1 200 OK\r\nContent-Length: 104857600\r\nContent-Type: application/octet-stream\r\n\r\n")
+        begin
+          loop { conn.write("z" * 65_536) }
+        rescue SystemCallError, IOError
+          closed << :closed
+        ensure
+          conn.close
+        end
+      end
+    rescue IOError
+      nil
+    end
+    require "aws-sdk-s3"
+    client = Aws::S3::Client.new(endpoint: "http://127.0.0.1:#{server.addr[1]}", force_path_style: true, region: "auto",
+                                 credentials: Aws::Credentials.new("a", "b"))
+    assert_raises(Puma::ConnectionError) do
+      r2_fetcher(client).each_chunk(entry("k")) { raise Puma::ConnectionError, "Socket timeout writing data" }
+    end
+    assert_equal :closed, closed.pop(timeout: 10), "the R2 read is closed"
+    assert_equal 1, requests.size, "a disconnect is not retried"
+  ensure
+    server&.close
+    thread&.kill
   end
 
   test "a sheet URL off an https public host is refused before any request" do

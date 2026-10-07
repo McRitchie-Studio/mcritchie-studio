@@ -59,7 +59,7 @@ module Insights
     end
 
     test "[integration] generate! writes only banked lessons to the target path" do
-      banked(slug: "bank this good lesson", task_slug: "feat-y")
+      banked(slug: "bank this good lesson", task_slug: task_rows!("feat-y").first.slug)
       banked(slug: "avoid this bad pattern", disposition: "not")
       ActionGrade.create!(agent_action: AgentAction.capture(session_id: "gen-unbanked", kind: "read"),
                           grader: "xan", slug: "not banked at all", disposition: "good") # unbanked → excluded

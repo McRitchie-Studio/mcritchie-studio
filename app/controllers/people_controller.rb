@@ -4,9 +4,9 @@ class PeopleController < ApplicationController
   # who may file a look, move a default, plant a picture or merge two people.
   # Before set_person, so a refused request costs no lookup.
   before_action :require_admin, only: [:create_appearance, :update_appearance, :create_iced_twin, :make_default_appearance,
-                                       :attach_artifact, :update_vocations, :merge_execute]
+                                       :attach_artifact, :update_vocations, :merge_execute, :edit_slug, :update_slug]
   before_action :set_person, only: [:show, :create_appearance, :update_appearance, :create_iced_twin, :make_default_appearance,
-                                    :attach_artifact, :update_vocations]
+                                    :attach_artifact, :update_vocations, :edit_slug, :update_slug]
 
   def index
     # Most-recently-touched first: creating or editing a model bumps a person,
@@ -149,6 +149,23 @@ class PeopleController < ApplicationController
     redirect_to person_path(@person.slug), notice: vocations_notice
   end
 
+  # The one way to change a person's slug: rename_slug rewrites every row that
+  # names the old one in the same transaction. A refusal (blank, badly formed,
+  # taken) renders the form again with the reason, as a 422.
+  def edit_slug; end
+
+  def update_slug
+    old_slug = @person.slug
+    rescue_and_log(target: @person) do
+      unless @person.rename_slug(params.dig(:person, :slug))
+        return render :edit_slug, status: :unprocessable_entity
+      end
+    end
+    return redirect_to person_path(@person.slug), notice: "Slug unchanged." if @person.slug == old_slug
+
+    redirect_to person_path(@person.slug), notice: "Renamed #{old_slug} to #{@person.slug}; every row that named it follows."
+  end
+
   def search
     query = params[:q].to_s.strip
     people = if query.present?
@@ -220,9 +237,11 @@ class PeopleController < ApplicationController
     end
 
     rescue_and_log(target: merge_person, parent: keep) do
-      perform_merge!(keep, merge_person)
+      People::Merge.call!(keep: keep, source: merge_person)
       redirect_to people_path, notice: "Merged #{merge_person.full_name} into #{keep.full_name}."
     end
+  rescue ActiveRecord::InvalidForeignKey, ActiveRecord::RecordNotUnique => e
+    redirect_to merge_people_path, alert: "Merge failed: #{ConstraintViolationResponses.reason_for(e)}"
   rescue StandardError => e
     redirect_to merge_people_path, alert: "Merge failed: #{e.message}"
   end
@@ -232,200 +251,6 @@ class PeopleController < ApplicationController
   end
 
   private
-
-  def perform_merge!(keep, source)
-    # 1. Move contracts
-    source.contracts.each do |c|
-      existing = Contract.find_by(person_slug: keep.slug, team_slug: c.team_slug)
-      if existing
-        c.destroy!
-      else
-        c.update!(person_slug: keep.slug, slug: "#{keep.slug}-#{c.team_slug}")
-      end
-    end
-
-    # 2. Move roster spots
-    source.roster_spots.update_all(person_slug: keep.slug)
-
-    # 3. Move coaches
-    source.coaches.each do |c|
-      existing = Coach.find_by(person_slug: keep.slug, team_slug: c.team_slug, role: c.role)
-      if existing
-        c.destroy!
-      else
-        c.update!(person_slug: keep.slug)
-      end
-    end
-
-    # 4. Merge athlete profiles
-    source_athlete = source.athlete_profile
-    keep_athlete = keep.athlete_profile
-
-    if source_athlete
-      if keep_athlete
-        # Merge draft data into keep's athlete if keep is missing it
-        if keep_athlete.draft_pick.nil? && source_athlete.draft_pick.present?
-          keep_athlete.update!(
-            draft_year: source_athlete.draft_year,
-            draft_round: source_athlete.draft_round,
-            draft_pick: source_athlete.draft_pick
-          )
-        end
-        # Move athlete grades from source to keep
-        source_athlete.grades.each do |g|
-          existing = AthleteGrade.find_by(athlete_slug: keep_athlete.slug, season_slug: g.season_slug)
-          if existing
-            g.destroy!
-          else
-            g.update!(athlete_slug: keep_athlete.slug)
-          end
-        end
-        # Move pff_stats
-        source_athlete.pff_stats.each do |s|
-          existing = PffStat.find_by(athlete_slug: keep_athlete.slug, season_slug: s.season_slug, stat_type: s.stat_type)
-          if existing
-            s.destroy!
-          else
-            s.update!(athlete_slug: keep_athlete.slug)
-          end
-        end
-        source_athlete.destroy!
-      else
-        # Re-parent the athlete
-        source_athlete.update!(person_slug: keep.slug)
-      end
-    end
-
-    # 5. Add merged person's name as alias
-    alias_name = source.full_name
-    unless keep.aliases.include?(alias_name)
-      keep.aliases << alias_name
-    end
-    # Also merge in source's aliases
-    source.aliases.each do |a|
-      keep.aliases << a unless keep.aliases.include?(a)
-    end
-    keep.save!
-
-    # 6. Copy boolean flags
-    keep.update!(athlete: true) if source.athlete? && !keep.athlete?
-    keep.update!(coach: true) if source.coach? && !keep.coach?
-    keep.update!(vocations: keep.vocations | source.vocations) if (source.vocations - keep.vocations).any?
-
-    # 7. Move the source's LOOKS and ARTIFACT CAST to the survivor
-    relocate_looks_and_cast!(keep, source)
-
-    # 8. Move the source's JEWELRY, which the destroy below would otherwise take
-    # with it (Person has_many :jewelries, dependent: :destroy).
-    PersonJewelry.where(person_slug: source.slug).update_all(person_slug: keep.slug, updated_at: Time.current)
-
-    # 9. Delete merged person
-    source.destroy!
-  end
-
-  # MERGING TWO PEOPLE MERGES THEIR PICTURES TOO.
-  #
-  # Without this, the destroy above cascades through
-  # `Person has_many :appearances, dependent: :destroy` and
-  # `has_many :artifact_subjects, dependent: :destroy`, and the source's looks
-  # and cast rows are DELETED rather than inherited. Measured on a throwaway
-  # transaction: a pair artifact went from two subjects to one, a character
-  # sheet was left with an empty cast label, and the pair's reuse key collapsed
-  # to a ONE-PERSON key — so it would match solo lookups it should never match
-  # and never again match the pair it actually depicts. Both silent.
-  #
-  # Both relocations can COLLIDE, and neither collision is a style question:
-  # each is a unique index that raises and takes the whole merge down with it.
-  def relocate_looks_and_cast!(keep, source)
-    relocate_cast!(keep, source)
-    recast_videos = relocate_recasts!(keep, source)
-    relocate_looks!(keep, source)
-
-    # The survivor may have just inherited their FIRST look. Relocation is an
-    # UPDATE and Appearance#become_default_if_first is an after_CREATE, so
-    # nothing on this path stamps the pointer — measured before the fix: a
-    # survivor holding one live look and a nil default, which is precisely the
-    # state every read then has to special-case.
-    keep.reload.resolve_default_appearance!
-
-    # Drop the cached collections so the destroy that follows cannot cascade
-    # into a look or a subject we just handed to the survivor.
-    source.association(:appearances).reset
-    source.association(:artifact_subjects).reset
-    source.association(:recast_performers).reset
-    MusicVideo.where(slug: recast_videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
-  end
-
-  # On-screen performers the source replaces (the recast) now name the
-  # survivor. Their looks follow in relocate_looks!; the prompts are refreshed
-  # once both have moved. Returns the videos touched.
-  def relocate_recasts!(keep, source)
-    recasts = VideoPerformer.where(recast_person_slug: source.slug)
-    videos = recasts.distinct.pluck(:music_video_slug)
-    recasts.update_all(recast_person_slug: keep.slug, updated_at: Time.current)
-    videos
-  end
-
-  # ORDER IS NOT LOAD-BEARING between this and the look pass, and an earlier
-  # draft of this comment claimed it was. It does not matter because the look
-  # pass re-points subjects by APPEARANCE, not by person, so it reaches the
-  # source's cast rows whether or not they have moved yet. Measured: swapping
-  # the two calls changes no outcome in the suite.
-  #
-  # `index_artifact_subjects_on_artifact_slug_and_person_slug` is unique, so an
-  # artifact casting BOTH people cannot take the source's row. After the merge
-  # that image depicts one person twice — a cast that never existed — so retire
-  # it rather than quietly halving it: left live, the row stays APPROVED while
-  # describing a cast its own image does not show.
-  #
-  # RETIRE IT BECAUSE IT IS WRONG, NOT BECAUSE IT IS REACHABLE. An earlier draft
-  # of this comment claimed a halved `pair` artifact MATCHES a one-person pair
-  # lookup. Measured in review: it does not, by two independent guards.
-  # `Content::ArtifactPlan#pair_slot` opens `return nil if cast.length < 2`, so
-  # a one-person pair lookup is never built — and it is the only caller that
-  # names `kind: "pair"`. `Artifact.matching` then filters on `kind`, so a solo
-  # character-sheet lookup cannot reach a `pair` row either. The halved row is
-  # INERT. Do not weaken this retire on the strength of that; the reason above
-  # stands on its own.
-  def relocate_cast!(keep, source)
-    source.artifact_subjects.to_a.each do |subject|
-      if ArtifactSubject.exists?(artifact_slug: subject.artifact_slug, person_slug: keep.slug)
-        artifact = Artifact.find_by(slug: subject.artifact_slug)
-        subject.destroy!
-        artifact.retire! if artifact && !artifact.retired?
-      else
-        subject.update!(person_slug: keep.slug)
-      end
-    end
-  end
-
-  # `index_appearances_live_per_person` is unique on (person_slug, descriptor)
-  # among LIVE looks, so a look whose descriptor the survivor already uses
-  # cannot simply move — it raises RecordNotUnique and kills the merge.
-  #
-  # Re-point its subjects at the survivor's twin and drop it. Measured against
-  # the alternatives on one probe across three trees: retiring-and-moving it,
-  # or moving it under a suffixed name, both leave the artifact keyed to a look
-  # no lookup will ever ask for again, so an approved image of the right person
-  # in the right outfit goes permanently invisible to Artifact.matching.
-  # Re-pointing is the only one of the three where the survivor's own look
-  # finds the image — and it is what a merge MEANS: after it, "Joseph in a
-  # jersey" simply is "Joe in a jersey".
-  def relocate_looks!(keep, source)
-    source.appearances.to_a.each do |look|
-      twin = look.retired? ? nil : keep.appearances.live.find_by(descriptor: look.descriptor)
-      if twin
-        ArtifactSubject.where(appearance_slug: look.slug).update_all(appearance_slug: twin.slug)
-        VideoPerformer.where(recast_appearance_slug: look.slug).update_all(recast_appearance_slug: twin.slug)
-        # Its iced twin follows it to the survivor's look, unless that look
-        # already has one (then the source's twin goes unlinked, not lost).
-        Appearance.where(base_appearance_slug: look.slug).update_all(base_appearance_slug: twin.slug) unless twin.iced_twin
-        look.destroy!
-      else
-        look.update!(person_slug: keep.slug)
-      end
-    end
-  end
 
   def find_duplicate_groups
     # Find people who share last_name and have similar first names (Levenshtein ≤ 2)

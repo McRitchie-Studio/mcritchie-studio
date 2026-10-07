@@ -13,8 +13,14 @@ class Activity < ApplicationRecord
     "handoff" => "Response or ready-again handoff"
   }.freeze
 
+  include ClearsUnknownSlug
+
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true
+  # A note keeps a handle no agent or task row holds (a mascot, a tool) in its
+  # metadata, so the foreign keys never cost the note.
+  clears_unknown_slug :agent_slug, "Agent", keep_in: :metadata, as: "agent_handle"
+  clears_unknown_slug :task_slug, "Task", keep_in: :metadata, as: "task_handle"
   # The block-mined grade candidates whose provenance is THIS activity (a
   # qa_feedback block). Nullify on destroy so a mined candidate outlives the block
   # Activity it was seeded from, mirroring ActionGrade's other nullify FKs.

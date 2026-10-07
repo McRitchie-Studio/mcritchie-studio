@@ -320,6 +320,36 @@ module ActiveSupport
 
     # Add more helper methods to be used by all tests here...
 
+    # The slug columns carry foreign keys, so a test that names a soul by slug
+    # (tasks.agent_slug, activities.agent_slug) creates the agent row first. The
+    # name parameterizes back to the slug, which Agent derives its slug from.
+    def agent_rows!(*slugs)
+      slugs.map { |slug| Agent.find_or_create_by!(slug: slug) { |agent| agent.name = slug.titleize } }
+    end
+
+    # Likewise for a task named by slug (task_events, activities, desk records).
+    # Inserted past the callbacks, so the row brings no events or mascot of its own.
+    def task_rows!(*slugs)
+      now = Time.current
+      missing = slugs - Task.where(slug: slugs).pluck(:slug)
+      Task.insert_all!(missing.map { |slug| { slug: slug, title: "Test task for #{slug}", stage: "designed", created_at: now, updated_at: now } }) if missing.any?
+      Task.where(slug: slugs).to_a
+    end
+
+    # Takes one slug foreign key off for this test; DDL is transactional in
+    # Postgres, so the test's rollback puts it back. For a test about a row that
+    # names no parent: a state only a row written before the keys can be in.
+    def without_slug_key(table, column)
+      connection = ActiveRecord::Base.connection
+      key = connection.foreign_keys(table.to_s).find { |fk| fk.column == column.to_s }
+      connection.remove_foreign_key(table.to_s, name: key.name) if key
+    end
+
+    # Likewise for a release named by slug (tasks.release_slug, release_events).
+    def release_rows!(*slugs)
+      slugs.map { |slug| Release.find_or_create_by!(slug: slug) { |release| release.state = Release::STATES.first } }
+    end
+
     # Pin one ENV key for the duration of the block, restoring the original
     # value (or its absence) on the way out. Safe under CI's process-per-worker
     # parallelism: each worker owns its ENV and runs its tests sequentially.

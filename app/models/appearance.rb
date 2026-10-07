@@ -82,6 +82,8 @@ class Appearance < ApplicationRecord
   before_validation :take_the_athletes_number, on: :create
   before_create :set_initial_position
   after_create :become_default_if_first
+  before_destroy :remember_default_holders
+  before_destroy :remember_recasts
   after_destroy :release_default_pointer
   after_destroy :release_recasts
 
@@ -326,25 +328,25 @@ class Appearance < ApplicationRecord
   # The FIRST look a person gets becomes their default. Doing it here rather
   # than at a call site means a person can never end up with looks and no
   # default, which is the state every lookup would have to special-case.
-  #
-  # RESOLVING rather than testing for a blank pointer keeps that promise on one
-  # more path: a person whose default was left aimed at a look that is gone is
-  # healed by their next look instead of staying stuck, because the old guard
-  # read a dangling pointer as "already has one".
   def become_default_if_first
     owner&.resolve_default_appearance!
   end
 
-  # A LOOK THAT GOES AWAY MUST RELEASE THE SLOT IT HELD.
+  # A LOOK THAT GOES AWAY HANDS THE SLOT ON.
   #
-  # Nothing else clears `people.default_appearance_slug` — there is no foreign
-  # key on it and no dependent: on this side of the association — so without
-  # this the pointer outlives the row and freezes the person in "has looks,
-  # resolves no default" for good. Scoped by the COLUMN rather than through
-  # #person because the column is a plain string that anyone could hold.
+  # `people.default_appearance_slug` and `characters.default_appearance_slug`
+  # carry a foreign key with ON DELETE SET NULL,
+  # so the DELETE itself clears every pointer aimed at this look, and by
+  # after_destroy no row names it any more. The holders are read before the
+  # delete (scoped by the COLUMN, since anyone may hold it, not only #person) and
+  # each is re-pointed at its oldest surviving live look afterwards.
+  def remember_default_holders
+    @default_holder_ids = [Person, Character].to_h { |owners| [owners.name, owners.where(default_appearance_slug: slug).pluck(:id)] }
+  end
+
   def release_default_pointer
     [Person, Character].each do |owners|
-      owners.where(default_appearance_slug: slug).find_each(&:resolve_default_appearance!)
+      owners.where(id: Array((@default_holder_ids || {})[owners.name])).find_each(&:resolve_default_appearance!)
     end
   end
 
@@ -356,12 +358,17 @@ class Appearance < ApplicationRecord
 
   # A recast that named this look keeps its athlete and loses the look (the
   # card asks for another), and the videos' prompts stop mentioning it.
-  def release_recasts
-    videos = VideoPerformer.where(recast_appearance_slug: slug).distinct.pluck(:music_video_slug)
-    return if videos.empty?
+  # video_performers.recast_appearance_slug carries a foreign key with ON DELETE
+  # SET NULL, so the recasts are released before the delete, while they can still
+  # be found by this slug, and their videos' prompts refreshed after it.
+  def remember_recasts
+    recasts = VideoPerformer.where(recast_appearance_slug: slug)
+    @recast_videos = recasts.distinct.pluck(:music_video_slug)
+    recasts.update_all(recast_appearance_slug: nil, updated_at: Time.current) if @recast_videos.any?
+  end
 
-    VideoPerformer.where(recast_appearance_slug: slug).update_all(recast_appearance_slug: nil, updated_at: Time.current)
-    MusicVideo.where(slug: videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+  def release_recasts
+    MusicVideo.where(slug: Array(@recast_videos)).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
   end
 
   def normalize_colorway

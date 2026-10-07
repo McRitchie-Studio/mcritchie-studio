@@ -1,10 +1,10 @@
 tasks_data = [
-  { title: "Review agent communication protocol",  stage: "designed",  priority: 0, agent_slug: "alex",         description: "Audit and improve inter-agent messaging patterns." },
+  { title: "Review agent communication protocol",  stage: "designed",  priority: 0, agent_slug: "xan",          description: "Audit and improve inter-agent messaging patterns." },
   { title: "Set up nightly sync job",              stage: "designed",  priority: 0, agent_slug: "mason",        description: "Configure cron job for nightly data sync across all agent databases." },
   { title: "Generate player prop lines",           stage: "building",  priority: 1, agent_slug: "turf-monster", description: "Calculate over/under lines for 67 seeded players based on historical data." },
   { title: "Review Turf Monster Tailwind PR",      stage: "submitted", priority: 1, agent_slug: "avi",          description: "Inspect the Tailwind PR metadata, diff, tests, and merge safety." },
   { title: "QA Turf Monster contest flow",         stage: "reviewed",  priority: 2, agent_slug: "avi",          description: "Approved after contest create and entry smoke checks — waiting for a release." },
-  { title: "Prepare production release train",      stage: "assembled", priority: 2, agent_slug: "alex",         description: "Merged into the current release branch; riding the train to QA." },
+  { title: "Prepare production release train",      stage: "assembled", priority: 2, agent_slug: "xan",          description: "Merged into the current release branch; riding the train to QA." },
   { title: "Deploy Turf Monster v2.1",             stage: "shipped",   priority: 2, agent_slug: "mason",        description: "Shipped with long-press button and cart improvements." },
   { title: "Archive stale Q1 tasks",               stage: "archived",  priority: 0, agent_slug: nil,            description: "Clean up completed tasks from Q1 2026." },
   # A block is a `building` ATTRIBUTE now (not a stage): this card rides the

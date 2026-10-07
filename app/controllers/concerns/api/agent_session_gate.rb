@@ -8,7 +8,12 @@ module Api
   # tier and its scope, and its soul is the actor:
   #
   #   require_task_scope    a task write: a studio session scoped to that task, or admin
-  #   require_admin_session a release write: admin only
+  #   require_admin_session an admin-tier write (releases, conductor lanes, agent
+  #                         updates): admin only
+  #
+  # Every board write that records an actor takes it from session_actor: tasks,
+  # task and review events, gate runs, release events, desk records, activities and
+  # agent activities. Agent actions record a lane, not a soul, and pin it to `agent`.
   #
   # Every refusal answers 403 with the reason.
   module AgentSessionGate
