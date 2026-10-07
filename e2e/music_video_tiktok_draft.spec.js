@@ -35,7 +35,7 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   await expect(card(1).locator("[data-test='clip-slug']")).toHaveText(SLUG);
   await expect(card(2).locator("[data-test='clip-slug']")).toHaveText("test-artist-a-tiktok-demo-alt-1-clip-02");
   await card(1).locator("[data-test='clip-slug-copy']").click();
-  await expect(card(1).locator("[data-test='clip-slug-row']")).toContainText(/Copied|press ⌘C/);
+  await expect(card(1).locator("[data-test='clip-slug-row']")).toContainText(/Copied|Selected: copy it from here/);
 
   // No generated version, no draft: the button is off and says why.
   await expect(tiktok(2)).toHaveAttribute("data-enabled", "false");

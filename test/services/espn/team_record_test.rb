@@ -10,6 +10,7 @@ class Espn::TeamRecordTest < ActiveSupport::TestCase
     OpenSSL::SSL::SSLError.new("SSL_connect returned=1 errno=0"), EOFError.new("end of file reached"),
     Net::OpenTimeout.new("execution expired"), Net::ReadTimeout.new, Errno::ECONNRESET.new, Errno::ECONNREFUSED.new,
     SocketError.new("getaddrinfo: nodename nor servname provided"), Net::HTTPBadResponse.new("wrong status line"),
+    Net::HTTPHeaderSyntaxError.new("wrong header line"), Net::ProtocolError.new("protocol"), Zlib::DataError.new("incorrect header check"),
     IOError.new("closed stream")
   ].freeze
 

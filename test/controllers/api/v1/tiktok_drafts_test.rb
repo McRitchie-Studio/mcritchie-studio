@@ -70,7 +70,7 @@ module Api
         assert_enqueued_jobs(1, only: TiktokDraftJob) { post path, headers: admin_headers, as: :json }
 
         assert_response :created
-        assert_equal ["queued", 1, "bin/tiktok-draft"], data.values_at("state", "version_number", "requested_by")
+        assert_equal ["queued", 1, "xan via bin/tiktok-draft"], data.values_at("state", "version_number", "requested_by")
         perform_enqueued_jobs
 
         get path, headers: auth_headers
@@ -139,7 +139,7 @@ module Api
       end
 
       test "an agent bearer without an admin session is refused on draft create" do
-        task = Task.create!(title: "Synthetic Build", slug: "synthetic-build", stage: "building",
+        task = Task.create!(title: "Synthetic Build Task", slug: "synthetic-build", stage: "building",
                             metadata: { "devops" => { "built_by" => "pokemon" } })
         studio = AgentSession.issue_studio!(soul: "pokemon", task:, issued_by: "task_claim")
         assert_no_enqueued_jobs { post path, headers: session_headers(studio), as: :json }
@@ -173,11 +173,23 @@ module Api
         assert_equal "delivered", data["state"]
       end
 
-      test "dry_run spelled any way but true is a real draft, and needs the admin session" do
-        %w[false 0 no].each do |spelling|
+      test "a request is a dry run that writes nothing or a gated draft, never between" do
+        %w[false 0 off].each do |spelling|
           post path, params: { dry_run: spelling }, headers: shared_headers, as: :json
           refused_for_want_of_an_admin_session
         end
+
+        %w[true 1 yes anything].each do |spelling|
+          assert_no_enqueued_jobs { post path, params: { dry_run: spelling }, headers: shared_headers, as: :json }
+          assert_response :success
+          assert_equal true, data["dry_run"]
+          assert_equal 0, TiktokDraft.count
+        end
+      end
+
+      test "the admin gate answers before the clip is looked up" do
+        post api_v1_alt_video_clip_tiktok_drafts_path("no-such-clip"), headers: shared_headers, as: :json
+        assert_response :forbidden
       end
 
       [OpenSSL::SSL::SSLError.new("SSL_connect returned=1"), EOFError.new("end of file reached"), Net::OpenTimeout.new].each do |boom|

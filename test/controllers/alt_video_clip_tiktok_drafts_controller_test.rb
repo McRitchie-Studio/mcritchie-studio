@@ -192,13 +192,18 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     page
 
-    assert_select "#{card(1)} form[data-test='clip-tiktok-draft'][x-data*='blocked: false'][x-on\\:submit]" do
-      assert_select "button[x-bind\\:disabled='sending || blocked']:not([disabled])"
-      assert_select "button [x-text]", "Draft to TikTok"
-    end
-    assert_select "#{card(2)} form[data-test='clip-tiktok-draft'][x-data*='blocked: true']" do
-      assert_select "button[x-bind\\:disabled='sending || blocked'][disabled]"
-    end
+    on = css_select("#{card(1)} form[data-test='clip-tiktok-draft']").sole
+    assert_equal "{ sending: false, blocked: false }", on["x-data"]
+    assert_equal "if (sending || blocked) { $event.preventDefault() } else { sending = true }", on["x-on:submit"]
+    assert_equal ["sending || blocked", nil], on.at_css("button").then { |b| [b["x-bind:disabled"], b["disabled"]] }
+    assert_equal "sending ? 'Sending…' : 'Draft to TikTok'", on.at_css("button span")["x-text"]
+    assert_equal "Draft to TikTok", on.at_css("button span").text
+
+    # Alpine's binding would switch a server-disabled button back on unless the
+    # form carries the server's own off state.
+    off = css_select("#{card(2)} form[data-test='clip-tiktok-draft']").sole
+    assert_equal "{ sending: false, blocked: true }", off["x-data"]
+    assert_equal ["sending || blocked", "disabled"], off.at_css("button").then { |b| [b["x-bind:disabled"], b["disabled"]] }
   end
 
   test "an attempt uploaded with its status unknown says to check TikTok and offers the re-poll, never Failed" do

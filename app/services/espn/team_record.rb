@@ -1,4 +1,6 @@
 require "net/http"
+require "openssl"
+require "zlib"
 require "json"
 require "uri"
 require_relative "api"
@@ -15,11 +17,23 @@ module Espn
   #
   # EVERY NUMBER IS READ, NEVER RECALLED. A read that fails raises Error; the
   # callers refuse to write a record they could not read.
+  #
+  # Error IS THE ONLY WAY A FAILED READ LEAVES HERE. The callers rescue Error
+  # and nothing else, so every way the network can fail is turned into it,
+  # whichever reader made the request: NETWORK_ERRORS below. A TLS failure, a
+  # connection closed mid-answer (EOFError) or a malformed response used to
+  # escape as its own class and reach the operator as a 500.
   class TeamRecord
     BASE = "https://#{Api::WEB_HOST}/apis/site/v2/sports/football/nfl".freeze
     SOURCE = "ESPN (#{Api::WEB_HOST})".freeze
 
     class Error < StandardError; end
+
+    # Timeout::Error covers Net::OpenTimeout, Net::ReadTimeout and Net::WriteTimeout;
+    # SystemCallError every Errno; IOError covers EOFError. The last four are a
+    # response that is not HTTP, or not the gzip it claims to be.
+    NETWORK_ERRORS = [SocketError, Timeout::Error, SystemCallError, IOError, OpenSSL::SSL::SSLError,
+                      Net::ProtocolError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Zlib::Error].freeze
 
     Reading = Struct.new(:record, :last_final, keyword_init: true)
 
@@ -36,6 +50,8 @@ module Espn
       raise Error, "ESPN returned no record for #{@team_name}" if record.to_s.empty?
 
       Reading.new(record: record, last_final: last_final(espn_id))
+    rescue *NETWORK_ERRORS => e
+      raise Error, "could not read ESPN for #{@team_name}: #{e.class}"
     end
 
     private
@@ -69,7 +85,7 @@ module Espn
       raise Error, "ESPN answered #{resp.code} for #{uri.path}" unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
-    rescue JSON::ParserError, SocketError, Timeout::Error, SystemCallError => e
+    rescue JSON::ParserError, *NETWORK_ERRORS => e
       raise Error, "could not read ESPN (#{uri.path}): #{e.class}"
     end
   end

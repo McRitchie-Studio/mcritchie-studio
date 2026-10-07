@@ -228,4 +228,24 @@ class TiktokDraftCliTest < Minitest::Test
     refute $?.success?
     assert_match(/lands on Alex's phone/, out)
   end
+
+  def test_the_admin_token_is_picked_out_of_whatever_the_grant_printed_around_it
+    token = "eyJfcmFpbHMiOnsiZGF0YSI6eyJzaWQiOiJzZXNzLXN5bnRoZXRpYyJ9fX0=--#{'ab12' * 16}"
+    noisy = "DEPRECATION WARNING: synthetic\nadmin session sess-synthetic granted to xan (admin), ends 2026-10-08T06:00:00Z.\n#{token}\r\n"
+
+    assert_equal token, TiktokDraftCli.admin_token(token)
+    assert_equal token, TiktokDraftCli.admin_token(noisy)
+    assert_equal token, TiktokDraftCli.admin_token("#{token}\nadmin session sess-synthetic granted to xan")
+    [nil, "", "   ", "not a token", "Running bin/rails on mcritchie-studio... up, run.1234"].each do |raw|
+      assert_nil TiktokDraftCli.admin_token(raw), "#{raw.inspect} holds no token"
+    end
+  end
+
+  def test_the_bin_without_an_admin_session_says_how_and_sends_nothing
+    out = `env -u AGENT_ADMIN_SESSION_TOKEN #{File.expand_path("../../bin/tiktok-draft", __dir__)} #{SLUG} --api https://hub.invalid --yes 2>&1`
+
+    refute $?.success?
+    assert_match(/AGENT_ADMIN_SESSION_TOKEN is not set/, out)
+    assert_match(/agent_sessions:grant_admin/, out)
+  end
 end
