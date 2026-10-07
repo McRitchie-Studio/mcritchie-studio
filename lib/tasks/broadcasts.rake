@@ -37,6 +37,21 @@ namespace :broadcasts do
     puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
   end
 
+  # The play-times note (task cyvasse-play-times-email), as a DRAFT at
+  # /broadcasts/cyvasse-play-times/edit, on the legacy list. Idempotent: an
+  # existing row is left as it is, so editor edits survive a re-run (it runs
+  # as the task's post-deploy). It never stages or sends.
+  desc "Create the Cyvasse Play Times broadcast as a draft (never sends)"
+  task draft_cyvasse_play_times: :environment do
+    broadcast = Broadcast.find_or_create_by!(slug: "cyvasse-play-times") do |b|
+      b.template_key = "cyvasse_play_times"
+      b.subject      = Broadcasts::CyvassePlayTimes::PLAIN_SUBJECT
+      b.target_list  = "cyvasse-legacy"
+      b.status       = "draft"
+    end
+    puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
+  end
+
   # Post-deploy for task cyvasse-email-live-copy: moves the existing draft to
   # the new subject. Idempotent; never touches a sent broadcast or a subject
   # someone edited in the editor, and never sends.
