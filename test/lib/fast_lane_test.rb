@@ -108,7 +108,7 @@ class FastLaneTest < Minitest::Test
 
   def test_handoff_command_names_an_executable_submit
     Dir.mktmpdir("desk-without-submit") do |desk|
-      _cd, submit, slug = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      _cd, submit, slug = parse_handoff(Remedy.handoff("fix-nav-bug", desk, HUB_BIN))
 
       assert_equal "fix-nav-bug", slug
       assert_equal submit, File.expand_path(submit),
@@ -124,7 +124,7 @@ class FastLaneTest < Minitest::Test
   # hint used to print died as `nohup: bin/submit: No such file or directory`.
   def test_handoff_command_is_never_bare
     Dir.mktmpdir("desk-without-submit") do |desk|
-      command = FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN)
+      command = Remedy.handoff("fix-nav-bug", desk, HUB_BIN)
       refute_match BARE_SHIP, command,
                    "the hint printed a bare bin/submit, which resolves only from a hub desk"
     end
@@ -141,7 +141,7 @@ class FastLaneTest < Minitest::Test
   # so a hint that names the script alone trades one failure for its mirror image.
   def test_handoff_command_stands_in_the_desk
     Dir.mktmpdir("desk-without-submit") do |desk|
-      cd, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      cd, = parse_handoff(Remedy.handoff("fix-nav-bug", desk, HUB_BIN))
       assert_equal desk, cd, "the hint must cd to the task's desk before running submit"
     end
   end
@@ -155,7 +155,7 @@ class FastLaneTest < Minitest::Test
       File.write(desk_submit, "#!/bin/sh\n")
       FileUtils.chmod("+x", desk_submit)
 
-      _cd, submit, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      _cd, submit, = parse_handoff(Remedy.handoff("fix-nav-bug", desk, HUB_BIN))
       assert_equal desk_submit, submit, "a desk that carries bin/submit must be handed its own"
     end
   end
@@ -169,7 +169,7 @@ class FastLaneTest < Minitest::Test
       File.write(dud, "not a program")
       FileUtils.chmod(0o644, dud)
 
-      _cd, submit, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      _cd, submit, = parse_handoff(Remedy.handoff("fix-nav-bug", desk, HUB_BIN))
       refute_equal dud, submit, "a non-executable desk submit must not be printed"
       assert File.executable?(submit), "the fallback must be a runnable script"
     end
@@ -188,13 +188,13 @@ class FastLaneTest < Minitest::Test
       File.chmod(0o755, script)
       File.symlink("tooling/abc123/bin", File.join(state, "bin"))
 
-      assert_equal File.join(state, "bin", "ship"), FastLane.resolve_bin("ship", sha_bin)
+      assert_equal File.join(state, "bin", "ship"), Remedy.resolve_bin("ship", sha_bin)
 
       File.unlink(File.join(state, "bin"))
       other = File.join(state, "tooling", "def456", "bin")
       FileUtils.mkdir_p(other)
       File.symlink("tooling/def456/bin", File.join(state, "bin"))
-      assert_equal script, FastLane.resolve_bin("ship", sha_bin), "a link that moved on is not this tree's name"
+      assert_equal script, Remedy.resolve_bin("ship", sha_bin), "a link that moved on is not this tree's name"
     end
   end
 end

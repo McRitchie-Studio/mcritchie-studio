@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "fast_lane"
+require_relative "remedy"
 
 # BlockRecipe — the copy-pasteable `bin/task block` commands the CLI PRINTS, held in
 # ONE table so none of them can be printed without its acting soul.
@@ -57,8 +57,8 @@ module BlockRecipe
   # satellite or gem desk that carries no bin/task; handing them a command their
   # checkout cannot execute is the defect remedy-hints-print-bare-paths closed
   # everywhere else. Resolved from bin/ (this file's parent) once at load; policy:
-  # FastLane.remedy_command.
-  TASK_CMD = FastLane.remedy_command("task", File.expand_path("..", __dir__)).freeze
+  # Remedy.command.
+  TASK_CMD = Remedy.command("task", File.expand_path("..", __dir__)).freeze
 
   TEMPLATES = {
     escalation: <<~CMD.chomp,

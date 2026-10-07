@@ -262,7 +262,7 @@ class TaskBeginTest < Minitest::Test
   # named must be the task's worktree — the cwd is the other half of the instruction
   # (bin/submit roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
   # refusing, and dying with the root guard's refusal only when no desk resolves; the cert
-  # WRITERS run by hand afterwards refuse ANY foreign root). FastLane.handoff_command's
+  # WRITERS run by hand afterwards refuse ANY foreign root). Remedy.handoff's
   # own arms are unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and
   # it is what reddens if the bare form is ever restored here.
   def test_begin_prints_a_handoff_that_resolves_from_the_desk
@@ -620,7 +620,7 @@ class TaskBeginTest < Minitest::Test
                 env: { "FAIL_PREFLIGHT" => "2" })
 
     refute status.success?, "a preflight that cannot describe the desk must refuse the claim"
-    # Filesystem-keyed for the reason test/lib/remedy_hint_guard_test.rb spells out:
+    # Filesystem-keyed for the reason test/lib/remedy_test.rb spells out:
     # an absolute path CONTAINS "bin/task begin <slug>", so a substring assertion
     # here passes the bare form as readily as the fixed one.
     resume = err[%r{re-run: (\S*/bin/task) begin #{SLUG}}, 1]

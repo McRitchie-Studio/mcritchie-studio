@@ -297,6 +297,7 @@ require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
+require_relative "lib/remedy"
 require_relative "lib/review_hop"
 require_relative "lib/desk_claim"
 require_relative "lib/code_diff"
@@ -307,12 +308,12 @@ require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
 # OWN __dir__. A RE-RUN remedy names the script for the tree the reader is ALREADY
-# standing in, so it passes one directory and carries no `cd`; FastLane.remedy_command
+# standing in, so it passes one directory and carries no `cd`; Remedy.command
 # holds the full policy, including why the form is unconditionally absolute even on a
 # hub desk. The bare `bin/task` this replaced resolves ONLY from a hub desk — bin/task
 # lives in mcritchie-studio/bin alone, so a builder on a turf-monster, rolio or gem
 # desk reached this script through its ABSOLUTE path and could not run the bare form
-# back. Pinned by test/lib/remedy_hint_guard_test.rb, which keys on the FILESYSTEM
+# back. Pinned by test/lib/remedy_test.rb, which keys on the FILESYSTEM
 # (File.executable?) rather than on what the line says, because an absolute path
 # CONTAINS the bare form and a substring assertion is blind to this defect.
 #
@@ -320,10 +321,10 @@ require_relative "lib/approval_request_notice"
 # reader JUST TYPED, not a command handed over to run, so it echoes the invocation with
 # $PROGRAM_NAME: absolute when they reached this script absolutely, bare when they typed
 # the bare form, and never a 90-character path in front of every flag list.
-SELF_CMD = FastLane.remedy_command("task", __dir__).freeze
+SELF_CMD = Remedy.command("task", __dir__).freeze
 # The self-service credential fix every lane is told to run itself. Same reasoning,
 # and bin/submit has carried the routed form since wave 1 (GH_AUTH_REFRESH_CMD there).
-GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__).freeze
+GH_AUTH_REFRESH_CMD = Remedy.command("gh-auth-refresh", __dir__).freeze
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
@@ -2791,10 +2792,10 @@ when "begin"
   puts "magic link: #{ReviewHop.mint_url(context["local_url"])}" if context["local_url"]
   puts "task: #{BASE_URL}/tasks/#{slug}"
   # Absolute script + the desk to run it from, on its own line so it is
-  # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
+  # copy-pasteable verbatim. See Remedy.handoff for why the bare
   # `bin/submit <slug>` this replaced was wrong from every desk but the hub's.
   puts "next: build in the worktree, then hand off with:"
-  puts "  #{FastLane.handoff_command(slug, worktree_dir, __dir__)}"
+  puts "  #{Remedy.handoff(slug, worktree_dir, __dir__)}"
 when "update"
   usage = "usage: #{$PROGRAM_NAME} update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)

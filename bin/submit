@@ -92,6 +92,7 @@ require "optparse"
 require_relative "lib/repo_root"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
+require_relative "lib/remedy"
 require_relative "lib/stacked_pr"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/pr_overlap"
@@ -118,19 +119,19 @@ DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __
 # used to print resolved only from a hub desk and died as `No such file or
 # directory` everywhere else. Resolved from THIS script's own __dir__ — the very
 # ship that is speaking, and its siblings beside it — which is why it can never be
-# mis-pointed; see FastLane.remedy_command for the full policy.
+# mis-pointed; see Remedy.command for the full policy.
 #
 # DELIBERATELY NOT the *_BIN seams above. Those are the EXECUTION path and are
 # ENV-overridable so tests can point them at stubs; a remedy names the real script
 # the READER is being sent to, and must stay true when the seam is redirected.
-SHIP_CMD = FastLane.remedy_command("submit", __dir__)
-TASK_CMD = FastLane.remedy_command("task", __dir__)
-FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
-DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__)
+SHIP_CMD = Remedy.command("submit", __dir__)
+TASK_CMD = Remedy.command("task", __dir__)
+FAST_CHECK_CMD = Remedy.command("fast-check", __dir__)
+DOR_CHECK_CMD = Remedy.command("dor-check", __dir__)
 # The token refresh is the one remedy here that is ALREADY self-service house-wide
 # (AGENTS.md prints it bare), but it is a hub-only script like the rest, so the
 # reader on a satellite desk needs the same absolute form.
-GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
+GH_AUTH_REFRESH_CMD = Remedy.command("gh-auth-refresh", __dir__)
 GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
 # A minted App installation token, populated only if a gh write refuses on
 # credentials (see gh_capture). Held for THIS run so one mint covers the rest of it.

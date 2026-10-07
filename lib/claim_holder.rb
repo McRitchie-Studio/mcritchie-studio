@@ -2,7 +2,7 @@
 
 require "time"
 require_relative "claim_lease"
-require_relative "../bin/lib/fast_lane"
+require_relative "../bin/lib/remedy"
 
 # ClaimHolder — WHO holds this task, in WHAT ROLE, and HOW FRESH is their lease.
 #
@@ -152,8 +152,8 @@ module ClaimHolder
   # DEFAULTED, NOT REQUIRED. A required kwarg would still let a future caller pass a
   # bare string; a default that is always absolute means the bare form cannot come
   # back through this door at all. Callers that resolved their own may pass it.
-  # Policy: FastLane.remedy_command.
-  TASK_COMMAND = FastLane.remedy_command("task", File.expand_path("../bin", __dir__)).freeze
+  # Policy: Remedy.command.
+  TASK_COMMAND = Remedy.command("task", File.expand_path("../bin", __dir__)).freeze
 
   module_function
 

@@ -79,12 +79,12 @@ class GithubReadRemedyTest < Minitest::Test
   # --- what the remedy IS ------------------------------------------------------
 
   def test_the_remedy_names_an_absolute_executable_script
-    command = GithubReadRemedy.refresh_command("GITHUB_TOKEN", BIN)
+    command = Remedy.token_export("GITHUB_TOKEN", BIN)
     script = command[/\$\((.+?)\)/, 1].to_s
 
     # Asks the DISK, not the string. An absolute path CONTAINS the bare form, so a
     # substring assertion here would pass on the very defect it is meant to catch —
-    # measured on PR #1341 and written up in test/lib/remedy_hint_guard_test.rb.
+    # measured on PR #1341 and written up in test/lib/remedy_test.rb.
     assert_equal File.expand_path(script), script,
                  "the remedy must name an ABSOLUTE script — a bare `bin/gh-token` typed from a " \
                  "satellite or gem desk is `No such file or directory`: #{command}"
@@ -97,7 +97,7 @@ class GithubReadRemedyTest < Minitest::Test
     # a plausible default is how the wrong spelling survives a rename.
     ["", "   ", nil].each do |blank|
       assert_raises(ArgumentError, "a blank env name must refuse, not default: #{blank.inspect}") do
-        GithubReadRemedy.refresh_command(blank, BIN)
+        Remedy.token_export(blank, BIN)
       end
     end
   end
@@ -123,7 +123,7 @@ class GithubReadRemedyTest < Minitest::Test
   # reason) this file exists to catch.
   def test_following_the_remedy_verbatim_sets_the_variable_it_names
     %w[GITHUB_TOKEN GH_TOKEN SOME_OTHER_READER_TOKEN].each do |name|
-      remedy = GithubReadRemedy.refresh_command(name, BIN)
+      remedy = Remedy.token_export(name, BIN)
 
       env = follow(remedy, probe: %w[GH_TOKEN GITHUB_TOKEN] | [name])
 
@@ -141,7 +141,7 @@ class GithubReadRemedyTest < Minitest::Test
   # before the remedy runs — because "set an unset variable" and "replace a stale
   # one" are different acts, and only the second is what an operator is doing.
   def test_the_remedy_replaces_a_stale_value_in_the_variable_the_read_consumes
-    remedy = GithubReadRemedy.refresh_command("GITHUB_TOKEN", BIN)
+    remedy = Remedy.token_export("GITHUB_TOKEN", BIN)
 
     env = follow(remedy, { "GITHUB_TOKEN" => STALE_READ_TOKEN })
 
