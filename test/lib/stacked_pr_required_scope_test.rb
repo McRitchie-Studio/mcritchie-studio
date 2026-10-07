@@ -15,7 +15,7 @@ class StackedPrRequiredScopeTest < Minitest::Test
       StackedPr.guard_base(base: "feat/parent", accepted: "accepted", slug: "demo-task",
                            pr_url: "https://github.com/o/r/pull/701",
                            list: ->(head) { listed << head; ["[]", true] },
-                           edit: ->(_base) { true }, say: ->(_line) {})
+                           edit: ->(_base) { true }, say: ->(_line) { })
     end
 
     assert_includes error.message, "repo_scope"
