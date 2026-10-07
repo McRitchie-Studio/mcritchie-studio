@@ -195,6 +195,20 @@ class SubmitWaitScriptTest < Minitest::Test
     end
   end
 
+  # The exit codes a caller branches on are printed by --help from ShipWait::EXIT_CODES,
+  # so the docs cite the help rather than restating a table that can drift.
+  def test_help_prints_every_exit_code_the_script_can_return
+    Dir.mktmpdir do |dir|
+      out, _err, code, = run_wait(dir, ["--help"])
+      assert_equal 0, code
+      exits = (ShipWait.constants.grep(/\AEXIT_/) - [:EXIT_CODES]).map { |c| ShipWait.const_get(c) }
+      assert_equal exits.sort, ShipWait::EXIT_CODES.keys.sort, "every EXIT_* constant needs a row in EXIT_CODES"
+      ShipWait::EXIT_CODES.each do |num, (name, _meaning)|
+        assert_match(/^\s+#{num}\s+#{Regexp.escape(name)}\s/, out, "--help must print exit #{num} (#{name})")
+      end
+    end
+  end
+
   # --- 4. IT IS BOUNDED -------------------------------------------------------
 
   def test_a_running_ship_times_out_inside_its_budget

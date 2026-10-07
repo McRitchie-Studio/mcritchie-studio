@@ -820,15 +820,9 @@ hub's absolute path stays a working fallback for one release. The desk-handoff
 re-exec (`MCR_SKIP_DESK_HANDOFF`) and the hub-move diagnosis that used to paper over
 the window are deleted.
 
-**Exit codes — branch on these, never re-parse the log:**
-
-| Code | Means | Do |
-|------|-------|----|
-| `0` | SUCCEEDED — the log carries `stage: submitted (read back verified)` | hand off |
-| `1` | FAILED — the run ended without that line | read the log, re-run `bin/submit` (it resumes) |
-| `2` | TIMEOUT — still running when `--timeout` elapsed | nothing is wrong; wait again |
-| `3` | USAGE — bad invocation, or a ship for that slug is already running | read the refusal |
-| `4` | NO LOG — nothing to watch, and `--launch` was not given | `--launch`, or point `--log` at your redirect |
+**Exit codes: branch on them, never re-parse the log.** `bin/submit-wait --help`
+prints the table from `bin/lib/ship_wait.rb#EXIT_CODES`; 0 alone means the ship
+reached `submitted`.
 
 **Four properties, and each one is a mistake somebody already made:**
 

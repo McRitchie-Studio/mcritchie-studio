@@ -68,6 +68,15 @@ module ShipWait
   EXIT_USAGE     = 3   # bad invocation
   EXIT_NO_LOG    = 4   # nothing to watch: no log, and no --launch
 
+  # The table `bin/submit-wait --help` prints, so no doc has to restate it.
+  EXIT_CODES = {
+    EXIT_SUCCEEDED => ["SUCCEEDED", "the log carries `#{SUCCESS_LINE}`; hand off"],
+    EXIT_FAILED => ["FAILED", "the run ended without that line; read the log, re-run bin/submit (it resumes)"],
+    EXIT_TIMEOUT => ["TIMEOUT", "still running when --timeout elapsed; nothing is wrong, wait again"],
+    EXIT_USAGE => ["USAGE", "bad invocation, or a ship for that slug is already running; read the refusal"],
+    EXIT_NO_LOG => ["NO LOG", "nothing to watch and --launch was not given; --launch, or point --log at your redirect"]
+  }.freeze
+
   # ~12 min is a cold ship; 30 gives headroom for a slow CI without ever being
   # unbounded. A wait that can hang forever recreates the defect in a new shape.
   DEFAULT_TIMEOUT_S = 1800
