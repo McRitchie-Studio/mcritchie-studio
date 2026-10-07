@@ -283,6 +283,7 @@ require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
+require_relative "../lib/devops_list_flags"
 require_relative "lib/task_board"
 require_relative "lib/block_recipe"
 require_relative "lib/bounce_ledger"
@@ -743,88 +744,14 @@ SCALAR_FLAGS = {
   # from --agent, which sets the task OWNER (agent_slug).
   "--persona" => "persona"
 }.freeze
-LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
-# The LIST_FLAGS whose values are IDENTIFIERS rather than prose, and which
-# therefore REFUSE a comma. Read the per-flag reasoning before adding a sixth:
-# this set is deliberately smaller than LIST_FLAGS, and growing it wrongly is a
-# worse defect than the one it fixes.
-#
-# THE DEFECT. Every LIST_FLAG is repeatable (`--repo a --repo b`), so `--repo a,b`
-# is user error. The defect was that it was accepted SILENTLY, storing a
-# one-element array holding the joined string — and producing a record that reads
-# correctly everywhere except where it matters. `bin/task show` prints
-# `repos: a,b` for the joined entry and for the correct pair alike, so nothing at
-# create time, and nothing on the board, can tell them apart.
-#
-# WHERE IT SURFACES, measured 2026-09-15 across the production board (2066 tasks):
-#   repositories  the LOUD reader, and the one that cost a sweep. Release::
-#                 Conductor resolves each entry to a repo, finds a phantom with no
-#                 PR, and refuses at step 3a — the guard added after the
-#                 2026-08-13 half-ship. It ABORTED a live QA release sweep on
-#                 /tasks/sweep-stale-signer-claims: nothing promoted, recorded or
-#                 deployed, repaired by hand and re-run. A SECOND instance was
-#                 typed the same night, by the operator who had just watched the
-#                 first one abort. The failure mode does not teach, because the
-#                 record looks right — which is the whole argument for a guard.
-#   risk_tags     the SILENT reader, and 1117 tasks already carry a joined entry.
-#                 ReviewerSelector looks each tag up in RISK_DOMAINS and matches
-#                 EXACTLY, so a joined entry matches nothing and the gate fails
-#                 OPEN: 464 tasks would have pulled a domain reviewer light and
-#                 did not. (Release::GemVersion is the one
-#                 reader unharmed — BREAKING_TAG is a substring regex.)
-#
-# WHY THESE TWO AND NOT THE OTHER THREE. `--accept`, `--test` and `--checks` carry
-# free PROSE, where a comma is ordinary punctuation — 291, 230 and 1605 board TASKS
-# respectively carry one, and those are 360, 309 and 5883 individual ENTRIES
-# (re-measured 2026-09-16; the first cut of this sentence printed the TASK counts and
-# called them entries — what a blanket rule would shred is the 6552 entries, not the
-# 2126 tasks). Every one of those entries is correct. Guarding them would
-# refuse legitimate acceptance criteria, and SPLITTING them would silently shred
-# an acceptance bullet into fragments. That is a worse defect than the one being
-# fixed, and it is exactly why this is a per-flag decision and not one blanket
-# rule. The invariant is asserted, not merely written here:
-# test_the_comma_guard_covers_identifier_flags_and_never_prose in
-# test/lib/task_cli_test.rb reads this constant out of this file.
-#
-# WHY REFUSE RATHER THAN SPLIT. Splitting cannot be WRONG — no legal repo name or
-# risk tag contains a comma — so it was the live alternative. It loses on two
-# counts. First, consistency: every other value this parser cannot honor dies
-# here (`--agent Steffon`, `--depends-on "Adopt Modal Primitive"`, a malformed
-# `--pr-url-for` pair, an unknown flag), each with the same stated reason — die
-# where a human can still fix it. A single flag that silently rewrites what the
-# operator typed, sitting among four that refuse, is its own trap. Second, and
-# decisive: splitting teaches the WRONG lesson. An agent whose `--repo a,b`
-# quietly works has learned that this CLI takes comma lists, and will next type
-# `--accept "one thing, then another"` expecting two criteria — which must stay
-# ONE, and will. Refusing states the flag's shape once, and the lesson transfers
-# to the flags that can never be guarded. The cost is one retyped command line,
-# paid by the operator who was already wrong, at the only moment it is still free.
-#
-# WHY THE GUARD LIVES HERE — AND WHY IT IS NOT THE ONLY ONE.
-# The VALUE alone cannot be judged: `["a,b"]` from --repo and `["one thing, then
-# another"]` from --accept are both one-element arrays, and the board form posts the
-# same two shapes as strings.
-#
-# The KEY can be, and SINCE 2026-09-16 IT IS. normalize_devops_metadata branches per
-# key (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so
-# Task::DEVOPS_IDENTIFIER_LIST_KEYS carries the same rule scoped to
-# `repositories`/`risk_tags` — splitting a joined entry there, never in prose,
-# WHATEVER SHAPE THE PAYLOAD ARRIVES IN. That last clause was the second half of the
-# fix and landed a day late: Task.normalize_devops_list decided by INPUT SHAPE, so
-# scoping the array branch to the key left the string branch splitting for every key,
-# and the board form's "One criterion per line" TEXTAREAS still shredded any criterion
-# carrying a comma. The identifier keys do still split on that branch — it is how the
-# form's own "auth, solana, migration" text field files three tags — but because the
-# KEY says so now, not because the value arrived as a string.
-#
-# That server rule is the backstop for the raw JSON API, which this file cannot see
-# at all. Do NOT read it as making this guard redundant: the server
-# SPLITS where this REFUSES, deliberately and for reasons argued at that constant (a
-# 422 teaches a scripted caller nothing, and costs it the whole write). This is
-# where the lesson gets taught, and where all 1104 joined entries the 2026-09-15
-# census found were typed — guard here FIRST, not only. The two never disagree in
-# front of a human, because this refusal runs before any request goes out.
-COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
+# The repeatable devops list flags and the identifier flags that refuse a comma
+# come from ONE key map, lib/devops_list_flags.rb, which Task reads too: the server
+# splits a joined identifier entry from a raw API caller, and this CLI refuses it
+# first, where a human can still retype the line. Refusing rather than splitting
+# keeps the lesson honest: an agent whose `--repo a,b` quietly worked would next
+# type `--accept "one thing, then another"` expecting two criteria.
+LIST_FLAGS = DevopsListFlags::FLAGS
+COMMA_FREE_LIST_FLAGS = DevopsListFlags::COMMA_FREE_FLAGS
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
 #
 # `--pr-url` holds ONE url, and the release lane parses that url for the repo it

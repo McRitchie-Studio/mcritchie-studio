@@ -171,17 +171,13 @@ class Task < ApplicationRecord
   # `abandoned_prs` records each PR still open when an operator archived the task
   # with `--force` (lib/open_pr_guard.rb). Never cleared: it separates a dropped
   # PR from a forgotten one.
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs
-                        fix_forward].freeze
-  # List keys whose entries are identifiers, so a comma inside one is a joined list:
-  # these split on commas in array form too. bin/task refuses `--repo a,b` first
-  # (COMMA_FREE_LIST_FLAGS, pinned by test/lib/task_comma_list_flags_test.rb); this
-  # is the backstop for raw API callers, where a joined entry names a phantom repo
-  # or a risk tag no gate matches. Prose keys (acceptance, test_plan, checks_run,
-  # abandoned_prs) keep their commas; test/models/task_devops_identifier_lists_test.rb
-  # checks the complement. Normalization runs on write only; #devops_list does not
-  # split.
-  DEVOPS_IDENTIFIER_LIST_KEYS = %w[repositories risk_tags].freeze
+  # The flag-written keys come from the key map (lib/devops_list_flags.rb).
+  DEVOPS_LIST_KEYS = (DevopsListFlags::FLAGS.values + %w[abandoned_prs fix_forward]).freeze
+  # List keys whose entries are identifiers, so a comma inside one is a joined list
+  # and splits on write in array form too. The key map (lib/devops_list_flags.rb) is
+  # the one copy; bin/task refuses the same keys' flags first. Prose keys keep their
+  # commas. Normalization runs on write only; #devops_list does not split.
+  DEVOPS_IDENTIFIER_LIST_KEYS = DevopsListFlags::IDENTIFIER_KEYS
   # Repo-keyed maps: { "<repo>" => "<value>" }. `pr_urls` holds each repo's PR for a
   # multi-repo task; `pr_url` stays the primary that every reader uses.
   DEVOPS_MAP_KEYS = %w[pr_urls].freeze
