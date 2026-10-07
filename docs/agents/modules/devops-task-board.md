@@ -687,13 +687,12 @@ fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fa
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
-```bash
-cd <desk>                            # the worktree begin printed
-<ship> <task-slug>                   # <ship> = the absolute path begin printed
-<ship> <task-slug> -m "Commit message"   # message defaults to the task title
-```
+Paste the `next:` line `bin/task begin` prints. It names the desk and the absolute
+ship script, so no doc spells that path: `bin/lib/fast_lane.rb#handoff_command`
+builds it, and `test/lib/fast_lane_test.rb` proves it resolves to an executable.
+Add `-m "Commit message"` to override the default message, the task title.
 
-**Both halves of that are load-bearing, and `begin` now prints them for you.**
+**Both halves of that line are load-bearing.**
 The PATH picks the script: every fast-lane script — `bin/task`, `bin/submit`,
 `bin/fast-check`, `bin/dor-check` — lives in
 mcritchie-studio/bin ALONE, so a bare `bin/submit` on a turf-monster or rolio desk
