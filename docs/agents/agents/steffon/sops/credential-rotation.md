@@ -8,7 +8,8 @@ credential; never merge two credentials' Phase 4. Filing a NEW credential is
 public leak) rotates here first; lesser issues are triaged in
 [`credential-issues`](../../../modules/credential-issues.md). **Precondition:** the admin lane,
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`: `source ~/.zprofile.admin`, never through a pipe (the token lands
-in a subshell); with no such file, Alex runs `bin/setup-1pass-token --admin` once.
+in a subshell), then run each `op` call with `OP_SERVICE_ACCOUNT_TOKEN` set to the admin token's
+value (sourcing alone leaves `op` on the agents token, and `studio-agents-admin` "isn't a vault"); with no such file, Alex runs `bin/setup-1pass-token --admin` once.
 **Placeholders:** `<VAR>` is the env-var name; `<item>` `<field>` `<vault>` the 1Password home;
 `<app>` `<file>` `<repo>` `<env>` one target; substitute each. This SOP assigns `$NEW`, `$OLD`,
 `$APPS`, `$ROTATED_AT`.
