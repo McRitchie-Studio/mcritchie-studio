@@ -570,7 +570,7 @@ run where every single refresh raised printed `0`, exited 0, and satisfied
 `heroku run --exit-code` just the same.
 
 **`post_deploy_cmd` safety rule.** Because `bin/release` runs the command
-verbatim against PRODUCTION, `bin/dor-check` **rejects** a bare full-suite seed
+verbatim against PRODUCTION, the board **refuses** a bare full-suite seed on write
 (`bin/rails db:seed`, `rails db:seed`, `bundle exec rails db:seed`,
 `db:seed:replant`, `rake db:seed`): `db/seeds.rb` loads **every** `db/seeds/*.rb`,
 so it would inject demo News/Content/Tasks into prod and abort the release on the
@@ -915,7 +915,7 @@ Production stays gated until Alex explicitly approves release work.
 
 **What review reads besides the diff.** `devops.post_deploy_cmd` runs verbatim
 against production on ship: reject a bare `db:seed` and require a narrow, idempotent
-command (`bin/dor-check` enforces this, but read it yourself). `risk_tags` decide
+command (the board refuses one on write, but read it yourself). `risk_tags` decide
 whether an infra gate (Steffon) is needed.
 
 **`bin/devops-cycle` is a read-only snapshot, not a review process.** It groups
