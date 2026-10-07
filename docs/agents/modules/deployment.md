@@ -58,12 +58,22 @@ of 2.
 
 The sizing authority is the database, not the dyno: the worst-case connection
 budget beside the `workers` line in `config/puma.rb`. The board Postgres is
-essential-0 with a hard 20-connection limit shared by web, the Solid Queue dyno,
+essential-1 with a hard 20-connection limit shared by web, the Solid Queue dyno,
 and agent CLI sessions — budgeted 6 + 7 + 5 = 18 of 20. A third web worker adds
 3 connections and makes it 21. `test/lib/puma_config_contract_test.rb` re-derives
 that budget from the parsed configs and fails the suite if it reaches the
 ceiling. Re-prove the math there before raising `WEB_CONCURRENCY`,
 `RAILS_MAX_THREADS`, or `JOB_CONCURRENCY` on Heroku.
+
+### Web Memory and the Allocator
+
+The web dyno grows with traffic and has crossed its 1 GB quota; never answer that
+by lowering `WEB_CONCURRENCY`. `MALLOC_ARENA_MAX=2` is already exported by the
+Ruby buildpack (`.profile.d/ruby.sh`), so the lever is jemalloc, which ships in
+the `heroku-26` image and is enabled by one `LD_PRELOAD` config var. Every
+production boot logs the malloc it actually mapped: `heroku logs -a
+mcritchie-studio | grep '\[allocator\]'`. Command, rollback and the Metrics API
+measurement plan: [`../system/web-memory-allocator.md`](../system/web-memory-allocator.md).
 
 ### Root-Domain Launch
 

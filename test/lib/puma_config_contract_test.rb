@@ -5,7 +5,7 @@
 # From the 2026-08-09 H12 outage: production ran one Basic dyno with no Puma
 # `workers` line and 3 threads — 3 TOTAL concurrency — and a request swarm
 # queued the entire site (2,293 H12s in 2m47s). The fix raises WEB_CONCURRENCY,
-# but the board Postgres is Heroku essential-0 with a HARD 20-connection limit
+# but the board Postgres is Heroku essential-1 with a HARD 20-connection limit
 # shared by web (workers x threads), the Solid Queue dyno (bin/jobs), and agent
 # CLI/console sessions. This test parses the REAL config files (config/puma.rb,
 # config/database.yml, config/queue.yml, config/recurring.yml), re-derives the
@@ -29,7 +29,7 @@ class PumaConfigContractTest < Minitest::Test
   QUEUE_YML = File.join(ROOT, "config/queue.yml")
   RECURRING_YML = File.join(ROOT, "config/recurring.yml")
 
-  # The prod board Postgres (Heroku essential-0) hard connection limit.
+  # The prod board Postgres (Heroku essential-1) hard connection limit.
   PG_CONNECTION_LIMIT = 20
 
   # Headroom the budget must leave for direct-DB agent sessions (`heroku run`
@@ -79,7 +79,7 @@ class PumaConfigContractTest < Minitest::Test
     assert_operator budget, :<, PG_CONNECTION_LIMIT, <<~MSG
       Worst-case connection budget #{budget} (web #{web} + jobs \
       #{solid_queue_worst_case} + #{CLI_SESSIONS} CLI sessions) reaches the \
-      essential-0 limit of #{PG_CONNECTION_LIMIT}. Shrink WEB_CONCURRENCY, \
+      essential-1 limit of #{PG_CONNECTION_LIMIT}. Shrink WEB_CONCURRENCY, \
       RAILS_MAX_THREADS, or config/queue.yml — and update the math beside the \
       `workers` line in config/puma.rb.
     MSG

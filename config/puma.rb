@@ -43,11 +43,11 @@ threads threads_count, threads_count
 # connections takes the budget below to 21, past the hard 20. More workers need
 # a larger Postgres plan first, not a larger dyno.
 #
-# THE CEILING THAT SIZES THIS: the board Postgres is Heroku essential-0 with a
-# HARD 20-connection limit, shared by every process that boots this app. Worst
-# case at these defaults — each live thread holds at most 1 connection, and the
-# per-process Active Record pool (database.yml: RAILS_MAX_THREADS, fallback 5)
-# caps any runaway:
+# THE CEILING THAT SIZES THIS: the board Postgres is Heroku essential-1 with a
+# HARD 20-connection limit (plan read with `heroku pg:info` on 2026-10-06), shared
+# by every process that boots this app. Worst case at these defaults — each live
+# thread holds at most 1 connection, and the per-process Active Record pool
+# (database.yml: RAILS_MAX_THREADS, fallback 5) caps any runaway:
 #
 #   web    2 workers x 3 threads (RAILS_MAX_THREADS default)      =  6
 #   jobs   Solid Queue dyno (bin/jobs, config/queue.yml):
@@ -59,6 +59,12 @@ threads threads_count, threads_count
 # test/lib/puma_config_contract_test.rb re-derives this budget from the parsed
 # configs and fails if it reaches 20. Re-prove the math there before raising
 # WEB_CONCURRENCY, RAILS_MAX_THREADS, or JOB_CONCURRENCY.
+#
+# MEMORY: when web nears its 1 GB quota, fix the allocator; never lower the
+# worker count (the H12 outage above). MALLOC_ARENA_MAX=2 is already exported by
+# the Ruby buildpack; the next lever is jemalloc via an LD_PRELOAD config var.
+# The plan, command, rollback and Metrics API measurement:
+# docs/agents/system/web-memory-allocator.md.
 if ENV["RAILS_ENV"] == "production"
   workers Integer(ENV.fetch("WEB_CONCURRENCY", 2))
 end

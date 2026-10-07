@@ -122,6 +122,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | G4 Ship gate (frozen-SHA + prod deploy) | `mcritchie-studio/docs/agents/modules/gates/g4-ship.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
 | CDN rollout (edge + origin lockdown) | `mcritchie-studio/docs/agents/system/cdn-rollout.md` |
+| Hub web memory: allocator choice and Metrics API measurement plan | `mcritchie-studio/docs/agents/system/web-memory-allocator.md` |
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
 | Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
