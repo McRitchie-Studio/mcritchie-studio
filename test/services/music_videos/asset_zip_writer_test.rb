@@ -115,7 +115,8 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
   test "a client that goes away stops the zip at once: no further fetch, no README, nothing in ErrorLog" do
     fetcher = RecordingFetcher.new
     log = StringIO.new
-    zip = ZipKit::Streamer.new(ZipKit::NullWriter)
+    out = StringIO.new("".b)
+    zip = ZipKit::Streamer.new(out)
     writer = MusicVideos::AssetZip::Writer.new(FakeManifest.new([entry("a"), entry("gone"), entry("later"), entry("prompt", kind: :text),
                                                                  entry("later-sheet", kind: :url)], []),
                                                fetcher:, logger: Logger.new(log))
@@ -123,7 +124,7 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
       assert_raises(Puma::ConnectionError) { writer.write(zip) }
     end
     assert_equal %w[a gone], fetcher.started, "nothing is fetched after the client has gone"
-    assert_not_includes zip.instance_variable_get(:@files).map(&:filename), "v_alt_1/README.txt"
+    assert_not_includes out.string, "README.txt", "nothing more is written after the client has gone"
     assert_no_match(/WARN|ERROR/, log.string, "a disconnect is not an error")
     assert_match(/client went away after 1 of 5 files/, log.string)
   end
