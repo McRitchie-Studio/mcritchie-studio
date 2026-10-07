@@ -220,7 +220,7 @@ the environment and never touches 1Password:
 
 | Half | Where it is when 1Password is down |
 |---|---|
-| `GH_APP_ID` — the numeric app id | [`credential-inventory.md`](credential-inventory.md) → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Also at `~/.config/mcritchie/app-ids.json` on Alex's Mac, but nothing creates that file — on a rebuilt machine, read the doc. |
+| `GH_APP_ID` — the numeric app id | `export GH_APP_IDENTITY=agent` (or `deployer`): `bin/gh-app-mint-token` reads the id from `config/github_apps.yml#agent` / `config/github_apps.yml#deployer` in the checkout, so no 1Password read is needed. |
 | `GH_APP_PEM` — the private key | the `.pem` as last downloaded: `~/Downloads/mcritchie-{agent,deployer}.*.private-key.pem`. **Never** in the repo. |
 
 **This is a bypass, not a repair.** It works only on a machine that already has
@@ -292,7 +292,7 @@ call.
 cd /Users/alex/projects/mcritchie-studio
 
 # Both legs read the same two halves. Export them once.
-export GH_APP_ID=4431410
+export GH_APP_IDENTITY=agent        # the app id comes from config/github_apps.yml
 export GH_APP_PEM="$(cat ~/Downloads/mcritchie-agent.*.private-key.pem)"
 
 # ── Leg 1: gh ─────────────────────────────────────────────────────────────────
@@ -344,11 +344,11 @@ Two consequences of arming leg 2:
   neither read nor written and every git operation mints its own installation
   token. One extra API round trip per git operation, no 1Password reads, and — the
   point — a result that is yours rather than a sibling's.
-- **Identity then comes from `GH_APP_ID`/`GH_APP_PEM`, not from `GH_APP_ITEM`.**
+- **Identity then comes from `GH_APP_IDENTITY` (or `GH_APP_ID`) and `GH_APP_PEM`, not from `GH_APP_ITEM`.**
   `bin/gh-app-mint-token` reads neither `GH_APP_ITEM` nor the `--reject` argument
   the helper's `erase` branch passes it (`bin/gh-app-git-credential#REJECTED`), so
   a rejected credential costs one minted token nobody reads — wasteful, never
-  fatal. For the **ship** lane, swap the app id to `4431542` and the PEM to the
+  fatal. For the **ship** lane, set `GH_APP_IDENTITY=deployer` and the PEM to the
   deployer `.pem`; exporting
   `GH_APP_ITEM` on its own would leave leg 2 on the agent identity, which is a
   wrong-identity *success* and harder to notice than a refusal.

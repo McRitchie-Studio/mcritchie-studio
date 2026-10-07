@@ -339,7 +339,6 @@ test/lib/agent_worktree_port_holder_test.rb: 3.99
 test/lib/agent_worktree_test.rb: 78.15
 test/lib/anchor_heartbeat_test.rb: 0.2
 test/lib/app_catalog_test.rb: 0.13
-test/lib/app_id_recorded_claims_test.rb: 0.07
 test/lib/app_profile_test.rb: 1.89
 test/lib/app_registry_test.rb: 0.08
 test/lib/apple_contact_test.rb: 7.94

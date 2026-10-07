@@ -188,7 +188,7 @@ an `assert_operator` on a length and an `assert_equal` on one alike — a length
 assertion running first is fine.
 
 That header is described above rather than quoted, deliberately:
-`test/lib/app_id_recorded_claims_test.rb` refuses private-key material anywhere
+`test/lib/hand_mint_recipe_test.rb` refuses private-key material anywhere
 under `docs/`, so illustrating this rule with a real one reddens CI.
 
 Ordering is invisible on review and silent when it regresses, so that file
