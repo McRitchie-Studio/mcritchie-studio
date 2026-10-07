@@ -150,11 +150,15 @@ stops being a detail and becomes a load-bearing invariant that needs a guard.
 **Where the rule already lives in code** — three sites, which is why it belongs
 in prose:
 
-| Repo | Service |
-|------|---------|
-| `mcritchie-studio` | `app/services/gmail/credentials.rb` |
-| `mcritchie-studio` | `app/services/workspace/credentials.rb` |
-| `mcritchie-industries` | `app/services/google/credentials.rb` |
+| Repo | Service | Leak test |
+|------|---------|-----------|
+| `mcritchie-studio` | `app/services/gmail/credentials.rb#parse` | `test/services/gmail/credentials_test.rb` |
+| `mcritchie-studio` | `app/services/workspace/credentials.rb#parse` | `test/services/workspace/credentials_test.rb` |
+| `mcritchie-industries` | `app/services/google/credentials.rb` | |
+
+Each in-repo site carries a behavioural leak test that feeds a secret-bearing
+broken payload and refutes the secret in the raised message, so the rule is
+pinned where it runs, not in a copy of this table.
 
 A hand-written `bin/rails runner` does **not** inherit any of them. When you
 write one that parses a credential — in a rake task, in an SOP, in a one-off —
@@ -185,11 +189,7 @@ assertion running first is fine.
 
 That header is described above rather than quoted, deliberately:
 `test/lib/app_id_recorded_claims_test.rb` refuses private-key material anywhere
-under `docs/`, so illustrating this rule with a real one reddens CI. Measured on
-the first push of this paragraph — and a docs-ONLY diff maps no test at all in
-`bin/fast-check`, so CI was the only thing that said so. Pairing prose with its
-guard test under `test/docs/` fixes that half too: a changed `*_test.rb` maps to
-itself, so the cert covers the doc rule instead of deferring it to CI.
+under `docs/`, so illustrating this rule with a real one reddens CI.
 
 Ordering is invisible on review and silent when it regresses, so that file
 asserts it rather than describing it: a guard parses its own source and flags
