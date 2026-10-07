@@ -18,9 +18,14 @@ The Pokémon's `download-youtube` SOP: the YouTube sub-SOP of
 ```bash
 yt-dlp -f "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]" \
   --merge-output-format mp4 --write-info-json \
-  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en.*,en" \
+  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en,en-orig" \
   -o "%(id)s.%(ext)s" "<url>"
 ```
+
+Ask for `en,en-orig` only. `en.*` also matched every auto-translated track
+(`en-zh-Hans`, …); on 2026-10-04 YouTube answered HTTP 429 on one of them and
+yt-dlp aborted the whole download. If a caption track is still refused, the
+script downloads again without captions and the record has no timing.
 
 A video with no captions (Night Call, measured 2026-09-29) gets no `.vtt`; its
 timing is empty.

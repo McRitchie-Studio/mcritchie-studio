@@ -2,6 +2,7 @@
 
 require "minitest/autorun"
 require "json"
+require "stringio"
 require "tmpdir"
 require_relative "../../bin/lib/digest_video"
 
@@ -30,9 +31,13 @@ class DigestVideoTest < Minitest::Test
   class FakeShell
     attr_reader :calls
 
-    def initialize(h264_available: true, codecs: %w[h264 aac])
+    CAPTION_429 = "ERROR: Unable to download video subtitles for 'en-zh-Hans-x': HTTP Error 429: Too Many Requests"
+
+    def initialize(h264_available: true, codecs: %w[h264 aac], captions_refused: false, fails_with: nil)
       @h264_available = h264_available
       @codecs = codecs
+      @captions_refused = captions_refused
+      @fails_with = fails_with
       @calls = []
     end
 
@@ -48,11 +53,13 @@ class DigestVideoTest < Minitest::Test
     private
 
     def ytdlp(cmd)
+      return ["", @fails_with, false] if @fails_with
       return ["", "Requested format is not available", false] if !@h264_available && cmd.include?(DigestVideo::H264)
+      return ["", CAPTION_429, false] if @captions_refused && cmd.include?("--write-subs")
 
       dir = cmd[cmd.index("-P") + 1]
       File.write(File.join(dir, "Sa7GSJJ_lOo.mp4"), "video")
-      File.write(File.join(dir, "Sa7GSJJ_lOo.en.vtt"), VTT)
+      File.write(File.join(dir, "Sa7GSJJ_lOo.en.vtt"), VTT) if cmd.include?("--write-subs")
       File.write(File.join(dir, "Sa7GSJJ_lOo.info.json"), JSON.generate(INFO))
       ["", "", true]
     end
@@ -142,6 +149,43 @@ class DigestVideoTest < Minitest::Test
     run_digest(kind: "cinematic") { |_shell, _storage, api| assert_equal "cinematic", api.payloads.first[:kind] }
     error = assert_raises(DigestVideo::Failure) { run_digest(kind: "documentary") { flunk "never runs" } }
     assert_match "kind must be one of: music_video, cinematic", error.message
+  end
+
+  def ytdlp_calls(shell) = shell.calls.select { |c| File.basename(c.first) == "yt-dlp" }
+
+  def test_asks_only_for_english_and_english_original_captions
+    run_digest(dry_run: true) do |shell, *|
+      cmd = ytdlp_calls(shell).first
+      assert_equal "en,en-orig", cmd[cmd.index("--sub-langs") + 1]
+    end
+  end
+
+  def test_a_refused_caption_track_costs_the_timing_not_the_video
+    run_digest(shell: FakeShell.new(captions_refused: true)) do |shell, storage, api, out, _log, _dir|
+      calls = ytdlp_calls(shell)
+      assert_equal [DigestVideo::H264, DigestVideo::H264], calls.map { |c| c[c.index("-f") + 1] }
+      assert_includes calls.first, "--write-subs"
+      refute_includes calls.last, "--write-subs"
+      assert_match(/captions refused \(.*429.*\); downloading without them/, out)
+      refute_match(/no H.264 format/, out)
+      assert_equal({ "cues" => [], "sections" => [] }, api.payloads.first[:caption_timing])
+      assert_includes storage.puts.keys, "#{KEY}.mp4"
+    end
+  end
+
+  def test_a_failure_that_is_not_a_missing_format_says_so
+    shell = FakeShell.new(fails_with: "ERROR: [youtube] Sa7GSJJ_lOo: HTTP Error 503: Service Unavailable")
+    out = nil
+    error = assert_raises(DigestVideo::Failure) do
+      Dir.mktmpdir do |dir|
+        out = StringIO.new
+        DigestVideo::Runner.new(workdir: dir, shell: shell, storage: FakeStorage.new, api: FakeApi.new, out: out,
+                                encoder: "libx264").call(URL)
+      end
+    end
+    assert_match(/the H.264 download failed \(.*503.*\); downloading best/, out.string)
+    refute_match(/no H.264 format/, out.string)
+    assert_match(/yt-dlp failed: .*503/, error.message)
   end
 
   def test_vp9_fallback_converts_with_aac_audio
