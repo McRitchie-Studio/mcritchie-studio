@@ -2415,19 +2415,18 @@ end
 # on ship (bin/release) instead of someone running the rake by hand afterward.
 # Like local_url and the test tiers, the command is a BUILD artifact — you only
 # know it once the migration exists — so the build gate (spec-complete, no code
-# yet) never asks for it. Escape hatch, consistent with the chore gate (satisfy
-# the contract; don't bypass it): declare the command, OR set post_deploy_cmd to
-# "none" to acknowledge a schema-only migration the release phase auto-runs. The
-# explicit "none" is the point — it forces a conscious decision instead of a
-# silent omission.
+# yet) never asks for it. A SEED owes a command or an explicit "none". A diff whose
+# data files are ONLY under db/migrate/ defaults the field to "none" (guard catalog
+# row 2.7): the release phase runs every migration, so there is nothing to declare.
 if gate != "build"
   data_files = data_changed_files
-  if data_files.any? && !present?(devops["post_deploy_cmd"])
+  migrations_only = data_files.all? { |f| f.start_with?("db/migrate/") }
+  if data_files.any? && !migrations_only && !present?(devops["post_deploy_cmd"])
     sample = data_files.first(3).join(", ") + (data_files.size > 3 ? ", …" : "")
-    errors << "diff touches a seed/migration (#{sample}) but devops.post_deploy_cmd is blank — this " \
+    errors << "diff touches a seed (#{sample}) but devops.post_deploy_cmd is blank — this " \
       "change should declare a post-deploy command so the conductor runs it on ship and nobody runs the " \
       "rake by hand (e.g. #{TASK_CMD} update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails pokemon:seed'); " \
-      "set it to 'none' if no command is needed (a schema-only migration the release phase auto-runs)"
+      "set it to 'none' if the seed needs no command"
   end
 
   # No Gemfile-vs-lock check here (guard catalog row 2.2): CI's frozen `bundle install`

@@ -1112,13 +1112,15 @@ class DorCheckTest < Minitest::Test
     "checks_run" => ["[unit] x", "[integration] y"]
   }.freeze
 
-  def test_migration_diff_without_post_deploy_cmd_is_gated
+  # Guard catalog row 2.7: a migrations-only diff defaults post_deploy_cmd to none.
+  def test_migration_only_diff_defaults_post_deploy_cmd_to_none
     out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
       check(BACKEND_CONTRACT)
     end
+    assert_equal 0, code, out
+    refute_match(/post_deploy_cmd is blank/, out)
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb\ndb/seeds/x.rb") { check(BACKEND_CONTRACT) }
     assert_equal 1, code, out
-    assert_match(/post_deploy_cmd is blank/, out)
-    assert_match(%r{db/migrate/20260623120000_add_widgets\.rb}, out)
     assert_match(/--post-deploy-cmd/, out)
   end
 
@@ -1186,7 +1188,7 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_post_deploy_nudge_surfaces_in_json_verdict
-    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+    out, code = with_changed_files("db/seeds/pokemon.rb") do
       check(BACKEND_CONTRACT, "--json")
     end
     assert_equal 1, code, out
@@ -1195,10 +1197,10 @@ class DorCheckTest < Minitest::Test
     assert(verdict["errors"].any? { |e| e =~ /post_deploy_cmd is blank/ })
   end
 
-  def test_code_chore_adding_a_migration_demands_both_shape_and_post_deploy
-    # A chore whose diff is ONLY a migration is gated twice: it ships code (db/ is
+  def test_code_chore_adding_a_seed_demands_both_shape_and_post_deploy
+    # A chore whose diff is ONLY a seed is gated twice: it ships code (db/ is
     # a code prefix → demand a shape) AND it's a data change (→ demand a command).
-    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+    out, code = with_changed_files("db/seeds/pokemon.rb") do
       check("kind" => "chore")
     end
     assert_equal 1, code, out
@@ -1208,8 +1210,8 @@ class DorCheckTest < Minitest::Test
 
   # --- [integration] real git working-tree detection of a migration diff -------
 
-  def test_e2e_real_migration_diff_without_command_fails_merge_gate
-    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+  def test_e2e_real_seed_diff_without_command_fails_merge_gate
+    with_git_repo(untracked: ["db/seeds/widgets.rb"]) do |dir|
       out, code = check_against(dir, BACKEND_CONTRACT)
       assert_equal 1, code, out
       assert_match(/DoR-to-Merge NOT met/, out)
