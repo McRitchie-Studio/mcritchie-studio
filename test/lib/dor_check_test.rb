@@ -1389,45 +1389,24 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # THE WAIT. Builder-side a running CI used to credit a fast cert provisionally and
-  # pass; with no cert to credit it is NOT ready — but it is not failed either, and the
-  # headline says which. bin/submit reads exit 1 and does not move the task.
-  def test_a_pending_ci_is_a_wait_for_the_builder_not_a_failure
-    out, code = check_ci(SUITE_CONTRACT, "pending")
-    assert_equal 1, code, "a pending CI must not reach submitted: #{out}"
-    assert_match(/⏳ DoR-to-Merge WAITING on CI/, out)
-    assert_match(/WAITING for it to settle/, out)
-    assert_match(/not ready to advance .* YET; re-run once CI reports/, out)
-    refute_match(/NOT met/, out, "a wait is worded as a wait, never as a failure")
-    refute_match(/PROVISIONALLY/, out, "nothing is credited provisionally any more")
+  # Guard catalog row 1.10: bin/submit calls this gate only after its CI wait settles,
+  # so there is no builder-side WAIT. A pending CI refuses in both roles, alike.
+  def test_a_pending_ci_refuses_in_both_roles_alike
+    %w[builder review].each do |role|
+      out, code = check_ci(SUITE_CONTRACT, "pending", "--gate-role", role)
+      assert_equal 1, code, "#{role}: #{out}"
+      assert_match(/NOT met/, out, "#{role}: pending is a NO")
+      assert_match(/defer until CI settles/, out)
+      refute_match(/WAITING/, out, "#{role}: the builder-side wait is gone")
+    end
   end
 
-  def test_a_pending_ci_refuses_the_review_gate_zero
-    out, code = check_ci(SUITE_CONTRACT, "pending", "--gate-role", "review")
-    assert_equal 1, code, out
-    assert_match(/NOT met/, out, "review's gate-zero is the authoritative verdict — pending is a NO there")
-    assert_match(/defer this review until CI settles/, out)
-    refute_match(/WAITING on CI/, out)
-  end
-
-  # The WAIT headline is reserved for the case where the pending CI is the ONLY thing
-  # standing: with another refusal beside it the verdict is NOT met, and both errors
-  # print, so a builder cannot mistake "come back later" for "fix nothing".
-  def test_a_pending_ci_beside_another_refusal_is_not_a_wait
-    out, code = check_ci(SUITE_CONTRACT.merge("checks_run" => ["[unit] x"]), "pending")
-    assert_equal 1, code, out
-    assert_match(/NOT met/, out)
-    refute_match(/WAITING on CI/, out)
-    assert_match(/still RUNNING/, out)
-    assert_match(/missing test tiers/, out)
-  end
-
-  def test_the_wait_surfaces_in_the_json_verdict
+  def test_a_pending_ci_reads_as_pending_in_the_json_verdict
     out, code = check_ci(SUITE_CONTRACT, "pending", "--json")
     assert_equal 1, code, out
     j = JSON.parse(out)
     refute j["ready"]
-    assert j["ci_waiting"], "the builder's pending verdict must be marked as a WAIT"
+    refute j.key?("ci_waiting"), "the builder-side wait is gone"
     assert_equal "pending", j.dig("suite_evidence", "state")
     refute j.dig("suite_evidence", "satisfied")
     assert_equal "pending", j["ci_gate_result"], "the gates card paints the wait as in-flight, not red"
@@ -1441,7 +1420,6 @@ class DorCheckTest < Minitest::Test
     assert_equal CiGate::SUITE_EVIDENCE_FORM, j.dig("suite_evidence", "form")
     assert j.dig("suite_evidence", "satisfied")
     assert_equal "green", j.dig("suite_evidence", "state")
-    refute j["ci_waiting"]
     refute j.key?("full_suite"), "the fingerprint block is gone with the receipts it described"
   end
 
@@ -1469,11 +1447,11 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  def test_a_recorded_full_cert_does_not_turn_a_wait_into_a_pass
+  def test_a_recorded_full_cert_does_not_turn_a_pending_ci_into_a_pass
     devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
     out, code = check_ci(devops, "pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
+    assert_match(/still RUNNING/, out)
   end
 
   def test_a_stale_or_missing_receipt_does_not_refuse_a_green_ci
@@ -1534,7 +1512,7 @@ class DorCheckTest < Minitest::Test
 
   def test_an_exempt_doc_only_chore_still_needs_the_green_ci
     # An exempt DOC-ONLY chore skips the TIER gate, never the CI verdict: this repo's
-    # CI grades prose. Green passes, pending waits, red refuses.
+    # CI grades prose. Green passes, pending and red refuse.
     exempt = ->(ci) { with_changed_files("docs/agents/note.md") { with_env("DOR_CHECK_CI_STATUS" => ci) { check({ "kind" => "chore" }) } } }
 
     out, code = exempt.call("green")
@@ -1544,7 +1522,7 @@ class DorCheckTest < Minitest::Test
 
     out, code = exempt.call("pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
+    assert_match(/still RUNNING/, out)
 
     out, code = exempt.call("red")
     assert_equal 1, code, out
@@ -1716,7 +1694,6 @@ class DorCheckTest < Minitest::Test
       assert_equal 1, code, "submit-side #{state} must refuse now that nothing stands in: #{out}"
       assert_match own_remedy, out, "#{state} must carry the builder's remedy"
       assert_match(/ONLY suite evidence/, out)
-      refute_match(/WAITING on CI/, out, "#{state} is not a wait — the answer was never given")
     end
   end
 
@@ -1806,15 +1783,13 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
-  def test_pending_ci_is_a_wait_at_submit_that_names_where_the_verdict_lands
-    # gate-submit-on-green-ci: bin/submit holds at step 6/8 for exactly this, so the
-    # ordinary handoff never sees it; a hand-run verdict is told to come back, and told
-    # that ship resumes at this step.
+  def test_pending_ci_at_submit_names_where_the_wait_lives
+    # bin/submit calls this gate only after its CI wait settles (row 1.10); a hand-run
+    # verdict on a running CI is told where the wait lives.
     out, code = ci_check("pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
     assert_match(/still RUNNING/, out)
-    assert_match(/bin\/submit waits for exactly this/, out, "the wait names the wrapper that holds for it")
+    assert_match(%r{bin/submit waits at step 6/8}, out, "the refusal names the wrapper that holds for it")
   end
 
   def test_review_gate_zero_still_blocks_pending_ci

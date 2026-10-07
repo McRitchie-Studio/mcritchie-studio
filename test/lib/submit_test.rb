@@ -308,19 +308,44 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  def test_a_ci_that_never_finishes_falls_through_to_the_gate_rather_than_wedging
+  # Guard catalog row 1.10: the gate reads only a settled CI. A CI still running when
+  # the wait gives up stops the handoff BEFORE the gate, so dor-check never meets it.
+  def test_a_ci_that_never_finishes_stops_before_the_gate_rather_than_wedging
     with_repo do |dir|
-      # A permanently-pending CI with a 1s budget. The handoff must not hang, and
-      # must not advance on its own — it hands the pending state to dor-check,
-      # which is precisely the pre-existing behaviour this degrades to.
       out, err, status, lines = run_ship(dir, extra_env: {
-        "SHIP_CI_STATE" => "state:pending", "SHIP_CI_WAIT_TIMEOUT" => "1", "FAIL_DOR" => "1"
+        "SHIP_CI_STATE" => "state:pending", "SHIP_CI_WAIT_TIMEOUT" => "1"
       })
       combined = "#{err}\n#{out}"
 
       refute status.success?
       assert_match(/still pending/, combined, "the give-up path must name what it gave up on")
-      assert_includes markers(lines), "DOR #{SLUG}", "and must still consult the gate"
+      assert_match(/resumes at 6\/8/, combined)
+      refute_includes markers(lines), "DOR #{SLUG}", "the gate must not be called on an unsettled CI"
+      refute_includes markers(lines), "TASK move"
+    end
+  end
+
+  def test_a_ci_that_never_appears_stops_before_the_gate
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:none", "SHIP_CI_WAIT_APPEARANCE" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute status.success?
+      assert_match(/reports no CI checks/, combined)
+      refute_includes markers(lines), "DOR #{SLUG}", "the gate must not be called on an absent CI"
+    end
+  end
+
+  def test_a_disarmed_wait_still_reads_ci_once_and_stops_on_pending
+    with_repo do |dir|
+      _out, _err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_WAIT" => "off", "SHIP_CI_STATE" => "state:pending"
+      })
+
+      refute status.success?
+      refute_includes markers(lines), "DOR #{SLUG}", "a disarmed wait still never hands the gate a pending CI"
     end
   end
 
@@ -369,7 +394,7 @@ class SubmitTest < Minitest::Test
 
       assert status.success?
       assert_match(/6\/8 ci — wait disabled/, combined)
-      refute_match(/CI settled on/, combined, "a disarmed wait must not report a verdict it never read")
+      assert_match(/reading CI once/, combined, "a disarmed wait reads CI once and says so")
       assert_includes markers(lines), "DOR #{SLUG}", "the gate runs either way"
     end
   end

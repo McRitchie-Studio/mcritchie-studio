@@ -36,9 +36,8 @@ never its own gate row.
   are gone with the certs (phase 2b, `retire-local-cert-evidence`); a leftover
   line on an old task is author prose to this gate. Green
   passes in both roles; red, conflicted, ci-less, closed and merged refuse in
-  both; a **pending** CI is a **WAIT** for the builder (exit 1 under a `⏳ …
-  WAITING on CI` headline, `ci_waiting: true` in `--json`) and a refusal for
-  review; an unread verdict (`none` / `unverified` / `unreadable` / a blank
+  both; a **pending** CI refuses in both roles (`bin/submit` calls the gate only
+  after its CI wait settles, so the handoff never meets one); an unread verdict (`none` / `unverified` / `unreadable` / a blank
   `pr_url`) refuses in both roles with its own remedy, and **no local cert
   stands in** for any of them. The one fingerprint-bound line still graded is
   the `test-only` shape's executed control (`[control@<fp>]`).
@@ -371,8 +370,7 @@ exactly as the cert was.
 `--json` carries the facts machine-readably: `code_root` (the checkout the
 **diff** was read from) and `diff_source` (`pr` | `git` | `branch` | `injected` |
 `pr_unreadable` | `indeterminate`) plus `changed_files`, then `suite_evidence`
-(`form: settled-green-ci`, `satisfied`, `state`, `head`, `waiting`) and
-`ci_waiting`. **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
+(`form: settled-green-ci`, `satisfied`, `state`, `head`). **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
 correct answer only when `code_root` is the task's own tree; the same pair read
 from anywhere else is the 08-08 false pass.
 
@@ -452,9 +450,9 @@ bin/dor-check <task-slug>
 ```
 
 Exit 0 = ready to advance `submitted → reviewed`, which since 2026-09-24 means
-the PR's CI has **settled green**. A CI still running exits 1 under a `⏳ …
-WAITING on CI` headline — not a failure, a wait; `bin/submit` holds at step 6/8 for
-exactly this, so the ordinary handoff never sees it. The verdict opens+closes the
+the PR's CI has **settled green**. A CI still running exits 1 with "defer until
+CI settles"; `bin/submit` calls the gate only after its CI wait settles and stops
+at step 6/8 when it does not, so the ordinary handoff never sees it. The verdict opens+closes the
 `dor` gate with its evidence as SOPs. `--json` records no gate attempt, so
 `bin/dor-check <task-slug> --json` before the ship is a free read-only probe for
 missing tiers and a bad `[control]` line.
@@ -479,8 +477,8 @@ for CI: it grades whatever state it finds. What changed first
 wrapper holds at step 6/8 until the PR's CI settles, so in the ordinary case this
 gate is handed a GREEN CI. What changed second (`dor-reads-settled-ci-verdict`,
 2026-09-24) is what a still-pending CI means when the wait times out: there is no
-provisional credit any more, so the builder-side verdict is a **WAIT** (exit 1) and
-`bin/submit` stops at 7/8 to be re-run once CI reports.
+provisional credit any more, so `bin/submit` stops at 6/8, before the gate, to be
+re-run once CI reports.
 
 That reversed a dated decision, which is worth stating rather than leaving to be
 rediscovered. The original reasoning (`ci-gate-review-handoff`, 2026-07-09) was
@@ -493,9 +491,9 @@ bouncing into a cold one.
 
 The gate's own semantics:
 
-- **Builder side (`dor`, the default role):** a still-running CI is a **WAIT** —
-  exit 1 under its own `⏳ … WAITING on CI` headline, the `ci` SOP recording
-  `pending` so the gates card paints it in-flight rather than red. A **red** CI
+- **Builder side (`dor`, the default role):** a still-running CI refuses, the
+  `ci` SOP recording `pending` so the gates card paints it in-flight rather than
+  red; `bin/submit` never calls the gate on one. A **red** CI
   (or a closed/merged `pr_url`, or a merge-conflicted or **ci-less** PR) refuses,
   and so does an unread verdict (`none` / `unverified` / `unreadable`) or a blank
   `pr_url`, each with its own remedy. Nothing is credited provisionally: no
@@ -598,9 +596,8 @@ attempt n+1.
     verdict is the whole suite verdict and `test/lib/dor_check_test.rb` pins the
     role table.
   - **The builder side is no longer provisional.** The same allow-list runs in
-    both roles, with one difference: a pending CI is a WAIT for the builder (exit
-    1, `⏳ … WAITING on CI`, `ci_waiting: true`) and a refusal for review. Both
-    directions are asserted, so the split cannot quietly collapse either way.
+    both roles, and a pending CI refuses in both: `bin/submit` calls the gate only
+    after its CI wait settles (guard catalog row 1.10).
     - **It is not "none of this applies", and on a docs task that difference is
       now visible.** The role asymmetry covers the *unread* family and `pending`;
       a **RED** CI has always blocked BOTH roles, and since the exempt path
@@ -610,7 +607,7 @@ attempt n+1.
       rather than sailing through. That is the correct direction — this repo's CI
       grades prose — and it was undocumented until now. Measured 2026-09-05
       against the exempt path in the builder role: `red` → exit 1, `green` and
-      `pending` → exit 0; since 2026-09-24 `pending` → exit 1 as a WAIT.
+      `pending` → exit 0; `pending` now exits 1 and `bin/submit` never calls the gate on it.
   - The **remedies stay distinct**, because the fixes are: `unreadable` names the
     credential and says re-running is futile (a `conductor-review`, not a
     `request-changes` — the builder does not own the token); `none` /

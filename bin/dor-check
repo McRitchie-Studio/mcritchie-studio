@@ -48,11 +48,9 @@
 #                                            move — the stale-green check below).
 #   red / conflicted / ci_less / closed /
 #   merged                                 → refuses, both roles.
-#   pending                                → builder: WAITING (exit 1, its own
-#                                            headline — bin/submit waits for CI at
-#                                            step 6/8, so this is the rare case);
-#                                            review: refuses (the authoritative
-#                                            verdict, "defer until CI settles").
+#   pending                                → refuses, both roles ("defer until CI
+#                                            settles"); bin/submit calls this gate
+#                                            only after its CI wait settles.
 #   none / unverified / unreadable / no_pr
 #   / unclassified                         → refuses, both roles, with the state's
 #                                            own remedy; no local cert stands in.
@@ -2213,7 +2211,6 @@ exempt_ci_error =
     CiGate.verdict(exempt_ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
                               slug: task["slug"] || slug, also_refused: exempt_also_refused)
   end
-exempt_ci_waiting = CiGate.waiting?(exempt_ci, review_role: review_role)
     # CI FIRST, the PR-read refusal second: one fault hides both reads — a refused
     # token, or a `gh`/network failure — and when they co-fire the CI verdict is the
     # one that has always led this refusal.
@@ -2243,7 +2240,6 @@ exempt_ci_waiting = CiGate.waiting?(exempt_ci, review_role: review_role)
         # disagree (exempt: true, ready: false) exactly when CI refuses.
         ready: exempt_ready,
         exempt: true,
-        ci_waiting: exempt_ci_waiting,
         diff_source: diff_source.to_s,
         # The doc-only PASS — the exact verdict shape the 08-08 false pass wore. It
         # must say which tree it read, or the exemption cannot be audited after the
@@ -2286,15 +2282,6 @@ exempt_ci_waiting = CiGate.waiting?(exempt_ci, review_role: review_role)
         # this pass, so the reader can tell a graded exemption from a blind one.
         puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no " \
              "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
-      elsif exempt_ci_waiting && exempt_errors == [exempt_ci_error]
-        # THE WAIT, on the exempt path: nothing refuses but an unsettled CI, and the
-        # headline says so rather than "NOT met" — bin/submit's step 7 reads exit 1 either
-        # way, so the wording is for the reader, and the reader's move is to come back.
-        puts "⏳ #{gate_label} WAITING on CI for #{title.inspect} — the OBSERVED diff ships no behavior; the CI " \
-             "verdict has not settled"
-        print_pr_coverage(gate)
-        puts "  - #{exempt_ci_error}"
-        puts "  → not ready to advance #{boundary} YET; re-run once CI reports"
       else
         puts "✗ #{gate_label} NOT met for #{title.inspect}"
         print_pr_coverage(gate)
@@ -2631,7 +2618,6 @@ end
 
 ci = nil
 ci_error = nil      # the CI refusal, if any — the suite gate's whole verdict
-ci_waiting = false  # builder-side pending: a WAIT, printed under its own headline
 ci_refused = false  # resolved after the review-side checks below; feeds the gates-card row
 if gate != "build"
   ci = task_ci_verdict(devops).first
@@ -2642,7 +2628,6 @@ if gate != "build"
   # any more, because nothing clears a CI refusal but CI.
   ci_error = CiGate.verdict(ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
                                 slug: task["slug"] || slug)
-  ci_waiting = CiGate.waiting?(ci, review_role: review_role)
 
   # ==== THE GREEN MUST STILL BE ABOUT THIS MERGE (review role) ====================
   #
@@ -2894,8 +2879,7 @@ if gate != "build" && ci
     form: CiGate::SUITE_EVIDENCE_FORM,
     satisfied: ci_error.nil? && ci[:state] == :green,
     state: ci[:state],
-    head: ci[:head_oid],
-    waiting: ci_waiting
+    head: ci[:head_oid]
   }.compact
 end
 
@@ -3185,8 +3169,7 @@ if options[:json]
   # the CI state, the head it was read for, and whether it satisfied the gate. The
   # `full_suite` block that stood here — fingerprint, lanes, route, per-repo cert
   # verdicts — described receipts this gate no longer reads.
-  suite_evidence: suite_evidence,
-  ci_waiting: ci_waiting
+  suite_evidence: suite_evidence
 )
   exit(ready ? 0 : 1)
 end
@@ -3240,19 +3223,6 @@ end
   puts "  → ready to advance #{boundary}"
   print_suggestions.call
   exit 0
-end
-
-# THE WAIT has its own headline: nothing refuses but an unsettled CI, so "NOT met"
-# would send the reader hunting for a defect. bin/submit's step 7 reads exit 1 either
-# way; the wording is for the reader, whose move is to come back once CI reports.
-waiting_only = ci_waiting && errors == [ci_error] && missing_meta.empty? && missing_tiers.empty?
-if waiting_only
-  puts "⏳ #{gate_label} WAITING on CI for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
-  print_pr_coverage(gate)
-  puts "  - #{ci_error}"
-  puts "  → not ready to advance #{boundary} YET; re-run once CI reports"
-  print_suggestions.call
-  exit 1
 end
 
 puts "✗ #{gate_label} NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"

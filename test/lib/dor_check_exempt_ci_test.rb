@@ -149,19 +149,17 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_includes builder.to_s, "open the PR", "the builder's move is to open one"
   end
 
-  # The role split that is left, and it must survive the extraction: a pending CI is
-  # a WAIT for the builder — still not ready, worded as waiting — and a refusal in
-  # review.
-  def test_unit_a_pending_ci_waits_for_the_builder_and_refuses_for_review
-    builder = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: false, pr_url: PR_URL, slug: "t")
-    assert_includes builder.to_s, "WAITING for it to settle"
-    assert CiGate.waiting?({ state: :pending }, review_role: false)
+  # Guard catalog row 1.10: bin/submit calls the gate only after its CI wait settles,
+  # so no builder-side WAIT survives. Pending and none read one refusal in both roles.
+  def test_unit_pending_and_none_refuse_alike_in_both_roles
+    %i[pending none].each do |state|
+      builder = CiGate.verdict({ state: state, pending: ["ci"] }, review_role: false, pr_url: PR_URL, slug: "t")
+      review = CiGate.verdict({ state: state, pending: ["ci"] }, review_role: true, pr_url: PR_URL, slug: "t")
 
-    review = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: true, pr_url: PR_URL, slug: "t")
-    assert_includes review.to_s, "still RUNNING"
-    assert_includes review.to_s, "defer this review"
-    refute CiGate.waiting?({ state: :pending }, review_role: true)
-    refute CiGate.waiting?({ state: :green }, review_role: false)
+      assert_equal review, builder, "#{state}: one refusal for both roles"
+      refute_includes builder.to_s, "WAITING"
+    end
+    refute CiGate.respond_to?(:waiting?), "the builder-side wait predicate is gone"
   end
 
   def test_unit_gate_row_names_ci_as_the_failing_sop_when_ci_is_why_it_failed
@@ -266,14 +264,13 @@ class DorCheckExemptCiTest < Minitest::Test
   # The builder's submit-side run stays provisional: review re-reads it, so a
   # pending CI is a note and a missing PR is silent. A fix that blocked BOTH roles
   # would stall every docs handoff on an hour-old token.
-  # The builder's submit-side run is no longer provisional: with the cert routes gone
-  # a pending CI is a WAIT (not ready, marked as waiting), a missing PR refuses (there
-  # is no verdict to read), and a RED CI blocks as it always did.
-  def test_the_builder_role_waits_on_pending_and_refuses_the_rest
+  # The builder's submit-side run refuses a pending CI (bin/submit never calls it on
+  # one, row 1.10), a missing PR (there is no verdict to read), and a RED CI.
+  def test_the_builder_role_refuses_pending_and_the_rest
     pending, code = check(devops, ci: "pending", role: "builder")
     assert_equal 1, code, "submit-side pending is not ready"
-    assert pending["ci_waiting"], "…but it is a WAIT, and the payload says so"
-    assert_includes errors_of(pending), "WAITING for it to settle"
+    refute pending.key?("ci_waiting"), "the builder-side wait is gone"
+    assert_includes errors_of(pending), "still RUNNING"
 
     no_pr, no_pr_code = check(devops("pr_url" => ""), role: "builder")
     assert_equal 1, no_pr_code, "with no PR there is no CI verdict to read"
