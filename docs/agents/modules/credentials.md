@@ -35,6 +35,31 @@ needle (`needle="${SECRET:200:60}"`), report paths and counts only, and tell a r
 token from a format example by its length. Once printed, a credential is
 compromised: rotate first, then clean the copies.
 
+## Local env files hold development keys
+
+**No local `.env` holds a production `SECRET_KEY_BASE`.** Rails 8.1 development
+reads the env key (measured 2026-10-06: the app's key and the env key share a
+digest), so a production key on disk signs cookies, magic links and API tokens
+that production accepts. Until that day every primary and desk held the hub's,
+because `bin/ecosystem-build` restored each primary's `.env` from the production
+app's config and `bin/agent-worktree new` copied it into every desk.
+
+Both writers now generate instead (`bin/lib/dev_secret_key.rb`): the restore drops
+the production key and writes a fresh one, and a desk cut gives its copy of `.env`
+its own key. Check and repair with:
+
+```bash
+bin/dev-secret-key scan    # every primary and desk vs each production app's digest; exit 1 = a match
+bin/dev-secret-key fix     # the same, then a fresh dev key in each flagged file
+```
+
+It prints paths and 8-char SHA-256 prefixes, never a value, reads production
+digests with `heroku config --json` (read-only), and exits 4 when it could read no
+production digest, because a scan with nothing to compare against proves nothing.
+No local flow needs the production key: Turf's managed-wallet encryption keys off
+`credentials.secret_key_base` (the master-key file), not the env value, and board
+tokens are minted by production from `AGENT_API_SECRET`.
+
 ## 1Password CLI quirks
 
 - `op item delete` (and `--archive`) refuses a Password-category item whose password

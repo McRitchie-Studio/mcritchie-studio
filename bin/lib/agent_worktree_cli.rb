@@ -286,7 +286,7 @@ module AgentWorktreeCli
   # `sh("bin/rails", "test", *rest)`. Those tokens are not this script's to account
   # for — they are minitest's — and both spellings are in real use: bare paths
   # (`test <app> <task> test/models/x_test.rb`, which bin/agent-worktree's own
-  # prepare_test_env header and test/lib/agent_worktree_test.rb:1135 both quote) and
+  # prepare_test_env header and test/lib/agent_worktree_test.rb:1170 both quote) and
   # flags after `--`. A dictionary check over that tail would refuse `-n /pattern/`
   # and `--` itself, wedging the documented form — a top-level guard wearing a
   # per-arm guard's clothes, which is the mistake bin/agent-runtime's `codex-update`

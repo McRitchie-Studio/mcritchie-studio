@@ -120,6 +120,41 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
+  # [unit] A desk never inherits its primary's SECRET_KEY_BASE. Until 2026-10-06 the
+  # copy was verbatim, so the production hub key the primaries held reached every
+  # desk. The copy now carries a freshly generated development key: a different value
+  # from the primary's, from a sibling desk's, and from anything the primary held.
+  def test_copy_primary_env_files_gives_each_desk_a_fresh_dev_secret_key_base
+    Dir.mktmpdir do |root|
+      primary_key = "f" * 128 # stands in for the production key a primary held
+      primary = File.join(root, "primary")
+      desks = %w[desk-a desk-b].map { |name| File.join(root, name) }
+      FileUtils.mkdir_p([primary, *desks])
+      File.write(File.join(primary, ".env"), "A=1\nSECRET_KEY_BASE=#{primary_key}\nB=2\n")
+
+      outs = desks.map do |desk|
+        run_in_script(<<~RUBY)
+          copy_primary_env_files(#{primary.inspect}, #{desk.inspect})
+        RUBY
+      end
+
+      keys = desks.map do |desk|
+        body = File.read(File.join(desk, ".env"))
+        refute_includes body, primary_key, "the primary's key never reaches a desk"
+        assert_equal %w[A=1 B=2], body.lines.map(&:chomp).reject { |l| l.start_with?("SECRET_KEY_BASE=") },
+                     "every other line is copied as it was"
+        body[/^SECRET_KEY_BASE=(\h{128})$/, 1].tap { |key| refute_nil key, "a generated 128-hex dev key" }
+      end
+      refute_equal keys[0], keys[1], "each desk generates its own key"
+      assert_equal "SECRET_KEY_BASE=#{primary_key}", File.readlines(File.join(primary, ".env"))[1].chomp,
+                   "the primary itself is left alone by a desk cut"
+      outs.each do |out|
+        assert_match(/\Acopied \.env \(fresh dev SECRET_KEY_BASE \h{8}\)\z/, out)
+        refute_includes out, primary_key
+      end
+    end
+  end
+
   def test_tool_written_env_files_are_not_held_as_work
     out = run_in_script('print IGNORED_TOOL_FILES.include?(".env.development")')
     assert_equal "true", out, "a desk's copied .env.development must not hold its teardown"
