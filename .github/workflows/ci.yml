@@ -436,7 +436,11 @@ jobs:
 
       - name: Read the shard matrix from config/rails_lane.yml
         id: plan
-        run: echo "shards=$(bin/ci-shard --matrix)" >> "$GITHUB_OUTPUT"
+        # The assignment stands alone so a bin/ci-shard failure fails this step (bash -e);
+        # inside the echo, its exit status would be lost.
+        run: |
+          shards="$(bin/ci-shard --matrix)"
+          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
 
   rails:
     needs: rails_plan
