@@ -197,16 +197,25 @@ there.
 
 ### 8. Export into the app's desk
 
-From the hub (mode (b)), or with the image URL (mode (a)):
+In mode (b), from the hub desk:
 
 ```bash
 bin/email-image export <slug> --into <app-desk>/app/assets/images/emails/
-# mode (a): fetch the approved url= locally, then
-bin/email-image export <slug> --into <app-desk>/app/assets/images/emails/ --image-url <url>
 ```
 
 It writes `<email>-<variant>-banner.jpg` and prints the
 `Studio::EmailCatalog.register` snippet and the resolver line for the app.
+
+In mode (a) the brief lives only in the production database, so a local export
+cannot find it (`--image-url` swaps the image source, not the lookup). Run the
+export on the dyno for the file name and the snippet, then fetch the approved
+`url=` into the app's desk yourself:
+
+```bash
+heroku run --no-tty --exit-code -a mcritchie-studio -- bin/email-image export <slug> --into /tmp/
+# it prints "wrote /tmp/<file>" and the snippet; then, locally:
+curl -sSfo <app-desk>/app/assets/images/emails/<file> "<approved url=>"
+```
 
 ### 9. Wire it to the mailer
 
