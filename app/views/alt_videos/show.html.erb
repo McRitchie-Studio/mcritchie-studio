@@ -7,7 +7,19 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="alt-video-kicker">
       Source video · <%= @alt_video.name %>
     </p>
-    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2 break-words"><%= @video.title %></h1>
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2 min-w-0">
+      <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words min-w-0"><%= @video.title %></h1>
+      <% if @clips.any? %>
+        <%# The page's primary action: every clip's hand-off in one zip, one folder per clip (AltVideoDownloadsController). %>
+        <%= link_to music_video_alt_video_download_path(@video, @alt_video), download: "",
+                    class: "btn btn-primary w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2",
+                    title: "The source clips, prompts, lettered frames and sheets, one folder per clip",
+                    data: { test: "alt-video-download-all", turbo: false } do %>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+          <span>Download all assets</span>
+        <% end %>
+      <% end %>
+    </div>
     <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
       <span data-test="alt-video-clip-count"><%= pluralize(@clips.size, "clip") %></span>
       <span>built <%= l(@alt_video.created_at, format: :short) %></span>

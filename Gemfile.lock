@@ -508,6 +508,7 @@ GEM
       nokogiri (~> 1.8)
     yard (0.9.45)
     zeitwerk (2.8.2)
+    zip_kit (6.3.6)
 
 PLATFORMS
   aarch64-linux
@@ -555,6 +556,7 @@ DEPENDENCIES
   turbo-rails
   tzinfo-data
   web-console
+  zip_kit (~> 6.3)
 
 RUBY VERSION
    ruby 3.3.11p205
