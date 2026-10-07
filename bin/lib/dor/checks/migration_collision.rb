@@ -12,9 +12,8 @@ require "json"
 # EVERY db:migrate — including the Heroku release phase, which takes the deploy down
 # with it. Three of these were caught by hand on 2026-08-13 before they merged.
 #
-# WHY THE MERGE GATE, when session-preflight already reports this at build time and
-# bin/submit at handoff: both judge ONE branch against the base at the moment they run,
-# and neither can see the case this exists for — two branches, each honestly clean
+# WHY THE MERGE GATE, when bin/submit already reports this at handoff: it judges ONE
+# branch against the base at the moment it runs, and cannot see the case this exists for — two branches, each honestly clean
 # when it was certified, that collide only once the FIRST one merges. The merge gate
 # is the last read before `accepted` takes both, which is why the sibling-PR leg below
 # is load-bearing and not decoration: without it, two simultaneous PRs both pass.

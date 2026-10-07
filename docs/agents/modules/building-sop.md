@@ -94,17 +94,15 @@ The desk is the build claim. `begin` refuses only when another live session's
 desk is bound to the task with uncommitted changes, and names it. Add `--steal`
 only for that case.
 
-**Read the preflight output and fix what it flags before writing code**: branch
-drift vs `accepted`, blocker feedback, same-file PR overlap, duplicate migration
-installs, generated-doc drift, stale terminology, required test tiers. A missing
-`test_plan` or `local_url` is expected at this point, not a blocker.
-
-**Installed an engine migration? Re-run the preflight after the install.** At
-claim time the branch has no commits, so the migration check has nothing to read.
-A duplicate install BLOCKS, because it merges cleanly and then raises
-`ActiveRecord::DuplicateMigrationNameError` on every `db:migrate`, including the
-Heroku release phase. The task that OWNS the migration keeps its copy; the other
-drops it. Mechanism: `bin/lib/migration_collision.rb`.
+**Read the preflight output before writing code.** `begin` runs it on the desk
+before the claim, and after the claim it only reports. It prints the latest
+feedback, the branch's distance from `accepted`, the PR's merge and check state,
+same-file overlap with other PRs, stale terminology in your own changed docs, the
+installed entry docs (information: the ship publishes them), and the tiers your
+shape owes. A blocked task's `begin` clears the block, so read its feedback first.
+Duplicate migration installs are checked by `bin/submit` and the merge gate on the
+final diff (mechanism: `bin/lib/migration_collision.rb`): the task that owns an
+engine migration keeps its copy, and the other drops it.
 
 ## Step 2 — Build in the worktree
 

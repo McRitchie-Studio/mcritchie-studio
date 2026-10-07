@@ -374,89 +374,29 @@ def test_a_dead_gh_credential_is_not_a_preflight_blocker
   assert_empty report.fetch("errors").grep(/gh auth/i)
 end
 
-  # --- duplicate migration installs -------------------------------------------
+  # --- duplicate migration installs: not the preflight's (guard catalog row 4.8) ----
   #
-  # [integration] THE DEFECT, through the real script. Two branches install ONE engine
-  # migration under two host timestamps; the FILES do not conflict (different names),
-  # so git merges both cleanly and Rails then raises DuplicateMigrationNameError on
-  # every db:migrate, including the Heroku release phase. The same-file overlap check
-  # above cannot see it — it intersects FILENAMES, and these differ by construction.
-  # Three live incidents on 2026-08-13/14 (turf #312/#313, hub #853/#848, turf #312
-  # against turf's already-merged copy).
+  # At begin the branch has no commits, so the preflight compared the base with
+  # itself. bin/submit and bin/dor-check run the real check on the final diff and the
+  # open sibling PRs (bin/lib/migration_collision.rb; test/lib/dor_check_migration_
+  # collision_test.rb). The preflight neither checks nor reports it.
 
   ENGINE_MIGRATION_ORIGINAL = "20260813220000"
   BASE_INSTALL = "db/migrate/20260813221100_add_standard_user_profile_columns.studio_engine.rb"
   SECOND_INSTALL = "db/migrate/20260813223520_add_standard_user_profile_columns.studio_engine.rb"
 
-  # The copy already on the base ref is the turf #312-vs-merged-copy shape, and it needs
-  # no GitHub at all — which is why this leg still speaks under --no-gh.
-  def test_a_second_install_of_a_base_ref_migration_blocks_preflight
+  def test_a_duplicate_migration_install_is_left_to_the_ship
     task = write_task
     advance_base_with(BASE_INSTALL, engine_migration, "engine install lands on the base")
     commit_file(SECOND_INSTALL, engine_migration, "the same migration, a new timestamp")
 
     out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?, "a duplicate install must BLOCK:\n#{out}\n#{err}"
 
+    assert status.success?, "#{out}\n#{err}"
     report = JSON.parse(out)
-    item = report.fetch("migration_collisions").fetch("items").fetch(0)
-    assert_equal "class", item.fetch("key"), "Rails groups by class name, so that is the key"
-    assert_equal SECOND_INSTALL, item.fetch("mine").fetch("path")
-    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
-    assert_equal "AddStandardUserProfileColumns", item.fetch("mine").fetch("class_name")
-    assert report.fetch("errors").any? { |e| e.include?("duplicate migration install") },
-           report.fetch("errors").inspect
-    # The same-file check is blind to this by construction — proving WHY the new one exists.
-    assert_empty report.fetch("overlap").fetch("items"),
-                 "filename intersection cannot see two differently-named copies"
-  end
-
-  # turf #312 vs #313: the other copy is on a sibling OPEN PR, so only its PATHS are
-  # available. The class key is derivable from a filename alone, which is what makes
-  # this leg affordable.
-  def test_a_sibling_open_pr_installing_the_same_migration_blocks_preflight
-    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-    commit_file(SECOND_INSTALL, engine_migration, "our install")
-    fake_bin = write_fake_gh(sibling_files: [BASE_INSTALL])
-
-    out, err, status = run_preflight(
-      "--file", task, "--no-install-docs", "--no-fetch", "--json",
-      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
-    )
-    refute status.success?, "#{out}\n#{err}"
-
-    report = JSON.parse(out)
-    item = report.fetch("migration_collisions").fetch("items").fetch(0)
-    assert_equal "pr", item.fetch("kind")
-    assert_equal 6, item.fetch("number"), "the COLLIDING PR must be named"
-    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
-  end
-
-  # THE NEGATIVE CONTROL, and it matters more than the detection above: a check that
-  # flagged an ordinary install would wedge every migration-bearing task in the shop.
-  # The branch installs a genuinely NEW engine migration while the base and a sibling PR
-  # each carry a different one — nothing may fire, and `installs` proves the check
-  # LOOKED rather than skipped.
-  def test_a_legitimate_single_install_does_not_block_preflight
-    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
-    advance_base_with(BASE_INSTALL, engine_migration, "an unrelated engine install on the base")
-    commit_file("db/migrate/20260814094500_add_widget_prefs_to_studio_users.studio_engine.rb",
-                engine_migration(original: "20260814090000", klass: "AddWidgetPrefsToStudioUsers"),
-                "a brand new engine migration")
-    fake_bin = write_fake_gh(
-      sibling_files: ["db/migrate/20260810120000_create_studio_email_settings.studio_engine.rb"]
-    )
-
-    out, err, status = run_preflight(
-      "--file", task, "--no-install-docs", "--no-fetch", "--json",
-      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
-    )
-    assert status.success?, "a normal install must NOT block:\n#{out}\n#{err}"
-
-    report = JSON.parse(out)
-    assert_empty report.fetch("migration_collisions").fetch("items")
-    assert_equal 1, report.fetch("migration_collisions").fetch("installs"),
-                 "the check must have SEEN the install — silence from a blind check proves nothing"
+    assert_includes report.fetch("changed_files"), SECOND_INSTALL, "FLOOR: the install must be in the diff"
+    refute report.key?("migration_collisions")
+    assert_empty report.fetch("errors").grep(/migration/)
   end
 
   # [integration] The THIRD CI state at the preflight tier (task

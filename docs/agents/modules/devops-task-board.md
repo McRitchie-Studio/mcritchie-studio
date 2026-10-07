@@ -49,27 +49,24 @@ creates a flat production task from the ask before allocating a worktree or
 editing files. If a task already exists, the agent updates that task instead of
 creating a duplicate.
 
-After the task is created and the isolated worktree is bound, run
-`bin/session-preflight <task-slug>` before editing. It is the start-of-session
-counterpart to `bin/dor-check`: it reads latest task feedback, branch drift
-against `origin/accepted`, PR merge/check state, same-file overlap with open or
-recent PRs, **duplicate migration installs**, installed docs/skills drift, stale
-terminology, and the required test tiers from `config/feature_shapes.yml`.
-Everything there is a warning except the last two and the migration check: two
-branches installing ONE engine migration under two host timestamps merge cleanly
-(the files have different names — only `db/schema.rb` conflicts) and then raise
-`ActiveRecord::DuplicateMigrationNameError` on every `db:migrate`, including the
-Heroku release phase, so it **blocks**. The mechanism, both detection keys, and
-the resolution live in `bin/lib/migration_collision.rb` — kept beside the code so
-they cannot drift from it. Non-code kinds (`chore`,
-`cleanup`, `docs`) skip the shape/required-metadata gate exactly as
-`bin/dor-check` does — but the `kind` label alone never earns that skip. The
-exemption is earned by the **observed diff**: a file is non-behavioral only if it
-is provably prose (`*.md`) or inert media, judged by **file type, never by
-directory** — so `docs/agents/setup.sh` gates like any other script, while
-`docs/agents/sop.md` skips. Anything else — `.github/workflows/*`, `Gemfile`,
-`config/*.yml`, `bin/*`, migrations, `test/**` — forfeits the exemption. See
-[gates/dor.md](gates/dor.md).
+`bin/task begin` runs `bin/session-preflight <task-slug>` on the desk before the
+claim. It is the start-of-session counterpart to `bin/dor-check`: it reads latest
+task feedback, the branch's distance from `origin/accepted`, PR merge/check state,
+same-file overlap with open or recent PRs, the installed entry docs, stale
+terminology in the branch's own changed files, and the required test tiers from
+`config/feature_shapes.yml`. It fails on a tree it cannot describe (the wrong
+checkout, an unreadable task), on an open PR's failures (a conflict, no CI, a red
+check), and on stale terminology the branch added; everything else is
+information. `begin` validates the shape and its
+metadata when it creates the task, `bin/submit` and the merge gate check duplicate
+migration installs on the final diff (`bin/lib/migration_collision.rb`), and
+`bin/dor-check` holds the shape gate. Non-code kinds (`chore`, `cleanup`, `docs`)
+skip that gate only when the **observed diff** earns it: a file is
+non-behavioral only if it is provably prose (`*.md`) or inert media, judged by
+**file type, never by directory**, so `docs/agents/setup.sh` gates like any other
+script while `docs/agents/sop.md` skips. Anything else (`.github/workflows/*`,
+`Gemfile`, `config/*.yml`, `bin/*`, migrations, `test/**`) forfeits the
+exemption. See [gates/dor.md](gates/dor.md).
 
 Feature agents should first identify the feature and accumulate acceptance
 criteria until the agent and Alex are aligned on the goal. The task is
