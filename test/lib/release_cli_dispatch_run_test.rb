@@ -246,11 +246,20 @@ class ReleaseCliDispatchRunTest < Minitest::Test
   # drives the real dispatch through the stub to prove it. A message quoting a command
   # that differs from the real one is worse than no command at all — the operator
   # pastes it, GitHub creates a run, and they conclude the workflow is healthy.
+  #
+  # THE ONE DIFFERENCE IS THE CORRELATION PAIR. The conductor appends its own
+  # `-f correlation_id=<id>` so its poll can find its run by name; that id is the
+  # conductor's, and a hand re-run neither needs it (the input is optional) nor
+  # should reuse it. So the dispatched argv is the quoted command plus exactly that
+  # one trailing pair, and nothing else may differ.
   def test_the_quoted_command_is_the_command_the_shell_dispatched
-    out = run_release(NO_RUN_CREATED, guarded(DISPATCH) + %(; p($dispatched)))
+    pinned = %(def dispatch_correlation_id = "dw-pinned")
+    out = run_release("#{NO_RUN_CREATED}\n#{pinned}", guarded(DISPATCH) + %(; p($dispatched)))
 
-    assert_includes out, Release::ShipSequence.dispatch_argv(WORKFLOW, INPUTS).inspect,
-                    "the argv `gh workflow run` was called with must be the one the abort quotes"
+    quoted = Release::ShipSequence.dispatch_argv(WORKFLOW, INPUTS)
+    assert_includes out, (quoted + ["-f", "correlation_id=dw-pinned"]).inspect,
+                    "the argv `gh workflow run` was called with must be the quoted one plus the correlation pair"
+    assert_includes out, "command:  #{quoted.join(' ')}\n", "the abort quotes the hand-runnable command"
   end
 
   # THE WRONG DIAGNOSIS IS THE COST. An hour went into a healthy app because the
