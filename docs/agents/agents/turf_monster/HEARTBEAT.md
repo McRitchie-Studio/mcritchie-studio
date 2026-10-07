@@ -77,7 +77,7 @@ so this stays a decision rather than an oversight.
 [`contest-rehearsal`](sops/contest-rehearsal.md) and
 [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) are direct-invocation
 only, which is why the heartbeat composition runs one act while the launcher card
-carries two. Direct-invocation is a fact about the COMPOSITION, not about card
+carries three. Direct-invocation is a fact about the COMPOSITION, not about card
 membership: `contest-rehearsal` is direct-invocation only and is a chip, so being
 direct-invoke has never been what keeps an act off the card.
 
