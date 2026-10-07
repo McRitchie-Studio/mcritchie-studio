@@ -116,11 +116,14 @@ origin/accepted:bin/release-check`.
 
 `bin/task begin` ends by logging the desk's soul in to the task (an agent session;
 [`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). A `bin/task`
-write to that task, run from inside the desk, then carries the session, and the
-board stamps the soul from it. Run from any other tree, or about any other task, the
-same command keeps the shared token. A refused session (revoked, expired, the task
-moved on) is dropped and the write retries with the shared token, so a login never
-blocks a ship.
+write to that task, run from inside the desk by the harness session that ran
+`begin`, then carries the session, and the board stamps the soul from it. Run from
+any other tree, about any other task, or by another harness session (a reviewer
+acting from the builder's desk), the same command keeps the shared token, so the
+board records the soul that command names. A refused session (revoked, expired, the
+task moved on) is dropped and the write retries with the shared token, so a login
+never blocks a ship; that retry and every later fallback write name the dropped
+session's slug, and the board's `[agent-auth] legacy` log line carries it.
 
 ### The board derives; nobody stamps
 
