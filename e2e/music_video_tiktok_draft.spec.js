@@ -60,6 +60,6 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   await expect(latest.locator("[data-test='clip-tiktok-copy']")).toBeVisible();
   await expect(latest.locator("[data-test='clip-tiktok-publish-id']")).toContainText("stand-in-");
   await expect(latest.locator("[data-test='clip-tiktok-stand-in']")).toBeVisible();
-  await expect(latest.locator("[data-test='clip-tiktok-team-rule']")).toContainText("Test Rusher Eta, the clip's target, by the look's team");
+  await expect(latest.locator("[data-test='clip-tiktok-team-rule']")).toContainText("Sample Rusher Eta, the clip's target, by the look's team");
   await expect(latest).toContainText("Version 1");
 });

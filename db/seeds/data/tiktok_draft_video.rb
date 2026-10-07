@@ -11,7 +11,8 @@ module TiktokDraftVideo
   SLUG = "test-artist-a-tiktok-demo".freeze
   SOURCE = "music_videos/test_artist_a/tiktok_demo/source/test_artist_a_tiktok_demo.mp4".freeze
   DURATION_MS = 45_000
-  ATHLETE = { first_name: "Test", last_name: "Rusher Eta" }.freeze
+  # Named neither "Test" nor "Demo": the search specs type those words and pin who is listed.
+  ATHLETE = { first_name: "Sample", last_name: "Rusher Eta" }.freeze
   LOOK = "Home Royal".freeze
   TEAM = "buffalo-bills".freeze
   CLIP = "#{SLUG}-alt-1-clip-01".freeze
