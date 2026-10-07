@@ -238,8 +238,8 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    **Iced sheet only** one, **No sheet yet** none. **The kicker: "create the Dak
    model" means the Dak model AND the iced-out Dak model.** Ask the operator
    whether to build both sheets (two charges) before choosing Both, and before
-   building the iced sheet of someone with a championship, check their jewelry
-   on their person page: the operator enters rings there, never the agent. The card previews the new look
+   building the iced sheet of someone with a championship, check that their
+   rings are on their person page (Jewelry), so the sheet draws their own. The card previews the new look
    as building and repaints itself when the sheet is ready, about two minutes.
    A look may be cast while its sheet is building, or with none; its chunks
    show the sheet once there is one. Where no generator is configured, or the
