@@ -11,11 +11,22 @@ require "fileutils"
 # `agent-session.json` inside the desk's own git directory (a worktree's `.git`
 # file points at it), owner-only. Inside the git directory it can never be
 # committed, in any repo, and no other worktree reads it. From then on a
-# `bin/task` write to THAT task, run from inside THAT desk, presents the session
-# token instead of the shared secret's, so the board stamps the actor from the
-# session. Every other call (a read, another task, a script run from any other
-# tree) keeps the shared token, so a reviewer on the same laptop never borrows the
-# builder's login.
+# `bin/task` write to THAT task, run from inside THAT desk BY THE HARNESS SESSION
+# THAT OPENED IT, presents the session token instead of the shared secret's, so the
+# board stamps the actor from the session. Every other call (a read, another task,
+# a script run from any other tree, or a different harness session acting from
+# inside this desk, such as a reviewer) keeps the shared token, so a reviewer never
+# borrows the builder's login, even from the builder's own desk.
+#
+# The owner is the harness session id (SessionIdentity: CLAUDE_CODE_SESSION_ID or
+# CODEX_THREAD_ID) recorded at the login. A file that names none, or a run that
+# names none, cannot prove it is the owner, so it keeps the shared token.
+#
+# When the board refuses the session, the desk drops it: the token is erased and
+# the file keeps only the session's slug, marked dropped. From then on the owner's
+# writes to that task (and its writes after the session expires) send the slug in
+# DROPPED_HEADER, so the board's legacy-token log line names the desk's session
+# instead of reading as an anonymous shared-token call.
 #
 # The token is a bearer credential: it lives in the file, never on stdout.
 module DeskSession
@@ -24,6 +35,9 @@ module DeskSession
   # Stop using a token this many seconds before its session expires.
   REFRESH_MARGIN = 60
   TASK_WRITE = %r{\A/api/v1/tasks/([^/?]+)}
+  # The request header naming the desk's dropped (or expired) session slug on a
+  # shared-token fallback. Read by Api::V1::BaseController#authenticate_legacy_token!.
+  DROPPED_HEADER = "X-Agent-Session-Dropped"
 
   module_function
 
@@ -88,17 +102,52 @@ module DeskSession
     nil
   end
 
-  # The session token for a write to `slug` from the desk at `root`, or nil when
-  # the desk holds no live login for that task.
-  def token_for(slug, root:, now: Time.now)
-    return nil if slug.to_s.empty?
+  # Drop the desk's session after the board refused it: erase the token and keep
+  # the slug, so later fallback writes can still name it. Never raises.
+  def drop(root, now: Time.now)
+    data = read(root)
+    return clear(root) unless data
+
+    write(root, data.except("token").merge("dropped_at" => now.utc.iso8601))
+  rescue StandardError
+    clear(root)
+  end
+
+  # The desk's session for a write to `slug` by the harness session
+  # `harness_session_id`, or nil when the desk holds none for that task or the
+  # caller is not the harness that opened it.
+  def owned_session(slug, root:, harness_session_id:)
+    return nil if slug.to_s.empty? || harness_session_id.to_s.strip.empty?
 
     data = read(root)
-    return nil unless data && data["task_slug"] == slug && !data["token"].to_s.empty?
+    return nil unless data && data["task_slug"] == slug
+    return nil unless data["harness_session_id"].to_s == harness_session_id.to_s.strip
 
-    expires = Time.parse(data["expires_at"].to_s)
-    expires - REFRESH_MARGIN > now ? data["token"] : nil
+    data
+  end
+
+  # The session token for a write to `slug` from the desk at `root`, or nil when
+  # the desk holds no live login for that task or the caller is another harness.
+  def token_for(slug, root:, harness_session_id:, now: Time.now)
+    data = owned_session(slug, root: root, harness_session_id: harness_session_id)
+    return nil unless data && !data["token"].to_s.empty?
+
+    live?(data, now) ? data["token"] : nil
+  end
+
+  # The slug of the owner's session for `slug` when that session no longer
+  # answers (dropped or expired), so a fallback write can name it; nil otherwise.
+  def dropped_slug_for(slug, root:, harness_session_id:, now: Time.now)
+    data = owned_session(slug, root: root, harness_session_id: harness_session_id)
+    return nil unless data && !data["slug"].to_s.empty?
+    return nil if !data["token"].to_s.empty? && live?(data, now)
+
+    data["slug"]
+  end
+
+  def live?(data, now)
+    Time.parse(data["expires_at"].to_s) - REFRESH_MARGIN > now
   rescue ArgumentError, TypeError
-    nil
+    false
   end
 end
