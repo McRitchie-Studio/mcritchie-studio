@@ -149,6 +149,18 @@ Rails.application.routes.draw do
   # Email header briefs (EmailImagesController, require_admin): a brief, its
   # generated candidates, approve/retire, and a preview inside the real email
   # shell. Epic email-image-builder, piece 1.
+  # THE CAST (CharactersController, require_admin): our fictional characters —
+  # mascots and puppets — with their looks and every image they appear in.
+  # Epic email-image-builder, addendum "Characters", piece A.
+  resources :characters, param: :slug, only: %i[index show new create edit update] do
+    member do
+      post :looks, action: :create_look
+    end
+  end
+  post "characters/:slug/looks/:look_slug/art", to: "characters#upload_art", as: :character_look_art
+  post "characters/:slug/looks/:look_slug/default", to: "characters#make_default", as: :default_character_look
+  post "characters/:slug/looks/:look_slug/sheet", to: "characters#build_sheet", as: :character_look_sheet
+
   # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
   # assets, its approved headers and open briefs, and the uploaded references.
   # Declared BEFORE resources :email_images, whose show route would otherwise
