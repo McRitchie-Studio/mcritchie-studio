@@ -304,6 +304,30 @@ class ConductorTest < Minitest::Test
   # non-zero into 1, so a wrapper reading `conductor qa --run` could not tell
   # "QA did not come up, re-run once it boots" from an abort.
 
+  # Unit: exec_bin itself, called directly. The script is loaded in a child ruby
+  # (its dispatch is guarded by `__FILE__ == $PROGRAM_NAME`) so its top-level
+  # methods never leak into this test process.
+  def exec_bin_status(*argv)
+    code = "load #{BIN.dump}; print exec_bin(*ARGV)"
+    out, err, status = Open3.capture3(@env, RbConfig.ruby, "-e", code, *argv)
+    assert status.success?, "loading bin/conductor failed: #{err}"
+    Integer(out[/\d+\z/])
+  end
+
+  def test_exec_bin_returns_the_childs_exit_status
+    [0, 1, 2, 3, 10].each do |code|
+      assert_equal code, exec_bin_status(RbConfig.ruby, "-e", "exit #{code}"), "child exit #{code}"
+    end
+  end
+
+  def test_exec_bin_reads_a_binary_that_never_launched_as_127
+    assert_equal 127, exec_bin_status(File.join(@dir, "no-such-binary"))
+  end
+
+  def test_exec_bin_reads_a_signal_death_as_1
+    assert_equal 1, exec_bin_status(RbConfig.ruby, "-e", "Process.kill(:KILL, Process.pid)")
+  end
+
   def test_qa_run_exits_3_when_prepare_exits_3
     _out, _err, status = run_conductor("qa", "--run", env: { "RELEASE_EXIT" => "3" })
 
