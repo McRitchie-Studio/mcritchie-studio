@@ -17,7 +17,6 @@
 # every throwaway — and only the primary checkout, whose `.git` is the repository itself,
 # is exempt. ALLOW_SHARED_DEV_DB=1 stays the one override.
 require "uri"
-require_relative "../bin/lib/remedy"
 
 module DeskDatabaseGuard
   OVERRIDE = "ALLOW_SHARED_DEV_DB"
@@ -25,10 +24,16 @@ module DeskDatabaseGuard
 
   module_function
 
-  # The re-provision command these refusals hand over (bin/lib/remedy.rb). Built on the
-  # refusal path only, never at boot: this file loads from an initializer in every env.
+  # The re-provision command these refusals hand over, through the one remedy helper
+  # (bin/lib/remedy.rb). Loaded on the refusal path only, never at boot: this file
+  # loads from an initializer in every env, and a refusal must never itself raise. A
+  # tree that carries no bin/ (a stripped fixture) still gets the absolute path.
   def agent_worktree_cmd
-    Remedy.command("agent-worktree", File.expand_path("../bin", __dir__))
+    bin = File.expand_path("../bin", __dir__)
+    require_relative "../bin/lib/remedy"
+    Remedy.command("agent-worktree", bin)
+  rescue LoadError, ArgumentError
+    File.join(bin, "agent-worktree")
   end
 
   # -> nil (proceed) or the refusal message.
