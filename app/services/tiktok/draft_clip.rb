@@ -6,9 +6,10 @@ module Tiktok
   #   preview(clip)          what a draft would send: the version, the athlete
   #                          and team (Tiktok::ClipTeam) and the caption
   #                          (Tiktok::ClipCaption). Writes nothing, calls no TikTok.
-  #   request!(clip, by:)    records a TiktokDraft (queued) with that caption
-  #                          and queues TiktokDraftJob. Refuses, recording
-  #                          nothing, when a draft cannot be made.
+  #   check!(clip)          every refusal, writing nothing; returns the preview
+  #   record!(preview, by:)  records a TiktokDraft (queued) with that caption
+  #                          and queues TiktokDraftJob
+  #   request!(clip, by:)    both
   #   run(draft)             the job's work: read the version from R2 chunk by
   #                          chunk, inbox-upload it (Tiktok::InboxUpload), then
   #                          poll TikTok's status for up to POLL_FOR.
@@ -65,14 +66,21 @@ module Tiktok
       raise Refused, e.message
     end
 
-    def request!(clip, by: nil)
+    # Everything that would stop a draft, before anything is written: the
+    # keys, an attempt already in flight, and the preview itself. Returns the
+    # preview; raises Refused. A refusal is an answer, not an error to log.
+    def check!(clip)
       raise Refused, self.class.unavailable_reason unless self.class.available?
 
       open = clip.tiktok_drafts.pending.where(created_at: (@now.call - STUCK_AFTER)..).last
       raise Refused, "a draft of #{clip.slug} is already #{open.state_label.downcase} (attempt #{open.id})" if open
 
-      pv = preview(clip)
-      draft = clip.tiktok_drafts.create!(
+      preview(clip)
+    end
+
+    # Records the attempt from a checked preview and queues the upload.
+    def record!(pv, by: nil)
+      draft = pv.clip.tiktok_drafts.create!(
         version_number: pv.version.number, version_object_key: pv.version.object_key, caption: pv.caption.text,
         byte_size: pv.version.byte_size, requested_by: by, state: "queued",
         facts: pv.caption.facts.merge(
@@ -84,6 +92,8 @@ module Tiktok
       TiktokDraftJob.perform_later(draft.id)
       draft
     end
+
+    def request!(clip, by: nil) = record!(check!(clip), by:)
 
     # The job's half. Only the run that moves the row off `queued` uploads, so
     # a queue that hands a dead worker's job to another never sends twice.

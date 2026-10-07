@@ -1,4 +1,4 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; Draft to TikTok with its attempts (alt_videos/_clip_tiktok); and the regenerate flag. The header carries the clip's slug with a copy control, the name the tiktok-draft SOP takes. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
@@ -46,6 +46,14 @@
     <div class="p-4 flex flex-col gap-3 min-w-0">
       <header class="min-w-0">
         <h3 class="text-lg font-bold text-heading"><%= clip.name %></h3>
+        <div x-data="copyField()" class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0" data-test="clip-slug-row">
+          <code x-ref="text" class="text-xs font-mono text-muted break-all select-all min-w-0" data-test="clip-slug"><%= clip.slug %></code>
+          <button type="button" @click="copy()" class="text-xs text-primary hover:underline shrink-0" data-test="clip-slug-copy"
+                  title="Copy this clip's slug, the name the tiktok-draft SOP takes">
+            <span x-text="copied ? 'Copied' : 'Copy slug'">Copy slug</span>
+          </button>
+          <span x-show="manual" x-cloak class="text-xs text-warning-ink">Selected: press ⌘C.</span>
+        </div>
         <p class="text-sm text-body font-mono tabular-nums" data-test="clip-window">
           <%= video_timecode(clip.start_ms) %>–<%= video_timecode(clip.end_ms) %>
           <span class="text-muted">· <%= format("%.1f", clip.duration_ms / 1000.0) %> s</span>
@@ -237,6 +245,8 @@
           </ul>
         <% end %>
       </div>
+
+      <%= render "alt_videos/clip_tiktok", clip: clip, video: video, alt_video: alt_video, primary: primary %>
 
       <div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-regenerate">
         <% if clip.regenerate_requested? %>
