@@ -105,10 +105,10 @@ bin/email-image brief --app turf-monster --email drop_signup_confirmation \
   Turf banner today); `none` leaves the art wordless for the engine's layered
   banner to set the headline as live text. `composited` is not built yet.
 - The headline is the alt text unless `--alt` says better. Keep it short: the
-  model spelled a three-word headline right; longer is unmeasured.
+  model spelled one short headline right ("You're on the list!"); longer is unmeasured.
 - `--notes` holds standing direction for every round of this brief.
-- It prints `created <slug>` with the page path. A brief already open for that
-  email answers "has already been taken"; use `bin/email-image list` and edit
+- It prints `created <slug>` with the page path. A brief already on file for that
+  email and variant, in any state, answers "has already been taken"; use `bin/email-image list` and edit
   it with `bin/email-image brief <slug> --headline …`.
 
 ### 2. Show Alex the base assets
@@ -222,8 +222,8 @@ curl -sSfo <app-desk>/app/assets/images/emails/<file> "<approved url=>"
 Paste the snippet into the app's `config/initializers/studio_emails.rb`, with the
 mailer preview, and set the mailer's image to
 `Studio::EmailCatalog.resolved_url("<key>")` with the headline as alt. For the
-Turf drop-signup emails this is epic piece 2: `DropSignupMailer.hero_image_resolver`
-returns `{ url:, alt: }` per kind and variant.
+Turf drop-signup emails this is epic piece 2, not built yet: `DropSignupMailer.hero_image_resolver`
+will return `{ url:, alt: }` per kind and variant.
 
 ### 10. Preview the render
 
@@ -234,7 +234,7 @@ fallback).
 
 ### 11. Ship
 
-The image and its registration ride the email's task: `bin/submit-wait <task>
+The image and its registration ride the email's task: `/Users/alex/projects/.agents/bin/ship-wait <task>
 --launch -m "…"` from that desk, per `building-sop`. Shannon reviews the
 visual.
 
