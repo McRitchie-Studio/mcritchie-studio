@@ -1,0 +1,14 @@
+Contact form submissions flagged as spam in the last day: <%= @total %>
+
+These were stored but not emailed. Skim for a real person: a visitor whose
+browser blocks JavaScript is flagged "no_browser_proof".
+<% @submissions.each do |submission| %>
+
+#<%= submission.id %> · <%= submission.created_at.in_time_zone("America/Denver").strftime("%b %-d %-l:%M %p %Z") %> · <%= submission.spam_reason %>
+<%= submission.name %> <<%= submission.email %>>
+<%= submission.message.squish.truncate(200) %>
+<% end %>
+<% if @remaining.positive? %>
+
+…and <%= @remaining %> more not listed.
+<% end %>
