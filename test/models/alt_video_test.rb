@@ -59,8 +59,7 @@ class AltVideoTest < ActiveSupport::TestCase
     recast!(@home)
     alt = AltVideo.build_from!(@video)
     before = MusicVideos::ClipPrompts.for(chunk(1), swaps: alt.swap_set)
-    assert_includes before, "with Test Athlete Alpha, the football player"
-    assert_includes before, "Home Blue model"
+    assert_includes before, "- Person A (lead) -> Test Athlete Alpha, Home Blue (character sheet 1)"
 
     recast!(@away)
     @video.video_performers.find_by!(ordinal: 1).update!(recast_keep: true)

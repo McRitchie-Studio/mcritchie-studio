@@ -77,7 +77,8 @@ module Api
                  "role" => c.role, "position" => c.position }
              end, "performers" => video.video_performers.map { |p| p.as_json(only: PERFORMER_FIELDS) },
                   "clips" => video.clip_candidates.map { |c| c.as_json(only: CLIP_FIELDS) },
-                  "chunks" => video.video_chunks.map { |c| c.as_json(only: CLIP_FIELDS) })
+                  "chunks" => video.video_chunks.map { |c| c.as_json(only: CLIP_FIELDS + %w[reference_frames]) },
+                  "alt_videos" => video.alt_videos.order(:number).map { |a| a.as_json(only: %w[number slug swaps]) })
       end
     end
   end

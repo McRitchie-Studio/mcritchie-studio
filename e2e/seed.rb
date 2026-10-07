@@ -1635,6 +1635,11 @@ Person.find_by(first_name: "Test", last_name: "Actor Delta") ||
 # with none (e2e/music_video_look_picker.spec.js).
 require Rails.root.join("db/seeds/data/look_picker_video.rb").to_s
 LookPickerVideo.seed!
+# /music_videos/test-artist-b-lettered-demo — three synthetic people, two swapped in
+# alt video 1 into looks with jersey numbers, chunk 3 lettered
+# (e2e/music_video_lettered_references.spec.js).
+require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
+LetteredVideo.seed!
 # /music_videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
 # test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s

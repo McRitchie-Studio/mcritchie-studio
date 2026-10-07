@@ -405,11 +405,16 @@
 # gives an older look its iced twin, creates a look and sees it beside its own twin.
 # Measured on the tree merged with accepted: `npx playwright test --list` => 222.
 #
-# 222 -> 223 on 2026-10-07 (/tasks/email-brand-asset-page):
+# 222 -> 223 on 2026-10-07 (/tasks/lettered-clip-references):
+# e2e/music_video_lettered_references.spec.js adds one spec, not quarantined: a clip with
+# two swaps shows both letters, jersey numbers, its lettered frames and numbered sheets.
+# Measured on the tree merged with accepted: `npx playwright test --list` => 223.
+#
+# 223 -> 224 on 2026-10-07 (/tasks/email-brand-asset-page):
 # e2e/email_brand_kits.spec.js adds one spec, not quarantined: an admin opens the Turf
 # brand kit, uploads a PNG reference and sees it listed. Measured on the tree merged
-# with accepted: `npx playwright test --list` => 223.
-total_specs: 223
+# with accepted: `npx playwright test --list` => 224.
+total_specs: 224
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -624,9 +629,11 @@ quarantined: 10
 # Measured on the tree merged with accepted: the same lister => 211.
 # 211 -> 212: the person_iced_twin.spec.js spec (/tasks/iced-look-twin-and-jewelry).
 # Measured on the tree merged with accepted: the same lister => 212.
-# 212 -> 213: the email_brand_kits.spec.js spec (/tasks/email-brand-asset-page).
-# Measured on the tree merged with accepted: the same lister => 213.
-executed: 213
+# 212 -> 213: the music_video_lettered_references.spec.js spec (/tasks/lettered-clip-references).
+# Measured on the tree merged with accepted: `npx playwright test --list --grep-invert @quarantine` => 213.
+# 213 -> 214: the email_brand_kits.spec.js spec (/tasks/email-brand-asset-page).
+# Measured on the tree merged with accepted: the same lister => 214.
+executed: 214
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

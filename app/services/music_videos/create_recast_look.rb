@@ -5,15 +5,18 @@ module MusicVideos
   # performer becomes that athlete in that look. Its iced twin is made beside it
   # (Appearances::IcedTwin) but not cast. The character sheets
   # is started by the caller (Appearances::SheetBuild), outside this
-  # transaction, so the job never runs before the look is committed.
+  # transaction, so the job never runs before the look is committed. The
+  # jersey number typed for the sheet is kept on the look (piece 16), so the
+  # clip prompts can name the player by it.
   class CreateRecastLook
     class Refused < StandardError; end
 
-    def initialize(performer, person_slug:, descriptor:, reference_url: nil)
+    def initialize(performer, person_slug:, descriptor:, reference_url: nil, jersey_number: nil)
       @performer = performer
       @person = Person.find_by(slug: person_slug.to_s)
       @descriptor = descriptor.to_s.squish
       @reference_url = reference_url.to_s.strip.presence
+      @jersey_number = Appearance.jersey_from(jersey_number)
     end
 
     # Why no look can be made, or nil.
@@ -31,7 +34,8 @@ module MusicVideos
       raise Refused, reason if reason
 
       Appearance.transaction do
-        look = Appearance.create!(person_slug: @person.slug, descriptor: @descriptor, reference_url: @reference_url)
+        look = Appearance.create!(person_slug: @person.slug, descriptor: @descriptor, reference_url: @reference_url,
+                                  jersey_number: @jersey_number)
         # Every new look gets its iced-out twin row; its sheet is built only if asked.
         Appearances::IcedTwin.create!(look)
         @performer.update!(recast_person_slug: @person.slug, recast_appearance_slug: look.slug, recast_keep: false)

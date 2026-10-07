@@ -150,7 +150,7 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     assert_equal [keep.slug, moved.slug], two.reload.values_at(:recast_person_slug, :recast_appearance_slug)
     assert one.recast? && two.recast?
     prompt = video.video_chunks.reload.first.prompt
-    assert_includes prompt, "with Recastkeep Mergefixture, the football player"
+    assert_includes prompt, "-> Recastkeep Mergefixture, Home (character sheet 1)"
     assert_not_includes prompt, "Recastsource"
   end
 

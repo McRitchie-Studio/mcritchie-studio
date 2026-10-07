@@ -32,6 +32,10 @@ class VideoPerformer < ApplicationRecord
 
   def name = "Person #{ordinal}"
 
+  # The letter this person goes by in clip prompts and on lettered reference
+  # frames: Person 2 is B in every clip of the source (MusicVideos::PersonLetters).
+  def letter = MusicVideos::PersonLetters.for(ordinal)
+
   # The card owes nothing. Naming an artist is optional and the swap is off by
   # default, so every card is closed except a swap still waiting for its look.
   def resolved? = recast_decided?

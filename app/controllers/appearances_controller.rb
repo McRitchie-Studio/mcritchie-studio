@@ -111,6 +111,17 @@ class AppearancesController < ApplicationController
 
   private
 
+  def keep_jersey_number
+    number = Appearance.jersey_from(params[:number])
+    return unless number.is_a?(Integer) && number != @appearance.jersey_number
+
+    @appearance.jersey_number = number
+    return unless @appearance.valid?
+
+    @appearance.save!
+    MusicVideos::ClipPrompts.refresh_casting!(@appearance)
+  end
+
   def run_search
     summary = Appearances::GatherReferencePhotos.call(@appearance)
 
@@ -152,7 +163,11 @@ class AppearancesController < ApplicationController
   # "Generate both" (`with_twin`) is the one press that starts TWO paid builds,
   # this look's and its iced twin's, and its label says so. Each build is its own
   # claim; a refusal on the twin is reported and leaves this look's build running.
+  #
+  # A jersey number typed here is also KEPT on the look (piece 16): the clip
+  # prompts name the player by it. A blank leaves the stored number alone.
   def generate_artifact
+    keep_jersey_number
     Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
     redirect_to appearance_path, notice: [Appearances::SheetBuild::STARTED_NOTICE, twin_build_sentence].compact.join(" ")
   rescue Appearances::GenerateArtifact::NoGenerator,

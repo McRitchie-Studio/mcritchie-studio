@@ -265,6 +265,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_050000) do
     t.string "higgsfield_reference_status"
     t.datetime "higgsfield_reference_synced_at"
     t.boolean "iced", default: false, null: false
+    t.integer "jersey_number"
     t.string "music_video_slug"
     t.integer "performer_ordinal"
     t.string "person_slug", null: false
@@ -2223,6 +2224,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_050000) do
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
     t.text "prompt", null: false
+    t.jsonb "reference_frames", default: [], null: false
     t.string "regenerate_note"
     t.datetime "regenerate_requested_at"
     t.string "seam"
