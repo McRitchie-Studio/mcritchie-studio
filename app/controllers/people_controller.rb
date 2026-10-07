@@ -20,6 +20,7 @@ class PeopleController < ApplicationController
     @models_by_person = ArtifactSubject
                         .joins("INNER JOIN artifacts ON artifacts.slug = artifact_subjects.artifact_slug")
                         .where("artifacts.retired_at IS NULL AND artifacts.image_url IS NOT NULL")
+                        .where.not(person_slug: nil)
                         .order(Arel.sql("artifacts.created_at DESC"))
                         .pluck(:person_slug, Arel.sql("artifacts.image_url"))
                         .group_by(&:first)

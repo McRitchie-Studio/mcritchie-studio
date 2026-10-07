@@ -58,7 +58,7 @@ class ModelPipelineController < ApplicationController
   # board rendered with, so the sentence the operator gets names the fact that blocked
   # him rather than a rule number.
   def update
-    look = Appearance.live.find_by!(slug: params[:slug])
+    look = Appearance.live.person_owned.find_by!(slug: params[:slug])
     target = params.require(:appearance).permit(:stage)[:stage].to_s
     reading = Appearances::Pipeline.reading_for(look)
 

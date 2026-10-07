@@ -1,4 +1,9 @@
-# One person IN one artifact, wearing one look.
+# One person — or one of our characters — IN one artifact, wearing one look.
+#
+# A subject names EXACTLY ONE owner (person_slug or character_slug), held by the
+# `artifact_subjects_exactly_one_owner` CHECK. The people-centred readers (the
+# person page, the reuse key, the content cast) filter by person_slug and never
+# see a character's row; a character's sheet is found through character_slug.
 #
 # THE JOIN THAT REMOVES THE CEILING. The shape this replaced carried
 # `secondary_player_slug` and capped at two people, which a three-person cast
@@ -10,9 +15,10 @@
 class ArtifactSubject < ApplicationRecord
   belongs_to :artifact, foreign_key: :artifact_slug, primary_key: :slug, inverse_of: :subjects
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, optional: true
+  belongs_to :character, foreign_key: :character_slug, primary_key: :slug, optional: true, inverse_of: :artifact_subjects
   belongs_to :appearance, foreign_key: :appearance_slug, primary_key: :slug, optional: true
 
-  validates :person_slug, presence: true
+  validate :exactly_one_owner
 
   scope :ordered, -> { order(:ordinal, :id) }
 
@@ -20,14 +26,23 @@ class ArtifactSubject < ApplicationRecord
 
   # Falls back to the person's default, which is the point of having one.
   def effective_appearance
-    appearance || person&.default_appearance
+    appearance || owner&.default_appearance
   end
 
+  def owner = character_slug.present? ? character : person
+
   def display_name
-    person&.full_name.presence || person_slug.to_s.titleize
+    named = character_slug.present? ? character&.name : person&.full_name
+    named.presence || (character_slug || person_slug).to_s.titleize
   end
 
   private
+
+  def exactly_one_owner
+    return if person_slug.present? ^ character_slug.present?
+
+    errors.add(:base, "A subject is exactly one person or one character")
+  end
 
   # AN ARTIFACT WITH NO SUBJECTS DEPICTS NOBODY, and `live` would still hand it
   # to the reuse lookup with an empty cast label and an empty reuse key.
