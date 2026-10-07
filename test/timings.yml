@@ -151,7 +151,6 @@ test/db/remap_package_tiers_test.rb: 0.14
 test/db/timeline_views_test.rb: 0.1
 test/docs/citation_resolution_guard_test.rb: 17.98
 test/docs/credential_rotation_shell_guard_test.rb: 1.74
-test/docs/credential_rotation_sop_docs_test.rb: 0.06
 test/docs/credential_shell_orphan_guard_test.rb: 0.19
 test/docs/executable_docs_installer_test.rb: 0.18
 test/docs/fast_lane_hub_path_docs_test.rb: 0.1
