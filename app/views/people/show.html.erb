@@ -182,7 +182,7 @@
               so when it refuses one. %>
           <% if admin? %>
             <%= form_with url: attach_artifact_person_path(@person.slug), method: :post,
-                          class: "flex items-center gap-2 flex-wrap pl-3 pb-2" do |f| %>
+                          class: "flex items-center gap-2 flex-wrap pl-3 pb-2 #{'ml-4 sm:ml-8' if look.iced?}" do |f| %>
               <%= f.hidden_field :appearance_slug, value: look.slug %>
               <%= f.text_field :image_url, placeholder: "https:// image URL for #{look.descriptor}",
                     class: "input-field text-xs w-80" %>
