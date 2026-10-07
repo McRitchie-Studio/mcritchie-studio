@@ -133,7 +133,7 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
     { source: "bin/devops-shift header:8 — acquire with the documented optional --label",
       argv: ["acquire", "xan", "--label", "Mew"],
       command: "acquire", lane: "xan", flags: { "label" => "Mew" } },
-    { source: "test/lib/devops_shift_renewer_integration_test.rb:139 — the real detached renew-loop",
+    { source: "test/lib/devops_shift_renewer_integration_test.rb#test_integration_a_headless_renewer_holds_the_lease_then_frees_it_when_its_anchor_dies — the real detached renew-loop",
       argv: ["renew-loop", "avi", "--anchor-pid", "4242", "--anchor-start", "Mon Aug 17 09:12:01 2026"],
       command: "renew-loop", lane: "avi",
       flags: { "anchor-pid" => "4242", "anchor-start" => "Mon Aug 17 09:12:01 2026" } }
@@ -206,7 +206,7 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   # An EMPTY value is not a missing one, and this CLI genuinely spawns one:
   # start_renewer builds `--anchor-start #{anchor[:start].to_s}`, and
   # SessionIdentity.proc_start returns "" whenever `ps` cannot read the anchor's start
-  # signature (bin/lib/session_identity.rb:151-155). Refusing that line would kill the
+  # signature (bin/lib/session_identity.rb#proc_start). Refusing that line would kill the
   # renewer over a degenerate-but-HANDLED case — process_alive? already reads a blank
   # signature as "stop renewing", which is the safe direction, not an error.
   def test_an_empty_flag_value_is_consumed_not_refused

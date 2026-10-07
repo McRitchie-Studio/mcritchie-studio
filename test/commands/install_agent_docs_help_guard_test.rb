@@ -25,7 +25,7 @@
 # same set. Only ONE of its six arms — `doctor` — ever counted its arguments.
 #
 # WHY THAT IS WORSE THAN A LOCAL FILE WRITE. These targets are GLOBAL and shared:
-# the installer's own header (bin/install-agent-docs:169-177) records that publishing
+# the installer's own header (bin/install-agent-docs) records that publishing
 # from a worktree flips every concurrent session to "installed docs drift". So one
 # agent probing a command it did not recognize reddens the preflight for every other
 # agent on the machine, and there is no reflog behind ~/.zprofile.

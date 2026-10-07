@@ -97,7 +97,7 @@ class AgentWorktreeCliTest < Minitest::Test
 
   # The load-bearing exit-code decision, pinned so it cannot drift back to the shared
   # guard's default. bin/task#begin_step! reads exit 0 from `new` as "THE WORKTREE WAS
-  # CREATED" and `begin_step!` die!s on anything else; bin/qa-intake:56 reads it as
+  # CREATED" and `begin_step!` die!s on anything else; bin/qa-intake#refresh_registry reads it as
   # "the registry was refreshed"; bin/release.rb#restore_primaries as "the primary
   # was restored" and bin/release.rb#reclaim_worktrees as "the reclaim ran". A help
   # probe established none of those.

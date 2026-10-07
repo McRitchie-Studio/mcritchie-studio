@@ -8,7 +8,7 @@
 #     eval "$(bin/gh-auth-refresh --export)"
 #
 # and no test asserted either string. The command is real and its whole stdout is
-# `export GH_TOKEN='…'` (bin/gh-auth-refresh:209). But the read that had just
+# `export GH_TOKEN='…'` (bin/gh-auth-refresh#export). But the read that had just
 # failed is THIS process's — Task#derived_authors_probe → Github::TaskDerivation →
 # Github::Client → Github::AppToken — and with App creds absent AppToken returns
 # `ENV[FALLBACK_TOKEN_ENV]`, i.e. GITHUB_TOKEN. So the operator followed the
@@ -155,7 +155,7 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
 
   def test_a_non_credential_fault_is_given_no_credential_remedy
     # THE OTHER HALF OF THE SAME DEFECT, and the standard bin/dor-check already
-    # holds: test/lib/dor_check_test.rb:1847 asserts there is no gh-auth-refresh on
+    # holds: test/lib/dor_check_test.rb#test_gh_or_network_error_refuses_without_naming_a_credential asserts there is no gh-auth-refresh on
     # a transport fault. `unreadable` covers a 401, a rate limit, a 5xx, a dead
     # network and a pr_url that names no PR; printing "refresh the credential" for
     # the last four is a false causal claim, and an operator who pastes it loops.

@@ -12,7 +12,7 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   # The premise was false, and the ceiling would have cemented the regression it
   # let through.
   #
-  # The real largest draw is app/views/agents/index.html.erb:16, the PUBLIC agents
+  # The real largest draw is the `agent.avatar` image in app/views/agents/index.html.erb, the PUBLIC agents
   # index, which renders each portrait as a full-bleed card hero: object-cover
   # inside an aspect-[5/3] link. That hero is about 294 CSS px wide on a wide
   # desktop and up to about 608 CSS px at the grid-cols-1 mobile breakpoint. The

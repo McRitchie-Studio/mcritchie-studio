@@ -14,7 +14,7 @@ require_relative "fast_lane"
 #     eval "$(bin/gh-auth-refresh --export)"
 #
 # That command's whole stdout contract is ONE line — `export GH_TOKEN='…'`
-# (bin/gh-auth-refresh:209, and its header states the contract in as many words).
+# (the `export` branch, bin/gh-auth-refresh#export, and its header states the contract in as many words).
 # But the read that had just failed was `Task#derived_authors_probe` →
 # Github::TaskDerivation → Github::Client → Github::AppToken, and with App creds
 # absent (the local case: neither the hub primary nor a desk .env carries

@@ -21,7 +21,7 @@ Rails.application.configure do
   # that is precisely why neither of bin/reviewer-select's credential refusals had
   # one. Armed, a pr_url that is not a GitHub PR url raises
   # Github::TaskDerivation::Unreadable in `parse!` BEFORE any HTTP is attempted
-  # (app/services/github/task_derivation.rb:161), so the refusal is reachable with
+  # (app/services/github/task_derivation.rb#parse!), so the refusal is reachable with
   # no network at all. A test that arms this and then names a REAL pr_url would
   # reach GitHub; do not.
   config.x.derive_from_github = ENV["DERIVE_FROM_GITHUB"] == "1"

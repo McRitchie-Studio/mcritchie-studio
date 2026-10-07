@@ -113,8 +113,8 @@ class DeployerTokenNeverCachedTest < Minitest::Test
   end
 
   # The real script, driven through the seams it ACTUALLY honours —
-  # CLAUDE_PROJECTS_DIR (bin/gh-token:128), GH_TOKEN_OP_BIN (:126) and
-  # GH_TOKEN_MINT_BIN (:127). Nothing here touches 1Password or GitHub.
+  # CLAUDE_PROJECTS_DIR (bin/gh-token#PROJECTS), GH_TOKEN_OP_BIN (bin/gh-token#OP_BIN)
+  # and GH_TOKEN_MINT_BIN (bin/gh-token#MINT_BIN). Nothing here touches 1Password or GitHub.
   #
   # I first wrote this against GH_TOKEN_MINT_STUB and MCR_PROJECTS_ROOT, neither
   # of which exists. A harness built on invented seams fails for the wrong reason

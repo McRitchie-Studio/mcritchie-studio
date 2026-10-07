@@ -314,34 +314,10 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   MINIMUM_FILES = 1200
   MINIMUM_CITATIONS = 100
 
-  # LANE 3 — THE RATCHET. The count of `path:line` citations whose path resolves.
-  # THIS NUMBER IS ONLY EVER LOWERED — by convention, enforced in review, not by any
-  # check here (limit D). It is a BOUND, not a measurement, so unlike a stated count it
-  # cannot go quietly stale in the dangerous direction — a tree that drifts under it
-  # fails loudly, and one that improves under it simply passes. This task took it from
-  # 107 to 63, while the seam population rose from 36 to 91 over the same diff. (The
-  # pre-task figure was first written here as 112 — itself an unverified number, in
-  # this file. Both ends are re-derivable by running this lane's own census.)
-  #
-  # 63 → 57 on the follow-up (close-the-citation-guard-gaps), and WHAT IT COUNTS WIDENED
-  # in the same commit, which is the one thing to understand before comparing the two
-  # numbers: continuation anchors are census rows now, so 57 covers pointers 63 never
-  # did. The arithmetic closes from either end. On the unconverted tree the widened
-  # census read 66 — the old 63 plus the three anchors it had been hiding — over a
-  # ceiling of 63, and that RED is the proof the continuation lane bites. It is still
-  # reproducible at 24890a10 with this file's census and nothing else changed, but it reads
-  # 65 THERE NOW, not 66: one of those three was the bare `bin/statusline:229,231`, which
-  # this grammar no longer reads (see CONTINUATION_ANCHOR). 65 over 63 is the same red for
-  # the same reason. Converting six citations then removed nine anchors (three of them
-  # carried a continuation), leaving 57, which is also 63 − 6. The seam population rose
-  # 91 → 102 over the same diff, and 103 once it merged: every anchor that left became a
-  # named landmark rather than a deletion.
-  #
-  # 57 -> 55 on this task (citations-resolve-but-mislead). NOTHING WAS CONVERTED to earn
-  # those two: 57 was the value the follow-up left, and the tree underneath it had already
-  # drifted to 55 by ordinary deletion. Lowering a bound onto the measured count is what
-  # keeps it a BOUND rather than slack — at 57 the next two rotting pointers were prepaid.
-  LINE_CITATION_CEILING = 55
+  # LANE 3 — NO `path:line` CITATIONS. Every citation into this repo is a seam, so the
+  # ceiling is zero: a line number rots on the next commit to the file it names, and a
+  # seam cannot. A new `path:line` reds here; cite the enclosing definition instead.
+  LINE_CITATION_CEILING = 0
 
   # LANE 5 — THE SECOND RATCHET, over the citations that carry NO declared anchor. It is
   # a strictly tighter bound sharing lane 3's mechanism, and the two together are what

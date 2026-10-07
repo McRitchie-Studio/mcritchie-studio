@@ -32,7 +32,7 @@
 # ── WHY THE END-TO-END ASSERTION IS KEYED ON THE FILESYSTEM ──────────────────
 #
 # MEASURED ON PR #1341: a grep-shaped assertion is BLIND to this defect.
-# test/lib/task_begin_test.rb:205 asserted `assert_includes out, "bin/submit
+# test/lib/task_begin_test.rb#test_begin_creates_claims_and_preflights_in_one_command asserted `assert_includes out, "bin/submit
 # #{SLUG}"` and stayed GREEN when the printed line was mutated back to the bare
 # form — because an absolute path CONTAINS that substring
 # (".../bin/submit <slug>" includes "bin/submit <slug>"). Several assertions in

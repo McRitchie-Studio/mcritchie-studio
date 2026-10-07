@@ -350,7 +350,7 @@ class OpMeterTest < Minitest::Test
   private
 
   # ESTABLISH THE PREMISE, DO NOT ASSUME IT. TaskBoard#agent_secret reads the REAL
-  # process ENV first (bin/lib/task_board.rb:209), so a set AGENT_API_SECRET
+  # process ENV first (bin/lib/task_board.rb#agent_secret), so a set AGENT_API_SECRET
   # short-circuits the .env and the vault both. The two cases that assert on the
   # chain's COST and on its .env FALLBACK are only meaningful with it unset.
   #

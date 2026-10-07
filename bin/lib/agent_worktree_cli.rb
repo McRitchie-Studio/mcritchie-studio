@@ -61,7 +61,7 @@ module AgentWorktreeCli
   #                        bound" — so a help probe answering 0 would let
   #                        `bin/task begin` march on to the claim, the preflight and
   #                        a printed worktree path for a desk that does not exist.
-  #   bin/qa-intake:56     `snapshot --write` under capture_status; exit 0 means
+  #   bin/qa-intake#refresh_registry `snapshot --write` under capture_status; exit 0 means
   #                        "the registry was refreshed", and the very next call
   #                        reads that registry to build the conductor queue. A
   #                        zero-exit probe hands it a STALE registry it believes is
@@ -286,7 +286,7 @@ module AgentWorktreeCli
   # `sh("bin/rails", "test", *rest)`. Those tokens are not this script's to account
   # for — they are minitest's — and both spellings are in real use: bare paths
   # (`test <app> <task> test/models/x_test.rb`, which bin/agent-worktree's own
-  # prepare_test_env header and test/lib/agent_worktree_test.rb:1170 both quote) and
+  # prepare_test_env header and test/lib/agent_worktree_test.rb#test_a_withheld_desk_has_no_rationale both quote) and
   # flags after `--`. A dictionary check over that tail would refuse `-n /pattern/`
   # and `--` itself, wedging the documented form — a top-level guard wearing a
   # per-arm guard's clothes, which is the mistake bin/agent-runtime's `codex-update`

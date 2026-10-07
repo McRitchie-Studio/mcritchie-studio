@@ -70,7 +70,7 @@ magic-link banner, and MI's admin page can replace it with MI-branded artwork.
 | Dev inbox | `/_studio/local_emails` | Already working |
 
 **Only one external caller** reads the registry today —
-`turf-monster/app/mailers/user_mailer.rb:30` calls
+`turf-monster/app/mailers/user_mailer.rb#magic_link` calls
 `Studio::EmailImage.url(:magic_link)`. So `VARIANTS` can change shape freely.
 
 ### Decision to confirm before you build

@@ -154,7 +154,7 @@ class GithubReadRemedyTest < Minitest::Test
   #
   # THE DEFECT, RUNNABLE. `eval "$(bin/gh-auth-refresh --export)"` was printed by
   # both of bin/reviewer-select's credential refusals. Its entire stdout contract is
-  # one line — `export GH_TOKEN='…'` (bin/gh-auth-refresh:209) — so it repairs the
+  # one line — `export GH_TOKEN='…'` (bin/gh-auth-refresh#export) — so it repairs the
   # credential `gh` reads and leaves GITHUB_TOKEN, which is what
   # Github::AppToken#resolve returns when App creds are absent, exactly as stale as
   # it was. The operator followed it verbatim and got the byte-identical refusal.
