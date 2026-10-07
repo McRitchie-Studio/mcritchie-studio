@@ -274,9 +274,9 @@ loads on production Cyvasse with `ref` intact. This is the same gate the
 ## The Play-Times Email
 
 The play-times email (`cyvasse_play_times`, task cyvasse-play-times-email) asks
-legacy players how their first game on the new Cyvasse went, then when they can
+legacy players how their game on the new Cyvasse went, then when they can
 play, so Alex can pick a standing biweekly Cyvasse Night. The subject comes from
-`Broadcasts::CyvassePlayTimes` ("%{username}, how was your first game on the new
+`Broadcasts::CyvassePlayTimes` ("%{username}, how was your game on the new
 Cyvasse?", or the plain line without a username). It has one button and one
 plain link, both the tracked `l=survey` link to
 `https://cyvasse.mcritchie.studio/surveys/play-times`, which the click tracker

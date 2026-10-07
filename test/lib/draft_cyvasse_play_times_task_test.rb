@@ -28,7 +28,7 @@ class DraftCyvassePlayTimesTaskTest < ActiveSupport::TestCase
     assert_equal "cyvasse_play_times", broadcast.template_key
     assert_equal "draft", broadcast.status
     assert_nil broadcast.sent_at
-    assert_equal "How was your first game on the new Cyvasse?", broadcast.subject
+    assert_equal "How was your game on the new Cyvasse?", broadcast.subject
     assert_equal "cyvasse-legacy", broadcast.target_list
     assert_equal 0, broadcast.deliveries.count
     assert_equal 0, broadcast.staged_emails.count

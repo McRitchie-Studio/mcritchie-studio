@@ -28,22 +28,31 @@ class CyvassePlayTimesEmailTest < ActionDispatch::IntegrationTest
     assert_not @broadcast.requires_staging?
   end
 
-  test "the subject names the reader when their username is known, plain otherwise" do
-    assert_equal "veyjin, how was your first game on the new Cyvasse?", render_for(@vey).subject
-    assert_equal "How was your first game on the new Cyvasse?", render_for(@guest).subject
+  test "the hero asks how their game was and when they can play" do
+    html = render_for(@vey, @delivery).body.to_s
+    assert_includes html, "How was your game?"
+    assert_includes html, "And when can you play?"
+    assert_not_includes html, "How was your first game?"
   end
 
-  test "the body opens with Hi, asks about the first game, then the Cyvasse Night times" do
+  test "the subject names the reader when their username is known, plain otherwise" do
+    assert_equal "veyjin, how was your game on the new Cyvasse?", render_for(@vey).subject
+    assert_equal "How was your game on the new Cyvasse?", render_for(@guest).subject
+  end
+
+  test "the body opens with Hi, asks about their game, then the Cyvasse Night times" do
     [ text(render_for(@vey, @delivery)), text(render_for(@guest)) ].each do |body|
       assert_includes body, "Hi \u{1F44B}\u{1F3FB}"
-      assert_includes body, "How was your first game on the new Cyvasse?"
+      assert_not_includes body, "first game on the new Cyvasse"
+      assert_includes body, "skip the first question if you haven\u2019t played yet"
+      assert_includes body, "How was your game on the new Cyvasse?"
       assert_includes body, "Cyvasse Night, every other week"
       assert_includes body, "Tell us when you’re free"
       assert_includes body, "30 seconds"
       assert_includes body, "Tell us (30 seconds)"
       assert_includes body, "cyvasse.mcritchie.studio/surveys/play-times"
     end
-    assert_operator text(render_for(@vey, @delivery)).index("How was your first game"),
+    assert_operator text(render_for(@vey, @delivery)).index("How was your game"),
                     :<, text(render_for(@vey, @delivery)).index("Cyvasse Night, every other week")
   end
 

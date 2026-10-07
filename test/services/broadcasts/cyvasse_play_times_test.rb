@@ -16,7 +16,7 @@ class Broadcasts::CyvassePlayTimesTest < ActiveSupport::TestCase
 
   test "Broadcast#subject_for fills the username through the registered resolver" do
     broadcast = Broadcast.new(template_key: "cyvasse_play_times", subject: "Stored subject is ignored")
-    assert_equal "veyjin, how was your first game on the new Cyvasse?", broadcast.subject_for({ "username" => "veyjin" })
-    assert_equal "How was your first game on the new Cyvasse?", broadcast.subject_for({})
+    assert_equal "veyjin, how was your game on the new Cyvasse?", broadcast.subject_for({ "username" => "veyjin" })
+    assert_equal "How was your game on the new Cyvasse?", broadcast.subject_for({})
   end
 end
