@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -255,6 +255,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
   end
 
   create_table "appearances", force: :cascade do |t|
+    t.string "base_appearance_slug"
     t.string "colorway"
     t.datetime "created_at", null: false
     t.string "descriptor", null: false
@@ -263,6 +264,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.datetime "higgsfield_reference_minted_at"
     t.string "higgsfield_reference_status"
     t.datetime "higgsfield_reference_synced_at"
+    t.boolean "iced", default: false, null: false
     t.string "music_video_slug"
     t.integer "performer_ordinal"
     t.string "person_slug", null: false
@@ -277,6 +279,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.string "stage"
     t.string "team_slug"
     t.datetime "updated_at", null: false
+    t.index ["base_appearance_slug"], name: "index_appearances_one_live_twin_per_base", unique: true, where: "((base_appearance_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.index ["higgsfield_reference_id"], name: "index_appearances_on_higgsfield_reference_id", unique: true, where: "(higgsfield_reference_id IS NOT NULL)"
     t.index ["music_video_slug", "performer_ordinal"], name: "index_appearances_one_live_look_per_performer", unique: true, where: "((music_video_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.index ["person_slug", "descriptor"], name: "index_appearances_live_per_person", unique: true, where: "(retired_at IS NULL)"
@@ -1282,6 +1285,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.index ["primary_vocation"], name: "index_people_on_primary_vocation"
     t.index ["slug"], name: "index_people_on_slug", unique: true
     t.index ["updated_at"], name: "index_people_on_updated_at"
+  end
+
+  create_table "person_jewelries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "description", null: false
+    t.string "image_url"
+    t.string "kind", null: false
+    t.string "name", null: false
+    t.string "person_slug", null: false
+    t.string "slug", null: false
+    t.string "source"
+    t.datetime "updated_at", null: false
+    t.integer "year"
+    t.index ["person_slug", "kind"], name: "index_person_jewelries_on_person_slug_and_kind"
+    t.index ["slug"], name: "index_person_jewelries_on_slug", unique: true
   end
 
   create_table "pff_stats", force: :cascade do |t|
