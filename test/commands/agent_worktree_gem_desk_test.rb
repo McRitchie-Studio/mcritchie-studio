@@ -15,7 +15,7 @@ require_relative "../support/desk_ledger_sink"
 # `git worktree add`. A hand-cut desk carried no context marker, no task binding and
 # no identity stamp, and `bin/task begin --repo studio-engine` died at step 2.
 #
-# THE LANE. A repo config/release_repos.yml files under `gems:` now gets a desk from
+# THE LANE. A repo the release registry (release_repos.yml) files under `gems:` now gets a desk from
 # `new` and a binding from `bind-task`, with no port, Redis slot or database: those
 # are app things. Everything here runs the REAL script against throwaway repos in a
 # tmpdir, each with a real bare origin, so `new` cuts from origin/accepted exactly as
