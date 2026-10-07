@@ -1,5 +1,8 @@
 class User < ApplicationRecord
   include Sluggable
+  # Its slug is the name and the email (name_slug), so it holds `@`, `.`, `+` and
+  # any letter a name does; a rename refuses only whitespace and URL delimiters.
+  self.slug_format = %r{\A[^\s/?#]+\z}
 
   # Stable operator identities whose roles and email links should survive fresh
   # DBs, first-login races, QA resets, and new-app clones of this pattern.

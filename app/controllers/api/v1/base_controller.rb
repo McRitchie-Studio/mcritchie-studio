@@ -14,6 +14,8 @@ module Api
       rescue_from StandardError, with: :handle_unexpected_error
       rescue_from ActiveRecord::RecordInvalid, with: :unprocessable
       rescue_from ActiveRecord::RecordNotFound, with: :not_found
+      # A foreign key or unique-index refusal answers 422 with the reason.
+      include ConstraintViolationResponses
 
       private
 

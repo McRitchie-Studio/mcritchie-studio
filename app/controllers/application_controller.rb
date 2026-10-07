@@ -3,6 +3,8 @@ class ApplicationController < ActionController::Base
   # Apple's 1 MiB limit. studio-engine docs/LINK_PREVIEW.md.
   include Studio::LinkPreviewBots
   include Studio::ErrorHandling
+  # After ErrorHandling: a foreign key or unique-index refusal answers 422.
+  include ConstraintViolationResponses
 
   # Preview fetchers skip the browser guard. iMessage's LinkPresentation sends a
   # pinned Safari 9 UA with the bot tokens appended ("... Version/9.0.1

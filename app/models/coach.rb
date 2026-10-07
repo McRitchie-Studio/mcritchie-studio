@@ -1,5 +1,8 @@
 class Coach < ApplicationRecord
   include Sluggable
+  # Its slug carries a snake_case word (a role, a stat or rank type), so a
+  # rename accepts underscores between the words.
+  self.slug_format = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
 
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug
