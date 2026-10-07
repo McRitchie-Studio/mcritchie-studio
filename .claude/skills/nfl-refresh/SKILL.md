@@ -11,7 +11,7 @@ Quick refresh that keeps starting lineups + depth charts current. Non-destructiv
 
 ## Preconditions
 
-1. **AWS credentials** for any new-player headshots: `op item get q6jborl22otitr5y3dzwpbzxa4 --vault txqp6ijdo3ujsfhsfzdj5h5dzq --field "AWS_ACCESS_KEY_ID" --reveal | head -c 4`. If empty, new players seed without headshots — re-run later when creds available.
+1. **Storage credentials** for any new-player headshots (uploaded through `Studio::S3` to Cloudflare R2; AWS retired 2026-10): `grep -c '^R2_ACCESS_KEY_ID=.' .env.development` should print `1` (dev pair from 1Password `r2.mcritchie-studio`). If missing, new players seed without headshots — re-run later when creds are available.
 2. **Postgres running**: `pg_isready`.
 
 ## Steps

@@ -13,7 +13,7 @@ End state: every NFL team has 32 active rosters with starting offense/defense li
 
 Confirm before running:
 
-1. **AWS credentials present** for S3 headshot upload. Check with `op item get q6jborl22otitr5y3dzwpbzxa4 --vault txqp6ijdo3ujsfhsfzdj5h5dzq --field "AWS_ACCESS_KEY_ID" --reveal | head -c 4`. Should print 4 chars of the access key. If empty, headshots will be skipped (Athletes still seed; re-run with creds later).
+1. **Storage credentials present** for the headshot upload, which goes through `Studio::S3` to Cloudflare R2 (AWS retired 2026-10). Locally they live in `.env.development` (`STUDIO_S3_BACKEND=r2`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`; the dev pair from 1Password `r2.mcritchie-studio`). Check with `grep -c '^R2_ACCESS_KEY_ID=.' .env.development` (expect `1`). If missing, headshots will be skipped (Athletes still seed; re-run with creds later).
 2. **Postgres running**: `pg_isready` returns `accepting connections`.
 3. **ImageMagick installed**: `which magick` returns a path. If missing, `brew install imagemagick`.
 4. **Working tree clean**: `git status --short` is empty (so seed log noise can be reverted easily if anything goes sideways).
