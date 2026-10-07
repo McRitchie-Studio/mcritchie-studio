@@ -1,6 +1,9 @@
 module Api
   module V1
     class AgentActivitiesController < BaseController
+      # turn_open preambles stay out of the request log.
+      include TelemetryLogFilter
+
       # The agent-narration sink. The agent self-declares meaningful activities
       # (via `bin/agent-activity`, with `bin/atomic-event` kept as a compatibility
       # command): it OPENs an activity with a category + reason, raw tool-calls

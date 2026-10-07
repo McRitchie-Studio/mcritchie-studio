@@ -1,6 +1,9 @@
 module Api
   module V1
     class AgentActionsController < BaseController
+      # Prompt, command and output bodies stay out of the request log.
+      include TelemetryLogFilter
+
       # POST /api/v1/agent_actions
       #
       # Live-capture sink for the forward-only action log. The parallel

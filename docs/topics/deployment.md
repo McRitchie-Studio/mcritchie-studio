@@ -17,7 +17,7 @@
 - **Legacy URL**: https://app.mcritchie.studio
 - **Archive URL**: https://v1.mcritchie.studio for the previous Squarespace site
 - **Heroku URL**: https://mcritchie-studio-039470649719.herokuapp.com/
-- **Database**: Heroku Postgres (essential-0)
+- **Database**: Heroku Postgres (essential-1, 20 connections)
 - **DNS**: apex `mcritchie.studio` ALIAS/ANAME → Heroku DNS target;
   `www` CNAME → Heroku DNS target; `app` CNAME remains as a legacy alias;
   `v1` CNAME remains attached to Squarespace
