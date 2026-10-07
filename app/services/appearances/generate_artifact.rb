@@ -143,10 +143,9 @@ module Appearances
     # is no measurement.
     #
     # THE ATTRIBUTION IS NOW SETTLED and the conclusion is unchanged: the measurement
-    # was made on /v1/images/edits ONLY, every site says so, and a guard
-    # (test/lib/generator_record_tripwire_test.rb) fails on a copy that drops the
-    # endpoint. What that buys is a smaller claim, not a bigger one — whether more
-    # references make a better sheet on THIS path is still UNMEASURED, and
+    # was made on /v1/images/edits ONLY, every site says so. What that buys is a
+    # smaller claim, not a bigger one — whether more references make a better sheet
+    # on THIS path is still UNMEASURED, and
     # config/image_generators.yml's `reference_arity` note says what would settle it.
     #
     # READS THE STORED s3_key AND NEVER REBUILDS THE PATH. `Athlete#headshot_url`

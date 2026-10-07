@@ -26,7 +26,7 @@ class ImageGeneration::OpenAITest < ActiveSupport::TestCase
   # two cases below stub `reference_arity` on it with a singleton method. The setup
   # above reloads before each case HERE, but nothing reloaded after the last one, so
   # whichever case ran last left its stub on the row every later test in the process
-  # reads. When that was the "many" case, GeneratorRecordTripwireTest's arity guard
+  # reads. When that was the "many" case, a test reading the row's arity
   # went red on a registry file nobody had touched (accepted CI, 2026-09-30, twice,
   # after new tests reshuffled the shards). Reproduce on the pre-fix file with
   # `--seed 13` over this file and that one.

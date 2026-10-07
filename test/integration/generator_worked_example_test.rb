@@ -13,8 +13,7 @@ require "test_helper"
 # "why is generation off" reads first. Only a test that walks YAML → Registry → controller
 # → rendered page can catch a comment that is false about the composition.
 #
-# test/lib/generator_record_tripwire_test.rb pins the PROSE (the old example may not come
-# back). This pins the BEHAVIOUR the prose describes, so the two cannot drift apart: if a
+# This pins the BEHAVIOUR the prose describes, so the two cannot drift apart: if a
 # second row ever claims `character_sheet` and wins the order, the assertions below change
 # and whoever changes them has to revisit the comment.
 #

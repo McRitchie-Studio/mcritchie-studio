@@ -3,7 +3,7 @@
 # [unit] + [integration] bin/ecosystem-build's agent-vault guard, EXECUTED.
 #
 # WHY THIS FILE EXISTS, and why it is not more assertions in
-# test/lib/credential_isolation_claims_test.rb. That file guards the SOURCE TEXT
+# test/lib/credential_vault_resolution_test.rb. That file guards the SOURCE TEXT
 # of this guard — that it names $agent_vault in its verdict, that it resolves the
 # name through MCR_OP_VAULT_AGENT, that no `grep -w` survives. Every one of those
 # is a statement about a string. None of them runs the guard, and the defect they
@@ -169,7 +169,7 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
                  "the missing-binary path must NOT send the reader to the 1Password console")
   end
 
-  # The override, exercised rather than asserted. credential_isolation_claims_test
+  # The override, exercised rather than asserted. credential_vault_resolution_test
   # pins the resolution LINE; this proves the value actually reaches the guard.
   def test_the_phase_honours_the_vault_override
     out = phase_secrets(op: '[{"name":"vault-on-this-machine"}]',

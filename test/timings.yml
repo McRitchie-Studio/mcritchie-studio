@@ -172,7 +172,6 @@ test/docs/sop_registry_install_test.rb: 3.53
 test/docs/start_here_label_guard_test.rb: 0.15
 test/docs/task_dependencies_writer_docs_test.rb: 0.09
 test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb: 0.23
-test/docs/token_session_mechanism_claims_test.rb: 0.09
 test/docs/zap_cert_freshness_docs_test.rb: 2.31
 test/helpers/appearances_helper_test.rb: 0.26
 test/helpers/application_helper_test.rb: 3.94
@@ -394,7 +393,6 @@ test/lib/content_cli_test.rb: 3.87
 test/lib/control_check_test.rb: 8.37
 test/lib/control_replay_test.rb: 0.17
 test/lib/credential_helper_install_test.rb: 3.92
-test/lib/credential_isolation_claims_test.rb: 2.08
 test/lib/deployer_token_never_cached_test.rb: 1.81
 test/lib/desk_activity_test.rb: 3.6
 test/lib/desk_claim_test.rb: 0.28
@@ -447,7 +445,6 @@ test/lib/fast_cert_family_test.rb: 0.33
 test/lib/fast_cert_subject_test.rb: 4.15
 test/lib/fast_cert_test.rb: 0.58
 test/lib/fast_check_test.rb: 57.85
-test/lib/fast_lane_teaches_agent_test.rb: 0.31
 test/lib/fast_lane_test.rb: 0.1
 test/lib/feature_marker_test.rb: 0.08
 test/lib/feature_shape_tiers_test.rb: 0.17
@@ -458,7 +455,6 @@ test/lib/gate_record_no_pr_ci_test.rb: 3.25
 test/lib/gate_record_no_verdict_ci_test.rb: 4.06
 test/lib/gate_record_pending_ci_test.rb: 0.07
 test/lib/gate_record_unreadable_ci_test.rb: 2.62
-test/lib/generator_record_tripwire_test.rb: 0.55
 test/lib/gh_auth_retry_test.rb: 0.09
 test/lib/gh_identity_test.rb: 0.09
 test/lib/gh_token_test.rb: 13.09
@@ -641,7 +637,6 @@ test/lib/test_health_ratchet_test.rb: 1.56
 test/lib/test_only_diff_test.rb: 0.06
 test/lib/test_parallelism_test.rb: 0.07
 test/lib/test_shard_test.rb: 0.12
-test/lib/token_session_sop_claims_test.rb: 0.17
 test/lib/toolchain_env_test.rb: 0.09
 test/lib/tree_fingerprint_test.rb: 0.2
 test/lib/triage_cli_test.rb: 8.77

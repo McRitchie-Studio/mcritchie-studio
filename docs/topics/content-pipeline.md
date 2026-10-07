@@ -152,22 +152,9 @@ about the QUERY or the ARCHIVE now, never as a missing purchase.
 
 **Where the found photographs live.** `appearance_reference_photos` holds EVERY
 candidate a search returned, chosen or not, with the reason each was passed over
-and the query that found it. `AppearanceReferencePhoto::REJECTION_REASONS` is the
-list and that constant is the source of truth — this doc once named only the first
-three of them and was seven behind by the time anybody noticed. So all ten are
-enumerated below, between markers, and `test/lib/generator_record_tripwire_test.rb`
-compares the block against the constant as a SET and fails on any disagreement in
-either direction. Edit the constant and this list goes red until you update it.
-
-<!-- REJECTION_REASONS:BEGIN — kept in sync with the constant by the tripwire test -->
-`unfetchable` · `duplicate` · `face_obscured` · `not_a_photo` · `wrong_person` ·
-`mixed_subjects` · `face_unscored` · `face_too_small` · `face_size_unmeasured` ·
-`beyond_limit`
-<!-- REJECTION_REASONS:END -->
-
-Read the constant's own comments for what each one means and which of them
-anything actually stamps — two of them are declared-but-unstamped, for stated
-reasons given there. The
+and the query that found it. The reasons are
+`app/models/appearance_reference_photo.rb#REJECTION_REASONS`; read the constant's
+own comments for what each one means and which of them anything stamps. The
 rejects are kept on purpose: the operator's question is "is the search any good?",
 and a table of winners cannot answer it — a search returning twenty stock
 thumbnails yields the same single winner as one returning twenty good portraits we

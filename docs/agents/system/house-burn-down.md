@@ -237,14 +237,10 @@ Use a **service account token** rather than the desktop app integration — it a
 The build lanes and the ship lane authenticate as different GitHub App identities
 (`github.mcritchie-agent` builds and merges; `github.mcritchie-admin` pushes
 `main` and deploys but cannot touch PRs). Their credentials live in **different
-vaults**, read by **different service-account tokens**, so an ordinary agent shell
-cannot MINT an admin credential — the 1Password read is the step that is
-*structurally* blocked, not merely discouraged. That such a shell does not come to
-HOLD a deployer token is a **second, separate** mechanism: `bin/gh-token` refuses
-to cache that identity at all (`CACHEABLE_IDENTITIES`). Both hold today — 5a-ii
-has the history — but they are enforced in different files, and a boundary
-described as one thing gets trusted for the other. `bin/lib/op_vaults.rb` is the
-one place that maps lane → vault → token; nothing else should ever name a vault.
+vaults**, read by **different service-account tokens**
+(`bin/lib/op_vaults.rb#LANES`, the one place that maps lane → vault → token;
+nothing else names a vault). Not caching a deployer token is a separate
+mechanism (`bin/gh-token#CACHEABLE_IDENTITIES`).
 
 | Lane | Vault (default) | Token variable | Loaded where |
 |------|-----------------|----------------|--------------|

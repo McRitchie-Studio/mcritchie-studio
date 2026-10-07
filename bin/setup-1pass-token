@@ -12,11 +12,8 @@
 # read is the step that is blocked — not merely discouraged from it. Admin lanes
 # source ~/.zprofile.admin explicitly.
 #
-# That is the whole claim, deliberately: this file blocks the MINT. Not holding
-# one is a separate mechanism in bin/gh-token, which refuses to cache a deployer
-# token at all (CACHEABLE_IDENTITIES) — it used to serve one from cache before
-# minting, and `never-cache-deployer-token` closed that. Naming both, and which
-# file owns which, is what keeps the boundary from being trusted too widely.
+# Not caching a deployer token is a separate mechanism, in
+# bin/gh-token#CACHEABLE_IDENTITIES.
 # See docs/agents/modules/credentials.md.
 #
 # Usage:
@@ -136,17 +133,8 @@ touch "$PROFILE"
 # ANCHORED ON PURPOSE. `^export ${VAR}=` takes this variable's own export line and
 # nothing else — not a comment that mentions the name, not a longer variable that
 # contains it, not a line where the name appears as a value. Re-running is a clean
-# replace rather than an append.
-#
-# IT IS NOT PROTECTING THE ADMIN LINE FROM THIS ONE, and an earlier version of this
-# comment said it was: that the old unanchored /OP_SERVICE_ACCOUNT_TOKEN/ matched
-# OP_ADMIN_SERVICE_ACCOUNT_TOKEN as a SUBSTRING and had once silently deleted the
-# admin token. That never happened and could not. OP_ADMIN_ sits between OP_ and
-# SERVICE_, so OP_SERVICE_ACCOUNT_TOKEN is not a substring of
-# OP_ADMIN_SERVICE_ACCOUNT_TOKEN, and the two variables live in different files
-# anyway. Verified 2026-08-29 by replaying the old sed against a profile holding
-# both lines in both orders; the admin line survived every time. The anchor stays
-# on its own merits, above. Guarded by test/lib/credential_isolation_claims_test.rb.
+# replace rather than an append. Exercised by
+# test/lib/credential_vault_resolution_test.rb.
 [[ -f "$PROFILE" ]] || : > "$PROFILE"
 /usr/bin/sed -i '' "/^export ${VAR}=/d" "$PROFILE"
 echo "export ${VAR}=$TOKEN" >> "$PROFILE"

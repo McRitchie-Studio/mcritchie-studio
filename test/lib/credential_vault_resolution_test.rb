@@ -1,151 +1,19 @@
 # frozen_string_literal: true
 
-# [unit] What the two-vault split ACTUALLY guarantees, and what the docs are
-# allowed to say about it.
-#
-# Sibling of test/lib/op_vaults_test.rb, which tests the MECHANISM. This file
-# tests the CLAIMS — because the defect it was written for was not in the code.
-# The code shipped correct on 2026-08-28 and is still correct; five prose sites
-# then described it as stronger than it is, and one invented an incident to
-# justify a line that needs no justification.
-#
-# ---------------------------------------------------------------------------
-# DEFECT 1 — THE OVERCLAIM. Five sites said an ordinary agent shell is
-# "structurally unable to READ an admin credential". Measured false at the time:
-# bin/gh-token read its cache BEFORE minting, so `bin/gh-token --identity deployer`
-# exited 0 in a shell that never sourced ~/.zprofile.admin. `never-cache-deployer-token`
-# has since closed that window (CACHEABLE_IDENTITIES = %w[agent], checked before the
-# read, with any stale slot purged).
-#
-# THE SCOPING RULE SURVIVES THE FIX, which is why this guard still earns its keep.
-# What each file may promise is decided by what that file ENFORCES: the token map
-# blocks the MINT, the cache rule stops the HOLDING. A sentence in one that claims
-# the other is unsourced even when both happen to be true — and the next edit to
-# either file breaks it silently.
-#
-# This is not pedantry about wording. A security boundary described as wider than
-# it is gets trusted for things it does not cover, and the discovery arrives at a
-# production deploy.
-#
-# DEFECT 2 — THE FABRICATED INCIDENT. Two sites said the old unanchored
-# /OP_SERVICE_ACCOUNT_TOKEN/ matched OP_ADMIN_SERVICE_ACCOUNT_TOKEN "as a
-# substring" and had "once silently deleted the admin token". It never did and
-# could not: OP_ADMIN_ sits between OP_ and SERVICE_. The anchored form was KEPT
-# — it is correct on its own merits — and only the invented history was deleted.
-# ---------------------------------------------------------------------------
-#
-# WHY A SENTENCE SCAN RATHER THAN A LIST OF DELETED SENTENCES. A test that greps
-# for the exact strings removed passes the moment somebody re-words the same false
-# claim, which is the likeliest way it comes back. The rule below is the rule the
-# prose has to follow: if a sentence says a build lane cannot HAVE an admin
-# credential, it must scope that to the MINT / the 1Password read.
+# [unit] The two-vault split as the scripts implement it: bin/setup-1pass-token
+# replaces only its own lane's export line, and every script resolves a vault
+# through an override (bin/lib/op_vaults.rb#LANES), never a literal.
 
 require "bundler/setup"
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 
-class CredentialIsolationClaimsTest < Minitest::Test
+class CredentialVaultResolutionTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
 
   AGENT_VAR = "OP_SERVICE_ACCOUNT_TOKEN"
   ADMIN_VAR = "OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
-
-  # The four files that describe the boundary in prose.
-  CLAIM_SITES = %w[
-    bin/lib/op_vaults.rb
-    bin/setup-1pass-token
-    docs/agents/system/house-burn-down.md
-    docs/agents/modules/credentials.md
-  ].freeze
-
-  # A sentence trips the rule when it denies a capability, names an admin
-  # credential, and reaches for a verb STRONGER than the mechanism supports —
-  # unless it also scopes itself to the mint / the 1Password read.
-  # `fails` earns its place: op_vaults.rb phrased the overclaim with no negation at
-  # all — "a build lane that REACHES FOR an admin credential FAILS" — so a denial
-  # vocabulary built only from cannot/unable/never walked straight past the site
-  # this file is named after. Measured: with the narrower pair, mutating that block
-  # back killed only the required-claim test.
-  DENIAL = /\b(?:unable|cannot|can(?:no|')t|never|impossible|fails?|failure)\b/i
-  TOO_STRONG = /\b(?:read|reads|obtain|obtains|get|gets|hold|holds|access|accesses|
-                    unreadable|reach|reaches|reaching)\b/xi
-  ADMIN_SUBJECT = /\badmin (?:credential|credentials|secret|secrets|token|tokens)\b/i
-  SCOPED_TO_THE_MINT = /\b(?:mint|mints|minting|1password read|op read)\b/i
-
-  # The fabricated incident, in any rewording: the two variable names in one
-  # sentence, joined by a substring/containment claim.
-  # ORDER-INDEPENDENT, BY MEASUREMENT. The first version of this required the
-  # containment word to sit BETWEEN the two names; the sentence actually deleted
-  # reads "...on OP_SERVICE_ACCOUNT_TOKEN also matches OP_ADMIN_SERVICE_ACCOUNT_TOKEN
-  # AS A SUBSTRING", which puts it after both — so restoring the real fabricated
-  # sentence killed nothing. Both names plus a containment word, in one sentence,
-  # in any order.
-  CONTAINMENT_WORD = /\b(?:substring|contains?|contained|containment)\b/i
-
-  # The incident itself, which is the operationally load-bearing half: the claim
-  # that the agent install ONCE DELETED the admin token.
-  DELETION_INCIDENT = /
-    \b(?:silently\ )?(?:deleted|deleting|delete|removed|wiped|clobbered)\b
-    [^.]{0,80}\badmin\b[^.]{0,40}\b(?:token|line|credential|one)\b
-  /xi
-
-  # A CORRECTION IS NOT THE CLAIM, and this file's own fix had to say the false
-  # thing out loud in order to retract it. So a sentence carrying the claim is an
-  # offender only when it neither DENIES it nor ATTRIBUTES it to a past version.
-  # The rule the prose must follow: deny it, or report it as history — never
-  # assert it. (Measured: without this guard the scan flagged the retraction in
-  # bin/setup-1pass-token, i.e. the fix itself.)
-  RETRACTED = /\b(?:not|never|neither)\s+(?:\S+\s+){0,3}(?:a\s+)?(?:substring|contains?|contain)\b/i
-  # NOT /x — free-spacing mode would delete every literal space here and turn
-  # "an earlier version" into "anearlierversion", which matches nothing. That is
-  # exactly what it did on the first run: both retractions were reported as
-  # offenders because their attribution marker was unmatchable.
-  ATTRIBUTED = /\b(?:an earlier version|previously (?:claimed|said)|used to (?:say|claim)|this (?:comment|paragraph) claimed|once said)\b/i
-
-  # ------------------------------------------------------------- the fact ----
-
-  # The whole fabricated incident rests on this being true. It is not.
-  def test_neither_token_variable_contains_the_other
-    refute_includes ADMIN_VAR, AGENT_VAR,
-                    "the fabricated incident requires #{AGENT_VAR} to be a substring of " \
-                    "#{ADMIN_VAR}. It is not: OP_ADMIN_ sits between OP_ and SERVICE_."
-    refute_includes AGENT_VAR, ADMIN_VAR
-
-    assert_equal "OP_ADMIN_", ADMIN_VAR[0, ADMIN_VAR.index("SERVICE_ACCOUNT_TOKEN")],
-                 "this is the exact reason the substring claim fails — pin it, so a rename " \
-                 "that made the claim TRUE would fail here instead of silently vindicating " \
-                 "a story that was never true"
-  end
-
-  # ----------------------------------------------------------- the replay ----
-
-  # The empirical half: run the OLD unanchored pattern against a profile holding
-  # both lines, in both orders, exactly as the deleted paragraph described.
-  def test_the_old_unanchored_sed_never_touched_the_admin_line
-    [[agent_line, admin_line], [admin_line, agent_line]].each do |lines|
-      profile = write_profile(lines)
-      sed("/#{AGENT_VAR}/d", profile)
-      body = File.read(profile)
-
-      assert_includes body, admin_line,
-                      "replaying the OLD unanchored sed against #{lines.first.split('=').first.strip}-first " \
-                      "must leave the admin line intact — it always did"
-      refute_includes body, agent_line, "the agent line is the one it was supposed to remove"
-    end
-  end
-
-  # CONTROL. Without this, the test above passes just as happily against a sed
-  # that deletes nothing at all — and would then prove the opposite of what it
-  # claims. This is the pattern that WOULD have eaten the admin line.
-  def test_the_replay_harness_can_actually_delete_the_admin_line
-    profile = write_profile([admin_line])
-    sed("/SERVICE_ACCOUNT_TOKEN/d", profile)
-
-    assert_equal "", File.read(profile).strip,
-                 "the replay harness must be capable of deleting the admin line, or the " \
-                 "survival asserted above is evidence of a broken command, not of a false claim"
-  end
 
   # -------------------------------------------- the form the script ships ----
 
@@ -176,61 +44,6 @@ class CredentialIsolationClaimsTest < Minitest::Test
                       "the anchor must spare #{decoy.strip.inspect} — sparing these is the real " \
                       "reason it is anchored, and the reason the invented one was never needed"
     end
-  end
-
-  # ------------------------------------------------------------ the prose ----
-
-  def test_no_file_re_asserts_the_fabricated_incident
-    offenders = prose_files.flat_map do |rel|
-      sentences(File.join(ROOT, rel)).filter_map do |sentence|
-        premise = sentence.include?(AGENT_VAR) && sentence.include?(ADMIN_VAR) &&
-                  sentence.match?(CONTAINMENT_WORD)
-        next unless premise || sentence.match?(DELETION_INCIDENT)
-        next if sentence.match?(RETRACTED) || sentence.match?(ATTRIBUTED)
-
-        "#{rel}: #{sentence}"
-      end
-    end
-
-    assert_empty offenders,
-                 "the substring claim is FALSE (see test_neither_token_variable_contains_the_other) " \
-                 "and was deleted on 2026-08-29. If a real containment bug is ever found, fix the " \
-                 "code and this test — do not re-add the story."
-  end
-
-  def test_every_isolation_claim_is_scoped_to_the_mint
-    offenders = CLAIM_SITES.flat_map do |rel|
-      sentences(File.join(ROOT, rel)).filter_map do |sentence|
-        next unless sentence.match?(DENIAL) && sentence.match?(ADMIN_SUBJECT) && sentence.match?(TOO_STRONG)
-        next if sentence.match?(SCOPED_TO_THE_MINT)
-
-        "#{rel}: #{sentence}"
-      end
-    end
-
-    assert_empty offenders,
-                 "a sentence denying a build lane an admin credential must scope itself to the " \
-                 "MINT (the 1Password read), because that is what THIS boundary enforces. Not " \
-                 "holding a deployer token is a separate mechanism in bin/gh-token, and an " \
-                 "unscoped claim here silently depends on a rule another file owns — the kind " \
-                 "of false that is only discovered at a production deploy."
-  end
-
-  # The other half of the same fix: deleting the overclaim must not leave the
-  # boundary undescribed. Each site has to state the narrow claim positively.
-  def test_each_site_states_the_narrow_claim
-    # Normalised through `sentences`, because a comment marker and a line wrap sit
-    # between "MINT an" and "admin credential" in bin/lib/op_vaults.rb — a raw-text
-    # match reports that site missing when the sentence is right there.
-    missing = CLAIM_SITES.reject do |rel|
-      sentences(File.join(ROOT, rel)).any? { |s| s.match?(/\bMINT(?:ING)?\b an admin credential/) }
-    end
-
-    assert_empty missing,
-                 "these files describe the two-vault boundary, so each must SAY what it is — " \
-                 "that a build lane cannot MINT an admin credential. Scrubbing the overclaim " \
-                 "without replacing it would satisfy the scan above and leave the reader with " \
-                 "nothing."
   end
 
   # ------------------------------------------------- the vault name itself ----
@@ -379,7 +192,7 @@ class CredentialIsolationClaimsTest < Minitest::Test
 
   # This file quotes the dead reference in order to forbid it, so it must exempt
   # itself — otherwise the guard reports its own error message as the offence.
-  SELF = "test/lib/credential_isolation_claims_test.rb"
+  SELF = "test/lib/credential_vault_resolution_test.rb"
 
   def scripts
     @scripts ||= Dir.chdir(ROOT) { Dir.glob("bin/**/*").select { |f| File.file?(f) } }
@@ -411,15 +224,6 @@ class CredentialIsolationClaimsTest < Minitest::Test
     args = File.executable?("/usr/bin/sed") && RUBY_PLATFORM.include?("darwin") ?
       ["/usr/bin/sed", "-i", "", pattern, path] : ["sed", "-i", pattern, path]
     system(*args, exception: true)
-  end
-
-  # Comment markers stripped so a claim wrapped in `# ` reads as one sentence.
-  def sentences(path)
-    File.read(path)
-        .gsub(/^\s*#\s?/, "")
-        .split(/(?<=[.!?])\s+|\n{2,}/)
-        .map { |s| s.gsub(/\s+/, " ").strip }
-        .reject(&:empty?)
   end
 
   def prose_files

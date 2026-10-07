@@ -228,18 +228,8 @@ the `.pem` on disk, so it does not generalise — not to a fresh Mac, not to CI,
 not to an agent whose box never held the key. It also fixes nothing about the
 broker: a quota-spent service account is still quota-spent afterwards.
 
-**No open ticket sits behind this, and nothing here waits on Alex.**
-`restore-agent-service-account` was filed on the premise that the agent service
-account no longer existed. That premise measured false, and the task is `archived`
-— read the board rather than taking this sentence's word for it:
-`bin/task show restore-agent-service-account --json | jq -r .stage` answers
-`archived`. Both of its acceptance criteria measure true. Measured 2026-09-28 from a shell
-where `op whoami` was answering the 403, after step 1a and nothing else:
-`bin/gh-auth-refresh --force --export` bypassed the shared cache and minted a
-fresh token (a new `sha256:` prefix on stderr, so it was a real mint and not a
-cache hit), and `gh api /installation/repositories --jq '.total_count'` answered
-18. So when this recipe is what gets you moving, the follow-up is step 1a — not a
-ticket, and not Alex.
+**No open ticket sits behind this, and nothing here waits on Alex.** When this
+recipe is what gets you moving, the follow-up is step 1a.
 
 ### There are two legs, and they are armed separately
 
@@ -265,10 +255,9 @@ looks identical to an unarmed one, because the fallback below answers either way
 unarmed, so arm leg 2 below. *Neither* answers ⇒ you have not minted at all, so
 start at leg 1.
 
-**Why the hub's symptom differs, and why its green does not travel.** One claim,
-and it is checkable: **`mcritchie-studio` is the only checkout on this machine
-carrying a repo-local `gh` fallback.** The sweep behind it, so you never have to
-take the number on trust:
+**Why the hub's symptom differs, and why its green does not travel.** The hub
+carries a repo-local `gh` fallback helper; other checkouts may not. Read which
+checkouts carry one rather than taking a count on trust:
 
 ```
 cd /Users/alex/projects
@@ -278,40 +267,24 @@ for d in */; do r="${d%/}"; [ -e "$r/.git" ] || continue
 done
 ```
 
-19 checkouts, one `gh` fallback (re-measured 2026-09-28). Quote its value as it
-really reads — an **absolute** path, not a bare `gh`:
-
-```
-helper = !/opt/homebrew/bin/gh auth git-credential
-```
-
-`moms-app` answers with a repo-local line too, but it duplicates the App helper
-the global config already names, so it is not a fallback. Every other checkout has
-no local line at all: `bin/gh-app-git-credential` is then the only helper git can
-reach, and a push with the shared session cold ends at `could not read Username`.
-
-Git tries the hub's fallback *after* the App helper comes up empty, because a
-local value appends to the global list rather than replacing it. Measured in the
-hub, where `git config --get-all credential."https://github.com".helper` answers
-three values in order — an empty reset, the App helper, then the `gh` one. That
-helper hands over whatever `gh`'s keyring holds for its active account, and when
-that token is stale GitHub answers `remote: Invalid username or token`.
+A checkout with no local line reaches only `bin/gh-app-git-credential`, and a
+push with the shared session cold ends at `could not read Username`. Git tries a
+repo-local fallback *after* the App helper comes up empty, because a local value
+appends to the global list rather than replacing it; `git config --get-all
+credential."https://github.com".helper` prints the order. The `gh` fallback hands
+over whatever `gh`'s keyring holds for its active account, and when that token is
+stale GitHub answers `remote: Invalid username or token`.
 
 The same fallback is why exporting `GH_TOKEN` alone *appears* to fix `git` **in
-the hub**: it fixes it nowhere else, this paragraph is the only place the config
-is documented, and every hub desk inherits it because worktrees share
-`.git/config`. Nothing in this repo wrote that line, and nothing in it can.
-The one git config this repo does write is the **global** App helper line,
-which the production ship points at
+the hub** and nowhere else; every hub desk inherits it because worktrees share
+`.git/config`. The one git config this repo writes is the **global** App helper
+line, which the production ship points at
 `/Users/alex/projects/.agents/bin/gh-app-git-credential`
-([`source-control.md`](source-control.md));
-**`bin/install-git-credential-helper` writes no git config at all.** Its own
-`--help` says so ("This command never edits ~/.gitconfig. It prints the one-line
-change and its revert; you run them"), and
-`bin/lib/credential_helper_install.rb#git_config_command` only *builds the
-string* the CLI prints. The one-liner it prints is `--global`; the hub's line is
-repo-local and was set by hand. Work around it; do not rely on it, and do not
-remove it — that config is Alex's call.
+([`source-control.md`](source-control.md)). `bin/install-git-credential-helper`
+prints its change rather than making it
+(`bin/lib/credential_helper_install.rb#git_config_command`). Work around the
+hub's fallback; do not rely on it, and do not remove it — that config is Alex's
+call.
 
 ### The recipe
 
@@ -422,7 +395,7 @@ Two traps in that check:
 | `Bad credentials`, 401 on `gh` | session aged out | step 1 |
 | `could not read Username for 'https://github.com'` | the git credential helper could not mint, and no other helper answered | step 1, then **step 1a**, then step 2 — and if `op` still cannot serve, *When 1Password itself is down* → **leg 2**. Exporting `GH_TOKEN` never reaches `git` |
 | `gh` answers but `git push` still fails | **only the `gh` leg is armed.** They are two legs with two routes | **step 1a** first if you have not run it — a broken `op` starves the git leg while an exported `GH_TOKEN` keeps `gh` answering. Then *When 1Password itself is down* → **leg 2** (`GH_APP_TOKEN_CMD`), and re-check with `git push --dry-run` |
-| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `!/opt/homebrew/bin/gh auth git-credential` fallback answered with a stale keyring token. No other checkout on this machine has that fallback, so they say `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
+| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `gh` fallback answered with a stale keyring token. A checkout without that fallback says `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
 | `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone, and only then the hand-mint |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
