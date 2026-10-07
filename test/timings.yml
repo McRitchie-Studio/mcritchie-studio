@@ -161,7 +161,6 @@ test/docs/desk_relative_hub_script_docs_test.rb: 0.13
 test/docs/executable_docs_installer_test.rb: 0.18
 test/docs/fast_lane_hub_path_docs_test.rb: 0.1
 test/docs/installer_command_scope_test.rb: 0.59
-test/docs/live_score_watch_scheduler_claims_test.rb: 0.15
 test/docs/parse_error_redaction_docs_test.rb: 0.13
 test/docs/qa_release_misfile_row_docs_test.rb: 0.05
 test/docs/reclaim_stage_channel_docs_test.rb: 0.96
