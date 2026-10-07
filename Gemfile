@@ -70,6 +70,10 @@ gem "image_processing", "~> 1.2"
 # gem needs. Guarded by test/lib/vips_dependency_test.rb.
 gem "ruby-vips", ">= 2.2.1", "< 3", require: false
 gem "aws-sdk-s3", require: false
+# Streams the alt video asset zips (AltVideoDownloadsController): entries are
+# written as they are read from R2, store-only, so a ~300 MB zip never sits in
+# dyno memory and the first byte leaves inside Heroku's 30 s window.
+gem "zip_kit", "~> 6.3"
 
 # Charts for the /intelligence task-development trends dashboard. Chartkick
 # renders Chart.js (pinned via importmap, no build step); Groupdate powers the
