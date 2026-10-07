@@ -264,23 +264,20 @@ composes, not the whole modal.
 
 ## Graduating — the procedure
 
-The fast lane cannot drive gems (`bin/task begin` refuses on all of them), so the
-gem half is hand-branched.
+`bin/task begin` cuts a gem desk (no port, Redis slot or database), but `bin/submit`
+does not ship one, so the gem half's handoff is by hand.
 
-**The gem half is a task like any other.** There is no size exemption for a gem,
-and `bin/task begin` refusing one is not permission to skip the board — `begin`
-cannot allocate the WORKTREE, but `bin/task create` works, and
+**The gem half is a task like any other.** There is no size exemption for a gem.
 `config/feature_shapes.yml` ships a `library` shape for exactly this (tiers:
 unit + integration, where integration means the consumer CI suite passes in both
-consuming apps). Cut the desk by hand with `git worktree add`.
+consuming apps).
 
 ```bash
-# 1. GEM — its own task, hand-cut desk off the shared base
+# 1. GEM — its own task and desk, cut off origin/accepted by begin
 cd /Users/alex/projects/mcritchie-studio
-bin/task create --title "<3-5 words>" --repo <studio-engine|solana-studio> \
-  --kind chore --shape library --agent <soul> --no-claim
-cd /Users/alex/projects/<studio-engine|solana-studio>
-git fetch origin && git worktree add .worktrees/<slug> -b feat/<slug> origin/accepted
+bin/task begin --title "<3-5 words>" --repo <studio-engine|solana-studio> \
+  --kind chore --shape library --agent <soul> --risk <tag> --accept "..." --test "[unit] ..."
+cd /Users/alex/projects/<studio-engine|solana-studio>/.worktrees/<slug>
 #    move the partial to studio/modals/blocks/_<name>.html.erb (or
 #    solana_studio/modals/), giving it LOCALS for everything the consumers differ on
 #    add a specimen: app/views/style/modals/_ds_<name>.html.erb, registered in

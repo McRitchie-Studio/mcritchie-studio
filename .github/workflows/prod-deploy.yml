@@ -11,12 +11,22 @@
 # not a second click on this run.
 name: Production Deploy
 
+# THE CORRELATION ID IN THE RUN NAME (guard-catalog row 7.4). bin/release's
+# dispatch_and_watch passes a fresh `correlation_id` and selects the run whose
+# title carries `[<id>]` (Release::ShipSequence.correlated_run_jq), so a
+# concurrent dispatch of this workflow can never be watched in place of its own.
+# Optional, so a hand dispatch needs no id; its title then ends in `[]`.
+run-name: Production Deploy ${{ inputs.sha }} [${{ inputs.correlation_id }}]
+
 on:
   workflow_dispatch:
     inputs:
       sha:
         description: "Frozen SHA to deploy (the QA-green release tip)"
         required: true
+      correlation_id:
+        description: "Conductor-minted id stamped into run-name so bin/release finds its own run (optional)"
+        required: false
       release_pr:
         description: "release->main PR number (for the record; optional)"
         required: false

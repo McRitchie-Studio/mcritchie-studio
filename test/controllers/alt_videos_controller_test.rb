@@ -207,6 +207,89 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_match(/chunks\/tiled_demo_chunk_01_0000_0025\.mp4/, segments.first["url"], "no version: the source chunk plays")
   end
 
+  # [component] Piece 18: a clip with a primary version shows it beside the
+  # source chunk, both opening on their first frame, with Play both and one
+  # scrub under them; a clip with none keeps the single preview, which also
+  # opens on its first frame. What it proves: the markup the browser is handed
+  # (which file sits on which side, preload=metadata plus the #t=0.001
+  # fragment, the labels, the controls). It does not prove a frame is painted
+  # or that the two play in sync: the e2e drives the player, and the posters
+  # are judged by eye in the screenshots.
+  test "a clip with a primary shows the original and the primary side by side, each on its first frame" do
+    AltVideo.build_from!(@video)
+    TiledVideo.version!(clip(2), number: 1, at: 1.hour.ago)
+    TiledVideo.version!(clip(2), number: 2)
+    log_in_as users(:alex)
+    get music_video_alt_video_path(@video, alt)
+
+    version_key = clip(2).primary_version.object_key
+    assert_select "[data-test='alt-clip'][data-ordinal='2'][data-compare='true']" do
+      assert_select "[data-test='clip-compare'][data-primary='2'][x-data='clipPair()']" do
+        assert_select "[data-test='clip-compare-original'] figcaption", "Original"
+        assert_select "[data-test='clip-compare-original'] video[data-test='clip-player'][x-ref='original'][preload='metadata'][controls]" do |video|
+          assert_match %r{chunks/tiled_demo_chunk_02_0020_0045\.mp4\?.*#t=0\.001\z}, video.first["src"]
+        end
+        assert_select "[data-test='clip-compare-version'][data-number='2'] figcaption", /\AVersion 2\s+\(primary\)\z/
+        assert_select "[data-test='clip-compare-version'] video[data-test='clip-version-player'][x-ref='version'][preload='metadata'][controls]" do |video|
+          assert_includes video.first["src"], "#{version_key}?"
+          assert video.first["src"].end_with?("#t=0.001")
+        end
+        assert_select "video[muted]", 0, "nothing is muted until Play both: either player alone keeps its sound"
+        assert_select "[data-test='clip-play-both']", /Play both/
+        assert_select "input[type='range'][data-test='clip-scrub']"
+        assert_select "[data-test='clip-play-both-note']", /Sound from Version 2 only: the original plays muted\./
+      end
+      assert_select "[data-test='clip-preview-button']", 0
+      # The rest of the card is untouched.
+      assert_select "[data-test='clip-handoff'] [data-test='clip-chunk-download']"
+      assert_select "[data-test='clip-version']", 2
+      assert_select "[data-test='clip-regenerate-form']"
+    end
+
+    # No version: the single preview, now on its first frame rather than black.
+    assert_select "[data-test='alt-clip'][data-ordinal='1'][data-compare='false']" do
+      assert_select "[data-test='clip-compare']", 0
+      assert_select "[data-test='clip-play-both']", 0
+      assert_select "[data-test='clip-solo'][x-data='clipPair()'] video[data-test='clip-player'][preload='metadata']" do |video|
+        assert_match %r{tiled_demo_chunk_01_0000_0025\.mp4\?.*#t=0\.001\z}, video.first["src"]
+      end
+      assert_select "[data-test='clip-preview-button']", /Preview the source chunk/
+    end
+  end
+
+  test "making an older version primary swaps the right-hand player" do
+    AltVideo.build_from!(@video)
+    TiledVideo.version!(clip(3), number: 1, at: 1.hour.ago)
+    TiledVideo.version!(clip(3), number: 2)
+    log_in_as users(:alex)
+
+    post primary_music_video_alt_video_clip_version_path(@video, alt, 3, 1)
+    follow_redirect!
+
+    one = clip(3).versions.find { |v| v.number == 1 }.object_key
+    assert_select "[data-test='alt-clip'][data-ordinal='3'] [data-test='clip-compare'][data-primary='1']" do
+      assert_select "[data-test='clip-compare-version'][data-number='1'][data-key=?] figcaption", one, /Version 1\s+\(primary\)/
+      assert_select "video[data-test='clip-version-player']" do |video|
+        assert_includes video.first["src"], "#{one}?"
+      end
+    end
+  end
+
+  test "a primary whose file is not reachable keeps the single preview" do
+    AltVideo.build_from!(@video)
+    TiledVideo.version!(clip(2), number: 1)
+    # Signs everything but the versions, as a store missing that object would.
+    store = Object.new
+    store.define_singleton_method(:signed_url) { |key:, **| key.include?("/clips/") ? nil : "https://fixture.invalid/#{key}?sig" }
+    log_in_as users(:alex)
+    AssetBrowser.stub(:source, store) { get music_video_alt_video_path(@video, alt) }
+
+    assert_select "[data-test='alt-clip'][data-ordinal='2'][data-compare='false']" do
+      assert_select "[data-test='clip-compare']", 0
+      assert_select "[data-test='clip-solo'] video[data-test='clip-player']"
+    end
+  end
+
   test "a non-MP4 is refused and records nothing" do
     AltVideo.build_from!(@video)
     log_in_as users(:alex)

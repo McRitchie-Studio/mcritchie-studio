@@ -153,7 +153,7 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
       assert_no_match(/\bsh\("gh", "run", "#{verb}"/, body,
         "no bare sh() gh call may remain in the dispatch lane")
     end
-    assert_includes body, "_, dispatched = gh_sh(*args, chdir: chdir)",
+    assert_includes body, "dispatch_out, dispatched = gh_sh(*args, chdir: chdir, capture: true)",
       "the dispatch itself rides the recovered credential"
   end
 end

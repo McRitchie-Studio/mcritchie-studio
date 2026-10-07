@@ -1,3 +1,5 @@
+require "securerandom"
+
 class Release
   # Pure decision logic for the multi-repo `bin/release ship` ("Run Deployment").
   #
@@ -118,6 +120,57 @@ class Release
       return nil if before_id.nil? || latest_id.nil?
 
       latest_id > before_id ? latest_id : nil
+    end
+
+    # --- github_actions deploy: WHICH run is ours, by correlation id ----------
+    #
+    # THE GAP new_run_id CANNOT CLOSE (guard-catalog row 7.4). "The first run
+    # strictly newer than the snapshot" is ours only while nobody else dispatches
+    # the same workflow inside the window. A second conductor, a hand dispatch, or
+    # a rollback racing a ship each register a run that is ALSO newer than the
+    # snapshot, and `--limit 1` hands back whichever is newest — so the conductor
+    # watches someone else's deploy and reports its verdict as ours. On
+    # prod-deploy.yml that is a production verdict about the wrong SHA.
+    #
+    # BY CONSTRUCTION, NOT BY TIMING. Each dispatch carries a fresh
+    # `correlation_id` input, and every workflow dispatch_and_watch drives declares
+    # `run-name: … [${{ inputs.correlation_id }}]`, so GitHub stamps the id into
+    # the run's displayTitle. The poll then selects the run whose title carries
+    # OUR marker; a concurrent run carries a different one and cannot match. The
+    # strictly-greater check stays as a second, independent belt.
+    #
+    # The id is hex, so the marker needs no escaping inside the jq string below.
+    CORRELATION_INPUT = "correlation_id"
+
+    def correlation_id(random: SecureRandom)
+      "dw-#{random.hex(8)}"
+    end
+
+    # The literal the workflows' run-name wraps the id in: `[<id>]`. Bracketed so
+    # one id can never match as a substring of a longer one's title by accident.
+    def run_name_marker(cid)
+      "[#{cid}]"
+    end
+
+    # The `gh run list --jq` filter that answers "our run's id": the newest run
+    # (gh lists newest first) whose displayTitle carries the marker, or EMPTY when
+    # none does yet — which the shell maps to 0, the same "no run yet" the
+    # unfiltered read reports, so the poll and both aborts read it unchanged.
+    def correlated_run_jq(cid)
+      %(map(select((.displayTitle // "") | contains(#{run_name_marker(cid).inspect}))) | .[0].databaseId // empty)
+    end
+
+    # THE ONE-RELEASE BRIDGE. `gh workflow run` dispatches the workflow file on the
+    # DEFAULT branch, and `prepare` dispatches qa-deploy.yml BEFORE the release that
+    # adds the `correlation_id` input has reached main — so GitHub refuses that one
+    # dispatch with `HTTP 422: Unexpected inputs provided: ["correlation_id"]`. A
+    # 422 creates no run, so re-dispatching without the input cannot double a
+    # deploy; the shell then falls back to the snapshot baseline for that dispatch
+    # alone. Matched narrowly (the refusal AND the input's name) so no other
+    # dispatch failure is ever retried.
+    def correlation_input_rejected?(gh_output)
+      out = gh_output.to_s
+      out.include?("Unexpected inputs") && out.include?(CORRELATION_INPUT)
     end
 
     # --- github_actions deploy: the fallback watcher's per-poll STATE verdict ---

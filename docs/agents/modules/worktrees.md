@@ -69,8 +69,10 @@ bin/agent-worktree sweep-orphan-dbs          # dry run; --yes drops orphaned des
 `new --soul <soul>` (passed by `bin/task begin --agent <soul>`) stamps the desk's **own**
 `config.worktree` with the soul's identity; re-stamp with `bin/agent-worktree identity <app>
 <slug> <soul>`. It never writes `~/.gitconfig` and refuses a primary. Without `--soul`, `new`
-prints `identity: UNSTAMPED`. **A desk cut by hand gets no stamp and no warning**
-(studio-engine, solana-studio, turf-vault): cut it at `<repo>/.worktrees/<slug>` and run
+prints `identity: UNSTAMPED`. The gems (studio-engine, solana-studio, as
+`config/release_repos.yml` files them) get their desk from `new` too, with no port, Redis
+slot or database. **A desk cut by hand gets no stamp and no warning** (turf-vault): cut it
+at `<repo>/.worktrees/<slug>` and run
 `/Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <repo> <slug> <soul>`.
 
 **Never run a plain `git config user.name` in a desk**: without `--worktree` it renames
