@@ -8,6 +8,7 @@ puts "Seeding test database for Playwright..."
 # Clear in dependency order
 EmailImageBrief.delete_all # e2e/email_images.spec.js opens its brief through the form
 Artifact.where(kind: "email_header").delete_all # header candidates; no artifact_subjects rows
+EmailBrandReference.delete_all # e2e/email_brand_kits.spec.js uploads one through the kit page
 Content.delete_all # references News (source_news_slug) + Team — clear before both
 News.delete_all
 ActionGrade.delete_all # FK child of atomic_actions — clear before the parent

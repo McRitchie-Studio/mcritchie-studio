@@ -149,6 +149,16 @@ Rails.application.routes.draw do
   # Email header briefs (EmailImagesController, require_admin): a brief, its
   # generated candidates, approve/retire, and a preview inside the real email
   # shell. Epic email-image-builder, piece 1.
+  # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
+  # assets, its approved headers and open briefs, and the uploaded references.
+  # Declared BEFORE resources :email_images, whose show route would otherwise
+  # read "brand_kits" as a brief slug. Task email-brand-asset-page.
+  get "email_images/brand_kits", to: "email_brand_kits#index", as: :email_brand_kits
+  get "email_images/brand_kits/:kit", to: "email_brand_kits#show", as: :email_brand_kit
+  post "email_images/brand_kits/:kit/references", to: "email_brand_kits#create_reference",
+                                                  as: :email_brand_kit_references
+  post "email_images/brand_kits/:kit/references/:slug/archive", to: "email_brand_kits#archive_reference",
+                                                                as: :archive_email_brand_kit_reference
   resources :email_images, param: :slug, only: %i[index create show update] do
     member do
       post :generate

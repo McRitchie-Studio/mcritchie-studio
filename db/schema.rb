@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_050000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -895,6 +895,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_040000) do
     t.string "lane", null: false
     t.datetime "updated_at", null: false
     t.index ["lane"], name: "index_devops_shifts_on_lane", unique: true
+  end
+
+  create_table "email_brand_references", force: :cascade do |t|
+    t.datetime "archived_at"
+    t.string "brand_kit", null: false
+    t.integer "byte_size", null: false
+    t.string "content_type", null: false
+    t.datetime "created_at", null: false
+    t.integer "height"
+    t.text "image_url", null: false
+    t.string "label", null: false
+    t.text "note"
+    t.string "role", null: false
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.string "uploaded_by"
+    t.integer "width"
+    t.index ["brand_kit", "archived_at"], name: "index_email_brand_references_on_brand_kit_and_archived_at"
+    t.index ["slug"], name: "index_email_brand_references_on_slug", unique: true
   end
 
   create_table "email_events", force: :cascade do |t|
