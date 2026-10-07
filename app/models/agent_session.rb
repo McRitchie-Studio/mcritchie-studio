@@ -60,6 +60,36 @@ class AgentSession < ApplicationRecord
     end
   end
 
+  # Why `soul` may not take a studio login to `task` by `issued_by`, or nil when it
+  # may. The machine credential presents the login, so the soul is never taken from
+  # the request alone: the task record names who is entitled to it.
+  # - task_claim: a soul the build claim recorded (devops.built_by or
+  #   devops.builders). `bin/task begin` logs in as exactly that soul, the one it
+  #   stamps the desk's identity with.
+  # - review_claim: a reviewer the task names (its stored pair or the live review
+  #   claim's holder) who did not build it.
+  def self.studio_login_refusal(soul:, task:, issued_by:)
+    value = Task.canonical_soul(soul)
+    builders = ([task.devops_built_by] + task.devops_builders).compact.uniq
+    case issued_by
+    when "task_claim"
+      return nil if builders.include?(value)
+
+      "#{value} is not #{task.slug}'s builder (the claim recorded #{builders.join(", ").presence || "none"}); " \
+        "a task_claim login names the soul the claim stamped"
+    when "review_claim"
+      return "#{value} built #{task.slug}, so it cannot log in as its reviewer" if builders.include?(value)
+
+      reviewers = (task.reviewers.map { |r| r["slug"] } + [task.review_holder])
+                  .map { |slug| Task.canonical_soul(slug) }.reject(&:empty?).uniq
+      return nil if reviewers.include?(value)
+
+      "#{value} is not a reviewer #{task.slug} names (#{reviewers.join(", ").presence || "none"})"
+    else
+      "issued_by must be one of #{STUDIO_ISSUERS.join(", ")}"
+    end
+  end
+
   # The session a token names, or nil when the token is not a session token at all
   # (a bad signature, another purpose, an expired message). A row that exists but
   # is no longer live is still returned: the caller answers with #refusal_reason.

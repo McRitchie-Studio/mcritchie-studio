@@ -12,6 +12,13 @@ class Team < ApplicationRecord
   has_many :pff_team_stats, foreign_key: :team_slug, primary_key: :slug
   has_many :coaches, foreign_key: :team_slug, primary_key: :slug
   has_many :team_rankings, foreign_key: :team_slug, primary_key: :slug
+  # Columns that hold a team slug with no association here. rename_slug! rewrites
+  # them; the census pin (test/models/slug_children_test.rb) keeps the list whole.
+  has_slug_children "appearances" => :team_slug,
+                    "athletes" => :team_slug,
+                    "contents" => %i[team_slug rival_team_slug],
+                    "news" => %i[primary_team_slug secondary_team_slug],
+                    "pff_stats" => :team_slug
 
   validates :name, presence: true
 

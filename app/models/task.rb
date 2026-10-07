@@ -229,6 +229,9 @@ class Task < ApplicationRecord
   validates :merged, inclusion: { in: MERGED_STATES }, allow_nil: true
   # Naming discipline, gated on change so untouched old tasks still save.
   validate :title_within_word_range, if: :title_changed?
+  # agent_slug carries a foreign key; naming no agent is a validation error with
+  # the reason (a 422), never the database's refusal.
+  validate :agent_slug_names_an_agent, if: -> { agent_slug.present? && will_save_change_to_agent_slug? }
   validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
   # Gated on change: a task must stay saveable after a dependency it named is
   # archived.
@@ -2799,6 +2802,10 @@ class Task < ApplicationRecord
   def acceptance_changed?
     previous = self.class.normalize_devops_list((metadata_was || {}).dig("devops", "acceptance"))
     previous != devops_acceptance
+  end
+
+  def agent_slug_names_an_agent
+    errors.add(:agent_slug, "names no agent (#{agent_slug})") unless Agent.exists?(slug: agent_slug)
   end
 
   # Titles stay 3-5 words; detail belongs in agent_context.

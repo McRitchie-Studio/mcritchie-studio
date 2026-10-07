@@ -3,6 +3,13 @@
 # Environment + HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
 name: QA Deploy
 
+# THE CORRELATION ID IN THE RUN NAME (guard-catalog row 7.4). bin/release's
+# dispatch_and_watch passes a fresh `correlation_id` and selects the run whose
+# title carries `[<id>]` (Release::ShipSequence.correlated_run_jq), so a
+# concurrent dispatch of this workflow can never be watched in place of its own.
+# Optional, so a hand dispatch needs no id; its title then ends in `[]`.
+run-name: QA Deploy ${{ inputs.sha }} [${{ inputs.correlation_id }}]
+
 # workflow_dispatch, NOT push:[release]: the conductor's sweep (`bin/release
 # prepare`) merges N reviewed PRs into `release`, which is N pushes — a push
 # trigger would fire N QA deploys, each racing the next. Dispatch means the
@@ -14,6 +21,9 @@ on:
       sha:
         description: "Release-tip SHA to deploy to QA (the swept `release` HEAD)"
         required: true
+      correlation_id:
+        description: "Conductor-minted id stamped into run-name so bin/release finds its own run (optional)"
+        required: false
 
 # One QA deploy at a time; never cancel an in-flight deploy. Not a CI suite lane,
 # so the anti-concurrency trigger guard (ci_workflow_triggers_test.rb parses only

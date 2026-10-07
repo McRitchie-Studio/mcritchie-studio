@@ -65,6 +65,10 @@ class AgentActivity < ApplicationRecord
   # intake) carry a null task_slug and must never fail a task lookup.
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
                     optional: true, inverse_of: :agent_activities
+  # The column carries a foreign key; a slug no task holds (an SOP name, a task not
+  # yet created) is cleared rather than costing the activity.
+  include ClearsUnknownSlug
+  clears_unknown_slug :task_slug, "Task"
 
   # The raw tool-calls that attributed to this activity. Nullify (not destroy) so
   # closing/removing an activity never destroys the actions it framed.

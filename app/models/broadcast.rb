@@ -43,6 +43,13 @@ class Broadcast < ApplicationRecord
     "cyvasse_first_game" => {
       "survey" => "https://cyvasse.mcritchie.studio/surveys/first-game",
       "build" => "https://mcritchie.studio/build"
+    }.freeze,
+    # The play-times note (task cyvasse-play-times-email): one survey that
+    # opens with the first-game question, then asks when the reader can play,
+    # to pick a standing biweekly Cyvasse Night. Same host and ?ref= path as
+    # cyvasse_first_game. One link only: the note is a single ask.
+    "cyvasse_play_times" => {
+      "survey" => "https://cyvasse.mcritchie.studio/surveys/play-times"
     }.freeze
   }.freeze
 
@@ -59,7 +66,8 @@ class Broadcast < ApplicationRecord
   SUBJECT_RESOLVERS = {
     "cyvasse_your_games" => "Broadcasts::CyvasseYourGames",
     "cyvasse_night" => "Broadcasts::CyvasseNight",
-    "cyvasse_first_game" => "Broadcasts::CyvasseFirstGame"
+    "cyvasse_first_game" => "Broadcasts::CyvasseFirstGame",
+    "cyvasse_play_times" => "Broadcasts::CyvassePlayTimes"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -71,6 +79,7 @@ class Broadcast < ApplicationRecord
     "cyvasse_your_games"    => "Cyvasse: Your Games",
     "cyvasse_night"         => "Cyvasse Night Invite",
     "cyvasse_first_game"    => "Cyvasse: How Was Your First Game",
+    "cyvasse_play_times"    => "Cyvasse: Play Times Survey",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy

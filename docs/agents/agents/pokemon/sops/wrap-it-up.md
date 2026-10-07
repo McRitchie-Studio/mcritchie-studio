@@ -198,8 +198,9 @@ toward the goal, and the in-flight roster stamped from `TZ=America/Denver date`.
   the runners past the 15-minute budget. Nothing was refused; wait and re-run
   `bin/submit`.
 - **Read the clock before stamping.** A roster time is a measurement.
-- **`task begin` refuses a gem repo** (`unknown app: studio-engine`). Cut the desk
-  by hand per [`worktrees.md`](../../../modules/worktrees.md).
+- **`task begin` refuses turf-vault** (`unknown app: turf-vault`). Cut the desk
+  by hand per [`worktrees.md`](../../../modules/worktrees.md). The gems
+  (studio-engine, solana-studio) get desks from `begin` since gem-repos-get-desks.
 
 ## Related
 

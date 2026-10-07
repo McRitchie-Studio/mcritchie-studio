@@ -20,6 +20,9 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
   end
 
   setup do
+    # Children first: their slug foreign keys refuse a parent deleted under them.
+    AthleteGrade.delete_all
+    PffStat.delete_all
     Athlete.delete_all
     Person.where(last_name: %w[Burrow Jefferson]).delete_all
     ImportRun.delete_all

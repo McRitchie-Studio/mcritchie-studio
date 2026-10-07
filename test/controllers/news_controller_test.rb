@@ -266,7 +266,8 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
     @reviewed_article.reload
     assert_equal "processed", @reviewed_article.stage
     assert_equal "christian-pulisic", @reviewed_article.primary_person_slug
-    assert_equal "usa", @reviewed_article.primary_team_slug
+    # "USA" names no team row (the fixture team is united-states), so the slug stays blank.
+    assert_nil @reviewed_article.primary_team_slug
   end
 
   test "process_step rejects non-reviewed article" do

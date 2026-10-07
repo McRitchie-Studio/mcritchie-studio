@@ -81,6 +81,10 @@ class AgentAction < ApplicationRecord
   # intake) carry a null task_slug, and capture must never fail on a task lookup.
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
                     optional: true, inverse_of: :agent_actions
+  # The column carries a foreign key; a slug no task holds (an SOP name, a task not
+  # yet created) is cleared rather than costing the capture.
+  include ClearsUnknownSlug
+  clears_unknown_slug :task_slug, "Task"
 
   # The narrated activity this raw tool-call rolls up under — the session's OPEN
   # AgentActivity at capture time (prefer explicit pin, else server fallback; see .capture). Optional:

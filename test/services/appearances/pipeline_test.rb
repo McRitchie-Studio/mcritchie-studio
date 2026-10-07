@@ -278,14 +278,13 @@ class Appearances::PipelineTest < ActiveSupport::TestCase
 
   # ── the connection `defined` asserts ──────────────────────────────────────────
 
-  # `appearances.person_slug` carries NO foreign key, so a look can name a person who is
-  # not on file and nothing else in the app would notice. The board is the first thing
-  # that looks.
+  # `appearances.person_slug` carries a foreign key now, so only a row from before the
+  # key can name a person who is not on file; the board still counts one.
   test "a look naming a person who is not on file is counted and held in designed" do
-    # BUILT THE WAY ONE ARISES IN THE WILD: a valid look whose person goes away, or is
-    # renamed, under it. `update_column` skips validation exactly as a raw delete of the
-    # person row would skip every callback.
+    # The key comes off for this test and the slug is written past validation: the
+    # shape of a row from before the key.
     orphan = look!(descriptor: "Orphan", colorway: "c")
+    without_slug_key(:appearances, :person_slug)
     orphan.update_column(:person_slug, "nobody-at-all")
 
     board = Appearances::Pipeline.build

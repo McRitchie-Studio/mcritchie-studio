@@ -415,6 +415,9 @@ Rails.application.routes.draw do
       post :attach_artifact
       # What this person does: many vocations, one primary. Admin only.
       patch :vocations, action: :update_vocations
+      # The person's slug, renamed with every row that names it. Admin only.
+      get :slug, action: :edit_slug, as: :edit_slug
+      patch :slug, action: :update_slug
     end
     # What the person wears, for the iced-out sheet (PersonJewelry). Admin only.
     resources :jewelries, only: [:create, :update, :destroy], param: :jewelry_slug, controller: "person_jewelries"
@@ -512,6 +515,8 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # Rename one record's slug with every row that names it (admin sessions).
+      patch "slugs/:kind/:slug", to: "slug_renames#update", as: :slug_rename
       # The person/athlete projection turf-monster syncs from. Read-only by
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.

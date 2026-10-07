@@ -38,7 +38,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     # built_by from it. No new code, no marker, no --actor — the seam already
     # existed and no documented path passed the flag.
     task = Task.create!(title: "Agent Slug Builder Probe", stage: "designed",
-                        agent_slug: "carl", metadata: { "devops" => {} })
+                        agent_slug: agent_rows!("carl").first.slug, metadata: { "devops" => {} })
 
     claim!(task, actor: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
 
@@ -73,7 +73,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     # survives on its own: this drives the MERGE, not the guard. The guard's one
     # remaining job — a key posted BLANK — is the test below it.
     task = Task.create!(title: "Builder Defend Probe Task", stage: "designed",
-                        agent_slug: "shannon", metadata: { "devops" => {} })
+                        agent_slug: agent_rows!("shannon").first.slug, metadata: { "devops" => {} })
     claim!(task, actor: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
 
     patch "/api/v1/tasks/#{task.slug}",
@@ -89,7 +89,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
   # deleting that `|| prior_devops["built_by"]` passes the whole suite.
   test "a client cannot erase the builder by posting it blank" do
     task = Task.create!(title: "Builder Blank Post Probe", stage: "designed",
-                        agent_slug: "shannon", metadata: { "devops" => {} })
+                        agent_slug: agent_rows!("shannon").first.slug, metadata: { "devops" => {} })
     claim!(task, actor: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
 
     patch "/api/v1/tasks/#{task.slug}",

@@ -56,6 +56,9 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("athletes:describe_from_headshots")
     ImageCache.where(owner_type: "Athlete").delete_all
+    # Children first: their slug foreign keys refuse a parent deleted under them.
+    AthleteGrade.delete_all
+    PffStat.delete_all
     Athlete.delete_all
   end
 

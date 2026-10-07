@@ -5,6 +5,9 @@ class Game < ApplicationRecord
   belongs_to :home_team, class_name: "Team", foreign_key: :home_team_slug, primary_key: :slug
   belongs_to :away_team, class_name: "Team", foreign_key: :away_team_slug, primary_key: :slug
 
+  # A game recap's content row names its game by slug (no association here).
+  has_slug_children "contents" => :game_slug
+
   validates :slate_slug, presence: true
   validates :home_team_slug, presence: true
   validates :away_team_slug, presence: true

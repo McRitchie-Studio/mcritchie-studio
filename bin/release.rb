@@ -628,8 +628,26 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
     return false # gh never answered — do not watch a stale run
   end
 
-  args = Release::ShipSequence.dispatch_argv(workflow, inputs)
-  _, dispatched = gh_sh(*args, chdir: chdir)
+  # OUR RUN, BY NAME (guard-catalog row 7.4). The dispatch carries a fresh
+  # correlation id that the workflow's `run-name` stamps into the run's title, and
+  # the poll below selects the run carrying it — so a concurrent dispatch of the
+  # same workflow (another conductor, a hand run, a rollback) can never be watched
+  # in place of ours. The baseline above stays: it is the credential probe, the
+  # second belt in new_run_id, and the bridge's whole answer (next comment).
+  cid = dispatch_correlation_id
+  args = Release::ShipSequence.dispatch_argv(workflow, (inputs || {}).merge(Release::ShipSequence::CORRELATION_INPUT => cid))
+  dispatch_out, dispatched = gh_sh(*args, chdir: chdir, capture: true)
+  if !dispatched && Release::ShipSequence.correlation_input_rejected?(dispatch_out)
+    # THE ONE-RELEASE BRIDGE (Release::ShipSequence.correlation_input_rejected?):
+    # the default branch's workflow predates the input, GitHub refused with a 422,
+    # and a 422 creates no run — so one re-dispatch without the id is safe, and
+    # this dispatch alone is matched by the baseline, exactly as before.
+    say("  ↻ #{workflow} on the default branch does not declare `correlation_id` yet (HTTP 422, no run " \
+        "created) — re-dispatching without it; this run is matched by the pre-dispatch baseline.")
+    cid = nil
+    dispatch_out, dispatched = gh_sh(*Release::ShipSequence.dispatch_argv(workflow, inputs), chdir: chdir, capture: true)
+  end
+  say(dispatch_out.strip) unless dispatch_out.to_s.strip.empty?
   unless dispatched
     # Same reason as above: `gh`'s error IS printed here (this call is not captured),
     # but the return still lands downstream as a boot verdict, so name the fact.
@@ -660,7 +678,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # Pinned by test_a_read_that_succeeds_before_the_list_goes_unreadable_does_not_claim_never_ran.
   saw_a_read = false
   20.times do
-    latest_id = newest_run_id(workflow, chdir: chdir)
+    latest_id = cid ? correlated_run_id(workflow, cid, chdir: chdir) : newest_run_id(workflow, chdir: chdir)
     saw_a_read = !latest_id.nil?
     # nil (a transient list failure) is SKIPPED, never compared to before_id.
     run_id = Release::ShipSequence.new_run_id(before_id, latest_id)
@@ -841,6 +859,22 @@ def newest_run_id(workflow, chdir: nil)
 
   out.strip.to_i
 end
+
+# The id of the run THIS dispatch created — the newest workflow_dispatch run whose
+# title carries `[<cid>]` — 0 when none does yet, nil when `gh run list` FAILED.
+# Same nil-vs-0 contract as newest_run_id, so the poll and both aborts read it
+# unchanged. `--limit 20` is the window a concurrent dispatch could push ours down.
+def correlated_run_id(workflow, cid, chdir: nil)
+  out, ok = sh("gh", "run", "list", "--workflow", workflow, "--event", "workflow_dispatch", "--limit", "20",
+               "--json", "databaseId,displayTitle", "--jq", Release::ShipSequence.correlated_run_jq(cid),
+               chdir: chdir, capture: true, env: gh_token_env($gh_lane_token))
+  return nil unless ok
+
+  out.strip.to_i
+end
+
+# A fresh correlation id per dispatch. A method of its own so a test can pin it.
+def dispatch_correlation_id = Release::ShipSequence.correlation_id
 
 # The raw `[out, ok]` of the newest-run-id read, WITHOUT the nil-folding above.
 # dispatch_and_watch's snapshot needs gh's words to classify the failure and to

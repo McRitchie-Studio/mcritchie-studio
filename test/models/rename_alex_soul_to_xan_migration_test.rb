@@ -66,12 +66,14 @@ class RenameAlexSoulToXanMigrationTest < ActiveSupport::TestCase
     DevopsShift.insert_all([{ lane: "alex", created_at: @now, updated_at: @now }])
     GateRun.insert_all([{ subject_type: "task", subject_slug: @task.slug, key: "g2b_light", attempt: 1,
                           actor: "alex", started_at: @now, created_at: @now, updated_at: @now }])
+    # The release first: release_events.release_slug carries a foreign key.
+    Release.insert_all([{ slug: "rel-sample", confirmed_by: "alex", created_at: @now, updated_at: @now }])
     ReleaseEvent.insert_all([{ release_slug: "rel-sample", step: "ship_gate", status: "started", actor: "alex",
                                occurred_at: @now, created_at: @now, updated_at: @now }])
-    Release.insert_all([{ slug: "rel-sample", confirmed_by: "alex", created_at: @now, updated_at: @now }])
     DeskRecord.insert_all([{ worktree_path: "/tmp/desk-sample", actor: "alex", created_at: @now, updated_at: @now }])
     Usage.insert_all([{ agent_slug: "alex", period_date: Date.current, period_type: "daily", model: "m",
                         created_at: @now, updated_at: @now }])
+    Skill.insert_all([{ name: "Orchestration", slug: "orchestration", created_at: @now, updated_at: @now }])
     SkillAssignment.insert_all([{ agent_slug: "alex", skill_slug: "orchestration", created_at: @now, updated_at: @now }])
   end
 
@@ -155,6 +157,9 @@ class RenameAlexSoulToXanMigrationTest < ActiveSupport::TestCase
   end
 
   test "down reverses the repoint" do
+    # Its down predates the slug keys: it points rows back at an `alex` agent the up
+    # retired, which the agent_slug keys refuse. Run against the schema it was written for.
+    %i[activities tasks usages skill_assignments].each { |table| without_slug_key(table, :agent_slug) }
     migrate(:up)
     migrate(:down)
 

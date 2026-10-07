@@ -7,6 +7,9 @@
 class App < ApplicationRecord
   include Sluggable
 
+  # A desk record names its app by slug (no association here).
+  has_slug_children "desk_records" => :app_slug
+
   # The default app a brand-new session adopts before any task exists — the
   # SessionStart hook seeds "<random Pokémon> · mcritchie-studio".
   DEFAULT_SLUG = "mcritchie-studio".freeze

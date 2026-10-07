@@ -415,7 +415,10 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    chunks needs no time limit. Measured locally on 2026-10-07: first byte in
    0.25-0.5 s, 327 MB in 14-21 s from the dev bucket, and the process's
    memory rose about 100 MB and then held flat, the same for 312 MB as for
-   936 MB written. Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
+   936 MB written. Cancel the download (or close the tab) and the server
+   stops at once: no further file is fetched. A failure other than that is
+   kept in the error log, once per download, as well as in the README.
+   Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
 3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
    click it to choose the file; it uploads at once. Each upload is a numbered
    **version**, kept and never overwritten, at
@@ -425,6 +428,12 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    most, checked in the browser before the upload and again on the server.
    The file rides the web request, so on a slow uplink a large file can pass
    Heroku's 30-second window: upload from the local hub then.
+   Once a clip has a primary, the card shows it beside the source chunk
+   (**Original** and **Version N (primary)**, side by side on a desktop,
+   stacked on a phone), each on its first frame. **Play both** runs the two
+   from the start together with the original muted, so the only sound is the
+   version's; pausing, playing or seeking either moves both, and one scrub
+   drives the pair. A clip with no version keeps the single source preview.
 4. **Request a regenerate** on a clip whose primary will not do, with an
    optional note. The flagged clips are listed at the top. The next upload
    for that clip clears its flag; **Clear** removes it by hand.

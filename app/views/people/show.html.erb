@@ -16,7 +16,13 @@
 
     <div class="flex-1 min-w-0">
       <h1 class="text-2xl font-bold text-heading"><%= @person.full_name %></h1>
-      <p class="text-sm text-muted"><%= @person.slug %></p>
+      <p class="text-sm text-muted">
+        <%= @person.slug %>
+        <% if admin? %>
+          <%= link_to "Rename", edit_slug_person_path(@person.slug), class: "ml-2 text-xs text-primary hover:underline",
+                data: { test: "person-rename-slug" } %>
+        <% end %>
+      </p>
 
       <div class="flex gap-2 flex-wrap mt-2">
         <% if (a = @person.athlete_profile) %>
