@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_131228) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -150,6 +150,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_131228) do
     t.index ["session_id", "transcript_path"], name: "index_agent_activities_on_session_and_transcript"
     t.index ["session_id", "turn_uuid"], name: "index_agent_activities_on_session_and_turn", unique: true, where: "(turn_uuid IS NOT NULL)"
     t.index ["task_slug", "seq"], name: "index_agent_activities_on_task_slug_and_seq"
+  end
+
+  create_table "agent_sessions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.string "harness_session_id"
+    t.datetime "issued_at", null: false
+    t.string "issued_by", null: false
+    t.datetime "revoked_at"
+    t.string "revoked_by"
+    t.string "slug", null: false
+    t.string "soul", null: false
+    t.string "task_slug"
+    t.string "tier", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_agent_sessions_on_slug", unique: true
+    t.index ["soul", "tier"], name: "index_agent_sessions_on_soul_and_tier"
+    t.index ["task_slug", "revoked_at"], name: "index_agent_sessions_on_task_slug_and_revoked_at"
   end
 
   create_table "agents", force: :cascade do |t|

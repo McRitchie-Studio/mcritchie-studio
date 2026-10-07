@@ -14,6 +14,9 @@ module Api
     class GateRunsController < BaseController
       before_action :set_subject
       before_action :validate_key!, except: :index
+      # A task's gate is a task write; a release's gate is a release write.
+      require_task_scope except: :index, if: -> { subject_type == "task" }
+      require_admin_session except: :index, if: -> { subject_type == "release" }
 
       def open
         run = GateRun.open!(**common_args)
@@ -59,6 +62,8 @@ module Api
         params[:subject_slug].to_s
       end
 
+      def gated_task_slug = subject_slug
+
       def gate_key
         params[:key].to_s
       end
@@ -97,7 +102,7 @@ module Api
           subject_type: subject_type,
           subject_slug: subject_slug,
           key: gate_key,
-          actor: payload[:actor].presence,
+          actor: session_actor(payload[:actor]),
           source: payload[:source].presence || "system",
           metadata: payload[:metadata].to_h
         }

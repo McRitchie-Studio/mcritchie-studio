@@ -2,6 +2,7 @@ module Api
   module V1
     class ReviewEventsController < BaseController
       before_action :set_task
+      require_task_scope
 
       def create
         attrs = event_attributes
@@ -49,6 +50,7 @@ module Api
 
       def event_attributes
         attrs = event_payload.to_h.symbolize_keys
+        attrs[:actor] = session_actor(attrs[:actor])
         attrs[:role] = attrs[:role].presence || attrs[:review_role].presence
         attrs[:moment] = attrs[:moment].presence || attrs[:review_moment].presence
         attrs[:source] = attrs[:source].presence || "api"

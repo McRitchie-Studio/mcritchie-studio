@@ -23,6 +23,7 @@ module Api
 
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock]
+      require_task_scope only: [:update, :destroy, :intent, :block, :unblock]
 
       def index
         return if reject_unsupported_index_params!
@@ -61,7 +62,10 @@ module Api
         # tell from a pre-gender draw. bin/agent-worktree writes it into the desk
         # context so bin/statusline can show ⚥. Derived per read, never stored, and
         # on show only (one row), so the index pays no per-task Pokémon read.
-        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task)))
+        # `agent_session` is the soul logged in to this task (the newest live studio
+        # session), or nil when only the Pokémon holds it.
+        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task),
+                                                    "agent_session" => live_agent_session_json(@task)))
       end
 
       def create
@@ -107,7 +111,7 @@ module Api
 
         reviewers = Array(params[:reviewers]).map { |r| r.respond_to?(:to_unsafe_h) ? r.to_unsafe_h : r }
         rescue_and_log(target: @task) do
-          @task.record_intent_event(to_stage: to_stage, actor: params[:actor].presence, reviewers: reviewers)
+          @task.record_intent_event(to_stage: to_stage, actor: session_actor(params[:actor]), reviewers: reviewers)
           render_data(@task)
         end
       rescue StandardError => e
@@ -122,7 +126,7 @@ module Api
       # separate qa_feedback Activity the caller posts alongside.
       def block
         rescue_and_log(target: @task) do
-          @task.block!(by: params[:by].presence || Current.task_event_actor.presence,
+          @task.block!(by: session_actor(params[:by]) || Current.task_event_actor.presence,
                        kind: params[:kind].presence)
           render_data(@task)
         end
@@ -136,7 +140,7 @@ module Api
       # answers 409 with the reason and stays. `by` names who cleared it, and the clear
       # writes an audit Activity. Idempotent: a task with no live block answers 200.
       def unblock
-        by = params[:by].presence || Current.task_event_actor.presence
+        by = session_actor(params[:by]) || Current.task_event_actor.presence
         if by.blank?
           return render_error("by is required: name who is clearing the block", status: :unprocessable_entity,
                                                                                   error_code: "MISSING_PARAM")
@@ -165,6 +169,11 @@ module Api
       end
 
       # The task mascot's display gender — see #show. nil for no mascot or a persona.
+      def live_agent_session_json(task)
+        AgentSession.unrevoked.unexpired.for_task(task.slug).where(tier: "studio")
+                    .order(issued_at: :desc).first&.summary
+      end
+
       def mascot_display_gender(task)
         slug = task.devops["mascot"].presence
         pokemon = slug && Pokemon.find_by(slug: slug)
@@ -326,11 +335,13 @@ module Api
         # A PATCH naming `stage: building` is a BUILD CLAIM even when the task is
         # already building (a re-claim or a handoff) — Task#build_claim_save?.
         Current.task_build_claim = params[:stage].to_s == "building"
+        # A session names the actor whether or not the caller sent an event payload.
+        Current.task_event_actor = current_agent_session.soul if current_agent_session
         return if event.blank?
 
         Current.task_event_session = event[:session].presence
 
-        Current.task_event_actor      = event[:actor].presence
+        Current.task_event_actor      = session_actor(event[:actor])
         Current.task_event_model      = event[:model].presence
         Current.task_event_tokens_in  = event[:tokens_in].presence&.to_i
         Current.task_event_tokens_out = event[:tokens_out].presence&.to_i

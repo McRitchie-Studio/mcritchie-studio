@@ -296,6 +296,7 @@ require_relative "lib/session_identity"
 require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/task_tree"
+require_relative "lib/desk_session"
 require_relative "lib/fast_lane"
 require_relative "lib/remedy"
 require_relative "lib/review_hop"
@@ -1298,13 +1299,65 @@ end
 # across every Ruby the agents might run this under.
 def api(method, path, body = nil, opts = {})
   auth = opts.fetch(:auth, true)
-  res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
+  session_token = auth ? desk_session_token(method, path) : nil
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: session_token || (auth ? token : nil), body: body)
+  if session_token && res.code.to_i == 401
+    # The desk's login ended (revoked, expired, or the task moved on). The shared
+    # token is still accepted, so drop the login and retry with it.
+    reason = TaskBoard.parse_body(res)["error"] || "HTTP 401"
+    warn!("note: this desk's agent session was refused (#{reason}); dropping it and retrying with the shared token")
+    DeskSession.clear(desk_session_root)
+    res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body)
+  end
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
     die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{handed_token_hint(res)}",
          code: task_not_found_response?(res, parsed) ? EXIT_TASK_NOT_FOUND : 1)
   end
   parsed
+end
+
+# The desk this process runs in, which holds the studio login `begin` wrote
+# (DeskSession). Memoized: the cwd does not change within one run.
+def desk_session_root
+  return @desk_session_root if defined?(@desk_session_root)
+
+  @desk_session_root = DeskSession.root_for(Dir.pwd)
+end
+
+# The desk's session token when this request writes the task the desk is logged
+# in to; nil for every other call, which keeps the shared token.
+def desk_session_token(method, path)
+  DeskSession.token_for(DeskSession.task_slug_for(method, path), root: desk_session_root)
+end
+
+# Log the desk's soul in to the task it just claimed (agent sessions, phase one):
+# POST /api/v1/agent_sessions with the shared token, and keep the session token in
+# the desk. Never fatal: without a login the desk's writes use the shared token,
+# exactly as before.
+def desk_login(slug, worktree_dir, soul)
+  if soul.to_s.strip.empty?
+    warn!("begin login — #{slug} names no builder soul, so the desk holds no agent session; " \
+          "its board writes use the shared token")
+    return
+  end
+
+  body = { "soul" => soul, "task_slug" => slug, "issued_by" => "task_claim",
+           "harness_session_id" => session_identity.first }.compact
+  res = TaskBoard.request(:post, "/api/v1/agent_sessions", base_url: BASE_URL, token: token, body: body)
+  parsed = TaskBoard.parse_body(res)
+  unless res.code.to_i == 201 && parsed.dig("data", "token")
+    warn!("begin login — no agent session (POST /api/v1/agent_sessions -> #{res.code}: " \
+          "#{parsed["error"] || "no token"}); the desk's board writes use the shared token")
+    return
+  end
+
+  data = parsed["data"]
+  DeskSession.write(worktree_dir, data.slice("slug", "soul", "tier", "task_slug", "expires_at", "token"))
+  warn!("begin login — #{data["soul"]} logged in to #{slug} (#{data["tier"]} session #{data["slug"]}, " \
+        "until #{data["expires_at"]}); kept in #{DeskSession.path(worktree_dir)}")
+rescue StandardError => e
+  warn!("begin login — no agent session (#{e.class}: #{e.message}); the desk's board writes use the shared token")
 end
 
 # Classify the board's answer HERE, where the response is still structured (status
@@ -2234,6 +2287,9 @@ end
 # NEVER FATAL. Every failure below leaves a whole desk and a claimed task, so it
 # warns with the exact remedy instead of dying past the claim — the same posture
 # `bin/agent-worktree new` takes toward a stamp that does not land.
+#
+# Returns the recorded soul (begin logs that soul in), or nil when the board named
+# none or could not be read.
 def reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped:)
   remedy = "#{worktree_bin} identity #{app} #{worktree_slug} <soul>"
   res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
@@ -2250,13 +2306,14 @@ def reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped:)
     return
   end
   # `new --soul` already stamped exactly this soul and printed the result.
-  return if soul == stamped
+  return soul if soul == stamped
 
   warn!("begin 5/5 identity — #{worktree_bin} identity #{app} #{worktree_slug} #{soul}   (the claim recorded #{soul})")
-  return if system(worktree_bin, "identity", app, worktree_slug, soul)
+  return soul if system(worktree_bin, "identity", app, worktree_slug, soul)
 
   warn!("  ✗ the desk identity did not land — hand commits there will not name #{soul}. " \
         "Fix what it printed above, then: #{worktree_bin} identity #{app} #{worktree_slug} #{soul}")
+  soul
 rescue StandardError => e
   # A board read that RAISES (connection refused, timeout) is the same non-answer as
   # a non-2xx — and must be just as non-fatal, or a network blip past the claim kills
@@ -2778,7 +2835,8 @@ when "begin"
   end
 
   clear_block_at_begin(slug, task, by: [builder, mover_session.to_s, "begin"].find { |v| !v.to_s.strip.empty? })
-  reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
+  desk_soul = reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
+  desk_login(slug, worktree_dir, desk_soul || builder)
 
   context = begin
     JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))

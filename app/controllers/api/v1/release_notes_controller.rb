@@ -1,6 +1,8 @@
 module Api
   module V1
     class ReleaseNotesController < BaseController
+      require_admin_session
+
       def create
         payload = release_notes_payload
         task_slugs = normalize_task_slugs(payload["task_slugs"].presence || payload["tasks"])

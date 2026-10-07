@@ -1,9 +1,18 @@
 # Agent sessions and capability APIs — design
 
-**Status: proposed, awaiting Alex's review.** His idea of 2026-10-05, written up
-as piece 3b of the `platform-audit-refactors` epic. Nothing on this page is built
-unless the sentence says so; section 1 is what exists, sections 2 to 8 are the
-proposal, section 9 is what only Alex can answer.
+**Status: approved by Alex on 2026-10-06, with two amendments: an admin session
+carries no task scope (the admin tier is the scope), and there is no Dawn (the
+client tier is Turf Monster and Tyrion).** His idea of 2026-10-05, piece 3b of the
+`platform-audit-refactors` epic. Section 1 is what existed before the build;
+sections 2 to 8 are the design, section 9 the questions it raised.
+
+**Built (phase one):** the `agent_sessions` table and `AgentSession` model (all three
+tiers, admin unscoped), `POST /api/v1/agent_sessions` for a studio login,
+`bin/task begin` logging the desk in, the actor taken from the session on every
+board write, the tier and scope gates (`Api::AgentSessionGate`), and the shared
+secret kept beside it, logged as legacy. Not built yet: the admin grant (Approve tap
+or launch phrase), the `claim-next-review` login, and the soul on the board card.
+How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
 The idea in one paragraph: credentials move behind deterministic server APIs, and
 the platform gains **agent sessions**. An agent logs in as a soul when it starts a
