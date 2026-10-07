@@ -8,7 +8,7 @@ require "test_helper"
 class DevopsMirroredColumnsApiTest < ActionDispatch::IntegrationTest
   PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/6161"
 
-  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
   def headers = { "Authorization" => "Bearer #{token}" }
 

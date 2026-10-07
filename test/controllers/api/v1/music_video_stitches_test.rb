@@ -15,7 +15,7 @@ module Api
       end
 
       def auth_headers
-        { "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth)}" }
+        { "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth, expires_in: 1.hour)}" }
       end
 
       def take_all! = @alt.clips.each { |clip| TiledVideo.version!(clip, number: 1, at: 1.hour.ago) }

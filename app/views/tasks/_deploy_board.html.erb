@@ -56,7 +56,7 @@
   <%# TEST-ONLY: lets the Playwright live-update e2e POST an intent/move to trigger a
       real broadcast. Gated to the test env — never rendered in development or production. %>
   <% if Rails.env.test? %>
-    <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
+    <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour) %>">
   <% end %>
 <% end %>
 

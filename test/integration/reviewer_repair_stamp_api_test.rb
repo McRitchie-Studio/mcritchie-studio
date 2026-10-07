@@ -27,7 +27,7 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
   BUILDER_SESSION  = "b1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
   REVIEWER_SESSION = "c2e1f3b4-5c6d-4e7f-9a01-b2c3d4e5f6a7"
 
-  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
   def auth = { "Authorization" => "Bearer #{token}" }
 

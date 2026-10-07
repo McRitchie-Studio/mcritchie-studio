@@ -8,7 +8,7 @@ module Api
     class AgentActivitiesReconcileTest < ActionDispatch::IntegrationTest
       setup do
         @headers = {
-          "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth)}"
+          "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth, expires_in: 1.hour)}"
         }
         @t0 = Time.utc(2026, 7, 11, 3, 12, 0)
         @a1 = AgentActivity.create!(session_id: "sess-fx", category: "Workflow", reason_slug: "kick off",

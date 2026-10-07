@@ -57,7 +57,7 @@ class DigestVideoTilesIntegrationTest < ActionDispatch::IntegrationTest
     def create(payload) = post("/api/v1/music_videos", { music_video: payload })
 
     def post(path, body)
-      token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+      token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
       session.post path, params: body, as: :json, headers: { "Authorization" => "Bearer #{token}" }
       raise DigestVideo::Failure, session.response.body unless session.response.successful?
 

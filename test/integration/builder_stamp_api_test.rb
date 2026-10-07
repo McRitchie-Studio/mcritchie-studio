@@ -8,7 +8,7 @@ require "test_helper"
 # feature. These cover the mechanism that ACTUALLY carries a builder — rule 4,
 # agent_slug — because that is what the fast lane now populates.
 class BuilderStampApiTest < ActionDispatch::IntegrationTest
-  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+  def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
   def claim!(task, actor:)
     patch "/api/v1/tasks/#{task.slug}",

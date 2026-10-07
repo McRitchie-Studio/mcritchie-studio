@@ -5,7 +5,7 @@ module Api
     class SessionsControllerTest < ActionDispatch::IntegrationTest
       setup do
         @headers = {
-          "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)}"
+          "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}"
         }
         # A single gen-1 Pokémon so the draw is deterministic, with its type color + emoji.
         Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)

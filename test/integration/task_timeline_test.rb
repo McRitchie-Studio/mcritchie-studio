@@ -26,7 +26,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
   # annotated TaskEvent end-to-end, and the model surfaces on the timeline.
   test "api stage move with usage records a TaskEvent and shows it on the timeline" do
     task = Task.create!(title: "Timeline api task", stage: "designed")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     assert_difference -> { task.task_events.count }, 1 do
       patch "/api/v1/tasks/#{task.slug}",
@@ -52,7 +52,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
   test "api block records the blocking agent and shows it on the timeline" do
     Agent.create!(name: "Shannon", slug: "shannon")
     task = Task.create!(title: "Timeline block actor task", stage: "submitted")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     # A block is a `building` attribute now — PATCH the dedicated block endpoint.
     patch "/api/v1/tasks/#{task.slug}/block",
@@ -109,7 +109,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     Agent.create!(name: "Carl", slug: "carl")
     Agent.create!(name: "Shannon", slug: "shannon")
     task = Task.create!(title: "Timeline intent task", stage: "submitted")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     assert_difference -> { task.task_events.intents.count }, 1 do
       post "/api/v1/tasks/#{task.slug}/intent",
@@ -139,7 +139,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
   test "api intent is a no-op once the target stage has already landed" do
     task = Task.create!(title: "Timeline intent noop task", stage: "reviewed")
     task.update!(stage: "assembled")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     assert_no_difference -> { task.task_events.intents.count } do
       post "/api/v1/tasks/#{task.slug}/intent",
@@ -154,7 +154,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     Agent.create!(name: "Shannon", slug: "shannon")
     reviewers = [{ slug: "carl", weight: "primary" }, { slug: "shannon", weight: "light" }]
     task = Task.create!(title: "Timeline rework intent task", stage: "submitted")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     post "/api/v1/tasks/#{task.slug}/intent",
          params: { to_stage: "reviewed", reviewers: reviewers, event: { source: "cli" } },
@@ -183,7 +183,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     Agent.create!(name: "Shannon", slug: "shannon")
     reviewers = [{ slug: "carl", weight: "primary" }, { slug: "shannon", weight: "light" }]
     task = Task.create!(title: "Timeline direct block task", stage: "submitted")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     post "/api/v1/tasks/#{task.slug}/intent",
          params: { to_stage: "reviewed", reviewers: reviewers, event: { source: "cli" } },
@@ -228,7 +228,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
   # [integration] a bad request (no to_stage) is a clean 400, never a 500.
   test "api intent without to_stage is a 400" do
     task = Task.create!(title: "Timeline intent bad task", stage: "submitted")
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
 
     post "/api/v1/tasks/#{task.slug}/intent",
          params: { actor: "steffon" }, headers: { "Authorization" => "Bearer #{token}" }, as: :json

@@ -24,7 +24,7 @@ class ReviewLeaseSurvivesReviewTest < ActionDispatch::IntegrationTest
 
   setup do
     @headers = {
-      "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth)}"
+      "Authorization" => "Bearer #{Rails.application.message_verifier('api_auth').generate('test', purpose: :api_auth, expires_in: 1.hour)}"
     }
     @task = Task.create!(title: "Long Review Under Way", stage: "submitted")
     @t0 = Time.utc(2026, 9, 8, 14, 0, 0)
