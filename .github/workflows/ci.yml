@@ -406,8 +406,10 @@ jobs:
   # the free one for the scarce one.
   #
   # WHY FOUR AND NOT MORE lives in config/rails_lane.yml next to the number, so there is
-  # one place to read it and one place to change it. `strategy.job-total` supplies the
-  # denominator, and bin/ci-shard ABORTS if the matrix and the contract disagree.
+  # one place to read it and one place to change it. The matrix is READ from that file
+  # by `rails_plan` (bin/ci-shard --matrix), so the workflow carries no second copy of
+  # the count; `strategy.job-total` supplies the denominator, and bin/ci-shard still
+  # aborts if the two ever disagree.
   #
   # NO CHROME HERE. The browser belongs to the `system` job below — 13 tests that used
   # to make this lane pay for a Chrome install and a chromedriver-eviction dance on
@@ -416,14 +418,29 @@ jobs:
   # THE UNION IS NOT ASSUMED. Four green shards over four empty buckets look exactly
   # like four green shards over the whole suite, which is why `rails_executed_set` below
   # is a separate, unconditional job rather than a claim in this comment.
+  rails_plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Read the shard matrix from config/rails_lane.yml
+        id: plan
+        run: echo "shards=$(bin/ci-shard --matrix)" >> "$GITHUB_OUTPUT"
+
   rails:
+    needs: rails_plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ${{ fromJSON(needs.rails_plan.outputs.shards) }}
 
     services:
       postgres:
