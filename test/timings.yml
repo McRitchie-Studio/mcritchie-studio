@@ -548,7 +548,6 @@ test/lib/release_registry_test.rb: 0.05
 test/lib/release_seal_cli_test.rb: 14.29
 test/lib/release_ship_gate_read_test.rb: 5.93
 test/lib/release_ship_mode_test.rb: 3.57
-test/lib/remedy_hint_guard_test.rb: 0.65
 test/lib/repo_root_test.rb: 0.22
 test/lib/response_payload_budget_test.rb: 0.05
 test/lib/review_autopilot_test.rb: 4.58

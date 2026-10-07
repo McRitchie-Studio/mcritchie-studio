@@ -685,8 +685,8 @@ fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fa
 record `pr_url` → `bin/dor-check` → `move submitted`):
 
 Paste the `next:` line `bin/task begin` prints. It names the desk and the absolute
-ship script, so no doc spells that path: `bin/lib/fast_lane.rb#handoff_command`
-builds it, and `test/lib/fast_lane_test.rb` proves it resolves to an executable.
+ship script, so no doc spells that path: `bin/lib/remedy.rb#handoff`
+builds it, and `test/lib/remedy_handoff_test.rb` proves it resolves to an executable.
 Add `-m "Commit message"` to override the default message, the task title.
 
 **Both halves of that line are load-bearing.**
@@ -1306,25 +1306,29 @@ moment they were already stuck.
 | a script named as a SUBJECT (`bin/dor-check credits this receipt only alongside a green CI`) | stays bare | prose, not an instruction — nobody pastes a sentence's subject |
 | a usage banner | `$PROGRAM_NAME` | it names the program the reader actually invoked — absolute when they reached it absolutely, bare when they typed it bare |
 | a step transcript (`4/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a transcript or a durable record — neither is addressed to a reader standing anywhere |
+| an argv a script runs itself (`Open3.capture2e("bin/agent-worktree", …)`) | stays bare | it is executed, not handed over |
 
 **Which copy you are sent to is decided by the disk, never by a repo's name.**
-`FastLane.remedy_command` (`bin/lib/fast_lane.rb`) takes an ordered list of `bin`
+`Remedy.command` (`bin/lib/remedy.rb`) takes an ordered list of `bin`
 directories and picks the first that actually holds an executable. A re-run passes
 one directory — the speaking script's own `__dir__`, so it names the very script
 that is talking. A handoff passes the desk's first and the hub's second. Resolving
 by existence self-heals: onboard a repo, or give a satellite a shim, and the hints
 follow the disk with no registry to remember.
 
-**Writing a new refusal?** Build the command through the helper, never by hand:
+**Writing a new refusal?** Build the command through `Remedy`, the one helper
+every printed remedy goes through, never by hand:
 
 ```ruby
-SELF_CMD = FastLane.remedy_command("fast-check", __dir__)
+SELF_CMD = Remedy.command("fast-check", __dir__)
 # …
 abort "fast-check: the receipt did not land. Re-run #{SELF_CMD} #{slug}."
 ```
 
-`test/lib/remedy_hint_guard_test.rb` sweeps the scripts for bare instructions and
-fails on a new one, naming the file and line. Its exemptions are keyed on the
-**line's text**, never its number, and each carries a `why:` — so a genuinely
-bare-and-correct site is recorded with its reason instead of quietly widening the
-hole.
+`Remedy.gh_auth_refresh` renders the `eval "$(… --export)"` line for a `gh` read,
+`Remedy.token_export` the `export <VAR>="$(…/gh-token)"` line for a Ruby GitHub
+read, and `Remedy.handoff` the `cd <desk> && …/submit <slug>` line. The helper
+names only a script that is on disk: a hint for a renamed or retired script raises
+`Remedy::UnknownScript` when it is built, so the drift fails the tests that load the
+script instead of reaching a reader. `test/lib/remedy_test.rb` pins the helper and
+`test/lib/remedy_hints_reach_the_reader_test.rb` runs a sample of the scripts.
