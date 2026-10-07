@@ -253,7 +253,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     post create_appearance_person_path(gamma.slug, return_to: card), params: { appearance: { descriptor: "Training Grey" } }
     assert_redirected_to card
     follow_redirect!
-    assert_equal ["Training Grey"],
+    assert_equal ["Training Grey", "Training Grey · iced"],
                  JSON.parse(css_select("[data-ordinal='1'] [data-test='performer-recast']").first["data-athlete"])["looks"].pluck("descriptor")
   end
 
@@ -271,7 +271,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "details#new-model[open] [data-test='new-model-return']"
     assert_select "details#new-model form[action=?]", create_appearance_person_path(@athlete.slug, return_to: card)
 
-    assert_difference -> { @athlete.appearances.count } => 1 do
+    assert_difference -> { @athlete.appearances.count } => 2, "the look and its iced twin" do
       post create_appearance_person_path(@athlete.slug, return_to: card), params: { appearance: { descriptor: "Alternate Black" } }
     end
     assert_redirected_to card
