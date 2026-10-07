@@ -82,7 +82,7 @@ require_relative "lib/merge_command"
 require_relative "lib/stacked_pr"
 require_relative "lib/acting_identity"
 require_relative "lib/approval_request_notice"
-require_relative "lib/fast_lane"
+require_relative "lib/remedy"
 require_relative "lib/repo_checkout"
 require_relative "lib/upstream_misfile"
 require_relative "lib/reviewer_select_skip"
@@ -94,9 +94,9 @@ ROOT = File.expand_path("..", __dir__)
 # spawned them, so the path picks the SCRIPT and no `cd` is owed). These reach a
 # reviewer through a SPAWN PROMPT, which is the reason the bare form was wrong here:
 # the reviewer reading it may be standing on a satellite or gem desk that carries no
-# bin/dor-check and no bin/task at all. Policy: FastLane.remedy_command.
-DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__).freeze
-TASK_CMD = FastLane.remedy_command("task", __dir__).freeze
+# bin/dor-check and no bin/task at all. Policy: Remedy.command.
+DOR_CHECK_CMD = Remedy.command("dor-check", __dir__).freeze
+TASK_CMD = Remedy.command("task", __dir__).freeze
 PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
 DEFAULT_APPS = %w[mcritchie-studio turf-monster rolio].freeze
 SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze

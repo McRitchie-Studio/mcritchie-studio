@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "time"
+require_relative "../bin/lib/remedy"
 
 # SeamReconcile — the anomaly decision for work that is FURTHER ALONG THAN ITS
 # STAGE SAYS, and which no SOP currently looks backward to find.
@@ -63,7 +64,7 @@ module SeamReconcile
     verdict_stranded: "re-read the PR head + CI: verdict holds => re-arm; base moved => re-review",
     merge_never_landed: "re-review %{slug} so pr-review lands its feat PR on accepted",
     sweep_unfinished: "read the release's latest G3 attempt: closed failed => ABORT (fix the " \
-                      "cause first); still open => INTERRUPTION (re-run bin/release prepare --yes)"
+                      "cause first); still open => INTERRUPTION (re-run #{Remedy.command("release", File.expand_path("../bin", __dir__), "prepare", "--yes")})"
   }.freeze
 
   # One-line explanation of what the reading MEANS, for the report.

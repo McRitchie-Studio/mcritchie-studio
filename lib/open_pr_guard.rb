@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../bin/lib/remedy"
+
 # OpenPrGuard — refuse to archive a task that still has an OPEN PR, and name it.
 #
 # THE MEASURED CASE (2026-09-01, found by auditing the open-PR backlog).
@@ -88,6 +90,9 @@
 # check could not be completed, and never that a PR is open. Claiming a fact the
 # check failed to establish is how a reader stops trusting the guard entirely.
 module OpenPrGuard
+  # The absolute commands these refusals hand over (bin/lib/remedy.rb).
+  TASK_CMD = Remedy.command("task", File.expand_path("../bin", __dir__)).freeze
+  GH_AUTH_REFRESH = Remedy.gh_auth_refresh(File.expand_path("../bin", __dir__)).freeze
   # github.com/<owner>/<repo>/pull/<n> — owner/repo captured together because that
   # is the `--repo` argument `gh` takes.
   PR_URL_PATTERN = %r{github\.com/([^/]+/[^/]+)/pull/(\d+)}
@@ -248,7 +253,7 @@ module OpenPrGuard
            gh pr close <n> --repo <owner/repo>      # drop it deliberately
          Then archive. To archive and ABANDON the open PRs — recorded on the task as a
          deliberate choice, so a later reader knows they were dropped and not forgotten:
-           bin/task move #{slug} archived --force
+           #{TASK_CMD} move #{slug} archived --force
     TEXT
   end
 
@@ -265,8 +270,8 @@ module OpenPrGuard
       #{lines}
          This is NOT a finding that they are open; it is a check that did not complete.
          The usual cause is a stale GitHub App token (they expire about hourly by design):
-           eval "$(bin/gh-auth-refresh --export)"
-         Any orphan this lets through stays findable: bin/task orphan-prs
+           #{GH_AUTH_REFRESH}
+         Any orphan this lets through stays findable: #{TASK_CMD} orphan-prs
     TEXT
   end
 

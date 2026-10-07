@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "remedy"
 
 # WHICH ARM OF reviewer-select's EXIT 10 IS THIS, AND WHAT DO YOU DO ABOUT IT?
 #
@@ -26,6 +27,8 @@ require "json"
 # with no code (a reviewer-select run without --json) classifies :unrecognized, which
 # names BOTH arms rather than guessing one.
 module ReviewerSelectSkip
+  # The absolute bin/task the reconcile remedies hand over (bin/lib/remedy.rb).
+  TASK_CMD = Remedy.command("task", File.expand_path("..", __dir__)).freeze
   # bin/reviewer-select's SKIP_CODE_HELD and SKIP_CODE_SELF_REVIEW, as the arms they name.
   CODES = { "held" => :held, "self_review" => :self_review }.freeze
 
@@ -78,24 +81,24 @@ module ReviewerSelectSkip
     "reviewer-select SKIPPED #{slug} — ALREADY UNDER REVIEW: another live session " \
       "already holds this review. Seating a second pair here IS the two-primaries bug. " \
       "Do NOT review it here; take the next reviewable task instead " \
-      "(bin/task claim-next-review):"
+      "(#{TASK_CMD} claim-next-review):"
   end
 
   def self_review_lead(slug)
     "reviewer-select SKIPPED #{slug} — THE PRIMARY BUILT IT: the board refused the " \
       "review claim because the picked primary is in this task's AUTHOR SET. NOBODY " \
       "holds this review, so taking the next task does NOT fix it — the same refusal " \
-      "recurs. Reconcile the author set instead: `bin/task show #{slug} --verbose` for " \
-      "what the board records, then `bin/task move #{slug} building --actor " \
+      "recurs. Reconcile the author set instead: `#{TASK_CMD} show #{slug} --verbose` for " \
+      "what the board records, then `#{TASK_CMD} move #{slug} building --actor " \
       "<the-real-builder>`:"
   end
 
   def unrecognized_lead(slug)
     "reviewer-select SKIPPED #{slug} (exit 10) — and it printed no skip code, so this " \
       "session will not guess which refusal it was: the two arms have OPPOSITE remedies. " \
-      "ALREADY UNDER REVIEW means a live holder — move on with bin/task " \
+      "ALREADY UNDER REVIEW means a live holder — move on with #{TASK_CMD} " \
       "claim-next-review. THE PRIMARY BUILT IT means an author-set collision — nobody " \
-      "holds it, moving on repeats it, and the fix is `bin/task move #{slug} building " \
+      "holds it, moving on repeats it, and the fix is `#{TASK_CMD} move #{slug} building " \
       "--actor <the-real-builder>`. Do NOT review it here; read reviewer-select's own " \
       "refusal below and follow the remedy IT names:"
   end

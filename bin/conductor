@@ -66,8 +66,14 @@ require "time"
 require "yaml"
 require_relative "lib/bin_helpers"
 require_relative "lib/board_read"
+require_relative "lib/remedy"
 
 SCRIPT_DIR = __dir__
+
+# The absolute commands the plan and the dry runs hand the operator (bin/lib/remedy.rb).
+RELEASE_CMD = Remedy.command("release", SCRIPT_DIR).freeze
+REVIEWER_SELECT_CMD = Remedy.command("reviewer-select", SCRIPT_DIR).freeze
+CONDUCTOR_CMD = Remedy.command("conductor", SCRIPT_DIR).freeze
 
 # bin/task's "the board POSITIVELY answered: there is no such task" exit code (its
 # EXIT_TASK_NOT_FOUND). Pinned by name here, and asserted against bin/task's own
@@ -387,7 +393,7 @@ def plan(reviewers: false, health: true)
     puts "  (none)"
   else
     sub_pipeline.each do |t|
-      puts "  - #{t['slug']}: bin/reviewer-select #{t['slug']}   # records the primary+light intent, then spawn that pair"
+      puts "  - #{t['slug']}: #{REVIEWER_SELECT_CMD} #{t['slug']}   # records the primary+light intent, then spawn that pair"
       if reviewers
         pair = reviewer_preview(t["slug"])
         puts "      picked: #{pair}" if pair
@@ -406,8 +412,8 @@ def plan(reviewers: false, health: true)
     puts "  (none)"
   else
     slugs = rev_pipeline.map { |t| t["slug"] }
-    puts "  bin/release merge #{slugs.join(' ')}   # bin/release computes the safe smallest-footprint overlap order"
-    puts "  (or: bin/conductor merge --run)"
+    puts "  #{RELEASE_CMD} merge #{slugs.join(' ')}   # bin/release computes the safe smallest-footprint overlap order"
+    puts "  (or: #{CONDUCTOR_CMD} merge --run)"
   end
   puts
 
@@ -420,10 +426,10 @@ def plan(reviewers: false, health: true)
     puts "  (none)"
   else
     puts "  members: #{asm_pipeline.map { |t| t['slug'] }.join(', ')}"
-    puts "  1. bin/release prepare        # deploy origin/release to QA (cut/refresh the QA app)"
+    puts "  1. #{RELEASE_CMD} prepare        # deploy origin/release to QA (cut/refresh the QA app)"
     puts "  2. review the QA app + choose ship authority"
-    puts "  3a. QA workflow handoff: bin/release ship --by conductor"
-    puts "  3b. autonomous workflow: bin/conductor ship --run"
+    puts "  3a. QA workflow handoff: #{RELEASE_CMD} ship --by conductor"
+    puts "  3b. autonomous workflow: #{CONDUCTOR_CMD} ship --run"
     puts "  plain conductor ship is dry; --run executes bin/release ship --by conductor --yes."
   end
   puts
@@ -468,7 +474,7 @@ def drive_merge(run:)
     ok = exec_bin(RELEASE_BIN, "merge", *slugs)
     exit(ok ? 0 : 1)
   else
-    puts "bin/release merge #{slugs.join(' ')}"
+    puts "#{RELEASE_CMD} merge #{slugs.join(' ')}"
     puts "(dry — re-run with --run to execute; bin/release applies the review-gate guard + overlap order)"
   end
 end
@@ -480,7 +486,7 @@ def drive_qa(run:)
     ok = exec_bin(RELEASE_BIN, "prepare")
     exit(ok ? 0 : 1)
   else
-    puts "bin/release prepare"
+    puts "#{RELEASE_CMD} prepare"
     puts "(dry — re-run with --run to execute)"
   end
 end
@@ -493,7 +499,7 @@ def drive_ship(run:)
     ok = exec_bin(RELEASE_BIN, "ship", "--by", "conductor", "--yes")
     exit(ok ? 0 : 1)
   else
-    puts "bin/release ship --by conductor"
+    puts "#{RELEASE_CMD} ship --by conductor"
     puts "(dry — qa-release stops here at QA; the full-cycle launcher uses `bin/conductor ship --run`)"
   end
 end

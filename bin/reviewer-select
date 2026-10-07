@@ -163,19 +163,18 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "lib/task_board"
 require_relative "lib/projects_root"
 require_relative "lib/session_identity"
-require_relative "lib/fast_lane"
+require_relative "lib/remedy"
 require_relative "lib/github_read_remedy"
 
 # EVERY COMMAND THIS SCRIPT HANDS OVER IS ABSOLUTE. It lives in mcritchie-studio/bin
 # alone — no satellite and no gem carries it — so a reader who reached it at all
 # reached it by absolute path, and a bare `bin/reviewer-select …` handed back to them
 # is `No such file or directory` from the tool's own hint at the moment they are
-# already stuck. FastLane.remedy_command resolves against the SPEAKING script's own
+# already stuck. Remedy.command resolves against the SPEAKING script's own
 # __dir__, so a hub run names the hub's copy and a run from the fixed-path tooling
 # install names its stable link rather than the SHA the next ship prunes.
-# test/lib/remedy_hint_guard_test.rb sweeps this file for the bare form.
-SELF_CMD = FastLane.remedy_command("reviewer-select", __dir__).freeze
-TASK_CMD = FastLane.remedy_command("task", __dir__).freeze
+SELF_CMD = Remedy.command("reviewer-select", __dir__).freeze
+TASK_CMD = Remedy.command("task", __dir__).freeze
 
 ROOT = File.expand_path("..", __dir__)
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
@@ -251,7 +250,7 @@ def warn_read_remedy!(reason)
   if Release::GhFailure.credential_failure?(reason)
     warn!("  The read was REFUSED on credentials. Refresh the one this process reads — the PR's")
     warn!("  commits name their authors — then re-run:")
-    warn!("    #{GithubReadRemedy.refresh_command(Github::AppToken::FALLBACK_TOKEN_ENV, __dir__)}")
+    warn!("    #{Remedy.token_export(Github::AppToken::FALLBACK_TOKEN_ENV, __dir__)}")
     warn!("  (NOT `gh-auth-refresh`: that sets GH_TOKEN, which this read never consults.)")
   else
     warn!("  This is NOT a credential fault — read the reason above. There is no credential to")

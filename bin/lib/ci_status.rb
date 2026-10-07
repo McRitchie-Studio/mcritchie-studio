@@ -5,7 +5,7 @@ require "open3"
 require "time"
 require "shellwords"
 require_relative "gh_auth_retry"
-require_relative "fast_lane"
+require_relative "remedy"
 
 # The REAL GitHub CI state of a PR, reduced to one verdict so bin/dor-check's merge
 # gate can refuse to hand a red PR to review — the #1 blocker class (a PR green
@@ -71,11 +71,8 @@ require_relative "fast_lane"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  # The credential fix these refusals prescribe. It is the most-pasted command in the
-  # house and was the last bare one left in the swept set — the operand is a FLAG
-  # (`--export`) rather than a slug, which is the shape the guard's original operand
-  # rule could not see. See INSTRUCTION_RE in test/lib/remedy_hint_guard_test.rb.
-  GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", File.expand_path("..", __dir__)).freeze
+  # The credential fix these refusals prescribe, the most-pasted command in the house.
+  GH_AUTH_REFRESH_CMD = Remedy.command("gh-auth-refresh", File.expand_path("..", __dir__)).freeze
 
   TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted ci_less].freeze
 

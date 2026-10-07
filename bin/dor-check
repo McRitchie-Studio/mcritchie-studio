@@ -116,7 +116,7 @@ require "uri"
 require "yaml"
 require "optparse"
 require_relative "lib/tree_fingerprint"
-require_relative "lib/fast_lane"
+require_relative "lib/remedy"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/task_pr_set"
@@ -154,11 +154,11 @@ CLAIM_RULES = %w[test_only_diff docs_with_guards_diff].freeze
 # it printed back at them. Resolved from __dir__ — the very dor-check that is
 # speaking, and its siblings beside it. Deliberately NOT TASK_BIN below: that is
 # the ENV-redirected EXEC seam, while a remedy names the real script the reader is
-# sent to. Policy: FastLane.remedy_command. (No refusal offers a local cert route:
+# sent to. Policy: Remedy.command. (No refusal offers a local cert route:
 # the receipts the certs recorded stopped being evidence, and then the certs
 # retired.)
-TASK_CMD = FastLane.remedy_command("task", __dir__)
-GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
+TASK_CMD = Remedy.command("task", __dir__)
+GH_AUTH_REFRESH_CMD = Remedy.command("gh-auth-refresh", __dir__)
 # The board CLI the task-root guard reads devops.branch/worktree_slug through when
 # a caller has no task in hand. dor-check always DOES (it just fetched one), so it
 # passes `devops:` and this stays unused on the normal path; tests stub it.

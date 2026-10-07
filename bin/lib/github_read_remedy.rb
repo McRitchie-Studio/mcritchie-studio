@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "fast_lane"
+require_relative "remedy"
 
 # The remedy a refusal prints when a GitHub read this process performed ITSELF —
 # in Ruby, over HTTP, through Github::Client — could not be read.
@@ -49,29 +49,11 @@ require_relative "fast_lane"
 # here: its job is the keyring plus GH_TOKEN, and widening its single-line stdout
 # contract would break the eval contract every other caller depends on.
 #
-# The path is resolved through FastLane so the printed line runs from ANY desk —
-# a bare `bin/gh-token` typed on a satellite or gem desk dies as `No such file or
-# directory`, which reads like a broken install rather than a wrong path.
+# The command itself is rendered by Remedy.token_export (bin/lib/remedy.rb), the one
+# helper every printed remedy goes through; this module keeps the reasoning and the
+# one-line squeeze for the failure reason quoted beside it.
 module GithubReadRemedy
   module_function
-
-  # `export <ENV>="$(<abs>/bin/gh-token)"` — a line an operator pastes into the
-  # shell they will re-run the refusing command from.
-  #
-  # env_name: the variable THE READ CONSUMES. Callers pass their reader's own
-  #           constant; nothing here guesses it.
-  # bin_dirs: the speaking script's own __dir__ (a re-run remedy names the very
-  #           script that is talking — see FastLane.resolve_bin).
-  #
-  # The double quotes around the substitution are deliberate: an unquoted `$( )`
-  # would word-split a token, and `export X=$(…)` with an empty result silently
-  # exports the empty string — which `gh` and AppToken both treat as "unset".
-  def refresh_command(env_name, bin_dirs)
-    name = env_name.to_s.strip
-    raise ArgumentError, "refresh_command needs the env var the read consumes" if name.empty?
-
-    %(export #{name}="$(#{FastLane.resolve_bin("gh-token", bin_dirs)})")
-  end
 
   # A failure reason squeezed onto ONE line. The reason quoted into these refusals
   # is a GitHub API error whose body is multi-line JSON; interpolated raw it breaks

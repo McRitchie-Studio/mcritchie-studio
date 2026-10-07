@@ -15,7 +15,7 @@
 # gate's decision table is unit-testable without spawning bin/dor-check against a
 # fixture — see test/lib/dor_check_exempt_ci_test.rb.
 require_relative "ci_status"
-require_relative "fast_lane"
+require_relative "remedy"
 
 module CiGate
   # THE ABSOLUTE COMMAND THIS GATE'S REFUSALS HAND BACK. It composes bin/dor-check's
@@ -23,12 +23,12 @@ module CiGate
   # fixed for the cert refusals next door — a builder or reviewer who may be standing
   # on a satellite or gem desk that carries no hub script. Resolved from bin/ (this
   # file's parent) once at load; policy and the desk-vs-hub reasoning:
-  # FastLane.remedy_command.
+  # Remedy.command.
   #
   # THE PURITY NOTE IN THE HEADER STILL HOLDS. Resolution reads the FILESYSTEM
   # (File.executable?) exactly once, at require time, and the verdict functions stay
   # pure: they interpolate one frozen string and shell nothing.
-  TASK_CMD = FastLane.remedy_command("task", File.expand_path("..", __dir__)).freeze
+  TASK_CMD = Remedy.command("task", File.expand_path("..", __dir__)).freeze
 
   # The one form of suite evidence bin/dor-check credits, named so the --json payload,
   # the gate SOPs and the docs spell it the same way.

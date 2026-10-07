@@ -24,6 +24,18 @@ module DeskDatabaseGuard
 
   module_function
 
+  # The re-provision command these refusals hand over, through the one remedy helper
+  # (bin/lib/remedy.rb). Loaded on the refusal path only, never at boot: this file
+  # loads from an initializer in every env, and a refusal must never itself raise. A
+  # tree that carries no bin/ (a stripped fixture) still gets the absolute path.
+  def agent_worktree_cmd
+    bin = File.expand_path("../bin", __dir__)
+    require_relative "../bin/lib/remedy"
+    Remedy.command("agent-worktree", bin)
+  rescue LoadError, ArgumentError
+    File.join(bin, "agent-worktree")
+  end
+
   # -> nil (proceed) or the refusal message.
   # `linked_worktree:` is linked_worktree?(root), passed in so this stays pure.
   def refusal(root:, rails_env:, database_url:, shared_database:, override: nil, linked_worktree: false)
@@ -41,7 +53,7 @@ module DeskDatabaseGuard
       ✗ refusing to run against the SHARED development database (#{shared_database}) from desk #{slug}.
         #{why(database_url)}
         Write the desk's own pointer with:
-          bin/agent-worktree new mcritchie-studio #{slug}
+          #{agent_worktree_cmd} new mcritchie-studio #{slug}
         (Test work needs no pointer: prefix it with RAILS_ENV=test. Meant it? #{OVERRIDE}=1.)
     MSG
   end
@@ -54,7 +66,7 @@ module DeskDatabaseGuard
         scratch worktree #{root}.
         #{why(database_url).sub("This desk", "This worktree")}
         A throwaway is for tests: prefix every rails command with RAILS_ENV=test.
-        (Need a development env? Provision a desk: bin/agent-worktree new mcritchie-studio <slug>.
+        (Need a development env? Provision a desk: #{agent_worktree_cmd} new mcritchie-studio <slug>.
         Meant it? #{OVERRIDE}=1.)
     MSG
   end

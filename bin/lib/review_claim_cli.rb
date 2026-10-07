@@ -72,6 +72,9 @@ require_relative "review_worker_pulse"
 require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
+  # The absolute bin/task every remedy here hands over (bin/lib/remedy.rb).
+  TASK_CMD = ClaimHolder::TASK_COMMAND
+
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
 
@@ -365,7 +368,7 @@ class ReviewClaimCli
     if data["state"].to_s == "reacquired"
       @err.puts("review-claim: ⚠️  #{slug} — your review lease had LAPSED and was re-acquired just now. " \
                 "It was FREE for up to #{lease_ttl_human}, so another reviewer could have popped this " \
-                "task in that window: check `bin/task review-claim status #{slug}` and the PR before you merge.")
+                "task in that window: check `#{TASK_CMD} review-claim status #{slug}` and the PR before you merge.")
     end
     OK
   end
@@ -382,7 +385,7 @@ class ReviewClaimCli
 
     if holder == :unreadable
       @err.puts("review-claim: ❌ #{slug} — NOT renewed, and the board would not say who holds it. " \
-                "Treat this task as NOT yours to review until `bin/task review-claim status #{slug}` answers.")
+                "Treat this task as NOT yours to review until `#{TASK_CMD} review-claim status #{slug}` answers.")
       return NO_LEASE
     end
 
@@ -390,7 +393,7 @@ class ReviewClaimCli
     return report_no_lease(slug, holder) unless holder["live"]
 
     @err.puts("review-claim: ❌ #{slug} — NOT renewed: this review is held by #{holder_line(holder)}. " \
-              "Only their session can release it — ask them (bin/task review-claim release #{slug}). " \
+              "Only their session can release it — ask them (#{TASK_CMD} review-claim release #{slug}). " \
               "Do NOT take it over: a steal mid-review voids the no-self-review guarantee.")
     SKIPPED
   end
@@ -403,7 +406,7 @@ class ReviewClaimCli
     lapsed = holder_line(holder) if holder.is_a?(Hash) && present?(holder["session"])
     @err.puts("review-claim: ❌ #{slug} — nothing renewed: you hold no review lease on this task" \
               "#{lapsed ? " (a LAPSED claim by #{lapsed} is on it)" : ""}. " \
-              "Claim it first: bin/task review-claim acquire #{slug} --agent <soul>.")
+              "Claim it first: #{TASK_CMD} review-claim acquire #{slug} --agent <soul>.")
     NO_LEASE
   end
 
@@ -695,13 +698,13 @@ class ReviewClaimCli
   # design — so the remedy is to ASK, and saying so here is what keeps a caller from
   # reaching for a takeover instead.
   def next_move(slug, grade)
-    return "→ free to claim: bin/task review-claim acquire #{slug}" if ClaimHolder.observed_free?(grade)
-    return "→ watch longer: bin/task review-claim status #{slug} --observe-for 90" if
+    return "→ free to claim: #{TASK_CMD} review-claim acquire #{slug}" if ClaimHolder.observed_free?(grade)
+    return "→ watch longer: #{TASK_CMD} review-claim status #{slug} --observe-for 90" if
       [ClaimHolder::INCONCLUSIVE, ClaimHolder::UNOBSERVED].include?(grade)
     return "→ it lapses on its own; wait it out, or ask the holder to release it now: " \
-           "bin/task review-claim release #{slug}" if grade == ClaimHolder::NOT_RENEWING
+           "#{TASK_CMD} review-claim release #{slug}" if grade == ClaimHolder::NOT_RENEWING
 
-    "→ ASK THE HOLDER TO RELEASE IT (only their session can): bin/task review-claim release #{slug}. " \
+    "→ ASK THE HOLDER TO RELEASE IT (only their session can): #{TASK_CMD} review-claim release #{slug}. " \
       "Do NOT take this task over — a steal mid-review voids the no-self-review guarantee and " \
       "strands the reviewer's verdict."
   end
@@ -896,7 +899,7 @@ class ReviewClaimCli
 
     if holder == :unreadable
       @out.puts("review-claim: #{slug} — NOTHING released, and the board would not say who holds it. " \
-                "Check before you assume the task is free: bin/task review-claim status #{slug}.")
+                "Check before you assume the task is free: #{TASK_CMD} review-claim status #{slug}.")
       return
     end
 
@@ -986,7 +989,7 @@ class ReviewClaimCli
     @out.puts("review-claim: ⛔ #{slug} — YOU BUILT THIS. A soul never reviews their own work — SKIP.")
     @out.puts("  The task records you as devops.built_by, so this claim is refused (not a race).")
     @out.puts("  Pick the next reviewable task. If the stamp is WRONG, correct it with")
-    @out.puts("  bin/task move #{slug} building --actor <the-real-builder> and re-run.")
+    @out.puts("  #{TASK_CMD} move #{slug} building --actor <the-real-builder> and re-run.")
   end
 
   # The reviewing SOUL leads when the board knows it. A skip or a refusal that says
@@ -1131,7 +1134,7 @@ class ReviewClaimCli
     stray = bad.find { |arg| !arg.start_with?("-") }
     if command == "claim-next" && stray
       @err.puts("claim-next-review takes NO task slug — the BOARD picks the task. To review the one " \
-                "you named: bin/task review-claim acquire #{stray}")
+                "you named: #{TASK_CMD} review-claim acquire #{stray}")
     end
     usage(CANT_RUN)
   end
@@ -1273,7 +1276,7 @@ class ReviewClaimCli
   end
 
   def usage_slug(cmd)
-    @err.puts("review-claim #{cmd} needs a task slug (e.g. `bin/task review-claim #{cmd} some-task`)")
+    @err.puts("review-claim #{cmd} needs a task slug (e.g. `#{TASK_CMD} review-claim #{cmd} some-task`)")
     CANT_RUN
   end
 
