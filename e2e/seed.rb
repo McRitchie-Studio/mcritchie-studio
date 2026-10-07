@@ -1650,3 +1650,9 @@ NightCallLooks.seed!
 Person.where(last_name: "Icefixture").destroy_all
 ice_person = Person.create!(first_name: "Novice", last_name: "Icefixture", slug: "novice-icefixture", athlete: true)
 Appearance.create!(person_slug: ice_person.slug, descriptor: "Comets white")
+# /characters/turf-monster — the first character, seeded through the same
+# idempotent service as production (e2e/characters.spec.js). Destroyed first so
+# a reseed starts clean; the store answers the public paths, so no bucket.
+Character.destroy_all
+kit_paths = { "image/webp" => "/agents/turf-monster.webp", "image/jpeg" => "/email_brand/turf-monster-style-anchor.jpg" }
+Characters::SeedTurfMonster.call(store: ->(_bytes, type) { kit_paths.fetch(type) })
