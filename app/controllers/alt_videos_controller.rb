@@ -47,14 +47,18 @@ class AltVideosController < ApplicationController
 
   private
 
-  # The signed files the page plays and downloads: each clip's source chunk,
-  # every version, the source audio, and the swapped people's character sheets.
+  # The signed files the page plays and downloads: each clip's source chunk and
+  # its lettered reference frames, every version, the source audio, and the
+  # swapped people's character sheets (with the looks' jersey numbers).
   def load_files
-    chunk_keys = @chunk_for.values.compact.map(&:object_key)
+    chunks = @chunk_for.values.compact
+    chunk_keys = chunks.map(&:object_key)
+    frame_keys = chunks.flat_map { |chunk| chunk.reference_frame_list.map { |f| f["object_key"] } }
     version_keys = @clips.flat_map { |clip| clip.versions.map(&:object_key) }
-    @urls = signed_urls(chunk_keys + version_keys + [@video.source_object_key])
-    @downloads = signed_urls(chunk_keys, download: true)
+    @urls = signed_urls(chunk_keys + frame_keys + version_keys + [@video.source_object_key])
+    @downloads = signed_urls(chunk_keys + frame_keys, download: true)
     @sheets = Artifact.newest_character_sheets(@swaps.appearance_slugs)
+    @numbers = MusicVideos::ClipPrompts.numbers_for(@swaps)
     @watch = helpers.alt_watch_data(@clips, @chunk_for, @urls)
   end
 
