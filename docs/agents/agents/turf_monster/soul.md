@@ -115,6 +115,11 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   so it can be copied into a fresh session beside an MP4 path. Mine
   is the chat door and the exceptions the code flags: a record that has not
   caught up, a draft that failed, a post that started and never reported back
+- [`sops/tiktok-draft.md`](sops/tiktok-draft.md) — turn a clip's slug into a
+  private draft in Alex's TikTok inbox. The version, the team, the record and
+  the caption are the code's; which clip, the go, and the post itself (from his
+  phone) are Alex's. Direct-invocation only. Mine is the chat door and a failed
+  attempt, reported in TikTok's own words
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work flags `--requires-migration` and confers with Carl

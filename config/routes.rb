@@ -210,6 +210,11 @@ Rails.application.routes.draw do
           post :primary, on: :member
         end
         resource :regenerate, only: [:create, :destroy], controller: "alt_video_clip_regenerates"
+        # Draft to TikTok (piece 19): the primary version into the operator's
+        # TikTok drafts; refresh reads TikTok's status once more.
+        resources :tiktok_drafts, only: [:create], controller: "alt_video_clip_tiktok_drafts" do
+          post :refresh, on: :member
+        end
       end
       # The final stitch: "Generate full video" records a request; show answers
       # its state as JSON for the page's progress poll.
@@ -554,6 +559,15 @@ Rails.application.routes.draw do
           end
         end
       end
+      # The tiktok-draft SOP's chat door (piece 19), as bin/tiktok-draft drives it:
+      # a clip by its slug, what a draft would send, its attempts, and the probe.
+      resources :alt_video_clips, only: [], param: :slug do
+        resources :tiktok_drafts, only: [:index, :create]
+      end
+      resources :tiktok_drafts, only: [] do
+        post :refresh, on: :member
+      end
+      get "tiktok/creator_info", to: "tiktok_drafts#creator_info"
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic
