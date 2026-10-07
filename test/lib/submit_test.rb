@@ -119,6 +119,7 @@ class SubmitTest < Minitest::Test
         exit 1 if ENV["FAIL_REVIEW_CLAIM"] == "1"
         puts ENV.fetch("TASK_REVIEW_CLAIM_JSON", '{"holder":null}')
       end
+      exit 1 if "#{marker}" == "TASK" && ARGV.first == "update" && ENV["STUB_FAIL_TASK_UPDATE"] == "1"
       if "#{marker}" == "TASK" && ARGV.first == "show"
         moved = File.readlines(log).any? { |l| l.split("\\t")[0, 2] == %w[TASK move] }
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
@@ -415,7 +416,7 @@ class SubmitTest < Minitest::Test
       # The pre-flight (FAST) comes AFTER the PR and the record: CI is already
       # running by the time it starts.
       assert_equal ["TASK show", "GH pr", "GH pr", "GH pr", "TASK show", "TASK update", "FAST #{SLUG}", "DOR #{SLUG}",
-                    "TASK move", "TASK show"], markers(lines),
+                    "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
       # The commit landed and was pushed: origin's branch tip equals local HEAD.
@@ -943,17 +944,17 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  def test_read_back_verify_fails_loud_when_the_move_never_persisted
+  # Guard catalog row 3.3: bin/task move verifies the stage write and the board derives
+  # the PR url, so ship does not read either back. A failed --pr-url write is a note.
+  def test_a_failed_pr_url_write_is_a_note_and_the_ship_moves_on
     with_repo do |dir|
-      # The board echoes success but the persisted stage never advances: the
-      # post-move read serves the same [building] record.
-      stuck = task_record(stage: "building", pr_url: PR_URL)
-      out, err, status, lines = run_ship(dir, moved_json: stuck)
+      out, err, status, lines = run_ship(dir, extra_env: { "STUB_FAIL_TASK_UPDATE" => "1" })
 
-      refute status.success?, "a non-persisted move must fail the ship"
-      assert_includes err, "read-back verify FAILED"
-      assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the move must have been attempted")
-      refute_includes out, "stage: submitted (read back verified)"
+      assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
+      assert_includes err, "the --pr-url write failed"
+      assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the move must still run")
+      marks = markers(lines)
+      assert marks.rindex("TASK show") < marks.index("TASK move"), "no read-back show after the move"
     end
   end
 
@@ -1028,27 +1029,6 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  def test_read_back_verify_refuses_a_wrong_persisted_pr_url
-    with_repo do |dir|
-      # The --pr-url write silently fails while a STALE pr_url (a different PR)
-      # sits on the board: the read-back must pin the EXACT URL this run
-      # recorded — any non-empty value must not pass as persistence.
-      stale = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/111"
-      out, err, status, lines = run_ship(
-        dir,
-        show_json: task_record(stage: "building", pr_url: stale),
-        moved_json: task_record(stage: "submitted", pr_url: stale)
-      )
-
-      refute status.success?, "a persisted pr_url that is not the one just recorded must fail the verify"
-      assert_includes err, "read-back verify FAILED"
-      assert_includes err, stale, "the refusal must name the URL the board holds"
-      assert_includes err, PR_URL, "the refusal must name the URL this run recorded"
-      assert(lines.any? { |l| l[0, 2] == %w[TASK update] }, "the record step must have been attempted")
-      refute_includes out, "PR: #{stale}", "the summary must never print the wrong PR as shipped"
-    end
-  end
-
   # --- 4/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
 
   # A record whose board serves `pr_url_or_derived` — the recorded url when there is
@@ -1060,8 +1040,7 @@ class SubmitTest < Minitest::Test
   end
 
   # [integration] The board already names the PR ship opened, so ship writes nothing
-  # at 4/8 — and the read-back at 8/8 passes on the DERIVED value, with the raw
-  # `devops.pr_url` still blank.
+  # at 4/8, with the raw `devops.pr_url` still blank.
   def test_record_skips_the_write_when_the_board_derives_the_same_pr
     with_repo do |dir|
       out, err, status, lines = run_ship(
@@ -1092,23 +1071,6 @@ class SubmitTest < Minitest::Test
 
       assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
       assert_equal [SLUG, "--pr-url", PR_URL], lines.find { |l| l[0, 2] == %w[TASK update] }[2, 3]
-    end
-  end
-
-  # [integration] The read-back still pins the EXACT url when it is derived: a board
-  # serving a different derived PR after the move fails the verify.
-  def test_read_back_refuses_a_derived_pr_that_is_not_this_runs
-    with_repo do |dir|
-      other = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/42"
-      _out, err, status, = run_ship(
-        dir,
-        show_json: derived_record(stage: "building", derived: PR_URL),
-        moved_json: derived_record(stage: "submitted", derived: other)
-      )
-
-      refute status.success?, "a derived pr_url that is not this run's PR must fail the read-back"
-      assert_includes err, "read-back verify FAILED"
-      assert_includes err, other
     end
   end
 

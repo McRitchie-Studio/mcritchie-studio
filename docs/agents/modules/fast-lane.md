@@ -196,7 +196,7 @@ task URL. `bin/submit` — the HUB's script, run with that worktree as the cwd �
 runs steps 5-6 (commit → push → **non-draft** PR into `accepted` led by the task
 URL → record `pr_url` (skipped when the board already derives it) → optional
 `bin/fast-check` pre-flight, while CI is already running → **wait for CI to
-settle** → `bin/dor-check` → `move submitted` → read-back verify). The push comes
+settle** → `bin/dor-check` → `move submitted`). The push comes
 before the pre-flight so CI starts about a minute sooner; the pre-flight's
 verdict never stops the ship. One ship mints one board token and hands it to
 every `bin/task` and `bin/dor-check` it spawns (`AGENT_API_TOKEN`; a CLI run on

@@ -685,7 +685,7 @@ worktree step: another live session's desk with uncommitted changes refuses, wit
 the desk named; `bin/task begin <task-slug> --steal` claims over it, and on the
 fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fast-check`
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
-record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
+record `pr_url` → `bin/dor-check` → `move submitted`):
 
 Paste the `next:` line `bin/task begin` prints. It names the desk and the absolute
 ship script, so no doc spells that path: `bin/lib/fast_lane.rb#handoff_command`
