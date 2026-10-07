@@ -123,6 +123,16 @@ class DigestVideoInstagramTest < Minitest::Test
     assert_match(/no Instagram post id/, profile.message)
   end
 
+  def test_audio_and_story_pages_are_refused_as_not_a_post
+    ["/reels/audio/1234567890/", "/reel/audio/1234567890/", "/some.handle/reels/audio/1/",
+     "/stories/testcreator/3570766765028588805/", "/stories/p/1/"].each do |path|
+      error = assert_raises(DigestVideo::Failure, path) { DigestVideo.instagram_id("https://www.instagram.com#{path}") }
+      assert_match(/not a single Instagram post/, error.message, path)
+    end
+    assert_equal ID, DigestVideo.instagram_id("https://www.instagram.com/audio/reel/#{ID}/"),
+                 "a handle named audio is still a handle"
+  end
+
   def test_the_page_drops_the_handle_and_the_tracking_query
     assert_equal PAGE, DigestVideo.instagram_page("https://www.instagram.com/some.handle/reels/#{ID}/?igsh=abc", ID)
     assert_equal "https://www.instagram.com/p/#{ID}/", DigestVideo.instagram_page("https://instagram.com/p/#{ID}", ID)
@@ -153,6 +163,23 @@ class DigestVideoInstagramTest < Minitest::Test
     prose = INFO.merge("description" => "Artist Name - Other Song secretcaption\nsecond line ft. Nobody")
     assert_equal ["Test Creator"], DigestVideo.instagram_credits(prose)
     assert_equal [], DigestVideo.instagram_credits(INFO.merge("uploader" => nil, "channel" => nil))
+  end
+
+  def test_a_display_name_with_no_key_safe_characters_falls_back_to_the_handle
+    ["🔥🎤🔥", "米津玄師", "  "].each do |name|
+      assert_equal %w[testcreator], DigestVideo.instagram_credits(INFO.merge("uploader" => name, "description" => "x")), name
+    end
+    assert_equal ["Beyoncé"], DigestVideo.instagram_credits(INFO.merge("uploader" => "Beyoncé", "description" => "x"))
+    unsafe_feat = INFO.merge("description" => "new one ft. 米津玄師 & Sample Singer")
+    assert_equal ["Test Creator", "Sample Singer"], DigestVideo.instagram_credits(unsafe_feat)
+  end
+
+  def test_an_emoji_display_name_digests_under_the_handle
+    shell = FakeShell.new(info: INFO.merge("uploader" => "🔥🎤🔥"))
+    run_digest(shell: shell) do |_shell, storage, api, _dir|
+      assert_equal %w[testcreator Sample\ Singer], api.payloads.first[:credited_artists]
+      assert(storage.puts.keys.all? { |k| k.start_with?("music_videos/testcreator/instagram_cabc_def_12/") }, storage.puts.keys.inspect)
+    end
   end
 
   def test_tiktok_credits_are_unchanged_by_the_shared_helper

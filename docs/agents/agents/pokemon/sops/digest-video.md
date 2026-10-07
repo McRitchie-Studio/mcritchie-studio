@@ -225,13 +225,21 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    look**; a person with **no look yet** (listed with "0 looks", saved alone
    as a pending swap) gets **Generate first look** in its place. The form asks
    for the look's name, which is the uniform or colours the sheet is drawn in
-   ("Broncos blue"), an optional jersey number, and a reference photo URL that
-   only a person with no stored headshot needs. Submitting makes the look,
-   **casts the card in it**, and starts the look's character sheet through the
-   one existing build (`Appearances::SheetBuild`, in a job; see
-   `docs/topics/content-pipeline.md`, "Character
-   sheets"). **It costs money**: one sheet per press, single-digit thousands
-   of tokens (`config/image_generators.yml`). The card previews the new look
+   ("Broncos blue"), an optional jersey number, a reference photo URL that
+   only a person with no stored headshot needs, and **which sheets to build**.
+   Submitting makes the look **and its iced-out twin** ("Broncos blue · iced":
+   designer shades, chain, watch, bracelet, grill, and the person's own rings
+   from their jewelry records, else generic diamond rings), **casts the card in
+   the look**, and starts the chosen sheets through the one existing build
+   (`Appearances::SheetBuild`, in a job; see `docs/topics/content-pipeline.md`,
+   "Character sheets" and "The iced-out twin"). **Each sheet costs money**:
+   single-digit thousands of tokens (`config/image_generators.yml`). The
+   default builds the look's sheet only; **Both sheets** is two paid builds,
+   **Iced sheet only** one, **No sheet yet** none. **The kicker: "create the Dak
+   model" means the Dak model AND the iced-out Dak model.** Ask the operator
+   whether to build both sheets (two charges) before choosing Both, and before
+   building the iced sheet of someone with a championship, check that their
+   rings are on their person page (Jewelry), so the sheet draws their own. The card previews the new look
    as building and repaints itself when the sheet is ready, about two minutes.
    A look may be cast while its sheet is building, or with none; its chunks
    show the sheet once there is one. Where no generator is configured, or the
@@ -243,9 +251,10 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    the confirm, and the athlete's name already fills the prompts. The swap can
    change before and after the cast is confirmed. **Only the operator sets
    it**: the agent never proposes who replaces anyone, and generating a look
-   is admin only. So is the person page's own look form, its "Make default"
-   and its "Attach image"; an attached image must be an `https://` URL on a
-   public host.
+   is admin only. So is the person page's own look form (which also makes the
+   iced twin), its "Create iced twin" for an older look, its "Make default",
+   its "Attach image" and its jewelry list; an attached image must be an
+   `https://` URL on a public host.
 
 The Night Call proof is the dev seed (`db/seeds/data/night_call_cast.rb`): seven
 people, stills and sightings, no names.

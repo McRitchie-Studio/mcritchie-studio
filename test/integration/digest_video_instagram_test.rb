@@ -52,6 +52,21 @@ JSON.parse(session.response.body).fetch("data")
 
   setup { Artist.create!(slug: "test-creator", name: "Test Creator", kind: "person") }
 
+  test "an emoji-only display name records under the handle" do
+    storage = Storage.new
+    Dir.mktmpdir do |dir|
+      DigestVideo::Runner.new(workdir: dir, shell: Shell.new(INFO.merge("uploader" => "🔥🎤🔥")), storage: storage,
+                              api: Api.new(self), out: StringIO.new).call(PAGE)
+    end
+    assert_response :created
+
+    video = MusicVideo.find_by!(platform: "instagram", source_id: ID)
+    assert_equal "testcreator-instagram-cxyz-ghi-34", video.slug
+    assert_equal [{ "name" => "testcreator", "role" => "primary", "reason" => "no_match" },
+                  { "name" => "Sample Singer", "role" => "featured", "reason" => "no_match" }], video.unresolved_credits
+    assert(storage.puts.keys.all? { |k| k.start_with?("music_videos/testcreator/instagram_cxyz_ghi_34/source/") })
+  end
+
   test "an Instagram digest records the creator, keeps the feat. name unresolved, and stores no caption" do
     storage = Storage.new
     Dir.mktmpdir do |dir|

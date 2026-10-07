@@ -44,7 +44,11 @@
           <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= @appearance.colorway %></span>
         <% end %>
         <span class="badge text-3xs bg-surface-alt text-muted border-subtle font-mono"><%= @appearance.slug %></span>
+        <% if @appearance.iced? %>
+          <span class="badge text-3xs bg-primary/10 text-primary border-primary/30" data-test="iced-badge">iced</span>
+        <% end %>
       </div>
+      <%= render "appearances/twin_link", look: @appearance, person: @person %>
     </div>
   </div>
 

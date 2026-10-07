@@ -103,6 +103,33 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     assert @look.reload.sheet_building?
   end
 
+  # The look page's "Generate both" is the one press that buys two sheets, and
+  # says so; the plain press on a look with a twin still buys one.
+  test "Generate both starts the look's build and its iced twin's; the plain press starts one" do
+    twin = Appearances::IcedTwin.create!(@look)
+    log_in_as(@admin)
+
+    with_generator do
+      get person_appearance_path(@person.slug, @look.slug)
+      assert_select "[data-test='generate-both']", text: /Generate both: this and Bills home · iced \(2 paid builds\)/
+      assert_select "[data-test='twin-link'] a[href=?]", person_appearance_path(@person.slug, twin.slug)
+
+      assert_enqueued_jobs(1, only: SheetBuildJob) { post generate_path }
+      assert_not twin.reload.sheet_building?
+
+      @look.update_columns(sheet_build_state: nil)
+      assert_enqueued_jobs(2, only: SheetBuildJob) { post generate_path, params: { with_twin: "1" } }
+    end
+
+    assert_match "two paid builds in all", flash[:notice]
+    assert twin.reload.sheet_building?
+
+    get person_appearance_path(@person.slug, twin.slug)
+    assert_select "[data-test='iced-badge']"
+    assert_select "[data-test='twin-base'] a[href=?]", generate_path.delete_suffix("/generate")
+    assert_select "[data-test='generate-both']", 0, "a twin has no twin to build with it"
+  end
+
   test "the job files the sheet against the look and records done" do
     log_in_as(@admin)
 

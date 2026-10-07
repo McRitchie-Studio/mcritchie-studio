@@ -651,7 +651,9 @@ class ApplicationHelperTest < ActionView::TestCase
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
-    assert_equal ["live-score-watch", "contest-rehearsal"], launchers[4][:actions]
+    # ...and post-to-x on 2026-10-06, so the operator can copy it and paste it into a
+    # fresh session beside an MP4 path.
+    assert_equal ["live-score-watch", "contest-rehearsal", "post-to-x"], launchers[4][:actions]
     # The general Pokémon carries the wrap-it-up takeover, a registered SOP.
     assert_equal ["wrap-it-up"], launchers[5][:actions]
 

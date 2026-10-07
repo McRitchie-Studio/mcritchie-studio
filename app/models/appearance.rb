@@ -38,6 +38,15 @@ class Appearance < ApplicationRecord
   belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
+  # THE ICED-OUT TWIN. Every look a person is given gets a twin that is its own
+  # look (so the recast picker lists it, "Cowboys white · iced") and builds its
+  # sheet from the iced prompt. `iced` marks the twin; `base_appearance_slug`
+  # names the look it was made from. Appearances::IcedTwin makes them.
+  belongs_to :base_appearance, class_name: "Appearance", foreign_key: :base_appearance_slug,
+             primary_key: :slug, optional: true, inverse_of: :iced_twins
+  has_many :iced_twins, -> { live }, class_name: "Appearance", foreign_key: :base_appearance_slug,
+           primary_key: :slug, inverse_of: :base_appearance, dependent: :nullify
+
   # THE PHOTOGRAPHS WE FOUND OF THIS PERSON, chosen and rejected both. DESTROYED
   # with the look rather than nullified, unlike the artifacts above: an artifact is
   # a picture that outlives the look it was filed under, while a candidate
@@ -70,6 +79,9 @@ class Appearance < ApplicationRecord
   def retired? = retired_at.present?
 
   def music_video_look? = music_video_slug.present?
+
+  # The live iced twin of this (base) look, or nil.
+  def iced_twin = iced_twins.first
 
   # The character-sheet build (Appearances::SheetBuild owns the rules).
   def sheet_build_stale?
