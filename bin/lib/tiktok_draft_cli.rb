@@ -7,7 +7,7 @@ require_relative "digest_video"
 # into the operator's TikTok drafts, through the hub API. The server does the
 # work (Tiktok::DraftClip): it holds the TikTok keys and reads the version from
 # R2. This side decides nothing; it asks, prints and waits.
-module TiktokDraft
+module TiktokDraftCli
   class Failure < StandardError; end
 
   class Runner

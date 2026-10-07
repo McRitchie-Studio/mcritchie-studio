@@ -17,7 +17,7 @@
 # The clip slug is on the clip's card, e.g. bigxthaplug-6wa-alt-3-clip-03.
 
 require "optparse"
-require_relative "lib/tiktok_draft"
+require_relative "lib/tiktok_draft_cli"
 
 options = { production: false, dry_run: false, status: false, whoami: false, yes: false, wait: 150 }
 parser = OptionParser.new do |opts|
@@ -55,7 +55,7 @@ end
 
 begin
   target = DigestVideo.target(production: options[:production])
-  runner = TiktokDraft::Runner.new(
+  runner = TiktokDraftCli::Runner.new(
     api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
     wait: options[:wait]
   )
@@ -64,6 +64,6 @@ begin
   elsif options[:status] then runner.status(ARGV.first)
   else runner.draft(ARGV.first)
   end
-rescue DigestVideo::Failure, TiktokDraft::Failure => e
+rescue DigestVideo::Failure, TiktokDraftCli::Failure => e
   abort "tiktok-draft: #{e.message}"
 end
