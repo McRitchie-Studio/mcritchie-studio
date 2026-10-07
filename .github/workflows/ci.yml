@@ -444,9 +444,11 @@ jobs:
       # actions/checkout defaults to a depth-1 fetch of the head SHA ALONE, which leaves
       # `origin/release` unresolvable, and a ratchet that cannot see its baseline cannot
       # certify monotonicity. It FAILS CLOSED on a missing baseline, so deleting this
-      # line turns a shard red and says why.
+      # line turns a shard red and says why. test/lib/test_health_ratchet_test.rb reads
+      # its baseline the same way: the skip count and the frozen hotspot sizes at the
+      # merge base with `origin/accepted`.
       #
-      # WHICH shard carries that file is decided by bin/lib/test_shard.rb's bin-packing
+      # WHICH shard carries those files is decided by bin/lib/test_shard.rb's bin-packing
       # and moves whenever a timing changes — so "the shard that needs it" is not a
       # stable thing to point at. Every shard gets the full history. It costs a few
       # seconds; guessing costs a red build nobody can reproduce.

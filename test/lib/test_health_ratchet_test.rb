@@ -3,9 +3,9 @@
 # [unit] THE RUBY SUITE'S RATCHET. Standalone (no Rails):
 #   ruby -Itest test/lib/test_health_ratchet_test.rb
 #
-# The static counterpart to config/e2e_lane.yml, for the half of the suite nothing was
-# counting: 445 Ruby test files carrying 6,582 cases, 26 skip call sites, and — as of
-# 2026-08-14 — zero assertion-free tests.
+# The static counterpart to config/e2e_lane.yml, for the Ruby suite: zero assertion-free
+# tests (stored), and a skip count and frozen hotspot sizes that may not rise above the
+# merge base with origin/accepted (computed, never stored).
 #
 # WHY A ZERO NEEDS ITS OWN PROOF. "assertion_free: 0" is a claim produced by a
 # detector, and a detector that silently matches nothing produces the same zero as a
@@ -106,45 +106,44 @@ class TestHealthRatchetTest < Minitest::Test
                  "or delete it."
   end
 
-  def test_the_skip_count_matches_the_ratchet
-    actual = TestHealth.skips(TEST_DIR)
+  # The skip count may not rise above the merge base's. Nothing is stored: removing a skip
+  # needs no edit, and adding one is refused in the diff that adds it.
+  def test_the_skip_count_does_not_rise_above_the_merge_base
+    base = TestHealth.base_ref(ROOT)
+    refute_nil base, "the merge base with #{TestHealth::BASE_BRANCH} cannot be read, so the skip ratchet " \
+                     "has nothing to compare with. Fetch it (`git fetch origin accepted`); CI checks out " \
+                     "the rails shards with fetch-depth: 0 for this reason."
 
-    assert_equal RATCHET["skips"], actual,
-                 "config/test_health.yml declares #{RATCHET["skips"]} skip call site(s), found #{actual}. " \
-                 "A skip is a test switched off without being deleted: the suite keeps its name and loses " \
-                 "its coverage. Going UP needs a deliberate edit to that file so the reason sits in the " \
-                 "diff; going DOWN is the good kind of edit — lower the number and ship it."
+    before = TestHealth.skips_at(ROOT, base)
+    refute_nil before, "the test tree at the merge base #{base[0, 12]} cannot be read"
+
+    actual = TestHealth.skips(TEST_DIR)
+    assert_operator actual, :<=, before,
+                    "the suite carries #{actual} skip call site(s); its merge base #{base[0, 12]} carried " \
+                    "#{before}. A skip is a test switched off without being deleted: the suite keeps its " \
+                    "name and loses its coverage. Fix the test or delete it."
   end
 
   # ── frozen hotspots: a file may shrink freely, never grow ──────────────────
 
-  def test_no_frozen_hotspot_has_grown
-    over = TestHealth.oversized(ROOT, RATCHET["frozen_size"])
-    named = over.map { |o| "#{o[:file]} is #{o[:lines]} lines, ceiling #{o[:ceiling]}" }
+  def test_no_frozen_hotspot_grew_past_the_merge_base
+    base = TestHealth.base_ref(ROOT)
+    refute_nil base, "the merge base with #{TestHealth::BASE_BRANCH} cannot be read; fetch it"
+
+    over = TestHealth.grown(ROOT, RATCHET["frozen"], base)
+    named = over.map { |o| "#{o[:file]} is #{o[:lines]} lines, #{o[:base]} at the merge base" }
 
     assert_empty over,
-                 "#{named.join("; ")}. These files are the suite's APPEND hotspots, where " \
-                 "PRs collide at the bottom of one file. Put the new test in a NEW file named for its " \
-                 "concern (that is what every test added in this session did), or, if you genuinely " \
-                 "grew an existing test, raise the ceiling in config/test_health.yml so the reason " \
-                 "sits in the diff."
+                 "#{named.join("; ")}. These files are the suite's APPEND hotspots, where PRs collide " \
+                 "at the bottom of one file. Put the new test in a NEW file named for its concern."
   end
 
-  def test_shrinking_a_frozen_file_is_always_allowed
-    frozen = { "test/lib/test_health_ratchet_test.rb" => 10_000 }
-
-    assert_empty TestHealth.oversized(ROOT, frozen),
-                 "a file well under its ceiling must never be an offender — shrinking needs no edit here"
-  end
-
-  # A ceiling naming a file that no longer exists must not fail the build. Deleting or
-  # renaming a frozen file is progress; the stale entry is a reviewer's tidy-up.
-  def test_a_ceiling_for_a_missing_file_is_not_a_failure
-    assert_empty TestHealth.oversized(ROOT, { "test/lib/nope_does_not_exist_test.rb" => 1 })
+  def test_the_frozen_list_is_not_empty
+    refute_empty Array(RATCHET["frozen"]), "an empty frozen list freezes nothing"
   end
 
   def test_the_ratchet_declares_every_key_the_guard_reads
-    assert_equal %w[assertion_free frozen_size skips].sort, RATCHET.keys.sort,
+    assert_equal %w[assertion_free frozen].sort, RATCHET.keys.sort,
                  "the contract and the guard must not drift: a key here with no assertion is a number " \
                  "nobody enforces, and an assertion with no key fails on arrival"
   end
