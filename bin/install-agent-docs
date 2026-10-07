@@ -544,18 +544,19 @@ shipped_pairs() {
 
 if [ "$MODE" = "check" ]; then
   status=0
-  if SHIPPED_SHA="$(shipped_sha)"; then
-    echo "OK: comparing the installed copies with the tree the last ship published (${SHIPPED_SHA:0:12})"
+  shipped_tree=""
+  if shipped_tree="$(shipped_sha)"; then
+    echo "OK: comparing the installed copies with the tree the last ship published (${shipped_tree:0:12})"
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
       rel="${pair%%:*}"; tgt="${pair#*:}"
-      if check_pair_at "$SHIPPED_SHA" "$rel" "$tgt"; then
-        echo "OK: $tgt matches $rel at ${SHIPPED_SHA:0:12}"
+      if check_pair_at "$shipped_tree" "$rel" "$tgt"; then
+        echo "OK: $tgt matches $rel at ${shipped_tree:0:12}"
       else
-        echo "ERROR: $tgt is out of date with $rel at the shipped tree ${SHIPPED_SHA:0:12}" >&2
+        echo "ERROR: $tgt is out of date with $rel at the shipped tree ${shipped_tree:0:12}" >&2
         status=1
       fi
-    done < <(shipped_pairs "$SHIPPED_SHA")
+    done < <(shipped_pairs "$shipped_tree")
   else
     for pair in "${ALL_PAIRS[@]}"; do
       src="${pair%%:*}"; tgt="${pair##*:}"
@@ -600,8 +601,8 @@ if [ "$MODE" = "check" ]; then
     # `bin/agent-runtime install` during fresh-machine bringup (install mode, never
     # this branch), and bin/release.rb's own warn line when the ship's step fails.
     echo "This is NOT yours to fix: the entry docs/skills are published by ONE owned step — sync_agent_docs, which \`bin/release ship\` runs after every production ship (Steffon, G4 Ship) from the tree that just shipped." >&2
-    if [ -n "${SHIPPED_SHA:-}" ]; then
-      echo "The installed copies differ from the tree the last ship published (${SHIPPED_SHA:0:12}), so that ship's sync step did not land or someone installed by hand. The next production ship is expected to heal it: the step runs unconditionally, is idempotent, and is non-fatal." >&2
+    if [ -n "$shipped_tree" ]; then
+      echo "The installed copies differ from the tree the last ship published (${shipped_tree:0:12}), so that ship's sync step did not land or someone installed by hand. The next production ship is expected to heal it: the step runs unconditionally, is idempotent, and is non-fatal." >&2
     else
       echo "No published tree is installed at $TOOLING_LINK yet, so this compares with $ROOT. Drift here is EXPECTED until the first production ship publishes; that ship closes it: the step runs unconditionally, is idempotent, and is non-fatal." >&2
     fi
