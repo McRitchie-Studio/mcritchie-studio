@@ -1,0 +1,15 @@
+<h2>Contact form: <%= @total %> flagged as spam in the last day</h2>
+<p>These were stored but not emailed. Skim for a real person: a visitor whose
+browser blocks JavaScript is flagged <code>no_browser_proof</code>.</p>
+<% @submissions.each do |submission| %>
+  <hr>
+  <p style="color:#666;font-size:12px;">
+    #<%= submission.id %> · <%= submission.created_at.in_time_zone("America/Denver").strftime("%b %-d %-l:%M %p %Z") %> · <%= submission.spam_reason %>
+  </p>
+  <p><strong><%= submission.name %></strong> &lt;<%= submission.email %>&gt;</p>
+  <p><%= submission.message.squish.truncate(200) %></p>
+<% end %>
+<% if @remaining.positive? %>
+  <hr>
+  <p>…and <%= @remaining %> more not listed.</p>
+<% end %>
