@@ -30,7 +30,7 @@
       <p class="text-3xs text-muted">
         A round sends up to <%= @reference_limit %>
         <%= "(#{@generator_row.label})" if @generator_row %>, numbered in the order it sends them:
-        the kit's lead first, then one per role, then the rest by role, newest upload first.
+        the kit's own references first, then uploads by role (mascot, logo, style, product, other), newest first.
       </p>
     </div>
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

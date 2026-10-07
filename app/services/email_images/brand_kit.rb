@@ -85,27 +85,21 @@ module EmailImages
     end
 
     # WHICH REFERENCES A ROUND SENDS, in the order it sends them. Deterministic:
-    # the same kit and limit always give the same list.
+    # the same kit rows and limit always give the same list.
     #
-    #   1. The kit's first YAML reference leads, always: it is the brand's
+    #   1. The kit's YAML references, in file order. The first is the brand's
     #      identity (the gator, the chest, the mark) and the prompt names it as
-    #      "the first reference image".
-    #   2. Then one reference for each role the lead does not already cover,
-    #      in ROLE_PRIORITY order, so a pile of mascot uploads never crowds out
-    #      the style anchor. Within a role the YAML reference comes first, else
-    #      the newest upload.
-    #   3. Then every remaining reference, in ROLE_PRIORITY order, YAML before
-    #      uploads, uploads newest first, until the limit is reached.
+    #      "the first reference image"; the rest (Turf's style anchor) are the
+    #      curated base, so uploads never crowd them out.
+    #   2. Then the active uploads, by role in ROLE_PRIORITY order (mascot,
+    #      logo, style, product, other), newest first within a role (created_at,
+    #      then id), until the limit is reached.
     def generator_references(limit: DEFAULT_REFERENCE_LIMIT)
       limit = limit.to_i
       return [] if limit <= 0
 
-      lead = base_references.first
-      rest = references.reject { |ref| ref.equal?(lead) }
-                       .each_with_index.sort_by { |ref, i| [role_rank(ref.role), i] }.map(&:first)
-      firsts = rest.uniq(&:role).reject { |ref| ref.role == lead&.role }
-      chosen = [lead].compact + firsts + rest.reject { |ref| firsts.any? { |f| f.equal?(ref) } }
-      chosen.first(limit)
+      uploads = uploaded_references.each_with_index.sort_by { |ref, i| [role_rank(ref.role), i] }.map(&:first)
+      (base_references + uploads).first(limit)
     end
 
     def role_rank(role) = ROLE_PRIORITY.index(role.to_s) || ROLE_PRIORITY.size

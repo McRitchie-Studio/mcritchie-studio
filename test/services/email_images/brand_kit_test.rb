@@ -109,22 +109,23 @@ class EmailImages::BrandKitTest < ActiveSupport::TestCase
     assert_equal %w[mascot style], turf.generator_references.map(&:role)
   end
 
-  test "the lead YAML reference always goes first, then one per uncovered role, then the rest" do
+  test "YAML references go first in file order, then uploads by role priority, newest first within a role" do
     brand_reference(label: "m1", created_at: 3.days.ago)
     m2 = brand_reference(label: "m2", created_at: 2.days.ago)
     brand_reference(label: "o1", role: "other", created_at: 1.day.ago)
     brand_reference(label: "p1", role: "product", created_at: 4.days.ago)
+    brand_reference(label: "s1", role: "style", created_at: 5.days.ago)
 
     labels = turf.generator_references(limit: 10).map(&:label)
-    assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg", "p1", "o1", "m2", "m1"], labels,
-                 "lead; style (YAML), product, other one each; then mascots newest first"
-    assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg", "p1", "o1"],
+    assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg", "m2", "m1", "s1", "p1", "o1"], labels
+    assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg", "m2", "m1"],
                  turf.generator_references(limit: 4).map(&:label)
     assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg"], turf.generator_references(limit: 2).map(&:label),
-                 "a pile of mascot uploads never crowds out the style anchor"
+                 "uploads never crowd out the kit's own style anchor"
     assert_equal ["turf-monster.webp"], turf.generator_references(limit: 1).map(&:label)
     m2.archive!
-    assert_equal %w[p1 o1 m1], turf.generator_references(limit: 10).map(&:label).last(3), "archived is never sent"
+    assert_equal %w[m1 s1 p1 o1], EmailImages::BrandKit.find!("turf-monster").generator_references(limit: 10).map(&:label).last(4),
+                 "an archived reference is never sent"
   end
 
   test "the cut is deterministic: the same rows give the same list every time" do
@@ -133,8 +134,8 @@ class EmailImages::BrandKitTest < ActiveSupport::TestCase
 
     first = turf.generator_references(limit: 4).map(&:label)
     5.times { assert_equal first, EmailImages::BrandKit.find!("turf-monster").generator_references(limit: 4).map(&:label) }
-    assert_equal ["turf-monster.webp", "same-second 2", "turf-monster-style-anchor.jpg", "same-second 1"], first,
-                 "logo ranks above style; same timestamp, so the higher id is the newer"
+    assert_equal ["turf-monster.webp", "turf-monster-style-anchor.jpg", "same-second 2", "same-second 1"], first,
+                 "same timestamp, so the higher id is the newer"
   end
 
   test "the limit follows the row's reference arity" do
