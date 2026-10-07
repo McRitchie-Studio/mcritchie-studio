@@ -2449,6 +2449,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   add_foreign_key "team_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "team_rankings", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "teams", "arenas", column: "home_arena_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "tiktok_drafts", "alt_video_clips", column: "clip_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "triage_findings", "tasks", column: "promoted_task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "usages", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade

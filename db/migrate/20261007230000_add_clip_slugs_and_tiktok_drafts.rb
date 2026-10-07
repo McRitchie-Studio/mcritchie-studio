@@ -13,8 +13,8 @@
 #                          API's inbox upload): which clip and version, the
 #                          caption the code wrote, TikTok's publish_id and
 #                          status, and any error, so a retry and its outcome are
-#                          both visible. Slug FK to the clip, like the rest of
-#                          the pipeline.
+#                          both visible. Slug FK to the clip (a real foreign
+#                          key, ON UPDATE CASCADE), like the rest of the pipeline.
 #
 # DATA STEP: the backfill runs here, inside the schema migration (one UPDATE,
 # bounded by the clips table, tens of rows in production), so it needs no
@@ -53,6 +53,10 @@ class AddClipSlugsAndTiktokDrafts < ActiveRecord::Migration[8.1]
       t.index :publish_id, unique: true, where: "publish_id IS NOT NULL"
       t.index :state
     end
+    # The slug FK every resolved slug column carries (SlugCensus): a dangling
+    # clip slug cannot be written, and NO ACTION on delete matches the model's
+    # restrict (a clip with draft attempts is not deleted out from under them).
+    add_foreign_key :tiktok_drafts, :alt_video_clips, column: :clip_slug, primary_key: :slug, on_update: :cascade
   end
 
   def down
