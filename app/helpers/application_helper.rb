@@ -1145,7 +1145,7 @@ module ApplicationHelper
     "workspace-launch"  => "Launch a new company workspace, step by step",
     "live-score-watch"  => "Watch a live NFL slot and record every score",
     "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
-    "post-to-x"         => "Post an MP4 to X (paste: post-to-x <path> <who won>)",
+    "post-to-x"         => "Post an MP4 to X: post-to-x <path> <who won>",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share the banked insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
