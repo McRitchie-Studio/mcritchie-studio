@@ -68,19 +68,21 @@ class SessionPreflightTest < Minitest::Test
     refute JSON.parse(out).fetch("errors").any? { |error| error.include?("blocked") }
   end
 
-  def test_branch_behind_release_is_a_blocker
+  # [unit] Guard catalog row 4.5: a branch behind its base is reported, never a
+  # blocker. No gate needs a rebase and CI tests the merge ref.
+  def test_branch_behind_release_is_reported_not_a_blocker
     task = write_task
     git("checkout", "-q", "--detach", "origin/release")
     release_commit = commit_file("docs/release.md", "release\n", "release moves")
     git("update-ref", "refs/remotes/origin/release", release_commit)
     git("checkout", "-q", "feat/session-preflight")
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
 
     report = JSON.parse(out)
-    assert_equal 1, report.fetch("branch").fetch("behind")
-    assert report.fetch("errors").any? { |error| error.include?("behind origin/release") }, report.fetch("errors").inspect
+    assert_equal 1, report.fetch("branch").fetch("behind"), "FLOOR: the drift must have been measured"
+    refute report.fetch("errors").any? { |error| error.include?("behind") }, report.fetch("errors").inspect
   end
 
   # [unit] The base ladder is accepted → release → main, mirroring
@@ -99,7 +101,7 @@ class SessionPreflightTest < Minitest::Test
     assert_equal 0, report.fetch("branch").fetch("behind")
   end
 
-  def test_behind_accepted_blocker_names_the_compared_ref
+  def test_behind_accepted_report_names_the_compared_ref
     task = write_task
     git("update-ref", "refs/remotes/origin/accepted", head)
     git("checkout", "-q", "--detach", "origin/accepted")
@@ -108,12 +110,14 @@ class SessionPreflightTest < Minitest::Test
     git("checkout", "-q", "feat/session-preflight")
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?
 
     report = JSON.parse(out)
     assert_equal "origin/accepted", report.fetch("branch").fetch("base")
     assert_equal 1, report.fetch("branch").fetch("behind")
-    assert report.fetch("errors").any? { |error| error.include?("behind origin/accepted") }, report.fetch("errors").inspect
+    human, = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch")
+    assert_includes human, "vs origin/accepted"
+    assert_includes human, "ahead 0, behind 1"
   end
 
   # [unit] SELF-DEFENSE for begin-preflight-wrong-root: a preflight is only

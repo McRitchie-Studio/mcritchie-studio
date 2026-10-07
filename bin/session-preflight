@@ -746,8 +746,7 @@ branch["dirty"] = working_tree_dirty?(options[:root])
 # root carries the task's branch — rather than trusting the caller's --root. The
 # classic failure is a report that silently describes the PRIMARY (its drift, its
 # PRs, its overlap) when the task lives on a worktree; every number below is then
-# about the wrong tree. On a mismatch REFUSE and say so, and SUPPRESS the drift
-# blocker (its count is meaningless for a tree that isn't this task's). Skipped
+# about the wrong tree. On a mismatch REFUSE and say so. Skipped
 # only when the fact is unknowable: no task branch to expect, or the root has no
 # resolvable branch (a non-git root → blank). A DETACHED HEAD is NOT skipped —
 # `git rev-parse --abbrev-ref HEAD` returns the literal "HEAD", which is never the
@@ -762,7 +761,6 @@ if branch["wrong_checkout"]
             "PR/overlap here describe the wrong tree. Run bin/session-preflight from the task's worktree, or pass " \
             "--root <worktree>."
 end
-errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; rebase before work or handoff" if !branch["wrong_checkout"] && branch["behind"].to_i.positive?
 warnings << "working tree has uncommitted changes" if branch["dirty"]
 changed = changed_files(options[:root], base)
 
