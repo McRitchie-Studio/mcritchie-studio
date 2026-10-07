@@ -5,39 +5,43 @@
 
 puts "Seeding test database for Playwright..."
 
-# Clear in dependency order
-EmailImageBrief.delete_all # e2e/email_images.spec.js opens its brief through the form
-Artifact.where(kind: "email_header").delete_all # header candidates; no artifact_subjects rows
-EmailBrandReference.delete_all # e2e/email_brand_kits.spec.js uploads one through the kit page
-Content.delete_all # references News (source_news_slug) + Team — clear before both
-News.delete_all
-ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
-AgentAction.delete_all
-AgentActivity.delete_all # narrated spans; actions nullify their FK on delete
-Activity.delete_all
-SkillAssignment.delete_all
-Task.delete_all
-Skill.delete_all
-Agent.delete_all
-Usage.delete_all
-ErrorLog.delete_all
-AppRequest.delete_all # /build requests reference their user — clear before it
-ContactSubmission.delete_all # /contact submissions; read-only rows, so delete_all (no callbacks)
-User.delete_all
-CoachRanking.delete_all
-Coach.delete_all
-Team.delete_all
-Person.delete_all
-GateRun.delete_all # slug-keyed, no FK — delete_all wipes above skip callbacks, so stale runs would otherwise survive reseeds and inflate attempt counts
-GithubWorkflowRun.delete_all # cached Actions runs for the /deployments panel — reseeded below
-CiCheckJob.delete_all # per-check LIVE CI progress rows (workflow_job) — reseeded below
-Release.delete_all
-SessionMascot.delete_all
-Pokemon.delete_all
-StackClient.delete_all
-CredentialRecord.delete_all # records restrict their vault's delete — clear before it
-CredentialVault.delete_all
-WorkspaceAccount.where(domain: "mcritchie.studio").delete_all
+# Clear the previous run. The slug columns carry foreign keys, and this list does
+# not clear every child table, so a re-seed over a used database runs it with the
+# checks off; CI seeds a freshly prepared database, where nothing dangles either way.
+ActiveRecord::Base.connection.disable_referential_integrity do
+  EmailImageBrief.delete_all # e2e/email_images.spec.js opens its brief through the form
+  Artifact.where(kind: "email_header").delete_all # header candidates; no artifact_subjects rows
+  EmailBrandReference.delete_all # e2e/email_brand_kits.spec.js uploads one through the kit page
+  Content.delete_all # references News (source_news_slug) + Team — clear before both
+  News.delete_all
+  ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
+  AgentAction.delete_all
+  AgentActivity.delete_all # narrated spans; actions nullify their FK on delete
+  Activity.delete_all
+  SkillAssignment.delete_all
+  Task.delete_all
+  Skill.delete_all
+  Agent.delete_all
+  Usage.delete_all
+  ErrorLog.delete_all
+  AppRequest.delete_all # /build requests reference their user — clear before it
+  ContactSubmission.delete_all # /contact submissions; read-only rows, so delete_all (no callbacks)
+  User.delete_all
+  CoachRanking.delete_all
+  Coach.delete_all
+  Team.delete_all
+  Person.delete_all
+  GateRun.delete_all # slug-keyed, no FK — delete_all wipes above skip callbacks, so stale runs would otherwise survive reseeds and inflate attempt counts
+  GithubWorkflowRun.delete_all # cached Actions runs for the /deployments panel — reseeded below
+  CiCheckJob.delete_all # per-check LIVE CI progress rows (workflow_job) — reseeded below
+  Release.delete_all
+  SessionMascot.delete_all
+  Pokemon.delete_all
+  StackClient.delete_all
+  CredentialRecord.delete_all # records restrict their vault's delete — clear before it
+  CredentialVault.delete_all
+  WorkspaceAccount.where(domain: "mcritchie.studio").delete_all
+end
 
 # Admin user
 admin = User.create!(
@@ -900,6 +904,10 @@ Task::TestingPhases.backfill!
 # "snorlax" matches a seeded Pokémon above so the mascot resolves a real name.
 hb_session = "e2e-heartbeat-0001"
 hb_task = "atomic-action-capture"
+# task_events.task_slug carries a foreign key, so the task the trajectory names is on
+# file. Archived and inserted past the callbacks, so it adds no card to any board.
+Task.insert_all([{ slug: hb_task, title: "Atomic Action Capture", stage: "archived",
+                   created_at: Time.current, updated_at: Time.current }], unique_by: :slug)
 hb_price = ->(tin, tout, model) { model ? (((tin * 5.0) + (tout * 25.0)) / 1_000_000.0).round(4) : 0 }
 hb_base = 30.minutes.ago
 hb_i = -1

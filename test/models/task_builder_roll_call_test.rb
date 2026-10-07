@@ -130,7 +130,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
 
   test "a typo'd actor falls through to the assigned agent rather than winning" do
     task = Task.create!(title: "Typo Actor Falls Through", stage: "designed",
-                        agent_slug: "shannon", metadata: { "devops" => {} })
+                        agent_slug: agent_rows!("shannon").first.slug, metadata: { "devops" => {} })
 
     claim!(task, actor: "stefon", session: STEFFON_SESSION)
 

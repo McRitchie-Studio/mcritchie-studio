@@ -65,8 +65,9 @@
 
 ## Key Patterns
 
-- **Slug-based FKs** — All foreign keys use slug strings (e.g. `agent_slug`), not integer IDs. Associations: `foreign_key: :agent_slug, primary_key: :slug`.
-- **Sluggable concern** (from studio engine) — `before_save :set_slug` via `name_slug` method. Used by User, Agent, Skill, Usage, Team, Person, Contract, Athlete.
+- **Slug-based FKs** — All foreign keys use slug strings (e.g. `agent_slug`), not integer IDs. Associations: `foreign_key: :agent_slug, primary_key: :slug`. Each one is also a database foreign key with `ON UPDATE CASCADE`, except the columns `SlugCensus::UNCONSTRAINED` lists with their reasons (see `docs/agents/system/coding-standards.md`, Foreign Keys).
+- **Sluggable concern** (from studio engine) — the slug is set once at create from `name_slug` and changed only by `rename_slug!`, which cascades to every child column (`has_many ... primary_key: :slug` plus `has_slug_children`). Used by User, Agent, Skill, Usage, Team, Person, Contract, Athlete and the sports models.
+- **Person merge** — `People::Merge` is the one merge (the people page and `Athletes::MergeDuplicates`): every row naming the source moves to the keeper or is dropped as a twin, and a moved row whose slug is built from the person's takes the keeper's.
 - **Task slug** — Immutable random hex generated once on create via `before_validation`. Does NOT use Sluggable. DevOps tasks store the human-readable feature/worktree handle in `metadata["devops"]["worktree_slug"]`.
 - **Task transitions** — The board uses the two-workflow release model from
   `Task::STAGES`: Build is `designed` → `building` → `submitted`, Deploy is

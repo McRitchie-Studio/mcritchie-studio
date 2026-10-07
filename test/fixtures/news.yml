@@ -40,7 +40,6 @@ refined_article:
   primary_person: "Dorival Junior"
   primary_team: "Brazil"
   primary_action: "Manager Sacked"
-  primary_person_slug: dorival-junior
   primary_team_slug: brazil
   title_short: "Brazil Sacks Manager"
   summary: "Brazil has fired manager Dorival Junior following a shock qualifying loss to Bolivia."
@@ -59,7 +58,6 @@ concluded_article:
   stage: concluded
   primary_team: "FIFA"
   primary_action: "Event Planning"
-  primary_team_slug: fifa
   title_short: "Fan Zones Revealed"
   summary: "FIFA reveals locations for fan zones across 16 host cities."
   feeling: "excited"

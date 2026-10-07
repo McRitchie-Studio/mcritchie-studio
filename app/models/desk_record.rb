@@ -61,6 +61,14 @@ class DeskRecord < ApplicationRecord
   # a 422 body that reads like a typo would understate it.
   class ResolvedRecordImmutable < StandardError; end
 
+  # app_slug and task_slug carry foreign keys. The registry reports what it sees, so
+  # a legacy `<app>.sibling` names its app, and an app or task the board does not
+  # hold is cleared (the payload keeps the registry's own words).
+  include ClearsUnknownSlug
+  before_validation { self.app_slug = app_slug.delete_suffix(".sibling") if app_slug.to_s.end_with?(".sibling") }
+  clears_unknown_slug :app_slug, "App"
+  clears_unknown_slug :task_slug, "Task"
+
   validates :worktree_path, presence: true
   validates :status, inclusion: { in: STATUSES }
   validate :resolution_agrees_with_status

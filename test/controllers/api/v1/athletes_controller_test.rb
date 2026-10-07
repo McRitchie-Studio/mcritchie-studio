@@ -9,6 +9,9 @@ module Api
   module V1
     class AthletesControllerTest < ActionDispatch::IntegrationTest
       setup do
+        # Children first: their slug foreign keys refuse a parent deleted under them.
+        AthleteGrade.delete_all
+        PffStat.delete_all
         Athlete.delete_all
         Person.where(last_name: "Sync").delete_all
       end

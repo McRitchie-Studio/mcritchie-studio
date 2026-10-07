@@ -136,20 +136,10 @@ else
   seed_look!(pushed, "#{pushed.team_slug.titleize} pushed ahead",
              colorway: "#{pushed.team_slug} pushed", stage: "generation")
 
-  # THE TWO BROKEN CONNECTIONS, so the operator can see what the board does with them.
-  # Both are real states of real data rather than hypotheticals: `appearances.person_slug`
-  # carries no foreign key, and the hub deliberately casts people who have no athlete
-  # record (Appearance's own header names Jim Carrey beside Joe Burrow).
-
-  # ORPHANED — a look naming a person who is not on file. NOTHING STOPS THIS: there is no
-  # foreign key on `appearances.person_slug` and the validation only checks presence, so
-  # `create!` takes a slug nobody holds and every other page reads the row as ordinary.
-  # The board is the first thing that looks.
-  orphan = Appearance.find_or_initialize_by(person_slug: "person-who-is-not-on-file",
-                                            descriptor: "Orphaned look")
-  orphan.colorway = "orphaned look"
-  orphan.save!
-  seed_candidates!(orphan, 8, chosen: 3)
+  # A BROKEN CONNECTION, so the operator can see what the board does with it. The hub
+  # deliberately casts people who have no athlete record (Appearance's own header
+  # names Jim Carrey beside Joe Burrow). A look naming a person who is not on file
+  # cannot be seeded: `appearances.person_slug` carries a foreign key to people.
 
   # NO ATHLETE RECORD AND NO NOTES — a person the hub knows but nothing describes.
   unrecorded = Person.find_or_create_by!(first_name: "Unrecorded", last_name: "Person") do |person|

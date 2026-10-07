@@ -629,7 +629,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # the selector with a busy set — end-to-end the light omits BOTH the builder and
   # the busy soul, Carl owns the primary seat, and a pair still forms.
   test "the move-to-building builder and a busy soul are both omitted from the light end-to-end" do
-    task = Task.create!(title: "build flow exclude integration", agent_slug: "shannon",
+    task = Task.create!(title: "build flow exclude integration", agent_slug: agent_rows!("shannon").first.slug,
                         metadata: { "devops" => { "shape" => "ui-only" } })
     task.build! # the real move-to-building path stamps devops.built_by = shannon
 

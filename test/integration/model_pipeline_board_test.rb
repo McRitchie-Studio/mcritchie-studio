@@ -142,13 +142,14 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='look-card-sports-number']", text: "#17"
   end
 
-  # `appearances.person_slug` carries NO foreign key, so a look can name a person who is
-  # not on file and nothing else in the app would notice. The lane that claims "the
-  # person's data is captured and current" must not be enterable by one.
+  # `appearances.person_slug` carries a foreign key now, so only a row from before the
+  # key can name a person who is not on file. The lane that claims "the person's data
+  # is captured and current" must still not be enterable by one.
   test "a look with no person on file is held in designed, counted and flagged" do
     orphan = look!("Orphan", colorway: "bills home")
     candidates!(orphan, 9, chosen: 4)
     sheet!(orphan)
+    without_slug_key(:appearances, :person_slug)
     orphan.update_column(:person_slug, "nobody-at-all")
 
     get model_pipeline_path
@@ -214,6 +215,7 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
   # the same rule, reached through the connection rather than through the work.
   test "an orphan cannot be dragged out of designed" do
     orphan = look!("Orphan", colorway: "bills home")
+    without_slug_key(:appearances, :person_slug)
     orphan.update_column(:person_slug, "nobody-at-all")
     log_in_as(users(:alex))
 

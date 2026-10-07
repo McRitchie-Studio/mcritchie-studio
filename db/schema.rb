@@ -2352,23 +2352,83 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
     t.index ["workspace_account_id"], name: "index_workspace_mailboxes_on_workspace_account_id"
   end
 
+  add_foreign_key "action_grades", "activities", column: "source_activity_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "action_grades", "agent_actions"
   add_foreign_key "action_grades", "agent_activities", on_delete: :nullify
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "activities", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_actions", "agent_activities", on_delete: :nullify
+  add_foreign_key "agent_actions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "agent_activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
+  add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "alt_videos", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
+  add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "appearances", "appearances", column: "base_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "appearances", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "appearances", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artifact_subjects", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "artifact_subjects", "artifacts", column: "artifact_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artifact_subjects", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artifacts", "email_image_briefs", column: "brief_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "artist_aliases", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artist_memberships", "artists", column: "group_artist_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artist_memberships", "artists", column: "member_artist_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artists", "people", column: "person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "athlete_grades", "athletes", column: "athlete_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "athlete_grades", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "athletes", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"
-  add_foreign_key "credential_records", "credential_vaults", column: "credential_vault_slug", primary_key: "slug"
+  add_foreign_key "coach_rankings", "coaches", column: "coach_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "coach_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "coaches", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "coaches", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "contents", "news", column: "source_news_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "contracts", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "contracts", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "credential_records", "credential_vaults", column: "credential_vault_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "depth_chart_entries", "depth_charts", column: "depth_chart_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "depth_chart_entries", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "depth_charts", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "desk_records", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
+  add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "games", "slates", column: "slate_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "games", "teams", column: "away_team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "games", "teams", column: "home_team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "knowledge_sources", "workspace_accounts"
   add_foreign_key "mailbox_drafts", "workspace_mailboxes"
+  add_foreign_key "music_video_artists", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "music_video_artists", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "news", "people", column: "primary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "news", "people", column: "secondary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "news", "teams", column: "primary_team_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "news", "teams", column: "secondary_team_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "people", "appearances", column: "default_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "person_jewelries", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "pff_stats", "athletes", column: "athlete_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "pff_stats", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "pff_team_stats", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "pff_team_stats", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "release_events", "releases", column: "release_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "review_pending_actions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
+  add_foreign_key "roster_spots", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "roster_spots", "rosters"
+  add_foreign_key "rosters", "slates", column: "slate_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "rosters", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "skill_assignments", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "skill_assignments", "skills", column: "skill_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "slates", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_failed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
@@ -2380,6 +2440,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   add_foreign_key "staged_emails", "broadcasts"
   add_foreign_key "staged_emails", "contacts"
   add_foreign_key "studio_email_deliveries", "users"
+  add_foreign_key "task_events", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "task_grades", "activities", column: "note_activity_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "task_grades", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "task_review_claims", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "tasks", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "tasks", "releases", column: "release_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "team_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "team_rankings", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "teams", "arenas", column: "home_arena_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
+  add_foreign_key "triage_findings", "tasks", column: "promoted_task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "usages", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_chunk_takes", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_clips", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_performers", "appearances", column: "recast_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "video_performers", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "video_performers", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_performers", "people", column: "recast_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "video_stitches", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_stitches", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "workspace_mailboxes", "workspace_accounts"
 end
