@@ -1,0 +1,65 @@
+// [e2e] Draft to TikTok, as the operator meets it on an alt video's clip
+// builder: every clip card shows its slug with a copy control; the button is
+// off for a clip with no generated version; pressing it on a clip with a
+// primary version records an attempt, and the card then shows the attempt
+// settle to "In your TikTok drafts" with the caption the code wrote, its Copy,
+// and TikTok's publish id. Wholly synthetic data, seeded by e2e/seed.rb from
+// db/seeds/data/tiktok_draft_video.rb: its own video, so this never meets the
+// specs that work on the other demos.
+//
+// WHAT THIS DOES NOT PROVE. Nothing here reaches TikTok, R2 or ESPN: the lane's
+// stand-in answers for TikTok and the bucket (config/initializers/
+// tiktok_draft_stand_in.rb) and the same fixed season the X card reads answers
+// for ESPN (every team 3-1). The real upload, its chunk rules and TikTok's
+// refusals are pinned in test/services/tiktok/inbox_upload_test.rb.
+// Everything else on this path is real: the button, the record, the caption
+// recipe, the job, the states and the page.
+const path = require("path");
+const fs = require("fs");
+const { test, expect } = require("@playwright/test");
+const { loginWithMagicLink } = require("./helpers");
+
+const MP4 = path.join(__dirname, "..", "test", "fixtures", "files", "stitch_demo.mp4");
+const SLUG = "test-artist-a-tiktok-demo-alt-1-clip-01";
+
+test("the operator drafts a clip to TikTok and sees the recorded draft", async ({ page }) => {
+  const body = fs.readFileSync(MP4);
+  await page.route("https://fixture.invalid/**", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body }));
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/music_videos/test-artist-a-tiktok-demo/alt_videos/1");
+
+  const card = (n) => page.locator(`[data-test='alt-clip'][data-ordinal='${n}']`);
+  const tiktok = (n) => card(n).locator("[data-test='clip-tiktok']");
+
+  // Every card names its clip: the slug the tiktok-draft SOP takes, with a copy control.
+  await expect(card(1).locator("[data-test='clip-slug']")).toHaveText(SLUG);
+  await expect(card(2).locator("[data-test='clip-slug']")).toHaveText("test-artist-a-tiktok-demo-alt-1-clip-02");
+  await card(1).locator("[data-test='clip-slug-copy']").click();
+  await expect(card(1).locator("[data-test='clip-slug-row']")).toContainText(/Copied|press ⌘C/);
+
+  // No generated version, no draft: the button is off and says why.
+  await expect(tiktok(2)).toHaveAttribute("data-enabled", "false");
+  await expect(tiktok(2).getByRole("button", { name: "Draft to TikTok" })).toBeDisabled();
+  await expect(tiktok(2).locator("[data-test='clip-tiktok-blocker']")).toContainText("No generated version yet");
+
+  // Clip 1 has a primary version: draft it.
+  await expect(tiktok(1)).toHaveAttribute("data-attempts", "0");
+  await tiktok(1).getByRole("button", { name: "Draft to TikTok" }).click();
+  await expect(page.locator("body")).toContainText("Clip 1 is on its way to your TikTok drafts");
+  await expect(tiktok(1)).toHaveAttribute("data-attempts", "1");
+
+  // The upload runs in the background; the card shows it once it has settled.
+  await expect(async () => {
+    await page.reload();
+    await expect(tiktok(1).locator("[data-test='clip-tiktok-latest']")).toHaveAttribute("data-state", "delivered");
+  }).toPass({ timeout: 20_000 });
+
+  const latest = tiktok(1).locator("[data-test='clip-tiktok-latest']");
+  await expect(latest.locator("[data-test='clip-tiktok-state']")).toHaveText("In your TikTok drafts");
+  await expect(latest.locator("[data-test='clip-tiktok-caption']")).toHaveText("Bills 3-1 #nfl #nfltiktok #footballtiktok #bills #fyp");
+  await expect(latest.locator("[data-test='clip-tiktok-copy']")).toBeVisible();
+  await expect(latest.locator("[data-test='clip-tiktok-publish-id']")).toContainText("stand-in-");
+  await expect(latest.locator("[data-test='clip-tiktok-stand-in']")).toBeVisible();
+  await expect(latest.locator("[data-test='clip-tiktok-team-rule']")).toContainText("Test Rusher Eta, the clip's target, by the look's team");
+  await expect(latest).toContainText("Version 1");
+});
