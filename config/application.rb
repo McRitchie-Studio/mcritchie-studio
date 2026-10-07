@@ -44,8 +44,15 @@ module McritchieStudio
     # earns its position by keeping EdgeGuard and HostAuthorization — which reject
     # requests outright — in front of the work of compressing a response they were
     # never going to send.
+    #
+    # A ZIP IS NEVER GZIPPED. The alt video asset zips (AltVideoDownloadsController)
+    # stream ~300 MB of already-compressed MP4/JPG/PNG; gzipping them would spend dyno
+    # CPU to make them no smaller. zip_kit sends `Content-Encoding: identity`, which
+    # Deflater still compresses, and `no-transform` cannot ride beside `no-store`
+    # (Rails drops extra directives there), so the skip is by type, here.
     require "rack/deflater"
-    config.middleware.insert_after ActionDispatch::Static, Rack::Deflater
+    config.middleware.insert_after ActionDispatch::Static, Rack::Deflater,
+                                   if: ->(_env, _status, headers, _body) { !headers["content-type"].to_s.start_with?("application/zip") }
 
     # Configuration for the application, engines, and railties goes here.
     #

@@ -1,4 +1,4 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
@@ -151,7 +151,18 @@
       <% end %>
 
       <div class="min-w-0" data-test="clip-handoff">
-        <p class="label-upper mb-1.5">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's sheets in the prompt's order, and the prompt</span></p>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5 min-w-0">
+          <p class="label-upper min-w-0">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's sheets in the prompt's order, and the prompt</span></p>
+          <% if chunk %>
+            <%= link_to music_video_alt_video_clip_download_path(video, alt_video, clip.chunk_ordinal), download: "",
+                        class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5",
+                        title: "This clip's source clip, prompt, lettered frames and sheets in one zip",
+                        data: { test: "clip-download-assets", turbo: false } do %>
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+              <span>Download clip assets</span>
+            <% end %>
+          <% end %>
+        </div>
         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 min-w-0">
           <% if chunk && (download = downloads[chunk.object_key]) %>
             <%= link_to "Download #{clip_seconds(clip.duration_ms)} s clip", download, download: chunk.object_key.split("/").last,
