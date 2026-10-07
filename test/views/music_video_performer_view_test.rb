@@ -393,7 +393,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     row = ImageGeneration::Registry.preferred(:character_sheet)
 
     render_card(sheet_row: row, sheet_ready: true)
-    assert_select "[data-test='look-cost-hint']", /Costs money: makes the look and builds one character sheet on GPT-5 image generation \(Responses\), about 6,724–7,629 tokens per sheet/
+    assert_select "[data-test='look-cost-hint']", /Costs money: makes the look and its iced twin, and builds the sheets you picked on GPT-5 image generation \(Responses\), one paid build each, about 6,724–7,629 tokens per sheet/
 
     render_card(sheet_row: row, sheet_ready: false)
     assert_select "[data-test='look-cost-hint']", /is not configured here, so the look is made without a character sheet and nothing is spent/

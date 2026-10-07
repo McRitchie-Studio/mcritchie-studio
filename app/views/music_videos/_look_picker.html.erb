@@ -1,4 +1,4 @@
-<%# The look step of "Replaced by": a listbox of the chosen athlete's looks (sheet thumbnail, name, default mark, build state), a larger preview of the one picked, and "Generate a new look" inline. Picking a look casts it at once (window.swapCard saves it; there is no Cast button). Driven by window.lookPicker, mixed into swapCard on the enclosing x-data root, for both an athlete just picked in the search and one read off the page. A custom listbox, since a native select cannot show images: focus stays on the trigger, which takes the arrow keys, Home, End, Enter, Space and Escape and names the active row. The generate form submits without Turbo, so the redirect's #person-N lands the operator back on this card, cast in the new look. %>
+<%# The look step of "Replaced by": a listbox of the chosen athlete's looks (sheet thumbnail, name, default mark, build state; iced twins listed as their own looks), a larger preview of the one picked, and "Generate a new look" inline, which makes the look and its iced twin and builds the sheets picked. Picking a look casts it at once (window.swapCard saves it; there is no Cast button). Driven by window.lookPicker, mixed into swapCard on the enclosing x-data root, for both an athlete just picked in the search and one read off the page. A custom listbox, since a native select cannot show images: focus stays on the trigger, which takes the arrow keys, Home, End, Enter, Space and Escape and names the active row. The generate form submits without Turbo, so the redirect's #person-N lands the operator back on this card, cast in the new look. %>
 <% n = performer.ordinal %>
 <% sheet_row = local_assigns[:sheet_row] %>
 <div x-show="athlete" x-cloak class="mt-2 space-y-2 min-w-0" data-test="look-picker">
@@ -104,6 +104,23 @@
                placeholder="Only for a person with no stored headshot" class="input-field py-2 text-sm w-full">
       </div>
     </div>
+    <%# Every new look gets its iced-out twin (a row, free). Which SHEETS to build is
+        the operator's pick, each one a paid image: never two unless Both is chosen. %>
+    <% if sheet_row && local_assigns[:sheet_ready] %>
+      <fieldset class="min-w-0" data-test="look-sheets-choice">
+        <legend class="block text-xs text-muted mb-1">Sheets to build (the iced twin look is made either way)</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          <% [["standard", "Character sheet", "1 paid build"], ["iced", "Iced sheet only", "1 paid build"],
+              ["both", "Both sheets", "2 paid builds"], ["none", "No sheet yet", "nothing spent"]].each do |value, label, cost| %>
+            <label class="flex items-center gap-2 rounded-lg border border-subtle bg-surface px-2 py-1.5 text-sm text-body min-w-0">
+              <input type="radio" name="sheets" value="<%= value %>" class="shrink-0" <%= "checked" if value == "standard" %>
+                     data-test="look-sheets-<%= value %>">
+              <span class="min-w-0 truncate"><%= label %> <span class="text-3xs text-muted">· <%= cost %></span></span>
+            </label>
+          <% end %>
+        </div>
+      </fieldset>
+    <% end %>
     <div class="flex flex-col sm:flex-row gap-2">
       <button type="submit" class="btn btn-primary btn-sm flex-1" :disabled="genBusy" data-test="look-generate-submit">
         <span x-show="!genBusy">Generate look</span>
@@ -117,7 +134,7 @@
       <% elsif !local_assigns[:sheet_ready] %>
         <%= sheet_row.label %> is not configured here, so the look is made without a character sheet and nothing is spent.
       <% else %>
-        Costs money: makes the look and builds one character sheet on <%= sheet_row.label %><% if (hint = sheet_row.expected_cost_hint) %>, <%= hint %><% end %>. It takes about two minutes.
+        Costs money: makes the look and its iced twin, and builds the sheets you picked on <%= sheet_row.label %>, one paid build each<% if (hint = sheet_row.expected_cost_hint) %>, <%= hint %><% end %>. A build takes about two minutes.
       <% end %>
     </p>
   <% end %>

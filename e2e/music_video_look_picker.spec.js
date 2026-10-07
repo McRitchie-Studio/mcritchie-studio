@@ -80,7 +80,7 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(form).toBeVisible();
   await expect(form).toContainText("New look for Demo Winger Delta");
   await expect(form.locator("input[name='descriptor']")).toBeFocused();
-  await expect(form.locator("[data-test='look-cost-hint']")).toContainText("Costs money: makes the look and builds one character sheet");
+  await expect(form.locator("[data-test='look-cost-hint']")).toContainText("Costs money: makes the look and its iced twin, and builds the sheets you picked");
   await form.locator("input[name='descriptor']").fill(name);
   await form.locator("input[name='number']").fill("12");
   await form.getByRole("button", { name: "Generate look" }).click();

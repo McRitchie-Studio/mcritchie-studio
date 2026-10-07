@@ -135,8 +135,17 @@
     <% if @appearances.any? %>
       <div class="space-y-2">
         <% @appearances.each do |look| %>
-          <div class="rounded-lg border border-subtle p-3 flex items-center gap-3 flex-wrap">
-            <span class="text-heading font-bold"><%= look.descriptor %></span>
+          <div id="look-<%= look.slug %>" data-test="person-look" data-iced="<%= look.iced? %>"
+               class="rounded-lg border p-3 flex items-center gap-3 flex-wrap scroll-mt-24 <%= look.iced? ? 'border-primary/30 bg-primary/5 ml-4 sm:ml-8' : 'border-subtle' %>">
+            <span class="text-heading font-bold min-w-0 break-words"><%= look.descriptor %></span>
+            <% if look.iced? %>
+              <span class="badge text-3xs bg-primary/10 text-primary border-primary/30" data-test="iced-badge">iced twin</span>
+            <% elsif admin? && !look.music_video_look? && !@twinned_slugs.include?(look.slug) %>
+              <%# Looks made before twins existed: one free press, no sheet built. %>
+              <%= button_to "Create iced twin", create_iced_twin_person_path(@person.slug),
+                    method: :post, params: { appearance_slug: look.slug },
+                    class: "btn btn-sm btn-outline", data: { test: "create-iced-twin" } %>
+            <% end %>
 
             <% if look.default? %>
               <span data-test="default-look-badge"
@@ -161,7 +170,7 @@
 
             <span class="ml-auto flex items-center gap-3">
               <span class="text-xs text-muted"><%= look.artifact_subjects.count %> image(s)</span>
-              <%= link_to "Reference photos and model →",
+              <%= link_to (look.iced? ? "Model and iced sheet →" : "Model and sheet →"),
                     person_appearance_path(@person.slug, look.slug),
                     data: { test: "character-model-link" },
                     class: "btn btn-sm btn-outline" %>
@@ -213,6 +222,8 @@
       </details>
     <% end %>
   </div>
+
+  <%= render "people/jewelry", person: @person, jewelries: @jewelries %>
 
   <%# --- every image they appear in, including shared ones --- %>
   <div class="card p-6 space-y-4">
