@@ -437,16 +437,6 @@ module AgentWorktreeFixture
     claim_json(Time.now - 3600, session: "sess-dead")
   end
 
-  # A lease whose expiry is PRESENT but unparseable — the corrupt state. live? cannot rule it
-  # lapsed (we could not check), so the desk is WITHHELD, but the honest hold reason is "claim
-  # expiry unverifiable", never "held by a live builder" (we never confirmed one). claim_json
-  # can't build this — it iso8601-formats a Time — so it is spelled out here.
-  def corrupt_claim_json
-    JSON.generate("stage" => TERMINAL_STAGE, "metadata" => { "devops" => {
-                    "claimed_session" => "sess-corrupt", "claim_expires_at" => "not-a-timestamp"
-                  } })
-  end
-
   def board_record_at(stage)
     JSON.generate("stage" => stage, "review_in_progress" => false,
                   "metadata" => { "devops" => JSON.parse(lapsed_claim_json).dig("metadata", "devops") })
@@ -459,8 +449,9 @@ module AgentWorktreeFixture
     File.write(env_path, "#{File.read(env_path)}\nTASK_RECORD_SLUG=#{slug}\n")
   end
 
-  # A fake `bin/task` that reports the task UNCLAIMED on the first `show` and LIVE-claimed
-  # on every later one — the builder-sits-down-mid-sweep race. Planted in the HUB (the
+  # A fake `bin/task` that reports the task SHIPPED on the first `show` and back on
+  # `building` on every later one — the builder-sits-down-mid-sweep race, which the stage
+  # channel holds (the legacy lease hold is gone, guard catalog row 5.1). Planted in the HUB (the
   # documented fallback), never inside the worktree, which would dirty it and disqualify
   # it from cleanup for the wrong reason.
   def plant_task_bin_claiming_on_second_read(slug)
@@ -476,7 +467,7 @@ module AgentWorktreeFixture
       if [ "$n" -eq 0 ]; then
         echo '{"stage":"shipped","metadata":{"devops":{}}}'
       else
-        echo '{"stage":"shipped","metadata":{"devops":{"claimed_session":"sess-midsweep","claim_expires_at":"#{expires}"}}}'
+        echo '{"stage":"building","metadata":{"devops":{"claimed_session":"sess-midsweep","claim_expires_at":"#{expires}"}}}'
       fi
     SH
     FileUtils.chmod(0o755, bin)

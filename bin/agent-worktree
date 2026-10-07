@@ -4377,26 +4377,16 @@ end
 
 # The reason this worktree is withheld from destruction, or nil when it is free to release.
 #
-# A desk is held when its bound task carries a live build-claim lease: a builder is on it,
-# their status line renewing the claim under the ClaimLease TTL. That claim is the only
-# signal that separates a builder who just sat down from finished work — a fresh worktree
-# and a fast-forward-merged one are git-identical (clean, HEAD == base, 0-ahead), so
-# cleanup_ready? alone cannot tell them apart.
-#
-# Withholds (returns a reason) in THREE cases, not one:
-#   - a confirmed LIVE claim — a builder is at the desk;
-#   - a CORRUPT claim — the lease is present but its expiry is unparseable, so liveness
-#     cannot be verified. "We could not check" is not "a builder is here": it withholds
-#     (an unverifiable desk must never read free on a destroy path), but names the hold
-#     honestly as "expiry unverifiable", never as a live builder — corrupt_expiry? branches
-#     it out before the live-builder message (which would also interpolate a nil age); and
+# The BOARD channel. A desk's build claim is the desk itself, and the legacy build-lease
+# hold that lived here is gone (guard catalog row 5.1): nothing writes those leases. What
+# stays is the read itself. Withholds (returns a reason) when:
 #   - a bound task whose board record could NOT be read — we know the desk could be
 #     claimed and failed to find out, so we cannot verify it is free. Board outages and
 #     mass-reclaim are correlated (the board 500s under the same parallel-devops load that
 #     spawns many worktrees), so failing open here reopens the incident precisely when
 #     everyone believes it is covered.
 # Fail-open (nil ⇒ reclaimable) survives only where it is FORCED or CORRECT: an unbound
-# task (no slug, nothing to look up) and a lapsed claim (we checked; the builder is gone).
+# task (no slug, nothing to look up) and a record the board answered.
 # Every branch that gives up on checking says so when `announce` is set — a guard that
 # silently disables itself is worse than no guard.
 def claim_hold(record, fresh: false, announce: false)
@@ -4479,7 +4469,7 @@ def claim_hold(record, fresh: false, announce: false)
   # so it never goes quietly.
   if slug.nil?
     if announce
-      warn "note: #{worktree_label(record)} has no bound task, so no build lease can be checked; " \
+      warn "note: #{worktree_label(record)} has no bound task, so no board record can be checked; " \
            "treating it as free"
     end
     return nil
@@ -4509,28 +4499,10 @@ def claim_hold(record, fresh: false, announce: false)
            "(re-run once the board is reachable)"
   end
 
-  # We READ the record. An empty devops here means "checked, and this task carries no
-  # claim" — free, not an outage.
-  claim = ClaimLease.from_devops(task_devops_for_pr(task_record))
-  return nil unless ClaimLease.live?(claim)
-
-  # CORRUPT: the claim's lease timestamp is PRESENT but unparseable, so liveness cannot be
-  # verified. live? folds this into "possibly live" (rightly withholding, since an
-  # unverifiable desk must never read free on a destroy path) — but the honest reason is NOT
-  # "a builder is here": we never confirmed one, we only failed to check. Emitting the
-  # live-builder line here both misattributes the hold AND interpolates a nil heartbeat_age
-  # ("heartbeat  s ago"), because heartbeat_age has no parseable lease to derive from.
-  # ClaimLease.corrupt_expiry? exists precisely to split this out.
-  if ClaimLease.corrupt_expiry?(claim)
-    return "claim expiry unverifiable (#{slug}) — the legacy build lease's timestamp is present " \
-           "but unparseable, so its liveness cannot be checked; withholding rather " \
-           "than nominating a desk we cannot verify — inspect task #{slug}"
-  end
-
-  age = ClaimLease.heartbeat_age(claim)
-  "held by a legacy build lease (#{slug}) — lease renewed #{age}s ago " \
-    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s); nothing writes these leases since the desk " \
-    "became the build claim, so it lapses on its own"
+  # We READ the record, so the board answered. The legacy build-lease hold that sat here
+  # is gone (guard catalog row 5.1): nothing writes those leases since the desk became the
+  # build claim, and the stage, review, desk and PR channels after this one judge the desk.
+  nil
 rescue StandardError => e
   # Always log — a guard that disables itself in silence is worse than no guard, and on the
   # quiet (doctor/registry) lane an unexpected error would otherwise nominate a held desk
@@ -5104,9 +5076,9 @@ def claim_clearance(record)
   return "no live release conductor claim (#{RELEASE_CLAIM_ROLES.join("/")})" if ship_workspace_record?(record)
 
   slug = task_record_slug(record[:env] || {})
-  return "no bound task, so no build lease to hold it" unless slug
+  return "no bound task, so no board record to read" unless slug
 
-  "no legacy build lease on #{slug} (nothing writes leases now; the desk itself is the build claim)"
+  "the board answered for #{slug} (the desk itself is the build claim)"
 end
 
 # What the BOARD-STAGE channel observed. The whole point of the channel is that the

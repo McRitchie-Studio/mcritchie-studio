@@ -298,10 +298,16 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
   end
 
-  def test_claim_hold_withholds_for_a_non_expired_claim
-    assert_equal "true",
+  # Guard catalog row 5.1: the legacy build-lease hold is gone. Nothing writes those
+  # leases since the desk became the build claim, so a lease on a readable record holds
+  # nothing; the board read itself stays (test_bound_but_unreadable_is_withheld_everywhere).
+  def test_claim_hold_ignores_a_legacy_lease
+    assert_equal "false",
                  live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2099-01-01T00:00:00Z" })),
-                 "a builder actively renewing its claim protects the desk"
+                 "a legacy lease no longer withholds a desk"
+    assert_equal "false",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" })),
+                 "nor does a corrupt one"
   end
 
   def test_claim_hold_frees_a_lapsed_claim
@@ -348,43 +354,6 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "nil", out
   end
 
-  # The HOLD REASON is what the destructive paths print instead of a silent skip — it must
-  # name the hold and carry the builder's heartbeat age so the operator can check it.
-  def test_claim_hold_reason_names_the_live_builder_and_its_heartbeat_age
-    expires = (Time.now + 110).utc.iso8601
-    out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false)
-        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
-      end
-      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
-    RUBY
-    assert_match(/held by a legacy build lease \(busy-task\)/, out)
-    assert_match(/lease renewed \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
-  end
-
-  # A CORRUPT claim — the lease is PRESENT but its expiry is unparseable, so liveness cannot be
-  # verified. live? merges it into "possibly live" (the desk is still WITHHELD, which is right),
-  # but the honest reason is NOT "a builder is here" — it is "we could not check". Before this
-  # branch existed the corrupt case fell through to the live-builder message and interpolated a
-  # nil heartbeat age ("builder heartbeat  s ago"), both misattributing the hold AND printing
-  # garbage. ClaimLease.corrupt_expiry? exists precisely to split this out.
-  def test_claim_hold_reason_for_a_corrupt_claim_says_expiry_unverifiable_not_live_builder
-    out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false)
-        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" } } }
-      end
-      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
-    RUBY
-    assert_match(/expiry unverifiable/, out,
-                 "a corrupt lease means we could not check liveness — the hold must say so")
-    assert_match(/busy-task/, out, "name the task so the operator can inspect it")
-    refute_match(/live builder/, out,
-                 "a corrupt claim must NOT be misattributed to a confirmed live builder")
-    refute_match(/heartbeat/, out,
-                 "no heartbeat age is knowable from an unparseable lease — the garbled " \
-                 "'heartbeat  s ago' interpolation must be gone entirely")
-  end
-
   def test_claim_hold_is_nil_when_free
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
@@ -402,7 +371,7 @@ class AgentWorktreeTest < Minitest::Test
     # git-eligible + unheld → free, no reason
     assert_equal "[true, nil]", verdict_for(held: false, dirty: false)
     # git-eligible but HELD → withheld, WITH a reason to print
-    assert_match(/\A\[false, "held by a legacy build lease/, verdict_for(held: true, dirty: false))
+    assert_match(/\A\[false, "the bound task t is at board stage `building`/, verdict_for(held: true, dirty: false))
     # not git-eligible → never a candidate, and NOT "withheld" (nothing to narrate)
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
@@ -425,10 +394,10 @@ class AgentWorktreeTest < Minitest::Test
   RUBY
 
   def verdict_for(held:, dirty:)
-    devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
+    stage = held ? "building" : "shipped"
     run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
-      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => #{devops} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => #{stage.inspect}, "metadata" => { "devops" => {} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
       print reclaim_verdict(record).inspect
@@ -1179,7 +1148,7 @@ class AgentWorktreeTest < Minitest::Test
 
     assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
     assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
-    assert_match(/no legacy build lease on t/, out, "the claim channel")
+    assert_match(/the board answered for t/, out, "the claim channel")
     assert_match(/board stage `shipped`/, out, "the board-stage channel")
     assert_match(/no review in progress/, out, "the review channel")
     assert_match(/desk idle/, out, "the desk channel")
