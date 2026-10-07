@@ -90,6 +90,8 @@ module SecretKeyBaseRotation
     lines = ["runtime=#{digest.(app.secret_key_base)} old=#{digest.(old)} " \
              "rotations signed=#{rotations.signed.size} encrypted=#{rotations.encrypted.size}"]
     return [false, lines << "FAIL: #{ENV_VAR} is unset"] if old.nil?
+    # Equal keys read the probe with no rotation at all: a PASS would prove nothing.
+    return [false, lines << "FAIL: #{ENV_VAR} equals the live key"] if old == app.secret_key_base
 
     jar = lambda do |key_generator, rots, cookies = {}|
       request = ActionDispatch::TestRequest.create(app.env_config.merge(

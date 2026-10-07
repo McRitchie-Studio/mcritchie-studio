@@ -234,6 +234,18 @@ class SecretKeyBaseRotationVerifyTest < ActiveSupport::TestCase
     assert_match(/FAIL/, lines.last)
   end
 
+  # Vacuity guard: an old key equal to the live one reads the probe without any
+  # rotation, so verify must FAIL rather than PASS on a swap that changed nothing.
+  test "control: fails when OLD_SECRET_KEY_BASE equals the live key" do
+    live = Rails.application.secret_key_base
+    rotations = during_initializers { rotations_from(live) }
+
+    ok, lines = SecretKeyBaseRotation.verify(env: { "OLD_SECRET_KEY_BASE" => live }, rotations: rotations)
+
+    refute ok
+    assert_match(/equals the live key/, lines.last)
+  end
+
   test "fails when OLD_SECRET_KEY_BASE is unset" do
     ok, lines = SecretKeyBaseRotation.verify(env: {})
 
