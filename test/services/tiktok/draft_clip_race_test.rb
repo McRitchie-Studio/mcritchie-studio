@@ -35,11 +35,12 @@ class Tiktok::DraftClipRaceTest < ActiveSupport::TestCase
     sweep!
   end
 
-  # Everything this file committed outside the fixtured tables. The fixtured
-  # ones (people, teams) are reloaded by the harness after a non-transactional
-  # test.
+  # Everything this file committed. The un-fixtured tables are emptied the way
+  # the leak guard empties them; the one row in a fixtured table (the person)
+  # goes by name, after the rows that point at it.
   def sweep!
     ActiveRecord::Base.connection_pool.with_connection { |connection| TestDatabaseLeakGuard.sweep!(connection) }
+    Person.where(last_name: "Tiktok Race").delete_all
   end
 
   def service(fetch: TiktokDraftFakes.espn)
