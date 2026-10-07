@@ -26,6 +26,9 @@ module Api
         chunk.association(:music_video).target = video
         chunk.reference_frames = body["frames"].map { |f| f.to_h.slice(*VideoClip::REFERENCE_KEYS) }
         chunk.prompt = MusicVideos::ClipPrompts.for(chunk)
+        # A refusal is an answer, not an ErrorLog.
+        return render_error(chunk.errors.full_messages.to_sentence, error_code: "INVALID_FRAMES") unless chunk.valid?
+
         rescue_and_log(target: video) { chunk.save! }
         render_data(chunk.as_json(only: %w[ordinal start_ms end_ms reference_frames]), status: :created)
       end
