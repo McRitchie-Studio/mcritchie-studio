@@ -8,7 +8,8 @@ sections 2 to 8 are the design, section 9 the questions it raised.
 
 **Built (phase one):** the `agent_sessions` table and `AgentSession` model (all three
 tiers, admin unscoped), `POST /api/v1/agent_sessions` for a studio login,
-`bin/task begin` logging the desk in, the actor taken from the session on every
+`bin/task begin` logging the desk in (presented only by the harness session that
+logged in, and naming its slug on a shared-token fallback once dropped), the actor taken from the session on every
 board write, the tier and scope gates (`Api::AgentSessionGate`), and the shared
 secret kept beside it, logged as legacy. Not built yet: the admin grant (Approve tap
 or launch phrase), the `claim-next-review` login, and the soul on the board card.

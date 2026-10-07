@@ -102,12 +102,15 @@ The board API takes two bearers (design:
 - **An agent session.** `bin/task begin` logs the desk's soul in to the task it
   claimed (`POST /api/v1/agent_sessions`, presented with the shared token) and keeps
   the session token in `agent-session.json` inside the desk's git directory,
-  owner-only, where no commit can reach it. A studio session is scoped to that task,
+  owner-only, where no commit can reach it, with the harness session (Claude or
+  Codex) that ran `begin`. Only that harness session presents it: anyone else running
+  `bin/task` in the desk, a reviewer included, uses the shared token. A studio session is scoped to that task,
   lives while the task is `building` or `submitted`, and expires after 24 hours. Its
   soul is the actor on every board write it makes; an `actor` or `by` param is
   ignored. It may write only its own task, and a release endpoint answers 403.
 - **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
-  everywhere for one release, with each use logged as `[agent-auth] legacy`, so Turf
+  everywhere for one release, with each use logged as `[agent-auth] legacy` (naming
+  the dropped desk session when a desk fell back from one), so Turf
   Monster's two endpoints and installed hooks keep running.
 
 Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after

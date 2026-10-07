@@ -65,12 +65,13 @@ module TaskBoard
   # Perform one JSON request. `path_or_uri` is a path joined onto `base_url`, or
   # a prebuilt URI (bin/devops-cycle builds its own to carry query strings).
   # `read_timeout: nil` leaves Net::HTTP's default (devops-cycle's posture).
-  def request(method, path_or_uri, base_url: nil, token: nil, body: nil, read_timeout: 30)
+  def request(method, path_or_uri, base_url: nil, token: nil, body: nil, read_timeout: 30, headers: nil)
     uri = path_or_uri.is_a?(URI::Generic) ? path_or_uri : URI.join(base_url, path_or_uri)
     klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch,
               delete: Net::HTTP::Delete }.fetch(method)
     req = klass.new(uri)
     req["Authorization"] = "Bearer #{token}" if token
+    (headers || {}).each { |name, value| req[name] = value.to_s unless value.to_s.empty? }
     if body
       req["Content-Type"] = "application/json"
       req.body = JSON.generate(body)

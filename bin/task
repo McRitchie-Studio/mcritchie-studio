@@ -1300,14 +1300,17 @@ end
 def api(method, path, body = nil, opts = {})
   auth = opts.fetch(:auth, true)
   session_token = auth ? desk_session_token(method, path) : nil
-  res = TaskBoard.request(method, path, base_url: BASE_URL, token: session_token || (auth ? token : nil), body: body)
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: session_token || (auth ? token : nil), body: body,
+                                        headers: (auth && !session_token ? desk_session_dropped_header(method, path) : nil))
   if session_token && res.code.to_i == 401
     # The desk's login ended (revoked, expired, or the task moved on). The shared
-    # token is still accepted, so drop the login and retry with it.
+    # token is still accepted, so drop the login (keeping its slug, which this and
+    # every later fallback write names to the board's log) and retry with it.
     reason = TaskBoard.parse_body(res)["error"] || "HTTP 401"
     warn!("note: this desk's agent session was refused (#{reason}); dropping it and retrying with the shared token")
-    DeskSession.clear(desk_session_root)
-    res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body)
+    DeskSession.drop(desk_session_root)
+    res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body,
+                                          headers: desk_session_dropped_header(method, path))
   end
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
@@ -1326,9 +1329,21 @@ def desk_session_root
 end
 
 # The desk's session token when this request writes the task the desk is logged
-# in to; nil for every other call, which keeps the shared token.
+# in to AND this run is the harness session that logged it in; nil for every other
+# call (a reviewer acting from the builder's desk included), which keeps the
+# shared token.
 def desk_session_token(method, path)
-  DeskSession.token_for(DeskSession.task_slug_for(method, path), root: desk_session_root)
+  DeskSession.token_for(DeskSession.task_slug_for(method, path), root: desk_session_root,
+                                                                 harness_session_id: session_identity.first)
+end
+
+# { DROPPED_HEADER => slug } when this shared-token write would have used the
+# desk's session but that session was dropped or has expired, so the board's log
+# names the desk; nil otherwise.
+def desk_session_dropped_header(method, path)
+  slug = DeskSession.dropped_slug_for(DeskSession.task_slug_for(method, path), root: desk_session_root,
+                                                                              harness_session_id: session_identity.first)
+  slug ? { DeskSession::DROPPED_HEADER => slug } : nil
 end
 
 # Log the desk's soul in to the task it just claimed (agent sessions, phase one):
@@ -1352,8 +1367,11 @@ def desk_login(slug, worktree_dir, soul)
     return
   end
 
+  # The harness session that logged in is the desk's owner: only it presents the
+  # token (DeskSession.token_for).
   data = parsed["data"]
-  DeskSession.write(worktree_dir, data.slice("slug", "soul", "tier", "task_slug", "expires_at", "token"))
+  DeskSession.write(worktree_dir, data.slice("slug", "soul", "tier", "task_slug", "expires_at", "token")
+                                      .merge("harness_session_id" => session_identity.first).compact)
   warn!("begin login — #{data["soul"]} logged in to #{slug} (#{data["tier"]} session #{data["slug"]}, " \
         "until #{data["expires_at"]}); kept in #{DeskSession.path(worktree_dir)}")
 rescue StandardError => e
