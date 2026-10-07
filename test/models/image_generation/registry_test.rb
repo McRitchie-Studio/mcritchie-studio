@@ -110,6 +110,32 @@ class ImageGeneration::RegistryTest < ActiveSupport::TestCase
 
   # THE RETIRED CAPABILITIES ARE GONE, not merely unused. Leaving them listed on a
   # row is what made a caller able to ask for them.
+  # THE EMAIL HEADER ROW (epic email-image-builder): the sheet's endpoint and
+  # snapshot, asked for a landscape size, every reference sent, no dollar rate,
+  # and a measured block from the one real round run in its build desk.
+  test "the email header row is the Responses path at a landscape size" do
+    row = ImageGeneration::Registry.find!("openai_image_header")
+
+    assert_equal ["email_header"], row.capabilities
+    assert_equal "openai", row.adapter
+    sheet = ImageGeneration::Registry.find!("openai_gpt5_sheet")
+    assert_equal [sheet.endpoint, sheet.model], [row.endpoint, row.model]
+    assert_equal "1536x1024", row.image_size
+    assert_equal "many", row.reference_arity
+    assert_nil row.unit_price_usd, "no honest single token rate exists; cost stays nil"
+    assert_equal "tokens", row.billing_unit_name
+    assert row.measured_result.present?
+    assert row.measured_on.present?
+    assert_equal 2, Array(row.measured[:units_range]).size
+  end
+
+  test "the header row does not compete for the sheet" do
+    assert_equal ["openai_image_header"], ImageGeneration::Registry.with_capability(:email_header).map(&:key)
+    assert_not ImageGeneration::Registry.find!("openai_image_header").capable_of?(:character_sheet)
+    assert_nil ImageGeneration::Registry.find!("openai_gpt5_sheet").image_size,
+               "the sheet's measured request shape sends no size"
+  end
+
   test "the withdrawn overclaim capabilities are absent everywhere" do
     known = ImageGeneration::Registry.known_capabilities
 

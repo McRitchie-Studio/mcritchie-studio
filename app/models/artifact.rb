@@ -3,8 +3,14 @@
 # It carries NO person and NO colorway of its own — both live on its subjects.
 # That is not tidiness: a mixed-cast image has three different looks in one
 # frame, so an artifact-level uniform cannot describe it.
+#
+# AN `email_header` IS THE ONE KIND WITH NO SUBJECTS. It is a candidate header
+# for an EmailImageBrief (epic email-image-builder), joined by `brief_slug`; it
+# reuses the provenance, cost, approve and retire this model already carries and
+# writes zero artifact_subjects rows, so every people-centred reader (which
+# filters by kind or joins through subjects) never sees it.
 class Artifact < ApplicationRecord
-  KINDS = %w[character_sheet pair group].freeze
+  KINDS = %w[character_sheet pair group email_header].freeze
 
   has_many :subjects, class_name: "ArtifactSubject", foreign_key: :artifact_slug,
                       primary_key: :slug, inverse_of: :artifact, dependent: :destroy
@@ -12,6 +18,7 @@ class Artifact < ApplicationRecord
 
   validates :slug, presence: true, uniqueness: true
   validates :kind, inclusion: { in: KINDS }
+  validates :brief_slug, presence: true, if: -> { kind == "email_header" }
 
   before_validation :generate_slug, on: :create
 

@@ -1,0 +1,114 @@
+# EMAIL BRAND KITS — what an email header generator may draw for each brand.
+#
+# Read by EmailImages::BrandKit. Git-reviewed on purpose (epic
+# email-image-builder, decision 2026-10-06): kits change rarely and a diff is
+# the review, the same rule as config/image_generators.yml.
+#
+# PALETTE VALUES ARE THE REPOS' THEME TOKENS, NEVER MEMORY. Each hex below cites
+# the file that owns it. The memory note's "furnace orange on deep navy" for
+# Industries is wrong against the repo (orange on near-black); trust the cite.
+#
+# REFERENCES ARE PATHS UNDER public/ IN THIS REPO, read as bytes and handed to
+# the generator inline. Only McRitchie-owned marks and mascots belong here:
+# never a real person, an athlete, or a team crest.
+#
+# `negative` is appended to every prompt. Its text-mode half is added by
+# EmailImages::Prompt, which knows whether the headline is drawn or not.
+
+defaults:
+  # Spend ceiling (epic standing rule): two candidates per round, four rounds
+  # per brief unless the brief's own max_rounds is raised by an admin.
+  candidates_per_round: 2
+  max_rounds: 4
+  # Email asset ceiling, in bytes. JPGs step their quality down to fit.
+  max_bytes: 300000
+
+presets:
+  # 2:1 matches the engine catalog banner (600x300 slot, ASPECT_RATIO 2.0) and
+  # every Turf banner. Generated at the image tool's 1536x1024, then
+  # centre-cropped and resized to exactly width x height.
+  header_2x1:
+    label: "Header 2:1 (1200x600)"
+    width: 1200
+    height: 600
+    generate_size: "1536x1024"
+
+kits:
+  turf-monster:
+    label: Turf Monster
+    app: turf-monster
+    palette:
+      # turf-monster/config/initializers/studio.rb (theme_primary, theme_success)
+      primary: "#2E7D32"
+      # turf-monster/config/initializers/studio.rb (theme_accent)
+      accent: "#8E82FE"
+      # engine default theme_dark, inherited by Turf (studio-engine lib/studio.rb)
+      dark: "#1A1535"
+      # turf-monster/app/assets/tailwind/application.css (ink green)
+      highlight: "#81c784"
+    references:
+      # The gator mascot. In every Turf header.
+      - path: public/agents/turf-monster.webp
+        role: mascot
+      # Turf's own welcome banner (turf-monster app/assets/images/emails/
+      # welcome-banner.jpg): the house look to match, never its words.
+      - path: public/email_brand/turf-monster-style-anchor.jpg
+        role: style
+    style: >
+      Bold, playful sports-app illustration. The green furry gator mascot from the
+      reference, full of energy, on a dark green night-time football field with soft
+      stadium glow and floating green confetti. Clean flat-vector cartoon shading,
+      high contrast, generous empty space on the left for a headline.
+    negative: >
+      No real people, no real athletes, no team logos, crests or jerseys of any real
+      team, no watermarks, no borders.
+    font: Montserrat
+
+  mcritchie-studio:
+    label: McRitchie Studio
+    app: mcritchie-studio
+    palette:
+      # engine defaults, which the hub inherits (studio-engine lib/studio.rb)
+      primary: "#8E82FE"
+      dark: "#1A1535"
+      light: "#f8fafc"
+      accent: "#F72585"
+    references:
+      # The treasure-chest mark (public/favicon.png, the purple chest).
+      - path: public/favicon.png
+        role: logo
+    style: >
+      Modern studio brand illustration. The treasure-chest mark from the reference as
+      the hero object, glowing with light, on a deep indigo background with soft violet
+      and magenta light and a few sparkles. Clean flat-vector style, high contrast,
+      generous empty space on the left for a headline.
+    negative: >
+      No real people, no faces, no third-party logos, no watermarks, no borders.
+    font: Montserrat
+
+  mcritchie-industries:
+    label: McRitchie Industries
+    app: mcritchie-industries
+    palette:
+      # mcritchie-industries/config/initializers/studio.rb (Forge Orange)
+      primary: "#C8661F"
+      # mcritchie-industries/config/initializers/studio.rb (Shop Black)
+      dark: "#141516"
+      light: "#FFFFFF"
+      # mcritchie-industries/config/initializers/studio.rb (Gunmetal)
+      accent: "#59606A"
+      # mcritchie-industries/config/initializers/studio.rb (theme_warning)
+      warning: "#F5C518"
+    references:
+      # The Industries icon mark (mcritchie-industries
+      # public/mcritchie_icon-simple_light_512px.png).
+      - path: public/email_brand/mcritchie-industries-icon.png
+        role: logo
+    style: >
+      Industrial brand illustration. The triangular square mark from the reference as
+      the hero object in brushed gunmetal, lit by warm forge-orange sparks and glow,
+      on a near-black workshop background. Clean, precise, high contrast, generous
+      empty space on the left for a headline.
+    negative: >
+      No real people, no faces, no third-party logos, no watermarks, no borders.
+    font: Montserrat

@@ -1,0 +1,77 @@
+<%# The brief's fields. On a new brief the email's identity (app, email key,
+    variant) is editable; once opened it is fixed, because the candidates are
+    stored under that path and the catalog key derives from it. %>
+<% new_brief = brief.new_record? %>
+<%= render "shared/form_errors", record: brief, spacing: "mb-3" %>
+<%= form_with model: brief, url: (new_brief ? email_images_path : email_image_path(brief)),
+              scope: :email_image_brief, class: "space-y-3", data: { test: "brief-form" } do |f| %>
+  <div class="grid gap-3 sm:grid-cols-3">
+    <div>
+      <%= f.label :app, "App", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <% if new_brief %>
+        <%= f.select :app, EmailImages::BrandKit.all.map { |k| [k.label, k.app] }, {}, class: "input-field w-full text-xs" %>
+      <% else %>
+        <p class="text-xs font-mono text-body"><%= brief.app %></p>
+      <% end %>
+    </div>
+    <div>
+      <%= f.label :email_key, "Email key", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <% if new_brief %>
+        <%= f.text_field :email_key, placeholder: "drop_signup_confirmation", class: "input-field w-full text-xs font-mono" %>
+      <% else %>
+        <p class="text-xs font-mono text-body"><%= brief.email_key %></p>
+      <% end %>
+    </div>
+    <div>
+      <%= f.label :variant, "Variant", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <% if new_brief %>
+        <%= f.text_field :variant, placeholder: "new_player (or leave blank)", class: "input-field w-full text-xs font-mono" %>
+      <% else %>
+        <p class="text-xs font-mono text-body"><%= brief.variant %></p>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="grid gap-3 sm:grid-cols-3">
+    <div>
+      <%= f.label :brand_kit, "Brand kit", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.select :brand_kit, EmailImages::BrandKit.all.map { |k| [k.label, k.key] }, {}, class: "input-field w-full text-xs" %>
+    </div>
+    <div>
+      <%= f.label :text_mode, "Text", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.select :text_mode, [["Baked into the art", "baked"], ["None (live text over art)", "none"]], {},
+                   class: "input-field w-full text-xs" %>
+    </div>
+    <div>
+      <%= f.label :image_format, "Format", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.select :image_format, [["JPG", "jpg"], ["PNG", "png"]], {}, class: "input-field w-full text-xs" %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :headline, "Headline (also the alt text)", class: "block text-2xs font-semibold text-heading mb-1" %>
+    <%= f.text_field :headline, maxlength: 120, placeholder: "You're In!", class: "input-field w-full text-sm" %>
+  </div>
+  <div class="grid gap-3 sm:grid-cols-2">
+    <div>
+      <%= f.label :subtext, "Sub-text (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_field :subtext, class: "input-field w-full text-xs" %>
+    </div>
+    <div>
+      <%= f.label :alt_text, "Alt text override (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_field :alt_text, class: "input-field w-full text-xs" %>
+    </div>
+  </div>
+  <div>
+    <%= f.label :prompt_notes, "Notes for the generator (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+    <%= f.text_area :prompt_notes, rows: 2, placeholder: "e.g. the gator holding a golden ticket",
+                    class: "input-field w-full text-xs" %>
+  </div>
+  <% unless new_brief %>
+    <div class="max-w-[10rem]">
+      <%= f.label :max_rounds, "Round limit", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.number_field :max_rounds, min: 1, max: 20, class: "input-field w-full text-xs" %>
+    </div>
+  <% end %>
+  <%= f.submit(new_brief ? "Open brief" : "Save brief", class: "btn btn-sm btn-primary") %>
+<% end %>

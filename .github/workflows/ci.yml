@@ -229,8 +229,13 @@ jobs:
         # budgets total ~22 minutes, and 25 sits above that and well below the
         # 45-minute job bound, so a step that blows through its retries still fails
         # long before it can take the whole job down with it.
+        #
+        # `imagemagick` is for e2e/email_images.spec.js: the fake image round still
+        # crops its placeholder through EmailImages::Crop (MiniMagick), exactly as a
+        # real round does on the dyno (ImageMagick 7 there, measured 2026-10-06).
+        # Without it the round fails server-side and no candidate ever renders.
         timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
+        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client imagemagick
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh

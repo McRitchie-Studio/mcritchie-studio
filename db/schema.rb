@@ -328,6 +328,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.datetime "approved_at"
     t.string "approved_by"
     t.integer "billable_units"
+    t.string "brief_slug"
     t.decimal "cost_usd", precision: 10, scale: 4
     t.datetime "created_at", null: false
     t.string "generator"
@@ -341,6 +342,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.string "slug", null: false
     t.string "source"
     t.datetime "updated_at", null: false
+    t.index ["brief_slug"], name: "index_artifacts_on_brief_slug"
     t.index ["generator", "retired_at"], name: "index_artifacts_on_generator_and_retired_at", where: "(generator IS NOT NULL)"
     t.index ["kind", "retired_at"], name: "index_artifacts_on_kind_and_retired_at"
     t.index ["slug"], name: "index_artifacts_on_slug", unique: true
@@ -906,6 +908,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.index ["broadcast_delivery_id"], name: "index_email_events_on_broadcast_delivery_id"
     t.index ["occurred_at"], name: "index_email_events_on_occurred_at"
     t.index ["provider_event_id"], name: "index_email_events_on_provider_event_id", unique: true, where: "(provider_event_id IS NOT NULL)"
+  end
+
+  create_table "email_image_briefs", force: :cascade do |t|
+    t.string "alt_text"
+    t.string "app", null: false
+    t.string "approved_artifact_slug"
+    t.string "brand_kit", null: false
+    t.text "build_error"
+    t.datetime "build_finished_at"
+    t.datetime "build_started_at"
+    t.string "build_state"
+    t.datetime "created_at", null: false
+    t.string "created_by"
+    t.string "email_key", null: false
+    t.datetime "exported_at"
+    t.string "exported_to"
+    t.string "generator_key"
+    t.string "headline", null: false
+    t.string "image_format", default: "jpg", null: false
+    t.integer "max_rounds", default: 4, null: false
+    t.string "preset", default: "header_2x1", null: false
+    t.text "prompt_notes"
+    t.integer "rounds_used", default: 0, null: false
+    t.string "slug", null: false
+    t.string "subtext"
+    t.string "text_mode", default: "baked", null: false
+    t.datetime "updated_at", null: false
+    t.string "variant", default: "default", null: false
+    t.index ["app", "email_key", "variant"], name: "index_email_image_briefs_on_app_and_email_key_and_variant", unique: true
+    t.index ["slug"], name: "index_email_image_briefs_on_slug", unique: true
   end
 
   create_table "error_logs", force: :cascade do |t|
