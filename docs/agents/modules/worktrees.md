@@ -162,8 +162,12 @@ Two checks sit outside the chain. A desk **outside a managed root** (`<repo>/.wo
 `<repo>.worktrees/`), such as `.claude/worktrees/*` or a scratchpad checkout, is listed but
 never nominated; remove it deliberately. And a desk every channel cleared is still held when
 **gitignored work** (an edited `.env.local`, say) changed after the desk was cut, because
-`git status` cannot see it. Regenerable paths (`tmp/`, `log/`, `node_modules/`, builds) and
-the env files this script writes do not count.
+`git status` cannot see it. `new` records a digest of every hand-written ignored path when it
+cuts the desk, and the hold compares contents with that record, so a file copied in at the
+cut (`config/master.key`) never holds. Regenerable paths (`tmp/`, `log/`, `node_modules/`,
+builds, `test/dummy/public/`, `playwright/.auth/`, an ignored `Gemfile.lock`) and the env
+files this script writes are never compared. A desk cut before the record existed keeps the
+older rule: any ignored path written after the cut holds it.
 
 So a desk is `reclaimable?` only when clean, merged, and cleared by every channel — its task
 at a terminal stage included. `quiet` never frees a desk, and no lane fails open. **The
