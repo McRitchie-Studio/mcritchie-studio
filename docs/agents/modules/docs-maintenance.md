@@ -20,10 +20,9 @@ skills). Edit the sources in this repo; never edit the generated roots — an ed
 there is silently reverted by the next install.
 
 **Nobody hand-runs the installer.** The install is an owned pipeline step:
-`sync_agent_docs` in `bin/release.rb`, which `bin/release ship` runs after every
-production ship (Steffon, G4 Ship) from the hub's ship workspace — the tree
-pinned at the SHA that just shipped. It runs unconditionally, is idempotent, is
-non-fatal by construction, and heals prior drift.
+`bin/release.rb#sync_agent_docs`, which `bin/release ship` runs after every
+production ship (Steffon, G4 Ship); that method picks the tree it installs from.
+It runs unconditionally, is idempotent, is non-fatal, and heals prior drift.
 
 So `installed docs/skills drift` between a docs merge and the next production
 ship is an **expected state, not a chore anyone owes**. It closes itself on the

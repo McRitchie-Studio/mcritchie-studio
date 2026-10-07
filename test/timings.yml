@@ -159,7 +159,6 @@ test/docs/installer_command_scope_test.rb: 0.59
 test/docs/reclaim_stage_channel_docs_test.rb: 0.96
 test/docs/review_handoff_mint_docs_test.rb: 0.07
 test/docs/review_lane_docs_test.rb: 3.63
-test/docs/ship_docs_sync_docs_test.rb: 0.94
 test/docs/sop_registry_docs_test.rb: 0.14
 test/docs/sop_registry_install_test.rb: 3.53
 test/docs/start_here_label_guard_test.rb: 0.15

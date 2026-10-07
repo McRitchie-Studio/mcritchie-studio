@@ -308,12 +308,10 @@ next release's seal shows it.
 `ship` records the **G4 Ship gate** (a red seal never flips its success) and moves
 members to `shipped` itself: never hand-run a bulk `bin/task move`.
 
-Post-ship, `bin/release ship` auto-runs `bin/install-agent-docs` from the hub's **ship
-workspace** (`mcritchie-studio/.worktrees/_ship`, pinned at the SHA that just shipped),
-so the installed agent docs are published from exactly what shipped. The hub **primary
-is the fallback, not the source**: `sync_agent_docs` drops back to it only when the
-ship workspace holds no installer, because the primary can sit a release behind. The
-step is non-fatal — it never aborts a completed ship — and **Steffon owns the step**.
+Post-ship, `bin/release ship` auto-runs `bin/install-agent-docs`, so the installed
+agent docs are published from what shipped; `bin/release.rb#sync_agent_docs` picks the
+tree. The step is non-fatal — it never aborts a completed ship — and **Steffon owns the
+step**.
 If it warns, run the installer path the warn line prints
 ([`docs-maintenance.md`](../../../modules/docs-maintenance.md) § Editing The Entry Docs), never the primary's copy.
 

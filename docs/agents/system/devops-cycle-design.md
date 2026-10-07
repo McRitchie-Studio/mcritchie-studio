@@ -1156,9 +1156,7 @@ as siblings at the projects root.
 
 **Post-ship agent-docs sync (the OWNED installer run).** After the primaries are
 restored to the freshly shipped `main`, ship auto-runs
-**`bin/install-agent-docs`** (`sync_agent_docs`, ship step 7b) from the hub's
-**ship workspace** (`mcritchie-studio/.worktrees/_ship`, the tree pinned at the
-frozen SHA that just shipped). It keeps the installed docs (`~/.claude` +
+**`bin/install-agent-docs`** (ship step 7b). It keeps the installed docs (`~/.claude` +
 `~/.codex` skills, the projects-root `AGENTS.md`/`CLAUDE.md`) in sync with what
 shipped, so an adapter/skill/SOP merge no longer drifts until someone happens to
 run the installer by hand. **Owner: Steffon (infra) owns the step and its
@@ -1166,18 +1164,8 @@ mechanism;** it runs inside whichever act drives `bin/release ship`
 (`production-deploy` / `full-cycle`).
 
 The installer syncs from its own root, so **the tree it runs in IS the docs it
-publishes** — which is why the source is the workspace and not a checkout that
-merely ought to match it. The hub **primary is the fallback, not the source**:
-`sync_agent_docs` takes the workspace root first, then drops back to the primary
-in a **guard clause** (`unless File.exist?` on the workspace's installer), so the
-fallback fires exactly when a ship resolved no hub member and that workspace
-holds no installer. The fallback is real — a doc that denies it disagrees with
-the code — but it is second, and deliberately so: ship no longer fast-forwards
-the primary's local `main` (`restore_primaries` tries, best-effort, and correctly
-refuses a primary holding a live session's work), so the primary can sit a
-release behind, and publishing from it would install docs that did not ship.
-(The `rescue StandardError` in the same method is a separate mechanism — the
-non-fatal skip below, not the fallback.)
+publishes**. `bin/release.rb#sync_agent_docs` picks that tree, and
+`test/lib/release_cli_post_deploy_test.rb` drives each branch it can take.
 
 It is post-SHIP by design: the step publishes only what actually shipped, so a
 qa-release-time or prepare-time run would publish a candidate that has not gone
