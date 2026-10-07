@@ -9,8 +9,7 @@
 # the hub primary that morning, the local `release` (dcc53183) was OLDER than `main`
 # and predated the doc, so the staged deletion carried over as nothing. The
 # `merge --ff-only origin/release` then wrote the doc back, and the commit
-# carried only the archive copy. `release` held the doc at both paths, and
-# ArchivePathCollisionTest reddened the next candidate.
+# carried only the archive copy, and `release` held the doc at both paths.
 #
 # Naming the source in `git add` cannot fix this alone, because by then the path
 # exists on disk again. The fix names the source at the call site, and
@@ -101,7 +100,7 @@ class ReleaseArchiveRetiredDocCommitTest < Minitest::Test
 
   private
 
-  # ArchivePathCollisionTest's detector, bound to the same archive_path_for.
+  # A doc present at both its live and its archive path, by DocsArchive.archive_path_for.
   def collisions(paths)
     present = paths.to_h { |p| [p, true] }
     paths.reject { |p| p.start_with?("#{DocsArchive::ARCHIVE_DIR}/") }
