@@ -99,7 +99,8 @@ before the claim, and after the claim it only reports. It prints the latest
 feedback, the branch's distance from `accepted`, the PR's merge and check state,
 same-file overlap with other PRs, stale terminology in your own changed docs, the
 installed entry docs (information: the ship publishes them), and the tiers your
-shape owes. A blocked task's `begin` clears the block, so read its feedback first.
+shape owes. `begin` clears a rework block (and records who did); an environment, dependency or
+`Escalated:` block stands. Read the feedback first.
 Duplicate migration installs are checked by `bin/submit` and the merge gate on the
 final diff (mechanism: `bin/lib/migration_collision.rb`): the task that owns an
 engine migration keeps its copy, and the other drops it.

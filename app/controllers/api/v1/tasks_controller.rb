@@ -130,13 +130,22 @@ module Api
         render_exception(e)
       end
 
-      # Clear a live block, leaving the task on `building` (Task#unblock!). `bin/task
-      # begin <slug>` on a blocked task is the builder's answer to the block, so begin
-      # calls this at the claim (guard catalog row 4.2). Idempotent: a task with no
-      # live block answers 200 unchanged.
+      # The builder's unblock (Task#builder_unblock!). `bin/task begin <slug>` on a
+      # REWORK-blocked task is the builder's answer to it, so begin calls this at the
+      # claim (guard catalog row 4.2). Any other block, and every `Escalated:` block,
+      # answers 409 with the reason and stays. `by` names who cleared it, and the clear
+      # writes an audit Activity. Idempotent: a task with no live block answers 200.
       def unblock
+        by = params[:by].presence || Current.task_event_actor.presence
+        if by.blank?
+          return render_error("by is required: name who is clearing the block", status: :unprocessable_entity,
+                                                                                  error_code: "MISSING_PARAM")
+        end
+        refusal = @task.builder_unblock_refusal
+        return render_error(refusal, status: :conflict, error_code: "UNBLOCK_REFUSED") if refusal
+
         rescue_and_log(target: @task) do
-          @task.unblock! if @task.blocked?
+          @task.builder_unblock!(by: by)
           render_data(@task)
         end
       rescue StandardError => e

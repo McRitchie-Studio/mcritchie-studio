@@ -143,6 +143,10 @@ class TaskBeginTest < Minitest::Test
       ["200 OK", JSON.generate("data" => @task)]
     when "PATCH"
       if path.end_with?("/unblock")
+        # The board refuses an escalation 409 (Task#builder_unblock_refusal).
+        return ["409 Conflict", JSON.generate("error" => "carries an escalation, which only Alex answers")] if @task["escalated"]
+
+        @unblocked_by = JSON.parse(body)["by"]
         @task.delete("blocked_at")
         return ["200 OK", JSON.generate("data" => @task)]
       end
@@ -349,17 +353,42 @@ class TaskBeginTest < Minitest::Test
     assert_includes steps, "PREFLIGHT"
   end
 
-  # [integration] Guard catalog row 4.2: begin on a blocked task is the answer to the
-  # block, so it clears it (PATCH .../unblock) and the begin completes.
-  def test_begin_on_a_blocked_task_clears_the_block
+  # [integration] Guard catalog row 4.2, scoped by decision 6: begin on a REWORK-blocked
+  # task is the answer to the block, so it clears it (PATCH .../unblock, naming who).
+  def test_begin_on_a_rework_blocked_task_clears_the_block_and_names_who
     blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework")
-    requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+    requests, _out, err, status, = run_begin([SLUG, "--agent", "pokemon"], existing: blocked)
 
     assert status.success?, "a blocked task's begin must complete, got:\n#{err}"
     assert(requests.any? { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/#{SLUG}/unblock" },
            "begin must clear the block, got: #{requests.map { |r| "#{r[:method]} #{r[:path]}" }.inspect}")
-    assert_includes err, "this begin answers the block, so the block is cleared"
+    assert_equal "pokemon", @unblocked_by, "the clear names who made it"
+    assert_includes err, "rework block is cleared by this begin (recorded as pokemon)"
     assert_nil @task["blocked_at"]
+  end
+
+  # Environment and dependency blocks wait on something outside the desk: no unblock.
+  def test_begin_leaves_a_dependency_or_environment_block_standing
+    %w[dependency environment].each do |kind|
+      blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => kind)
+      requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+
+      assert status.success?, err
+      refute(requests.any? { |r| r[:path].to_s.end_with?("/unblock") }, "a #{kind} block must not be cleared")
+      assert_includes err, "carries a #{kind} block, which this begin does not clear"
+      assert_equal "2026-10-07T08:00:00Z", @task["blocked_at"]
+    end
+  end
+
+  # An escalation the board refuses (409) stands, and begin says so and completes.
+  def test_begin_reports_a_refused_escalation_and_completes
+    blocked = building_task.merge("blocked_at" => "2026-10-07T08:00:00Z", "block_kind" => "rework", "escalated" => true)
+    _requests, _out, err, status, = run_begin([SLUG], existing: blocked)
+
+    assert status.success?, err
+    assert_includes err, "block stands"
+    assert_includes err, "only Alex answers"
+    assert_equal "2026-10-07T08:00:00Z", @task["blocked_at"]
   end
 
   # [unit] The control: an unblocked task sends no unblock.

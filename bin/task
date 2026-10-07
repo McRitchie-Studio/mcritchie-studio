@@ -2302,23 +2302,33 @@ rescue Errno::ENOENT, Psych::Exception => e
   die!("could not read the shapes at #{BEGIN_SHAPES_PATH} (#{e.class}: #{e.message}). Nothing was written.")
 end
 
-# A BLOCKED TASK'S BEGIN IS THE ANSWER TO THE BLOCK (guard catalog row 4.2). A
-# rework block leaves the task on `building` with blocked_at set, and the builder
-# who resumes it is the one fixing it, so begin clears the block at the claim
-# (Task#unblock! via PATCH /api/v1/tasks/<slug>/unblock). The preflight that runs
-# next has no "task is blocked" state left to fail on; it prints the feedback the
-# block carried. Report-only: a board that cannot answer leaves the desk and the
-# claim standing and says how to clear it.
-def clear_block_at_begin(slug, task)
+# A REWORK BLOCK'S BEGIN IS THE ANSWER TO IT (guard catalog row 4.2, scoped by
+# decision 6). A rework block leaves the task on `building` with blocked_at set, and
+# the builder who resumes it is the one fixing it, so begin clears it at the claim
+# through PATCH /api/v1/tasks/<slug>/unblock, naming who (`by`); the board writes the
+# audit row (Task#builder_unblock!). Any other block (environment, dependency) waits on
+# something outside the desk, and an `Escalated:` block waits on Alex: begin leaves
+# those standing, and the server refuses them 409 if asked. Report-only: the desk and
+# the claim stand either way.
+def clear_block_at_begin(slug, task, by:)
   return if task["blocked_at"].to_s.strip.empty? || task["stage"].to_s != "building"
 
-  res = TaskBoard.request(:patch, "/api/v1/tasks/#{slug}/unblock", base_url: BASE_URL, token: token)
+  kind = task["block_kind"].to_s
+  unless kind == "rework"
+    warn!("begin — #{slug} carries a #{kind.empty? ? "kindless" : kind} block, which this begin does not clear: it " \
+          "waits on something outside the desk. Read the feedback the preflight printed.")
+    return
+  end
+
+  res = TaskBoard.request(:patch, "/api/v1/tasks/#{slug}/unblock", base_url: BASE_URL, token: token,
+                                                                   body: { "by" => by })
   if res.code.to_i.between?(200, 299)
-    warn!("begin — #{slug} was blocked; this begin answers the block, so the block is cleared. " \
-          "Read the feedback the preflight prints before editing.")
+    warn!("begin — #{slug}'s rework block is cleared by this begin (recorded as #{by}). " \
+          "Read the feedback the preflight printed before editing.")
   else
-    warn!("begin — could not clear #{slug}'s block (PATCH /api/v1/tasks/#{slug}/unblock -> #{res.code}); " \
-          "the desk and the claim stand. Clear it from the task page's Resume control.")
+    reason = TaskBoard.parse_body(res)["error"] || res.code
+    warn!("begin — #{slug}'s block stands (PATCH /api/v1/tasks/#{slug}/unblock -> #{res.code}: #{reason}); " \
+          "the desk and the claim stand.")
   end
 rescue StandardError => e
   warn!("begin — could not clear #{slug}'s block (#{e.class}: #{e.message}); the desk and the claim stand. " \
@@ -2766,7 +2776,7 @@ when "begin"
     begin_step!("5/5 claim", slug, *move_cmd)
   end
 
-  clear_block_at_begin(slug, task)
+  clear_block_at_begin(slug, task, by: [builder, mover_session.to_s, "begin"].find { |v| !v.to_s.strip.empty? })
   reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
 
   context = begin

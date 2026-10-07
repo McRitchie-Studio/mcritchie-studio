@@ -142,7 +142,7 @@ reach grading with a settlement that does not fit.
 | Guard | Refuses → prevents | Trigger · fires | n | Disposition |
 |---|---|---|---|---|
 | `bin/session-preflight#install_docs_check`; the installer's `check` exit | See decision 1 | 2026-09-07 · three agents in one night | 2 | BY CONSTRUCTION (worked example A) · applied: `guards-preflight-and-desks` (`check` reads the tree the fixed path names; the preflight prints it as information) |
-| "task is blocked" | See decision 6 | · | 1 | BY CONSTRUCTION (decision 6) · applied: `guards-preflight-and-desks` (`PATCH /api/v1/tasks/:slug/unblock`, called by `begin`) |
+| "task is blocked" | See decision 6 | · | 1 | BY CONSTRUCTION (decision 6) · applied: `guards-preflight-and-desks` (`PATCH /api/v1/tasks/:slug/unblock`, called by `begin`; rework blocks only, never an `Escalated:` block, which answer 409; each clear writes an audit Activity naming `by`) |
 | `bin/session-preflight#stale_scan` | Stale words anywhere in the base docs, not the diff | · | 1 | BY CONSTRUCTION: scan only changed files · applied: `guards-preflight-and-desks` |
 | Shape missing, unknown or short of metadata | Learned after the claim | · | 1 | BY CONSTRUCTION: `begin` validates on create · applied: `guards-preflight-and-desks` (`local_url` is left to the build) |
 | "behind base; rebase" | Every resumed desk, since `accepted` moves constantly; no gate needs a rebase and CI tests the merge ref | · | 1 | DELETE · applied: `guards-preflight-and-desks` |
