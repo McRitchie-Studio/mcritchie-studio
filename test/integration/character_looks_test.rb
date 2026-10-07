@@ -37,15 +37,12 @@ class CharacterLooksTest < ActionDispatch::IntegrationTest
     EmailImageFakes::Adapter.reset!
     ImageGeneration::Adapter.stub(:for, EmailImageFakes::Adapter) do
       Appearances::StoreGeneratedImage.stub(:call, store) do
-        with_env("OPENAI_API_KEY", "sk-test") { build_and_check(stored) }
+        with_env("OPENAI_API_KEY", "sk-test") do
+          started_at = Appearances::SheetBuild.start!(@look)
+          Appearances::SheetBuild.run(@look.reload, started_at: started_at)
+        end
       end
     end
-    check_filed
-  end
-
-  def build_and_check(stored)
-    started_at = Appearances::SheetBuild.start!(@look)
-    Appearances::SheetBuild.run(@look.reload, started_at: started_at)
 
     assert_equal "done", @look.reload.sheet_build_state, @look.sheet_build_error
     call = EmailImageFakes::Adapter.calls.sole
@@ -53,9 +50,7 @@ class CharacterLooksTest < ActionDispatch::IntegrationTest
     assert_includes call[:prompt], "Turf Monster, an original illustrated mascot"
     assert_no_match(/this exact man|photograph/i, call[:prompt])
     assert_equal [{ prefix: "character-sheets", subject: "characters/turf-monster" }], stored
-  end
 
-  def check_filed
     artifact = Artifact.sole
     subject = artifact.subjects.sole
     assert_equal ["character_sheet", "turf-monster", nil, @look.slug],
