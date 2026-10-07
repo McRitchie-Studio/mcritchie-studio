@@ -688,8 +688,8 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # this directory and the guard below evaporates in silence — the one failure mode a
     # credential guard may not have, because its whole value is being there later. The
     # population is asserted before it is walked.
-    assert_equal 3, paths.size,
-                 "expected api.rb, player_profile.rb and scrape_depth_charts.rb — a moved or " \
+    assert_equal 4, paths.size,
+                 "expected api.rb, player_profile.rb, scrape_depth_charts.rb and team_record.rb — a moved or " \
                  "renamed ESPN directory must FAIL this guard, never quietly empty it"
     paths.each do |path|
       code = File.readlines(path).reject { |line| line.strip.start_with?("#") }.join(" ").squeeze(" ")
