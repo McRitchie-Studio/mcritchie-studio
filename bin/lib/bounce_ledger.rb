@@ -53,7 +53,7 @@ module BounceLedger
   # must not proceed as though the answer were zero.
   class UnreadableResponse < StandardError; end
 
-  # The kinds `bin/task block --kind` can stamp (mirrors Task::BLOCK_KINDS), plus
+  # The kinds Task::BLOCK_KINDS lets `bin/task block --kind` stamp, plus
   # UNKNOWN_KIND for a row that carries no kind at all.
   KINDS = %w[environment rework dependency].freeze
   UNKNOWN_KIND = "unknown"

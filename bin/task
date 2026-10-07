@@ -965,7 +965,6 @@ LEGACY_STAGE_HINTS = {
   "prod_ready" => "assembled",
   "done" => "shipped"
 }.freeze
-BLOCK_KINDS = %w[environment rework dependency].freeze
 PERSONA_CLEAR = %w[none clear off -].freeze
 # REMOVING one entry from a repo-keyed map: `--pr-url-for <repo>=none`. Same
 # vocabulary as PERSONA_CLEAR so the CLI has ONE clear-token idiom, not two.
@@ -3172,7 +3171,8 @@ when "block"
     else unknown_flag!(ARGV[i], valid: %w[--kind --summary --feedback --details --agent --breaker-ack], context: "block")
     end
   end
-  die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
+  # The kind rides to the board as typed; Task validates block_kind and refuses an
+  # unknown one with a 422 before anything is stamped.
   die!("--breaker-ack only applies to --kind rework") if breaker_ack && kind != "rework"
   # This read doubles as the existence check the breaker would otherwise repeat —
   # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.

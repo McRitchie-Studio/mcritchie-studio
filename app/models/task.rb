@@ -251,6 +251,11 @@ class Task < ApplicationRecord
   validates :approval_status, inclusion: { in: OPERATOR_APPROVAL_STATUSES,
                                            message: "must be one of #{OPERATOR_APPROVAL_STATUSES.join(", ")}" },
                               allow_nil: true, if: :will_save_change_to_approval_status?
+  # The one copy of the block kinds: bin/task sends --kind as typed and this answers
+  # a kind it does not know with a 422 naming the list. Gated on change, like the
+  # approval status above.
+  validates :block_kind, inclusion: { in: BLOCK_KINDS, message: "must be one of #{BLOCK_KINDS.join(", ")}" },
+                         allow_nil: true, if: :will_save_change_to_block_kind?
 
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
