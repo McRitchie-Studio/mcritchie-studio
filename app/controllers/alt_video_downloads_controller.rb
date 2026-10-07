@@ -20,8 +20,8 @@ class AltVideoDownloadsController < ApplicationController
     alt.association(:music_video).target = video
     manifest = MusicVideos::AssetZip::Manifest.for(alt, only: params[:clip_ordinal],
                                                          page_url: music_video_alt_video_url(video, alt))
-    # no-transform: Rack::Deflater would otherwise gzip the stored zip on the dyno.
-    response.headers["Cache-Control"] = "private, no-store, no-transform"
+    # A private download, never cached. (Rack::Deflater skips a zip: config/application.rb.)
+    response.headers["Cache-Control"] = "private, no-store"
     zip_kit_stream(filename: manifest.filename) do |zip|
       result = MusicVideos::AssetZip::Writer.new(manifest).write(zip)
       Rails.logger.info("[asset_zip] #{manifest.filename}: #{result.written} files, #{result.missing.size} not included")
