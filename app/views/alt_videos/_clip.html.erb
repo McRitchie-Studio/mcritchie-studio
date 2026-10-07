@@ -28,7 +28,7 @@
                   class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 rounded-full px-4 py-2 bg-surface/90 text-heading shadow hover:text-primary"
                   data-test="clip-preview-button">
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-            <span class="text-sm font-semibold">Preview the source chunk</span>
+            <span class="text-sm font-semibold whitespace-nowrap">Preview the source chunk</span>
           </button>
           <p x-show="failed.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
              data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
