@@ -79,7 +79,7 @@ end
 
 contract = TestShard.load_contract(CONTRACT_PATH)
 if mode == :matrix
-  puts TestShard.matrix(contract).to_s
+  puts TestShard.matrix(contract).inspect
   exit 0
 end
 timings = TestShard.load_timings(TIMINGS_PATH)
