@@ -202,7 +202,25 @@ gem "sentry-rails"
 # set in config/initializers/studio.rb) and adds Studio.booking_path. On 0.83
 # the crop was one fixed window that hid the last slots of this schedule's
 # fullest day.
-gem "studio-engine", "~> 0.84"
+#
+# 0.92 is the floor now: it adds Studio.lookbook_in_production, which
+# config/initializers/studio.rb sets, and makes the component gallery opt-in by
+# bundle (task hub-shows-lookbook-gallery-live). Below 0.92 that setter raises
+# NoMethodError at boot.
+gem "studio-engine", "~> 0.92"
+
+# The component gallery (Lookbook at /admin/style/components, admins only; the
+# engine's router constraint answers everyone else 404). studio-engine never
+# requires lookbook: an app opts in by bundling it, and the hub runs it in
+# production too, with Studio.lookbook_in_production in
+# config/initializers/studio.rb. Alex approved the cost on 2026-10-06: about
+# 28 MB per process that boots the app.
+#
+# It MUST stay AFTER studio-engine and OUTSIDE any group. Bundler.require loads
+# gems in this file's order, and ViewComponent has to decide its preview routes
+# before Lookbook turns previews on; listed first, the engine warns at boot.
+# test/lib/gemfile_lookbook_order_test.rb holds both rules.
+gem "lookbook", "~> 2.3"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the
