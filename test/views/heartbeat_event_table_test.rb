@@ -6,12 +6,15 @@ require "test_helper"
 # null agent_activity_id render in the trailing "Unlabeled" group. Read-only: the
 # table has no inline grading controls (grading lives in the drawer).
 class HeartbeatEventTableTest < ActionView::TestCase
+  # task_slug carries a foreign key: a span that names a task has it on file.
   def event(**attrs)
+    task_rows!(attrs[:task_slug]) if attrs[:task_slug]
     AgentActivity.create!({ session_id: "s", category: "Explore", reason_slug: "find issue with api",
                           opened_at: Time.current, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
   def action(**attrs)
+    task_rows!(attrs[:task_slug]) if attrs[:task_slug]
     AgentAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current }.merge(attrs))
   end

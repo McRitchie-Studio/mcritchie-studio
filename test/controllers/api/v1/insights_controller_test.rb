@@ -36,6 +36,7 @@ module Api
       end
 
       test "[integration] each insight carries the compact feed shape" do
+        task_rows!("some-task-slug")
         banked(slug: "flag the gap first", disposition: "not", long_form: "Anchor: check siblings.",
                task_slug: "some-task-slug")
 

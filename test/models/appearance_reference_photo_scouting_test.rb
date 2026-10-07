@@ -37,6 +37,11 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
     refute build(operator_verdict: nil).judged?
   end
 
+  # appearance_slug carries a foreign key, so each test's photos hang off a real look.
+  def look_on_file(hint)
+    Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Scouting #{hint} #{SecureRandom.hex(3)}").slug
+  end
+
   # ── FOUND ORDER VERSUS GALLERY ORDER ─────────────────────────────────────────────
 
   test "[unit] found_order returns the provider's rank, NOT our ranking" do
@@ -44,7 +49,7 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
     # OUR ranking, the thing under examination; found_order is the archive's, the evidence
     # it is examined against. Shown one way only, a bad search and a bad ranker look
     # identical.
-    look = "look-order-#{SecureRandom.hex(3)}"
+    look = look_on_file("order")
     third = Photo.create!(appearance_slug: look, image_url: "https://example.com/c.jpg",
                           source: Photo::SOURCE_SEARCH, position: 3, face_score: 0.9, chosen: true)
     first = Photo.create!(appearance_slug: look, image_url: "https://example.com/a.jpg",
@@ -64,7 +69,7 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
     # Postgres sorts NULL FIRST in ascending order, so without NULLS LAST the two floor
     # rows — which carry no provider rank — would lead a column whose entire point is the
     # rank.
-    look = "look-nulls-#{SecureRandom.hex(3)}"
+    look = look_on_file("nulls")
     ranked = Photo.create!(appearance_slug: look, image_url: "https://example.com/r.jpg",
                            source: Photo::SOURCE_SEARCH, position: 7)
     unranked = Photo.create!(appearance_slug: look, image_url: "https://example.com/u.jpg",
@@ -154,8 +159,7 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
     # size above a visibility score, and a gallery sorted the other way reads as a ranking
     # bug that is not there. This is the case the old order got wrong: a 92-visibility
     # photograph whose face is small in frame is precisely the one that cannot mint.
-    Photo.where(appearance_slug: "look-order").delete_all
-    look = "look-order"
+    look = look_on_file("size")
     small = Photo.create!(appearance_slug: look, image_url: "https://x.test/small.jpg",
                           source: Photo::SOURCE_SEARCH, chosen: true,
                           face_score: 0.92, face_fill: 0.2, position: 1)
@@ -172,8 +176,7 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
   test "[unit] an unsized row sorts BELOW every measured one, never above" do
     # POSTGRES SORTS NULL FIRST IN DESCENDING ORDER, so without NULLS LAST a row nobody
     # measured would lead a gallery ordered by a measurement it does not have.
-    Photo.where(appearance_slug: "look-nulls").delete_all
-    look = "look-nulls"
+    look = look_on_file("unsized")
     unsized = Photo.create!(appearance_slug: look, image_url: "https://x.test/unsized.jpg",
                             source: Photo::SOURCE_SEARCH, chosen: true, position: 1)
     sized = Photo.create!(appearance_slug: look, image_url: "https://x.test/sized.jpg",

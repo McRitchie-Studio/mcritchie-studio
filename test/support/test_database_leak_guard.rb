@@ -65,21 +65,21 @@ module TestDatabaseLeakGuard
     # clean), having emptied them so the next test starts from the same empty
     # database the boot purge promised.
     #
-    # It truncates the WHOLE un-fixtured set, not just the tables that came back
-    # dirty, and that is a foreign-key decision rather than a lazy one: Postgres
-    # refuses to TRUNCATE a table another table references unless both are in the
-    # same statement. Every FK in this schema whose PARENT is un-fixtured has an
-    # un-fixtured CHILD as well (checked against db/schema.rb's 19 constraints; the
-    # only fixtured child, roster_spots, points at fixtured rosters), so truncating
-    # the set together is safe on its own terms — no reliance on
-    # disable_referential_integrity, and no dependency on WHICH table happened to
-    # leak. Same "one truncate for the whole graph" reasoning as TestDatabasePurge.
+    # It empties the WHOLE un-fixtured set, not just the tables that came back
+    # dirty, with DELETE under disable_referential_integrity rather than TRUNCATE:
+    # the slug foreign keys let a FIXTURED child point at an un-fixtured parent
+    # (tasks.release_slug at releases), and Postgres refuses to TRUNCATE a table
+    # another table references unless both are in the same statement, which would
+    # take the fixtured table with it. DELETE with the triggers off empties exactly
+    # the un-fixtured tables, in any order; Rails re-loads the fixtured ones.
     def sweep!(connection)
       leaked = leaked_tables(connection)
       return {} if leaked.empty?
 
       counts = TestDatabasePurge.row_counts(leaked, connection)
-      connection.truncate_tables(*unfixtured_tables(connection))
+      connection.disable_referential_integrity do
+        unfixtured_tables(connection).each { |table| connection.execute("DELETE FROM #{connection.quote_table_name(table)}") }
+      end
       counts
     end
 

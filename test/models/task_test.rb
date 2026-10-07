@@ -351,7 +351,7 @@ class TaskTest < ActiveSupport::TestCase
     # assigned agent_slug is the automatic, no-flag builder source — so
     # reviewer-select auto-excludes the builder WITHOUT the operator passing
     # --builder by hand every time.
-    task = Task.create!(title: "assigned builder auto stamp", agent_slug: "carl",
+    task = Task.create!(title: "assigned builder auto stamp", agent_slug: agent_rows!("carl").first.slug,
                         metadata: { "devops" => { "shape" => "backend" } })
     task.build! # no Current actor — the bare-CLI build path
 
@@ -363,7 +363,7 @@ class TaskTest < ActiveSupport::TestCase
     # The real bare-CLI move sets the actor to the session UUID. That's not a
     # soul, so it never stamps — but the assigned agent_slug now backstops it.
     Current.task_event_actor = "942a9824-375f-4d13-b60e-85be79ee9880"
-    task = Task.create!(title: "session actor assignee stamp", agent_slug: "carl",
+    task = Task.create!(title: "session actor assignee stamp", agent_slug: agent_rows!("carl").first.slug,
                         metadata: { "devops" => { "shape" => "backend" } })
     task.build!
 
@@ -376,7 +376,7 @@ class TaskTest < ActiveSupport::TestCase
   test "a soul build actor wins over the assigned agent_slug" do
     # An explicit --actor <soul> attribution beats the agent_slug default.
     Current.task_event_actor = "shannon"
-    task = Task.create!(title: "actor beats assignee task", agent_slug: "carl",
+    task = Task.create!(title: "actor beats assignee task", agent_slug: agent_rows!("carl").first.slug,
                         metadata: { "devops" => { "shape" => "backend" } })
     task.build!
 
@@ -390,7 +390,7 @@ class TaskTest < ActiveSupport::TestCase
     # builder — the agent_slug default only fills a BLANK built_by, it never
     # overwrites (only an explicit --actor re-points on a re-claim).
     Current.task_event_actor = "shannon"
-    task = Task.create!(title: "no clobber existing builder", agent_slug: "carl",
+    task = Task.create!(title: "no clobber existing builder", agent_slug: agent_rows!("carl").first.slug,
                         metadata: { "devops" => { "shape" => "backend" } })
     task.build!
     assert_equal "shannon", task.reload.devops_built_by
@@ -408,7 +408,7 @@ class TaskTest < ActiveSupport::TestCase
   test "an assigned build auto-excludes the builder from review end-to-end" do
     # The whole point of FIX (a): assign carl, do a plain build (no actor/flag),
     # and the reviewer pool excludes carl with no manual --builder.
-    task = Task.create!(title: "assigned end to end exclude", agent_slug: "carl",
+    task = Task.create!(title: "assigned end to end exclude", agent_slug: agent_rows!("carl").first.slug,
                         metadata: { "devops" => { "shape" => "backend" } })
     task.build!
 
@@ -882,7 +882,7 @@ class TaskTest < ActiveSupport::TestCase
   # shed_column_shadow_keys callback this stores the fiction and the task page
   # renders it — which is the original bug, reachable by a second door.
   test "[unit] a raw metadata write cannot plant a release_slug shadow" do
-    task = Task.create!(title: "Shadow proof task", release_slug: "rel-2026-08-12-real")
+    task = Task.create!(title: "Shadow proof task", release_slug: release_rows!("rel-2026-08-12-real").first.slug)
 
     task.update!(metadata: { "devops" => { "kind" => "bug", "release_slug" => "rel-typed-by-hand" } })
     task.reload

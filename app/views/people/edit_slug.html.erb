@@ -1,0 +1,34 @@
+<%# Rename one person's slug. rename_slug rewrites every row that names the old
+    slug in one transaction; a refusal comes back here with the reason. %>
+<% content_for(:title, "Rename #{@person.full_name} — McRitchie Studio") %>
+
+<div class="max-w-xl mx-auto px-4 py-8">
+  <div class="card p-6 space-y-4">
+    <div>
+      <h1 class="text-xl font-bold text-heading">Rename <%= @person.full_name %></h1>
+      <p class="text-sm text-muted mt-1">
+        The slug is the person's address and the key every contract, look and record
+        holds. Renaming it moves all of them with it.
+      </p>
+    </div>
+
+    <%= form_with model: @person, url: slug_person_path(@person.slug_in_database), method: :patch, scope: :person,
+                  local: true, class: "space-y-3", data: { test: "person-slug-form" } do |f| %>
+      <div>
+        <%= f.label :slug, "Slug", class: "block text-xs text-muted mb-1" %>
+        <%= f.text_field :slug, value: params.dig(:person, :slug) || @person.slug_in_database, required: true, autocomplete: "off", spellcheck: false,
+              class: "input-field py-2 text-sm w-full font-mono" %>
+        <p class="text-xs text-muted mt-1">Lowercase letters and digits, joined by single hyphens.</p>
+        <% if @person.errors[:slug].any? %>
+          <p class="text-sm text-danger-ink mt-2" data-test="person-slug-error">
+            <%= @person.errors.full_messages_for(:slug).to_sentence %>
+          </p>
+        <% end %>
+      </div>
+      <div class="flex items-center gap-3">
+        <%= f.submit "Rename", class: "btn btn-sm btn-primary" %>
+        <%= link_to "Cancel", person_path(@person.slug_in_database), class: "text-sm text-muted hover:underline" %>
+      </div>
+    <% end %>
+  </div>
+</div>

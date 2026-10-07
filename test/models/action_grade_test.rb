@@ -396,6 +396,7 @@ class ActionGradeTest < ActiveSupport::TestCase
   end
 
   test "[unit] to_insight carries long_form and reads provenance from either source" do
+    task_rows!("some-feature-slug")
     span = event(session_id: "feed-prov", task_slug: "some-feature-slug")
     grade = ActionGrade.create!(event_valid_attrs(agent_activity: span, slug: "promote this guardrail",
                                                   long_form: "Anchor: check siblings first."))

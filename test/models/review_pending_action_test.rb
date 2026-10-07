@@ -14,6 +14,8 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
 
   def setup
     @task = Task.create!(title: "Armed Merge Subject", slug: SLUG, stage: "submitted")
+    # A verdict's author is an agent row: activities.agent_slug carries a foreign key.
+    %w[carl avi].each { |soul| Agent.find_or_create_by!(slug: soul) { |a| a.name = soul.capitalize } }
   end
 
   def record_verdict(outcome: "merge-ready", agent: "carl")

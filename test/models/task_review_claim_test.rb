@@ -17,7 +17,10 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   B = { session: "sess-B", nonce: "inst-B" }.freeze
   RESUME_A2 = { session: "sess-A", nonce: "inst-A2" }.freeze # same session, second terminal
 
+  # task_review_claims.task_slug carries a foreign key, so the task is on file
+  # first (a test that needs it `submitted` creates it itself, before this).
   def acquire(task_slug: SLUG, now: Time.current, label: nil, reviewer: nil, **who)
+    task_rows!(task_slug.strip)
     TaskReviewClaim.acquire(task_slug: task_slug, session: who[:session], nonce: who[:nonce], label: label,
                             reviewer: reviewer, now: now)
   end
@@ -263,6 +266,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   # second row for the same slug, and that claim_row tolerates that race by re-reading
   # the winner's row instead of raising.
   test "the unique index forbids a second claim row for one task" do
+    task_rows!(SLUG)
     TaskReviewClaim.create!(task_slug: SLUG)
     assert_raises(ActiveRecord::RecordNotUnique) do
       # bypass the model so we test the DB constraint itself, not the uniqueness validation
@@ -274,6 +278,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   end
 
   test "claim_row tolerates the create race and returns the single winning row" do
+    task_rows!(SLUG)
     first = TaskReviewClaim.claim_row(SLUG)
     second = TaskReviewClaim.claim_row(SLUG)
     assert_equal first.id, second.id, "both first-acquirers converge on ONE row (the unique index enforces it)"

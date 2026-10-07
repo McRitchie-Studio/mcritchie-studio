@@ -157,10 +157,12 @@ news_data.each do |data|
     n.primary_action = data[:primary_action]
     n.secondary_person = data[:secondary_person]
     n.secondary_team = data[:secondary_team]
-    n.primary_person_slug = data[:primary_person_slug]
-    n.primary_team_slug = data[:primary_team_slug]
-    n.secondary_person_slug = data[:secondary_person_slug]
-    n.secondary_team_slug = data[:secondary_team_slug]
+    # The slug columns carry foreign keys, so a story keeps only the person and
+    # team slugs this database holds (the FIFA and NFL seeds may not have run).
+    n.primary_person_slug = Person.find_by(slug: data[:primary_person_slug])&.slug
+    n.primary_team_slug = Team.find_by(slug: data[:primary_team_slug])&.slug
+    n.secondary_person_slug = Person.find_by(slug: data[:secondary_person_slug])&.slug
+    n.secondary_team_slug = Team.find_by(slug: data[:secondary_team_slug])&.slug
     n.article_image_url = data[:article_image_url]
     n.title_short = data[:title_short]
     n.summary = data[:summary]

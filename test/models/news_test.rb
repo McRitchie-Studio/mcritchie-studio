@@ -154,7 +154,8 @@ class NewsTest < ActiveSupport::TestCase
 
     assert_equal "processed", result.stage
     assert_equal "christian-pulisic", result.primary_person_slug
-    assert_equal "usa", result.primary_team_slug
+    # "USA" names no team row (the fixture team is united-states): no slug is written.
+    assert_nil result.primary_team_slug
     assert_not_nil result.processed_at
   end
 
@@ -204,6 +205,13 @@ class NewsTest < ActiveSupport::TestCase
 
   # --- Full pipeline ---
 
+  test "[unit] Process writes the slug of a team the hub holds" do
+    article = news(:reviewed_article)
+    article.update!(primary_team: "Brazil")
+
+    assert_equal "brazil", News::Process.new(article).call.primary_team_slug
+  end
+
   test "full pipeline new through concluded" do
     article = News.create!(title: "Test pipeline article", author: "Test")
 
@@ -220,7 +228,8 @@ class NewsTest < ActiveSupport::TestCase
     News::Process.new(article).call
     assert_equal "processed", article.stage
     assert_equal "joe-burrow", article.primary_person_slug
-    assert_equal "cincinnati-bengals", article.primary_team_slug
+    # No Bengals team row in the fixtures: the slug stays blank rather than dangling.
+    assert_nil article.primary_team_slug
 
     News::Refine.new(article).call(
       title_short: "Burrow injured",

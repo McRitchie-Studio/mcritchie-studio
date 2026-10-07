@@ -33,6 +33,9 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
   end
 
   def reset_jeffersons
+    # Children first: their slug foreign keys refuse a parent deleted under them.
+    AthleteGrade.delete_all
+    PffStat.delete_all
     Athlete.delete_all
     Person.where(last_name: "Jefferson").delete_all
   end

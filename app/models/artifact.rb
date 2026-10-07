@@ -15,6 +15,8 @@ class Artifact < ApplicationRecord
   has_many :subjects, class_name: "ArtifactSubject", foreign_key: :artifact_slug,
                       primary_key: :slug, inverse_of: :artifact, dependent: :destroy
   has_many :people, through: :subjects, source: :person
+  # The email image brief an email_header candidate was rendered for.
+  belongs_to :email_image_brief, foreign_key: :brief_slug, primary_key: :slug, optional: true, inverse_of: false
 
   validates :slug, presence: true, uniqueness: true
   validates :kind, inclusion: { in: KINDS }
