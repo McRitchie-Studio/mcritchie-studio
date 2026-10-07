@@ -32,7 +32,6 @@ class ValidateSlugForeignKeys < ActiveRecord::Migration[8.1]
     pending.each do |key|
       execute "ALTER TABLE #{db.quote_table_name(key["child"])} VALIDATE CONSTRAINT #{db.quote_column_name(key["name"])}"
     end
-  ensure
     execute "RESET lock_timeout"
   end
 
@@ -79,17 +78,28 @@ class ValidateSlugForeignKeys < ActiveRecord::Migration[8.1]
     end
   end
 
+  # One UPDATE per table, every handle column at once, so clearing one dangling
+  # column never re-checks a row whose other column still dangles.
+  HANDLES = {
+    "activities" => [["agent_slug", "agents", "agent_handle"], ["task_slug", "tasks", "task_handle"]],
+    "tasks" => [["agent_slug", "agents", "agent_handle"]]
+  }.freeze
+
   def move_handles_into_metadata
-    [["activities", "agent_slug", "agents", "agent_handle"],
-     ["activities", "task_slug", "tasks", "task_handle"],
-     ["tasks", "agent_slug", "agents", "agent_handle"]].each do |table, column, parent, key|
-      c = db.quote_column_name(column)
+    HANDLES.each do |table, columns|
+      kept = columns.map do |column, parent, key|
+        "CASE WHEN #{orphan_sql(table, column, parent)} THEN jsonb_build_object(#{db.quote(key)}, #{db.quote_column_name(column)}) ELSE '{}'::jsonb END"
+      end
+      cleared = columns.map do |column, parent, _key|
+        c = db.quote_column_name(column)
+        "#{c} = CASE WHEN #{orphan_sql(table, column, parent)} THEN NULL ELSE #{c} END"
+      end
       rows = db.update(<<~SQL.squish)
         UPDATE #{db.quote_table_name(table)}
-        SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(#{db.quote(key)}, #{c}), #{c} = NULL
-        WHERE #{orphan_sql(table, column, parent)}
+        SET metadata = COALESCE(metadata, '{}'::jsonb) || #{kept.join(" || ")}, #{cleared.join(", ")}
+        WHERE #{columns.map { |column, parent, _| "(#{orphan_sql(table, column, parent)})" }.join(" OR ")}
       SQL
-      say "#{table}.#{column}: #{rows} unknown handles moved to metadata.#{key}" if rows.positive?
+      say "#{table}: #{rows} unknown handles moved into metadata" if rows.positive?
     end
   end
 
