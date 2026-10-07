@@ -4,7 +4,7 @@ require "fileutils"
 
 module EmailImages
   # WHAT A BRAND'S HEADERS ARE MADE FROM, as files an agent can open and show
-  # Alex before a round (the `email-image` SOP, step 2): the kit's reference
+  # Alex before a round (the `email-image` SOP, step 1): the kit's reference
   # images (mascot or logo, style anchor), its palette, its style words, and the
   # headers already approved for that brand.
   #
