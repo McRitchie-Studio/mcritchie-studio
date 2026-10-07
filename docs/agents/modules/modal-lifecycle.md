@@ -324,23 +324,11 @@ breaks every consumer below it. (A `breaking` risk tag forces `major` too — th
 precedence is explicit override, then a breaking tag, then the kind's default — so
 either move works; what does not work is silence.)
 
-**`--depends-on` declares the sequence; it is usually optional here.** The
-column is real (`db/schema.rb`) and really read — `Release::Ordering.producer_first`
-topologically sorts on it, reached from `Release#ordered_members` and the
-conductor's sweep — and as of /tasks/wire-task-dependencies-field a command
-finally writes it. Until then nothing did: an earlier draft of this procedure
-told you to declare the field in a bracketed literal syntax nothing parsed, so
-the step named a behaviour no one could perform.
-
-Reach for it only for a sequence the heuristic cannot infer. `producer_first`
-already sorts gems before apps unaided, which is exactly the gem-then-consumer
-case above, so the normal graduation needs no edge at all — one app that must
-deploy before another is the case that does. Three properties before you lean
-on it: a dependency on a task OUTSIDE the release does not hold this one back
-(by design — it cannot be ordered here); a slug naming NO task is REFUSED,
-precisely because that same tolerance would otherwise make a typo invisible
-forever; and the flag REPLACES the list rather than appending, so pass the whole
-set in one call.
+**`--depends-on` declares the sequence; it is usually optional here.**
+`Release::Ordering` (`app/models/release/ordering.rb#producer_first`) already sorts
+gems before apps unaided, which is exactly the gem-then-consumer case above, so the
+normal graduation needs no edge at all; one app that must deploy before another is
+the case that does. `bin/task --help` prints the flag's rules before you lean on it.
 
 **Three things that bite here:**
 

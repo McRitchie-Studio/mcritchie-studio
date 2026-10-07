@@ -164,7 +164,6 @@ test/docs/submit_wait_docs_test.rb: 0.17
 test/docs/sop_registry_docs_test.rb: 0.14
 test/docs/sop_registry_install_test.rb: 3.53
 test/docs/start_here_label_guard_test.rb: 0.15
-test/docs/task_dependencies_writer_docs_test.rb: 0.09
 test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb: 0.23
 test/docs/zap_cert_freshness_docs_test.rb: 2.31
 test/helpers/appearances_helper_test.rb: 0.26

@@ -1021,21 +1021,12 @@ bin/task update <slug> --depends-on none                # clear it
 bin/task field <slug> dependencies                      # read back, one slug per line
 ```
 
-`Release::Ordering.producer_first` sorts gems before apps on its own, so declare
-an edge only for a sequence that heuristic cannot infer — one app that must
-deploy before another. Three properties decide whether it does anything:
-
-- A dependency on a task **outside the release** does not hold this one back.
-  That is deliberate (it cannot be ordered here), and it is also why a **typo is
-  invisible** — the pass cannot tell an unresolvable slug from no dependency at
-  all. So the write refuses a slug naming no task, rather than storing a
-  declaration that would never fire.
-- It **replaces** the list, like `--checks`. Pass the whole set in one call.
-- A `devops` write to the name is refused with a 422 naming the column
-  (`Task::DEVOPS_COLUMN_KEYS`) — same rule as `release_slug` above, for the same
-  reason: two docs told agents to declare this field, in a bracketed literal
-  syntax nothing parsed, months before anything could write it at all. The
-  devops namespace is exactly where that habit points.
+`bin/task --help` prints the flag's whole rule (when to reach for it, that it
+replaces the list, that an out-of-release dependency is tolerated and an unknown
+slug refused); the flag is `bin/task#TOP_LIST_FLAGS`, and `Release::Ordering`
+(`app/models/release/ordering.rb#producer_first`) is what reads the column. A
+`devops` write to the name is refused with a 422 naming the column
+(`app/models/task.rb#DEVOPS_COLUMN_KEYS`), the same rule as `release_slug` above.
 
 ## Epic Slug — the epic a task belongs to
 
