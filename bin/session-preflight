@@ -482,17 +482,15 @@ def attribute_merged(items, candidates)
   end
 end
 
-# Entry-doc drift, surfaced from bin/install-agent-docs' own `check`.
+# Entry-doc drift, surfaced from bin/install-agent-docs' own `check`, as
+# INFORMATION (guard catalog row 4.1, worked example A). A desk measures nothing it
+# cannot fix: the installed copies have one writer, the ship's sync_agent_docs step,
+# and the installer's `check` compares them with the tree that ship published. So
+# the line reports and never adds an error; status is "pass", "drift" or "skipped".
 #
-# On a FAIL the part that MUST survive is the installer's guidance — it is what
-# says WHO closes the drift (sync_agent_docs, an owned step of `bin/release ship`)
-# and WHEN, so the reader does not take it for a chore they owe. The installer
-# emits that guidance LAST, after one ERROR line per drifted pair, and the old
-# `max: 8` counted the passing `OK:` lines against that budget: enough drifted
-# pairs and the guidance was the half that truncated away, leaving only the
-# accusation. So a FAIL drops the `OK:` lines (noise in a failure report) and
-# keeps a cap with real headroom over every ERROR line the installer can emit.
-# A PASS is unchanged. Task preflight-invites-wrong-fix.
+# On drift the part that must survive is the installer's guidance, which says WHO
+# closes it and WHEN. The installer prints it after one ERROR line per drifted pair,
+# so the `OK:` lines are dropped and the cap leaves room for every ERROR line.
 def install_docs_check(root)
   script = File.join(root, "bin", "install-agent-docs")
   return { "status" => "skipped", "message" => "missing #{script}" } unless File.executable?(script)
@@ -501,7 +499,7 @@ def install_docs_check(root)
   return { "status" => "pass", "message" => compact_lines(out, max: 8).join("; ") } if ok
 
   lines = compact_lines([err, out].join("\n"), max: 64).reject { |line| line.start_with?("OK:") }
-  { "status" => "fail", "message" => lines.first(16).join("; ") }
+  { "status" => "drift", "message" => lines.first(16).join("; ") }
 end
 
 def active_stale_scan_files(root, changed)
@@ -653,7 +651,8 @@ end
   end
 
   docs = report["installed_docs"]
-  puts "Installed docs: #{docs["status"]}#{docs["message"].to_s.empty? ? "" : " - #{docs["message"]}"}"
+  status = docs["status"] == "drift" ? "drift (information only: the ship publishes these, not this desk)" : docs["status"]
+  puts "Installed docs: #{status}#{docs["message"].to_s.empty? ? "" : " - #{docs["message"]}"}"
 
   stale = report["stale_terms"]
   if stale.empty?
@@ -864,7 +863,6 @@ installed_docs = if options[:install_docs]
 else
   { "status" => "skipped", "message" => "disabled by --no-install-docs" }
 end
-errors << "installed docs/skills drift: #{installed_docs["message"]}" if installed_docs["status"] == "fail"
 
 scan_files = active_stale_scan_files(options[:root], changed)
 options[:stale_paths].each do |path|

@@ -219,16 +219,24 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "legacy queued stage query", hit.fetch("label")
   end
 
-  def test_installed_docs_drift_blocks_preflight
+  # [unit] Guard catalog row 4.1: a desk measures nothing it cannot fix. A desk cut
+  # after a docs merge, with the installer reporting drift, passes; the drift is a
+  # line of information. The FLOOR assertions prove the stub's drift really landed.
+  def test_installed_docs_drift_is_information_and_the_preflight_passes
     write_installer(status: 1, stderr: "ERROR: /Users/alex/projects/AGENTS.md is out of date\n")
     task = write_task
 
-    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
-    refute status.success?
-
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
     report = JSON.parse(out)
-    assert_equal "fail", report.fetch("installed_docs").fetch("status")
-    assert report.fetch("errors").any? { |error| error.include?("installed docs/skills drift") }
+    assert_equal "drift", report.fetch("installed_docs").fetch("status"), "FLOOR: the drift must have been read"
+    assert_includes report.fetch("installed_docs").fetch("message"), "AGENTS.md"
+
+    assert status.success?, "installed-docs drift must not fail the preflight: #{report["errors"].inspect}\n#{err}"
+    refute report.fetch("errors").any? { |error| error.include?("installed docs") }
+
+    human, = run_preflight("--file", task, "--no-gh", "--no-fetch")
+    assert_includes human, "Installed docs: drift (information only"
+    assert_includes human, "OK session preflight passed"
   end
 
   # [integration] The drift REPORT must carry the installer's guidance, which is the
@@ -248,14 +256,14 @@ class SessionPreflightTest < Minitest::Test
     task = write_task
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
-    refute status.success?
+    assert status.success?, "drift is information, never a blocker"
 
     report = JSON.parse(out)
     message = report.fetch("installed_docs").fetch("message")
 
     # FLOOR: the stub really ran and its drift really landed, so the assertions below
     # are reading a populated message rather than an empty string.
-    assert_equal "fail", report.fetch("installed_docs").fetch("status")
+    assert_equal "drift", report.fetch("installed_docs").fetch("status")
     assert_includes message, "doc-1.md", "the drift report must still name what drifted"
 
     [
