@@ -328,7 +328,7 @@ def local_action(worktree)
   elsif !zeroish?(worktree["behind_origin_main"])
     "rebase on `#{base_ref_for(worktree)}`, resolve conflicts, test, and force-push with lease if already pushed"
   elsif Array(worktree["issues"]).any?
-    "resolve listed lifecycle issues, then rerun `bin/qa-intake --refresh`"
+    "resolve listed lifecycle issues, then rerun `#{Remedy.command("qa-intake", __dir__, "--refresh")}`"
   else
     "inspect manually; branch is ahead but did not satisfy QA readiness rules"
   end
