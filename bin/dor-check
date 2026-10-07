@@ -151,7 +151,11 @@ Dor::Checks.load!
 # lane and the reclaimed-worktree remedy hash a committed BRANCH TREE instead
 # (control_fingerprint).
 ROOT = File.expand_path("..", __dir__)
-CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
+CONFIG_PATH = ENV.fetch("DOR_CHECK_SHAPES_CONFIG", File.join(ROOT, "config", "feature_shapes.yml"))
+# The claim rules the `case claim_rule` block implements, one per `when` arm. The
+# config is checked against this list when it loads (guard catalog row 2.6), so a
+# shape can never reach the gate carrying a rule nobody implemented.
+CLAIM_RULES = %w[test_only_diff docs_with_guards_diff].freeze
 # ── remedy forms of the scripts this gate NAMES in a refusal ──────────────────
 # Absolute and resolvable. bin/task and bin/gh-auth-refresh live in
 # mcritchie-studio/bin ALONE, so a builder grading a turf-monster or rolio desk
@@ -1629,6 +1633,18 @@ end
 slug = ARGV.shift
 config = YAML.load_file(CONFIG_PATH)
 shapes = config.fetch("shapes")
+# THE SCHEMA CHECK, at load: an unimplemented claim rule is a config error, named
+# before any task is read, never a per-task verdict.
+unimplemented = shapes.filter_map do |name, shape_config|
+  rule = shape_config.is_a?(Hash) ? shape_config["claimable_when"] : nil
+  "#{name}: #{rule}" if rule && !CLAIM_RULES.include?(rule)
+end
+unless unimplemented.empty?
+  warn "dor-check: #{CONFIG_PATH} declares claimable_when rule(s) this gate does not implement " \
+       "(#{unimplemented.join(', ')}). Implement the rule in bin/dor-check's `case claim_rule` block and " \
+       "CLAIM_RULES, or fix the value."
+  exit 2
+end
 defaults = config.fetch("defaults", {})
 
 gate = options[:gate]
@@ -2373,21 +2389,6 @@ if claim_rule
         "in the diff), and a tierless docs claim must not be its cheap door. Re-shape to test-only"
       must_be = nil
     end
-  else
-    # AN UNCLASSIFIED CLAIM RULE REFUSES. A `claimable_when` this gate does not
-    # implement used to fall through and GRANT the claim in silence — the shape
-    # keeping its light contract BECAUSE its guard was unrecognized, which is this
-    # block's own failure arriving through the block itself. Same allow-list
-    # discipline the CI-state gate applies: a state nobody classified is evidence
-    # the gate is out of date, never evidence of health.
-    offenders = []
-    proven = false
-    must_be = nil
-    proven_label = nil
-    errors << "shape #{shape.inspect} declares claimable_when: #{claim_rule.inspect}, a claim rule bin/dor-check " \
-      "does not implement — so the shape's lighter contract is REFUSED rather than granted by an unrecognized " \
-      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / docs_with_guards_diff), " \
-      "or fix the value in config/feature_shapes.yml"
   end
 
   if must_be && offenders.any?
