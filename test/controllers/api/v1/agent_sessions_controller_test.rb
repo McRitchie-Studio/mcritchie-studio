@@ -9,6 +9,10 @@ module Api
     class AgentSessionsControllerTest < ActionDispatch::IntegrationTest
       setup do
         @task = tasks(:in_progress_task) # building
+        # The claim stamped pokemon as the builder, so pokemon is the soul a
+        # task_claim login is entitled to.
+        @task.update_column(:metadata, @task.metadata.to_h.merge("devops" => { "built_by" => "pokemon",
+                                                                                "builders" => ["pokemon"] }))
         @other = tasks(:queued_task)
         @legacy = { "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}" }
       end
@@ -192,6 +196,34 @@ module Api
         login(soul: "nobody")
         assert_response :unprocessable_entity
         assert_match(/not a soul/, error)
+      end
+
+      # Phase one minted a session for whatever soul the shared-secret holder named,
+      # so any holder could log in as carl. The task record now names who may.
+      test "a task_claim login for a soul the claim did not stamp answers 403 with the reason" do
+        assert_no_difference -> { AgentSession.count } do
+          login(soul: "carl")
+        end
+
+        assert_response :forbidden
+        assert_equal "SESSION_FORBIDDEN", JSON.parse(response.body)["error_code"]
+        assert_match(/carl is not #{@task.slug}'s builder \(the claim recorded pokemon\)/, error)
+      end
+
+      test "a review_claim login is for a reviewer the task names, never its builder" do
+        @task.update_columns(stage: "submitted",
+                             metadata: @task.metadata.merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" }]))
+
+        login(soul: "carl", issued_by: "review_claim")
+        assert_response :created
+
+        login(soul: "jasper", issued_by: "review_claim")
+        assert_response :forbidden
+        assert_match(/jasper is not a reviewer #{@task.slug} names \(carl\)/, error)
+
+        login(soul: "pokemon", issued_by: "review_claim")
+        assert_response :forbidden
+        assert_match(/pokemon built #{@task.slug}/, error)
       end
 
       test "whoami names the session, or legacy for the shared secret's token" do

@@ -11,7 +11,8 @@ module Api
       end
 
       def create
-        activity = Activity.new(activity_params)
+        # The session's soul is the author when a session is present (the param is ignored).
+        activity = Activity.new(activity_params.merge(agent_slug: session_actor(activity_params[:agent_slug])))
         rescue_and_log(target: activity) do
           activity.save!
           render_data(activity, status: :created)
