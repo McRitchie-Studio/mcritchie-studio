@@ -375,10 +375,14 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    Editing the cast cards afterwards never changes an existing alt video:
    change the cards and press Build Clips again for another version.
 2. **Take the hand-off** on each clip card, in time order: **Download 25 s
-   clip** (the source chunk, as an attachment), **Download character assets**
-   (the character sheet of each person this alt video swaps in that window),
-   and **Copy prompt** (built from the alt video's own swaps). With no sheet
-   the card says so and links to the athlete.
+   clip** (the source chunk, as an attachment), the **lettered frames** (each
+   with **Download**; make them first, see
+   [Lettered references](#lettered-references)), one sheet button per person
+   this alt video swaps in that window, labelled `Sheet 1 · Person B · #4 Dak
+   Prescott`, and **Copy prompt** (built from the alt video's own swaps). Add
+   the sheets to Higgsfield in their numbered order: the prompt names them as
+   "character sheet 1", "character sheet 2". With no sheet the card says so
+   and links to the athlete.
 3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
    click it to choose the file; it uploads at once. Each upload is a numbered
    **version**, kept and never overwritten, at
@@ -411,6 +415,64 @@ where they were; `video_chunk_takes` is kept, read by nothing).
 Timing comes from each chunk's `start_ms` and `end_ms`
 (`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
 run a frame long and a generated file may differ slightly.
+
+### Lettered references
+
+The clip prompt names people by **letter** and players by **jersey number**:
+`Person B (lead) -> #4 Dak Prescott, Cowboys white (character sheet 1)`. A
+letter is fixed per source video: Person 1 is A, Person 2 is B, and so on, in
+every clip and every alt video. The prompt lists every swapped person seen in
+the clip, leads (lip-synced) and background alike; everyone else is kept. A
+look's number is `appearances.jersey_number`, typed when the look is made or
+its sheet generated, and edited on the person page (**Save number**); without
+one the prompt uses the name. To show Higgsfield who is who, each clip gets 2-3
+stills of the source with the letters drawn over the people.
+
+Letters are not names. The agent places a tag where it sees a person; only
+the operator says who that person is.
+
+1. **Extract.** On the Mac, from the hub checkout:
+
+   ```bash
+   bin/clip-references <slug> --extract              # dev bucket, localhost:3000
+   bin/clip-references <slug> --extract --alt 2      # choose frames that show alt video 2's swaps
+   bin/clip-references <slug> --extract --production # production API and bucket
+   ```
+
+   For each chunk it picks 2-3 moments from the cast's sightings where the
+   chunk's people are clearly on screen (with `--alt`, the ones that alt video
+   swaps first), stills them with ffmpeg (an accurate seek: `-ss` before `-i`),
+   and writes `~/projects/.corpus/music_videos/references/<slug>/tags.json`.
+   `--dry-run` prints the moments only.
+2. **Place the tags.** Open each frame under `references/<slug>/frames/` and
+   fill its `tags` with one entry per person you can see. `expect` is who the
+   sightings put on screen; tag who you actually see, using any letter in
+   `people` (each carries the cast card's visual label):
+
+   ```json
+   { "file": "frames/chunk_03_ref_01.jpg", "t_ms": 45000, "expect": ["A", "B", "C"],
+     "tags": [ { "letter": "B", "x": 0.50, "y": 0.50 }, { "letter": "C", "x": 0.80, "y": 0.42 } ] }
+   ```
+
+   `x` and `y` are the fractions of the frame's width and height where the tag
+   goes: over the chest, clear of the face. A frame left with no tags is dropped.
+3. **Apply.**
+
+   ```bash
+   bin/clip-references <slug> --apply --dry-run      # draw into references/<slug>/lettered/ and look at them
+   bin/clip-references <slug> --apply                # draw, upload, post
+   bin/clip-references <slug> --apply --chunk 3      # one chunk
+   ```
+
+   Each tag is drawn as a yellow disc with the letter in black by ImageMagick
+   (`magick`; this ffmpeg has no `drawtext`). The JPEGs go to
+   `music_videos/<artist>/<video>/chunks/refs/<video>_chunk_<NN>_<mmss>_<mmss>_ref_<NN>.jpg`
+   and each chunk's set is posted to
+   `POST /api/v1/music_videos/:slug/chunks/:ordinal/references`
+   (`{ frames: [{ object_key, t_ms, letters }] }`, agent token; any other key is
+   refused). A post replaces the chunk's frames; a re-tile at the same windows
+   keeps them. The frames belong to the source's chunks, so every alt video's
+   clip card shows them.
 
 ### The final stitch
 

@@ -144,6 +144,20 @@ its progress. Built by `generated-takes-and-stitch-preview` (piece 3) and
 reshaped by `alt-videos-and-clip-builder` (piece 13). The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).
 
+**Lettered references.** The clip prompt (`MusicVideos::ClipPrompts`, wording
+in `MusicVideos::ClipPrompt.lettered`) names people by a letter fixed per
+source (`MusicVideos::PersonLetters`: Person N is the Nth letter) and players by
+the look's `appearances.jersey_number`, read live at render, with one line per
+swapped person in the window: lead (the chunk's target, or two clear sightings
+in the window: lip-synced) or background. Sheets are numbered in the card's
+download order. A window that swaps nobody keeps the single-target prompt. Each
+chunk can carry 2-4 lettered reference frames (`video_clips.reference_frames`,
+jsonb `[{ object_key, t_ms, letters }]`, written whole by `bin/clip-references
+--apply` through `POST /api/v1/music_videos/:slug/chunks/:ordinal/references`);
+the agent places the tags by eye, ImageMagick draws them on the Mac. Built by
+`lettered-clip-references`, piece 16. The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#lettered-references).
+
 **The final stitch.** "Generate full video", on an alt video once every clip
 has a primary version and none is flagged (`AltVideo#ready_to_stitch?`),
 records a numbered stitch of that alt video in `video_stitches` with the
@@ -174,6 +188,10 @@ fulfils a request through the API, and `StitchVideoJob`, which the button
 enqueues only where ffmpeg is on `PATH` (a local hub). On production a request
 stays `requested` until the Mac runs the bin.
 
+Lettered reference frames are made on the Mac too (`bin/clip-references`):
+ffmpeg stills the source, the agent places the tags, and ImageMagick (`magick`)
+draws them, since the Homebrew ffmpeg has no `drawtext`.
+
 ## Data model
 
 Record slugs stay kebab-case, the app's existing convention.
@@ -186,8 +204,8 @@ Record slugs stay kebab-case, the app's existing convention.
 | `artist_memberships` | member → group, start and end years |
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
-| `appearances` | gains a nullable music video link |
-| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status. Chunks are cut once per source and shared by every alt video. The chunk regenerate columns are piece 3's, now unread |
+| `appearances` | gains a nullable music video link, and `jersey_number` (0-99, nullable): the number a look wears, named in clip prompts |
+| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status. Chunks are cut once per source and shared by every alt video, with their lettered `reference_frames` (jsonb: object key, time, letters). The chunk regenerate columns are piece 3's, now unread |
 | `alt_videos` | one generated version of a source: `slug` (`<source>-alt-<n>`), source (`music_video_slug`), `number` per source, and `swaps` (jsonb snapshot: performer ordinal, person and look slugs and names) |
 | `alt_video_clips` | alt video (`alt_video_slug`) × chunk: `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
 | `alt_video_clip_versions` | one generated MP4 uploaded back for a clip (`alt_video_clip_id`): version `number`, asset, size, file name, and `primary_since` (the latest is the primary) |
@@ -218,6 +236,7 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
 music_videos/<artist>/<video>/stills/person_01_0230.jpg
 music_videos/<artist>/<video>/clips/<video>_clip_01_<seam>_<shape>_<start>_<end>.mp4
 music_videos/<artist>/<video>/chunks/<video>_chunk_01_<start>_<end>.mp4
+music_videos/<artist>/<video>/chunks/refs/<video>_chunk_01_<start>_<end>_ref_01.jpg   lettered reference frames
 music_videos/<artist>/<video>/alt_videos/01/clips/<video>_alt_01_chunk_01_<start>_<end>_v01.mp4
 music_videos/<artist>/<video>/alt_videos/01/stitched/<video>_alt_01_stitched_01.mp4
 music_videos/<artist>/<video>/generated/…  and  stitched/…   piece 3-4 objects, kept in place
