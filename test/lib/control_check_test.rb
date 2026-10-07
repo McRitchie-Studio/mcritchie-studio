@@ -84,7 +84,7 @@ class ControlCheckTest < Minitest::Test
   # The stub CLI and its store live OUTSIDE the repo under test. Writing them
   # inside it would make the working tree dirty, and control-check (correctly)
   # refuses a dirty tree — the harness would have been testing its own mess.
-  def run_control(dir, slug: "task-test", env: {})
+  def run_control(dir, slug: "task-test", env: {}, args: [])
     Dir.mktmpdir do |stub_dir|
       task_bin, store = stub_task_bin(stub_dir)
       base_env = SessionEnv.neutralized.merge(
@@ -94,7 +94,7 @@ class ControlCheckTest < Minitest::Test
         "CONTROL_CHECK_SKIP_PREPARE" => "1",
         "CONTROL_CHECK_TASK_BIN" => task_bin
       ).merge(env)
-      out = IO.popen(base_env, "#{BIN} #{slug} 2>&1", &:read)
+      out = IO.popen(base_env, [BIN, slug, *args, { err: [:child, :out] }], &:read)
       code = $?.exitstatus
       recorded = JSON.parse(File.read(store)).dig("metadata", "devops", "checks_run")
       return [out, code, recorded]
@@ -124,18 +124,40 @@ class ControlCheckTest < Minitest::Test
     end
   end
 
-  def test_a_still_passing_pre_change_file_yields_no_signal
+  # Guard catalog row 1.4: the author's sentence travels IN the NO-SIGNAL stamp, so a
+  # NO-SIGNAL stamp without one never exists.
+  def test_a_still_passing_pre_change_file_yields_no_signal_with_the_sentence_in_the_stamp
     # Both sides satisfy the stub command — a rename/consolidation/refactor looks
     # exactly like a quietly deleted assertion, which is the whole reason this
     # verdict does not refuse.
     with_repo(base: { "test/models/a_test.rb" => "NEWMARKER old\n" },
               head: { "test/models/a_test.rb" => "NEWMARKER new\n" }) do |dir|
-      out, code, recorded = run_control(dir)
+      out, code, recorded = run_control(dir, args: ["--why", "renamed the helper; coverage identical"])
 
       assert_equal 0, code, out
       assert_includes out, "VERDICT: NO-SIGNAL"
       assert_includes recorded.first, "NO-SIGNAL"
-      refute_includes out, "distinguishes nothing\ncontrol-check: ERROR"
+      assert_includes recorded.first, "why: renamed the helper; coverage identical"
+    end
+  end
+
+  def test_a_no_signal_run_without_a_sentence_stamps_nothing_and_asks_for_it
+    with_repo(base: { "test/models/a_test.rb" => "NEWMARKER old\n" },
+              head: { "test/models/a_test.rb" => "NEWMARKER new\n" }) do |dir|
+      out, code, recorded = run_control(dir)
+
+      assert_equal 1, code, out
+      assert_includes out, "NO-SIGNAL needs your sentence"
+      assert_empty recorded, "a NO-SIGNAL stamp without a sentence must never be written"
+    end
+  end
+
+  def test_with_nothing_to_replay_the_sentence_becomes_a_control_line_naming_the_diff
+    with_repo(base: {}, head: { "test/models/new_test.rb" => "NEWMARKER\n" }) do |dir|
+      out, code, recorded = run_control(dir, args: ["--why", "forced a 404; watched it fail"])
+
+      assert_equal 0, code, out
+      assert_equal ["[control] test/models/new_test.rb → forced a 404; watched it fail"], recorded
     end
   end
 

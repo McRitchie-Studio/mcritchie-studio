@@ -234,8 +234,8 @@ module ControlReplay
       "The pre-change test FAILED against unchanged production code, so this diff was necessary."
     when NO_SIGNAL
       "The pre-change test PASSED, so the replay distinguishes nothing — a rename, a move, a " \
-        "consolidation and a deleted assertion all look like this. Review judges; see the author's " \
-        "[control] line for which it is."
+        "consolidation and a deleted assertion all look like this. Review judges; the author's " \
+        "sentence follows as `why:`."
     else
       "The post-change tests did not pass, so the before/after comparison is not this diff's headline."
     end

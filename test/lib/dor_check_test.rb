@@ -2150,19 +2150,6 @@ class DorCheckTest < Minitest::Test
     assert_match(/does the changed test still bite/, out)
   end
 
-  def test_integration_test_only_refuses_a_control_that_names_no_file_from_the_diff
-    # A control that could have been written before the change was made is a
-    # sentence, not a result. This is the one mechanical claim the control gate
-    # makes, so it has to actually bite.
-    devops = TEST_ONLY_CONTRACT.merge(
-      "checks_run" => ["[control] I ran a control and it failed, honest"]
-    )
-    out, code = with_changed_files(TEST_ONLY_DIFF) { check(devops) }
-
-    refute_equal 0, code, out
-    assert_match(/names no file from this diff/, out)
-  end
-
   def test_integration_a_control_may_name_the_file_by_basename
     # The short spelling a human actually types must satisfy it — refusing it would
     # only teach people to paste the long path without running anything. The
@@ -2367,19 +2354,15 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  def test_integration_a_no_signal_control_asks_for_the_sentence_not_a_refusal_of_the_change
-    # NO-SIGNAL is what a rename, a move, a consolidation AND a quietly deleted
-    # assertion all look like. The gate must not refuse the CHANGE for it — it asks
-    # the author for the one thing the machine cannot supply.
+  # Guard catalog row 1.4: bin/control-check stamps NO-SIGNAL only with the author's
+  # `why:` sentence, so the gate no longer asks for one beside a NO-SIGNAL stamp.
+  def test_integration_a_no_signal_stamp_alone_satisfies_the_control
     with_control_repo do |dir|
       out, code = control_check(TEST_ONLY_CONTRACT.merge("checks_run" => []), dir,
                                 env: { "DOR_CHECK_CONTROL_EVIDENCE" => "fresh:NO-SIGNAL" })
 
-      refute_equal 0, code, out
-      assert_match(/NO-SIGNAL/, out)
-      assert_match(/rename/, out)
-      # The remedy is a sentence, not a re-run and not a different shape.
-      assert_match(/Add the sentence/, out)
+      assert_equal 0, code, out
+      refute_match(/Add the sentence/, out)
     end
   end
 

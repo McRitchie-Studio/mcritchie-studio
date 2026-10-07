@@ -32,6 +32,14 @@
 # a consolidation and a deleted assertion are indistinguishable here, and why a
 # false refusal on legitimate work would cost more than this gate collects.
 #
+# THE SENTENCE TRAVELS IN THE STAMP (guard catalog row 1.4). A NO-SIGNAL replay needs
+# the author's sentence saying which of those it is. `--why "<sentence>"` writes it
+# INTO the stamp, and a NO-SIGNAL run without one stamps nothing and asks for it, so
+# a NO-SIGNAL stamp without a sentence never exists and bin/dor-check never checks
+# for one. With nothing to replay (an added file, an e2e/ spec), `--why` records the
+# author's `[control]` line itself, naming this diff's files, so that line always
+# names a file from the diff.
+#
 # ENV SEAMS (tests):
 #   CONTROL_CHECK_ROOT          repo root (default: cwd's git toplevel via RepoRoot)
 #   CONTROL_CHECK_TASK_BIN      board CLI (default: bin/task)
@@ -76,15 +84,47 @@ rescue SystemCallError
   false
 end
 
+# Send ONLY the line this runner owns and let the write funnel merge it against
+# the board's current state (lib/cert_evidence.rb): a stale snapshot resent
+# wholesale is what wiped newer tier lines.
+def record_line!(slug, line)
+  if BoardChecks.fetch(TASK_BIN, slug).nil?
+    warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
+         "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+         "--checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: File::NULL)
+    warn "control-check: ran, but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run, " \
+         "or record by hand: bin/task update #{slug} --checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
+  if missing && !missing.empty?
+    warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
+         "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \
+         "--checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  note "recorded: #{line}"
+end
+
 USAGE = <<~TXT
-  usage: bin/control-check <task-slug>
+  usage: bin/control-check <task-slug> [--why "<sentence>"]
 
     Execute the `test-only` shape's control: run the changed test files at HEAD,
-    then restore their PRE-CHANGE content and run those, and stamp the verdict.
+    then run their PRE-CHANGE content, and stamp the verdict.
 
+    --why "<s>"   the author's sentence: which of rename/move/consolidation/… a
+                  NO-SIGNAL replay is (required to stamp NO-SIGNAL), or, with
+                  nothing to replay, the control you ran by hand (recorded as the
+                  [control] line, naming this diff's files)
     --help, -h    this text — REPLAYS NOTHING
 
-  Takes exactly one task slug and no flags. The pre-change files run in a
+  Takes exactly one task slug. The pre-change files run in a
   throwaway worktree cut at the merge base; this tree is never written.
 TXT
 
@@ -100,12 +140,14 @@ ARGS = CliArgGuard.guard!(
   program: "control-check",
   usage: USAGE,
   allow_positional: true,
+  value: ["--why"],
   help_exit: 0,
   consequence: "NOTHING was replayed — the tree was not touched and no verdict was stamped."
 )
 die "usage: bin/control-check <task-slug>" unless ARGS.positionals.size == 1
 
 slug = ARGS.positionals.first
+why = ARGS.first("--why").to_s.strip
 
 root = RepoRoot.code_root(ENV["CONTROL_CHECK_ROOT"], ROOT)
 die "#{root} is not a git repo — the control replays committed content, so it needs one" unless
@@ -142,8 +184,13 @@ if replay.empty?
   note "nothing to replay — no changed file has both a pre-change version and a runner here."
   note "  deferred (pre-change version, no runner in this ecosystem): #{deferred.join(', ')}" if deferred.any?
   note "  added (no pre-change version to replay):                   #{added.join(', ')}" if added.any?
-  note "This is the REVIEWER-PROMPT half of the control. Record what you ran by hand:"
-  note "  bin/task update #{slug} --checks '[control] <file> → <what you observed>'"
+  if why.empty?
+    note "This is the REVIEWER-PROMPT half of the control. Record what you ran by hand:"
+    note "  bin/control-check #{slug} --why '<the control you ran> → <what you observed>'"
+    exit 0
+  end
+  # The author's line, written here so it names this diff's files by construction.
+  record_line!(slug, "[control] #{(deferred + added).join(', ')} → #{why}")
   exit 0
 end
 
@@ -226,29 +273,13 @@ puts
 note "VERDICT: #{verdict}"
 note ControlReplay.explanation(verdict)
 
-# Send ONLY the line this runner owns and let the write funnel merge it against
-# the board's current state (lib/cert_evidence.rb): a stale snapshot resent
-# wholesale is what wiped newer tier lines.
-if BoardChecks.fetch(TASK_BIN, slug).nil?
-  warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
-       "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
-       "--checks #{Shellwords.escape(line)}"
+if verdict == ControlReplay::NO_SIGNAL && why.empty?
+  warn "control-check: NO-SIGNAL needs your sentence before it is stamped: a rename, a move, a " \
+       "consolidation and a deleted assertion all look like this, and only you know which. Re-run with " \
+       "it: bin/control-check #{slug} --why '<renamed/consolidated/…>, coverage preserved because …'. " \
+       "Nothing was stamped."
   exit 1
 end
-
-unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: File::NULL)
-  warn "control-check: ran, but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run, " \
-       "or record by hand: bin/task update #{slug} --checks #{Shellwords.escape(line)}"
-  exit 1
-end
-
-missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
-if missing && !missing.empty?
-  warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
-       "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \
-       "--checks #{Shellwords.escape(line)}"
-  exit 1
-end
-
-note "recorded: #{line}"
+line = "#{line} why: #{why}" unless why.empty?
+record_line!(slug, line)
 exit 0

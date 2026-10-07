@@ -333,26 +333,6 @@ def tier_satisfied?(checks, tier)
   checks.any? { |line| line.to_s =~ /\A\s*\[\s*#{Regexp.escape(tier)}\s*[\]:]/i }
 end
 
-# Does this [control] line name a file that is actually in the diff? The one
-# mechanical claim the control gate makes (see the block at the shape checks): it
-# separates a control ABOUT THIS CHANGE from a sentence that could have been
-# written before the change existed.
-#
-# Full path OR basename, because a builder writing the line by hand reasonably
-# types `hub_test.rb` rather than `test/integration/hub_test.rb`, and refusing the
-# short form would only teach people to paste the long one without running
-# anything. The basename still has to belong to a file in THIS diff, which is the
-# property being asserted; the spelling is not.
-def control_names_a_changed_file?(line, observed)
-  text = line.to_s
-  observed.any? do |path|
-    file = path.to_s.strip
-    next false if file.empty?
-
-    text.include?(file) || text.include?(File.basename(file))
-  end
-end
-
 # Which observed paths bin/control-check CAN replay: a runnable Ruby test file
 # that EXISTS at the diff base, so there is a pre-change version to run against
 # current production code. A rename shows up here through its OLD path (the
@@ -2937,7 +2917,7 @@ if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include
   # — so in the review lane it grades against the task BRANCH's committed tree, not
   # the reviewer's checkout (control_fingerprint), and a tree nobody can hash is
   # :missing rather than a synthesised :fresh.
-  control_lane, verdict = control_evidence_status(checks, control_fingerprint)
+  control_lane, = control_evidence_status(checks, control_fingerprint)
   replayable = control_replayable_files(observed)
 
   if replayable.any? && control_lane != :fresh
@@ -2953,31 +2933,13 @@ if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include
       "\"does the changed test still bite?\", which is the question a tier list cannot ask about a diff " \
       "with no behavior in it. Nothing in this diff is automatically replayable (an added file has no " \
       "pre-change version; e2e/ and tests/ have no runner here), so this half is yours: run the control and " \
-      "record what you SAW, e.g. #{TASK_CMD} update #{task["slug"] || slug} --checks '[control] pre-change " \
-      "test/integration/hub_test.rb at HEAD → 1 failure at line 42 (the assertion I deleted); post-change " \
-      "green' — or, for added coverage, the mutation you forced and the failure it produced"
-  elsif control_lines.any? && observed.any? &&
-        control_lines.none? { |line| control_names_a_changed_file?(line, observed) }
-    sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
-    errors << "the [control] line names no file from this diff, so it is not evidence ABOUT this change — " \
-      "a control that could have been written before the change was made is a sentence, not a result. " \
-      "Name the test file you controlled (one of: #{sample}) along with the command you ran and the " \
-      "failure you observed"
+      "record what you SAW with `bin/control-check #{task["slug"] || slug} --why '<the control you ran> → " \
+      "<the failure it produced>'`, which writes the [control] line naming this diff's files"
   end
 
-  # A NO-SIGNAL replay is the dangerous-looking case, and it is ALSO what a rename
-  # or a consolidation produces. The machine cannot tell them apart, so it does not
-  # try to — it hands the reviewer a machine-observed fact and asks the author for
-  # the sentence that disambiguates it. Refusal here is for the MISSING sentence,
-  # never for the verdict.
-  if control_lane == :fresh && verdict == ControlReplay::NO_SIGNAL && control_lines.empty?
-    errors << "the executed control came back NO-SIGNAL: the pre-change test PASSED against current " \
-      "production code, so the replay proves nothing about whether this change was needed. That is what a " \
-      "rename, a move, a consolidation AND a silently-deleted assertion all look like — the machine cannot " \
-      "tell them apart, and it is not refusing your change for it. Add the sentence that can: bin/task " \
-      "update #{task["slug"] || slug} --checks '[control] <file> → renamed/consolidated/… , coverage " \
-      "preserved because …'"
-  end
+  # NO-SIGNAL and "names no file" are not checked here (guard catalog row 1.4):
+  # bin/control-check stamps NO-SIGNAL only with the author's `why:` sentence inside
+  # the stamp, and writes the hand [control] line itself, naming the diff's files.
 end
 
 # ==== BROWSER EVIDENCE — did a browser ever SEE the browser code? ==============
