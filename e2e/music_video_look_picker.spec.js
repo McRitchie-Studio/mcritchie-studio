@@ -13,7 +13,10 @@ const { loginWithMagicLink } = require("./helpers");
 const VIDEO = "/music_videos/test-cinematic-look-picker-demo";
 const card = (page, n) => page.locator(`[data-test='performer-card'][data-ordinal='${n}']`);
 const recast = (page, n) => card(page, n).locator("[data-test='performer-recast']");
-const option = (scope, name) => scope.locator("[data-test='look-option']").filter({ hasText: name });
+// Exact on the look's name: a new look's iced twin ("<name> · iced") is listed beside it.
+const exactly = (text) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+const option = (scope, name) => scope.locator("[data-test='look-option']")
+  .filter({ has: scope.page().locator("[data-test='look-option-name']", { hasText: exactly(name) }) });
 
 test("operator opens the look dropdown, previews a look, and generates a new one from the card", async ({ page }) => {
   const name = `Road Teal ${Date.now()}`;
