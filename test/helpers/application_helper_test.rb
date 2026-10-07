@@ -1172,10 +1172,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil action_description("not-an-act")
   end
 
-  # DRIFT GUARD. The defect this replaces was a caption nothing asserted: the docs
-  # sweep in test/docs/share_insights_precondition_docs_test.rb bans /confirmed\s+
-  # insights?/ across docs/agents/**, but ACTION_DESCRIPTIONS lives in app/ and was
-  # never in that corpus, so this one site survived the correction. The bank is
+  # DRIFT GUARD. The defect this replaces was a caption nothing asserted. The bank is
   # ActionGrade.banked whichever grader wrote the row, and `mcr` is an audit OF a
   # grade (writable anonymously — heartbeat_grade_auth_test.rb), so no caption may
   # sell the act as publishing a confirmed subset.

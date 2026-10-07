@@ -29,36 +29,23 @@ the Procedure below.
 
 ## Preconditions
 
-**The bank is non-empty.** That is the whole entry condition, and it is stated
-here as the set the generator publishes — `Insights::DocGenerator.banked_insights`
-reads exactly this and filters on nothing else:
-
-```ruby
-ActionGrade.banked
-```
-
-Ask the **board** that question, never a local database: every local one answers
-zero, and the Procedure's verification read below is the same question asked
-correctly. If the bank is empty, report "nothing to share" and stop.
+**The bank is non-empty.** That is the whole entry condition: the set the
+generator publishes, `app/services/insights/doc_generator.rb#banked_insights`,
+has at least one row. Ask the **board** that question, never a local database:
+every local one answers zero, and the Procedure's verification read below is the
+same question asked correctly. If the bank is empty, report "nothing to share"
+and stop.
 
 **Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
 ROW: `xan` is Xan's grade of the activity, `mcr` is Alex's audit **of
 that grade** — a second row on the same target, written from the browser drawer
 and never by the agent CLI, because the agent API always grades as `xan`. That
-is PROVENANCE, NOT PROOF: it records who wrote the row (the drawer's writes need
-an admin), and nothing reads it as a gate. Every other reader of the bank agrees: the feed-forward
-`/api/v1/insights` hook and the `/xan/insights` page both read
-`ActionGrade.banked` with no grader filter.
-
-So an entry condition of `grader: "mcr"` would stand this SOP down over every
-lesson an agent can bank — which is precisely what it did. This section used to
-require Alex's confirmation while all five banked lessons were Xan-graded, so
-the SOP reported "nothing to share" over the bank it exists to publish
-(`/tasks/sop-precondition-blocks-sharing`). The guard in
-`test/docs/share_insights_precondition_docs_test.rb` now EXECUTES the condition
-stated above and holds it equal to the set the generator publishes, so prose and
-query cannot drift apart again in silence.
+is PROVENANCE, NOT PROOF: it records who wrote the row, and nothing reads it as a
+gate. Every other reader of the bank agrees: the feed-forward `/api/v1/insights`
+hook and the `/xan/insights` page read the same banked set with no grader filter.
+An entry condition on `grader: "mcr"` would stand this SOP down over every lesson
+an agent can bank.
 
 ## Procedure
 

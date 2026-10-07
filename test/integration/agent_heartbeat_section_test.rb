@@ -91,11 +91,8 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
                   text: "Share the banked insights into the docs", count: 1
   end
 
-  # DRIFT GUARD, at the surface the operator actually reads. The docs sweep in
-  # test/docs/share_insights_precondition_docs_test.rb bans this claim across
-  # docs/agents/**; this heartbeat card renders from app/, which that sweep cannot
-  # see — which is why the caption outlived the six-doc correction. Both halves are
-  # now covered.
+  # DRIFT GUARD, at the surface the operator actually reads: the heartbeat card
+  # renders from app/, so the caption is pinned where it is rendered.
   test "the rendered heartbeat card never sells the share act as confirmed-only" do
     get agent_path("xan")
     assert_response :success

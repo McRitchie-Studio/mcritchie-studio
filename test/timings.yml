@@ -167,7 +167,6 @@ test/docs/qa_release_misfile_row_docs_test.rb: 0.05
 test/docs/reclaim_stage_channel_docs_test.rb: 0.96
 test/docs/review_handoff_mint_docs_test.rb: 0.07
 test/docs/review_lane_docs_test.rb: 3.63
-test/docs/share_insights_precondition_docs_test.rb: 0.24
 test/docs/ship_docs_sync_docs_test.rb: 0.94
 test/docs/submit_wait_docs_test.rb: 0.17
 test/docs/sop_registry_docs_test.rb: 0.14
