@@ -104,6 +104,7 @@ class PokemonPokedexTest < ActiveSupport::TestCase
                           created_at: 5.minutes.ago, updated_at: 5.minutes.ago)
     # A shiny evolution snapshot (orphan task_slug keeps the fixture free of a
     # genesis event) — the most recent FIRST shiny sighting.
+    without_slug_key(:task_events, :task_slug) # a backfilled row from before the key
     TaskEvent.create!(task_slug: "ghost-task", from_stage: "building", to_stage: "submitted",
                       occurred_at: 1.hour.ago, metadata: { "mascot" => { "slug" => pupitar.slug, "shiny" => "true" } })
 
@@ -340,6 +341,7 @@ class PokemonPokedexTest < ActiveSupport::TestCase
   # task no longer resolves — it must drop out silently, not raise on a public page.
   test "[unit] a ship with neither a snapshot nor a resolvable task is skipped cleanly" do
     Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1, base: "pikachu", evolution: [])
+    without_slug_key(:task_events, :task_slug) # a backfilled row from before the key
     TaskEvent.create!(task_slug: "ghost-task", from_stage: "assembled", to_stage: "shipped",
                       occurred_at: 5.minutes.ago, metadata: { "backfilled" => true })
 

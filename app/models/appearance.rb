@@ -72,6 +72,7 @@ class Appearance < ApplicationRecord
   before_validation :take_the_athletes_number, on: :create
   before_create :set_initial_position
   after_create :become_default_if_first
+  before_destroy :remember_default_holders
   after_destroy :release_default_pointer
   after_destroy :release_recasts
 
@@ -300,26 +301,23 @@ class Appearance < ApplicationRecord
   # The FIRST look a person gets becomes their default. Doing it here rather
   # than at a call site means a person can never end up with looks and no
   # default, which is the state every lookup would have to special-case.
-  #
-  # RESOLVING rather than testing for a blank pointer keeps that promise on one
-  # more path: a person whose default was left aimed at a look that is gone is
-  # healed by their next look instead of staying stuck, because the old guard
-  # read a dangling pointer as "already has one".
   def become_default_if_first
     person&.resolve_default_appearance!
   end
 
-  # A LOOK THAT GOES AWAY MUST RELEASE THE SLOT IT HELD.
+  # A LOOK THAT GOES AWAY HANDS THE SLOT ON.
   #
-  # Nothing else clears `people.default_appearance_slug` — there is no foreign
-  # key on it and no dependent: on this side of the association — so without
-  # this the pointer outlives the row and freezes the person in "has looks,
-  # resolves no default" for good. Scoped by the COLUMN rather than through
-  # #person because the column is a plain string that anyone could hold.
+  # `people.default_appearance_slug` carries a foreign key with ON DELETE SET NULL,
+  # so the DELETE itself clears every pointer aimed at this look, and by
+  # after_destroy no row names it any more. The holders are read before the
+  # delete (scoped by the COLUMN, since anyone may hold it, not only #person) and
+  # each is re-pointed at its oldest surviving live look afterwards.
+  def remember_default_holders
+    @default_holder_ids = Person.where(default_appearance_slug: slug).pluck(:id)
+  end
+
   def release_default_pointer
-    Person.where(default_appearance_slug: slug).find_each do |holder|
-      holder.resolve_default_appearance!
-    end
+    Person.where(id: Array(@default_holder_ids)).find_each(&:resolve_default_appearance!)
   end
 
   # A recast that named this look keeps its athlete and loses the look (the

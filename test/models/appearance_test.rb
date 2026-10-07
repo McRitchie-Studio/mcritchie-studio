@@ -265,9 +265,8 @@ class AppearanceTest < ActiveSupport::TestCase
     assert_not_equal third.slug, @burrow.reload.default_appearance_slug
   end
 
-  # The pointer is a bare string column with no foreign key, so "the owner holds
-  # it" is a convention rather than a guarantee. Releasing by COLUMN rather than
-  # through #person is what makes the release complete.
+  # Anyone may hold the pointer, not only the look's own person, so the release
+  # reads holders by COLUMN rather than through #person.
   test "a destroyed look releases every pointer aimed at it" do
     look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
     @chase.update_columns(default_appearance_slug: look.slug)
@@ -279,19 +278,15 @@ class AppearanceTest < ActiveSupport::TestCase
                "a pointer held by someone else dangles just as badly"
   end
 
-  # THE VACUITY TRAP THIS SEAM PRODUCES, pinned as a test.
-  #
-  # A test in PR 1566 passed on a broken tree because `Appearance.delete_all` in
-  # its setup left the pointer aimed at a deleted row: the old guard read a
-  # DANGLING pointer as "already has a default" and never stamped the later
-  # look, so the read never re-pointed and the assertion passed for the wrong
-  # reason. Resolving rather than testing for blank heals that on the next
-  # create, whatever removed the row.
-  test "a look created after a raw delete takes the orphaned slot" do
+  # A raw delete (no callbacks) cannot strand the pointer: the foreign key's ON
+  # DELETE SET NULL clears it, and the person's next look takes the slot.
+  test "a look created after a raw delete takes the freed slot" do
     Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
-    Appearance.delete_all # no callbacks — exactly what the vacuous setup did
-    assert @burrow.reload.default_appearance_slug.present?, "the control — the pointer is dangling"
-    assert_nil @burrow.default_appearance, "the control — and it resolves to nothing"
+    assert @burrow.reload.default_appearance_slug.present?, "the control — the first look holds the slot"
+    AppearanceReferencePhoto.delete_all
+    ArtifactSubject.where.not(appearance_slug: nil).update_all(appearance_slug: nil)
+    Appearance.delete_all # no callbacks
+    assert_nil @burrow.reload.default_appearance_slug, "the key cleared the pointer"
 
     replacement = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
 
