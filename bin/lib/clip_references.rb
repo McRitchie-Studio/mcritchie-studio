@@ -44,8 +44,8 @@ module ClipReferences
   # Up to `count` moments inside [start_ms, end_ms] to still, chosen from the
   # cast's sightings so the chunk's people are clearly visible. focus: the
   # ordinals that matter most (an alt video's swaps); by default everyone in
-  # the window. Greedy: each pick shows the most focus people not yet shown
-  # clearly, then the most clear people. Returns [{ t_ms, letters }] in time
+  # the window. Greedy: each pick shows the most focus people not yet shown,
+  # then the most clear people. Returns [{ t_ms, letters }] in time
   # order, letters = everyone sighted at that moment.
   def pick_times(performers, start_ms:, end_ms:, focus: nil, count: FRAMES)
     lo = start_ms + EDGE_MS
@@ -58,20 +58,22 @@ module ClipReferences
     focus = (focus.nil? ? present : focus & present)
     focus = present if focus.empty?
 
-    clear_at = ->(t) { sighted.select { |_o, ss| ss.any? { |s| s["visibility"] == "clear" && (s["t_ms"] - t).abs <= TOLERANCE_MS } }.keys }
+    seen = ->(t, clear_only) { sighted.select { |_o, ss| ss.any? { |s| (s["t_ms"] - t).abs <= TOLERANCE_MS && (!clear_only || s["visibility"] == "clear") } }.keys }
     picked = []
     shown = []
+    mid = (start_ms + end_ms) / 2
     while picked.size < count
       open = moments.reject { |t| picked.any? { |p| (p - t).abs < MIN_GAP_MS } }
       break if open.empty?
 
-      mid = (start_ms + end_ms) / 2
+      # Focus people not shown yet (background people are often only partly
+      # visible, so any sighting counts), then focus people clear, then anyone clear.
       best = open.max_by do |t|
-        clear = clear_at.call(t)
-        [(clear & (focus - shown)).size, (clear & focus).size, clear.size, -(t - mid).abs]
+        clear = seen.call(t, true)
+        [(seen.call(t, false) & (focus - shown)).size, (clear & focus).size, clear.size, -(t - mid).abs]
       end
       picked << best
-      shown |= clear_at.call(best) & focus
+      shown |= seen.call(best, false) & focus
     end
     fill_evenly(picked, lo, hi, [count, 2].min)
     picked.sort.map { |t| { "t_ms" => t, "letters" => seen_at(sighted, t) } }

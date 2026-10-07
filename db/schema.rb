@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -263,6 +263,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.datetime "higgsfield_reference_minted_at"
     t.string "higgsfield_reference_status"
     t.datetime "higgsfield_reference_synced_at"
+    t.integer "jersey_number"
     t.string "music_video_slug"
     t.integer "performer_ordinal"
     t.string "person_slug", null: false
@@ -2186,6 +2187,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
     t.text "prompt", null: false
+    t.jsonb "reference_frames", default: [], null: false
     t.string "regenerate_note"
     t.datetime "regenerate_requested_at"
     t.string "seam"
