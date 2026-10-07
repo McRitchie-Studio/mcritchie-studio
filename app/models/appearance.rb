@@ -271,9 +271,14 @@ class Appearance < ApplicationRecord
 
   # A new look with no number typed wears the athlete's roster number
   # (athletes.jersey_number) when there is one; the operator edits it on the
-  # person page when this look wears another.
+  # person page when this look wears another. A plain query, NOT
+  # person.athlete_profile: loading the association here would cache it on the
+  # caller's Person, and a later read (GatherReferencePhotos' team) would see
+  # the stale row instead of one updated since.
   def take_the_athletes_number
-    self.jersey_number = person&.athlete_profile&.jersey_number if jersey_number.nil?
+    return unless jersey_number.nil? && person_slug.present?
+
+    self.jersey_number = Athlete.where(person_slug:).pick(:jersey_number)
   end
 
   # The FIRST look a person gets becomes their default. Doing it here rather
