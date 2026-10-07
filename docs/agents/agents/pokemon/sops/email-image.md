@@ -1,10 +1,12 @@
 # Email Image
+<!-- registry: make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export -->
 
 ## Status: Active
 
 The Pokémon's `email-image` SOP: make the header image for one transactional
 email, in a Claude Code session, with Alex. You show him what the brand's headers
-are made from, take his direction and his copy, generate candidates through the
+are made from (the brand kit page), ask whether to add references, take his
+direction and his copy, generate candidates through the
 hub, show them to him inline, iterate on his notes, and approve only when he
 says so. Then you export the image and wire it into the app's mailer.
 
@@ -26,7 +28,7 @@ Plan and background: `/Users/alex/projects/.agents/epics/email-image-builder.md`
 
 | Deterministic: the hub | Agentic: you |
 |---|---|
-| The brand kit: references, palette, style, the "never" list (`config/email_brand_kits.yml`) | What the email is for, and which brand |
+| The brand kit: references, palette, style, the "never" list (`config/email_brand_kits.yml` plus the references added on `/email_images/brand_kits/<kit>`) | What the email is for, and which brand |
 | The generator call, the crop to 1200x600, the byte budget, our copy on R2 | The headline and subtext, from Alex's copy |
 | The round cap, the claim, the cost record | Each round's direction, in a sentence the model can use |
 | Approve, retire, export, the catalog snippet | Judging candidates for brand fit before Alex sees them |
@@ -45,7 +47,7 @@ writes one image file into the app's desk. It never merges, deploys, or touches
 
 ## Entry: pick where the CLI runs
 
-Every step below is `bin/email-image <subcommand>`. Run `bin/email-image --help`
+Every step below is `bin/email-image <subcommand>` (step 1 may use the kit page instead). Run `bin/email-image --help`
 for the reference; it is safe anywhere on the line and starts nothing.
 
 **(a) On the production hub. Recommended.** The OpenAI key and the R2 bucket live
@@ -82,7 +84,8 @@ here is not on Alex's page. Use it for a dry run, or when the hub is down.
 1. **The email exists and has a task.** You are building the email (or its
    header) under `bin/task begin`; the image rides that task's PR. No task, stop
    and open one.
-2. **The brand has a kit.** `bin/email-image assets <kit>` lists it; the kits are
+2. **The brand has a kit.** `bin/email-image assets <kit>` lists it, and
+   `/email_images/brand_kits` shows every kit; the kits are
    `turf-monster`, `mcritchie-studio`, `mcritchie-industries`. A new brand is a
    change to `config/email_brand_kits.yml` (its own task), not an improvisation.
 3. **A generator is configured.** If `generate` answers "set OPENAI_API_KEY",
@@ -90,7 +93,46 @@ here is not on Alex's page. Use it for a dry run, or when the hub is down.
 
 ## The loop: one brief
 
-### 1. Brief
+### 1. Show Alex the brand kit, and ask whether to add references
+
+Open the kit page with him, or run the CLI and show him what it prints:
+
+- **The page:** `https://mcritchie.studio/email_images/brand_kits/<kit>` (admin
+  only; linked from `/email_images` as **Brand kits**). It shows each reference
+  large with its role and source, which ones a round sends (`sent #1`, `sent #2`,
+  …), the palette swatches with hex, the font, the style text, the "never"
+  rules, every header already approved for the brand (app, email, variant,
+  approver, date), and the brand's open briefs.
+- **The CLI:**
+
+  ```bash
+  bin/email-image assets turf-monster
+  ```
+
+  It prints the kit, its palette, each reference (`reference <role> …` with
+  `origin=yaml|upload`, `label=`, `note=`, `file=`, `url=`), a palette swatch,
+  the style and never-lists, every approved header (`approved …`), and the kit
+  page's URL (`page …`). Open each `file=` (or fetch each `url=` in mode (a))
+  with Read so Alex sees them in the conversation.
+
+Summarise in two lines what the model will be handed: the mascot or mark, the
+style anchor, any added references and their notes, the colours. Then **ask
+Alex whether to add references** before a round: a new pose, a logo lockup, a
+style example. He adds them on the kit page (**Add a reference**: PNG, JPEG or
+WebP up to 5 MB, a role of mascot, logo, style, product or other, a label, and
+an optional note such as "use this pose"), and archives any that should stop
+being sent. Our own mascots, logos and art only: never a photo of a real person
+or athlete, never a team logo. The CLI only lists references; it does not upload.
+
+**Which references a round sends.** At most four on the `openai_image_header`
+row (one on a row whose `reference_arity` is `one`): the kit's own YAML
+references first, in file order (the mascot or mark leads), then the uploads by
+role (mascot, logo, style, product, other), newest first within a role. Archived
+uploads are never sent. The prompt names each sent upload by its position, role,
+label and note. The page's `sent #n` badges show the cut; re-run `assets` or
+reload the page after an upload to see it.
+
+### 2. Brief
 
 Ask Alex, or read from the email's task: which app and email key, which variant,
 the headline, the subtext, and the text mode.
@@ -110,19 +152,6 @@ bin/email-image brief --app turf-monster --email drop_signup_confirmation \
 - It prints `created <slug>` with the page path. A brief already on file for that
   email and variant, in any state, answers "has already been taken"; use `bin/email-image list` and edit
   it with `bin/email-image brief <slug> --headline …`.
-
-### 2. Show Alex the base assets
-
-```bash
-bin/email-image assets turf-monster
-```
-
-It prints the kit, its palette, each reference (`reference mascot …`,
-`reference style …`), a palette swatch, the style and never-lists, and every
-header already approved for that brand (`approved …`). Open each `file=` (or
-fetch each `url=` in mode (a)) with Read so Alex sees them in the conversation,
-then summarise in two lines what the model will be handed: the mascot or mark,
-the style anchor, the colours.
 
 ### 3. Take his direction and copy
 
@@ -252,8 +281,9 @@ The CLI enforces these; know them so you can explain a refusal.
 
 ## What good looks like
 
-- Alex saw the base assets and every surviving candidate inline, in the
-  conversation, before he chose.
+- Alex saw the brand kit (the page or the base assets inline) and was asked
+  whether to add references before the first round.
+- Alex saw every surviving candidate inline, in the conversation, before he chose.
 - Every round carries his direction in its notes, and `show` tells the story.
 - The approval reads `by alex`, made after his explicit word in the transcript.
 - The app's mailer preview renders the header at 600 px with its alt.
@@ -279,8 +309,11 @@ file path, rounds used and tokens spent, and the email task the image rides.
 
 ## Background
 
-- Code: `bin/email-image`, `app/services/email_images/` (the CLI, `Build`,
-  `Generate`, `Crop`, `BaseAssets`, `Export`), `config/email_brand_kits.yml`,
+- Code: `bin/email-image`, `app/services/email_images/` (the CLI, `BrandKit`,
+  `UploadReference`, `Build`, `Generate`, `Crop`, `BaseAssets`, `Export`),
+  `config/email_brand_kits.yml`, the `email_brand_references` table
+  (`EmailBrandReference`, stored on R2 under `email_brand/<kit>/refs/`), the kit
+  pages (`EmailBrandKitsController`),
   the `openai_image_header` row in `config/image_generators.yml` (its measured
   block holds the latency and token figures quoted here).
 - A round's notes are stored in each candidate's `prompt` as the line

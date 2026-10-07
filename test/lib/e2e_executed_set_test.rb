@@ -20,16 +20,18 @@
 #   [unit] the gate's verdict over hand-built Playwright JSON reports.
 
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../../bin/lib/e2e_executed_set"
 
 class E2eExecutedSetTest < Minitest::Test
   CONTRACT = {
-    "total_specs" => 4,
     "quarantined" => 1,
-    "executed" => 3,
     "quarantine_tag" => "@quarantine",
     "shards" => 2
   }.freeze
+
+  # The committed suite the gate judges against: 4 specs, 1 quarantined, so 3 must run.
+  CENSUS = E2eSpecCensus::Census.new(total: 4, quarantined: 1, lane_files: 2)
 
   # A Playwright JSON report, in the shape Playwright actually emits — VERIFIED by running the
   # real thing and reading it back (top-level `config`/`suites`/`errors`/`stats`; specs nested
@@ -52,7 +54,7 @@ class E2eExecutedSetTest < Minitest::Test
     E2eExecutedSet::Report.new(source: source, doc: doc)
   end
 
-  def gate(reports) = E2eExecutedSet.new(contract: CONTRACT, reports: reports)
+  def gate(reports, census: CENSUS) = E2eExecutedSet.new(contract: CONTRACT, reports: reports, census: census)
 
   def healthy_reports
     [
@@ -101,7 +103,7 @@ class E2eExecutedSetTest < Minitest::Test
     refute_predicate gate(reports), :ok?
     assert_match(/SKIPPED AT RUNTIME/, failures.join)
     assert_match(/landing page loads/, failures.join)
-    # And the arithmetic fires independently — 2 executed, contract says 3.
+    # And the arithmetic fires independently — 2 executed, the census says 3.
     assert_match(/EXECUTED 2 spec/, failures.join)
   end
 
@@ -120,8 +122,8 @@ class E2eExecutedSetTest < Minitest::Test
     failures = gate(reports).failures
 
     refute_predicate gate(reports), :ok?
-    assert_match(/EXECUTED 2 spec\(s\); config\/e2e_lane\.yml pins it at 3/, failures.join)
-    assert_match(/1 FEWER than the contract/, failures.join)
+    assert_match(/EXECUTED 2 spec\(s\); the committed suite under e2e\/ counts 3/, failures.join)
+    assert_match(/1 FEWER than the census/, failures.join)
   end
 
   # --- THE SHARD AXIS ----------------------------------------------------------------
@@ -218,5 +220,34 @@ class E2eExecutedSetTest < Minitest::Test
 
     assert_predicate gate([nested]), :ok?
     assert_equal 3, gate([nested]).executed_tests.size
+  end
+
+  # --- the census is computed, not declared --------------------------------------------
+
+  # Adding a spec moves the expected set with no edit anywhere: the census grows, and a run
+  # that executed the old set is now one short.
+  def test_unit_the_expected_set_follows_the_committed_suite
+    grown = E2eSpecCensus::Census.new(total: 5, quarantined: 1, lane_files: 3)
+
+    assert_equal 4, gate(healthy_reports, census: grown).expected_executed
+    assert_match(/1 FEWER than the census/, gate(healthy_reports, census: grown).failures.join)
+  end
+
+  def test_unit_the_census_counts_bare_specs_and_tags_from_the_files
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "a.spec.js"), <<~JS)
+        test("landing page loads", async () => {});
+        // test("commented out", async () => {});
+        test("rotted spec @quarantine", async () => {});
+      JS
+      File.write(File.join(dir, "b.spec.js"), %(test("tasks page loads", async () => {});\n))
+
+      census = E2eSpecCensus.count(dir, quarantine_tag: "@quarantine")
+
+      assert_equal 3, census.total
+      assert_equal 1, census.quarantined
+      assert_equal 2, census.executed
+      assert_equal 2, census.lane_files
+    end
   end
 end

@@ -182,11 +182,12 @@ lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
 (`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
 `--actor`. A RESUME HONOURS SIX FLAGS — `--slug`, `--repo`, `--agent`,
 `--dev-size`, `--steal`, and `--title` itself — and refuses every OTHER create
-flag with the `bin/task update` remedy rather than dropping it. The first five
-are `BEGIN_RESUME_FLAGS`; `--title` is legal only when you re-run the create line
-on a task that already exists, because it is how that re-run NAMES the task. So
-re-running the create line resumes cleanly, and only the OTHER create flags on it
-(say `--shape`) are refused.
+flag on `begin <slug>` with the `bin/task update` remedy rather than dropping it.
+The first five are `BEGIN_RESUME_FLAGS`; `--title` is legal only when you re-run
+the create line on a task that already exists, because it is how that re-run
+NAMES the task. Re-running the create line resumes cleanly, and its OTHER create
+flags (say `--shape`) are forwarded to `bin/task update <slug>` (guard catalog
+row 3.7).
 
 ### What the wrappers run
 
@@ -196,7 +197,7 @@ task URL. `bin/submit` — the HUB's script, run with that worktree as the cwd �
 runs steps 5-6 (commit → push → **non-draft** PR into `accepted` led by the task
 URL → record `pr_url` (skipped when the board already derives it) → optional
 `bin/fast-check` pre-flight, while CI is already running → **wait for CI to
-settle** → `bin/dor-check` → `move submitted` → read-back verify). The push comes
+settle** → `bin/dor-check` → `move submitted`). The push comes
 before the pre-flight so CI starts about a minute sooner; the pre-flight's
 verdict never stops the ship. One ship mints one board token and hands it to
 every `bin/task` and `bin/dor-check` it spawns (`AGENT_API_TOKEN`; a CLI run on
@@ -292,9 +293,10 @@ Before editing a single file:
    GitHub CI is the one verdict, and `bin/fast-check` is the optional pre-flight
    before it, never evidence the gate reads. Read "owes the CI gate" as "is not
    exempt", never as "must run the full suite locally".
-   **Shape by the files, never the hunk.** `bin/lib/code_diff.rb` classifies by
-   file type: a comment-only `.rb` edit is not `docs`, and `docs` admits prose plus
-   guard tests under `test/docs/` and nothing else. A studio-engine change a
+   **Shape by the files.** `bin/lib/code_diff.rb` classifies by file type, with one
+   exception: `docs` admits prose, guard tests (`test/docs/*_test.rb` or
+   `test/**/*_guard_test.rb`), and Ruby files whose edit changed only comments
+   (`bin/lib/ruby_comment_diff.rb`), and nothing else. A studio-engine change a
    consumer can assert on is `library`, not `ui-only`. A `.github/workflows` change
    is `backend`, and its honest `[integration]` line is the PR's own CI run of the
    changed workflow.

@@ -1,8 +1,8 @@
 # Hub Web Memory: the Allocator Change and Its Measurement Plan
 
 **Task:** [`hub-web-memory-stays-under`](https://mcritchie.studio/tasks/hub-web-memory-stays-under).
-**Owner:** Steffon. **Status:** code shipped through review; the Heroku config change
-waits for Alex's go-ahead and runs in the release lane.
+**Owner:** Steffon. **Status:** jemalloc live on QA (v551) and prod (v561/v562) since
+2026-10-07; the 72h after-window read is pending.
 
 The hub's production web dyno (`mcritchie-studio`, one Standard-2X, 1 GB) climbs
 with traffic and crossed its quota three times in six days. This page records the
@@ -66,17 +66,37 @@ Steffon runs these. No agent runs them without Alex's explicit go-ahead in sessi
 ```bash
 # 0. Baseline first (see "Measure" below); save the output.
 
-# 1. QA smoke: boots on jemalloc, /up answers.
-heroku config:set LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 -a mcritchie-studio-qa
-heroku logs -a mcritchie-studio-qa -n 300 | grep '\[allocator\]'   # expect allocator=jemalloc
-curl -fsS -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-qa.herokuapp.com/up
+# 1. QA prerequisites. libjemalloc ships in the heroku-26 image only; on heroku-24
+#    ld.so ignores the preload and the process stays on glibc. Match prod's
+#    buildpacks too (nodejs, then ruby). Both take effect on the NEXT build.
+heroku apps:info -a mcritchie-studio-qa | grep -i stack           # must read heroku-26
+heroku stack:set heroku-26 -a mcritchie-studio-qa                 # if it does not
+heroku buildpacks -a mcritchie-studio-qa                          # expect 1. heroku/nodejs 2. heroku/ruby
+heroku buildpacks:add --index 1 heroku/nodejs -a mcritchie-studio-qa   # if nodejs is missing
 
-# 2. Production. config:set restarts every dyno (a new release).
+# 2. QA smoke, after a QA build on heroku-26: boots on jemalloc, /up answers.
+heroku config:set LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 -a mcritchie-studio-qa
+heroku logs -a mcritchie-studio-qa -n 300 | grep 'INFO -- : \[allocator\] allocator='   # expect allocator=jemalloc
+curl -fsS -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-qa-26cedb6e8fdc.herokuapp.com/up
+
+# 3. Production. config:set restarts every dyno (a new release).
 heroku config:set LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 -a mcritchie-studio
 heroku releases -a mcritchie-studio -n 2                          # a new vN names LD_PRELOAD
-heroku logs -a mcritchie-studio -n 500 | grep '\[allocator\]'     # web AND worker: allocator=jemalloc
+heroku logs -a mcritchie-studio -n 500 | grep 'INFO -- : \[allocator\] allocator='   # web AND worker: allocator=jemalloc
 curl -fsS -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/up
 ```
+
+**Read the boot line within minutes of the restart.** It prints once per boot,
+and Heroku keeps only the last 1,500 log lines (prod has no log drain), so on
+prod it scrolls out within about half an hour. Once it has, read the same report
+from a one-off on the current release, which runs the same slug and config:
+
+```bash
+heroku run -a mcritchie-studio --no-tty -- 'bin/rails runner "puts AllocatorReport.line"'
+```
+
+Agent telemetry requests also log `[allocator]` text when an agent's command
+mentions it, so grep for `INFO -- : [allocator] allocator=`, not the bare prefix.
 
 Read the QA host from `heroku domains -a mcritchie-studio-qa` if the herokuapp URL
 does not answer. The boot line looks like:
@@ -92,7 +112,12 @@ ignores it.
 
 ```bash
 heroku config:unset LD_PRELOAD -a mcritchie-studio
+heroku config:unset LD_PRELOAD -a mcritchie-studio-qa
 ```
+
+QA's stack and buildpack changes do not need reverting for an allocator rollback.
+If a heroku-26 QA build ever fails, `heroku stack:set heroku-24 -a mcritchie-studio-qa`
+returns the next build to the old stack; the running release keeps serving.
 
 Roll back on any of: boot crash or R10, `/up` not 200, an error-rate rise in
 `ErrorLog` after the release, or peak memory no better at the 72-hour read.
@@ -108,8 +133,10 @@ comparison as the 72 hours AFTER it, starting the after window one hour after th
 release so the boot spike drops out. Keep the same weekdays where possible: if the
 change lands on a Tuesday, compare against the previous Tuesday-to-Friday instead
 of the weekend. 72 hours covers several 3-5 hour climbs and at least two daily
-dyno cycles. A deploy inside either window resets memory: note it, and extend the
-window rather than averaging across it.
+dyno cycles. A deploy restarts the dynos and resets memory, and at this app's rate
+(14 to 18 releases per 72 hours, config-var releases included) no window is free of
+them. So record the release count inside each window, compare windows with similar
+counts, and do not extend a window past its deploys.
 
 **Normalize by traffic.** Read the router request counts for the same windows and
 compare memory per traffic level, not raw: a quiet after-window proves nothing.
@@ -153,8 +180,39 @@ API key; `HEROKU_API_KEY` comes from `~/.zprofile` like every other Heroku read.
 
 **Baseline already taken (24 hours to 2026-10-07 01:49 UTC, 10-minute buckets):**
 peak 1,034 MB, steady (p50) 799 MB, swap max 26 MB in 27 of 145 buckets, quota
-1,024 MB. Re-take the full 72-hour baseline right before the change; this one is
-the reference shape, not the comparison.
+1,024 MB. This was the reference shape, not the comparison; the full 72-hour
+baselines were taken afterwards (see Baselines below).
+
+### Rollout record (2026-10-06, Steffon)
+
+Alex approved option (a) at 21:05 MDT: move QA to heroku-26, then jemalloc on QA,
+then on production.
+
+| Release created (UTC) | App | Release | What |
+|------------|-----|---------|------|
+| 2026-10-07 03:10:26 | `mcritchie-studio-qa` | v550 | `stack:set heroku-26`, `heroku/nodejs` buildpack added, `LD_PRELOAD` set (still glibc: running heroku-24 slug) |
+| 2026-10-07 04:11:11 | `mcritchie-studio-qa` | v551 (9c52eacd) | first heroku-26 build, dynos up 04:11:44; web, worker and release phase log `allocator=jemalloc` |
+| 2026-10-07 04:41:31 | `mcritchie-studio` | v561 | `LD_PRELOAD` set through the Platform API (`PATCH /apps/mcritchie-studio/config-vars`, same effect as `heroku config:set`; the CLI was hanging); dynos up 04:42:15; a one-off confirmed `libjemalloc` in `/proc/self/maps` |
+| 2026-10-07 05:22:10 | `mcritchie-studio` | v562 (9c52eacd) | hub release with the boot line; dynos up 05:22:44; a one-off on v562 reports `allocator=jemalloc` |
+
+**Early QA signal, not a measurement:** QA logged 202 R14s on glibc between
+00:35 and 04:11 UTC, and none in the 29 minutes after its jemalloc boot.
+
+**Baselines, web, 10-minute buckets** (the Metrics API commands above):
+
+| Window (UTC) | Releases inside | Peak | Steady (p50) | Swap max | Swap buckets | Over quota | Requests | Peak hour |
+|--------------|-----------------|------|--------------|----------|--------------|------------|----------|-----------|
+| A: 72h before the change, 10-04 04:41 to 10-07 04:41 (Sat night to Tue, MDT) | 14 (v547 to v560) | 1,034 MB | 805 MB | 26 MB | 116 / 433 | 9 | 166,823 | 6,228 |
+| B: weekday match, 09-30 06:23 to 10-03 06:23 (Wed to Fri, MDT) | 18 (v526 to v543) | 1,082 MB | 855 MB | 110 MB | 69 / 433 | 21 | 134,446 | 5,266 |
+
+Worker, same windows: A peak 767 MB, steady 632 MB, swap max 79 MB in 94 / 433
+buckets, never over quota; B peak 742 MB, steady 651 MB, swap max 77 MB in 130 / 433.
+
+**After window:** 2026-10-07 06:23 UTC to 2026-10-10 06:23 UTC (Wed 00:23 to
+Sat 00:23 MDT), one hour after v562's restart. Count its releases, then compare
+it with the baseline whose count is closer (A: 14, B: 18); B also matches the
+weekdays. If the count falls between the two, report both comparisons. The rule
+is in **Windows** above.
 
 **Success** is all of: peak under 900 MB (10% under quota) for the whole after
 window, zero over-quota buckets, zero swap buckets, and a steady value no worse

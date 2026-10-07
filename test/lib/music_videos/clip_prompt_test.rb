@@ -2,9 +2,11 @@
 
 require "minitest/autorun"
 require_relative "../../../lib/music_videos/clip_prompt"
+require_relative "../../../lib/music_videos/person_letters"
 
 # [unit] The Higgsfield swap prompt: the proven prompt with its blanks, the
-# athlete and look a recast fills in, and the wording for a cinematic video.
+# athlete and look a recast fills in, and the wording for a cinematic video;
+# and prompt v2 (piece 16), people by letter and players by jersey number.
 class MusicVideosClipPromptTest < Minitest::Test
   P = MusicVideos::ClipPrompt
 
@@ -88,5 +90,77 @@ class MusicVideosClipPromptTest < Minitest::Test
   def test_background_people_are_everyone_else
     prompt = P.fill(target: "desk", others: ["long-haired man"], background: true)
     assert_includes prompt, "Please keep the long-haired man and everyone else the same."
+  end
+
+  # --- prompt v2: lettered ---
+
+  DAK = { letter: "B", number: 4, athlete: "Test Athlete Alpha", look: "Home White", sheet: 1, lead: true }.freeze
+  LAMB = { letter: "D", number: 88, athlete: "Test Athlete Beta", look: "Home White", sheet: 2, lead: false }.freeze
+
+  def test_lettered_names_every_swap_by_letter_and_number_in_sheet_order
+    prompt = P.lettered(swaps: [DAK, LAMB])
+
+    assert_equal <<~PROMPT.chomp, prompt
+      This clip is from a music video. People are marked A, B, C... in the reference frames.
+
+      Swap these people:
+      - Person B (lead) -> #4 Test Athlete Alpha, Home White (character sheet 1)
+      - Person D (background) -> #88 Test Athlete Beta, Home White (character sheet 2)
+
+      Each player should have his normal hair, athletic build and be in uniform, full pads with no helmet (like his character sheet).
+      #4 Test Athlete Alpha should also be mouthing all the mouth movements of Person B.
+      Give each of them a diamond encrusted watch, necklace, rings, and some designer sunglasses.
+      Keep everyone else exactly as they are.
+      Please give the video the same cinematic lighting as the music video.
+    PROMPT
+  end
+
+  def test_lettered_lip_syncs_leads_only
+    prompt = P.lettered(swaps: [DAK, LAMB.merge(lead: true)])
+
+    assert_includes prompt, "#4 Test Athlete Alpha should also be mouthing all the mouth movements of Person B."
+    assert_includes prompt, "#88 Test Athlete Beta should also be mouthing all the mouth movements of Person D."
+    refute_includes P.lettered(swaps: [LAMB]), "mouthing"
+  end
+
+  def test_lettered_falls_back_to_the_name_without_a_number_and_drops_a_missing_look
+    prompt = P.lettered(swaps: [DAK.merge(number: nil, look: nil)])
+
+    assert_includes prompt, "- Person B (lead) -> Test Athlete Alpha (character sheet 1)"
+    assert_includes prompt, "Swap this person:"
+    assert_includes prompt, "The player should have his normal hair"
+    assert_includes prompt, "Give him a diamond encrusted watch"
+    refute_includes prompt, "#"
+  end
+
+  def test_lettered_without_frames_does_not_point_at_them_and_a_cinematic_is_a_video
+    prompt = P.lettered(swaps: [DAK], video_kind: "cinematic", framed: false)
+
+    assert prompt.start_with?("This clip is from a video.\n")
+    refute_includes prompt, "reference frames"
+    assert prompt.end_with?("same cinematic lighting as the original video.")
+    refute_includes prompt, "music video"
+  end
+
+  def test_lettered_names_cannot_open_a_blank
+    prompt = P.lettered(swaps: [DAK.merge(athlete: " Test\n{athlete} Alpha ", look: "Home {video}")])
+
+    refute_includes prompt, "{"
+    assert_includes prompt, "#4 Test athlete Alpha, Home video"
+  end
+
+  def test_lettered_needs_a_swap
+    assert_raises(ArgumentError) { P.lettered(swaps: []) }
+  end
+
+  def test_letters_are_fixed_per_ordinal
+    letters = MusicVideos::PersonLetters
+    assert_equal %w[A B C D], (1..4).map { |n| letters.for(n) }
+    assert_equal "Z", letters.for(26)
+    assert_equal "AA", letters.for(27)
+    assert_equal "AZ", letters.for(52)
+    (1..60).each { |n| assert_equal n, letters.ordinal(letters.for(n)) }
+    assert_nil letters.ordinal("b")
+    assert_raises(ArgumentError) { letters.for(0) }
   end
 end

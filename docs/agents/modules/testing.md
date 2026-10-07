@@ -24,7 +24,7 @@ checks to `checks_run` as each stage completes.
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | DoR (the dor-check verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release`/`accepted` — the `playwright` job in `ci.yml`, which carries no branch condition of its own, so it follows the workflow's `push: branches:` list in full. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
-| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the `executed` set `config/e2e_lane.yml` declares** — the one thing the `playwright` job cannot verify about itself |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the executed set the committed suite counts** (`bin/lib/e2e_spec_census.rb`: committed − quarantined) — the one thing the `playwright` job cannot verify about itself |
 | Rails executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `rails_executed_set` job, after the four `rails` shards (`bin/rails-executed-set-check`). Asserts every committed file `config/rails_lane.yml` owns **ran at least one test, in exactly one shard**. Each receipt also names **the commit its shard ran**, and the gate refuses to audit across commits — see below |
 | Local proof | Worktree URL | Local DB only | Usually yes | DoR (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
@@ -93,16 +93,11 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — **`total_specs` −
-`quarantined` == `executed`** — so they can never certify two different suites.
-
-**The numbers live in that file and are deliberately NOT repeated here.** They move
-whenever a spec is added: this paragraph sat quoting 95 − 18 == 77 while the contract
-climbed past 103, 107, 108, 110 and 112 — three of those bumps landed on one day
-(2026-08-18). A count copied into prose is a second source of truth that nothing
-enforces, and it rots within days while every guard stays green — the same disease as the ratchet-that-was-really-a-pin described just above, one
-level out. Read the numbers from `config/e2e_lane.yml`; it is the only copy any guard
-consults.
+generalizes. Both read the same census, `bin/lib/e2e_spec_census.rb` — **committed specs
+− quarantined specs == executed**, counted from the files under `e2e/` — so they can never
+certify two different suites, and adding a spec moves no number by hand.
+`config/e2e_lane.yml` holds only what the tree cannot compute: the quarantine ceiling, its
+tag and the shard count.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
@@ -927,10 +922,10 @@ UI, ERB, CSS and browser-verification traps live in
 - Never name a Minitest helper `message`, `run`, `diff`, `skip` or `capture_io`; the framework calls them. `assert_select "sel", "text"` treats the string as a text match; put intent in a comment and constraints in `count:`/`text:`.
 - Parallel workers get their own database, never their own filesystem. Key every written path to the process and test, and tear down only what that test created.
 - A file added to a shared fixture builder reaches every sibling test; gate it on a parameter, and A/B by reverting the test file. Retuning a shared double's timing can leave a sibling spec passing through another code path; check its event still has a receiver.
-- A targeted run misses cross-file guards. When a diff adds or renames anything under `bin/`, `config/` or `docs/agents/`, run `test/lib test/commands test/docs` as directories. A test that spells a repo path or constant joins that source's `bin/fast-check` mapping and can trip the exact lists in `test/lib/fast_cert_subject_test.rb`; prefer the constant, and run that file. A file under a `frozen_size` ceiling in `config/test_health.yml` cannot grow past it, so a new concern gets a new file.
+- A targeted run misses cross-file guards. When a diff adds or renames anything under `bin/`, `config/` or `docs/agents/`, run `test/lib test/commands test/docs` as directories. A test that spells a repo path or constant joins that source's `bin/fast-check` mapping and can trip the exact lists in `test/lib/fast_cert_subject_test.rb`; prefer the constant, and run that file. A file on the `frozen` list in `config/test_health.yml` cannot grow past its size at the merge base with `origin/accepted`, so a new concern gets a new file.
 - A spawned interactive shell (`zsh -i`, `bash -i`) writes the operator's real history; set `ZDOTDIR` and `HISTFILE` to the sandbox.
 - A Node shim must use `Object.defineProperty(globalThis, "navigator", …)` and check that it took; plain assignment is a no-op where `navigator` is built in.
-- `playwright.config.js` binds `E2E_PORT`, default 3000, and adopts any server already listening there, so pass a free port and restart the server after a view edit. A spec owns its fixtures: mint rows through the board API (`meta[name=e2e-api-token]`) and delete them in a `finally`, because a card added to `e2e/seed.rb` changes the input of specs that measure the board. After a merge, re-derive `config/e2e_lane.yml` from `npx playwright test --list` on the merged tree; never add the two deltas.
+- `playwright.config.js` binds `E2E_PORT`, default 3000, and adopts any server already listening there, so pass a free port and restart the server after a view edit. A spec owns its fixtures: mint rows through the board API (`meta[name=e2e-api-token]`) and delete them in a `finally`, because a card added to `e2e/seed.rb` changes the input of specs that measure the board.
 - A red that errors before its assertion, in machinery the diff cannot reach, is environmental; a `result not reported` with no backtrace is a dead worker. Say both halves before re-running. A flake whose failure looks like its subject is urgent: wait on a postcondition, never a sleep.
 
 ## Test Suite Catalog

@@ -1112,13 +1112,15 @@ class DorCheckTest < Minitest::Test
     "checks_run" => ["[unit] x", "[integration] y"]
   }.freeze
 
-  def test_migration_diff_without_post_deploy_cmd_is_gated
+  # Guard catalog row 2.7: a migrations-only diff defaults post_deploy_cmd to none.
+  def test_migration_only_diff_defaults_post_deploy_cmd_to_none
     out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
       check(BACKEND_CONTRACT)
     end
+    assert_equal 0, code, out
+    refute_match(/post_deploy_cmd is blank/, out)
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb\ndb/seeds/x.rb") { check(BACKEND_CONTRACT) }
     assert_equal 1, code, out
-    assert_match(/post_deploy_cmd is blank/, out)
-    assert_match(%r{db/migrate/20260623120000_add_widgets\.rb}, out)
     assert_match(/--post-deploy-cmd/, out)
   end
 
@@ -1186,7 +1188,7 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_post_deploy_nudge_surfaces_in_json_verdict
-    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+    out, code = with_changed_files("db/seeds/pokemon.rb") do
       check(BACKEND_CONTRACT, "--json")
     end
     assert_equal 1, code, out
@@ -1195,10 +1197,10 @@ class DorCheckTest < Minitest::Test
     assert(verdict["errors"].any? { |e| e =~ /post_deploy_cmd is blank/ })
   end
 
-  def test_code_chore_adding_a_migration_demands_both_shape_and_post_deploy
-    # A chore whose diff is ONLY a migration is gated twice: it ships code (db/ is
+  def test_code_chore_adding_a_seed_demands_both_shape_and_post_deploy
+    # A chore whose diff is ONLY a seed is gated twice: it ships code (db/ is
     # a code prefix → demand a shape) AND it's a data change (→ demand a command).
-    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+    out, code = with_changed_files("db/seeds/pokemon.rb") do
       check("kind" => "chore")
     end
     assert_equal 1, code, out
@@ -1208,8 +1210,8 @@ class DorCheckTest < Minitest::Test
 
   # --- [integration] real git working-tree detection of a migration diff -------
 
-  def test_e2e_real_migration_diff_without_command_fails_merge_gate
-    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+  def test_e2e_real_seed_diff_without_command_fails_merge_gate
+    with_git_repo(untracked: ["db/seeds/widgets.rb"]) do |dir|
       out, code = check_against(dir, BACKEND_CONTRACT)
       assert_equal 1, code, out
       assert_match(/DoR-to-Merge NOT met/, out)
@@ -1226,113 +1228,15 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # --- post-deploy SAFETY gate: reject a bare full-suite seed command ----------
-  # bin/release runs devops.post_deploy_cmd VERBATIM against PRODUCTION. A bare
-  # db:seed loads db/seeds.rb → EVERY db/seeds/*.rb (demo data + any non-idempotent
-  # file), so it's rejected; a NARROW scoped-runner / dedicated-rake command is
-  # required. Real near-miss: merge-docs-reviewer-into-alex shipped 'bin/rails
-  # db:seed'. A non-data code diff (app/models) isolates the safety gate as the
-  # sole failure (no post-deploy NUDGE, which only fires on db/seeds|db/migrate).
-
-  REJECTED_POST_DEPLOY_CMDS = [
-    "bin/rails db:seed",
-    "rails db:seed",
-    "bundle exec rails db:seed",
-    "bin/rails db:seed:replant",
-    "rake db:seed",
-    "bundle exec rails db:seed RAILS_ENV=production"
-  ].freeze
-
-  ACCEPTED_POST_DEPLOY_CMDS = [
-    "rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'",
-    "bin/rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'",
-    "bin/rails pokemon:seed",
-    "bin/rails pokemon:resync_mascots",
-    "bin/rails db:migrate",
-    "none"
-  ].freeze
-
-  def test_bare_full_suite_seed_commands_are_rejected
-    REJECTED_POST_DEPLOY_CMDS.each do |cmd|
-      out, code = with_changed_files("app/models/agent.rb") do
-        check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
-      end
-      assert_equal 1, code, "expected REJECT for #{cmd.inspect}\n#{out}"
-      assert_match(/bare full-suite seed/, out, "why-message missing for #{cmd.inspect}")
-      assert_match(/PRODUCTION/, out, "prod-safety rationale missing for #{cmd.inspect}")
-      assert_match(/rails runner|dedicated/, out, "narrow pattern missing for #{cmd.inspect}")
-    end
-  end
+  # --- post-deploy SAFETY: the Task model refuses a bare seed on write (row 2.8);
+  # test/models/task_post_deploy_cmd_test.rb pins it. The gate passes narrow commands.
 
   def test_narrow_post_deploy_commands_are_accepted
-    ACCEPTED_POST_DEPLOY_CMDS.each do |cmd|
+    ["bin/rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'", "bin/rails pokemon:seed", "none"].each do |cmd|
       out, code = with_changed_files("app/models/agent.rb") do
         check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
       end
       assert_equal 0, code, "expected ACCEPT for #{cmd.inspect}\n#{out}"
-      assert_match(/DoR-to-Merge met/, out, cmd)
-    end
-  end
-
-  def test_blank_post_deploy_cmd_is_not_gated
-    # No post_deploy_cmd at all → the safety gate is silent (non-data diff, so the
-    # NUDGE doesn't fire either) → the contract passes.
-    out, code = with_changed_files("app/models/agent.rb") { check(BACKEND_CONTRACT) }
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    refute_match(/bare full-suite seed/, out)
-  end
-
-  def test_seed_diff_with_bare_seed_command_is_rejected_by_safety_not_nudge
-    # The command IS present (so the NUDGE is satisfied) but it's the dangerous
-    # bare seed — the SAFETY gate is the failure, not the blank-command nudge.
-    out, code = with_changed_files("db/seeds/54_demo.rb") do
-      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails db:seed"))
-    end
-    assert_equal 1, code, out
-    assert_match(/bare full-suite seed/, out)
-    refute_match(/post_deploy_cmd is blank/, out)
-  end
-
-  def test_build_gate_also_rejects_a_bare_seed_command
-    # The value is dangerous regardless of gate, so the build gate rejects it too.
-    out, code = check(
-      { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
-        "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [],
-        "post_deploy_cmd" => "bin/rails db:seed" },
-      "--gate", "build"
-    )
-    assert_equal 1, code, out
-    assert_match(/bare full-suite seed/, out)
-  end
-
-  def test_bare_seed_command_surfaces_in_json_verdict
-    out, code = with_changed_files("app/models/agent.rb") do
-      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bundle exec rails db:seed"), "--json")
-    end
-    assert_equal 1, code, out
-    verdict = JSON.parse(out)
-    refute verdict["ready"]
-    assert(verdict["errors"].any? { |e| e =~ /bare full-suite seed/ })
-  end
-
-  # --- [integration] real git working-tree, bad vs good post_deploy_cmd --------
-
-  def test_e2e_migration_diff_rejects_bare_seed_command
-    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
-      out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails db:seed"))
-      assert_equal 1, code, out
-      assert_match(/DoR-to-Merge NOT met/, out)
-      assert_match(/bare full-suite seed/, out)
-    end
-  end
-
-  def test_e2e_migration_diff_accepts_scoped_runner_command
-    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
-      cmd = "rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'"
-      out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
-      assert_equal 0, code, out
-      assert_match(/DoR-to-Merge met/, out)
     end
   end
 
@@ -1389,45 +1293,24 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # THE WAIT. Builder-side a running CI used to credit a fast cert provisionally and
-  # pass; with no cert to credit it is NOT ready — but it is not failed either, and the
-  # headline says which. bin/submit reads exit 1 and does not move the task.
-  def test_a_pending_ci_is_a_wait_for_the_builder_not_a_failure
-    out, code = check_ci(SUITE_CONTRACT, "pending")
-    assert_equal 1, code, "a pending CI must not reach submitted: #{out}"
-    assert_match(/⏳ DoR-to-Merge WAITING on CI/, out)
-    assert_match(/WAITING for it to settle/, out)
-    assert_match(/not ready to advance .* YET; re-run once CI reports/, out)
-    refute_match(/NOT met/, out, "a wait is worded as a wait, never as a failure")
-    refute_match(/PROVISIONALLY/, out, "nothing is credited provisionally any more")
+  # Guard catalog row 1.10: bin/submit calls this gate only after its CI wait settles,
+  # so there is no builder-side WAIT. A pending CI refuses in both roles, alike.
+  def test_a_pending_ci_refuses_in_both_roles_alike
+    %w[builder review].each do |role|
+      out, code = check_ci(SUITE_CONTRACT, "pending", "--gate-role", role)
+      assert_equal 1, code, "#{role}: #{out}"
+      assert_match(/NOT met/, out, "#{role}: pending is a NO")
+      assert_match(/defer until CI settles/, out)
+      refute_match(/WAITING/, out, "#{role}: the builder-side wait is gone")
+    end
   end
 
-  def test_a_pending_ci_refuses_the_review_gate_zero
-    out, code = check_ci(SUITE_CONTRACT, "pending", "--gate-role", "review")
-    assert_equal 1, code, out
-    assert_match(/NOT met/, out, "review's gate-zero is the authoritative verdict — pending is a NO there")
-    assert_match(/defer this review until CI settles/, out)
-    refute_match(/WAITING on CI/, out)
-  end
-
-  # The WAIT headline is reserved for the case where the pending CI is the ONLY thing
-  # standing: with another refusal beside it the verdict is NOT met, and both errors
-  # print, so a builder cannot mistake "come back later" for "fix nothing".
-  def test_a_pending_ci_beside_another_refusal_is_not_a_wait
-    out, code = check_ci(SUITE_CONTRACT.merge("checks_run" => ["[unit] x"]), "pending")
-    assert_equal 1, code, out
-    assert_match(/NOT met/, out)
-    refute_match(/WAITING on CI/, out)
-    assert_match(/still RUNNING/, out)
-    assert_match(/missing test tiers/, out)
-  end
-
-  def test_the_wait_surfaces_in_the_json_verdict
+  def test_a_pending_ci_reads_as_pending_in_the_json_verdict
     out, code = check_ci(SUITE_CONTRACT, "pending", "--json")
     assert_equal 1, code, out
     j = JSON.parse(out)
     refute j["ready"]
-    assert j["ci_waiting"], "the builder's pending verdict must be marked as a WAIT"
+    refute j.key?("ci_waiting"), "the builder-side wait is gone"
     assert_equal "pending", j.dig("suite_evidence", "state")
     refute j.dig("suite_evidence", "satisfied")
     assert_equal "pending", j["ci_gate_result"], "the gates card paints the wait as in-flight, not red"
@@ -1441,7 +1324,6 @@ class DorCheckTest < Minitest::Test
     assert_equal CiGate::SUITE_EVIDENCE_FORM, j.dig("suite_evidence", "form")
     assert j.dig("suite_evidence", "satisfied")
     assert_equal "green", j.dig("suite_evidence", "state")
-    refute j["ci_waiting"]
     refute j.key?("full_suite"), "the fingerprint block is gone with the receipts it described"
   end
 
@@ -1469,11 +1351,11 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  def test_a_recorded_full_cert_does_not_turn_a_wait_into_a_pass
+  def test_a_recorded_full_cert_does_not_turn_a_pending_ci_into_a_pass
     devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
     out, code = check_ci(devops, "pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
+    assert_match(/still RUNNING/, out)
   end
 
   def test_a_stale_or_missing_receipt_does_not_refuse_a_green_ci
@@ -1534,7 +1416,7 @@ class DorCheckTest < Minitest::Test
 
   def test_an_exempt_doc_only_chore_still_needs_the_green_ci
     # An exempt DOC-ONLY chore skips the TIER gate, never the CI verdict: this repo's
-    # CI grades prose. Green passes, pending waits, red refuses.
+    # CI grades prose. Green passes, pending and red refuse.
     exempt = ->(ci) { with_changed_files("docs/agents/note.md") { with_env("DOR_CHECK_CI_STATUS" => ci) { check({ "kind" => "chore" }) } } }
 
     out, code = exempt.call("green")
@@ -1544,7 +1426,7 @@ class DorCheckTest < Minitest::Test
 
     out, code = exempt.call("pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
+    assert_match(/still RUNNING/, out)
 
     out, code = exempt.call("red")
     assert_equal 1, code, out
@@ -1599,56 +1481,19 @@ class DorCheckTest < Minitest::Test
     assert(verdict["suggestions"].any? { |s| s =~ /canonical/ }, "the suggestion rides in the json verdict")
   end
 
-  # --- Gem-publish seam guard (merge gate) -----------------------------------
+  # --- Gem-publish seam: no gate check (guard catalog row 2.2) ---------------
+  # CI's frozen bundle install fails first on a constraint the lock cannot satisfy.
 
-  # A minimal Gemfile.lock pinning studio-engine to `version`.
-  def lock_with(version)
-    "GEM\n  remote: https://rubygems.org/\n  specs:\n" \
-      "    studio-engine (#{version})\n\nDEPENDENCIES\n  studio-engine\n"
-  end
-
-  # A temp repo carrying a Gemfile + Gemfile.lock for the guard to read, with the
-  # branch diff pointed at Gemfile (the trigger).
-  def with_gemfile_diff(gemfile, lock)
-    Dir.mktmpdir do |dir|
-      File.write(File.join(dir, "Gemfile"), gemfile)
-      File.write(File.join(dir, "Gemfile.lock"), lock)
-      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_CHANGED_FILES" => "Gemfile") { yield }
-    end
-  end
-
-  def test_merge_gate_blocks_a_gemfile_bump_the_lock_cannot_satisfy
-    out, code = with_gemfile_diff(%(gem "studio-engine", "~> 0.9"\n), lock_with("0.8.0")) do
-      check(BACKEND_CONTRACT)
-    end
-    assert_equal 1, code, out
-    assert_match(/studio-engine.*Gemfile\.lock pins 0\.8\.0/, out)
-    assert_match(/gem-publish seam/, out)
-  end
-
-  def test_merge_gate_passes_when_the_lock_satisfies_the_bumped_constraint
-    out, code = with_gemfile_diff(%(gem "studio-engine", "~> 0.9"\n), lock_with("0.9.0")) do
-      check(BACKEND_CONTRACT)
-    end
-    assert_equal 0, code, out
-  end
-
-  def test_gem_guard_does_not_fire_when_the_branch_left_the_gemfile_alone
+  def test_a_gemfile_bump_the_lock_cannot_satisfy_is_left_to_ci
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.9"\n))
-      File.write(File.join(dir, "Gemfile.lock"), lock_with("0.8.0"))
-      out, code = with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_CHANGED_FILES" => "app/models/x.rb") do
+      File.write(File.join(dir, "Gemfile.lock"), "GEM\n  specs:\n    studio-engine (0.8.0)\n")
+      out, code = with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_CHANGED_FILES" => "Gemfile") do
         check(BACKEND_CONTRACT)
       end
-      assert_equal 0, code, out # Gemfile not in the diff → a pre-existing state, not this branch's
+      assert_equal 0, code, out
+      refute_match(/gem-publish seam/, out)
     end
-  end
-
-  def test_gem_guard_ignores_a_path_or_git_source_bridge
-    out, code = with_gemfile_diff(%(gem "studio-engine", path: "../studio-engine"\n), lock_with("0.8.0")) do
-      check(BACKEND_CONTRACT)
-    end
-    assert_equal 0, code, out # the local-dev bridge isn't a versioned constraint
   end
 
   # --- CI-status gate: the merge gate refuses a red / not-yet-green PR ----------
@@ -1716,7 +1561,6 @@ class DorCheckTest < Minitest::Test
       assert_equal 1, code, "submit-side #{state} must refuse now that nothing stands in: #{out}"
       assert_match own_remedy, out, "#{state} must carry the builder's remedy"
       assert_match(/ONLY suite evidence/, out)
-      refute_match(/WAITING on CI/, out, "#{state} is not a wait — the answer was never given")
     end
   end
 
@@ -1806,15 +1650,13 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
-  def test_pending_ci_is_a_wait_at_submit_that_names_where_the_verdict_lands
-    # gate-submit-on-green-ci: bin/submit holds at step 6/8 for exactly this, so the
-    # ordinary handoff never sees it; a hand-run verdict is told to come back, and told
-    # that ship resumes at this step.
+  def test_pending_ci_at_submit_names_where_the_wait_lives
+    # bin/submit calls this gate only after its CI wait settles (row 1.10); a hand-run
+    # verdict on a running CI is told where the wait lives.
     out, code = ci_check("pending")
     assert_equal 1, code, out
-    assert_match(/WAITING on CI/, out)
     assert_match(/still RUNNING/, out)
-    assert_match(/bin\/submit waits for exactly this/, out, "the wait names the wrapper that holds for it")
+    assert_match(%r{bin/submit waits at step 6/8}, out, "the refusal names the wrapper that holds for it")
   end
 
   def test_review_gate_zero_still_blocks_pending_ci
@@ -2175,19 +2017,6 @@ class DorCheckTest < Minitest::Test
     assert_match(/does the changed test still bite/, out)
   end
 
-  def test_integration_test_only_refuses_a_control_that_names_no_file_from_the_diff
-    # A control that could have been written before the change was made is a
-    # sentence, not a result. This is the one mechanical claim the control gate
-    # makes, so it has to actually bite.
-    devops = TEST_ONLY_CONTRACT.merge(
-      "checks_run" => ["[control] I ran a control and it failed, honest"]
-    )
-    out, code = with_changed_files(TEST_ONLY_DIFF) { check(devops) }
-
-    refute_equal 0, code, out
-    assert_match(/names no file from this diff/, out)
-  end
-
   def test_integration_a_control_may_name_the_file_by_basename
     # The short spelling a human actually types must satisfy it — refusing it would
     # only teach people to paste the long path without running anything. The
@@ -2392,19 +2221,15 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  def test_integration_a_no_signal_control_asks_for_the_sentence_not_a_refusal_of_the_change
-    # NO-SIGNAL is what a rename, a move, a consolidation AND a quietly deleted
-    # assertion all look like. The gate must not refuse the CHANGE for it — it asks
-    # the author for the one thing the machine cannot supply.
+  # Guard catalog row 1.4: bin/control-check stamps NO-SIGNAL only with the author's
+  # `why:` sentence, so the gate no longer asks for one beside a NO-SIGNAL stamp.
+  def test_integration_a_no_signal_stamp_alone_satisfies_the_control
     with_control_repo do |dir|
       out, code = control_check(TEST_ONLY_CONTRACT.merge("checks_run" => []), dir,
                                 env: { "DOR_CHECK_CONTROL_EVIDENCE" => "fresh:NO-SIGNAL" })
 
-      refute_equal 0, code, out
-      assert_match(/NO-SIGNAL/, out)
-      assert_match(/rename/, out)
-      # The remedy is a sentence, not a re-run and not a different shape.
-      assert_match(/Add the sentence/, out)
+      assert_equal 0, code, out
+      refute_match(/Add the sentence/, out)
     end
   end
 

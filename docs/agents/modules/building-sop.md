@@ -1,4 +1,5 @@
 # Building SOP — the feature agent's build flow, task → submitted
+<!-- registry: feature-agent build flow + local-review decision -->
 
 **Purpose.** Take one task from a claim to the `submitted` seam: a non-draft PR
 into `accepted`, green CI, and a passing `bin/dor-check`.
@@ -67,12 +68,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      CI satisfies it exactly as for a feature, and `bin/fast-check` is only the
      optional pre-flight before it.
   3. It owes a **control**: evidence the changed test **still bites**. Run
-     `bin/control-check <task>`. Where it stamps nothing (an added test, or no
-     runner for `e2e/`/`tests/`), write a `[control]` line in `checks_run` naming
-     a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
-     you for that sentence.
+     `bin/control-check <task>`. Where it has nothing to replay (an added test,
+     or no runner for `e2e/`/`tests/`), re-run it with `--why "<the control you
+     ran> → <what failed>"` and it records the `[control]` line, naming the
+     diff's files. A `NO-SIGNAL` verdict is **not** a refusal; it stamps only with
+     your `--why` sentence (rename, consolidation, …) inside the stamp.
   4. `bin/submit` never runs it. Run it after your last commit (the stamp is bound
-     to the tree) and never beside a ship (it swaps test files in place).
+     to the tree). It replays the pre-change files in a throwaway worktree, so it
+     never writes your desk.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session: `<app-slug> · <feature-slug> · <task URL>`.

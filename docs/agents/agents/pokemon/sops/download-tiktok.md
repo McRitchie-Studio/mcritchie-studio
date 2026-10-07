@@ -1,4 +1,5 @@
 # Download TikTok
+<!-- registry: yt-dlp download of a TikTok video; unmeasured -->
 
 ## Status: Active
 

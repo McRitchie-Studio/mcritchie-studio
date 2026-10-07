@@ -31,8 +31,8 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
 
     assert_equal [@athlete.slug, @away.slug, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
     prompts.each do |prompt|
-      assert prompt.start_with?("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.")
-      assert_includes prompt, "(like the Away White model provided)"
+      assert prompt.start_with?("This clip is from a video.")
+      assert_includes prompt, "- Person A (lead) -> Test Athlete Alpha, Away White (character sheet 1)"
       assert_not_includes prompt, "{athlete}"
       assert_not_includes prompt, "music video"
     end
@@ -41,7 +41,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
   test "changing the look, keeping, and clearing each rewrite the stored prompts" do
     recast(@jacket, person_slug: @athlete.slug, appearance_slug: @away.slug)
     recast(@jacket, person_slug: @athlete.slug, appearance_slug: @home.slug)
-    assert(prompts.all? { |p| p.include?("like the Home Blue model provided") && p.exclude?("Away White") })
+    assert(prompts.all? { |p| p.include?("Person A (lead) -> Test Athlete Alpha, Home Blue") && p.exclude?("Away White") })
 
     recast(@jacket, keep: true)
     assert @jacket.reload.recast_keep?
@@ -50,7 +50,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
 
     recast(@jacket, swap: true)
     assert @jacket.reload.recast?
-    assert(prompts.all? { |p| p.include?("like the Home Blue model provided") }, "on again names him with no re-pick")
+    assert(prompts.all? { |p| p.include?("Person A (lead) -> Test Athlete Alpha, Home Blue") }, "on again names him with no re-pick")
 
     recast(@jacket, clear: true)
     assert_equal [nil, nil, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
@@ -60,7 +60,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     # The woman in the doorway is seen at 9, 12 and 30 s: chunks 1 and 2 only.
     recast(@doorway, person_slug: @athlete.slug, appearance_slug: @home.slug)
 
-    named = prompts.map { |p| p.include?("Replace the woman in the doorway in this video with Test Athlete Alpha") }
+    named = prompts.map { |p| p.include?("- Person B (background) -> Test Athlete Alpha, Home Blue (character sheet 1)") }
     assert_equal [true, true, false, false], named
     assert(prompts.last(2).all? { |p| p.include?("{athlete}") })
   end
@@ -71,16 +71,19 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     recast(extra, person_slug: @athlete.slug, appearance_slug: @home.slug)
     chunk = video.reload.video_chunks.first
     assert_equal extra, chunk.swap_target
-    assert chunk.prompt.start_with?("Replace the woman in the doorway in this video with Test Athlete Alpha")
-    assert_includes chunk.prompt, "Please keep the man in the red jacket the same."
+    assert_includes chunk.prompt, "- Person B (background) -> Test Athlete Alpha, Home Blue (character sheet 1)"
+    assert_not_includes chunk.prompt, "Person A", "the kept star is not in the swap list"
+    assert_includes chunk.prompt, "Keep everyone else exactly as they are."
     assert_equal star, video.video_chunks.last.swap_target, "the last chunk never shows the extra"
 
     recast(star, person_slug: @athlete.slug, appearance_slug: @away.slug)
     chunk = video.reload.video_chunks.first
     assert_equal star, chunk.swap_target
-    assert chunk.prompt.start_with?("Replace the man in the red jacket in this video with Test Athlete Alpha")
+    assert_includes chunk.prompt, "- Person A (lead) -> Test Athlete Alpha, Away White (character sheet 1)"
+    assert_includes chunk.prompt, "- Person B (background) -> Test Athlete Alpha, Home Blue (character sheet 2)",
+                    "every swapped person in the window, leads and background"
     candidate = video.clip_candidates.first
-    assert_includes candidate.prompt, "like the Away White model provided"
+    assert_includes candidate.prompt, "Person A (lead) -> Test Athlete Alpha, Away White"
   end
 
   test "an athlete without a look, a stranger's look and no choice at all are refused and change nothing" do
@@ -100,7 +103,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     recast(@jacket, person_slug: @athlete.slug, appearance_slug: @away.slug)
     MusicVideos::ReplaceClips.new(@video.reload, RecastVideo.chunk_rows(@video), kind: "chunk").call
 
-    assert(prompts.all? { |p| p.include?("with Test Athlete Alpha, the football player") })
+    assert(prompts.all? { |p| p.include?("Person A (lead) -> Test Athlete Alpha, Away White") })
   end
 
   test "destroying the look leaves the athlete, asks for another look, and drops its name from the prompts" do
@@ -109,7 +112,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
 
     assert @jacket.reload.recast_pending?
     assert_equal [1], @video.reload.recast_open.map(&:ordinal)
-    assert(prompts.all? { |p| p.include?("with Test Athlete Alpha") && p.include?("(like the model provided)") })
+    assert(prompts.all? { |p| p.include?("- Person A (lead) -> Test Athlete Alpha (character sheet 1)") })
   end
 
   test "destroying the athlete frees the performer and blanks the prompts again" do
@@ -128,7 +131,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     assert @jacket.reload.recast_pending?
     assert_not @jacket.resolved?, "an athlete with no look does not close a card"
     assert_equal [1], @video.reload.recast_open.map(&:ordinal)
-    assert(prompts.all? { |p| p.include?("with Test Athlete Gamma") && p.include?("(like the model provided)") })
+    assert(prompts.all? { |p| p.include?("- Person A (lead) -> Test Athlete Gamma (character sheet 1)") })
   end
 
   test "the typeahead finds every person, people with a look first, each with their looks and row facts" do
@@ -231,7 +234,7 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
 
     recast(@jacket, swap: true)
     assert_equal [@athlete.slug, @away.slug, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
-    assert(prompts.any? { |p| p.include?("like the Away White model provided") })
+    assert(prompts.any? { |p| p.include?("Person A (lead) -> Test Athlete Alpha, Away White") })
   end
 
   test "a remembered look retired while the swap was off falls back to the athlete alone, pending" do

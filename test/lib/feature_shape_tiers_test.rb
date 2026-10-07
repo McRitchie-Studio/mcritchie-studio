@@ -453,10 +453,19 @@ class FeatureShapeTiersTest < Minitest::Test
   DOR_CHECK = File.join(ROOT, "bin/dor-check")
 
   def implemented_claim_rules(source)
-    body = source[/^\s*case claim_rule\s*$(.*?)^\s*else\s*$/m, 1]
+    body = source[/^\s*case claim_rule\s*$(.*?)^  end\s*$/m, 1]
     return [] if body.nil?
 
     body.scan(/^\s*when\s+"([a-z0-9_]+)"/).flatten
+  end
+
+  # Guard catalog row 2.6: the config is schema-checked against CLAIM_RULES at load,
+  # so the constant must name exactly the `when` arms the dispatch implements.
+  def test_unit_claim_rules_names_exactly_the_implemented_arms
+    source = File.read(DOR_CHECK)
+    declared = source[/^CLAIM_RULES = %w\[([^\]]*)\]/, 1].to_s.split
+
+    assert_equal implemented_claim_rules(source).sort, declared.sort
   end
 
   def test_unit_every_claimable_when_in_the_config_is_implemented_by_dor_check

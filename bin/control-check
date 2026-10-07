@@ -11,40 +11,34 @@
 #
 # WHAT IT DOES
 #
-#   1. Refuses a dirty tree. The harness RESTORES files by content; uncommitted
-#      work in the blast radius would be destroyed by the restore-back. So the
-#      changed test files must be COMMITTED (this is also what makes the diff a
-#      stable object to reason about).
-#   2. Reads the committed diff (base...HEAD) with rename detection, and splits it
+#   1. Reads the committed diff (base...HEAD) with rename detection, and splits it
 #      (ControlReplay.partition) into replayable / deferred / added.
-#   3. Runs the changed test files AS THEY ARE at HEAD.
-#   4. Restores the PRE-CHANGE content of the replayable files and runs THOSE.
-#      Sound only because `test-only` already proved the diff is 100% test code,
-#      so production code at the base is identical to production code at HEAD —
-#      restoring the test files reproduces the parent state without a checkout.
-#   5. Restores the tree and PROVES it restored (below), then stamps the verdict.
+#   2. Runs the changed test files AS THEY ARE in this tree.
+#   3. Cuts a THROWAWAY worktree at the merge base and runs the replayable files
+#      THERE. Sound only because `test-only` already proved the diff is 100% test
+#      code, so production code at the merge base is identical to production code
+#      at HEAD: the throwaway tree IS the parent state.
+#   4. Removes the throwaway worktree and stamps the verdict.
 #
-# THE HARNESS ASSERTS ITS OWN EFFECT — BOTH DIRECTIONS
-#
-# A swap harness that silently fails to swap runs the NEW code twice and reports a
-# confident, wrong answer. (This is the `sed -i ''` lesson from the parent task,
-# where a BSD/GNU flag difference made an in-place edit a no-op and the harness
-# happily "verified" an unmutated file.) So:
-#
-#   * after restoring, every replay path's blob hash MUST equal the base blob hash
-#     (`git hash-object` vs `git rev-parse <base>:<path>`) — content-addressed, not
-#     "did the string appear";
-#   * after restore-back, the working tree MUST be clean AND the whole-tree
-#     fingerprint MUST equal the one taken before the harness touched anything.
-#
-# Either assertion failing ABORTS without stamping. A control that cannot prove it
-# ran the code it claims to have run is worth less than no control at all, because
-# it is the same false confidence with a machine's name on it.
+# NOTHING IS SWAPPED OR RESTORED, BY CONSTRUCTION (guard catalog row 1.1). The
+# harness used to overwrite the desk's test files with their pre-change blobs and
+# check them out again, which needed three refusals: a dirty tree it would clobber,
+# a swap that did not land (the `sed -i ''` lesson), and a restore-back that leaked.
+# git writes the pre-change files itself in the throwaway tree, and the desk is
+# never written, so none of those states can exist.
 #
 # WHAT IT DOES NOT DO: refuse on the verdict. `old GREEN` (NO-SIGNAL) is reported,
 # never refused — see bin/lib/control_replay.rb's header for why a rename, a move,
 # a consolidation and a deleted assertion are indistinguishable here, and why a
 # false refusal on legitimate work would cost more than this gate collects.
+#
+# THE SENTENCE TRAVELS IN THE STAMP (guard catalog row 1.4). A NO-SIGNAL replay needs
+# the author's sentence saying which of those it is. `--why "<sentence>"` writes it
+# INTO the stamp, and a NO-SIGNAL run without one stamps nothing and asks for it, so
+# a NO-SIGNAL stamp without a sentence never exists and bin/dor-check never checks
+# for one. With nothing to replay (an added file, an e2e/ spec), `--why` records the
+# author's `[control]` line itself, naming this diff's files, so that line always
+# names a file from the diff.
 #
 # ENV SEAMS (tests):
 #   CONTROL_CHECK_ROOT          repo root (default: cwd's git toplevel via RepoRoot)
@@ -57,6 +51,7 @@
 require "English"
 require "fileutils"
 require "shellwords"
+require "tmpdir"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
@@ -89,27 +84,55 @@ rescue SystemCallError
   false
 end
 
+# Send ONLY the line this runner owns and let the write funnel merge it against
+# the board's current state (lib/cert_evidence.rb): a stale snapshot resent
+# wholesale is what wiped newer tier lines.
+def record_line!(slug, line)
+  if BoardChecks.fetch(TASK_BIN, slug).nil?
+    warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
+         "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+         "--checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: File::NULL)
+    warn "control-check: ran, but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run, " \
+         "or record by hand: bin/task update #{slug} --checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
+  if missing && !missing.empty?
+    warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
+         "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \
+         "--checks #{Shellwords.escape(line)}"
+    exit 1
+  end
+
+  note "recorded: #{line}"
+end
+
 USAGE = <<~TXT
-  usage: bin/control-check <task-slug>
+  usage: bin/control-check <task-slug> [--why "<sentence>"]
 
     Execute the `test-only` shape's control: run the changed test files at HEAD,
-    then restore their PRE-CHANGE content and run those, and stamp the verdict.
+    then run their PRE-CHANGE content, and stamp the verdict.
 
+    --why "<s>"   the author's sentence: which of rename/move/consolidation/… a
+                  NO-SIGNAL replay is (required to stamp NO-SIGNAL), or, with
+                  nothing to replay, the control you ran by hand (recorded as the
+                  [control] line, naming this diff's files)
     --help, -h    this text — REPLAYS NOTHING
 
-  Takes exactly one task slug and no flags. The tree must be clean: the harness
-  restores files by content, so uncommitted work in the blast radius is destroyed.
+  Takes exactly one task slug. The pre-change files run in a
+  throwaway worktree cut at the merge base; this tree is never written.
 TXT
 
 # EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE HARNESS RUNS.
 #
 # `slug = ARGV.shift` accepted ANY non-empty token, and only an empty one was
 # refused. So `bin/control-check --help` took "--help" as the task slug and ran the
-# replay harness for real: it prepares the test database, OVERWRITES working-tree
-# files with their pre-change blobs, deletes files, and `git checkout HEAD --`s the
-# survivors. The dirty-tree refusal below was the only thing standing between a
-# probe and a clobbered desk — and a probe is precisely the moment nobody has
-# checked whether their desk is clean.
+# replay harness for real: it prepared the test database and ran the replay.
 #
 # Same defect class that cost bin/archive-docs a docs ledger on 2026-08-31.
 ARGS = CliArgGuard.guard!(
@@ -117,33 +140,28 @@ ARGS = CliArgGuard.guard!(
   program: "control-check",
   usage: USAGE,
   allow_positional: true,
+  value: ["--why"],
   help_exit: 0,
   consequence: "NOTHING was replayed — the tree was not touched and no verdict was stamped."
 )
 die "usage: bin/control-check <task-slug>" unless ARGS.positionals.size == 1
 
 slug = ARGS.positionals.first
+why = ARGS.first("--why").to_s.strip
 
 root = RepoRoot.code_root(ENV["CONTROL_CHECK_ROOT"], ROOT)
 die "#{root} is not a git repo — the control replays committed content, so it needs one" unless
   git_ok?(root, "rev-parse", "--git-dir")
 
-# --- 1. the tree must be clean ------------------------------------------------
-# Not fastidiousness: restore-back is `git checkout HEAD -- <paths>`, which would
-# silently destroy uncommitted edits to exactly the files under test.
-dirty = git(root, "status", "--porcelain").split("\n").map(&:strip).reject(&:empty?)
-unless dirty.empty?
-  die "working tree is dirty (#{dirty.size} path(s), e.g. #{dirty.first(3).join(', ')}). The control " \
-      "RESTORES files by content and would destroy uncommitted work. Commit the test changes first — " \
-      "the control is about the committed diff anyway."
-end
-
 base = ENV["CONTROL_CHECK_DIFF_BASE"].to_s.strip
 base = FastCert.default_diff_base(root) if base.empty?
 die "cannot resolve diff base #{base.inspect} — fetch it (git fetch origin) and re-run" unless
   git_ok?(root, "rev-parse", "--verify", base)
+# The parent state the replay runs in: the commit `base...HEAD` diffs from.
+merge_base = git(root, "merge-base", base, "HEAD").strip
+die "cannot find the merge base of #{base} and HEAD — fetch it (git fetch origin) and re-run" if merge_base.empty?
 
-# --- 2. partition the diff ----------------------------------------------------
+# --- 1. partition the diff ----------------------------------------------------
 raw = git(root, "diff", "--name-status", "-M", "#{base}...HEAD")
 changes = ControlReplay.parse_name_status(raw)
 if changes.empty?
@@ -166,25 +184,33 @@ if replay.empty?
   note "nothing to replay — no changed file has both a pre-change version and a runner here."
   note "  deferred (pre-change version, no runner in this ecosystem): #{deferred.join(', ')}" if deferred.any?
   note "  added (no pre-change version to replay):                   #{added.join(', ')}" if added.any?
-  note "This is the REVIEWER-PROMPT half of the control. Record what you ran by hand:"
-  note "  bin/task update #{slug} --checks '[control] <file> → <what you observed>'"
+  if why.empty?
+    note "This is the REVIEWER-PROMPT half of the control. Record what you ran by hand:"
+    note "  bin/control-check #{slug} --why '<the control you ran> → <what you observed>'"
+    exit 0
+  end
+  # The author's line, written here so it names this diff's files by construction.
+  record_line!(slug, "[control] #{(deferred + added).join(', ')} → #{why}")
   exit 0
 end
 
-# --- 3. fingerprint BEFORE the harness touches anything -----------------------
-fingerprint_before = TreeFingerprint.working_tree(root)
+# --- the fingerprint the stamp binds to: this tree, which the harness never writes
+fingerprint = TreeFingerprint.working_tree(root)
 die "cannot fingerprint #{root} (no git identity?) — the stamp must be bound to this exact code" if
-  fingerprint_before.nil?
+  fingerprint.nil?
 
 test_cmd = ENV.fetch("CONTROL_CHECK_TEST_CMD", "bin/rails test")
 prepare_cmd = ENV.fetch("CONTROL_CHECK_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
 
-unless ENV["CONTROL_CHECK_SKIP_PREPARE"]
-  note "preparing test DB/assets: #{prepare_cmd}"
-  unless system({ "RAILS_ENV" => "test" }, prepare_cmd, chdir: root.to_s)
-    die "#{prepare_cmd} failed — the replay needs a prepared test DB to mean anything"
-  end
+def prepare!(dir, prepare_cmd)
+  return if ENV["CONTROL_CHECK_SKIP_PREPARE"]
+
+  note "preparing test DB/assets in #{dir}: #{prepare_cmd}"
+  return if system({ "RAILS_ENV" => "test" }, prepare_cmd, chdir: dir.to_s)
+
+  die "#{prepare_cmd} failed — the replay needs a prepared test DB to mean anything"
 end
+prepare!(root, prepare_cmd)
 
 # Run a set of test paths, returning [ok, summary]. Exit status is the authority
 # (a parsed count is a convenience and formats drift); the summary line is lifted
@@ -204,7 +230,7 @@ def run_tests(root, test_cmd, paths)
   [ok, summary.empty? ? "(no summary line)" : summary]
 end
 
-# --- 4. the HEAD run ----------------------------------------------------------
+# --- 2. the HEAD run ----------------------------------------------------------
 head_paths = ControlReplay.head_runnable(changes)
 head_ok = true
 head_summary = "(no post-change runnable file — every replayed file was deleted by this diff)"
@@ -213,99 +239,47 @@ if head_paths.any?
   head_ok, head_summary = run_tests(root, test_cmd, head_paths)
 end
 
-# --- 5. restore the PRE-change content, and PROVE it landed -------------------
-# `created` are paths absent at HEAD (this diff deleted or renamed them); they are
-# unlinked on the way out rather than checked out.
-created = []
-touched = []
+# --- 3. the replay, in a throwaway worktree at the merge base -----------------
+# The untracked env files and key a test boot reads (.env*, config/*.key) are copied
+# in; everything else the tree holds is the merge base's own committed content.
+replay_root = File.join(Dir.mktmpdir("control-check-"), "tree")
 begin
-  replay.each do |path|
-    blob = git(root, "rev-parse", "--verify", "--quiet", "#{base}:#{path}").strip
-    die "cannot read #{path} at #{base} — the diff says it existed there" if blob.empty?
-
-    full = File.join(root.to_s, path)
-    # Recorded BEFORE the write, and `touched` before the ASSERTION below: the
-    # cleanup list must cover every path this harness has begun to modify, not
-    # every path it finished modifying. Tracking only successes would leave
-    # pre-change content on disk on exactly the path that failed — the harness
-    # would corrupt the tree in its error case, which is the case it exists for.
-    created << path unless File.exist?(full)
-    touched << path
-    FileUtils.mkdir_p(File.dirname(full))
-    content = IO.popen(["git", "-C", root.to_s, "cat-file", "blob", blob], &:read)
-    File.binwrite(full, content)
-
-    # THE ASSERTION. Content-addressed: the file on disk must hash to the base
-    # blob. A harness that failed to swap now stops here instead of reporting a
-    # confident verdict about code it never ran.
-    landed = git(root, "hash-object", full).strip
-    unless landed == blob
-      die "restore of #{path} DID NOT LAND (on-disk #{landed[0, 12]} != #{base} #{blob[0, 12]}). " \
-          "Refusing to run — a swap harness that did not swap would replay the NEW file and call it the old one."
-    end
+  die "cannot cut a throwaway worktree at #{merge_base[0, 12]}" unless
+    git_ok?(root, "worktree", "add", "--detach", replay_root, merge_base)
+  (Dir.glob(File.join(root.to_s, ".env*")) + Dir.glob(File.join(root.to_s, "config", "*.key"))).each do |src|
+    rel = src.delete_prefix("#{root}/")
+    dest = File.join(replay_root, rel)
+    FileUtils.cp(src, dest) if File.file?(src) && !File.exist?(dest)
   end
-  note "restored #{touched.size} pre-change file(s), each verified against its #{base} blob"
-
-  # --- 6. the replay ----------------------------------------------------------
-  note "replaying the PRE-change files against current production code: #{replay.join(', ')}"
-  old_ok, old_summary = run_tests(root, test_cmd, replay)
+  prepare!(replay_root, prepare_cmd)
+  note "replaying the PRE-change files in a worktree at #{merge_base[0, 12]}: #{replay.join(', ')}"
+  old_ok, old_summary = run_tests(replay_root, test_cmd, replay)
 ensure
-  # --- 7. restore back, unconditionally --------------------------------------
-  created.each do |path|
-    File.delete(File.join(root.to_s, path))
-  rescue SystemCallError
-    nil
-  end
-  survivors = touched - created
-  git_ok?(root, "checkout", "HEAD", "--", *survivors) if survivors.any?
+  # --- 4. remove the throwaway tree -------------------------------------------
+  git_ok?(root, "worktree", "remove", "--force", replay_root)
+  FileUtils.rm_rf(File.dirname(replay_root))
+  git_ok?(root, "worktree", "prune")
 end
 
-# --- 8. PROVE the restore-back landed ----------------------------------------
-after_dirty = git(root, "status", "--porcelain").split("\n").map(&:strip).reject(&:empty?)
-fingerprint_after = TreeFingerprint.working_tree(root)
-unless after_dirty.empty? && fingerprint_after == fingerprint_before
-  die "the harness did NOT fully restore the tree (dirty: #{after_dirty.size}, fingerprint " \
-      "#{fingerprint_before.to_s[0, 12]} → #{fingerprint_after.to_s[0, 12]}). Your working tree may still " \
-      "hold pre-change content — inspect `git status` and `git checkout HEAD -- .` before trusting it. " \
-      "NOT stamping: a control whose harness leaked cannot be bound to a fingerprint it no longer matches."
-end
-note "tree restored and verified (fingerprint #{fingerprint_before[0, 12]} unchanged)"
-
-# --- 9. the verdict, and the stamp -------------------------------------------
+# --- 5. the verdict, and the stamp -------------------------------------------
 verdict = ControlReplay.verdict(old_failed: !old_ok, head_failed: !head_ok)
 detail = ControlReplay.detail(verdict: verdict, replay: replay, deferred: deferred, added: added,
                               old_failed: !old_ok, head_failed: !head_ok)
 detail = "#{detail} [old: #{old_summary}] [head: #{head_summary}]"
-line = CertEvidence.evidence_line(ControlReplay::LANE, fingerprint_before, detail,
+line = CertEvidence.evidence_line(ControlReplay::LANE, fingerprint, detail,
                                   repo: TaskTree.repo_of_checkout(root))
 
 puts
 note "VERDICT: #{verdict}"
 note ControlReplay.explanation(verdict)
 
-# Send ONLY the line this runner owns and let the write funnel merge it against
-# the board's current state (lib/cert_evidence.rb): a stale snapshot resent
-# wholesale is what wiped newer tier lines.
-if BoardChecks.fetch(TASK_BIN, slug).nil?
-  warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
-       "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
-       "--checks #{Shellwords.escape(line)}"
+if verdict == ControlReplay::NO_SIGNAL && why.empty?
+  warn "control-check: NO-SIGNAL needs your sentence before it is stamped: a rename, a move, a " \
+       "consolidation and a deleted assertion all look like this, and only you know which. Re-run with " \
+       "it: bin/control-check #{slug} --why '<renamed/consolidated/…>, coverage preserved because …'. " \
+       "Nothing was stamped."
   exit 1
 end
-
-unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: File::NULL)
-  warn "control-check: ran, but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run, " \
-       "or record by hand: bin/task update #{slug} --checks #{Shellwords.escape(line)}"
-  exit 1
-end
-
-missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
-if missing && !missing.empty?
-  warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
-       "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \
-       "--checks #{Shellwords.escape(line)}"
-  exit 1
-end
-
-note "recorded: #{line}"
+line = "#{line} why: #{why}" unless why.empty?
+record_line!(slug, line)
 exit 0

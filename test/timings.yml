@@ -154,9 +154,7 @@ test/docs/credential_rotation_shell_guard_test.rb: 1.74
 test/docs/credential_shell_orphan_guard_test.rb: 0.19
 test/docs/fast_lane_hub_path_docs_test.rb: 0.1
 test/docs/review_lane_docs_test.rb: 3.63
-test/docs/sop_registry_docs_test.rb: 0.14
 test/docs/sop_registry_install_test.rb: 3.53
-test/docs/start_here_label_guard_test.rb: 0.15
 test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb: 0.23
 test/docs/zap_cert_freshness_docs_test.rb: 2.31
 test/helpers/appearances_helper_test.rb: 0.26
@@ -492,7 +490,6 @@ test/lib/process_table_test.rb: 0.1
 test/lib/projects_root_test.rb: 0.44
 test/lib/publish_assets_task_test.rb: 0.03
 test/lib/puma_config_contract_test.rb: 0.05
-test/lib/qa_registry_declares_qa_env_test.rb: 0.03
 test/lib/qa_server_cli_test.rb: 0.13
 test/lib/r2_backup_test.rb: 0.15
 test/lib/r2_backup_workflow_test.rb: 0.05
@@ -579,7 +576,6 @@ test/lib/submit_wait_script_test.rb: 14.64
 test/lib/ship_wait_test.rb: 0.13
 test/lib/stacked_pr_test.rb: 0.11
 test/lib/stale_check_test.rb: 0.06
-test/lib/stamp_confirmation_test.rb: 0.05
 test/lib/standard_profile_columns_test.rb: 0.03
 test/lib/standard_profile_rollback_guard_test.rb: 0.05
 test/lib/state_store_containment_test.rb: 1.15
@@ -797,7 +793,6 @@ test/models/task_approval_window_test.rb: 5.24
 test/models/task_assembled_seat_test.rb: 0.72
 test/models/task_assembled_span_test.rb: 1.06
 test/models/task_avi_sizing_trigger_test.rb: 0.5
-test/models/task_block_kinds_parity_test.rb: 0.01
 test/models/task_blocked_scope_test.rb: 0.8
 test/models/task_board_rank_test.rb: 0.27
 test/models/task_board_scope_test.rb: 33.81
@@ -815,7 +810,6 @@ test/models/task_event_test.rb: 3.71
 test/models/task_intent_test.rb: 2.62
 test/models/task_mascot_evolution_test.rb: 6.31
 test/models/task_mascot_shiny_test.rb: 1.17
-test/models/task_open_intents_parity_test.rb: 1.15
 test/models/task_progress_test.rb: 0.63
 test/models/task_resubmission_test.rb: 4.18
 test/models/task_review_claim_test.rb: 2.67

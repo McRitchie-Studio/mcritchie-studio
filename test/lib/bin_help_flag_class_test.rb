@@ -106,6 +106,8 @@ class BinHelpFlagClassTest < Minitest::Test
     "x-post"                 => :optparse,
     # Leftover positionals beyond <soul> <dir> abort with the usage line.
     "openclaw-workspace"     => :optparse,
+    # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
+    "sop-registry"           => :optparse,
     "control-check"          => :cli_arg_guard,
     # Read-only: it runs the JS dependency audit and reports a verdict; it takes
     # no options and mutates nothing, so there is no first mutation for --help to
@@ -331,6 +333,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "find-clips"             => :optparse,
     # Exactly one slug; --help and an unknown flag exit before the API is read.
     "stitch-video"           => :optparse,
+    # Exactly one slug and one of --extract or --apply; --help and an unknown flag
+    # exit before the API is read, a frame stilled or anything uploaded.
+    "clip-references"        => :optparse,
     # Read-only: every verb is a read through one `heroku run`. The verb is
     # shifted first, then OptionParser owns the rest, so `desk 5 --help` prints
     # help and exits before any run; an unknown flag raises unrescued.

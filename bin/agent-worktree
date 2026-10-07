@@ -1198,7 +1198,8 @@ def ensure_git_worktree(app, task, type, &on_cut)
 end
 
 # The primary's env files a desk inherits, copied once at cut and never over an
-# existing copy, with SECRET_KEY_BASE swapped for a freshly generated dev key. `.env.development` holds settings that must reach development and
+# existing copy, with SECRET_KEY_BASE swapped for a freshly generated dev key and
+# every production-only key dropped. `.env.development` holds settings that must reach development and
 # NOT the test env: dotenv-rails loads `.env` in both, so object-storage stages (R2
 # for dev, ACTIVE_STORAGE_BACKEND / STUDIO_S3_BACKEND) live there, and a desk's test
 # suite keeps seeing exactly what CI sees (asset-library QA/local-dev pass, 2026-09-30).
@@ -1215,7 +1216,13 @@ def copy_primary_env_files(primary, dir)
     # holds (a production key reached every desk this way until 2026-10-06), the
     # copy gets a freshly generated development key. bin/lib/dev_secret_key.rb.
     fresh = DevSecretKey.replace_in_copy(target)
-    puts fresh ? "copied #{name} (fresh dev SECRET_KEY_BASE #{DevSecretKey.prefix(fresh)})" : "copied #{name}"
+    # Nor any production-only key (DevSecretKey::PRODUCTION_ONLY_KEYS, the one
+    # deny list): a key the primary still holds stops at the primary.
+    dropped = DevSecretKey.strip_production_only(target)
+    notes = []
+    notes << "fresh dev SECRET_KEY_BASE #{DevSecretKey.prefix(fresh)}" if fresh
+    notes << "dropped production-only #{dropped.join(", ")}" unless dropped.empty?
+    puts notes.empty? ? "copied #{name}" : "copied #{name} (#{notes.join("; ")})"
   end
 end
 

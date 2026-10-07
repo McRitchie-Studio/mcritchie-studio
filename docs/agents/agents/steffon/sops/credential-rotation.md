@@ -1,4 +1,5 @@
 # Credential Rotation SOP (Steffon)
+<!-- registry: rotate one secret everywhere -->
 
 ## Status: Active
 

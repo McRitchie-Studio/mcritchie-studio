@@ -26,9 +26,10 @@
         <% @swaps.to_a.each do |entry| %>
           <% performer = performers[entry.performer_ordinal] %>
           <li class="min-w-0 break-words" data-test="alt-video-swap" data-ordinal="<%= entry.performer_ordinal %>">
-            <span class="text-body">Person <%= entry.performer_ordinal %></span>
-            <% if performer %><span class="text-muted">(<%= performer.label %>)</span><% end %>
+            <span class="font-semibold text-heading">Person <%= MusicVideos::PersonLetters.for(entry.performer_ordinal) %></span>
+            <span class="text-muted">· Person <%= entry.performer_ordinal %><% if performer %> (<%= performer.label %>)<% end %></span>
             <span class="text-muted">→</span>
+            <% if (number = @numbers[entry.appearance_slug]) %><span class="font-semibold text-heading">#<%= number %></span><% end %>
             <span class="font-semibold text-heading"><%= entry.label %></span>
             <% unless entry.look_name %><span class="text-warning-ink">· no look was chosen</span><% end %>
           </li>
@@ -44,7 +45,8 @@
     <div class="flex flex-col gap-4" data-test="alt-clips">
       <% @clips.each do |clip| %>
         <%= render "alt_videos/clip", clip: clip, chunk: @chunk_for[clip.chunk_ordinal], alt_video: @alt_video, video: @video,
-                   swaps: @swaps, urls: @urls, downloads: @downloads, sheets: @sheets, overlap_ms: @video.chunk_overlap_ms.to_i %>
+                   swaps: @swaps, urls: @urls, downloads: @downloads, sheets: @sheets, numbers: @numbers,
+                   overlap_ms: @video.chunk_overlap_ms.to_i %>
       <% end %>
     </div>
   <% else %>

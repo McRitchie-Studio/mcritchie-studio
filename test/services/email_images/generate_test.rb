@@ -12,6 +12,7 @@ class EmailImages::GenerateTest < ActiveSupport::TestCase
   setup do
     Artifact.where(kind: "email_header").delete_all
     EmailImageBrief.delete_all
+    EmailBrandReference.delete_all
     ImageGeneration::Registry.reload!
     @brief = turf_brief
   end
@@ -59,6 +60,43 @@ class EmailImages::GenerateTest < ActiveSupport::TestCase
       assert_equal "1536x1024", call[:image_size]
       assert_equal 2, call[:reference_urls].size, "the gator and the style anchor"
       assert call[:reference_urls].first.start_with?("data:image/webp;base64,")
+    end
+  end
+
+  # [integration] A reference added on the kit page reaches the generator, by
+  # its URL, after the kit's YAML pair, and the stored prompt names it with
+  # its note. An archived one never does.
+  test "the generator receives an uploaded reference and the prompt carries its note" do
+    ref = brand_reference(label: "Gator wave", note: "use this pose")
+    brand_reference(label: "Archived", role: "logo").archive!
+
+    with_fake_header_generator do
+      artifact = EmailImages::Generate.call(@brief, count: 1).sole
+
+      urls = EmailImageFakes::Adapter.calls.sole[:reference_urls]
+      assert_equal 3, urls.size
+      assert urls.first.start_with?("data:image/webp;base64,"), "the gator still leads"
+      assert urls.second.start_with?("data:image/jpeg;base64,"), "then the style anchor"
+      assert_equal ref.image_url, urls.third
+      assert_includes artifact.prompt, %(Reference image 3 is a mascot reference, "Gator wave": use this pose.)
+      refute_includes artifact.prompt, "Archived"
+    end
+  end
+
+  test "the generator is cut to the reference limit, and a one-arity row gets the lead alone" do
+    5.times { |i| brand_reference(label: "pose #{i}", created_at: i.minutes.ago) }
+
+    with_fake_header_generator do
+      EmailImages::Generate.call(@brief, count: 1)
+      assert_equal EmailImages::BrandKit::DEFAULT_REFERENCE_LIMIT, EmailImageFakes::Adapter.calls.sole[:reference_urls].size
+
+      row = ImageGeneration::Registry.find("openai_image_header").dup
+      row.reference_arity = "one"
+      EmailImageFakes::Adapter.reset!
+      generator = EmailImages::Generate.new(@brief, row: row, count: 1)
+      generator.call
+      assert_equal 1, EmailImageFakes::Adapter.calls.sole[:reference_urls].size
+      assert_equal 1, generator.references.size
     end
   end
 

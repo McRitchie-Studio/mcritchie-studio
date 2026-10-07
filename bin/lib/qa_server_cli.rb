@@ -186,4 +186,20 @@ module QaServerCli
   def self.heal_plan(declared, live)
     config_drift(declared, live).map { |key, _why| [key, declared.fetch(key)] }.to_h
   end
+
+  # ---- the QA marker -----------------------------------------------------------
+  #
+  # Every QA app boots RAILS_ENV=production, so QA_ENV is the only signal that
+  # separates a review target from real production (the banner, AppFlags and the
+  # bucket choice all read it). An entry in config/qa_environments.yml is a QA app
+  # by being there, so the loader stamps the marker on every entry rather than
+  # trusting each one to declare it; a declared value, even a falsy one, is
+  # overwritten.
+  QA_MARKER = { "QA_ENV" => "true" }.freeze
+
+  def self.with_qa_marker(entries)
+    entries.transform_values do |config|
+      config.merge("required_config" => (config["required_config"] || {}).merge(QA_MARKER))
+    end
+  end
 end

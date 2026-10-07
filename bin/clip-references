@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# clip references <music_video_slug>: lettered reference frames for every chunk
+# of a source (recast pipeline, piece 16). Each chunk gets 2-3 stills where its
+# people are clearly on screen, with each person's letter drawn over them
+# (Person 1 = A, Person 2 = B, fixed per source), shown on every alt video's
+# clip card for Higgsfield (docs/agents/agents/pokemon/sops/digest-video.md,
+# "Lettered references"). Two steps, because the agent places the tags by eye:
+#
+#   bin/clip-references <slug> --extract            # still the frames, write tags.json to fill
+#   bin/clip-references <slug> --apply              # draw the filled tags, upload, post
+#   bin/clip-references <slug> --extract --alt 2    # pick frames that show alt video 2's swaps
+#   bin/clip-references <slug> --apply --chunk 3    # one chunk only
+#   bin/clip-references <slug> --extract --dry-run  # print the chosen moments only
+#   bin/clip-references <slug> --apply --dry-run    # draw locally; upload and post nothing
+#   bin/clip-references <slug> --api URL            # another hub, e.g. a desk server
+#   bin/clip-references <slug> --production         # production bucket and https://mcritchie.studio
+#
+# Drawing uses ImageMagick (`magick`); this ffmpeg build has no drawtext.
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup" # aws-sdk-s3 for R2; before any gem loads
+require "optparse"
+require_relative "lib/clip_references"
+
+options = { production: false, dry_run: false, workdir: File.expand_path("~/projects/.corpus/music_videos") }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/clip-references <music_video_slug> --extract|--apply [options]"
+  opts.on("--extract", "still each chunk's frames and write tags.json for the agent to fill") { options[:step] = :extract }
+  opts.on("--apply", "draw the filled tags, upload the frames and post them to the hub") { options[:step] = :apply }
+  opts.on("--alt N", Integer, "choose frames that show this alt video's swaps (default: everyone)") { |v| options[:alt] = v }
+  opts.on("--chunk N", Integer, "one chunk only") { |v| options[:chunk] = v }
+  opts.on("--production", "read and write the production bucket and API (default: dev)") { options[:production] = true }
+  opts.on("--api URL", "hub API base (default: localhost:3000, or mcritchie.studio with --production)") { |v| options[:api] = v }
+  opts.on("--source FILE", "the source MP4 on disk (default: the digest folder, else R2)") { |v| options[:source] = File.expand_path(v) }
+  opts.on("--workdir DIR", "working folder (default #{options[:workdir]}); frames go under references/<slug>/") do |v|
+    options[:workdir] = File.expand_path(v)
+  end
+  opts.on("--dry-run", "extract: print the moments only; apply: draw locally, upload and post nothing") { options[:dry_run] = true }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "clip-references: #{e.message}"
+end
+
+if ARGV.size != 1
+  warn parser.banner
+  abort(ARGV.empty? ? "clip-references: a music video slug is required" : "clip-references: exactly one slug, got #{ARGV.size}")
+end
+abort "clip-references: say --extract (step 1) or --apply (step 2)" unless options[:step]
+abort "clip-references: no such file: #{options[:source]}" if options[:source] && !File.file?(options[:source])
+
+begin
+  target = DigestVideo.target(production: options[:production])
+  runner = ClipReferences::Runner.new(
+    api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
+    storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
+    shell: DigestVideo.shell, workdir: options[:workdir], source: options[:source], dry_run: options[:dry_run],
+    bucket: target[:bucket], alt: options[:alt], chunk: options[:chunk]
+  )
+  runner.public_send(options[:step], ARGV.first)
+rescue DigestVideo::Failure => e
+  abort "clip-references: #{e.message}"
+end

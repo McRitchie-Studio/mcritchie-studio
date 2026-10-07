@@ -12,10 +12,7 @@ require "test_helper"
 # Task.normalize_devops_metadata already branches on it. The argument for splitting
 # rather than refusing lives at Task::DEVOPS_IDENTIFIER_LIST_KEYS.
 #
-# A NEW FILE RATHER THAN AN APPEND: test/models/task_test.rb is a frozen hotspot in
-# config/test_health.yml (2023, at its ceiling), and the freeze exists to push new
-# tests into new files. The one case there whose CLAIM this change narrows — array
-# lists keeping their commas, now true of prose keys only — was edited in place.
+# The guarded keys come from the key map, lib/devops_list_flags.rb.
 class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
   TURF_PR = "https://github.com/McRitchie-Studio/turf-monster/pull/305".freeze
   HUB_PR  = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1420".freeze
@@ -181,20 +178,6 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
 
       assert_equal split, Task.normalize_devops_metadata(key => spaced)[key],
                    "devops.#{key} is a joined text_field on the board form and must still split"
-    end
-  end
-
-  # --- the guarded set itself -------------------------------------------------
-
-  # A typo'd entry in the constant would be INERT — the exact failure mode this rule
-  # exists to repair, one layer up. Mirrors the CLI-side check in
-  # test/lib/task_comma_list_flags_test.rb, which reads its constant out of bin/task.
-  test "[unit] every guarded key is a real devops list key" do
-    assert Task::DEVOPS_IDENTIFIER_LIST_KEYS.any?, "an empty guarded set asserts nothing"
-
-    Task::DEVOPS_IDENTIFIER_LIST_KEYS.each do |key|
-      assert_includes Task::DEVOPS_LIST_KEYS, key,
-                      "#{key} is guarded as a list key but is not one — the guard never fires"
     end
   end
 

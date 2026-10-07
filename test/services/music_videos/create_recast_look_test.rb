@@ -90,7 +90,7 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     assert(named.any? { |prompt| prompt.include?("Test Athlete Alpha") })
 
     MusicVideos::CreateRecastLook.new(jacket, person_slug: alpha.slug, descriptor: "Alternate Black").call
-    assert(video.reload.video_chunks.map(&:prompt).any? { |prompt| prompt.include?("like the Alternate Black model provided") })
+    assert(video.reload.video_chunks.map(&:prompt).any? { |prompt| prompt.include?("-> Test Athlete Alpha, Alternate Black (character sheet 1)") })
     assert_not_equal named, video.video_chunks.map(&:prompt)
 
     MusicVideos::CreateRecastLook.new(jacket, person_slug: @rookie.slug, descriptor: "Road grey").call

@@ -14,6 +14,7 @@ class EmailImages::CliTest < ActiveSupport::TestCase
   setup do
     Artifact.where(kind: "email_header").delete_all
     EmailImageBrief.delete_all
+    EmailBrandReference.delete_all
     ImageGeneration::Registry.reload!
     @dir = Dir.mktmpdir("email-image-cli")
   end
@@ -111,6 +112,27 @@ class EmailImages::CliTest < ActiveSupport::TestCase
 
     assert(records(out, "reference").all? { |r| r["file"] == "-" && r["url"].present? })
     assert_empty Dir.children(@dir)
+  end
+
+  # [integration] A reference added on the kit page is in the CLI's list too:
+  # role, label, note and URL, downloaded beside the YAML ones. An archived
+  # one is not.
+  test "assets lists and downloads uploaded references with role, label, note and url" do
+    ref = brand_reference(label: "Gator wave", note: "use this pose", role: "mascot")
+    brand_reference(label: "Old logo", role: "logo").archive!
+
+    status, out, = EmailImages::Download.stub(:bytes, EmailImageFakes.small_png) { cli("assets", "turf-monster", "--out", @dir) }
+
+    assert_equal 0, status
+    refs = records(out, "reference")
+    assert_equal %w[yaml yaml upload], refs.map { |r| r["origin"] }
+    upload = refs.last
+    assert_equal ["mascot", "Gator wave", "use this pose", ref.image_url, "upload #{ref.slug}"],
+                 upload.values_at("_subject", "label", "note", "url", "source")
+    assert File.file?(upload["file"]), "the uploaded reference is downloaded for the agent to show"
+    assert_equal ".png", File.extname(upload["file"])
+    assert_equal "-", refs.first["note"]
+    assert_match %r{/email_images/brand_kits/turf-monster\z}, records(out, "page").sole["url"]
   end
 
   test "assets refuses an unknown kit" do

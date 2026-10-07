@@ -312,9 +312,9 @@ jobs:
       #      exactly `@quarantine`. Widening it to `@quarantine|board` — dropping 8 specs to
       #      43, every guard formerly green — is now a test failure.
       #   2. THE DECLARED SET. test/lib/e2e_quarantine_ratchet_test.rb reads the committed
-      #      specs: total_specs − quarantined == executed, and every selection modifier is
-      #      refused on ANY receiver. The NUMBERS live in config/e2e_lane.yml and are not
-      #      repeated here — every copy of them in prose has rotted within days.
+      #      specs and refuses every selection modifier on ANY receiver, so the census
+      #      (bin/lib/e2e_spec_census.rb: committed − quarantined) is the executed set. The
+      #      counts are computed from e2e/; only the quarantine ceiling is written down.
       #   3. THE EXECUTED SET — the receipt, below. Guards 1 and 2 read the SOURCE, and a
       #      source-level guard can only refuse the spellings someone thought to refuse.
       #      Three rounds of review proved that by finding a fourth, every time: `.only`
@@ -406,8 +406,10 @@ jobs:
   # the free one for the scarce one.
   #
   # WHY FOUR AND NOT MORE lives in config/rails_lane.yml next to the number, so there is
-  # one place to read it and one place to change it. `strategy.job-total` supplies the
-  # denominator, and bin/ci-shard ABORTS if the matrix and the contract disagree.
+  # one place to read it and one place to change it. The matrix is READ from that file
+  # by `rails_plan` (bin/ci-shard --matrix), so the workflow carries no second copy of
+  # the count; `strategy.job-total` supplies the denominator, and bin/ci-shard still
+  # aborts if the two ever disagree.
   #
   # NO CHROME HERE. The browser belongs to the `system` job below — 13 tests that used
   # to make this lane pay for a Chrome install and a chromedriver-eviction dance on
@@ -416,14 +418,45 @@ jobs:
   # THE UNION IS NOT ASSUMED. Four green shards over four empty buckets look exactly
   # like four green shards over the whole suite, which is why `rails_executed_set` below
   # is a separate, unconditional job rather than a claim in this comment.
+  rails_plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+
+    steps:
+      # `ref: github.sha` on the plan, every shard and the executed-set gate: one commit
+      # for the whole lane, so the gate never audits receipts from another tree (guard
+      # catalog row 1.6; test/lib/rails_lane_checkout_pin_test.rb). A pull_request's
+      # default ref is the merge ref GitHub recomputes when the base moves.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: false
+
+      - name: Read the shard matrix from config/rails_lane.yml
+        id: plan
+        # The assignment stands alone so a bin/ci-shard failure fails this step (bash -e);
+        # inside the echo, its exit status would be lost.
+        run: |
+          shards="$(bin/ci-shard --matrix)"
+          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
+
   rails:
+    needs: rails_plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ${{ fromJSON(needs.rails_plan.outputs.shards) }}
 
     services:
       postgres:
@@ -444,15 +477,18 @@ jobs:
       # actions/checkout defaults to a depth-1 fetch of the head SHA ALONE, which leaves
       # `origin/release` unresolvable, and a ratchet that cannot see its baseline cannot
       # certify monotonicity. It FAILS CLOSED on a missing baseline, so deleting this
-      # line turns a shard red and says why.
+      # line turns a shard red and says why. test/lib/test_health_ratchet_test.rb reads
+      # its baseline the same way: the skip count and the frozen hotspot sizes at the
+      # merge base with `origin/accepted`.
       #
-      # WHICH shard carries that file is decided by bin/lib/test_shard.rb's bin-packing
+      # WHICH shard carries those files is decided by bin/lib/test_shard.rb's bin-packing
       # and moves whenever a timing changes — so "the shard that needs it" is not a
       # stable thing to point at. Every shard gets the full history. It costs a few
       # seconds; guessing costs a red build nobody can reproduce.
       - name: Checkout code
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install packages
@@ -543,6 +579,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

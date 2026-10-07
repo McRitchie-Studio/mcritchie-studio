@@ -1,4 +1,5 @@
 # Domain DNS
+<!-- registry: verify, MX, SPF, DKIM, DMARC -->
 
 ## Status: Active
 

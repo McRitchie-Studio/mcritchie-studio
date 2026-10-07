@@ -63,13 +63,12 @@ class RailsExecutedSetTest < Minitest::Test
     end
   end
 
-  def problems_for(*payloads, contract: CONTRACT, expected: EXPECTED, tree_commit: nil)
+  def problems_for(*payloads, contract: CONTRACT, expected: EXPECTED)
     with_reports(*payloads) do |dir|
       RailsExecutedSet.problems(
         reports: RailsExecutedSet.load_reports(dir),
         expected: expected,
-        contract: contract,
-        tree_commit: tree_commit
+        contract: contract
       )
     end
   end
@@ -245,19 +244,11 @@ class RailsExecutedSetTest < Minitest::Test
     end
   end
 
-  # ---- COMMIT IDENTITY: is the expected set even comparable to the executed one? ----
+  # ---- COMMIT IDENTITY ----
   #
-  # The gate re-derives `expected` from a tree IT checks out, while the receipts were
-  # written by shards that checked out THEIRS. A branch name read at two moments is two
-  # trees. These cases pin which of those situations the gate may do arithmetic over.
-  #
-  # THE HISTORY. Engine consumer run 32495361932 called two hub test files committed
-  # files that "executed NOTHING". They had run green in the hub's own lane minutes
-  # earlier. The shards checked out `accepted` at 15:02:17 and the gate at 15:06:17; hub
-  # PR #979 merged f9a440e5 in between, adding exactly those two files. The receipts'
-  # union was byte-identical to the lane's file set at f9a440e5^. The gate's verdict was
-  # arithmetically correct and completely misleading, and it cost a conductor an
-  # investigation into skips that did not exist.
+  # The plan, shards and gate all check out `github.sha` (guard catalog row 1.6, pinned by
+  # test/lib/rails_lane_checkout_pin_test.rb), so the gate no longer compares receipts with
+  # its own tree. Shards that disagree among themselves still go RED.
 
   OLD = "f4d2823000000000000000000000000000000000"
   NEW = "f9a440e500000000000000000000000000000000"
@@ -265,8 +256,7 @@ class RailsExecutedSetTest < Minitest::Test
   def test_unit_receipts_on_the_SAME_commit_as_the_tree_audit_normally
     assert_empty problems_for(
       receipt(shard: 1, files: { "test/a_test.rb" => 3, "test/b_test.rb" => 1 }, commit: NEW),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW),
-      tree_commit: NEW
+      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW)
     )
   end
 
@@ -277,34 +267,12 @@ class RailsExecutedSetTest < Minitest::Test
   def test_unit_a_file_that_never_ran_is_STILL_RED_when_the_commits_agree
     problems = problems_for(
       receipt(shard: 1, files: { "test/a_test.rb" => 3 }, commit: NEW),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW),
-      tree_commit: NEW
+      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW)
     )
 
     assert_equal 1, problems.length
     assert_includes problems.first, "test/b_test.rb"
     assert_includes problems.first, "executed NOTHING"
-  end
-
-  # THE REGRESSION, in the shape the engine lane actually produced it: the tree has a
-  # file the receipts' commit did not, and every shard is internally fine.
-  def test_unit_receipts_from_an_OLDER_commit_are_RED_as_a_RACE_not_as_a_coverage_hole
-    problems = problems_for(
-      receipt(shard: 1, files: { "test/a_test.rb" => 3 }, commit: OLD),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: OLD),
-      tree_commit: NEW
-    )
-
-    assert_equal 1, problems.length,
-                 "the race is the ONE finding; the file-level list is derived from two different " \
-                 "trees and must not be printed beside it: #{problems.inspect}"
-    assert_includes problems.first, "f4d28230"
-    assert_includes problems.first, "f9a440e5"
-    assert_includes problems.first, "CHECKOUT RACE"
-
-    refute_includes problems.first, "executed NOTHING",
-                    "test/b_test.rb did not fail to run — it did not EXIST at the receipts' commit. " \
-                    "Naming it here is the false accusation this case exists to prevent"
   end
 
   # THE WORSE VARIANT the receipt field also buys: shards that STRADDLE the merge. Their
@@ -313,8 +281,7 @@ class RailsExecutedSetTest < Minitest::Test
   def test_unit_shards_that_ran_DIFFERENT_commits_are_RED
     problems = problems_for(
       receipt(shard: 1, files: { "test/a_test.rb" => 3, "test/b_test.rb" => 1 }, commit: OLD),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW),
-      tree_commit: NEW
+      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: NEW)
     )
 
     assert_equal 1, problems.length
@@ -330,36 +297,11 @@ class RailsExecutedSetTest < Minitest::Test
   def test_unit_a_receipt_that_names_no_commit_is_audited_STRICTLY
     problems = problems_for(
       receipt(shard: 1, files: { "test/a_test.rb" => 3 }),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }),
-      tree_commit: NEW
+      receipt(shard: 2, files: { "test/c_test.rb" => 7 })
     )
 
     assert_equal 1, problems.length
     assert_includes problems.first, "test/b_test.rb"
     assert_includes problems.first, "executed NOTHING"
-  end
-
-  # A gate run outside a git checkout knows no commit of its own. It must fall back to
-  # the old behaviour rather than treat "unknown" as "mismatched".
-  def test_unit_an_unknown_tree_commit_makes_no_claim
-    assert_empty problems_for(
-      receipt(shard: 1, files: { "test/a_test.rb" => 3, "test/b_test.rb" => 1 }, commit: OLD),
-      receipt(shard: 2, files: { "test/c_test.rb" => 7 }, commit: OLD),
-      tree_commit: nil
-    )
-  end
-
-  # The gate's own checkout is a git checkout in every environment that runs it, so the
-  # resolver has to work on a real repository rather than only on fixtures.
-  def test_unit_tree_commit_reads_a_real_repository_and_nil_outside_one
-    root = File.expand_path("../..", __dir__)
-
-    assert_match(/\A[0-9a-f]{40}\z/, RailsExecutedSet.tree_commit(root).to_s,
-                 "the gate must be able to name the commit it derived `expected` from")
-
-    Dir.mktmpdir do |dir|
-      assert_nil RailsExecutedSet.tree_commit(dir),
-                 "outside a repository the answer is 'no claim' — never a mismatch"
-    end
   end
 end

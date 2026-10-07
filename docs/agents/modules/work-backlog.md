@@ -1,4 +1,5 @@
 # Work Backlog — chew through your own designed tasks, two or three at a time
+<!-- registry: your own tasks, two-three wide -->
 
 You filed a handful of tasks while doing something else. This module is the
 casual cadence for working them off: **take your own `designed` tasks, run two or

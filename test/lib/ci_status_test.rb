@@ -1097,9 +1097,9 @@ class CiStatusTest < Minitest::Test
   # different register. Asserted across every cause and every route, because a
   # placeholder is a property of the METHOD, not of one branch.
   def test_no_remedy_hands_the_reader_an_unfillable_placeholder
-    [true, false, nil, :retired].each do |route|
+    [false, true].each do |route|
       ALL_REMEDY_CAUSES.each do |cause|
-        text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: cause, cert_route: route,
+        text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: cause, release_grain: route,
                                           task: "some-task")
 
         refute_includes text, "<task>",
@@ -1114,9 +1114,9 @@ class CiStatusTest < Minitest::Test
   # interpolate lands in no sentence. Every route denies, and says so in the CONTRACT
   # CLAUSE test/lib/dor_check_exempt_ci_test.rb reads the printed refusal for.
   def test_every_route_denies_a_cert_and_names_no_command_to_run_one
-    [true, false, nil, :retired].each do |route|
+    [false, true].each do |route|
       text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials,
-                                        cert_route: route, task: "builder-reads-remedy-twice")
+                                        release_grain: route, task: "builder-reads-remedy-twice")
 
       refute_includes text, "certify in full instead", "#{route.inspect}: the retired offer is back"
       refute_includes text, "full-suite-check", "#{route.inspect}: no route may name the retired runner"
@@ -1124,16 +1124,16 @@ class CiStatusTest < Minitest::Test
     end
   end
 
-  # The task-grain routes are ONE sentence now: true (the old gated offer) and false
-  # (the old doc-only denial) print the same thing, and only :retired — release grain —
-  # differs, by naming `bin/release prepare` as what the operator re-runs.
-  def test_the_task_grain_routes_print_one_denial_and_the_release_route_its_own
-    plain = [true, false, nil].map { |route| CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: route) }
+  # The task grain is the default and one sentence; only release grain differs, by
+  # naming `bin/release prepare` as what the operator re-runs.
+  def test_the_task_grain_default_prints_one_denial_and_the_release_grain_its_own
+    plain = [CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials),
+             CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, release_grain: false)]
 
-    assert_equal 1, plain.uniq.size, "true/false/nil must print the same task-grain denial:\n#{plain.uniq.join("\n---\n")}"
+    assert_equal 1, plain.uniq.size, "the default is the task-grain denial:\n#{plain.uniq.join("\n---\n")}"
     assert_includes plain.first, "the ONLY suite evidence this gate credits"
 
-    retired = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: :retired)
+    retired = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, release_grain: true)
     assert_includes retired, "bin/release prepare"
     refute_includes retired, "the ONLY suite evidence this gate credits"
   end

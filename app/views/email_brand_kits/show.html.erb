@@ -1,0 +1,177 @@
+<%# ONE BRAND KIT: the references (YAML and uploaded, with which ones a round
+    sends), the add-a-reference form, the palette, font, style and "never"
+    rules, every approved header, and the open briefs. The `email-image` SOP
+    opens this page with Alex at step 1. Admin only. %>
+<% sent_index = @sent.each_with_index.to_h { |ref, i| [ref.object_id, i + 1] } %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <%= link_to "Brand kits", email_brand_kits_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono break-all"><%= @kit.key %></span>
+  </nav>
+
+  <div class="card p-4 sm:p-5 space-y-2">
+    <h1 class="text-xl sm:text-2xl font-bold text-heading break-words"><%= @kit.label %></h1>
+    <div class="flex gap-1.5 flex-wrap">
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle">app: <%= @kit.app %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle">font: <%= @kit.font %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= pluralize(@references.size, "reference") %></span>
+    </div>
+    <p class="text-2xs text-muted">
+      Agents: <span class="font-mono break-all">bin/email-image assets <%= @kit.key %></span> prints and downloads everything on this page.
+    </p>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="kit-references">
+    <div class="flex flex-wrap items-baseline gap-2">
+      <h2 class="text-sm font-bold text-heading">References</h2>
+      <p class="text-3xs text-muted">
+        A round sends up to <%= @reference_limit %>
+        <%= "(#{@generator_row.label})" if @generator_row %>, numbered in the order it sends them:
+        the kit's own references first, then uploads by role (mascot, logo, style, product, other), newest first.
+      </p>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% @references.each do |ref| %>
+        <% position = sent_index[ref.object_id] %>
+        <div class="rounded-lg border border-subtle bg-surface p-3 space-y-2 min-w-0" data-test="reference"
+             data-origin="<%= ref.origin %>" data-role="<%= ref.role %>" data-sent="<%= position.present? %>">
+          <div class="aspect-square rounded bg-surface-alt border border-subtle flex items-center justify-center overflow-hidden">
+            <img src="<%= ref.display_url %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="badge text-3xs bg-primary/10 text-primary border-primary/40"><%= ref.role %></span>
+            <% if ref.yaml? %>
+              <span class="badge text-3xs bg-surface-alt text-muted border-subtle">in the kit YAML</span>
+            <% else %>
+              <span class="badge text-3xs bg-surface-alt text-muted border-subtle">uploaded</span>
+            <% end %>
+            <% if position %>
+              <span class="badge text-3xs bg-success/10 text-success-ink border-success/40" data-test="sent-badge">sent #<%= position %></span>
+            <% else %>
+              <span class="badge text-3xs bg-surface-alt text-muted border-subtle">not sent</span>
+            <% end %>
+          </div>
+          <p class="text-xs font-semibold text-heading break-words" data-test="reference-label"><%= ref.label %></p>
+          <% if ref.note.present? %>
+            <p class="text-2xs text-body break-words" data-test="reference-note">&ldquo;<%= ref.note %>&rdquo;</p>
+          <% end %>
+          <p class="text-3xs text-muted font-mono break-all" data-test="reference-source"><%= ref.yaml? ? ref.path : ref.url.to_s.truncate(120) %></p>
+          <% if ref.upload? %>
+            <p class="text-3xs text-muted">
+              Added <%= ref.uploaded_at&.to_date&.to_fs(:long) %><% if ref.uploaded_by.present? %> by <%= ref.uploaded_by %><% end %>
+            </p>
+            <%= button_to "Archive", archive_email_brand_kit_reference_path(@kit.key, ref.slug),
+                          class: "btn btn-sm btn-neutral", form: { data: { test: "archive-form", turbo_confirm: "Archive #{ref.label}? No round will send it." } } %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+    <% if @archived.any? %>
+      <details class="text-2xs" data-test="archived-references">
+        <summary class="cursor-pointer text-muted"><%= pluralize(@archived.size, "archived reference") %></summary>
+        <ul class="mt-2 space-y-1">
+          <% @archived.each do |row| %>
+            <li class="text-muted break-words"><%= row.role %> &middot; <%= row.label %> &middot; archived <%= row.archived_at.to_date.to_fs(:long) %></li>
+          <% end %>
+        </ul>
+      </details>
+    <% end %>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="reference-upload">
+    <h2 class="text-sm font-bold text-heading">Add a reference</h2>
+    <p class="text-2xs text-body" data-test="likeness-guard">
+      Our own mascots, logos and art only. <strong>No photos of real people or athletes, and no team logos or crests.</strong>
+      PNG, JPEG or WebP, up to 5 MB.
+    </p>
+    <%= render "shared/form_errors", record: @reference, spacing: "mb-3" %>
+    <%= form_with model: @reference, url: email_brand_kit_references_path(@kit.key), scope: :email_brand_reference,
+                  multipart: true, class: "space-y-3", data: { test: "reference-form" } do |f| %>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <div class="sm:col-span-3">
+          <%= f.label :file, "Image", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.file_field :file, accept: "image/png,image/jpeg,image/webp", class: "input-field w-full text-xs" %>
+        </div>
+        <div>
+          <%= f.label :role, "Role", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.select :role, EmailBrandReference::ROLES, {}, class: "input-field w-full text-xs" %>
+        </div>
+        <div class="sm:col-span-2">
+          <%= f.label :label, "Label", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_field :label, maxlength: 80, placeholder: "Gator, arms raised", class: "input-field w-full text-xs" %>
+        </div>
+        <div class="sm:col-span-3">
+          <%= f.label :note, "How to use it (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+          <%= f.text_area :note, rows: 2, maxlength: 500, placeholder: "Use this pose; keep the jersey colours.", class: "input-field w-full text-xs" %>
+        </div>
+      </div>
+      <%= f.submit "Add reference", class: "btn btn-sm btn-primary" %>
+    <% end %>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+    <div class="card p-4 sm:p-5 space-y-3 min-w-0" data-test="kit-palette">
+      <h2 class="text-sm font-bold text-heading">Palette</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <% @kit.palette.each do |name, hex| %>
+          <div class="space-y-1" data-test="swatch">
+            <div class="h-14 rounded border border-subtle" style="background-color: <%= hex %>"></div>
+            <p class="text-2xs text-heading font-semibold"><%= name %></p>
+            <p class="text-3xs text-muted font-mono"><%= hex %></p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="card p-4 sm:p-5 space-y-3 min-w-0" data-test="kit-style">
+      <h2 class="text-sm font-bold text-heading">Font, style and never</h2>
+      <dl class="space-y-2 text-2xs">
+        <div><dt class="text-muted">Font</dt><dd class="text-body"><%= @kit.font %></dd></div>
+        <div><dt class="text-muted">Style</dt><dd class="text-body" data-test="kit-style-text"><%= @kit.style %></dd></div>
+        <div><dt class="text-muted">Never</dt><dd class="text-body" data-test="kit-never"><%= @kit.negative %></dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="approved-headers">
+    <h2 class="text-sm font-bold text-heading">Approved headers</h2>
+    <% if @approved_headers.empty? %>
+      <p class="text-2xs text-muted">No header is approved for this brand yet.</p>
+    <% else %>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <% @approved_headers.each do |brief, artifact| %>
+          <%= link_to email_image_path(brief), class: "block rounded-lg border border-subtle bg-surface p-3 space-y-2 hover:border-primary min-w-0",
+                      data: { test: "approved-header", slug: brief.slug } do %>
+            <img src="<%= artifact.image_url %>" alt="<%= brief.effective_alt_text %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
+            <p class="text-xs text-heading font-semibold break-words">&ldquo;<%= brief.headline %>&rdquo;</p>
+            <p class="text-3xs text-muted break-words">
+              <%= brief.app %> &middot; <span class="font-mono"><%= brief.email_key %></span> &middot; <%= brief.variant %>
+            </p>
+            <p class="text-3xs text-muted">Approved by <%= artifact.approved_by.presence || "unknown" %> on <%= artifact.approved_at.to_date.to_fs(:long) %></p>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="open-briefs">
+    <h2 class="text-sm font-bold text-heading">Open briefs</h2>
+    <% if @open_briefs.empty? %>
+      <p class="text-2xs text-muted">No open brief for this brand.</p>
+    <% else %>
+      <ul class="divide-y divide-subtle">
+        <% @open_briefs.each do |brief| %>
+          <li class="py-2 flex flex-wrap items-center gap-2 min-w-0" data-test="open-brief" data-slug="<%= brief.slug %>">
+            <%= link_to brief.catalog_key, email_image_path(brief), class: "font-mono text-xs text-primary hover:underline break-all" %>
+            <span class="text-xs text-body truncate min-w-0">&ldquo;<%= brief.headline %>&rdquo;</span>
+            <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= brief.build_state.presence || "new" %></span>
+            <span class="text-3xs text-muted ml-auto">rounds <%= brief.rounds_used %>/<%= brief.max_rounds %></span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+</div>

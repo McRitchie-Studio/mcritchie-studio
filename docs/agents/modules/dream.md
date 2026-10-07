@@ -1,4 +1,5 @@
 # Dream
+<!-- registry: the bank of good answers every session reads at start; capture and sign-off -->
 
 ## Status: Active
 

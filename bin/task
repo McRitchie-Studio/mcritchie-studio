@@ -273,6 +273,7 @@ require "time"
 require "fileutils"
 require "shellwords"
 require "rbconfig"
+require "yaml"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
@@ -283,6 +284,7 @@ require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
+require_relative "../lib/devops_list_flags"
 require_relative "lib/task_board"
 require_relative "lib/block_recipe"
 require_relative "lib/bounce_ledger"
@@ -298,7 +300,6 @@ require_relative "lib/desk_claim"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
-require_relative "lib/stamp_confirmation"
 require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
@@ -743,88 +744,12 @@ SCALAR_FLAGS = {
   # from --agent, which sets the task OWNER (agent_slug).
   "--persona" => "persona"
 }.freeze
-LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
-# The LIST_FLAGS whose values are IDENTIFIERS rather than prose, and which
-# therefore REFUSE a comma. Read the per-flag reasoning before adding a sixth:
-# this set is deliberately smaller than LIST_FLAGS, and growing it wrongly is a
-# worse defect than the one it fixes.
-#
-# THE DEFECT. Every LIST_FLAG is repeatable (`--repo a --repo b`), so `--repo a,b`
-# is user error. The defect was that it was accepted SILENTLY, storing a
-# one-element array holding the joined string — and producing a record that reads
-# correctly everywhere except where it matters. `bin/task show` prints
-# `repos: a,b` for the joined entry and for the correct pair alike, so nothing at
-# create time, and nothing on the board, can tell them apart.
-#
-# WHERE IT SURFACES, measured 2026-09-15 across the production board (2066 tasks):
-#   repositories  the LOUD reader, and the one that cost a sweep. Release::
-#                 Conductor resolves each entry to a repo, finds a phantom with no
-#                 PR, and refuses at step 3a — the guard added after the
-#                 2026-08-13 half-ship. It ABORTED a live QA release sweep on
-#                 /tasks/sweep-stale-signer-claims: nothing promoted, recorded or
-#                 deployed, repaired by hand and re-run. A SECOND instance was
-#                 typed the same night, by the operator who had just watched the
-#                 first one abort. The failure mode does not teach, because the
-#                 record looks right — which is the whole argument for a guard.
-#   risk_tags     the SILENT reader, and 1117 tasks already carry a joined entry.
-#                 ReviewerSelector looks each tag up in RISK_DOMAINS and matches
-#                 EXACTLY, so a joined entry matches nothing and the gate fails
-#                 OPEN: 464 tasks would have pulled a domain reviewer light and
-#                 did not. (Release::GemVersion is the one
-#                 reader unharmed — BREAKING_TAG is a substring regex.)
-#
-# WHY THESE TWO AND NOT THE OTHER THREE. `--accept`, `--test` and `--checks` carry
-# free PROSE, where a comma is ordinary punctuation — 291, 230 and 1605 board TASKS
-# respectively carry one, and those are 360, 309 and 5883 individual ENTRIES
-# (re-measured 2026-09-16; the first cut of this sentence printed the TASK counts and
-# called them entries — what a blanket rule would shred is the 6552 entries, not the
-# 2126 tasks). Every one of those entries is correct. Guarding them would
-# refuse legitimate acceptance criteria, and SPLITTING them would silently shred
-# an acceptance bullet into fragments. That is a worse defect than the one being
-# fixed, and it is exactly why this is a per-flag decision and not one blanket
-# rule. The invariant is asserted, not merely written here:
-# test_the_comma_guard_covers_identifier_flags_and_never_prose in
-# test/lib/task_cli_test.rb reads this constant out of this file.
-#
-# WHY REFUSE RATHER THAN SPLIT. Splitting cannot be WRONG — no legal repo name or
-# risk tag contains a comma — so it was the live alternative. It loses on two
-# counts. First, consistency: every other value this parser cannot honor dies
-# here (`--agent Steffon`, `--depends-on "Adopt Modal Primitive"`, a malformed
-# `--pr-url-for` pair, an unknown flag), each with the same stated reason — die
-# where a human can still fix it. A single flag that silently rewrites what the
-# operator typed, sitting among four that refuse, is its own trap. Second, and
-# decisive: splitting teaches the WRONG lesson. An agent whose `--repo a,b`
-# quietly works has learned that this CLI takes comma lists, and will next type
-# `--accept "one thing, then another"` expecting two criteria — which must stay
-# ONE, and will. Refusing states the flag's shape once, and the lesson transfers
-# to the flags that can never be guarded. The cost is one retyped command line,
-# paid by the operator who was already wrong, at the only moment it is still free.
-#
-# WHY THE GUARD LIVES HERE — AND WHY IT IS NOT THE ONLY ONE.
-# The VALUE alone cannot be judged: `["a,b"]` from --repo and `["one thing, then
-# another"]` from --accept are both one-element arrays, and the board form posts the
-# same two shapes as strings.
-#
-# The KEY can be, and SINCE 2026-09-16 IT IS. normalize_devops_metadata branches per
-# key (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so
-# Task::DEVOPS_IDENTIFIER_LIST_KEYS carries the same rule scoped to
-# `repositories`/`risk_tags` — splitting a joined entry there, never in prose,
-# WHATEVER SHAPE THE PAYLOAD ARRIVES IN. That last clause was the second half of the
-# fix and landed a day late: Task.normalize_devops_list decided by INPUT SHAPE, so
-# scoping the array branch to the key left the string branch splitting for every key,
-# and the board form's "One criterion per line" TEXTAREAS still shredded any criterion
-# carrying a comma. The identifier keys do still split on that branch — it is how the
-# form's own "auth, solana, migration" text field files three tags — but because the
-# KEY says so now, not because the value arrived as a string.
-#
-# That server rule is the backstop for the raw JSON API, which this file cannot see
-# at all. Do NOT read it as making this guard redundant: the server
-# SPLITS where this REFUSES, deliberately and for reasons argued at that constant (a
-# 422 teaches a scripted caller nothing, and costs it the whole write). This is
-# where the lesson gets taught, and where all 1104 joined entries the 2026-09-15
-# census found were typed — guard here FIRST, not only. The two never disagree in
-# front of a human, because this refusal runs before any request goes out.
-COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
+# The repeatable devops list flags and the identifier flags whose commas split come
+# from ONE key map, lib/devops_list_flags.rb, which Task reads too: the server splits
+# a joined identifier entry from a raw API caller, and this CLI splits it the same
+# way (guard catalog row 3.6). Prose flags (--accept, --test, --checks) never split.
+LIST_FLAGS = DevopsListFlags::FLAGS
+COMMA_FREE_LIST_FLAGS = DevopsListFlags::COMMA_FREE_FLAGS
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
 #
 # `--pr-url` holds ONE url, and the release lane parses that url for the repo it
@@ -884,8 +809,8 @@ SIZES = %w[small medium large xl].freeze
 # board (agent_slug is a free-form column, `belongs_to :agent, optional: true`),
 # stored, and then SILENTLY skipped by the stamp — so `--agent Steffon` or
 # `--agent turf_monster` records an assignee whose only job was to feed
-# `devops.built_by` and feeds it nothing. Refuse it here, where a human can still
-# fix it, exactly as --po-size and --gem-bump are refused.
+# `devops.built_by` and feeds it nothing. normalize_agent_slug! folds those spellings
+# and checks the roster; this shape is its floor when the roster cannot be read.
 SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
@@ -965,7 +890,6 @@ LEGACY_STAGE_HINTS = {
   "prod_ready" => "assembled",
   "done" => "shipped"
 }.freeze
-BLOCK_KINDS = %w[environment rework dependency].freeze
 PERSONA_CLEAR = %w[none clear off -].freeze
 # REMOVING one entry from a repo-keyed map: `--pr-url-for <repo>=none`. Same
 # vocabulary as PERSONA_CLEAR so the CLI has ONE clear-token idiom, not two.
@@ -1270,20 +1194,30 @@ def validate_size!(flag, value)
   die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
 end
 
-# The task's assigned soul. Validated for SHAPE only — the CLI cannot see the
-# Agent table, and a missing Agent row is NOT what breaks the stamp (checked:
-# db/seeds/02_agents.rb seeds every soul). What breaks it is a value outside
-# SOUL_SLUG, which `Task#builder_to_stamp` rules 1 and 4 both test before they
-# stamp `devops.built_by`. reviewer-select reads ONLY that key and REFUSES an
-# unknown builder (bin/reviewer-select), so a dropped stamp does not fail the
-# review — it stalls it, and a hand-picked reviewer once turned out to be the PR's
-# own author. A flag whose whole purpose is stamping must never no-op quietly.
-def validate_agent_slug!(flag, value)
-  return if value.to_s.match?(SOUL_SLUG)
+# The task's assigned soul, NORMALIZED rather than refused (guard catalog row 3.6):
+# `--agent Steffon` and `--agent "turf monster"` mean steffon and turf-monster, so
+# the case and separators are folded. What still refuses is a slug NO soul matches —
+# the roster in config/souls.yml, which db/seeds/02_agents.rb seeds the Agent table
+# from and Task::SOUL_ROSTER reads — because `Task#builder_to_stamp` stamps
+# devops.built_by only for a soul, reviewer-select reads only that key, and a
+# dropped stamp once seated a PR's own author as its reviewer.
+SOUL_ROSTER_PATH = File.expand_path("../config/souls.yml", __dir__)
+SOUL_ALIASES = { "alex" => "xan" }.freeze
 
-  die!("#{flag} must be a soul slug — lowercase letters and single hyphens " \
-       "(e.g. steffon, turf-monster) — got #{value.inspect}. " \
-       "Anything else is stored but never stamped onto devops.built_by, " \
+def soul_roster
+  @soul_roster ||= YAML.safe_load_file(SOUL_ROSTER_PATH).fetch("souls").map { |soul| soul.fetch("slug").to_s }
+rescue StandardError
+  []
+end
+
+def normalize_agent_slug!(flag, value)
+  slug = value.to_s.strip.downcase.gsub(/[\s_]+/, "-")
+  slug = SOUL_ALIASES.fetch(slug, slug)
+  roster = soul_roster
+  return slug if roster.include?(slug) || (roster.empty? && slug.match?(SOUL_SLUG))
+
+  die!("#{flag} #{value.inspect} names no soul — one of: #{roster.join(", ")}. " \
+       "A value that is not a soul is never stamped onto devops.built_by, " \
        "which is what bin/reviewer-select reads to keep a soul off their own PR.")
 end
 
@@ -1413,10 +1347,15 @@ def parse_flags(argv, context: nil)
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       value = argv[i + 1] || die!("#{arg} needs a value")
-      # Identifier flags only (COMMA_FREE_LIST_FLAGS) — the prose flags keep their
-      # commas. A no-op for the other three, so the branch keeps one shape.
-      refuse_comma_list!(arg, value) if COMMA_FREE_LIST_FLAGS.include?(arg)
-      lists[LIST_FLAGS[arg]] << value; i += 2
+      # SPLIT, not refused (guard catalog row 3.6): no repo name or risk tag
+      # contains a comma, so `--repo a,b` means two entries. The prose flags keep
+      # their commas.
+      if COMMA_FREE_LIST_FLAGS.include?(arg)
+        lists[LIST_FLAGS[arg]].concat(value.split(",").map(&:strip).reject(&:empty?))
+      else
+        lists[LIST_FLAGS[arg]] << value
+      end
+      i += 2
     elsif MAP_FLAGS.key?(arg)
       # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
       # query string could. A malformed pair dies here rather than writing half a
@@ -1450,7 +1389,7 @@ def parse_flags(argv, context: nil)
       value = argv[i + 1] || die!("#{arg} needs a value")
       # The assignee is the stamp's rule-4 input; a non-soul value is a silent
       # no-op downstream, so it dies here instead.
-      validate_agent_slug!(arg, value) if key == "agent"
+      value = normalize_agent_slug!(arg, value) if key == "agent"
       top[key] = value; i += 2
     elsif BOOL_FLAGS.key?(arg)
       # Valueless — consumes ONE token. Storing the boolean (including `false`)
@@ -2185,45 +2124,6 @@ def verify_move_persisted!(slug, expected_stage)
   exit 1
 end
 
-# The `merged` twin of read_back_stage — the git-location crash-recovery signal
-# (nil/accepted/release/main). Same degrade-on-unverifiable contract: a non-2xx
-# or transport error returns nil (could not verify), never an abort. Empty string
-# means the board read the task back with no merged stamp.
-def read_back_merged(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
-  return nil unless res.code.to_i.between?(200, 299)
-
-  data = TaskBoard.parse_body(res)["data"]
-  data.is_a?(Hash) ? data["merged"].to_s : nil
-rescue StandardError
-  nil
-end
-
-# CONFIRM a `merged` stamp actually landed before reporting success — the twin of
-# verify_move_persisted!. A dropped git-location write is not cosmetic: the sweep
-# classifies a `reviewed` member with merged:"" as a HELD anomaly and leaves it
-# behind, so a silently-non-persisting stamp would strand the task off every RC.
-# On a DEFINITE mismatch exit nonzero + loud; an unverifiable read (nil) degrades
-# to the prior behavior (not proof of a failed write).
-def verify_merged_persisted!(slug, expected)
-  # A 200 is not persistence: confirm the stamp by reading it back. Only an EXACT match
-  # passes — a blank value (the write dropped) AND an unreadable board (the read-back GET
-  # failed) both stay unconfirmed. The old code returned on a nil read-back, treating an
-  # unreadable board as verified; under load the PATCH drops and the GET fails together, so
-  # that silent pass is exactly how a dropped stamp reached a `reviewed` member as merged:None
-  # (2026-07-21). Retries survive a transient read miss without accepting a genuine drop.
-  return if StampConfirmation.confirmed?(expected,
-                                         read_back: -> { read_back_merged(slug) },
-                                         sleeper: ->(seconds) { sleep(seconds) })
-
-  last = read_back_merged(slug)
-  shown = last.nil? ? "unreadable" : (last.empty? ? "nil" : last)
-  warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but the read-back shows merged:[#{shown}].")
-  warn!("  A failed read is NOT a confirmation — the git-location write did not land (or the board is unreadable); the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
-  warn!("  Re-run: #{SELF_CMD} merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog / PG connections).")
-  exit 1
-end
-
 # --- Fast lane: `begin` ------------------------------------------------------
 
 # THE FLAGS `begin` HONOURS ON A RESUME — the single source, read back by the
@@ -2268,6 +2168,38 @@ def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], u
                   hint: "#{hint_lead} — set it on the existing task with " \
                         "`#{SELF_CMD} update #{update_target} #{arg} ...`#{tail}")
   end
+end
+
+# DOOR 2's construction (guard catalog row 3.7): a create flag re-run against a task
+# that already exists is FORWARDED to `bin/task update <slug>`, which is where the
+# refusal used to send the caller. The resume flags (and their values) stay with
+# begin; everything else is the update's to parse and, if it must, to refuse.
+BEGIN_RESUME_VALUE_FLAGS = %w[--slug --repo --agent --dev-size --title].freeze
+
+def forward_create_flags_to_update!(raw_argv, slug)
+  forward = []
+  i = 0
+  while i < raw_argv.length
+    arg = raw_argv[i].to_s
+    if BEGIN_RESUME_VALUE_FLAGS.include?(arg)
+      i += 2
+    elsif BOOL_FLAGS.key?(arg)
+      forward << arg
+      i += 1
+    elsif arg.start_with?("--") && arg != "--steal"
+      forward.concat(raw_argv[i, 2])
+      i += 2
+    else
+      i += 1 # the positional slug, or --steal: begin's own
+    end
+  end
+  return if forward.empty?
+
+  warn!("begin 1/5 task — #{slug} already exists; forwarding #{forward.grep(/\A--/).join(" ")} to " \
+        "#{SELF_CMD} update #{slug}")
+  return if system(RbConfig.ruby, File.expand_path(__FILE__), "update", slug, *forward)
+
+  die!("the forwarded update of #{slug} failed — see above; nothing else ran.")
 end
 
 # The task record for `begin`'s resume decision: the data on 2xx, nil on the
@@ -2651,24 +2583,11 @@ when "begin"
     write_feature_marker(task)
     warn!("begin 1/5 task — created #{slug} [designed]")
   else
-    # ⛔ DOOR 2 — THE TASK ALREADY EXISTS, so this is a RESUME and every create
-    # flag is inert, --title or no --title. Door 1 catches only the blank-title
-    # spelling; what actually makes a create flag inert is the task EXISTING.
-    # `begin --title "Some Existing Title" --shape backend` walked straight past
-    # door 1 and dropped --shape in silence — on the DOCUMENTED re-run path, since
-    # `begin` is advertised as resumable. Refuse it here instead, naming the task
-    # so the remedy is copy-pasteable. --title stays legal: it is what named the
-    # task whose slug we just resolved, not an attempt to re-create it.
-    # THE REFUSAL MUST LEAVE A WAY FORWARD. Re-running the whole create line is a
-    # real habit — the fast lane prints it and `begin` is advertised as resumable
-    # — so a refusal that only says "no" trades a silent drop for a dead end. Name
-    # both moves: where the value DOES belong, and how to resume without it.
-    refuse_inert_create_flags!(
-      raw_argv, also_valid: %w[--title], update_target: slug,
-      because: "#{slug} already exists",
-      hint_lead: "begin RESUMES an existing task and never re-shapes it",
-      tail: ", then resume with `#{ClaimHolder::TASK_COMMAND} begin #{slug}`"
-    )
+    # DOOR 2 — THE TASK ALREADY EXISTS, so this is a RESUME. Re-running the
+    # documented create line is a real habit, so its create flags (--shape, --risk,
+    # --accept …) are forwarded to `update` rather than refused (guard catalog row
+    # 3.7). --title stays begin's: it named the task whose slug was just resolved.
+    forward_create_flags_to_update!(raw_argv, slug)
     warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
   end
 
@@ -2912,10 +2831,9 @@ when "merged"
   # Set the git-location crash-recovery signal (Task::MERGED_STATES). NOT a stage
   # move and NOT event-recorded: it's the durable "where is the code" fact the
   # deploy heartbeats read. Set through the same one-path PATCH update as
-  # `move` (config/routes.rb: no named-transition endpoint), then read back to
-  # confirm it persisted — a 200 is not persistence, and a dropped stamp would
-  # strand the task off every RC (the sweep leaves a merged:"" `reviewed` member
-  # behind as a HELD anomaly).
+  # `move` (config/routes.rb: no named-transition endpoint). Not read back (guard
+  # catalog row 3.5): the board derives `merged` from GitHub, so a dropped
+  # override strands nothing.
   usage = "usage: #{$PROGRAM_NAME} merged <slug> <accepted|release|main>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   state = positional!(ARGV.shift || die!(usage), usage)
@@ -2924,7 +2842,6 @@ when "merged"
   die!(usage) unless ARGV.empty?
   warn "#{MERGED_NOT_NEEDED_NOTICE} Writing merged:#{state} as a manual override anyway."
   task = api(:patch, "/api/v1/tasks/#{slug}", { "merged" => state })["data"]
-  verify_merged_persisted!(slug, state)
   puts "merged set on #{slug}: #{state}"
   print_task(task)
 when "fix-forward"
@@ -3172,7 +3089,8 @@ when "block"
     else unknown_flag!(ARGV[i], valid: %w[--kind --summary --feedback --details --agent --breaker-ack], context: "block")
     end
   end
-  die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
+  # The kind rides to the board as typed; Task validates block_kind and refuses an
+  # unknown one with a 422 before anything is stamped.
   die!("--breaker-ack only applies to --kind rework") if breaker_ack && kind != "rework"
   # This read doubles as the existence check the breaker would otherwise repeat —
   # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.

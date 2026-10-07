@@ -39,20 +39,29 @@
 # launcher appends to the log — never from `pgrep`/`pkill`/`ps | grep`. A pattern
 # that can match a sibling is the whole disease.
 #
-# AND ENDED IS NOT FAILED. `bin/submit` can exit 0 on a run that did not reach the
-# seam, so process absence proves nothing about OUTCOME. The authoritative fact is
-# a line ship prints only after its own end-to-end read-back verify:
+# AND ENDED IS NOT FAILED. Process absence proves nothing about OUTCOME. The
+# authoritative fact is the ONE TERMINAL LINE bin/submit prints on every exit path
+# (guard catalog row 3.4):
 #
-#     stage: submitted (read back verified)
+#     stage: submitted (read back verified)              the handoff landed
+#     stage: reviewed (past the submitted seam)          already handed off: nothing to do
+#     stage: building (not submitted)                    any refusal, any other exit
 #
 # `verdict` therefore reads the LOG for WHAT happened and takes `ended:` only as
 # WHEN to stop waiting. An exit status is never consulted for the verdict — it is
-# relayed to the reader and nothing more.
+# relayed to the reader and nothing more. A log with no terminal line at all (a
+# killed process) ended without a verdict and reads :failed.
 module ShipWait
   # bin/submit's final stdout line, printed only after the read-back verify passes
   # (bin/submit's last `puts`). The one string that means "this ship reached the
   # submitted seam". Nothing else in ship's output is terminal-and-positive.
   SUCCESS_LINE = "stage: submitted (read back verified)"
+  # The terminal line of a run whose task was already past `submitted`: nothing to
+  # hand off, which is a success for the wait (an already-reviewed task used to exit
+  # 0 with no line and read as FAILED).
+  PAST_SEAM_RE = /\Astage: (?:reviewed|assembled|shipped|archived) \(past the submitted seam\)\z/
+  PAST_SEAM_SUFFIX = "(past the submitted seam)"
+  NOT_SUBMITTED_SUFFIX = "(not submitted)"
 
   # The marker `bin/submit-wait --launch` appends to the log after the ship process
   # exits. It makes the LOG self-sufficient: a wait attaching later — a new
@@ -92,8 +101,16 @@ module ShipWait
   # that greps its own documentation is the same class of bug as one that greps
   # its own command line.
   def succeeded?(text)
-    text.to_s.each_line.any? { |line| line.strip == SUCCESS_LINE }
+    text.to_s.each_line.any? { |line| success_line?(line.strip) }
   end
+
+  def success_line?(line)
+    line == SUCCESS_LINE || PAST_SEAM_RE.match?(line)
+  end
+
+  # The terminal lines bin/submit prints for the other two exits.
+  def past_seam_line(stage) = "stage: #{stage} #{PAST_SEAM_SUFFIX}"
+  def not_submitted_line(stage) = "stage: #{stage.to_s.empty? ? 'unknown' : stage} #{NOT_SUBMITTED_SUFFIX}"
 
   # The status the launcher recorded, or nil when the log holds no sentinel.
   # LAST sentinel wins — a truncate-on-relaunch should make this moot, but a log

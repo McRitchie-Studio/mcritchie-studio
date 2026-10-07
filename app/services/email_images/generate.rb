@@ -40,7 +40,7 @@ module EmailImages
         raise RoundsExhausted, "This brief has used all #{@brief.max_rounds} rounds. Change the brief " \
                                "(headline, notes) or raise its round limit; nothing was spent."
       end
-      missing = @brief.kit.references.reject(&:exists?)
+      missing = @brief.kit.base_references.reject(&:exists?)
       raise MissingReference, "Brand kit reference missing: #{missing.map(&:path).join(', ')}" if missing.any?
     end
 
@@ -59,12 +59,20 @@ module EmailImages
                end
     end
 
-    def prompt = @prompt ||= EmailImages::Prompt.call(@brief, round: @round, round_notes: @notes)
+    def prompt = @prompt ||= EmailImages::Prompt.call(@brief, round: @round, round_notes: @notes, references: references)
+
+    # THE REFERENCES THIS ROUND SENDS: the kit's YAML and uploaded references,
+    # cut to what this row accepts by EmailImages::BrandKit#generator_references
+    # (the deterministic role rule). The prompt describes exactly this list, in
+    # this order.
+    def references
+      @references ||= @brief.kit.generator_references(limit: EmailImages::BrandKit.reference_limit(row))
+    end
 
     private
 
     def generate_one
-      result = client.generate_and_wait(prompt: prompt, reference_urls: @brief.kit.reference_data_uris,
+      result = client.generate_and_wait(prompt: prompt, reference_urls: references.map(&:generator_input),
                                         image_size: generate_size, num_images: 1)
       raise ImageGeneration::GenerationFailed, "#{row.label} returned no image" unless result.any?
 

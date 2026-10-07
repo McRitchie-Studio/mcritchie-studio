@@ -1,4 +1,5 @@
 # Bucket Provision
+<!-- registry: per-app R2 pair + tokens -->
 
 ## Status: Active
 

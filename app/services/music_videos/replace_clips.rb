@@ -11,7 +11,8 @@ module MusicVideos
   #
   # A chunk set arrives with the chunk length and overlap it was cut at (25 s
   # and 5 s unless sent); the video records them with the set. A chunk cut at
-  # the same window as before keeps piece 3's (now unread) regenerate flag;
+  # the same window as before keeps piece 3's (now unread) regenerate flag and
+  # its lettered reference frames (piece 16; their keys name the window);
   # an alt video's clips find their chunk again by that window
   # (AltVideoClip#chunk_in).
   class ReplaceClips
@@ -64,8 +65,8 @@ module MusicVideos
         @video.update!(chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms]) if chunk?
         clips = @rows.map do |row|
           clip = @video.video_clips.build(row.slice(*fields).merge("kind" => @kind))
-          clip.prompt = ClipPrompts.for(clip)
           clip.assign_attributes(flags.fetch([clip.ordinal, clip.start_ms, clip.end_ms], {}))
+          clip.prompt = ClipPrompts.for(clip)
           clip.tap(&:save!)
         end
         @video.sync_clip_stage!
@@ -79,10 +80,11 @@ module MusicVideos
 
     def fields = chunk? ? CHUNK_FIELDS : FIELDS
 
-    # [ordinal, start_ms, end_ms] => the operator's pending regenerate request.
+    # [ordinal, start_ms, end_ms] => what a chunk cut at the same window
+    # keeps: the operator's pending regenerate request and the lettered frames.
     def regenerate_flags(chunks)
-      chunks.where.not(regenerate_requested_at: nil).to_h do |c|
-        [[c.ordinal, c.start_ms, c.end_ms], c.slice(:regenerate_requested_at, :regenerate_note)]
+      chunks.where.not(regenerate_requested_at: nil).or(chunks.where.not(reference_frames: [])).to_h do |c|
+        [[c.ordinal, c.start_ms, c.end_ms], c.slice(:regenerate_requested_at, :regenerate_note, :reference_frames)]
       end
     end
 

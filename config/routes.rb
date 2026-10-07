@@ -149,6 +149,16 @@ Rails.application.routes.draw do
   # Email header briefs (EmailImagesController, require_admin): a brief, its
   # generated candidates, approve/retire, and a preview inside the real email
   # shell. Epic email-image-builder, piece 1.
+  # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
+  # assets, its approved headers and open briefs, and the uploaded references.
+  # Declared BEFORE resources :email_images, whose show route would otherwise
+  # read "brand_kits" as a brief slug. Task email-brand-asset-page.
+  get "email_images/brand_kits", to: "email_brand_kits#index", as: :email_brand_kits
+  get "email_images/brand_kits/:kit", to: "email_brand_kits#show", as: :email_brand_kit
+  post "email_images/brand_kits/:kit/references", to: "email_brand_kits#create_reference",
+                                                  as: :email_brand_kit_references
+  post "email_images/brand_kits/:kit/references/:slug/archive", to: "email_brand_kits#archive_reference",
+                                                                as: :archive_email_brand_kit_reference
   resources :email_images, param: :slug, only: %i[index create show update] do
     member do
       post :generate
@@ -394,6 +404,8 @@ Rails.application.routes.draw do
       # The model library: a person's looks, and the images made of them.
       # Admin only, all three (hub signup is open; a session is no gate).
       post :create_appearance
+      # One look's jersey number (the number clip prompts name the player by).
+      patch :update_appearance
       # A free row: the iced-out twin of a look made before twins existed.
       post :create_iced_twin
       post :make_default_appearance
@@ -496,11 +508,15 @@ Rails.application.routes.draw do
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
-      # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5)
-      # and bin/stitch-video (the final stitch).
+      # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5),
+      # bin/clip-references (lettered frames) and bin/stitch-video (the final stitch).
       resources :music_videos, only: [:show, :create], param: :slug do
         post :performers, on: :member
         post :clips, on: :member
+        # A chunk's lettered reference frames, as bin/clip-references --apply posts them.
+        resources :chunks, only: [], param: :ordinal do
+          resource :references, only: [:create], controller: "music_video_chunk_references"
+        end
         # The final stitch of an alt video, as bin/stitch-video drives it: read
         # the requests, open one, then report it started, finished or failed.
         resources :alt_videos, only: [], param: :number do

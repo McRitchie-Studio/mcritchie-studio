@@ -88,34 +88,18 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # the lookup says so. That is precisely why the blank-title door STAYS above the
   # network in the test above — a grammar fact must not depend on a reachable
   # board — and why these two checks are not collapsed into one.
-  test "a create flag is refused once the task turns out to already exist" do
-    err, status = begin_against_existing_task("--title", "Probe Task", "--shape", "backend")
+  # Guard catalog row 3.7: the create flags of a re-run against an existing task are
+  # FORWARDED to `bin/task update <slug>` rather than refused.
+  test "a create flag is forwarded to update once the task turns out to already exist" do
+    writes = []
+    err, status = begin_against_existing_task("--title", "Probe Task", "--shape", "backend", writes: writes)
 
-    refute status.success?, "a flag begin cannot honour must fail the command, not be dropped"
-    assert_includes err, "unknown flag", "the refusal must name the flag as unknown"
-    assert_includes err, "--shape"
-    assert_includes err, "already exists",
-                     "the refusal must name WHY the flag is inert — the task exists, so this " \
-                     "is a resume — not merely that a flag was unrecognised"
-    assert_includes err, "bin/task update probe-task",
-                     "and must name the remedy against THIS task, ready to paste"
-    refute_includes err, "begin 2/5 worktree",
-                    "the refusal must land BEFORE begin allocates a desk — a run that is " \
-                    "going to be refused must not leave a worktree behind first"
-  end
-
-  # THE REFUSAL MUST LEAVE A WAY FORWARD, and this is the cost of the fix above
-  # rather than a free win. Re-running the whole create line IS a real habit: the
-  # fast lane prints that line and `begin` is advertised as resumable, so this
-  # change turns a silent drop into a hard stop for anyone who re-runs it verbatim.
-  # That trade is only worth making if the stop is one paste from working — a
-  # refusal that just says "no" would swap a quiet wrong answer for a dead end.
-  test "the already-exists refusal names how to resume" do
-    err, _status = begin_against_existing_task("--title", "Probe Task", "--shape", "backend")
-
-    assert_includes err, "bin/task begin probe-task",
-                     "the refusal must name the resume command, not only the update remedy — " \
-                     "re-running the create line is the habit this newly refuses"
+    refute_includes err, "unknown flag", "the flag is forwarded, not refused"
+    assert_includes err, "forwarding --shape to"
+    assert_includes err, "begin 2/5 worktree", "and begin carries on into the resume"
+    assert(writes.any? { |w| JSON.parse(w).dig("devops", "shape") == "backend" },
+           "the forwarded update must PATCH the shape onto the task: #{writes.inspect}")
+    assert status.exitstatus.is_a?(Integer)
   end
 
   # The flag that must NOT be refused here. --title is how a re-run names the task
@@ -145,26 +129,25 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                      "the documented fast lane for every resumed task"
   end
 
-  # SHAPE, NOT MEMBERSHIP. The CLI holds no Rails constants and cannot see the
-  # Agent table — and a missing Agent row is NOT what breaks the stamp (every soul
-  # is seeded). What breaks it is a value outside SOUL_SLUG, which
-  # Task#builder_to_stamp tests before it writes built_by. `--agent Steffon` and
-  # `--agent turf_monster` are the realistic spellings that silently no-op.
-  test "an agent value that could never stamp is refused at the door" do
-    ["Steffon", "turf_monster", "carl2"].each do |bad|
+  # NORMALIZED, THEN MEMBERSHIP (guard catalog row 3.6). `--agent Steffon` and
+  # `--agent turf_monster` fold to the soul they mean; only a slug no soul in
+  # config/souls.yml matches is refused, because it could never stamp built_by.
+  test "an agent value that names no soul is refused at the door" do
+    ["carl2", "stefon"].each do |bad|
       _out, err, status = run_task("create", "--title", "Probe Three Words", "--agent", bad)
 
-      refute status.success?, "#{bad.inspect} cannot match SOUL_SLUG, so it must not be accepted"
-      assert_includes err, "must be a soul slug", "the refusal must say what shape is required"
+      refute status.success?, "#{bad.inspect} names no soul, so it must not be accepted"
+      assert_includes err, "names no soul"
       assert_includes err, "built_by", "and why it matters — the stamp is the whole point"
     end
   end
 
-  test "a soul-shaped agent value passes validation" do
-    _out, err, _status = run_task("create", "--title", "Probe Three Words", "--agent", "turf-monster")
+  test "an agent value in another case or separator is normalized, not refused" do
+    ["Steffon", "turf_monster", "Turf Monster", "turf-monster"].each do |spelling|
+      _out, err, _status = run_task("create", "--title", "Probe Three Words", "--agent", spelling)
 
-    refute_includes err, "must be a soul slug",
-                     "a hyphenated soul is the shape Task::SOUL_SLUG accepts"
+      refute_includes err, "names no soul", "#{spelling.inspect} names a soul in another spelling"
+    end
   end
 
   # GUARD THE MIRROR. bin/task carries its own copy of SOUL_SLUG because it holds
@@ -681,8 +664,9 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # the task whose slug `begin` just resolved — and it is exactly the flag the
   # entry docs left out of their count.
   def door_two_extra_flags(source)
-    source[/also_valid: %w\[([^\]]+)\]/, 1]&.split ||
-      flunk("could not read door 2's also_valid whitelist out of bin/task")
+    kept = source[/^BEGIN_RESUME_VALUE_FLAGS = %w\[([^\]]+)\]/, 1]&.split ||
+           flunk("could not read door 2's BEGIN_RESUME_VALUE_FLAGS out of bin/task")
+    kept - advertised_flags(source)
   end
 
   # THE OLD, CHARACTER-BASED SLICE — kept only so M6 can prove its hazard. A probe
@@ -745,14 +729,14 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # task, and return [stderr, status]. The worktree, preflight and move children
   # are stubbed, so a run that gets PAST the refusal still does no real work —
   # which is what lets the second test assert a clean resume succeeds.
-  def begin_against_existing_task(*args)
+  def begin_against_existing_task(*args, writes: nil)
     Dir.mktmpdir do |dir|
       stub(dir, "move-stub", "exit 0")
       stub(dir, "worktree-stub", "echo #{dir}")
       stub(dir, "preflight-stub", "exit 0")
       err = status = nil
 
-      with_board_sink(dir) do |base|
+      with_board_sink(dir, writes: writes) do |base|
         _out, err, status = Open3.capture3(
           { "TASK_API_BASE" => base, "AGENT_API_SECRET" => "not-a-real-secret",
             "TASK_SKIP_MARKER" => "1", "TASK_BEGIN_PROJECTS_DIR" => dir,

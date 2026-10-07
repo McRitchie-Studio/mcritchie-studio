@@ -171,17 +171,13 @@ class Task < ApplicationRecord
   # `abandoned_prs` records each PR still open when an operator archived the task
   # with `--force` (lib/open_pr_guard.rb). Never cleared: it separates a dropped
   # PR from a forgotten one.
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs
-                        fix_forward].freeze
-  # List keys whose entries are identifiers, so a comma inside one is a joined list:
-  # these split on commas in array form too. bin/task refuses `--repo a,b` first
-  # (COMMA_FREE_LIST_FLAGS, pinned by test/lib/task_comma_list_flags_test.rb); this
-  # is the backstop for raw API callers, where a joined entry names a phantom repo
-  # or a risk tag no gate matches. Prose keys (acceptance, test_plan, checks_run,
-  # abandoned_prs) keep their commas; test/models/task_devops_identifier_lists_test.rb
-  # checks the complement. Normalization runs on write only; #devops_list does not
-  # split.
-  DEVOPS_IDENTIFIER_LIST_KEYS = %w[repositories risk_tags].freeze
+  # The flag-written keys come from the key map (lib/devops_list_flags.rb).
+  DEVOPS_LIST_KEYS = (DevopsListFlags::FLAGS.values + %w[abandoned_prs fix_forward]).freeze
+  # List keys whose entries are identifiers, so a comma inside one is a joined list
+  # and splits on write in array form too. The key map (lib/devops_list_flags.rb) is
+  # the one copy; bin/task refuses the same keys' flags first. Prose keys keep their
+  # commas. Normalization runs on write only; #devops_list does not split.
+  DEVOPS_IDENTIFIER_LIST_KEYS = DevopsListFlags::IDENTIFIER_KEYS
   # Repo-keyed maps: { "<repo>" => "<value>" }. `pr_urls` holds each repo's PR for a
   # multi-repo task; `pr_url` stays the primary that every reader uses.
   DEVOPS_MAP_KEYS = %w[pr_urls].freeze
@@ -251,6 +247,15 @@ class Task < ApplicationRecord
   validates :approval_status, inclusion: { in: OPERATOR_APPROVAL_STATUSES,
                                            message: "must be one of #{OPERATOR_APPROVAL_STATUSES.join(", ")}" },
                               allow_nil: true, if: :will_save_change_to_approval_status?
+  # The one copy of the block kinds: bin/task sends --kind as typed and this answers
+  # a kind it does not know with a 422 naming the list. Gated on change, like the
+  # approval status above.
+  validates :block_kind, inclusion: { in: BLOCK_KINDS, message: "must be one of #{BLOCK_KINDS.join(", ")}" },
+                         allow_nil: true, if: :will_save_change_to_block_kind?
+  # bin/release runs devops.post_deploy_cmd VERBATIM against production, and a bare
+  # `db:seed` loads every db/seeds/*.rb. Refused on write (guard catalog row 2.8), so
+  # bin/dor-check never meets one. Gated on change, so a legacy row still saves.
+  validate :post_deploy_cmd_is_not_a_bare_seed, if: :post_deploy_cmd_changed?
 
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
@@ -1196,26 +1201,25 @@ class Task < ApplicationRecord
     events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
-  # `events:` follows #assembled_seconds_from_pickup's contract: a parameter with
-  # the SQL default, never a `loaded?` sniff. record_intent_event's idempotency
-  # check calls with no events, so a write path always reads the database.
+  # ONE implementation, over an event array. The board passes its preload as
+  # `events:`; every other caller (record_intent_event's idempotency check among
+  # them) passes nothing and gets a fresh read of this task's intents and
+  # transitions, never a `loaded?` sniff, so a write path always reads the database.
   def open_intents_for(to_stage, events: nil)
     to_stage = to_stage.to_s
     return [] unless NEXT_INTENT_STAGE[stage] == to_stage
 
+    events ||= task_events.where(kind: [ TaskEvent::INTENT, TaskEvent::TRANSITION ]).to_a
     # Resolved once per call and passed down, never memoized on the instance.
     entry = current_stage_entry_event(events: events)
 
     open_intent_candidates(to_stage, events).reject do |intent|
-      !intent_started_in_current_stage?(intent, entry: entry) ||
-        intent_superseded?(intent, events: events)
+      !intent_started_in_current_stage?(intent, entry: entry) || superseded_by?(events, intent)
     end
   end
 
   # The →to_stage intents, oldest first.
   def open_intent_candidates(to_stage, events)
-    return task_events.intents.where(to_stage: to_stage).chronological.to_a unless events
-
     events.select { |event| event.intent? && event.to_stage == to_stage }
           .sort_by { |event| [event.occurred_at, event.id.to_i] }
   end
@@ -1255,20 +1259,7 @@ class Task < ApplicationRecord
   end
 
   # An intent closes when its target lands or any later transition leaves its
-  # source stage. The Ruby branch mirrors the SQL predicate term for term.
-  def intent_superseded?(intent, events: nil)
-    return superseded_by?(events, intent) if events
-
-    task_events.transitions.where(
-      "(to_stage = :target OR from_stage = :source) AND " \
-        "(occurred_at > :occurred_at OR (occurred_at = :occurred_at AND id > :id))",
-      target: intent.to_stage,
-      source: intent.from_stage,
-      occurred_at: intent.occurred_at,
-      id: intent.id
-    ).exists?
-  end
-
+  # source stage.
   def superseded_by?(events, intent)
     events.any? do |event|
       next false unless event.transition?
@@ -2036,9 +2027,10 @@ class Task < ApplicationRecord
   # builder who excludes nobody. It registers identities, not review seats
   # (ReviewerSelector::POOL decides those), so `pokemon`, the general builder, is
   # here. The static list is the floor: .soul_roster unions seeded Agent slugs,
-  # and the floor survives a DB outage. Keep it in lockstep with the seed
-  # (test/models/agents_seed_test.rb).
-  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex tyrion].freeze
+  # and the floor survives a DB outage. It is read from config/souls.yml, the file
+  # db/seeds/02_agents.rb seeds from, so a seeded soul is always on the floor.
+  SOUL_ROSTER = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
+                    .map { |soul| soul.fetch("slug") }.freeze
 
   # Retired slugs that still resolve on read: `alex` became `xan` (the human owner
   # is Alex). Nothing writes the legacy slug; every stamp goes through
@@ -2053,8 +2045,8 @@ class Task < ApplicationRecord
   end
 
   # Every soul slug this deployment recognises: the floor plus seeded agents. A
-  # lookup error degrades to the floor, which names every real soul, so a new soul
-  # belongs in SOUL_ROSTER, not only the seed. Memoized per request
+  # lookup error degrades to the floor, which names every soul in config/souls.yml.
+  # Memoized per request
   # (Current.soul_roster).
   def self.soul_roster
     Current.soul_roster ||= begin
@@ -2735,6 +2727,25 @@ class Task < ApplicationRecord
 
   # True when the normalized acceptance list differs from the stored one, so
   # untouched tasks and other devops updates are not re-validated.
+  # The rake TASK token `db:seed` (and `db:seed:replant` / any `db:seed:*`) as a
+  # standalone word: the COLON is the tell. The scoped `db/seeds/NN.rb` (slash) and a
+  # dedicated task like `pokemon:seed` do not match.
+  BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
+
+  def post_deploy_cmd_changed?
+    (metadata_was || {}).dig("devops", "post_deploy_cmd") != devops["post_deploy_cmd"]
+  end
+
+  def post_deploy_cmd_is_not_a_bare_seed
+    cmd = devops["post_deploy_cmd"].to_s
+    return unless BARE_SEED_TASK.match?(cmd)
+
+    errors.add(:base, "post_deploy_cmd #{cmd.inspect} is a bare full-suite seed — bin/release runs it " \
+                      "VERBATIM against PRODUCTION, and db:seed loads EVERY db/seeds/*.rb. Declare a narrow " \
+                      "command: a scoped single-file runner (rails runner 'load Rails.root.join(" \
+                      "\"db/seeds/NN_x.rb\").to_s') or a dedicated idempotent rake task (bin/rails pokemon:seed)")
+  end
+
   def acceptance_changed?
     previous = self.class.normalize_devops_list((metadata_was || {}).dig("devops", "acceptance"))
     previous != devops_acceptance

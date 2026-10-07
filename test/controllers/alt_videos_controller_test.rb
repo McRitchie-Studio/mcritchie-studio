@@ -3,6 +3,7 @@
 require "test_helper"
 require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 require Rails.root.join("db/seeds/data/recast_video.rb").to_s
+require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 
 # [integration] The clip builder end to end: Build Clips on the cast page makes
 # an alt video and opens it; a dropped MP4 becomes a clip's primary version;
@@ -111,16 +112,62 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='alt-clip'][data-ordinal='2']" do
       assert_select "[data-test='clip-window']", /0:20–0:45/
-      assert_select "[data-test='clip-swap']", /Test Athlete Alpha > Home Blue/
-      assert_select "[data-test='clip-prompt']", /with Test Athlete Alpha, the football player/
+      assert_select "[data-test='clip-swap-row'][data-letter='A'][data-lead='true']", /Person A.*lead.*Test Athlete Alpha, Home Blue.*sheet 1/m
+      assert_select "[data-test='clip-prompt']", /Person A \(lead\) -> Test Athlete Alpha, Home Blue \(character sheet 1\)/
       assert_select "[data-test='clip-copy']", "Copy prompt"
       assert_select "[data-test='clip-chunk-download'][download='tiled_demo_chunk_02_0020_0045.mp4']", "Download 25 s clip"
-      assert_select "[data-test='clip-sheet-missing'][data-ordinal='1']", /No character sheet for Test Athlete Alpha > Home Blue/
+      assert_select "[data-test='clip-sheet-missing'][data-ordinal='1']",
+                    /Sheet 1 · Person A · Test Athlete Alpha: no character sheet for Test Athlete Alpha > Home Blue/
+      assert_select "[data-test='clip-frames-none']", /bin\/clip-references #{@video.slug}/
       assert_select "[data-test='clip-drop-form'][data-max-bytes='#{Store::MAX_BYTES}']" do
         assert_select "[data-test='clip-drop']", /Drop the generated MP4 here/
         assert_select "input[type='file'][name='file'][data-test='clip-file']"
       end
       assert_select "[data-test='clip-versions-empty']"
+    end
+  end
+
+  # [component] Piece 16: two swaps in one window, lettered frames with
+  # Download above the hand-off, and each sheet labelled as the prompt numbers it.
+  test "a clip card letters its people: frames, numbered sheets and the full v2 prompt" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    log_in_as users(:alex)
+    get music_video_alt_video_path(video, alt)
+
+    assert_select "[data-test='alt-video-swap'][data-ordinal='2']", /Person B.*Person 2.*#4.*Test Passer Epsilon > Home White/m
+    assert_select "[data-test='alt-clip'][data-ordinal='3']" do
+      assert_select "[data-test='clip-swap-row']", 2
+      assert_select "[data-test='clip-swap-row'][data-letter='B'][data-lead='true']", /#4 Test Passer Epsilon/
+      assert_select "[data-test='clip-swap-row'][data-letter='C'][data-lead='false']", /background.*#88 Test Receiver Zeta/m
+      assert_select "[data-test='clip-frames'][data-count='2']" do
+        assert_select "[data-test='clip-frame'][data-letters='A,B,C']", 2
+        assert_select "[data-test='clip-frame']", /0:45 · A B C/
+      end
+      assert_select "[data-test='clip-sheet'][data-sheet='1'][data-ordinal='2']", "Sheet 1 · Person B · #4 Test Passer Epsilon"
+      assert_select "[data-test='clip-sheet'][data-sheet='2'][data-ordinal='3']", "Sheet 2 · Person C · #88 Test Receiver Zeta"
+      assert_select "[data-test='clip-prompt']", /- Person B \(lead\) -> #4 Test Passer Epsilon, Home White \(character sheet 1\)\s+- Person C \(background\) -> #88 Test Receiver Zeta, Home White \(character sheet 2\)/
+    end
+    # The frames sit above the hand-off buttons on the card.
+    card = css_select("[data-test='alt-clip'][data-ordinal='3']").sole.to_html
+    assert_operator card.index("data-test=\"clip-frames\""), :<, card.index("data-test=\"clip-handoff\"")
+    assert_select "[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-frames-none']"
+
+    # The cast card carries the same letter.
+    get music_video_path(video)
+    assert_select "[data-test='performer-card'][data-ordinal='2'] [data-test='performer-letter']", "B"
+  end
+
+  test "a swapped person with no sheet keeps the number in the card's label" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    ArtifactSubject.where(appearance_slug: alt.swap_set[3].appearance_slug).destroy_all
+    log_in_as users(:alex)
+    get music_video_alt_video_path(video, alt)
+
+    assert_select "[data-test='alt-clip'][data-ordinal='3']" do
+      assert_select "[data-test='clip-sheet'][data-sheet='1']", "Sheet 1 · Person B · #4 Test Passer Epsilon"
+      assert_select "[data-test='clip-sheet-missing'][data-ordinal='3']", /\ASheet 2 · Person C · #88 Test Receiver Zeta: no character sheet/
     end
   end
 

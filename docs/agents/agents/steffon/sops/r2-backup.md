@@ -1,4 +1,5 @@
 # R2 Backup
+<!-- registry: backup bucket, nightly run, garbage collection, restore -->
 
 ## Status: Active
 

@@ -74,8 +74,8 @@ class ZapCertFreshnessDocsTest < Minitest::Test
   #   otherclone/                    a SEPARATE clone — independent refs
   #
   # builder and zapdesk are SIBLING worktrees: neither is the other's parent, which
-  # is the exact shape a reviewer stands in. Nothing here fetches unless a test asks
-  # — bin/dor-check never fetches either, and that is the condition, not an oversight.
+  # is the exact shape a reviewer stands in. Nothing here fetches unless a test asks;
+  # bin/dor-check's review role fetches the branch first (guard catalog row 2.9).
   def with_house
     Dir.mktmpdir("zap-cert") do |dir|
       remote = File.join(dir, "remote.git")
@@ -320,181 +320,38 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_empty leads, "the two cases are no longer bolded bullet leads — re-point this pin"
     assert leads.any? { |l| l =~ /worktree/i && l.include?("STALE") },
            "no bullet lead assigns STALE to the WORKTREE case (the shared-ref, house case)"
-    assert leads.any? { |l| l =~ /clone/i && l.include?("FRESH") },
-           "no bullet lead assigns FRESH to the CLONE case (the independent-ref, dangerous reading)"
-    refute leads.any? { |l| l =~ /worktree/i && l.include?("FRESH") },
-           "a bullet lead calls the WORKTREE case FRESH — the two cases are inverted"
-    refute leads.any? { |l| l =~ /clone/i && l.include?("STALE") },
-           "a bullet lead calls the CLONE case STALE — the two cases are inverted"
+    assert leads.any? { |l| l =~ /clone/i && l =~ /fetch/i && l.include?("STALE") },
+           "no bullet lead says the review's FETCH makes the CLONE case STALE (guard catalog row 2.9)"
+    refute leads.any? { |l| l.include?("FRESH") },
+           "a bullet lead calls a zap FRESH — the review fetches first, so no zap reads FRESH there"
   end
 
-  # --- the SAME backstop for the bin/ prose ----------------------------------
+  # --- the review FETCHES first (guard catalog row 2.9) ---------------------
   #
-  # THE HOLE THIS FILLS, measured on this task's first review pass: reverting BOTH
-  # corrected bin/ sentences to the original false text reddened NOTHING — 163 runs,
-  # 0 failures across test/docs, review_tree_guard_test and dor_check_zap_seams_test.
-  # The MECHANISM above is well guarded (forcing same_commit? either way, or lane_status
-  # to :fresh, reddens four of the tests above) and the doc has the backstop directly
-  # overhead. The bin/ prose had nothing — and it is the half an operator actually reads
-  # MID-VERDICT, at the moment they are deciding whether to trust the gate or route
-  # around it. It has now been wrong twice.
-  #
-  # THESE ARE NOT A GREP FOR THE NEW WORDING. The task record forbids that and is right
-  # to: a pin on today's phrasing dies at the next reword and proves nothing about the
-  # gate. All three MEASURE FIRST, in the same house geometry and through the same two
-  # functions review's gate-zero calls, and compare the prose to what they measured:
-  #
-  #   the first  measures that :mismatch is reachable with the lane BOTH ways, which is
-  #              what makes naming a lane verdict in that refusal unsound at all;
-  #   the second measures which verdict each case actually produces, and pins that the
-  #              two comment passages bind them that way round;
-  #   the third  measures the REMEDY — what the printed commands do to the lane and the
-  #              head check when an operator actually runs them, in order.
-  #
-  # So reword any of them freely. Invert the pairing, collapse the two cases back under
-  # one quantifier over "any other checkout", re-assert a state the check has not
-  # established, or hand the operator a remedy that loops, and these go red.
-
-  # The two states the ORIGINAL false sentences named, kept here as the one thing a
-  # rewrite may not reintroduce. Located by CODE anchors — the condition that fires the
-  # refusal, and the section rules around each comment — never by a phrase inside the
-  # prose, so the wording stays free.
-  COLLAPSED_QUANTIFIER = %r{\b(?:any other|another|some other)\s+checkout\b|\banywhere\s+else\b}i
-
-  def source(rel) = File.read(File.join(ROOT, rel))
-
-  # bin/dor-check's refusal literal, taken from its firing condition down to the next
-  # branch. Anchored on the `if`, not on any sentence it prints.
-  def head_refusal_literal
-    body = source("bin/dor-check")[/if review_role && head_check\[:state\] == :mismatch\n(.*?)\n\s*elsif /m, 1]
-    refute_nil body, "bin/dor-check no longer refuses on `head_check[:state] == :mismatch` — re-point this " \
-                     "guard rather than deleting it; what the refusal may claim is still the live question"
-    body
-  end
-
-  # The same refusal as the OPERATOR sees it, with Ruby's string-continuation seams
-  # (a trailing backslash, a newline, and a re-opened quote) closed up and whitespace
-  # flattened. Pins on the COMMANDS it prints read THIS and not the literal: where a
-  # command falls in the source is a wrapping accident, and a guard a re-wrap turns red
-  # is a guard that gets deleted rather than re-pointed.
-  def head_refusal_text
-    head_refusal_literal.gsub(/"\s*\\\s*\n\s*"/, "").gsub(/\s+/, " ")
-  end
-
-  # A comment block, de-hashed and reflowed into sentences. Both bounds are structural.
-  def comment_sentences(rel, from:, to:)
-    block = source(rel)[/#{from}(.*?)#{to}/m, 1]
-    refute_nil block, "the #{rel} passage this pin covers is gone or its bounds moved — re-point it; the " \
-                      "claim it carries is still live"
-    block.lines.map { |l| l.sub(/\A\s*#\s?/, "").rstrip }.join(" ").squeeze(" ").split(/(?<=\.)\s+/)
-  end
-
-  # ONE push, measured: what does each case do to the desk's cert lane and head check?
-  def verdicts_for(push_from)
+  # bin/dor-check --gate-role review fetches the PR branch in the graded checkout before
+  # it reads origin/<branch>. Measured here: after that fetch a clone-side zap reads
+  # STALE and the head check :match, exactly as a worktree zap does with no fetch, so
+  # the stale-tree refusal had nothing left to catch and is gone.
+  def test_the_review_fetch_makes_a_clone_zap_read_stale_and_the_head_match
     with_house do |h|
-      certified = cert_tree_seen_from(h[:builder])
-      checks = cert_for(certified)
-      zap!(h[push_from], "9\n")
+      checks = cert_for(cert_tree_seen_from(h[:builder]))
+      zap!(h[:otherclone], "5\n")
+      git!(h[:builder], "fetch -q origin #{BRANCH}")
       head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH,
                                              pr_head: capture(h[:remote], "rev-parse #{BRANCH}"))
-      [CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
+
+      assert_equal :stale, CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder]))
+      assert_equal :match, head[:state]
     end
   end
 
-  def test_a_mismatch_does_not_fix_the_lane_so_the_refusal_may_not_name_one
-    clone_only = verdicts_for(:otherclone)
+  def test_the_gate_fetches_the_branch_before_the_head_check
+    source = File.read(File.join(ROOT, "bin/dor-check"))
+    fetch = source.index(/"fetch", "--quiet", "origin", zap_branch/)
+    check = source.index("head_check = ReviewTreeGuard.head_assessment(")
 
-    # THE COMPOUND CASE, and it is the HOUSE route rather than a contrivance: a reviewer
-    # zaps from the throwaway SIBLING WORKTREE the zap protocol prescribes (lane STALE,
-    # head :match, nothing refuses), and then anything with independent refs moves the
-    # head again — GitHub's Update-branch button, which bin/dor-check's OWN base report
-    # recommends by name. The clone has to take the zap first, exactly as GitHub would.
-    compound = with_house do |h|
-      certified = cert_tree_seen_from(h[:builder])
-      checks = cert_for(certified)
-      zap!(h[:zapdesk], "2\n")
-      git!(h[:otherclone], "fetch -q origin #{BRANCH}")
-      git!(h[:otherclone], "reset -q --hard origin/#{BRANCH}")
-      zap!(h[:otherclone], "3\n")
-      head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH,
-                                             pr_head: capture(h[:remote], "rev-parse #{BRANCH}"))
-      [CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
-    end
-
-    assert_equal [%i[fresh mismatch], %i[stale mismatch]], [clone_only, compound],
-                 "the SAME refusal condition (:mismatch) is reachable with the cert lane BOTH ways. That is " \
-                 "the whole reason the refusal below may not report one — it has not established it."
-
-    refusal = head_refusal_literal
-    refute_match(/\b(?:not|never) moved\b|\bunmoved\b|\bstill pre-(?:zap|push)\b/i, refusal,
-                 "the refusal claims the ref's HISTORY. :mismatch says only that the ref does not carry the " \
-                 "PUSHED HEAD; the compound case measured above moved that ref and still reaches :mismatch.")
-    refute_match(/\bFRESH\b|\bSTALE\b/i, refusal,
-                 "the refusal names a cert lane verdict. Measured directly above: :mismatch holds with the " \
-                 "lane FRESH and with it STALE, so this message cannot know which — and in the stale arm the " \
-                 "SAME errors array already carries `full-suite: STALE` from suite_evidence_error. One " \
-                 "verdict contradicting itself is this task's defect. Describe THIS ref; let the lane speak.")
-  end
-
-  def test_the_gate_comments_bind_each_verdict_to_the_case_that_produces_it
-    worktree_lane, worktree_head = verdicts_for(:zapdesk)
-    clone_lane, clone_head = verdicts_for(:otherclone)
-
-    # The expectations below are MEASURED, not written down: flip the mechanism and the
-    # prose these pins demand flips with it.
-    assert_equal %i[stale match], [worktree_lane, worktree_head]
-    assert_equal %i[fresh mismatch], [clone_lane, clone_head]
-    worktree_verdict = worktree_lane.to_s.upcase
-    clone_verdict = clone_lane.to_s.upcase
-
-    passages = {
-      "bin/lib/review_tree_guard.rb" =>
-        comment_sentences("bin/lib/review_tree_guard.rb",
-                          from: /^# ── SEAM 1:.*?\n/, to: /^# ── SEAM 2:/),
-      "bin/dor-check" =>
-        comment_sentences("bin/dor-check",
-                          from: /^  # SEAM 1 — REFUSES,/, to: /^  head_check = ReviewTreeGuard\.head_assessment\(/)
-    }
-
-    passages.each do |file, sentences|
-      names_worktree = ->(s) { s.match?(/worktree/i) }
-      names_independent = ->(s) { s.match?(/\bclone\b|INDEPENDENT/i) }
-
-      assert sentences.any? { |s| names_worktree.call(s) && s.include?(worktree_verdict) },
-             "#{file}: no sentence binds #{worktree_verdict} to the SIBLING WORKTREE case — the shared-ref, " \
-             "house case, measured #{worktree_verdict} in this very test. A passage that explains the gate " \
-             "without saying which push it catches is how the collapsed claim got in twice."
-      assert sentences.any? { |s| names_independent.call(s) && s.include?(clone_verdict) },
-             "#{file}: no sentence binds #{clone_verdict} to the INDEPENDENT-REFS case (a separate clone, " \
-             "another machine, Update-branch) — the case this check is the only thing to catch"
-
-      # A straight SWAP keeps both nouns and both verdicts, so presence alone is not a
-      # pin. Sentences naming exactly ONE case must carry that case's verdict and not
-      # the other's; a sentence naming BOTH is a comparison and is left alone.
-      inverted = sentences.select do |s|
-        (names_worktree.call(s) && !names_independent.call(s) && s.include?(clone_verdict)) ||
-          (names_independent.call(s) && !names_worktree.call(s) && s.include?(worktree_verdict))
-      end
-      assert_empty inverted, "#{file}: a sentence gives one case the OTHER case's verdict — the two are " \
-                             "inverted, which is the partial break a half-remembered rule produces"
-    end
-
-    # The falsified absolute itself, in every bin/ site that carried it. This is what
-    # the reviewer's mutation restores, and it is a refute on the DEAD wording only —
-    # it constrains nothing about how the correction is phrased.
-    {
-      "bin/lib/review_tree_guard.rb" => passages["bin/lib/review_tree_guard.rb"].join(" "),
-      "bin/dor-check comment" => passages["bin/dor-check"].join(" "),
-      "bin/dor-check refusal" => head_refusal_literal,
-      "bin/lib/ci_status.rb" => comment_sentences("bin/lib/ci_status.rb",
-                                                  from: /^  # PURE\. The PR's head commit,/,
-                                                  to: /^  def self\.head_oid/).join(" ")
-    }.each do |where, text|
-      refute_match COLLAPSED_QUANTIFIER, text,
-                   "#{where}: the ref-sharing claim is collapsed back under a quantifier over CHECKOUTS " \
-                   "('another checkout', 'anywhere else'). Measured above: a sibling worktree is another " \
-                   "checkout and it DOES move the ref. The test is ref sharing, not distance."
-    end
+    refute_nil fetch, "bin/dor-check no longer fetches the PR branch in the review role"
+    assert fetch < check, "the fetch must come BEFORE the head check reads origin/<branch>"
   end
 
   # --- and the REMEDY it prints, measured end to end -------------------------
@@ -531,7 +388,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       end
 
       assert_equal %i[fresh mismatch], grade.call(cert),
-                   "precondition: this is the state the refusal is printed into"
+                   "precondition: an unfetched desk after a clone-side zap"
 
       git!(desk, "fetch -q origin #{BRANCH}")
       after_fetch = grade.call(cert)
@@ -544,7 +401,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     end
 
     assert_equal %i[stale match], fetch_only,
-                 "a bare fetch DOES clear the head refusal — which is why the message keeps recommending it"
+                 "a bare fetch moves the ref, which is what the review gate now does for itself"
     assert_equal %i[stale match], fetch_then_recert,
                  "re-certifying without moving the checkout re-stamps the tree that is already there, so the " \
                  "lane stays STALE: the operator followed the remedy and got the same verdict back"
@@ -593,41 +450,6 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     assert moved_desk,
            "scoping still does the job it is printed for: the GRADED checkout lands on the fetched head"
 
-    remedy = head_refusal_text[/git (?:-C \S+ )?fetch origin.*/m]
-    refute_nil remedy, "the refusal no longer names `git [-C <root>] fetch origin <branch>` — re-point this " \
-                       "guard rather than deleting it; whether the printed remedy works is still the live " \
-                       "question"
-
-    # Every command printed AGAINST THE PR BRANCH must name the tree. Commands naming
-    # some OTHER ref are exempt on purpose: a recovery note for the primary's own
-    # upstream is run where the operator is standing and correctly carries no -C.
-    unscoped = remedy.scan(/git (?!-C )(?:[a-z-]+ )+?origin[ \/]\#\{\w+\}/)
-    assert_empty unscoped,
-                 "the refusal prints #{unscoped.length} command(s) against the PR branch with no directory " \
-                 "(#{unscoped.inspect}). Measured directly above: pasted from the primary this very gate " \
-                 "tells reviewers to run from, the bare fast-forward moves THAT checkout onto the feature " \
-                 "head. Scope them — `git -C \#{diff_root} …` — so the printed command acts on the tree the " \
-                 "sentence around it is talking about."
-
-    move = remedy.index(/git -C \S+ (?:merge --ff-only|pull|reset --hard|checkout)/)
-    refute_nil move,
-               "the remedy names no DIRECTORY-SCOPED command that MOVES the graded checkout onto the fetched " \
-               "head. Measured directly " \
-               "above: fetch-then-re-stamp leaves the lane STALE, because bin/control-check hashes the " \
-               "WORKING tree and a fetch does not move it. A remedy that loops is the same defect as a " \
-               "diagnosis that lies — the operator trusts it once and then stops trusting the gate."
-    # EITHER SPELLING. The re-run used to be the literal `bin/full-suite-check <slug>`;
-    # remedy-hints-print-bare-paths made it an ABSOLUTE, desk-first path computed at
-    # runtime (a reviewer at a satellite primary cannot run the bare form), so the source
-    # now carries `#{recert_command}` where the literal used to be. Indexing on the
-    # literal alone silently found the PROSE mention earlier in the paragraph instead —
-    # green in the wrong place, then red for the wrong reason. What this guard is ABOUT
-    # is the ORDER, so it matches whichever spelling names the command.
-    recert = remedy.rindex(/bin\/control-check \S|recert_command/)
-    assert recert.nil? || move < recert,
-           "the remedy's LAST word on bin/control-check comes BEFORE the command that moves this checkout. " \
-           "Measured above, a cert taken in that order stamps the tree the operator already had."
-
     # AND THE DOC'S COPY OF THE SAME REMEDY, both bullets. Correcting the gate and not
     # the protocol leaves two authorities disagreeing about one measured fact, and an
     # operator who reads the doc first never sees the correction. That split is how this
@@ -640,7 +462,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_empty bullets, "neither case's bullet tells the reader how to re-stamp any more — re-point this pin"
     bullets.each do |bullet|
       lead = bullet[/\A\*\*(.+?)\*\*/m, 1].to_s.gsub(/\s+/, " ")[0, 60]
-      # Flattened for the same reason head_refusal_text is: markdown re-wraps, and a
+      # Flattened: markdown re-wraps, and a
       # command split across two lines is still one command to the reader who copies it.
       flat = bullet.gsub(/\s+/, " ")
       unscoped_here = flat.scan(/git (?!-C )(?:[a-z-]+ )+?origin\/<branch>/)
@@ -713,21 +535,6 @@ class ZapCertFreshnessDocsTest < Minitest::Test
                  "[did it run?, did it land the PR head tree?] per candidate move. BOTH moves git prints " \
                  "as hints succeed and BOTH land a tree that is not the PR head — which is why the refusal " \
                  "may not stop at the fast-forward and leave the operator holding git's advice.")
-
-    refusal = head_refusal_text
-    refute_match(/git (?:-C \S+ )?merge --no-ff/, refusal,
-                 "the refusal prints git's own --no-ff hint as a command to RUN. Measured directly above it " \
-                 "succeeds and lands a tree that is not the PR head's, so a cert taken after it describes a " \
-                 "tree that never merges — the remedy steering into the very defect this gate exists to catch")
-    assert_match(/git -C \S+ reset --hard origin\/\#\{\w+\}/, refusal,
-                 "the refusal names no scoped command that RESOLVES a refused fast-forward. Measured above, " \
-                 "`reset --hard origin/<branch>` is the only candidate that lands the PR head tree, and it " \
-                 "DISCARDS the desk's own commit — which is exactly why the refusal must name it out loud " \
-                 "instead of leaving the operator to pick one of git's two wrong hints")
-    assert_match(/git -C \S+ log [^)]*origin\/\#\{\w+\}\.\.HEAD/, refusal,
-                 "the refusal reaches `reset --hard` without first naming a command that shows WHAT would be " \
-                 "discarded. On a review lane that diverged commit is usually sitting on the BUILDER'S desk; " \
-                 "a remedy that says destroy-it-to-proceed without saying look-first is one that eats work")
 
     # The doc's copy of the same two claims. Two authorities, one remedy — and this
     # passage is where a correction applied to only one of them last time.

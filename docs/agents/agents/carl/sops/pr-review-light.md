@@ -1,4 +1,5 @@
 # PR Review Light
+<!-- registry (role SOP): the light reviewer's own steps -->
 
 > **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](../../../modules/token-session.md)).
 

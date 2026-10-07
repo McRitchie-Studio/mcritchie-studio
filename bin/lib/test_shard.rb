@@ -149,6 +149,10 @@ module TestShard
   end
 
   # config/rails_lane.yml — the lane's contract. Read by the planner AND by the gate.
+  # The CI shard matrix the contract declares: [1, 2, …, shards]. ci.yml's `rails_plan`
+  # job prints it (bin/ci-shard --matrix) and the `rails` job's matrix reads it.
+  def matrix(contract) = (1..contract.fetch(:shards)).to_a
+
   def load_contract(path)
     parsed = YAML.safe_load_file(path, permitted_classes: [], aliases: false)
     raise ArgumentError, "#{path}: expected a mapping" unless parsed.is_a?(Hash)

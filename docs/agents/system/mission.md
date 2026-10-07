@@ -8,7 +8,7 @@ it. The entry map every session loads is `/Users/alex/projects/AGENTS.md`.
 | The hub provides | Where |
 |------------------|-------|
 | Task pipeline | `designed → building → submitted → reviewed → assembled → shipped`, plus `archived` (`Task::STAGES`); the board at `/tasks` and `/deployments` |
-| Agent registry | `/agents`, seeded from `db/seeds/02_agents.rb` and `db/seeds/03_skills.rb`; the roster in `Task::SOUL_ROSTER` |
+| Agent registry | `/agents`, seeded from `config/souls.yml` (by `db/seeds/02_agents.rb`) and `db/seeds/03_skills.rb`; `Task::SOUL_ROSTER` reads the same `config/souls.yml` |
 | Activity record | Every session narrates with `bin/agent-activity`; Xan grades at `/xan/heartbeat`; banked lessons at `/xan/insights` |
 | Usage tracking | API cost and tokens per agent at `/usages` |
 | Error capture | `/error_logs` from `studio-engine` |

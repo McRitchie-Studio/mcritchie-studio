@@ -149,19 +149,17 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_includes builder.to_s, "open the PR", "the builder's move is to open one"
   end
 
-  # The role split that is left, and it must survive the extraction: a pending CI is
-  # a WAIT for the builder — still not ready, worded as waiting — and a refusal in
-  # review.
-  def test_unit_a_pending_ci_waits_for_the_builder_and_refuses_for_review
-    builder = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: false, pr_url: PR_URL, slug: "t")
-    assert_includes builder.to_s, "WAITING for it to settle"
-    assert CiGate.waiting?({ state: :pending }, review_role: false)
+  # Guard catalog row 1.10: bin/submit calls the gate only after its CI wait settles,
+  # so no builder-side WAIT survives. Pending and none read one refusal in both roles.
+  def test_unit_pending_and_none_refuse_alike_in_both_roles
+    %i[pending none].each do |state|
+      builder = CiGate.verdict({ state: state, pending: ["ci"] }, review_role: false, pr_url: PR_URL, slug: "t")
+      review = CiGate.verdict({ state: state, pending: ["ci"] }, review_role: true, pr_url: PR_URL, slug: "t")
 
-    review = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: true, pr_url: PR_URL, slug: "t")
-    assert_includes review.to_s, "still RUNNING"
-    assert_includes review.to_s, "defer this review"
-    refute CiGate.waiting?({ state: :pending }, review_role: true)
-    refute CiGate.waiting?({ state: :green }, review_role: false)
+      assert_equal review, builder, "#{state}: one refusal for both roles"
+      refute_includes builder.to_s, "WAITING"
+    end
+    refute CiGate.respond_to?(:waiting?), "the builder-side wait predicate is gone"
   end
 
   def test_unit_gate_row_names_ci_as_the_failing_sop_when_ci_is_why_it_failed
@@ -266,14 +264,13 @@ class DorCheckExemptCiTest < Minitest::Test
   # The builder's submit-side run stays provisional: review re-reads it, so a
   # pending CI is a note and a missing PR is silent. A fix that blocked BOTH roles
   # would stall every docs handoff on an hour-old token.
-  # The builder's submit-side run is no longer provisional: with the cert routes gone
-  # a pending CI is a WAIT (not ready, marked as waiting), a missing PR refuses (there
-  # is no verdict to read), and a RED CI blocks as it always did.
-  def test_the_builder_role_waits_on_pending_and_refuses_the_rest
+  # The builder's submit-side run refuses a pending CI (bin/submit never calls it on
+  # one, row 1.10), a missing PR (there is no verdict to read), and a RED CI.
+  def test_the_builder_role_refuses_pending_and_the_rest
     pending, code = check(devops, ci: "pending", role: "builder")
     assert_equal 1, code, "submit-side pending is not ready"
-    assert pending["ci_waiting"], "…but it is a WAIT, and the payload says so"
-    assert_includes errors_of(pending), "WAITING for it to settle"
+    refute pending.key?("ci_waiting"), "the builder-side wait is gone"
+    assert_includes errors_of(pending), "still RUNNING"
 
     no_pr, no_pr_code = check(devops("pr_url" => ""), role: "builder")
     assert_equal 1, no_pr_code, "with no PR there is no CI verdict to read"
@@ -698,16 +695,15 @@ class DorCheckExemptCiTest < Minitest::Test
   #   bin/dor-check       0 stating / 1 default — pr_read_alert, for the same reason;
   #                       the suite gate's two builder-side unreadable-CI refusals
   #                       retired with the cert lanes they argued from.
-  #   bin/pr-review       1 stating / 0 default — cert_route: !maybe_exempt, kept as a
-  #                       legal spelling (both values print the task-grain denial).
-  #   bin/release.rb      1 stating / 0 default — the G3 pre-QA gate, cert_route:
-  #                       :retired since /tasks/release-offers-retired-cert.
+  #   bin/pr-review       0 stating / 1 default — the pre-review briefing (task grain).
+  #   bin/release.rb      2 stating / 0 default — the G3 pre-QA and G4 ship gates,
+  #                       release_grain: true.
   UNREADABLE_REMEDY_CALL_SITES = {
     "bin/lib/ci_gate.rb" => { states_route: 0, takes_default: 1 },
     "bin/dor-check" => { states_route: 0, takes_default: 1 },
-    "bin/pr-review" => { states_route: 1, takes_default: 0 },
+    "bin/pr-review" => { states_route: 0, takes_default: 1 },
     # G3's pre_qa_ci_abort and G4's ship_test_gate_ci_abort — both release-grain
-    # denials (:retired); the ship gate reads CI for the frozen tree exactly as G3
+    # denials (release_grain: true); the ship gate reads CI for the frozen tree exactly as G3
     # reads it for the release tip, so its :unreadable branch carries the same remedy.
     "bin/release.rb" => { states_route: 2, takes_default: 0 }
   }.freeze
@@ -815,14 +811,14 @@ class DorCheckExemptCiTest < Minitest::Test
   def test_unit_the_unreadable_remedy_call_site_registry_matches_the_source
     UNREADABLE_REMEDY_CALL_SITES.each do |file, expected|
       args = calls_to(code_of(file), UNREADABLE_REMEDY_MARKER)
-      stating, defaulting = args.partition { |arg| arg.include?("cert_route:") }
+      stating, defaulting = args.partition { |arg| arg.include?("release_grain:") }
 
       assert_equal expected[:states_route], stating.size,
-                   "#{file}: callers STATING cert_route: changed. Update the call-site list in " \
+                   "#{file}: callers STATING release_grain: changed. Update the call-site list in " \
                    "CiStatus.unreadable_remedy's header, then this registry — the comment is the " \
                    "deliverable, this test is only what keeps it true.\n#{stating.join("\n---\n")}"
       assert_equal expected[:takes_default], defaulting.size,
-                   "#{file}: callers TAKING the cert_route: default changed. A new default-taker is a new " \
+                   "#{file}: callers TAKING the release_grain: default changed. A new default-taker is a new " \
                    "promise nobody classified — decide its route, then update ci_status.rb's list and " \
                    "this registry.\n#{defaulting.join("\n---\n")}"
     end
@@ -912,10 +908,10 @@ class DorCheckExemptCiTest < Minitest::Test
   # divergence between them (an offer creeping back on one) fails here.
   def test_unit_the_true_route_is_the_same_task_grain_denial_as_false
     REMEDY_CAUSES.each do |cause|
-      offered = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: true)
-      denied = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: false)
+      offered = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause)
+      denied = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, release_grain: false)
 
-      assert_equal denied, offered, "#{cause.inspect}: true and false must print one denial"
+      assert_equal denied, offered, "#{cause.inspect}: the default and false must print one denial"
       assert_includes offered, DENIES_CERT, "#{cause.inspect}: the denial carries the contract clause"
       refute_includes offered, OFFERS_CERT, "#{cause.inspect}: the retired offer is back"
       refute_includes offered, CO_FIRE_CLAIM, "#{cause.inspect}: the derived clause must not leak on an empty list"
@@ -927,8 +923,8 @@ class DorCheckExemptCiTest < Minitest::Test
   # because the binary test above can only reach one cause.
   def test_unit_an_empty_also_refused_prints_the_original_exempt_closing
     REMEDY_CAUSES.each do |cause|
-      [true, false, nil].each do |route|
-        remedy = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: route)
+      [false].each do |route|
+        remedy = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, release_grain: route)
 
         assert remedy.end_with?(GREEN_SUFFICIENT),
                "#{cause.inspect}/#{route.inspect}: an empty also_refused must close with the original " \
@@ -937,23 +933,18 @@ class DorCheckExemptCiTest < Minitest::Test
     end
   end
 
-  # ── the route fence (findings 1 and 2 of this task's review) ────────────────
+  # ── the grain is a keyword, so it cannot be misspelled (guard catalog row 1.11) ──
 
-  # `case` FAILS OPEN, and `:retired` made that reachable. While the route was
-  # true/false/nil there was no way to misspell it; a SYMBOL can be typed wrong, and
-  # `:retried` fell through the `else` and printed the GATED cert offer — on a gate
-  # that retired the cert route, which is the precise defect `:retired` was added to
-  # fix. The call-site registry cannot catch it: it partitions on the STRING
-  # "cert_route:", so a misspelled VALUE still counts as a caller that states its
-  # route and the suite stays green.
-  def test_unit_a_misspelled_cert_route_raises_instead_of_printing_the_gated_offer
+  # The retired `cert_route:` took a symbol, a symbol could be misspelled, and a
+  # validator fenced it. `release_grain:` is a boolean keyword: a misspelled NAME is
+  # Ruby's own ArgumentError, and there is no value to misspell. This is the control.
+  def test_unit_a_misspelled_grain_keyword_raises_before_printing_anything
     error = assert_raises(ArgumentError) do
-      CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, cert_route: :retried)
+      CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, release_grian: true)
     end
 
-    assert_includes error.message, ":retried", "the refusal must name the value it rejected"
-    refute_includes error.message, OFFERS_CERT,
-                    "the typo must not reach the gated branch even to quote it"
+    assert_includes error.message, "release_grian"
+    assert_raises(ArgumentError) { CiStatus.unreadable_remedy(REMEDY_REPO, cert_route: :retired) }
   end
 
   # ONE FENCE, ONE ENTRY POINT. CiGate.unread_ci_refusal used to forward this parameter
@@ -1057,7 +1048,7 @@ class DorCheckExemptCiTest < Minitest::Test
   # failure bin/lib/ci_status.rb's header names in so many words.
   def test_unit_both_co_fire_closings_end_with_the_same_independent_clause
     gate = CiGate.unread_ci_refusal({ state: :none }, PR_URL, "t", also_refused: [PR_READ_NOUN_PHRASE])
-    status = CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, cert_route: false,
+    status = CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, release_grain: false,
                                                      also_refused: [PR_READ_NOUN_PHRASE])
 
     assert gate.end_with?(CO_FIRE_TAIL), "ci_gate.rb's co-fire closing:\n#{gate}"
