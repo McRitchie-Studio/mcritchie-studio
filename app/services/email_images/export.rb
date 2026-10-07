@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
-require "base64"
 require "fileutils"
-require "net/http"
 
 module EmailImages
   # WRITE A BRIEF'S APPROVED HEADER TO A FILE the app will commit, and say how
@@ -17,9 +15,6 @@ module EmailImages
 
     class NotApproved < StandardError; end
     class ExportFailed < StandardError; end
-
-    OPEN_TIMEOUT = 5
-    READ_TIMEOUT = 60
 
     def self.call(brief, into:, **kwargs) = new(brief, into: into, **kwargs).call
 
@@ -77,24 +72,9 @@ module EmailImages
     end
 
     def read(url)
-      if url.to_s.start_with?("data:")
-        data = url.to_s.split(",", 2).last.to_s
-        bytes = Base64.decode64(data)
-        raise ExportFailed, "the stored data URI decoded to nothing" if bytes.empty?
-
-        return bytes
-      end
-
-      uri = URI.parse(url.to_s)
-      raise ExportFailed, "#{url.inspect} is not an http(s) URL" unless uri.is_a?(URI::HTTP)
-
-      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
-                                                     open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
-        http.get(uri.request_uri)
-      end
-      raise ExportFailed, "#{url} answered HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-
-      response.body.to_s.b
+      EmailImages::Download.bytes(url)
+    rescue EmailImages::Download::Failed => e
+      raise ExportFailed, e.message
     end
   end
 end

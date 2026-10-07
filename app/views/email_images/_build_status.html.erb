@@ -1,10 +1,14 @@
 <%# The brief's round (EmailImages::Build): generating with a self-refresh,
-    stale, done, or failed with the reason. Nothing before the first round. %>
+    stale, done, or failed with the reason. Nothing before the first round.
+    The reload timer is cleared when Turbo swaps the page out, so a visitor who
+    navigated away is not yanked back by a reload of a page they left. %>
 <% state = brief.build_stale? ? "stale" : brief.build_state %>
 <% if state.present? %>
   <div data-test="build-status" data-state="<%= state %>" role="status"
        class="rounded-lg border p-2 text-2xs space-y-1 <%= state == 'failed' ? 'border-danger/40 bg-danger/10 text-danger-ink' : 'border-subtle bg-surface text-body' %>"
-       <% if state == "building" %>x-data x-init="setTimeout(() => window.location.reload(), 10000)"<% end %>>
+       <% if state == "building" %>x-data="{ timer: null }"
+       x-init="timer = setTimeout(() => window.location.reload(), 10000);
+               document.addEventListener('turbo:before-render', () => clearTimeout(timer), { once: true })"<% end %>>
     <% case state %>
     <% when "building" %>
       <p class="font-semibold text-heading">Generating candidates &middot; started <%= time_ago_in_words(brief.build_started_at) %> ago</p>

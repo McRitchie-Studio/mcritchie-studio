@@ -111,4 +111,28 @@ class EmailImages::BuildTest < ActiveSupport::TestCase
   test "the job discards errors rather than retrying a paid call" do
     assert_includes EmailImageBuildJob.rescue_handlers.map(&:first), "StandardError"
   end
+
+  test "start! hands the round's notes to the job, which hands them to the prompt" do
+    with_env("OPENAI_API_KEY", "sk-test") do
+      EmailImages::Build.start!(@brief, notes: "  sunrise  ")
+    end
+    job = enqueued_jobs.find { |j| j["job_class"] == "EmailImageBuildJob" }
+    assert_equal "sunrise", job["arguments"].last
+
+    with_fake_header_generator do
+      perform_enqueued_jobs(only: EmailImageBuildJob)
+    end
+    assert(@brief.candidates.all? { |a| a.prompt.include?("Round 1 direction: sunrise") })
+  end
+
+  test "run_now! runs the round in-process under the same claim" do
+    with_fake_header_generator do
+      EmailImages::Build.run_now!(@brief, notes: "dusk")
+    end
+
+    assert_equal "done", @brief.reload.build_state
+    assert_equal 1, @brief.rounds_used
+    assert_equal 2, @brief.candidates.count
+    assert_no_enqueued_jobs only: EmailImageBuildJob
+  end
 end

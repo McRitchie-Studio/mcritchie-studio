@@ -203,6 +203,7 @@ not depend on it. `(role SOP)` marks the procedure one reviewer role runs inside
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | `download-instagram` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
+| `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |

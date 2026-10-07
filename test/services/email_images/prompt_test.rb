@@ -30,4 +30,16 @@ class EmailImages::PromptTest < ActiveSupport::TestCase
     prompt = EmailImages::Prompt.call(turf_brief(prompt_notes: "the gator holds a golden ticket"))
     assert_includes prompt, "golden ticket"
   end
+
+  test "a round with no notes still records its number; none means no round line" do
+    brief = turf_brief
+    assert_equal [3, nil], EmailImages::Prompt.round_of(EmailImages::Prompt.call(brief, round: 3)).to_a
+    assert_equal [nil, nil], EmailImages::Prompt.round_of(EmailImages::Prompt.call(brief)).to_a
+  end
+
+  test "the brief's standing notes are never mistaken for a round's" do
+    brief = turf_brief(prompt_notes: "Round 9 direction: sneaky")
+    line = EmailImages::Prompt.round_of(EmailImages::Prompt.call(brief, round: 1, round_notes: "real"))
+    assert_equal [1, "real"], line.to_a
+  end
 end

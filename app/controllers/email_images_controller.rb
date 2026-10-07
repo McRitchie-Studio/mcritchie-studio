@@ -44,13 +44,18 @@ class EmailImagesController < ApplicationController
     end
   end
 
+  # THE FALLBACK PATH. Generation normally runs from a Claude Code session
+  # through the `email-image` SOP (bin/email-image generate); this button stays
+  # for when no session is at hand.
+  #
   # THE REFUSALS ARE STATES, not failures (no generator, rounds spent, a round
-  # already running): they answer as an alert and write no ErrorLog row.
+  # already running): they answer as an alert and write no ErrorLog row. Any
+  # OTHER error (the enqueue, the database) is logged against the brief by
+  # rescue_and_log and still answers as an alert, never a bare 500.
   def generate
-    EmailImages::Build.start!(@brief, count: params[:count].presence&.to_i)
-    redirect_to email_image_path(@brief), notice: EmailImages::Build::STARTED_NOTICE
-  rescue *EmailImages::Build::REFUSALS => e
-    redirect_to email_image_path(@brief), alert: e.message
+    rescue_and_log(target: @brief) { start_round }
+  rescue StandardError => e
+    redirect_to email_image_path(@brief), alert: "Could not start a round: #{e.message}"
   end
 
   def approve
@@ -85,6 +90,13 @@ class EmailImagesController < ApplicationController
   end
 
   private
+
+  def start_round
+    EmailImages::Build.start!(@brief, count: params[:count].presence&.to_i)
+    redirect_to email_image_path(@brief), notice: EmailImages::Build::STARTED_NOTICE
+  rescue *EmailImages::Build::REFUSALS => e
+    redirect_to email_image_path(@brief), alert: e.message
+  end
 
   def set_brief
     @brief = EmailImageBrief.find_by!(slug: params[:slug])

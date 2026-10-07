@@ -23,16 +23,27 @@ module EmailImages
 
     REFUSALS = [Busy, Generate::NoGenerator, Generate::RoundsExhausted, Generate::MissingReference].freeze
 
-    def self.start!(brief, count: nil)
+    def self.start!(brief, count: nil, notes: nil)
       Generate.new(brief, count: count).check!
       started_at = claim!(brief)
-      EmailImageBuildJob.perform_later(brief.slug, started_at.iso8601(6), count)
+      EmailImageBuildJob.perform_later(brief.slug, started_at.iso8601(6), count, Prompt.clean_notes(notes))
       started_at
     rescue *REFUSALS
       raise
     rescue StandardError => e
       finish(brief, started_at, FAILED, e.message) if started_at
       raise
+    end
+
+    # THE CLI'S ROUND (bin/email-image generate): the same free refusals, the
+    # same claim, the same take/finish, run in this process instead of a job so
+    # the agent driving the SOP gets its candidates back in one command. Returns
+    # the claim time; the brief's build_state says whether the round succeeded.
+    def self.run_now!(brief, count: nil, notes: nil)
+      Generate.new(brief, count: count).check!
+      started_at = claim!(brief)
+      run(brief, started_at: started_at, count: count, notes: notes)
+      started_at
     end
 
     def self.claim!(brief)
@@ -49,12 +60,14 @@ module EmailImages
       now
     end
 
-    def self.run(brief, started_at:, count: nil)
+    def self.run(brief, started_at:, count: nil, notes: nil)
       running_at = take(brief, started_at)
       return unless running_at
 
       begin
-        Generate.call(brief, count: count)
+        # The claim spent the round, so the row's counter IS this round's number.
+        round = EmailImageBrief.where(id: brief.id).pick(:rounds_used)
+        Generate.call(brief, count: count, round: round, notes: notes)
         finish(brief, running_at, DONE)
       rescue *REFUSALS => e
         finish(brief, running_at, FAILED, e.message)
