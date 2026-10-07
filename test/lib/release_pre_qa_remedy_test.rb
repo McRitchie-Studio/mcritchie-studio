@@ -91,7 +91,7 @@ class ReleasePreQaRemedyTest < Minitest::Test
     root = File.expand_path("../..", __dir__)
 
     CAUSES.each do |cause|
-      text = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: cause, cert_route: :retired)
+      text = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: cause, release_grain: true)
 
       text.scan(%r{\bbin/[a-z0-9][a-z0-9._-]*}).uniq.each do |rel|
         path = File.join(root, rel)
@@ -150,7 +150,7 @@ class ReleasePreQaRemedyTest < Minitest::Test
 
   # ── the route is a SECOND one, not a reuse ──────────────────────────────────
   #
-  # The task-grain routes (`true`, `false`, `nil`) all deny too — since
+  # The task grain (`release_grain: false`, the default) denies too — since
   # /tasks/dor-reads-settled-ci-verdict they print ONE denial, resting on "a settled
   # green CI for the PR's head is the only suite evidence the gate credits". That
   # premise is about a TASK's PR; a release SHA has no PR and nobody exempted it, so
@@ -158,11 +158,10 @@ class ReleasePreQaRemedyTest < Minitest::Test
   # that fails if someone collapses the two.
   def test_the_retired_route_denies_for_its_own_reason_not_the_task_grain_one
     retired = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions,
-                                                                             cert_route: :retired)
+                                                                             release_grain: true)
     exempt  = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions,
-                                                                             cert_route: false)
-    gated   = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions,
-                                                                             cert_route: true)
+                                                                             release_grain: false)
+    gated   = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions)
 
     assert_includes retired, DENIES_CERT
     refute_includes retired, "the PR's current head",
@@ -172,7 +171,7 @@ class ReleasePreQaRemedyTest < Minitest::Test
                     "nothing was waived at G3; the route was RETIRED, which is a different fact"
     assert_includes retired, "RELEASE-grain", "the denial must say WHY it denies, not merely that it does"
 
-    assert_equal exempt, gated, "true and false are one task-grain denial now — neither offers a cert"
+    assert_equal exempt, gated, "the default and false are one task-grain denial — neither offers a cert"
     assert_includes gated, DENIES_CERT
     refute_includes gated, OFFERS_CERT, "the old gated offer is retired with the receipts it named"
 
