@@ -46,17 +46,14 @@ class CharacterTest < ActiveSupport::TestCase
     assert_nil c.reload.default_appearance_slug
   end
 
-  test "make_default! moves the pointer, and a dangling pointer heals on the next look" do
+  test "make_default! moves the pointer, and the database refuses a dangling one" do
     c = puppet
     c.appearances.create!(descriptor: "Classic")
     holiday = c.appearances.create!(descriptor: "Holiday")
     holiday.make_default!
     assert_equal holiday.slug, c.reload.default_appearance_slug
 
-    c.update_columns(default_appearance_slug: "look-gone")
-    fresh = c.appearances.create!(descriptor: "Third")
-    assert_not_equal "look-gone", c.reload.default_appearance_slug
-    assert_includes [holiday.slug, fresh.slug, c.appearances.order(:created_at).first.slug], c.default_appearance_slug
+    assert_raises(ActiveRecord::InvalidForeignKey) { c.update_columns(default_appearance_slug: "look-gone") }
   end
 
   test "Person and Character share one resolver" do
