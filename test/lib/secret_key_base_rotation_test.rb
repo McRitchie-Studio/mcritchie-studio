@@ -86,3 +86,36 @@ class SecretKeyBaseRotationTest < ActiveSupport::TestCase
     jar_for(secret_key_base, rotations, "probe" => raw)
   end
 end
+
+# [unit] SecretKeyBaseRotation.verify, the step 2 on-dyno proof
+# (bin/rails secret_key_base:verify_rotation): PASS only when the old key is set AND
+# registered, and its output carries digests, never a key.
+class SecretKeyBaseRotationVerifyTest < ActiveSupport::TestCase
+  OLD_KEY = "d" * 128
+
+  test "passes when the old key is set and registered" do
+    rotations = ActiveSupport::Messages::RotationConfiguration.new
+    SecretKeyBaseRotation.apply!(rotations, old_secret_key_base: OLD_KEY)
+
+    ok, lines = SecretKeyBaseRotation.verify(env: { "OLD_SECRET_KEY_BASE" => OLD_KEY }, rotations: rotations)
+
+    assert ok, lines.join("\n")
+    assert_match(/PASS/, lines.last)
+    refute(lines.any? { |l| l.include?(OLD_KEY) || l.include?(Rails.application.secret_key_base) })
+  end
+
+  test "control: fails when the old key is set but no rotation is registered" do
+    ok, lines = SecretKeyBaseRotation.verify(env: { "OLD_SECRET_KEY_BASE" => OLD_KEY },
+                                             rotations: ActiveSupport::Messages::RotationConfiguration.new)
+
+    refute ok
+    assert_match(/FAIL/, lines.last)
+  end
+
+  test "fails when OLD_SECRET_KEY_BASE is unset" do
+    ok, lines = SecretKeyBaseRotation.verify(env: {})
+
+    refute ok
+    assert_match(/unset/, lines.last)
+  end
+end
