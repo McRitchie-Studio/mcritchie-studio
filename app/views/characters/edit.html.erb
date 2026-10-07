@@ -1,0 +1,12 @@
+<%# Edit a character's profile. Admin only. %>
+<div class="max-w-3xl mx-auto px-4 py-6 space-y-4">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Characters", characters_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <%= link_to @character.name, character_path(@character), class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold">Edit</span>
+  </nav>
+  <h1 class="text-xl font-bold text-heading">Edit <%= @character.name %></h1>
+  <%= render "characters/form", character: @character %>
+</div>

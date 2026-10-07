@@ -27,13 +27,16 @@ class AppearanceReferencePhoto < ApplicationRecord
   #              public reachability we control and have measured.
   #   operator — typed into the look form by a human who looked at it.
   #   search   — an image-search provider's answer. Nobody has seen it.
+  #   upload   — art an admin uploaded to a CHARACTER's look (/characters): our
+  #              own cast, never a real person, so no eligibility rule runs.
   #
   # The gallery prints this beside every photograph, because "the search found
   # this" and "you chose this" deserve different confidence from a reviewer.
   SOURCE_HEADSHOT = "headshot".freeze
   SOURCE_OPERATOR = "operator".freeze
   SOURCE_SEARCH = "search".freeze
-  SOURCES = [SOURCE_HEADSHOT, SOURCE_OPERATOR, SOURCE_SEARCH].freeze
+  SOURCE_UPLOAD = "upload".freeze
+  SOURCES = [SOURCE_HEADSHOT, SOURCE_OPERATOR, SOURCE_SEARCH, SOURCE_UPLOAD].freeze
 
   # WHY A CANDIDATE WAS PASSED OVER. Enumerated rather than free text so the
   # gallery can style them and so a new reason has to be declared here, where

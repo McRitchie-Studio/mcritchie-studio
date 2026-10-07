@@ -96,7 +96,7 @@ module Appearances
       # shapes — fal a vendor CDN url, OpenAI a base64 data URI — and neither
       # belongs in the column. Storing first means a failed upload leaves no
       # artifact pointing at an object that was never written.
-      stored_url = StoreGeneratedImage.call(result.primary_url, person_slug: @appearance.person_slug)
+      stored_url = StoreGeneratedImage.call(result.primary_url, subject: storage_subject)
       persist(result, stored_url)
     end
 
@@ -122,6 +122,9 @@ module Appearances
     def prompt
       return @prompt if @prompt.present?
       return ArtistSheetPrompt.call(@appearance) if @appearance.music_video_look?
+      # A CHARACTER IS DRAWN, NOT PHOTOGRAPHED: its own prompt carries no
+      # person or likeness wording (Appearances::CastSheetPrompt).
+      return CastSheetPrompt.call(@appearance) if @appearance.character_owned?
 
       CharacterSheetPrompt.call(@appearance, number: @number)
     end
@@ -216,6 +219,7 @@ module Appearances
       ArtifactSubject.create!(
         artifact_slug: artifact.slug,
         person_slug: @appearance.person_slug,
+        character_slug: @appearance.character_slug,
         appearance_slug: @appearance.slug,
         ordinal: 1,
         role: "Character sheet"
@@ -231,8 +235,19 @@ module Appearances
     end
 
     def no_photo_message
+      if @appearance.character_owned?
+        return "#{@appearance.owner_name} has no reachable reference art on this look, so there is " \
+               "nothing to draw from. Nothing was generated and nothing was spent."
+      end
+
       "#{@appearance.person&.full_name || 'This person'} has no cached headshot, so there is " \
         "no face to build a likeness from. Nothing was generated and nothing was spent."
+    end
+
+    # The bucket folder under character-sheets/: the person's slug as before, or
+    # characters/<slug> for one of our cast.
+    def storage_subject
+      @appearance.character_owned? ? "characters/#{@appearance.character_slug}" : @appearance.person_slug
     end
   end
 end

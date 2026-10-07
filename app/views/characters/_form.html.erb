@@ -1,0 +1,53 @@
+<%# A character's profile fields: name, slug (on create), kind, brand, bio,
+    personality, voice notes, avatar. Local: character. %>
+<%= render "shared/form_errors", record: character, spacing: "mb-3" %>
+<%= form_with model: character, url: character.persisted? ? character_path(character) : characters_path,
+              class: "card p-4 sm:p-5 space-y-3", data: { test: "character-form" } do |f| %>
+  <div class="grid gap-3 sm:grid-cols-2">
+    <div>
+      <%= f.label :name, class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_field :name, maxlength: 80, required: true, class: "input-field w-full text-sm" %>
+    </div>
+    <% unless character.persisted? %>
+      <div>
+        <%= f.label :slug, "Slug (optional; made from the name)", class: "block text-2xs font-semibold text-heading mb-1" %>
+        <%= f.text_field :slug, placeholder: "turf-monster", class: "input-field w-full text-sm font-mono" %>
+      </div>
+    <% end %>
+    <div>
+      <%= f.label :kind, class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.select :kind, Character::KINDS, {}, class: "input-field w-full text-sm" %>
+    </div>
+    <div>
+      <%= f.label :brand, "Brand kit (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.select :brand, EmailImages::BrandKit.keys, { include_blank: "None" }, class: "input-field w-full text-sm" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :bio, class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_area :bio, rows: 3, class: "input-field w-full text-sm" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :personality, class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_area :personality, rows: 3, class: "input-field w-full text-sm" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :voice_notes, "Voice notes (optional)", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_area :voice_notes, rows: 2, class: "input-field w-full text-sm" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :avatar_url, "Avatar URL (optional; else the default look's sheet or art)", class: "block text-2xs font-semibold text-heading mb-1" %>
+      <%= f.text_field :avatar_url, class: "input-field w-full text-sm font-mono" %>
+    </div>
+    <% if character.persisted? %>
+      <label class="flex items-center gap-2 text-2xs text-body sm:col-span-2">
+        <%= hidden_field_tag "character[retired]", "0", id: nil %>
+        <%= check_box_tag "character[retired]", "1", character.retired?, id: "character_retired" %>
+        Retired (hidden from the cast list)
+      </label>
+    <% end %>
+  </div>
+  <div class="flex gap-2">
+    <%= f.submit character.persisted? ? "Save" : "Create character", class: "btn btn-sm btn-primary" %>
+    <%= link_to "Cancel", character.persisted? ? character_path(character) : characters_path, class: "btn btn-sm btn-neutral" %>
+  </div>
+<% end %>

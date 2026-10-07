@@ -19,6 +19,12 @@
       <span class="badge text-3xs bg-surface-alt text-muted border-subtle">font: <%= @kit.font %></span>
       <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= pluralize(@references.size, "reference") %></span>
     </div>
+    <% if @featured_character %>
+      <p class="text-sm">
+        <%= link_to "Featured character: #{@featured_character.name} →", character_path(@featured_character),
+                    class: "font-semibold text-primary hover:underline", data: { test: "featured-character" } %>
+      </p>
+    <% end %>
     <p class="text-2xs text-muted">
       Agents: <span class="font-mono break-all">bin/email-image assets <%= @kit.key %></span> prints and downloads everything on this page.
     </p>

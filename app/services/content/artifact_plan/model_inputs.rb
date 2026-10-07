@@ -39,6 +39,7 @@ class Content
 
       def anchor
         @anchor ||= if @appearance.music_video_look? then video_still_anchor
+                    elsif @appearance.character_owned? then character_anchor
                     elsif athlete then headshot_anchor
                     else operator_anchor
                     end
@@ -107,7 +108,17 @@ class Content
 
       def athlete = @athlete ||= @appearance.person&.athlete_profile
 
-      def person_name = @appearance.person&.full_name.presence || @appearance.person_slug
+      def person_name = @appearance.owner_name
+
+      # A CHARACTER IS ANCHORED BY ITS OWN REFERENCE ART: the look's reference URL or
+      # its first chosen upload, in the order the sheet would send them. Never a
+      # headshot or a search hit — a character has no face to find.
+      def character_anchor
+        url = Appearances::ReferenceSet.new(@appearance).generation_urls.first
+        Asset.new(kind: "anchor", label: "Anchor art", decision: url ? :reuse : :acquire,
+                  occupant: url, url: url,
+                  detail: url ? "the look's reference art" : "no reference art — add an image to the look")
+      end
 
       # AN ATHLETE IS ANCHORED BY THE CACHED HEADSHOT AND NOTHING ELSE. A typed URL
       # is free text, and a wide action shot was measured to fail at prepare.
