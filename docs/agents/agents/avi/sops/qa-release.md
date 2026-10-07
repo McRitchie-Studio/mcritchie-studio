@@ -251,8 +251,17 @@ code**, so re-running a red candidate goes red forever.
 - **NOT GREEN** — a verdict, then **exit 3**: QA did not come up, members stay
   `reviewed`. **Fix the cause first, THEN re-run.**
 
-The exit status is the verdict: 0 is `✓ Assembled <rel>`, 3 is `✓ Prepared (NOT
-assembled — QA not green)`, and 1 is an abort.
+The exit status is the verdict (`app/models/release/cli.rb`):
+
+| Exit | Meaning | Response |
+|---|---|---|
+| **0** | `✓ Assembled <rel>`, or an early return with nothing to sweep | proceed to `production-deploy` |
+| **1** | **ABORT**: a refusal with a verdict (also `--help`, `Release::Cli::HELP_EXIT`) | read the abort; take its row below |
+| **2** | **ARGUMENT REFUSAL**: a flag `prepare` does not accept; nothing ran | fix the command line, then re-run |
+| **3** | **NOT GREEN**: `✓ Prepared (NOT assembled — QA not green)` (`PREPARE_QA_NOT_GREEN_EXIT`) | fix the boot, then re-run (the **QA deploy / boot FAILED** row) |
+
+`bin/conductor qa --run` exits with `prepare`'s status unchanged, so a wrapper reads
+the same verdict from either command.
 
 ### INTERRUPTION — re-run `bin/release prepare --yes`. That is the whole fix.
 
