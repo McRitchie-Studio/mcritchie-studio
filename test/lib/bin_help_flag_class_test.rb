@@ -333,6 +333,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "find-clips"             => :optparse,
     # Exactly one slug; --help and an unknown flag exit before the API is read.
     "stitch-video"           => :optparse,
+    # Exactly one slug and one of --extract or --apply; --help and an unknown flag
+    # exit before the API is read, a frame stilled or anything uploaded.
+    "clip-references"        => :optparse,
     # Read-only: every verb is a read through one `heroku run`. The verb is
     # shifted first, then OptionParser owns the rest, so `desk 5 --help` prints
     # help and exits before any run; an unknown flag raises unrescued.

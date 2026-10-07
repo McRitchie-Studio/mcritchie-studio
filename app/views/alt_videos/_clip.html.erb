@@ -1,11 +1,13 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview and window; whom the alt video's swaps replace here; the hand-off (the 25 s source clip, the swapped people's character sheets, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview and window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
 <% target = chunk&.swap_target(swaps) %>
 <% swap = target && swaps[target.ordinal] %>
 <% swapped = chunk ? chunk.swapped_present(swaps) : [] %>
-<% prompt = chunk && MusicVideos::ClipPrompts.for(chunk, swaps: swaps) %>
+<% lettered = chunk ? MusicVideos::ClipPrompts.lettered(chunk, swaps: swaps, numbers: numbers) : [] %>
+<% frames = chunk ? chunk.reference_frame_list : [] %>
+<% prompt = chunk && MusicVideos::ClipPrompts.for(chunk, swaps: swaps, numbers: numbers) %>
 <article id="clip-<%= clip.chunk_ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
          x-data="clipRow()" data-src="<%= url %>"
          data-test="alt-clip" data-ordinal="<%= clip.chunk_ordinal %>"
@@ -59,6 +61,22 @@
         <% end %>
       </div>
 
+      <% if lettered.any? %>
+        <div class="text-sm text-body min-w-0" data-test="clip-swaps" data-count="<%= lettered.size %>">
+          <p class="label-upper mb-1">Swapped here</p>
+          <ul class="flex flex-col gap-1">
+            <% lettered.each do |row| %>
+              <li class="min-w-0 break-words" data-test="clip-swap-row" data-letter="<%= row.letter %>" data-lead="<%= row.lead %>">
+                <span class="font-semibold text-heading">Person <%= row.letter %></span>
+                <span class="badge text-3xs <%= row.lead ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-muted border-subtle' %>"><%= row.lead ? "lead" : "background" %></span>
+                <span class="text-muted">→</span>
+                <span class="font-semibold text-heading"><%= row.player %></span><% if row.look %><span class="text-muted">, <%= row.look %></span><% end %>
+                <span class="text-muted">· sheet <%= row.sheet %></span>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      <% else %>
       <p class="text-sm text-body min-w-0" data-test="clip-target">
         <span class="label-upper mr-1">Target</span>
         <% if target %>
@@ -76,6 +94,7 @@
           <span class="text-muted">Nobody in this window is labelled or swapped.</span>
         <% end %>
       </p>
+      <% end %>
 
       <% if prompt %>
         <div class="min-w-0">
@@ -91,8 +110,40 @@
         </div>
       <% end %>
 
+      <% if chunk %>
+        <div class="min-w-0" data-test="clip-frames" data-count="<%= frames.size %>">
+          <p class="label-upper mb-1.5">Lettered frames <span class="normal-case tracking-normal">· the people marked A, B, C… as the prompt names them; add them to Higgsfield as references</span></p>
+          <% if frames.any? %>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <% frames.each_with_index do |frame, i| %>
+                <% frame_url = urls[frame["object_key"]] %>
+                <figure class="min-w-0" data-test="clip-frame" data-key="<%= frame["object_key"] %>" data-letters="<%= frame["letters"].join(",") %>">
+                  <% if frame_url %>
+                    <%= link_to frame_url, target: "_blank", rel: "noopener", class: "block" do %>
+                      <img src="<%= frame_url %>" alt="Frame <%= i + 1 %> at <%= video_timecode(frame["t_ms"]) %>, people <%= frame["letters"].join(", ") %>"
+                           loading="lazy" class="w-full aspect-video object-cover rounded-md border border-subtle bg-inset">
+                    <% end %>
+                  <% else %>
+                    <div class="w-full aspect-video rounded-md border border-subtle bg-inset flex items-center justify-center text-3xs text-muted p-1 text-center">Frame not reachable</div>
+                  <% end %>
+                  <figcaption class="flex flex-wrap items-center justify-between gap-x-2 mt-1 text-xs min-w-0">
+                    <span class="text-muted font-mono tabular-nums"><%= video_timecode(frame["t_ms"]) %> · <%= frame["letters"].join(" ") %></span>
+                    <% if (frame_download = downloads[frame["object_key"]]) %>
+                      <%= link_to "Download", frame_download, download: frame["object_key"].split("/").last,
+                                  class: "text-primary hover:underline shrink-0", data: { test: "clip-frame-download" } %>
+                    <% end %>
+                  </figcaption>
+                </figure>
+              <% end %>
+            </div>
+          <% else %>
+            <p class="text-sm text-muted" data-test="clip-frames-none">No lettered frames yet: run <code class="text-xs">bin/clip-references <%= video.slug %></code> on the Mac.</p>
+          <% end %>
+        </div>
+      <% end %>
+
       <div class="min-w-0" data-test="clip-handoff">
-        <p class="label-upper mb-1.5">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's looks and the prompt</span></p>
+        <p class="label-upper mb-1.5">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's sheets in the prompt's order, and the prompt</span></p>
         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 min-w-0">
           <% if chunk && (download = downloads[chunk.object_key]) %>
             <%= link_to "Download #{clip_seconds(clip.duration_ms)} s clip", download, download: chunk.object_key.split("/").last,
@@ -100,16 +151,18 @@
           <% else %>
             <span class="text-sm text-muted" data-test="clip-chunk-unreachable">Source clip not reachable.</span>
           <% end %>
-          <% swapped.each do |entry| %>
+          <% swapped.zip(lettered).each do |entry, row| %>
             <% sheet = entry.appearance_slug && sheets[entry.appearance_slug] %>
+            <% sheet_label = "Sheet #{row.sheet} · Person #{row.letter} · #{row.player}" %>
             <% if sheet %>
               <%= link_to sheet.image_url, target: "_blank", rel: "noopener", download: "#{entry.appearance_slug}_character_sheet",
-                          class: "btn btn-outline btn-sm min-w-0", data: { test: "clip-sheet", look: entry.appearance_slug, ordinal: entry.performer_ordinal } do %>
-                <span class="truncate">Download character assets · <%= entry.label %></span>
+                          title: entry.label, class: "btn btn-outline btn-sm min-w-0",
+                          data: { test: "clip-sheet", look: entry.appearance_slug, ordinal: entry.performer_ordinal, sheet: row.sheet } do %>
+                <span class="whitespace-normal break-words"><%= sheet_label %></span>
               <% end %>
             <% else %>
               <span class="text-sm text-warning-ink min-w-0 break-words" data-test="clip-sheet-missing" data-ordinal="<%= entry.performer_ordinal %>">
-                No character sheet for <%= entry.label %> yet.
+                <%= sheet_label %>: no character sheet for <%= entry.label %> yet.
                 <%= link_to "Open the athlete", person_path(entry.person_slug), class: "text-primary hover:underline" %> to build one.
               </span>
             <% end %>

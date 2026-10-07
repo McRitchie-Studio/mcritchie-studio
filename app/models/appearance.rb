@@ -62,9 +62,14 @@ class Appearance < ApplicationRecord
   # the same as "designed", and `allow_nil` is what keeps the two distinguishable —
   # every look on file predates the board and asserts no hand placement.
   validates :stage, inclusion: { in: STAGES }, allow_nil: true
+  # The number this look wears (piece 16): clip prompts name the player as
+  # "#4 Dak Prescott". Per look, not per person: a throwback can wear another.
+  JERSEY_NUMBERS = (0..99)
+  validates :jersey_number, numericality: { only_integer: true, in: JERSEY_NUMBERS }, allow_nil: true
 
   before_validation :generate_slug, on: :create
   before_validation :normalize_colorway
+  before_validation :take_the_athletes_number, on: :create
   before_create :set_initial_position
   after_create :become_default_if_first
   after_destroy :release_default_pointer
@@ -176,6 +181,18 @@ class Appearance < ApplicationRecord
     [descriptor, (default? ? "(default)" : nil)].compact.join(" ")
   end
 
+  # "#4", or nil without a number.
+  def jersey_label = jersey_number.nil? ? nil : "##{jersey_number}"
+
+  # A typed jersey number as the column takes it: "04" -> 4, blank -> nil.
+  # Anything else is kept as typed, so the validation names it.
+  def self.jersey_from(value)
+    text = value.to_s.strip
+    return nil if text.empty?
+
+    text.match?(/\A\d{1,2}\z/) ? text.to_i : text
+  end
+
   # THE LOOK AN ATTACH FILES.
   #
   # Uploading an image for a named colorway is a STATEMENT about how this person
@@ -264,6 +281,21 @@ class Appearance < ApplicationRecord
   end
 
   private
+
+  # A new look with no number typed wears the athlete's roster number
+  # (athletes.jersey_number) when there is one; the operator edits it on the
+  # person page when this look wears another. A plain query, NOT
+  # person.athlete_profile: loading the association here would cache it on the
+  # caller's Person, and a later read (GatherReferencePhotos' team) would see
+  # the stale row instead of one updated since.
+  def take_the_athletes_number
+    return unless jersey_number.nil? && person_slug.present?
+
+    roster = Athlete.where(person_slug:).pick(:jersey_number)
+    # A roster number the look cannot wear (bad feed data) is no number, never a
+    # refused look.
+    self.jersey_number = roster if roster.is_a?(Integer) && JERSEY_NUMBERS.cover?(roster)
+  end
 
   # The FIRST look a person gets becomes their default. Doing it here rather
   # than at a call site means a person can never end up with looks and no
