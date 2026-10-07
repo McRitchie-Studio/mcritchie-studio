@@ -52,12 +52,14 @@ class SecretKeyBaseRotationTest < ActiveSupport::TestCase
     assert_empty rotations.encrypted
   end
 
-  test "the app booted with no rotation registered when the var is unset" do
-    skip "OLD_SECRET_KEY_BASE is set in this environment" if ENV["OLD_SECRET_KEY_BASE"].present?
-
+  # The boot-time registration matches the environment: none when the var is
+  # unset (the no-op promise), one of each when it is set.
+  test "the app booted with exactly the rotations its environment asks for" do
+    expected = SecretKeyBaseRotation.old_secret_key_base ? 1 : 0
     rotations = Rails.application.config.action_dispatch.cookies_rotations
-    assert_empty rotations.signed
-    assert_empty rotations.encrypted
+
+    assert_equal expected, rotations.signed.size
+    assert_equal expected, rotations.encrypted.size
   end
 
   private
