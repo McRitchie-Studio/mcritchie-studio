@@ -25,6 +25,9 @@ class Athletes::BackfillDescriptionsTest < ActiveSupport::TestCase
     # The table carries fixtures; this suite reasons about counts, so start from a
     # known floor and create exactly the athletes each test is about.
     ImageCache.where(owner_type: "Athlete").delete_all
+    # Children first: their slug foreign keys refuse a parent deleted under them.
+    AthleteGrade.delete_all
+    PffStat.delete_all
     Athlete.delete_all
   end
 

@@ -461,6 +461,7 @@ module Api
       # as hard as the storage — a silent success is the failure mode.
 
       test "[integration] a devops release_slug write is refused, not silently dropped" do
+        release_rows!("rel-2026-08-12-real")
         @task.update!(release_slug: "rel-2026-08-12-real")
 
         patch api_v1_task_path(@task.slug),
@@ -635,6 +636,7 @@ module Api
       # present, so this payload never reaches the normalizer. The model's
       # before_save shed is what keeps the invariant total across BOTH doors.
       test "[integration] a raw metadata devops write cannot plant a release_slug shadow" do
+        release_rows!("rel-2026-08-12-real")
         @task.update!(release_slug: "rel-2026-08-12-real")
 
         patch api_v1_task_path(@task.slug),
@@ -651,6 +653,7 @@ module Api
       # The read side agrees: the API serves the COLUMN at top level, which is what
       # bin/conductor and `bin/task field` consume.
       test "[integration] the api serves release_slug as a top-level column" do
+        release_rows!("rel-2026-08-12-real")
         @task.update!(release_slug: "rel-2026-08-12-real")
 
         get api_v1_task_path(@task.slug), headers: @headers

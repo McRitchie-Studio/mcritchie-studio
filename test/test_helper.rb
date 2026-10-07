@@ -320,6 +320,18 @@ module ActiveSupport
 
     # Add more helper methods to be used by all tests here...
 
+    # The slug columns carry foreign keys, so a test that names a soul by slug
+    # (tasks.agent_slug, activities.agent_slug) creates the agent row first. The
+    # name parameterizes back to the slug, which Agent derives its slug from.
+    def agent_rows!(*slugs)
+      slugs.map { |slug| Agent.find_or_create_by!(slug: slug) { |agent| agent.name = slug.titleize } }
+    end
+
+    # Likewise for a release named by slug (tasks.release_slug, release_events).
+    def release_rows!(*slugs)
+      slugs.map { |slug| Release.find_or_create_by!(slug: slug) { |release| release.state = Release::STATES.first } }
+    end
+
     # Pin one ENV key for the duration of the block, restoring the original
     # value (or its absence) on the way out. Safe under CI's process-per-worker
     # parallelism: each worker owns its ENV and runs its tests sequentially.

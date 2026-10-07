@@ -63,14 +63,20 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
     assert_select "td", /Morse/
   end
 
+  # The season row stays (its grades, stats and rankings hold it by foreign key);
+  # moving it out of 2025 is what the controller's lookup sees as no season.
+  def without_the_2025_nfl_season!
+    Season.find_by(year: 2025, league: "nfl").update_columns(year: 1999)
+  end
+
   test "quarterback rankings redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_quarterback_rankings_path
     assert_redirected_to root_path
   end
 
   test "offensive line rankings redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_offensive_line_rankings_path
     assert_redirected_to root_path
   end
@@ -243,7 +249,7 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "pass-first rankings redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_pass_first_rankings_path
     assert_redirected_to root_path
   end
@@ -285,7 +291,7 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "prospects page redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_prospects_path
     assert_redirected_to root_path
   end
@@ -353,7 +359,7 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "team unit rankings redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_team_rankings_path("buffalo-bills")
     assert_redirected_to root_path
   end
@@ -380,7 +386,7 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "player impact redirects when no season" do
-    Season.find_by(year: 2025, league: "nfl").destroy
+    without_the_2025_nfl_season!
     get nfl_player_impact_path(player_id: "david-bailey", team_id: "buffalo-bills")
     assert_redirected_to nfl_hub_path
   end

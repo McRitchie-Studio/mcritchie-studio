@@ -13,17 +13,32 @@
 - Exception: Task uses `before_validation :generate_slug` with random hex (immutable)
 - Exception: SkillAssignment has no slug (join table)
 - Exception: Activity sets slug via `after_create` (needs id)
-- studio-engine's `Sluggable#set_slug` runs on **every** save, not just create, so a
-  row cannot keep a slug that differs from its `name_slug`. Because foreign keys are
-  slug strings, a change to `name_slug` renames existing rows and orphans their
-  children with no error. Keep the new `name_slug` byte-identical for every row
-  already in production, and pin it with a test that updates a row and asserts the
-  slug did not move.
+- A slug is written once, at create (studio-engine `Sluggable`); a later save never
+  recomputes it. The one way to change it is `rename_slug!` (or `rename_slug` for a
+  form), which rewrites every child column in one transaction and raises
+  `Sluggable::SlugRefused` (a 422) when the slug is blank, badly formed or taken.
+  The hub exposes it at `PATCH /people/:slug/slug` and `PATCH /api/v1/slugs/:kind/:slug`.
+- A model whose slugs hold more than lowercase hyphenated words sets
+  `self.slug_format` (User, and the models whose slugs carry a snake_case word).
+- A column that holds a parent's slug with no association on the parent is
+  declared there with `has_slug_children "table" => :column`;
+  `test/models/slug_children_test.rb` fails when a census column is missing.
 
 ## Foreign Keys
 - All foreign keys use slug strings, not integer IDs
 - Associations use `foreign_key: :agent_slug, primary_key: :slug` pattern
 - Example: `has_many :tasks, foreign_key: :agent_slug, primary_key: :slug`
+- Every slug column the census (`bin/rails db:slug_census`) resolves carries a
+  database foreign key to its parent's `slug`, `ON UPDATE CASCADE`, with
+  `ON DELETE` RESTRICT, SET NULL or CASCADE chosen per column. The columns left
+  without one are listed with their reasons in `SlugCensus::UNCONSTRAINED`, and
+  `test/models/slug_foreign_keys_test.rb` holds both lists to the schema. A new
+  slug column takes its key in the migration that adds it.
+- A writer that passes whatever handle its caller holds (telemetry, task notes,
+  the desk inventory) declares `clears_unknown_slug` (`ClearsUnknownSlug`), so a
+  slug no parent holds is cleared, or kept in metadata, rather than refused.
+- A refusal the database makes (`InvalidForeignKey`, `RecordNotUnique`) answers 422
+  with the reason through `ConstraintViolationResponses`, on the web and the API.
 
 ## Error Handling
 - `ErrorLog.capture!(exception, target:, parent:)` for structured error logging

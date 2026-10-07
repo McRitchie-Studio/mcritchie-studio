@@ -46,6 +46,9 @@ class Nflverse::SeedPlayersRunRecordTest < ActiveSupport::TestCase
   def last_run = ImportRun.for_source(SOURCE).order(:started_at).last
 
   setup do
+    # Children first: their slug foreign keys refuse a parent deleted under them.
+    AthleteGrade.delete_all
+    PffStat.delete_all
     Athlete.delete_all
     Person.where(last_name: "Jefferson").delete_all
     ImportRun.delete_all
