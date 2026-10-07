@@ -1201,26 +1201,25 @@ class Task < ApplicationRecord
     events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
-  # `events:` follows #assembled_seconds_from_pickup's contract: a parameter with
-  # the SQL default, never a `loaded?` sniff. record_intent_event's idempotency
-  # check calls with no events, so a write path always reads the database.
+  # ONE implementation, over an event array. The board passes its preload as
+  # `events:`; every other caller (record_intent_event's idempotency check among
+  # them) passes nothing and gets a fresh read of this task's intents and
+  # transitions, never a `loaded?` sniff, so a write path always reads the database.
   def open_intents_for(to_stage, events: nil)
     to_stage = to_stage.to_s
     return [] unless NEXT_INTENT_STAGE[stage] == to_stage
 
+    events ||= task_events.where(kind: [ TaskEvent::INTENT, TaskEvent::TRANSITION ]).to_a
     # Resolved once per call and passed down, never memoized on the instance.
     entry = current_stage_entry_event(events: events)
 
     open_intent_candidates(to_stage, events).reject do |intent|
-      !intent_started_in_current_stage?(intent, entry: entry) ||
-        intent_superseded?(intent, events: events)
+      !intent_started_in_current_stage?(intent, entry: entry) || superseded_by?(events, intent)
     end
   end
 
   # The →to_stage intents, oldest first.
   def open_intent_candidates(to_stage, events)
-    return task_events.intents.where(to_stage: to_stage).chronological.to_a unless events
-
     events.select { |event| event.intent? && event.to_stage == to_stage }
           .sort_by { |event| [event.occurred_at, event.id.to_i] }
   end
@@ -1260,20 +1259,7 @@ class Task < ApplicationRecord
   end
 
   # An intent closes when its target lands or any later transition leaves its
-  # source stage. The Ruby branch mirrors the SQL predicate term for term.
-  def intent_superseded?(intent, events: nil)
-    return superseded_by?(events, intent) if events
-
-    task_events.transitions.where(
-      "(to_stage = :target OR from_stage = :source) AND " \
-        "(occurred_at > :occurred_at OR (occurred_at = :occurred_at AND id > :id))",
-      target: intent.to_stage,
-      source: intent.from_stage,
-      occurred_at: intent.occurred_at,
-      id: intent.id
-    ).exists?
-  end
-
+  # source stage.
   def superseded_by?(events, intent)
     events.any? do |event|
       next false unless event.transition?
