@@ -58,57 +58,32 @@ class TaskCommaListFlagsTest < Minitest::Test
     [err, status]
   end
 
-  # ── the wiring (the guarded set itself is lib/devops_list_flags.rb) ───────
-
-  # A constant nobody reads is a dead guard. Both doors must call the refusal:
-  # the LIST branch (`--repo` / `--risk`) and the MAP branch, whose repo KEY
-  # Task#release_repos folds into the release identity — so a comma there reaches
-  # the plan as a phantom repo by the other door.
-  def test_both_parse_branches_call_the_refusal
+  # ── the wiring (the split set itself is lib/devops_list_flags.rb) ─────────
+  #
+  # Guard catalog row 3.6: the LIST branch SPLITS a comma-joined identifier value
+  # into entries, and only the MAP branch still refuses — --pr-url-for's repo key
+  # cannot split (two repos, one url).
+  def test_the_list_branch_splits_and_only_the_map_branch_refuses
     body = SOURCE[/^def parse_flags\(argv.*?\n^end$/m]
-    refute_nil body, "parse_flags must be extractable to prove the guard is wired"
+    refute_nil body, "parse_flags must be extractable to prove the split is wired"
 
-    assert_includes body, "refuse_comma_list!(arg, value) if COMMA_FREE_LIST_FLAGS.include?(arg)",
-                    "the LIST branch must consult the constant"
+    assert_includes body, "if COMMA_FREE_LIST_FLAGS.include?(arg)", "the LIST branch must consult the constant"
+    assert_includes body, 'value.split(",")', "and split the value it reads"
     assert_includes body, "refuse_comma_list!(arg, repo,",
                     "the MAP branch must guard --pr-url-for's repo key, which cannot be split at all"
-    assert_equal 2, body.scan(/refuse_comma_list!/).size,
-                 "exactly two call sites — a third would mean a flag was guarded without a decision"
+    assert_equal 1, body.scan(/refuse_comma_list!/).size, "exactly one refusal site: the map key"
   end
 
-  # ── ordering: the refusal precedes the network ─────────────────────────────
+  # The joined and repeated spellings travel alike: both reach the (unroutable)
+  # board, and neither is refused.
+  def test_a_comma_joined_repo_travels_like_the_repeated_form
+    [%w[--repo turf-monster,mcritchie-studio], %w[--repo turf-monster --repo mcritchie-studio],
+     %w[--risk devops,release]].each do |flags|
+      err, status = run_task(["create", "--title", "Two repo task", *flags])
 
-  def test_a_comma_joined_repo_is_refused_before_the_board_is_reached
-    err, status = run_task(["create", "--title", "Two repo task", "--repo", "turf-monster,mcritchie-studio"])
-
-    refute status.success?, "a comma-joined --repo must exit nonzero"
-    assert_match(/--repo turf-monster --repo mcritchie-studio/, err,
-                 "the remedy is built from the value actually typed, so it is copyable")
-    refute_match NETWORK_ERROR, err,
-                 "the refusal fires in parse_flags, before auth and before any request — a rejected " \
-                 "line must leave no half-written record behind it"
-  end
-
-  # THE CONTROL for the case above, and the reason it is an experiment rather
-  # than a restatement: the SAME command with the flag spelled correctly DOES
-  # reach the board and dies on the unroutable address. Without this, "no network
-  # error" would be satisfied by a CLI that never talks to anything.
-  def test_the_correctly_spelled_flag_does_reach_the_board
-    err, status = run_task(["create", "--title", "Two repo task", "--repo", "turf-monster",
-                            "--repo", "mcritchie-studio"])
-
-    refute status.success?, "the board is unroutable here, so a create that reaches it still fails"
-    assert_match NETWORK_ERROR, err,
-                 "the repeated form is accepted and travels — which is what makes the sibling test's " \
-                 "silence meaningful"
-    refute_match(/is ONE value containing a comma/, err, "and it is never refused")
-  end
-
-  def test_a_comma_joined_risk_is_refused_before_the_board_is_reached
-    err, status = run_task(["create", "--title", "Risky joined task", "--risk", "devops,release"])
-
-    refute status.success?
-    assert_match(/--risk devops --risk release/, err)
-    refute_match NETWORK_ERROR, err
+      refute status.success?, "the board is unroutable here, so a create that reaches it still fails"
+      assert_match NETWORK_ERROR, err, "#{flags.inspect} must be accepted and travel"
+      refute_match(/is ONE value containing a comma/, err, "and it is never refused")
+    end
   end
 end

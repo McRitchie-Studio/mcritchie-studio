@@ -1347,8 +1347,6 @@ def parse_flags(argv, context: nil)
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       value = argv[i + 1] || die!("#{arg} needs a value")
-      # Identifier flags only (COMMA_FREE_LIST_FLAGS) — the prose flags keep their
-      # commas. A no-op for the other three, so the branch keeps one shape.
       # SPLIT, not refused (guard catalog row 3.6): no repo name or risk tag
       # contains a comma, so `--repo a,b` means two entries. The prose flags keep
       # their commas.
