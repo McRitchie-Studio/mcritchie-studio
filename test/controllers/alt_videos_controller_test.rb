@@ -152,6 +152,10 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     card = css_select("[data-test='alt-clip'][data-ordinal='3']").sole.to_html
     assert_operator card.index("data-test=\"clip-frames\""), :<, card.index("data-test=\"clip-handoff\"")
     assert_select "[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-frames-none']"
+
+    # The cast card carries the same letter.
+    get music_video_path(video)
+    assert_select "[data-test='performer-card'][data-ordinal='2'] [data-test='performer-letter']", "B"
   end
 
   test "a clip card labels a found sheet by number, letter and player" do
