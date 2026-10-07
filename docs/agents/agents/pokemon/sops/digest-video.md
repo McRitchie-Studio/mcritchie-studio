@@ -415,7 +415,10 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    chunks needs no time limit. Measured locally on 2026-10-07: first byte in
    0.25-0.5 s, 327 MB in 14-21 s from the dev bucket, and the process's
    memory rose about 100 MB and then held flat, the same for 312 MB as for
-   936 MB written. Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
+   936 MB written. Cancel the download (or close the tab) and the server
+   stops at once: no further file is fetched. A failure other than that is
+   kept in the error log, once per download, as well as in the README.
+   Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
 3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
    click it to choose the file; it uploads at once. Each upload is a numbered
    **version**, kept and never overwritten, at

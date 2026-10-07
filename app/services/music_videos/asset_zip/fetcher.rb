@@ -37,10 +37,22 @@ module MusicVideos
 
       # get_object with a block streams the body to it; an error status is
       # buffered by the SDK and raised, never yielded.
+      #
+      # An error raised by the block itself (the zip's sink: a client that
+      # went away raises Puma::ConnectionError there) or the network failing
+      # mid-body is not retried, since chunks already went out: the SDK
+      # finishes the R2 socket and raises NonRetryableStreamingError around
+      # it. The block's own error is handed back as itself, so the Writer can
+      # tell a disconnect from a failed read.
       def object(key, &blk)
         require "aws-sdk-s3"
         client.get_object(bucket:, key: Studio::S3.full_key(key), &blk)
         nil
+      rescue Aws::S3::Plugins::NonRetryableStreamingError => e
+        original = e.original_error
+        raise FetchFailed, "storage read failed (#{original.class.name.demodulize})" if original.is_a?(Seahorse::Client::NetworkingError)
+
+        raise original
       rescue Studio::S3::NotConfigured
         raise FetchFailed, "object storage is not configured here"
       rescue Aws::S3::Errors::NoSuchKey, Aws::S3::Errors::NotFound
