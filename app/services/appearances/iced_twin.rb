@@ -46,7 +46,10 @@ module Appearances
         # uniform through the base instead (CharacterSheetPrompt#colourway).
         descriptor: Appearance.available_descriptor(@base.person_slug, "#{@base.descriptor}#{SUFFIX}"),
         iced: true,
-        base_appearance_slug: @base.slug
+        base_appearance_slug: @base.slug,
+        # The same uniform, so the same number (piece 16's clip prompts name the
+        # player by it); editable on the twin's own row afterwards.
+        jersey_number: @base.jersey_number
       )
     end
   end

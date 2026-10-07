@@ -58,6 +58,53 @@ module MusicVideos
       text.match?(PERSON_WORD) ? "the #{text}" : "the person in the #{text} scenes"
     end
 
+    # PROMPT V2 (piece 16): people by LETTER, players by JERSEY NUMBER. Used
+    # whenever anyone the clip swaps is on screen in it; fill above stays for
+    # a clip that swaps nobody (it keeps the {athlete} blank).
+    #
+    # swaps: one Hash per swapped person present, in character-sheet order
+    # (the clip card's download buttons): letter ("B"), number (4 or nil),
+    # athlete ("Dak Prescott"), look ("Cowboys white" or nil), sheet (1-based),
+    # lead (true: on screen long enough to lip-sync; false: background).
+    # framed: the clip has lettered reference frames, so the letters can be
+    # pointed at.
+    Swap = Data.define(:letter, :number, :athlete, :look, :sheet, :lead) do
+      # "#4 Dak Prescott", or the name alone without a number.
+      def player
+        name = ClipPrompt.plain(athlete) || ATHLETE
+        number.nil? ? name : "##{number} #{name}"
+      end
+    end
+
+    LETTERED_LIGHTING = "Please give the video the same cinematic lighting as the {source}."
+    KEEP_REST = "Keep everyone else exactly as they are."
+
+    def lettered(swaps:, video_kind: "music_video", framed: true)
+      list = swaps.map { |s| s.is_a?(Swap) ? s : Swap.new(**s.to_h.transform_keys(&:to_sym)) }
+      raise ArgumentError, "a lettered prompt needs at least one swapped person" if list.empty?
+
+      kind = video_kind.to_s
+      header = "This clip is from a #{VIDEO_WORDS.fetch(kind, VIDEO_WORDS['music_video'])}."
+      header += " People are marked A, B, C... in the reference frames." if framed
+      one = list.size == 1
+      lines = [header, "", "Swap #{one ? 'this person' : 'these people'}:"]
+      list.each do |s|
+        look = ClipPrompt.plain(s.look)
+        lines << "- Person #{s.letter} (#{s.lead ? 'lead' : 'background'}) -> #{s.player}#{", #{look}" if look} " \
+                 "(character sheet #{s.sheet})"
+      end
+      lines << ""
+      lines << "#{one ? 'The player' : 'Each player'} should have his normal hair, athletic build and be in uniform, " \
+               "full pads with no helmet (like #{one ? 'the character sheet provided' : 'his character sheet'})."
+      list.select(&:lead).each do |s|
+        lines << "#{s.player} should also be mouthing all the mouth movements of Person #{s.letter}."
+      end
+      lines << "Give #{one ? 'him' : 'each of them'} a diamond encrusted watch, necklace, rings, and some designer sunglasses."
+      lines << KEEP_REST
+      lines << LETTERED_LIGHTING.gsub("{source}", SOURCE_WORDS.fetch(kind, SOURCE_WORDS["music_video"]))
+      lines.join("\n")
+    end
+
     def sentence(items)
       return items.first if items.size == 1
 

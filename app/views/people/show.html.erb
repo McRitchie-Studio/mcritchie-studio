@@ -160,6 +160,10 @@
               <span class="text-xs text-muted"><%= look.colorway %></span>
             <% end %>
 
+            <% if look.jersey_label %>
+              <span class="badge text-3xs bg-surface-alt text-body border-subtle" data-test="look-jersey"><%= look.jersey_label %></span>
+            <% end %>
+
             <%# THE ROUTE TO THE CHARACTER MODEL PAGE, and the only one: an operator
                 must be able to reach that page by clicking rather than by knowing a
                 URL. The chip beside it answers "which of my models have an identity"
@@ -179,8 +183,17 @@
 
           <%# Attach an image for THIS look. Admin only, like the action; the
               address must be an https URL on a public host, and the action says
-              so when it refuses one. %>
+              so when it refuses one. Beside it, the look's jersey number: the
+              number clip prompts name the player by (blank clears it). %>
           <% if admin? %>
+            <%= form_with url: update_appearance_person_path(@person.slug), method: :patch, scope: :appearance,
+                          class: "flex items-center gap-2 flex-wrap pl-3", data: { test: "look-jersey-form" } do |f| %>
+              <%= hidden_field_tag :appearance_slug, look.slug %>
+              <%= f.label :jersey_number, "Jersey number", for: "jersey-#{look.slug}", class: "text-xs text-muted" %>
+              <%= f.number_field :jersey_number, id: "jersey-#{look.slug}", value: look.jersey_number, min: 0, max: 99,
+                    placeholder: "none", class: "input-field text-xs w-20" %>
+              <%= f.submit "Save number", class: "btn btn-sm btn-outline" %>
+            <% end %>
             <%= form_with url: attach_artifact_person_path(@person.slug), method: :post,
                           class: "flex items-center gap-2 flex-wrap pl-3 pb-2 #{'ml-4 sm:ml-8' if look.iced?}" do |f| %>
               <%= f.hidden_field :appearance_slug, value: look.slug %>
@@ -212,6 +225,7 @@
           <div class="flex gap-2 flex-wrap">
             <%= f.text_field :team_slug, placeholder: "team slug (athletes only)", class: "input-field text-sm w-52" %>
             <%= f.text_field :colorway, placeholder: "colorway (optional)", class: "input-field text-sm w-40" %>
+            <%= f.number_field :jersey_number, placeholder: "jersey number", min: 0, max: 99, class: "input-field text-sm w-36" %>
           </div>
           <%= f.url_field :reference_url, placeholder: "reference photo URL", class: "input-field text-sm w-full" %>
           <%= f.text_area :generation_notes, rows: 2,

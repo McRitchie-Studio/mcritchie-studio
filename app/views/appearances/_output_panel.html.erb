@@ -173,8 +173,10 @@
             artifacts, so it is a task rather than a side effect of correcting a
             comment. Until then this field is the only number the prompt sees, and left
             blank the prompt omits the number and nameplate clauses rather than asking
-            the model to render a placeholder. %>
-        <%= f.number_field :number, placeholder: "Jersey number (optional)",
+            the model to render a placeholder. It opens filled with the look's stored
+            jersey number, and a number typed here is kept on the look for the clip
+            prompts (AppearancesController#keep_jersey_number). %>
+        <%= f.number_field :number, placeholder: "Jersey number (optional)", value: @appearance.jersey_number,
               min: 0, max: 99, class: "input-field w-full text-xs" %>
         <% sheet_word = @appearance.iced? ? "iced character sheet" : "character sheet" %>
         <%= f.submit(@appearance.sheet_build_failed? ? "Retry #{sheet_word}" : "Generate #{sheet_word}",

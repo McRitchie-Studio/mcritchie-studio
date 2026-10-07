@@ -172,8 +172,8 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   // Build Clips snapshots the swap: the new alt video's prompts name the athlete and look.
   await page.locator("[data-test='cast-progress']").getByRole("button", { name: "Build Clips" }).click();
   const clipPrompt = page.locator("[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-prompt']");
-  await expect(clipPrompt).toContainText("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.");
-  await expect(clipPrompt).toContainText("(like the Home Blue model provided)");
+  await expect(clipPrompt).toContainText("- Person A (lead) -> Test Athlete Alpha, Home Blue (character sheet 1)");
+  await expect(clipPrompt).toContainText("Test Athlete Alpha should also be mouthing all the mouth movements of Person A.");
   await expect(clipPrompt).not.toContainText("music video");
   await expect(page.locator("[data-test='alt-video-swap'][data-ordinal='1']")).toContainText("Test Athlete Alpha > Home Blue");
   await page.goto(VIDEO);

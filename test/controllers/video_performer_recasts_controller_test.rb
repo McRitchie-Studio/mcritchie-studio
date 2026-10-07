@@ -48,8 +48,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Person 1 is replaced by Test Athlete Alpha > Away White.", flash[:notice]
     assert_equal [@athlete.slug, @away.slug], performer(1).values_at(:recast_person_slug, :recast_appearance_slug)
     @video.video_chunks.each do |chunk|
-      assert chunk.prompt.start_with?("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.")
-      assert_includes chunk.prompt, "like the Away White model provided"
+      assert_includes chunk.prompt, "- Person A (lead) -> Test Athlete Alpha, Away White (character sheet 1)"
     end
 
     follow_redirect!
@@ -72,10 +71,10 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal({ "state" => "recast", "person_slug" => @athlete.slug, "appearance_slug" => @home.slug,
                    "label" => "Test Athlete Alpha > Home Blue", "message" => "Person 1 is replaced by Test Athlete Alpha > Home Blue." }, body)
-    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Home Blue model provided") })
+    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("Person A (lead) -> Test Athlete Alpha, Home Blue") })
 
     assert_equal "Test Athlete Alpha > Away White", save(1, person_slug: @athlete.slug, appearance_slug: @away.slug)["label"]
-    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Away White model provided") })
+    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("Person A (lead) -> Test Athlete Alpha, Away White") })
 
     body = save(1, clear: "1")
     assert_equal ["none", nil, nil], body.values_at("state", "person_slug", "appearance_slug")
@@ -121,7 +120,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
 
     body = save(1, swap: "1")
     assert_equal ["recast", @athlete.slug, @away.slug], body.values_at("state", "person_slug", "appearance_slug")
-    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Away White model provided") })
+    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("Person A (lead) -> Test Athlete Alpha, Away White") })
   end
 
   test "picking another person while Keep Original is checked unchecks it and swaps to them" do
@@ -134,7 +133,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     body = save(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
     assert_equal ["recast", @athlete.slug, @home.slug], body.values_at("state", "person_slug", "appearance_slug")
     assert_equal [@athlete.slug, @home.slug, false], performer(1).values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
-    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Home Blue model provided") })
+    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("Person A (lead) -> Test Athlete Alpha, Home Blue") })
   end
 
   # The card's queue sends changes in the order they were made (show.html.erb, swapCard#drain):

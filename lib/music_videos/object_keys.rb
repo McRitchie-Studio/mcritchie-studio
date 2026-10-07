@@ -25,6 +25,14 @@ module MusicVideos
       "#{m[1]}chunks/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
     end
 
+    # music_videos/<artist>/<video>/chunks/refs/<video>_chunk_<NN>_<mmss>_<mmss>_ref_<NN>.jpg:
+    # one lettered reference frame of a chunk (bin/clip-references, piece 16),
+    # the chunk's own file name with the frame number, so they sort together.
+    def self.chunk_reference(source_key:, ordinal:, start_ms:, end_ms:, number:)
+      m = video_folder(source_key)
+      "#{m[1]}chunks/refs/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}_ref_#{format('%02d', number)}.jpg"
+    end
+
     # music_videos/<artist>/<video>/generated/<video>_chunk_<NN>_<mmss>_<mmss>_take_<NN>.mp4:
     # one generated MP4 the operator uploaded back for that chunk. The chunk's
     # own file name with the take number, so the two sort together.

@@ -11,12 +11,20 @@
 #              each alt video's clip of a chunk (AltVideoClip) holds the MP4s
 #              generated from it. The regenerate_* columns are piece 3's,
 #              moved onto the clip and read by nothing here.
+#
+# A chunk can carry LETTERED REFERENCE FRAMES (piece 16): stills of the source
+# inside its window with each person's letter drawn over them (Person 2 = B),
+# made on the Mac by bin/clip-references and posted whole through the agent API
+# as reference_frames: [{ object_key, t_ms, letters }]. Shared by every alt
+# video, like the chunk: a letter names a person of the source, never a swap.
 class VideoClip < ApplicationRecord
   KINDS = %w[candidate chunk].freeze
   SEAMS = MusicVideos::ClipFinder::SEAMS
   CAST_SHAPES = MusicVideos::ClipCast::SHAPES
   STATUSES = %w[proposed approved rejected].freeze
   LENGTH_MS = (MusicVideos::ClipFinder::MIN_MS..MusicVideos::ClipFinder::MAX_MS)
+  REFERENCE_KEYS = %w[object_key t_ms letters].freeze
+  MAX_REFERENCE_FRAMES = 4
 
   belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :video_clips
 
@@ -37,6 +45,7 @@ class VideoClip < ApplicationRecord
   validate :seam_inside_the_window
   validate :performers_belong_to_the_video
   validate :object_key_names_the_window
+  validate :reference_frames_are_lettered_stills
 
   def chunk? = kind == "chunk"
 
@@ -61,6 +70,9 @@ class VideoClip < ApplicationRecord
     present = Array(performer_ordinals)
     music_video.video_performers.find { |p| present.include?(p.ordinal) && swapped.call(p) } || labelled
   end
+
+  # The lettered reference frames, in order: [{ "object_key", "t_ms", "letters" }].
+  def reference_frame_list = Array(reference_frames)
 
   # Everyone in this window the swap set replaces, in cast order: whose
   # character sheets the hand-off offers.
@@ -112,6 +124,43 @@ class VideoClip < ApplicationRecord
     known = music_video&.video_performers&.map(&:ordinal) || []
     unknown = (performer_ordinals + [target_performer].compact) - known
     errors.add(:performer_ordinals, "names no such person: #{unknown.join(', ')}") if unknown.any?
+  end
+
+  # Frames belong to a chunk, numbered from 1 in the chunk's refs folder, each
+  # inside the window, each naming only letters of people the video has.
+  def reference_frames_are_lettered_stills
+    frames = reference_frames
+    return if frames == []
+    return errors.add(:reference_frames, "are for a chunk only") unless chunk?
+
+    ok = frames.is_a?(Array) && frames.all? { |f| f.is_a?(Hash) && f.keys.sort == REFERENCE_KEYS.sort }
+    return errors.add(:reference_frames, "must each be { #{REFERENCE_KEYS.join(', ')} }") unless ok
+    if frames.size > MAX_REFERENCE_FRAMES
+      return errors.add(:reference_frames, "are at most #{MAX_REFERENCE_FRAMES} per chunk")
+    end
+
+    known = music_video&.video_performers&.map(&:letter) || []
+    frames.each_with_index do |frame, i|
+      reference_frame_problem(frame, i + 1, known)&.then { |why| errors.add(:reference_frames, "#{i + 1}: #{why}") }
+    end
+  end
+
+  def reference_frame_problem(frame, number, known)
+    t = frame["t_ms"]
+    return "t_ms must fall inside the chunk" unless t.is_a?(Integer) && t.between?(start_ms.to_i, end_ms.to_i)
+
+    letters = frame["letters"]
+    unless letters.is_a?(Array) && letters.any? && letters.all?(String) && letters.uniq.size == letters.size
+      return "letters must be a list of person letters, each once"
+    end
+    unknown = letters - known
+    return "no such person: #{unknown.join(', ')}" if unknown.any?
+
+    expected = MusicVideos::ObjectKeys.chunk_reference(source_key: music_video&.source_object_key, ordinal:,
+                                                       start_ms:, end_ms:, number:)
+    "object_key must be #{expected}" unless frame["object_key"] == expected
+  rescue ArgumentError, TypeError
+    "object_key cannot be checked against the video's source folder"
   end
 
   def object_key_names_the_window
