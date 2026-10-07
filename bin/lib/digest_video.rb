@@ -51,6 +51,11 @@ module DigestVideo
   INSTAGRAM_POST = %r{\A(?:/[^/]+)?/(p|tv|reels?)/([\w-]+)}
   # yt-dlp's own words when Instagram wants a session (measured 2026-10-04).
   LOGIN_WALL = /empty media response|cookies-from-browser|login required/i
+  # English as written and as spoken; "en.*" also pulled every auto-translation
+  # (en-zh-Hans, …), and one 429 among them aborted the whole download.
+  CAPTION_LANGS = "en,en-orig"
+  CAPTION_FAILURE = /Unable to download video subtitles/i
+  FORMAT_MISSING = /Requested format is not available/i
   # Where yt-dlp keeps the session it was lent; never left in a downloaded info.json.
   SESSION_KEYS = %w[cookies http_headers].freeze
   CREDIT_WORDS = 4 # a longer "ft. …" run is caption prose, not a name
@@ -94,6 +99,10 @@ module DigestVideo
     path = URI.parse(url).path.to_s
     if path.start_with?("/share/")
       raise Failure, "an Instagram share link has no post id: open it and paste the /reel/ or /p/ URL it lands on"
+    end
+    # A sound's page lists every reel that uses it; a story is not a post.
+    if path.match?(%r{\A(?:/[^/]+)?/reels?/audio/}) || path.start_with?("/stories/")
+      raise Failure, "#{url} is not a single Instagram post: paste one /reel/, /p/ or /tv/ URL"
     end
 
     path[INSTAGRAM_POST, 2] or raise Failure, "no Instagram post id in #{url}: paste a /reel/, /p/ or /tv/ URL"
@@ -139,15 +148,19 @@ module DigestVideo
 
   # The creator, then feat.-style names from the caption's first line. The
   # caption itself is never kept: only names the parser pulls out of it.
+  # A name with no key-safe characters (emoji-only, non-Latin) cannot name an R2
+  # folder, so the next name is taken: the handle, which always has some.
   def creator_credits(names, caption)
-    creator = names.map { |n| n.to_s.strip }.find { |n| !n.empty? }
+    creator = names.map { |n| n.to_s.strip }.find { |n| key_safe?(n) }
     return [] unless creator # a caption name is never the primary
 
     caption = caption.to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
     featured = MusicVideos::CreditParser.new.parse(title: caption).featured
-                                        .reject { |n| n.split.size > CREDIT_WORDS }
+                                        .reject { |n| n.split.size > CREDIT_WORDS || !key_safe?(n) }
     [creator, *featured].compact.uniq(&:downcase)
   end
+
+  def key_safe?(name) = !MusicVideos::ObjectKeys.snake(name).empty?
 
   def youtube_id(url)
     uri = URI.parse(url)
@@ -265,6 +278,8 @@ module DigestVideo
       title, uploader, artists = payload.delete(:credits)
       credits = MusicVideos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
       MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
+    rescue ArgumentError => e # a title or name with no key-safe characters
+      raise Failure, "no R2 key for these credits (#{e.message}); ask Alex"
     end
 
     def short_code(url) = URI.parse(url).path.scan(/[\w-]+/).last || "tiktok"
@@ -272,22 +287,31 @@ module DigestVideo
     def download(url, dir, platform)
       @out.puts "downloading #{url} (H.264 first)"
       instagram = platform == "instagram"
-      subs = platform == "youtube" ? ["--write-subs", "--write-auto-subs", "--sub-format", "vtt", "--sub-langs", "en.*,en"] : []
+      subs = platform == "youtube" ? ["--write-subs", "--write-auto-subs", "--sub-format", "vtt", "--sub-langs", CAPTION_LANGS] : []
       session = @cookies_from_browser ? ["--cookies-from-browser", @cookies_from_browser] : []
-      common = [*session, "--merge-output-format", "mp4", "--write-info-json", *subs, "-P", dir,
-                "-o", "%(id)s.%(ext)s", url]
+      base = [*session, "--merge-output-format", "mp4", "--write-info-json", "-P", dir, "-o", "%(id)s.%(ext)s", url]
+      common = [*subs, *base]
       h264 = { "tiktok" => TIKTOK_H264, "instagram" => INSTAGRAM_H264 }.fetch(platform, H264)
       _o, err, ok = @shell.call(@ytdlp, "-f", h264, *common)
+      if !ok && subs.any? && err.to_s.match?(CAPTION_FAILURE)
+        # Captions only give timing: a refused track never costs the video.
+        @out.puts "captions refused (#{last_line(err)}); downloading without them, so the record has no timing"
+        common = base
+        _o, err, ok = @shell.call(@ytdlp, "-f", h264, *common)
+      end
       unless ok
         raise Failure, login_wall(err) if DigestVideo.login_wall?(err) # a second try would only spend the rate limit
 
-        @out.puts "no H.264 format (#{err.to_s.lines.last&.strip}); downloading best and converting"
+        why = err.to_s.match?(FORMAT_MISSING) ? "no H.264 format" : "the H.264 download failed (#{last_line(err)})"
+        @out.puts "#{why}; downloading best and converting"
         _o, err, ok = @shell.call(@ytdlp, "-f", instagram ? INSTAGRAM_ANY : ANY, *common)
-        raise Failure, "yt-dlp failed: #{err.to_s.lines.last&.strip}" unless ok
+        raise Failure, "yt-dlp failed: #{last_line(err)}" unless ok
       end
     ensure
       DigestVideo.scrub_session(dir) if @cookies_from_browser
     end
+
+    def last_line(err) = err.to_s.lines.last&.strip
 
     def login_wall(err)
       line = err.to_s.lines.grep(/ERROR/).last.to_s[/ERROR:\s*(.+?\.)(?:\s|\z)/, 1] || err.to_s.lines.last.to_s.strip[0, 160]

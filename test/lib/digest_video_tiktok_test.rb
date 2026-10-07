@@ -172,6 +172,11 @@ class DigestVideoTiktokTest < Minitest::Test
     end
   end
 
+  def test_a_non_latin_channel_falls_back_to_the_handle
+    assert_equal %w[testcreator], DigestVideo.tiktok_credits(INFO.merge("channel" => "米津玄師", "creator" => "🎤",
+                                                                        "title" => "x"))
+  end
+
   def test_no_creator_is_a_failure_before_upload
     shell = FakeShell.new(info: INFO.merge("channel" => nil, "creator" => nil, "uploader" => nil))
     error = assert_raises(DigestVideo::Failure) { run_digest(shell: shell) { flunk "should not finish" } }

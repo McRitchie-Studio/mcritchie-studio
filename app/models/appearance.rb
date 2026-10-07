@@ -38,6 +38,15 @@ class Appearance < ApplicationRecord
   belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
+  # THE ICED-OUT TWIN. Every look a person is given gets a twin that is its own
+  # look (so the recast picker lists it, "Cowboys white · iced") and builds its
+  # sheet from the iced prompt. `iced` marks the twin; `base_appearance_slug`
+  # names the look it was made from. Appearances::IcedTwin makes them.
+  belongs_to :base_appearance, class_name: "Appearance", foreign_key: :base_appearance_slug,
+             primary_key: :slug, optional: true, inverse_of: :iced_twins
+  has_many :iced_twins, -> { live }, class_name: "Appearance", foreign_key: :base_appearance_slug,
+           primary_key: :slug, inverse_of: :base_appearance, dependent: :nullify
+
   # THE PHOTOGRAPHS WE FOUND OF THIS PERSON, chosen and rejected both. DESTROYED
   # with the look rather than nullified, unlike the artifacts above: an artifact is
   # a picture that outlives the look it was filed under, while a candidate
@@ -55,7 +64,8 @@ class Appearance < ApplicationRecord
   validates :stage, inclusion: { in: STAGES }, allow_nil: true
   # The number this look wears (piece 16): clip prompts name the player as
   # "#4 Dak Prescott". Per look, not per person: a throwback can wear another.
-  validates :jersey_number, numericality: { only_integer: true, in: 0..99 }, allow_nil: true
+  JERSEY_NUMBERS = (0..99)
+  validates :jersey_number, numericality: { only_integer: true, in: JERSEY_NUMBERS }, allow_nil: true
 
   before_validation :generate_slug, on: :create
   before_validation :normalize_colorway
@@ -74,6 +84,9 @@ class Appearance < ApplicationRecord
   def retired? = retired_at.present?
 
   def music_video_look? = music_video_slug.present?
+
+  # The live iced twin of this (base) look, or nil.
+  def iced_twin = iced_twins.first
 
   # The character-sheet build (Appearances::SheetBuild owns the rules).
   def sheet_build_stale?
@@ -278,7 +291,10 @@ class Appearance < ApplicationRecord
   def take_the_athletes_number
     return unless jersey_number.nil? && person_slug.present?
 
-    self.jersey_number = Athlete.where(person_slug:).pick(:jersey_number)
+    roster = Athlete.where(person_slug:).pick(:jersey_number)
+    # A roster number the look cannot wear (bad feed data) is no number, never a
+    # refused look.
+    self.jersey_number = roster if roster.is_a?(Integer) && JERSEY_NUMBERS.cover?(roster)
   end
 
   # The FIRST look a person gets becomes their default. Doing it here rather

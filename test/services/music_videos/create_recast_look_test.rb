@@ -25,6 +25,10 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     assert_equal [@rookie.slug, "Broncos blue"], [look.person_slug, look.descriptor]
     assert look.default?
     assert_nil look.sheet_build_state, "the record half starts no build"
+    twin = look.iced_twin
+    assert_equal ["Broncos blue · iced", true], [twin.descriptor, twin.iced?], "every new look gets its iced twin"
+    assert_nil twin.sheet_build_state
+    assert_not twin.default?
     assert_equal [@rookie.slug, look.slug], @open.reload.values_at(:recast_person_slug, :recast_appearance_slug)
     assert @open.recast?
   end

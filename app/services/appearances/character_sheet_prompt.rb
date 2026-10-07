@@ -70,26 +70,70 @@ module Appearances
       "rear view of the head"
     ].freeze
 
+    # ── THE ICED VARIANT (recast epic piece 15, the operator's spec 2026-10-06) ──
+    #
+    # The same grid, identity rules and pads rule, plus designer shades and an
+    # iced-out jewelry set, held CONSISTENT across the sheet, and two head views
+    # swapped for special shots (the rings held to the camera, the grill in a big
+    # smile). One builder with a flag, not a copy, so a change to the layout or
+    # the pads clause reaches both sheets.
+    #
+    # THE SHADES ARE ONE NAMED DESIGN, not "designer shades", because a vague noun
+    # is re-imagined per panel and the operator asked for the SAME shades in every
+    # panel. Per the rule above, the consistency demand is repeated per panel
+    # (ICED_PANEL_SUFFIX), not stated once.
+    SHADES = "one specific pair of designer sunglasses - black acetate frames, dark tinted lenses, " \
+             "thin gold metal temples - worn over his eyes".freeze
+    ICED_PANEL_SUFFIX = ", wearing the SAME sunglasses and the SAME iced-out jewelry set as every other panel".freeze
+
+    # Generic pieces, used for any kind the person has no PersonJewelry record of.
+    GENERIC_PIECES = {
+      "chain" => "a heavy diamond-encrusted Cuban link chain with a large diamond pendant, worn OVER the jersey",
+      "watch" => "a fully diamond-encrusted watch (iced-out bezel, dial and bracelet)",
+      "bracelet" => "a diamond tennis bracelet",
+      "grill" => "a diamond-encrusted grill covering his top and bottom teeth",
+      "rings" => "diamond-encrusted rings on several fingers of both hands"
+    }.freeze
+
+    # The head views with the two special shots in place of "three-quarter
+    # looking up" and "front smiling". Same count and positions, so the grid holds.
+    RINGS_VIEW = "RINGS SHOT: facing the camera, both hands raised in front of his chest with the backs of " \
+                 "his fingers turned to the lens so every ring is large, sharp and clearly readable".freeze
+    GRILL_VIEW = "GRILL SHOT: front, a big wide open smile showing the diamond-encrusted grill on his teeth".freeze
+    ICED_HEAD_VIEWS = HEAD_VIEWS.map { |view|
+      { "three-quarter looking up" => RINGS_VIEW, "front smiling" => GRILL_VIEW }.fetch(view, view)
+    }.freeze
+
     def self.call(appearance, **kwargs) = new(appearance, **kwargs).call
 
-    def initialize(appearance, colourway: nil, number: nil, surname: nil)
+    # `iced:` defaults to the look's own flag, so an iced twin's build reads the
+    # iced prompt with no change to Appearances::GenerateArtifact's call.
+    def initialize(appearance, colourway: nil, number: nil, surname: nil, iced: nil)
       @appearance = appearance
       @colourway = colourway
       @number = number
       @surname = surname
+      @iced = iced.nil? ? appearance&.iced? || false : iced
     end
 
+    def iced? = @iced
+
     def call
-      [preamble, left_columns, right_columns, closing].join("\n\n")
+      parts = [preamble]
+      parts << iced_clause if iced?
+      parts += [left_columns, right_columns, closing]
+      parts.join("\n\n")
     end
 
     # WHAT THE SHEET IS OF. Falls back through the look before giving up, because
     # `colorway` is nil on most looks and the descriptor is what the operator
-    # actually typed ("Broncos home").
+    # actually typed ("Broncos home"). An iced twin reads its BASE look: its own
+    # descriptor ends in " · iced", which is not a uniform.
     def colourway
+      uniform = @appearance&.iced? && @appearance.base_appearance || @appearance
       @colourway.presence ||
-        @appearance&.colorway.presence ||
-        @appearance&.descriptor.presence ||
+        uniform&.colorway.presence ||
+        uniform&.descriptor.to_s.delete_suffix(Appearances::IcedTwin::SUFFIX).presence ||
         "team"
     end
 
@@ -130,8 +174,8 @@ module Appearances
     def left_columns
       <<~TEXT.strip
         LEFT TWO COLUMNS, full body standing figures each spanning the full height of both rows:
-        Column 1: full body facing forward, NO helmet, bare head#{PANEL_SUFFIX}, game pants and cleats.
-        Column 2: full body facing away showing his back, wearing his helmet#{nameplate_clause}#{PANEL_SUFFIX}. His head is turned ONLY SLIGHTLY to the left - a subtle relaxed glance of about fifteen degrees, just enough to catch the edge of the helmet and a sliver of his jaw in profile. This is a gentle natural turn, NOT a sharp ninety-degree look over the shoulder, and the neck must appear relaxed and unstrained.
+        Column 1: full body facing forward, NO helmet, bare head#{panel_suffix}, game pants and cleats.
+        Column 2: full body facing away showing his back, wearing his helmet#{nameplate_clause}#{panel_suffix}. His head is turned ONLY SLIGHTLY to the left - a subtle relaxed glance of about fifteen degrees, just enough to catch the edge of the helmet and a sliver of his jaw in profile. This is a gentle natural turn, NOT a sharp ninety-degree look over the shoulder, and the neck must appear relaxed and unstrained.
       TEXT
     end
 
@@ -139,7 +183,7 @@ module Appearances
     # one in full pads" after the list. Same rule, one level down: a list item is
     # a local description too.
     def right_columns
-      lines = HEAD_VIEWS.map { |view| "  - #{view}#{PANEL_SUFFIX}." }
+      lines = head_views.map { |view| "  - #{view}#{panel_suffix}." }
       <<~TEXT.strip
         RIGHT THREE COLUMNS, six head-and-upper-torso views, three on the top row and three on the
         bottom row:
@@ -150,6 +194,54 @@ module Appearances
     def closing
       "The SAME individual in every panel, facial features faithful to the reference photograph. " \
         "Photorealistic, sharp focus."
+    end
+
+    def head_views = iced? ? ICED_HEAD_VIEWS : HEAD_VIEWS
+    def panel_suffix = iced? ? "#{PANEL_SUFFIX}#{ICED_PANEL_SUFFIX}" : PANEL_SUFFIX
+
+    # THE JEWELRY AND THE CONSISTENCY RULE. Each piece comes from the person's
+    # PersonJewelry records when there are any (named and described, so a
+    # champion is drawn in HIS rings), otherwise from GENERIC_PIECES.
+    def iced_clause
+      <<~TEXT.strip
+        ICED-OUT LOOK. In every panel he also wears #{SHADES}, and this exact jewelry set:
+        #{jewelry_lines.map { |line| "  - #{line}" }.join("\n")}
+        CONSISTENCY: the sunglasses and every piece of jewelry are ONE fixed set - identical design, size,
+        colour and position in every panel where they are visible. Never swap, add, drop or restyle a piece
+        between panels.
+      TEXT
+    end
+
+    def jewelry_lines
+      [
+        "chain: #{pieces('chain')}",
+        "watch on his LEFT wrist: #{pieces('watch')}",
+        "bracelet on his RIGHT wrist (the hand without the watch): #{pieces('bracelet')}",
+        "grill: #{pieces('grill')}",
+        "rings: #{rings}"
+      ] + others
+    end
+
+    def jewelries
+      @jewelries ||= @appearance&.person ? @appearance.person.jewelries.to_a : []
+    end
+
+    def pieces(kind)
+      own = jewelries.select { |j| j.kind == kind }
+      return GENERIC_PIECES.fetch(kind) if own.empty?
+
+      own.map(&:prompt_phrase).join("; ")
+    end
+
+    def rings
+      own = jewelries.select(&:ring?)
+      return GENERIC_PIECES.fetch("rings") if own.empty?
+
+      "his own championship rings, each rendered faithfully - #{own.map(&:prompt_phrase).join('; ')}"
+    end
+
+    def others
+      jewelries.select { |j| j.kind == "other" }.map { |j| "also: #{j.prompt_phrase}" }
     end
 
     def number_clause = number.present? ? ", jersey number #{number}" : ""

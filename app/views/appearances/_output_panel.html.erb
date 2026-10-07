@@ -178,11 +178,20 @@
             prompts (AppearancesController#keep_jersey_number). %>
         <%= f.number_field :number, placeholder: "Jersey number (optional)", value: @appearance.jersey_number,
               min: 0, max: 99, class: "input-field w-full text-xs" %>
-        <%= f.submit(@appearance.sheet_build_failed? ? "Retry character sheet" : "Generate character sheet",
-                     class: "btn btn-sm btn-primary w-full") %>
+        <% sheet_word = @appearance.iced? ? "iced character sheet" : "character sheet" %>
+        <%= f.submit(@appearance.sheet_build_failed? ? "Retry #{sheet_word}" : "Generate #{sheet_word}",
+                     class: "btn btn-sm btn-primary w-full", data: { test: "generate-sheet" }) %>
+        <%# THE ONE PRESS THAT BUYS TWO SHEETS, and its label says so: this look and
+            its iced twin, two paid builds. Offered only while the twin is idle. %>
+        <% twin = @appearance.iced? ? nil : @appearance.iced_twin %>
+        <% if twin && !twin.sheet_building? %>
+          <%= f.button "Generate both: this and #{twin.descriptor} (2 paid builds)", name: "with_twin", value: "1",
+                class: "btn btn-sm btn-outline w-full", data: { test: "generate-both" } %>
+        <% end %>
       <% end %>
       <p class="text-3xs text-muted">
-        Costs money &mdash; one full sheet per press. No character model needed.
+        Costs money &mdash; one full sheet per build. No character model needed.
+        <% if @appearance.iced? %>The iced prompt adds the jewelry and swaps two head views for a grill shot and a rings shot.<% end %>
       </p>
     <% else %>
       <p class="text-2xs text-muted">

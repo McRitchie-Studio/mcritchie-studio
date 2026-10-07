@@ -60,6 +60,37 @@ class LookJerseyNumberTest < ActionDispatch::IntegrationTest
     assert_equal 7, @person.appearances.create!(descriptor: "Throwback", jersey_number: 7).jersey_number
   end
 
+  test "a roster number the look cannot wear is no number, never a refused look" do
+    Athlete.create!(person_slug: @person.slug, sport: "football", jersey_number: 100)
+    look = @person.appearances.create!(descriptor: "Home Purple")
+    assert_nil look.jersey_number
+  end
+
+  test "an iced twin wears its base look's number" do
+    base = @person.appearances.create!(descriptor: "Home White", jersey_number: 4)
+    assert_equal 4, Appearances::IcedTwin.create!(base).jersey_number
+
+    video = LetteredVideo.seed!
+    look = MusicVideos::CreateRecastLook.new(video.video_performers.find_by!(ordinal: 1), person_slug: @person.slug,
+                                             descriptor: "Away Blue", jersey_number: "23").call
+    assert_equal [23, 23], [look.jersey_number, look.iced_twin.jersey_number]
+  end
+
+  test "a number typed for a sheet build refills the stored prompts" do
+    video = LetteredVideo.seed!
+    look = Appearance.find_by!(slug: video.video_performers.find_by!(ordinal: 2).recast_appearance_slug)
+    real = Appearances::SheetBuild.method(:start!)
+    Appearances::SheetBuild.define_singleton_method(:start!) { |*_args, **_opts| true }
+    log_in_as users(:alex)
+
+    post generate_person_appearance_path(look.person_slug, look.slug), params: { number: "9" }
+
+    assert_equal 9, look.reload.jersey_number
+    assert_includes video.video_chunks.find_by!(ordinal: 3).prompt, "Person B (lead) -> #9 Test Passer Epsilon"
+  ensure
+    Appearances::SheetBuild.define_singleton_method(:start!, real) if real
+  end
+
   test "a number outside 0-99 is refused" do
     look = @person.appearances.new(descriptor: "Odd", jersey_number: 100)
     assert_not look.valid?

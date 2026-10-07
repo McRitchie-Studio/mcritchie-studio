@@ -400,11 +400,16 @@
 # generates a fake round, approves a candidate and sees it in the email shell preview.
 # Measured on the tree merged with accepted: `npx playwright test --list` => 221.
 #
-# 221 -> 222 on 2026-10-06 (/tasks/lettered-clip-references):
+# 221 -> 222 on 2026-10-07 (/tasks/iced-look-twin-and-jewelry):
+# e2e/person_iced_twin.spec.js adds one spec, not quarantined: the operator adds a ring,
+# gives an older look its iced twin, creates a look and sees it beside its own twin.
+# Measured on the tree merged with accepted: `npx playwright test --list` => 222.
+#
+# 222 -> 223 on 2026-10-07 (/tasks/lettered-clip-references):
 # e2e/music_video_lettered_references.spec.js adds one spec, not quarantined: a clip with
 # two swaps shows both letters, jersey numbers, its lettered frames and numbered sheets.
-# Measured with `npx playwright test --list` => 222.
-total_specs: 222
+# Measured on the tree merged with accepted: `npx playwright test --list` => 223.
+total_specs: 223
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -617,9 +622,11 @@ quarantined: 10
 # `npx playwright test --list --grep-invert @quarantine` => 210.
 # 210 -> 211: the email_images.spec.js spec (/tasks/email-header-image-generator).
 # Measured on the tree merged with accepted: the same lister => 211.
-# 211 -> 212: the music_video_lettered_references.spec.js spec (/tasks/lettered-clip-references).
-# `npx playwright test --list --grep-invert @quarantine` => 212.
-executed: 212
+# 211 -> 212: the person_iced_twin.spec.js spec (/tasks/iced-look-twin-and-jewelry).
+# Measured on the tree merged with accepted: the same lister => 212.
+# 212 -> 213: the music_video_lettered_references.spec.js spec (/tasks/lettered-clip-references).
+# Measured on the tree merged with accepted: `npx playwright test --list --grep-invert @quarantine` => 213.
+executed: 213
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

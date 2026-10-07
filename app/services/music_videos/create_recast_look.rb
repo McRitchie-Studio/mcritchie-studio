@@ -2,7 +2,8 @@ module MusicVideos
   # "Generate a new look" on a cast card: a new look (Appearance) for the
   # athlete the operator chose, named by him ("Broncos blue"). The card saves
   # every pick at once (no Cast button), so the new look is cast too: the
-  # performer becomes that athlete in that look. The character sheet
+  # performer becomes that athlete in that look. Its iced twin is made beside it
+  # (Appearances::IcedTwin) but not cast. The character sheets
   # is started by the caller (Appearances::SheetBuild), outside this
   # transaction, so the job never runs before the look is committed. The
   # jersey number typed for the sheet is kept on the look (piece 16), so the
@@ -35,6 +36,8 @@ module MusicVideos
       Appearance.transaction do
         look = Appearance.create!(person_slug: @person.slug, descriptor: @descriptor, reference_url: @reference_url,
                                   jersey_number: @jersey_number)
+        # Every new look gets its iced-out twin row; its sheet is built only if asked.
+        Appearances::IcedTwin.create!(look)
         @performer.update!(recast_person_slug: @person.slug, recast_appearance_slug: look.slug, recast_keep: false)
         ClipPrompts.refresh!(@performer.music_video)
         look

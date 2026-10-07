@@ -396,11 +396,15 @@ Rails.application.routes.draw do
       post :create_appearance
       # One look's jersey number (the number clip prompts name the player by).
       patch :update_appearance
+      # A free row: the iced-out twin of a look made before twins existed.
+      post :create_iced_twin
       post :make_default_appearance
       post :attach_artifact
       # What this person does: many vocations, one primary. Admin only.
       patch :vocations, action: :update_vocations
     end
+    # What the person wears, for the iced-out sheet (PersonJewelry). Admin only.
+    resources :jewelries, only: [:create, :update, :destroy], param: :jewelry_slug, controller: "person_jewelries"
 
     # ONE LOOK'S CHARACTER MODEL. Nested because a look has no meaning without its
     # person, and PATHED as "models" because that is the word the person page and
