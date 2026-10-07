@@ -112,6 +112,16 @@ count. Read the script from `origin/accepted`, never the local primary:
 `git -C /Users/alex/projects/turf-vault fetch origin && git show
 origin/accepted:bin/release-check`.
 
+### The desk logs in
+
+`bin/task begin` ends by logging the desk's soul in to the task (an agent session;
+[`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). A `bin/task`
+write to that task, run from inside the desk, then carries the session, and the
+board stamps the soul from it. Run from any other tree, or about any other task, the
+same command keeps the shared token. A refused session (revoked, expired, the task
+moved on) is dropped and the write retries with the shared token, so a login never
+blocks a ship.
+
 ### The board derives; nobody stamps
 
 Three facts are no longer hand-written (devops-v3 piece 4c-i). The board derives

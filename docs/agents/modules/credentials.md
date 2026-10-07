@@ -94,6 +94,28 @@ the devnet `VaultState` seats only `8K81…`, Alex and Mason, so local dev has n
 devnet-only signer until one is seated (turf-monster
 `docs/qa-signing-key-rotation.md`, "What this ceremony does not fix").
 
+## How a soul logs in to the board
+
+The board API takes two bearers (design:
+[`../system/agent-sessions-design.md`](../system/agent-sessions-design.md)).
+
+- **An agent session.** `bin/task begin` logs the desk's soul in to the task it
+  claimed (`POST /api/v1/agent_sessions`, presented with the shared token) and keeps
+  the session token in `agent-session.json` inside the desk's git directory,
+  owner-only, where no commit can reach it. A studio session is scoped to that task,
+  lives while the task is `building` or `submitted`, and expires after 24 hours. Its
+  soul is the actor on every board write it makes; an `actor` or `by` param is
+  ignored. It may write only its own task, and a release endpoint answers 403.
+- **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
+  everywhere for one release, with each use logged as `[agent-auth] legacy`, so Turf
+  Monster's two endpoints and installed hooks keep running.
+
+Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after
+8 hours; the operator grant that issues them is not built yet. Every refusal answers
+401 (the session ended: revoked, expired, or the task moved on) or 403 (tier or
+scope) with the reason. `GET /api/v1/agent_sessions/current` says who a bearer is;
+`DELETE` on the same path logs out.
+
 ## 1Password CLI quirks
 
 - `op item delete` (and `--archive`) refuses a Password-category item whose password

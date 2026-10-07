@@ -20,7 +20,8 @@ class DeskSessionTest < ActiveSupport::TestCase
       now = Time.now
       DeskSession.write(root, "task_slug" => "t-1", "token" => "tok", "expires_at" => (now + 3600).utc.iso8601)
 
-      assert_equal root, DeskSession.root_for(File.join(root).tap { |d| FileUtils.mkdir_p(File.join(d, "app")) } + "/app")
+      FileUtils.mkdir_p(File.join(root, "app"))
+      assert_equal File.realpath(root), File.realpath(DeskSession.root_for(File.join(root, "app")))
       assert_equal "tok", DeskSession.token_for("t-1", root: root, now: now)
       assert_nil DeskSession.token_for("t-2", root: root, now: now)
       assert_nil DeskSession.token_for("t-1", root: root, now: now + 3600 - 30)
