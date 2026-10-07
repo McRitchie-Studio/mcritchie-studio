@@ -209,6 +209,13 @@ class BinHelpFlagClassTest < Minitest::Test
     # makes exit 0 an ASSERTION — "this backup IS the one you saved" — and a probe must
     # never answer with an assertion, the same reasoning as bin/harvest-desk-ledger.
     "scratch-backup"         => :cli_arg_guard,
+    # --- NEW SCRIPT, guarded at birth (/tasks/local-dev-drops-prod-hub-key) ---
+    # `rewrite`/`fix` OVERWRITE a local .env's SECRET_KEY_BASE, and `scan` reads every
+    # production app's Heroku config. One guard call ahead of `case command`. Help exits
+    # 3: a scan's exit 0 is the ASSERTION "no production key on disk", which a probe
+    # must never answer with. Behavioural proof:
+    # test/lib/dev_secret_key_scan_integration_test.rb (`rewrite --help` writes nothing).
+    "dev-secret-key"         => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/chrome-profile-order-sop) -------
     # The second entry added by an author rather than a sweep. Its mutations reach
     # OUTSIDE this repo entirely, which is new for this file: `apply` QUITS THE
@@ -550,6 +557,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Redis DB, Postgres database, branch removal and Redis-band write
     # bin/agent-worktree can perform is reached through `case cmd`.
     "agent-worktree"      => "case cmd",
+    # Every write (rewrite, fix) and every Heroku read (scan) is reached through
+    # `case command`, so the guard has to precede that line.
+    "dev-secret-key"      => "case command",
     # Same reasoning once more, and the LAST of the family. Every POST and marker write
     # bin/atomic-event can perform — the activity open/close, the close_all teardown,
     # the grade, the action report, the sticky acting-agent — is reached through

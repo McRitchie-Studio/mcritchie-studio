@@ -60,6 +60,7 @@ require_relative "../lib/desk_root"
 require_relative "lib/desk_ledger"
 require_relative "lib/projects_root"
 require_relative "lib/cli_arg_guard"
+require_relative "lib/dev_secret_key"
 require_relative "lib/agent_worktree_cli"
 # The SESSION half of the context marker, and the reverse lookup it enables. The
 # marker knew the task and not the session; the session record knows the session
@@ -1197,7 +1198,7 @@ def ensure_git_worktree(app, task, type, &on_cut)
 end
 
 # The primary's env files a desk inherits, copied once at cut and never over an
-# existing copy. `.env.development` holds settings that must reach development and
+# existing copy, with SECRET_KEY_BASE swapped for a freshly generated dev key. `.env.development` holds settings that must reach development and
 # NOT the test env: dotenv-rails loads `.env` in both, so object-storage stages (R2
 # for dev, ACTIVE_STORAGE_BACKEND / STUDIO_S3_BACKEND) live there, and a desk's test
 # suite keeps seeing exactly what CI sees (asset-library QA/local-dev pass, 2026-09-30).
@@ -1210,7 +1211,11 @@ def copy_primary_env_files(primary, dir)
     next unless File.exist?(source) && !File.exist?(target)
 
     FileUtils.cp(source, target)
-    puts "copied #{name}"
+    # A desk never inherits the primary's SECRET_KEY_BASE: whatever the primary
+    # holds (a production key reached every desk this way until 2026-10-06), the
+    # copy gets a freshly generated development key. bin/lib/dev_secret_key.rb.
+    fresh = DevSecretKey.replace_in_copy(target)
+    puts fresh ? "copied #{name} (fresh dev SECRET_KEY_BASE #{DevSecretKey.prefix(fresh)})" : "copied #{name}"
   end
 end
 

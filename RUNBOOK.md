@@ -44,7 +44,7 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 
 **"Continue as" not appearing on Turf Monster**
 - Diagnosis: `sso_user_available?` returns false. Either no `sso_email` in session, or `sso_source` matches the current app.
-- Fix: Verify both apps share the same `SECRET_KEY_BASE`. Check `session_store.rb` uses `key: "_studio_session"` with `domain: :all` (dev) or `".mcritchie.studio"` (prod). Log into McRitchie Studio first to populate `sso_*` fields.
+- Fix: Turf Monster's cross-app SSO is closed today (its own `_turf_session` cookie, `sso_continue`/`sso_login` 404). Restoring it needs both apps on one `SECRET_KEY_BASE`; locally that is a shared DEV key, never the production one (`bin/dev-secret-key scan`). Check `session_store.rb` uses `key: "_studio_session"` with `domain: :all` (dev) or `".mcritchie.studio"` (prod). Log into McRitchie Studio first to populate `sso_*` fields.
 
 **SSO login creates duplicate user**
 - Diagnosis: SSO finds or creates by email. If emails differ between apps, a new user is created.

@@ -46,6 +46,34 @@ HEROKU_APPS=(mcritchie-studio)
 RAILS_PORTS=(3000)
 DEPLOY_PROVIDERS=(heroku)  # index-aligned with RAILS_APPS — drives provider-specific behavior
 
+# Write a primary's .env from a Heroku app's config, minus the stack-local
+# pointers. SECRET_KEY_BASE is dropped and REGENERATED: Rails development reads
+# the env key, so a restored production key signs cookies and magic links that
+# production accepts. Until 2026-10-06 every primary and desk held the hub's
+# production key this way (bin/lib/dev_secret_key.rb).
+restore_env_from_heroku() {
+  local heroku_app="$1" env_path="$2"
+  heroku config --app "$heroku_app" --shell 2>/dev/null \
+    | grep -vE "^(export )?(DATABASE_URL|RAILS_SERVE_STATIC_FILES|REDIS_URL|SECRET_KEY_BASE)=" \
+    > "$env_path"
+  chmod 600 "$env_path"
+  restore_dev_secret_key "$env_path"
+}
+
+# Give a restored .env a freshly generated development SECRET_KEY_BASE, never the
+# production value `heroku config` carries. Prints nothing secret. Uses the
+# bin/dev-secret-key beside this script. Without ruby (Phase 2 not yet run) the
+# file keeps no key at all, and Rails falls back to its generated
+# tmp/local_secret.txt; it never falls back to the production value.
+restore_dev_secret_key() {
+  local env_path="$1"
+  local tool
+  tool="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dev-secret-key"
+  if [ -f "$tool" ] && command -v ruby >/dev/null 2>&1; then
+    ruby "$tool" rewrite "$env_path" >/dev/null && log_ok "$(basename "$(dirname "$env_path")")/.env" "fresh dev SECRET_KEY_BASE"
+  fi
+}
+
 # Read active satellites from mcritchie-studio/config/satellites.yml.
 # Appends each to RAILS_APPS / HEROKU_APPS / RAILS_PORTS / SIBLING_REPOS.
 # Silently no-ops if ruby isn't installed yet (Phase 2 installs it) — first
@@ -421,10 +449,7 @@ phase_secrets() {
       local provider="${DEPLOY_PROVIDERS[$i]:-heroku}"
       if [ "$provider" = "heroku" ]; then
         log_act "restoring $app/.env from $heroku_app config (heroku)"
-        heroku config --app "$heroku_app" --shell 2>/dev/null \
-          | grep -vE "^DATABASE_URL=|^RAILS_SERVE_STATIC_FILES=|^REDIS_URL=" \
-          > "$env_path"
-        chmod 600 "$env_path"
+        restore_env_from_heroku "$heroku_app" "$env_path"
       else
         log_act "$app uses deploy_provider=$provider — skipping auto-.env restore"
         echo "# Hand-populate .env for $app (deploy_provider: $provider)" > "$env_path"
