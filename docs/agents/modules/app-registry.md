@@ -175,8 +175,8 @@ window, so the mascot can take one throttle period to appear.
 
 To "act as" a soul instead of the session's Pokémon, set a **persona**:
 `bin/task create --persona jasper` (also on `update`). The server stamps the
-agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, seeded in
-`db/seeds/02_agents.rb`) as the status-line mascot, and `bin/statusline` sets the
+agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, from
+`config/souls.yml`) as the status-line mascot, and `bin/statusline` sets the
 terminal tab title to the same emoji + name. A new task without `--persona`
 reverts to the session's Pokémon, and `bin/task update <slug> --persona none`
 (also `clear`/`off`/`-`) reverts mid-task. For a session-level Codex/Claude marker

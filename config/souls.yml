@@ -1,0 +1,236 @@
+# THE SOUL ROSTER: one record per soul, and the one place a soul is written down.
+#
+# Read by db/seeds/02_agents.rb, which upserts one Agent row per record, and by
+# Task::SOUL_ROSTER, the static floor of slugs Task.soul? accepts when the Agent
+# table cannot be read. A soul added here is on both, so the seed and the roster
+# cannot drift.
+#
+# Fields:
+#   slug, name, status, agent_type, title, description, avatar, position
+#             the Agent columns; avatar names a file under public/agents/
+#   emoji, color
+#             the status-line glyph and tint (Agent#emoji, Agent#status_color),
+#             explicit so two souls never collide on the avatar palette
+#   metadata  merged into Agent#metadata; the ReviewerSelector keys:
+#               reviewer       true if in the senior review pool
+#               review_role    owner | reviewer | orchestrator | null
+#               domains        areas this soul reviews (domain-fit input)
+#               review_weight  NUMERIC weight (2.0 heavy, 1.0 light), never a label
+#
+# Carl is the standing primary and owner on every PR; he summons one domain light
+# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Xan (Documentation). Avi
+# is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
+# one change. See docs/agents/agents/carl/sops/pr-review.md.
+souls:
+- slug: xan
+  name: Xan
+  status: active
+  agent_type: orchestrator
+  title: Lead Orchestrator
+  description: 'Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.'
+  avatar: "/agents/xan.webp"
+  position: 0
+  emoji: "🧭"
+  color: "#818CF8"
+  metadata:
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - documentation
+    - docs
+    - runbooks
+    - agent-operating-model
+    - readme
+    review_weight: 2.0
+- slug: avi
+  name: Avi
+  status: active
+  agent_type: product
+  title: Product Owner
+  description: 'Product Owner and Deploy-flow assembler. Refines tickets, sets po_size, and owns the qa-release sweep: promote the accepted → release batch PR, run the pre-QA gate, deploy QA, and flip members assembled on QA-green. Review is Carl''s; the ship is Steffon''s.'
+  avatar: "/agents/avi.webp"
+  position: 3
+  emoji: "📋"
+  color: "#FB7185"
+  metadata:
+    review_role:
+    reviewer: false
+    assembler: true
+    qa_owner: true
+    responsibilities:
+    - ticket-refinement
+    - sizing
+    - qa-release
+    - qa-deploy
+- slug: carl
+  name: Carl
+  status: active
+  agent_type: specialist
+  title: Lead Architect
+  description: 'Lead Architect and owner of PR review. Crack Rails dev — controllers, models, migrations, background jobs, ActiveRecord performance, and the studio-engine internals. The STANDING PRIMARY on every PR: the deep reviewer who owns the gates, summons a domain light specialist at his discretion, drives the verdict, and merges approved work into the accepted branch.'
+  avatar: "/agents/carl.webp"
+  position: 4
+  emoji: "🛠"
+  color: "#F97316"
+  metadata:
+    review_role: owner
+    reviewer: true
+    standing_primary: true
+    domains:
+    - backend
+    - models
+    - controllers
+    - migrations
+    - jobs
+    - studio-engine
+    review_weight: 2.0
+- slug: shannon
+  name: Shannon
+  status: active
+  agent_type: specialist
+  title: Dev UI Expert
+  description: UI specialist. Owns frontend development across the ecosystem — ERB views, Tailwind, Alpine.js, theme system, and studio-engine UI primitives. Senior reviewer for UI PRs in the Deploy-flow review pool.
+  avatar: "/agents/shannon.webp"
+  position: 5
+  emoji: "🎨"
+  color: "#EC4899"
+  metadata:
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - ui
+    - views
+    - tailwind
+    - alpine
+    - theme
+    - studio-engine-ui
+    review_weight: 2.0
+- slug: jasper
+  name: Jasper
+  status: active
+  agent_type: specialist
+  title: Dev Blockchain Expert
+  description: 'Blockchain specialist. Owns the Solana surface: turf-vault Anchor program, solana-studio Ruby client, and all on-chain integration. Senior reviewer for Web3 / on-chain PRs in the Deploy-flow review pool.'
+  avatar: "/agents/jasper.webp"
+  position: 6
+  emoji: "🧪"
+  color: "#9945FF"
+  metadata:
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - web3
+    - solana
+    - turf-vault
+    - solana-studio
+    - on-chain
+    - anchor
+    review_weight: 2.0
+- slug: steffon
+  name: Steffon
+  status: active
+  agent_type: specialist
+  title: Platform Engineer
+  description: Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. After the reslot the reviewer-select QA-owner exclusion keys on Avi (who runs qa-release), not on Steffon, so Steffon is back in the light pool.
+  avatar: "/agents/steffon.webp"
+  position: 7
+  emoji: "🚀"
+  color: "#06B6D4"
+  metadata:
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - devops
+    - release
+    - infrastructure
+    - ci
+    - observability
+    - heroku
+    review_weight: 2.0
+    ship_gate: true
+- slug: turf-monster
+  name: Turf Monster
+  status: active
+  agent_type: specialist
+  title: Sports Domain Specialist
+  description: Specializes in sports data, pick'em games, and the Turf Monster app. Expert in World Cup props and player stats.
+  avatar: "/agents/turf-monster.webp"
+  position: 1
+  emoji: "🐲"
+  color: "#84CC16"
+  metadata:
+    review_role:
+    reviewer: false
+- slug: mack
+  name: Mack
+  status: active
+  agent_type: worker
+  title: General Worker
+  description: Versatile worker agent handling data scraping, processing, and general-purpose tasks. Reliable and efficient.
+  avatar: "/agents/mack.webp"
+  position: 8
+  emoji: "📦"
+  color: "#9CA3AF"
+  metadata:
+    review_role:
+    reviewer: false
+- slug: mason
+  name: Mason
+  status: active
+  agent_type: specialist
+  title: Marketing
+  description: Runs marketing — brand voice, launch comms, social, funnels, copy. (Previously held Infrastructure; that surface now belongs to Steffon.)
+  avatar: "/agents/mason.webp"
+  position: 2
+  emoji: "📣"
+  color: "#EF4444"
+  metadata:
+    review_role:
+    reviewer: false
+# The general builder. It is legion (each task wears its own mascot, recorded in
+# devops.mascot) but one soul, so the slug is stable and the costume is not. It
+# builds and never reviews: absent from ReviewerSelector::POOL, so naming it as
+# the author excludes nobody and frees no seat. Pikachu is the soul's face.
+- slug: pokemon
+  name: Pokémon
+  status: active
+  agent_type: worker
+  title: General Builder
+  description: 'The builder. Every task is built by one, and it is legion: each task gets its own mascot, and every mascot is the same soul. Builds whatever the task needs — UI, backend, Google Workspace, a shared gem, an on-chain instruction — to the standards the specialists review to. Builds; never reviews, releases, or deploys.'
+  avatar: "/agents/pokemon.webp"
+  position: 9
+  emoji: "⚡"
+  color: "#FACC15"
+  metadata:
+    review_role:
+    reviewer: false
+# The CMO. Non-reviewing, like Mason.
+- slug: rex
+  name: Rex
+  status: active
+  agent_type: specialist
+  title: Chief Marketing Officer
+  description: 'Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics stay with Mason.'
+  avatar:
+  position: 10
+  emoji: "📈"
+  color: "#14B8A6"
+  metadata:
+    review_role:
+    reviewer: false
+# Cyvasse's house player: client-facing, and by design holds no credential beyond
+# his own game token (docs/agents/agents/tyrion/role.md). Tywin is Cyvasse's
+# admin; Tyrion is the face. Non-reviewing.
+- slug: tyrion
+  name: Tyrion
+  status: active
+  agent_type: specialist
+  title: Cyvasse House Player
+  description: 'Cyvasse''s client-facing player: plays visitors, talks with them across the board, and teaches the game. Holds no credentials beyond his own game token, so nothing can be talked out of him. Runs on an isolated machine; Tywin runs the place.'
+  avatar:
+  position: 11
+  emoji: "🦁"
+  color: "#B45309"
+  metadata:
+    review_role:
+    reviewer: false

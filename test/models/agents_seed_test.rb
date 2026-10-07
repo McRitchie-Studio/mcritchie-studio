@@ -156,25 +156,25 @@ class AgentsSeedTest < ActiveSupport::TestCase
     assert_equal colors.uniq, colors, "each reviewer soul gets a distinct persona tint"
   end
 
-  # --- the roster and the seeds must not drift (reviewer-select-seats-authors) ---
+  # --- one source: config/souls.yml feeds both the seed and the roster floor ---
 
-  test "every seeded soul appears in Task::SOUL_ROSTER" do
-    # Task.soul? validates authorship against the roster, and its static floor is
-    # what keeps that working when the DB is unreachable. A soul seeded here but
-    # missing from the floor would be a real builder that a degraded selector reads
-    # as an unknown — fail-closed, but a false refusal, and a guard that cries wolf
-    # gets routed around. Parsed from the seed source rather than from Agent rows so
-    # the assertion holds even if the seed never ran.
-    seeded = File.read(SEED)[/agents_data = \[(.*?)\n\]/m, 1].to_s.scan(/slug:\s*"([a-z0-9-]+)"/).flatten
+  test "[unit] the seed creates exactly the souls Task::SOUL_ROSTER names" do
+    run_seed
+    souls = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls").map { |s| s.fetch("slug") }
 
-    assert_operator seeded.size, :>=, 9, "the seed file should still define the full roster"
-    assert_empty seeded - Task::SOUL_ROSTER,
-      "these souls are seeded but missing from Task::SOUL_ROSTER (app/models/task.rb)"
+    assert_equal souls, Task::SOUL_ROSTER, "the roster floor is read from config/souls.yml"
+    assert_equal Task::SOUL_ROSTER.sort, Agent.where(slug: Task::SOUL_ROSTER).pluck(:slug).sort,
+                 "the seed upserts one Agent per roster soul"
   end
 
-  test "the roster names no soul the seed does not create" do
-    run_seed
-    assert_empty Task::SOUL_ROSTER - Agent.pluck(:slug),
-      "Task::SOUL_ROSTER names a soul the seed never creates — one of the two is wrong"
+  test "[unit] a soul added to config/souls.yml is seeded and on the roster floor" do
+    souls = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
+    probe = souls.first.merge("slug" => "probe-soul", "name" => "Probe Soul", "position" => 99)
+    real = YAML.method(:safe_load_file)
+    souls_path = Rails.root.join("config/souls.yml").to_s
+    fake = ->(path, *args, **opts) { path.to_s == souls_path ? { "souls" => souls + [probe] } : real.call(path, *args, **opts) }
+    YAML.stub(:safe_load_file, fake) { run_seed }
+
+    assert Agent.exists?(slug: "probe-soul"), "the seed reads its roster from config/souls.yml"
   end
 end

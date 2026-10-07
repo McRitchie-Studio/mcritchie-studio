@@ -2023,9 +2023,10 @@ class Task < ApplicationRecord
   # builder who excludes nobody. It registers identities, not review seats
   # (ReviewerSelector::POOL decides those), so `pokemon`, the general builder, is
   # here. The static list is the floor: .soul_roster unions seeded Agent slugs,
-  # and the floor survives a DB outage. Keep it in lockstep with the seed
-  # (test/models/agents_seed_test.rb).
-  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex tyrion].freeze
+  # and the floor survives a DB outage. It is read from config/souls.yml, the file
+  # db/seeds/02_agents.rb seeds from, so a seeded soul is always on the floor.
+  SOUL_ROSTER = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
+                    .map { |soul| soul.fetch("slug") }.freeze
 
   # Retired slugs that still resolve on read: `alex` became `xan` (the human owner
   # is Alex). Nothing writes the legacy slug; every stamp goes through
@@ -2040,8 +2041,8 @@ class Task < ApplicationRecord
   end
 
   # Every soul slug this deployment recognises: the floor plus seeded agents. A
-  # lookup error degrades to the floor, which names every real soul, so a new soul
-  # belongs in SOUL_ROSTER, not only the seed. Memoized per request
+  # lookup error degrades to the floor, which names every soul in config/souls.yml.
+  # Memoized per request
   # (Current.soul_roster).
   def self.soul_roster
     Current.soul_roster ||= begin
