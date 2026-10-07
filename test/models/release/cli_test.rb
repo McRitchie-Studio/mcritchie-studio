@@ -243,4 +243,18 @@ class Release::CliTest < ActiveSupport::TestCase
     assert_equal "  release notes: posted (2 messages)",
                  Release::Cli.release_notes_line({ "notes_delivered" => true, "notes_messages" => 2 }, "r")
   end
+
+  # --- prepare's exit status (guard catalog row 7.5) ---
+
+  test "a NOT-green prepare exits nonzero and distinct from an abort" do
+    assert_equal Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, Release::Cli.prepare_exit_status(:qa_not_green)
+    refute_equal 0, Release::Cli::PREPARE_QA_NOT_GREEN_EXIT
+    refute_equal 1, Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, "1 is an abort; QA-not-green is its own verdict"
+  end
+
+  test "an assembled or early-returning prepare exits zero" do
+    [:assembled, nil, true].each do |outcome|
+      assert_equal 0, Release::Cli.prepare_exit_status(outcome), outcome.inspect
+    end
+  end
 end

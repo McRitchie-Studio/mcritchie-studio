@@ -248,11 +248,11 @@ code**, so re-running a red candidate goes red forever.
 
 - **INTERRUPTION** — no verdict (a detached agent, killed terminal, crash). **Re-run it.**
 - **ABORT** — a refusal with a verdict. **Fix the cause first, THEN re-run.**
-- **NOT GREEN** — a verdict, then a **normal return**: QA did not come up, members stay
+- **NOT GREEN** — a verdict, then **exit 3**: QA did not come up, members stay
   `reviewed`. **Fix the cause first, THEN re-run.**
 
-**THE EXIT CODE IS NEVER THE VERDICT** (NOT-green exits **0**). `✓ Assembled <rel>` is
-green; `✓ Prepared (NOT assembled — QA not green)` is not.
+The exit status is the verdict: 0 is `✓ Assembled <rel>`, 3 is `✓ Prepared (NOT
+assembled — QA not green)`, and 1 is an abort.
 
 ### INTERRUPTION — re-run `bin/release prepare --yes`. That is the whole fix.
 

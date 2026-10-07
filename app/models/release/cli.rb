@@ -241,6 +241,20 @@ class Release
     # CLI's exit codes changes.
     HELP_EXIT = 1
 
+    # `bin/release prepare` exits this when QA did not go green: an app never booted,
+    # so nothing assembled and the members stay `reviewed` (guard catalog row 7.5).
+    # The exit status IS the QA verdict, so a wrapper that reads it cannot call a
+    # failed sweep a success. Distinct from 1 (an abort) so a caller can tell "QA did
+    # not come up, re-run once it boots" from a refusal.
+    PREPARE_QA_NOT_GREEN_EXIT = 3
+
+    # The exit status for prepare's outcome: PREPARE_QA_NOT_GREEN_EXIT for
+    # :qa_not_green, 0 for anything else (assembled, or an early return with nothing
+    # to do).
+    def prepare_exit_status(outcome)
+      outcome == :qa_not_green ? PREPARE_QA_NOT_GREEN_EXIT : 0
+    end
+
     # The full keyword set bin/release hands CliArgGuard.guard! for `command` —
     # nil when the token is not a subcommand at all (a bare `--help`, a typo), which
     # the dispatcher's own `else` already answers with usage + exit 1.

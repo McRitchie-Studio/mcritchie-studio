@@ -10,6 +10,7 @@
 # It is also picked up by the normal `bin/rails test` sweep.
 
 require_relative "release_cli_harness"
+require_relative "../../app/models/release/cli"
 
 class ReleaseCliPrepareTest < ReleaseCliHarness
   # --- init --dry-run: create the persistent `release` branch per repo ---
@@ -113,14 +114,45 @@ class ReleaseCliPrepareTest < ReleaseCliHarness
 
     assert_includes out, "QA is NOT green", "the boot failure is reported"
     assert_includes out, "Prepared (NOT assembled — QA not green)"
-    # prepare RETURNS NORMALLY here, so the wrapper that runs it prints `PREPARE EXIT: 0`
-    # over a release that assembled nothing — measured on rel-20260907-14cff2, where the
-    # zero was read as success. The block has to say so where the failure is read.
-    assert_includes out, "the exit code is NEVER the QA verdict",
-                    "a NOT-green prepare must warn that its own exit 0 is not a verdict"
+    assert_includes out, "prepare exits 3: QA is not green",
+                    "the block names the exit status the dispatcher returns"
     refute_includes out, "hand off to Steffon",
                     "a NOT-green prepare must not point at `bin/release ship` — there is nothing to ship yet"
     refute_includes out, "QA-GREEN-CALL", "no flip on a QA-red prepare"
+  end
+
+  # --- the exit status IS the QA verdict (guard catalog row 7.5) ---------------
+  #
+  # A NOT-green prepare used to return normally, so its wrapper printed exit 0 over a
+  # release that assembled nothing (rel-20260907-14cff2). The dispatcher now exits
+  # Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, so the exit code cannot disagree with
+  # the block.
+
+  def test_prepare_exits_nonzero_when_qa_is_not_green
+    setup = SWEEP_FLOW_STUB + %(\ndef wait_for_boot(_url) = false)
+    out = run_cli(["--yes"], call: "begin; exit_after_prepare(prepare); puts 'EXIT=0'; " \
+                                   "rescue SystemExit => e; puts \"EXIT=\#{e.status}\"; end", setup: setup)
+
+    assert_includes out, "EXIT=#{Release::Cli::PREPARE_QA_NOT_GREEN_EXIT}",
+                    "a QA-red prepare must exit nonzero, through the dispatcher's own helper"
+    refute_includes out, "Prepare ABORTED partway",
+                    "the exit lands outside prepare, so its abort report never fires"
+  end
+
+  def test_prepare_exits_zero_when_qa_is_green
+    out = run_cli(["--yes"], call: "begin; exit_after_prepare(prepare); puts 'EXIT=0'; " \
+                                   "rescue SystemExit => e; puts \"EXIT=\#{e.status}\"; end",
+                  setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "Assembled rel-sweep"
+    assert_includes out, "EXIT=0"
+  end
+
+  def test_the_dispatcher_routes_prepare_through_the_exit_helper
+    src = File.read(BIN)
+
+    assert_includes src, %(when "prepare"  then exit_after_prepare(prepare)),
+                    "the subcommand must exit with prepare's outcome, not return it"
   end
 
   # --- prepare: wait_for_boot closes the /up-smoke race before assembling ---
