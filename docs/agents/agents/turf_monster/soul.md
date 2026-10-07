@@ -111,7 +111,8 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
 - [`sops/post-to-x.md`](sops/post-to-x.md) — turn "this team won" and a video
   into a post on `@turfmonstershow`. The copy is the code's, built from the
   live record and the team's tags; the go is Alex's, by his click on the card
-  or his word in chat. Direct-invocation only and off the launcher card. Mine
+  or his word in chat. Direct-invocation only, and a chip on the launcher card
+  so it can be copied into a fresh session beside an MP4 path. Mine
   is the chat door and the exceptions the code flags: a record that has not
   caught up, a draft that failed, a post that started and never reported back
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster

@@ -1083,7 +1083,13 @@ module ApplicationHelper
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
   # deploy-with-task; Steffon: production-deploy + clean-infra + workspace-launch; Xan: grade-events +
   # share-insights + full-cycle; Turf Monster: live-score-watch +
-  # contest-rehearsal).
+  # contest-rehearsal + post-to-x).
+  #
+  # +post-to-x+ is on the card because the operator asked for it there
+  # (2026-10-06): he copies the chip, pastes it into a fresh session with an MP4
+  # path and a few words, and the SOP's chat door takes it from there. Its earlier
+  # off-card reason ("operator-triggered and it publishes") described the act, not
+  # the card, the same as the retired cadence argument below.
   #
   # +archive-shipped+ is deliberately ABSENT: production-deploy runs it as its final
   # step, so the cleaning rides every release instead of waiting to be remembered.
@@ -1119,7 +1125,7 @@ module ApplicationHelper
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
       { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
-      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
+      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal", "post-to-x"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
       # The general builder has no HEARTBEAT, so its row carries acts only.
       { agent_slug: "pokemon", heartbeat: nil, actions: ["wrap-it-up"], label: "Build + wrap up", title: "Pokémon — hand a stuck session to a fresh one, then clear its board" }
     ]
@@ -1139,6 +1145,7 @@ module ApplicationHelper
     "workspace-launch"  => "Launch a new company workspace, step by step",
     "live-score-watch"  => "Watch a live NFL slot and record every score",
     "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
+    "post-to-x"         => "Post an MP4 to X (paste: post-to-x <path> <who won>)",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share the banked insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
@@ -1183,6 +1190,7 @@ module ApplicationHelper
     "workspace-launch"  => "🏢",
     "live-score-watch"  => "🏈",
     "contest-rehearsal" => "🎬",
+    "post-to-x"         => "📣",
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",

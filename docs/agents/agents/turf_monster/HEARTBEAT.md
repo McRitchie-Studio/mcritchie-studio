@@ -36,11 +36,12 @@ attribution and routes to its act SOPs:
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
 
-`post-to-x` is not a chip, for a seventh reason: it is OPERATOR-triggered and
-it PUBLISHES. It runs when Alex has put videos on the board and never otherwise, every
-batch waits on his approval, and a button that posts to a public account on a
-cadence has nothing to post. It stays a registered invocation by name, owned
-here and in the SOP registry.
+`post-to-x` IS a chip, since 2026-10-06, at Alex's request: he copies it from
+the card and pastes it into a fresh session with an MP4 path and a few words
+("post-to-x ~/Downloads/clip.mp4 Vikings win"). It was off the card before for
+being operator-triggered and public; that described the act, not the card, and
+the chip changes neither. Every post still waits on his word, and the heartbeat
+composition still runs only `live-score-watch`.
 
 `collect-vault-revenue` is not a chip, for a sixth reason: it is OPERATOR-
 triggered and it MOVES MONEY. It runs when Alex asks for the revenue and never
