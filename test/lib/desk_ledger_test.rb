@@ -197,6 +197,8 @@ class DeskLedgerTest < Minitest::Test
       assert_predicate result, :queued?
       refute_predicate result, :ok?
       assert_equal 1, DeskLedger.pending(queue_path).size
+      assert_equal %w[queue.jsonl queue.jsonl.lock], Dir.children(File.dirname(queue_path)).sort,
+                   "written by temp file and rename: no temp file is left behind"
     end
   end
 

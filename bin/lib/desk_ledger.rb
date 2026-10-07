@@ -98,8 +98,8 @@ module DeskLedger
   # would hold the queue forever. Returns the number posted.
   def flush(queue:, dotenv: nil, env: ENV)
     posted = 0
-    with_queue_lock(queue) do |file|
-      bodies = file.read.lines.filter_map { |line| JSON.parse(line) rescue nil }
+    with_queue_lock(queue) do
+      bodies = queued_bodies(queue)
       remaining = bodies.drop_while do |body|
         result = post("/api/v1/desk_records", body, dotenv: dotenv, env: env)
         if result.ok?
@@ -109,9 +109,7 @@ module DeskLedger
         end
         result.ok? || !retryable?(result)
       end
-      file.rewind
-      file.truncate(0)
-      remaining.each { |body| file.puts(JSON.generate(body)) }
+      write_queue(queue, remaining) unless remaining.size == bodies.size
     end
     posted
   rescue SystemCallError
@@ -129,21 +127,42 @@ module DeskLedger
   end
 
   def enqueue(queue, body, reason)
-    with_queue_lock(queue) do |file|
-      file.seek(0, IO::SEEK_END)
-      file.puts(JSON.generate(body))
+    with_queue_lock(queue) do
+      write_queue(queue, queued_bodies(queue) + [body])
     end
     Result.new(ok: false, queued: true, error: reason)
   rescue SystemCallError => e
     Result.new(ok: false, error: "#{reason}; and the local queue #{queue} could not be written (#{e.class}: #{e.message})")
   end
 
+  # The lock is a sibling file, because the queue itself is replaced by rename: a lock
+  # held on the old inode would not exclude a writer that opens the new one.
   def with_queue_lock(queue)
     FileUtils.mkdir_p(File.dirname(queue))
-    File.open(queue, File::RDWR | File::CREAT, 0o600) do |file|
-      file.flock(File::LOCK_EX)
-      yield file
+    File.open("#{queue}.lock", File::RDWR | File::CREAT, 0o600) do |lock|
+      lock.flock(File::LOCK_EX)
+      yield
     end
+  end
+
+  def queued_bodies(queue)
+    return [] unless File.file?(queue)
+
+    File.readlines(queue).filter_map { |line| JSON.parse(line) rescue nil }
+  end
+
+  # Temp file plus rename(2): a crash mid-write leaves the old queue or the new one,
+  # never a truncated half of either.
+  def write_queue(queue, bodies)
+    temp = "#{queue}.tmp-#{Process.pid}"
+    File.open(temp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+      bodies.each { |body| file.puts(JSON.generate(body)) }
+      file.flush
+      file.fsync
+    end
+    File.rename(temp, queue)
+  ensure
+    FileUtils.rm_f(temp) if temp && File.exist?(temp)
   end
 
   def desk_body(desk:, status:, source:, resolved_on: nil, actor: nil, safety: nil, reason: nil,
