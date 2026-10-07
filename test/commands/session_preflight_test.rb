@@ -623,6 +623,10 @@ end
     # rather than as a hole in the fixture. Copying it keeps the sandbox faithful to
     # the layout the assertions below are about.
     FileUtils.cp_r(File.join(ROOT, "lib"), File.join(hub, "lib"))
+    # The remedy hints bin/lib builds at load name real scripts (bin/lib/remedy.rb refuses
+    # a name its own bin/ does not carry), so the copied hub carries the one ci_status.rb
+    # names. bin/task is the fake sibling written below.
+    FileUtils.cp(File.join(ROOT, "bin", "gh-auth-refresh"), File.join(hub, "bin", "gh-auth-refresh"))
     File.write(File.join(hub, "config", "feature_shapes.yml"), <<~YAML)
       defaults:
         required_metadata: [acceptance]

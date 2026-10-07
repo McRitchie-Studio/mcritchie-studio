@@ -223,7 +223,7 @@ class ConductorTest < Minitest::Test
     assert_includes out, "assembled → QA then SHIP"
     assert_includes out, "bin/release prepare"
     assert_match %r{QA workflow handoff: /\S*/bin/release ship --by conductor}, out
-    assert_includes out, "autonomous workflow: bin/conductor ship --run"
+    assert_match %r{autonomous workflow: /\S*/bin/conductor ship --run}, out
   end
 
   def test_plan_flags_blocked_and_non_pipeline_separately

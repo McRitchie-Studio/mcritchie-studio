@@ -331,7 +331,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "stack: down"
     assert_includes out, "redis=9"
     assert_includes out, "db=mcritchie_studio_development_terminal_context"
-    assert_includes out, "remove: bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+    assert_match %r{remove: /\S+/bin/agent-worktree remove mcritchie-studio terminal-context --yes}, out
   end
 
   test "[integration] reclaim dry-run prints the same safety evidence" do
@@ -346,7 +346,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "safe: merged on origin/main (clean, +0/-0)"
     assert_includes out, "stack: down"
     assert_includes out, "redis=9"
-    assert_includes out, "remove: bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+    assert_match %r{remove: /\S+/bin/agent-worktree remove mcritchie-studio terminal-context --yes}, out
   end
 
   test "[integration] cleanup write records operational context in the ledger" do

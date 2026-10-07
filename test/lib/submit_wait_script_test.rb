@@ -156,7 +156,7 @@ class SubmitWaitScriptTest < Minitest::Test
       assert_operator elapsed, :<, FAST_S, "took #{elapsed.round(2)}s"
       assert_match(/FAILED/, err)
       assert_match(/dor-check refused/, err, "the failure relays ship's own last line")
-      assert_match(/re-run bin\/submit #{SLUG}/, err, "the refusal names the remedy")
+      assert_match(%r{re-run /\S+/bin/submit #{SLUG} }, err, "the refusal names the absolute remedy")
     end
   end
 
