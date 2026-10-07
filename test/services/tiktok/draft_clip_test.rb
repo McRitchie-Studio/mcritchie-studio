@@ -24,7 +24,7 @@ class Tiktok::DraftClipTest < ActiveSupport::TestCase
   end
 
   def service(uploader: @uploader, **opts)
-    Tiktok::DraftClip.new(uploader:, reader: @reader, fetch: TiktokDraftFakes.espn, sleeper: ->(_) {}, **opts)
+    Tiktok::DraftClip.new(uploader:, reader: @reader, fetch: TiktokDraftFakes.espn, sleeper: ->(_) { }, **opts)
   end
 
   def with_available
