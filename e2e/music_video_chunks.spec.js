@@ -32,14 +32,16 @@ test("Build Clips turns a tiled source into an alt video of clip cards", async (
   await expect(page.locator("[data-test='alt-clip']")).toHaveCount(4);
   await expect(page.locator("[data-test='alt-progress-count']")).toHaveText("0 of 4");
 
-  // A clip card: the source chunk loads only when asked; the prompt copies whole.
+  // A clip card: the source chunk opens on its first frame (only its metadata
+  // loads until Preview is pressed); the prompt copies whole.
   const card = page.locator("[data-test='alt-clip'][data-ordinal='2']");
   await expect(card.locator("[data-test='clip-overlap']")).toHaveText("First 5 s repeat clip 1");
   const player = card.locator("[data-test='clip-player']");
-  await expect(player).toBeHidden();
-  await card.locator("[data-test='clip-preview-button']").click();
   await expect(player).toBeVisible();
-  await expect(player).toHaveAttribute("src", /tiled_demo_chunk_02_0020_0045\.mp4/);
+  await expect(player).toHaveAttribute("preload", "metadata");
+  await expect(player).toHaveAttribute("src", /tiled_demo_chunk_02_0020_0045\.mp4.*#t=0\.001$/);
+  await card.locator("[data-test='clip-preview-button']").click();
+  await expect(card.locator("[data-test='clip-preview-button']")).toBeHidden();
   await expect(card.locator("[data-test='clip-chunk-download']")).toHaveText("Download 25 s clip");
   await expect(card.locator("[data-test='clip-chunk-download']")).toHaveAttribute("download", "tiled_demo_chunk_02_0020_0045.mp4");
   await card.locator("[data-test='clip-copy']").click();
