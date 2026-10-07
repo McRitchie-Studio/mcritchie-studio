@@ -44,6 +44,58 @@ module DevSecretKey
   # Where local env files live: the shared projects-root .env, each primary, and each desk.
   SCAN_GLOBS = [".env*", "*/.env*", "*/.worktrees/*/.env*"].freeze
 
+  # THE DENY LIST: keys only a deployed app may hold. This constant is the ONE
+  # place it lives. bin/ecosystem-build's restore drops every one of them
+  # (`bin/dev-secret-key filter`), and `scan` flags a local file that holds a
+  # production value for any of them.
+  #
+  # Found 2026-10-06: the old restore had copied all of these out of production
+  # `heroku config` into the hub and turf primaries, and bin/agent-worktree then
+  # copied them into every desk. Local dev needs none of them:
+  #
+  #   SOLANA_ADMIN_KEY      mainnet VaultState signer slot 0 and server fee payer
+  #                         (turf-monster-mainnet). FIRST ON PURPOSE: it signs
+  #                         money. turf-monster-qa carries the same key.
+  #   CDP_API_KEY_*         the production Coinbase CDP key; only the ramp flows use it
+  #   AWS_*                 the production IAM key; local storage runs on R2 (QA keys)
+  #   RESEND_API_KEY        production mail; local stacks capture mail instead
+  #                         (LOCAL_EMAIL_CAPTURE=1, /_studio/local_emails)
+  #   GITHUB_TOKEN          the hub's static fallback PAT; answered 401 on 2026-10-06
+  #   MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)
+  #                         on turf-monster-mainnet it opens every custodial
+  #                         mainnet wallet; development falls back to
+  #                         secret_key_base (Solana::Keypair.current_encryptor)
+  #   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
+  #                         live Stripe on turf-monster-mainnet; local uses test mode
+  #
+  # PRODUCTION means the apps outside QA_HEROKU_APPS. A local file holding a QA
+  # app's value for one of these keys is not flagged: local turf deliberately
+  # shares QA's managed-wallet key, and QA's Stripe is test mode. The restore
+  # filter is by NAME, so a production restore drops these whatever their value.
+  #
+  # Kept by design, NOT listed: RAILS_MASTER_KEY (decrypts the committed
+  # credentials) and AGENT_API_SECRET (verifies board tokens).
+  PRODUCTION_ONLY_KEYS = %w[
+    SOLANA_ADMIN_KEY
+    CDP_API_KEY_ID
+    CDP_API_KEY_SECRET
+    AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY
+    RESEND_API_KEY
+    GITHUB_TOKEN
+    MANAGED_WALLET_ENCRYPTION_KEY
+    MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS
+    STRIPE_SECRET_KEY
+    STRIPE_WEBHOOK_SECRET
+  ].freeze
+
+  # The QA apps on HEROKU_APPS. Their SECRET_KEY_BASE is still flagged (a QA key
+  # is not a development key), but their production-only values are not.
+  QA_HEROKU_APPS = %w[mcritchie-studio-qa turf-monster-qa mcritchie-industries-qa rolio-qa].freeze
+
+  # The key a dotenv/`heroku config --shell` line sets, or nil for a comment or blank.
+  ANY_LINE = /\A\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)\z/m
+
   module_function
 
   # A fresh development key: 64 random bytes, hex, the shape `bin/rails secret` prints.
@@ -59,15 +111,69 @@ module DevSecretKey
     hex_digest.to_s[0, PREFIX_LEN]
   end
 
-  # The value the file sets, as dotenv would read it; nil when no line sets it.
-  def read_value(path)
+  # The value the file sets for `key`, as dotenv would read it; nil when no line sets it.
+  def read_value(path, key = KEY)
     return nil unless File.file?(path)
 
     File.foreach(path) do |line|
-      m = LINE.match(line) or next
-      return parse_value(m[2])
+      m = ANY_LINE.match(line) or next
+      next unless m[1] == key
+
+      return parse_value(m[2].chomp)
     end
     nil
+  end
+
+  def production_only?(key)
+    PRODUCTION_ONLY_KEYS.include?(key.to_s)
+  end
+
+  # The restore filter: `text` (a `heroku config --shell` dump) minus every line
+  # that sets a PRODUCTION_ONLY_KEYS key. A quoted value that runs over several
+  # lines is dropped whole, so no tail of it is left behind as a stray line.
+  # Returns [kept_text, dropped_key_names]; the names are safe to print, the
+  # values are never returned.
+  def filter_production_only(text)
+    kept = []
+    dropped = []
+    open_quote = nil
+    text.to_s.each_line do |line|
+      if open_quote
+        open_quote = nil if line.include?(open_quote)
+        next
+      end
+      m = ANY_LINE.match(line)
+      if m && production_only?(m[1])
+        dropped << m[1]
+        raw = m[2].lstrip
+        quote = raw[0] if %w[" '].include?(raw[0])
+        open_quote = quote if quote && !raw[1..].to_s.include?(quote)
+        next
+      end
+      kept << line
+    end
+    [kept.join, dropped.uniq]
+  end
+
+  # Desk provisioning's hook: drop every PRODUCTION_ONLY_KEYS line from a COPIED
+  # env file, so a desk never inherits a production-only key the primary still
+  # holds. Returns the dropped key names (never a value); [] leaves the file as is.
+  def strip_production_only(path)
+    return [] unless File.file?(path)
+
+    kept, dropped = filter_production_only(File.read(path))
+    atomic_write(path, kept) unless dropped.empty?
+    dropped
+  end
+
+  # Remove every line that sets `key` from `path` (atomic, permissions kept).
+  # Returns the number of lines removed.
+  def remove_key(path, key)
+    lines = File.readlines(path)
+    kept = lines.reject { |line| (m = ANY_LINE.match(line)) && m[1] == key }
+    removed = lines.size - kept.size
+    atomic_write(path, kept.join) if removed.positive?
+    removed
   end
 
   # dotenv's reading of a raw right-hand side: a quoted value is its inner text;
@@ -127,18 +233,27 @@ module DevSecretKey
   #   :empty       a line with no value (a template such as .env.example)
   #   :absent      no line sets the key
   # `production_digests` maps a full hex digest to the app that holds it.
-  def scan(files, production_digests)
+  # `key` is the variable read (SECRET_KEY_BASE by default); every row carries it.
+  def scan(files, production_digests, key: KEY)
     files.map do |path|
-      value = read_value(path)
+      value = read_value(path, key)
       if value.nil?
-        { path: path, state: :absent, prefix: nil, app: nil }
+        { path: path, key: key, state: :absent, prefix: nil, app: nil }
       elsif value.empty?
-        { path: path, state: :empty, prefix: nil, app: nil }
+        { path: path, key: key, state: :empty, prefix: nil, app: nil }
       else
         d = digest(value)
         app = production_digests[d]
-        { path: path, state: app ? :production : :dev, prefix: prefix(d), app: app }
+        { path: path, key: key, state: app ? :production : :dev, prefix: prefix(d), app: app }
       end
+    end
+  end
+
+  # The production-only sweep: one row per (file, key) for each PRODUCTION_ONLY_KEYS
+  # key the file sets. `digests_by_key` maps key => {full_digest => app}.
+  def scan_production_only(files, digests_by_key, keys: PRODUCTION_ONLY_KEYS)
+    keys.flat_map do |key|
+      scan(files, digests_by_key.fetch(key, {}), key: key).reject { |row| row[:state] == :absent }
     end
   end
 
@@ -147,7 +262,16 @@ module DevSecretKey
   # hashed inside this process and dropped; it is never returned or printed.
   # `runner` is a seam for tests: (app) -> [stdout, success?].
   def heroku_digests(apps = HEROKU_APPS, runner: method(:heroku_config_json))
-    digests = {}
+    by_key, unread = heroku_digests_by_key(apps, [KEY], runner: runner)
+    [by_key.fetch(KEY), unread]
+  end
+
+  # {key => {full_digest => app}} for each of `keys`, from ONE config read per
+  # app, plus the unread apps. A production-only key records no QA app's digest. Same contract as heroku_digests: values are hashed
+  # in-process and dropped.
+  def heroku_digests_by_key(apps = HEROKU_APPS, keys = [KEY] + PRODUCTION_ONLY_KEYS,
+                            runner: method(:heroku_config_json))
+    by_key = keys.to_h { |key| [key, {}] }
     unread = []
     apps.each do |app|
       out, ok = runner.call(app)
@@ -156,10 +280,14 @@ module DevSecretKey
         unread << app
         next
       end
-      value = config[KEY].to_s
-      digests[digest(value)] = app unless value.empty?
+      keys.each do |key|
+        next if production_only?(key) && QA_HEROKU_APPS.include?(app)
+
+        value = config[key].to_s
+        by_key[key][digest(value)] = app unless value.empty?
+      end
     end
-    [digests, unread]
+    [by_key, unread]
   end
 
   def heroku_config_json(app)

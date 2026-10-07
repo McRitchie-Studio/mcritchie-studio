@@ -1,6 +1,6 @@
 # Credentials
 
-> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`solana.turf.admin`, in `studio-agents` — the ordinary agent token reads it; no admin token needed since 2026-09-15), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
+> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config`, minus every production-only key (`DevSecretKey::PRODUCTION_ONLY_KEYS`, `SOLANA_ADMIN_KEY` first), then writes `.env` for both Rails apps. Since 2026-10-06 it writes no `SOLANA_ADMIN_KEY` at all ([`../modules/credentials.md`](../modules/credentials.md#local-env-files-hold-development-keys)). See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
 
 ## Environment Variables
 
@@ -13,7 +13,7 @@ All sensitive credentials are stored as environment variables, never in code.
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
 - `RAILS_MASTER_KEY` — Rails encrypted credentials key
-- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on the Heroku dynos it is Xan (`8K81…`, `agent.xan.solana`); in a local `.env` written by `bin/ecosystem-build` it is `solana.turf.admin` (`BLSBw8fX…`). See **Onchain Admin** below
+- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on the Heroku dynos it is Xan (`8K81…`, `agent.xan.solana`); a local `.env` written by `bin/ecosystem-build` holds none since 2026-10-06 (it was `solana.turf.admin`, `BLSBw8fX…`, a mainnet Squads seat). See **Onchain Admin** below
 - `ANTHROPIC_API_KEY` — Claude API key for AI chat (McRitchie Studio)
 - `X_BEARER_TOKEN` — X (Twitter) API bearer token for News intake (McRitchie Studio). See `docs/agents/system/news-pipeline.md` for setup.
 

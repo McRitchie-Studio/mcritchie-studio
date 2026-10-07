@@ -90,7 +90,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 | Where | Item | Vault | Field label |
 |---|---|---|---|
-| Local `.env` (written by `bin/ecosystem-build`) | `solana.turf.admin` (`BLSBw8fX…`) | `studio-agents` | `private-key`, HYPHENATED |
+| Local `.env` | none: `bin/ecosystem-build` stopped writing `solana.turf.admin` (`BLSBw8fX…`) on 2026-10-06; `SOLANA_ADMIN_KEY` is production-only | — | — |
 | `turf-monster-mainnet` + `turf-monster-qa` Heroku config | `agent.xan.solana` (`8K81…`) | `studio-agents-admin` | `private key`, SPACED |
 
 > **That split is deliberate and temporary (2026-09-15).** The turf keys were
