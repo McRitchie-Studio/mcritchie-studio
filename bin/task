@@ -299,7 +299,6 @@ require_relative "lib/desk_claim"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
-require_relative "lib/stamp_confirmation"
 require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
@@ -2111,45 +2110,6 @@ def verify_move_persisted!(slug, expected_stage)
   exit 1
 end
 
-# The `merged` twin of read_back_stage — the git-location crash-recovery signal
-# (nil/accepted/release/main). Same degrade-on-unverifiable contract: a non-2xx
-# or transport error returns nil (could not verify), never an abort. Empty string
-# means the board read the task back with no merged stamp.
-def read_back_merged(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
-  return nil unless res.code.to_i.between?(200, 299)
-
-  data = TaskBoard.parse_body(res)["data"]
-  data.is_a?(Hash) ? data["merged"].to_s : nil
-rescue StandardError
-  nil
-end
-
-# CONFIRM a `merged` stamp actually landed before reporting success — the twin of
-# verify_move_persisted!. A dropped git-location write is not cosmetic: the sweep
-# classifies a `reviewed` member with merged:"" as a HELD anomaly and leaves it
-# behind, so a silently-non-persisting stamp would strand the task off every RC.
-# On a DEFINITE mismatch exit nonzero + loud; an unverifiable read (nil) degrades
-# to the prior behavior (not proof of a failed write).
-def verify_merged_persisted!(slug, expected)
-  # A 200 is not persistence: confirm the stamp by reading it back. Only an EXACT match
-  # passes — a blank value (the write dropped) AND an unreadable board (the read-back GET
-  # failed) both stay unconfirmed. The old code returned on a nil read-back, treating an
-  # unreadable board as verified; under load the PATCH drops and the GET fails together, so
-  # that silent pass is exactly how a dropped stamp reached a `reviewed` member as merged:None
-  # (2026-07-21). Retries survive a transient read miss without accepting a genuine drop.
-  return if StampConfirmation.confirmed?(expected,
-                                         read_back: -> { read_back_merged(slug) },
-                                         sleeper: ->(seconds) { sleep(seconds) })
-
-  last = read_back_merged(slug)
-  shown = last.nil? ? "unreadable" : (last.empty? ? "nil" : last)
-  warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but the read-back shows merged:[#{shown}].")
-  warn!("  A failed read is NOT a confirmation — the git-location write did not land (or the board is unreadable); the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
-  warn!("  Re-run: #{SELF_CMD} merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog / PG connections).")
-  exit 1
-end
-
 # --- Fast lane: `begin` ------------------------------------------------------
 
 # THE FLAGS `begin` HONOURS ON A RESUME — the single source, read back by the
@@ -2838,10 +2798,9 @@ when "merged"
   # Set the git-location crash-recovery signal (Task::MERGED_STATES). NOT a stage
   # move and NOT event-recorded: it's the durable "where is the code" fact the
   # deploy heartbeats read. Set through the same one-path PATCH update as
-  # `move` (config/routes.rb: no named-transition endpoint), then read back to
-  # confirm it persisted — a 200 is not persistence, and a dropped stamp would
-  # strand the task off every RC (the sweep leaves a merged:"" `reviewed` member
-  # behind as a HELD anomaly).
+  # `move` (config/routes.rb: no named-transition endpoint). Not read back (guard
+  # catalog row 3.5): the board derives `merged` from GitHub, so a dropped
+  # override strands nothing.
   usage = "usage: #{$PROGRAM_NAME} merged <slug> <accepted|release|main>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   state = positional!(ARGV.shift || die!(usage), usage)
@@ -2850,7 +2809,6 @@ when "merged"
   die!(usage) unless ARGV.empty?
   warn "#{MERGED_NOT_NEEDED_NOTICE} Writing merged:#{state} as a manual override anyway."
   task = api(:patch, "/api/v1/tasks/#{slug}", { "merged" => state })["data"]
-  verify_merged_persisted!(slug, state)
   puts "merged set on #{slug}: #{state}"
   print_task(task)
 when "fix-forward"

@@ -2811,25 +2811,13 @@ class TaskCliTest < Minitest::Test
     assert_equal 1, status.exitstatus, "the state positional is required"
   end
 
-  # A 200 is not persistence: if the board echoes the value but the write never
-  # lands, the read-back must catch it and exit NONZERO — a silently-unstamped
-  # `reviewed` member would be dropped by the sweep as a HELD anomaly.
-  def test_merged_exits_nonzero_when_the_stamp_does_not_persist
-    _requests, _out, err, status = run_task(["merged", "demo-task", "accepted"], stub_persist: false)
-    assert_equal 1, status.exitstatus, "a non-persisting stamp must not report success"
-    assert_match(/merged NOT persisted/, err)
-  end
-
-  # THE 2026-07-21 ROOT CAUSE: under board load the merged PATCH drops AND the read-back GET
-  # fails together. The verifier read the failed GET as nil and treated nil as "persisted" —
-  # absence of signal as success — so a dropped stamp reached a `reviewed` member as merged:None
-  # and the sweep left nine tasks stranded. An UNREADABLE read-back must now fail closed, exactly
-  # like a blank one: a failed read is never a confirmation.
-  def test_merged_exits_nonzero_when_the_read_back_is_unreadable
-    _requests, _out, err, status = run_task(["merged", "demo-task", "accepted"], fail_get: 503)
-    assert_equal 1, status.exitstatus, "an unconfirmable stamp (board unreadable) must not report success"
-    assert_match(/merged NOT persisted/, err)
-    assert_match(/unreadable/i, err, "the failure names that the board could not be read")
+  # Guard catalog row 3.5: `merged` is derived from GitHub, so the override is not
+  # read back; a write that does not persist strands nothing.
+  def test_merged_override_is_not_read_back
+    requests, _out, _err, status = run_task(["merged", "demo-task", "accepted"], stub_persist: false)
+    assert_equal 0, status.exitstatus
+    patch_at = requests.index { |r| r[:method] == "PATCH" }
+    assert_empty requests.drop(patch_at + 1).select { |r| r[:method] == "GET" }, "no read-back after the write"
   end
 
 end
