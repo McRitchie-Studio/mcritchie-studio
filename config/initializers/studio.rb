@@ -163,6 +163,17 @@ Studio.configure do |config|
   # app asks a new account, unlike turf's welcome → name → age → wallet chain.
   config.draw_onboarding_routes = true
 
+  # Draw the component gallery (Lookbook at /admin/style/components) in
+  # production too, not only in development and test. Two halves, both needed:
+  # `gem "lookbook"` in the Gemfile, after studio-engine, and this line. The
+  # engine mounts it behind Studio::ComponentGallery::AdminConstraint, so an
+  # admin with a live session gets the gallery and everyone else gets 404 on
+  # the gallery, /lookbook-assets and /admin/style/previews alike. Alex approved
+  # the memory on 2026-10-06 (about 28 MB per process); delete this line to take
+  # the gallery off production without unbundling it.
+  # test/integration/component_gallery_production_test.rb holds both cases.
+  config.lookbook_in_production = true
+
   # S3 (Studio::S3 — upload/url/delete against "<prefix>-<dev|production>").
   # Engine default is nil, so set it explicitly. Region defaults to us-east-2.
   config.s3_bucket_prefix = "mcritchie-studio"
