@@ -66,7 +66,7 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 
 | Command | What it does |
 |---------|--------------|
-| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights. `--agent <soul>` is optional |
+| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, preflights it, claims it. `--agent <soul>` is optional |
 | `bin/submit-wait <task-slug> --launch -m "Commit message"` | Runs `bin/submit` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
 | `bin/release status` | Where the current release stands |

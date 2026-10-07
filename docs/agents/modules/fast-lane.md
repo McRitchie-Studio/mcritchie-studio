@@ -341,9 +341,9 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
-allocates the isolated worktree on an allocated port, claims the task, and
-preflights (pinning the worktree via --root). Read the preflight output and fix
-any blockers before implementation.
+allocates the isolated worktree on an allocated port, preflights it (pinning the
+worktree via --root), and claims the task. Read the preflight output and fix what
+it reports before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url http://localhost:<port>/<path>

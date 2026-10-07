@@ -55,6 +55,18 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "pass", report.fetch("installed_docs").fetch("status")
   end
 
+  # [unit] Row 3.8: a task the preflight cannot read is exit 2, so begin refuses
+  # the claim on it.
+  def test_an_unreadable_task_is_exit_two
+    path = File.join(@sandbox, "broken.json")
+    File.write(path, "not json")
+
+    _out, err, status = run_preflight("--file", path, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+
+    assert_equal 2, status.exitstatus, err
+    assert_includes err, "could not parse task JSON"
+  end
+
   # [unit] Guard catalog row 4.2: a blocked task is not a preflight failure; begin
   # clears the block at the claim and the preflight prints the feedback it carried.
   def test_a_blocked_task_passes_the_preflight
@@ -132,11 +144,8 @@ class SessionPreflightTest < Minitest::Test
     task = write_task # devops.branch = feat/session-preflight
     git("update-ref", "refs/remotes/origin/accepted", head)
     git("checkout", "-q", "-b", "feat/some-other-desk") # a DIFFERENT branch than the task's
-    # Put the wrong branch genuinely BEHIND accepted so the drift-suppression path is
-    # exercised NON-vacuously: without the wrong_checkout guard a "behind" blocker
-    # would fire; with it, that meaningless drift number for the wrong tree must be
-    # suppressed. (An at-tip wrong branch would make the suppression assertion pass
-    # trivially — there would be no drift to suppress.)
+    # The wrong branch sits BEHIND accepted, so the report carries a drift number for
+    # a tree that is not this task's; the refusal is what makes it meaningless.
     git("checkout", "-q", "--detach", "origin/accepted")
     accepted_commit = commit_file("docs/accepted.md", "moved\n", "accepted moves ahead")
     git("update-ref", "refs/remotes/origin/accepted", accepted_commit)
@@ -144,14 +153,12 @@ class SessionPreflightTest < Minitest::Test
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
     refute status.success?, "a root on the wrong branch must be refused"
+    assert_equal 2, status.exitstatus, "the wrong checkout is exit 2: begin refuses the claim on it (row 3.8)"
 
     report = JSON.parse(out)
-    assert_equal 1, report.fetch("branch").fetch("behind"),
-                 "the wrong branch IS behind accepted — so the suppression below is non-vacuous"
+    assert_equal 1, report.fetch("branch").fetch("behind")
     assert report.fetch("errors").any? { |error| error.downcase.include?("wrong checkout") },
            "must name the wrong-checkout blocker, got: #{report.fetch("errors").inspect}"
-    refute report.fetch("errors").any? { |error| error.include?("behind") },
-           "a real-but-meaningless drift number for the wrong tree must be SUPPRESSED, not surfaced"
   end
 
   # [unit] The self-defense must NOT fire when the inspected checkout IS the task's
@@ -229,6 +236,7 @@ class SessionPreflightTest < Minitest::Test
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
     refute status.success?
+    assert_equal 1, status.exitstatus, "a finding is exit 1: begin reports it and claims (row 3.8)"
 
     report = JSON.parse(out)
     hit = report.fetch("stale_terms").first

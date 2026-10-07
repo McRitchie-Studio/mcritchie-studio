@@ -63,7 +63,7 @@ class TaskBeginTest < Minitest::Test
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV, Dir.pwd].join("\\t")) }
-      exit(ENV["FAIL_#{marker}"] == "1" ? 1 : 0)
+      exit(Integer(ENV.fetch("FAIL_#{marker}", "0")))
     RUBY
     FileUtils.chmod("+x", stub)
     stub
@@ -583,17 +583,47 @@ class TaskBeginTest < Minitest::Test
     assert_equal BIN, banner, "the banner must echo the invocation it was reached by:\n#{err}"
   end
 
-  def test_begin_preflight_failure_names_the_resume
-    _requests, _out, err, status, lines =
-      run_begin([SLUG], existing: building_task, env: { "FAIL_PREFLIGHT" => "1" })
+  # Guard catalog row 3.8: the preflight runs BEFORE the claim. When it cannot
+  # describe the desk (exit 2) nothing is claimed, and the refusal names the resume.
+  def test_begin_preflight_that_cannot_describe_the_desk_refuses_before_the_claim
+    requests, _out, err, status, lines =
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA],
+                env: { "FAIL_PREFLIGHT" => "2" })
 
-    refute status.success?, "a red preflight must fail the begin"
+    refute status.success?, "a preflight that cannot describe the desk must refuse the claim"
     # Filesystem-keyed for the reason test/lib/remedy_hint_guard_test.rb spells out:
     # an absolute path CONTAINS "bin/task begin <slug>", so a substring assertion
     # here passes the bare form as readily as the fixed one.
     resume = err[%r{re-run: (\S*/bin/task) begin #{SLUG}}, 1]
     refute_nil resume, "the failure must name the resume:\n#{err}"
     assert File.executable?(resume), "the resume must name a runnable script, got #{resume.inspect}"
+    assert_includes err, "nothing was claimed"
     assert(lines.any? { |l| l[0] == "PREFLIGHT" }, "the preflight must have been attempted")
+    refute(patches_of(requests).any? { |r| JSON.parse(r[:body])["stage"] == "building" },
+           "no claim may be written before a preflight that could not describe the desk")
+    assert_equal "designed", @task["stage"]
+  end
+
+  # Findings (exit 1) are a report: the claim proceeds and begin completes.
+  def test_begin_preflight_findings_are_a_report_and_the_claim_proceeds
+    requests, out, err, status, = run_begin(
+      ["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA],
+      env: { "FAIL_PREFLIGHT" => "1" }
+    )
+
+    assert status.success?, "findings must not fail begin:\n#{err}\n#{out}"
+    assert_includes err, "found work for this desk"
+    assert(patches_of(requests).any? { |r| JSON.parse(r[:body])["stage"] == "building" }, "the claim must land")
+    assert_equal "building", @task["stage"]
+  end
+
+  # The order itself: the preflight is logged before the claim's child move.
+  def test_begin_runs_the_preflight_before_the_claim
+    _requests, _out, err, status, = run_begin(
+      ["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA]
+    )
+
+    assert status.success?, err
+    assert_operator err.index("begin 4/5 preflight"), :<, err.index("begin 5/5 claim"), err
   end
 end

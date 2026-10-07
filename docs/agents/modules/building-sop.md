@@ -37,8 +37,8 @@ workflows that meet at `submitted`:
 
 ## Step 1 — Claim: task + worktree + preflight
 
-One command creates the task, cuts a desk on an allocated port, claims the task,
-and preflights. Skip it when a focus session already made your desk.
+One command creates the task, cuts a desk on an allocated port, preflights the
+desk, and claims the task. Skip it when a focus session already made your desk.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -87,7 +87,7 @@ every session: `<app-slug> · <feature-slug> · <task URL>`.
 To resume a held or blocked task instead:
 
 ```bash
-bin/task begin <slug>              # re-creates/rebinds the desk, moves to building, preflights
+bin/task begin <slug>              # re-creates/rebinds the desk, preflights, moves to building
 ```
 
 The desk is the build claim. `begin` refuses only when another live session's

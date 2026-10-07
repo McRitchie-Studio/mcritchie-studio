@@ -14,6 +14,8 @@
 #   bin/session-preflight <task-slug>
 #   bin/session-preflight <task-slug> --json
 #   bin/session-preflight --file task.json --no-gh --no-install-docs --no-fetch
+#
+# Exit 0 passed, 1 findings to work on in the desk, 2 cannot describe the desk.
 
 require "json"
 require "net/http"
@@ -77,9 +79,17 @@ def warn!(message)
   $stderr.puts(message)
 end
 
+# EXIT CODES. 0: passed. 1: findings for the builder to work on in this desk (a PR
+# conflict, no CI, a red check, stale terminology the branch added). 2: this command
+# could not describe the task's desk at all (a usage error, an unreadable task, the
+# wrong checkout). `bin/task begin` runs the preflight before the claim and refuses
+# the claim only on 2 (guard catalog row 3.8); 1 is a report.
+EXIT_FINDINGS = 1
+EXIT_CANNOT_DESCRIBE = 2
+
 def die!(message)
   warn!("error: #{message}")
-  exit 1
+  exit EXIT_CANNOT_DESCRIBE
 end
 
 def capture(*cmd, chdir: nil, env: {})
@@ -737,4 +747,5 @@ else
   print_human(report)
 end
 
-exit(report["ok"] ? 0 : 1)
+exit(0) if report["ok"]
+exit(branch["wrong_checkout"] ? EXIT_CANNOT_DESCRIBE : EXIT_FINDINGS)
