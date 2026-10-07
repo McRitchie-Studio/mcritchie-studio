@@ -1,4 +1,5 @@
 # SOP — Constraint Diagnosis
+<!-- registry: find the one thing limiting demand -->
 
 **Owner:** Rex · **Runs:** at the start of every engagement, and any time someone
 asks "what should we do about marketing?"

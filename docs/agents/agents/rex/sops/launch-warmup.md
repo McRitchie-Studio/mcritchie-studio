@@ -1,4 +1,5 @@
 # SOP — Launch Warm-up
+<!-- registry: gated rollout of a new app, domain or email list -->
 
 **Owner:** Rex · **Runs:** whenever something new is about to meet the public: a
 new app, a new domain for an existing app, or a new or imported email list. It

@@ -1,4 +1,5 @@
 # Knowledge Capture — one front door, every source
+<!-- registry: team@, intake protocol, sweep -->
 
 ## Status: Active
 

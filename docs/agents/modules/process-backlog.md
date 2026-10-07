@@ -1,4 +1,5 @@
 # Process Backlog — groom the designed column, then build it four wide
+<!-- registry: groom designed, build four wide -->
 
 The `designed` column is where sessions put work they will not do right now. It
 grows faster than it drains, and it grows **crooked**: sessions do not hear each

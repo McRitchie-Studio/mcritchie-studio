@@ -1,4 +1,5 @@
 # Form Fill — complete an application on Alex's behalf
+<!-- registry: complete an application from records, ask only what they cannot answer -->
 
 ## Status: Active
 

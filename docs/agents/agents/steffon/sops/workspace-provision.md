@@ -1,4 +1,5 @@
 # Workspace Provision
+<!-- registry: client Google Workspace read access -->
 
 ## Status: Active
 

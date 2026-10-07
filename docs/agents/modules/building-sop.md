@@ -1,4 +1,5 @@
 # Building SOP — the feature agent's build flow, task → submitted
+<!-- registry: feature-agent build flow + local-review decision -->
 
 **Purpose.** Take one task from a claim to the `submitted` seam: a non-draft PR
 into `accepted`, green CI, and a passing `bin/dor-check`.

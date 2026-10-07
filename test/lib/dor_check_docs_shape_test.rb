@@ -261,7 +261,7 @@ class DorCheckDocsShapeTest < Minitest::Test
   # together: a *_test.rb under test/docs/ may ride a prose diff; nothing else may.
 
   def test_integration_docs_passes_on_prose_plus_a_registry_guard_test
-    out, code = with_changed_files("docs/agents/agents/steffon/sops/credential-filing.md\ndocs/agents/index.md\ntest/docs/sop_registry_docs_test.rb") do
+    out, code = with_changed_files("docs/agents/agents/steffon/sops/credential-filing.md\ndocs/agents/index.md\ntest/docs/sop_registry_generated_test.rb") do
       check(DOCS_CONTRACT)
     end
 
@@ -281,7 +281,7 @@ class DorCheckDocsShapeTest < Minitest::Test
   end
 
   def test_integration_docs_is_refused_on_guard_tests_with_no_prose
-    out, code = with_changed_files("test/docs/sop_registry_docs_test.rb") { check(DOCS_CONTRACT) }
+    out, code = with_changed_files("test/docs/sop_registry_generated_test.rb") { check(DOCS_CONTRACT) }
 
     refute_equal 0, code, out
     assert_match(/test-only/, out,

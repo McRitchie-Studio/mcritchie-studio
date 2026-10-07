@@ -23,7 +23,8 @@ invisible to the index.
 
 ## You already built the mechanism — for SOPs only
 
-`test/docs/sop_registry_docs_test.rb` enforces exactly the property we want:
+The SOP registry now generates from disk (`bin/sop-registry`), the property we
+want here. The test it replaced held the registry to the disk:
 
 ```ruby
 test "every registered SOP path exists on disk"
@@ -124,7 +125,7 @@ and requiring them in Start Here would defeat the archive sweep.
   else, with a comment saying why each exemption exists.
 - `docs/agents/index.md` stays well-formed, so the generated root
   `/Users/alex/projects/AGENTS.md` still renders cleanly from it, and the
-  existing `sop_registry_docs_test.rb` still passes.
+  `bin/sop-registry` still reports the SOP registry current.
 
 ## Routing
 

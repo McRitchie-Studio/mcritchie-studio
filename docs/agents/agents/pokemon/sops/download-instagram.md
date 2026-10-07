@@ -1,4 +1,5 @@
 # Download Instagram
+<!-- registry: yt-dlp download of an Instagram reel or post; cookie path unmeasured -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # App Deploy Standard
+<!-- registry: single-use apps: profile, contract, `bin/register-app` -->
 
 ## Status: Active
 

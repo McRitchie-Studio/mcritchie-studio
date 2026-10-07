@@ -1,4 +1,5 @@
 # Sleeper Auction Watch
+<!-- registry: live draft valuation -->
 
 ## Status: Active
 

@@ -1,4 +1,5 @@
 # SOP — Content Sprint
+<!-- registry: the weekly test-at-volume loop -->
 
 **Owner:** Rex · **Runs:** weekly, per client, once a constraint has been named
 by [`constraint-diagnosis.md`](constraint-diagnosis.md).

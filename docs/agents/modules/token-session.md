@@ -1,4 +1,5 @@
 # `token-session` — GitHub token sessions, self-healing
+<!-- registry: GitHub token session broken: 401, `Bad credentials`, push refused -->
 
 **Invocation:** `token-session` · **Owner:** Shared · **Read this file, then run it.**
 

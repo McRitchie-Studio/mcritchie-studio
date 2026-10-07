@@ -1,4 +1,5 @@
 # Credential Filing SOP (Steffon)
+<!-- registry: naming, logos, vault lanes -->
 
 ## Status: Active
 

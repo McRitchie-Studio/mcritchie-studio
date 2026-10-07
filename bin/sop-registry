@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/sop-registry — generate the SOP registry from the SOP files.
+#
+#   bin/sop-registry           check: exit 1 naming each generated doc that is stale
+#   bin/sop-registry --write   rewrite the generated blocks in docs/agents/index.md
+#                              (the SOP Registry) and docs/agents/start-here.md
+#
+# The rule for what is registered lives in bin/lib/sop_registry.rb. Run --write after
+# adding, renaming or deleting an SOP file or changing its `<!-- registry: … -->` line.
+
+require "optparse"
+require_relative "lib/sop_registry"
+
+write = false
+OptionParser.new do |opts|
+  opts.banner = "usage: bin/sop-registry [--write]"
+  opts.on("--write", "rewrite the generated blocks") { write = true }
+  opts.on("-h", "--help", "print this help") do
+    puts opts
+    exit 0
+  end
+end.parse!(ARGV)
+abort "usage: bin/sop-registry [--write] (unexpected: #{ARGV.join(" ")})" unless ARGV.empty?
+
+root = File.expand_path("..", __dir__)
+if write
+  SopRegistry.write!(root)
+  puts "wrote #{SopRegistry::REGISTRY_PATH} and #{SopRegistry::START_HERE_PATH} " \
+       "(#{SopRegistry.entries(root).size} entries)"
+  exit 0
+end
+
+stale = SopRegistry.stale(root)
+if stale.empty?
+  puts "SOP registry is current (#{SopRegistry.entries(root).size} entries)"
+  exit 0
+end
+
+warn "stale generated SOP registry: #{stale.join(", ")}"
+warn "run: bin/sop-registry --write"
+exit 1
