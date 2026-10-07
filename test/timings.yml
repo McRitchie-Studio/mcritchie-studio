@@ -425,7 +425,6 @@ test/lib/edge_guard_test.rb: 0.12
 test/lib/engine_migration_content_test.rb: 0.47
 test/lib/engine_pin_contract_test.rb: 0.09
 test/lib/engine_version_claims_test.rb: 0.05
-test/lib/env_example_credential_pointers_test.rb: 0.15
 test/lib/fast_cert_family_test.rb: 0.33
 test/lib/fast_cert_subject_test.rb: 4.15
 test/lib/fast_cert_test.rb: 0.58
