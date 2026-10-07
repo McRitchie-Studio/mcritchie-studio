@@ -95,6 +95,10 @@ module DigestVideo
     if path.start_with?("/share/")
       raise Failure, "an Instagram share link has no post id: open it and paste the /reel/ or /p/ URL it lands on"
     end
+    # A sound's page lists every reel that uses it; a story is not a post.
+    if path.match?(%r{\A(?:/[^/]+)?/reels?/audio/}) || path.start_with?("/stories/")
+      raise Failure, "#{url} is not a single Instagram post: paste one /reel/, /p/ or /tv/ URL"
+    end
 
     path[INSTAGRAM_POST, 2] or raise Failure, "no Instagram post id in #{url}: paste a /reel/, /p/ or /tv/ URL"
   end
@@ -139,15 +143,19 @@ module DigestVideo
 
   # The creator, then feat.-style names from the caption's first line. The
   # caption itself is never kept: only names the parser pulls out of it.
+  # A name with no key-safe characters (emoji-only, non-Latin) cannot name an R2
+  # folder, so the next name is taken: the handle, which always has some.
   def creator_credits(names, caption)
-    creator = names.map { |n| n.to_s.strip }.find { |n| !n.empty? }
+    creator = names.map { |n| n.to_s.strip }.find { |n| key_safe?(n) }
     return [] unless creator # a caption name is never the primary
 
     caption = caption.to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
     featured = MusicVideos::CreditParser.new.parse(title: caption).featured
-                                        .reject { |n| n.split.size > CREDIT_WORDS }
+                                        .reject { |n| n.split.size > CREDIT_WORDS || !key_safe?(n) }
     [creator, *featured].compact.uniq(&:downcase)
   end
+
+  def key_safe?(name) = !MusicVideos::ObjectKeys.snake(name).empty?
 
   def youtube_id(url)
     uri = URI.parse(url)
@@ -265,6 +273,8 @@ module DigestVideo
       title, uploader, artists = payload.delete(:credits)
       credits = MusicVideos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
       MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
+    rescue ArgumentError => e # a title or name with no key-safe characters
+      raise Failure, "no R2 key for these credits (#{e.message}); ask Alex"
     end
 
     def short_code(url) = URI.parse(url).path.scan(/[\w-]+/).last || "tiktok"
