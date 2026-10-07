@@ -375,11 +375,11 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   # search came back a wall of his LSU college photographs. Nothing raised and nothing
   # logged: the page printed a query that looked deliberate.
   #
-  # THESE FOUR TESTS RUN WITH `Team.delete_all`, which is the production state and NOT the
-  # seeded one. A test against the seeded teams table would have passed before the fix.
+  # THESE TESTS NAME TEAMS THE teams TABLE DOES NOT HOLD, which is the production state
+  # (no teams rows) and NOT the seeded one; no fixture holds these slugs. The table itself
+  # stays, since contracts and the other team children hold its fixture rows by key.
 
   test "the team joins the query from the slug when the teams table is empty" do
-    Team.delete_all
     athlete = athletes(:allen_athlete)
     athlete.update!(team_slug: "minnesota-vikings")
     assert_nil athlete.reload.team, "the precondition IS the defect: the association resolves nil"
@@ -393,7 +393,6 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   # and the variants are appended to it, so a regression that dropped the team from the
   # subject would show up here as four bare-name queries.
   test "every variant carries the team the slug supplied" do
-    Team.delete_all
     athletes(:allen_athlete).update!(team_slug: "minnesota-vikings")
 
     queries = Appearances::GatherReferencePhotos.new(@look).queries
@@ -420,7 +419,6 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   # distinct production slugs were checked by hand on 2026-09-27; these are the two whose
   # digits and multi-word cities make them the ones worth pinning.
   test "a numeric or multi-word team slug humanises to the team's actual name" do
-    Team.delete_all
     athlete = athletes(:allen_athlete)
 
     {

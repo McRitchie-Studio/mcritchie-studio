@@ -73,6 +73,7 @@ class Appearance < ApplicationRecord
   before_create :set_initial_position
   after_create :become_default_if_first
   before_destroy :remember_default_holders
+  before_destroy :remember_recasts
   after_destroy :release_default_pointer
   after_destroy :release_recasts
 
@@ -322,12 +323,17 @@ class Appearance < ApplicationRecord
 
   # A recast that named this look keeps its athlete and loses the look (the
   # card asks for another), and the videos' prompts stop mentioning it.
-  def release_recasts
-    videos = VideoPerformer.where(recast_appearance_slug: slug).distinct.pluck(:music_video_slug)
-    return if videos.empty?
+  # video_performers.recast_appearance_slug carries a foreign key with ON DELETE
+  # SET NULL, so the recasts are released before the delete, while they can still
+  # be found by this slug, and their videos' prompts refreshed after it.
+  def remember_recasts
+    recasts = VideoPerformer.where(recast_appearance_slug: slug)
+    @recast_videos = recasts.distinct.pluck(:music_video_slug)
+    recasts.update_all(recast_appearance_slug: nil, updated_at: Time.current) if @recast_videos.any?
+  end
 
-    VideoPerformer.where(recast_appearance_slug: slug).update_all(recast_appearance_slug: nil, updated_at: Time.current)
-    MusicVideo.where(slug: videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+  def release_recasts
+    MusicVideo.where(slug: Array(@recast_videos)).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
   end
 
   def normalize_colorway

@@ -39,7 +39,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
       next "#{name}: points at #{key.to_table}.#{key.primary_key}, census says #{target_table}.#{target_column}" unless
         [key.to_table, key.primary_key] == [target_table, target_column]
       next "#{name}: ON UPDATE #{key.on_update.inspect}" unless key.on_update == :cascade
-      next "#{name}: ON DELETE NO ACTION; name restrict, nullify or cascade" if key.on_delete.nil?
+      next "#{name}: ON DELETE RESTRICT, which Rails cannot read as InvalidForeignKey; use NO ACTION" if key.on_delete == :restrict
 
       "#{name}: still NOT VALID" unless validated?(table, column)
     end
@@ -89,13 +89,13 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     yield
     keys.each do |table, column, parent, on_delete|
       connection.add_foreign_key(table, parent, column: column, primary_key: "slug", on_update: :cascade,
-                                                on_delete: on_delete.to_sym, validate: false)
+                                                on_delete: on_delete&.to_sym, validate: false)
     end
   end
 
   test "[integration] constraints added NOT VALID then validated; every census orphan is resolved or listed" do
     note = action = desk = nil
-    with_keys_not_valid(%w[activities agent_slug agents restrict], %w[activities task_slug tasks nullify],
+    with_keys_not_valid(["activities", "agent_slug", "agents", nil], %w[activities task_slug tasks nullify],
                         %w[agent_actions task_slug tasks nullify], %w[desk_records app_slug apps nullify],
                         %w[tasks agent_slug agents nullify]) do
       note = Activity.create!(activity_type: "comment", description: "from a mascot")
@@ -136,7 +136,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
   end
 
   test "[integration] the migration validates a clean key itself" do
-    with_keys_not_valid(%w[usages agent_slug agents restrict]) { nil }
+    with_keys_not_valid(["usages", "agent_slug", "agents", nil]) { nil }
 
     migration.up
 
@@ -152,7 +152,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
   end
 
   test "[integration] a dangling slug in a NOT NULL column stops the validate step with its name" do
-    with_keys_not_valid(%w[contracts person_slug people restrict]) do
+    with_keys_not_valid(["contracts", "person_slug", "people", nil]) do
       contracts(:messi_argentina).update_columns(person_slug: "nobody-on-file")
     end
 

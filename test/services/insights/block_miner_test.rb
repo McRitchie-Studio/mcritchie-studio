@@ -8,16 +8,16 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
   def span(task_slug:, opened_at:, seq: 0, session_id: "sess-mine", category: "Edit",
            reason_slug: "did the work", agent: nil, stage: "building")
     AgentActivity.create!(session_id: session_id, category: category, reason_slug: reason_slug,
-                        task_slug: task_slug, opened_at: opened_at, seq: seq,
+                        task_slug: task_rows!(task_slug).first.slug, opened_at: opened_at, seq: seq,
                         agent: agent, stage: stage)
   end
 
   def block(task_slug:, text:, at:)
-    Activity.create!(task_slug: task_slug, activity_type: "qa_feedback", description: text, created_at: at)
+    Activity.create!(task_slug: task_rows!(task_slug).first.slug, activity_type: "qa_feedback", description: text, created_at: at)
   end
 
   def resolution(task_slug:, at:)
-    Activity.create!(task_slug: task_slug, activity_type: "handoff", description: "ready again",
+    Activity.create!(task_slug: task_rows!(task_slug).first.slug, activity_type: "handoff", description: "ready again",
                      metadata: { "resolves_feedback" => true }, created_at: at)
   end
 
@@ -46,7 +46,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
   test "[unit] mines the full DETAILS as the lesson even when the block carries a summary" do
     now = Time.current
     span(task_slug: "t-split", opened_at: now - 10.minutes, seq: 0)
-    blk = Activity.create!(task_slug: "t-split", activity_type: "qa_feedback",
+    blk = Activity.create!(task_slug: task_rows!("t-split").first.slug, activity_type: "qa_feedback",
                            description: "The stage transition bypasses the server guard entirely here",
                            metadata: { "summary" => "Stage move skips server guard" },
                            created_at: now - 5.minutes)

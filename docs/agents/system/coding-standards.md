@@ -30,7 +30,8 @@
 - Example: `has_many :tasks, foreign_key: :agent_slug, primary_key: :slug`
 - Every slug column the census (`bin/rails db:slug_census`) resolves carries a
   database foreign key to its parent's `slug`, `ON UPDATE CASCADE`, with
-  `ON DELETE` RESTRICT, SET NULL or CASCADE chosen per column. The columns left
+  `ON DELETE` NO ACTION (a refusal Rails reads as `InvalidForeignKey`; RESTRICT
+  raises an error Rails does not map), SET NULL or CASCADE chosen per column. The columns left
   without one are listed with their reasons in `SlugCensus::UNCONSTRAINED`, and
   `test/models/slug_foreign_keys_test.rb` holds both lists to the schema. A new
   slug column takes its key in the migration that adds it.

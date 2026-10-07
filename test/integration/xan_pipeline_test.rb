@@ -138,6 +138,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
   # ── candidates awaiting grade · block-mined "not" grades ────────────────────
 
   def block_mined_candidate(task_slug:, session_id:, banked: false)
+    task_rows!(task_slug) # the span and the block name it by a foreign key
     s = span(session_id: session_id, reason: "did the risky edit", task_slug: task_slug)
     blk = Activity.create!(task_slug: task_slug, activity_type: "qa_feedback",
                            description: "stage transition bypassed the server-side guard here")

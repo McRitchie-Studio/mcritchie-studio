@@ -45,6 +45,7 @@ class Artists::Wikidata::SnapshotImporterTest < ActiveSupport::TestCase
   test "a changed source updates in place and keeps the slug an operator may rely on" do
     import
     jay = Artist.find_by!(wikidata_id: "Q62766")
+    Person.find_or_create_by!(first_name: "Shawn", last_name: "Carter") # artists.person_slug carries a foreign key
     jay.update!(person_slug: "shawn-carter")
 
     data = JSON.parse(File.read(SNAPSHOT))
