@@ -881,6 +881,18 @@ class TaskCliTest < Minitest::Test
   # which is exactly the Submitted→Reviewed chip bug this task fixes. End-to-end
   # through bin/task against the stub board, sharing the on-disk usage baseline
   # across the two invocations (same HOME + TASK_USAGE_DIR).
+  # The review lane's intent comes from the claim. A claim-less `intent --to reviewed`
+  # says so itself, so no doc has to forbid it; the deploy lane's intents stay quiet.
+  def test_intent_to_reviewed_points_at_the_review_claim
+    _req, _out, err, status = run_task(["intent", "demo-task", "--to", "reviewed"])
+    assert status.success?, err
+    assert_includes err, "bin/task review-claim acquire"
+
+    _req, _out, err, status = run_task(["intent", "demo-task", "--to", "assembled", "--actor", "avi"])
+    assert status.success?, err
+    refute_includes err, "review-claim"
+  end
+
   def test_intent_seeds_baseline_so_first_review_move_records_a_delta
     Dir.mktmpdir do |home|
       proj = File.join(home, ".claude", "projects", "-Users-xan-projects")

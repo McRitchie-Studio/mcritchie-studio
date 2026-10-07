@@ -996,6 +996,12 @@ APPROVAL_STATUSES = %w[waiting approved changes_requested none].freeze
 # value, and a literal there reads as an incidental string rather than the rule.
 APPROVAL_WAITING = "waiting"
 
+# Printed by `intent --to reviewed`, which records the review-lane intent with no
+# claim behind it. Two sessions once selected one PR that way.
+REVIEWED_INTENT_NOTE = "note: `intent --to reviewed` takes no review claim, so another " \
+                       "session can select this task too. Review with `bin/task review-claim " \
+                       "acquire <task>` instead; it writes the reviewed intent and the claim together."
+
 def warn!(msg)
   $stderr.puts(msg)
 end
@@ -3008,6 +3014,10 @@ when "intent"
   end
   die!("usage: #{$PROGRAM_NAME} intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
   validate_stage!(to_stage)
+  # The review lane's intent comes from the CLAIM: TaskReviewClaim.acquire writes it
+  # with the reservation in one write. This write touches no claim, so the command
+  # itself says so, rather than every doc having to forbid it.
+  warn!(REVIEWED_INTENT_NOTE) if to_stage == "reviewed"
   body = { "to_stage" => to_stage, "event" => { "source" => "cli" } }
   body["actor"] = actor if actor
   body["reviewers"] = reviewers if reviewers.any?
