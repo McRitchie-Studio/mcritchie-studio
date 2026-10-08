@@ -447,6 +447,37 @@ Every look a person is given gets an **iced-out twin** (the operator's ask,
 | Suite traps | `OPENAI_NO_LIVE_CALLS=1`, `FAL_NO_LIVE_CALLS=1`, armed in `test/test_helper.rb` |
 | Autoload | `open_ai.rb` needs the inflection in `config/initializers/inflections.rb` |
 
+#### Characters: looks owned by our fictional cast
+
+A look (`Appearance`) belongs to **exactly one** owner: a `Person` (a real human)
+or a `Character` (our cast: a `mascot` or a `puppet`, e.g. Turf Monster). The
+`appearances_exactly_one_owner` and `artifact_subjects_exactly_one_owner` CHECK
+constraints hold it in the database; `Appearance#owner` and `#owner_name` answer
+either. Both owners resolve and release their default look through one concern,
+`HoldsDefaultAppearance`.
+
+- **Owner-generic:** the default-look pointer, `ArtifactSubject` (a character's
+  sheet files `character_slug`), `Appearances::SheetBuild` /
+  `Appearances::GenerateArtifact` (a character's anchor is its own reference art;
+  its prompt is `Appearances::CastSheetPrompt`, with no person or likeness
+  wording; its sheet is stored under `character-sheets/characters/<slug>/`),
+  `Artifact.newest_character_sheets`, `AppearanceReferencePhoto` (source `upload`
+  is character art and is never face-judged).
+- **Person-only:** the model pipeline board (`Appearance.person_owned`), every
+  recast picker (`Appearance.recastable`), the people pages and their model
+  thumbnails, the content cast and reuse key, `Appearance.file_for_colorway!`,
+  the iced twin (refused for a character), the Higgsfield identity mint (refused
+  for a character) and the likeness search (a character has no person name, so
+  it searches nothing).
+- **Pages:** `/characters` and `/characters/:slug` (`CharactersController`,
+  `require_admin`): the cast, a profile, its looks with art and sheet status, art
+  uploads (`Characters::UploadLookArt`, PNG/JPEG/WebP read from the bytes, 5 MB,
+  stored under `characters/<slug>/refs/`) and a paid **Build sheet** button. A
+  brand kit page links its live character (`Character.featured_for`).
+- **Seed:** `bin/rails characters:seed_turf_monster` (idempotent, never
+  overwrites an edit, generates nothing) creates Turf Monster and his default
+  "Classic" look from the Turf kit's references.
+
 **The identity photo reads the STORED `s3_key`, never a rebuilt path.**
 `Athlete#headshot_url` resolves the `ImageCache` row and calls `ImageCache#url`;
 `Athlete#headshot_key_prefix` is a WRITE-time builder. `Athletes::RekeyHeadshots`
@@ -968,7 +999,23 @@ Extracted to `app/views/contents/_tiktok_assembly_card.html.erb`. Autoplay video
 3. **Mark Posted** — paste TikTok URL OR click with no URL (escape hatch — paste later via Edit). Both advance stage to posted.
 
 ### TikTok API posting (in app review)
-`Tiktok::OAuthClient` (refresh-token flow) + `Tiktok::PostMedia` (Content Posting API, `PULL_FROM_URL` pointed at the S3 MP4). `Content::PostToTiktok` orchestrates. Two endpoints: `inbox` (drafts, recommended for trend-chasing) and `direct_post` (immediate publish, optional CML music_id). ENV: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REFRESH_TOKEN`, `TIKTOK_OPEN_ID`. 1Password item: `🐊 TikTok` in the `studio-agents` vault (not present there on 2026-08-29 — recreate it before relying on this step). **One-time OAuth handshake**: visit `/admin/tiktok/connect`, authenticate as @turfmonstershow, copy the displayed `TIKTOK_REFRESH_TOKEN` + `TIKTOK_OPEN_ID` into `.env` and back into 1Password.
+`Tiktok::OAuthClient` (refresh-token flow) + `Tiktok::PostMedia` (Content Posting API, `PULL_FROM_URL` pointed at the S3 MP4). `Content::PostToTiktok` orchestrates. Two endpoints: `inbox` (drafts, recommended for trend-chasing) and `direct_post` (immediate publish, optional CML music_id). ENV: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REFRESH_TOKEN`, `TIKTOK_OPEN_ID`. 1Password item: `tiktok.studio.agents` in the `studio-agents` vault, filed EMPTY on purpose since 2026-09-24 (the operator posts TikTok by hand); no server holds the four values (measured 2026-10-07), so nothing on this path can call TikTok until he files them. **One-time OAuth handshake**: visit `/admin/tiktok/connect`, authenticate as @turfmonstershow, copy the displayed `TIKTOK_REFRESH_TOKEN` + `TIKTOK_OPEN_ID` into `.env` and back into 1Password.
+
+### TikTok drafts from a clip (recast pipeline)
+The `tiktok-draft` SOP (`docs/agents/agents/turf_monster/sops/tiktok-draft.md`): one alt video clip's primary version into the operator's TikTok drafts, with a caption written by code. Two doors into `Tiktok::DraftClip`: **Draft to TikTok** on the clip card (`AltVideoClipTiktokDraftsController`) and `bin/tiktok-draft <clip-slug>` through `Api::V1::TiktokDraftsController`.
+
+- **The clip's name.** `alt_video_clips.slug`, `<alt video slug>-clip-<NN>` (`bigxthaplug-6wa-alt-3-clip-03`), unique, set when Build Clips makes the clip and shown on its card with a copy control.
+- **The caption.** `Tiktok::ClipCaption`: `"<Mascot> <record> #nfl #nfltiktok #footballtiktok <slogan tag> <#mascot> #fyp"`. The record is `Espn::TeamRecord`, the same three ESPN reads `X::PostDraft` makes (extracted from it, not copied), and the tags are spelled by `X::PostDraft.tag`. The tag set is TikTok's own, a constant (`LEAD_TAGS`, `TAIL_TAGS`, six tags at most), because it is one fixed list changed by review, like `X::PostDraft::LEAGUE_TAGS`. Length is checked against TikTok's 2,200 UTF-16 units. NFL teams only. No model writes copy.
+- **The team.** `Tiktok::ClipTeam`: the clip's lead swapped athlete from the alt video's swap snapshot (the chunk's target if swapped; else the first lead on screen in cast order; else the first swapped person on screen; else the alt video's first swap), then that athlete's team (the look's `team_slug`; else the athlete's current team; never a past contract).
+- **The upload.** `Tiktok::InboxUpload`, the Content Posting API's inbox endpoint (`/v2/post/publish/inbox/video/init/`) with source **`FILE_UPLOAD`**, not `PULL_FROM_URL`: TikTok pulls only from a domain verified on the developer app, and the clip versions sit in R2 behind signed URLs on a host that is not. The server reads the object from R2 by byte range (`Tiktok::DraftClip::R2Reader`) and PUTs each chunk to the upload URL with `Content-Range: bytes first-last/total`. TikTok's rules: a file under 5 MB is one chunk; otherwise chunks are 5 to 64 MB, the count is size / chunk size rounded DOWN, and the last chunk takes the remainder (up to 128 MB); at most 1,000 chunks; the URL lasts an hour. We send 10 MB chunks (a file of 10 MB or less in one) and cap a file at 512 MB.
+- **No caption travels.** The inbox endpoint takes the source alone, so the caption cannot ride with the draft. The card and the bin show it with a Copy, and the operator pastes it when he posts from the phone.
+- **The record.** `tiktok_drafts`, one row per attempt: clip slug, version number and object, caption, the facts it rests on, `publish_id`, our state (`queued`, `uploading`, `processing`, `unknown`, `delivered`, `failed`) beside TikTok's own status from `/v2/post/publish/status/fetch/` (`PROCESSING_UPLOAD`, `SEND_TO_USER_INBOX`, `FAILED` with `fail_reason`), and the error. `TiktokDraftJob` runs the upload and polls for 90 seconds; it is never retried, since a retried upload is a second draft. **Check TikTok** and `bin/tiktok-draft <slug> --status` read the status again.
+- **One press, one draft.** `Tiktok::DraftClip#record!` takes the clip's row lock, looks again for an attempt in flight, and only then records, so two requests that both passed the first check leave one attempt. The three ESPN reads happen before the lock. There is no unique index, because an attempt pending past 15 minutes (`STUCK_AFTER`) is dead and must not block the next. The card's button turns itself off on submit.
+- **Never failed after the bytes are sent.** Until the upload returns, an error fails the attempt and a new one is right. After it returns, only TikTok's own `FAILED` does: a status read that breaks, or our own write breaking, leaves the attempt `unknown` ("Uploaded, status unknown", check the phone), in flight for the same 15 minutes, and a later status read settles it.
+- **The API door needs an admin session.** `POST /api/v1/alt_video_clips/:slug/tiktok_drafts` answers 403 `SESSION_FORBIDDEN` to the shared token and to a studio session (`require_admin_session_only`); a dry run, the index, a refresh and the probe stay open to any board bearer. `bin/tiktok-draft` sends that one request with the token in `AGENT_ADMIN_SESSION_TOKEN`, granted by `bin/rails agent_sessions:grant_admin` from a shell on the hub, and asks for `--yes` on every hub that is not this machine. The card is behind the signed-in admin, as before.
+- **An ESPN read that fails is a refusal.** `Espn::TeamRecord` turns every network failure (TLS, a closed connection, a timeout, a malformed response) into its one error, so the card answers a flash and the API a 409 `NOT_DRAFTABLE`, recording nothing.
+- **The probe.** `bin/tiktok-draft --whoami` (`GET /api/v1/tiktok/creator_info`) refreshes the token and asks TikTok whose account it is. With no keys it answers 503 `NOT_CONFIGURED`.
+- **Stand-in.** `TIKTOK_DRAFT_STAND_IN=1` (never production), and the e2e lane, replace the two outside calls (`config/initializers/tiktok_draft_stand_in.rb`); every such attempt is marked "stand-in" and its publish id starts `stand-in-`.
 
 ### TikTok app status
 Submitted for review 2026-05-04. Sandbox mode works for the app owner's account. App scopes were initially over-requested (Login Kit + Content Posting API + Share Kit + Data Portability + Webhooks + Local Service API); for production approval should be trimmed to just Login Kit + Content Posting API with scopes user.info.basic + video.upload + video.publish.

@@ -435,9 +435,12 @@ module DigestVideo
 
   # The hub API: POST /api/v1/auth { secret } → bearer token, then the call.
   class ApiClient
-    def initialize(base_url:, repo_root:)
+    # bearer: a token to present as is (an admin agent session's, for
+    # bin/tiktok-draft); nil exchanges the shared secret for one.
+    def initialize(base_url:, repo_root:, bearer: nil)
       @base = base_url.chomp("/")
       @repo_root = repo_root
+      @token = bearer
     end
 
     def authenticate

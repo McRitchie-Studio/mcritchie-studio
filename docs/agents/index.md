@@ -201,6 +201,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `post-to-x` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | `roster-sync` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| `tiktok-draft` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
 | `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
 | `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
 | `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |

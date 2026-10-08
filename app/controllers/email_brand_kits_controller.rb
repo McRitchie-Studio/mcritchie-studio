@@ -66,6 +66,9 @@ class EmailBrandKitsController < ApplicationController
     @approved_headers = approved.filter_map { |b| (a = artifacts[b.approved_artifact_slug]) && [b, a] }
                                 .sort_by { |_, a| a.approved_at }.reverse
     @open_briefs = briefs.reject { |b| b.approved_artifact_slug.present? }
+    # The live character that fronts this brand (Characters addendum, piece A:
+    # a link only; piece C brings the full card).
+    @featured_character = Character.featured_for(@kit.key)
   end
 
   def reference_params

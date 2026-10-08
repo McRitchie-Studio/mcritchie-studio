@@ -110,6 +110,10 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
   end
 
   test "an activity stamps the session soul, and the shared token keeps the param" do
+    # Activity clears an agent_slug that names no Agent row (ClearsUnknownSlug), so
+    # both souls this case stamps need one; the fixtures hold only xan and mack.
+    %w[jasper carl].each { |soul| Agent.create!(name: soul.capitalize, slug: soul, status: "active", agent_type: "worker") }
+
     post_activity(bearer(@studio), "from the session")
     assert_response :created
     assert_equal "jasper", Activity.find_by!(description: "from the session").agent_slug

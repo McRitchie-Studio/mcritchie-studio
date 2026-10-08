@@ -1,4 +1,12 @@
-# HOW A PERSON LOOKS in a generated image.
+# HOW A PERSON — OR ONE OF OUR CHARACTERS — LOOKS in a generated image.
+#
+# OWNED BY EXACTLY ONE OF TWO: a Person (a real human) or a Character (our
+# fictional cast: a mascot or a puppet). The `appearances_exactly_one_owner`
+# CHECK holds it in the database and `exactly_one_owner` says it in words.
+# Everything person-specific below (the athlete's jersey number, the iced twin,
+# the recast, the likeness search and identity mint) reads `person` and stays
+# person-only: `recastable` and `person_owned` keep character looks out of it.
+# What both owners share goes through `owner`.
 #
 # The generalisation of "colorway". Anchored on Person rather than on a player
 # because the hub models PEOPLE: a piece can cast Joe Burrow beside Jim Carrey
@@ -32,6 +40,7 @@ class Appearance < ApplicationRecord
   STAGES = Appearances::LookReading::STAGES
 
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
+  belongs_to :character, foreign_key: :character_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
   # A music-video look: this artist as they appear in one video (music video
   # pipeline, stage 4). Nil on athlete looks.
@@ -56,7 +65,8 @@ class Appearance < ApplicationRecord
            inverse_of: :appearance, dependent: :destroy
 
   validates :slug, presence: true, uniqueness: true
-  validates :person_slug, :descriptor, presence: true
+  validates :descriptor, presence: true
+  validate :exactly_one_owner
 
   # NULL IS A REAL AND COMMON VALUE: "nobody has ever dragged this look". It is not
   # the same as "designed", and `allow_nil` is what keeps the two distinguishable —
@@ -80,12 +90,28 @@ class Appearance < ApplicationRecord
   scope :live, -> { where(retired_at: nil) }
   # Looks an on-screen performer can be recast INTO: live, and not themselves a
   # capture of a performer in some video (a music-video look).
-  scope :recastable, -> { live.where(music_video_slug: nil) }
+  # Person-owned only: a puppet in a Recast video is piece D of the Characters
+  # addendum, not something a recast picker may offer by accident.
+  scope :recastable, -> { live.where(music_video_slug: nil).person_owned }
+  scope :person_owned, -> { where.not(person_slug: nil) }
+  scope :character_owned, -> { where.not(character_slug: nil) }
 
   def to_param = slug
   def retired? = retired_at.present?
 
   def music_video_look? = music_video_slug.present?
+
+  # WHO WEARS THIS LOOK: the Person or the Character, whichever is set.
+  def owner = character_owned? ? character : person
+  def character_owned? = character_slug.present?
+  def person_owned? = person_slug.present?
+
+  # The name a prompt or a page names the owner by: a person's full name, a
+  # character's name, or the slug when the owner row is gone.
+  def owner_name
+    named = character_owned? ? character&.name : person&.full_name
+    named.presence || (character_slug || person_slug).to_s.titleize.presence
+  end
 
   # The live iced twin of this (base) look, or nil.
   def iced_twin = iced_twins.first
@@ -115,11 +141,11 @@ class Appearance < ApplicationRecord
   end
 
   def default?
-    person&.default_appearance_slug == slug
+    owner&.default_appearance_slug == slug
   end
 
   def make_default!
-    person&.update!(default_appearance_slug: slug)
+    owner&.update!(default_appearance_slug: slug)
   end
 
   # What an image generator works from. An athlete's physical description comes
@@ -303,22 +329,31 @@ class Appearance < ApplicationRecord
   # than at a call site means a person can never end up with looks and no
   # default, which is the state every lookup would have to special-case.
   def become_default_if_first
-    person&.resolve_default_appearance!
+    owner&.resolve_default_appearance!
   end
 
   # A LOOK THAT GOES AWAY HANDS THE SLOT ON.
   #
-  # `people.default_appearance_slug` carries a foreign key with ON DELETE SET NULL,
+  # `people.default_appearance_slug` and `characters.default_appearance_slug`
+  # carry a foreign key with ON DELETE SET NULL,
   # so the DELETE itself clears every pointer aimed at this look, and by
   # after_destroy no row names it any more. The holders are read before the
   # delete (scoped by the COLUMN, since anyone may hold it, not only #person) and
   # each is re-pointed at its oldest surviving live look afterwards.
   def remember_default_holders
-    @default_holder_ids = Person.where(default_appearance_slug: slug).pluck(:id)
+    @default_holder_ids = [Person, Character].to_h { |owners| [owners.name, owners.where(default_appearance_slug: slug).pluck(:id)] }
   end
 
   def release_default_pointer
-    Person.where(id: Array(@default_holder_ids)).find_each(&:resolve_default_appearance!)
+    [Person, Character].each do |owners|
+      owners.where(id: Array((@default_holder_ids || {})[owners.name])).find_each(&:resolve_default_appearance!)
+    end
+  end
+
+  def exactly_one_owner
+    return if person_slug.present? ^ character_slug.present?
+
+    errors.add(:base, "A look belongs to exactly one person or one character")
   end
 
   # A recast that named this look keeps its athlete and loses the look (the

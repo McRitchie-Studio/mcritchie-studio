@@ -30,7 +30,7 @@ class AltVideosController < ApplicationController
   end
 
   def show
-    @alt_video = @video.alt_videos.includes(:stitches, clips: :versions).find_by!(number: params[:number])
+    @alt_video = @video.alt_videos.includes(:stitches, clips: %i[versions tiktok_drafts]).find_by!(number: params[:number])
     @alt_video.association(:music_video).target = @video
     @swaps = @alt_video.swap_set
     # Loaded ON the association, so every clip's target reads the same rows.

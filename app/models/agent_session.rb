@@ -60,6 +60,17 @@ class AgentSession < ApplicationRecord
     end
   end
 
+  # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
+  # Steffon or Xan, for the admin TTL or fewer whole hours, never more.
+  def self.grant_admin!(soul:, hours: nil)
+    max = TTL.fetch("admin") / 1.hour
+    length = hours.nil? ? max : Integer(hours.to_s, 10, exception: false)
+    raise ArgumentError, "HOURS must be a whole number from 1 to #{max}, got #{hours.inspect}" unless length&.between?(1, max)
+
+    now = Time.current
+    create!(soul: soul, tier: "admin", issued_by: "operator_grant", issued_at: now, expires_at: now + length.hours)
+  end
+
   # Why `soul` may not take a studio login to `task` by `issued_by`, or nil when it
   # may. The machine credential presents the login, so the soul is never taken from
   # the request alone: the task record names who is entitled to it.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -208,9 +208,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.integer "end_ms", null: false
     t.string "regenerate_note"
     t.datetime "regenerate_requested_at"
+    t.string "slug", null: false
     t.integer "start_ms", null: false
     t.datetime "updated_at", null: false
     t.index ["alt_video_slug", "chunk_ordinal"], name: "index_alt_video_clips_on_alt_video_slug_and_chunk_ordinal", unique: true
+    t.index ["slug"], name: "index_alt_video_clips_on_slug", unique: true
   end
 
   create_table "alt_videos", force: :cascade do |t|
@@ -274,6 +276,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
 
   create_table "appearances", force: :cascade do |t|
     t.string "base_appearance_slug"
+    t.string "character_slug"
     t.string "colorway"
     t.datetime "created_at", null: false
     t.string "descriptor", null: false
@@ -286,7 +289,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.integer "jersey_number"
     t.string "music_video_slug"
     t.integer "performer_ordinal"
-    t.string "person_slug", null: false
+    t.string "person_slug"
     t.integer "position"
     t.string "reference_url"
     t.datetime "retired_at"
@@ -299,11 +302,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.string "team_slug"
     t.datetime "updated_at", null: false
     t.index ["base_appearance_slug"], name: "index_appearances_one_live_twin_per_base", unique: true, where: "((base_appearance_slug IS NOT NULL) AND (retired_at IS NULL))"
+    t.index ["character_slug", "descriptor"], name: "index_appearances_live_per_character", unique: true, where: "(retired_at IS NULL)"
+    t.index ["character_slug"], name: "index_appearances_on_character_slug"
     t.index ["higgsfield_reference_id"], name: "index_appearances_on_higgsfield_reference_id", unique: true, where: "(higgsfield_reference_id IS NOT NULL)"
     t.index ["music_video_slug", "performer_ordinal"], name: "index_appearances_one_live_look_per_performer", unique: true, where: "((music_video_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.index ["person_slug", "descriptor"], name: "index_appearances_live_per_person", unique: true, where: "(retired_at IS NULL)"
     t.index ["slug"], name: "index_appearances_on_slug", unique: true
     t.index ["stage", "position"], name: "index_appearances_board_rank", where: "(retired_at IS NULL)"
+    t.check_constraint "num_nonnulls(person_slug, character_slug) = 1", name: "appearances_exactly_one_owner"
   end
 
   create_table "apps", force: :cascade do |t|
@@ -336,14 +342,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
   create_table "artifact_subjects", force: :cascade do |t|
     t.string "appearance_slug"
     t.string "artifact_slug", null: false
+    t.string "character_slug"
     t.datetime "created_at", null: false
     t.integer "ordinal", default: 1, null: false
-    t.string "person_slug", null: false
+    t.string "person_slug"
     t.string "role"
     t.datetime "updated_at", null: false
     t.index ["appearance_slug"], name: "index_artifact_subjects_on_appearance_slug"
+    t.index ["artifact_slug", "character_slug"], name: "index_artifact_subjects_on_artifact_and_character", unique: true, where: "(character_slug IS NOT NULL)"
     t.index ["artifact_slug", "person_slug"], name: "index_artifact_subjects_on_artifact_slug_and_person_slug", unique: true
+    t.index ["character_slug"], name: "index_artifact_subjects_on_character_slug"
     t.index ["person_slug"], name: "index_artifact_subjects_on_person_slug"
+    t.check_constraint "num_nonnulls(person_slug, character_slug) = 1", name: "artifact_subjects_exactly_one_owner"
   end
 
   create_table "artifacts", force: :cascade do |t|
@@ -558,6 +568,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.index ["person_id"], name: "index_builders_on_person_id"
     t.index ["primary_language", "active"], name: "index_builders_on_primary_language_and_active"
     t.index ["source_dataset"], name: "index_builders_on_source_dataset"
+  end
+
+  create_table "characters", force: :cascade do |t|
+    t.string "avatar_url"
+    t.text "bio"
+    t.string "brand"
+    t.datetime "created_at", null: false
+    t.string "default_appearance_slug"
+    t.string "kind", null: false
+    t.string "name", null: false
+    t.text "personality"
+    t.datetime "retired_at"
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.text "voice_notes"
+    t.index ["brand"], name: "index_characters_on_brand"
+    t.index ["slug"], name: "index_characters_on_slug", unique: true
+    t.check_constraint "kind::text = ANY (ARRAY['mascot'::character varying, 'puppet'::character varying]::text[])", name: "characters_kind_known"
   end
 
   create_table "ci_check_jobs", force: :cascade do |t|
@@ -2130,6 +2158,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
   end
 
+  create_table "tiktok_drafts", force: :cascade do |t|
+    t.bigint "byte_size"
+    t.text "caption", null: false
+    t.integer "chunk_count"
+    t.string "clip_slug", null: false
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.jsonb "facts", default: {}, null: false
+    t.string "fail_reason"
+    t.datetime "finished_at"
+    t.datetime "polled_at"
+    t.string "publish_id"
+    t.string "requested_by"
+    t.string "state", default: "queued", null: false
+    t.string "tiktok_status"
+    t.datetime "updated_at", null: false
+    t.datetime "uploaded_at"
+    t.integer "version_number", null: false
+    t.string "version_object_key", null: false
+    t.index ["clip_slug", "created_at"], name: "index_tiktok_drafts_on_clip_slug_and_created_at"
+    t.index ["publish_id"], name: "index_tiktok_drafts_on_publish_id", unique: true, where: "(publish_id IS NOT NULL)"
+    t.index ["state"], name: "index_tiktok_drafts_on_state"
+  end
+
   create_table "tracked_github_builder_repos", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
@@ -2344,10 +2396,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "appearances", "appearances", column: "base_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "appearances", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "appearances", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "artifact_subjects", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "artifact_subjects", "artifacts", column: "artifact_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "artifact_subjects", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "artifact_subjects", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "artifacts", "email_image_briefs", column: "brief_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "artist_aliases", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade
@@ -2360,6 +2414,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"
+  add_foreign_key "characters", "appearances", column: "default_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "coach_rankings", "coaches", column: "coach_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "coach_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "coaches", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
@@ -2423,6 +2478,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_210100) do
   add_foreign_key "team_rankings", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "team_rankings", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "teams", "arenas", column: "home_arena_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "tiktok_drafts", "alt_video_clips", column: "clip_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "triage_findings", "tasks", column: "promoted_task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "usages", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade

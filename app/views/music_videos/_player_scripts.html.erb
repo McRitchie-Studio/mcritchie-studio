@@ -26,6 +26,29 @@
     };
   };
 
+  // A copy control for one piece of text on a clip card (its slug, a TikTok
+  // caption): copies the x-ref="text" element's text, or selects it so the
+  // operator can copy it by hand when the browser blocks the clipboard.
+  window.copyField = function () {
+    return {
+      copied: false, manual: false,
+      async copy() {
+        const ok = await window.copyText(this.$refs.text.textContent.trim());
+        if (ok === false) {
+          const range = document.createRange();
+          range.selectNodeContents(this.$refs.text);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          this.manual = true;
+          return;
+        }
+        this.copied = true; this.manual = false;
+        setTimeout(() => { this.copied = false; }, 1400);
+      },
+    };
+  };
+
   // An alt video clip's players: the source chunk (x-ref original) and, once
   // the clip has a primary version, that version (x-ref version) beside it.
   // Each opens on its first frame: preload="metadata" fetches only the head

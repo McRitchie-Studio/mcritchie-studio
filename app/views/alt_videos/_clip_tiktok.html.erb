@@ -1,0 +1,95 @@
+<%# Draft to TikTok on one clip (recast pipeline, piece 19): the button that sends the clip's primary version into the operator's TikTok drafts (off until the clip has a primary version, and off when this server has no TikTok keys), then the latest attempt: its state, the version it sent, the caption the code wrote with a Copy (TikTok takes no caption with a draft, so it is pasted on the phone), TikTok's publish id and status, and any error. An attempt whose bytes are with TikTok (processing, or uploaded with its status unknown) carries Check TikTok, which reads the status again. Earlier attempts fold away below it. The same machine as bin/tiktok-draft. %>
+<% drafts = clip.tiktok_drafts.to_a %>
+<% latest = drafts.last %>
+<% available = Tiktok::DraftClip.available? %>
+<% blocker = if !primary then "No generated version yet: drop one above first." elsif !available then "TikTok keys are not set on this server." end %>
+<div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-tiktok" data-attempts="<%= drafts.size %>"
+     data-state="<%= latest&.state %>" data-enabled="<%= blocker.nil? %>">
+  <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 min-w-0">
+    <p class="text-sm text-body min-w-0">
+      <span class="label-upper block mb-0.5">TikTok draft</span>
+      <% if primary %>
+        Sends <span class="font-semibold text-heading"><%= primary.name %></span> to your TikTok drafts, private until you post it from your phone.
+      <% else %>
+        Sends the primary version to your TikTok drafts, private until you post it from your phone.
+      <% end %>
+    </p>
+    <%# One press, one draft: the form turns its own button off as it submits, and swallows a second submit. The server holds the same line under the clip's row lock (Tiktok::DraftClip#record!), so this is the courtesy and that is the guard. `blocked` carries the server's own off state into Alpine, which would otherwise switch the button back on. %>
+    <%= button_to music_video_alt_video_clip_tiktok_drafts_path(video, alt_video, clip.chunk_ordinal), method: :post,
+                  disabled: blocker.present?, title: blocker || "Upload #{primary&.name} into your TikTok drafts",
+                  "x-bind:disabled": "sending || blocked",
+                  class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
+                  form: { class: "shrink-0", data: { test: "clip-tiktok-draft", turbo: false },
+                          "x-data": "{ sending: false, blocked: #{blocker.present?} }",
+                          "x-on:submit": "if (sending || blocked) { $event.preventDefault() } else { sending = true }",
+                          "x-on:pageshow.window": "sending = false" } do %>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m0 0-4 4m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <span x-text="sending ? 'Sending…' : 'Draft to TikTok'">Draft to TikTok</span>
+    <% end %>
+  </div>
+  <% if blocker %>
+    <p class="text-xs text-muted mt-1" data-test="clip-tiktok-blocker"><%= blocker %></p>
+  <% end %>
+
+  <% if latest %>
+    <% badge = { "delivered" => "bg-success/10 text-success-ink border-success/40", "failed" => "bg-warning/10 text-warning-ink border-warning/40",
+                 "unknown" => "bg-warning/10 text-warning-ink border-warning/40" }
+                 .fetch(latest.state, "bg-primary/10 text-primary border-primary/20") %>
+    <div class="mt-2 flex flex-col gap-2 min-w-0" data-test="clip-tiktok-latest" data-id="<%= latest.id %>" data-state="<%= latest.state %>">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm min-w-0">
+        <span class="badge text-xs <%= badge %>" data-test="clip-tiktok-state"><%= latest.state_label %></span>
+        <span class="text-muted min-w-0 break-words">
+          <%= latest.version_name %> · attempt <%= latest.id %> · <%= l(latest.created_at, format: :short) %>
+          <% if latest.tiktok_status.present? %>· TikTok: <span class="font-mono text-xs"><%= latest.tiktok_status %></span><% end %>
+        </span>
+        <% if latest.facts["stand_in"] %>
+          <span class="badge text-3xs bg-surface-alt text-muted border-subtle" data-test="clip-tiktok-stand-in"
+                title="This server's stand-in answered: nothing reached TikTok">stand-in</span>
+        <% end %>
+        <% if latest.with_tiktok? %>
+          <%= button_to "Check TikTok", refresh_music_video_alt_video_clip_tiktok_draft_path(video, alt_video, clip.chunk_ordinal, latest),
+                        method: :post, class: "text-xs text-primary hover:underline", form: { class: "contents", data: { test: "clip-tiktok-refresh" } } %>
+        <% end %>
+      </div>
+      <% if latest.error.present? %>
+        <p class="text-sm text-warning-ink break-words" data-test="clip-tiktok-error"><%= latest.error %></p>
+      <% end %>
+      <% Array(latest.facts["exceptions"]).each do |note| %>
+        <p class="text-xs text-warning-ink break-words" data-test="clip-tiktok-check">Check: <%= note %></p>
+      <% end %>
+      <div x-data="copyField()" class="min-w-0">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <p class="label-upper min-w-0">Caption <span class="normal-case tracking-normal">· <%= latest.facts["team"] %>, <%= latest.facts["record"] %> per ESPN · paste it when you post</span></p>
+          <button type="button" @click="copy()" class="btn btn-outline btn-sm shrink-0" data-test="clip-tiktok-copy">
+            <span x-text="copied ? 'Copied' : 'Copy caption'">Copy caption</span>
+          </button>
+        </div>
+        <p x-ref="text" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
+           data-test="clip-tiktok-caption"><%= latest.caption %></p>
+        <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="clip-tiktok-copy-manual">Copy is blocked here: the caption is selected, so copy it from there.</p>
+      </div>
+      <% if latest.facts["athlete"] %>
+        <p class="text-xs text-muted break-words" data-test="clip-tiktok-team-rule">
+          Team from <%= latest.facts["athlete"] %>, <%= latest.facts["athlete_rule"] %>, by the <%= latest.facts["team_from"] %>'s team.
+        </p>
+      <% end %>
+      <% if latest.publish_id.present? %>
+        <p class="text-xs text-muted break-all" data-test="clip-tiktok-publish-id">publish_id <span class="font-mono"><%= latest.publish_id %></span></p>
+      <% end %>
+    </div>
+
+    <% if drafts.size > 1 %>
+      <details class="mt-2 text-sm min-w-0" data-test="clip-tiktok-history">
+        <summary class="cursor-pointer text-muted hover:text-heading"><%= pluralize(drafts.size - 1, "earlier attempt") %></summary>
+        <ul class="flex flex-col gap-1 mt-1.5">
+          <% drafts[0...-1].reverse_each do |draft| %>
+            <li class="min-w-0 break-words text-muted" data-test="clip-tiktok-attempt" data-state="<%= draft.state %>">
+              Attempt <%= draft.id %> · <%= draft.version_name %> · <%= l(draft.created_at, format: :short) %> ·
+              <span class="font-semibold text-heading"><%= draft.state_label %></span><% if draft.error.present? %>: <%= draft.error %><% end %>
+            </li>
+          <% end %>
+        </ul>
+      </details>
+    <% end %>
+  <% end %>
+</div>

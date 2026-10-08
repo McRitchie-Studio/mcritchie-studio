@@ -149,6 +149,18 @@ Rails.application.routes.draw do
   # Email header briefs (EmailImagesController, require_admin): a brief, its
   # generated candidates, approve/retire, and a preview inside the real email
   # shell. Epic email-image-builder, piece 1.
+  # THE CAST (CharactersController, require_admin): our fictional characters —
+  # mascots and puppets — with their looks and every image they appear in.
+  # Epic email-image-builder, addendum "Characters", piece A.
+  resources :characters, param: :slug, only: %i[index show new create edit update] do
+    member do
+      post :looks, action: :create_look
+    end
+  end
+  post "characters/:slug/looks/:look_slug/art", to: "characters#upload_art", as: :character_look_art
+  post "characters/:slug/looks/:look_slug/default", to: "characters#make_default", as: :default_character_look
+  post "characters/:slug/looks/:look_slug/sheet", to: "characters#build_sheet", as: :character_look_sheet
+
   # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
   # assets, its approved headers and open briefs, and the uploaded references.
   # Declared BEFORE resources :email_images, whose show route would otherwise
@@ -198,6 +210,11 @@ Rails.application.routes.draw do
           post :primary, on: :member
         end
         resource :regenerate, only: [:create, :destroy], controller: "alt_video_clip_regenerates"
+        # Draft to TikTok (piece 19): the primary version into the operator's
+        # TikTok drafts; refresh reads TikTok's status once more.
+        resources :tiktok_drafts, only: [:create], controller: "alt_video_clip_tiktok_drafts" do
+          post :refresh, on: :member
+        end
       end
       # The final stitch: "Generate full video" records a request; show answers
       # its state as JSON for the page's progress poll.
@@ -542,6 +559,15 @@ Rails.application.routes.draw do
           end
         end
       end
+      # The tiktok-draft SOP's chat door (piece 19), as bin/tiktok-draft drives it:
+      # a clip by its slug, what a draft would send, its attempts, and the probe.
+      resources :alt_video_clips, only: [], param: :slug do
+        resources :tiktok_drafts, only: [:index, :create]
+      end
+      resources :tiktok_drafts, only: [] do
+        post :refresh, on: :member
+      end
+      get "tiktok/creator_info", to: "tiktok_drafts#creator_info"
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic

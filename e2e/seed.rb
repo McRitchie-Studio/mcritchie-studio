@@ -1617,6 +1617,12 @@ TiledVideo.seed!
 # chunks, one take short of ready to stitch (e2e/music_video_full_video.spec.js).
 require Rails.root.join("db/seeds/data/stitch_ready_video.rb").to_s
 StitchReadyVideo.seed!
+# /music_videos/test-artist-a-tiktok-demo — a third synthetic tiled video whose alt
+# video 1 swaps Person 1 into a synthetic athlete in a Buffalo Bills look, clip 1
+# holding a version and no draft attempts (e2e/music_video_tiktok_draft.spec.js).
+require Rails.root.join("db/seeds/data/tiktok_draft_video.rb").to_s
+TiktokDraft.delete_all
+TiktokDraftVideo.seed!
 # /music_videos/test-cinematic-recast-demo — a synthetic cinematic video, both
 # people kept as is, tiled into four chunks, and a synthetic athlete with two
 # looks (e2e/music_video_recast.spec.js).
@@ -1658,3 +1664,9 @@ NightCallLooks.seed!
 Person.where(last_name: "Icefixture").destroy_all
 ice_person = Person.create!(first_name: "Novice", last_name: "Icefixture", slug: "novice-icefixture", athlete: true)
 Appearance.create!(person_slug: ice_person.slug, descriptor: "Comets white")
+# /characters/turf-monster — the first character, seeded through the same
+# idempotent service as production (e2e/characters.spec.js). Destroyed first so
+# a reseed starts clean; the store answers the public paths, so no bucket.
+Character.destroy_all
+kit_paths = { "image/webp" => "/agents/turf-monster.webp", "image/jpeg" => "/email_brand/turf-monster-style-anchor.jpg" }
+Characters::SeedTurfMonster.call(store: ->(_bytes, type) { kit_paths.fetch(type) })

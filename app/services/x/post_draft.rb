@@ -1,8 +1,5 @@
-require "net/http"
-require "json"
-require "uri"
 require "time"
-require_relative "../espn/api"
+require_relative "../espn/team_record"
 
 module X
   # Turns "this team won" into post copy, deterministically.
@@ -12,7 +9,9 @@ module X
   #           plus the facts it read and anything that should stop a human.
   #
   # Pure logic over three ESPN reads — no Rails, so bin/x-post and the app share
-  # ONE implementation and cannot drift into two copies of the recipe.
+  # ONE implementation and cannot drift into two copies of the recipe. The reads
+  # themselves are Espn::TeamRecord, which TikTok's recipe (Tiktok::ClipCaption)
+  # shares; the tags are this class's, and `tag` is shared too.
   #
   # EVERY NUMBER IS READ, NEVER RECALLED. The record comes from ESPN at draft
   # time, and the draft checks that the team's most recent final really was a
@@ -21,27 +20,25 @@ module X
   class PostDraft
     # The host and the name come from Espn::Api, the one place this app spells
     # them: ESPN's other host 403s every Ruby client, whatever it calls itself.
-    ESPN = "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl".freeze
+    ESPN = Espn::TeamRecord::BASE
     LEAGUE_TAGS = %w[#nfl #nflfootball].freeze
     STALE_AFTER = 8 * 24 * 60 * 60 # a final older than this is last week's game
 
     Team   = Struct.new(:name, :location, :mascot, :hashtag, keyword_init: true)
     Result = Struct.new(:text, :facts, :exceptions, keyword_init: true)
 
-    class Error < StandardError; end
+    # One error class for a failed read, whichever recipe asked.
+    Error = Espn::TeamRecord::Error
 
     def initialize(team:, fetch: nil, now: Time.now)
       @team  = team
-      @fetch = fetch || method(:http_json)
+      @fetch = fetch
       @now   = now
     end
 
     def call
-      espn   = espn_team
-      record = @fetch.call("#{ESPN}/teams/#{espn.fetch('id')}").dig("team", "record", "items", 0, "summary")
-      raise Error, "ESPN returned no record for #{@team.name}" if record.to_s.empty?
-
-      game = last_final(espn.fetch("id"))
+      reading = Espn::TeamRecord.new(team_name: @team.name, fetch: @fetch).call
+      record, game = reading.record, reading.last_final
       Result.new(text: text(record, game), facts: facts(record, game), exceptions: exceptions(game))
     end
 
@@ -77,25 +74,6 @@ module X
 
     private
 
-    def espn_team
-      teams = @fetch.call("#{ESPN}/teams").dig("sports", 0, "leagues", 0, "teams") || []
-      match = teams.map { |t| t["team"] }.find { |t| t["displayName"].to_s.casecmp?(@team.name.to_s) }
-      match or raise Error, "ESPN lists no team named #{@team.name.inspect}"
-    end
-
-    def last_final(espn_id)
-      events = @fetch.call("#{ESPN}/teams/#{espn_id}/schedule")["events"] || []
-      event  = events.select { |e| e.dig("competitions", 0, "status", "type", "completed") }.max_by { |e| e["date"].to_s }
-      return nil unless event
-
-      sides = event.dig("competitions", 0, "competitors") || []
-      us    = sides.find { |s| s.dig("team", "id").to_s == espn_id.to_s }
-      them  = sides.find { |s| s.dig("team", "id").to_s != espn_id.to_s }
-      { "kickoff" => event["date"], "matchup" => event["shortName"], "won" => us && us["winner"] == true,
-        "score" => "#{us&.dig('score', 'displayValue')}-#{them&.dig('score', 'displayValue')}",
-        "opponent" => them&.dig("team", "displayName"), "neutral_site" => event.dig("competitions", 0, "neutralSite") == true }
-    end
-
     def text(record, game)
       slot = game && self.class.slot_tag(Time.parse(game["kickoff"]))
       tags = [*LEAGUE_TAGS, @team.hashtag.to_s.strip.downcase, self.class.tag(@team.location), self.class.tag(@team.mascot), slot]
@@ -104,7 +82,7 @@ module X
 
     def facts(record, game)
       { "team" => @team.name, "record" => record, "last_final" => game,
-        "source" => "ESPN (#{Espn::Api::WEB_HOST})", "read_at" => @now.utc.iso8601 }
+        "source" => Espn::TeamRecord::SOURCE, "read_at" => @now.utc.iso8601 }
     end
 
     # Reasons a person should look before this goes out. Empty means standard copy.
@@ -118,18 +96,6 @@ module X
         out << "the most recent final (#{game['matchup']}) kicked off #{game['kickoff']}, more than a week ago" if @now - Time.parse(game["kickoff"]) > STALE_AFTER
       end
       out
-    end
-
-    def http_json(url)
-      uri  = URI(url)
-      resp = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 8, read_timeout: 12) do |h|
-        h.get(uri.request_uri, "User-Agent" => Espn::Api::USER_AGENT, "Accept" => "application/json")
-      end
-      raise Error, "ESPN answered #{resp.code} for #{uri.path}" unless resp.is_a?(Net::HTTPSuccess)
-
-      JSON.parse(resp.body)
-    rescue JSON::ParserError, SocketError, Timeout::Error, SystemCallError => e
-      raise Error, "could not read ESPN (#{uri.path}): #{e.class}"
     end
   end
 end

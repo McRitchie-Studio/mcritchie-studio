@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# tiktok draft <clip-slug>: put one alt video clip's PRIMARY version into the
+# operator's TikTok drafts, with the caption the code writes. The chat door of
+# the tiktok-draft SOP (docs/agents/agents/turf_monster/sops/tiktok-draft.md);
+# the clip card's "Draft to TikTok" button is the other door into the same
+# machine. The hub does the work: it holds the TikTok keys and reads the file
+# from R2. A draft is private on the phone until the operator posts it.
+#
+#   bin/tiktok-draft <clip-slug> --dry-run             the caption and the athlete/team it rests on; writes nothing
+#   bin/tiktok-draft <clip-slug>                       draft it on the local hub (localhost:3000) and wait
+#   bin/tiktok-draft <clip-slug> --production --yes    draft it on https://mcritchie.studio (Alex's word first)
+#
+# A draft needs an ADMIN agent session: the hub refuses the shared token on the
+# request that creates one. Grant it from a shell on that hub and hold its
+# token in AGENT_ADMIN_SESSION_TOKEN (`bin/rails agent_sessions:grant_admin`;
+# the refusal prints the exact line). --dry-run, --status and --whoami need none.
+# --yes is required on every hub that is not this machine, however it is named.
+#   bin/tiktok-draft <clip-slug> --status              every attempt; re-reads TikTok for one still processing
+#   bin/tiktok-draft --whoami [--production]           the TikTok account the hub's keys post as
+#
+# The clip slug is on the clip's card, e.g. bigxthaplug-6wa-alt-3-clip-03.
+
+require "optparse"
+require_relative "lib/tiktok_draft_cli"
+
+options = { production: false, dry_run: false, status: false, whoami: false, yes: false, wait: 150 }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/tiktok-draft <clip-slug> [--dry-run | --status] [--production [--yes]]\n" \
+                "       bin/tiktok-draft --whoami [--production]"
+  opts.on("--production", "the production hub, https://mcritchie.studio (default: localhost:3000)") { options[:production] = true }
+  opts.on("--api URL", "another hub, e.g. a desk server") { |v| options[:api] = v }
+  opts.on("--dry-run", "print the caption and what it rests on; record nothing, call no TikTok") { options[:dry_run] = true }
+  opts.on("--status", "list the clip's attempts; re-read TikTok for one still processing") { options[:status] = true }
+  opts.on("--whoami", "the TikTok account the hub's keys post as (the probe)") { options[:whoami] = true }
+  opts.on("--yes", "required to draft on any hub but this machine: Alex said to draft this clip") { options[:yes] = true }
+  opts.on("--wait SECONDS", Integer, "how long to wait for the draft to settle (default 150)") { |v| options[:wait] = v }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "tiktok-draft: #{e.message}"
+end
+
+if options[:whoami]
+  abort "tiktok-draft: --whoami takes no clip slug" unless ARGV.empty?
+elsif ARGV.size != 1
+  warn parser.banner
+  abort(ARGV.empty? ? "tiktok-draft: a clip slug is required (it is on the clip's card)" : "tiktok-draft: exactly one clip slug, got #{ARGV.size}")
+end
+abort "tiktok-draft: --dry-run and --status are separate runs" if options[:dry_run] && options[:status]
+drafting = !options[:whoami] && !options[:dry_run] && !options[:status]
+
+begin
+  base_url = options[:api] || DigestVideo.target(production: options[:production])[:api]
+  refusal = drafting && TiktokDraftCli.yes_refusal(base_url:, yes: options[:yes])
+  abort "tiktok-draft: #{refusal}" if refusal
+
+  repo_root = File.expand_path("..", __dir__)
+  admin_token = TiktokDraftCli.admin_token(ENV[TiktokDraftCli::ADMIN_TOKEN_ENV])
+  runner = TiktokDraftCli::Runner.new(
+    api: DigestVideo::ApiClient.new(base_url:, repo_root:),
+    admin_api: admin_token && DigestVideo::ApiClient.new(base_url:, repo_root:, bearer: admin_token),
+    wait: options[:wait]
+  )
+  if options[:whoami] then runner.whoami
+  elsif options[:dry_run] then runner.dry_run(ARGV.first)
+  elsif options[:status] then runner.status(ARGV.first)
+  else runner.draft(ARGV.first)
+  end
+rescue DigestVideo::Failure, TiktokDraftCli::Failure => e
+  abort "tiktok-draft: #{e.message}"
+end
