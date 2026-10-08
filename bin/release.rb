@@ -4418,6 +4418,10 @@ end
 # refuse, mirroring `:unverified` above: a failed read is not a finding, and turning an
 # I/O hiccup into a release outage is its own false alarm.
 def refuse_blind_accepted!(repos)
+  # A repo flagged `accepted_trigger_lint: true` holds this rule in its own CI, so it
+  # is not read here. The refusal runs for every unflagged repo.
+  linted, repos = repos.partition { |repo| Release::AcceptedCertification.trigger_linted?(repo, RELEASE_REPOS) }
+  say("  · `accepted` trigger held by the repo's own CI lint in #{linted.join(', ')}") if linted.any?
   return if repos.empty?
 
   step("guard: every repo this promote carries must be ABLE to certify `accepted`")

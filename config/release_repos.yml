@@ -122,9 +122,20 @@
 # (/Users/alex/projects/<repo>), resolved from the app root's parent, so run
 # ship from a primary checkout, not a worktree.
 
+# accepted_trigger_lint: true says the repo's own CI fails when `accepted` leaves
+# its suite workflow's push branches, so `bin/release` skips its promote-time
+# trigger refusal (refuse_blind_accepted!) for that repo. Set it only after
+# reading the lint on the repo's origin/accepted; a repo without the key is still
+# refused at promote. The lint files:
+#   studio-engine, chain-ops   test/lib/ci_accepted_trigger_test.rb
+#   solana-studio              test/ci_accepted_trigger_test.rb
+#   mcritchie-studio, turf-monster, rolio   test/lib/ci_workflow_triggers_test.rb
+#   mcritchie-industries       test/lib/ci_workflow_test.rb
+
 gems:
   studio-engine:
     ladder: three-rung
+    accepted_trigger_lint: true
     version_file: lib/studio/version.rb
     gemspec: studio-engine.gemspec
     release_check: bin/release-check
@@ -134,6 +145,7 @@ gems:
     lint_lane: none
   solana-studio:
     ladder: three-rung
+    accepted_trigger_lint: true
     # A dedicated version file, not the gemspec: bin/dor-check refuses a PR that
     # edits version_file, so the gemspec stays editable through the normal cycle.
     version_file: lib/solana_studio/version.rb
@@ -147,6 +159,7 @@ gems:
 apps:
   mcritchie-studio:
     ladder: three-rung
+    accepted_trigger_lint: true
     # The hub's deploy workflow runs no tests, so both gates name CI's full
     # `test` job suite, verbatim; repos_test holds them to ci.yml.
     test_cmd: bin/rails db:test:prepare test test:system
@@ -158,6 +171,7 @@ apps:
       smoke_url: https://mcritchie.studio
   turf-monster:
     ladder: three-rung
+    accepted_trigger_lint: true
     # bin/deploy runs the full suite before production, so test_cmd stays unset;
     # the integration tier gates the QA deploy.
     qa_test_cmd: bin/rails test test/integration
@@ -207,6 +221,7 @@ apps:
     # Archived; its GitHub remote no longer resolves for the agent identity, and it
     # has no `accepted` rung. `dormant` keeps it out of the conductor's repo list.
     ladder: dormant
+    accepted_trigger_lint: true
     # Rails/SQLite, no studio-engine. git_push_heroku runs no tests, so both gates
     # name CI's full suite, verbatim (repos_test reads rolio's ci.yml at
     # origin/release), and the two strings stay equal.
@@ -219,6 +234,7 @@ apps:
       smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
   mcritchie-industries:
     ladder: three-rung
+    accepted_trigger_lint: true
     # Managed studio-engine satellite. git_push_heroku runs no tests, so both gates
     # name CI's full suite, verbatim (repos_test reads its ci.yml at origin/release),
     # and the two strings stay equal.
@@ -360,6 +376,7 @@ apps:
     # any ref, so a missing command aborts with nothing moved. qa_test_cmd stays
     # unset until test/integration has tests.
     ladder: blocked
+    accepted_trigger_lint: true
   moms-app:
     # Registered by bin/register-app on profile standalone-heroku. The contract, the
     # QA decision and how to leave the profile: config/app_profiles.yml and the

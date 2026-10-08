@@ -133,6 +133,21 @@ class Release
       GEM_SUITE_WORKFLOWS.fetch(slug, UNMAPPED)
     end
 
+    # The registry key a repo's row sets once its own CI lints the `accepted` trigger.
+    TRIGGER_LINT_KEY = "accepted_trigger_lint"
+
+    # Does `repo`'s own CI fail when `accepted` leaves its suite workflow's push
+    # branches? Only a literal `true` on the repo's row counts: an absent row, an
+    # absent key and any other value all leave the promote refusal in force.
+    def trigger_linted?(repo, config)
+      slug = repo.to_s.split("/").last.to_s
+      %w[gems apps].any? do |kind|
+        row = config.to_h.fetch(kind, nil)
+        row = row[slug] if row.is_a?(Hash)
+        row.is_a?(Hash) && row[TRIGGER_LINT_KEY] == true
+      end
+    end
+
     # The repos among `sources` that CANNOT certify `branch`.
     #
     # `sources` is { repo => { workflow_path => yaml_text } } — every workflow file
