@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# The per-repo `accepted_trigger_lint` flag in config/release_repos.yml. Standalone:
+# The per-repo `accepted_trigger_lint` flag in the release repo registry. Standalone:
 #   ruby -Itest test/lib/release_accepted_trigger_lint_flag_test.rb
 #
 # A flagged repo holds the `accepted` trigger rule in its own CI, so bin/release
@@ -11,10 +11,10 @@ require "minitest/autorun"
 require "open3"
 require "yaml"
 require_relative "../../app/models/release/accepted_certification"
+require_relative "../../bin/lib/release_registry"
 
 class ReleaseAcceptedTriggerLintFlagTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
-  REGISTRY = File.expand_path("../../config/release_repos.yml", __dir__)
 
   BLIND_YAML = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release]\njobs: {}\n"
   CERTIFYING = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release, accepted]\njobs: {}\n"
@@ -110,7 +110,8 @@ class ReleaseAcceptedTriggerLintFlagTest < Minitest::Test
   end
 
   def test_the_registry_flags_exactly_the_repos_whose_lint_was_read
-    config = YAML.load_file(REGISTRY)
+    # The path is cited by its constant: spelling it would widen its fast-check lane.
+    config = YAML.load_file(ReleaseRegistry::REGISTRY_PATH)
     repos = %w[gems apps].flat_map { |kind| config.fetch(kind).keys }
     flagged = repos.select { |repo| Release::AcceptedCertification.trigger_linted?(repo, config) }
 
