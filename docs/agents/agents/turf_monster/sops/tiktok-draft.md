@@ -84,8 +84,8 @@ must print the account Alex expects on his phone. Then:
 
 | It says | Meaning | Action |
 |---|---|---|
-| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys | Stop. Report it; see [What blocks it today](#what-blocks-it-today) |
-| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the handshake at `/admin/tiktok/connect`, his to run |
+| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys, or no account is connected; the message says which | Stop. Report it; see [What blocks it today](#what-blocks-it-today) |
+| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the sign-in at `/admin/tiktok/connect`, his to run; the hub stores what comes back |
 | Another account | The keys belong to the wrong account | Stop. Do not draft |
 
 ### 1. Dry run
@@ -205,7 +205,7 @@ so, and Alex uses the card.
 
 `/music_videos/<source>/alt_videos/<n>`, on the clip's card, under its
 versions: **Draft to TikTok**. It is off, with the reason beside it, when the
-clip has no generated version or the server has no TikTok keys. After a click
+clip has no generated version or the server is not connected to TikTok. After a click
 the card shows the attempt: its state, the version sent, the caption with
 **Copy caption**, the rule that chose the team, TikTok's publish id, and any
 error. The button turns itself off as it submits. **Check TikTok** re-reads the
@@ -242,14 +242,31 @@ In order, each Alex's to authorize:
    upload scope (`video.upload`) is granted, could not be measured without the
    keys. An app still in sandbox can draft only to accounts added as its test
    users.
-2. **The handshake.** `/admin/tiktok/connect` on production, signed in to the
-   TikTok account the drafts should land in. It displays the refresh token and
-   the open id once.
-3. **Filing.** The four values go into `tiktok.studio.agents` and onto the
-   production app through `credential-filing`. Never onto QA.
+2. **The app's keys.** The client key and the client secret go into
+   `tiktok.studio.agents` and onto the production app through
+   `credential-filing`. Never onto QA. They are the only TikTok values a person
+   files.
+3. **The sign-in.** Sign in at `/admin/tiktok/connect` on production, as an
+   admin, signed in to the TikTok account the drafts should land in; the hub
+   stores the connection. The page that comes back says it is connected and
+   saved, and names the account, the scope TikTok granted and the day the
+   refresh token expires. It shows no token and there is nothing to copy.
 4. **The probe.** Step 0 above. It is the first call that proves any of this.
 
+Sign in again, the same way, when the probe reports a refused token or the
+expiry day nears: the same account's connection is updated in place.
+
 ## Background — not needed to execute
+
+**Where the connection lives.** The sign-in's callback stores one
+`TiktokConnection` row per TikTok account: the open id, the refresh token
+(encrypted at rest, Active Record Encryption), the granted scope, who connected
+it, and when the refresh token expires. Drafting uses the most recently
+connected account. When TikTok answers a token refresh with a new refresh
+token, the hub saves it over the stored one. `TIKTOK_REFRESH_TOKEN` and
+`TIKTOK_OPEN_ID` are a fallback only: `Tiktok::OAuthClient` reads the env pair
+when no connection is stored, and never writes to it. The client key and
+secret stay in the environment.
 
 **The team rule.** The caption is about the team of the clip's lead swapped
 athlete, read from the alt video's swap snapshot (never the cast card as it

@@ -320,7 +320,7 @@ verified only that far — say so rather than recording a green verify.
 
 ## TikTok credentials (`TIKTOK_CLIENT_KEY/SECRET/REFRESH_TOKEN/OPEN_ID`)
 
-**Store:** 1Password item `🐊 TikTok` (4 fields) + Heroku config on `mcritchie-studio` + `.env` locally.
+**Store:** the client key and secret in the 1Password item `🐊 TikTok` + Heroku config on `mcritchie-studio` + `.env` locally. The refresh token and the open id live in the hub's database (`tiktok_connections`, the token encrypted), written by the sign-in; `TIKTOK_REFRESH_TOKEN` / `TIKTOK_OPEN_ID` are a fallback read only when no connection is stored.
 
 **Refresh token rotates roughly every 1 year, but use shortens it.** Watch for `invalid_grant` errors from `Tiktok::OAuthClient`.
 
@@ -332,12 +332,11 @@ verified only that far — say so rather than recording a green verify.
 **Procedure (refresh token + open_id — user-level, rotates with re-auth):**
 1. Visit `https://app.mcritchie.studio/admin/tiktok/connect` (admin-only).
 2. Authenticate as @turfmonstershow.
-3. The success page displays a fresh `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID`. Copy both.
-4. Update 1Password `🐊 TikTok` fields `refresh token`, `open id`.
-5. `heroku config:set TIKTOK_REFRESH_TOKEN=... TIKTOK_OPEN_ID=... --app mcritchie-studio`.
-6. Re-run `bin/ecosystem-build`.
+3. The hub stores the connection itself. The success page says it is connected and saved, with the account, the granted scope and the refresh token's expiry day. It shows no token; nothing is copied to 1Password or Heroku.
 
-**Verify:** `bin/rails runner 'puts Tiktok::OAuthClient.new.access_token.present?'` returns `true`.
+A refresh token TikTok rotates during a token refresh is saved over the stored one by `Tiktok::OAuthClient`.
+
+**Verify:** `bin/tiktok-draft --whoami --production` prints the account.
 
 ---
 
