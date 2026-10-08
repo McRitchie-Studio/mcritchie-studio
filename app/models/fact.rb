@@ -3,9 +3,12 @@
 # Encryption, non-deterministic). A fact is refined, never edited: #supersede!
 # writes a successor and links the predecessor to it; #retire! ends one.
 #
-# Identity data is never stored. A value or a source note that reads as an SSN, a
-# card, an account or routing number, or a password is refused, and a key that
-# names one of those takes a pointer: a fact with no value, only its source.
+# Identity data is never stored. A value that reads as an SSN, a card, an account
+# or routing number, a passport or licence number, a PIN or a password is
+# refused, and so is an unformatted number of LONG_NUMBER digits unless the key
+# is a known numeric one (NUMERIC_KEYS). A key that names identity data takes a
+# pointer: a fact with no value, only its source. The columns stored in the
+# clear (key, subject slug, source reference, source note) pass the same screen.
 #
 # Sensitivity decides who reads and writes a fact through the API
 # (Api::V1::FactsController): ordinary for a studio session, both for admin.
@@ -14,20 +17,50 @@ class Fact < ApplicationRecord
   SENSITIVITIES = %w[ordinary sensitive].freeze
   SOURCE_KINDS = %w[knowledge_doc drive_file].freeze
   SUBJECT_SLUG = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
-  POINTER_MESSAGE = "reads as identity data (%s); store a pointer to the original instead: " \
+  # A key is a name: lowercase words and digits joined by a hyphen or an underscore.
+  KEY_FORMAT = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
+  KEY_MAX = 64
+  KEY_MESSAGE = "is lowercase words and digits joined by a hyphen or an underscore, " \
+                "#{KEY_MAX} characters at most (year-founded)".freeze
+  POINTER = "store a pointer to the original instead".freeze
+  POINTER_MESSAGE = "reads as identity data (%s); #{POINTER}: " \
                     "the same key with no value and the source that holds it".freeze
+  KEY_POINTER_MESSAGE = "reads as identity data (%s); #{POINTER}: " \
+                        "a key that only names it, no value, and the source that holds it".freeze
 
   # A key that names identity data, matched on the key in lowercase words.
-  IDENTITY_KEY = /\b(ssn|social\ security|password|passcode|passphrase|routing|aba|iban|cvv|cvc|pin|
-                  (account|acct|card)\ (number|num|no)|(credit|debit)\ card)\b/x
-  # What a value is refused for, by the kind the refusal names.
+  IDENTITY_KEY = /\b(ssn|social\ security|itin|password|passwd|pwd|passcode|passphrase|pin|
+                  routing|aba|iban|cvv|cvc|passport|(?<!business\ )card|
+                  acct|account(?!\ (manager|executive|rep|representative|team|owner))|
+                  drivers?\ licen[cs]e|licen[cs]e\ (number|num|no|id))\b/x
+  # A person's tax id is their identity; a company's EIN is an ordinary fact.
+  PERSON_IDENTITY_KEY = /\b(ein|fein|tin|tax\ id|taxpayer\ id|licen[cs]e)\b/
+  # What a text is refused for, by the kind the refusal names.
   IDENTITY_VALUE = {
-    "ssn" => /(?<!\d)\d{3}[- ]\d{2}[- ]\d{4}(?!\d)|\b(ssn|social security)\b\D{0,12}\d{4,}/i,
+    "ssn" => /(?<!\d)\d{3}[-. ]\d{2}[-. ]\d{4}(?!\d)|\b(ssn|social security)\b\D{0,12}\d{4,}/i,
     "routing number" => /\b(routing|aba)\b\D{0,12}\d{6,}/i,
     "account number" => /\b(account|acct|iban)\b\D{0,12}\d{6,}/i,
-    "password" => /\b(password|passcode|passphrase|pwd)\b\s*(is|[:=])\s*\S+/i
+    "passport or licence number" => /\b(passport|licen[cs]e)\b\D{0,12}\d{6,}/i,
+    "pin" => /\bpin\b\s*(is|[:=#])\s*\d{4,}/i,
+    "password" => /\b(password|passwd|passcode|passphrase|pwd)\b\s*(is|[:=])\s*\S+/i
   }.freeze
   CARD_CANDIDATE = /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/
+  # An unformatted run of this many digits reads as an account or id number.
+  LONG_NUMBER = 8
+  LONG_NUMBER_KIND = "an unformatted number of #{LONG_NUMBER} or more digits".freeze
+  # An identity-named key carries fewer digits than a PIN has.
+  IDENTITY_KEY_DIGITS = 4
+  # The keys whose value may carry a long number, each with the runs it admits.
+  NUMERIC_KEYS = [
+    [/\b(phone|fax|tel|telephone|mobile|cell)\b/, /\A\d{10,15}\z/],
+    [/\b(zip|postal)\b/, /\A\d{9}\z/],
+    [/\b(date|founded|formed|incorporated|born|birthday|dob)\b/, /\A(19|20)\d{6}\z/]
+  ].freeze
+  # The same, for a company or an app only: public business identifiers.
+  BUSINESS_NUMERIC_KEYS = [
+    [/\b(ein|fein|tin|tax\ id|duns)\b/, /\A\d{9}\z/],
+    [/\b(sos|entity)\ (id|number|no)\b|\bfile\ (number|no)\b/, /\A\d{8,12}\z/]
+  ].freeze
 
   encrypts :value
   self.filter_attributes += %i[value]
@@ -43,14 +76,14 @@ class Fact < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, format: { with: SUBJECT_SLUG }
-  validates :key, presence: true, length: { maximum: 120 }
+  validates :key, presence: true
   validates :sensitivity, inclusion: { in: SENSITIVITIES }
   validates :source_kind, inclusion: { in: SOURCE_KINDS }
   validates :source_ref, presence: true, length: { maximum: 255 }
   validates :source_note, length: { maximum: 500 }
   validates :recorded_by_session_slug, :recorded_at, presence: true
   validate :person_subject_exists, on: :create
-  validate :value_or_pointer, :refuse_identity_data, on: :create
+  validate :key_is_a_name, :value_or_pointer, :refuse_identity_data, on: :create
 
   scope :current, -> { where(superseded_by_slug: nil, retired_at: nil) }
   scope :for_subject, ->(type, slug) { where(subject_type: type.to_s, subject_slug: slug.to_s) }
@@ -67,7 +100,7 @@ class Fact < ApplicationRecord
 
   # The kind of identity data `text` reads as, or nil.
   def self.identity_kind(text)
-    string = text.to_s
+    string = text.to_s.tr("_", " ")
     return nil if string.empty?
 
     kind = IDENTITY_VALUE.find { |_, pattern| pattern.match?(string) }&.first
@@ -94,7 +127,10 @@ class Fact < ApplicationRecord
     (sum % 10).zero?
   end
 
-  def identity_key? = IDENTITY_KEY.match?(key.to_s.downcase.tr("_-", "  "))
+  def identity_key?
+    IDENTITY_KEY.match?(key_words) || (subject_type == "person" && PERSON_IDENTITY_KEY.match?(key_words))
+  end
+
   def pointer? = value.blank?
   def sensitive? = sensitivity == "sensitive"
   def superseded? = superseded_by_slug.present?
@@ -150,6 +186,21 @@ class Fact < ApplicationRecord
     errors.add(:subject_slug, "names no person") unless Person.exists?(slug: subject_slug)
   end
 
+  def key_words = key.to_s.downcase.tr("_-", "  ")
+
+  # The key is stored in the clear, so it names a thing and carries no data.
+  def key_is_a_name
+    return if key.blank?
+
+    digits = key.count("0-9")
+    kind = self.class.identity_kind(key)
+    kind ||= LONG_NUMBER_KIND if digits >= LONG_NUMBER
+    kind ||= "a number in a key that names it" if identity_key? && digits >= IDENTITY_KEY_DIGITS
+    return errors.add(:key, format(KEY_POINTER_MESSAGE, kind)) if kind
+
+    errors.add(:key, KEY_MESSAGE) unless key.length <= KEY_MAX && KEY_FORMAT.match?(key)
+  end
+
   def value_or_pointer
     if identity_key?
       errors.add(:value, format(POINTER_MESSAGE, "the key names it")) unless pointer?
@@ -159,9 +210,27 @@ class Fact < ApplicationRecord
   end
 
   def refuse_identity_data
-    { value: value, source_note: source_note }.each do |attribute, text|
-      kind = self.class.identity_kind(text)
-      errors.add(attribute, format(POINTER_MESSAGE, kind)) if kind && errors[attribute].empty?
-    end
+    refuse(:value, self.class.identity_kind(value) || (LONG_NUMBER_KIND unless numbers_admitted?))
+    refuse(:subject_slug, plain_kind(subject_slug, digits: subject_slug.to_s.count("0-9")))
+    %i[source_ref source_note].each { |attribute| refuse(attribute, plain_kind(self[attribute])) }
+  end
+
+  def refuse(attribute, kind)
+    errors.add(attribute, format(POINTER_MESSAGE, kind)) if kind && errors[attribute].empty?
+  end
+
+  # The kind a column stored in the clear is refused for, or nil.
+  def plain_kind(text, digits: nil)
+    long = digits ? digits >= LONG_NUMBER : long_numbers(text).any?
+    self.class.identity_kind(text) || (LONG_NUMBER_KIND if long)
+  end
+
+  def long_numbers(text) = text.to_s.scan(/\d{#{LONG_NUMBER},}/)
+
+  # Does the key admit every long number the value carries?
+  def numbers_admitted?
+    rules = NUMERIC_KEYS + (subject_type == "person" ? [] : BUSINESS_NUMERIC_KEYS)
+    admitted = rules.select { |words, _| words.match?(key_words) }.map(&:last)
+    long_numbers(value).all? { |run| admitted.any? { |shape| shape.match?(run) } }
   end
 end
