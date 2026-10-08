@@ -1,0 +1,11 @@
+<%# One fact's value. A pointer has none; a sensitive value stays folded until opened. %>
+<% if fact.pointer? %>
+  <p class="text-sm text-muted italic" data-test="fact-pointer">Not stored. The original is at the source.</p>
+<% elsif fact.sensitive? %>
+  <details class="text-sm text-body">
+    <summary class="cursor-pointer text-xs text-muted">Show value</summary>
+    <p class="mt-1 break-words whitespace-pre-line" data-test="fact-value"><%= fact.value %></p>
+  </details>
+<% else %>
+  <p class="text-sm text-body break-words whitespace-pre-line" data-test="fact-value"><%= fact.value %></p>
+<% end %>

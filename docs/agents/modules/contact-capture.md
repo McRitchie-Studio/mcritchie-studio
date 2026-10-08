@@ -188,7 +188,14 @@ What the helper guarantees, so you do not have to:
 2. Stamp the desk item's `filed_note` with one line: `contact: created |
    updated (fields) | current | skipped | pending — <Name>`. The desk is
    private; the person's name may go there.
-3. Delete the scratch JSON and any image files.
+3. Record what the email taught you beyond the card's fields (a role in a
+   deal, who introduced them, a company's detail) as a fact, not as a prose note:
+   `bin/fact company/<slug> --add <key>=<value> --source <doc>`, or
+   `person/<slug>` when the hub holds that person. The source is the filed
+   document's id, so file the email first
+   ([`knowledge-capture`](knowledge-capture.md#facts-are-records-on-the-hub)).
+   Card fields (phones, emails, addresses) stay in Contacts.
+4. Delete the scratch JSON and any image files.
 
 ---
 
@@ -196,7 +203,8 @@ What the helper guarantees, so you do not have to:
 
 - **Contact details are personal data.** They go to Contacts and the private
   desk only. Never put them in this public repo, a task, a PR body, an
-  Artifact, or `business-data/FACTS.md`. A contact is not a business fact.
+  Artifact, a fact record, or `business-data/FACTS.md`. A contact is not a
+  business fact.
   Tests use synthetic names.
 - **Runs on Alex's Mac only**, in a session he can answer. `osascript` does not
   exist on a dyno, and the prompt needs him.
