@@ -221,7 +221,7 @@ class ReleaseCliHarness < Minitest::Test
     env = OutboundSeams.env(
       "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
-      "TASK_API_BASE" => UNROUTABLE_API_BASE
+      "TASK_API_BASE" => UNROUTABLE_API_BASE, "GH_AUTH_TOKEN_BIN" => ReleaseCliStubs.token_broker
     )
     last = nil
     SUBPROCESS_ATTEMPTS.times do

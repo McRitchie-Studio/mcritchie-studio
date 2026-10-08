@@ -1105,17 +1105,17 @@ class TaskCliTest < Minitest::Test
     assert_equal "Bearer stub-token", requests.last[:headers]["authorization"], "with the token the board minted"
   end
 
-  # [integration] A handed token the board refuses names the var, not the secret
-  # chain the run never consulted — so the reader fixes the right thing.
+  # [integration] A handed token the board keeps refusing: one re-mint, then the
+  # refusal names the var. The re-mint itself: task_cli_handed_token_remint_test.rb.
   def test_a_refused_handed_token_names_the_environment_variable
-    _requests, _out, err, status = run_task(["show", "demo-task", "--json"],
-                                            env: { "AGENT_API_TOKEN" => "tok-stale" }, fail_get: 401,
-                                            fail_get_body: JSON.generate("error" => "token expired"))
+    requests, _out, err, status = run_task(["show", "demo-task", "--json"],
+                                           env: { "AGENT_API_TOKEN" => "tok-stale" }, fail_get: 401,
+                                           fail_get_body: JSON.generate("error" => "token expired"))
 
     refute status.success?
     assert_match(/401/, err)
-    assert_includes err, "AGENT_API_TOKEN", "the refusal must name the handed-in var"
-    assert_includes err, "unset it to mint afresh"
+    assert_equal 1, requests.count { |r| r[:path] == "/api/v1/auth" }, "the re-mint happens once"
+    assert_includes err, "AGENT_API_TOKEN was refused and a fresh bearer was refused too"
   end
 
   # The default `show` stays terse — it counts the acceptance items, it does not

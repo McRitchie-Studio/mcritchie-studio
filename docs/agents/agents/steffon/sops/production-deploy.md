@@ -188,10 +188,17 @@ Two entries is the tightened shape; more means re-run the tighten `bin/deploy` p
 
 ### A refused push is classified before it advises
 
+Before each `main` push the ship mints a fresh deployer token. A failed mint is
+retried once after 5 seconds; a second failure aborts before the push and prints the
+mint's own error, classified NETWORK when it names one (1Password unreachable over DNS
+reads NETWORK, not MINT).
+
 A refused **`main`** push (fatal):
 
 | Outcome | What you do |
 |---|---|
+| **NETWORK** (`Could not resolve host`, `getaddrinfo`, a timeout) | Restore the network, then re-run `bin/release ship` — it resumes. No token needs refreshing and `main` needs no reconciling. **Do NOT re-run `prepare`.** |
+| **MINT** (`could not mint the DEPLOYER token`) | Read the mint's error, printed just above (`deployer mint said:`; it carries `op`'s own last line as `op said:`), and act on what it names. Only when it says the vault could not be read on credentials: `source ~/.zprofile.admin`. Then re-run `bin/release ship` — it resumes. |
 | **AUTH** (`Invalid username or token`, `Authentication failed`, a 401/403) | `source ~/.zprofile.admin` and `export GH_APP_ITEM=github.mcritchie-admin` (BEFORE the push), then re-run `bin/release ship` — it resumes. The deployer is never cached, so there is no token to refresh by hand. **Do NOT re-run `prepare`**: the freeze is still good. |
 | **NON-FAST-FORWARD** | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
 | **UNRECOGNISED** | Read git's output, printed just above the verdict, before doing either. |
@@ -246,8 +253,7 @@ naming the source. Nothing runs locally, and it does not self-gate on G3's recor
 
 For a genuine false negative, the supported override is `bin/release ship
 --skip-test-gate --reason "…"`, which records a **red** gate SOP. The skip covers
-every app with a `test_cmd`, and each app's gate consumes one `--reason`: pass the
-flag once per gated app, or the second one aborts. **Never** blank the
+every app with a `test_cmd`, and one `--reason` serves all of them. **Never** blank the
 registry's `test_cmd`/`qa_test_cmd`: that silently disarms the last gate before
 production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
 

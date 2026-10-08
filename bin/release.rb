@@ -5025,8 +5025,23 @@ end
 # which is the whole lesson of this function.
 #
 # ORDER MATTERS. `error: failed to push some refs to ...` appears in BOTH
-# failures, so it can never be the discriminator; auth is checked first because
-# it is the one that was being misread.
+# failures, so it can never be the discriminator; auth is checked before
+# divergence because it is the one that was being misread.
+#
+# Network signs are checked before both: a credential helper that cannot reach
+# its host leaves git saying `could not read Username`, an auth sign.
+PUSH_NETWORK_SIGNS = [
+  /could not resolve host/i,
+  /getaddrinfo/i,
+  /no such host/i,
+  /name or service not known/i,
+  /temporary failure in name resolution/i,
+  /network is unreachable/i,
+  /failed to connect to/i,
+  /connection (?:refused|reset)/i,
+  /timed out|\btimeout\b/i
+].freeze
+
 PUSH_AUTH_SIGNS = [
   /invalid username or token/i,
   /authentication failed/i,
@@ -5048,9 +5063,10 @@ PUSH_DIVERGED_SIGNS = [
   /tip of your current branch is behind/i
 ].freeze
 
-# => [:auth, :diverged, :unknown]
+# => [:network, :auth, :diverged, :unknown]
 def classify_push_failure(output)
   text = output.to_s
+  return :network if PUSH_NETWORK_SIGNS.any? { |re| text.match?(re) }
   return :auth if PUSH_AUTH_SIGNS.any? { |re| text.match?(re) }
   return :diverged if PUSH_DIVERGED_SIGNS.any? { |re| text.match?(re) }
 
@@ -5061,6 +5077,15 @@ end
 # new cause cannot be classified without also being explained.
 def push_failure_message(repo, sha, cause)
   case cause
+  when :network
+    "could not push #{repo} origin/main to #{short(sha)} — the output above names a NETWORK failure (DNS or " \
+      "a timeout), not a credential refusal and not a divergence. No token needs refreshing and main needs " \
+      "no reconciling. Restore the network, then re-run `bin/release ship` — it resumes; do NOT re-run `prepare`."
+  when :mint
+    "could not mint the DEPLOYER token for the #{repo} push to #{short(sha)}, in two tries — the push was NOT " \
+      "attempted, so main has not moved. The mint's own error is above: act on what it names. If it says " \
+      "the vault could not be read on credentials, `source ~/.zprofile.admin` restores the admin token. " \
+      "Then re-run `bin/release ship` — it resumes; do NOT re-run `prepare`."
   when :auth
     "could not push #{repo} origin/main to #{short(sha)} — git was REFUSED ON CREDENTIALS, not on the ref. " \
       "main has NOT diverged and nothing needs reconciling; the push never got far enough to find out. " \
@@ -5090,6 +5115,25 @@ def push_failure_message(repo, sha, cause)
   end
 end
 
+PUSH_MINT_RETRY_SECONDS = 5
+
+# A fresh deployer token for one push: one mint, one retry, then an abort that
+# carries the mint's own error. The mint names the deployer; the push below
+# authenticates through the git credential helper, which reads GH_APP_ITEM.
+def mint_push_token(repo, sha)
+  token = GhAuthRetry.mint(identity: "deployer")
+  return token if token
+
+  say("  ↻ deployer token mint failed before the #{repo} push; retrying once in #{PUSH_MINT_RETRY_SECONDS}s")
+  sleep(PUSH_MINT_RETRY_SECONDS)
+  token = GhAuthRetry.mint(identity: "deployer")
+  return token if token
+
+  err = GhAuthRetry.last_error
+  say("  deployer mint said: #{err.empty? ? '(nothing)' : err}")
+  abort!(push_failure_message(repo, sha, classify_push_failure(err) == :network ? :network : :mint))
+end
+
 def push_frozen_main(repo, sha)
   sha = sha.to_s.strip
   step("push #{repo} origin main → frozen #{short(sha)} (ref push — no checkout, no working tree)")
@@ -5103,7 +5147,11 @@ def push_frozen_main(repo, sha)
   # CAPTURED, because the diagnosis below is READ from git rather than assumed.
   # It is echoed either way, so the operator still sees exactly what an uncaptured
   # push would have shown them.
-  out, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main", capture: true)
+  # The minted token rides the push as GH_TOKEN. Only the `gh auth git-credential`
+  # fallback helper reads it; gh-app-git-credential mints its own from GH_APP_ITEM.
+  token = mint_push_token(repo, sha)
+  out, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main", capture: true,
+               env: gh_token_env(token))
   say(out.to_s.rstrip) unless out.to_s.strip.empty?
   abort!(push_failure_message(repo, sha, classify_push_failure(out))) unless ok
 
@@ -5522,6 +5570,11 @@ def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
   end
 end
 
+# opt_value consumes the flag, and test_gate runs once per gated repo.
+def skip_test_gate_reason
+  @skip_test_gate_reason ||= opt_value("--reason").to_s.strip
+end
+
 def test_gate(repo, frozen_sha:)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
@@ -5542,7 +5595,7 @@ def test_gate(repo, frozen_sha:)
   # gate SOP — a skipped gate is now visible in the release record forever, where
   # the old trick left one that read "already green".
   if SKIP_TEST_GATE
-    reason = opt_value("--reason").to_s.strip
+    reason = skip_test_gate_reason
     abort!("--skip-test-gate requires --reason \"…\" (it is recorded on the release as a red gate)") if reason.empty?
     unless confirm("⚠ SKIP the #{repo} ship test gate (`#{cmd}`) on frozen #{short(frozen_sha)}? " \
                    "CI's verdict for it will NOT be read before the irreversible prod deploy. Reason: #{reason}")

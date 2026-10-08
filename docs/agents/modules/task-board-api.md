@@ -59,8 +59,8 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
    secret only when it is not. `bin/submit` mints once per run and exports it to
    every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
-   board answers `401` to a handed token, `bin/task` names the variable; unset
-   it to mint afresh.
+   board answers `401` to a handed token, `bin/task` mints one from the secret
+   and retries the call, once per run; a second `401` is fatal and names the variable.
 
 ### Secret hygiene
 

@@ -998,7 +998,7 @@ module CiStatus
   # `status` (queued|in_progress|completed) + `conclusion` (success|failure|
   # neutral|cancelled|skipped|timed_out|action_required|stale|startup_failure|null).
   # CHECK_RUN_BUCKETS maps conclusion → bucket exactly as gh's own bucketing does;
-  # anything not yet `completed` (and any conclusion GitHub adds later that we
+  # a run with no conclusion (and any conclusion GitHub adds later that we
   # don't know) is `pending` — never invented as a pass or a fail.
   #
   # NO CI DATA IS NOT A FAILURE. A release-tip SHA with no workflow run answers
@@ -1096,11 +1096,9 @@ module CiStatus
     verdict
   end
 
-  # PURE. status + conclusion → gh's bucket vocabulary. Not-yet-`completed` (and
-  # any unknown conclusion) is `pending`: a run still in flight is not a verdict.
+  # PURE. conclusion → gh's bucket vocabulary. A present conclusion settles the
+  # run whatever its `status` says; no conclusion (and any unknown one) is `pending`.
   def self.check_run_bucket(run)
-    return "pending" unless run["status"].to_s.downcase == "completed"
-
     CHECK_RUN_BUCKETS.fetch(run["conclusion"].to_s.downcase, "pending")
   end
 

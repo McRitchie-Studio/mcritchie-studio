@@ -1289,6 +1289,7 @@ end
 # secret chain it never consulted.
 def handed_token_hint(res)
   return "" unless res.code.to_i == 401 && TaskBoard.handed_token
+  return " (#{TaskBoard::TOKEN_ENV} was refused and a fresh bearer was refused too)" if @handed_token_reminted
 
   " (the bearer came from #{TaskBoard::TOKEN_ENV}; unset it to mint afresh from the secret)"
 end
@@ -1315,9 +1316,19 @@ def api(method, path, body = nil, opts = {})
     res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body,
                                           headers: desk_session_dropped_header(method, path))
   end
+  if auth && res.code.to_i == 401 && TaskBoard.handed_token && !@handed_token_reminted &&
+     TaskBoard.parse_body(res)["error_code"] != "SESSION_ENDED"
+    # The handed bearer was refused: mint one from the secret and retry, once per run.
+    @handed_token_reminted = true
+    @token = api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+    warn!("note: the handed #{TaskBoard::TOKEN_ENV} was refused (HTTP 401); " \
+          "minted a fresh bearer (length #{@token.length}) and retrying")
+    res = TaskBoard.request(method, path, base_url: BASE_URL, token: @token, body: body,
+                                          headers: desk_session_dropped_header(method, path))
+  end
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
-    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{handed_token_hint(res)}",
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{handed_token_hint(res) if auth}",
          code: task_not_found_response?(res, parsed) ? EXIT_TASK_NOT_FOUND : 1)
   end
   parsed

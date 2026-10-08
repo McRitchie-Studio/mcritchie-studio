@@ -286,7 +286,7 @@ unreadable verdict must **never** read as a pass:
 | `green` | Every check-run passed/skipped for this SHA. | **PASS** — certify, record `ok:true`, QA deploys. |
 | `red` | A check failed/cancelled. | **FAIL** — a regression is riding `release`: eject the offender, revert, re-`prepare`. |
 | `none` | No check-run for this SHA. `ci.yml` triggers on `pull_request` + `push:[main, release]`, so a pushed `release` tip normally DOES build — `none` is the brief window before the run registers (a non-GitHub remote reads as `unverified`). | **POLL** — hold and re-read until CI concludes; fail closed at the timeout. |
-| `pending` | The push-triggered run has not settled — the gate reads it seconds after the merge. | **POLL** — the expected just-merged state; hold and re-read until it concludes. |
+| `pending` | The push-triggered run has not settled — the gate reads it seconds after the merge. A check-run is settled once it carries a `conclusion`, whatever its `status` says. | **POLL** — the expected just-merged state; hold and re-read until it concludes. |
 | `unverified` | No `gh`, no network, a 404, a non-GitHub remote. | **POLL** — a transient read miss; hold and re-read, fail closed at the timeout. |
 | `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. | **ABORT** — a credential fault, not a running CI; the gate does **not** poll a refused token. Fix the token, then re-run. |
 

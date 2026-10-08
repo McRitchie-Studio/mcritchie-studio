@@ -189,12 +189,23 @@ The push output is now captured, echoed, and CLASSIFIED, the same way
 
 | Outcome | What git said | What you do |
 |---|---|---|
+| **NETWORK** | `Could not resolve host`, `getaddrinfo`, `no such host`, a timeout, a refused connection. Checked first: a credential helper that cannot reach its host also leaves `could not read Username`. | Restore the network, then re-run `bin/release ship`; it resumes. No token needs refreshing and nothing needs reconciling. |
 | **AUTH** | `Invalid username or token`, `Authentication failed`, `could not read Username`, `Permission denied (publickey)`, a 401/403 | `source ~/.zprofile.admin` and `export GH_APP_ITEM=github.mcritchie-admin` BEFORE the push — the ship pushes as the **deployer**, whose credential lives in `studio-agents-admin`, and it is never cached, so those two lines are the whole fix. Then re-run `bin/release ship`; it resumes. **Do NOT re-run `prepare`** — the freeze is still good. |
 | **DIVERGED** | `non-fast-forward`, `[rejected] … (fetch first)`, `Updates were rejected because…` | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
 | **UNRECOGNISED** | anything else | Read git's output above before acting — **both** standard remedies may be the wrong errand. The ship says so rather than guessing. |
 
 `error: failed to push some refs to …` appears in **both** failures, so it is
 never the discriminator. Nothing forces in any case.
+
+The ship mints a fresh **deployer** token before each `main` push (`mint_push_token`).
+The push itself authenticates through `gh-app-git-credential`, which reads `GH_APP_ITEM`
+and mints its own token; the pre-minted one rides the push as `GH_TOKEN`, which only the
+fallback helper (`gh auth git-credential`) reads. A failed mint is retried once after 5
+seconds; a second failure aborts before the push with the mint's own error. `bin/gh-token`
+carries `op`'s last stderr line in that error (`op said: …`, scrubbed and capped), so
+1Password unreachable over DNS is classified NETWORK. Any other mint failure reads MINT:
+act on what the error names; `source ~/.zprofile.admin` is the remedy only when it says
+the vault could not be read on credentials.
 
 **A dirty app primary no longer blocks a ship.** The preflight prints a NOTE plus
 a rescue (commit the stranded work to a labeled `rescue/<repo>-<timestamp>`
@@ -255,7 +266,7 @@ production unchecked.
 `bin/release ship --skip-test-gate --reason "…"`
 
 It demands a reason, **confirms** before skipping, reads no verdict, and records a
-**red** `ship_test_gate` gate SOP — so a skipped gate is visible in the release
+**red** `ship_test_gate` gate SOP for every gated app, each carrying the one reason — so a skipped gate is visible in the release
 record forever. Use it only when the code is verified green elsewhere and the
 instrument is the thing that's broken; then **fix the instrument**.
 
