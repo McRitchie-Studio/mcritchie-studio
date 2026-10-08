@@ -6,6 +6,7 @@
 #   [unit] scoring, ranking, the tie-break and the selection; each with its control.
 
 require "minitest/autorun"
+require "stringio"
 require_relative "../../bin/lib/dream_bank"
 require_relative "../../bin/lib/dream_selector"
 
@@ -88,7 +89,7 @@ class DreamSelectorTest < Minitest::Test
   def test_unit_platform_universals_always_included
     selection = DreamSelector.select(payment_task, bank, soul: "pokemon", limit: 2)
 
-    assert_equal %w[settle-once-per-entry money-moves-in-a-transaction], selection.picked.map(&:slug)
+    assert_equal %w[settle-once-per-entry entry-fee-charges-once], selection.picked.map(&:slug)
     assert_equal %w[list-the-candidates report-what-you-verified], selection.universals.map(&:slug),
                  "the universals score 0 here and load all the same"
     assert_includes selection.hidden.map(&:slug), "docs-guard-names-its-rule"
@@ -101,11 +102,81 @@ class DreamSelectorTest < Minitest::Test
     assert_equal 2, nobody.universals.size
   end
 
-  def test_unit_a_soul_with_fewer_dreams_than_the_limit_is_shown_them_all
+  def test_unit_the_limit_is_twelve_and_a_shorter_sequence_is_shown_whole
     selection = DreamSelector.select(payment_task, bank, soul: "pokemon")
 
     assert_equal 12, DreamSelector::LIMIT
-    assert_equal 5, selection.picked.size
-    assert_equal "untagged-habit", selection.picked.last.slug, "zero scores rank last, in slug order"
+    assert_equal 14, DreamBank.soul("pokemon", dir: BANK).size
+    assert_equal 12, selection.picked.size
+    assert_equal %w[docs-guard-names-its-rule untagged-habit], (selection.hidden.map(&:slug) & pokemon_slugs).sort,
+                 "the two that score 0 rank out"
+
+    carl = DreamSelector.select(payment_task, bank, soul: "carl")
+    assert_equal %w[money-review-reads-the-ledger wait-for-the-light], carl.picked.map(&:slug),
+                 "control: a sequence under the limit keeps its zero-score dream"
+  end
+
+  def pokemon_slugs
+    DreamBank.soul("pokemon", dir: BANK).map(&:slug)
+  end
+
+  def context(soul = "pokemon", **options)
+    DreamBank.task_context(soul, bank, facts: facts, task: "settle-payout-once", **options)
+  end
+
+  def test_unit_why_lines_drop_before_dreams
+    full = context(budget: nil)
+    assert_equal 14, full.scan("\nWhy: ").size, "twelve picked and two universals, each with its Why; 4 of 18 are not shown"
+    assert_operator full.index("settle-once-per-entry"), :<, full.index("entry-fee-charges-once"), "rank order"
+    assert_operator full.index("retried-webhook-is-deduplicated"), :<, full.index("### Platform dreams")
+    assert full.end_with?("\n\n4 not shown: bin/dream list --task settle-payout-once"), full[-80..]
+
+    mixed = context(budget: full.size - 1)
+    assert_equal 12, mixed.scan("\nWhy: ").size, "the platform Why lines drop first"
+    assert_includes mixed, "Why: A retry after a timeout pays the same entry again."
+    refute_includes mixed, "Why: An accepted request is not a delivered one."
+
+    brief = context(budget: mixed.size - 1)
+    refute_includes brief, "\nWhy: "
+    assert_equal 14, brief.scan("**Q: ").size, "every dream survives the loss of the Why lines"
+
+    tight = context(budget: brief.size - 1)
+    assert_operator tight.size, :<=, brief.size - 1
+    refute_includes tight, "retried-webhook-is-deduplicated", "the lowest-ranked pick drops first"
+    assert_includes tight, "report-what-you-verified", "the universals outlast the picks"
+    assert tight.end_with?("5 not shown: bin/dream list --task settle-payout-once"), tight[-80..]
+
+    assert_operator context.size, :<=, DreamBank::CALL_BUDGET
+    assert_equal 6_000, DreamBank::CALL_BUDGET
+    assert_equal "", context(budget: 10), "nothing prints when not even the heading fits"
+  end
+
+  def test_unit_a_soul_without_dreams_or_off_the_roster_gets_no_block
+    assert_equal "", context("mack")
+    assert_equal "", context("nobody")
+    refute_equal "", context("carl"), "control"
+  end
+
+  def test_unit_announce_selects_with_facts_and_prints_the_whole_sequence_without
+    selected = StringIO.new
+    DreamBank.announce("pokemon", io: selected, task: "settle-payout-once", facts: facts, dir: BANK)
+    assert_equal context + "\n", selected.string
+    refute_includes selected.string, "docs-guard-names-its-rule"
+
+    [ nil, {}, "not json" ].each do |unread|
+      whole = StringIO.new
+      DreamBank.announce("pokemon", io: whole, task: "settle-payout-once", facts: unread, dir: BANK)
+      assert_equal DreamBank.soul_context("pokemon", bank, task: "settle-payout-once") + "\n", whole.string, unread.inspect
+      assert_includes whole.string, "docs-guard-names-its-rule"
+    end
+  end
+
+  def test_unit_announce_survives_a_missing_bank_and_unusable_facts
+    io = StringIO.new
+    assert_nil DreamBank.announce("pokemon", io: io, task: "t", facts: facts, dir: "/nonexistent/dreams")
+    assert_equal "", io.string
+
+    DreamBank.announce("pokemon", io: io, task: "t", facts: { "metadata" => 7, "title" => [ 1 ], "stage" => {} }, dir: BANK)
+    assert_includes io.string, "## Pokémon's dream sequence · task t", "unusable facts rank in slug order; nothing raises"
   end
 end

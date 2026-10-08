@@ -16,6 +16,7 @@
 # session-start hook and claim commands that a dream may not break.
 
 require "yaml"
+require_relative "dream_selector"
 
 module DreamBank
   DEFAULT_DIR = File.expand_path("../../docs/agents/dreams", __dir__)
@@ -29,6 +30,8 @@ module DreamBank
   TAGS = %w[soul repo shape risk stage topic].freeze
   TAG_VALUE = /\A[a-z0-9][a-z0-9+-]*\z/
   SOUL_ALIASES = { "alex" => "xan" }.freeze
+  # The most characters one claim's dream block takes.
+  CALL_BUDGET = 6_000
 
   Dream = Struct.new(:slug, :question, :answer, :why, :status, :tags, :home, keyword_init: true) do
     def approved?
@@ -54,6 +57,11 @@ module DreamBank
   end
 
   module_function
+
+  # DREAM_BANK_DIR names another bank; the tracked one is the default.
+  def bank_dir(env = ENV)
+    env["DREAM_BANK_DIR"].to_s.empty? ? DEFAULT_DIR : env["DREAM_BANK_DIR"]
+  end
 
   # Every parseable dream under the directory, in path order.
   def all(dir: DEFAULT_DIR)
@@ -167,19 +175,74 @@ module DreamBank
     mine = Array(dreams).select { |dream| dream.approved? && dream.souls.include?(slug) }
     return "" if record.nil? || mine.empty?
 
-    heading = "## #{record["name"]}'s dream sequence"
-    heading += " · task #{task}" unless task.to_s.strip.empty?
-    "#{heading}\n" \
-      "Worked decisions for this seat, signed off by Alex. Your skills are this sequence plus " \
-      "`docs/agents/agents/#{slug.tr("-", "_")}/role.md`. When a situation here matches yours, answer it " \
-      "the same way. A dream never overrides a First Rule or an SOP. " \
-      "Full stories: `docs/agents/dreams/INDEX.md`.\n\n" +
+    "#{soul_heading(record, task)}\n#{soul_intro("Worked decisions for this seat", slug)}\n\n" +
       mine.map { |dream| dream_block(dream) }.join("\n\n")
   end
 
-  # Prints a soul's sequence to `io`; prints nothing when there is none. Never raises.
-  def announce(name, io: $stderr, task: nil, dir: DEFAULT_DIR)
-    text = soul_context(name, soul(name, dir: dir), task: task)
+  def soul_heading(record, task)
+    heading = "## #{record["name"]}'s dream sequence"
+    task.to_s.strip.empty? ? heading : "#{heading} · task #{task}"
+  end
+
+  def soul_intro(lead, slug)
+    "#{lead}, signed off by Alex. Your skills are this sequence plus " \
+      "`docs/agents/agents/#{slug.tr("-", "_")}/role.md`. When a situation here matches yours, answer it " \
+      "the same way. A dream never overrides a First Rule or an SOP. " \
+      "Full stories: `docs/agents/dreams/INDEX.md`."
+  end
+
+  # The dreams one claim loads: the soul's dreams that score highest against the
+  # task's `facts` (the board's task JSON), then the platform sequence, then a line
+  # naming how many approved dreams are not shown. Within `budget` it drops the
+  # platform Why lines, then every Why, then whole dreams from the lowest rank up,
+  # the platform's last. "" when the soul is unknown or has no approved dream.
+  def task_context(name, dreams, facts:, task:, budget: CALL_BUDGET, limit: DreamSelector::LIMIT, souls: roster)
+    slug = canonical_soul(name)
+    record = souls[slug]
+    selection = DreamSelector.select(DreamSelector.task(facts), Array(dreams), soul: slug, limit: limit)
+    return "" if record.nil? || selection.picked.empty?
+
+    total = selection.shown.size + selection.hidden.size
+    head = "#{soul_heading(record, task)}\n#{soul_intro("The decisions for this seat that best match the task", slug)}"
+    render = lambda do |kept, why, platform_why|
+      task_blocks(head, kept - selection.universals, kept & selection.universals,
+                  why: why, platform_why: platform_why, hidden: total - kept.size, task: task)
+    end
+    kept = selection.universals + selection.picked
+    [ [ true, true ], [ true, false ] ].each do |why, platform_why|
+      text = render.call(kept, why, platform_why)
+      return text if fits?(text, budget)
+    end
+    until kept.empty?
+      text = render.call(kept, false, false)
+      return text if fits?(text, budget)
+
+      kept = kept[0...-1]
+    end
+    ""
+  end
+
+  def task_blocks(head, picked, universals, why:, platform_why:, hidden:, task:)
+    parts = [ head ] + picked.map { |dream| dream_block(dream, why: why) }
+    parts << "### Platform dreams" unless universals.empty?
+    parts += universals.map { |dream| dream_block(dream, why: platform_why) }
+    parts << not_shown_line(hidden, task) if hidden.positive?
+    parts.join("\n\n")
+  end
+
+  def not_shown_line(count, task)
+    "#{count} not shown: bin/dream list --task #{task}"
+  end
+
+  # Prints a soul's dreams to `io`: the set selected for the task when `facts`
+  # holds the board's task JSON, else the whole sequence. Prints nothing when the
+  # soul has none. Never raises.
+  def announce(name, io: $stderr, task: nil, facts: nil, dir: bank_dir)
+    text = if facts.is_a?(Hash) && !facts.empty?
+      task_context(name, approved(dir: dir), facts: facts, task: task)
+    else
+      soul_context(name, soul(name, dir: dir), task: task)
+    end
     io.puts(text) unless text.empty?
   rescue StandardError
     nil

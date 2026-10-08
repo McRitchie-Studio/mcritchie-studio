@@ -3,11 +3,14 @@
 
 # bin/dream — prints a dream sequence from the bank (docs/agents/dreams/).
 #
-#   bin/dream <soul> [--task <slug>]   the soul's sequence; --task names the task in the heading
+#   bin/dream <soul>                   the soul's whole sequence
+#   bin/dream <soul> --task <slug>     the dreams a claim of that task loads for the soul
+#   bin/dream list [--task <slug>]     every approved dream with its file, ranked for the task
 #   bin/dream platform                 the sequence every session start loads
 #   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md
 #
-# Reads tracked files only. Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
+# Reads tracked files; --task also reads the task from the board, and prints
+# unranked, with the reason on stderr, when it cannot. Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
 
 require_relative "lib/dream_bank"
 
@@ -17,11 +20,15 @@ class DreamCli
   USAGE = 2
   HELP_FLAGS = %w[-h --help help].freeze
   INDEX_MODES = %w[--write --check].freeze
+  TASK_SLUG = /\A[a-z0-9][a-z0-9-]*\z/
 
-  def initialize(env: ENV, out: $stdout, err: $stderr)
-    @dir = env["DREAM_BANK_DIR"].to_s.empty? ? DreamBank::DEFAULT_DIR : env["DREAM_BANK_DIR"]
+  # `task_reader` answers a slug with the board's task JSON, or nil.
+  def initialize(env: ENV, out: $stdout, err: $stderr, task_reader: nil)
+    @env = env
+    @dir = DreamBank.bank_dir(env)
     @out = out
     @err = err
+    @task_reader = task_reader || method(:board_task)
   end
 
   def run(argv)
@@ -32,6 +39,7 @@ class DreamCli
     when nil then usage(@err, USAGE)
     when "index" then index(rest)
     when "platform" then rest.empty? ? platform : usage(@err, USAGE)
+    when "list" then list(rest)
     else soul(command, rest)
     end
   end
@@ -53,18 +61,69 @@ class DreamCli
     OK
   end
 
+  # [] for no arguments, [slug] for `--task <slug>`, nil for anything else.
+  def task_argument(rest)
+    return [] if rest.empty?
+
+    rest.size == 2 && rest.first == "--task" && TASK_SLUG.match?(rest[1]) ? [ rest[1] ] : nil
+  end
+
   def soul(name, rest)
-    task = rest.first == "--task" ? rest[1].to_s : nil
-    return usage(@err, USAGE) unless rest.empty? || (rest.size == 2 && !task.to_s.empty?)
+    task = task_argument(rest)
+    return usage(@err, USAGE) if task.nil?
 
     slug = DreamBank.canonical_soul(name)
     record = DreamBank.roster[slug]
     return refuse("`#{name}` is not a soul. Souls: #{DreamBank.roster.keys.join(", ")}.") if record.nil?
 
-    text = DreamBank.soul_context(slug, DreamBank.soul(slug, dir: @dir), task: task)
+    facts = task.empty? ? nil : facts_for(task.first)
+    text = if facts
+      DreamBank.task_context(slug, DreamBank.approved(dir: @dir), facts: facts, task: task.first)
+    else
+      DreamBank.soul_context(slug, DreamBank.soul(slug, dir: @dir), task: task.first)
+    end
     text = "#{record["name"]} has no approved dreams. Role page: `docs/agents/agents/#{slug.tr("-", "_")}/role.md`." if text.empty?
     @out.puts(text)
     OK
+  end
+
+  def list(rest)
+    task = task_argument(rest)
+    return usage(@err, USAGE) if task.nil?
+
+    dreams = DreamBank.approved(dir: @dir)
+    facts = task.empty? ? nil : facts_for(task.first)
+    scored = facts ? DreamSelector.task(facts) : nil
+    dreams = DreamSelector.rank(scored, dreams) if scored
+    @out.puts(facts ? "## Approved dreams, ranked for task #{task.first}" : "## Approved dreams")
+    dreams.each do |dream|
+      label = scored ? "score #{DreamSelector.score(scored, dream)} · " : ""
+      @out.puts("#{label}`#{dream.slug}` · #{dream.sequence} · #{File.join(@dir, dream.home, "#{dream.slug}.md")}",
+                "  Q: #{dream.question}")
+    end
+    OK
+  end
+
+  # The task's board JSON, or nil with the reason on stderr.
+  def facts_for(slug)
+    facts = begin
+      @task_reader.call(slug)
+    rescue StandardError
+      nil
+    end
+    return facts if facts.is_a?(Hash) && !facts.empty?
+
+    @err.puts("dream: could not read task `#{slug}` from the board; printing unranked.")
+    nil
+  end
+
+  def board_task(slug)
+    require "json"
+    require_relative "lib/agent_api"
+    api = AgentApi.new(open_timeout: 2, read_timeout: 5, env: @env)
+    token = api.token
+    response = token && api.http_get("/api/v1/tasks/#{slug}", bearer: token)
+    response && response.code.to_i == 200 ? JSON.parse(response.body)["data"] : nil
   end
 
   def index(rest)
