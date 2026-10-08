@@ -42,9 +42,33 @@
 - A writer that passes whatever handle its caller holds (telemetry, task notes,
   the desk inventory) declares `clears_unknown_slug` (`ClearsUnknownSlug`), so a
   slug no parent holds is cleared, or kept in metadata, rather than refused.
-- A refusal the database makes (`InvalidForeignKey`, `RecordNotUnique`) answers 422
-  with the reason through `ConstraintViolationResponses`, on the web and the API;
-  a unique refusal on any index but a record's own `slug` is also an ErrorLog row.
+- A refusal the database makes (`InvalidForeignKey`, `RecordNotUnique`,
+  `CheckViolation`, `NotNullViolation`) answers 422 with the reason through
+  `ConstraintViolationResponses`, on the web and the API. A CHECK refusal is named
+  from its constraint, never from the database's detail, which quotes the row. A
+  CHECK, a NOT NULL, or a unique refusal on any index but a record's own `slug` is
+  also an ErrorLog row: a validation was skipped or is missing.
+- A stage, status or state string column holds one list: the model constant its
+  `inclusion:` validation reads, registered in `StringStates::REGISTRY` and
+  enforced by a CHECK constraint named `<table>_<column>_known`. A new value needs
+  a migration that replaces the constraint (add the new one `NOT VALID`, validate
+  it, drop the old); `test/models/state_check_constraints_test.rb` fails until the
+  constant, the validation and the constraint agree. A new state column is
+  registered, or listed in `StringStates::UNCONSTRAINED` with its reason.
+- `bin/rails state_checks:census` is the read-only report (SELECTs only): each
+  constraint's state, any value outside its list, and the values the unconstrained
+  columns hold; it is run by hand and exits non-zero while anything is unsettled.
+  `bin/rails state_checks:apply` is the post-deploy hook: it adds and validates
+  each constraint whose rows are clean and exits 0 whatever the rows hold, because
+  the release stops on a hook that fails. What it could not settle (a stray
+  value, a NULL stage, a list that differs, a lock not granted) it prints and
+  keeps as one open triage finding, `state-checks-unsettled`, with constraint
+  names and counts; only an unexpected exception exits non-zero. A constraint is
+  never added over a stray value, because Postgres checks a `NOT VALID`
+  constraint on every later update of that row.
+- A column nothing reads is listed in `DeadColumns` and ignored by its model for
+  one release before a migration drops it: the servers still running the previous
+  release during a deploy name every column they know in each INSERT.
 
 ## Error Handling
 - `ErrorLog.capture!(exception, target:, parent:)` for structured error logging

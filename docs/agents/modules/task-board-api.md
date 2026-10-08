@@ -527,7 +527,6 @@ it captures the specific check-in moment and message.
 - `priority` — `0`, `1`, or `2`
 - `agent_slug` — owning agent (optional)
 - `stage` — see stages below
-- `required_skills` — array of strings
 - `metadata` — free-form hash
 - `devops` — **top-level** object, normalized and stored at `metadata.devops`
 
@@ -754,7 +753,7 @@ See footgun 4 for the full set of fields that live outside `devops`.
    under `metadata` directly instead of `devops`.
 4. **Some load-bearing fields are TOP-LEVEL COLUMNS, not `devops` keys — and
    `metadata.devops.<name>` reads `null` for them on every task, stamped or
-   not.** The set: `merged`, `stage`, `agent_slug`, `priority`, `required_skills`,
+   not.** The set: `merged`, `stage`, `agent_slug`, `priority`,
    and the size trio `po_size` / `dev_size` / `pm_size` / `actual_size`. Send them
    at the top level of the PATCH body, and **read them back from the top level**:
 

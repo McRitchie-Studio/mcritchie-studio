@@ -383,10 +383,6 @@
     </div>
   <% end %>
 
-  <% if task.stage == 'failed' && task.error_message.present? %>
-    <p class="text-xs text-danger-ink truncate mt-1"><%= task.error_message %></p>
-  <% end %>
-
   <%# Footer timestamp row: created-at (🌱, floats left) and updated-at (✏️,
       floats right) as absolute stamps — an at-a-glance read of a card's age and
       its last touch. The Local Demo action moved up into the full-length status
