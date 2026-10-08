@@ -52,6 +52,7 @@ class HarnessKeyCliTest < Minitest::Test
       file = HarnessKey.write(proj, { "slug" => "sess-key", "token" => "KEY" }, env: pin(proj))
 
       assert_equal File.join(proj, ".agents", "harness-key.json"), file
+      assert_raises(NoMethodError) { HarnessKey.path(proj) }
       assert_equal 0o600, File.stat(file).mode & 0o777
       assert_equal "KEY", HarnessKey.token(proj, env: pin(proj))
     end
@@ -164,7 +165,19 @@ class HarnessKeyCliTest < Minitest::Test
     end
   end
 
+  def test_unit_help_and_an_unknown_flag_act_on_nothing
+    Dir.mktmpdir do |proj|
+      assert_equal HarnessKeyCli::OK, run_cli(proj, ["request", "--help"])
+      assert_includes @out.string, "usage: harness-key request"
+      assert_equal HarnessKeyCli::USAGE_CODE, run_cli(proj, ["request", "--force"])
+      assert_includes @err.string, "invalid option: --force"
+      assert_equal HarnessKeyCli::USAGE_CODE, run_cli(proj, %w[request extra])
+      assert_empty @api.calls, "nothing reached the board"
+      assert_nil HarnessKey.read(proj, env: pin(proj))
+    end
+  end
+
   def test_unit_an_unknown_command_is_usage
-    Dir.mktmpdir { |proj| assert_equal HarnessKeyCli::USAGE, run_cli(proj, ["mint"]) }
+    Dir.mktmpdir { |proj| assert_equal HarnessKeyCli::USAGE_CODE, run_cli(proj, ["mint"]) }
   end
 end

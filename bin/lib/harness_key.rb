@@ -28,9 +28,8 @@ module HarnessKey
     dir.empty? ? ProjectsRoot.default_projects_dir : File.expand_path(dir)
   end
 
-  def path(projects_dir)
-    File.join(projects_dir, ".agents", FILE)
-  end
+  # Where the key is kept, for a message: never a path a caller can act on.
+  WHERE = "#{FILE} in the projects root's agent state directory"
 
   # A sandboxed process (a test run) never reads the operator's real key: it
   # would present it to whatever board the test points at.
@@ -101,7 +100,16 @@ module HarnessKey
     token && yield(token)
   end
 
+  # The file's path, resolved for a mutation: a sandboxed process that cannot
+  # prove its destination aborts here.
   def guarded_path(projects_dir, env)
     TaskUsageSandbox.enforce!(path(projects_dir), store: STORE, env: TaskUsageSandbox.guard_env(env))
   end
+
+  # The raw path. Private: a caller gets the contents (read) or a guarded path
+  # (write, clear), never this.
+  def path(projects_dir)
+    File.join(projects_dir, ".agents", FILE)
+  end
+  private_class_method :path
 end

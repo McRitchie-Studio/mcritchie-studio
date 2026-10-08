@@ -19,6 +19,7 @@
 #
 # Exit codes: 0 done · 1 refused or failed · 2 still pending · 3 usage.
 
+require "optparse"
 require_relative "lib/agent_api"
 require_relative "lib/harness_key"
 require_relative "lib/session_identity"
@@ -27,7 +28,7 @@ class HarnessKeyCli
   OK = 0
   FAILED = 1
   PENDING = 2
-  USAGE = 3
+  USAGE_CODE = 3
   MAX_WAIT = 600
   POLL_SECONDS = 5
 
@@ -41,28 +42,35 @@ class HarnessKeyCli
   end
 
   def run
-    command = @argv.shift
-    flags = parse_flags(@argv)
-    case command
-    when "request" then request(flags)
-    when "collect" then collect(flags)
-    when "status" then status
-    when "forget" then forget
-    else usage
+    flags = {}
+    parser = OptionParser.new do |opts|
+      opts.banner = USAGE
+      opts.on("--label MACHINE", "request: the machine's name on the board (default: this host)") { |v| flags["label"] = v }
+      opts.on("--code CODE", "collect: the one-time code the board shows the operator") { |v| flags["code"] = v }
+      opts.on("--wait SECONDS", Integer, "collect: keep trying for up to #{MAX_WAIT} seconds") { |v| flags["wait"] = v }
+      opts.on("-h", "--help", "print this and do nothing") { flags["help"] = true }
     end
+    command, *extra = parser.parse(@argv)
+    if flags["help"]
+      @out.puts(parser)
+      return OK
+    end
+    return usage unless extra.empty? && COMMANDS.include?(command)
+
+    send(command, flags)
+  rescue OptionParser::ParseError => e
+    @err.puts("harness-key: #{e.message}")
+    usage
   end
 
   private
 
-  def usage
-    @err.puts("usage: harness-key request [--label <machine>] | collect [--code <code>] [--wait <seconds>] | status | forget")
-    USAGE
-  end
+  COMMANDS = %w[request collect status forget].freeze
+  USAGE = "usage: harness-key request [--label <machine>] | collect [--code <code>] [--wait <seconds>] | status | forget"
 
-  def parse_flags(args)
-    flags = {}
-    flags[args.shift.sub(/\A--/, "")] = args.shift.to_s while args.first.to_s.start_with?("--")
-    flags
+  def usage
+    @err.puts(USAGE)
+    USAGE_CODE
   end
 
   def dir = @api.projects_dir
@@ -139,11 +147,11 @@ class HarnessKeyCli
     HarnessKey.write(dir, { "slug" => data["slug"], "label" => data["label"] || held["label"], "token" => data["token"],
                             "granted_at" => data["issued_at"] }, env: @env)
     @out.puts("harness-key: #{data['slug']} granted to #{data['label'] || held['label']} " \
-              "(key length #{data['token'].length}, kept in #{HarnessKey.path(dir)}, not printed)")
+              "(key length #{data['token'].length}, kept owner-only in #{HarnessKey::WHERE}, not printed)")
     OK
   end
 
-  def status
+  def status(_flags = nil)
     token = HarnessKey.token(dir, env: @env)
     unless token
       pending = HarnessKey.open_request(dir, env: @env)
@@ -162,7 +170,7 @@ class HarnessKeyCli
     end
   end
 
-  def forget
+  def forget(_flags = nil)
     HarnessKey.clear(dir, env: @env)
     @out.puts("harness-key: the local file is gone. The key stays valid on the board until the operator revokes it: " \
               "bin/rails agent_sessions:revoke SLUG=<sess-…>")
