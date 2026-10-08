@@ -115,14 +115,15 @@ class ModalHostAdoptionTest < ActionDispatch::IntegrationTest
   # the assertion was blind to the case it exists for. An assignment, a `&&`,
   # and a `name: function` are all things the documentation never writes.
   test "the adopted host brings the registry seams the fork never had" do
-    src = ResolvedView.source("host", "studio/modals")
+    # The store's JavaScript, wherever the bundled engine keeps it.
+    src = ResolvedView.modal_host_script
 
     assert_match(/CARD_WIDTHS\s*&&/, src,
                  "the host must RESOLVE a per-modal width from the CARD_WIDTHS registry; " \
                  "the fork hardcoded max-w-sm on the card element")
-    assert_match(/cardClasses:\s*function/, src,
+    assert_match(ResolvedView.store_function("cardClasses"), src,
                  "cardClasses() is what applies the width and the animation classes")
-    assert_match(/window\.ModalAnimations\s*=\s*\{/, src,
+    assert_match(/\bwin(?:dow)?\.ModalAnimations\s*=\s*(?:\{|mergeAnimations\()/, src,
                  "the per-modal enter/exit animation registry is the third seam, and it must be " \
                  "BUILT here — the consumer extension point is an app defining " \
                  "window.ModalAnimations first and the host merging its own defaults over it, " \
