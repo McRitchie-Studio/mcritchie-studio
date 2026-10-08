@@ -15,7 +15,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     error.message
   end
 
-  test "test_grant_issues_unscoped_8h_admin" do
+  test "grant issues unscoped 8h admin" do
     freeze_time do
       login = request
       session = login.approve!(by: "alex@test.com")
@@ -40,7 +40,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     assert_equal "launch_phrase", login.decided_by
   end
 
-  test "test_lapse_mints_nothing" do
+  test "lapse mints nothing" do
     login = request
     travel 10.minutes + 1.second do
       assert_equal "lapsed", login.state
@@ -54,7 +54,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     travel(9.minutes) { assert_equal "pending", login.state } # control: inside the window it is open
   end
 
-  test "test_refusal_says_why" do
+  test "refusal says why" do
     login = request
     login.refuse!(by: "alex@test.com", reason: "declined by the operator")
 
@@ -66,7 +66,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     assert_equal "declined by the operator", login.summary["reason"]
   end
 
-  test "test_collect_once" do
+  test "collect once" do
     login = request
     key = login.collect_key
     assert_match(/is pending/, refusal(:pending) { login.collect!(collect_key: key, harness_session_id: HARNESS) })

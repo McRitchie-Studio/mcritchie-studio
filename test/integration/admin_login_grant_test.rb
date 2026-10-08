@@ -84,7 +84,7 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
 
   # ---- path 2: the Approve tap -------------------------------------------------
 
-  test "approve_tap_mints" do
+  test "approve tap mints" do
     login, key = posted
     log_in_as(users(:alex))
 
