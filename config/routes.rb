@@ -171,7 +171,7 @@ Rails.application.routes.draw do
   # bare 401/403 where every other walled page redirects.
   # docs/topics/logos.md. Task logo-studio-gallery-page.
   get "logos", to: "logos#index", as: :logos
-  get "logos/:brand", to: "logos#show", as: :logo
+  get "logos/:brand", to: "logos#show", as: :logo_brand
   get "logos/:brand/navbar", to: "logos#navbar", as: :navbar_logo
 
   # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
