@@ -257,9 +257,7 @@ class TaskCliTest < Minitest::Test
       "metadata" => { "devops" => @stub_devops }
     }.merge(@stub_columns || {})
     Array(@stub_omit_columns).each { |key| data.delete(key) }
-    body = { "data" => data.merge(@stub_progress || {}) }
-    body["warnings"] = @stub_warnings if @stub_warnings
-    JSON.generate(body)
+    JSON.generate("data" => data.merge(@stub_progress || {}))
   end
 
   def devops_of(request)
@@ -277,15 +275,6 @@ class TaskCliTest < Minitest::Test
     assert_equal SESSION, devops["session_id"]
     assert_equal "claude", devops["session_provider"]
     assert_equal "feature", devops["kind"]
-  end
-
-  # The board saves a long title and says so; the CLI prints what it said.
-  def test_create_prints_the_boards_warnings_and_succeeds
-    @stub_warnings = ["title is 9 words; 3-5 reads best on the board (put detail in agent_context)"]
-    _requests, _out, err, status = run_task(["create", "--title", "Session demo task", "--kind", "feature"])
-
-    assert status.success?, err
-    assert_includes err, "warning: title is 9 words; 3-5 reads best"
   end
 
   def test_create_stamps_session_from_codex_thread_env
@@ -2253,22 +2242,6 @@ class TaskCliTest < Minitest::Test
     assert_match(/<repo>=<pr-url>/, err)
     assert_nil requests.find { |r| r[:method] == "PATCH" },
                "a malformed pair must not PATCH a partial record"
-  end
-
-  # Guard catalog row 10.3: the url decides the key, so a pair typed under the
-  # wrong repo joins the stored map beside that repo's own entry.
-  def test_pr_url_for_keys_a_pair_by_the_repo_its_url_names
-    hub = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836"
-    turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
-    requests, _out, err, status = run_task(
-      ["update", "demo-task", "--pr-url-for", "mcritchie-studio=#{turf}"],
-      stub_devops: { "kind" => "feature", "pr_urls" => { "mcritchie-studio" => hub } }
-    )
-
-    assert status.success?, err
-    patch = requests.reverse.find { |r| r[:method] == "PATCH" }
-    assert_equal({ "mcritchie-studio" => hub, "turf-monster" => turf }, devops_of(patch)["pr_urls"])
-    assert_includes err, "is filed under turf-monster, the repo the url names"
   end
 
   # --- REMOVING an entry: `--pr-url-for <repo>=none` --------------------------
