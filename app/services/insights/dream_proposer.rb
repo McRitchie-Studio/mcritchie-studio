@@ -118,7 +118,12 @@ module Insights
         "source" => "task #{@task.slug} · #{found.key} · #{found.sources.join(", ")}",
         "soul" => found.soul
       }.merge(task_tags)
-      lines = front.map { |key, value| "#{key}: #{value.is_a?(Array) ? "[#{value.join(", ")}]" : value.to_json}" }
+      bare = %w[status soul]
+      lines = front.map do |key, value|
+        next "#{key}: [#{value.join(", ")}]" if value.is_a?(Array)
+
+        "#{key}: #{bare.include?(key) ? value : value.to_json}"
+      end
       <<~DREAM
         ---
         #{lines.join("\n")}

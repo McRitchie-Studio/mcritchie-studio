@@ -8,10 +8,17 @@
 #   bin/dream list [--task <slug>]     every approved dream with its file, ranked for the task
 #   bin/dream platform                 the sequence every session start loads
 #   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md
+#   bin/dream propose --materialize <finding>
+#                                      write the proposed dream a dream-proposal-<task> triage finding
+#                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
 #
 # Reads tracked files; --task also reads the task from the board, and prints
-# unranked, with the reason on stderr, when it cannot. Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
+# unranked, with the reason on stderr, when it cannot. propose reads the finding
+# from the board, runs only in a task desk, and never overwrites a file.
+# Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
 
+require "fileutils"
+require "pathname"
 require_relative "lib/dream_bank"
 
 class DreamCli
@@ -21,14 +28,19 @@ class DreamCli
   HELP_FLAGS = %w[-h --help help].freeze
   INDEX_MODES = %w[--write --check].freeze
   TASK_SLUG = /\A[a-z0-9][a-z0-9-]*\z/
+  PROPOSAL = /\Adream-proposal-([a-z0-9][a-z0-9-]*)\z/
+  BANK = "docs/agents/dreams"
 
-  # `task_reader` answers a slug with the board's task JSON, or nil.
-  def initialize(env: ENV, out: $stdout, err: $stderr, task_reader: nil)
+  # `task_reader` answers a slug with the board's task JSON, or nil;
+  # `finding_reader` answers a finding slug with its board row, or nil.
+  def initialize(env: ENV, out: $stdout, err: $stderr, task_reader: nil, finding_reader: nil, cwd: Dir.pwd)
     @env = env
     @dir = DreamBank.bank_dir(env)
     @out = out
     @err = err
     @task_reader = task_reader || method(:board_task)
+    @finding_reader = finding_reader || method(:board_finding)
+    @cwd = cwd
   end
 
   def run(argv)
@@ -40,6 +52,7 @@ class DreamCli
     when "index" then index(rest)
     when "platform" then rest.empty? ? platform : usage(@err, USAGE)
     when "list" then list(rest)
+    when "propose" then propose(rest)
     else soul(command, rest)
     end
   end
@@ -118,12 +131,60 @@ class DreamCli
   end
 
   def board_task(slug)
+    board_get("/api/v1/tasks/#{slug}")
+  end
+
+  def board_finding(slug)
+    Array(board_get("/api/v1/triage_findings?slug=#{slug}")).find { |row| row["slug"] == slug }
+  end
+
+  def board_get(path)
     require "json"
     require_relative "lib/agent_api"
     api = AgentApi.new(open_timeout: 2, read_timeout: 5, env: @env)
     token = api.token
-    response = token && api.http_get("/api/v1/tasks/#{slug}", bearer: token)
+    response = token && api.http_get(path, bearer: token)
     response && response.code.to_i == 200 ? JSON.parse(response.body)["data"] : nil
+  end
+
+  # The desk the command stands in (<repo>/.worktrees/<slug>), or nil.
+  def desk
+    Pathname.new(File.expand_path(@cwd)).ascend.find do |path|
+      path.parent.basename.to_s == ".worktrees" && !path.basename.to_s.start_with?("_")
+    end&.to_s
+  end
+
+  def propose(rest)
+    match = rest.size == 2 && rest.first == "--materialize" ? PROPOSAL.match(rest[1]) : nil
+    return usage(@err, USAGE) if match.nil?
+
+    root = desk
+    return refuse("propose writes into a task desk; #{@cwd} is not inside one.") if root.nil?
+    return refuse("#{root} has no #{BANK}/.") unless File.directory?(File.join(root, BANK))
+
+    row = begin
+      @finding_reader.call(rest[1])
+    rescue StandardError
+      nil
+    end
+    return refuse("could not read finding `#{rest[1]}` from the board.") unless row.is_a?(Hash)
+
+    body = row["body"].to_s
+    dream = DreamBank.parse(body, slug: match[1])
+    soul = dream&.souls&.first
+    unless dream && dream.status == "proposed" && dream.souls.size == 1 && DreamBank.roster.key?(soul)
+      return refuse("finding `#{rest[1]}` does not hold a proposed dream for one known soul.")
+    end
+
+    path = File.join(root, BANK, soul, "#{match[1]}.md")
+    return refuse("#{path} exists; it is not overwritten.") if File.exist?(path)
+
+    FileUtils.mkdir_p(File.dirname(path))
+    File.open(path, File::WRONLY | File::CREAT | File::EXCL) { |file| file.write(body) }
+    @out.puts("dream: wrote #{path} (status proposed)",
+              "Rewrite its question, answer and why from the source activities, run `bin/dream index --write`, " \
+              "and ask Alex to sign off (docs/agents/modules/dream.md Act 3).")
+    OK
   end
 
   def index(rest)

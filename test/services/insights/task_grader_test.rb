@@ -231,8 +231,8 @@ class Insights::TaskGraderTest < ActiveSupport::TestCase
 
     finding = TriageFinding.find_by!(slug: "dream-proposal-grade-dream-corrected")
     assert_equal TaskGrade::LEARNING, grade.verdict
-    assert_includes finding.body, "status: \"proposed\""
-    assert_includes finding.body, "soul: \"carl\""
+    assert_includes finding.body, "\nstatus: proposed\n"
+    assert_includes finding.body, "\nsoul: carl\n"
     assert_includes finding.body, "task grade-dream-corrected"
   end
 
