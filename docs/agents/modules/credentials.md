@@ -87,7 +87,7 @@ left alone.
 | `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
 | `MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)` | mainnet's opens every custodial mainnet wallet; development falls back to `secret_key_base` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | live Stripe on `turf-monster-mainnet`; local runs test mode |
-| `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value; development uses the fixed keys in `config/environments/development.rb` |
+| `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value and the stored TikTok connection; development uses the fixed keys in `config/environments/development.rb` |
 
 Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
 
@@ -261,9 +261,18 @@ ordinary facts; sensitive facts need the admin session.
 
 ## Fact encryption keys
 
-`Fact#value` is encrypted with Active Record Encryption. Production and QA read
-three config vars, generated once per app with `bin/rails db:encryption:init` and
-filed through [`credential-filing`](../agents/steffon/sops/credential-filing.md):
+`Fact#value` is encrypted with Active Record Encryption, and so is the stored
+TikTok connection (`TiktokConnection#refresh_token`). Production and QA read
+three config vars, one set per app. Both sets were filed on 2026-10-08 through
+[`credential-filing`](../agents/steffon/sops/credential-filing.md), in the
+`studio-applications` vault: `active-record-encryption.studio.applications`
+(production, `mcritchie-studio`) and
+`active-record-encryption.studio-qa.applications` (QA, `mcritchie-studio-qa`),
+fields `primary-key`, `deterministic-key` and `key-derivation-salt`. As of
+2026-10-08 each app's config holds all three names, each value matched its
+vault field by digest, and production had no stored fact when they were set
+([`credential-inventory.md`](credential-inventory.md)). A fresh app gets its own
+set, generated with `bin/rails db:encryption:init`.
 
 | Config var | Holds |
 |---|---|
@@ -273,9 +282,12 @@ filed through [`credential-filing`](../agents/steffon/sops/credential-filing.md)
 
 - Without them the app boots, `/api/v1/facts` answers 503 naming the vars, and
   the person page says facts cannot be read.
-- Losing the primary key or the salt makes every stored value unreadable. Keep
-  them in 1Password before the first fact is written, and never change one in
-  place.
+- Losing the primary key or the salt makes every stored value unreadable, and
+  nothing recovers a fact value. The stored TikTok connection becomes unreadable
+  too; that one recovers by signing in again at `/admin/tiktok/connect`.
+  Never change a key in place.
+- The two apps hold different sets. Never copy production's set to QA or the
+  reverse.
 - Development and test use fixed keys from `config/environments/`, which guard
   no real data. No key is committed for production, and the production values
   are on the [production-only list](#production-only-keys), so no restore copies

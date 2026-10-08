@@ -267,8 +267,8 @@ shared drive or manage its members.
 5. For a Workspace with no delegation yet, a super-admin adds the key's client id
    and the four scopes in the Admin console under Security, API controls,
    Domain-wide delegation ([`workspace-provision`](../agents/steffon/sops/workspace-provision.md)).
-6. For facts to go live: approve Steffon setting the three
-   `ACTIVE_RECORD_ENCRYPTION_*` values on production and QA
+6. Done 2026-10-08, on Alex's word: the three `ACTIVE_RECORD_ENCRYPTION_*`
+   values are set on production and QA, one set per app
    ([`credentials.md`](../modules/credentials.md)).
 
 Steffon provisions the knowledge bucket with his `bucket-provision` SOP before

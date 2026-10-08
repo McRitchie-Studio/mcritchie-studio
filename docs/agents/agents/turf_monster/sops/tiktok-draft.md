@@ -273,11 +273,17 @@ target users.
    token encrypted, so the production app must hold
    `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`,
    `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and
-   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. As of 2026-10-08 it holds
-   none of them. Generating and filing them is Steffon's
+   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. This is met as of
+   2026-10-08: production and QA each hold all three, a different set per app,
+   filed as `active-record-encryption.studio.applications` and
+   `active-record-encryption.studio-qa.applications` (vault
+   `studio-applications`). So this step is a check: confirm the three names
+   are present on the app (names only, never the values). A fresh app or a
+   restore that lacks them gets its own set through Steffon's
    [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex's
-   word; never invent them in a session. Until they are set, step 4 refuses
-   before it asks TikTok for anything.
+   word; never invent them in a session, and never copy production's keys to
+   QA or the reverse. On an app without them, step 4 refuses before it asks
+   TikTok for anything.
 4. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
    signed in to TikTok as the target user; the hub stores the connection. The
    page that comes back says it is connected and saved, and names the account,

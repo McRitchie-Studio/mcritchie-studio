@@ -380,6 +380,10 @@ TIKTOK_CLIENT_SECRET=...              #   "client-secret": the sandbox app's pai
 # The TikTok connection (refresh token, open id) is not a filed value: it lives in the hub's
 # tiktok_connections table. To recover it, sign in again at /admin/tiktok/connect.
 # TIKTOK_REFRESH_TOKEN / TIKTOK_OPEN_ID are a fallback, read only when no connection is stored.
+# ACTIVE_RECORD_ENCRYPTION_* is never set here (production-only list; development uses fixed keys).
+# The deployed sets live in Heroku config and in 1Password (studio-applications), filed 2026-10-08:
+#   "active-record-encryption.studio.applications" (production), "active-record-encryption.studio-qa.applications" (QA).
+# Stored fact values do not recover without their app's set; the TikTok connection recovers by signing in again.
 AWS_ACCESS_KEY_ID=...                 # S3 ImageCache bucket
 AWS_SECRET_ACCESS_KEY=...
 SES_AWS_ACCESS_KEY_ID=...             # 1Password: agent.aws.mcritchie-ses, SES API checks only
