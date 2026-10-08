@@ -1,0 +1,46 @@
+# Logo brand styles: the data Logos::NavbarLogo (lib/logos/navbar_logo.rb)
+# draws a brand's Navbar Logo from. Rules and rake task: docs/topics/logos.md.
+#
+# name       two words; the logo sets them on one line beside the icon
+# icon       a key in lib/logos/data/brand_icons.json
+# highlight  how one word leads the other:
+#              weight  the leading word is `heavy`, the other `light`
+#              colour  both words are `heavy`; the leading word takes `accent`
+# heavy      Montserrat weight for homogeneous text and the leading word
+# light      the quiet word's weight (highlight: weight only)
+# tones      fills for a light and a dark background. `text` is the name's
+#            colour; `quiet` (optional, defaults to `text`) is the non-leading
+#            word under highlight: weight; `accent` is the leading word under
+#            highlight: colour; `icon` maps each icon layer role to a fill.
+#
+# Fills are solid #hex only: no gradients.
+
+studio:
+  name: McRITCHIE STUDIO
+  icon: studio
+  highlight: weight
+  heavy: 800
+  light: 300
+  tones:
+    light:
+      text: "#1A1535"
+      icon: { primary: "#1A1535" }
+    dark:
+      text: "#FFFFFF"
+      icon: { primary: "#8E82FE" }
+
+industries:
+  name: McRITCHIE INDUSTRIES
+  icon: industries
+  highlight: weight
+  heavy: 700
+  light: 300
+  tones:
+    light:
+      text: "#262A30"
+      quiet: "#41464D"
+      icon: { primary: "#262A30", edge: "#8C939C" }
+    dark:
+      text: "#F4F5F7"
+      quiet: "#D3D6DA"
+      icon: { primary: "#D3D6DA", edge: "#FFFFFF" }
