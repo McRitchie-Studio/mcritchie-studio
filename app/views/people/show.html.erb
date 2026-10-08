@@ -108,6 +108,11 @@
     <% end %>
   <% end %>
 
+  <%# --- facts on file, admin only --- %>
+  <% if admin? %>
+    <%= render "people/facts", person: @person, chains: @fact_chains %>
+  <% end %>
+
   <%# --- the looks --- %>
   <div class="card p-6 space-y-4">
     <div class="flex items-center justify-between">

@@ -64,8 +64,8 @@ For each item, in order:
    expectation it fulfills (`expectation_id`) when one exists. Keep the
    repo-side original in `business-data/` per its README, one INDEX row each.
    A durable fact the item establishes (a code, a date, an address, an
-   advisor) also gets its row in the quick reference,
-   `business-data/FACTS.md` — cited back to this doc, with who asserted it;
+   advisor) is recorded with `bin/fact`, cited back to this doc, with who
+   asserted it in the note;
    see [the quick reference](#the-quick-reference--when-to-pull-from-facts-when-to-add-to-it).
 6. **Flag urgency:** a decision-changing fact (a moved date, a changed number)
    jumps the queue — surface it to Alex immediately rather than
@@ -122,6 +122,41 @@ REPORTED to Alex, never processed, never deleted.
 
 ## The quick reference — when to pull from FACTS, when to add to it
 
+### Facts are records on the hub
+
+A durable fact is an encrypted record on the hub: one subject (`person/<slug>`,
+`company/<slug>` or `app/<slug>`), one key, one value, and the document it came
+from. `bin/fact` reads and writes them, from the desk of a task you hold:
+
+```bash
+FACT=/Users/alex/projects/.agents/bin/fact     # fallback: /Users/alex/projects/mcritchie-studio/bin/fact
+
+$FACT company/<slug>                                               # current facts, each with its source
+$FACT company/<slug> --add naics=<code> --source <knowledge doc id> --note "the seller says"
+$FACT company/<slug> --add bank-account --source drive:<file id>    # a pointer: no value is stored
+$FACT --supersede <fact-slug> --value <new value> --source <doc>    # the old fact stays as history
+$FACT --retire <fact-slug>
+```
+
+- **Every fact names its source**: a knowledge doc id, or `drive:<file id>` for a
+  Google Drive original. File the document first, then record the fact.
+- **Identity data is never stored.** An SSN, a card, an account or routing
+  number, or a password answers 422. Record a pointer instead: the key with no
+  value and the source that holds the original.
+- **A fact is refined, never edited.** `--supersede` writes the new value and
+  links the old one to it; a person's page on the hub shows both.
+- **Two levels.** A desk's session reads and writes ordinary facts. `--sensitive`
+  facts need an admin session (`AGENT_ADMIN_SESSION_TOKEN`,
+  [`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). A
+  `person/<slug>` subject must be a person the hub holds; company and app slugs
+  are free.
+- **New facts go to `bin/fact` only**, not to a prose note or a new FACTS row.
+
+The rows already in `business-data/FACTS.md` stay there. Importing them into
+fact records is separate work, so read both until it is done.
+
+### The FACTS file
+
 `business-data/FACTS.md`, in the private `mcritchie-industries` repo, holds the
 answers sessions keep reaching for. Every row gives the value, an as-of date,
 a source (a knowledge doc `KD #n`, a filed path, a public page, or Alex's own
@@ -129,7 +164,7 @@ word with its date), **who asserted it**, and a History column. It is the fast
 answer; the source it cites holds the context behind it. This rule applies
 in **any** session, not only during capture.
 
-**Pull from it first** whenever your work needs a fact about Alex's companies:
+**Pull from `bin/fact` and FACTS first** whenever your work needs a fact about Alex's companies:
 an entity's legal name, EIN, formation date, address, industry code,
 headcount, advisors, or the deal's key dates. That includes:
 
@@ -143,7 +178,7 @@ there is a question for Alex, not a value to copy. If the fact is missing,
 search the knowledge layer and filed originals, then add the row you had to
 dig for.
 
-**Add to it in the same pass** whenever a session learns a durable fact,
+**Record a fact in the same pass** (`bin/fact --add`) whenever a session learns a durable fact,
 however it arrived: capture (email, Slack, Gmail, file drop), a call
 transcript, a form-fill, research on a public page, or Alex telling you in chat.
 **Durable** means a reference fact someone will ask for again. A figure that
@@ -151,8 +186,8 @@ moves weekly (a price, a peg, a balance) stays in its knowledge doc.
 
 - Record **who said it** ("the seller says", "Alex chose"). In an inline
   email reply, name the speaker from the text, not from the layout.
-- When a fact changes, update the value and move the old one into History.
-  Don't overwrite it.
+- When a fact changes, `--supersede` it. For a FACTS row, update the value and
+  move the old one into History. Don't overwrite either.
 - When two sources disagree, record both readings, which one is in use, and
   why.
 - The source must be on file. If the fact came from an email or document the
@@ -160,7 +195,8 @@ moves weekly (a price, a peg, a balance) stays in its knowledge doc.
 
 **What never goes in:** privileged deal content (APA terms, negotiating
 positions, buyer-side arithmetic). It stays behind its knowledge doc's access
-map, because FACTS is readable by anyone with the repo. And **no FACTS value
+map, because FACTS is readable by anyone with the repo and an ordinary fact by
+any desk's session. Identity data goes in neither. And **no FACTS value
 is ever copied into this public repo**, the task board, a PR body, or an
 Artifact.
 

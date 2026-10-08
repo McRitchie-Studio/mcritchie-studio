@@ -1,0 +1,13 @@
+<%# Where one fact came from, who recorded it and when. %>
+<p class="text-xs text-muted break-words" data-test="fact-source">
+  Source:
+  <% if fact.source_kind == "drive_file" %>
+    <%= link_to "Drive file #{fact.source_ref}", "https://drive.google.com/file/d/#{ERB::Util.url_encode(fact.source_ref)}/view",
+          class: "text-primary hover:underline", target: "_blank", rel: "noopener" %>
+  <% else %>
+    knowledge doc <span class="font-mono"><%= fact.source_ref %></span>
+  <% end %>
+  <% if fact.source_note.present? %>(<%= fact.source_note %>)<% end %>
+  · recorded by <%= fact.recorded_by_session&.soul || "an ended session" %>
+  on <%= fact.recorded_at.strftime("%Y-%m-%d") %>
+</p>
