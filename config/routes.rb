@@ -209,6 +209,8 @@ Rails.application.routes.draw do
     # the cast card's swaps; its page is the clip builder. Each clip (alt video x
     # chunk) takes uploaded versions, one primary, and a regenerate flag.
     resources :alt_videos, only: [:create, :show], param: :number do
+      # The page's signed URLs again, as JSON: it outlives the fifteen minutes they last.
+      get :links, on: :member, defaults: { format: :json }
       # The asset zips (piece 17): every clip's hand-off, or one clip's, streamed.
       resource :download, only: [:show], controller: "alt_video_downloads"
       resources :clips, only: [], param: :ordinal do

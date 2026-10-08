@@ -2,7 +2,10 @@
 <%= render "components/copy_text_script" %>
 <%= render "music_videos/player_scripts" %>
 
-<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-video" data-number="<%= @alt_video.number %>">
+<%# data-links-*: where the page asks for fresh signed links, how long they last and when these were signed (signedLinks, music_videos/_player_scripts). %>
+<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-video" data-number="<%= @alt_video.number %>"
+         data-links-url="<%= links_music_video_alt_video_path(@video, @alt_video) %>" data-links-ttl="<%= AltVideosController::SIGNED_URL_TTL %>"
+         data-links-signed-at="<%= (@signed_at.to_f * 1000).round %>">
   <header class="mb-6 min-w-0">
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="alt-video-kicker">
       Source video · <%= @alt_video.name %>
@@ -51,7 +54,7 @@
   </div>
 
   <% if @clips.any? %>
-    <%= render "alt_videos/watch", alt_video: @alt_video, clips: @clips, watch: @watch, audio_url: @urls[@video.source_object_key] %>
+    <%= render "alt_videos/watch", video: @video, alt_video: @alt_video, clips: @clips, watch: @watch, audio_url: @urls[@video.source_object_key] %>
     <%= render "alt_videos/full_video", video: @video, alt_video: @alt_video, clips: @clips, stitches: @stitches, urls: @stitch_urls,
                downloads: @stitch_downloads, here: @stitch_here %>
     <div class="flex flex-col gap-4" data-test="alt-clips">
@@ -64,4 +67,19 @@
   <% else %>
     <div class="empty-state text-muted" data-test="alt-clips-empty">This alt video has no clips: its source had no chunks when it was built.</div>
   <% end %>
+
+  <%# Said only when fresh links could not be had: the session ended, or the server did not answer. %>
+  <div x-data="{ state: '' }" @signed-links.window="state = $event.detail.state" x-show="state === 'signin' || state === 'failed'" x-cloak
+       class="fixed bottom-4 inset-x-4 z-[var(--z-alert)] mx-auto max-w-xl card p-3 text-sm text-warning-ink border border-warning/40 shadow-lg"
+       role="status" data-test="links-status" :data-state="state">
+    <span x-show="state === 'signin'" data-test="links-status-signin">
+      The file links on this page expired, and so did your session.
+      <%= link_to "Sign in again", login_path, class: "text-primary hover:underline font-semibold" %>, then reload this page.
+    </span>
+    <span x-show="state === 'failed'" x-cloak data-test="links-status-failed">
+      The file links on this page expired and fresh ones could not be fetched.
+      <button type="button" class="text-primary hover:underline font-semibold" @click="window.location.reload()">Reload the page</button>
+    </span>
+  </div>
 </section>
+<script>window.signedLinks.start();</script>

@@ -22,14 +22,16 @@
       <% if url %>
         <div x-data="clipPair()" class="absolute inset-0" data-test="clip-solo">
           <video x-ref="original" src="<%= first_frame_src(url) %>" controls playsinline preload="metadata"
-                 class="absolute inset-0 w-full h-full bg-black" data-test="clip-player"
-                 @error="failed.original = true"></video>
+                 class="absolute inset-0 w-full h-full bg-black" data-test="clip-player" data-signed-key="<%= chunk.object_key %>"
+                 @error="lost('original')"></video>
           <button type="button" x-show="!started" @click="playOriginal()"
                   class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 rounded-full px-4 py-2 bg-surface/90 text-heading shadow hover:text-primary"
                   data-test="clip-preview-button">
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
             <span class="text-sm font-semibold whitespace-nowrap">Preview the source chunk</span>
           </button>
+          <p x-show="renewing.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-body"
+             data-test="clip-link-refreshing">This link expired: getting a fresh one…</p>
           <p x-show="failed.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
              data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
         </div>
@@ -135,8 +137,8 @@
                 <% frame_url = urls[frame["object_key"]] %>
                 <figure class="min-w-0" data-test="clip-frame" data-key="<%= frame["object_key"] %>" data-letters="<%= frame["letters"].join(",") %>">
                   <% if frame_url %>
-                    <%= link_to frame_url, target: "_blank", rel: "noopener", class: "block" do %>
-                      <img src="<%= frame_url %>" alt="Frame <%= i + 1 %> at <%= video_timecode(frame["t_ms"]) %>, people <%= frame["letters"].join(", ") %>"
+                    <%= link_to frame_url, target: "_blank", rel: "noopener", class: "block", data: { signed_key: frame["object_key"] } do %>
+                      <img src="<%= frame_url %>" data-signed-key="<%= frame["object_key"] %>" alt="Frame <%= i + 1 %> at <%= video_timecode(frame["t_ms"]) %>, people <%= frame["letters"].join(", ") %>"
                            loading="lazy" class="w-full aspect-video object-cover rounded-md border border-subtle bg-inset">
                     <% end %>
                   <% else %>
@@ -146,7 +148,8 @@
                     <span class="text-muted font-mono tabular-nums"><%= video_timecode(frame["t_ms"]) %> · <%= frame["letters"].join(" ") %></span>
                     <% if (frame_download = downloads[frame["object_key"]]) %>
                       <%= link_to "Download", frame_download, download: frame["object_key"].split("/").last,
-                                  class: "text-primary hover:underline shrink-0", data: { test: "clip-frame-download" } %>
+                                  class: "text-primary hover:underline shrink-0",
+                                  data: { test: "clip-frame-download", signed_key: frame["object_key"], signed_as: "download" } %>
                     <% end %>
                   </figcaption>
                 </figure>
@@ -174,7 +177,7 @@
         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 min-w-0">
           <% if chunk && (download = downloads[chunk.object_key]) %>
             <%= link_to "Download #{clip_seconds(clip.duration_ms)} s clip", download, download: chunk.object_key.split("/").last,
-                        class: "btn btn-outline btn-sm", data: { test: "clip-chunk-download" } %>
+                        class: "btn btn-outline btn-sm", data: { test: "clip-chunk-download", signed_key: chunk.object_key, signed_as: "download" } %>
           <% else %>
             <span class="text-sm text-muted" data-test="clip-chunk-unreachable">Source clip not reachable.</span>
           <% end %>
@@ -231,7 +234,8 @@
                 </span>
                 <span class="flex items-center gap-2 shrink-0">
                   <% if (version_url = urls[version.object_key]) %>
-                    <%= link_to "Open", version_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline", data: { test: "clip-version-open" } %>
+                    <%= link_to "Open", version_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline",
+                                  data: { test: "clip-version-open", signed_key: version.object_key } %>
                   <% end %>
                   <% if version == primary %>
                     <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">Primary</span>
