@@ -32,8 +32,9 @@ module Api
       # - An agent session's token (AgentSession#token): the row is read on every
       #   call, so a revoked or expired session, a studio session whose task left
       #   building and review, or a reviewer's session whose claim is not live,
-      #   answers 401 with the reason. A client session answers
-      #   403: no board endpoint serves the client tier yet. The session then sets
+      #   answers 401 with the reason. A client session answers 403 everywhere but
+      #   the endpoints its runtime key names (AgentSession::CLIENT_ENDPOINTS: Turf
+      #   Monster's athletes read and game recap post). The session then sets
       #   Current.agent_session, which names the actor and drives the tier gates
       #   (Api::AgentSessionGate). A harness key (tier harness) is the exception: it
       #   is a machine's credential, so it sets Current.harness_key and no session,
@@ -81,13 +82,26 @@ module Api
 
         reason = session.refusal_reason
         return render_error(reason, status: :unauthorized, error_code: "SESSION_ENDED") if reason
-        if session.client?
-          return render_error("a client session reaches no board endpoint", status: :forbidden,
-                                                                             error_code: "SESSION_FORBIDDEN")
-        end
         return authenticate_harness_key!(session) if session.harness?
+        return render_client_refusal(session) if session.client? && !session.reaches_endpoint?(endpoint_signature)
 
         Current.agent_session = session
+      end
+
+      # This action as AgentSession::CLIENT_ENDPOINTS and the legacy census name it.
+      def endpoint_signature
+        "#{request.request_method} #{controller_path}##{action_name}"
+      end
+
+      def render_client_refusal(session)
+        routes = session.client_routes
+        reason = if routes.empty?
+                   "a client session reaches no board endpoint"
+                 else
+                   "a client session reaches no board endpoint but its own: #{session.soul}'s runtime key reaches " \
+                     "#{routes.to_sentence} and nothing else"
+                 end
+        render_error(reason, status: :forbidden, error_code: "SESSION_FORBIDDEN")
       end
 
       def authenticate_harness_key!(key)

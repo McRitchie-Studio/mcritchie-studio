@@ -23,6 +23,15 @@ class AgentSession < ApplicationRecord
   # builder.
   HARNESS_SOUL = "pokemon".freeze
   HARNESS_ISSUERS = %w[operator_grant launch_phrase].freeze
+  # What a client soul's runtime key reaches: the action ("<METHOD>
+  # <controller>#<action>") and the route a refusal names. A soul with no entry
+  # reaches nothing.
+  CLIENT_ENDPOINTS = {
+    "turf-monster" => {
+      "GET api/v1/athletes#index" => "GET /api/v1/athletes",
+      "POST api/v1/game_recaps#create" => "POST /api/v1/game_recaps"
+    }
+  }.freeze
   CLIENT_SOULS = %w[turf-monster tyrion].freeze
   ISSUERS = %w[task_claim review_claim operator_grant launch_phrase runtime_key].freeze
   STUDIO_ISSUERS = %w[task_claim review_claim].freeze
@@ -111,6 +120,17 @@ class AgentSession < ApplicationRecord
             harness_session_id: harness_session_id)
   end
 
+  # A client soul's runtime key (lib/tasks/agent_sessions.rake): a client session
+  # with no expiry in effect, which reaches CLIENT_ENDPOINTS for its soul. `label`
+  # names the runtime that holds it.
+  def self.grant_runtime_key!(soul:, label:)
+    value = Task.canonical_soul(soul)
+    raise ArgumentError, "SOUL must be a client soul with endpoints (#{CLIENT_ENDPOINTS.keys.join(", ")}), got #{soul.inspect}" unless CLIENT_ENDPOINTS.key?(value)
+    raise ArgumentError, "LABEL is required: it names the runtime that holds the key" if label.to_s.strip.empty?
+
+    create!(soul: value, tier: "client", issued_by: "runtime_key", label: label.to_s.strip)
+  end
+
   # Why `soul` may not take a studio login to `task` by `issued_by`, or nil when it
   # may. The machine credential presents the login, so the soul is never taken from
   # the request alone: the task record names who is entitled to it.
@@ -197,6 +217,16 @@ class AgentSession < ApplicationRecord
     return false unless studio?
 
     task_slug.present? && task_slug == slug.to_s
+  end
+
+  # The routes a client session reaches, as a refusal names them.
+  def client_routes
+    client? && issued_by == "runtime_key" ? CLIENT_ENDPOINTS.fetch(soul, {}).values : []
+  end
+
+  # May this client session call `action` ("<METHOD> <controller>#<action>")?
+  def reaches_endpoint?(action)
+    client? && issued_by == "runtime_key" && CLIENT_ENDPOINTS.fetch(soul, {}).key?(action)
   end
 
   # Why this session may not move `task` to `to` (a stage, or "blocked"), or nil
