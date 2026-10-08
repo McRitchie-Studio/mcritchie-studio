@@ -220,7 +220,7 @@ first signal in that order claims the proposal.
 | `operator_praise` | a note containing an operator phrase | the author of the newest handoff before it by another soul, else the task's builder |
 | `review_praise` | a scout report or a handoff, by a soul other than the builder, containing a review phrase | the same |
 
-A signal whose soul is not in `config/souls.yml` proposes nothing.
+A signal whose soul is not in `config/souls.yml` is skipped, and the next is tried.
 
 The proposal is the triage finding `dream-proposal-<task-slug>`, whose body is
 the dream file. One finding per task: a second grade, or a dismissed finding,
