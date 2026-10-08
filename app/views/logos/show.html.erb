@@ -13,7 +13,7 @@
   <div class="card p-4 sm:p-5 space-y-2">
     <div class="flex flex-wrap items-start gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0"><%= name %></h1>
-      <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_path(@logo.brand, guides: (1 unless @guides)),
+      <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, guides: (1 unless @guides)),
                   class: "btn btn-sm #{@guides ? 'btn-primary' : 'btn-neutral'} sm:ml-auto", data: { test: "guides-toggle" } %>
     </div>
     <p class="text-sm text-secondary">

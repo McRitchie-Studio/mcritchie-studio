@@ -14,7 +14,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   end
 
   def requests
-    { index: -> { get logos_path }, show: -> { get logo_path("industries") },
+    { index: -> { get logos_path }, show: -> { get logo_brand_path("industries") },
       navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") } }
   end
 
@@ -39,7 +39,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
     assert_select "[data-test='logo-brand-row'][data-brand='industries']" do
-      assert_select "a[href=?]", logo_path("industries"), text: "McRitchie Industries"
+      assert_select "a[href=?]", logo_brand_path("industries"), text: "McRitchie Industries"
       assert_select "[data-test='logo-plate'][data-tone='light'][style*='#FFFFFF'] img[alt=?][src=?]", LABEL,
                     navbar_logo_path("industries", rule: 4, text: "second", tone: "light", guides: 0)
       assert_select "[data-test='logo-plate'][data-tone='dark'][style*='#12141A'] img[alt=?]", LABEL.sub("light", "dark")
@@ -61,7 +61,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "a brand page shows every rule and text on a light and a dark plate, each with a download and a copy" do
     log_in_as(@admin)
-    get logo_path("industries")
+    get logo_brand_path("industries")
     assert_response :success
 
     assert_equal %w[3 4], css_select("[data-test='logo-rule']").map { |section| section["data-rule"] }
@@ -91,7 +91,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "the flat-icon note is Industries' alone" do
     log_in_as(@admin)
-    get logo_path("studio")
+    get logo_brand_path("studio")
     assert_response :success
     assert_select "h1", "McRitchie Studio"
     assert_select "[data-test='brand-note']", 0
@@ -99,13 +99,13 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "the guides toggle swaps every logo for its guide drawing and back" do
     log_in_as(@admin)
-    get logo_path("industries")
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_path("industries", guides: 1), text: "Show guides"
+    get logo_brand_path("industries")
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("industries", guides: 1), text: "Show guides"
     assert_select "img[data-test='logo-image'][src*='guides=1']", 0
 
-    get logo_path("industries", guides: 1)
+    get logo_brand_path("industries", guides: 1)
     assert_response :success
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_path("industries"), text: "Hide guides"
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("industries"), text: "Hide guides"
     assert_select "img[data-test='logo-image'][src*='guides=1']", 12
     assert_select "img[data-test='logo-image'][alt$='construction guides']", 12
     assert_select "a[data-test='logo-download'][href*='guides=1']", 12
@@ -133,7 +133,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "an unknown brand is a 404 on the page and on the endpoint" do
     log_in_as(@admin)
-    [logo_path("acme"), navbar_logo_path("acme"), navbar_logo_path("acme", rule: 9)].each do |path|
+    [logo_brand_path("acme"), navbar_logo_path("acme"), navbar_logo_path("acme", rule: 9)].each do |path|
       get path
       assert_response :not_found, path
     end
@@ -151,7 +151,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_no_match(/navbar_logo\.rb|variant\.rb|backtrace/i, response.body)
     end
 
-    get logo_path("industries", guides: "maybe")
+    get logo_brand_path("industries", guides: "maybe")
     assert_response :unprocessable_content
     assert_match(/unknown guides "maybe"/, response.body)
   end
