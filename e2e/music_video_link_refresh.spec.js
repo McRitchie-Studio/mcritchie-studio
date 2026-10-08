@@ -3,8 +3,9 @@
 // far longer. A player that fails on a lapsed link asks the page's links
 // endpoint for fresh ones, says so while it waits, comes back at the same place
 // and plays; the other links on the page move over with it; and "This browser
-// would not start both players" is never said about a lapsed link. A refresh
-// the server refuses says why, and the player then reports its file.
+// would not start both players" is never said about a lapsed link. The Watch
+// full video modal does the same for its clips. A refresh the server refuses
+// says why, and the player then reports its file.
 //
 // HOW EXPIRY IS STAGED. Nothing here waits fifteen minutes. The page's own
 // record of when its links were signed is wound back sixteen (lapse), which is
@@ -218,6 +219,43 @@ test("the links are refreshed before anything fails, one request at a time", asy
   expect(await page.evaluate(() => window.signedLinks.fresh())).toBe(true);
   await expect(page.locator("[data-test='clip-load-failed']:visible")).toHaveCount(0);
   await expect(page.locator("[data-test='links-status']")).toBeHidden();
+});
+
+test("Watch full video opens on the freshest links, and a clip that fails mid-watch is cued again on a fresh one", async ({ page }) => {
+  const bucket = await stage(page);
+  await page.goto(STITCH_DEMO);
+  await loaded(page.locator("[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-compare']"));
+
+  // The page sat open: its links lapsed and were refreshed before the modal was ever built.
+  await bucket.lapse();
+  await page.evaluate(() => window.signedLinks.woke());
+  await expect.poll(() => bucket.state.round).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.signedLinks.fresh())).toBe(true);
+
+  await page.locator("[data-test='watch-open']").click();
+  const preview = page.locator("[data-test='stitch-preview']");
+  const front = preview.locator("[data-test='stitch-video']").first();
+  const waiting = preview.locator("[data-test='stitch-link-refreshing']");
+  const failed = preview.locator("[data-test='stitch-load-failed']");
+  // Built from the page as rendered, yet on the refreshed links: the clip and the source audio.
+  await expect(front).toHaveAttribute("src", /&fresh=1$/);
+  await expect(preview.locator("[data-test='stitch-audio']")).toHaveAttribute("src", /&fresh=1$/);
+  await expect.poll(() => front.evaluate((v) => v.readyState >= 1 && !v.error)).toBe(true);
+
+  // Mid-watch the links lapse and the clip on screen fails.
+  await bucket.lapse();
+  bucket.hold();
+  await front.evaluate((v) => v.load());
+  await expect(waiting).toBeVisible();
+  await expect(waiting).toHaveText("This link expired: getting a fresh one…");
+  await expect(failed).toBeHidden();
+
+  bucket.release();
+  await expect(front).toHaveAttribute("src", /&fresh=2$/);
+  await expect.poll(() => front.evaluate((v) => v.readyState >= 1 && !v.error)).toBe(true);
+  await expect(waiting).toBeHidden();
+  await expect(failed).toBeHidden();
+  expect(bucket.state.asked).toBe(2);
 });
 
 test("a refresh the server refuses says why, and the player then reports its file", async ({ page }) => {
