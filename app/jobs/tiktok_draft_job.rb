@@ -1,5 +1,5 @@
 # Runs Tiktok::DraftClip#run off the request: upload a clip's primary version
-# into the operator's TikTok drafts, then poll TikTok's status.
+# to the operator's TikTok inbox, then poll TikTok's status.
 #
 # NEVER RETRIED: ApplicationJob retries any StandardError three times, and a
 # retried upload is a second draft on the phone. The service records every

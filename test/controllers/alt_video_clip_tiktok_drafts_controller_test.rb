@@ -51,7 +51,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='true']" do
       assert_select "form[data-test='clip-tiktok-draft'] button:not([disabled])", /Draft to TikTok/
-      assert_select "*", /Sends Version 1 to your TikTok drafts/
+      assert_select "*", /Sends Version 1 to your TikTok inbox\. Nothing is posted until you finish it in the phone app/
     end
     assert_select "#{card(2)} [data-test='clip-tiktok'][data-enabled='false']" do
       assert_select "form[data-test='clip-tiktok-draft'] button[disabled]"
@@ -75,12 +75,17 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     draft = TiktokDraft.sole
     assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
     assert_equal [@clip.slug, 1, "queued", users(:alex).email], [draft.clip_slug, draft.version_number, draft.state, draft.requested_by]
-    assert_match(/on its way to your TikTok drafts/, flash[:notice])
+    assert_match(/on its way to your TikTok inbox .*The caption does not travel: paste it in the app/, flash[:notice])
 
     perform_enqueued_jobs
     page
     assert_select "#{card(1)} [data-test='clip-tiktok-latest'][data-state='delivered']" do
-      assert_select "[data-test='clip-tiktok-state']", "In your TikTok drafts"
+      assert_select "[data-test='clip-tiktok-state']", "Sent to your TikTok inbox"
+      assert_select "[data-test='clip-tiktok-next-step']",
+                    /Open the TikTok app on your phone → Inbox → System notifications → tap the notification/
+      assert_select "[data-test='clip-tiktok-caption-hint']",
+                    "TikTok did not receive this caption. Paste it in the app, replacing the hashtag TikTok prefilled."
+      assert_select "[data-test='clip-tiktok-ai-label']", /turn on the AI-generated label under "Content disclosure and ads"/
       assert_select "[data-test='clip-tiktok-caption']", "Bills 3-2 #nfl #nfltiktok #footballtiktok #bills #fyp"
       assert_select "[data-test='clip-tiktok-copy']", /Copy caption/
       assert_select "[data-test='clip-tiktok-publish-id']", /v_inbox_file~synthetic\.1/
@@ -100,6 +105,10 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{card(1)} [data-test='clip-tiktok'][data-attempts='2']"
     assert_select "#{card(1)} [data-test='clip-tiktok-latest'][data-state='processing']" do
       assert_select "[data-test='clip-tiktok-refresh']"
+      # Not yet in the inbox, so no "open the notification" line; the caption
+      # never travels, so its hint shows whatever the state.
+      assert_select "[data-test='clip-tiktok-next-step']", 0
+      assert_select "[data-test='clip-tiktok-caption-hint']", /TikTok did not receive this caption/
       assert_select "[data-test='clip-tiktok-stand-in']", "stand-in"
     end
     assert_select "#{card(1)} [data-test='clip-tiktok-history'] [data-test='clip-tiktok-attempt'][data-state='failed']", /HTTP 400/
@@ -112,7 +121,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
 
     assert_equal ["delivered", "SEND_TO_USER_INBOX"], draft.reload.values_at(:state, :tiktok_status)
-    assert_match(/In your TikTok drafts/, flash[:notice])
+    assert_match(/Sent to your TikTok inbox\. Open the TikTok app on your phone → Inbox → System notifications/, flash[:notice])
   end
 
   test "a refusal records nothing and says why" do
@@ -209,13 +218,13 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
   test "an attempt uploaded with its status unknown says to check TikTok and offers the re-poll, never Failed" do
     draft = TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "Bills 3-2", state: "unknown",
                                 publish_id: "v_inbox_file~p", uploaded_at: 1.minute.ago,
-                                error: "The upload reached TikTok, but its status could not be read (EOFError). Check your TikTok drafts.")
+                                error: "The upload reached TikTok, but its status could not be read (EOFError). Check your TikTok inbox on the phone.")
     log_in_as users(:alex)
     page
 
     assert_select "#{card(1)} [data-test='clip-tiktok-latest'][data-state='unknown']" do
       assert_select "[data-test='clip-tiktok-state']", "Uploaded, status unknown"
-      assert_select "[data-test='clip-tiktok-error']", /Check your TikTok drafts/
+      assert_select "[data-test='clip-tiktok-error']", /Check your TikTok inbox on the phone/
       assert_select "[data-test='clip-tiktok-refresh']"
     end
 

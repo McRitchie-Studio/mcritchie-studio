@@ -43,7 +43,7 @@ if !Rails.env.production? && (ENV["TIKTOK_DRAFT_STAND_IN"] == "1" || (Rails.env.
     # The e2e lane reads the same fixed season the X card's draft reads.
     Tiktok::DraftClip.fetch = Content::DraftXCopy.fetch if Rails.env.test?
     # The test adapter only records jobs; run the upload in-process so the
-    # page can reach "In your TikTok drafts". Scoped to this one job.
+    # page can reach "Sent to your TikTok inbox". Scoped to this one job.
     TiktokDraftJob.queue_adapter = :async if Rails.env.test?
   end
 end

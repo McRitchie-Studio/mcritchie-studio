@@ -99,6 +99,7 @@ class Appearances::PipelineTest < ActiveSupport::TestCase
   end
 
   test "the trade check reads the athlete's CURRENT team" do
+    Team.create!(name: "Cincinnati Bengals", sport: "football", league: "nfl") # a look may only name a team on file
     look = look!(descriptor: "Old jersey", colorway: "bengals white", team_slug: "cincinnati-bengals")
     sheet!(look)
 
