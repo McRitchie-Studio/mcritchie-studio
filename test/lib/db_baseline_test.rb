@@ -208,9 +208,9 @@ class DbBaselineTest < ActiveSupport::TestCase
 
   test "the suite marks the test database before rails/test_help checks for pending migrations" do
     helper = File.read(Rails.root.join("test/test_helper.rb"))
-    mark = helper.index(%(DbBaseline.mark_environment!("test"))
+    mark = helper.index('DbBaseline.mark_environment!("test"')
     assert mark, "test/test_helper.rb no longer marks the test database"
-    assert_operator mark, :<, helper.index(%(require "rails/test_help"))
+    assert_operator mark, :<, helper.index('require "rails/test_help"')
   end
 
   # --- the marker, against a scratch Postgres schema inside the test transaction ---
