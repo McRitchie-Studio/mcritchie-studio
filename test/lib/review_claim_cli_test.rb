@@ -63,6 +63,8 @@ class ReviewClaimCliTest < Minitest::Test
       # must survive an empty answer rather than depending on canned JSON riding
       # along with a status that forbids one.
       return Resp.new(code, "") if code.to_i == 204
+      # A 409 is the board's refusal: its body is the reason, with no `data` wrapper.
+      return Resp.new(code, JSON.generate(data)) if code.to_i == 409
 
       Resp.new(code, JSON.generate({ data: data }))
     end
@@ -383,6 +385,57 @@ class ReviewClaimCliTest < Minitest::Test
 
   def release_refusal_routes(holder)
     { "/review_claim/release" => [204, {}], "/review_claim" => [200, { "holder" => holder }] }
+  end
+
+  # Guard catalog row 10.7: the board's refusal is a 409 that carries its reason and
+  # the holder, so the CLI names who holds the task without a second read.
+  def claim_refusal(holder)
+    held = holder.is_a?(Hash) && holder["live"]
+    [409, { "error" => "review lease not changed", "holder" => holder,
+            "error_code" => held ? "REVIEW_CLAIM_HELD_BY_OTHER" : "REVIEW_CLAIM_NO_LEASE" }]
+  end
+
+  def holder_reads(cli)
+    cli.instance_variable_get(:@api).posts.select { |p| p[:method] == :get && p[:path].to_s.end_with?("/review_claim") }
+  end
+
+  def test_unit_a_409_release_names_the_holder_from_the_refusal_itself
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "label" => "Gengar", "live" => true }
+      c = cli(projects_dir: proj, routes: { "/review_claim/release" => claim_refusal(holder) })
+
+      assert_equal ReviewClaimCli::OK, c.run(["release", SLUG])
+      assert_match(/NOTHING released/, @err.string)
+      assert_match(/carl/, @err.string)
+      assert_empty holder_reads(c), "the refusal already said who holds it"
+    end
+  end
+
+  def test_unit_a_409_release_with_no_holder_says_the_task_is_free
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, routes: { "/review_claim/release" => claim_refusal(nil) })
+
+      assert_equal ReviewClaimCli::OK, c.run(["release", SLUG])
+      assert_match(/nothing released/i, @out.string)
+      assert_match(/free either way/i, @out.string)
+      assert_empty holder_reads(c)
+    end
+  end
+
+  def test_unit_a_409_renew_exits_skipped_for_a_live_holder_and_no_lease_for_none
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "label" => "Gengar", "live" => true }
+      held = cli(projects_dir: proj, routes: { "/review_claim/renew" => claim_refusal(holder) })
+
+      assert_equal ReviewClaimCli::SKIPPED, held.run(["renew", SLUG])
+      assert_match(/NOT renewed/, @err.string)
+      assert_match(/carl/, @err.string)
+      assert_empty holder_reads(held)
+
+      none = cli(projects_dir: proj, routes: { "/review_claim/renew" => claim_refusal(nil) })
+      assert_equal ReviewClaimCli::NO_LEASE, none.run(["renew", SLUG])
+      assert_match(/you hold no review lease/, @err.string)
+    end
   end
 
   def test_unit_release_refused_by_a_live_holder_names_them_and_warns
@@ -1119,6 +1172,17 @@ class ReviewClaimCliTest < Minitest::Test
       assert_equal ReviewClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, *anchor_flags])
       assert_equal 1, renew_posts(c).length,
                    "a submitted task is still under review — its lease must go on being renewed"
+    end
+  end
+
+  # The board's 409 refusal stops the loop, exactly as the older 204 does.
+  def test_unit_a_renew_loop_stops_on_the_boards_409_refusal
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, routes: { "/review_claim/renew" => claim_refusal(nil),
+                                            "/tasks/#{SLUG}" => [200, { "stage" => "submitted" }] })
+
+      assert_equal ReviewClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, *anchor_flags])
+      assert_equal 1, renew_posts(c).length, "one refused beat, then the loop ends"
     end
   end
 

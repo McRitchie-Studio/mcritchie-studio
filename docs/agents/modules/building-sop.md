@@ -49,6 +49,7 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
 - **Title: 3-5 words.** The slug derives from it and seeds `feat/<slug>`. Pass
   `--slug` only to override.
 - **Each `--accept` bullet: 5-12 words.** Put detail in `--agent-context "…"`.
+  Outside either range the board saves the task and answers with a warning.
 - **`--agent <soul>` is optional.** Review keeps you off your own PR by the souls
   on its commits (`<soul>@mcritchie.studio`), which the board derives from GitHub,
   so what matters is that your desk commits as you. `--agent` sets that identity

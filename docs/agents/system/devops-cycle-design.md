@@ -1245,8 +1245,8 @@ title so two real occurrences from different releases stay distinguishable while
 one occurrence refiled twice does not. Refusing was considered and rejected: it
 would discard text the operator just typed at the end of a ship, and the retro's
 whole contract is non-blocking. The `--file-tasks` titles are NOT slug-tagged —
-`Task::TITLE_WORD_RANGE` caps titles at 3-5 words, so a `(rel-…)` suffix would
-422 the create; the release rides in `agent_context` there instead.
+`Task::TITLE_WORD_RANGE` advises 3-5 word titles, which a `(rel-…)` suffix would
+overrun; the release rides in `agent_context` there instead.
 
 **PRIOR ART — the three-state field every finding carries.** A finding records
 whether anyone checked what was ALREADY on the surface it describes, because a

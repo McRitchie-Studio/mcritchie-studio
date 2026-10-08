@@ -110,10 +110,32 @@ class TaskDependenciesTest < ActiveSupport::TestCase
     assert task.save
   end
 
-  # The other half of DEVOPS_COLUMN_KEYS: the normalizer refuses the write (pinned
-  # by the spread test above) and this callback sheds anything a pre-wiring write
-  # already parked in the shadow store. Without it LOCATOR's "metadata.devops.<name>
-  # is ALWAYS null" would be an aspiration, not a guarantee.
+  # Guard catalog row 10.2. A devops post naming a routed column is that column's
+  # write: Task.devops_column_writes carries it and the devops hash never stores it.
+  test "[unit] a devops dependencies post routes to the column" do
+    raw = { "kind" => "chore", "dependencies" => "first-task-slug, second-task-slug" }
+
+    assert_equal({ "dependencies" => %w[first-task-slug second-task-slug] }, Task.devops_column_writes(raw))
+    assert_equal({ "kind" => "chore" }, Task.normalize_devops_metadata(raw))
+  end
+
+  test "[unit] a blank routed value and a post naming no routed key write nothing" do
+    assert_equal({}, Task.devops_column_writes("dependencies" => [], "epic_slug" => "  "))
+    assert_equal({}, Task.devops_column_writes("kind" => "chore"))
+    assert_equal({}, Task.devops_column_writes(nil))
+  end
+
+  # A read-merge-write echoes the whole stored devops hash. A legacy row's shadow
+  # must not ride that echo into the column.
+  test "[unit] an echo of a stored shadow is not a column write" do
+    stored = { "kind" => "chore", "dependencies" => ["never-read"], "epic_slug" => "old-epic" }
+
+    assert_equal({}, Task.devops_column_writes(stored.dup, stored))
+    assert_equal({ "epic_slug" => "new-epic" },
+                 Task.devops_column_writes(stored.merge("epic_slug" => "new-epic"), stored))
+  end
+
+  # A pre-wiring write parked a value in the shadow store; every save sheds it.
   test "[unit] a stored devops dependencies shadow is shed on save" do
     task = Task.create!(title: "Shadow Dependencies Task")
     task.update_column(:metadata, { "devops" => { "kind" => "chore", "dependencies" => ["never-read"] } })

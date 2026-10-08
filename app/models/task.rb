@@ -124,25 +124,20 @@ class Task < ApplicationRecord
   # admin-gated TasksController#update; Api::V1::TasksController clamps a
   # caller-supplied "web" to "api". Attribution only: it gates no approval value.
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
-  # Names that live in a top-level column, so a devops write to them raises with
-  # the sentence below (both controllers rescue into a 422). Without this,
-  # normalize_devops_metadata would skip the key in silence and the column and a
-  # same-named key would diverge. A blank value is still skipped.
+  # Server-owned column names: the sweep and Task#block! write them, so a devops
+  # write to one raises with the sentence below (both controllers answer 422). A
+  # blank value is skipped.
   DEVOPS_COLUMN_KEYS = {
     "release_slug" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                       "(Release#record_members), never set by hand",
     "release_train" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                        "(Release#record_members), never set by hand",
     "block_kind" => "the tasks.block_kind column — stamped server-side by Task#block! " \
-                    "(POST /api/v1/tasks/:slug/block)",
-    # `--depends-on` writes the column; #shed_column_shadow_keys drops a value an
-    # older write parked under the devops key.
-    "dependencies" => "the tasks.dependencies column — set it with " \
-                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)",
-    # The epic chip and the `?epic=` filter read the column, never a devops key.
-    "epic_slug" => "the tasks.epic_slug column — set it with " \
-                   "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
+                    "(POST /api/v1/tasks/:slug/block)"
   }.freeze
+  # Column names a caller may set. A devops post naming one is a write to its
+  # column (.devops_column_writes); the devops hash never stores it.
+  DEVOPS_ROUTED_KEYS = %w[dependencies epic_slug].freeze
   # Devops keys that also live in an indexed top-level column, because hot paths
   # query them: the board sorts on approval_status, the merged-PR webhook finds a
   # task by pr_url and branch, and the Pokédex finds one by session_id. The JSON
@@ -166,6 +161,7 @@ class Task < ApplicationRecord
   }.freeze
   # Human-facing fields are kept terse (so the operator can read the board at a
   # glance); agents put their verbose detail in `agent_context`.
+  # Outside these ranges a save succeeds and answers with a warning (#warnings).
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
   # `abandoned_prs` records each PR still open when an operator archived the task
@@ -227,12 +223,9 @@ class Task < ApplicationRecord
   validates :stage, inclusion: { in: STAGES }
   # `merged` is nil or a known git location; heartbeats read it as ground truth.
   validates :merged, inclusion: { in: MERGED_STATES }, allow_nil: true
-  # Naming discipline, gated on change so untouched old tasks still save.
-  validate :title_within_word_range, if: :title_changed?
   # agent_slug carries a foreign key; naming no agent is a validation error with
   # the reason (a 422), never the database's refusal.
   validate :agent_slug_names_an_agent, if: -> { agent_slug.present? && will_save_change_to_agent_slug? }
-  validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
   # Gated on change: a task must stay saveable after a dependency it named is
   # archived.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
@@ -288,11 +281,12 @@ class Task < ApplicationRecord
   after_commit :clear_stale_review_claim_on_submit,
                on: %i[create update],
                if: -> { previous_changes.key?("stage") && stage == "submitted" }
-  # #shed_column_shadow_keys enforces DEVOPS_COLUMN_KEYS at the last gate.
+  # #shed_column_shadow_keys keeps every column name out of the devops hash.
   # #restore_mascot_identity runs first of the mascot callbacks: a PATCH that omits
   # the mascot must not trigger a redraw. Then the session mascot re-derives on each
   # build-stage move, so a new agent's session gets its own Pokémon.
   before_save :shed_column_shadow_keys
+  before_save :collect_naming_warnings
   before_save :restore_mascot_identity
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
@@ -927,6 +921,11 @@ class Task < ApplicationRecord
     devops_list("risk_tags")
   end
 
+  # Naming advice from the last save; both task controllers answer with it.
+  def warnings
+    @warnings || []
+  end
+
   def devops_acceptance
     devops_list("acceptance")
   end
@@ -1409,7 +1408,7 @@ class Task < ApplicationRecord
   #   * a name not posted → unchanged
   #   * a name posted     → authoritative, blank included, so a field can be cleared
   # The posted-name set separates "absent" from "present and blank", which the
-  # normalized hash cannot. `& DEVOPS_KEYS` keeps a refused column name from also
+  # normalized hash cannot. `& DEVOPS_KEYS` keeps a column name from also
   # deleting. Pure; raises what normalize_devops_metadata raises (a 422 upstream).
   def self.merge_devops_metadata(existing, raw)
     normalized = normalize_devops_metadata(raw)
@@ -1450,24 +1449,35 @@ class Task < ApplicationRecord
     return if posted.nil?
     return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
 
-    # The remedy is a write the caller can make now, never a backward move: from
-    # `reviewed` on, the code is already on accepted. One sentence on three surfaces:
-    # this message, bin/task's #warn_dropped_approval_request!, and the board doc's
-    # Operator Validation Gate item 8. Pinned by
-    # test/models/task_approval_request_guard_test.rb.
+    # The remedy is ApprovalRequestRemedy.sentence, the one bin/task also prints.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
           "#{APPROVAL_REQUEST_STAGES.join(" or ")}, so this save would settle it to " \
-          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. Record the " \
-          "operator's answer where you stand: bin/task update <task-slug> --approval " \
-          "#{OPERATOR_APPROVAL_APPROVED}, or bin/task update <task-slug> --approval " \
-          "#{OPERATOR_APPROVAL_CHANGES_REQUESTED} — both are legal at every stage. If you still " \
-          "need his eyes on merged work, point him at the QA candidate once the qa-release sweep " \
-          "deploys it. Do not move the task back to re-open the request: a backward move " \
-          "un-merges nothing — from reviewed on, the code is already on accepted. Next time, ask " \
-          "BEFORE the work merges — a request now survives the handoff to submitted and pulses " \
-          "through review."
+          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. " \
+          "#{ApprovalRequestRemedy.sentence} Next time, ask BEFORE the work merges — a request " \
+          "now survives the handoff to submitted and pulses through review."
+  end
+
+  # The column writes a devops post carries under a routed name
+  # (DEVOPS_ROUTED_KEYS), as { "<column>" => value }. Both controllers merge it
+  # under their own params, so a column posted by its own name wins. A blank
+  # value writes nothing, and so does an echo of a shadow an old row still
+  # stores (`stored_devops`): a read-merge-write must not revive it. Pure.
+  def self.devops_column_writes(raw_devops, stored_devops = nil)
+    posted = (raw_devops || {}).to_h.transform_keys(&:to_s)
+    stored = (stored_devops || {}).to_h
+
+    DEVOPS_ROUTED_KEYS.each_with_object({}) do |key, writes|
+      value = routed_column_value(key, posted[key])
+      next if value.blank? || value == routed_column_value(key, stored[key])
+
+      writes[key] = value
+    end
+  end
+
+  def self.routed_column_value(key, raw)
+    key == "dependencies" ? normalize_devops_list(raw, split_commas: true) : raw.to_s.strip
   end
 
   # The one canonical epic handle, shared by the write and the `for_epic` read:
@@ -1496,11 +1506,12 @@ class Task < ApplicationRecord
         end
       next if normalized_value.blank?
 
-      # A column-backed name raises and names its home. After the blank guard, before
+      # A server-owned name raises and names its home. After the blank guard, before
       # the whitelist, so it never decays into a silent skip.
       if (home = DEVOPS_COLUMN_KEYS[key])
         raise ArgumentError, "devops.#{key} is not writable — it lives in #{home}"
       end
+      # A routed name (DEVOPS_ROUTED_KEYS) drops here: .devops_column_writes carries it.
       next unless DEVOPS_KEYS.include?(key)
 
       normalized[key] = normalized_value
@@ -1509,27 +1520,22 @@ class Task < ApplicationRecord
 
   # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" } from
   # a Hash (the API and `bin/task --pr-url-for`) or a list or string of bare urls.
-  # Both shapes validate alike: each value must parse as a PR url and is keyed by
-  # the repo it names. A bad pair raises (a 422 upstream), since a skipped PR url is
-  # the failure this key exists to close.
+  # Either way each value must parse as a PR url and is keyed by the repo it names.
+  # A value that is no PR url raises (a 422 upstream), since a skipped PR url is the
+  # failure this key exists to close.
   def self.normalize_devops_map(value)
-    pairs =
-      if value.is_a?(Hash)
-        value.to_h.map { |repo, url| normalize_devops_map_pair(repo, url) }
-      else
-        # A PR url is an identifier, so the list branch splits commas; a joined entry
-        # would drop the second PR. The Hash branch needs no rule: a key must match its
-        # url's repo.
-        normalize_devops_list(value, split_commas: true).map { |url| normalize_devops_map_pair(nil, url) }
-      end
+    # A PR url is an identifier, so a string or list splits commas; a joined entry
+    # would drop the second PR.
+    urls = value.is_a?(Hash) ? value.to_h.values : normalize_devops_list(value, split_commas: true)
 
-    pairs.compact.to_h
+    urls.filter_map { |url| normalize_devops_map_pair(url) }.to_h
   end
 
-  # One validated `<repo> => <pr url>` pair, or nil for a blank value. A blank is
-  # the unset: writers send the whole map, so blanking a value removes it.
-  def self.normalize_devops_map_pair(repo, url)
-    repo = repo.to_s.strip
+  # One `<repo> => <pr url>` pair, or nil for a blank value. A blank is the unset:
+  # writers send the whole map, so blanking a value removes it. The key is the repo
+  # the url names; a caller's own key is not read, so no entry sits under the
+  # wrong repo.
+  def self.normalize_devops_map_pair(url)
     url = url.to_s.strip
     return nil if url.blank?
 
@@ -1538,11 +1544,6 @@ class Task < ApplicationRecord
       raise ArgumentError,
             "devops.pr_urls entry #{url.inspect} names no repo — expected a " \
             "github.com/<owner>/<repo>/pull/<n> url"
-    end
-    if repo.present? && repo != named
-      raise ArgumentError,
-            "devops.pr_urls entry #{repo.inspect} => #{url.inspect} is filed under the " \
-            "wrong repo — that url names #{named.inspect}"
     end
 
     [named, url]
@@ -2587,17 +2588,15 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # Strip any devops key that shadows a column, on every save. Two layers on
-  # purpose: normalize_devops_metadata raises at the front door, and this sheds in
-  # silence for paths around it (a raw `metadata:` PATCH, legacy rows), where
-  # raising would brick saves that never named the key. Keep both.
+  # Strip any devops key that shadows a column, on every save: a raw `metadata:`
+  # write and legacy rows reach here without passing normalize_devops_metadata.
   def shed_column_shadow_keys
     return if metadata.blank?
 
     devops = metadata["devops"]
     return unless devops.is_a?(Hash)
 
-    DEVOPS_COLUMN_KEYS.each_key { |key| devops.delete(key) }
+    (DEVOPS_COLUMN_KEYS.keys + DEVOPS_ROUTED_KEYS).each { |key| devops.delete(key) }
   end
 
   # Carry the mascot handle across a write that blanked it (a blank post or a raw
@@ -2809,13 +2808,24 @@ class Task < ApplicationRecord
     errors.add(:agent_slug, "names no agent (#{agent_slug})") unless Agent.exists?(slug: agent_slug)
   end
 
-  # Titles stay 3-5 words; detail belongs in agent_context.
-  def title_within_word_range
-    count = word_count(title)
-    return if TITLE_WORD_RANGE.cover?(count)
+  # Naming advice for the fields this save changes: a title outside 3-5 words, an
+  # acceptance bullet outside 5-12. Advice only; the save goes through.
+  def collect_naming_warnings
+    found = []
+    if title_changed? && !TITLE_WORD_RANGE.cover?(count = word_count(title))
+      found << "title is #{count} words; #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} reads best " \
+               "on the board (put detail in agent_context)"
+    end
+    if acceptance_changed?
+      devops_acceptance.each_with_index do |bullet, i|
+        count = word_count(bullet)
+        next if ACCEPTANCE_WORD_RANGE.cover?(count)
 
-    errors.add(:title, "must be #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} words " \
-                       "(was #{count}) — name it tightly; put detail in agent_context")
+        found << "acceptance ##{i + 1} is #{count} words; #{ACCEPTANCE_WORD_RANGE.first}-" \
+                 "#{ACCEPTANCE_WORD_RANGE.last} reads best: #{bullet.to_s.truncate(48)}"
+      end
+    end
+    @warnings = found
   end
 
   # Coerce `dependencies` into the flat list of slug strings Release::Ordering
@@ -2864,16 +2874,5 @@ class Task < ApplicationRecord
     errors.add(:dependencies, "name no task on this board: #{unknown.map(&:inspect).join(", ")} — " \
                               "Release::Ordering silently ignores a dependency it cannot resolve, " \
                               "so the sequencing you declared would never happen")
-  end
-
-  # Each acceptance bullet stays 5-12 words.
-  def acceptance_bullets_within_word_range
-    devops_acceptance.each_with_index do |bullet, i|
-      count = word_count(bullet)
-      next if ACCEPTANCE_WORD_RANGE.cover?(count)
-
-      errors.add(:base, "acceptance ##{i + 1} must be #{ACCEPTANCE_WORD_RANGE.first}-" \
-                        "#{ACCEPTANCE_WORD_RANGE.last} words (was #{count}): #{bullet.to_s.truncate(48)}")
-    end
   end
 end

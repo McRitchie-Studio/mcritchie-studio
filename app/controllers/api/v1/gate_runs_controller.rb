@@ -87,14 +87,13 @@ module Api
                               "(live gates: #{GateRun::KEYS.join(', ')})",
                               error_code: "RETIRED_GATE_KEY")
         end
-        unless GateRun::KEYS.include?(gate_key)
-          return render_error("unknown gate key #{gate_key.inspect} (one of: #{GateRun::KEYS.join(', ')})",
-                              error_code: "INVALID_GATE_KEY")
-        end
-        return if GateRun.grain_for(gate_key) == subject_type
+        return if GateRun::KEYS.include?(gate_key)
 
-        render_error("#{gate_key} is a #{GateRun.grain_for(gate_key)}-grain gate, not #{subject_type}",
-                     error_code: "GATE_GRAIN_MISMATCH")
+        # A key on the wrong grain is GateRun's own validation
+        # (#key_grain_matches_subject_type): the write raises RecordInvalid and the
+        # base controller answers 422 with its sentence.
+        render_error("unknown gate key #{gate_key.inspect} (one of: #{GateRun::KEYS.join(', ')})",
+                     error_code: "INVALID_GATE_KEY")
       end
 
       def common_args

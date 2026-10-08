@@ -154,7 +154,7 @@ class TasksController < ApplicationController
     @task = Task.new(task_params)
     rescue_and_log(target: @task) do
       @task.save!
-      redirect_to task_path(@task.slug), notice: "Task created."
+      redirect_to task_path(@task.slug), notice: saved_notice("Task created.")
     end
   rescue StandardError => e
     @agents = Agent.active.order(:position)
@@ -171,7 +171,7 @@ class TasksController < ApplicationController
       Current.task_event_actor = current_activity_agent_slug || current_user&.email
       @task.update!(task_params)
       respond_to do |format|
-        format.html { redirect_to task_path(@task.slug), notice: "Task updated." }
+        format.html { redirect_to task_path(@task.slug), notice: saved_notice("Task updated.") }
         format.json { render json: @task }
       end
     end
@@ -396,6 +396,11 @@ class TasksController < ApplicationController
     ).compact
   end
 
+  # The flash for a save, with the task's naming advice after it.
+  def saved_notice(text)
+    [text, *@task.warnings.map { |warning| "Note: #{warning}." }].join(" ")
+  end
+
   def task_params
     permitted = params.require(:task).permit(
       :title,
@@ -440,14 +445,10 @@ class TasksController < ApplicationController
         # the column. Do not "tidy" these away.
         :release_slug,
         :release_train,
-        # Same reason, newer column. `dependencies` is the tasks.dependencies
-        # column as of /tasks/wire-task-dependencies-field; two docs spent months
-        # telling agents to "declare `dependencies: [<task>]`", so the devops
-        # namespace is exactly where someone will try to write it. Listing it
-        # lets Task::DEVOPS_COLUMN_KEYS answer with a 422 that names the real
-        # home; omitting it would have strong params drop the name silently,
-        # which is the defect above, not a tidier list.
+        # Routed to their columns (Task.devops_column_writes), never stored as
+        # devops keys.
         :dependencies,
+        :epic_slug,
         :requires_release_conductor,
         :included_in_release,
         :approval_status,
@@ -475,7 +476,7 @@ class TasksController < ApplicationController
     return attrs unless permitted[:devops]
 
     attrs[:metadata] = merged_metadata_with_devops(permitted[:devops], stage: permitted[:stage])
-    attrs
+    attrs.reverse_merge(Task.devops_column_writes(permitted[:devops], @task&.devops))
   end
 
   # Fold a form's PARTIAL devops post into the task's full metadata.

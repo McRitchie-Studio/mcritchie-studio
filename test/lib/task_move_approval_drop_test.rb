@@ -45,6 +45,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require_relative "../../lib/approval_request_remedy"
 # Neutralizes the ambient session vars and pins the usage/marker write roots, so a
 # child never reads the operator's live session or writes into his real cost store.
 require_relative "../support/session_env"
@@ -312,8 +313,10 @@ class TaskMoveApprovalDropTest < Minitest::Test
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
-    assert_match(/already approved in words, record it/, err,
-                 "the governing condition leads — not advice for last time")
+    # The sentence is the one the board's 422 carries, with this CLI's command and
+    # the task's own slug in it.
+    assert_includes err.gsub(%r{\S*bin/task}, "bin/task"),
+                    ApprovalRequestRemedy.sentence(command: "bin/task", slug: SLUG)
 
     commands = err.scan(%r{bin/task ([^.,;\n]+)}).flatten.map(&:split)
     # Guard the SCAN before trusting it: a regex that matched nothing would loop zero

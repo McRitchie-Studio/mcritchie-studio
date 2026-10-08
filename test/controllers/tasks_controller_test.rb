@@ -1687,6 +1687,33 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "textarea[name='task[devops][acceptance]']", text: /Original review continues without interruption/
   end
 
+  # Guard catalog row 10.2: the form's devops spelling writes the columns.
+  test "[integration] a form devops post naming dependencies and epic_slug writes the columns" do
+    log_in_as(@admin)
+    blocker = Task.create!(title: "Publish Engine Gem")
+    task = Task.create!(title: "Adopt Engine Gem")
+
+    patch task_path(task.slug),
+          params: { task: { devops: { kind: "chore", dependencies: blocker.slug, epic_slug: "devops-v3" } } }
+
+    assert_redirected_to task_path(task.slug)
+    task.reload
+    assert_equal [blocker.slug], task.dependencies
+    assert_equal "devops-v3", task.epic_slug
+    assert_equal({ "kind" => "chore" }, task.devops.slice("kind", "dependencies", "epic_slug"))
+  end
+
+  test "[integration] the form saves a long title and the flash says so" do
+    log_in_as(@admin)
+
+    assert_difference "Task.count", 1 do
+      post tasks_path, params: { task: { title: "This form title runs well past five words" } }
+    end
+
+    assert_redirected_to task_path(Task.order(:created_at).last.slug)
+    assert_match(/Task created\. Note: title is 8 words; 3-5 reads best/, flash[:notice])
+  end
+
   test "[integration] create preserves followup task shape from form params" do
     log_in_as(@admin)
 
@@ -1794,15 +1821,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_nil @new_task.reload.devops["pr_urls"]
   end
 
-  test "[integration] a web devops edit 422s on a pr_urls url filed under the wrong repo" do
+  test "[integration] a web devops edit keys a pr_urls url by the repo it names" do
     log_in_as(@admin)
     turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
 
     patch task_path(@new_task.slug, format: :json),
           params: { task: { devops: { kind: "bug", pr_urls: { "mcritchie-studio" => turf } } } }
 
-    assert_response :unprocessable_entity
-    assert_match(/wrong repo/, JSON.parse(response.body)["error"])
+    assert_response :success
+    assert_equal({ "turf-monster" => turf }, @new_task.reload.devops["pr_urls"])
   end
 
   # === A board UI edit is a PARTIAL devops write ===

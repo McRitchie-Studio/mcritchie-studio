@@ -50,8 +50,8 @@ module TaskColumnFields
   # The names this CLI resolves from the COLUMN and never from metadata.devops.
   # `show --verbose` reads these through this module; `bin/task field` consults
   # this list for the same reason, so the two surfaces can never disagree about
-  # the same task. The server enforces the other half — Task::DEVOPS_COLUMN_KEYS
-  # refuses a devops write to these names and sheds any stored shadow — which is
+  # the same task. The server enforces the other half — it refuses or routes a
+  # devops write to these names and sheds any stored shadow — which is
   # what makes LOCATOR's "ALWAYS null" a guarantee rather than an observation.
   COLUMN_NAMES = %w[merged release_slug dependencies epic_slug].freeze
 

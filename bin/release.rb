@@ -9540,7 +9540,7 @@ end
 # measured floor case; five words is roughly "verb + object + where".
 RETRO_FOLLOWUP_MIN_WORDS = 5
 # How many leading words become the finding title (the board path uses 5 — see
-# retro's --file-tasks branch — because Task titles validate to 3-5 words).
+# retro's --file-tasks branch — because Task titles read best at 3-5 words).
 RETRO_FOLLOWUP_TITLE_WORDS = 8
 
 def retro_followup_words(text) = text.to_s.split(/\s+/).reject(&:empty?)
@@ -9699,12 +9699,9 @@ def retro
       step("file #{followups.size} follow-up task(s) via bin/task create (--file-tasks)")
       task_bin = File.expand_path("../bin/task", __dir__)
       followups.each do |f|
-        # NOT slug-tagged like the triage title: Task titles validate to 3-5
-        # words (Task::TITLE_WORD_RANGE), so a "(rel-…)" suffix would push every
-        # title out of range and the create would 422. The release stays in
-        # agent_context below, which is where task detail belongs anyway. A vague
-        # follow-up is REJECTED here by that same validation — loudly, by the
-        # board, which is the right place for it; the warning above says why.
+        # NOT slug-tagged like the triage title: a "(rel-…)" suffix would push every
+        # title past the 3-5 words the board reads best at (Task::TITLE_WORD_RANGE).
+        # The release stays in agent_context below.
         title = f.split(/\s+/).first(5).join(" ")
         # --no-claim: filing a retro follow-up must not repoint the conductor's
         # active-feature marker (and its live build-claim) onto each fresh task.

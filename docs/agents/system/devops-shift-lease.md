@@ -150,13 +150,14 @@ Two design points worth keeping. **Re-acquiring your own lapse is a heal, not a
 steal** — it is the same compare-and-set `acquire` uses, so the moment another
 instance holds a live lease the renewal is refused and writes nothing; what it fixes
 is a slow beat (or a slept laptop) making a renewer exit `:lease_lost` and silently
-stop renewing a review still being written. And **the 204 stays the detached
-renewer's stop signal**: `ReviewClaimCli#renewed?` reads the status code, renewers
-already running out in the fleet were spawned from older checkouts, and the two states
-that still answer 204 are exactly the two where stopping is correct. A bodiless 204
-cannot say WHICH refusal it is, so the CLI resolves that with the holder read
-`status` already owns — one extra call, on a path that used to produce no output at
-all.
+stop renewing a review still being written. And **a refusal carries its reason**:
+a review-claim renew or release that changes nothing answers 409 with `error`,
+an `error_code` (`REVIEW_CLAIM_HELD_BY_OTHER` or `REVIEW_CLAIM_NO_LEASE`) and the
+`holder` block, so the CLI names who holds the task from the refusal itself. That
+409 is the detached renewer's stop signal (`ReviewClaimCli#renewed?`), in exactly
+the two states where stopping is correct. A renewer from a checkout that reads
+only the older bodiless 204 does not stop on the 409: it ends when the task leaves
+`submitted`, when its anchor dies, or at its lifetime cap.
 
 **The REVIEW lane now has its own TTL** (fixed 2026-09-08,
 `review-lease-outlives-review`). Fixing the renewer was necessary and not sufficient:

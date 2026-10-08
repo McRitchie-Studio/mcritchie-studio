@@ -500,25 +500,58 @@ module Api
         assert_not @task.devops.key?("dependencies"), "the column write must not also seed a devops shadow"
       end
 
-      # Two docs told agents to "declare `dependencies: [<task>]`" for months, so
-      # the devops namespace is exactly where the habit points. Strong params
-      # dropping it there would be a 200 for a write the conductor never sees.
-      test "[integration] a devops dependencies write is refused and names the column" do
+      # Guard catalog row 10.2: the devops namespace is where the habit points,
+      # so a post there is the column write.
+      test "[integration] a devops dependencies write lands in the column" do
         blocker = Task.create!(title: "Publish Engine Gem")
-        @task.update!(dependencies: [blocker.slug])
 
         patch api_v1_task_path(@task.slug),
-              params: { devops: { kind: "chore", dependencies: ["typed-under-devops"] } },
+              params: { devops: { kind: "chore", dependencies: [blocker.slug] } },
               headers: @headers, as: :json
 
-        assert_response :unprocessable_entity, "a write to a column-backed name must fail loudly"
-        assert_match(/devops\.dependencies is not writable/, response.parsed_body["error"].to_s)
-        assert_match(/tasks\.dependencies column/, response.parsed_body["error"].to_s)
-        assert_match(/--depends-on/, response.parsed_body["error"].to_s,
-                     "the refusal must name the command that DOES work")
-
+        assert_response :success
         @task.reload
-        assert_equal [blocker.slug], @task.dependencies, "the column is untouched by a refused write"
+        assert_equal [blocker.slug], @task.dependencies
+        assert_equal "chore", @task.devops["kind"]
+        assert_not @task.devops.key?("dependencies"), "the routed name is never stored under devops"
+      end
+
+      test "[integration] a devops dependencies write naming no task answers 422 with the reason" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { dependencies: ["typed-under-devops"] } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/name no task on this board/, response.parsed_body["error"].to_s)
+        assert_equal [], @task.reload.dependencies
+      end
+
+      test "[integration] echoing a legacy row's stored shadow leaves the column alone" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+        @task.update!(dependencies: [blocker.slug])
+        @task.update_column(:metadata, { "devops" => { "kind" => "chore", "dependencies" => ["never-read"] } }) # rubocop:disable Rails/SkipsModelValidations
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug", dependencies: ["never-read"] } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        @task.reload
+        assert_equal [blocker.slug], @task.dependencies
+        assert_equal "bug", @task.devops["kind"]
+        assert_not @task.devops.key?("dependencies"), "the save sheds the shadow"
+      end
+
+      test "[integration] a column posted by its own name wins over the devops spelling" do
+        first = Task.create!(title: "Publish Engine Gem")
+        second = Task.create!(title: "Adopt Engine Gem")
+
+        patch api_v1_task_path(@task.slug),
+              params: { dependencies: [first.slug], devops: { dependencies: [second.slug] } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal [first.slug], @task.reload.dependencies
       end
 
       # The ordering pass cannot tell an unresolvable slug from no dependency at
@@ -592,17 +625,15 @@ module Api
         assert_nil @task.reload.devops["pr_urls"]
       end
 
-      test "[integration] a pr_urls url filed under the wrong repo is refused" do
+      test "[integration] a pr_urls url is keyed by the repo it names, whatever key it came under" do
+        turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+
         patch api_v1_task_path(@task.slug),
-              params: { devops: {
-                kind: "bug",
-                pr_urls: { "mcritchie-studio" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" }
-              } },
+              params: { devops: { kind: "bug", pr_urls: { "mcritchie-studio" => turf } } },
               headers: @headers, as: :json
 
-        assert_response :unprocessable_entity
-        assert_match(/wrong repo/, response.parsed_body["error"].to_s)
-        assert_match(/turf-monster/, response.parsed_body["error"].to_s)
+        assert_response :success
+        assert_equal({ "turf-monster" => turf }, @task.reload.devops["pr_urls"])
       end
 
       # Blanking a value is the API-level UNSET — every writer sends the whole
@@ -886,19 +917,24 @@ module Api
         assert_equal "renamed task title here", @task.title
       end
 
-      test "create enforces the 3-5 word title (naming discipline)" do
+      test "[integration] a long title creates the task and answers with a warning" do
         post api_v1_tasks_path,
              params: { title: "way too many words in this task title now" }, # 9 words
              headers: @headers, as: :json
-        assert_response :unprocessable_entity
-        assert_match(/3-5 words/, JSON.parse(response.body)["error"])
+        assert_response :created
+        body = response.parsed_body
+        assert_equal "way too many words in this task title now", body.dig("data", "title")
+        assert_equal 1, body["warnings"].size
+        assert_match(/title is 9 words; 3-5 reads best/, body["warnings"].first)
       end
 
-      test "create enforces 5-12 word acceptance bullets" do
-        post api_v1_tasks_path,
-             params: { title: "valid four word title", devops: { acceptance: ["too short"] } },
-             headers: @headers, as: :json
-        assert_response :unprocessable_entity
+      test "[integration] a short acceptance bullet saves and answers with a warning" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { acceptance: ["too short"] } },
+              headers: @headers, as: :json
+        assert_response :success
+        assert_equal ["too short"], @task.reload.devops_acceptance
+        assert_match(/acceptance #1 is 2 words; 5-12 reads best/, response.parsed_body["warnings"].first)
       end
 
       test "create accepts a compliant title and acceptance" do
@@ -906,6 +942,7 @@ module Api
              params: { title: "valid four word title", devops: { acceptance: ["the user can log in fine"] } },
              headers: @headers, as: :json
         assert_response :created
+        assert_not response.parsed_body.key?("warnings"), "a save with nothing to say carries no warnings key"
       end
 
       # A scalar `event` (e.g. ?event=foo) used to raise TypeError in the

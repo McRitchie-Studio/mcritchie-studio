@@ -1,6 +1,8 @@
 module Api
   module V1
     class TaskEventsController < BaseController
+      include Api::RequiresEventUsage
+
       STAGE_ALIASES = {
         "design" => "designed",
         "design_complete" => "designed",
@@ -40,7 +42,7 @@ module Api
       end
 
       def complete
-        return unless validate_usage!("completed")
+        return unless event_usage_present?(event_attributes, "completed")
 
         event = with_task_event_context do
           if transition_stage?
@@ -62,7 +64,7 @@ module Api
       end
 
       def fail
-        return unless validate_usage!("failed")
+        return unless event_usage_present?(event_attributes, "failed")
 
         event = Task.transaction do
           checkpoint = @task.record_checkpoint_event(
@@ -166,21 +168,6 @@ module Api
         return nil if raw.blank?
 
         Array(raw).map { |item| item.respond_to?(:to_unsafe_h) ? item.to_unsafe_h : item }
-      end
-
-      def validate_usage!(status)
-        attrs = event_attributes
-        return true unless %w[api agent cli].include?(attrs[:source].to_s)
-
-        missing = %i[model tokens_in tokens_out cost].select { |key| attrs[key].nil? || attrs[key].to_s.blank? }
-        return true if missing.empty?
-
-        render_error(
-          "event usage is required for #{attrs[:source]} #{status} events: #{missing.join(', ')}",
-          status: :unprocessable_entity,
-          error_code: "MISSING_EVENT_USAGE"
-        )
-        false
       end
 
       def with_task_event_context

@@ -1,12 +1,14 @@
 module Api
   module V1
     class ReviewEventsController < BaseController
+      include Api::RequiresEventUsage
+
       before_action :set_task
       require_task_scope
 
       def create
         attrs = event_attributes
-        return unless validate_usage!(attrs)
+        return unless event_usage_present?(attrs, attrs[:status])
 
         event = nil
         rescue_and_log(target: @task) do
@@ -69,21 +71,6 @@ module Api
         when "failed" then "failed"
         else "info"
         end
-      end
-
-      def validate_usage!(attrs)
-        return true unless %w[api agent cli].include?(attrs[:source].to_s)
-        return true unless %w[completed failed].include?(attrs[:status].to_s)
-
-        missing = %i[model tokens_in tokens_out cost].select { |key| attrs[key].nil? || attrs[key].to_s.blank? }
-        return true if missing.empty?
-
-        render_error(
-          "event usage is required for #{attrs[:source]} #{attrs[:status]} review events: #{missing.join(', ')}",
-          status: :unprocessable_entity,
-          error_code: "MISSING_EVENT_USAGE"
-        )
-        false
       end
 
       def with_task_event_context(attrs)

@@ -125,7 +125,7 @@ class TaskDevopsMirroredColumnsTest < ActiveSupport::TestCase
     assert_equal [], Task::DEVOPS_MIRRORED_KEYS & Task::DEVOPS_COLUMN_KEYS.keys,
                  "a retired key moves to DEVOPS_COLUMN_KEYS only once old writers are gone"
     assert_nothing_raised { Task.normalize_devops_metadata("pr_url" => PR_URL, "branch" => "feat/z") }
-    assert_raises(ArgumentError) { Task.normalize_devops_metadata("epic_slug" => "x") }
+    assert_raises(ArgumentError) { Task.normalize_devops_metadata("release_slug" => "x") }
   end
 
   test "[unit] the stale-approval settle moves the column with the key" do
