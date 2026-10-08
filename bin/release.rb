@@ -5004,7 +5004,9 @@ end
 # index does. Called once per gem straight after its publish (so a later gem's
 # release-check finds it) and again by bump_consumer_locks_for_qa; the memo keeps
 # the second call to a lookup.
-def await_published_gems!(published_gems, resume: "bin/release prepare")
+# `resume` is positional on purpose: callers pass a braceless `gem => version` hash,
+# which Ruby would read as keywords beside a keyword parameter.
+def await_published_gems!(published_gems, resume = "bin/release prepare")
   return if published_gems.nil? || published_gems.empty?
 
   @gems_ready ||= {}
@@ -7356,7 +7358,7 @@ def ship_gem(repo, version, frozen, member_slugs = [], candidate: nil)
       pushed_sha = Digest::SHA256.file(artifact).hexdigest
     end)
     # Before the checksum read, and before anything locks it: RubyGems must SERVE it.
-    await_published_gems!({ repo => version }, resume: "bin/release ship")
+    await_published_gems!({ repo => version }, "bin/release ship")
     confirm_published_checksum!(repo, version, pushed_sha)
   end
   @ship_live << "gem #{repo} #{version} live on RubyGems"
@@ -7535,7 +7537,7 @@ def repin_consumers(app_groups, published_gems, ship_sha)
   gem_names = published_gems.keys
   # RubyGems must serve every final before a lock names it (a re-run arrives here
   # with the gems already live and this machine possibly without them).
-  await_published_gems!(published_gems, resume: "bin/release ship") unless DRY
+  await_published_gems!(published_gems, "bin/release ship") unless DRY
   step("re-lock consumers of #{gem_names.join(', ')} to the final version (after all gems live, before any deploy)")
   app_groups.each do |group|
     repo = group["repo"]
