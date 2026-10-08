@@ -13,6 +13,18 @@ namespace :db do
       abort e.message
     end
 
+    desc "Read-only: report what the baseline finds in this database"
+    task check: "db:load_config" do
+      found = ActiveRecord::Base.connection_pool.with_connection do |connection|
+        DbBaseline::Marker.new(connection: connection, migrate_dir: Rails.root.join("db/migrate")).report
+      end
+      puts "baseline versions recorded: #{found.recorded.size}"
+      puts "present but not recorded (db:migrate records them): #{found.marked.size}"
+      puts "to create (db:migrate runs them): #{found.pending.empty? ? 'none' : found.pending.join(', ')}"
+      puts "tables short of baseline columns: #{found.short.empty? ? 'none' : found.short.join('; ')}"
+      exit 1 if found.short.any?
+    end
+
     desc "Bring a database that stopped partway through the retired migrations to their head, then migrate"
     task catch_up: "db:load_config" do
       DbBaseline::CatchUp.new(root: Rails.root, pool: ActiveRecord::Base.connection_pool).run!

@@ -283,7 +283,9 @@ module DbBaseline
   # Records baseline versions where the database already holds what they create.
   # Writes schema_migrations rows and nothing else.
   class Marker
-    Result = Struct.new(:marked, :pending, keyword_init: true)
+    # recorded: versions already in the ledger. marked: versions this run records.
+    # pending: migrations db:migrate will run. short: tables that lack baseline columns.
+    Report = Struct.new(:recorded, :marked, :pending, :short, keyword_init: true)
 
     def initialize(connection:, migrate_dir:)
       @connection = connection
@@ -294,15 +296,22 @@ module DbBaseline
       Dir[File.join(@migrate_dir, "#{PREFIX}*.rb")].sort.map { |path| Entry.new(path) }
     end
 
-    def mark!
+    # Reads only. `short` covers every baseline table the database holds.
+    def report
       applied = @connection.table_exists?("schema_migrations") ? @connection.select_values("SELECT version FROM schema_migrations") : []
-      open = entries.reject { |entry| applied.include?(entry.version) }
+      all = entries
+      done, open = all.partition { |entry| applied.include?(entry.version) }
       present = open.select { |entry| present?(entry) }
-      short = present.filter_map { |entry| shortfall(entry) }
-      raise Error, partway_message(short) if short.any?
+      Report.new(recorded: done.map(&:version), marked: present.map(&:version), pending: (open - present).map(&:file),
+                 short: (done + present).filter_map { |entry| shortfall(entry) })
+    end
 
-      record(present.map(&:version))
-      Result.new(marked: present.map(&:version), pending: (open - present).map(&:version))
+    def mark!
+      found = report
+      raise Error, partway_message(found.short) if found.short.any?
+
+      record(found.marked)
+      found
     end
 
     private
@@ -317,7 +326,7 @@ module DbBaseline
     end
 
     def shortfall(entry)
-      return unless entry.kind == :table
+      return unless entry.kind == :table && @connection.table_exists?(entry.name)
 
       missing = entry.columns - @connection.columns(entry.name).map(&:name)
       "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
