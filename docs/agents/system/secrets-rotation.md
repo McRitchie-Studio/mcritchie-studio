@@ -320,21 +320,23 @@ verified only that far — say so rather than recording a green verify.
 
 ## TikTok credentials (`TIKTOK_CLIENT_KEY/SECRET/REFRESH_TOKEN/OPEN_ID`)
 
-**Store:** the client key and secret in the 1Password item `🐊 TikTok` + Heroku config on `mcritchie-studio` + `.env` locally. The refresh token and the open id live in the hub's database (`tiktok_connections`, the token encrypted), written by the sign-in; `TIKTOK_REFRESH_TOKEN` / `TIKTOK_OPEN_ID` are a fallback read only when no connection is stored.
+**Store:** the client key and secret in the 1Password item `tiktok.studio.agents` in the `studio-agents` vault (fields `client-key`, `client-secret`) + Heroku config on `mcritchie-studio` + `.env` locally. The refresh token, the open id and the granted scope live in the hub's database (`tiktok_connections`, the token encrypted), written by the sign-in: nobody files them. `TIKTOK_REFRESH_TOKEN` / `TIKTOK_OPEN_ID` are a fallback, read only when no connection is stored.
 
 **Refresh token rotates roughly every 1 year, but use shortens it.** Watch for `invalid_grant` errors from `Tiktok::OAuthClient`.
 
 **Procedure (client key/secret — app-level, rarely changes):**
-1. https://developers.tiktok.com → your app → App information → regenerate Client Secret.
-2. Update 1Password `🐊 TikTok` fields `client key`, `client secret`.
-3. `heroku config:set TIKTOK_CLIENT_KEY=... TIKTOK_CLIENT_SECRET=... --app mcritchie-studio`.
+1. https://developers.tiktok.com → the sandbox app → regenerate Client Secret.
+2. Update the item's `client-key` and `client-secret`.
+3. Put both on the production app through `credential-filing`.
 
 **Procedure (refresh token + open_id — user-level, rotates with re-auth):**
-1. Visit `https://app.mcritchie.studio/admin/tiktok/connect` (admin-only).
-2. Authenticate as @turfmonstershow.
-3. The hub stores the connection itself. The success page says it is connected and saved, with the account, the granted scope and the refresh token's expiry day. It shows no token; nothing is copied to 1Password or Heroku.
+1. Visit `https://mcritchie.studio/admin/tiktok/connect` (admin-only).
+2. Sign in to TikTok as the sandbox app's target user.
+3. The hub stores the connection itself. The page that comes back says it is connected and saved, with the account, the granted scope and the refresh token's expiry day. It shows no token; nothing is copied to 1Password or Heroku.
 
 A refresh token TikTok rotates during a token refresh is saved over the stored one by `Tiktok::OAuthClient`.
+
+The sign-in asks for drafts only. `TIKTOK_SCOPES` widens it; see `docs/topics/content-pipeline.md`, "TikTok API posting". When the sign-in does not connect, the page says why; the fixes are in the `tiktok-draft` SOP's "Setup".
 
 **Verify:** `bin/tiktok-draft --whoami --production` prints the account.
 

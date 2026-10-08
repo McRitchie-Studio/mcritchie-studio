@@ -1,7 +1,7 @@
 # TikTok Draft
 <!-- registry: clip slug in, a private draft in Alex's TikTok inbox and its code-written caption out -->
 
-## Status: Built, waiting on TikTok keys
+## Status: Built; step 0 says whether this server is connected
 
 This is Turf Monster's `tiktok-draft` SOP. It is an input-output machine. The
 input is **a clip's slug**, the name printed on every clip card of an alt video
@@ -13,8 +13,8 @@ for him to paste when he posts.
 Alex posts from his phone. Nothing here publishes: a draft is private until he
 does.
 
-**Until the keys are filed, step 0 fails and you stop there.** What is missing,
-and who supplies it, is under [What blocks it today](#what-blocks-it-today).
+**Until the server is connected, step 0 fails and you stop there.** Connecting
+it is Alex's, once, under [Setup](#setup).
 
 There are two doors into the same machine (`Tiktok::DraftClip`):
 
@@ -84,7 +84,7 @@ must print the account Alex expects on his phone. Then:
 
 | It says | Meaning | Action |
 |---|---|---|
-| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys, or no account is connected; the message says which | Stop. Report it; see [What blocks it today](#what-blocks-it-today) |
+| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys, or no account is connected; the message says which | Stop. Report it; see [Setup](#setup) |
 | `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the sign-in at `/admin/tiktok/connect`, his to run; the hub stores what comes back |
 | Another account | The keys belong to the wrong account | Stop. Do not draft |
 
@@ -225,33 +225,49 @@ One row per clip: the slug, the attempt number and its state, the caption. Then
 anything held back and why. The state comes from the command's own line or the
 card, never from memory.
 
-## What blocks it today
+## Setup
 
-Measured 2026-10-07: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`,
-`TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` are set on no Heroku app and in no
-local env file, and the 1Password item `tiktok.studio.agents` (vault
-`studio-agents`) is filed empty on purpose, with the operator's note of
-2026-09-24 that TikTok is posted by hand. A draft is still posted by hand from
-the phone, so this SOP does not undo that decision, but filling the item is
-Alex's call: it grants the hub the ability to upload to his account.
+Once per TikTok account, and again when the refresh token dies. Every step is
+Alex's to authorize; the sign-in (step 3) is his to do, in his browser.
 
-In order, each Alex's to authorize:
+The hub connects through a **sandbox** TikTok app. The production Turf Monster
+app was refused ("not approved for personal or company internal use"), and a
+sandbox app needs no review. It drafts only to the accounts listed as its
+target users.
 
-1. **The developer app.** The TikTok app was submitted for review on
-   2026-05-04. Whether it is approved, and whether the Content Posting API's
-   upload scope (`video.upload`) is granted, could not be measured without the
-   keys. An app still in sandbox can draft only to accounts added as its test
-   users.
-2. **The app's keys.** The client key and the client secret go into
-   `tiktok.studio.agents` and onto the production app through
-   `credential-filing`. Never onto QA. They are the only TikTok values a person
-   files.
-3. **The sign-in.** Sign in at `/admin/tiktok/connect` on production, as an
-   admin, signed in to the TikTok account the drafts should land in; the hub
-   stores the connection. The page that comes back says it is connected and
-   saved, and names the account, the scope TikTok granted and the day the
-   refresh token expires. It shows no token and there is nothing to copy.
-4. **The probe.** Step 0 above. It is the first call that proves any of this.
+1. **The sandbox app**, at developers.tiktok.com:
+   - Products: **Login Kit** and **Content Posting API**. Direct Post stays off.
+   - Scopes: `user.info.basic` and `video.upload`.
+   - Login Kit redirect URI: `https://mcritchie.studio/admin/tiktok/callback`, exactly.
+   - Sandbox settings, Target Users: the account the drafts land in.
+2. **File the app's keys.** The sandbox's client key and client secret go in
+   the 1Password item `tiktok.studio.agents` (vault `studio-agents`), fields
+   `client-key` and `client-secret`, and onto the production app through
+   [`credential-filing`](../../steffon/sops/credential-filing.md). Never onto QA.
+3. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
+   signed in to TikTok as the target user; the hub stores the connection. The
+   page that comes back says it is connected and saved, and names the account,
+   the scope TikTok granted and the day the refresh token expires. It shows no
+   token: there is nothing to copy and nothing to file.
+4. **Probe.** Step 0 above. It is the first call that proves any of this.
+
+Sign in again, the same way, when the probe reports a refused token or the
+expiry day nears: the same account's connection is updated in place.
+
+When step 3 does not connect, the page says why:
+
+| It says | Fix |
+|---|---|
+| `TikTok keys are not set on this server` | Step 2 |
+| `The TikTok app lacks a permission this sign-in asked for` | Step 1: the products and the two scopes |
+| `This callback address is not registered on the TikTok app` | Step 1: the redirect URI, exactly |
+| `TikTok does not accept this client key` | Step 2: the key and secret are a mismatched pair, or a production app's |
+| `The signed-in TikTok account is not a target user of the sandbox app` | Step 1: Target Users, or sign in as the listed account |
+| `The sign-in was declined on TikTok` | Step 3 again |
+
+**The sign-in asks for drafts only.** `user.info.basic` and `video.upload` are
+all this SOP needs. Direct post (`video.publish`) is not part of it; why, and
+how it is opted into, is in the Background.
 
 Sign in again, the same way, when the probe reports a refused token or the
 expiry day nears: the same account's connection is updated in place.
@@ -311,6 +327,19 @@ server now holds the line (`Api::AgentSessionGate#require_admin_session_only!`).
 The grant here is the board's: the one-time code or the Approve tap, section 3 of
 `mcritchie-studio/docs/agents/system/agent-sessions-design.md`. The hub-shell
 grant is the fallback for when the board cannot grant.
+
+**Drafts only, and the direct-post opt-in.** TikTok refuses the whole sign-in
+with the error `scope` when the app lacks any one scope asked for, and a
+sandbox app without Direct Post has no `video.publish`; the hub asked for it
+until 2026-10-08 and was refused. The sign-in now asks for
+`Tiktok::OAuthClient::DEFAULT_SCOPES`. Setting `TIKTOK_SCOPES` on the server
+(comma-separated, from `user.info.basic`, `video.upload`, `video.publish`, and
+never without the first two) widens the next sign-in; an unknown name stops
+`/admin/tiktok/connect` with a message naming it. The stored
+connection records the scope the sign-in was granted, as a record; what a call
+may do is read from TikTok: every token refresh returns it, and the Starter Post direct-post button
+(`Tiktok::PostMedia`) is refused with "this TikTok connection was authorized
+for drafts only" unless that answer holds `video.publish`.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
 TikTok and the bucket itself and marks every attempt "stand-in". Its

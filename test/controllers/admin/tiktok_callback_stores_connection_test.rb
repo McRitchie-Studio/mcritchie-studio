@@ -124,8 +124,32 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
     end
 
     assert_response :unprocessable_entity
-    assert_includes response.body, "Refresh token can't be blank"
+    assert_select "[data-tiktok-refusal]", text: /TikTok answered, but the connection was not saved/
+    assert_select "[data-tiktok-refusal]", text: /Refresh token can.t be blank/
     assert_not_includes response.body, ACCESS
+  end
+
+  test "[integration] the callback's page is never cached, stored or refused" do
+    log_in_as users(:alex)
+    finish_connect(answer)
+    assert_equal "no-store", response.headers["Cache-Control"]
+
+    finish_connect(answer(refresh_token: nil))
+    assert_equal "no-store", response.headers["Cache-Control"]
+
+    get admin_dashboard_path
+    assert_not_equal "no-store", response.headers["Cache-Control"], "the control: another admin page is not no-store"
+  end
+
+  test "[integration] the auth code is filtered from the callback's logged parameters, and only there" do
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+
+    logged = filter.filter("controller" => "admin/tiktok", "action" => "callback", "code" => "synthetic-code", "state" => "s1")
+    assert_equal "[FILTERED]", logged["code"]
+    assert_equal "s1", logged["state"]
+
+    other = filter.filter("controller" => "tasks", "action" => "index", "code" => "synthetic-code")
+    assert_equal "synthetic-code", other["code"], "the control: a code elsewhere is not masked"
   end
 
   test "[integration] a state mismatch exchanges no code and stores nothing" do

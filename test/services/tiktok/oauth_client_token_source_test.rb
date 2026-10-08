@@ -152,6 +152,74 @@ class Tiktok::OAuthClientTokenSourceTest < ActiveSupport::TestCase
     end
   end
 
+  # The four below go through the token endpoint's own stand-in (OAuthClient.http),
+  # so the answer is parsed and checked exactly as TikTok's is.
+  def tiktok_http(status: 200, **answer)
+    Tiktok::OAuthClient.http = lambda do |params|
+      @sent << params
+      [status, JSON.generate(answer)]
+    end
+    yield
+  ensure
+    Tiktok::OAuthClient.http = nil
+  end
+
+  test "[unit] a rotated refresh token in TikTok's own answer is saved, not discarded" do
+    connection = connect
+    with_tiktok_env(pair: false) do
+      tiktok_http(access_token: "act.synthetic", refresh_token: "rft.synthetic-rotated", scope: "user.info.basic,video.upload",
+                  refresh_expires_in: 500) do
+        assert_equal "act.synthetic", Tiktok::OAuthClient.access_token
+      end
+    end
+
+    assert_equal [STORED], @sent.map { |p| p[:refresh_token] }
+    assert_equal "rft.synthetic-rotated", connection.reload.refresh_token
+  end
+
+  test "[unit] a refresh answer with no scope still returns the access token; a direct post is refused" do
+    connect
+    with_tiktok_env(pair: false) do
+      tiktok_http(access_token: "act.synthetic") do
+        assert_equal "act.synthetic", Tiktok::OAuthClient.access_token, "drafts keep working"
+        assert_empty Tiktok::OAuthClient.granted_scopes
+        error = assert_raises(Tiktok::OAuthClient::MissingScope) { Tiktok::OAuthClient.ensure_direct_post! }
+        assert_includes error.message, "video.publish"
+      end
+    end
+  end
+
+  test "[unit] a granted scope is split on commas and on whitespace" do
+    connect
+    with_tiktok_env(pair: false) do
+      tiktok_http(access_token: "act.synthetic", scope: "user.info.basic video.upload,\n video.publish") do
+        assert_equal %w[user.info.basic video.upload video.publish], Tiktok::OAuthClient.granted_scopes
+        assert_nothing_raised { Tiktok::OAuthClient.ensure_direct_post! }
+      end
+      tiktok_http(access_token: "act.synthetic", scope: "user.info.basic video.upload") do
+        assert_raises(Tiktok::OAuthClient::MissingScope) { Tiktok::OAuthClient.ensure_direct_post! }
+      end
+    end
+    assert_equal %w[a b], TiktokConnection.new(scope: "a, b").scopes
+  end
+
+  test "[unit] a refusal prints TikTok's error only when it is a string, never a nested object" do
+    connect
+    with_tiktok_env(pair: false) do
+      tiktok_http(status: 400, error: { refresh_token: "rft.synthetic-nested-leak" }, error_description: "Refresh token is invalid.") do
+        error = assert_raises(Tiktok::OAuthClient::Error) { Tiktok::OAuthClient.access_token }
+        assert_includes error.message, "Refresh token is invalid.", "the control: a string part is still printed"
+        assert_not_includes error.message, "rft.synthetic-nested-leak"
+        assert_not_includes error.message, "refresh_token"
+      end
+      tiktok_http(status: 400, error: ["rft.synthetic-nested-leak"], error_description: { "x" => "rft.synthetic-nested-leak" }) do
+        error = assert_raises(Tiktok::OAuthClient::Error) { Tiktok::OAuthClient.access_token }
+        assert_includes error.message, "TikTok gave no reason"
+        assert_not_includes error.message, "rft.synthetic-nested-leak"
+      end
+    end
+  end
+
   test "[unit] a rotation keeps the cached access token; a new sign-in drops it" do
     connect
     with_memory_cache do

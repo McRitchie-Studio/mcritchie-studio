@@ -36,8 +36,8 @@ attribution and routes to its act SOPs:
   draft in Alex's TikTok inbox: the code picks the clip's primary version,
   writes the caption from the lead swapped athlete's team and its live record,
   and uploads it; Alex posts from his phone. The clip card does it with a
-  button; this act covers the chat door and a failed attempt. Built 2026-10-07
-  and waiting on TikTok keys.
+  button; this act covers the chat door and a failed attempt. Built 2026-10-07;
+  its Setup section connects the server through a sandbox TikTok app.
 
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.

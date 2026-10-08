@@ -62,6 +62,9 @@ class TiktokConnection < ApplicationRecord
     true
   end
 
+  # The granted scope as names (TikTok writes one comma-separated string).
+  def scopes = Tiktok::OAuthClient.split_scopes(scope)
+
   # What a page calls this account: its display name, or its open id.
   def account = display_name.presence || open_id
 end

@@ -6,6 +6,20 @@
     drafting uses it from here on.
   </p>
 
+  <p class="card p-4 text-body" data-tiktok-grant>
+    <% if !@can_draft %>
+      <span class="font-semibold text-warning">video.upload was not granted</span>, so this connection cannot draft.
+      Start again and leave the upload permission on.
+    <% elsif @direct_post %>
+      <span class="font-semibold">Drafts and direct post.</span>
+      This connection can upload to the TikTok inbox and publish to the public feed.
+    <% else %>
+      <span class="font-semibold">Drafts only.</span>
+      This connection can upload to the TikTok inbox. It cannot publish: a direct post is refused until the
+      sign-in is run again with video.publish.
+    <% end %>
+  </p>
+
   <dl class="card p-4 space-y-3 text-sm">
     <div>
       <dt class="text-muted text-xs mb-1">Account</dt>

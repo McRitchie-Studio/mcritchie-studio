@@ -297,7 +297,8 @@ class ReleaseGemsAfterQaTest < ReleaseCliHarness
     out = eval_helper(%(release_entry_points.keys.join("\n")))
 
     assert_match(%r{the fixed-path install \(.*/\.agents/bin/release\.rb\)}, out)
-    assert_match(%r{the hub primary's working tree \(.*/mcritchie-studio/bin/release\.rb\)}, out)
+    # The checkout directory is named by whoever cloned it (consumer CI uses mcritchie_studio).
+    assert_match(%r{the hub primary's working tree \(/.+/bin/release\.rb\)}, out)
     assert_includes out, "the hub primary's origin/main"
   end
 
