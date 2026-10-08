@@ -66,7 +66,7 @@ class ReleaseCandidateBundlerTest < Minitest::Test
 
   # The real `bundle`, outside this process's own bundle, writing only under @root.
   def bundle(*args)
-    env = ENV.keys.grep(/\A(BUNDLE_|RUBYOPT\z|RUBYLIB\z|GEM_HOME\z|GEM_PATH\z)/).to_h { |k| [k, nil] }
+    env = ENV.keys.grep(/\A(BUNDLE_|BUNDLER_|RUBYOPT\z|RUBYLIB\z|GEM_HOME\z|GEM_PATH\z)/).to_h { |k| [k, nil] }
     env.merge!("BUNDLE_GEMFILE" => File.join(@app, "Gemfile"), "BUNDLE_APP_CONFIG" => File.join(@root, "config"),
                "BUNDLE_USER_HOME" => File.join(@root, "home"), "BUNDLE_FROZEN" => "false")
     out, status = Open3.capture2e(env, "bundle", *args, chdir: @app)
