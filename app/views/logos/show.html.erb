@@ -1,0 +1,66 @@
+<%# ONE BRAND'S NAVBAR LOGOS: by rule (3, then 4), then by text, each on a light
+    and a dark plate, with a download and a copy per logo. ?guides=1 swaps every
+    logo for its guide drawing. Read-only. Admin only (LogosController). %>
+<%= render "components/copy_text_script" %>
+<% name = Logos::Variant.brand_name(@logo) %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Logos", logos_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono break-all"><%= @logo.brand %></span>
+  </nav>
+
+  <div class="card p-4 sm:p-5 space-y-2">
+    <div class="flex flex-wrap items-start gap-3">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0"><%= name %></h1>
+      <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_path(@logo.brand, guides: (1 unless @guides)),
+                  class: "btn btn-sm #{@guides ? 'btn-primary' : 'btn-neutral'} sm:ml-auto", data: { test: "guides-toggle" } %>
+    </div>
+    <p class="text-sm text-secondary">
+      <% if @guides %>
+        The guide drawings: the numbered rows, the icon's right edge and where the name starts. They are for looking at, never for shipping.
+      <% else %>
+        Every Navbar Logo for this brand, drawn from its icon and its name. Show guides to see how each was built.
+      <% end %>
+    </p>
+    <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
+    <% if @note %>
+      <p class="text-2xs text-muted" data-test="brand-note"><%= @note %></p>
+    <% end %>
+  </div>
+
+  <% @variants.group_by(&:rule).each do |rule, by_rule| %>
+    <section class="card p-4 sm:p-5 space-y-4" data-test="logo-rule" data-rule="<%= rule %>">
+      <div>
+        <h2 class="text-base font-bold text-heading"><%= Logos::Variant::RULES.fetch(rule) %></h2>
+        <p class="text-sm text-secondary" data-test="rule-sentence"><%= Logos::Variant::RULE_SENTENCES.fetch(rule) %></p>
+      </div>
+      <% by_rule.group_by(&:text).each do |text, by_text| %>
+        <div class="space-y-2" data-test="logo-text" data-text="<%= text %>">
+          <h3 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(text) %></h3>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <% by_text.each do |variant| %>
+              <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tone="<%= variant.tone %>">
+                <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>">
+                  <%= logo_image(variant, max_height: @guides ? 76 : 60) %>
+                </div>
+                <div class="flex flex-wrap items-center gap-2"
+                     x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
+                  <span class="text-3xs uppercase tracking-wide text-muted mr-auto"><%= variant.tone %></span>
+                  <%= link_to "Download", navbar_logo_path(@logo.brand, variant.params.merge(download: 1)),
+                              class: "btn btn-sm btn-neutral", data: { test: "logo-download", turbo: false },
+                              aria: { label: "Download: #{variant.label}" } %>
+                  <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
+                  <button type="button" class="btn btn-sm btn-neutral" data-test="logo-copy" data-clip="<%= variant.svg %>"
+                          aria-label="Copy SVG: <%= variant.label %>" x-text="words[state]"
+                          @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
+                  <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </section>
+  <% end %>
+</div>

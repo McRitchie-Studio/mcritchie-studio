@@ -1,0 +1,60 @@
+<%# LOGO STUDIO: one row per brand in config/logo_brands.yml, with its rule-of-4
+    Navbar Logo (second word leads) on a light and a dark plate, its typeface
+    and its colours. Read-only. Admin only (LogosController). %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-heading">Logos</h1>
+    <p class="text-sm text-secondary">Each brand's Navbar Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
+    <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for a brand comes later, with the brand kit record.</p>
+  </div>
+
+  <div class="card p-4 sm:p-5">
+    <table class="w-full block sm:table text-sm" data-test="logo-brands">
+      <thead class="hidden sm:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
+        <tr>
+          <th scope="col" class="pb-2 pr-4 font-semibold">Brand</th>
+          <th scope="col" class="pb-2 pr-4 font-semibold">Navbar logo</th>
+          <th scope="col" class="pb-2 pr-4 font-semibold">Typeface</th>
+          <th scope="col" class="pb-2 font-semibold">Colours</th>
+        </tr>
+      </thead>
+      <tbody class="block sm:table-row-group divide-y divide-subtle">
+        <% @logos.each do |logo| %>
+          <% name = Logos::Variant.brand_name(logo) %>
+          <tr class="block sm:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
+            <th scope="row" class="block sm:table-cell py-3 sm:pr-4 text-left align-top">
+              <%= link_to name, logo_path(logo.brand), class: "font-bold text-primary hover:underline" %>
+              <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
+            </th>
+            <td class="block sm:table-cell pb-3 sm:py-3 sm:pr-4 align-top">
+              <%= link_to logo_path(logo.brand), class: "flex flex-col gap-2 min-w-0", aria: { label: "#{name}: every logo" } do %>
+                <% Logos::Variant::TONES.each do |tone| %>
+                  <span class="flex items-center rounded-lg border border-subtle px-3 py-2 min-w-0" style="<%= logo_plate_style(tone) %>" data-test="logo-plate" data-tone="<%= tone %>">
+                    <%= logo_image(Logos::Variant.new(logo, rule: 4, text: :second, tone: tone), max_height: 28) %>
+                  </span>
+                <% end %>
+              <% end %>
+            </td>
+            <td class="block sm:table-cell pb-3 sm:py-3 sm:pr-4 align-top" data-test="logo-typeface">
+              <span class="sm:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
+              <span class="font-semibold text-heading">Montserrat</span>
+              <span class="text-2xs text-muted whitespace-nowrap">weights <%= logo_brand_weights(logo.brand).join(" and ") %></span>
+            </td>
+            <td class="block sm:table-cell pb-3 sm:py-3 align-top" data-test="logo-colours">
+              <% logo_brand_colours(logo.brand).each do |tone, hexes| %>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5">
+                  <span class="text-3xs uppercase tracking-wide text-muted w-8"><%= tone %></span>
+                  <% hexes.each do |hex| %>
+                    <span class="inline-flex items-center gap-1 text-2xs font-mono text-body" data-test="logo-swatch">
+                      <span class="inline-block w-3.5 h-3.5 rounded border border-subtle" style="background-color: <%= hex %>" aria-hidden="true"></span><%= hex %>
+                    </span>
+                  <% end %>
+                </div>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>
