@@ -73,7 +73,7 @@
     <% if @resubmission&.surfaced? %>
       <% unaddressed = @resubmission.unaddressed? %>
       <%# Theme-aware tint from status_tone, the same danger and warning roles as
-          _task_card's blocked and cleared tones, so the panel and its badges read in
+          TaskCardComponent's blocked and cleared tones, so the panel and its badges read in
           both themes. %>
       <div class="mb-4 rounded-lg border p-3 <%= unaddressed ? "border-danger/40 bg-danger/10" : "border-warning/40 bg-warning/10" %>"
            data-test="task-resubmission" data-state="<%= @resubmission.state %>">
