@@ -32,6 +32,8 @@
       this.schedule();
       if (!window.__signedLinksBound) {
         window.__signedLinksBound = true;
+        // A page Turbo shows again from its cache runs no inline script: start from its markup.
+        document.addEventListener("turbo:load", () => { if (!window.signedLinks.url) window.signedLinks.start(); });
         document.addEventListener("visibilitychange", () => window.signedLinks.woke());
         window.addEventListener("pageshow", () => window.signedLinks.woke());
         // Images and the plain players report here; the Alpine players call recover() themselves.

@@ -70,7 +70,7 @@
 
   <%# Said only when fresh links could not be had: the session ended, or the server did not answer. %>
   <div x-data="{ state: '' }" @signed-links.window="state = $event.detail.state" x-show="state === 'signin' || state === 'failed'" x-cloak
-       class="fixed bottom-4 inset-x-4 z-[var(--z-alert)] mx-auto max-w-xl card p-3 text-sm text-warning-ink border border-warning/40 shadow-lg"
+       class="fixed bottom-4 inset-x-4 z-[var(--z-alert)] mx-auto max-w-xl rounded-lg bg-surface p-3 text-sm text-warning-ink border border-warning/40 shadow-lg"
        role="status" data-test="links-status" :data-state="state">
     <span x-show="state === 'signin'" data-test="links-status-signin">
       The file links on this page expired, and so did your session.
