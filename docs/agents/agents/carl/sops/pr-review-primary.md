@@ -197,7 +197,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
      - **After your own zap, release before the move.** A zap puts you in the
        author set, so your review login answers 403 on the move to `reviewed`
        ([`credentials.md`](../../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
-       Merge, run step 7's release, then move.
+       Merge, run step 7's release, then move. When the move is refused without
+       the claim too, an admin outside the author set makes it:
+       `TASK_AS_ADMIN=1 bin/task move <task-slug> reviewed`.
      - **No `merged` stamp.** The board derives the rung from GitHub and
        refreshes its `merged` column when the task lands on `reviewed`.
        `bin/task merged` is only a manual override for a PR GitHub cannot place.

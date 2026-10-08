@@ -987,15 +987,13 @@ class AtomicCaptureHook
     deliver(payload, path: path) # fork unsupported → inline with short timeouts
   end
 
-  # Auth (cached token via the shared AgentApi client) then POST the action.
-  # Best-effort; swallows everything. A 401 drops the shared token cache so the
-  # next call re-mints.
+  # POST the action, presenting a login this harness session holds when there is
+  # one (an action records the `agent` lane, never a soul, so the login only
+  # authenticates it) and the shared token otherwise (AgentApi.call). With neither
+  # (the shared token turned off, no login) nothing is sent. Best-effort; swallows
+  # everything. A 401 on the shared token drops its cache so the next call re-mints.
   def deliver(payload, path: "/api/v1/agent_actions")
-    tok = @api.token
-    return unless tok
-
-    res = @api.http_json(:post, path, payload, bearer: tok)
-    @api.invalidate_token! if res && res.code.to_i == 401
+    AgentApi.call(@api, :post, path, payload, session: @api.held_session(session_id: payload["session_id"]))
   rescue StandardError
     # swallow
   end

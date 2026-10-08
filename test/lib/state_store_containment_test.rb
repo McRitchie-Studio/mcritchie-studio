@@ -128,6 +128,8 @@ class StateStoreContainmentTest < Minitest::Test
     "lib/task_usage_sandbox.rb" => [:guard, "the guard itself — it names .agents to DEFINE the forbidden root"],
     "bin/lib/session_markers.rb" => [:ruby, "narration-marker choke point: marker_path is PRIVATE; write/delete enforce"],
     "bin/lib/agent_api.rb" => [:ruby, "agent-token cache: every mutation goes through guarded_token_cache_path"],
+    "bin/lib/harness_key.rb" => [:ruby, "this machine's harness key: path is PRIVATE; write/clear go through " \
+                                        "guarded_path, and a sandboxed read answers nothing"],
     "bin/task" => [:ruby, "active-feature marker + cost store: enforce! at each write seam"],
     "bin/release.rb" => [:ruby, "conductor locks + cost store: enforce! at each seam"],
     "bin/reviewer-select" => [:ruby, "cost store: enforce! at its dir seam"],
@@ -195,6 +197,10 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/lib/agent_api.rb" => {
       "token_cache_path" => "BUILDER — private; guarded_token_cache_path is what mutations use",
       "read_cached_token" => "READ — returns the cached token, never writes"
+    },
+    "bin/lib/harness_key.rb" => {
+      "path" => "BUILDER — private; guarded_path is what write and clear use",
+      "read" => "READ — returns the key file's contents, and nothing at all in a sandboxed process"
     },
     "bin/task" => {
       "feature_marker_path" => "BUILDER — write_feature_marker launders it at the write seam",

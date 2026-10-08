@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require "uri"
 require_relative "digest_video"
+require_relative "held_session"
+require_relative "harness_key"
 
 # The chat door of the tiktok-draft SOP
 # (docs/agents/agents/turf_monster/sops/tiktok-draft.md): one clip, by its slug,
@@ -10,21 +13,44 @@ require_relative "digest_video"
 #
 # CREATING a draft needs an admin agent session: the hub refuses the shared
 # token and a studio session on that one request (Api::V1::TiktokDraftsController).
-# The operator's shell holds its token in AGENT_ADMIN_SESSION_TOKEN; reading
-# (a dry run, --status, --whoami) needs only the shared token every desk has.
+# The command presents the admin login this harness session holds, which the
+# operator grants on the board (`bin/agent-activity heartbeat xan|steffon`), or
+# the hub-shell grant's token in AGENT_ADMIN_SESSION_TOKEN when the board cannot
+# grant. Reading (a dry run, --status, --whoami) needs only the shared token
+# every desk has.
 module TiktokDraftCli
   class Failure < StandardError; end
 
   ADMIN_TOKEN_ENV = "AGENT_ADMIN_SESSION_TOKEN"
 
   # What to do about a missing, expired or refused admin session.
-  ADMIN_SESSION_HOWTO = "A draft needs an admin session (Xan or Steffon). From a shell on the hub you are drafting on, " \
-                        "grant one and keep its token out of sight:\n" \
+  ADMIN_SESSION_HOWTO = "A draft needs an admin session (Xan or Steffon). Ask the board for one:\n" \
+                        "  bin/agent-activity heartbeat xan      (or steffon; it prints a login-… slug)\n" \
+                        "Alex grants it on the board's tasks page: the Approve tap on the row with that slug, or the row's " \
+                        "one-time code, which you post with `bin/agent-activity heartbeat xan --code <code>`. It lasts 8 hours; " \
+                        "then re-run this command.\n" \
+                        "When the board cannot grant (it is down, or the hub is a local or desk one), a shell on that hub can:\n" \
                         "  local or desk hub:  export #{ADMIN_TOKEN_ENV}=\"$(bin/rails agent_sessions:grant_admin)\"\n" \
                         "  production:         export #{ADMIN_TOKEN_ENV}=\"$(heroku run --no-tty -a mcritchie-studio " \
                         "-- bin/rails agent_sessions:grant_admin 2>/dev/null)\"\n" \
-                        "It lasts 8 hours. Then re-run this command in the same shell. " \
                         "The clip card's Draft to TikTok button is the other door."
+
+  # The board the harness session's admin login was granted by.
+  BOARD_ENV = "ATOMIC_CAPTURE_URL"
+  DEFAULT_BOARD = "https://mcritchie.studio"
+
+  # The admin login this harness session collected from the board, when
+  # `base_url` is that board. A login is never presented to another hub.
+  def self.held_admin_token(base_url:, env: ENV)
+    board = env[BOARD_ENV].to_s.strip
+    board = DEFAULT_BOARD if board.empty?
+    return nil unless URI(base_url.to_s.strip).host.to_s.downcase == URI(board).host.to_s.downcase
+
+    login = HeldSession.find(env: env.to_h.except(HeldSession::ADMIN_ENV), projects_dir: HarnessKey.projects_dir(env), tier: "admin")
+    login && login["token"]
+  rescue URI::InvalidURIError
+    nil
+  end
 
   # A signed session token as Rails writes one: payload, "--", digest.
   TOKEN_LINE = %r{\A[A-Za-z0-9+/=_-]{20,}--[0-9a-f]{40,128}\z}
@@ -85,7 +111,9 @@ module TiktokDraftCli
 
     # Records an attempt, then waits for it to settle (or for `wait` to run out).
     def draft(slug)
-      raise Failure, "#{ADMIN_TOKEN_ENV} is not set. #{ADMIN_SESSION_HOWTO}" unless @admin_api
+      unless @admin_api
+        raise Failure, "This session holds no admin login for this hub and #{ADMIN_TOKEN_ENV} is not set. #{ADMIN_SESSION_HOWTO}"
+      end
 
       data = @api.get(index_path(slug))
       print_clip(data)

@@ -59,6 +59,9 @@ class Current < ActiveSupport::CurrentAttributes
   # secret's token. Set by Api::V1::BaseController#authenticate_api!; when present
   # it, not a request param, names the actor on every board write.
   attribute :agent_session
+  # The harness key (AgentSession, tier harness) the request presented at a door
+  # that mints a login, or nil. It names a machine, never an actor.
+  attribute :harness_key
 
   # Set the per-transition usage attributes from a captured-usage hash for the
   # duration of the block, then clear them — so a conductor/release flip that

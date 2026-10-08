@@ -1,0 +1,214 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/harness-key: ask for, collect and inspect this machine's harness key
+# (docs/agents/system/agent-sessions-design.md, section 3).
+#
+#   bin/harness-key request [--label <machine>]   post the request; print its login-… slug
+#   bin/harness-key collect [--code <code>] [--wait <seconds>]
+#                                                 grant it with the one-time code (or after the
+#                                                 operator's Approve tap) and keep the key
+#   bin/harness-key status                        what this machine holds, and whether the board takes it
+#   bin/harness-key forget                        delete the local file (the operator revokes the key)
+#
+# The operator grants a harness key once per machine, on the board's tasks page:
+# the row reads `Harness key · <machine>` and carries the slug `request` printed.
+# The key mints studio logins (`bin/task begin`, a review claim) and posts login
+# requests. It is kept owner-only in <projects>/.agents/harness-key.json and is
+# never printed: every command reports its length only.
+#
+# Exit codes: 0 done · 1 refused or failed · 2 still pending · 3 usage.
+
+require "optparse"
+require_relative "lib/agent_api"
+require_relative "lib/harness_key"
+require_relative "lib/session_identity"
+
+class HarnessKeyCli
+  OK = 0
+  FAILED = 1
+  PENDING = 2
+  USAGE_CODE = 3
+  MAX_WAIT = 600
+  POLL_SECONDS = 5
+
+  def initialize(argv, env: ENV, out: $stdout, err: $stderr, api: nil, sleeper: ->(s) { sleep(s) })
+    @argv = argv.dup
+    @env = env
+    @out = out
+    @err = err
+    @api = api || AgentApi.new(env: env, open_timeout: 5, read_timeout: 20)
+    @sleeper = sleeper
+  end
+
+  def run
+    flags = {}
+    parser = OptionParser.new do |opts|
+      opts.banner = USAGE
+      opts.on("--label MACHINE", "request: the machine's name on the board (default: this host)") { |v| flags["label"] = v }
+      opts.on("--code CODE", "collect: the one-time code the board shows the operator") { |v| flags["code"] = v }
+      opts.on("--wait SECONDS", Integer, "collect: keep trying for up to #{MAX_WAIT} seconds") { |v| flags["wait"] = v }
+      opts.on("-h", "--help", "print this and do nothing") { flags["help"] = true }
+    end
+    command, *extra = parser.parse(@argv)
+    if flags["help"]
+      @out.puts(parser)
+      return OK
+    end
+    return usage unless extra.empty? && COMMANDS.include?(command)
+
+    send(command, flags)
+  rescue OptionParser::ParseError => e
+    @err.puts("harness-key: #{e.message}")
+    usage
+  end
+
+  private
+
+  COMMANDS = %w[request collect status forget].freeze
+  USAGE = "usage: harness-key request [--label <machine>] | collect [--code <code>] [--wait <seconds>] | status | forget"
+
+  def usage
+    @err.puts(USAGE)
+    USAGE_CODE
+  end
+
+  def dir = @api.projects_dir
+
+  def request(flags)
+    if HarnessKey.token(dir, env: @env)
+      @out.puts("harness-key: this machine already holds #{held_line}; `forget` it first to ask for another")
+      return OK
+    end
+
+    label = flags["label"].to_s.strip
+    label = HarnessKey.machine_label if label.empty?
+    prior = HarnessKey.open_request(dir, env: @env)
+    body = { "kind" => "harness_key", "label" => label, "harness_session_id" => harness_session_id,
+             "collect_key" => prior && prior["collect_key"] }.compact
+    res = post("/api/v1/agent_login_requests", body)
+    data = parse(res)
+    unless ok?(res) && present?(data["slug"]) && present?(data["collect_key"])
+      @err.puts("harness-key: not requested: #{refusal_of(res)}")
+      return FAILED
+    end
+
+    HarnessKey.write(dir, { "request" => data["slug"], "collect_key" => data["collect_key"], "ends_at" => data["ends_at"],
+                            "label" => label, "harness_session_id" => harness_session_id }, env: @env)
+    @out.puts("harness-key: #{data['slug']} requested for #{label}, pending until #{data['ends_at']}. " \
+              "Operator: on #{@api.base_url}/tasks find the row that reads `Harness key · #{label}` and #{data['slug']}; " \
+              "Approve it, or give this session its one-time code for `bin/harness-key collect --code <code>`.")
+    OK
+  end
+
+  def collect(flags)
+    held = HarnessKey.open_request(dir, env: @env)
+    unless held
+      @err.puts(HarnessKey.token(dir, env: @env) ? "harness-key: already held: #{held_line}" : "harness-key: no open request; run `bin/harness-key request`")
+      return HarnessKey.token(dir, env: @env) ? OK : FAILED
+    end
+
+    proof = { "collect_key" => held["collect_key"], "harness_session_id" => held["harness_session_id"] }
+    if present?(flags["code"])
+      res = post("/api/v1/agent_login_requests/#{held['request']}/code", proof.merge("code" => flags["code"]))
+      unless ok?(res)
+        @err.puts("harness-key: code refused: #{refusal_of(res)}")
+        return FAILED
+      end
+    end
+    poll(held, proof, flags["wait"].to_i.clamp(0, MAX_WAIT))
+  end
+
+  def poll(held, proof, wait)
+    deadline = Time.now + wait
+    loop do
+      res = post("/api/v1/agent_login_requests/#{held['request']}/collect", proof)
+      return keep(held, parse(res)) if ok?(res)
+
+      unless res && res.code.to_i == 409
+        HarnessKey.clear(dir, env: @env) if res && [403, 404, 410].include?(res.code.to_i)
+        @err.puts("harness-key: not collected: #{refusal_of(res)}")
+        return FAILED
+      end
+      if Time.now + POLL_SECONDS > deadline
+        @out.puts("harness-key: #{held['request']} is still pending; run `bin/harness-key collect` again once it is granted")
+        return PENDING
+      end
+      @sleeper.call(POLL_SECONDS)
+    end
+  end
+
+  def keep(held, data)
+    unless present?(data["token"])
+      @err.puts("harness-key: not collected: the response carried no key")
+      return FAILED
+    end
+
+    HarnessKey.write(dir, { "slug" => data["slug"], "label" => data["label"] || held["label"], "token" => data["token"],
+                            "granted_at" => data["issued_at"] }, env: @env)
+    @out.puts("harness-key: #{data['slug']} granted to #{data['label'] || held['label']} " \
+              "(key length #{data['token'].length}, kept owner-only in #{HarnessKey::WHERE}, not printed)")
+    OK
+  end
+
+  def status(_flags = nil)
+    token = HarnessKey.token(dir, env: @env)
+    unless token
+      pending = HarnessKey.open_request(dir, env: @env)
+      @out.puts(pending ? "harness-key: #{pending['request']} is pending until #{pending['ends_at']}" :
+                          "harness-key: this machine holds no harness key; logins are minted with the shared token")
+      return pending ? PENDING : OK
+    end
+
+    res = @api.http_get("/api/v1/agent_sessions/current", bearer: token)
+    if ok?(res)
+      @out.puts("harness-key: #{held_line}; the board accepts it")
+      OK
+    else
+      @out.puts("harness-key: #{held_line}; the board refused it: #{refusal_of(res)}")
+      FAILED
+    end
+  end
+
+  def forget(_flags = nil)
+    HarnessKey.clear(dir, env: @env)
+    @out.puts("harness-key: the local file is gone. The key stays valid on the board until the operator revokes it: " \
+              "bin/rails agent_sessions:revoke SLUG=<sess-…>")
+    OK
+  end
+
+  def held_line
+    data = HarnessKey.read(dir, env: @env) || {}
+    "#{data['slug']} for #{data['label']} (key length #{data['token'].to_s.length})"
+  end
+
+  # A request is presented with the machine credential: the key this machine
+  # already holds, else the shared secret's token.
+  def post(path, body)
+    bearer = HarnessKey.token(dir, env: @env) || @api.token
+    bearer && @api.http_json(:post, path, body, bearer: bearer)
+  end
+
+  def harness_session_id
+    id = SessionIdentity.id(@env)
+    id.empty? ? "machine:#{HarnessKey.machine_label}" : id
+  end
+
+  def ok?(res) = res && res.code.to_i.between?(200, 299)
+  def present?(value) = !value.to_s.strip.empty?
+
+  def parse(res)
+    body = JSON.parse(res.body.to_s)
+    body.is_a?(Hash) ? (body["data"].is_a?(Hash) ? body["data"] : body) : {}
+  rescue StandardError
+    {}
+  end
+
+  def refusal_of(res)
+    return "the board did not answer, or this machine has no credential to present" unless res
+
+    "#{parse(res)['error'] || 'no reason given'} (HTTP #{res.code})"
+  end
+end
+
+exit(HarnessKeyCli.new(ARGV).run) if __FILE__ == $PROGRAM_NAME

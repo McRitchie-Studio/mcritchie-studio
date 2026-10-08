@@ -66,6 +66,7 @@ require "rbconfig"
 require_relative "agent_api"
 require_relative "session_identity"
 require_relative "desk_session"
+require_relative "harness_key"
 require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
@@ -264,8 +265,8 @@ class ReviewClaimCli
     # itself), else nothing and the seat waits for reviewer-select as before.
     reviewer = flags["agent"].to_s.strip
     reviewer = acting_agent(sid).to_s.strip if reviewer.empty?
-    res = post("#{base(slug)}/review_claim",
-               { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
+    res = mint_post("#{base(slug)}/review_claim",
+                    { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
     return cant_run("no response from the board — proceeding without a review claim") unless ok?(res)
 
     data = parse_data(res)
@@ -296,8 +297,8 @@ class ReviewClaimCli
     label = session_mascot(sid) if label.empty?
     reviewer = flags["agent"].to_s.strip
     reviewer = acting_agent(sid).to_s.strip if reviewer.empty?
-    res = post("/api/v1/tasks/claim_next_review",
-               { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
+    res = mint_post("/api/v1/tasks/claim_next_review",
+                    { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
     return cant_run("no response from the board — could not claim a review") unless ok?(res)
 
     data = parse_data(res)
@@ -467,7 +468,8 @@ class ReviewClaimCli
     res = (post("#{base(slug)}/review_claim/release", { "session" => sid, "nonce" => nonce }) if present?(sid))
     stop_renewer(sid, slug)
     clear_marker(sid, slug)
-    DeskSession.clear_review(@tree.call, slug)
+    # Only the harness session that kept the review login forgets it.
+    DeskSession.clear_review(@tree.call, slug, harness_session_id: SessionIdentity.id(@env))
     report_release(slug, res)
     OK
   end
@@ -1042,6 +1044,22 @@ class ReviewClaimCli
 
     res = get(base(slug))
     ok?(res) ? parse_data(res) : nil
+  end
+
+  # A claim mints the reviewer's login, so it is presented with the machine
+  # credential: this machine's harness key when it holds one. A machine with no
+  # key, or whose key the board answers 401 (revoked), claims with the shared
+  # token.
+  def mint_post(path, body)
+    said = lambda do |res|
+      @err.puts("review-claim: this machine's harness key was not accepted (#{res ? "HTTP 401" : "no response"}); " \
+                "claiming with the shared token.")
+    end
+    HarnessKey.mint(HarnessKey.token(@api.projects_dir, env: @api.env), fallback: -> { :shared }, refused: said) do |bearer|
+      bearer == :shared ? post(path, body) : @api.http_json(:post, path, body, bearer: bearer)
+    end
+  rescue StandardError
+    nil
   end
 
   def post(path, body)

@@ -1,6 +1,14 @@
-# One request for an admin agent session (docs/agents/system/agent-sessions-design.md,
-# section 3). `bin/agent-activity heartbeat steffon|xan` posts it; the operator
-# grants it one of two ways inside the admin_login window (Devops::Windows):
+# One request for a login only the operator grants
+# (docs/agents/system/agent-sessions-design.md, section 3), of one of two kinds:
+#
+# - admin_login: an admin agent session. `bin/agent-activity heartbeat steffon|xan`
+#   posts it.
+# - harness_key: one machine's harness key (AgentSession, tier harness), which
+#   mints studio logins. `bin/harness-key request` posts it, once per machine;
+#   `label` names the machine.
+#
+# The operator grants either one of two ways inside the admin_login window
+# (Devops::Windows):
 #
 # - the Approve tap on the board (issued_by operator_grant);
 # - the one-time code the board shows an admin on the request, which the operator
@@ -13,6 +21,8 @@
 # stored for that, #state computes it.
 class AgentLoginRequest < ApplicationRecord
   STATUSES = %w[pending granted refused].freeze
+  KINDS = %w[admin_login harness_key].freeze
+  LABEL = /\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}\z/
   # Wrong codes a request takes before it is refused.
   CODE_ATTEMPTS = 5
   # Requests one soul gets inside one window. An operator's Decline frees its slot.
@@ -37,12 +47,15 @@ class AgentLoginRequest < ApplicationRecord
   # The collect key, in memory on the instance .request! returns and nowhere else.
   attr_reader :collect_key
 
-  attr_readonly :slug, :soul, :harness_session_id, :phrase_digest, :collect_digest, :requested_at
+  attr_readonly :slug, :soul, :kind, :label, :harness_session_id, :phrase_digest, :collect_digest, :requested_at
 
   validates :slug, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
+  validates :kind, inclusion: { in: KINDS }
+  validates :label, format: { with: LABEL, message: "names the machine in 1 to 63 letters, digits, spaces, dots, dashes or underscores" },
+                    if: :harness_key?
   validates :harness_session_id, :requested_at, presence: true
-  validate :soul_is_admin
+  validate :soul_fits_kind
 
   before_validation :assign_defaults, on: :create
 
@@ -68,22 +81,27 @@ class AgentLoginRequest < ApplicationRecord
   # post is refused unless it presents the open request's collect key, which
   # replaces it. The harness session id is asserted by the caller, so it proves
   # nothing by itself.
-  def self.request!(soul:, harness_session_id:, collect_key: nil)
-    value = Task.canonical_soul(soul)
+  #
+  # A harness key request is held as AgentSession::HARNESS_SOUL whatever soul the
+  # caller names: the key belongs to the machine `label` names.
+  def self.request!(soul:, harness_session_id:, collect_key: nil, kind: "admin_login", label: nil)
+    kind = kind.to_s.presence || "admin_login"
+    value = kind == "harness_key" ? AgentSession::HARNESS_SOUL : Task.canonical_soul(soul)
+    noun = kind == "harness_key" ? "a harness key request" : "an admin login for #{value}"
     transaction do
       lock_soul(value)
-      prior = awaiting.find_by(soul: value, harness_session_id: harness_session_id.to_s)
+      prior = awaiting.find_by(soul: value, kind: kind, harness_session_id: harness_session_id.to_s)
       if prior && !prior.key_matches?(collect_key)
-        raise Refusal.new(:open, "an admin login for #{value} is already open under this harness session id, pending until " \
+        raise Refusal.new(:open, "#{noun} is already open under this harness session id, pending until " \
                                  "#{prior.window.ends_at.utc.iso8601}; present its collect key to replace it")
       end
       if counted(value).count >= SOUL_REQUESTS
-        raise Refusal.new(:too_many, "#{value} already has #{SOUL_REQUESTS} admin login requests inside the " \
+        raise Refusal.new(:too_many, "#{value} already has #{SOUL_REQUESTS} #{kind == "harness_key" ? "harness key" : "admin login"} requests inside the " \
                                      "#{window_length.in_minutes.to_i}-minute window; wait, or have the operator decline one")
       end
 
       prior&.refuse!(by: "reissue", reason: "superseded by its owner's newer request")
-      create!(soul: value, harness_session_id: harness_session_id.to_s)
+      create!(soul: value, kind: kind, label: label.to_s.strip.presence, harness_session_id: harness_session_id.to_s)
     end
   end
 
@@ -99,6 +117,8 @@ class AgentLoginRequest < ApplicationRecord
   def self.normalize_code(value)
     value.to_s.upcase.gsub(/[^A-Z0-9]/, "")
   end
+
+  def harness_key? = kind == "harness_key"
 
   def window
     Devops::Windows.admin_login(requested_at: requested_at)
@@ -183,6 +203,8 @@ class AgentLoginRequest < ApplicationRecord
     {
       "slug" => slug,
       "soul" => soul,
+      "kind" => kind,
+      "label" => label,
       "status" => state(now),
       "requested_at" => requested_at&.iso8601,
       "ends_at" => window.ends_at.iso8601,
@@ -208,7 +230,11 @@ class AgentLoginRequest < ApplicationRecord
   end
 
   def grant!(by:, issued_by:)
-    session = AgentSession.create!(soul: soul, tier: "admin", issued_by: issued_by, harness_session_id: harness_session_id)
+    session = if harness_key?
+                AgentSession.grant_harness_key!(label: label, issued_by: issued_by, harness_session_id: harness_session_id)
+              else
+                AgentSession.create!(soul: soul, tier: "admin", issued_by: issued_by, harness_session_id: harness_session_id)
+              end
     update!(status: "granted", decided_by: by.to_s, decided_at: Time.current, agent_session_slug: session.slug)
     session
   end
@@ -261,6 +287,7 @@ class AgentLoginRequest < ApplicationRecord
 
   def assign_defaults
     self.soul = Task.canonical_soul(soul) if soul.present?
+    self.kind = "admin_login" if kind.blank?
     self.slug ||= "login-#{SecureRandom.hex(8)}"
     self.requested_at ||= Time.current
     self.phrase_digest ||= self.class.digest(derived_code)
@@ -268,9 +295,11 @@ class AgentLoginRequest < ApplicationRecord
     self.collect_digest ||= self.class.digest(@collect_key)
   end
 
-  def soul_is_admin
-    return if AgentSession.tier_for_soul(soul) == "admin"
-
-    errors.add(:soul, "#{soul.inspect} holds no admin tier; an admin login is for #{AgentSession::ADMIN_SOULS.join(" and ")}")
+  def soul_fits_kind
+    if harness_key?
+      errors.add(:soul, "a harness key is requested as #{AgentSession::HARNESS_SOUL}") unless soul == AgentSession::HARNESS_SOUL
+    elsif AgentSession.tier_for_soul(soul) != "admin"
+      errors.add(:soul, "#{soul.inspect} holds no admin tier; an admin login is for #{AgentSession::ADMIN_SOULS.join(" and ")}")
+    end
   end
 end

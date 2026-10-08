@@ -108,6 +108,10 @@ class BinHelpFlagClassTest < Minitest::Test
     "openclaw-workspace"     => :optparse,
     # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
     "sop-registry"           => :optparse,
+    # Asks the board for this machine's harness key and keeps it. `--help` is wired
+    # through OptionParser and prints before dispatch; an unknown flag, an unknown
+    # command and a stray positional all refuse before any request or write.
+    "harness-key"            => :optparse,
     "control-check"          => :cli_arg_guard,
     # Read-only: it runs the JS dependency audit and reports a verdict; it takes
     # no options and mutates nothing, so there is no first mutation for --help to

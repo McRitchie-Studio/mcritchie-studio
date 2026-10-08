@@ -55,6 +55,12 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
 
    Missing/invalid/expired tokens return `401` with
    `{ "error": "...", "error_code": "UNAUTHORIZED" }`.
+
+   This is the shared token. An agent session's token is the other bearer, and
+   the one a claimed task's writes carry; each use of the shared token is counted
+   in the legacy-use census, and it stops writing once that reads zero
+   ([`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). Send
+   `X-Agent-Caller: <script>` so the census can name the caller.
 4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
    secret only when it is not. `bin/submit` mints once per run and exports it to

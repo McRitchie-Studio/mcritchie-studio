@@ -117,9 +117,15 @@ module DeskSession
     file && write_file(file, session)
   end
 
-  def clear_review(root, slug)
+  # Forget the review login to `slug`. With `harness_session_id`, only the harness
+  # session that kept the login forgets it: another session's release leaves the
+  # file alone.
+  def clear_review(root, slug, harness_session_id: nil)
     file = review_path(root, slug)
-    File.delete(file) if file && File.file?(file)
+    return unless file && File.file?(file)
+    return if harness_session_id && (read_file(file) || {})["harness_session_id"].to_s != harness_session_id.to_s.strip
+
+    File.delete(file)
   rescue StandardError
     nil
   end

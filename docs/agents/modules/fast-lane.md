@@ -115,7 +115,9 @@ origin/accepted:bin/release-check`.
 ### The desk logs in
 
 `bin/task begin` ends by logging the desk's soul in to the task (an agent session;
-[`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). A `bin/task`
+[`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). It presents
+the machine's harness key to mint the login, or the shared token on a machine
+that holds none. A `bin/task`
 write to that task, run from inside the desk by the harness session that ran
 `begin`, then carries the session, and the board stamps the soul from it. Run from
 any other tree, about any other task, or by another harness session (a reviewer

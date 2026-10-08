@@ -243,6 +243,23 @@ module Api
 
         assert_equal "pokemon", JSON.parse(response.body).dig("data", "agent_session", "soul")
       end
+
+      test "task show names only a session that is live" do
+        task = Task.create!(title: "Reviewed By A Lapsed Claim", stage: "submitted")
+        task.update_column(:metadata, { "devops" => { "built_by" => "pokemon", "builders" => ["pokemon"] } })
+        builder = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+        # A reviewer's login whose claim does not exist is unrevoked, unexpired and not live.
+        reviewer = AgentSession.issue_studio!(soul: "carl", task: task, issued_by: "review_claim")
+        refute reviewer.live?
+
+        get api_v1_task_path(task.slug), headers: @legacy
+        assert_equal builder.slug, JSON.parse(response.body).dig("data", "agent_session", "slug"),
+                     "the newest session is not live, so the live one behind it is named"
+
+        task.update_column(:stage, "reviewed")
+        get api_v1_task_path(task.slug), headers: @legacy
+        assert_nil JSON.parse(response.body).dig("data", "agent_session"), "no session is live once the task left review"
+      end
     end
   end
 end

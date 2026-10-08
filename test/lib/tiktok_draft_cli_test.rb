@@ -241,11 +241,34 @@ class TiktokDraftCliTest < Minitest::Test
     end
   end
 
+  # The board's grant: the admin login the harness session collected is presented
+  # to the board that granted it, and to no other hub.
+  def test_the_held_admin_login_is_presented_only_to_the_board_that_granted_it
+    require "tmpdir"
+    Dir.mktmpdir do |proj|
+      env = { "CLAUDE_PROJECTS_DIR" => proj, "CLAUDE_CODE_SESSION_ID" => "harness-tiktok" }
+      assert_nil TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env), "no login held"
+
+      AdminLogin.write("harness-tiktok", proj, { "soul" => "xan", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+                                                 "expires_at" => (Time.now + 3600).utc.iso8601 }, env: env)
+      assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env)
+      assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "http://localhost:3000",
+                                                                  env: env.merge("ATOMIC_CAPTURE_URL" => "http://localhost:3000"))
+      ["http://localhost:3000", "https://hub.invalid", "not a url"].each do |other|
+        assert_nil TiktokDraftCli.held_admin_token(base_url: other, env: env), "#{other} did not grant this login"
+      end
+      assert_nil TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio",
+                                                 env: env.merge("CLAUDE_CODE_SESSION_ID" => "another-harness"))
+    end
+  end
+
   def test_the_bin_without_an_admin_session_says_how_and_sends_nothing
     out = `env -u AGENT_ADMIN_SESSION_TOKEN #{File.expand_path("../../bin/tiktok-draft", __dir__)} #{SLUG} --api https://hub.invalid --yes 2>&1`
 
     refute $?.success?
     assert_match(/AGENT_ADMIN_SESSION_TOKEN is not set/, out)
+    assert_match(/bin\/agent-activity heartbeat xan/, out, "the board's grant is named first")
     assert_match(/agent_sessions:grant_admin/, out)
+    assert_operator out.index("heartbeat xan"), :<, out.index("agent_sessions:grant_admin")
   end
 end

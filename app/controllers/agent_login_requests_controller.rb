@@ -9,7 +9,11 @@ class AgentLoginRequestsController < ApplicationController
   def approve
     decide do
       session = @login.approve!(by: current_user.email)
-      "Admin session granted to #{@login.soul} until #{session.expires_at.utc.iso8601}."
+      if @login.harness_key?
+        "Harness key #{session.slug} granted to #{@login.label}."
+      else
+        "Admin session granted to #{@login.soul} until #{session.expires_at.utc.iso8601}."
+      end
     end
   end
 
@@ -17,7 +21,7 @@ class AgentLoginRequestsController < ApplicationController
   def refuse
     decide do
       @login.refuse!(by: current_user.email, reason: "declined by the operator")
-      "Admin login for #{@login.soul} declined."
+      @login.harness_key? ? "Harness key for #{@login.label} declined." : "Admin login for #{@login.soul} declined."
     end
   end
 

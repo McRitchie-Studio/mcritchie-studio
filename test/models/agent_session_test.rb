@@ -75,6 +75,18 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert_equal "xan", AgentSession.create!(soul: "alex", tier: "admin", issued_by: "operator_grant").soul
   end
 
+  test "a harness key is held as the logged-out builder, scoped to no task, and granted by the operator" do
+    key = AgentSession.grant_harness_key!(label: "studio-mac", issued_by: "launch_phrase")
+    assert_equal [ "harness", "pokemon", "studio-mac", nil ], [ key.tier, key.soul, key.label, key.task_slug ]
+    assert key.expires_at > 50.years.from_now
+    refute key.covers_task?(@task.slug)
+
+    refute AgentSession.new(soul: "xan", tier: "harness", issued_by: "operator_grant").valid?
+    refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "operator_grant", task_slug: @task.slug).valid?
+    refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "task_claim").valid?
+    assert_raises(ActiveRecord::ReadonlyAttributeError) { key.update!(label: "another-mac") }
+  end
+
   test "covers_task?: studio its own task only, admin any task, client none" do
     other = tasks(:queued_task)
 

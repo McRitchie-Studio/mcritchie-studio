@@ -6,6 +6,14 @@ module Api
 
       before_action :authenticate_api!
 
+      # The actions of a controller a harness key may call: the doors that mint a
+      # login. Every other action answers a harness key 403.
+      class_attribute :harness_key_actions, default: [].freeze
+
+      def self.accepts_harness_key(*actions)
+        self.harness_key_actions = actions.map(&:to_s).freeze
+      end
+
       # rescue_from matches handlers in REVERSE registration order (the
       # last-declared wins). So the broad StandardError catch-all MUST be declared
       # FIRST — otherwise it shadows the specific handlers below it and a plain
@@ -24,15 +32,18 @@ module Api
       # - An agent session's token (AgentSession#token): the row is read on every
       #   call, so a revoked or expired session, a studio session whose task left
       #   building and review, or a reviewer's session whose claim is not live,
-      #   answers 401 with the reason. A client session answers
-      #   403: no board endpoint serves the client tier yet. The session then sets
+      #   answers 401 with the reason. A client session answers 403 everywhere but
+      #   the endpoints its runtime key names (AgentSession::CLIENT_ENDPOINTS: Turf
+      #   Monster's athletes read and game recap post). The session then sets
       #   Current.agent_session, which names the actor and drives the tier gates
-      #   (Api::AgentSessionGate).
+      #   (Api::AgentSessionGate). A harness key (tier harness) is the exception: it
+      #   is a machine's credential, so it sets Current.harness_key and no session,
+      #   and only the actions a controller names with accepts_harness_key take it.
       # - The shared secret's token (POST /api/v1/auth), kept for one release so Turf
       #   Monster's two endpoints and installed hooks keep working. It must verify
       #   AND carry an expiry: MessageVerifier enforces an expiry when one is
       #   present, but a token minted without `expires_in` verifies forever. Each use
-      #   is logged as legacy.
+      #   is logged as legacy and counted in the legacy-use census (LegacyAuthUse).
       def authenticate_api!
         token = request.headers["Authorization"]&.sub(/\ABearer\s+/, "")
         return render_error("Missing token", status: :unauthorized, error_code: "UNAUTHORIZED") unless token.present?
@@ -49,6 +60,7 @@ module Api
 
         Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}" \
                           "#{dropped_session_note}")
+        LegacyAuthUse.record!(endpoint: endpoint_signature, caller: LegacyAuthUse.caller_for(request))
       end
 
       # A desk whose agent session was dropped (or expired) falls back to the shared
@@ -71,12 +83,37 @@ module Api
 
         reason = session.refusal_reason
         return render_error(reason, status: :unauthorized, error_code: "SESSION_ENDED") if reason
-        if session.client?
-          return render_error("a client session reaches no board endpoint", status: :forbidden,
-                                                                             error_code: "SESSION_FORBIDDEN")
-        end
+        return authenticate_harness_key!(session) if session.harness?
+        return render_client_refusal(session) if session.client? && !session.reaches_endpoint?(endpoint_signature)
 
         Current.agent_session = session
+      end
+
+      # This action as AgentSession::CLIENT_ENDPOINTS and the legacy census name it.
+      def endpoint_signature
+        "#{request.request_method} #{controller_path}##{action_name}"
+      end
+
+      def render_client_refusal(session)
+        routes = session.client_routes
+        reason = if routes.empty?
+                   "a client session reaches no board endpoint"
+                 else
+                   "a client session reaches no board endpoint but its own: #{session.soul}'s runtime key reaches " \
+                     "#{routes.to_sentence} and nothing else"
+                 end
+        render_error(reason, status: :forbidden, error_code: "SESSION_FORBIDDEN")
+      end
+
+      def authenticate_harness_key!(key)
+        unless harness_key_actions.include?(action_name)
+          return render_error("a harness key mints studio logins (POST /api/v1/agent_sessions, a review claim) and posts " \
+                              "login requests; it reaches no other endpoint. Write a task with the login its claim minted",
+                              status: :forbidden, error_code: "SESSION_FORBIDDEN")
+        end
+
+        Rails.logger.info("[agent-auth] harness key #{key.slug} (#{key.label}): #{request.request_method} #{request.path}")
+        Current.harness_key = key
       end
 
       # The `exp` a verified api_auth token carries, or nil when it has none. Call

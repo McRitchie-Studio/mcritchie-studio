@@ -542,24 +542,24 @@ class ReleaseClaimCli
     "/api/v1/releases/#{slug}"
   end
 
+  # A conductor claim is an admin-tier write, so each call presents the admin
+  # login this harness session holds (`heartbeat steffon|xan`, or
+  # AGENT_ADMIN_SESSION_TOKEN) and the board records the claim under that soul.
+  # With no admin login the call uses the shared token.
   def post(path, body)
-    tok = @api.token
-    return nil unless tok
-
-    res = @api.http_json(:post, path, body, bearer: tok)
-    @api.invalidate_token! if res && res.code.to_i == 401
-    res
+    AgentApi.call(@api, :post, path, body, session: admin_session)
   rescue StandardError
     nil
   end
 
   def get(path)
-    tok = @api.token
-    return nil unless tok
+    AgentApi.call(@api, :get, path, nil, session: admin_session)
+  rescue StandardError
+    nil
+  end
 
-    res = @api.http_json(:get, path, nil, bearer: tok)
-    @api.invalidate_token! if res && res.code.to_i == 401
-    res
+  def admin_session
+    HeldSession.find(env: @env, projects_dir: @api.projects_dir, tier: "admin")
   rescue StandardError
     nil
   end

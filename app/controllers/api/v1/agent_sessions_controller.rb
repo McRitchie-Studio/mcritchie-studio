@@ -6,14 +6,17 @@ module Api
     #   GET    /api/v1/agent_sessions/current  who this bearer is logged in as
     #   DELETE /api/v1/agent_sessions/current  log out (revoke this session)
     #
-    # A studio login is presented with the machine credential, which today is the
-    # shared secret's token: a session cannot mint another session. The login names
+    # A studio login is presented with the machine credential: the machine's
+    # harness key, or the shared secret's token. A session cannot mint another
+    # session, and a harness key mints studio logins only. The login names
     # the soul the desk commits as and the task it claimed; the task must be building
     # (task_claim) or submitted (review_claim), and the task record must entitle the
     # soul to it (AgentSession.studio_login_refusal): the builder the claim stamped,
     # or a reviewer the task names. Any other soul answers 403 with the reason. Admin
     # sessions are granted by the operator, not here.
     class AgentSessionsController < BaseController
+      accepts_harness_key :create, :show
+
       # The stage a task must be in for each kind of studio login.
       CLAIM_STAGES = { "task_claim" => "building", "review_claim" => "submitted" }.freeze
 
@@ -53,6 +56,9 @@ module Api
 
       def show
         session = current_agent_session
+        if Current.harness_key
+          return render_data({ "session" => nil, "auth" => "harness_key", "harness_key" => Current.harness_key.summary })
+        end
         return render_data({ "session" => nil, "auth" => "legacy" }) unless session
 
         render_data({ "session" => session.summary, "auth" => "agent_session" })

@@ -452,6 +452,10 @@ SessionStart context-injection JSON to stdout and exits 0:
 
 Same board + token as the rest of the stack (`ATOMIC_CAPTURE_URL`,
 `AGENT_API_SECRET` → repo `.env` → 1Password last, reusing the shared token cache).
+The read and the capture hook's posts present a login the harness session holds
+when there is one, and the shared token otherwise; with `AGENT_LEGACY_TOKEN=off`
+and no login nothing is sent
+([`credentials.md`](../modules/credentials.md#hooks-and-narration)).
 **NON-FATAL by construction:** no token, an unreachable board, or an empty bank
 prints **nothing** and exits 0 — the hook can never block or slow a session start.
 `bin/session-insights` is tracked executable (`100755`) because the hook invokes
