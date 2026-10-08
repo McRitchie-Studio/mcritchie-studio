@@ -209,6 +209,24 @@ module Api
         assert_response :created, "a pointer is superseded by a pointer (control)"
       end
 
+      test "[integration] a supersede with a blank sensitivity is refused; a sensitive fact stays sensitive" do
+        ["", "  "].each do |blank|
+          assert_no_difference -> { Fact.count } do
+            post supersede_api_v1_fact_path(@sensitive.slug), headers: bearer(@admin), as: :json,
+                                                              params: { fact: { value: "band eight", source_ref: "doc-9", sensitivity: blank } }
+          end
+          assert_response :unprocessable_entity
+          assert_match(/Sensitivity/, body["error"])
+          assert @sensitive.reload.current?
+        end
+
+        post supersede_api_v1_fact_path(@sensitive.slug), headers: bearer(@admin), as: :json,
+                                                          params: { fact: { value: "band eight", source_ref: "doc-9" } }
+        assert_response :created, "left out, the sensitivity is kept (control)"
+        assert_equal "sensitive", body.dig("data", "sensitivity")
+        assert_equal 0, Fact.readable_at("studio").where(key: "salary").count
+      end
+
       test "[integration] a studio session writes ordinary facts only; admin writes sensitive" do
         assert_no_difference -> { Fact.count } do
           create(@studio, key: "band", value: "seven", sensitivity: "sensitive")

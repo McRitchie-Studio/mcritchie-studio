@@ -139,11 +139,13 @@ class Fact < ApplicationRecord
 
   # Writes this fact's successor (same subject, key and, unless given,
   # sensitivity) and links this one to it. The predecessor keeps its own value
-  # and source.
+  # and source. A sensitivity given blank is refused: it would fall to the
+  # default and demote a sensitive fact.
   def supersede!(recorded_by_session_slug:, **attrs)
     transaction do
       lock!
       refuse_settled!
+      refuse_blank_sensitivity!(attrs)
       successor = self.class.create!(
         { subject_type: subject_type, subject_slug: subject_slug, key: key, sensitivity: sensitivity,
           source_kind: source_kind }.merge(attrs.compact).merge(recorded_by_session_slug: recorded_by_session_slug)
@@ -177,6 +179,14 @@ class Fact < ApplicationRecord
     return if current?
 
     errors.add(:base, superseded? ? "is superseded by #{superseded_by_slug}" : "is retired")
+    raise ActiveRecord::RecordInvalid, self
+  end
+
+  def refuse_blank_sensitivity!(attrs)
+    return if attrs[:sensitivity].nil? || attrs[:sensitivity].present?
+
+    errors.add(:sensitivity, "can't be blank on a supersede: leave it out to keep #{sensitivity}, " \
+                             "or name one of #{SENSITIVITIES.join(", ")}")
     raise ActiveRecord::RecordInvalid, self
   end
 
