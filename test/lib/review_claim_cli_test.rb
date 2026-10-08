@@ -576,6 +576,30 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
+  def test_unit_claim_next_stdout_is_only_the_slug
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+
+      assert_equal ReviewClaimCli::OK, c.run(["claim-next", "--agent", "carl"])
+      assert_equal "popped-task\n", @out.string, "the soul's dreams never reach stdout"
+      assert_includes @err.string, "## Carl's dream sequence · task popped-task"
+    end
+  end
+
+  def test_unit_acquire_prints_the_reviewing_souls_dreams_to_stderr
+    Dir.mktmpdir do |proj|
+      assert_equal ReviewClaimCli::OK, cli(projects_dir: proj, data: { "acquired" => true }).run(["acquire", SLUG, "--agent", "carl"])
+      assert_includes @err.string, "## Carl's dream sequence · task #{SLUG}"
+      refute_includes @out.string, "dream sequence"
+
+      assert_equal ReviewClaimCli::OK, cli(projects_dir: proj, data: { "acquired" => true }).run(["acquire", SLUG])
+      assert_equal "", @err.string, "no soul, no sequence"
+
+      assert_equal ReviewClaimCli::SKIPPED, cli(projects_dir: proj, data: { "acquired" => false }).run(["acquire", SLUG, "--agent", "carl"])
+      refute_includes @err.string, "dream sequence", "a refused claim loads nothing"
+    end
+  end
+
   def test_unit_claim_next_prints_none_and_exits_nonzero_when_nothing_eligible
     Dir.mktmpdir do |proj|
       c = cli(projects_dir: proj, data: { "claimed" => nil, "reason" => "no_green_ci" })

@@ -300,6 +300,7 @@ require_relative "lib/desk_session"
 require_relative "lib/fast_lane"
 require_relative "lib/remedy"
 require_relative "lib/review_hop"
+require_relative "lib/dream_bank"
 require_relative "lib/desk_claim"
 require_relative "lib/code_diff"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
@@ -2872,6 +2873,7 @@ when "begin"
   # `bin/submit <slug>` this replaced was wrong from every desk but the hub's.
   puts "next: build in the worktree, then hand off with:"
   puts "  #{Remedy.handoff(slug, worktree_dir, __dir__)}"
+  DreamBank.announce(builder, io: $stderr, task: slug)
 when "update"
   usage = "usage: #{$PROGRAM_NAME} update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)

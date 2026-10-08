@@ -69,6 +69,7 @@ require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
 require_relative "review_worker_pulse"
+require_relative "dream_bank"
 require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
@@ -268,6 +269,7 @@ class ReviewClaimCli
     if data["acquired"]
       write_marker(sid, slug)
       start_renewer(sid, slug)
+      DreamBank.announce(reviewer, io: @err, task: slug)
       @out.puts("review-claim: ✅ #{slug} review claimed — this task is yours to review.")
       OK
     else
@@ -300,6 +302,7 @@ class ReviewClaimCli
     if present?(slug)
       write_marker(sid, slug)
       start_renewer(sid, slug)
+      DreamBank.announce(reviewer, io: @err, task: slug)
       @out.puts(slug) # JUST the slug, so `slug=$(bin/task claim-next-review)` captures it
       OK
     else
