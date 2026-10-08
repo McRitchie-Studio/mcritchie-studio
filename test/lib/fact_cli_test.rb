@@ -86,6 +86,55 @@ class FactCliTest < Minitest::Test
     assert_raises(OptionParser::InvalidOption) { FactCli.parse(%w[josh-allen --frobnicate]) }
   end
 
+  SSN = "123-45-6789"
+  BANK = "000123456789"
+
+  def parsed_pair(pair) = FactCli.parse(["company/acme", "--add", pair, "--source", "doc-1"]).fetch(:pair)
+
+  def test_add_splits_at_the_first_equals_sign_and_keeps_the_rest_as_the_value
+    assert_equal ["gate", "east"], parsed_pair("gate=east")
+    assert_equal ["motto", "a=b=c"], parsed_pair("motto=a=b=c")
+    assert_equal ["motto", "\"built to last\""], parsed_pair("motto=\"built to last\"")
+    assert_equal ["year-founded", "1987"], parsed_pair(" year-founded =1987")
+    assert_equal ["bank-account", nil], parsed_pair("bank-account")
+    assert_equal ["a" * 64, "x"], parsed_pair("#{"a" * 64}=x")
+  end
+
+  # Each of these would put data in the key, the one column stored in the clear.
+  def test_a_key_that_is_not_a_name_is_refused_here_and_never_sent_or_repeated
+    { "a colon for the equals sign" => "ssn: #{SSN}", "a space for the equals sign" => "ssn #{SSN}",
+      "a colon, no space" => "ssn:#{SSN}", "a quoted pair" => "\"ssn=#{SSN}\"", "a quoted key" => "'ssn'=#{SSN}",
+      "digits before the equals sign" => "#{BANK}=checking", "digits joined to a name" => "acct-#{BANK}=x",
+      "digits in pieces" => "ssn-123-45-6789", "an empty key" => "=#{SSN}", "upper case" => "SSN",
+      "too long" => "#{"a" * 65}=x" }.each do |label, pair|
+      api = FakeApi.new(fact)
+      error = assert_raises(FactCli::Failure, label) do
+        FactCli::Runner.new(api: api, out: StringIO.new).run(FactCli.parse(["company/acme", "--add", pair, "--source", "doc-1"]))
+      end
+      assert_match(/Nothing was sent/, error.message, label)
+      [SSN, BANK].each { |data| refute_includes error.message, data, label }
+      assert_empty api.calls, label
+    end
+  end
+
+  # The hub refuses these; bin/fact sends them as typed, with the key and value apart.
+  def test_an_identity_pair_reaches_the_hub_as_a_key_and_a_value
+    assert_equal ["bank_account", BANK], parsed_pair("bank_account=#{BANK}")
+    assert_equal ["ssn", " #{SSN}"], parsed_pair("ssn = #{SSN}")
+    assert_equal ["note", "password=hunter2"], parsed_pair("note=password=hunter2")
+  end
+
+  def test_a_subject_or_a_fact_slug_that_carries_data_is_refused_and_never_repeated
+    [[SSN], ["company/#{BANK}"], ["company/Acme Welding"], ["--retire", SSN],
+     ["--supersede", "ssn #{SSN}", "--value", "x", "--source", "d"], ["#{SSN}/acme"],
+     ["--add", "ssn", SSN, "--source", "d"]].each do |argv|
+      error = assert_raises(FactCli::Failure) { FactCli.parse(argv) }
+      [SSN, BANK].each { |data| refute_includes error.message, data }
+    end
+    assert_equal %w[company acme-welding-2020], FactCli.parse(%w[company/acme-welding-2020])[:subject]
+    assert_equal "fact-0123456789abcdef", FactCli.parse(%w[--retire fact-0123456789abcdef])[:retire]
+  end
+
   def test_help_asks_the_hub_for_nothing
     assert FactCli.parse(%w[--help])[:help]
   end

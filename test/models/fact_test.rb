@@ -115,6 +115,13 @@ class FactTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] bin/fact screens a key by Fact's own grammar" do
+    require Rails.root.join("bin/lib/fact_cli")
+
+    assert_equal [Fact::KEY_FORMAT, Fact::KEY_MAX, Fact::LONG_NUMBER, Fact::SUBJECT_SLUG],
+                 [FactCli::KEY_FORMAT, FactCli::KEY_MAX, FactCli::LONG_NUMBER, FactCli::SUBJECT_SLUG]
+  end
+
   test "[unit] a colon typed for the equals sign is refused: 'ssn: digits' stores nothing" do
     assert_pointer_refusal(:key, "ssn: digits", digits: SSN_DIGITS, key: "ssn: #{SSN_DIGITS}", value: nil)
     assert_equal 0, Fact.count
