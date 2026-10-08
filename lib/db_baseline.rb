@@ -14,7 +14,7 @@ require "yaml"
 #   CatchUp    brings a database that stopped partway through the retired ledger to
 #              that ledger's head (db:baseline:catch_up).
 #
-# Procedure: docs/agents/modules/backend-discipline.md#the-migration-baseline
+# Procedure: docs/agents/modules/backend-discipline.md, "The Migration Baseline"
 module DbBaseline
   # Every baseline version starts with this date, so it sorts before any other migration.
   PREFIX = "20260101"

@@ -10,15 +10,23 @@
 # Migrations newer than the schema's version are kept, so a schema taken from
 # production leaves the migrations production has not run in place. Installed
 # engine migrations are always kept. Changes files only; it opens no database.
-# Procedure: docs/agents/modules/backend-discipline.md#the-migration-baseline
-require_relative "../config/environment"
+# Procedure: docs/agents/modules/backend-discipline.md, "The Migration Baseline"
 require "optparse"
 
-options = { schema: Rails.root.join("db/schema.rb").to_s }
-OptionParser.new do |parser|
-  parser.on("--schema PATH") { |path| options[:schema] = File.expand_path(path) }
-  parser.on("--dry-run") { options[:dry_run] = true }
-end.parse!
+options = { schema: File.expand_path("../db/schema.rb", __dir__) }
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/db-baseline [--schema PATH] [--dry-run]"
+  opts.on("--schema PATH", "the schema production holds (default db/schema.rb)") { |path| options[:schema] = File.expand_path(path) }
+  opts.on("--dry-run", "print what would be written, retired and kept") { options[:dry_run] = true }
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "bin/db-baseline: #{e.message}\n#{parser.banner}"
+end
+abort "bin/db-baseline: unexpected argument #{ARGV.first}\n#{parser.banner}" if ARGV.any?
+
+require_relative "../config/environment"
 
 engine_names = Rails::Engine.subclasses.flat_map do |engine|
   Array(engine.paths["db/migrate"]&.existent).flat_map { |dir| Dir.children(dir) }.map { |file| DbBaseline.bare_name(file) }

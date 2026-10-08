@@ -108,6 +108,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "openclaw-workspace"     => :optparse,
     # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
     "sop-registry"           => :optparse,
+    # Rewrites db/migrate; the parse (and --help) comes before any file is touched,
+    # and an unknown flag or a stray argument aborts with the usage line.
+    "db-baseline"            => :optparse,
     # Asks the board for this machine's harness key and keeps it. `--help` is wired
     # through OptionParser and prints before dispatch; an unknown flag, an unknown
     # command and a stray positional all refuse before any request or write.
