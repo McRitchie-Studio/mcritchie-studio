@@ -10,12 +10,10 @@
 # and history; Task::SOUL_ALIASES reads `alex` as `xan`.
 agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
 
-# `alex` → `xan`, IN PLACE. db/migrate/20260924210000_rename_alex_soul_to_xan.rb
-# repoints the row and every stored soul-slug value at migrate time, and on a
-# deploy it has always run before this seed (release phase migrates; the seed
-# rides `rake apps:seed`). This is the seed's own idempotent half for a database
-# the migration has not reached — a desk seeded from an older tree — so the
-# upsert below FINDS `xan` instead of creating a second orchestrator. Never
+# `alex` → `xan`, IN PLACE. A deployed database had the row and every stored
+# soul-slug value repointed by a data migration. This is the seed's own idempotent
+# half for a database that migration never reached — a desk seeded from an older
+# tree — so the upsert below FINDS `xan` instead of creating a second orchestrator. Never
 # `destroy` the old row: Agent has_many :activities dependent: :destroy, and the
 # seat's history hangs off it. Runs before the roster loop on purpose.
 if (legacy = Agent.find_by(slug: "alex"))

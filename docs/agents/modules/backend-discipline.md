@@ -294,6 +294,55 @@ Persist external IDs, transaction signatures, payment intent IDs, and webhook ev
 - Put state transitions behind named methods instead of scattered status assignment.
 - Keep jobs and seeds idempotent.
 
+## The Migration Baseline
+
+`db/migrate` holds one create migration per table (`20260101NNNNNN_create_<table>.rb`),
+so a new machine reads each model as it is. `bin/db-baseline` writes them from a
+schema.rb. Change the schema with a new, normally timestamped migration; never edit a
+baseline file. Code: `lib/db_baseline.rb`, `lib/tasks/db_baseline.rake`.
+
+- **What sits beside the baseline.** Installed engine migrations (`*.studio_engine.rb`),
+  which create the engine's own tables. Native files that hold an engine migration's
+  name, so the engine's install step skips them (`create_active_storage_tables`,
+  `allow_null_image_cache_owner`, and `DbBaseline::HELD_NAMES` for a name the engine
+  has yet to ship). Any migration newer than the schema the baseline was written from.
+- **Views.** The SQL lives in `db/views/<name>.sql`, one baseline migration each. A view
+  never dumps to schema.rb, so a database loaded from the schema (test, a fresh desk)
+  has none.
+- **An existing database is never re-migrated.** `db:baseline:mark` runs ahead of
+  `db:migrate` and `db:prepare`, and after `db:test:prepare`. Where the database holds a
+  table with every baseline column, it records that migration's version; it writes
+  `schema_migrations` rows and nothing else. A table that is absent is left for its
+  migration to create. The retired versions stay in the ledger and read `NO FILE` in
+  `db:migrate:status`.
+- **A database partway through the retired migrations stops the run, unchanged**, and
+  names the columns it lacks. `bin/rails db:baseline:catch_up` replays the retired
+  migrations out of git (the commit in `db/baseline.yml`), then migrates. A database
+  with nothing to keep: `bin/rails db:drop db:prepare`.
+- **Read-only check.** `bin/rails db:baseline:check` reports what the baseline finds and
+  exits 1 on a table short of a column. On production:
+  `heroku run --no-tty -a mcritchie-studio -- bin/rails db:baseline:check`.
+
+Re-baseline after a schema facelift:
+
+1. Bring every database you keep to head; catch-up reaches back one baseline.
+2. Take the schema production holds: `git show origin/main:db/schema.rb > tmp/production-schema.rb`.
+3. `bin/db-baseline --schema tmp/production-schema.rb --dry-run`, then without
+   `--dry-run`. Migrations newer than that schema stay as files, so production still
+   runs them on its next deploy.
+4. `bin/rails test test/lib/db_baseline_test.rb test/integration/db_baseline_mark_test.rb`:
+   a fresh database migrated from zero must dump `db/schema.rb` exactly, and a database
+   that already holds the tables must migrate nothing.
+
+Traps:
+
+- Postgres rewrites a check-constraint or partial-index expression each time it is
+  loaded, so a database built by migrations and one loaded from schema.rb can dump the
+  same constraint in two spellings. `db/schema.rb` holds what a fresh migrate dumps;
+  after `db:migrate` in a desk, keep only your own hunks of the schema diff.
+- `bin/release` refuses to roll back past a release that adds migration files, and a
+  re-baseline adds one per table.
+
 ## Verification
 
 Backend changes should include the narrowest meaningful automated test. For provider workflows, also verify the local callback path or document the exact external dependency blocking verification.
