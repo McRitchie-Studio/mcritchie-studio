@@ -179,8 +179,8 @@ module DbBaseline
     end
 
     # A table follows every table it points at, so its foreign keys sit in its own
-    # migration. Where tables point at each other, the first by name goes first and
-    # the key waits in the migration of the table it points at.
+    # migration. Where tables point at each other, the one most pointed at goes first
+    # and its key waits in the migration of the table it points at.
     def sort(tables)
       names = tables.map(&:name)
       needs = tables.to_h do |table|
@@ -192,7 +192,8 @@ module DbBaseline
       end
       ordered = []
       until needs.empty?
-        ready = needs.select { |_, targets| (targets - ordered).empty? }.keys.min || needs.keys.min
+        ready = needs.select { |_, targets| (targets - ordered).empty? }.keys.min
+        ready ||= needs.keys.min_by { |name| [-needs.values.count { |targets| targets.include?(name) }, name] }
         ordered << ready
         needs.delete(ready)
       end
