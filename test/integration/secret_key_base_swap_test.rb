@@ -67,7 +67,30 @@ class SecretKeyBaseSwapTest < ActionDispatch::IntegrationTest
     assert_match %r{/login}, response.location
   end
 
+  # The tamper control: the survival test above, with one character of the
+  # old-key session cookie changed before the first request after the swap.
+  test "a tampered session cookie fails after the swap" do
+    log_in_as(users(:alex))
+    get deployments_path
+    assert_response :success
+
+    swap_to(@new_key, rotate_from: @old_key)
+    name = Rails.application.config.session_options.fetch(:key)
+    sealed = cookies[name]
+    assert sealed.present?, "the session cookie should be in the jar before it is tampered"
+    cookies[name] = flip_first_character(sealed)
+    assert_not_equal sealed, cookies[name], "the tampered cookie should be the one sent"
+
+    get deployments_path
+    assert_response :redirect
+    assert_match %r{/login}, response.location
+  end
+
   private
+
+  def flip_first_character(value)
+    (value[0] == "A" ? "B" : "A") + value[1..]
+  end
 
   def swap_to(secret_key_base, rotate_from: nil, at_boot: false)
     rotations = ActiveSupport::Messages::RotationConfiguration.new
