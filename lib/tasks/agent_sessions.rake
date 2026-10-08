@@ -51,7 +51,7 @@ namespace :agent_sessions do
 
   desc "List the long-lived keys (harness keys and client runtime keys); never a value"
   task keys: :environment do
-    rows = AgentSession.keys.order(:issued_at).map do |key|
+    rows = AgentSession.granted_keys.order(:issued_at).map do |key|
       state = key.revoked? ? "revoked #{key.revoked_at.utc.iso8601} by #{key.revoked_by}" : "live"
       [ key.slug, key.tier, key.soul, key.label.to_s, key.issued_by, key.issued_at.utc.iso8601, state ].join("  ")
     end

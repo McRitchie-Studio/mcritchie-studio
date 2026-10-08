@@ -60,7 +60,7 @@ class AgentSession < ApplicationRecord
   scope :unexpired, -> { where("expires_at > ?", Time.current) }
   scope :for_task, ->(slug) { where(task_slug: slug) }
   # The long-lived keys: every harness key and every client runtime key.
-  scope :keys, -> { where(tier: "harness").or(where(issued_by: "runtime_key")) }
+  scope :granted_keys, -> { where(tier: "harness").or(where(issued_by: "runtime_key")) }
 
   # The tier a soul's own sessions are capped at, or nil for a slug that is no soul.
   def self.tier_for_soul(soul)
