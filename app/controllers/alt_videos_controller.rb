@@ -46,8 +46,8 @@ class AltVideosController < ApplicationController
 
   # The page's signed URLs again, by object key: `inline` plays or shows a file,
   # `download` saves it. It signs the key set `show` builds and nothing else: it
-  # reads no key from the request. Always JSON (the route sets the format), so
-  # AdminWall answers a signed-out fetch 401 and a non-admin 403, never a redirect.
+  # reads no key from the request. The page asks with Accept: application/json,
+  # so AdminWall answers a signed-out fetch 401 and a non-admin 403, not a redirect.
   def links
     load_alt_video(clips: :versions)
     sign_files
