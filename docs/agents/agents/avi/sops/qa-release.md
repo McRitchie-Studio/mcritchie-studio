@@ -266,8 +266,8 @@ bin/release prepare --yes
      pin as a floor must read the base version of `>= x.y.z.rcN` (turf-monster's
      `engine_pin_contract_test.rb` and `workflow_citation_docs_test.rb` do).
    - studio-engine's `bin/gem-drift-check` compares the engine's solana-studio lock
-     with each consumer's. It ignores a consumer on a candidate of a version the
-     engine does not have yet; the ship bumps the engine's lock to the final.
+     with each consumer's. It names and skips a consumer locked to a prerelease;
+     the ship bumps the engine's lock to the final.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that exact SHA
    IS the verdict**; nothing runs locally. It polls a pending run, passes only on green,
    and fails closed on everything else. It may **credit** an existing green for the same
