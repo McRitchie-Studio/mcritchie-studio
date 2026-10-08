@@ -165,6 +165,7 @@ require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 require_relative "../app/models/release/ladder"
 require_relative "../app/models/release/accepted_certification"
 require_relative "../app/models/release/gemfile_repin"
+require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/engine_migration_install"

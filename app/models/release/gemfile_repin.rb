@@ -114,6 +114,51 @@ class Release
       end.join
     end
 
+    # --- the release candidate pin ---------------------------------------------
+    #
+    # Bundler resolves a prerelease only when a requirement names one, so a consumer
+    # locks a candidate through an exact second requirement on its own line:
+    #   gem "x", "~> 0.95"                →  gem "x", "~> 0.95", "0.96.0.rc1"
+    # Dropping it gives back the line it was added to, byte for byte.
+
+    # A quoted exact candidate requirement, with the comma that leads it.
+    CANDIDATE_ARG = /\s*,\s*(['"])=?\s*(\d+\.\d+\.\d+\.rc\d+)\1/
+
+    # The candidate version pinned on the gem's line, or nil.
+    def candidate_pin(gemfile_text, gem_name)
+      line = gem_line_for(gemfile_text, gem_name)
+      line && strip_comment(line)[CANDIDATE_ARG, 2]
+    end
+
+    # Pin the gem's line to exactly `candidate`, replacing any candidate already there.
+    # The requirement goes after the line's own requirement strings and before its
+    # options. A source-ref line is left alone: re-pin it to a version first.
+    def pin_candidate(gemfile_text, gem_name, candidate)
+      edit_gem_line(gemfile_text, gem_name) do |head, rest|
+        rest = rest.sub(CANDIDATE_ARG, "")
+        requirements = rest[/\A(?:\s*,\s*(['"])[^'"]*\1)*/]
+        "#{head}#{requirements}, \"#{candidate}\"#{rest.delete_prefix(requirements)}"
+      end
+    end
+
+    # Remove the candidate requirement from the gem's line. Idempotent.
+    def drop_candidate(gemfile_text, gem_name)
+      edit_gem_line(gemfile_text, gem_name) { |head, rest| "#{head}#{rest.sub(CANDIDATE_ARG, '')}" }
+    end
+
+    # Yield (`gem "<name>"`, the code after it) for the gem's plain-pin line and put
+    # the block's answer back with the line's comment and ending.
+    def edit_gem_line(gemfile_text, gem_name)
+      gemfile_text.to_s.each_line.map do |line|
+        next line unless gem_declaration?(line, gem_name) && !source_ref?(line)
+
+        code    = strip_comment(line)
+        head    = code[/\A[ \t]*gem\s+(['"])#{Regexp.escape(gem_name.to_s)}\1/]
+        comment = line.chomp.delete_prefix(code)
+        "#{yield(head, code.delete_prefix(head))}#{comment}#{line[/\r?\n\z/]}"
+      end.join
+    end
+
     # --- internals -----------------------------------------------------------
 
     # A quoted version-requirement argument: "~> 0.10", ">= 1.0", "0.8.0".

@@ -492,6 +492,37 @@ class Release
       end
     end
 
+    # The Gemfile text that locks `version` of a published gem. A candidate
+    # (`x.y.z.rcN`) is the final's Gemfile plus the exact candidate requirement; a
+    # final is that Gemfile with any candidate requirement dropped. So the ship's
+    # Gemfile is the prepare's minus one requirement string.
+    def locked_gemfile(gemfile_text, gem_name, version)
+      final = Release::GemCandidate.final_of(version) || version
+      text  = bumped_gemfile(Release::GemfileRepin.drop_candidate(gemfile_text, gem_name), gem_name, final)
+      return text unless Release::GemCandidate.candidate?(version)
+
+      Release::GemfileRepin.pin_candidate(text, gem_name, version)
+    end
+
+    # The published gems a consumer must re-lock before it deploys: its Gemfile line
+    # is a source ref or carries a candidate pin, or its lock resolves a prerelease.
+    # The lock is read as well as the Gemfile because a lock keeps a candidate that
+    # still satisfies the pin once the candidate requirement is gone.
+    def gems_to_relock(published_gem_names, gemfile_text, lockfile_text = "")
+      Array(published_gem_names).select do |gem_name|
+        Release::GemfileRepin.references_branch?(gemfile_text, gem_name) ||
+          Release::GemfileRepin.candidate_pin(gemfile_text, gem_name) ||
+          prerelease_locked?(lockfile_text, gem_name)
+      end
+    end
+
+    def prerelease_locked?(lockfile_text, gem_name)
+      resolved = locked_version(lockfile_text, gem_name)
+      !resolved.nil? && Gem::Version.new(resolved).prerelease?
+    rescue ArgumentError
+      true # a version nobody can parse is not a release
+    end
+
     # The body of a Gemfile.lock's `GEM` sections — the RubyGems-sourced
     # resolutions only.
     #
