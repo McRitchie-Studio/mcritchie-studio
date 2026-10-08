@@ -164,6 +164,16 @@ Rails.application.routes.draw do
   post "characters/:slug/looks/:look_slug/default", to: "characters#make_default", as: :default_character_look
   post "characters/:slug/looks/:look_slug/sheet", to: "characters#build_sheet", as: :character_look_sheet
 
+  # Logo studio (LogosController, require_admin): a read-only gallery over
+  # Logos::NavbarLogo. /navbar serves one logo as image/svg+xml; ?download=1
+  # sends it as a file. The path carries no .svg on purpose: an extension would
+  # set the request format, and the admin wall answers a non-HTML format with a
+  # bare 401/403 where every other walled page redirects.
+  # docs/topics/logos.md. Task logo-studio-gallery-page.
+  get "logos", to: "logos#index", as: :logos
+  get "logos/:brand", to: "logos#show", as: :logo_brand
+  get "logos/:brand/navbar", to: "logos#navbar", as: :navbar_logo
+
   # Email brand kits (EmailBrandKitsController, require_admin): each kit's base
   # assets, its approved headers and open briefs, and the uploaded references.
   # Declared BEFORE resources :email_images, whose show route would otherwise
