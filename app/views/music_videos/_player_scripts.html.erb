@@ -117,9 +117,10 @@
       const at = el.currentTime, playing = !el.paused && !el.ended;
       // clipPair: the seeks below are the page's, not the operator's.
       el.__quietUntil = performance.now() + 2000;
-      el.src = url + hash;
+      // The place rides in on the URL's own time fragment (as the first frame
+      // does, #t=0.001), and a browser that ignores it is seeked there.
+      el.src = at > 0.001 ? url + "#t=" + at.toFixed(3) : url + hash;
       if (at > 0.001) {
-        el.currentTime = at;
         el.addEventListener("loadedmetadata", () => {
           if (Math.abs(el.currentTime - at) > 0.05) { el.__quietUntil = performance.now() + 400; el.currentTime = at; }
         }, { once: true });
