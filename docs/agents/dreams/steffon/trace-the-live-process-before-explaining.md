@@ -4,6 +4,8 @@ answer: "Look first. The thing is still running: find its process, its parent, i
 why: "A generic explanation cannot say whether to click Allow or Deny. The working directory of the waiting process named the exact session that raised it."
 status: approved
 source: "2026-10-04 \u00b7 session 588cf516"
+soul: steffon
+topic: [processes, diagnosis]
 ---
 
 # Trace the live process before explaining

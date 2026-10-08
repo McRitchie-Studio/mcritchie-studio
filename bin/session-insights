@@ -21,9 +21,10 @@
 # prints NOTHING and exits 0, so a session with no insights just starts normally —
 # the hook can never block or slow a session start.
 #
-# It also loads the DREAM BANK (bin/lib/dream_bank.rb): the approved worked
-# decisions in docs/agents/dreams/. Dreams are tracked files, read locally, so they
-# load even when the board gives no insights. Dreams print first; insights follow.
+# It also loads the DREAM BANK's platform sequence (bin/lib/dream_bank.rb): the
+# approved dreams with no soul tag, then the helper roster. Dreams are tracked
+# files, read locally, so they load even when the board gives no insights. Dreams
+# print first; insights follow. A soul's own sequence loads through bin/dream.
 
 require "json"
 require_relative "lib/agent_api"
@@ -78,9 +79,9 @@ class SessionInsights
     # swallow — a feed-forward hook must never break or delay a session start
   end
 
-  # The approved dreams as a context block; "" when the bank is empty or unreadable.
+  # The platform sequence as a context block; "" when it is empty or unreadable.
   def dream_context(budget: CONTEXT_BUDGET)
-    DreamBank.context(DreamBank.approved(dir: @dreams_dir), budget: budget)
+    DreamBank.platform_context(DreamBank.platform(dir: @dreams_dir), budget: budget)
   rescue StandardError
     ""
   end

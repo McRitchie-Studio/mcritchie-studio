@@ -157,20 +157,30 @@ class SessionInsightsTest < Minitest::Test
   end
 
   def test_unit_the_real_bank_and_a_full_feed_fit_under_the_cap_with_every_dream
-    approved = DreamBank.approved
+    platform = DreamBank.platform
     insights = "## Insights\n" + ("- x" * 1).ljust(INSIGHT_RESERVE - 12, "x")
     real = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR)
 
     dreams = real.dream_context(budget: real.dream_budget(insights))
     context = real.session_context(dreams: dreams, insights: insights)
 
+    assert_operator platform.size, :>=, 12, "the platform sequence lost dreams"
     assert_operator context.size, :<=, HOOK_CAP
     assert_includes context, insights, "the insights are never trimmed for a dream"
-    assert_equal approved.size, dreams.scan(/^\*\*Q:/).size,
-                 "the approved bank no longer fits beside a full insight feed: " \
-                 "#{approved.size} approved, #{dreams.scan(/^\*\*Q:/).size} loaded. " \
-                 "Shorten a dream or retire one (docs/agents/modules/dream.md, The ceiling)."
+    assert_equal platform.size, dreams.scan(/^\*\*Q:/).size,
+                 "the platform sequence no longer fits beside a full insight feed: " \
+                 "#{platform.size} approved, #{dreams.scan(/^\*\*Q:/).size} loaded. " \
+                 "Shorten a dream, retire one or tag it for a soul (docs/agents/modules/dream.md, The ceiling)."
     refute_includes dreams, "did not fit this block"
+    assert_includes dreams, "### Helper agents", "the helper roster rides the platform sequence"
+  end
+
+  def test_unit_a_souls_dreams_stay_out_of_the_session_start_block
+    soul_only = DreamBank.approved.reject(&:platform?)
+    dreams = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR).dream_context
+
+    refute_empty soul_only
+    soul_only.each { |dream| refute_includes dreams, "(`#{dream.slug}`)" }
   end
 
   def test_unit_an_oversized_feed_squeezes_the_dreams_and_never_the_insights
@@ -195,6 +205,8 @@ class SessionInsightsTest < Minitest::Test
         context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
         assert_includes context, "**Q: Do I merge on one read?** (`wait-for-it`)"
         refute_includes context, "candidate", "a proposed dream reaches no session"
+        refute_includes context, "Carl only", "a soul's dream loads through bin/dream, not at session start"
+        assert_includes context, "### Helper agents"
         assert_operator context.index("## Dreams"), :<, context.index("## Insights")
       end
     end
@@ -226,6 +238,9 @@ class SessionInsightsTest < Minitest::Test
                  "why: \"A late blocker costs a whole task.\"\nstatus: approved\n---\n\n# Wait\n")
       File.write(File.join(dir, "not-yet.md"),
                  "---\nquestion: \"A candidate question?\"\nanswer: \"A candidate answer.\"\nstatus: proposed\n---\n")
+      FileUtils.mkdir_p(File.join(dir, "carl"))
+      File.write(File.join(dir, "carl", "review.md"),
+                 "---\nquestion: \"Carl only?\"\nanswer: \"Carl only.\"\nstatus: approved\nsoul: carl\n---\n")
       yield dir
     end
   end

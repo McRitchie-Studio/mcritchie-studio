@@ -4,6 +4,7 @@ answer: "None yet. List the candidates in one line each, name the one you would 
 why: "The newest item is often his own reply, not the one he means. One session filed the wrong chain and ran a full ship before learning which he wanted."
 status: approved
 source: "2026-10-01 and 2026-10-03 \u00b7 sessions c0844cf2, f5502ef1"
+topic: ambiguity
 ---
 
 # List the candidates before acting on the one

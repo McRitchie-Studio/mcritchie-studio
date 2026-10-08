@@ -4,6 +4,7 @@ answer: "Not a script that mutates. Read its source or use a read-only command. 
 why: "A probe run of the ship command committed eight files under the message 'probe', and a guessed `--help` ran a real sweep across nine repos."
 status: approved
 source: "2026-08-26 \u00b7 session 9e42c2b3"
+topic: probing
 ---
 
 # Never probe with the real command

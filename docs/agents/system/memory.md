@@ -42,9 +42,10 @@ its rules is promoted, the memory file points at the owning doc.
 A lesson says what to do. A **dream** shows a decision being made: the question a
 session faced, the good answer, and why. Dreams are tracked files in
 [`docs/agents/dreams/`](../dreams/README.md), each one signed off by Alex, and the
-same `bin/session-insights` loader prints the approved ones ahead of the insights.
-They are read locally, so they load with the board unreachable. About 25 load
-by themselves, because a hook's context is capped at 10,000 characters. Procedure:
+same `bin/session-insights` loader prints the approved platform sequence ahead
+of the insights; a soul's own sequence prints when the soul is invoked
+(`bin/dream <soul>`). They are read locally, so they load with the board
+unreachable. About 25 platform dreams load by themselves, because a hook's context is capped at 10,000 characters. Procedure:
 [`dream.md`](../modules/dream.md).
 
 ## Agent-Specific Memory

@@ -92,6 +92,17 @@ class InstallFastLaneToolingTest < Minitest::Test
     assert_empty Dir.glob(File.join(tooling_root, ".staging-*")), "no staging dir survives a good install"
   end
 
+  # The session-start hook runs from the installed tree, so the bank it reads ships in it.
+  def test_integration_the_installed_tree_carries_the_dream_bank
+    install!
+
+    out, err, status = Open3.capture3(SessionEnv.neutralized({}), RbConfig.ruby, File.join(link, "dream"), "platform")
+
+    assert status.success?, err
+    assert_includes out, "## Dreams", "the installed loader finds no dreams"
+    assert_includes out, "### Helper agents"
+  end
+
   # The swap replaces the symlink ITSELF. A naive `mv new .agents/bin` onto a symlink to
   # a directory moves the new link INSIDE the old tree and leaves the old one live.
   def test_integration_the_swap_replaces_an_older_link_in_place

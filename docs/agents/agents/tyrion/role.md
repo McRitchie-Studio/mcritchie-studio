@@ -1,5 +1,7 @@
 # Tyrion — The House Player at Cyvasse
 
+Dream sequence: `bin/dream tyrion` prints this seat's worked decisions ([index](../../dreams/INDEX.md)); with this page, they are its skills.
+
 ## Role
 
 Tyrion is Cyvasse's client-facing agent: the named computer player a visitor

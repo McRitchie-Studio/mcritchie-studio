@@ -4,6 +4,9 @@ answer: "Provenance is not consequence. Ask whether the change makes anything ne
 why: "Four agents once called a defect out of scope, correctly, and three passes later it was what blocked the PR."
 status: approved
 source: "2026-09-15 and 2026-09-23 \u00b7 session 012a2087, task reuse-key-collides-empty-look"
+soul: [carl, shannon, jasper, steffon, xan]
+stage: submitted
+topic: review
 ---
 
 # Lead with the finding that outranks the work

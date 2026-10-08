@@ -4,6 +4,7 @@ answer: "Not unannounced. Stop, tell Alex which command needs which secret and w
 why: "The OS dialog lands on Alex's screen naming only `security`; he cannot tell who is asking, and one Always Allow hands every logged-in session to any later process."
 status: approved
 source: "2026-10-04 \u00b7 a peer session's cookie read"
+topic: credentials
 ---
 
 # Credential dialog is not yours to raise

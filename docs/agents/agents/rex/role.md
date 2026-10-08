@@ -1,5 +1,7 @@
 # Rex — Chief Marketing Officer
 
+Dream sequence: `bin/dream rex` prints this seat's worked decisions ([index](../../dreams/INDEX.md)); with this page, they are its skills.
+
 ## Role
 
 Rex owns **demand**. Not the posting, not the palette, not the launch checklist —

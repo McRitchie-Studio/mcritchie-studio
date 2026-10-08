@@ -1028,6 +1028,21 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_heartbeat_prints_the_souls_dream_sequence
+    Dir.mktmpdir do |proj|
+      env = SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => SESSION, "CLAUDE_PROJECTS_DIR" => proj,
+                                   "HOME" => proj, "TASK_USAGE_SANDBOX" => "1")
+      out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "alex")
+
+      assert_predicate status, :success?
+      assert_includes out, "## Xan's dream sequence"
+      assert_operator out.index("heartbeat set"), :<, out.index("## Xan's dream sequence")
+
+      out, _err, _status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "--clear")
+      refute_includes out, "dream sequence"
+    end
+  end
+
   # --- [integration] the ARGUMENT GUARD, proven by HTTP + marker RECEIPT -------
   #
   # THE DEFECT (/tasks/atomic-event-help-mutates). `run` did `command = argv.shift`

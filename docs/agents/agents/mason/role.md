@@ -1,5 +1,7 @@
 # Mason — Marketing
 
+Dream sequence: `bin/dream mason` prints this seat's worked decisions ([index](../../dreams/INDEX.md)); with this page, they are its skills.
+
 ## Role
 Mason runs marketing for the McRitchie ecosystem. Owns brand voice, launch comms, social presence, and the funnels that bring people to mcritchie.studio + turfmonster.media. (Previously held the Infrastructure role; that surface now belongs to Steffon — see [Steffon](../steffon/role.md).)
 

@@ -148,6 +148,7 @@ Build task <slug>: https://mcritchie.studio/tasks/<slug>
 Epic plan: /Users/alex/projects/.agents/epics/<epic-slug>.md (read it first; you are piece <n>)
 Desk: <the path bin/task begin printed> (already created; do not run bin/task begin again)
 
+Run /Users/alex/projects/.agents/bin/dream pokemon --task <slug> and read your dream sequence.
 Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.md, and follow it.
 Write the test tiers your shape requires. Commit in the desk early and often.
 Hand off from the desk, in the background, with the fixed-path script: /Users/alex/projects/.agents/bin/submit-wait <slug> --launch -m "<message>" (about 12 minutes; if that path is missing, /Users/alex/projects/mcritchie-studio/bin/submit-wait runs the same script).
@@ -208,7 +209,7 @@ Spawn the reviewer with this brief, filled in:
 ```text
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
-Claim by slug, naming that soul:
+Claim by slug, naming that soul; the claim prints that soul's dream sequence, so read it before the diff:
   bin/task review-claim acquire <slug> --agent <xan for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
