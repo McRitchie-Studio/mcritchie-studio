@@ -295,6 +295,37 @@ module Api
         [nested, top, ORDINARY, SENSITIVE].each { |value| assert_not_includes log.string, value }
       end
 
+      test "[integration] no fact data reaches the log in a refused write: a number, a key, a note or a reference" do
+        number = 918_273_645_546
+        log = StringIO.new
+        logger = ActiveSupport::Logger.new(log)
+        logger.level = :debug
+        with_loggers(logger) do
+          flat(@admin, key: "top", value: number)
+          create(@admin, key: "nested", value: number)
+          flat(@admin, key: "small-number", value: 4321)
+          flat(@admin, key: "flag", value: true)
+          [{ key: "ssn: #{SSN}" }, { key: "pin-4321" }, { key: "note", value: "x", source_note: "wire #{BANK}" },
+           { key: "note", value: "x", source_ref: BANK }, { key: "note", valeu: "mistyped-value-3c1d" }].each do |fact|
+            create(@admin, **fact)
+            flat(@admin, **fact)
+          end
+          post supersede_api_v1_fact_path(@ordinary.slug), headers: bearer(@admin), as: :json, params: { value: number, source_ref: "d" }
+          flat(@admin, key: "hometown", value: "logged-control-value-2a9c")
+        end
+
+        assert_equal 1, Fact.where(key: %w[top nested ssn note hometown pin-4321]).count, "only the control landed"
+        # Booleans, not assert_includes: a failure must not print the log.
+        logged = log.string.lines.grep(/Parameters|Unpermitted/).join
+        assert logged.scan("Parameters:").size >= 16, "the request log was captured (control)"
+        assert logged.include?(%("key"=>"hometown")), "an ordinary key is logged (control)"
+        assert logged.include?(%("subject_slug"=>"#{@person.slug}")), "the subject is logged (control)"
+        [number.to_s, "4321", "=>true", SSN, BANK, "mistyped-value-3c1d", "logged-control-value-2a9c"].each_with_index do |text, at|
+          assert_not logged.include?(text), "the log carries fact data (item #{at})"
+        end
+        assert_not log.string.include?(number.to_s), "the number is nowhere in the log"
+      end
+
       test "[integration] without encryption keys every facts call answers 503 with the ENV names" do
         Fact.stub(:encryption_ready?, false) do
           list(@admin)
