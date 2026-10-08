@@ -94,7 +94,7 @@ Where each command may run, the author set, and the long form:
 6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
-9. **Dream before you decide.** Session start loads the dream bank: good answers from past sessions, signed off by Alex. Read it, and answer a matching situation the same way. A dream never overrides a rule here or an SOP. Detail: `docs/agents/modules/dream.md`.
+9. **Dream before you decide.** Session start loads the platform dream sequence: good answers from past sessions, signed off by Alex. A soul's own sequence loads with `bin/dream <soul>`. Read it, and answer a matching situation the same way. A dream never overrides a rule here or an SOP. Detail: `docs/agents/modules/dream.md`.
 
 Namespace scratch writes by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
 Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style*.

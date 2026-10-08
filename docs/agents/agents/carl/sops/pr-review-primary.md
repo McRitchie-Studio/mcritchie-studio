@@ -47,6 +47,8 @@ tasks. If anything is missing, note it as a finding; do not guess.
    bin/agent-activity start --category Verify --agent carl --task <task-slug> --reason "review: <task-slug>"
    ```
 
+   Then run `bin/dream carl --task <task-slug>` and read your dream sequence ([`dream.md`](../../../modules/dream.md)).
+
 2. **Summon your LIGHT: your call, one soul.** Preview the domain pick, or
    override it with your own judgment. Keep `--no-record`: a bare run RECORDS the
    pair, and recording takes the task's review claim.

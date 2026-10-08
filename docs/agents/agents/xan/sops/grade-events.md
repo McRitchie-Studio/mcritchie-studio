@@ -17,6 +17,8 @@ This page owns the learning capability. It runs in three parts:
    in code. Nothing tripped means "nothing to learn", and nothing is written.
    Something tripped writes ONE learning line, as a task note and as a banked
    insight that `bin/session-insights` serves. No one runs this by hand.
+   The same call proposes at most one dream for a task whose notes carry a
+   signal ([`dream.md`](../../../modules/dream.md#the-grader-proposes-one-at-ship)).
 2. **Grade recent activities by hand, only when named.** This SOP, below.
 3. **Share the bank out.** [`share-insights.md`](share-insights.md) regenerates
    the lessons doc from the banked insights.

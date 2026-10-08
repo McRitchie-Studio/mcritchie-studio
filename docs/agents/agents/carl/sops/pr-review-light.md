@@ -72,6 +72,8 @@ note it as a finding — do not guess.
    bin/agent-activity start --category Verify --agent <your-soul> --task <task-slug> --reason "light review: <task-slug>"
    ```
 
+   Then run `bin/dream <your-soul> --task <task-slug>` and read your dream sequence ([`dream.md`](../../../modules/dream.md)).
+
 2. **Focused second read.** A lighter pass than Carl's, centered on your domain
    and the highest-risk surface. **Do not run the gates** — Carl owns
    `bin/dor-check` and the cert/CI verification; you glance at whether `checks_run`
