@@ -243,13 +243,11 @@ The draft is a fixed template per signal, filled from these fields only:
 **What is dropped.** A draft is dropped, with a log line naming the task slug
 and the rule and nothing else, when:
 
-- the task title holds the first and last name of a row in the people table
-  (a soul's name is allowed);
+- the task title or slug holds the first and last name of a row in the people table (a soul's is allowed);
 - the draft holds an email address, a phone number, a money amount, a run of
   six or more digits, or a comma-grouped number. Activity slugs are not counted.
 
-A single name and a number under six digits pass the screen; the session that
-materializes the draft reads it against the rules above.
+A single name, a company name and a number under six digits pass the screen; the materializing session reads the draft against these rules.
 
 **Materialize it.** In a hub task desk:
 
@@ -261,11 +259,12 @@ It writes `docs/agents/dreams/<soul>/<task-slug>.md` in that desk with
 `status: proposed`. It refuses outside a desk, refuses a finding that is not a
 proposed dream for one known soul, and never overwrites a file. Then:
 
-1. Read the source activities named in `source`, and rewrite the question,
-   answer, why and the three sections to the decision the task made.
+1. Read the source activities named in `source`, and rewrite the title, the
+   question, answer, why and the three sections to the decision the task made.
+   The title and the file name come from the task: reword or rename one that
+   names a client, a company or a person, because this repository is public.
 2. Run `bin/dream index --write` and commit both files.
-3. Ask Alex to sign off (Act 3). A proposed dream loads in no sequence; the
-   index lists it with status `proposed`.
+3. Ask Alex to sign off (Act 3). A proposed dream loads in no sequence; the index lists it `proposed`.
 
 ## Act 3 — Sign-off (Alex)
 
