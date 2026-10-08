@@ -477,6 +477,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
     Release::ShipSequence.define_singleton_method(:missing_deploy_commands) { |*| [] } # the SHAs here are not commits
     def run_ship_gate(*) = puts("ACT frozen-gate")
     def ship_gem_candidates(*) = [{ "studio-engine" => "0.9.0.rc1" }, []]
+    def gem_stamp_problems(*) = []
     def ship_gem(repo, version, *_rest, candidate: nil) = puts("ACT publish-final #{repo} #{version} after #{candidate}")
     def repin_consumers(app_groups, published, ship_sha)
       puts("ACT relock")
@@ -487,6 +488,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
       puts("ACT relock-gate #{repo} #{frozen_sha[0, 7]}")
       abort("✗ red") if ENV["GATE"] == "red"
     end
+    def refuse_prerelease_deploy!(*) = puts("ACT prerelease-backstop")
     def deploy_app(group, sha) = puts("ACT deploy #{group['repo']} #{sha[0, 7]}")
     def run_post_deploy(*) = nil
     def production_smoke_seal(*) = nil
@@ -506,7 +508,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
     acts = ship_order("green")
 
     assert_equal ["ACT frozen-gate", "ACT publish-final studio-engine 0.9.0 after 0.9.0.rc1", "ACT relock",
-                  "ACT relock-gate mcritchie-studio eeeeeee", "ACT deploy mcritchie-studio eeeeeee",
+                  "ACT relock-gate mcritchie-studio eeeeeee", "ACT prerelease-backstop", "ACT deploy mcritchie-studio eeeeeee",
                   "ACT deploy turf-monster ccccccc", "ACT producer-locks"], acts
   end
 
@@ -515,5 +517,70 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
 
     assert_equal ["ACT frozen-gate", "ACT publish-final studio-engine 0.9.0 after 0.9.0.rc1", "ACT relock",
                   "ACT relock-gate mcritchie-studio eeeeeee", "ABORTED"], acts
+  end
+
+  # ── which tooling prepared this release ────────────────────────────────────
+
+  def stamp_problems(stamp, candidates)
+    eval_helper(%(gem_stamp_problems(#{stamp.inspect}, #{candidates.inspect}).join(" | ")))
+  end
+
+  STAMP = { "flow" => "1", "gems" => { "studio-engine" => "0.96.0.rc2" } }.freeze
+
+  def test_a_candidate_the_release_record_names_is_accepted
+    assert_equal "", stamp_problems(STAMP, "studio-engine" => "0.96.0.rc2")
+  end
+
+  def test_a_candidate_with_no_stamp_on_the_release_refuses_the_ship
+    assert_includes stamp_problems({}, "studio-engine" => "0.96.0.rc2"),
+                    "consumers lock 0.96.0.rc2, but the release record carries no candidate stamp"
+    assert_includes stamp_problems(nil, "studio-engine" => "0.96.0.rc2"), "no candidate stamp"
+  end
+
+  def test_a_stamp_from_another_flow_or_naming_another_candidate_refuses_the_ship
+    assert_includes stamp_problems(STAMP.merge("flow" => "2"), "studio-engine" => "0.96.0.rc2"), "candidate flow 2 (this ship runs flow 1)"
+    assert_includes stamp_problems(STAMP, "studio-engine" => "0.96.0.rc1"), "the release record names 0.96.0.rc2"
+  end
+
+  # OLD prepare, NEW ship: the old flow published the final at prepare, locked
+  # consumers to it and stamped nothing. Nothing here objects, and nothing is pushed.
+  def test_a_release_an_older_prepare_made_ships_as_before
+    assert_equal "", stamp_problems({}, "studio-engine" => nil)
+
+    out = run_cli(["--yes"], setup: candidates_world({ "mcritchie-studio" => "0.96.0", "turf-monster" => "0.96.0" }),
+                  call: CANDIDATES_CALL)
+    assert_includes out, "CANDIDATE=nil", out
+    assert_match(/^PROBLEMS=$/, out)
+
+    with_gems do |cdn, built|
+      shipped = run_cli(["--yes"], setup: ship_world(cdn: cdn, built: File.join(built, "unused.gem"), live: [{ "number" => "0.96.0" }]),
+                        call: ship_gem_call(nil))
+      assert_includes shipped, "already live on RubyGems — skip publish (idempotent)", shipped
+      assert_includes shipped, "SHIPPED"
+      refute_includes shipped, "PUSHED 0.96.0"
+    end
+  end
+
+  # ── the backstop: no prerelease lock is deployed ───────────────────────────
+
+  BACKSTOP_CALL = %{begin; refuse_prerelease_deploy!([{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }], } +
+                  %{{ "mcritchie-studio" => "b" * 40, "turf-monster" => "c" * 40 }); puts("DEPLOYS"); } +
+                  %{rescue SystemExit => e; puts("REFUSED: " + e.message); end}
+
+  # Whatever the steps before it reported: here the re-lock "ran" and turf's tree
+  # still names the candidate.
+  def test_a_tree_whose_lock_names_a_prerelease_is_not_deployed
+    out = run_cli(["--yes"], setup: candidates_world({ "mcritchie-studio" => "0.96.0", "turf-monster" => "0.96.0.rc2" }), call: BACKSTOP_CALL)
+
+    assert_match(/REFUSED: ✗ REFUSING TO DEPLOY a prerelease gem — turf-monster locks studio-engine 0\.96\.0\.rc2 at ccccccc\./, out)
+    assert_includes out, "No app has been deployed and no app's main has moved"
+    refute_includes out, "DEPLOYS"
+  end
+
+  # THE CONTROL.
+  def test_trees_on_released_versions_deploy
+    out = run_cli(["--yes"], setup: candidates_world({ "mcritchie-studio" => "0.96.0", "turf-monster" => "0.96.0" }), call: BACKSTOP_CALL)
+
+    assert_includes out, "DEPLOYS", out
   end
 end

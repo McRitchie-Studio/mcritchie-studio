@@ -227,4 +227,99 @@ class ReleaseGemsAfterQaTest < ReleaseCliHarness
   def test_the_candidate_this_sweep_locked_passes
     assert_includes stray("studio-engine" => "0.96.0.rc1"), "PASSED"
   end
+
+  # ── a candidate needs a ship that finalizes it ─────────────────────────────
+
+  # The machine's ship entry points, as the test names them. `:self` reads the script
+  # under test, so it carries the flow by construction.
+  def entry_points(points)
+    rows = points.map do |label, text|
+      body = text == :self ? "File.read(#{BIN.inspect})" : text.inspect
+      %(#{label.inspect} => [-> { #{body} }, "bring #{label} up to date"])
+    end
+    "def release_entry_points = { #{rows.join(', ')} }\n"
+  end
+
+  OLD_SCRIPT = "#!/usr/bin/env ruby\n# a release.rb from before the candidate flow\ndef ship; end\n"
+
+  def prepare_with(points, stub = {})
+    run_cli(["--yes"], setup: gem_publish_stub(version: "1.0.0", **stub) + candidate_world + entry_points(points),
+            call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+  end
+
+  # NEW prepare, OLDER ship present: refused before any candidate exists.
+  def test_prepare_refuses_a_candidate_while_an_older_ship_can_follow_it
+    out = prepare_with({ "the fixed-path install" => OLD_SCRIPT, "the hub primary" => :self })
+
+    assert_match(/ABORTED: .*gem publish preflight FAILED — NOTHING was published/, out)
+    assert_includes out, "the fixed-path install does not carry the candidate flow"
+    assert_includes out, "would publish the final and deploy consumers still locked to the candidate"
+    assert_includes out, "Fix: bring the fixed-path install up to date"
+    refute_includes out, "the hub primary does not", "only the entry point that lacks it is named"
+    assert_empty out.lines.grep(/^(PUSHED|TAG-PUSHED) /), "no candidate is published: #{out}"
+    refute_includes out, "LOCK-PUSH"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_an_entry_point_nobody_can_read_refuses_too
+    out = prepare_with({ "the fixed-path install" => nil, "the hub primary" => :self })
+
+    assert_includes out, "the fixed-path install could not be read", out
+    assert_empty out.lines.grep(/^PUSHED /)
+  end
+
+  def test_an_entry_point_on_another_flow_number_refuses
+    out = prepare_with({ "the hub primary" => %(GEM_CANDIDATE_FLOW = "0"\n) })
+
+    assert_includes out, "the hub primary carries candidate flow 0, not 1", out
+    assert_empty out.lines.grep(/^PUSHED /)
+  end
+
+  # THE CONTROL: every entry point carries the flow, and the candidate publishes.
+  def test_prepare_publishes_when_every_entry_point_carries_the_flow
+    out = prepare_with({ "the fixed-path install" => :self, "the hub primary" => :self })
+
+    assert_includes out, "NO-ABORT", out
+    assert_equal ["PUSHED release-studio-engine-1.0.0.rc1.gem"], out.lines.grep(/^PUSHED /).map(&:strip)
+  end
+
+  # A sweep that publishes no candidate (the final is live) is the old flow's shape,
+  # which an older ship handles: it is not held up.
+  def test_a_sweep_with_no_candidate_does_not_ask
+    out = prepare_with({ "the fixed-path install" => OLD_SCRIPT },
+                       { live: [{ "number" => "1.0.0" }], lock_dirty: false, tag: "v1.0.0", ahead: "" })
+
+    assert_includes out, "NO-ABORT", out
+    assert_includes out, "consumers lock the final"
+  end
+
+  def test_the_real_entry_points_are_the_fixed_path_install_and_the_hub_primary
+    out = eval_helper(%(release_entry_points.keys.join("\n")))
+
+    assert_match(%r{the fixed-path install \(.*/\.agents/bin/release\.rb\)}, out)
+    assert_match(%r{the hub primary's working tree \(.*/mcritchie-studio/bin/release\.rb\)}, out)
+    assert_includes out, "the hub primary's origin/main"
+  end
+
+  # The marker other checkouts read as text: one line, in the form the reader matches.
+  def test_the_script_carries_the_flow_line_exactly_once
+    assert_equal 1, File.read(BIN).scan(/^GEM_CANDIDATE_FLOW = "\d+"$/).size
+  end
+
+  # The stamp lands before any consumer is locked to the candidate.
+  def test_the_release_is_stamped_with_its_candidates_before_the_bump
+    stamped = <<~'RUBY'
+      self.singleton_class.prepend(Module.new do
+        def conductor(ruby, **kw)
+          puts("STAMP " + ruby[/'gem_candidates' => (\{.*?\}\})/, 1].to_s) if ruby.include?("'gem_candidates' =>")
+          super
+        end
+      end)
+    RUBY
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0") + candidate_world + stamped)
+
+    assert_match(/^STAMP \{"flow" ?=> ?"1", "gems" ?=> ?\{"studio-engine" ?=> ?"1\.0\.0\.rc1"\}\}/, out)
+    assert_operator out.index("STAMP"), :<, out.index("LOCK-PUSH"), "stamped before a lock names the candidate"
+    assert_operator out.index("PUSHED"), :<, out.index("STAMP"), "and after the candidate exists"
+  end
 end

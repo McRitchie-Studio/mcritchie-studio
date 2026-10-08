@@ -388,6 +388,7 @@ class ReleaseCliHarness < Minitest::Test
         def with_ship_workspace(_repo) = yield
         # A Gemfile.lock on the OLD version, and the gem's version file at the final.
         def gem_artifact_version(artifact) = File.basename(artifact, ".gem").split("-").last
+        def release_entry_points = {} # the machine's other checkouts are not this fixture's
         def ship_workspace!(repo, _sha)
           dir = File.join(Dir.tmpdir, "prep-ws-#{Process.pid}-#{repo}")
           FileUtils.mkdir_p(File.join(dir, "lib/studio"))

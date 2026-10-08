@@ -3923,6 +3923,13 @@ def prepare
   # it rather than the primary checkout, which sits on `main` and is a release
   # behind by construction. See Release::GemVersion.reported_version.
   published_gems = publish_gems_for_qa(gem_plan)
+  # The stamp a ship with this flow checks its candidates against. Before the
+  # consumer bump: a lock on a candidate never exists without it.
+  if published_gems.any?
+    step("record: gem candidate stamp (flow #{GEM_CANDIDATE_FLOW}) #{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')}")
+    conductor("r = Release.current; r.update!(metadata: (r.metadata || {}).merge('gem_candidates' => " \
+              "#{gem_candidate_stamp(published_gems).inspect})); puts({gem_candidates: true}.to_json)")
+  end
   bump_consumer_locks_for_qa(app_groups, published_gems)
   refuse_stray_candidates!(app_groups, published_gems)
 
@@ -5799,6 +5806,86 @@ def settle_lock!(workspace, repo, expects)
          "bin/release defect with the line it wrote.")
 end
 
+# THE GEM CANDIDATE FLOW, as a literal other checkouts read AS TEXT.
+#
+# A prepare that publishes a candidate needs a ship that finalizes it: one that
+# publishes the final and re-locks consumers off the candidate. A ship from tooling
+# without the flow publishes the final and deploys the frozen lock, candidate and
+# all. Two things on this machine can run a ship: the fixed-path install and the hub
+# primary. So before prepare publishes a candidate it reads both for this line
+# (release_entry_points, gem_flow_failures), and it stamps the release so a ship
+# with the flow can tell what prepared it (gem_candidate_stamp). No stamp can stop
+# tooling that does not read it; the entry-point read is what keeps such a ship
+# from following a candidate, and the ship's own prerelease refusal
+# (refuse_prerelease_deploy!) is the backstop for every ship that has the flow.
+GEM_CANDIDATE_FLOW = "1"
+GEM_CANDIDATE_FLOW_LINE = /^GEM_CANDIDATE_FLOW = "(\d+)"$/
+
+# Every place on this machine a `bin/release ship` can be started from, as
+# { label => [-> { the release.rb text, or nil when unreadable }, how to bring it up to date] }.
+def release_entry_points
+  root    = projects_root
+  primary = repo_path(APP)
+  fixed   = File.join(root, ".agents", "bin", "release.rb")
+  read    = ->(path) { File.exist?(path) ? File.read(path) : nil }
+  {
+    "the fixed-path install (#{fixed})" =>
+      [-> { read.call(fixed) },
+       "run `#{File.join(primary, 'bin', 'install-agent-docs')}` from a hub primary on `main` (the ship runs it; it is non-fatal there)"],
+    "the hub primary's working tree (#{File.join(primary, 'bin', 'release.rb')})" =>
+      [-> { read.call(File.join(primary, "bin", "release.rb")) },
+       "`git -C #{primary} checkout main && git -C #{primary} pull --ff-only` (the ship's restore-primary skips a dirty primary)"],
+    "the hub primary's origin/main" =>
+      [lambda {
+         sh("git", "-C", primary, "fetch", "origin", "main", "--quiet", capture: true)
+         text, ok = git_capture("-C", primary, "show", "origin/main:bin/release.rb")
+         ok ? text : nil
+       },
+       "ship the release that carries the candidate flow to production first; until then prepare cannot publish a candidate"]
+  }
+end
+
+# One sentence per entry point that could run a ship WITHOUT this candidate flow.
+# An unreadable entry point counts: a ship nobody could read is not a ship proven safe.
+def gem_flow_failures
+  release_entry_points.filter_map do |label, (reader, remedy)|
+    text = begin
+      reader.call
+    rescue StandardError
+      nil
+    end
+    found = text.to_s[GEM_CANDIDATE_FLOW_LINE, 1]
+    next if found == GEM_CANDIDATE_FLOW
+
+    state = text.nil? ? "could not be read" : (found ? "carries candidate flow #{found}, not #{GEM_CANDIDATE_FLOW}" : "does not carry the candidate flow")
+    "#{label} #{state}: a ship started there would publish the final and deploy consumers still locked to " \
+      "the candidate. Fix: #{remedy}"
+  end
+end
+
+# What prepare records on the release beside its candidates.
+def gem_candidate_stamp(published_gems)
+  { "flow" => GEM_CANDIDATE_FLOW, "gems" => published_gems.reject { |_, v| v.to_s.empty? } }
+end
+
+# The ship's read of that stamp against the candidates it found in the locks QA
+# ran. A candidate the release record does not name was locked by something other
+# than this flow's prepare, and is not shipped on that evidence.
+def gem_stamp_problems(stamp, qa_candidates)
+  stamp = stamp.is_a?(Hash) ? stamp : {}
+  qa_candidates.filter_map do |gem_name, candidate|
+    next if candidate.to_s.empty?
+
+    recorded = stamp.dig("gems", gem_name).to_s
+    if stamp["flow"].to_s != GEM_CANDIDATE_FLOW
+      "#{gem_name}: consumers lock #{candidate}, but the release record carries " \
+        "#{stamp['flow'] ? "candidate flow #{stamp['flow']}" : 'no candidate stamp'} (this ship runs flow #{GEM_CANDIDATE_FLOW})"
+    elsif recorded != candidate
+      "#{gem_name}: consumers lock #{candidate}, but the release record names #{recorded.empty? ? 'no candidate' : recorded}"
+    end
+  end
+end
+
 # --- prepare-side gem candidate publish (producer-first, BEFORE the pre-QA gate + QA) ----
 #
 # QA must test what production builds, and a RubyGems version can never be
@@ -6324,6 +6411,10 @@ def validate_gems_for_qa(gem_groups, app_groups)
     plan << { "repo" => repo, "tip" => tip, "version" => version, "already_live" => candidate.final_live?,
               "candidate" => candidate.final_live? ? nil : candidate.version, "candidate_live" => candidate.reuse? }
   end
+
+  # A candidate needs a ship that finalizes it. Asked last, and only when this sweep
+  # would publish or lock one, so every other finding is named in the same abort.
+  failures.concat(gem_flow_failures) if plan.any? { |entry| !entry["candidate"].to_s.empty? }
 
   if failures.any?
     abort!("gem publish preflight FAILED — NOTHING was published (every swept gem validates before the " \
@@ -6988,6 +7079,22 @@ def settle_producer_locks(published_gems)
 rescue SystemExit, StandardError => e
   say("  ⚠ producer locks not settled (#{e.message.to_s[0, 300]}). The ship continues; run `bundle update " \
       "#{published_gems.keys.join(' ')}` on the named gem repo's `#{ACCEPTED_BRANCH}`.")
+end
+
+# The last read before the deploy loop, on the exact SHAs it is about to deploy.
+# By here every candidate has been re-locked to its final, so a prerelease in a
+# lock means a step above did not do what it reported, or the tree came from
+# tooling this ship knows nothing about. Either way it does not go to production.
+def refuse_prerelease_deploy!(app_groups, ship_sha)
+  return if DRY
+
+  findings = stray_candidate_findings(app_groups, {}) { |repo| ship_sha[repo] }
+  return if findings.empty?
+
+  abort!("REFUSING TO DEPLOY a prerelease gem — #{findings.map { |f| f.sub(/, and this release.*\z/, '') }.join('; ')}. " \
+         "No app has been deployed and no app's main has moved. Any final this ship published stays published. " \
+         "The tree that deploys must lock a released version: re-run `#{RELEASE_SELF_CMD} prepare` (it locks the " \
+         "live final and QA runs again), then `#{RELEASE_SELF_CMD} ship`.")
 end
 
 # THE POST-CONDITION: after the sweep has bumped every lock it owns, does any repo
@@ -8551,7 +8658,8 @@ def ship
     "abort('no active release to ship') unless r.active? || unfinished.positive?; " \
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
-    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
+    "gem_candidates: (r.metadata['gem_candidates'] || {})}.to_json)",
     read_only: true
   )
   abort!("no active release to ship") if result["slug"].to_s.empty?
@@ -8646,6 +8754,7 @@ def ship
   qa_candidates = {}
   if !DRY
     qa_candidates, candidate_problems = ship_gem_candidates(gem_groups, app_groups, ship_sha)
+    candidate_problems += gem_stamp_problems(result["gem_candidates"], qa_candidates)
     if candidate_problems.any?
       abort!("gem candidate preflight FAILED — #{candidate_problems.join('; ')}. Nothing has moved and nothing " \
              "was published. #{STRAY_CANDIDATE_REMEDY}")
@@ -8704,6 +8813,10 @@ def ship
 
   # 4b. The re-lock commit is the tree that deploys: read ITS CI before any deploy.
   run_relock_gate(app_groups, ship_sha)
+
+  # 4c. THE BACKSTOP: no tree whose lock names a prerelease of a registered gem
+  #     deploys, whatever prepared it and whatever the steps above concluded.
+  refuse_prerelease_deploy!(app_groups, ship_sha)
 
   # 5. Apps hub-first, then satellites: test gate → prod adapter.
   app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
