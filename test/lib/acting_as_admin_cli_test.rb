@@ -6,7 +6,7 @@
 # studio login.
 #
 # Run directly:
-#   ruby -Itest test/lib/task_cli_admin_session_test.rb
+#   ruby -Itest test/lib/acting_as_admin_cli_test.rb
 
 require "minitest/autorun"
 require "json"
@@ -20,7 +20,7 @@ require_relative "../support/session_env"
 require_relative "../../bin/lib/admin_login"
 require_relative "../../bin/lib/desk_session"
 
-class TaskCliAdminSessionTest < Minitest::Test
+class ActingAsAdminCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
   HARNESS = "harness-admin-test"
 
