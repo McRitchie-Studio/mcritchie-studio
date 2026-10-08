@@ -29,6 +29,10 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   # like the test is obsolete rather than like the wrong question.
   def host_source = ResolvedView.source("host", "studio/modals")
 
+  # The store's JavaScript: studio/modal_host.js on an engine that ships the
+  # store as a module, the same resolved partial on one that keeps it inline.
+  def host_script = ResolvedView.modal_host_script
+
   # THE BACKDROP ELEMENT, parsed out of the RENDERED page.
   #
   # WHY NOT assert_includes ON THE SOURCE — this is the trap the first version of
@@ -93,7 +97,7 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   # which prose cannot satisfy — the whole reason the substring version failed.
   test "every store function the backdrop binds is actually defined" do
     el = backdrop
-    src = host_source
+    src = host_script
 
     called = %w[x-init @keydown.tab.prevent :aria-label @keydown.escape.window @click.self]
              .flat_map { |a| el[a].to_s.scan(/\$store\.modals\.(\w+)\(/) }
@@ -104,7 +108,7 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
                     "#{called.inspect} — if the bindings moved, re-point this test"
 
     called.each do |name|
-      assert_match(/\b#{Regexp.escape(name)}: function\s*\(/, src,
+      assert_match(ResolvedView.store_function(name), src,
                    "the backdrop binds $store.modals.#{name}(), and the store never DEFINES it. " \
                    "The attribute assertions above stay green on this — they prove the wire, not " \
                    "what is on the end of it — and Alpine throws in the browser where no Rails " \
@@ -133,10 +137,10 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   # THE SWAP DEFECT the engine's review sent back: a replace keeps current()
   # truthy, so the outer template never re-mounts and x-init never re-runs.
   test "the host re-focuses after a replace" do
-    src = host_source
+    src = host_script
 
-    assert_includes src, "refocus: function",
-                    "the host has no refocus() — the trap releases on the first swap"
+    assert_match(ResolvedView.store_function("refocus"), src,
+                 "the host has no refocus() — the trap releases on the first swap")
     # Anchored on a RECEIVER: this file documents refocus() in prose, so a bare
     # /refocus\(\)/ matches the comment and stays green with every call deleted.
     # That exact trap was caught by mutation in the engine.
@@ -152,7 +156,7 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   end
 
   test "the host returns focus to the opener when the last dialog closes" do
-    src = host_source
+    src = host_script
 
     assert_includes src, "releaseFocus",
                     "the host never restores focus, so closing strands the keyboard user"
@@ -161,11 +165,9 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   end
 
   test "the host names the dialog" do
-    src = host_source
-
-    assert_includes src, "dialogLabel",
-                    "the dialog has no accessible name — it announces as just 'dialog'"
-    assert_match(/:aria-label=/, src, "the name is computed but never bound to the element")
+    assert_match(ResolvedView.store_function("dialogLabel"), host_script,
+                 "the dialog has no accessible name — it announces as just 'dialog'")
+    assert_match(/:aria-label=/, host_source, "the name is computed but never bound to the element")
   end
 
   # WHERE THE RELEASE MAY SIT, AND WHAT MAY GATE IT.
@@ -193,7 +195,10 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   # Zero on the engine (release is a sibling of the guard), zero on the deleted
   # fork (no callback at all), one on turf's defect and on the mutant above.
   test "close() releases outside the removal guard, gated only on the stack" do
-    body = host_source[/close: function\(\).*?\n        \},/m]
+    # close() in either dialect: an object-literal member of the inline store, or
+    # `store.close = function` in studio/modal_host.js.
+    body = host_script[/close: function\(\).*?\n        \},/m] ||
+           host_script[/store\.close = function \(\) \{.*?\n  \}\n/m]
 
     refute_nil body, "close() moved — re-point this test rather than deleting it"
 
