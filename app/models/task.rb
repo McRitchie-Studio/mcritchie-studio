@@ -1449,24 +1449,14 @@ class Task < ApplicationRecord
     return if posted.nil?
     return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
 
-    # The remedy is a write the caller can make now, never a backward move: from
-    # `reviewed` on, the code is already on accepted. One sentence on three surfaces:
-    # this message, bin/task's #warn_dropped_approval_request!, and the board doc's
-    # Operator Validation Gate item 8. Pinned by
-    # test/models/task_approval_request_guard_test.rb.
+    # The remedy is ApprovalRequestRemedy.sentence, the one bin/task also prints.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
           "#{APPROVAL_REQUEST_STAGES.join(" or ")}, so this save would settle it to " \
-          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. Record the " \
-          "operator's answer where you stand: bin/task update <task-slug> --approval " \
-          "#{OPERATOR_APPROVAL_APPROVED}, or bin/task update <task-slug> --approval " \
-          "#{OPERATOR_APPROVAL_CHANGES_REQUESTED} — both are legal at every stage. If you still " \
-          "need his eyes on merged work, point him at the QA candidate once the qa-release sweep " \
-          "deploys it. Do not move the task back to re-open the request: a backward move " \
-          "un-merges nothing — from reviewed on, the code is already on accepted. Next time, ask " \
-          "BEFORE the work merges — a request now survives the handoff to submitted and pulses " \
-          "through review."
+          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. " \
+          "#{ApprovalRequestRemedy.sentence} Next time, ask BEFORE the work merges — a request " \
+          "now survives the handoff to submitted and pulses through review."
   end
 
   # The column writes a devops post carries under a routed name

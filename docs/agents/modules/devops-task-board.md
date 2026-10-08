@@ -211,9 +211,11 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 
    If you still need his eyes on merged work, point him at the QA candidate once
    the `qa-release` sweep deploys it. `--approval waiting` at `reviewed` or later is
-   refused (a 422 naming the stage and the value). This is the same remedy `bin/task
+   refused (a 422 naming the stage and the value). That 422 and the warning `bin/task
    move` prints when it announces a discarded request
-   (`bin/task#warn_dropped_approval_request!`; its test runs both commands).
+   (`bin/task#warn_dropped_approval_request!`; its test runs both commands) carry
+   one sentence, `lib/approval_request_remedy.rb#sentence`, which is the remedy
+   above in full.
 
 ## Operator windows
 
