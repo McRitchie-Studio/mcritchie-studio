@@ -296,6 +296,22 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
     assert_match(/left review \(it is reviewed\)/, body["error"])
   end
 
+  test "builder session cannot move a stage through the events endpoints" do
+    task = review_task("Builder Completes Reviewed Event")
+    builder = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+    %w[reviewed/complete archived/complete light_review/fail].each do |event|
+      post "/api/v1/tasks/#{task.slug}/events/#{event}", params: { event: { source: "system" } },
+                                                        headers: bearer(builder), as: :json
+      assert_response :forbidden, event
+      assert_equal %w[SESSION_FORBIDDEN submitted], [body["error_code"], task.reload.stage], event
+    end
+    # Control: the shared token completes the same event.
+    post "/api/v1/tasks/#{task.slug}/events/reviewed/complete", params: { event: { source: "system" } },
+                                                                 headers: @legacy, as: :json
+    assert_response :created
+    assert_equal "reviewed", task.reload.stage
+  end
+
   test "archive needs admin" do
     move(@task, "archived", bearer(@studio))
     assert_response :forbidden
