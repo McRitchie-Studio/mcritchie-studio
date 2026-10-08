@@ -1,0 +1,50 @@
+<%# Facts on file for one person: each with its source, who recorded it, and the
+    facts it replaced. Read-only; facts are written through bin/fact. Admin only. %>
+<div class="card p-6 space-y-4" data-test="facts-panel">
+  <div class="flex items-center justify-between gap-3">
+    <p class="label-upper text-primary">Facts</p>
+    <span class="text-xs text-muted">encrypted at rest; each names its source</span>
+  </div>
+
+  <% if chains.nil? %>
+    <p class="text-sm text-muted" data-test="facts-unavailable">
+      Fact encryption is not configured on this app, so facts cannot be read here.
+    </p>
+  <% elsif chains.empty? %>
+    <p class="text-sm text-muted" data-test="facts-empty">
+      No facts on file. Add one with
+      <code class="text-xs">bin/fact person/<%= person.slug %> --add key=value --source &lt;doc&gt;</code>.
+    </p>
+  <% else %>
+    <ul class="divide-y divide-subtle">
+      <% chains.each do |fact, replaced| %>
+        <li class="py-3 space-y-1.5 min-w-0" data-test="fact-row" data-fact="<%= fact.slug %>">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+            <span class="text-sm font-semibold text-heading break-words"><%= fact.key %></span>
+            <% if fact.sensitive? %>
+              <span class="badge text-3xs uppercase bg-surface-alt text-secondary border-subtle">Sensitive</span>
+            <% end %>
+            <% if fact.retired? %>
+              <span class="badge text-3xs uppercase bg-surface-alt text-muted border-subtle" data-test="fact-retired">Retired</span>
+            <% end %>
+          </div>
+          <%= render "people/fact_value", fact: fact %>
+          <%= render "people/fact_source", fact: fact %>
+          <% if replaced.any? %>
+            <details class="text-xs text-muted" data-test="fact-history">
+              <summary class="cursor-pointer">History (<%= replaced.size %>)</summary>
+              <ol class="mt-2 space-y-2 border-l border-subtle pl-3">
+                <% replaced.each do |old| %>
+                  <li class="space-y-1 min-w-0" data-test="fact-history-row">
+                    <%= render "people/fact_value", fact: old %>
+                    <%= render "people/fact_source", fact: old %>
+                  </li>
+                <% end %>
+              </ol>
+            </details>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</div>

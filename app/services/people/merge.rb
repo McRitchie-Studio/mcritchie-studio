@@ -241,6 +241,7 @@ class People::Merge
       stats[:news_moved] += News.where(column => source.slug).update_all(column => keep.slug, updated_at: now)
     end
     stats[:builders_moved] += Builder.where(person_id: source.id).update_all(person_id: keep.id, updated_at: now)
+    stats[:facts_moved] += Fact.for_subject("person", source.slug).update_all(subject_slug: keep.slug, updated_at: now)
   end
 
   def merge_identity

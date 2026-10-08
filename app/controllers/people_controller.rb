@@ -41,6 +41,7 @@ class PeopleController < ApplicationController
                          .includes(subjects: [:person, :appearance])
                          .order(created_at: :desc)
                          .distinct
+    @fact_chains = fact_chains if admin?
   end
 
   # Creating a person's FIRST look also makes it their default — the model does
@@ -194,6 +195,14 @@ class PeopleController < ApplicationController
 
   def set_person
     @person = Person.find_by!(slug: params[:slug])
+  end
+
+  # The person's facts, each current one with the facts it replaced; nil when
+  # this app holds no encryption key to read them with.
+  def fact_chains
+    return nil unless Fact.encryption_ready?
+
+    Fact.chains(Fact.for_subject("person", @person.slug).includes(:recorded_by_session).newest_first.to_a)
   end
 
   # The cast card a "new look" link came from (/music_videos/<slug>#person-<n>),

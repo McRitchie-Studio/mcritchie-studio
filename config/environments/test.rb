@@ -79,4 +79,10 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Fixed Active Record Encryption keys for this environment's own database.
+  # They guard no real data; production reads ACTIVE_RECORD_ENCRYPTION_* (config/application.rb).
+  config.active_record.encryption.primary_key ||= "test-only-fact-primary-key-0123456789"
+  config.active_record.encryption.deterministic_key ||= "test-only-fact-deterministic-key-0123"
+  config.active_record.encryption.key_derivation_salt ||= "test-only-fact-key-derivation-salt-01"
 end
