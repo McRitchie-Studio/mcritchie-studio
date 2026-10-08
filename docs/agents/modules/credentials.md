@@ -271,8 +271,7 @@ three config vars, one set per app. Both sets were filed on 2026-10-08 through
 fields `primary-key`, `deterministic-key` and `key-derivation-salt`. As of
 2026-10-08 each app's config holds all three names, each value matched its
 vault field by digest, and production had no stored fact when they were set
-([`credential-inventory.md`](credential-inventory.md)). A fresh app gets its own
-set, generated with `bin/rails db:encryption:init`.
+([`credential-inventory.md`](credential-inventory.md)).
 
 | Config var | Holds |
 |---|---|
@@ -282,10 +281,32 @@ set, generated with `bin/rails db:encryption:init`.
 
 - Without them the app boots, `/api/v1/facts` answers 503 naming the vars, and
   the person page says facts cannot be read.
-- Losing the primary key or the salt makes every stored value unreadable, and
-  nothing recovers a fact value. The stored TikTok connection becomes unreadable
-  too; that one recovers by signing in again at `/admin/tiktok/connect`.
-  Never change a key in place.
+- **Recovery, when an app's config has lost them and its 1Password item is
+  intact** (a restored app that carries an existing database is this case): set
+  the same three values back from that app's own item, field `primary-key` to
+  `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `deterministic-key` to
+  `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and `key-derivation-salt` to
+  `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`, through
+  [`credential-filing`](../agents/steffon/sops/credential-filing.md), with no
+  command that prints a value. Never generate a new set for an app that holds
+  stored values: a new set makes every one of them unreadable.
+- **A fresh app with an empty database** gets its own new set, generated with
+  `bin/rails db:encryption:init` and filed under its own new item. Never file
+  over an existing item: that overwrites the filed copy of a set some database
+  still needs.
+- **To confirm an app holds them, ask by name, never by printing a value.** Per
+  name, `heroku config --json --app <app> | jq '(.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY // "") != ""'`
+  answers `true` only when the name is present and non-empty; the same
+  expression on an absent name answers `false`, which is the control
+  ([`house-burn-down.md`](../system/house-burn-down.md), the hub `.env` block,
+  where the idiom comes from).
+- Losing the primary key or the salt from both the app's config and its item
+  makes every stored fact value unreadable, and nothing recovers one. The
+  stored TikTok connection becomes unreadable too; that one recovers by signing
+  in again at `/admin/tiktok/connect`.
+- These keys are not rotated on a cadence, and none is changed in place. A
+  forced change (a compromise) loses the stored facts and needs a TikTok
+  sign-in, so it is a recovery event, not a rotation.
 - The two apps hold different sets. Never copy production's set to QA or the
   reverse.
 - Development and test use fixed keys from `config/environments/`, which guard

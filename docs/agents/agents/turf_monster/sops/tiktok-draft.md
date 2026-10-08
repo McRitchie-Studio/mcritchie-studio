@@ -278,10 +278,17 @@ target users.
    filed as `active-record-encryption.studio.applications` and
    `active-record-encryption.studio-qa.applications` (vault
    `studio-applications`). So this step is a check: confirm the three names
-   are present on the app (names only, never the values). A fresh app or a
-   restore that lacks them gets its own set through Steffon's
+   are present on the app, by name and never by printing a value. For each
+   name, `heroku config --json --app mcritchie-studio | jq '(.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY // "") != ""'`
+   answers `true` only when the name is present and non-empty. When one is
+   missing, which case it is decides the fix
+   ([`credentials.md`](../../../modules/credentials.md#fact-encryption-keys)):
+   a restored app that carries an existing database gets its filed set back
+   from its own item, never a new one; a fresh app with an empty database gets
+   its own new set, filed under its own new item; never file over an existing
+   item. Either is Steffon's
    [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex's
-   word; never invent them in a session, and never copy production's keys to
+   word; never invent keys in a session, and never copy production's keys to
    QA or the reverse. On an app without them, step 4 refuses before it asks
    TikTok for anything.
 4. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,

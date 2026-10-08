@@ -384,6 +384,7 @@ TIKTOK_CLIENT_SECRET=...              #   "client-secret": the sandbox app's pai
 # The deployed sets live in Heroku config and in 1Password (studio-applications), filed 2026-10-08:
 #   "active-record-encryption.studio.applications" (production), "active-record-encryption.studio-qa.applications" (QA).
 # Stored fact values do not recover without their app's set; the TikTok connection recovers by signing in again.
+# A restored app gets its filed set back from its own item, never a new one (credentials.md, "Fact encryption keys").
 AWS_ACCESS_KEY_ID=...                 # S3 ImageCache bucket
 AWS_SECRET_ACCESS_KEY=...
 SES_AWS_ACCESS_KEY_ID=...             # 1Password: agent.aws.mcritchie-ses, SES API checks only

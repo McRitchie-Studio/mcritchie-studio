@@ -6,11 +6,15 @@ slots in later as a second source behind the same reader. Section 1 is what
 exists; sections 2 to 8 are the design; section 9 lists the build pieces and
 section 10 the decisions Alex makes.
 
-**On `accepted`, not live.** Three things this page relies on are merged to
-`accepted` and are not in production: private facts (the `Fact` model,
-`/api/v1/facts`, `bin/fact`, the person-page panel), the dream bank in two
+**On `accepted`, not live.** Two things this page relies on are merged to
+`accepted` and are not in production: the dream bank in two
 sequences with relevance loading and the ship-time proposer, and the review-claim
 and one-time-code logins. Each is marked **(accepted)** where the page leans on it.
+Private facts (the `Fact` model, `/api/v1/facts`, `bin/fact`, the person-page
+panel) are past that point as of 2026-10-08: the code is on `main`, production
+holds its encryption keys (`Fact.encryption_ready?` is true), and no fact is
+stored yet (`Fact.count` is 0). The feature has not been exercised in
+production; its **(accepted)** marks below predate this.
 
 The idea in one paragraph: knowledge sits in five tiers, and it flows downward
 only. An original lives in Drive. A fact or a page is derived from it and points
