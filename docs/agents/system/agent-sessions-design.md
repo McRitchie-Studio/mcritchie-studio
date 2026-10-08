@@ -6,6 +6,11 @@ enforces, and what is decided and not built. Section 8 lists the remaining steps
 by task slug; section 9 holds the questions Alex has not answered.
 How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
+The page reads the code on `accepted`. Three pieces are merged there and are not
+in production: the reviewer's login with the transition checks of section 5, the
+admin login request with its two grants, and the facts API. Section 8 names the
+task each rides on. The hub-shell admin grant is in production (section 3).
+
 The idea in one paragraph: credentials move behind deterministic server APIs, and
 the platform has **agent sessions**. An agent logs in as a soul when it claims a
 task, and the session carries one variable, the logged-in agent. The server
@@ -77,7 +82,7 @@ secret's token until a per-machine key replaces it (section 8).
 | Studio, builder | The task claim: `bin/task begin` logs the desk in (`POST /api/v1/agent_sessions`). The task must be `building`, and the soul must be one the claim recorded as its builder; any other soul answers 403 | The machine key | The task | When the task leaves `building` and `submitted`, or after 24 hours |
 | Studio, reviewer | The review claim: `bin/task claim-next-review` and `review-claim acquire`. The mint sits inside the claim's lock. The soul must be in the reviewer pool and outside the task's author set | The machine key | The claimed task | When the task leaves `submitted`, when the claim lapses, is released or changes hands, or after 24 hours |
 | Admin | The one-time code the board shows on the request, carried in Alex's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
-| Admin, from a hub shell | `bin/rails agent_sessions:grant_admin`: a shell on the hub can already write the database, so the shell is the grant | Nothing; the token prints on stdout for `AGENT_ADMIN_SESSION_TOKEN` | None | One to eight whole hours |
+| Admin, from a hub shell | `bin/rails agent_sessions:grant_admin`: a shell on the hub can already write the database, so the shell is the grant. It runs outside the board: no request, no code, no tap and no window, and the row records `operator_grant`, the value an Approve tap writes | Nothing; the token prints on stdout for `AGENT_ADMIN_SESSION_TOKEN` | None | One to eight whole hours |
 | Client | Not built. Decided: only from the isolated runtime, with a runtime-bound key stored as a digest and shown once, as Tyrion's bot token is | The runtime key, from the runtime's own env | The runtime's channel (first case: Turf Monster's TikTok DMs) | The key's |
 
 **The admin request has two grants the server verifies** (`AgentLoginRequest`).
@@ -196,9 +201,11 @@ and a ship recovery read it as they do now. None of this section is built.
 | The session table, the studio login at `bin/task begin`, the actor from the session, the tier and scope gates, the shared token kept beside them | `agent-sessions-phase-one` | shipped |
 | The gates on the board writes phase one left open: shifts, agent updates and the remaining actor sinks | `gate-remaining-board-writes` | shipped |
 | A review claim logs the reviewer in; the verdict and `archived` transitions are checked | `agent-sessions-review-login` | merged; rides the next release |
-| The admin login request, its two grants and the hub-shell grant | `agent-sessions-admin-grant` | merged; rides the next release |
+| The admin-only TikTok draft create and the hub-shell grant | `tiktok-draft-hardening` | shipped |
+| The admin login request and its two grants | `agent-sessions-admin-grant` | merged; rides the next release |
+| The facts API, session-only | `facts-primitive-and-endpoints` | merged; rides the next release |
 | The shared token answers 401 on writes; a per-machine key mints studio logins; Turf's two services get their own key; hooks, `bin/release` and `bin/task` authenticate by session | `retire-shared-secret-fallback` | blocked: it needs the admin grant live in production, and question 1 |
-| The soul, tier and expiry on the board card | `task-card-becomes-component` | designed |
+| The soul on the board card; the tier and the expiry are on no card | `task-card-becomes-component` | designed |
 | The checks on `reviewed` to `assembled` and `assembled` to `shipped`; the capability endpoints of section 4 marked not built; break-glass logging (section 7) | none filed | |
 | One leases table for review, release and shift claims (epic piece 5e) | none filed | |
 | The client runtime and its key, Turf Monster's TikTok DMs first (epic piece 3f) | none filed | |
@@ -231,3 +238,8 @@ token stops writing:
 3. **Does a logged-out Pokémon narrate once the shared token retires?** This page
    says yes, attributed to the mascot; the alternative makes narration the first
    studio write.
+4. **Does the hub-shell grant stay?** `bin/rails agent_sessions:grant_admin` is in
+   production, and the TikTok draft SOP runs it there through `heroku run`: whoever
+   can run a command on the hub mints an admin session of up to eight hours, with
+   no code and no tap. Proposed: keep it as the path for when the board cannot
+   grant, and move that SOP to the board's grant once it is in production.
