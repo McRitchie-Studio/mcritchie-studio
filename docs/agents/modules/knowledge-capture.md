@@ -140,9 +140,28 @@ $FACT --retire <fact-slug>
 
 - **Every fact names its source**: a knowledge doc id, or `drive:<file id>` for a
   Google Drive original. File the document first, then record the fact.
+- **A key is a name.** Lowercase words and digits joined by a hyphen or an
+  underscore (`year-founded`), 64 characters at most. The key is stored
+  unencrypted, so it carries no data: `--add "ssn: <digits>"`, a colon typed for
+  the equals sign, is refused before anything is sent.
 - **Identity data is never stored.** An SSN, a card, an account or routing
-  number, or a password answers 422. Record a pointer instead: the key with no
-  value and the source that holds the original.
+  number, a passport or licence number, a PIN or a password answers 422, in the
+  value, the key, the source or the note. Record a pointer instead: a key that
+  names it, no value, and the source that holds the original.
+  - **A key that names identity data takes a pointer only**: `account`, `acct`,
+    `card`, `routing`, `aba`, `iban`, `cvv`, `ssn`, `social-security`, `itin`,
+    `passport`, `drivers-license`, `license-number`, `password`, `passcode`,
+    `pin`, alone or inside a longer key (`bank_account`, `checking-account`).
+    `account-manager` and `business-card` are ordinary keys.
+  - **A person's tax id is identity; a company's is not.** `ein`, `tin`, `tax-id`
+    and `license` take a pointer on a `person/<slug>` and a value on a company
+    or an app.
+  - **A long unformatted number is refused**: eight or more digits in a row
+    read as an account number. The numeric keys take their own: `phone`, `fax`,
+    `mobile` (10 to 15 digits), `zip` (9), a date key such as `formed`,
+    `founded` or `date` (`YYYYMMDD`), and, for a company or an app, `ein`,
+    `tax-id`, `duns` (9) and `sos-id`, `entity-id`, `file-number` (8 to 12).
+    Write any other large figure with its separators (`$12,500,000`).
 - **A fact is refined, never edited.** `--supersede` writes the new value and
   links the old one to it; a person's page on the hub shows both.
 - **Two levels.** A desk's session reads and writes ordinary facts. `--sensitive`

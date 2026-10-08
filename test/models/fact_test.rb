@@ -234,6 +234,21 @@ class FactTest < ActiveSupport::TestCase
     assert_equal [[successor, [old]]], Fact.chains(Fact.for_subject("person", @person.slug).newest_first.to_a)
   end
 
+  test "[unit] a supersede with a blank sensitivity is refused; left out, the sensitivity is kept" do
+    old = build(sensitivity: "sensitive").tap(&:save!)
+    ["", " "].each do |blank|
+      error = assert_raises(ActiveRecord::RecordInvalid) do
+        old.supersede!(value: "v2", source_ref: "doc-2", sensitivity: blank, recorded_by_session_slug: @session.slug)
+      end
+      assert_includes error.record.errors.attribute_names, :sensitivity
+    end
+    assert old.reload.current?
+    assert_equal 1, Fact.count
+
+    kept = old.supersede!(value: "v2", source_ref: "doc-2", sensitivity: nil, recorded_by_session_slug: @session.slug)
+    assert_equal "sensitive", kept.sensitivity
+  end
+
   test "[unit] a superseded or retired fact cannot be superseded again" do
     old = build.tap(&:save!)
     old.supersede!(value: "v2", source_ref: "doc-2", recorded_by_session_slug: @session.slug)
