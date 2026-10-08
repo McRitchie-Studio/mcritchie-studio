@@ -246,6 +246,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
+    # PATCHes the production hub's SECRET_KEY_BASE. The help scan and the refusal
+    # run before HEROKU_API_KEY is read. Behavioural proof:
+    # test/lib/secret_key_base_swap_script_test.rb.
+    "secret-key-base-swap"   => :own_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/docs-installer-help-publishes).
     # These two were the sharpest pair in the gap bucket, because the thing they
     # publish is GLOBAL and shared. `bin/install-agent-docs install --help` read its
@@ -713,7 +717,8 @@ class BinHelpFlagClassTest < Minitest::Test
       "ecosystem-build"       => "BUILDS NOTHING",
       "gh-app-git-credential" => "MINTS NOTHING",
       "install-agent-docs"    => "PUBLISHES NOTHING",
-      "agent-runtime"         => "INSTALLS NOTHING"
+      "agent-runtime"         => "INSTALLS NOTHING",
+      "secret-key-base-swap"  => "TOUCHES NOTHING"
     }.each do |name, promise|
       src = source(name)
 

@@ -65,6 +65,7 @@ require "fileutils"
 require "rbconfig"
 require_relative "agent_api"
 require_relative "session_identity"
+require_relative "desk_session"
 require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
@@ -206,6 +207,8 @@ class ReviewClaimCli
     # tier drives `status` as arithmetic instead of waiting on wall time.
     @sleeper = ->(seconds) { sleep(seconds) }
     @clock   = -> { Time.now }
+    # The checkout the claim runs in, which keeps the review login. Injected in tests.
+    @tree = -> { DeskSession.root_for(Dir.pwd) }
   end
 
   # Entry point. Returns the process exit code.
@@ -269,6 +272,7 @@ class ReviewClaimCli
     if data["acquired"]
       write_marker(sid, slug)
       start_renewer(sid, slug)
+      keep_login(slug, data["agent_session"])
       DreamBank.announce(reviewer, io: @err, task: slug)
       @out.puts("review-claim: ✅ #{slug} review claimed — this task is yours to review.")
       OK
@@ -302,6 +306,7 @@ class ReviewClaimCli
     if present?(slug)
       write_marker(sid, slug)
       start_renewer(sid, slug)
+      keep_login(slug, data["agent_session"])
       DreamBank.announce(reviewer, io: @err, task: slug)
       @out.puts(slug) # JUST the slug, so `slug=$(bin/task claim-next-review)` captures it
       OK
@@ -468,6 +473,7 @@ class ReviewClaimCli
     res = (post("#{base(slug)}/review_claim/release", { "session" => sid, "nonce" => nonce }) if present?(sid))
     stop_renewer(sid, slug)
     clear_marker(sid, slug)
+    DeskSession.clear_review(@tree.call, slug)
     report_release(slug, res)
     OK
   end
@@ -1006,6 +1012,28 @@ class ReviewClaimCli
     age_txt = age.nil? ? "" : ", last heartbeat ~#{age}s ago"
     since_txt = since.empty? ? "" : " since #{since}"
     "#{who}#{since_txt}#{age_txt}"
+  end
+
+  # Keep the reviewer's login the claim returned (DeskSession.write_review), so
+  # this harness's `bin/task` writes to `slug` from this checkout present it. The
+  # note goes to stderr and never carries the token. Never fatal: without it the
+  # writes use the shared token.
+  def keep_login(slug, login)
+    return unless login.is_a?(Hash) && present?(login["token"])
+
+    owner = SessionIdentity.id(@env)
+    root = @tree.call
+    file = present?(owner) && root &&
+           DeskSession.write_review(root, login.slice("slug", "soul", "tier", "task_slug", "issued_by", "expires_at", "token")
+                                               .merge("harness_session_id" => owner))
+    if file
+      @err.puts("review-claim: #{login["soul"]} logged in to #{slug} (session #{login["slug"]}, until #{login["expires_at"]}).")
+    else
+      @err.puts("review-claim: #{login["soul"]}'s login to #{slug} was not kept " \
+                "(#{present?(owner) ? "not inside a checkout" : "no harness session id"}); board writes use the shared token.")
+    end
+  rescue StandardError => e
+    @err.puts("review-claim: the login to #{slug} was not kept (#{e.class}); board writes use the shared token.")
   end
 
   # ── HTTP + helpers ───────────────────────────────────────────────────────────

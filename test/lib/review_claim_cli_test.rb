@@ -87,7 +87,85 @@ class ReviewClaimCliTest < Minitest::Test
     c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code, routes: routes))
     @spawned = []
     c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
+    # No test keeps a login in the checkout the suite runs from.
+    c.instance_variable_set(:@tree, -> { @tree })
     c
+  end
+
+  HARNESS = "harness-reviewer"
+  LOGIN = { "slug" => "sess-r1", "soul" => "carl", "tier" => "studio", "issued_by" => "review_claim",
+            "expires_at" => "2999-01-01T00:00:00Z", "token" => "SECRET-TOKEN" }.freeze
+
+  # A checkout to keep a login in: a tmpdir with a `.git` directory.
+  def with_tree
+    Dir.mktmpdir do |tree|
+      FileUtils.mkdir_p(File.join(tree, ".git"))
+      @tree = tree
+      yield tree
+    ensure
+      @tree = nil
+    end
+  end
+
+  def login_for(slug) = LOGIN.merge("task_slug" => slug)
+
+  def test_unit_claim_next_stdout_is_only_the_slug
+    Dir.mktmpdir do |proj|
+      with_tree do |tree|
+        c = cli(projects_dir: proj, env: { "CLAUDE_CODE_SESSION_ID" => HARNESS },
+                data: { "claimed" => { "slug" => "popped-task" }, "agent_session" => login_for("popped-task") })
+
+        assert_equal ReviewClaimCli::OK, c.run(["claim-next", "--agent", "carl"])
+        assert_equal "popped-task\n", @out.string
+        assert_match(/carl logged in to popped-task \(session sess-r1/, @err.string)
+        assert_includes @err.string, "## Carl's dream sequence · task popped-task"
+        refute_includes @out.string + @err.string, "SECRET-TOKEN"
+        assert_equal "SECRET-TOKEN",
+                     DeskSession.token_for("popped-task", root: tree, harness_session_id: HARNESS)
+        assert_nil DeskSession.token_for("popped-task", root: tree, harness_session_id: "another-harness")
+      end
+    end
+  end
+
+  def test_unit_claim_next_with_no_login_keeps_nothing_and_says_nothing
+    Dir.mktmpdir do |proj|
+      with_tree do |tree|
+        c = cli(projects_dir: proj, env: { "CLAUDE_CODE_SESSION_ID" => HARNESS },
+                data: { "claimed" => { "slug" => "popped-task" }, "agent_session" => nil })
+
+        assert_equal ReviewClaimCli::OK, c.run(["claim-next"])
+        assert_equal "popped-task\n", @out.string
+        assert_empty @err.string
+        refute File.exist?(DeskSession.review_path(tree, "popped-task"))
+      end
+    end
+  end
+
+  def test_unit_acquire_keeps_the_login_and_release_forgets_it
+    Dir.mktmpdir do |proj|
+      with_tree do |tree|
+        env = { "CLAUDE_CODE_SESSION_ID" => HARNESS }
+        cli(projects_dir: proj, env: env, data: { "acquired" => true, "agent_session" => login_for(SLUG) })
+          .run(["acquire", SLUG, "--agent", "carl"])
+        assert_equal "SECRET-TOKEN", DeskSession.token_for(SLUG, root: tree, harness_session_id: HARNESS)
+        refute_includes @out.string + @err.string, "SECRET-TOKEN"
+
+        cli(projects_dir: proj, env: env, data: { "released" => true, "state" => "released" }).run(["release", SLUG])
+        assert_nil DeskSession.token_for(SLUG, root: tree, harness_session_id: HARNESS)
+      end
+    end
+  end
+
+  def test_unit_a_login_with_nowhere_to_live_is_named_and_the_claim_stands
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, env: { "CLAUDE_CODE_SESSION_ID" => HARNESS },
+              data: { "claimed" => { "slug" => "popped-task" }, "agent_session" => login_for("popped-task") })
+
+      assert_equal ReviewClaimCli::OK, c.run(["claim-next"])
+      assert_equal "popped-task\n", @out.string
+      assert_match(/was not kept \(not inside a checkout\); board writes use the shared token/, @err.string)
+      refute_includes @err.string, "SECRET-TOKEN"
+    end
   end
 
   def marker(projects_dir, slug = SLUG)
@@ -573,16 +651,6 @@ class ReviewClaimCliTest < Minitest::Test
       assert_includes argv, "popped-task"
       assert(c.instance_variable_get(:@api).posts.any? { |p| p[:path] == "/api/v1/tasks/claim_next_review" },
              "it POSTs the collection pop endpoint")
-    end
-  end
-
-  def test_unit_claim_next_stdout_is_only_the_slug
-    Dir.mktmpdir do |proj|
-      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
-
-      assert_equal ReviewClaimCli::OK, c.run(["claim-next", "--agent", "carl"])
-      assert_equal "popped-task\n", @out.string, "the soul's dreams never reach stdout"
-      assert_includes @err.string, "## Carl's dream sequence · task popped-task"
     end
   end
 

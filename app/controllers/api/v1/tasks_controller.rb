@@ -24,6 +24,7 @@ module Api
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock]
       require_task_scope only: [:update, :destroy, :intent, :block, :unblock]
+      before_action :require_transition_tier!, only: [:update, :block]
 
       def index
         return if reject_unsupported_index_params!
@@ -166,6 +167,19 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # A session may make only the transitions its tier allows
+      # (AgentSession#transition_refusal). A request with no session passes.
+      def require_transition_tier!
+        session = current_agent_session
+        return unless session
+
+        to = action_name == "block" ? "blocked" : params[:stage].to_s
+        return if to.blank? || to == @task.stage
+
+        reason = session.transition_refusal(@task, to)
+        render_session_refusal(reason) if reason
       end
 
       # The task mascot's display gender — see #show. nil for no mascot or a persona.

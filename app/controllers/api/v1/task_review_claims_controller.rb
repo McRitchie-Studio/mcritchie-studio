@@ -23,18 +23,25 @@ module Api
       # Atomic take-or-skip. Always 200 with { acquired, disposition, holder } —
       # `acquired:false` (a live reviewer) is a normal outcome, not an error; the
       # caller branches on the flag. The holder block powers the skip message.
+      #
+      # A claim taken with the machine credential also logs the reviewer in:
+      # `agent_session` carries the review_claim session and its token, or null when
+      # the reviewer has no review login to the task. A caller that already holds a
+      # session gets no login: a session cannot mint a session.
       def acquire
         outcome = TaskReviewClaim.acquire(
           task_slug: params[:slug],
           session:   claim_params[:session],
           nonce:     claim_params[:nonce],
           label:     claim_params[:label],
-          reviewer:  claim_params[:reviewer]
+          reviewer:  claim_params[:reviewer],
+          mint_session: current_agent_session.nil?
         )
         render_data({
           "acquired"    => outcome.acquired,
           "disposition" => outcome.disposition.to_s,
-          "holder"      => outcome.claim.holder_info
+          "holder"      => outcome.claim.holder_info,
+          "agent_session" => login_json(outcome)
         })
       end
 
@@ -58,7 +65,8 @@ module Api
             session:  claim_params[:session],
             nonce:    claim_params[:nonce],
             label:    claim_params[:label],
-            reviewer: claim_params[:reviewer]
+            reviewer: claim_params[:reviewer],
+            mint_session: current_agent_session.nil?
           )
         end
 
@@ -66,7 +74,8 @@ module Api
           render_data({
             "claimed"     => claimed_task_json(result.task),
             "disposition" => result.outcome.disposition.to_s,
-            "holder"      => result.outcome.claim.holder_info
+            "holder"      => result.outcome.claim.holder_info,
+            "agent_session" => login_json(result.outcome)
           })
         else
           # `blind_repos` rides the empty pop so the caller can tell a WIRING GAP
@@ -120,6 +129,12 @@ module Api
       end
 
       private
+
+      # The login a claim minted, with its token; nil when it minted none.
+      def login_json(outcome)
+        session = outcome.agent_session
+        session && session.summary.merge("token" => session.token)
+      end
 
       # The claimed task's identity + review handles for the CLI/UI — the slug the
       # caller reviews next, plus the PR/branch it lands on.

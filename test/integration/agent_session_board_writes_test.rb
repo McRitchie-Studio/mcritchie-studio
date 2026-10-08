@@ -161,4 +161,172 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert_equal "human", AgentAction.find_by!(session_id: "harness-b").actor
   end
+
+  # ---- the review claim's login --------------------------------------------------
+
+  def review_task(title, builder: "pokemon")
+    task = Task.create!(title: title, stage: "submitted")
+    task.update_column(:metadata, { "devops" => { "built_by" => builder, "builders" => [builder] } })
+    task
+  end
+
+  # Claims the review over the API and returns the response's session block.
+  def claim_review(task, headers: @legacy, reviewer: "carl")
+    post review_claim_api_v1_task_path(task.slug), params: { session: "rev-1", nonce: "n", reviewer: reviewer },
+                                                   headers: headers, as: :json
+    assert_response :ok
+    body.dig("data", "agent_session")
+  end
+
+  def token_bearer(token) = { "Authorization" => "Bearer #{token}" }
+
+  def move(task, stage, headers)
+    patch api_v1_task_path(task.slug), params: { stage: stage }, headers: headers, as: :json
+  end
+
+  def post_review_event(task, headers)
+    post "/api/v1/tasks/#{task.slug}/review_events",
+         params: { review_event: { role: "primary", moment: "diff", actor: "pokemon", message: "read" } },
+         headers: headers, as: :json
+  end
+
+  test "reviewer session writes review events" do
+    task = review_task("Reviewer Writes Events")
+    login = claim_review(task)
+    assert_equal %w[carl studio review_claim], login.values_at("soul", "tier", "issued_by")
+
+    post_review_event(task, token_bearer(login["token"]))
+    assert_response :created
+    assert_equal "carl", task.task_events.checkpoints.last.actor
+
+    # Control: the shared token keeps the param.
+    other = review_task("Legacy Writes Events")
+    post_review_event(other, @legacy)
+    assert_response :created
+    assert_equal "pokemon", other.task_events.checkpoints.last.actor
+  end
+
+  test "claim_next_review returns the reviewer's login with the claimed task" do
+    task = review_task("Popped For Review")
+    result = Task::ClaimNextResult.new(task: task, reason: "claimed",
+                                       outcome: TaskReviewClaim.acquire(task_slug: task.slug, session: "rev-1", nonce: "n",
+                                                                        reviewer: "carl", mint_session: true))
+    seen = nil
+    Task.stub(:claim_next_review, ->(**args) { seen = args; result }) do
+      post "/api/v1/tasks/claim_next_review", params: { session: "rev-1", nonce: "n", reviewer: "carl" },
+                                              headers: @legacy, as: :json
+    end
+
+    assert_response :ok
+    assert seen[:mint_session], "the shared token asks for the login"
+    assert_equal task.slug, body.dig("data", "claimed", "slug")
+    assert_equal result.outcome.agent_session, AgentSession.from_token(body.dig("data", "agent_session", "token"))
+  end
+
+  test "a session cannot claim a review login" do
+    task = review_task("Builder Claims Review")
+    builder = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+
+    assert_nil claim_review(task, headers: bearer(builder), reviewer: "carl")
+    assert body.dig("data", "acquired"), "the lease itself is still taken"
+    assert_equal 0, AgentSession.where(issued_by: "review_claim").count
+  end
+
+  test "builder session cannot move submitted to reviewed" do
+    task = review_task("Builder Moves To Reviewed")
+    builder = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+
+    move(task, "reviewed", bearer(builder))
+    assert_response :forbidden
+    assert_equal "SESSION_FORBIDDEN", body["error_code"]
+    assert_match(/submitted to reviewed is made by a reviewer outside #{task.slug}'s author set/, body["error"])
+
+    patch block_api_v1_task_path(task.slug), params: { kind: "rework" }, headers: bearer(builder), as: :json
+    assert_response :forbidden
+    assert_match(/submitted to blocked/, body["error"])
+    assert_equal "submitted", task.reload.stage
+    refute task.blocked?
+
+    # Control: a reviewer outside the author set makes the same move.
+    move(task, "reviewed", token_bearer(claim_review(task)["token"]))
+    assert_response :ok
+    assert_equal "reviewed", task.reload.stage
+  end
+
+  test "an outside reviewer blocks a submitted task, and the shared token still moves one" do
+    task = review_task("Reviewer Blocks Submitted Task")
+    patch block_api_v1_task_path(task.slug), params: { kind: "rework", by: "pokemon" },
+                                             headers: token_bearer(claim_review(task)["token"]), as: :json
+    assert_response :ok
+    assert_equal %w[building carl], [task.reload.stage, task.blocked_by]
+
+    legacy = review_task("Legacy Moves To Reviewed")
+    move(legacy, "reviewed", @legacy)
+    assert_response :ok
+    assert_equal "reviewed", legacy.reload.stage
+  end
+
+  test "released claim answers 401" do
+    task = review_task("Released Claim Answers Refusal")
+    token = claim_review(task)["token"]
+    post review_claim_release_api_v1_task_path(task.slug), params: { session: "rev-1", nonce: "n" },
+                                                           headers: @legacy, as: :json
+    assert_response :ok
+
+    move(task, "reviewed", token_bearer(token))
+    assert_response :unauthorized
+    assert_equal "SESSION_ENDED", body["error_code"]
+    assert_equal "submitted", task.reload.stage
+  end
+
+  test "a lapsed claim answers 401, and the verdict ends the session" do
+    task = review_task("Lapsed Claim Answers Refusal")
+    token = claim_review(task)["token"]
+
+    travel ClaimLease::REVIEW_TTL_SECONDS + 1 do
+      move(task, "reviewed", token_bearer(token))
+      assert_response :unauthorized
+      assert_equal "SESSION_ENDED", body["error_code"]
+    end
+
+    move(task, "reviewed", token_bearer(token))
+    assert_response :ok
+    post_review_event(task, token_bearer(token))
+    assert_response :unauthorized
+    assert_match(/left review \(it is reviewed\)/, body["error"])
+  end
+
+  test "builder session cannot move a stage through the events endpoints" do
+    task = review_task("Builder Completes Reviewed Event")
+    builder = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+    %w[reviewed/complete archived/complete light_review/fail].each do |event|
+      post "/api/v1/tasks/#{task.slug}/events/#{event}", params: { event: { source: "system" } },
+                                                        headers: bearer(builder), as: :json
+      assert_response :forbidden, event
+      assert_equal %w[SESSION_FORBIDDEN submitted], [body["error_code"], task.reload.stage], event
+    end
+    # Control: the shared token completes the same event.
+    post "/api/v1/tasks/#{task.slug}/events/reviewed/complete", params: { event: { source: "system" } },
+                                                                 headers: @legacy, as: :json
+    assert_response :created
+    assert_equal "reviewed", task.reload.stage
+  end
+
+  test "archive needs admin" do
+    move(@task, "archived", bearer(@studio))
+    assert_response :forbidden
+    assert_equal "SESSION_FORBIDDEN", body["error_code"]
+    assert_match(/building to archived is an admin transition; jasper holds a studio session/, body["error"])
+    assert_equal "building", @task.reload.stage
+
+    move(@task, "archived", bearer(@admin))
+    assert_response :ok
+    assert_equal "archived", @task.reload.stage
+
+    # Control: the shared token archives.
+    other = review_task("Legacy Token Archives Task")
+    move(other, "archived", @legacy)
+    assert_response :ok
+    assert_equal "archived", other.reload.stage
+  end
 end

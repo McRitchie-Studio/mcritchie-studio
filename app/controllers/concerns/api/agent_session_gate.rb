@@ -25,6 +25,9 @@ module Api
   # task and review events, gate runs, release events, desk records, activities and
   # agent activities. Agent actions record a lane, not a soul, and pin it to `agent`.
   #
+  # A session's stage transitions are checked where the stage is written
+  # (Api::V1::TasksController#require_transition_tier!).
+  #
   # Every refusal answers 403 with the reason.
   module AgentSessionGate
     extend ActiveSupport::Concern
