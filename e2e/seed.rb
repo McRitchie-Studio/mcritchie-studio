@@ -1421,7 +1421,9 @@ traded_athlete = lane_athlete.call("Traded", "denver-broncos")
 lane_headshot.call(traded_athlete)
 traded_look = Appearance.create!(person_slug: traded_athlete.person_slug,
                                  descriptor: "Previous team game", colorway: "previous team game",
-                                 team_slug: "seattle-seahawks", stage: "generation")
+                                 # A look may only name a team on file, and this seed files one
+                                 # (the Bills): still not the athlete's Broncos, so still traded.
+                                 team_slug: coach_team.slug, stage: "generation")
 lane_candidates.call(traded_look, 9, 4)
 Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "a-generator")
         .subjects.create!(person_slug: traded_look.person_slug,

@@ -125,6 +125,18 @@ class TiktokDraftCliTest < Minitest::Test
     assert_includes out.string, "attempt 4: Version 1 · Delivered · TikTok SEND_TO_USER_INBOX"
   end
 
+  # The server says what the operator does next (TiktokDraft#next_steps); the
+  # bin prints it under the newest attempt only.
+  def test_a_delivered_attempt_prints_the_servers_next_steps_once
+    steps = ["Open the TikTok app on your phone", "TikTok did not receive this caption."]
+    api = FakeApi.new(attempts: [self.class.attempt(3, "delivered", next_steps: steps), self.class.attempt(4, "delivered", next_steps: steps)])
+    run, out = runner(api)
+    run.status(SLUG)
+
+    assert_equal 1, out.string.scan("  next: Open the TikTok app on your phone").size
+    assert_operator out.string.index("attempt 4:"), :<, out.string.index("  next: TikTok did not receive this caption.")
+  end
+
   def test_whoami_prints_the_account
     run, out = runner(FakeApi.new)
     run.whoami
@@ -185,14 +197,14 @@ class TiktokDraftCliTest < Minitest::Test
     api = FakeApi.new(states:)
     api.define_singleton_method(:get) do |path|
       data = super(path)
-      data["attempts"].each { |a| a["error"] = "The upload reached TikTok, but its status could not be read (EOFError). Check your TikTok drafts." if a["state"] == "unknown" }
+      data["attempts"].each { |a| a["error"] = "The upload reached TikTok, but its status could not be read (EOFError). Check your TikTok inbox on the phone." if a["state"] == "unknown" }
       data
     end
     run, out = runner(api)
     attempt = run.draft(SLUG)
 
     assert_equal "unknown", attempt["state"]
-    assert_includes out.string, "Check your TikTok drafts"
+    assert_includes out.string, "Check your TikTok inbox on the phone"
     assert_includes out.string, "do not draft it again"
     assert_includes out.string, "--status"
   end

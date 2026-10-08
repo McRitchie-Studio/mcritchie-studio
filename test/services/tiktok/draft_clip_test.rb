@@ -3,7 +3,7 @@ require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 require_relative "../../support/tiktok_draft_fakes"
 
 # [integration] Tiktok::DraftClip — a clip's primary version into the
-# operator's TikTok drafts: the attempt is recorded with the code's caption and
+# operator's TikTok inbox: the attempt is recorded with the code's caption and
 # the version it sends, the upload runs once, TikTok's status settles it, and
 # every refusal and failure is visible on the row. TikTok, R2 and ESPN are fakes.
 class Tiktok::DraftClipTest < ActiveSupport::TestCase
@@ -194,7 +194,7 @@ class Tiktok::DraftClipTest < ActiveSupport::TestCase
       assert_equal ["v_inbox_file~synthetic.1", "Uploaded, status unknown"], [draft.publish_id, draft.state_label]
       assert draft.uploaded_at
       assert_nil draft.finished_at
-      assert_match(/check your TikTok drafts/i, draft.error)
+      assert_match(/check your TikTok inbox on the phone/i, draft.error)
       assert_includes draft.error, boom.class.name
     end
   end
@@ -248,7 +248,7 @@ class Tiktok::DraftClipTest < ActiveSupport::TestCase
 
     assert_equal 1, @uploader.uploads.size, "the bytes are with TikTok"
     assert_equal ["unknown", "v_inbox_file~synthetic.1"], draft.reload.values_at(:state, :publish_id)
-    assert_match(/check your TikTok drafts/i, draft.error)
+    assert_match(/check your TikTok inbox on the phone/i, draft.error)
   end
 
   test "an upload that breaks before every byte is sent still fails, so a retry is right" do

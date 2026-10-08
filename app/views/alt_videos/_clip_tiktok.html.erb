@@ -1,4 +1,4 @@
-<%# Draft to TikTok on one clip (recast pipeline, piece 19): the button that sends the clip's primary version into the operator's TikTok drafts (off until the clip has a primary version, and off when this server is not connected to TikTok), then the latest attempt: its state, the version it sent, the caption the code wrote with a Copy (TikTok takes no caption with a draft, so it is pasted on the phone), TikTok's publish id and status, and any error. An attempt whose bytes are with TikTok (processing, or uploaded with its status unknown) carries Check TikTok, which reads the status again. Earlier attempts fold away below it. The same machine as bin/tiktok-draft. %>
+<%# Draft to TikTok on one clip (recast pipeline, piece 19): the button that sends the clip's primary version to the operator's TikTok inbox (off until the clip has a primary version, and off when this server is not connected to TikTok), then the latest attempt: its state, the version it sent, the caption the code wrote with a Copy and the line that says TikTok did not receive it (it is pasted in the app, over the hashtag TikTok prefilled), TikTok's publish id and status, and any error. A delivered attempt says what to do next: TikTok files nothing under Drafts, it sends an inbox notification that opens in the phone app, and the AI-generated label is turned on there before posting. An attempt whose bytes are with TikTok (processing, or uploaded with its status unknown) carries Check TikTok, which reads the status again. Earlier attempts fold away below it. The same machine as bin/tiktok-draft. %>
 <% drafts = clip.tiktok_drafts.to_a %>
 <% latest = drafts.last %>
 <% available = Tiktok::DraftClip.available? %>
@@ -9,14 +9,14 @@
     <p class="text-sm text-body min-w-0">
       <span class="label-upper block mb-0.5">TikTok draft</span>
       <% if primary %>
-        Sends <span class="font-semibold text-heading"><%= primary.name %></span> to your TikTok drafts, private until you post it from your phone.
+        Sends <span class="font-semibold text-heading"><%= primary.name %></span> to your TikTok inbox. Nothing is posted until you finish it in the phone app.
       <% else %>
-        Sends the primary version to your TikTok drafts, private until you post it from your phone.
+        Sends the primary version to your TikTok inbox. Nothing is posted until you finish it in the phone app.
       <% end %>
     </p>
     <%# One press, one draft: the form turns its own button off as it submits, and swallows a second submit. The server holds the same line under the clip's row lock (Tiktok::DraftClip#record!), so this is the courtesy and that is the guard. `blocked` carries the server's own off state into Alpine, which would otherwise switch the button back on. %>
     <%= button_to music_video_alt_video_clip_tiktok_drafts_path(video, alt_video, clip.chunk_ordinal), method: :post,
-                  disabled: blocker.present?, title: blocker || "Upload #{primary&.name} into your TikTok drafts",
+                  disabled: blocker.present?, title: blocker || "Send #{primary&.name} to your TikTok inbox",
                   "x-bind:disabled": "sending || blocked",
                   class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                   form: { class: "shrink-0", data: { test: "clip-tiktok-draft", turbo: false },
@@ -54,20 +54,30 @@
       <% if latest.error.present? %>
         <p class="text-sm text-warning-ink break-words" data-test="clip-tiktok-error"><%= latest.error %></p>
       <% end %>
+      <% if latest.delivered? %>
+        <p class="text-sm text-body break-words" data-test="clip-tiktok-next-step"><span class="font-semibold text-heading">Next:</span> <%= TiktokDraft::INBOX_STEPS %></p>
+      <% end %>
       <% Array(latest.facts["exceptions"]).each do |note| %>
         <p class="text-xs text-warning-ink break-words" data-test="clip-tiktok-check">Check: <%= note %></p>
       <% end %>
       <div x-data="copyField()" class="min-w-0">
         <div class="flex items-center justify-between gap-2 mb-1">
-          <p class="label-upper min-w-0">Caption <span class="normal-case tracking-normal">· <%= latest.facts["team"] %>, <%= latest.facts["record"] %> per ESPN · paste it when you post</span></p>
+          <p class="label-upper min-w-0">Caption <span class="normal-case tracking-normal">· <%= latest.facts["team"] %>, <%= latest.facts["record"] %> per ESPN</span></p>
           <button type="button" @click="copy()" class="btn btn-outline btn-sm shrink-0" data-test="clip-tiktok-copy">
             <span x-text="copied ? 'Copied' : 'Copy caption'">Copy caption</span>
           </button>
         </div>
         <p x-ref="text" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
            data-test="clip-tiktok-caption"><%= latest.caption %></p>
+        <%# Nothing of a failed attempt reached the app, so there is nothing there to paste a caption over. %>
+        <% unless latest.failed? %>
+          <p class="text-xs text-body mt-1 break-words" data-test="clip-tiktok-caption-hint"><%= TiktokDraft::CAPTION_STEP %></p>
+        <% end %>
         <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="clip-tiktok-copy-manual">Copy is blocked here: the caption is selected, so copy it from there.</p>
       </div>
+      <% unless latest.failed? %>
+        <p class="text-xs text-warning-ink break-words" data-test="clip-tiktok-ai-label"><%= TiktokDraft::AI_LABEL_STEP %></p>
+      <% end %>
       <% if latest.facts["athlete"] %>
         <p class="text-xs text-muted break-words" data-test="clip-tiktok-team-rule">
           Team from <%= latest.facts["athlete"] %>, <%= latest.facts["athlete_rule"] %>, by the <%= latest.facts["team_from"] %>'s team.

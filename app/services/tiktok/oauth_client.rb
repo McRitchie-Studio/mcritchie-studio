@@ -159,7 +159,7 @@ module Tiktok
         raise MissingScope, "this TikTok connection was authorized for drafts only (granted: #{granted.join(', ')}). " \
                             "A direct post needs #{DIRECT_POST_SCOPE}: add Direct Post to the TikTok app, set " \
                             "#{SCOPES_ENV}=#{KNOWN_SCOPES.join(',')}, and connect again at #{CONNECT_PATH}. " \
-                            "Send to drafts still works."
+                            "Send to TikTok inbox still works."
       end
 
       def open_id

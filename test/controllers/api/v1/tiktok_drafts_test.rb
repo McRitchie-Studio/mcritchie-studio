@@ -75,8 +75,9 @@ module Api
 
         get path, headers: auth_headers
         attempt = data["attempts"].sole
-        assert_equal ["delivered", "SEND_TO_USER_INBOX", "v_inbox_file~synthetic.1", "In your TikTok drafts"],
+        assert_equal ["delivered", "SEND_TO_USER_INBOX", "v_inbox_file~synthetic.1", "Sent to your TikTok inbox"],
                      attempt.values_at("state", "tiktok_status", "publish_id", "state_label")
+        assert_equal TiktokDraft::NEXT_STEPS, attempt["next_steps"]
         assert_equal 1, @uploader.uploads.size
       end
 

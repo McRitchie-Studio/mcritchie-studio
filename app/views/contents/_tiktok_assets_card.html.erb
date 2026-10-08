@@ -1,7 +1,7 @@
 <%# TikTok API call-to-action card. Shows on the Content show page when
     workflow is starter_post_tiktok_* AND stage = "assets". Three publish
     paths, all gated on this server being connected to TikTok:
-      - Send to drafts (recommended, INBOX endpoint, attach sound in app)
+      - Send to the TikTok inbox (recommended, INBOX endpoint, attach sound in app)
       - Direct post (auto-publish, optional CML music_id)
       - Manual fallback (download MP4 + paste resulting URL) %>
 <%
@@ -14,18 +14,18 @@
   <%# DRAFT (INBOX) — recommended so you can attach a trending sound %>
   <div class="mb-4 pb-4 border-b border-subtle">
     <p class="text-sm text-body mb-3">
-      <span class="font-semibold">Send to drafts (recommended):</span>
-      uploads the video to your TikTok inbox so you can attach a trending sound and publish from the app.
+      <span class="font-semibold">Send to your TikTok inbox (recommended):</span>
+      TikTok sends an inbox notification; open it in the phone app to attach a trending sound and publish.
       <% unless tiktok_creds_set %>
         <span class="text-warning text-xs block mt-1">⚠ TikTok is not connected on this server: it needs TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET, then a sign-in at /admin/tiktok/connect.</span>
       <% end %>
     </p>
-    <%= button_to "📥 Send to TikTok Drafts",
+    <%= button_to "📥 Send to TikTok inbox",
           post_to_tiktok_content_path(@content.slug, publish_type: "inbox"),
           class: "btn btn-primary",
           disabled: !tiktok_creds_set,
           form: { class: "inline-block", "data-turbo": "false" },
-          data: { confirm: "Send to your TikTok app drafts. ~10–30s. Continue?" } %>
+          data: { confirm: "Send to your TikTok inbox. ~10–30s. Continue?" } %>
   </div>
 
   <%# DIRECT POST — fully automated, no music unless music_id provided %>

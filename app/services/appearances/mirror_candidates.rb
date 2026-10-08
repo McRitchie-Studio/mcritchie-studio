@@ -37,10 +37,11 @@ module Appearances
   # apart.
   #
   # OUR OWN FETCHER IS NOT REFUSED, and that is the measurement the whole fix rests
-  # on rather than an assumption. LiveCache.fetch (like ImageCache.fetch_remote) uses
-  # `URI.open`, which sends Net::HTTP's default `User-Agent: Ruby`; measured against
-  # the failing URL on 2026-09-26 it answered 200 with 222,045 bytes. A UA Wikimedia
-  # accepts is all its policy asks for.
+  # on rather than an assumption. LiveCache.fetch then used `URI.open`, which sends
+  # Net::HTTP's default `User-Agent: Ruby`; measured against the failing URL on
+  # 2026-09-26 it answered 200 with 222,045 bytes. A UA Wikimedia accepts is all its
+  # policy asks for. The fetch is now the engine's pinned one (see LiveCache below),
+  # which is Net::HTTP too and sends the same header; a test pins it.
   #
   # ── WHAT IS MIRRORED, AND WHAT IS DELIBERATELY NOT ──────────────────────────────
   #
@@ -131,25 +132,28 @@ module Appearances
 
     # THE LIVE CACHE: our own fetch, so the response's Content-Type is read before the
     # bytes are handed to Studio::ImageCache as a local file.
+    #
+    # THE FETCH IS THE ENGINE'S (`Studio::ImageCache.fetch_response`), not a client
+    # of our own. It vets the URL (`vet_source_url!`: http or https, a public host
+    # however it is written and wherever its name resolves), then connects to the
+    # ADDRESS IT VETTED (`pinned_http`), so the name cannot answer differently
+    # between the check and the connection. Every redirect is vetted and pinned the
+    # same way, at most Studio::ImageCache::MAX_REDIRECTS of them, and never from
+    # https down to http. The body is capped at MAX_REMOTE_BYTES (SourceTooLarge),
+    # and a non-2xx answer raises OpenURI::HTTPError, as the open-uri fetch this
+    # replaced did.
+    #
+    # These URLs come from a search engine, so nobody looked at them: a refusal
+    # here (InvalidSourceURL, or its subclass UnresolvedSourceHost) is caught by
+    # `mirror` below like any other failed fetch, and costs that one candidate.
+    #
+    # It still says who it is: Net::HTTP sends `User-Agent: Ruby` on a request
+    # that sets none, which is the header Wikimedia's hotlink policy asks for
+    # (see the head of this file).
     module LiveCache
       def self.fetch(url)
-        require "open-uri"
-        # FOLLOW-UP (needs the published gem, so it is not done here): this
-        # checks the URL and then URI.open resolves the name AGAIN and follows
-        # redirects unchecked. Move it to the engine's `vet_source_url!` +
-        # `pinned_http`. /tasks/url-guard-off-hot-paths, epic
-        # recast-video-pipeline piece 23. It asks the guard directly rather than
-        # through Appearances::FetchableUrl, so it is one lookup per mirrored
-        # photograph, in a job.
-        Studio::ImageCache.validate_source_url!(url)
-        URI.open(url, read_timeout: 30, redirect: true) do |io|
-          body = io.read(Studio::ImageCache::MAX_REMOTE_BYTES + 1).to_s
-          if body.bytesize > Studio::ImageCache::MAX_REMOTE_BYTES
-            raise Studio::ImageCache::SourceTooLarge, "remote payload exceeds #{Studio::ImageCache::MAX_REMOTE_BYTES} bytes"
-          end
-
-          [body, io.content_type]
-        end
+        hop = Studio::ImageCache.fetch_response(url.to_s)
+        [hop.body, hop.headers["content-type"]]
       end
 
       def self.cache!(**) = Studio::ImageCache.cache!(**)
