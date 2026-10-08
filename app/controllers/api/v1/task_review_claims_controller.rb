@@ -89,46 +89,47 @@ module Api
 
       # POST /api/v1/tasks/:slug/review_claim/renew { session, nonce } — the
       # heartbeat. 200 { renewed: true, state: "renewed"|"reacquired", holder: … } when
-      # this instance holds the review after the call; 204 no-op when it does not
-      # (held by another, or nothing of ours to renew — never an error).
-      #
-      # THE 204 IS THE DETACHED RENEWER'S STOP SIGNAL and is kept exactly where it was
-      # on purpose (ReviewClaimCli#renewed? reads the code, and renewers already
-      # running out in the fleet were spawned from older checkouts). What CHANGED is
-      # which states reach it: a lapse the caller can heal now re-acquires and answers
-      # 200, so a renewer no longer exits `:lease_lost` on its own slow beat. The two
-      # states that still 204 are the two where stopping is correct.
-      #
-      # A bodiless 204 cannot say WHICH refusal it is, so the CLI resolves that with
-      # the holder read (GET review_claim) it already owns, rather than this endpoint
-      # inventing a body a 204 is not allowed to carry.
+      # this instance holds the review after the call. A lapse the caller can heal
+      # re-acquires and answers 200. Otherwise 409 with the reason
+      # (#render_claim_refusal), which is the detached renewer's stop signal.
       def renew
         outcome = TaskReviewClaim.renew(task_slug: params[:slug], session: claim_params[:session],
                                         nonce: claim_params[:nonce])
-        return head :no_content unless outcome.renewed?
+        return render_claim_refusal("renewed", outcome) unless outcome.renewed?
 
         render_data({ "renewed" => true, "state" => outcome.state.to_s,
                       "holder" => outcome.claim&.holder_info })
       end
 
       # POST /api/v1/tasks/:slug/review_claim/release { session, nonce } — the clean
-      # review-end drop (frees the task without waiting out the TTL). 200 when the
-      # holder released it; 204 no-op when a non-holder asked (never an error).
-      #
-      # The 200 now carries the STATE, exactly as `renew` does, because "released"
-      # and "released, but your lease had already lapsed" are different facts and the
-      # second one means the review ran for a window with its task FREE. The status
-      # code contract is unchanged — a 204 is still every no-op — so the CLI resolves
-      # WHICH refusal it is with the holder read it already owns.
+      # review-end drop (frees the task without waiting out the TTL). 200 with the
+      # state when the holder released it: "released", or "released_lapsed" when the
+      # lease had already lapsed and the task was free for a window. Otherwise 409
+      # with the reason (#render_claim_refusal); nothing is written.
       def release
         outcome = TaskReviewClaim.release(task_slug: params[:slug], session: claim_params[:session],
                                           nonce: claim_params[:nonce])
-        return head :no_content unless outcome.released?
+        return render_claim_refusal("released", outcome) unless outcome.released?
 
         render_data({ "released" => true, "state" => outcome.state.to_s })
       end
 
       private
+
+      # A renew or release that changed nothing: 409 saying which of the two cases
+      # it is, with the claim's holder block (null when the task has no claim row).
+      # `held_by_other` has somebody to ask; `no_lease` means the caller holds
+      # nothing here, whoever held it last.
+      def render_claim_refusal(verb, outcome)
+        held = outcome.state == :held_by_other
+        reason = held ? "another live session holds this task's review" : "this session holds no review lease on this task"
+        render json: {
+          error: "review lease not #{verb}: #{reason}",
+          error_code: held ? "REVIEW_CLAIM_HELD_BY_OTHER" : "REVIEW_CLAIM_NO_LEASE",
+          state: outcome.state.to_s,
+          holder: outcome.claim&.holder_info
+        }, status: :conflict
+      end
 
       # The login a claim minted, with its token; nil when it minted none.
       def login_json(outcome)

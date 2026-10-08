@@ -115,11 +115,28 @@ module Api
         assert_equal "INVALID_GATE_KEY", response.parsed_body["error_code"]
       end
 
-      test "a release-grain key on a task subject is a grain mismatch" do
-        post "/api/v1/gates/task/#{@task.slug}/g3_candidate/open", headers: @headers, as: :json
+      # Guard catalog row 10.7: the controller holds no grain rule of its own.
+      # GateRun's validation refuses on every write that can mint a row, and the
+      # 422 carries its sentence.
+      test "[integration] a key on the wrong grain answers 422 in the model's words, on open and close" do
+        release = Release.create!(state: "assembling")
+        wrong = {
+          "/api/v1/gates/task/#{@task.slug}/g3_candidate/open" => [{}, /g3_candidate is a release-grain gate, not task/],
+          "/api/v1/gates/task/#{@task.slug}/g3_candidate/close" => [{ success: true }, /g3_candidate is a release-grain gate, not task/],
+          "/api/v1/gates/release/#{release.slug}/dor/open" => [{}, /dor is a task-grain gate, not release/],
+          "/api/v1/gates/task/#{@task.slug}/g3_candidate/sops" =>
+            [{ gate: { sop: { sop: "smoke", result: "pass" } } }, /g3_candidate is a release-grain gate, not task/]
+        }
 
-        assert_response :unprocessable_entity
-        assert_equal "GATE_GRAIN_MISMATCH", response.parsed_body["error_code"]
+        assert_no_difference "GateRun.count" do
+          wrong.each do |path, (params, sentence)|
+            post path, params: params, headers: @headers, as: :json
+
+            assert_response :unprocessable_entity, path
+            assert_equal "VALIDATION_FAILED", response.parsed_body["error_code"], path
+            assert_match sentence, response.parsed_body["error"], path
+          end
+        end
       end
 
       test "release subjects take release-grain gates" do

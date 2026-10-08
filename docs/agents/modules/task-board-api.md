@@ -380,7 +380,7 @@ api POST /api/v1/gates/task/<task-slug>/g2a_primary/close \
 A SOP entry keeps `{sop, cmd, tier, result, duration_ms, at}` (`at` is stamped
 server-side when absent). `source` defaults to `"system"`. Errors: an unknown
 key → `INVALID_GATE_KEY`; a task-grain key on a release (or vice versa) →
-`GATE_GRAIN_MISMATCH`; an unknown subject → `404 NOT_FOUND`; `close` without
+`VALIDATION_FAILED` with `GateRun`'s own sentence; an unknown subject → `404 NOT_FOUND`; `close` without
 `success` → `MISSING_SUCCESS`.
 
 **Deliberately NO usage gate** — gate markers are deterministic pipeline
