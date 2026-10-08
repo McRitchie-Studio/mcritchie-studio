@@ -67,7 +67,8 @@ tokens are minted by production from `AGENT_API_SECRET`.
 `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, `RESEND_API_KEY`, `GITHUB_TOKEN`,
 `MANAGED_WALLET_ENCRYPTION_KEY`, `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS`,
-`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. The 2026-10-06 sweep found the
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three
+`ACTIVE_RECORD_ENCRYPTION_*` names. The 2026-10-06 sweep found the
 old restore had copied each of them out of production `heroku config` into the
 primaries and every desk. `bin/ecosystem-build` now pipes its restore
 through `bin/dev-secret-key filter` and writes nothing when it cannot run the
@@ -86,6 +87,7 @@ left alone.
 | `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
 | `MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)` | mainnet's opens every custodial mainnet wallet; development falls back to `secret_key_base` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | live Stripe on `turf-monster-mainnet`; local runs test mode |
+| `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value; development uses the fixed keys in `config/environments/development.rb` |
 
 Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
 
@@ -128,6 +130,32 @@ draft create, which `bin/tiktok-draft` reaches with the variable above. Every re
 401 (the session ended: revoked, expired, or the task moved on) or 403 (tier or
 scope) with the reason. `GET /api/v1/agent_sessions/current` says who a bearer is;
 `DELETE` on the same path logs out.
+
+The facts API (`/api/v1/facts`, `bin/fact`) takes an agent session only: the
+shared token answers 401, a client session 403. A studio session reads and writes
+ordinary facts; sensitive facts need the admin session.
+
+## Fact encryption keys
+
+`Fact#value` is encrypted with Active Record Encryption. Production and QA read
+three config vars, generated once per app with `bin/rails db:encryption:init` and
+filed through [`credential-filing`](../agents/steffon/sops/credential-filing.md):
+
+| Config var | Holds |
+|---|---|
+| `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY` | the key fact values are encrypted with |
+| `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` | the key for deterministic attributes; none is declared, Rails takes the set |
+| `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` | the salt both keys are derived with |
+
+- Without them the app boots, `/api/v1/facts` answers 503 naming the vars, and
+  the person page says facts cannot be read.
+- Losing the primary key or the salt makes every stored value unreadable. Keep
+  them in 1Password before the first fact is written, and never change one in
+  place.
+- Development and test use fixed keys from `config/environments/`, which guard
+  no real data. No key is committed for production, and the production values
+  are on the [production-only list](#production-only-keys), so no restore copies
+  them into a local `.env`.
 
 ## 1Password CLI quirks
 
