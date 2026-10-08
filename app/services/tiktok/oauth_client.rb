@@ -23,6 +23,13 @@ module Tiktok
   # token, the stored connection is updated (TiktokConnection#rotate!). The env
   # pair is read-only: nothing is written when it is the source.
   #
+  # A STORED CONNECTION THAT CANNOT BE READ (the app's encryption keys were
+  # lost or changed) is no source, and the env pair does NOT stand in for it: a
+  # dead row behind a live-looking fallback would hide the loss. The server
+  # counts as not connected, connection_problem says why, and signing in again
+  # replaces the row. A disconnect deletes the row, and then the env pair
+  # answers again.
+  #
   # WHAT THE SIGN-IN ASKS FOR. Drafts only, by default: DEFAULT_SCOPES. The hub's
   # clip drafting uploads to the inbox (video.upload) and never publishes, and
   # TikTok refuses the whole sign-in with the error `scope` when the app lacks
@@ -163,8 +170,18 @@ module Tiktok
       end
 
       def open_id
-        token_source&.open_id or raise NotConfigured, "no TikTok account is connected (sign in at #{CONNECT_PATH})"
+        token_source&.open_id or raise NotConfigured, not_connected_reason
       end
+
+      # Why a stored connection is no source, in plain words; nil when there is
+      # none stored or it reads fine.
+      def connection_problem
+        connection = TiktokConnection.current
+        "#{TiktokConnection::UNREADABLE} at #{CONNECT_PATH}" if connection && !connection.readable?
+      end
+
+      # Is the env pair set? Both names, or it is no pair.
+      def env_pair_present? = ENV["TIKTOK_REFRESH_TOKEN"].present? && ENV["TIKTOK_OPEN_ID"].present?
 
       def app_creds_present?
         ENV["TIKTOK_CLIENT_KEY"].present? && ENV["TIKTOK_CLIENT_SECRET"].present?
@@ -177,14 +194,16 @@ module Tiktok
       end
 
       # The refresh token and open id in use: the stored connection first, then
-      # the env pair (both of the two, or it is no source). nil when neither.
+      # the env pair (both of the two, or it is no source). nil when neither,
+      # and nil when a connection is stored but cannot be read: the env pair
+      # never stands in for an unreadable row.
       def token_source
         connection = TiktokConnection.current
-        return TokenSource.new(connection.refresh_token, connection.open_id, connection) if connection
+        if connection
+          return connection.readable? ? TokenSource.new(connection.refresh_token, connection.open_id, connection) : nil
+        end
 
-        token = ENV["TIKTOK_REFRESH_TOKEN"]
-        id = ENV["TIKTOK_OPEN_ID"]
-        TokenSource.new(token, id, nil) if token.present? && id.present?
+        TokenSource.new(ENV["TIKTOK_REFRESH_TOKEN"], ENV["TIKTOK_OPEN_ID"], nil) if env_pair_present?
       end
 
       # A granted or asked scope list, as TikTok and TIKTOK_SCOPES write one:
@@ -200,8 +219,12 @@ module Tiktok
       def ensure_runtime_creds!
         return if runtime_creds_present?
 
-        raise NotConfigured, "TikTok is not connected: this server needs TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET, " \
-                             "and a sign-in at #{CONNECT_PATH}"
+        raise NotConfigured, not_connected_reason
+      end
+
+      def not_connected_reason
+        connection_problem || "TikTok is not connected: this server needs TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET, " \
+                              "and a sign-in at #{CONNECT_PATH}"
       end
 
       # One refresh of the refresh token in use (token_source), cached for 50
@@ -222,7 +245,7 @@ module Tiktok
             grant_type:    "refresh_token",
             refresh_token: source.refresh_token
           )
-          source.connection&.rotate!(json)
+          source.connection&.rotate!(json, sent: source.refresh_token)
           { "access_token" => json["access_token"], "scope" => json["scope"].to_s }
         end
       end

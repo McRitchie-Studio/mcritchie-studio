@@ -5,6 +5,8 @@ module Admin
   # the refresh token encrypted). No token is rendered, flashed or logged, and
   # nobody copies one by hand.
   #
+  # /disconnect deletes the stored connection.
+  #
   # Neither action writes an ErrorLog row for an answer it expects: keys not
   # set, a bad TIKTOK_SCOPES, or a refusal from TikTok. Each gets plain words.
   class TiktokController < ApplicationController
@@ -13,6 +15,11 @@ module Admin
     before_action(only: :callback) { response.headers["Cache-Control"] = "no-store" }
 
     KEYS_NOT_SET = "TikTok keys are not set on this server".freeze
+    # Without the app's encryption keys the connection cannot be stored, and
+    # TikTok's grant would be thrown away. So both actions refuse first.
+    ENCRYPTION_NOT_SET = "This server cannot store a TikTok connection: its encryption keys are not set " \
+                         "(#{TiktokConnection::ENCRYPTION_ENV.join(', ')}).".freeze
+    ENCRYPTION_FIX = "Nothing was asked of TikTok. File the three keys on this server, then start again.".freeze
 
     # TikTok's `error` param on the callback => [what happened, what to do].
     # Anything else is shown in TikTok's own words (unknown_refusal).
@@ -40,6 +47,8 @@ module Admin
     }.freeze
 
     def connect
+      return redirect_to(admin_dashboard_path, alert: "#{ENCRYPTION_NOT_SET} #{ENCRYPTION_FIX}") unless TiktokConnection.encryption_ready?
+
       url = Tiktok::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state)
       redirect_to url, allow_other_host: true
     rescue Tiktok::OAuthClient::NotConfigured
@@ -54,6 +63,8 @@ module Admin
         return render plain: "OAuth state mismatch — restart the connect flow.", status: :bad_request
       end
       return refuse_as_tiktok_said(params[:error].to_s) if params[:error].present?
+      # Before the exchange: a code is spent by it, and the grant could not be kept.
+      return refuse(ENCRYPTION_NOT_SET, ENCRYPTION_FIX, status: :service_unavailable) unless TiktokConnection.encryption_ready?
 
       json = Tiktok::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
       @connection  = TiktokConnection.store!(json, by: current_user.slug)
@@ -70,6 +81,15 @@ module Admin
       refuse(KEYS_NOT_SET + ".", "File the client key and secret, then start again.")
     rescue Tiktok::OAuthClient::Error => e
       refuse("TikTok refused to exchange the sign-in code.", "Start again: a code works once and expires in minutes.", detail: e.message)
+    end
+
+    # Deletes every stored connection (the connected page's button, confirmed
+    # there), then says what the server falls back to: with the env pair still
+    # set, drafting carries on from it.
+    def disconnect
+      @deleted = TiktokConnection.delete_all
+      @env_pair = Tiktok::OAuthClient.env_pair_present?
+      render :disconnected
     end
 
     private

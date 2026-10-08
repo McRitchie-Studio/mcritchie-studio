@@ -1,0 +1,24 @@
+<%# What DELETE /admin/tiktok/connection shows: the stored connection is gone, and whether the env pair is still set, because then drafting carries on from it. %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-tiktok-disconnected>
+  <h1 class="text-3xl font-bold text-heading">TikTok disconnected</h1>
+  <p class="text-secondary" data-tiktok-field="deleted">
+    <% if @deleted.zero? %>
+      No connection was stored on this server, so nothing was deleted.
+    <% else %>
+      The stored connection was deleted from this server.
+    <% end %>
+  </p>
+
+  <p class="card p-4 text-body" data-tiktok-fallback="<%= @env_pair ? "env" : "none" %>">
+    <% if @env_pair %>
+      <span class="font-semibold text-warning">Drafting is still on.</span>
+      TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are set on this server, and with no stored connection it drafts from them.
+      Remove both from the server's config to turn drafting off.
+    <% else %>
+      <span class="font-semibold">Drafting is off.</span>
+      TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are not set on this server, so nothing connects it to TikTok until an admin signs in again.
+    <% end %>
+  </p>
+
+  <%= link_to "Sign in again", admin_tiktok_connect_path, class: "btn btn-primary" %>
+</section>

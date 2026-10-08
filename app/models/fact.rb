@@ -96,6 +96,10 @@ class Fact < ApplicationRecord
   scope :readable_at, ->(tier) { tier.to_s == "admin" ? all : where(sensitivity: "ordinary") }
   scope :newest_first, -> { order(recorded_at: :desc, id: :desc) }
 
+  # The three names Active Record Encryption reads (config/application.rb).
+  ENCRYPTION_ENV = %w[ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+                      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT].freeze
+
   # Is the encryption key set? False on a production app whose
   # ACTIVE_RECORD_ENCRYPTION_* config is missing; a read or write then raises
   # ActiveRecord::Encryption::Errors::Configuration.

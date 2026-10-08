@@ -59,7 +59,8 @@ module Tiktok
           return "the TikTok keys are not set on this server (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET)"
         end
 
-        "no TikTok account is connected to this server: an admin signs in at #{OAuthClient::CONNECT_PATH} " \
+        OAuthClient.connection_problem ||
+          "no TikTok account is connected to this server: an admin signs in at #{OAuthClient::CONNECT_PATH} " \
           "and the hub stores the connection"
       end
     end

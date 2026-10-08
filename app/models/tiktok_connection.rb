@@ -9,7 +9,17 @@
 # TikTok may answer a token refresh with a new refresh token. #rotate! keeps
 # the stored one current (Tiktok::OAuthClient calls it); without that the row
 # would go stale the first time TikTok rotated.
+#
+# THE ROW DEPENDS ON THE APP'S ENCRYPTION KEYS (ENCRYPTION_ENV). Without them
+# nothing can be stored, so the sign-in refuses before it asks TikTok for
+# anything (.encryption_ready?). With them lost or changed, a stored row can no
+# longer be read (#readable? is false): it counts as not connected, and the
+# recovery is to sign in again, which replaces the row.
 class TiktokConnection < ApplicationRecord
+  # The three names Active Record Encryption reads; Fact holds the list.
+  ENCRYPTION_ENV = Fact::ENCRYPTION_ENV
+  UNREADABLE = "the stored TikTok connection cannot be read; sign in again".freeze
+
   encrypts :refresh_token
   self.filter_attributes += %i[refresh_token]
 
@@ -17,6 +27,9 @@ class TiktokConnection < ApplicationRecord
   validates :refresh_token, :connected_at, presence: true
 
   class << self
+    # Can this app encrypt a token at all? The one predicate Fact asks too.
+    def encryption_ready? = Fact.encryption_ready?
+
     # The connection the hub uses: the most recently connected account.
     def current = order(connected_at: :desc, id: :desc).first
 
@@ -28,6 +41,12 @@ class TiktokConnection < ApplicationRecord
       attempts = 0
       begin
         connection = find_or_initialize_by(open_id: grant["open_id"].to_s)
+        # A row whose token can no longer be read is replaced, not updated:
+        # signing in again is the recovery for a lost or changed key.
+        unless connection.new_record? || connection.readable?
+          where(id: connection.id).delete_all
+          connection = new(open_id: connection.open_id)
+        end
         connection.assign_attributes(
           refresh_token: grant["refresh_token"].to_s,
           scope: grant["scope"].to_s.presence,
@@ -54,12 +73,33 @@ class TiktokConnection < ApplicationRecord
 
   # Saves the refresh token TikTok returned with a token refresh, when it
   # differs from the stored one. Returns whether it wrote.
-  def rotate!(grant, now: Time.current)
+  #
+  # `sent` is the refresh token that refresh was made with. Under the row's
+  # lock the row is read again, and nothing is written unless it still holds
+  # `sent`: a refresh that answers late cannot store an older token over a
+  # newer rotation, and one racing a new sign-in cannot overwrite the sign-in's
+  # token. A row deleted meanwhile (a disconnect) takes no write either.
+  def rotate!(grant, sent:, now: Time.current)
     returned = grant["refresh_token"].to_s
-    return false if returned.empty? || returned == refresh_token
+    return false if returned.empty? || returned == sent
 
-    update!(refresh_token: returned, refreshed_at: now, refresh_expires_at: self.class.expiry(grant, now))
+    with_lock do
+      next false unless refresh_token == sent
+
+      update!(refresh_token: returned, refreshed_at: now, refresh_expires_at: self.class.expiry(grant, now))
+      true
+    end
+  rescue ActiveRecord::RecordNotFound
+    false
+  end
+
+  # Can the stored refresh token be decrypted with this app's keys? False when
+  # the keys were lost or changed since the sign-in, or are not set at all.
+  def readable?
+    refresh_token
     true
+  rescue ActiveRecord::Encryption::Errors::Base
+    false
   end
 
   # The granted scope as names (TikTok writes one comma-separated string).

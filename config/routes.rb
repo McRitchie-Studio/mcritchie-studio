@@ -314,6 +314,8 @@ Rails.application.routes.draw do
 
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
+    # Deletes the stored connection (the button on the connected page).
+    delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
   end
 
   # HTML

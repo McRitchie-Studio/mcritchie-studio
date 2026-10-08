@@ -152,6 +152,59 @@ class Tiktok::OAuthClientTokenSourceTest < ActiveSupport::TestCase
     end
   end
 
+  def with_other_encryption_key
+    other = ActiveRecord::Encryption::DerivedSecretKeyProvider.new("another-synthetic-primary-key-987654321")
+    ActiveRecord::Encryption.with_encryption_context(key_provider: other) { yield }
+  end
+
+  test "[unit] an unreadable stored connection is not connected, says why, and the env pair does not stand in" do
+    connect
+    with_tiktok_env do # the env pair IS set
+      assert Tiktok::OAuthClient.runtime_creds_present? # the control: readable, it is connected
+      assert_nil Tiktok::OAuthClient.connection_problem
+
+      with_other_encryption_key do
+        assert_nil Tiktok::OAuthClient.token_source, "no fallback to the env pair behind a dead row"
+        assert_not Tiktok::OAuthClient.runtime_creds_present?
+        assert_not Tiktok::DraftClip.available?
+        assert_equal "the stored TikTok connection cannot be read; sign in again at /admin/tiktok/connect",
+                     Tiktok::OAuthClient.connection_problem
+        assert_equal Tiktok::OAuthClient.connection_problem, Tiktok::DraftClip.unavailable_reason
+
+        error = assert_raises(Tiktok::OAuthClient::NotConfigured) { tiktok_answers { Tiktok::OAuthClient.access_token } }
+        assert_includes error.message, "cannot be read; sign in again"
+        assert_raises(Tiktok::OAuthClient::NotConfigured) { Tiktok::OAuthClient.open_id }
+        assert_empty @sent, "TikTok was not asked with the env pair's token"
+      end
+    end
+  end
+
+  test "[unit] once the unreadable row is deleted the env pair answers again" do
+    connect
+    with_tiktok_env do
+      with_other_encryption_key do
+        TiktokConnection.delete_all
+        assert Tiktok::OAuthClient.runtime_creds_present?
+        assert_not Tiktok::OAuthClient.token_source.stored?
+      end
+    end
+  end
+
+  test "[unit] a refresh that answers after a new sign-in does not overwrite the sign-in's token" do
+    connection = connect
+    with_tiktok_env(pair: false) do
+      endpoint = lambda do |params|
+        @sent << params
+        connect(token: "rft.synthetic-new-sign-in", now: NOW + 1.hour) # the sign-in lands while TikTok is answering
+        { "access_token" => "act.synthetic", "refresh_token" => "rft.synthetic-from-old-refresh" }
+      end
+      Tiktok::OAuthClient.stub(:post_token, endpoint) { Tiktok::OAuthClient.access_token }
+    end
+
+    assert_equal [STORED], @sent.map { |p| p[:refresh_token] }
+    assert_equal "rft.synthetic-new-sign-in", connection.reload.refresh_token
+  end
+
   # The four below go through the token endpoint's own stand-in (OAuthClient.http),
   # so the answer is parsed and checked exactly as TikTok's is.
   def tiktok_http(status: 200, **answer)

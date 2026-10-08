@@ -48,6 +48,15 @@
     </div>
   </dl>
 
+  <div class="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <p class="text-sm text-body min-w-0">
+      <span class="font-semibold text-heading">Disconnect.</span>
+      Deletes the stored connection from this server. Signing in again connects it back.
+    </p>
+    <%= button_to "Disconnect TikTok", admin_tiktok_disconnect_path, method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto shrink-0",
+                  form: { class: "shrink-0", data: { test: "tiktok-disconnect", turbo_confirm: "Delete the stored TikTok connection from this server?" } } %>
+  </div>
+
   <p class="text-secondary text-sm">
     Prove it with <code class="text-primary">bin/tiktok-draft --whoami --production</code>: it prints the
     account this connection posts as.

@@ -253,7 +253,7 @@ card, never from memory.
 ## Setup
 
 Once per TikTok account, and again when the refresh token dies. Every step is
-Alex's to authorize; the sign-in (step 3) is his to do, in his browser.
+Alex's to authorize; the sign-in (step 4) is his to do, in his browser.
 
 The hub connects through a **sandbox** TikTok app. The production Turf Monster
 app was refused ("not approved for personal or company internal use"), and a
@@ -269,33 +269,57 @@ target users.
    the 1Password item `tiktok.studio.agents` (vault `studio-agents`), fields
    `client-key` and `client-secret`, and onto the production app through
    [`credential-filing`](../../steffon/sops/credential-filing.md). Never onto QA.
-3. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
+3. **The encryption keys, before any sign-in.** The hub stores the refresh
+   token encrypted, so the production app must hold
+   `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`,
+   `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and
+   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. As of 2026-10-08 it holds
+   none of them. Generating and filing them is Steffon's
+   [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex's
+   word; never invent them in a session. Until they are set, step 4 refuses
+   before it asks TikTok for anything.
+4. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
    signed in to TikTok as the target user; the hub stores the connection. The
    page that comes back says it is connected and saved, and names the account,
    the scope TikTok granted and the day the refresh token expires. It shows no
    token: there is nothing to copy and nothing to file.
-4. **Probe.** Step 0 above. It is the first call that proves any of this.
+5. **Probe.** Step 0 above. It is the first call that proves any of this.
+6. **Retire the hand-filed pair, once, after the first stored sign-in probes
+   clean.** Remove `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` from the
+   production app's config and blank the `refresh-token` and `open-id` fields
+   on `tiktok.studio.agents` (all four of its fields are filled as of
+   2026-10-08). Left in place, the pair is a second live credential, and the
+   server drafts from it whenever no connection is stored. Then run the probe
+   again.
+
+**To disconnect**, press **Disconnect TikTok** on the connected page (it asks
+first). It deletes the stored connection and says whether the env pair is still
+set; if it is, drafting carries on from the pair until step 6 is done.
 
 Sign in again, the same way, when the probe reports a refused token or the
 expiry day nears: the same account's connection is updated in place.
 
-When step 3 does not connect, the page says why:
+When step 4 does not connect, the page says why:
 
 | It says | Fix |
 |---|---|
 | `TikTok keys are not set on this server` | Step 2 |
+| `This server cannot store a TikTok connection: its encryption keys are not set` | Step 3 |
 | `The TikTok app lacks a permission this sign-in asked for` | Step 1: the products and the two scopes |
 | `This callback address is not registered on the TikTok app` | Step 1: the redirect URI, exactly |
 | `TikTok does not accept this client key` | Step 2: the key and secret are a mismatched pair, or a production app's |
 | `The signed-in TikTok account is not a target user of the sandbox app` | Step 1: Target Users, or sign in as the listed account |
-| `The sign-in was declined on TikTok` | Step 3 again |
+| `The sign-in was declined on TikTok` | Step 4 again |
+
+**A stored connection that cannot be read.** If the encryption keys are lost or
+changed after a sign-in, the stored refresh token can no longer be decrypted.
+The server then counts as not connected and says "the stored TikTok connection
+cannot be read; sign in again"; it does not fall back to the env pair. Step 4
+again replaces the row.
 
 **The sign-in asks for drafts only.** `user.info.basic` and `video.upload` are
 all this SOP needs. Direct post (`video.publish`) is not part of it; why, and
 how it is opted into, is in the Background.
-
-Sign in again, the same way, when the probe reports a refused token or the
-expiry day nears: the same account's connection is updated in place.
 
 ## Background — not needed to execute
 
@@ -306,7 +330,8 @@ it, and when the refresh token expires. Drafting uses the most recently
 connected account. When TikTok answers a token refresh with a new refresh
 token, the hub saves it over the stored one. `TIKTOK_REFRESH_TOKEN` and
 `TIKTOK_OPEN_ID` are a fallback only: `Tiktok::OAuthClient` reads the env pair
-when no connection is stored, and never writes to it. The client key and
+when no connection is stored, and never writes to it. A stored connection that
+cannot be read is not "no connection": the pair does not stand in for it. The client key and
 secret stay in the environment.
 
 **The team rule.** The caption is about the team of the clip's lead swapped

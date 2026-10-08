@@ -189,6 +189,154 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
     assert_equal 0, TiktokConnection.count
   end
 
+  # Unsets this environment's fixed encryption keys for the block: production
+  # as it stood on 2026-10-08. The real predicate reads the real config.
+  def without_encryption_keys
+    config = ActiveRecord::Encryption.config
+    originals = [config.primary_key, config.key_derivation_salt]
+    assert Fact.encryption_ready?, "the control: this environment has keys until they are unset"
+    config.primary_key = nil
+    config.key_derivation_salt = nil
+    assert_not Fact.encryption_ready?, "the no-keys path is reached for real, with no stub"
+    yield
+  ensure
+    config.primary_key, config.key_derivation_salt = originals
+  end
+
+  NAMES = /ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY, ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY, ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT/
+
+  test "[integration] without encryption keys connect refuses before TikTok, naming the three keys, and logs no error" do
+    log_in_as users(:alex)
+
+    without_encryption_keys do
+      assert_no_difference -> { ErrorLog.count } do
+        get admin_tiktok_connect_path
+      end
+
+      assert_redirected_to admin_dashboard_path
+      assert_no_match(/tiktok\.com/, response.location)
+      assert_match NAMES, flash[:alert]
+      assert_match(/cannot store a TikTok connection/, flash[:alert])
+      assert_nil session[:tiktok_oauth_state], "no sign-in was started"
+    end
+
+    # The control: with the keys back, the same request does go to TikTok.
+    get admin_tiktok_connect_path
+    assert_match %r{\Ahttps://www\.tiktok\.com/}, response.location
+  end
+
+  test "[integration] without encryption keys the callback refuses before the exchange: no code spent, no row, no error log" do
+    log_in_as users(:alex)
+    state = begin_connect # the keys were lost between the redirect and the return
+
+    without_encryption_keys do
+      assert_no_difference [-> { ErrorLog.count }, -> { TiktokConnection.count }] do
+        finish_connect(answer, state:)
+      end
+
+      assert_response :service_unavailable
+      assert_empty @exchanges, "TikTok was not asked: the grant could not have been kept"
+      assert_select "[data-tiktok-refusal]", text: /cannot store a TikTok connection/
+      assert_select "[data-tiktok-refusal]", text: NAMES
+      assert_select "[data-tiktok-refusal]", text: /Nothing was asked of TikTok/
+    end
+
+    # The control: with the keys back, the same walk exchanges the code and stores the row.
+    assert_difference -> { TiktokConnection.count }, 1 do
+      finish_connect(answer)
+    end
+    assert_equal 1, @exchanges.size
+  end
+
+  test "[integration] a state mismatch is still refused first, keys or no keys" do
+    log_in_as users(:alex)
+    begin_connect
+
+    without_encryption_keys { finish_connect(answer, state: "forged") }
+
+    assert_response :bad_request
+    assert_empty @exchanges
+  end
+
+  def with_other_encryption_key
+    other = ActiveRecord::Encryption::DerivedSecretKeyProvider.new("another-synthetic-primary-key-987654321")
+    ActiveRecord::Encryption.with_encryption_context(key_provider: other) { yield }
+  end
+
+  test "[integration] the connected page carries a confirmed Disconnect, and disconnecting deletes the connection" do
+    log_in_as users(:alex)
+    finish_connect(answer)
+
+    assert_select "form[data-test='tiktok-disconnect'][action='#{admin_tiktok_disconnect_path}'][data-turbo-confirm]" do
+      assert_select "input[name='_method'][value='delete']"
+      assert_select "button", "Disconnect TikTok"
+    end
+
+    assert_difference -> { TiktokConnection.count }, -1 do
+      delete admin_tiktok_disconnect_path
+    end
+
+    assert_response :success
+    assert_select "[data-tiktok-disconnected] h1", "TikTok disconnected"
+    assert_select "[data-tiktok-field='deleted']", text: /The stored connection was deleted/
+    assert_select "[data-tiktok-fallback='none']", text: /Drafting is off/
+    assert_not Tiktok::OAuthClient.runtime_creds_present?
+    assert_not_includes response.body, REFRESH
+  end
+
+  test "[integration] disconnecting says plainly when the env pair is still set and drafting carries on from it" do
+    log_in_as users(:alex)
+    finish_connect(answer)
+    ENV["TIKTOK_REFRESH_TOKEN"] = "rft.synthetic-env-NEVER-RENDERED"
+    ENV["TIKTOK_OPEN_ID"] = "open-synthetic-env"
+
+    delete admin_tiktok_disconnect_path
+
+    assert_response :success
+    assert_select "[data-tiktok-fallback='env']", text: /Drafting is still on/
+    assert_select "[data-tiktok-fallback='env']", text: /TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are set on this server/
+    assert_select "[data-tiktok-fallback='none']", 0
+    assert_not_includes response.body, "rft.synthetic-env-NEVER-RENDERED"
+    assert Tiktok::OAuthClient.runtime_creds_present?, "and it is true: the env pair now answers"
+    assert_not Tiktok::OAuthClient.token_source.stored?
+  end
+
+  test "[integration] disconnecting with nothing stored deletes nothing and says so" do
+    log_in_as users(:alex)
+
+    delete admin_tiktok_disconnect_path
+
+    assert_response :success
+    assert_select "[data-tiktok-field='deleted']", text: /No connection was stored/
+  end
+
+  test "[integration] disconnect removes a connection that can no longer be read" do
+    log_in_as users(:alex)
+    finish_connect(answer)
+
+    with_other_encryption_key do
+      assert_difference -> { TiktokConnection.count }, -1 do
+        delete admin_tiktok_disconnect_path
+      end
+      assert_response :success
+    end
+  end
+
+  test "[integration] a viewer and a visitor cannot disconnect" do
+    log_in_as users(:alex)
+    finish_connect(answer)
+    get logout_path
+
+    assert_no_difference -> { TiktokConnection.count } do
+      delete admin_tiktok_disconnect_path
+      assert_response :redirect
+
+      log_in_as users(:viewer)
+      delete admin_tiktok_disconnect_path
+      assert_response :redirect
+    end
+  end
+
   test "[integration] no sign-in stand-in is installed outside the e2e lane and a local demo" do
     assert_nil Tiktok::OAuthClient.sign_in_stand_in
   end

@@ -94,6 +94,33 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a stored connection that cannot be read turns the button off; the page does not break" do
+    Tiktok::DraftClip.uploader = nil
+    keys = { "TIKTOK_CLIENT_KEY" => "synthetic-client-key", "TIKTOK_CLIENT_SECRET" => "synthetic-client-secret",
+             "TIKTOK_REFRESH_TOKEN" => "rft.synthetic-env", "TIKTOK_OPEN_ID" => "open-synthetic-env" }
+    originals = keys.keys.index_with { |k| ENV[k] }
+    keys.each { |k, v| ENV[k] = v }
+    TiktokConnection.store!({ "open_id" => "open-synthetic-1", "refresh_token" => "rft.synthetic-stored" }, by: "alex")
+    log_in_as users(:alex)
+
+    page
+    assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='true']" # the control: readable, the button is on
+
+    other = ActiveRecord::Encryption::DerivedSecretKeyProvider.new("another-synthetic-primary-key-987654321")
+    ActiveRecord::Encryption.with_encryption_context(key_provider: other) do
+      page
+      assert_response :success
+      assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='false']"
+      assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok is not connected on this server."
+
+      post music_video_alt_video_clip_tiktok_drafts_path(@video, @alt, 1)
+      assert_match(/the stored TikTok connection cannot be read; sign in again/, flash[:alert])
+      assert_equal 0, TiktokDraft.count
+    end
+  ensure
+    originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
+
   test "a failed latest attempt shows its error and caption, and neither the paste hint nor the AI label line" do
     TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "Bills 3-2", state: "failed",
                         error: "TikTok refused chunk 1 of 1 (HTTP 400)")
