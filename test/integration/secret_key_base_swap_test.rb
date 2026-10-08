@@ -38,12 +38,11 @@ class SecretKeyBaseSwapTest < ActionDispatch::IntegrationTest
     assert_response :success, "the rotated session should have been re-written under the new key"
   end
 
-  # The 2026-10-07 defect, reproduced on a real session cookie. In production the
-  # initializer registers the rotation during config/initializers, when the
-  # KeyGenerator class default is still SHA1 and nothing has derived the old key
-  # yet. Here the same conditions are rebuilt: the app's memoized generator for the
-  # old key is set aside and apply! runs under the SHA1 default. Red before the fix
-  # (the rotation came out SHA1 and the visitor was signed out); green after.
+  # Boot order, reproduced on a real session cookie. The initializer registers the
+  # rotation during config/initializers, when the KeyGenerator class default is
+  # still SHA1 and nothing has derived the old key yet. The same conditions are
+  # rebuilt here: the app's memoized generator for the old key is set aside and
+  # apply! runs under the SHA1 default.
   test "the session survives when the rotation is registered at boot, under the SHA1 default" do
     log_in_as(users(:alex))
     get deployments_path
