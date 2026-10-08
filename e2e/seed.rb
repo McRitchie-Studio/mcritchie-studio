@@ -101,8 +101,8 @@ SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
 # Tasks in different workflow stages
 Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "xan")
-Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "xan", queued_at: 3.days.ago, started_at: 2.days.ago)
+Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", started_at: 2.hours.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "xan", started_at: 2.days.ago)
 # A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
 # + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
 # Seeding stage: "blocked" now fails validation and takes the whole e2e run down with

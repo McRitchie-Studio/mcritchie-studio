@@ -7,7 +7,7 @@ require "open3"
 # reader raise, which the model assertions pin.
 class DeadTaskColumnsGrepTest < ActiveSupport::TestCase
   DECLARATION = "app/models/concerns/dead_columns.rb".freeze
-  SEARCHED = %w[app lib bin config db/seeds db/seeds.rb].freeze
+  SEARCHED = %w[app lib bin config db/seeds db/seeds.rb e2e].freeze
   SHARED_NAMES = %w[queued_at error_message logo_url].freeze
 
   def model_for(table) = ApplicationRecord.descendants.find { |model| model.table_name == table } || table.classify.constantize
