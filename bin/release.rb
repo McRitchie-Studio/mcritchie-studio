@@ -5781,6 +5781,24 @@ def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
          "resolves through — then re-run; it resumes.")
 end
 
+# Plain `bundle lock` after the resolving requirement came off the Gemfile: it
+# rewrites the lock's DEPENDENCIES to the committed line and must leave every
+# candidate resolved. A lock that moved means the committed line does not admit the
+# candidate, and a frozen install of that tree would fail.
+def settle_lock!(workspace, repo, expects)
+  step("bundle lock (cd #{workspace}) — settle the lock on the committed Gemfile")
+  _, ok = sh("bundle", "lock", chdir: workspace)
+  lockfile = File.join(workspace, "Gemfile.lock")
+  text = File.exist?(lockfile) ? File.read(lockfile) : ""
+  moved = expects.reject { |gem_name, version| Release::ShipSequence.lock_bump_landed?(text, gem_name, version) }
+  return if ok && moved.empty?
+
+  abort!("#{repo}: the lock did not hold #{expects.map { |g, v| "#{g} #{v}" }.join(', ')} on the committed Gemfile " \
+         "(#{ok ? "it resolves #{moved.keys.map { |g| "#{g} #{Release::ShipSequence.locked_version(text, g) || 'nothing'}" }.join(', ')}" : '`bundle lock` exited non-zero'}). " \
+         "Nothing was committed or pushed in #{repo}. The Gemfile line must admit the candidate: report this as a " \
+         "bin/release defect with the line it wrote.")
+end
+
 # --- prepare-side gem candidate publish (producer-first, BEFORE the pre-QA gate + QA) ----
 #
 # QA must test what production builds, and a RubyGems version can never be
@@ -6630,9 +6648,9 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
     repo = group["repo"]
 
     if DRY
-      step("  #{repo}: pin the candidate exactly in the Gemfile → bundle lock --update <gem> --conservative in " \
-           "the ship workspace @ origin/#{RELEASE_BRANCH} " \
-           "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
+      step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{RELEASE_BRANCH}, " \
+           "resolving the candidate through a requirement that is on the Gemfile only for the resolve " \
+           "(the committed pin changes only if the new version escapes it) → install any new engine migrations " \
            "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
            "commit + push origin #{ACCEPTED_BRANCH}, then fast-forward origin #{RELEASE_BRANCH} to it " \
            "(onto #{RELEASE_BRANCH} alone only when the two branches do not share a commit; " \
@@ -6665,11 +6683,15 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         next
       end
 
-      # A candidate rides an exact second requirement on the gem's line; Bundler
-      # resolves a prerelease only when one is named (Release::ShipSequence.locked_gemfile).
+      # `expected` is what gets COMMITTED; `resolving` adds each candidate's exact
+      # requirement for the resolve only, because Bundler takes a prerelease only
+      # when one is named and then keeps it in the lock (Release::ShipSequence
+      # .locked_gemfile). An in-range candidate therefore changes no Gemfile line.
       expected = text.dup
       touched.each { |gem_name| expected = Release::ShipSequence.locked_gemfile(expected, gem_name, published_gems[gem_name]) }
-      File.write(ws_gemfile, expected) if expected != text
+      resolving = expected.dup
+      touched.each { |gem_name| resolving = Release::ShipSequence.resolving_gemfile(resolving, gem_name, published_gems[gem_name]) }
+      File.write(ws_gemfile, resolving) if resolving != text
       # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF — and RIDE THE LADDER while
       # doing it. `bundle lock --update` exits 0 whether or not it could SEE the
       # version we just published, so its exit status proves nothing about which
@@ -6689,6 +6711,12 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       # in the diff and trivially different in the lockfile.
       touched.each do |gem_name|
         bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
+      end
+      # Back to the committed Gemfile, and a plain `bundle lock` so the lock's
+      # DEPENDENCIES match it. The candidate must still be resolved afterwards.
+      if resolving != expected
+        File.write(ws_gemfile, expected)
+        settle_lock!(workspace, repo, touched.to_h { |gem_name| [gem_name, published_gems[gem_name]] })
       end
 
       # THE MIGRATIONS RIDE WITH THE LOCK. A consumer whose engine gained a
@@ -6921,7 +6949,7 @@ def stray_candidate_findings(app_groups, wanted, &ref_for)
     gemfile, = git_capture("-C", path, "show", "#{ref}:Gemfile")
     registered.filter_map do |gem_name|
       resolved = Release::ShipSequence.locked_version(lock, gem_name).to_s
-      pinned   = Release::GemfileRepin.candidate_pin(gemfile.to_s, gem_name).to_s
+      pinned   = Release::GemfileRepin.prerelease_requirement(gemfile.to_s, gem_name).to_s
       held     = [resolved, pinned].find { |v| Release::ShipSequence.prerelease_version?(v) }
       next if held.nil?
 
@@ -7528,20 +7556,21 @@ def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:, expect:
     expected_gemfile: expected_gemfile
   )
 
-  # 4. THE LOCK — it resolves every version this run would lock. A re-lock that
-  #    dropped the candidate requirement but kept the candidate in the lock has
-  #    the right Gemfile and the wrong gem.
+  # 4. THE LOCK — it resolves every version this run would lock. A candidate
+  #    normally changes no Gemfile line, so the frozen tree itself has the right
+  #    Gemfile and the wrong gem; only the lock tells a re-lock from it.
   lock, lock_ok = git_capture("-C", workspace, "show", "#{head}:Gemfile.lock")
   lock_ok && expect.all? { |gem, version| Release::ShipSequence.lock_bump_landed?(lock, gem, version) }
 end
 
 # RE-LOCK each consumer to the FINAL gem versions: after ALL gems are live, before
-# any app deploys. QA ran each consumer on a candidate (`"~> x.y", "x.y.z.rcN"` in
-# its Gemfile, x.y.z.rcN in its lock); production runs the final. So this drops the
-# candidate requirement, runs `bundle lock --update <gem> --conservative`, reads the
-# lock back, and commits the two files on TOP of the QA-frozen SHA. A source-ref line
-# (a branch or path) is re-pinned to `~> x.y` by the same pass. Idempotent: a consumer
-# already on the final is a no-op, and a re-lock a prior run pushed is reused.
+# any app deploys. QA ran each consumer on a candidate (x.y.z.rcN in its lock);
+# production runs the final. So this runs `bundle lock --update <gem>
+# --conservative`, reads the lock back, and commits on TOP of the QA-frozen SHA.
+# Normally that commit is Gemfile.lock alone. It also carries the Gemfile when the
+# candidate needed a floor on the line (the final escaped the old pin) or the line
+# was a source ref: both are rewritten to `~> x.y`. Idempotent: a consumer already
+# on the final is a no-op, and a re-lock a prior run pushed is reused.
 #
 # The commit changes Gemfile and Gemfile.lock only, and the tree that deploys is
 # that commit, so run_relock_gate reads CI for it before any deploy.
@@ -7563,8 +7592,8 @@ def repin_consumers(app_groups, published_gems, ship_sha)
     path = repo_path(repo)
 
     if DRY
-      step("  #{repo}: drop the candidate requirement (and re-pin any branch-ref'd gem) in Gemfile (ship " \
-           "workspace @ frozen) → bundle lock --update <gem> --conservative → read the lock back → commit + " \
+      step("  #{repo}: bundle lock --update <gem> --conservative (ship workspace @ frozen; a candidate floor or " \
+           "a branch ref on the Gemfile line becomes ~> x.y) → read the lock back → commit + " \
            "push origin #{RELEASE_BRANCH} (idempotent; no-op if already on the final)")
       next
     end
@@ -7616,7 +7645,11 @@ def repin_consumers(app_groups, published_gems, ship_sha)
         next
       end
       # What QA ran, for the commit message and the gate's abort text.
-      was = pending.to_h { |gem| [gem, Release::GemfileRepin.candidate_pin(text, gem)] }
+      frozen_lock = File.exist?(ws_lock) ? File.read(ws_lock) : ""
+      was = pending.to_h do |gem|
+        resolved = Release::ShipSequence.locked_version(frozen_lock, gem)
+        [gem, Release::ShipSequence.prerelease_version?(resolved) ? resolved : nil]
+      end
       branch_refd = pending.select { |gem| Release::GemfileRepin.references_branch?(text, gem) }
       pins = pending.map do |gem|
         was[gem] ? "#{gem} #{published_gems[gem]} (QA ran #{was[gem]})" : "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}"
@@ -7673,8 +7706,8 @@ def repin_consumers(app_groups, published_gems, ship_sha)
       # ship that has just published the final. This commit is the last thing
       # between the frozen SHA and a production deploy.
       # --conservative for a candidate: only the gem itself may move off the tree QA
-      # ran. `expect:` is not optional here: with the requirement dropped, a lock
-      # still on the candidate satisfies the Gemfile and bundler would keep it.
+      # ran. `expect:` is not optional here: a lock still on the candidate satisfies
+      # the Gemfile, and bundler keeps it unless the update lands.
       pending.each do |gem|
         bundle_lock(workspace, gem, conservative: !branch_refd.include?(gem), expect: published_gems[gem])
       end

@@ -288,15 +288,16 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
 
   # ── the re-lock commit ─────────────────────────────────────────────────────
 
-  PINNED   = %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9", "0.10.0.rc1"\n)
-  UNPINNED = %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n)
+  # An in-range candidate leaves the Gemfile alone: the lock is its only witness.
+  PINNED   = %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n)
+  UNPINNED = PINNED
   def lock_at(version) = "GEM\n  remote: https://rubygems.org/\n  specs:\n    studio-engine (#{version})\n"
 
   # A consumer whose `release` is frozen on the candidate, as prepare leaves it.
-  def build_candidate_fixture(dir)
+  def build_candidate_fixture(dir, gemfile: PINNED)
     clone = build_sibling_fixture(dir)
     run_git(clone, "checkout", "-q", "release")
-    File.write(File.join(clone, "Gemfile"), PINNED)
+    File.write(File.join(clone, "Gemfile"), gemfile)
     File.write(File.join(clone, "Gemfile.lock"), lock_at("0.10.0.rc1"))
     run_git(clone, "add", "-A")
     run_git(clone, "commit", "-q", "-m", "bump studio-engine 0.10.0.rc1 for QA")
@@ -323,7 +324,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
     run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}\nFROZEN = #{frozen.inspect}\n) + extra, call: RELOCK_CALL)
   end
 
-  def test_the_relock_commit_changes_only_the_gemfile_and_its_lock
+  def test_the_relock_commit_changes_only_the_lock
     Dir.mktmpdir do |dir|
       clone, frozen = build_candidate_fixture(dir)
       origin = File.join(dir, "origin.git")
@@ -335,7 +336,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
       assert_includes out, "SHIPPING #{head}", "the ship SHA moves to the re-lock commit"
       assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=0.10.0"
       assert_equal frozen, git_out(origin, "rev-parse", "release^"), "one commit, on top of the SHA QA froze"
-      assert_equal "Gemfile\nGemfile.lock", git_out(origin, "diff", "--name-only", frozen, head)
+      assert_equal "Gemfile.lock", git_out(origin, "diff", "--name-only", frozen, head), "the lock-only commit"
       assert_equal UNPINNED.strip, git_out(origin, "show", "#{head}:Gemfile")
       assert_includes git_out(origin, "show", "#{head}:Gemfile.lock"), "studio-engine (0.10.0)"
       assert_equal "relock studio-engine 0.10.0 (QA ran 0.10.0.rc1)", git_out(origin, "log", "-1", "--format=%s", head)
@@ -366,7 +367,6 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
       clone, frozen = build_candidate_fixture(dir)
       origin = File.join(dir, "origin.git")
       run_git(clone, "checkout", "-q", "--detach", frozen)
-      File.write(File.join(clone, "Gemfile"), UNPINNED)
       File.write(File.join(clone, "Gemfile.lock"), lock_at("0.10.0.rc1") + "\n")
       run_git(clone, "add", "-A")
       run_git(clone, "commit", "-q", "-m", "relock by hand, lock not updated")
@@ -379,6 +379,22 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
       assert_match(/REFUSED: ✗ sibling origin\/release .* drifted past the QA-frozen SHA/, out)
       assert_equal wrong, git_out(origin, "rev-parse", "release")
       refute_includes out, "SHIPPING"
+    end
+  end
+
+  # A candidate whose final escaped the old pin: the frozen line carries the
+  # candidate as its floor, and the re-lock rewrites it to the final's own pin.
+  def test_a_candidate_floor_on_the_line_becomes_the_finals_pin
+    Dir.mktmpdir do |dir|
+      clone, frozen = build_candidate_fixture(dir, gemfile: %(source "https://rubygems.org"\ngem "studio-engine", ">= 0.10.0.rc1", "< 1"\n))
+      origin = File.join(dir, "origin.git")
+
+      out = relock(clone, frozen, LOCKS_FINAL)
+
+      head = git_out(origin, "rev-parse", "release")
+      assert_includes out, "SHIPPING #{head}", out
+      assert_equal "Gemfile\nGemfile.lock", git_out(origin, "diff", "--name-only", frozen, head)
+      assert_equal %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.10"), git_out(origin, "show", "#{head}:Gemfile")
     end
   end
 

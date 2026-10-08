@@ -42,23 +42,69 @@ class Release::CandidatePinTest < ActiveSupport::TestCase
                  R.pin_candidate(text, "studio-engine", "0.96.0.rc1")
   end
 
-  # --- locked_gemfile: what prepare and ship each write ---
+  # --- locked_gemfile: what prepare and ship each COMMIT ---
 
-  test "the ship's Gemfile is the prepare's minus the candidate requirement" do
+  # Every committed line must admit the version it is committed for: a line that
+  # does not is a Gemfile no Bundler can resolve.
+  def admits?(text, version)
+    Gem::Requirement.new(*R.version_requirements(text, "studio-engine")).satisfied_by?(Gem::Version.new(version))
+  end
+
+  test "an in-range candidate changes no Gemfile line at prepare or at ship" do
     prepared = S.locked_gemfile(PLAIN, "studio-engine", "0.96.0.rc1")
-    assert_includes prepared, %("~> 0.95", "0.96.0.rc1")
+    assert_equal PLAIN, prepared
+    assert admits?(prepared, "0.96.0.rc1")
     assert_equal PLAIN, S.locked_gemfile(prepared, "studio-engine", "0.96.0")
   end
 
-  test "a final that escapes the pin rewrites it, under the candidate and after" do
-    prepared = S.locked_gemfile(PLAIN, "studio-engine", "1.0.0.rc1")
-    assert_includes prepared, %(gem "studio-engine", "~> 1.0", "1.0.0.rc1" # the floor\n)
-    assert_includes S.locked_gemfile(prepared, "studio-engine", "1.0.0"), %(gem "studio-engine", "~> 1.0" # the floor\n)
+  test "the resolving Gemfile names the candidate exactly and comes straight back off" do
+    resolving = S.resolving_gemfile(PLAIN, "studio-engine", "0.96.0.rc1")
+    assert_includes resolving, %(gem "studio-engine", "~> 0.95", "0.96.0.rc1" # the floor\n)
+    assert admits?(resolving, "0.96.0.rc1")
+    assert_equal PLAIN, R.drop_candidate(resolving, "studio-engine")
+    assert_equal PLAIN, S.resolving_gemfile(PLAIN, "studio-engine", "0.96.0"), "a final resolves from the committed text"
   end
 
-  test "a source ref becomes a version pin plus the candidate" do
+  # The pin the final would get, "~> 1.0", EXCLUDES 1.0.0.rc1: a prerelease sorts
+  # below its final. The committed line keeps that range and opens its floor.
+  test "a candidate whose final escapes the pin gets a line that admits both" do
+    assert_not Gem::Requirement.new("~> 1.0").satisfied_by?(Gem::Version.new("1.0.0.rc1")), "the trap this guards"
+
+    prepared = S.locked_gemfile(PLAIN, "studio-engine", "1.0.0.rc1")
+    assert_includes prepared, %(gem "studio-engine", ">= 1.0.0.rc1", "< 2" # the floor\n)
+    assert admits?(prepared, "1.0.0.rc1")
+    assert admits?(prepared, "1.0.0")
+    assert_not admits?(prepared, "2.0.0")
+    assert admits?(S.resolving_gemfile(prepared, "studio-engine", "1.0.0.rc1"), "1.0.0.rc1")
+
+    shipped = S.locked_gemfile(prepared, "studio-engine", "1.0.0")
+    assert_includes shipped, %(gem "studio-engine", "~> 1.0" # the floor\n)
+    assert_equal shipped, S.locked_gemfile(PLAIN, "studio-engine", "1.0.0"), "the ship's line is the final's own"
+  end
+
+  test "a minor that escapes a three-segment pin gets the same treatment" do
+    text = %(gem "studio-engine", "~> 0.95.0", require: false\n)
+    prepared = S.locked_gemfile(text, "studio-engine", "0.96.0.rc1")
+    assert_equal %(gem "studio-engine", ">= 0.96.0.rc1", "< 1", require: false\n), prepared
+    assert admits?(prepared, "0.96.0.rc1")
+    assert_equal %(gem "studio-engine", "~> 0.96", require: false\n), S.locked_gemfile(prepared, "studio-engine", "0.96.0")
+  end
+
+  test "a source ref becomes a version line that admits the candidate, then the final's pin" do
     text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
-    assert_equal %(gem "studio-engine", "~> 0.96", "0.96.0.rc1"\n), S.locked_gemfile(text, "studio-engine", "0.96.0.rc1")
+    prepared = S.locked_gemfile(text, "studio-engine", "0.97.0.rc1")
+    assert_equal %(gem "studio-engine", ">= 0.97.0.rc1", "< 1"\n), prepared
+    assert admits?(prepared, "0.97.0.rc1")
+    assert_equal %(gem "studio-engine", "~> 0.97"\n), S.locked_gemfile(prepared, "studio-engine", "0.97.0")
+    assert_equal S.locked_gemfile(text, "studio-engine", "0.97.0"), S.locked_gemfile(prepared, "studio-engine", "0.97.0")
+  end
+
+  # A QA bounce: the line already carries rc1's floor and the next candidate is rc2.
+  test "a second candidate keeps a line that admits it" do
+    prepared = S.locked_gemfile(PLAIN, "studio-engine", "1.0.0.rc1")
+    again = S.locked_gemfile(prepared, "studio-engine", "1.0.0.rc2")
+    assert_equal prepared, again
+    assert admits?(again, "1.0.0.rc2")
   end
 
   test "a gem the Gemfile never declares leaves it untouched" do
@@ -69,12 +115,12 @@ class Release::CandidatePinTest < ActiveSupport::TestCase
 
   LOCK = "GEM\n  remote: https://rubygems.org/\n  specs:\n    studio-engine (%s)\n\nDEPENDENCIES\n  studio-engine (~> 0.95)\n"
 
-  test "a candidate pin, a source ref and a prerelease lock each need the relock" do
-    pinned = R.pin_candidate(PLAIN, "studio-engine", "0.96.0.rc1")
-    assert_equal ["studio-engine"], S.gems_to_relock(%w[studio-engine solana-studio], pinned, format(LOCK, "0.96.0.rc1"))
+  test "a prerelease lock, a candidate floor and a source ref each need the relock" do
+    # The usual case: the Gemfile is untouched and only the lock names the candidate.
+    assert_equal ["studio-engine"], S.gems_to_relock(%w[studio-engine solana-studio], PLAIN, format(LOCK, "0.96.0.rc1"))
+    floored = S.locked_gemfile(PLAIN, "studio-engine", "1.0.0.rc1")
+    assert_equal ["studio-engine"], S.gems_to_relock(["studio-engine"], floored, format(LOCK, "0.95.2"))
     assert_equal ["studio-engine"], S.gems_to_relock(["studio-engine"], %(gem "studio-engine", path: "../x"\n))
-    # The pin is gone but the lock kept the candidate: Bundler accepts that lock as is.
-    assert_equal ["studio-engine"], S.gems_to_relock(["studio-engine"], PLAIN, format(LOCK, "0.96.0.rc1"))
   end
 
   test "a plain pin on a released version needs nothing" do

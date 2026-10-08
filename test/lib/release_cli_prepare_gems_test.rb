@@ -44,12 +44,12 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # that escapes it.
   def test_prepare_rewrites_the_consumer_pin_only_when_the_published_version_escapes_it
     escaped = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0"))
-    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0", "1.0.0.rc1"),
-                    "a major bump escapes `~> 0.10` — the pin advances, under the exact candidate"
+    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", ">= 1.0.0.rc1", "< 2"),
+                    "a major bump escapes `~> 0.10` — the line takes the candidate as its floor"
 
     held = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0"))
-    assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10", "0.11.0.rc1"),
-                    "a minor bump is WITHIN `~> 0.10` — the pin stays, plus the exact candidate"
+    assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"\n),
+                    "a minor bump is WITHIN `~> 0.10` — the committed Gemfile does not change"
     assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0.rc1"
   end
 

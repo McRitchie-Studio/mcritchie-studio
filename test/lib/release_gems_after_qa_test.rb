@@ -43,6 +43,46 @@ class ReleaseGemsAfterQaTest < ReleaseCliHarness
     assert_includes out, "QA-DEPLOY", "and QA still deploys, on the candidate"
   end
 
+  # An in-range candidate: the commit is the lock alone. The exact requirement is on
+  # the Gemfile only while bundle resolves.
+  def test_an_in_range_candidate_commits_no_gemfile_change
+    seen = <<~'RUBY'
+      self.singleton_class.prepend(Module.new do
+        def bundle_lock(path, gem, **kw)
+          puts("GEMFILE-AT-RESOLVE " + File.read(File.join(path, "Gemfile")).strip)
+          super
+        end
+      end)
+    RUBY
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0") + candidate_world + seen)
+
+    assert_includes out, %(GEMFILE-AT-RESOLVE gem "studio-engine", "~> 0.10", "0.11.0.rc1"), out
+    assert_includes out, "settle the lock on the committed Gemfile"
+    assert_includes out, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"\n)
+    assert_includes out, "committed studio-engine 0.11.0.rc1"
+  end
+
+  # The settle step is a read-back: a lock that left the candidate is never committed.
+  def test_a_lock_that_drops_the_candidate_on_the_committed_gemfile_is_refused
+    drift = <<~'RUBY'
+      self.singleton_class.prepend(Module.new do
+        def sh(*a, **k)
+          if a[0, 2] == %w[bundle lock] && a.size == 2
+            lock = File.join(k[:chdir], "Gemfile.lock")
+            File.write(lock, File.read(lock).sub("(0.11.0.rc1)", "(0.10.0)"))
+          end
+          super
+        end
+      end)
+    RUBY
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.11.0") + candidate_world + drift,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_match(/ABORTED: .*the lock did not hold studio-engine 0\.11\.0\.rc1 on the committed Gemfile \(it resolves studio-engine 0\.10\.0\)/, out)
+    refute_includes out, "LOCK-PUSH"
+    refute_includes out, "QA-DEPLOY"
+  end
+
   # A QA bounce moves the gem's tip. The next sweep keeps the allocated 1.0.0 and
   # publishes a NEW candidate of it: the bounced one is never locked again.
   def test_red_qa_leaves_version_free
@@ -54,7 +94,8 @@ class ReleaseGemsAfterQaTest < ReleaseCliHarness
                     "the version stays the one already allocated: #{out}"
     assert_equal ["PUSHED release-studio-engine-1.0.0.rc2.gem"], out.lines.grep(/^PUSHED /).map(&:strip)
     assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0.rc2"
-    assert_includes out, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0", "1.0.0.rc2")
+    assert_includes out, %(GEMFILE-AFTER gem "studio-engine", ">= 1.0.0.rc2", "< 2"),
+                    "1.0.0 escapes the fixture's `~> 0.10`, so the committed line admits the candidate"
     refute_match(/PUSHED release-studio-engine-1\.0\.0\.gem/, out, "no final is pushed on the way")
   end
 
