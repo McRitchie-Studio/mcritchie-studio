@@ -97,7 +97,7 @@ class MusicVideosAssetZipManifestTest < ActiveSupport::TestCase
       assert_equal %w[assets.mcritchie.studio], lookups
     end
 
-    ActiveSupport::CurrentAttributes.reset_all
+    ActiveSupport::CurrentAttributes.clear_all
     with_url_guard(unresolved: %w[assets.mcritchie.studio]) do
       m = manifest
       assert(paths(m).none? { |p| p.include?("/sheets/") })

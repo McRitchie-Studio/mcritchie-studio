@@ -70,7 +70,7 @@ class Appearances::FetchableUrlTest < ActiveSupport::TestCase
       assert_equal 1, lookups.size
 
       # What Rails does between two requests, and between two jobs.
-      ActiveSupport::CurrentAttributes.reset_all
+      ActiveSupport::CurrentAttributes.clear_all
 
       Fetchable.ok?("https://cdn.example.com/a.png")
       assert_equal 2, lookups.size, "a verdict never outlives the request that asked"
@@ -141,6 +141,19 @@ class Appearances::FetchableUrlTest < ActiveSupport::TestCase
         assert_equal Fetchable::REFUSED, Fetchable.verdict("https://127.0.0.1/a.png"), "a text refusal costs nothing and still answers"
       end
     end
+  end
+
+  # NO STAND-IN: the guard here is whichever engine the hub locks. Past the
+  # budget the URL's text is still judged, through the next engine's
+  # `resolver: nil` or, on one that takes no such keyword, the plain call.
+  test "past the budget the locked engine still refuses on the text, and a name reads as could not check" do
+    Fetchable.limit_lookups(0)
+
+    assert_equal Fetchable::REFUSED, Fetchable.verdict("https://127.0.0.1/a.png")
+    assert_equal Fetchable::REFUSED, Fetchable.verdict("https://localhost/a.png")
+    assert_equal Fetchable::REFUSED, Fetchable.https_verdict("http://cdn.example.com/a.png")
+    assert_equal Fetchable::UNRESOLVED, Fetchable.verdict("https://cdn.example.com/a.png")
+    assert_equal Fetchable::UNRESOLVED, Fetchable.https_verdict("https://cdn.example.com/a.png")
   end
 
   test "outside a request there is no budget" do

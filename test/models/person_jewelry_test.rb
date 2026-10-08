@@ -66,7 +66,7 @@ class PersonJewelryTest < ActiveSupport::TestCase
   # a rename must not be refused because a CDN's name did not look up.
   test "saving a jewel whose image URL did not change asks the guard nothing" do
     piece = jewel(image_url: "https://cdn.example.com/ring.png").tap(&:save!)
-    ActiveSupport::CurrentAttributes.reset_all
+    ActiveSupport::CurrentAttributes.clear_all
 
     with_url_guard(unresolved: %w[cdn.example.com]) do |lookups|
       piece = PersonJewelry.find(piece.id)
@@ -84,7 +84,7 @@ class PersonJewelryTest < ActiveSupport::TestCase
       piece.save!
       assert_equal %w[cdn.example.com], lookups, "valid? then save! is one lookup"
 
-      ActiveSupport::CurrentAttributes.reset_all
+      ActiveSupport::CurrentAttributes.clear_all
       piece.image_url = "https://other.example.com/ring.png"
       assert piece.valid?
       assert_equal %w[cdn.example.com other.example.com], lookups

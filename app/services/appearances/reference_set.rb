@@ -132,8 +132,20 @@ module Appearances
     # method re-checks, so the two agree by construction; a row from before it does not,
     # and an "In the model (6)" heading above an identity built from 1 is exactly the
     # kind of quietly disagreeing pair of counts this lane has already shipped once.
+    #
+    # A row whose host could not be looked up is NOT here: it failed no rule, nobody
+    # could ask. Those are #unchecked_rows.
     def refused_rows
-      persisted_rows.select { |photo| photo.chosen? && !offerable?(photo, :mint_eligible?) }
+      persisted_rows.select { |photo| photo.chosen? && !unchecked?(photo) && !offerable?(photo, :mint_eligible?) }
+    end
+
+    # CHOSEN ROWS LEFT OUT BECAUSE THEIR HOST COULD NOT BE LOOKED UP just now (the
+    # next engine's guard resolves the name; Appearances::FetchableUrl). They are
+    # not offered to any generator, since nothing is known about where they
+    # point, and the next request asks again. Empty on an engine that resolves
+    # nothing.
+    def unchecked_rows
+      persisted_rows.select { |photo| photo.chosen? && unchecked?(photo) }
     end
 
     # WHAT THE PAGE SHOWS: every candidate, chosen first, floor included.
@@ -195,9 +207,17 @@ module Appearances
     # than by the run that filed it. One predicate so every reader is provably answering
     # the same question — computed separately they drift, and the page then reports a
     # refusal that did not happen.
+    #
+    # ONE LOOKUP PER HOST, NOT PER ROW PER LIST. Every list here asks this of every
+    # chosen row, and on the next engine each ask could be a DNS lookup;
+    # FetchableUrl remembers the answer per host for the request. `ok_for?` logs a
+    # row left out because its host could not be looked up, so it never goes quietly.
     def offerable?(photo, rule)
-      FetchableUrl.ok?(photo.image_url) && photo.public_send(rule, person_name)
+      FetchableUrl.ok_for?(photo.image_url, look: @appearance&.slug, what: "chosen reference") &&
+        photo.public_send(rule, person_name)
     end
+
+    def unchecked?(photo) = FetchableUrl.verdict(photo.image_url) == FetchableUrl::UNRESOLVED
 
     # THE NAME THE WRONG-PERSON CHECK IS AGAINST. Memoised because it is asked once per
     # row and the walk is two associations deep; `nil` is a real answer (a look whose

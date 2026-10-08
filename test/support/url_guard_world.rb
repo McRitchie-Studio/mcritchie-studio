@@ -28,8 +28,14 @@ module UrlGuardWorld
     lookups = []
     real = Studio::ImageCache.method(:validate_source_url!)
     with_unresolved_constant(engine) do |error_class|
-      guard = lambda do |url, **|
+      guard = lambda do |url, **options|
+        # Today's guard takes no keywords; the next one reads `resolver: nil` as
+        # "judge the text only".
+        raise ArgumentError, "unknown keyword: #{options.keys.first.inspect}" if options.any? && engine == :current
+
         uri = real.call(url)
+        next uri if options.key?(:resolver) && options[:resolver].nil?
+
         host = uri.host.to_s.downcase
         lookups << host
         UrlGuardWorld.advance(slow[host]) if slow[host]

@@ -116,14 +116,18 @@ class PeopleController < ApplicationController
   # THE URL IS CHECKED BEFORE ANYTHING IS FILED. It becomes the look's newest
   # sheet: the operator's browser loads it on the cast card, and the chunk
   # hand-off gives it out as the swap reference. So it must be https on a public
-  # host (Appearances::FetchableUrl.https?); a refusal writes no row.
+  # host (Appearances::FetchableUrl.https_verdict); a refusal writes no row, and
+  # neither does a host that could not be looked up, which is told apart.
   def attach_artifact
     appearance = @person.appearances.live.find_by(slug: params[:appearance_slug]) || @person.default_appearance
     return redirect_to(person_path(@person.slug), alert: "Create a look first.") unless appearance
 
     image_url = params[:image_url].to_s.strip
-    unless Appearances::FetchableUrl.https?(image_url)
-      return redirect_to(person_path(@person.slug), alert: Appearances::FetchableUrl::HTTPS_REFUSAL)
+    verdict = Appearances::FetchableUrl.https_verdict(image_url)
+    unless verdict == Appearances::FetchableUrl::OK
+      unchecked = verdict == Appearances::FetchableUrl::UNRESOLVED
+      return redirect_to(person_path(@person.slug),
+                         alert: unchecked ? Appearances::FetchableUrl::HTTPS_UNCHECKED : Appearances::FetchableUrl::HTTPS_REFUSAL)
     end
 
     rescue_and_log(target: @person) do

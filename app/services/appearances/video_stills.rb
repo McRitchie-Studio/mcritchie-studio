@@ -11,7 +11,7 @@ module Appearances
     # an anchor rather than sending nothing.
     def self.urls(appearance, source: AssetBrowser.source)
       keys(appearance).map { |key| source.signed_url(key: key, expires_in: TTL) }
-                      .select { |url| FetchableUrl.ok?(url) }
+                      .select { |url| FetchableUrl.ok_for?(url, look: appearance&.slug, what: "video still") }
     rescue AssetBrowser::Unavailable
       []
     end

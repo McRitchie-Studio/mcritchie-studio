@@ -15,6 +15,10 @@ class PersonJewelry < ApplicationRecord
   CHAMPIONSHIP_KINDS = %w[super_bowl_ring championship_ring].freeze
   RING_KINDS = CHAMPIONSHIP_KINDS
 
+  IMAGE_URL_REFUSED = "must be an https:// URL on a public host"
+  IMAGE_URL_UNCHECKED = "could not be checked right now: its host could not be looked up. " \
+                        "Confirm the host name, or try again in a moment"
+
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :jewelries
 
   validates :slug, presence: true, uniqueness: true
@@ -23,7 +27,10 @@ class PersonJewelry < ApplicationRecord
   validates :description, presence: true, length: { maximum: 600 }
   validates :year, presence: true, if: :championship?
   validates :year, numericality: { only_integer: true, greater_than: 1900, less_than: 2200 }, allow_nil: true
-  validate :image_url_is_public_https
+  # Only when the URL changes (a new piece with a URL is a change). On the next
+  # engine this check is a DNS lookup that can take seconds and can fail, and a
+  # rename must not be refused because a CDN's name did not look up.
+  validate :image_url_is_public_https, if: :will_save_change_to_image_url?
 
   before_validation :generate_slug, on: :create
   before_validation :normalize
@@ -46,12 +53,17 @@ class PersonJewelry < ApplicationRecord
   private
 
   # The page renders it and the prompt may hand it on, so the same rule as an
-  # attached sheet: https on a public host, or blank.
+  # attached sheet: https on a public host, or blank. A host that could not be
+  # looked up is a different answer from a bad address: nothing is wrong with
+  # what was typed that trying again may not fix.
   def image_url_is_public_https
     return if image_url.blank?
-    return if Appearances::FetchableUrl.https?(image_url)
 
-    errors.add(:image_url, "must be an https:// URL on a public host")
+    case Appearances::FetchableUrl.https_verdict(image_url)
+    when Appearances::FetchableUrl::OK then nil
+    when Appearances::FetchableUrl::UNRESOLVED then errors.add(:image_url, IMAGE_URL_UNCHECKED)
+    else errors.add(:image_url, IMAGE_URL_REFUSED)
+    end
   end
 
   def normalize

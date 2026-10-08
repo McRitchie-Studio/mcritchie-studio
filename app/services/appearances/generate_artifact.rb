@@ -72,6 +72,10 @@ module Appearances
     # face is likeness it can carry.
     IDENTITY_VARIANTS = %w[original 400 100].freeze
 
+    # What Appearances::FetchableUrl calls the anchor when it logs one left out
+    # because its host could not be looked up.
+    IDENTITY_ANCHOR = "identity anchor".freeze
+
     def self.call(appearance, **kwargs) = new(appearance, **kwargs).call
 
     def initialize(appearance, row: nil, prompt: nil, number: nil)
@@ -165,7 +169,17 @@ module Appearances
       return @identity_photo_url if defined?(@identity_photo_url)
 
       anchor = inputs.anchor
-      @identity_photo_url = (anchor.url if !anchor.acquire? && FetchableUrl.ok?(anchor.url))
+      @identity_photo_url =
+        (anchor.url if !anchor.acquire? &&
+                       FetchableUrl.ok_for?(anchor.url, look: @appearance&.slug, what: IDENTITY_ANCHOR))
+    end
+
+    # THE ANCHOR IS ON FILE BUT ITS HOST COULD NOT BE LOOKED UP in this request, so
+    # it was left out. Not "no headshot": the photograph is there, and the next
+    # request asks again.
+    def identity_photo_unchecked?
+      identity_photo_url.blank? &&
+        FetchableUrl.left_out(look: @appearance&.slug).any? { |what, _host| [IDENTITY_ANCHOR, "video still"].include?(what) }
     end
 
     # WHAT THIS BUILD CONSUMES, each answering reuse / refresh / acquire.
@@ -235,6 +249,11 @@ module Appearances
     end
 
     def no_photo_message
+      if identity_photo_unchecked?
+        return "#{@appearance.owner_name}'s identity photo could not be checked just now: its host could not " \
+               "be looked up. Nothing was generated and nothing was spent. Try again in a moment."
+      end
+
       if @appearance.character_owned?
         return "#{@appearance.owner_name} has no reachable reference art on this look, so there is " \
                "nothing to draw from. Nothing was generated and nothing was spent."
