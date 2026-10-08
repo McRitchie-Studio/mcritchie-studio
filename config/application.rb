@@ -54,6 +54,14 @@ module McritchieStudio
     config.middleware.insert_after ActionDispatch::Static, Rack::Deflater,
                                    if: ->(_env, _status, headers, _body) { !headers["content-type"].to_s.start_with?("application/zip") }
 
+    # Active Record Encryption (Fact#value). Production and QA set all three
+    # names; development and test fall back to the fixed keys in their own
+    # environment file. Unset in production, the app boots and facts answer 503.
+    %w[primary_key deterministic_key key_derivation_salt].each do |name|
+      value = ENV["ACTIVE_RECORD_ENCRYPTION_#{name.upcase}"].presence
+      config.active_record.encryption[name] = value if value
+    end
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files

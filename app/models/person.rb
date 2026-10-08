@@ -33,6 +33,18 @@ class Person < ApplicationRecord
                     "depth_chart_entries" => :person_slug,
                     "news" => %i[primary_person_slug secondary_person_slug]
 
+  # A rename carries this person's facts. Facts name a subject by type and slug,
+  # so the cascade is scoped to person rows here, not declared as a slug child.
+  def rename_slug!(new_slug)
+    old_slug = slug_in_database
+    transaction do
+      super.tap do |counts|
+        moved = Fact.for_subject("person", old_slug).update_all(subject_slug: slug) unless slug == old_slug
+        counts["facts.subject_slug"] = moved if moved
+      end
+    end
+  end
+
   # WHAT A PERSON DOES. A person holds any number of these and exactly one
   # primary, which is the one the UI shows (a search row, the person page).
   # Listed in the order a list is stored and a blank primary is filled from.

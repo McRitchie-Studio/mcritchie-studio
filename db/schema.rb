@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1025,6 +1025,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
     t.index ["parent_type", "parent_id"], name: "index_error_logs_on_parent_type_and_parent_id"
     t.index ["slug"], name: "index_error_logs_on_slug", unique: true
     t.index ["target_type", "target_id"], name: "index_error_logs_on_target_type_and_target_id"
+  end
+
+  create_table "facts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "key", null: false
+    t.datetime "recorded_at", null: false
+    t.string "recorded_by_session_slug", null: false
+    t.datetime "retired_at"
+    t.string "sensitivity", default: "ordinary", null: false
+    t.string "slug", null: false
+    t.string "source_kind", null: false
+    t.string "source_note"
+    t.string "source_ref", null: false
+    t.string "subject_slug", null: false
+    t.string "subject_type", null: false
+    t.string "superseded_by_slug"
+    t.datetime "updated_at", null: false
+    t.text "value"
+    t.index ["recorded_by_session_slug"], name: "index_facts_on_recorded_by_session_slug"
+    t.index ["slug"], name: "index_facts_on_slug", unique: true
+    t.index ["subject_type", "subject_slug", "key"], name: "index_facts_on_subject_type_and_subject_slug_and_key"
+    t.index ["superseded_by_slug"], name: "index_facts_on_superseded_by_slug"
   end
 
   create_table "games", force: :cascade do |t|
@@ -2430,6 +2452,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "facts", "agent_sessions", column: "recorded_by_session_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "facts", "facts", column: "superseded_by_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "games", "slates", column: "slate_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "games", "teams", column: "away_team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "games", "teams", column: "home_team_slug", primary_key: "slug", on_update: :cascade

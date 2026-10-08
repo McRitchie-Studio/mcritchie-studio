@@ -13,5 +13,14 @@ Rails.application.config.filter_parameters += [
   # tested against the full dotted path), because a bare :message would also
   # mask every other `message` param and, through filter_attributes, every
   # model's `message` column in an inspect. ContactSubmission filters its own.
-  /\Acontact_submission\.(phone|message)\z/
+  /\Acontact_submission\.(phone|message)\z/,
+  # A fact's value, nested (`fact.value`) and at the top level of a facts API
+  # request. Scoped to that controller: a bare :value would mask every `value`
+  # param. Fact filters its own column.
+  /\Afact\.value\z/,
+  lambda do |key, value, params = nil|
+    next unless key.to_s == "value" && value.is_a?(String)
+
+    value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/facts"
+  end
 ]
