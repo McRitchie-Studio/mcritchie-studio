@@ -40,7 +40,7 @@ class GuardCatalogMarksTest < ActiveSupport::TestCase
         header = cells
         next
       end
-      next if cells.all? { |cell| cell.match?(/\A-+\z/) }
+      next if line.match?(/\A\|[-|\s]+\z/)
 
       verdict_at = header.index { |name| VERDICT_HEADERS.include?(name) }
       next unless verdict_at && cells[verdict_at].to_s.match?(RULED)
