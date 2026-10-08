@@ -22,6 +22,14 @@ Shannon is the visual light on the PR, and Alex approves the image.
 Plan and background: `/Users/alex/projects/.agents/epics/email-image-builder.md`
 (piece 6).
 
+**Start at the generator page.** Alex starts a run from
+`https://mcritchie.studio/email_images/generator/<kit>` (admin only; the kit list
+is `/email_images/generator`, linked from `/email_images` and each brand kit page). It shows the brand's character model (or, for a
+kit no character fronts, the kit's references), up to four example headers, and
+a copy box that fills this SOP's prompt: `Run the email-image SOP.`, the brand
+and email, the headline, and the look. When he pastes that prompt, take the
+brand, email, headline and look from it as the brief's starting values.
+
 ## The split: read this before running anything
 
 **You run the conversation and judge the art. The hub does everything else.**
@@ -247,6 +255,12 @@ curl -sSfo <app-desk>/app/assets/images/emails/<file> "<approved url=>"
 ```
 
 ### 9. Wire it to the mailer
+
+The approved header becomes the `default_asset` of the email's
+`Studio::EmailCatalog` entry, registered in the app's
+`config/initializers/studio_emails.rb` and managed at the app's `/admin/emails`.
+**Every new transactional email registers there** (Alex's rule, 2026-10-07;
+Turf PR #930 registered `drop_signup_confirmation` and `drop_signup_announcement`).
 
 Paste the snippet into the app's `config/initializers/studio_emails.rb`, with the
 mailer preview, and set the mailer's image to
