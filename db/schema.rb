@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1267,6 +1267,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160000) do
     t.bigint "workspace_account_id"
     t.index ["kind", "external_root_id"], name: "index_knowledge_sources_on_kind_and_external_root_id", unique: true
     t.index ["workspace_account_id"], name: "index_knowledge_sources_on_workspace_account_id"
+  end
+
+  create_table "legacy_auth_uses", force: :cascade do |t|
+    t.string "caller", null: false
+    t.date "day", null: false
+    t.string "endpoint", null: false
+    t.datetime "last_used_at", null: false
+    t.integer "uses", default: 0, null: false
+    t.index ["day", "endpoint", "caller"], name: "index_legacy_auth_uses_on_day_and_endpoint_and_caller", unique: true
   end
 
   create_table "mailbox_drafts", force: :cascade do |t|

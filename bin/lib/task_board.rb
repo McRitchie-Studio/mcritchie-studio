@@ -50,6 +50,9 @@ module TaskBoard
   # exports it here so its child CLIs skip their own POST /api/v1/auth; a CLI run
   # on its own finds it unset and mints as before.
   TOKEN_ENV = "AGENT_API_TOKEN"
+  # The request header that names the calling script in the board's legacy-use
+  # census (LegacyAuthUse). Client-asserted; the board uses it for counting only.
+  CALLER_HEADER = "X-Agent-Caller"
 
   # Raised by the STRICT readers (`parse_body!`, `rows!`) for every answer a
   # caller cannot trust: an empty body, a body that is not JSON, a payload that
@@ -71,6 +74,7 @@ module TaskBoard
               delete: Net::HTTP::Delete }.fetch(method)
     req = klass.new(uri)
     req["Authorization"] = "Bearer #{token}" if token
+    req[CALLER_HEADER] = "bin/#{File.basename($PROGRAM_NAME.to_s)}"[0, 64]
     (headers || {}).each { |name, value| req[name] = value.to_s unless value.to_s.empty? }
     if body
       req["Content-Type"] = "application/json"

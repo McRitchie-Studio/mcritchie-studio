@@ -9,6 +9,8 @@ module Api
         unless expected.present? && ActiveSupport::SecurityUtils.secure_compare(secret.to_s, expected)
           return render json: { error: "Invalid secret" }, status: :unauthorized
         end
+        # An exchange of the secret is a legacy use too, counted by its caller.
+        LegacyAuthUse.record!(endpoint: LegacyAuthUse::EXCHANGE, caller: LegacyAuthUse.caller_for(request))
         token = message_verifier.generate(
           { authenticated: true, issued_at: Time.current.iso8601 },
           purpose: :api_auth, expires_in: 24.hours

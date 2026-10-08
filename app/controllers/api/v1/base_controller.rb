@@ -43,7 +43,7 @@ module Api
       #   Monster's two endpoints and installed hooks keep working. It must verify
       #   AND carry an expiry: MessageVerifier enforces an expiry when one is
       #   present, but a token minted without `expires_in` verifies forever. Each use
-      #   is logged as legacy.
+      #   is logged as legacy and counted in the legacy-use census (LegacyAuthUse).
       def authenticate_api!
         token = request.headers["Authorization"]&.sub(/\ABearer\s+/, "")
         return render_error("Missing token", status: :unauthorized, error_code: "UNAUTHORIZED") unless token.present?
@@ -60,6 +60,7 @@ module Api
 
         Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}" \
                           "#{dropped_session_note}")
+        LegacyAuthUse.record!(endpoint: endpoint_signature, caller: LegacyAuthUse.caller_for(request))
       end
 
       # A desk whose agent session was dropped (or expired) falls back to the shared
