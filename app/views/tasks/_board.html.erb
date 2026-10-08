@@ -243,6 +243,7 @@ document.addEventListener('turbo:before-cache', function() {
   <!-- Header — Dashboard/Stages links above the title; the Tasks/Deployments
        toggle (page_nav) switches boards; New Task / Archived on the far right. -->
   <div class="mb-6">
+    <%= render "agent_login_requests/pending" %>
     <%= render "board_top_links", current: current_page %>
     <div class="flex items-center gap-4 flex-wrap">
       <h2 class="text-2xl font-bold text-heading"><%= title %></h2>

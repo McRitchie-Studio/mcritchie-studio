@@ -4,10 +4,10 @@ require "yaml"
 require "time"
 
 module Devops
-  # The three OPERATOR WINDOWS (docs/agents/system/devops-v3-design.md section 6):
-  # the minutes Alex gives himself to answer a UI approval, an escalation, and a
-  # production-authority request before the pipeline proceeds on a defined
-  # default. Every window here is DERIVED — a timestamp the task or release
+  # The OPERATOR WINDOWS (docs/agents/system/devops-v3-design.md section 6):
+  # the minutes Alex gives himself to answer a UI approval, an escalation, a
+  # production-authority request and an admin login request before the pipeline
+  # proceeds on a defined default. Every window here is DERIVED — a timestamp the task or release
   # already carries plus a length from config/release_builder.yml — so there is
   # no window column to keep in step, and changing a length in the YAML moves
   # every countdown on the board at once.
@@ -22,8 +22,8 @@ module Devops
 
     CONFIG_PATH = File.expand_path("../../../config/release_builder.yml", __dir__)
 
-    KINDS = %w[approval escalation production].freeze
-    DEFAULT_MINUTES = { "approval" => 10, "escalation" => 20, "production" => 30 }.freeze
+    KINDS = %w[approval escalation production admin_login].freeze
+    DEFAULT_MINUTES = { "approval" => 10, "escalation" => 20, "production" => 30, "admin_login" => 10 }.freeze
 
     # The ship modes `bin/release ship --mode` accepts; `production_ship.mode`
     # in the YAML picks the default for a launch that names none.
@@ -41,7 +41,8 @@ module Devops
     LAPSED_LABELS = {
       "approval"   => "unanswered, proceeding",
       "escalation" => "lapsed, recommendation stands",
-      "production" => "lapsed, shipping on green"
+      "production" => "lapsed, shipping on green",
+      "admin_login" => "lapsed, nothing granted"
     }.freeze
 
     # One derived window. `opened_at` is the timestamp it derives from (the
@@ -133,7 +134,7 @@ module Devops
       raise ArgumentError, "#{source} must be one of #{MODES.join('|')}, got #{value.inspect}"
     end
 
-    # --- the three windows ----------------------------------------------------
+    # --- the windows ----------------------------------------------------------
 
     # The UI-approval window: open while the request is `waiting`, from the
     # moment it was posted. nil when nothing is waiting or the request carries
@@ -170,6 +171,15 @@ module Devops
       return nil unless opened
 
       build("production", opened, config)
+    end
+
+    # The admin-login window (AgentLoginRequest), from the moment the request was
+    # posted. On lapse nothing is granted.
+    def admin_login(requested_at:, config: self.config)
+      opened = parse_time(requested_at)
+      return nil unless opened
+
+      build("admin_login", opened, config)
     end
 
     # Every open window a TASK carries, escalation first: an escalation is the

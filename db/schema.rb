@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -150,6 +150,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
     t.index ["session_id", "transcript_path"], name: "index_agent_activities_on_session_and_transcript"
     t.index ["session_id", "turn_uuid"], name: "index_agent_activities_on_session_and_turn", unique: true, where: "(turn_uuid IS NOT NULL)"
     t.index ["task_slug", "seq"], name: "index_agent_activities_on_task_slug_and_seq"
+  end
+
+  create_table "agent_login_requests", force: :cascade do |t|
+    t.string "agent_session_slug"
+    t.integer "code_attempts", default: 0, null: false
+    t.string "collect_digest", null: false
+    t.datetime "collected_at"
+    t.datetime "created_at", null: false
+    t.datetime "decided_at"
+    t.string "decided_by"
+    t.string "harness_session_id", null: false
+    t.string "phrase_digest", null: false
+    t.string "refusal_reason"
+    t.datetime "requested_at", null: false
+    t.string "slug", null: false
+    t.string "soul", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_session_slug"], name: "index_agent_login_requests_on_agent_session_slug"
+    t.index ["slug"], name: "index_agent_login_requests_on_slug", unique: true
+    t.index ["status", "requested_at"], name: "index_agent_login_requests_on_status_and_requested_at"
   end
 
   create_table "agent_sessions", force: :cascade do |t|
@@ -2388,6 +2409,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_230000) do
   add_foreign_key "agent_actions", "agent_activities", on_delete: :nullify
   add_foreign_key "agent_actions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "agent_login_requests", "agent_sessions", column: "agent_session_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
