@@ -1,31 +1,45 @@
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6">
-  <h1 class="text-3xl font-bold text-heading">TikTok connected ✅</h1>
+  <h1 class="text-3xl font-bold text-heading">TikTok connected</h1>
+
+  <p class="card p-4 text-body" data-tiktok-grant>
+    <% if !@can_draft %>
+      <span class="font-semibold text-warning">video.upload was not granted</span>, so this connection cannot draft.
+      Start again and leave the upload permission on.
+    <% elsif @direct_post %>
+      <span class="font-semibold">Drafts and direct post.</span>
+      This connection can upload to the TikTok inbox and publish to the public feed.
+    <% else %>
+      <span class="font-semibold">Drafts only.</span>
+      This connection can upload to the TikTok inbox. It cannot publish: a direct post is refused until the
+      sign-in is run again with video.publish.
+    <% end %>
+  </p>
+
   <p class="text-secondary">
-    Copy the values below into <code class="text-primary">/Users/alex/projects/.env</code>.
-    The refresh token is long-lived (~365 days) — keep it secret. After that, restart the dev server to pick up the new env vars.
+    File the three values below in the 1Password item <code class="text-primary">tiktok.studio.agents</code>
+    (vault <code class="text-primary">studio-agents</code>), each in the field named above it. They are shown
+    once and stored nowhere by this server. The refresh token is long-lived: keep it secret.
   </p>
 
   <div class="card p-4 space-y-3 font-mono text-sm">
     <div>
-      <div class="text-muted text-xs mb-1">TIKTOK_REFRESH_TOKEN</div>
-      <div class="bg-inset p-3 rounded break-all"><%= @refresh_token %></div>
+      <div class="text-muted text-xs mb-1">refresh-token (TIKTOK_REFRESH_TOKEN)</div>
+      <div class="bg-inset p-3 rounded break-all" data-tiktok-field="refresh-token"><%= @refresh_token %></div>
     </div>
     <div>
-      <div class="text-muted text-xs mb-1">TIKTOK_OPEN_ID</div>
-      <div class="bg-inset p-3 rounded break-all"><%= @open_id %></div>
+      <div class="text-muted text-xs mb-1">open-id (TIKTOK_OPEN_ID)</div>
+      <div class="bg-inset p-3 rounded break-all" data-tiktok-field="open-id"><%= @open_id %></div>
     </div>
     <div>
-      <div class="text-muted text-xs mb-1">access_token (short-lived, do NOT save)</div>
-      <div class="bg-inset p-3 rounded break-all opacity-60"><%= @access_token %></div>
-    </div>
-    <div class="text-xs text-muted">
-      scope: <code><%= @scope %></code> · expires_in: <%= @expires_in %>s
+      <div class="text-muted text-xs mb-1">scope (what TikTok granted; a record, not a server setting)</div>
+      <div class="bg-inset p-3 rounded break-all" data-tiktok-field="scope"><%= @scope %></div>
     </div>
   </div>
 
-  <pre class="bg-inset p-3 rounded text-xs overflow-x-auto"># add to .env
-TIKTOK_CLIENT_KEY=<from developer.tiktok.com>
-TIKTOK_CLIENT_SECRET=<from developer.tiktok.com>
-TIKTOK_REFRESH_TOKEN=<%= @refresh_token %>
-TIKTOK_OPEN_ID=<%= @open_id %></pre>
+  <p class="text-secondary text-sm">
+    Next: <code class="text-primary">credential-filing</code> puts the refresh token and the open id on the
+    server beside the client key and secret, then <code class="text-primary">bin/tiktok-draft --whoami --production</code>
+    proves the connection. The server reads the granted scope from TikTok each time it refreshes the token,
+    so the filed scope is for the record.
+  </p>
 </section>

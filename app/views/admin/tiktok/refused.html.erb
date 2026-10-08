@@ -1,0 +1,22 @@
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6">
+  <h1 class="text-3xl font-bold text-heading">TikTok did not connect</h1>
+
+  <div class="card p-4 space-y-3" data-tiktok-refusal>
+    <p class="text-body font-semibold"><%= @sentence %></p>
+    <p class="text-secondary text-sm"><%= @fix %></p>
+    <% if @detail.present? %>
+      <p class="bg-inset p-3 rounded text-sm break-words"><%= @detail %></p>
+    <% end %>
+    <dl class="text-xs text-muted space-y-1 font-mono">
+      <% if @code.present? %>
+        <div>TikTok's code: <span data-tiktok-refusal-code><%= @code %></span></div>
+      <% end %>
+      <% if @asked.present? %>
+        <div>This sign-in asked for: <%= @asked %></div>
+      <% end %>
+      <div class="break-all">Callback address: <%= @callback_url %></div>
+    </dl>
+  </div>
+
+  <%= link_to "Start again", admin_tiktok_connect_path, class: "btn btn-primary" %>
+</section>
