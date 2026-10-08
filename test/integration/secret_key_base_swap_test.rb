@@ -78,10 +78,11 @@ class SecretKeyBaseSwapTest < ActionDispatch::IntegrationTest
     name = Rails.application.config.session_options.fetch(:key)
     sealed = cookies[name]
     assert sealed.present?, "the session cookie should be in the jar before it is tampered"
-    cookies[name] = flip_first_character(sealed)
-    assert_not_equal sealed, cookies[name], "the tampered cookie should be the one sent"
+    tampered = flip_first_character(sealed)
+    assert tampered != sealed, "the tampered cookie should differ from the sealed one"
 
-    get deployments_path
+    # An explicit Cookie header replaces the jar's cookies for this request.
+    get deployments_path, headers: { "Cookie" => "#{name}=#{Rack::Utils.escape(tampered)}" }
     assert_response :redirect
     assert_match %r{/login}, response.location
   end
