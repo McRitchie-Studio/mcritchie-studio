@@ -1305,10 +1305,12 @@ def api(method, path, body = nil, opts = {})
   if session_token && res.code.to_i == 401
     # The desk's login ended (revoked, expired, or the task moved on). The shared
     # token is still accepted, so drop the login (keeping its slug, which this and
-    # every later fallback write names to the board's log) and retry with it.
+    # every later fallback write names to the board's log) and retry with it. A
+    # review login is forgotten instead (DeskSession.refused).
     reason = TaskBoard.parse_body(res)["error"] || "HTTP 401"
     warn!("note: this desk's agent session was refused (#{reason}); dropping it and retrying with the shared token")
-    DeskSession.drop(desk_session_root)
+    DeskSession.refused(DeskSession.task_slug_for(method, path), root: desk_session_root,
+                                                                 harness_session_id: session_identity.first)
     res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body,
                                           headers: desk_session_dropped_header(method, path))
   end

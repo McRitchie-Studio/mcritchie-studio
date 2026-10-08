@@ -418,8 +418,9 @@ class Task < ApplicationRecord
   #   2. Ci::ReviewGate.green? over every repo with a PR; non-green is skipped;
   #   3. TaskReviewClaim.acquire, whose claim-row lock picks the final winner.
   # `ci_status` is the test seam (`{ slug => token }` or one token for all);
-  # production passes nil.
-  def self.claim_next_review(session:, nonce:, label: nil, reviewer: nil, now: Time.current, ci_status: nil)
+  # production passes nil. `mint_session` rides to the acquire.
+  def self.claim_next_review(session:, nonce:, label: nil, reviewer: nil, now: Time.current, ci_status: nil,
+                             mint_session: false)
     ordered_slugs = reviewable(now: now).ordered.pluck(:slug)
     return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
 
@@ -442,7 +443,7 @@ class Task < ApplicationRecord
         end
 
         outcome = TaskReviewClaim.acquire(task_slug: slug, session: session, nonce: nonce, label: label,
-                                          reviewer: reviewer, now: now)
+                                          reviewer: reviewer, now: now, mint_session: mint_session)
         next nil unless outcome.acquired # claim held by a racer — skip to the next
 
         ClaimNextResult.new(task: task, outcome: outcome, reason: "claimed")

@@ -22,8 +22,9 @@ module Api
       # Two bearers are accepted:
       #
       # - An agent session's token (AgentSession#token): the row is read on every
-      #   call, so a revoked or expired session, or a studio session whose task left
-      #   building and review, answers 401 with the reason. A client session answers
+      #   call, so a revoked or expired session, a studio session whose task left
+      #   building and review, or a reviewer's session whose claim is not live,
+      #   answers 401 with the reason. A client session answers
       #   403: no board endpoint serves the client tier yet. The session then sets
       #   Current.agent_session, which names the actor and drives the tier gates
       #   (Api::AgentSessionGate).
