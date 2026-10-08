@@ -338,6 +338,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Exactly one clip slug, or --whoami; --help and an unknown flag exit before
     # the API is read, and a production draft also needs --yes.
     "tiktok-draft"           => :optparse,
+    # One subject, or a fact slug with --supersede or --retire; --help and an
+    # unknown flag exit before a session token is read or the hub is called.
+    "fact"                   => :optparse,
     # Read-only: every verb is a read through one `heroku run`. The verb is
     # shifted first, then OptionParser owns the rest, so `desk 5 --help` prints
     # help and exits before any run; an unknown flag raises unrescued.

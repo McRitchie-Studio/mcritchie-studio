@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/fact: a subject's facts on the hub (docs/agents/modules/knowledge-capture.md).
+#
+#   bin/fact person/josh-allen                                    current facts, each with its source
+#   bin/fact person/josh-allen --add hometown=Firebaugh --source <doc>
+#   bin/fact person/josh-allen --add ssn --source drive:<file id>   a pointer; identity data is never stored
+#   bin/fact --supersede <fact-slug> --value Fresno --source <doc>
+#   bin/fact --retire <fact-slug>
+#
+# It presents an agent session: the desk's own, or an admin token in
+# AGENT_ADMIN_SESSION_TOKEN. Sensitive facts need the admin session.
+
+require_relative "lib/fact_cli"
+
+begin
+  options = FactCli.parse(ARGV)
+  if options[:help]
+    puts FactCli::USAGE
+    exit 0
+  end
+  token = FactCli.session_token
+  abort "fact: #{FactCli::NO_SESSION}" unless token
+
+  api = FactCli::Api.new(base_url: options[:api] || ENV.fetch("TASK_API_BASE", FactCli::DEFAULT_API), token: token)
+  FactCli::Runner.new(api: api).run(options)
+rescue OptionParser::ParseError, FactCli::Failure => e
+  abort "fact: #{e.message}"
+end
