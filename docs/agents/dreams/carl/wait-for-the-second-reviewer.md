@@ -4,6 +4,9 @@ answer: "No. Quiet is not stopped. Check its transcript for activity and wait fo
 why: "Before merge, its finding is a one-line fix on the branch. After merge, the same finding is a new task, card, PR, CI run and review."
 status: approved
 source: "2026-09-23 \u00b7 pr-review sitting"
+soul: carl
+stage: submitted
+topic: review
 ---
 
 # Wait for the second reviewer

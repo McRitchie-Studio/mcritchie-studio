@@ -4,6 +4,9 @@ answer: "Fetch first, then read the ref again. Then read the task's claim. Only 
 why: "A stale ref blocked a task six minutes after its dependency merged, and stamped 'unresolved feedback' onto a live session's in-progress work."
 status: approved
 source: "2026-08-27 \u00b7 task workflows-card-fifth-soul"
+soul: carl
+stage: submitted
+topic: [blocking, claims]
 ---
 
 # Fetch and read the claim before blocking

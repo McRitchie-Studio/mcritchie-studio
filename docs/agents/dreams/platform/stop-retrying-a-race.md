@@ -4,6 +4,7 @@ answer: "No. Two dead handles is a cause, not bad luck. Find what is invalidatin
 why: "Each retry spends Alex's attention on a click into nothing."
 status: approved
 source: "2026-09-27 \u00b7 session 1c7e1097"
+topic: diagnosis
 ---
 
 # Stop retrying a race

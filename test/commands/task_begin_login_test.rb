@@ -157,6 +157,17 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
     end
   end
 
+  test "begin --agent prints that soul's dream sequence to stderr" do
+    with_desk do |dir, _desk, _requests|
+      out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir), BIN, "begin", SLUG,
+                                        "--agent", "carl", chdir: dir)
+
+      assert status.success?, err
+      assert_includes err, "## Carl's dream sequence · task #{SLUG}"
+      refute_includes out, "dream sequence"
+    end
+  end
+
   # ---- the review claim's login (DeskSession.write_review) ------------------------
 
   test "a reviewer's write presents its review login, and the builder's keeps the desk's" do

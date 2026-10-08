@@ -4,6 +4,7 @@ answer: "Confirm what is right, change only what matters, and give the real reas
 why: "'Best practice' persuades nobody. 'I mishandled a secret today, so a key that never expires is the wrong setting here' does."
 status: approved
 source: "2026-09-27 \u00b7 session 1c7e1097"
+topic: reporting
 ---
 
 # Say the uncomfortable reason

@@ -4,6 +4,10 @@ answer: "With arithmetic on the real numbers. Subtract the before from the after
 why: "It splits 'the money is wrong' from 'the screen is wrong' in one step, before any theory about websockets or the chain."
 status: approved
 source: "2026-09-07 \u00b7 session 0bc673df"
+soul: [jasper, turf-monster]
+repo: turf-monster
+risk: payment
+topic: balances
 ---
 
 # Reconcile the numbers before theorizing

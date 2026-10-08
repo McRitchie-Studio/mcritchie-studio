@@ -4,6 +4,9 @@ answer: "Read the rows the change acts on first. If their state makes the change
 why: "He asked from memory of the contest; the rows are the contest. A correct-looking edit on finished games would have chosen which final score counts."
 status: approved
 source: "2026-09-27 \u00b7 session ab3acb34"
+soul: turf-monster
+repo: turf-monster
+topic: [contests, data-change]
 ---
 
 # Read the state before the mutation

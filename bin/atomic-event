@@ -59,6 +59,7 @@ require_relative "lib/agent_api"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/session_markers"
 require_relative "lib/session_identity"
+require_relative "lib/dream_bank"
 
 class AgentActivityCli
   include AgentApi::Presence
@@ -563,6 +564,7 @@ class AgentActivityCli
     write_acting_agent(sid, canonical)
     @out.puts("atomic-event: heartbeat set — every activity attributes to #{canonical} " \
               "(stacked over the base mascot) until `heartbeat --clear` or session end")
+    DreamBank.announce(canonical, io: @out)
   end
 
   # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`

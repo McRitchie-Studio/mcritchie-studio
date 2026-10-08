@@ -4,6 +4,9 @@ answer: "A test that subscribes to the query layer over a full run and asserts z
 why: "A grep for `save` and `update` proves today's spelling. It cannot see a callback or a raw execute, and a test that never queried passes for nothing."
 status: approved
 source: "2026-09-22 \u00b7 task audit-turf-merged-athlete-rows"
+soul: pokemon
+shape: backend
+topic: [audit, production]
 ---
 
 # Prove read only by measuring writes

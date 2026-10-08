@@ -11,6 +11,8 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
+require "stringio"
 require_relative "../../bin/lib/dream_bank"
 
 class DreamBankTest < Minitest::Test
@@ -121,18 +123,150 @@ class DreamBankTest < Minitest::Test
     assert_includes DreamBank.context(three_dreams), "A dream never overrides a First Rule or an SOP."
   end
 
+  # ── tags and the two sequences ─────────────────────────────────────────────
+
+  def tagged(extra, question: "Do I merge on one read?")
+    DREAM.sub("status: Approved", "status: approved\n#{extra}").sub("Do I merge on one read?", question)
+  end
+
+  def test_unit_parse_reads_tags_as_lists
+    dream = DreamBank.parse(tagged("soul: [carl, xan]\nshape: ui+db\ntopic: review"), slug: "x")
+
+    assert_equal %w[carl xan], dream.souls
+    assert_equal({ "soul" => %w[carl xan], "shape" => %w[ui+db], "topic" => %w[review] }, dream.tags)
+    refute dream.platform?
+    assert DreamBank.parse(DREAM, slug: "y").platform?, "a dream with no soul tag is platform"
+  end
+
+  def test_unit_rejects_unknown_tag
+    assert_nil DreamBank.parse(tagged("sole: carl"), slug: "x"), "an unknown front matter key"
+    assert_nil DreamBank.parse(tagged("soul: nobody"), slug: "x"), "a soul that is not on the roster"
+    assert_nil DreamBank.parse(tagged("topic: Two Words"), slug: "x"), "a tag value that is not one token"
+    assert_equal [ "unknown front matter key `sole`" ], DreamBank.errors({ "sole" => "carl" })
+    assert_equal [ "unknown soul `nobody`" ], DreamBank.errors({ "soul" => "nobody" })
+    assert_empty DreamBank.errors({ "soul" => "turf-monster", "source" => "anything at all" })
+  end
+
+  def test_unit_reads_platform_and_soul_banks
+    Dir.mktmpdir do |dir|
+      write(dir, "platform/universal.md", DREAM)
+      write(dir, "carl/review.md", tagged("soul: [carl, xan]", question: "Carl's question?"))
+      write(dir, "carl/later.md", tagged("soul: carl", question: "Proposed?").sub("status: approved", "status: proposed"))
+      write(dir, "turf-monster/contest.md", tagged("soul: turf-monster", question: "A contest question?"))
+      write(dir, "INDEX.md", DREAM)
+      write(dir, "platform/README.md", DREAM)
+
+      assert_equal %w[later review universal contest], DreamBank.all(dir: dir).map(&:slug)
+      assert_equal %w[carl carl platform turf-monster], DreamBank.all(dir: dir).map(&:home)
+      assert_equal %w[universal], DreamBank.platform(dir: dir).map(&:slug)
+      assert_equal %w[review], DreamBank.soul("carl", dir: dir).map(&:slug), "a proposed dream reaches no soul"
+      assert_equal %w[review], DreamBank.soul("alex", dir: dir).map(&:slug), "alex is xan"
+      assert_equal %w[contest], DreamBank.soul("turf_monster", dir: dir).map(&:slug)
+      assert_empty DreamBank.soul("jasper", dir: dir)
+    end
+  end
+
+  def test_unit_soul_context_names_the_seat_its_role_page_and_the_task
+    dream = DreamBank.parse(tagged("soul: turf-monster"), slug: "contest")
+    context = DreamBank.soul_context("turf_monster", [ dream ], task: "some-task")
+
+    assert_includes context, "## Turf Monster's dream sequence · task some-task"
+    assert_includes context, "`docs/agents/agents/turf_monster/role.md`"
+    assert_includes context, "A dream never overrides a First Rule or an SOP."
+    assert_includes context, "**Q: Do I merge on one read?** (`contest`)"
+    assert_includes context, "Why: A late blocker"
+    assert_equal "", DreamBank.soul_context("carl", [])
+    assert_equal "", DreamBank.soul_context("nobody", [ dream ])
+  end
+
+  def test_unit_announce_prints_a_souls_sequence_and_never_raises
+    Dir.mktmpdir do |dir|
+      write(dir, "carl/review.md", tagged("soul: carl"))
+      io = StringIO.new
+
+      DreamBank.announce("carl", io: io, dir: dir)
+      assert_includes io.string, "## Carl's dream sequence"
+
+      [ "jasper", "nobody", "", nil ].each do |soul|
+        quiet = StringIO.new
+        DreamBank.announce(soul, io: quiet, dir: dir)
+        assert_equal "", quiet.string, "#{soul.inspect} has nothing to print"
+      end
+      DreamBank.announce("carl", io: nil, dir: dir)
+    end
+  end
+
+  def test_unit_platform_context_adds_the_helper_roster_inside_the_budget
+    dreams = three_dreams
+    plain = DreamBank.context(dreams)
+    full = DreamBank.platform_context(dreams)
+
+    assert full.start_with?(plain), "the dreams come first, whole"
+    assert_includes full, "### Helper agents"
+    assert_includes full, "`carl` Lead Architect"
+    assert_includes full, "`bin/dream <soul>`"
+    assert_equal plain, DreamBank.platform_context(dreams, budget: plain.size), "the roster never costs a dream"
+    assert_operator DreamBank.platform_context(dreams, budget: full.size).size, :<=, full.size
+    assert_equal "", DreamBank.platform_context([]), "no dreams, no block"
+  end
+
   # ── the real bank ──────────────────────────────────────────────────────────
 
+  def bank_files
+    Dir.glob(File.join(DreamBank::DEFAULT_DIR, "**", "*.md")).reject { |p| DreamBank::SKIPPED.include?(File.basename(p)) }
+  end
+
   def test_unit_every_tracked_dream_parses_with_a_known_status
-    files = Dir.glob(File.join(DreamBank::DEFAULT_DIR, "*.md")).reject { |p| File.basename(p) == "README.md" }
     dreams = DreamBank.all
 
-    refute_empty files, "the bank has no dreams; DEFAULT_DIR may point at the wrong place"
-    assert_equal files.map { |p| File.basename(p, ".md") }.sort, dreams.map(&:slug),
+    assert_operator dreams.size, :>=, 20, "the bank lost dreams; DEFAULT_DIR may point at the wrong place"
+    assert_equal bank_files.map { |p| File.basename(p, ".md") }.sort, dreams.map(&:slug).sort,
                  "a dream file failed to parse, so it would load nowhere and say nothing"
+    assert_equal dreams.map(&:slug).uniq, dreams.map(&:slug), "two dreams share a slug"
     dreams.each do |dream|
       assert_includes %w[proposed approved], dream.status, "#{dream.slug} has an unknown status"
       refute_empty dream.why, "#{dream.slug} gives no reason; a dream without its why is a rule"
     end
+  end
+
+  def test_unit_every_dream_lives_in_the_directory_its_soul_tag_names
+    DreamBank.all.each do |dream|
+      assert_equal dream.sequence, dream.home, "#{dream.slug} is tagged for #{dream.sequence} and filed under #{dream.home}"
+    end
+  end
+
+  def test_unit_the_real_bank_has_both_sequences
+    assert_operator DreamBank.platform.size, :>=, 12
+    assert_operator DreamBank.soul("carl").size, :>=, 3
+    assert_equal DreamBank.approved.size, DreamBank.platform.size + DreamBank.approved.reject(&:platform?).size
+  end
+
+  def test_unit_index_matches_generator
+    assert_equal DreamBank.index, File.read(File.join(DreamBank::DEFAULT_DIR, "INDEX.md")),
+                 "docs/agents/dreams/INDEX.md is stale. Run `bin/dream index --write`."
+  end
+
+  def test_unit_index_lists_a_dream_under_every_sequence_it_loads_in
+    Dir.mktmpdir do |dir|
+      write(dir, "platform/universal.md", DREAM)
+      write(dir, "carl/review.md", tagged("soul: [carl, xan]\ntopic: [review, merge]", question: "Carl | Xan?"))
+
+      index = DreamBank.index(dir: dir)
+
+      assert_includes index, "2 dreams."
+      assert_includes index, "## Platform (1)"
+      assert_includes index, "## Carl (1)\n\nLoads at: `bin/dream carl`"
+      assert_includes index, "## Xan (1)"
+      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Xan? | topic: review, merge | approved |").size
+      refute_includes index, "## Jasper"
+    end
+  end
+
+  private
+
+  def write(dir, relative, text)
+    path = File.join(dir, relative)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, text)
   end
 end

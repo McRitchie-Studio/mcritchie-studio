@@ -1,0 +1,91 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/dream — prints a dream sequence from the bank (docs/agents/dreams/).
+#
+#   bin/dream <soul> [--task <slug>]   the soul's sequence; --task names the task in the heading
+#   bin/dream platform                 the sequence every session start loads
+#   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md
+#
+# Reads tracked files only. Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
+
+require_relative "lib/dream_bank"
+
+class DreamCli
+  OK = 0
+  REFUSED = 1
+  USAGE = 2
+  HELP_FLAGS = %w[-h --help help].freeze
+  INDEX_MODES = %w[--write --check].freeze
+
+  def initialize(env: ENV, out: $stdout, err: $stderr)
+    @dir = env["DREAM_BANK_DIR"].to_s.empty? ? DreamBank::DEFAULT_DIR : env["DREAM_BANK_DIR"]
+    @out = out
+    @err = err
+  end
+
+  def run(argv)
+    return usage(@out, OK) if argv.any? { |arg| HELP_FLAGS.include?(arg) }
+
+    command, *rest = argv
+    case command
+    when nil then usage(@err, USAGE)
+    when "index" then index(rest)
+    when "platform" then rest.empty? ? platform : usage(@err, USAGE)
+    else soul(command, rest)
+    end
+  end
+
+  private
+
+  def usage(io, code)
+    io.puts(File.read(__FILE__)[/^# bin\/dream.*?(?=^\n)/m].gsub(/^# ?/, ""))
+    code
+  end
+
+  def refuse(reason)
+    @err.puts("dream: #{reason}")
+    REFUSED
+  end
+
+  def platform
+    @out.puts(DreamBank.platform_context(DreamBank.platform(dir: @dir)))
+    OK
+  end
+
+  def soul(name, rest)
+    task = rest.first == "--task" ? rest[1].to_s : nil
+    return usage(@err, USAGE) unless rest.empty? || (rest.size == 2 && !task.to_s.empty?)
+
+    slug = DreamBank.canonical_soul(name)
+    record = DreamBank.roster[slug]
+    return refuse("`#{name}` is not a soul. Souls: #{DreamBank.roster.keys.join(", ")}.") if record.nil?
+
+    text = DreamBank.soul_context(slug, DreamBank.soul(slug, dir: @dir), task: task)
+    text = "#{record["name"]} has no approved dreams. Role page: `docs/agents/agents/#{slug.tr("-", "_")}/role.md`." if text.empty?
+    @out.puts(text)
+    OK
+  end
+
+  def index(rest)
+    return usage(@err, USAGE) unless rest.empty? || (rest.size == 1 && INDEX_MODES.include?(rest.first))
+
+    path = File.join(@dir, "INDEX.md")
+    text = DreamBank.index(dir: @dir)
+    case rest.first
+    when "--write"
+      File.write(path, text)
+      @out.puts("dream: wrote #{path}")
+    when "--check"
+      current = File.exist?(path) ? File.read(path) : nil
+      return refuse("#{path} is stale. Run `bin/dream index --write`.") unless current == text
+
+      @out.puts("dream: #{path} is current")
+    else
+      @out.puts(text)
+    end
+    OK
+  end
+end
+
+exit(DreamCli.new.run(ARGV)) if $PROGRAM_NAME == __FILE__
