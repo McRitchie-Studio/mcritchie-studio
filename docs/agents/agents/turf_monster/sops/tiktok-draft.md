@@ -313,7 +313,9 @@ The grant here is the board's: the one-time code or the Approve tap, section 3 o
 grant is the fallback for when the board cannot grant.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
-TikTok and the bucket itself and marks every attempt "stand-in". It never runs
+TikTok and the bucket itself and marks every attempt "stand-in". Its
+`/admin/tiktok/connect` skips TikTok and stores a connection named
+`stand-in-account`. It never runs
 in production.
 
 **AI-generated clips of real players.** TikTok has a policy on labelling

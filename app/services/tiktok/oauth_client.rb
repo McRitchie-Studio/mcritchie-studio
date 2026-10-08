@@ -53,8 +53,16 @@ module Tiktok
     end
 
     class << self
+      # Stand-in for TikTok's side of the sign-in: an object answering
+      # authorize_url and exchange_code as the two methods below do. nil means
+      # TikTok itself. Set by config/initializers/tiktok_draft_stand_in.rb for
+      # the e2e lane and a local demo, never in production.
+      attr_accessor :sign_in_stand_in
+
       # Builds the user-facing authorize URL for the one-time OAuth handshake.
       def authorize_url(redirect_uri:, state:, scopes: DEFAULT_SCOPES)
+        return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes:) if sign_in_stand_in
+
         ensure_app_creds!
         params = {
           client_key:    ENV.fetch("TIKTOK_CLIENT_KEY"),
@@ -69,6 +77,8 @@ module Tiktok
       # Exchanges an authorization code for an access_token + refresh_token + open_id.
       # Returns the parsed JSON response.
       def exchange_code(code:, redirect_uri:)
+        return sign_in_stand_in.exchange_code(code:, redirect_uri:) if sign_in_stand_in
+
         ensure_app_creds!
         post_token(
           client_key:    ENV.fetch("TIKTOK_CLIENT_KEY"),

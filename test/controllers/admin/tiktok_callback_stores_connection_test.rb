@@ -165,6 +165,28 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
     assert_equal 0, TiktokConnection.count
   end
 
+  test "[integration] no sign-in stand-in is installed outside the e2e lane and a local demo" do
+    assert_nil Tiktok::OAuthClient.sign_in_stand_in
+  end
+
+  test "[integration] the stand-in sign-in walks connect to a stored, named stand-in connection" do
+    log_in_as users(:alex)
+    Tiktok::OAuthClient.sign_in_stand_in = TiktokDraftStandIn::SignIn.new
+
+    get admin_tiktok_connect_path
+    assert_match(/\A#{Regexp.escape(admin_tiktok_callback_url)}\?code=stand-in-code&state=\h{32}\z/, response.location)
+    follow_redirect!
+
+    assert_response :success
+    assert_select "[data-tiktok-field='account']", text: "stand-in-account"
+    connection = TiktokConnection.current
+    assert_match(/\Astand-in-refresh-\h{16}\z/, connection.refresh_token)
+    assert_not_includes response.body, connection.refresh_token
+    assert_no_match(/stand-in-(refresh|access)/, response.body)
+  ensure
+    Tiktok::OAuthClient.sign_in_stand_in = nil
+  end
+
   test "[integration] nothing the callback logs holds a token" do
     log_in_as users(:alex)
     state = begin_connect
