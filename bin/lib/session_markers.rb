@@ -17,6 +17,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.task-review-beat-<slug>           a foreground BEAT on that review (bin/lib/review_worker_pulse.rb)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.presence-<kind>-<pid> a HEAVY-WORK claim (bin/lib/presence_claim.rb)
+#   <projects>/.agents/sessions/<id>.admin-login          the held admin login (bin/lib/admin_login.rb), mode 0600
 #   <projects>/.agents/sessions/<id>.shift-heartbeat      statusline's shift-renew throttle (bash)
 #   <projects>/.agents/sessions/<id>.mascot-heal          statusline's mascot self-heal throttle (bash)
 #

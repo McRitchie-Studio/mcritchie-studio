@@ -145,7 +145,7 @@ class AgentApi
   end
 
   def http_json(method, path, body, bearer:)
-    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
+    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, delete: Net::HTTP::Delete }.fetch(method)
     http_request(klass, path, body, bearer: bearer)
   end
 

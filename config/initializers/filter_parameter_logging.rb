@@ -18,6 +18,13 @@ Rails.application.config.filter_parameters += [
   # request. Scoped to that controller: a bare :value would mask every `value`
   # param. Fact filters its own column.
   /\Afact\.value\z/,
+  # An admin login's one-time code, nested and at the top level of its own API.
+  /\Aagent_login_request\.code\z/,
+  lambda do |key, value, params = nil|
+    next unless key.to_s == "code" && value.is_a?(String)
+
+    value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_login_requests"
+  end,
   lambda do |key, value, params = nil|
     next unless key.to_s == "value" && value.is_a?(String)
 

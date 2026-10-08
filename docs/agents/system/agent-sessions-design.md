@@ -16,11 +16,15 @@ claim-next-review`, `review-claim acquire`) logs the reviewer in to the claimed
 task, and a session's stage moves are checked against section 5 for the review
 verdict (`reviewed`, or a block of a `submitted` task) and for `archived`. An admin session can be granted from a
 shell on the hub (`bin/rails agent_sessions:grant_admin`, added 2026-10-07): the
-shell is the grant, and it stands in for the Approve tap. The first endpoint that
-accepts ONLY an admin session, refusing the shared token too, is the TikTok draft
-create (`require_admin_session_only`). Not built yet: the Approve tap and the
-launch phrase, the section 5 checks on `reviewed` to `assembled` and `assembled`
-to `shipped`, and the soul on the board card.
+shell is the grant. `bin/agent-activity heartbeat steffon|xan` posts an admin login
+request (`AgentLoginRequest`), and the operator grants it with the Approve tap on
+the board or with the one-time code the board shows him, which the agent posts
+back (`heartbeat <soul> --code <code>`); a launch phrase with no code grants
+nothing. The first endpoint that accepts ONLY an admin session, refusing the
+shared token too, is the TikTok draft create (`require_admin_session_only`). Not
+built yet: `bin/task` presenting an admin session, the section 5 checks on
+`reviewed` to `assembled` and `assembled` to `shipped`, and the soul on the board
+card.
 How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
 The idea in one paragraph: credentials move behind deterministic server APIs, and
@@ -87,11 +91,12 @@ reads. So every grant comes from outside the model.
 | Studio, builder | The task claim: `bin/task begin` mints the session on the claim | The machine key (section 8, step 2): a per-laptop key the script reads from its env, never the model | The task and its repo | With the task's build (`submitted`), or the harness session's end, whichever is first (question 2) |
 | Studio, reviewer | The review claim: `bin/task claim-next-review` | The machine key | The claimed task | With the review (`reviewed` or `blocked`), or session end |
 | Studio, QA | Alex launches `qa-release` himself; the launch claims the release | The machine key | The release | With the release's QA result, or session end |
-| Admin | Alex's launch phrase (today, the `full-cycle` SOP), or an Approve tap on the board: the production window of `Devops::Windows`. The session asks; the server posts the request; the grant is the tap, or the window lapsing with no veto in `timed` mode | The machine key, plus the request id | The release or the rotation named in the request | Two hours, or the SOP's end event |
+| Admin | The one-time code the board shows on the request, carried in Alex's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
 | Client | Only from the isolated runtime: a runtime-bound key, stored as a digest and shown once, as Tyrion's bot token is | The runtime key, from the runtime's own env | The runtime's channel (first case: Turf Monster's TikTok DMs) | The key's; the session rotates daily |
 
-Only the tap is a fact the server can verify. The launch phrase works as the
-`full-cycle` kickoff works today: it lets the session ask, and the window answers.
+The tap and the one-time code are facts the server can verify. The launch phrase
+carries the code the board shows on the request; the phrase alone is words in a
+context, and grants nothing.
 
 ## 4. Capability endpoints
 

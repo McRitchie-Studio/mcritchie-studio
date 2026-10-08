@@ -111,6 +111,9 @@ Rails.application.routes.draw do
   # waits on its window. Admin-gated in ReleasesController; records the one
   # `ship_authorized completed` event through Release#grant_ship_authorization!.
   post "deployments/:slug/ship_authorization", to: "releases#authorize_ship", as: :authorize_ship_deployment
+  # The operator's answer to an admin login request (the board's Approve and Decline).
+  post "agent_logins/:slug/approve", to: "agent_login_requests#approve", as: :approve_agent_login
+  post "agent_logins/:slug/refuse", to: "agent_login_requests#refuse", as: :refuse_agent_login
   get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
   get "stages", to: "tasks#stages", as: :stages
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.
@@ -531,6 +534,9 @@ Rails.application.routes.draw do
       post   "agent_sessions", to: "agent_sessions#create"
       get    "agent_sessions/current", to: "agent_sessions#show"
       delete "agent_sessions/current", to: "agent_sessions#destroy"
+      post   "agent_login_requests", to: "agent_login_requests#create"
+      post   "agent_login_requests/:slug/code", to: "agent_login_requests#code"
+      post   "agent_login_requests/:slug/collect", to: "agent_login_requests#collect"
       post "release_notes", to: "release_notes#create"
       # Finished-game push from turf-monster (Nfl::LiveScores::PollCycle#finalise).
       # Creates the Content idea a faceless recap video is built from. Idempotent:
