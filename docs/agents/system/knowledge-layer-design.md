@@ -31,7 +31,7 @@ session's context only when that session asks for it by id.
 | The index | `KnowledgeSource` (kinds `google_drive`, `egnyte`, `transcripts`) and `SourceDocument`: Drive file id, version, title, owner, link, Drive's MD5 for binary files, a per-agent access map, and the version last indexed | `app/models/knowledge_source.rb#KINDS`, `app/models/source_document.rb#needs_indexing?` |
 | What the index lacks | A SHA-256, a summary, a category, any document text, and anything that calls `mark_indexed!` | `app/models/source_document.rb#mark_indexed!` |
 | Uploaded documents | The engine's `Studio::KnowledgeDoc` holds an upload by `s3_key`, with an access map of `full`, `aware` or `none` per agent. The hub has the table and draws no knowledge routes | `docs/agents/modules/knowledge-capture.md` |
-| A second Gmail lane | An OAuth grant for one mailbox, `gmail.readonly` only, feeding the desk queue. It holds no Drive scope | `app/services/gmail/credentials.rb#SCOPES` |
+| A second Gmail lane | An OAuth grant for one mailbox, `gmail.readonly` only, feeding the desk queue. It holds no Drive scope | `app/services/gmail/client.rb#SCOPES` |
 | Private facts **(accepted)** | One encrypted record per subject, key and value, with a required source: a knowledge doc id or a Drive file id. The source is a string; nothing checks it against the index | `app/models/fact.rb#SOURCE_KINDS` |
 | Dreams **(accepted)** | A platform sequence and one per soul, a generated index, and selection by relevance at a claim | `bin/lib/dream_bank.rb#CALL_BUDGET`, `bin/lib/dream_selector.rb#LIMIT` |
 | Mirrors | None. Nothing copies Drive to disk, and nothing copies model memory to Drive | — |
