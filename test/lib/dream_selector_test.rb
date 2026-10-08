@@ -7,6 +7,8 @@
 
 require "minitest/autorun"
 require "stringio"
+require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/dream_bank"
 require_relative "../../bin/lib/dream_selector"
 
@@ -168,6 +170,20 @@ class DreamSelectorTest < Minitest::Test
       DreamBank.announce("pokemon", io: whole, task: "settle-payout-once", facts: unread, dir: BANK)
       assert_equal DreamBank.soul_context("pokemon", bank, task: "settle-payout-once") + "\n", whole.string, unread.inspect
       assert_includes whole.string, "docs-guard-names-its-rule"
+    end
+  end
+
+  def test_unit_one_unreadable_or_malformed_file_leaves_the_others_loaded
+    Dir.mktmpdir do |dir|
+      FileUtils.cp_r(File.join(BANK, "."), dir)
+      assert_equal bank.map(&:slug), DreamBank.all(dir: dir).map(&:slug), "control: every file readable loads them all"
+
+      FileUtils.mkdir_p(File.join(dir, "pokemon", "a-directory-not-a-file.md"))
+      File.write(File.join(dir, "pokemon", "malformed.md"), "---\nquestion: [unclosed\n---\n")
+      File.binwrite(File.join(dir, "platform", "not-utf8.md"), "---\nquestion: \"\xFF\xFE?\"\nanswer: \"A.\"\n---\n")
+
+      assert_equal bank.map(&:slug), DreamBank.all(dir: dir).map(&:slug)
+      assert_equal 14, DreamBank.soul("pokemon", dir: dir).size
     end
   end
 

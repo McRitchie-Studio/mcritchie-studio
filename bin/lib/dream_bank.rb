@@ -4,7 +4,8 @@
 # sequences. The PLATFORM sequence is every approved dream with no `soul` tag;
 # bin/session-insights prints it at session start. A SOUL's sequence is every
 # approved dream tagged with that soul; bin/dream prints it when the soul is
-# invoked.
+# invoked. A task claim prints the soul's dreams that DreamSelector ranks highest
+# for the task, then the platform sequence.
 #
 # A dream is one worked decision from a past session: the question the session
 # faced, the good answer it gave, and why that answer was right. The bank is
@@ -63,16 +64,23 @@ module DreamBank
     env["DREAM_BANK_DIR"].to_s.empty? ? DEFAULT_DIR : env["DREAM_BANK_DIR"]
   end
 
-  # Every parseable dream under the directory, in path order.
+  # Every parseable dream under the directory, in path order. A file that cannot
+  # be read is skipped.
   def all(dir: DEFAULT_DIR)
     Dir.glob(File.join(dir, "**", "*.md")).sort.filter_map do |path|
       next if SKIPPED.any? { |name| File.basename(path).casecmp?(name) }
 
       home = File.dirname(path).delete_prefix(dir).delete_prefix("/")
-      parse(File.read(path), slug: File.basename(path, ".md"), home: home)
+      parse(read(path), slug: File.basename(path, ".md"), home: home)
     end
   rescue StandardError
     []
+  end
+
+  def read(path)
+    File.read(path)
+  rescue StandardError
+    nil
   end
 
   def approved(dir: DEFAULT_DIR)

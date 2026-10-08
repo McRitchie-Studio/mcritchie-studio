@@ -6,7 +6,7 @@ format and the sign-off rule are in [`../modules/dream.md`](../modules/dream.md)
 | Directory | Holds | Loads |
 |---|---|---|
 | `platform/` | dreams with no `soul` tag | at every session start |
-| `<soul>/` | dreams whose first `soul` tag is that soul | when the soul is invoked: `bin/dream <soul>` |
+| `<soul>/` | dreams whose first `soul` tag is that soul | when the soul is invoked (`bin/dream <soul>`); a task claim loads the ones that match the task |
 
 A directory is named for a `config/souls.yml` slug. A dream tagged for several
 souls loads in each of their sequences and lives under the first.
