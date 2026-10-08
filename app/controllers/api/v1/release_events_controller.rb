@@ -1,6 +1,8 @@
 module Api
   module V1
     class ReleaseEventsController < BaseController
+      include Api::RequiresEventUsage
+
       STEP_ALIASES = {
         "testing" => "review_tests",
         "assembling" => "assemble_release",
@@ -50,7 +52,7 @@ module Api
       end
 
       def record(status)
-        return unless validate_usage!(status)
+        return unless event_usage_present?(event_attributes, status)
 
         event = @release.record_event!(
           step: normalized_step,
@@ -97,22 +99,6 @@ module Api
         attrs[:tokens_out] = attrs[:tokens_out].presence&.to_i
         attrs[:cost] = attrs[:cost].presence&.to_d
         attrs
-      end
-
-      def validate_usage!(status)
-        attrs = event_attributes
-        return true if status == "started"
-        return true unless ReleaseEvent::USAGE_REQUIRED_SOURCES.include?(attrs[:source].to_s)
-
-        missing = %i[model tokens_in tokens_out cost].select { |key| attrs[key].nil? || attrs[key].to_s.blank? }
-        return true if missing.empty?
-
-        render_error(
-          "event usage is required for #{attrs[:source]} #{status} events: #{missing.join(', ')}",
-          status: :unprocessable_entity,
-          error_code: "MISSING_EVENT_USAGE"
-        )
-        false
       end
     end
   end

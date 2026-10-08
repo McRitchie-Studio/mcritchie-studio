@@ -67,17 +67,13 @@ class TaskEpicSlugTest < ActiveSupport::TestCase
                  "the chip prints it beside the task slug; the two must read by one rule"
   end
 
-  # THE COLUMN-NOT-DEVOPS RULE. A devops write to the name is refused loudly and
-  # names the flag that does work — the release_slug incident was a same-named
-  # devops key diverging from the column, with the visible one inert.
-  test "[unit] a devops epic_slug write is refused and names --epic" do
-    error = assert_raises(ArgumentError) do
-      Task.normalize_devops_metadata({ "kind" => "feature", "epic_slug" => "devops-v3" })
-    end
+  # Guard catalog row 10.2: the devops spelling is routed to the column and never
+  # stored under devops.
+  test "[unit] a devops epic_slug post is a column write, not a devops key" do
+    raw = { "kind" => "feature", "epic_slug" => "devops-v3" }
 
-    assert_match(/devops\.epic_slug is not writable/, error.message)
-    assert_match(/tasks\.epic_slug column/, error.message)
-    assert_match(/--epic/, error.message, "the refusal must name the command that DOES work")
+    assert_equal({ "kind" => "feature" }, Task.normalize_devops_metadata(raw))
+    assert_equal({ "epic_slug" => "devops-v3" }, Task.devops_column_writes(raw))
   end
 
   test "[unit] a stored devops epic_slug shadow is shed on save" do

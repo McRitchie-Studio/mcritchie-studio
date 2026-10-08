@@ -39,7 +39,7 @@ module Api
         assert body.dig("holder", "live")
       end
 
-      test "[integration] only the holder can renew; a non-holder is a 204 no-op" do
+      test "[integration] only the holder can renew; a non-holder is refused with 409" do
         acquire(session: "A", nonce: "a")
 
         post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
@@ -51,26 +51,48 @@ module Api
 
         post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "B", nonce: "b" },
                                                               headers: @headers, as: :json
-        assert_response :no_content
+        assert_response :conflict
+        assert_equal "REVIEW_CLAIM_HELD_BY_OTHER", response.parsed_body["error_code"]
       end
 
-      # THE 204 IS A CONTRACT, not an implementation detail: ReviewClaimCli#renewed? —
-      # the loop inside every detached renewer, including ones already running out in
-      # the fleet from older checkouts — stops on exactly this code. The two states
-      # that must keep sending it are the two where stopping is right.
-      test "[integration] a renew nobody can honour still answers 204, so a renewer stops" do
+      # Guard catalog row 10.7: a refusal carries its reason. The 409 is what stops a
+      # detached renewer (ReviewClaimCli#renewed?), and its body says which of the
+      # two cases it is and who holds the task.
+      test "[integration] a renew nobody can honour answers 409 with the reason and the holder" do
         post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
                                                               headers: @headers, as: :json
-        assert_response :no_content, "no claim row at all: there is nothing to renew"
+        assert_response :conflict, "no claim row at all: there is nothing to renew"
+        body = response.parsed_body
+        assert_equal "review lease not renewed: this session holds no review lease on this task", body["error"]
+        assert_equal "REVIEW_CLAIM_NO_LEASE", body["error_code"]
+        assert_equal "no_lease", body["state"]
+        assert body.key?("holder"), "the holder key is always present"
+        assert_nil body["holder"], "no claim row, so nobody to name"
 
-        acquire(session: "B", nonce: "b")
+        acquire(session: "B", nonce: "b", label: "Gastly")
         post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
                                                               headers: @headers, as: :json
-        assert_response :no_content, "held by another: A's renewer must stop, not keep beating"
+        assert_response :conflict, "held by another: A's renewer must stop, not keep beating"
+        body = response.parsed_body
+        assert_equal "review lease not renewed: another live session holds this task's review", body["error"]
+        assert_equal "REVIEW_CLAIM_HELD_BY_OTHER", body["error_code"]
+        assert_equal "held_by_other", body["state"]
+        assert_equal "B", body.dig("holder", "session")
+        assert body.dig("holder", "live")
+      end
+
+      test "[integration] no renew or release answers without a body" do
+        acquire(session: "A", nonce: "a")
+        [review_claim_renew_api_v1_task_path(@task.slug), review_claim_release_api_v1_task_path(@task.slug)].each do |path|
+          post path, params: { session: "B", nonce: "b" }, headers: @headers, as: :json
+
+          assert_not_equal 204, response.status, path
+          assert_predicate response.parsed_body["error"], :present?, path
+        end
       end
 
       # The heal, at the wire. A lapse the caller can re-take answers 200 rather than
-      # 204, so a renewer whose own beat ran slow keeps going instead of exiting
+      # a refusal, so a renewer whose own beat ran slow keeps going instead of exiting
       # `:lease_lost` and silently ending renewal for a review still in progress. It
       # says `reacquired`, because the lease WAS free for a window and the reviewer
       # needs to know that before they merge.
@@ -99,12 +121,25 @@ module Api
         assert response.parsed_body.dig("data", "acquired"), "a released task is immediately claimable"
       end
 
-      test "[integration] a non-holder release is a 204 no-op and does not free the task" do
+      test "[integration] a non-holder release answers 409 with the reason and does not free the task" do
         acquire(session: "A", nonce: "a")
         post review_claim_release_api_v1_task_path(@task.slug), params: { session: "B", nonce: "b" },
                                                                headers: @headers, as: :json
-        assert_response :no_content
+        assert_response :conflict
+        body = response.parsed_body
+        assert_equal "review lease not released: another live session holds this task's review", body["error"]
+        assert_equal "REVIEW_CLAIM_HELD_BY_OTHER", body["error_code"]
+        assert_equal "A", body.dig("holder", "session")
         assert TaskReviewClaim.find_by(task_slug: @task.slug).live?, "the task is still held by A"
+      end
+
+      test "[integration] a release with nothing to drop answers 409 naming no lease" do
+        post review_claim_release_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
+                                                               headers: @headers, as: :json
+        assert_response :conflict
+        assert_equal "REVIEW_CLAIM_NO_LEASE", response.parsed_body["error_code"]
+        assert_equal "review lease not released: this session holds no review lease on this task",
+                     response.parsed_body["error"]
       end
 
       test "[integration] status GET reports the reviewer, null when none" do

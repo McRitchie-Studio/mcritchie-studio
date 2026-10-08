@@ -1200,10 +1200,12 @@ class TaskTest < ActiveSupport::TestCase
     assert_match(/names no repo/, error.message)
   end
 
-  test "[unit] normalize_devops_map REFUSES a url filed under the wrong repo" do
-    error = assert_raises(ArgumentError) { Task.normalize_devops_map("mcritchie-studio" => TURF_PR) }
-    assert_match(/wrong repo/, error.message)
-    assert_match(/turf-monster/, error.message, "the error names the repo the url actually points at")
+  # Guard catalog row 10.3: the url decides the key, so no entry sits under the
+  # wrong repo and there is nothing to refuse.
+  test "[unit] normalize_devops_map keys a hash entry by the repo its url names" do
+    assert_equal({ "turf-monster" => TURF_PR }, Task.normalize_devops_map("mcritchie-studio" => TURF_PR))
+    assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR },
+                 Task.normalize_devops_map("mcritchie-studio" => TURF_PR, "turf-monster" => HUB_PR))
   end
 
   test "[unit] normalize_devops_map REFUSES a list entry that names no repo" do
@@ -1346,43 +1348,6 @@ class TaskTest < ActiveSupport::TestCase
     inclusion = Task.reviewed_release_inclusion
     assert_not inclusion["turf-monster"][:included],
                "a single held member holds the whole app so the marker never says 'shipping' over an ejected member"
-  end
-
-  # --- Naming discipline: terse title + acceptance, agent_context ---
-
-  test "title must be 3-5 words on create" do
-    assert Task.new(title: "fix the login").valid?               # 3
-    assert Task.new(title: "add a new login flow").valid?        # 5
-    assert_not Task.new(title: "fix login").valid?               # 2
-    assert_not Task.new(title: "add a brand new login flow now").valid? # 7
-  end
-
-  test "an existing task is grandfathered until its title actually changes" do
-    task = Task.create!(title: "valid four word title")
-    task.update!(stage: "building") # title untouched → not re-validated
-    assert_equal "building", task.reload.stage
-    assert_raises(ActiveRecord::RecordInvalid) do
-      task.update!(title: "now this title has far too many words to pass") # 9
-    end
-  end
-
-  test "each acceptance bullet must be 5-12 words on create" do
-    ok = Task.new(title: "acceptance length check",
-                  metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } }) # 6
-    assert ok.valid?
-    short = Task.new(title: "acceptance length check",
-                     metadata: { "devops" => { "acceptance" => ["too short here"] } }) # 3
-    assert_not short.valid?
-  end
-
-  test "acceptance is validated on change but unrelated devops updates are grandfathered" do
-    task = Task.create!(title: "acceptance change task",
-                        metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } })
-    task.update!(metadata: task.metadata.deep_merge("devops" => { "kind" => "bug" })) # acceptance untouched
-    assert_equal "bug", task.devops_kind
-    assert_raises(ActiveRecord::RecordInvalid) do
-      task.update!(metadata: task.metadata.deep_merge("devops" => { "acceptance" => ["too short"] })) # 2
-    end
   end
 
   test "agent_context stores free-form verbose detail" do

@@ -351,10 +351,9 @@ class ReviewClaimCli
     res = post("#{base(slug)}/review_claim/renew", { "session" => sid, "nonce" => nonce })
     return cant_run("no response from the board — the review lease was NOT renewed") if res.nil?
 
-    # The BODY decides, not the status code: 204 sits inside `ok?`'s 200-299 range, so
-    # reading the code here would call the no-op a success all over again. A 204 (and
-    # any non-JSON answer) parses to {} and reads as "nothing renewed", which is the
-    # safe direction for every shape this can take.
+    # The BODY decides, not the status code: only `renewed: true` is a renewal. A
+    # refusal (409 with the reason, or a bodiless 204 from an older board) and any
+    # non-JSON answer parse to {} and read as "nothing renewed".
     data = parse_data(res)
     if data["renewed"]
       # THE WORKER'S OWN BEAT. This is a FOREGROUND command — a tool call a dead
@@ -366,7 +365,7 @@ class ReviewClaimCli
       return renewed_ok(slug, data)
     end
 
-    refuse_renew(slug)
+    refuse_renew(slug, res)
   end
 
   # The 200 path. Quiet on an ordinary renewal — this runs on a loop and a line per
@@ -381,15 +380,10 @@ class ReviewClaimCli
     OK
   end
 
-  # The 204 path — nothing was renewed, and this is where the old silence lived. A
-  # bodiless 204 cannot say WHICH refusal it is, so we ask the holder read that
-  # `status` already uses. It costs one extra board call on a path that today produces
-  # no output at all, and only on the FAILING branch: the renew loop's happy path never
-  # reaches here. The lease can of course change between the two calls; the exit code
-  # is already decided by the 204, so a race can only affect the WORDING, and we report
-  # what we actually read rather than what we assume.
-  def refuse_renew(slug)
-    holder = read_holder(slug)
+  # Nothing was renewed. The board's 409 says who holds the task (#refusal_holder),
+  # and the exit code follows from that.
+  def refuse_renew(slug, res)
+    holder = refusal_holder(slug, res)
 
     if holder == :unreadable
       @err.puts("review-claim: ❌ #{slug} — NOT renewed, and the board would not say who holds it. " \
@@ -423,7 +417,7 @@ class ReviewClaimCli
   # TASK_REVIEW_CLAIM_SESSION + TASK_CLAIM_NONCE from its parent because, once
   # detached, it can no longer re-derive the live-instance identity by walking its own
   # ancestry — a renewer that guessed its nonce would renew NOTHING, and every renew
-  # would 204 silently, which is indistinguishable from the bug it exists to fix.
+  # would be refused, which is indistinguishable from the bug it exists to fix.
   #
   # THE SECOND EXIT, and why the anchor alone was not enough. This loop used to stop
   # on its anchor dying and on nothing else, which quietly assumed that a session
@@ -791,24 +785,35 @@ class ReviewClaimCli
     SessionIdentity.agent_process
   end
 
-  # One heartbeat from inside the loop. TRUE keeps the loop running. A definitive 204
-  # means the board says we are no longer the holder — released elsewhere, or the
-  # review changed hands — so we stop. An unreachable board is NOT that: a network
-  # blip keeps renewing (bounded by the renewer's safety cap), while a clear "you
-  # don't hold this" stops.
-  #
-  # A LAPSE OF OUR OWN NO LONGER LANDS HERE AS A STOP. The board re-acquires a lease
-  # that is still ours when nobody else has taken it, and answers 200 — so a slow beat,
-  # a slept laptop or a throttled board heals instead of exiting `:lease_lost` and
-  # silently ending renewal for a review still being written. The 204 is now reserved
-  # for the two states where stopping is right: a DIFFERENT live instance holds it, or
-  # there is nothing to hold. Read from the status CODE, deliberately: this predicate
-  # is the one thing detached renewers already out in the fleet depend on.
+  # One heartbeat from inside the loop. TRUE keeps the loop running. A refusal means
+  # the board says we are no longer the holder (a different live instance holds the
+  # task, or there is nothing to hold), so the loop stops. An unreachable board is
+  # not that: a network blip keeps renewing, bounded by the renewer's safety cap. A
+  # lapse of our own is healed by the board and answers 200.
   def renewed?(slug)
     res = post("#{base(slug)}/review_claim/renew", { "session" => session_id, "nonce" => nonce })
     return true if res.nil? # board unreachable — not proof we lost the review
 
-    res.code.to_i != 204
+    !claim_refused?(res)
+  end
+
+  # The board's "nothing changed" answer to a renew or release: 409 with the reason.
+  # A bodiless 204 is the same answer from a board that predates the 409.
+  def claim_refused?(res)
+    [204, 409].include?(res.code.to_i)
+  end
+
+  # Who holds the task, for a refusal's message: the holder block the 409 carries,
+  # or the holder read when the answer has none (a 204). nil is "nobody".
+  def refusal_holder(slug, res)
+    body = begin
+      JSON.parse(res.body.to_s)
+    rescue StandardError
+      nil
+    end
+    return read_holder(slug) unless res.code.to_i == 409 && body.is_a?(Hash) && body.key?("holder")
+
+    body["holder"].is_a?(Hash) ? body["holder"] : nil
   end
 
   # Has the review this loop protects reached its verdict — i.e. has the task left
@@ -857,27 +862,15 @@ class ReviewClaimCli
 
   # ── Rendering ────────────────────────────────────────────────────────────────
 
-  # Report what the BOARD did, not what we hoped it did (the same lesson bin/devops-shift
-  # learned: a 204 release means NOTHING was released, so don't claim success).
-  #
-  # THE 204 USED TO BE ONE SENTENCE FOR THREE DIFFERENT SITUATIONS, and the sentence
-  # it chose ("not under review by this session") was a guess. Measured 2026-09-08: a
-  # probe reading this line mislabelled two lease states, and a 75-minute review hit
-  # the same confusion live — a release that answered "nothing released" while the
-  # reviewer had no idea whether the task was still theirs, somebody else's, or free.
-  # So the refusal now ASKS, with the same holder read `refuse_renew` uses, and names
-  # what it found. It costs one extra board call on a path that produced no usable
-  # information at all, and only on the failing branch.
-  #
-  # The exit code stays 0 for every outcome (this CLI's documented contract, and a
-  # release that found nothing to drop is not a failed review) — the honesty is in
-  # the message, and the dangerous state gets stderr rather than stdout.
+  # Report what the board did. A refusal names who holds the task, from the 409's
+  # holder block. The exit code stays 0 for every outcome: a release that found
+  # nothing to drop is not a failed review, and the dangerous state goes to stderr.
   def report_release(slug, res)
     if res.nil?
       @out.puts("review-claim: could not reach the board — the #{slug} review will lapse " \
                 "on its own within ~#{lease_ttl_human}.")
-    elsif res.code.to_i == 204
-      refuse_release(slug)
+    elsif claim_refused?(res)
+      refuse_release(slug, res)
     elsif ok?(res)
       report_released(slug, parse_data(res))
     else
@@ -901,10 +894,10 @@ class ReviewClaimCli
     @out.puts("review-claim: #{slug} review released.")
   end
 
-  # The 204 path — nothing was dropped. Three states reach it and they call for three
-  # different next moves, so read the holder rather than assuming the common one.
-  def refuse_release(slug)
-    holder = read_holder(slug)
+  # Nothing was dropped. Three states reach here and they call for three different
+  # next moves, so the message follows the holder the board named.
+  def refuse_release(slug, res)
+    holder = refusal_holder(slug, res)
 
     if holder == :unreadable
       @out.puts("review-claim: #{slug} — NOTHING released, and the board would not say who holds it. " \

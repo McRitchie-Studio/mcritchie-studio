@@ -84,38 +84,15 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
                     "and the other answer he can give is recordable too"
   end
 
-  # --- the refusal must name a way FORWARD, and never a way BACKWARD ---
+  # --- the refusal names a way forward, and never a way backward ---
   #
-  # Until 2026-09-08 this body opened with "Ask for approval BEFORE handing off" and
-  # named no move that gets the operator's eyes NOW. The fix gave it bin/task's own
-  # recovery path — and that path was "move the task back and ask again", which ms#1375
-  # then retired from the doc and from bin/task's warning as WRONG: from `reviewed` on
-  # the code is already on `accepted`, so a backward move un-merges nothing and only
-  # makes the board show `building` for landed code. app/models/task.rb was not in that
-  # diff, so the 422 an agent actually RECEIVES went on teaching the move its CLI and
-  # its doc had just stopped teaching — three surfaces, one situation, and the tested
-  # one disagreeing with the other two.
-  #
-  # THE WHOLE SENTENCE, not a substring. `refute_match(/move the task back/)` passes on
-  # a message that still prints `bin/task move <task-slug> building` under any other
-  # phrasing, and `assert_includes "approved"` passed on the OLD message too — it named
-  # that shortcut last. So the remedy is pinned verbatim, and the commands are counted.
-  #
-  # WHAT THIS FILE CANNOT DECIDE, stated plainly: the message carries a `<task-slug>`
-  # placeholder, because the guard is a class method with no task in scope — so these
-  # commands cannot be shelled out and RUN from here. The identical pair IS executed end
-  # to end, at `reviewed`, by test/lib/task_move_approval_drop_test.rb,
-  # test_every_command_the_warning_prints_actually_runs.
-  REMEDY = "Record the operator's answer where you stand: bin/task update <task-slug> " \
-           "--approval approved, or bin/task update <task-slug> --approval changes_requested " \
-           "— both are legal at every stage. If you still need his eyes on merged work, point " \
-           "him at the QA candidate once the qa-release sweep deploys it. Do not move the task " \
-           "back to re-open the request: a backward move un-merges nothing — from reviewed on, " \
-           "the code is already on accepted."
+  # The remedy is ApprovalRequestRemedy.sentence, which bin/task's drop warning
+  # prints too (guard catalog row 10.4), so the two cannot disagree. The commands
+  # in it are executed end to end by test/lib/task_move_approval_drop_test.rb.
 
   def refusal_commands
     error = assert_raises(ArgumentError) { fold(stage: "reviewed", approval_status: "waiting") }
-    commands = error.message.scan(%r{bin/task [^,.—\n]+}).map(&:strip)
+    commands = error.message.scan(%r{bin/task [^,.;—\n]+}).map(&:strip)
 
     # FLOOR. An extraction that matched nothing would pass every assertion below
     # vacuously, which is exactly how a message-shape guard rots into decoration.
@@ -125,12 +102,10 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     commands
   end
 
-  test "[unit] the refusal states the whole record-in-place remedy, verbatim" do
+  test "[unit] the 422 carries the shared remedy sentence" do
     error = assert_raises(ArgumentError) { fold(stage: "reviewed", approval_status: "waiting") }
 
-    assert_includes error.message, REMEDY,
-                    "the 422 an agent RECEIVES must state the same remedy bin/task prints and the " \
-                    "board doc teaches — three surfaces, one sentence"
+    assert_includes error.message, ApprovalRequestRemedy.sentence
   end
 
   test "[unit] every command the refusal prints records an answer in place" do
@@ -144,49 +119,10 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
 
   test "[unit] the refusal never names a stage to move back to" do
     error = assert_raises(ArgumentError) { fold(stage: "reviewed", approval_status: "waiting") }
-    instructions = error.message.scan(%r{bin/task [^,.—\n]+}).map(&:strip)
+    instructions = error.message.scan(%r{bin/task [^,.;—\n]+}).map(&:strip)
 
     refute(instructions.any? { |c| c.match?(%r{\Abin/task move }) },
            "moving a task out of `reviewed` un-merges nothing; the answer is recorded where it stands")
-  end
-
-  # --- THREE SURFACES, ONE REMEDY ---
-  #
-  # The same situation is narrated in three places: this model's 422 (the one an agent
-  # RECEIVES), bin/task's #warn_dropped_approval_request!, and the board doc's Operator
-  # Validation Gate item 8. ms#1375 corrected the last two and left this one teaching
-  # "move the task back and ask again" — and CI could not see it, because each surface
-  # was pinned by its own test against its own wording. This asks all three the SAME
-  # question at once, so a fourth copy is caught the day it prints a backward move.
-  test "[unit] no approval surface hands a reader a backward move" do
-    cli = File.read(Rails.root.join("bin/task").to_s)[/def warn_dropped_approval_request!.*?^end$/m].to_s
-    doc = operator_gate_commands
-
-    refute_empty cli, "could not read bin/task's drop warning — this guard would pass over anything"
-    refute_empty doc, "could not read the board doc's recovery step"
-
-    assert_empty refusal_commands.grep(%r{\Abin/task move }),
-                 "the model's 422 names a backward move"
-    refute_match(/\#\{SELF_CMD\} move /, cli,
-                 "bin/task's drop warning names a backward move")
-    assert_empty doc.grep(%r{\Abin/task move }),
-                 "the board doc's recovery step names a backward move"
-
-    { "the model's 422" => refusal_commands.join(" "),
-      "bin/task's warning" => cli,
-      "the board doc" => doc.join(" ") }.each do |name, text|
-      assert_includes text, Task::OPERATOR_APPROVAL_APPROVED, "#{name} must name the approved answer"
-      assert_includes text, Task::OPERATOR_APPROVAL_CHANGES_REQUESTED,
-                      "#{name} must name the changes_requested answer"
-    end
-  end
-
-  # The commands the board doc's Operator Validation Gate prints as the recovery step.
-  def operator_gate_commands
-    doc = File.read(Rails.root.join("docs/agents/modules/devops-task-board.md").to_s)
-    section = doc[/^## Operator Validation Gate$.*?(?=^## )/m].to_s
-    step = section[/^\d+\.\s+\*\*[^\n]*Record his answer where you stand.*?\z/m].to_s
-    step[/```bash\n(.*?)```/m].to_s.lines.map(&:strip).grep(%r{\Abin/task })
   end
 
   test "[unit] every settled approval value still folds in every stage" do

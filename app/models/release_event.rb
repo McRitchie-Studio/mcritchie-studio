@@ -13,7 +13,6 @@ class ReleaseEvent < ApplicationRecord
     rollback
   ].freeze
   STATUSES = %w[started completed failed].freeze
-  USAGE_REQUIRED_SOURCES = %w[api agent cli].freeze
 
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release_events
 
@@ -84,14 +83,11 @@ class ReleaseEvent < ApplicationRecord
     self.source ||= "api"
   end
 
+  # The rule is EventUsage; the event endpoints refuse the same events first.
   def required_usage_for_agent_completion
-    return if status == "started"
-    return unless USAGE_REQUIRED_SOURCES.include?(source.to_s)
-
-    errors.add(:model, "is required for #{source} #{status} events") if model.blank?
-    errors.add(:tokens_in, "is required for #{source} #{status} events") if tokens_in.nil?
-    errors.add(:tokens_out, "is required for #{source} #{status} events") if tokens_out.nil?
-    errors.add(:cost, "is required for #{source} #{status} events") if cost.nil?
+    EventUsage.missing(source: source, status: status, values: self).each do |field|
+      errors.add(field, "is required for #{source} #{status} events")
+    end
   end
 
   # The declared kind for the client's ReleaseFx router — the step/status pair this

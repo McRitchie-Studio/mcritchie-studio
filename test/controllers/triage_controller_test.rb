@@ -50,9 +50,11 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] promote surfaces a task validation failure without stamping" do
     log_in_as(@admin)
+    @finding.update_column(:title, "") # rubocop:disable Rails/SkipsModelValidations
     assert_no_difference "Task.count" do
-      post promote_triage_finding_path(@finding.slug), params: { title: "Too long a task title to pass validation", kind: "chore" }
+      post promote_triage_finding_path(@finding.slug), params: { kind: "chore" }
     end
+    assert_match(/Promote failed: Title can't be blank/, flash[:alert])
     assert_equal "open", @finding.reload.status
   end
 

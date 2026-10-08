@@ -126,12 +126,13 @@ class ReviewLeaseSurvivesReviewTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] a non-holder's release is still a 204 that writes nothing" do
+  test "[integration] a non-holder's release is refused with a reason and writes nothing" do
     travel_to(@t0) do
       acquire(session: "A", nonce: "a")
       release(session: "B", nonce: "b")
 
-      assert_response :no_content
+      assert_response :conflict
+      assert_equal "REVIEW_CLAIM_HELD_BY_OTHER", response.parsed_body["error_code"]
       assert_equal "A", TaskReviewClaim.find_by(task_slug: @task.slug).claimed_session,
                    "release never frees a live review for someone who does not hold it"
     end

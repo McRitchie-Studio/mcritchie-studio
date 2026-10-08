@@ -142,7 +142,7 @@ class AppRequest < ApplicationRecord
       self.showcase = true if user&.admin?
       save!
       task = Task.create!(
-        # Four words whatever the name: the board requires a 3-5 word title, and
+        # Four words whatever the name: the board reads best with a 3-5 word title, and
         # a hyphenated subdomain stays one word.
         title: "Build Launch App #{subdomain}",
         stage: "designed",

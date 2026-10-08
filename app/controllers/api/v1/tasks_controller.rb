@@ -73,7 +73,7 @@ module Api
         task = Task.new(task_params)
         rescue_and_log(target: task) do
           task.save!
-          render_data(task, status: :created)
+          render_saved(task, status: :created)
         end
       rescue StandardError => e
         render_exception(e)
@@ -82,7 +82,7 @@ module Api
       def update
         rescue_and_log(target: @task) do
           @task.update!(task_params)
-          render_data(@task)
+          render_saved(@task)
         end
       rescue StandardError => e
         render_exception(e)
@@ -201,6 +201,13 @@ module Api
       # PR on the task branch into the column, and a later show serves it. bin/submit's
       # record step skips its write when this names the PR it opened, and writes the
       # url itself otherwise; its read-back verifies it either way.
+      # A saved task, with its naming advice beside `data` when the save drew any.
+      def render_saved(task, status: :ok)
+        body = { data: task }
+        body[:warnings] = task.warnings if task.warnings.any?
+        render json: body, status: status
+      end
+
       def derived_facts_json(task)
         { "pr_url_or_derived" => task.recorded_pr_url_enqueuing_fill }
       rescue StandardError => e
@@ -414,8 +421,8 @@ module Api
           # deleted; bin/lib/migration_collision.rb is the protection.)
           :requires_migration,
           # The epic handle (`bin/task create|begin|update --epic <slug>`), a
-          # TOP-LEVEL column like `dependencies` below it — never a devops key,
-          # which Task::DEVOPS_COLUMN_KEYS refuses with a 422 naming this field.
+          # TOP-LEVEL column like `dependencies` below it. A devops post naming
+          # either is routed to the column (Task.devops_column_writes).
           # `null` or `"none"` clears it; the model normalizes (lowercase, strip)
           # and refuses a value that is not a slug, so a 422 here quotes the rule
           # rather than storing a handle the `?epic=` filter would never match.
@@ -485,7 +492,9 @@ module Api
         # on a create that names no stage.
         effective_stage = attrs["stage"].presence || @task&.stage || Task.new.stage
         attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params, effective_stage)
-        attrs
+        # devops.dependencies and devops.epic_slug are column writes; a column
+        # posted by its own name wins.
+        attrs.reverse_merge(Task.devops_column_writes(raw_devops_params, @task&.devops))
       end
 
       def raw_devops_params
