@@ -7,6 +7,7 @@ module Api
       def index
         findings = TriageFinding.recent
         findings = findings.where(status: params[:status]) if params[:status].present?
+        findings = findings.where(slug: params[:slug]) if params[:slug].present?
         result = paginate(findings)
         render_data(result[:records], meta: result[:meta])
       end

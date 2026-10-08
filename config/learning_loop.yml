@@ -30,3 +30,26 @@ priority:
   - cost
   - build_cycle
   - review_cycle
+
+# The dreaming act (Insights::DreamProposer; docs/agents/modules/dream.md Act 2).
+# A graded task whose notes carry one of these signals gets ONE proposed dream,
+# filed as the triage finding dream-proposal-<task-slug>.
+dream:
+  # The order a signal claims the one proposal. Remove a key to switch it off.
+  signals:
+    - overruled_block
+    - corrected_block
+    - ruling
+    - operator_praise
+    - review_praise
+  # A note containing one of these, in any case, is an operator praise.
+  operator_phrases:
+    - good call
+    - accepted the recommendation
+    - against the obvious move
+  # A scout report or a handoff by a soul containing one of these is a review praise.
+  review_phrases:
+    - right call
+    - right decision
+    - good decision
+    - well judged

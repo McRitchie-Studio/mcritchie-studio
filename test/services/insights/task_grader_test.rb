@@ -209,9 +209,63 @@ class Insights::TaskGraderTest < ActiveSupport::TestCase
     assert_nil reader.lines_for(nil)
   end
 
+  def contested_task(slug, verdict)
+    %w[carl avi pokemon].each { |soul| Agent.find_or_create_by!(slug: soul) { |agent| agent.name = soul.capitalize } }
+    task = shipped_task(slug)
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "pokemon" }))
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", agent_slug: "carl",
+                     description: "The reader raises on nil.", metadata: { "kind" => "rework" })
+    Activity.create!(task_slug: task.slug, activity_type: "clarification", agent_slug: "pokemon",
+                     description: "CONTEST: the caller guards it.")
+    Activity.create!(task_slug: task.slug, activity_type: "comment", agent_slug: "avi",
+                     description: "RULING: #{verdict} — measured on the PR head.")
+    task
+  end
+
+  test "[integration] grading a corrected-block task files the dream proposal finding" do
+    task = contested_task("grade-dream-corrected", "ACCEPT")
+
+    grade = assert_difference -> { TriageFinding.count }, 1 do
+      Insights::TaskGrader.grade!(task.slug, pr_reader: NoLines.new(nil))
+    end
+
+    finding = TriageFinding.find_by!(slug: "dream-proposal-grade-dream-corrected")
+    assert_equal TaskGrade::LEARNING, grade.verdict
+    assert_includes finding.body, "status: \"proposed\""
+    assert_includes finding.body, "soul: \"carl\""
+    assert_includes finding.body, "task grade-dream-corrected"
+  end
+
+  test "[integration] a task with no signal is graded and files no proposal" do
+    task = shipped_task("grade-dream-plain")
+    bounce(task, "One small fix")
+
+    assert_no_difference -> { TriageFinding.count } do
+      assert Insights::TaskGrader.grade!(task.slug, pr_reader: NoLines.new(nil))
+    end
+  end
+
+  test "[integration] a proposer failure is logged and the grade still records" do
+    task = contested_task("grade-dream-broken", "OVERRULE")
+    io = StringIO.new
+    original = Rails.logger
+    Rails.logger = ActiveSupport::Logger.new(io)
+
+    grade = TriageFinding.stub(:create!, ->(*) { raise "boom" }) do
+      Insights::TaskGrader.grade!(task.slug, pr_reader: NoLines.new(nil))
+    end
+
+    assert_equal grade, TaskGrade.find_by(task_slug: task.slug)
+    assert grade.note_activity, "the learning is still written"
+    assert_includes io.string, "[dream-proposer] grade-dream-broken: failed (RuntimeError)"
+    assert_not TriageFinding.exists?(slug: "dream-proposal-grade-dream-broken")
+  ensure
+    Rails.logger = original
+  end
+
   test "[unit] the shipped config carries every threshold the grader reads" do
     config = Insights::TaskGrader.config
-    %w[bounces gate_failures percentile trailing_window min_samples priority].each do |key|
+    %w[bounces gate_failures percentile trailing_window min_samples priority dream].each do |key|
       assert config.key?(key), "config/learning_loop.yml is missing #{key}"
     end
   end
