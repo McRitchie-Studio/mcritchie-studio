@@ -908,6 +908,11 @@ class AgentActivityCliTest < Minitest::Test
                                                    "reason" => "review the diff", "outcome" => "approved" }])]
     end
 
+    if path.start_with?("/api/v1/agent_login_requests") || path == "/api/v1/agent_sessions/current"
+      reply = (@login_replies || {})[path.split("/").last]
+      return reply if reply
+    end
+
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end
 
@@ -1276,6 +1281,173 @@ class AgentActivityCliTest < Minitest::Test
     assert_empty(read - known,
                  "bin/atomic-event READS #{(read - known).join(', ')} but no COMMANDS entry lists " \
                  "it — the guard would refuse a flag the script supports")
+  end
+
+  # ── [integration] admin login: `heartbeat steffon|xan` asks for the admin session ──
+
+  ADMIN_TOKEN = "admin-session-token-never-printed"
+  COLLECT_KEY = "collect-key-never-printed"
+  LOGIN_PATHS = %r{\A/api/v1/agent_login_requests}
+
+  def login_replies(overrides = {})
+    @login_replies = {
+      "agent_login_requests" => ["201 Created", JSON.generate("data" => {
+        "slug" => "login-abc", "soul" => "xan", "status" => "pending",
+        "ends_at" => (Time.now + 600).utc.iso8601, "collect_key" => COLLECT_KEY
+      })],
+      "code" => ["200 OK", JSON.generate("data" => { "slug" => "login-abc", "status" => "granted" })],
+      "collect" => ["409 Conflict", JSON.generate("error" => "login-abc is pending", "error_code" => "LOGIN_PENDING")],
+      "current" => ["200 OK", JSON.generate("data" => {})]
+    }.merge(overrides)
+  end
+
+  def collected_reply
+    ["200 OK", JSON.generate("data" => { "slug" => "sess-admin", "soul" => "xan", "tier" => "admin",
+                                         "expires_at" => (Time.now + 28_800).utc.iso8601, "token" => ADMIN_TOKEN })]
+  end
+
+  def admin_login_file(proj) = SessionMarkers.send(:marker_path, SESSION, proj, AdminLogin::SUFFIX)
+  def login_calls(requests) = requests.select { |r| r[:path].match?(LOGIN_PATHS) }
+
+  def test_integration_heartbeat_xan_posts_an_admin_login_request_and_keeps_its_key
+    Dir.mktmpdir do |proj|
+      login_replies
+      requests, out, err, = spawn_cli(%w[heartbeat xan], proj: proj)
+
+      create, collect = login_calls(requests)
+      assert_equal %w[POST /api/v1/agent_login_requests], [create[:method], create[:path]]
+      assert_equal({ "soul" => "xan", "harness_session_id" => SESSION }, JSON.parse(create[:body]))
+      assert_equal "Bearer stub-token", create[:headers]["authorization"], "the machine credential asks"
+      assert_equal "/api/v1/agent_login_requests/login-abc/collect", collect[:path]
+      assert_equal({ "collect_key" => COLLECT_KEY, "harness_session_id" => SESSION }, JSON.parse(collect[:body]))
+
+      held = JSON.parse(File.read(admin_login_file(proj)))
+      assert_equal ["xan", "login-abc", COLLECT_KEY], held.values_at("soul", "request", "collect_key")
+      assert_equal 0o600, File.stat(admin_login_file(proj)).mode & 0o777
+      assert_match(/admin login login-abc requested for xan/, out)
+      assert_match(/still pending/, out)
+      refute_includes out + err, COLLECT_KEY
+    end
+  end
+
+  def test_integration_a_held_request_is_resumed_not_posted_again
+    Dir.mktmpdir do |proj|
+      login_replies
+      run_cli(%w[heartbeat xan], proj: proj)
+      again = login_calls(run_cli(%w[heartbeat xan], proj: proj))
+
+      assert_equal ["/api/v1/agent_login_requests/login-abc/collect"], again.map { |r| r[:path] }
+    end
+  end
+
+  def test_integration_heartbeat_alex_asks_as_xan_and_a_studio_soul_asks_for_nothing
+    Dir.mktmpdir do |proj|
+      login_replies
+      alex = login_calls(run_cli(%w[heartbeat alex], proj: proj))
+      assert_equal "xan", JSON.parse(alex.first[:body])["soul"]
+    end
+    Dir.mktmpdir do |proj|
+      login_replies
+      assert_empty login_calls(run_cli(%w[heartbeat avi], proj: proj)), "avi holds no admin tier"
+      refute File.exist?(admin_login_file(proj))
+    end
+  end
+
+  def test_integration_heartbeat_xan_help_posts_nothing_and_keeps_nothing
+    Dir.mktmpdir do |proj|
+      login_replies
+      requests, out, = spawn_cli(%w[heartbeat xan --help], proj: proj)
+
+      assert_empty requests, "--help reached the server"
+      assert_match(/--code <code>/, out)
+      refute File.exist?(admin_login_file(proj))
+    end
+  end
+
+  def test_integration_the_code_grants_and_the_token_is_kept_never_printed
+    Dir.mktmpdir do |proj|
+      login_replies
+      run_cli(%w[heartbeat xan], proj: proj)
+
+      login_replies("collect" => collected_reply)
+      requests, out, err, = spawn_cli(%w[heartbeat xan --code ABCD-EFGH], proj: proj)
+      code, collect = login_calls(requests)
+      assert_equal "/api/v1/agent_login_requests/login-abc/code", code[:path]
+      assert_equal({ "collect_key" => COLLECT_KEY, "harness_session_id" => SESSION, "code" => "ABCD-EFGH" }, JSON.parse(code[:body]))
+      assert_equal "/api/v1/agent_login_requests/login-abc/collect", collect[:path]
+
+      held = JSON.parse(File.read(admin_login_file(proj)))
+      assert_equal ["xan", "sess-admin", ADMIN_TOKEN], held.values_at("soul", "session", "token")
+      refute held.key?("collect_key"), "the spent key is dropped"
+      assert_equal 0o600, File.stat(admin_login_file(proj)).mode & 0o777
+      assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
+      assert_match(/admin session sess-admin granted to xan/, out)
+      refute_includes out + err, ADMIN_TOKEN
+
+      requests, out, err, = spawn_cli(%w[heartbeat xan], proj: proj)
+      assert_empty login_calls(requests), "a held session asks for nothing"
+      assert_match(/admin session sess-admin held as xan/, out)
+      refute_includes out + err, ADMIN_TOKEN
+    end
+  end
+
+  def test_integration_a_wrong_code_says_why_and_collects_nothing
+    Dir.mktmpdir do |proj|
+      login_replies
+      run_cli(%w[heartbeat xan], proj: proj)
+
+      login_replies("code" => ["403 Forbidden", JSON.generate("error" => "wrong code; 4 of 5 attempts left on login-abc")])
+      requests, _out, err, status = spawn_cli(%w[heartbeat xan --code NOPE-NOPE], proj: proj)
+
+      assert_equal ["/api/v1/agent_login_requests/login-abc/code"], login_calls(requests).map { |r| r[:path] }
+      assert_match(/admin login code refused — 403: wrong code; 4 of 5 attempts left/, err)
+      assert_equal "login-abc", JSON.parse(File.read(admin_login_file(proj)))["request"], "the request is still held"
+      assert_equal 0, status.exitstatus
+    end
+  end
+
+  def test_integration_a_refused_request_is_forgotten_with_the_reason
+    Dir.mktmpdir do |proj|
+      login_replies("collect" => ["410 Gone", JSON.generate("error" => "login-abc was refused: declined by the operator")])
+      _requests, _out, err, = spawn_cli(%w[heartbeat xan], proj: proj)
+
+      assert_match(/admin login not collected — 410: login-abc was refused: declined by the operator/, err)
+      refute File.exist?(admin_login_file(proj))
+    end
+  end
+
+  def test_integration_heartbeat_clear_and_close_open_log_the_admin_session_out
+    [%w[heartbeat --clear], %w[close-open]].each do |argv|
+      Dir.mktmpdir do |proj|
+        login_replies("collect" => collected_reply)
+        run_cli(%w[heartbeat xan], proj: proj)
+        assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
+
+        requests, out, err, = spawn_cli(argv, proj: proj)
+        logout = requests.find { |r| r[:path] == "/api/v1/agent_sessions/current" }
+        assert_equal ["DELETE", "Bearer #{ADMIN_TOKEN}"], [logout[:method], logout[:headers]["authorization"]], argv.join(" ")
+        refute File.exist?(admin_login_file(proj))
+        refute_includes out + err, ADMIN_TOKEN
+      end
+    end
+  end
+
+  def test_unit_admin_login_reads_only_a_live_token_and_an_open_request
+    Dir.mktmpdir do |proj|
+      soon = (Time.now + 30).utc.iso8601
+      later = (Time.now + 3600).utc.iso8601
+      AdminLogin.write(SESSION, proj, { "soul" => "xan", "token" => "t", "expires_at" => soon }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      assert_nil AdminLogin.token_for(SESSION, proj), "inside the refresh margin"
+      AdminLogin.write(SESSION, proj, { "soul" => "xan", "token" => "t", "expires_at" => later }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      assert_equal "t", AdminLogin.token_for(SESSION, proj)
+      assert_nil AdminLogin.token_for("another-session", proj)
+
+      request = { "soul" => "xan", "request" => "login-abc", "collect_key" => "k", "ends_at" => later }
+      assert_equal request, AdminLogin.open_request(request, "xan")
+      assert_nil AdminLogin.open_request(request, "steffon")
+      assert_nil AdminLogin.open_request(request.merge("ends_at" => (Time.now - 1).utc.iso8601), "xan")
+      assert_equal [0, 0, 30, 600], [nil, "x", "30", "9999"].map { |value| AdminLogin.wait_seconds(value) }
+    end
   end
 
 end
