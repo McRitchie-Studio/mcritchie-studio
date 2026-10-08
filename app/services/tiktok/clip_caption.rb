@@ -3,7 +3,7 @@ require_relative "../espn/team_record"
 require_relative "../x/post_draft"
 
 module Tiktok
-  # The caption for a clip going to the operator's TikTok drafts, written by
+  # The caption for a clip going to the operator's TikTok inbox, written by
   # code, the same every time (recast pipeline, piece 19). No model writes it.
   #
   #   input   the team (name, location, mascot, slogan hashtag), the same

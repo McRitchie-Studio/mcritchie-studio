@@ -2,7 +2,7 @@
 
 # "Draft to TikTok" on one clip of an alt video (recast pipeline, piece 19):
 # records an attempt with the caption the code wrote and queues the upload of
-# the clip's primary version into the operator's TikTok drafts. "Check TikTok"
+# the clip's primary version to the operator's TikTok inbox. "Check TikTok"
 # reads TikTok's status once more for an attempt still processing.
 #
 #   POST /music_videos/:slug/alt_videos/:n/clips/:ordinal/tiktok_drafts
@@ -25,7 +25,7 @@ class AltVideoClipTiktokDraftsController < ApplicationController
     end
     raise refusal if refusal
 
-    back(notice: "#{@clip.name} is on its way to your TikTok drafts (attempt #{draft.id}). Paste the caption when you post.")
+    back(notice: "#{@clip.name} is on its way to your TikTok inbox (attempt #{draft.id}). The caption does not travel: paste it in the app.")
   rescue Tiktok::DraftClip::Refused => e
     back(alert: "#{@clip.name} not drafted: #{e.message}.")
   end
@@ -33,6 +33,6 @@ class AltVideoClipTiktokDraftsController < ApplicationController
   def refresh
     draft = @clip.tiktok_drafts.find(params[:id])
     rescue_and_log(target: @video) { Tiktok::DraftClip.new.refresh(draft) }
-    back(notice: "#{@clip.name}, attempt #{draft.id}: #{draft.state_label}.#{' Check your TikTok drafts.' if draft.state == 'unknown'}")
+    back(notice: "#{@clip.name}, attempt #{draft.id}: #{draft.state_label}.#{" #{TiktokDraft::UNKNOWN_STEP}." if draft.state == 'unknown'}#{" #{TiktokDraft::INBOX_STEPS}" if draft.delivered?}")
   end
 end
