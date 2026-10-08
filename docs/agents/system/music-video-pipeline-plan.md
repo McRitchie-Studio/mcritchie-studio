@@ -141,7 +141,16 @@ the card plays it beside the source chunk, both on their first frame, with
 "request regenerate"; the next upload clears it. **Watch full video** opens a
 modal that plays the primaries back to back as if stitched
 (`MusicVideos::StitchTimeline`, handover mid-overlap, source audio, the source
-chunk where a clip has no version). `/alt_videos` lists every alt video with
+chunk where a clip has no version). Every file on the page is a signed URL
+good for fifteen minutes, and the page is left open far longer, so it keeps
+them fresh: `GET /music_videos/<slug>/alt_videos/<n>/links` answers the page's
+own keys signed again (it reads no key from the request), and `signedLinks`
+(`music_videos/_player_scripts`) swaps them in a minute before they lapse, on
+coming back to the tab, and when a player fails on a lapsed link, keeping each
+player's place. A player says "This link expired: getting a fresh one…" while
+it waits, and reports a missing file only when it fails on a fresh link
+(`clip-page-links-refresh`). The cast page's own previews are not refreshed.
+`/alt_videos` lists every alt video with
 its progress. Built by `generated-takes-and-stitch-preview` (piece 3) and
 reshaped by `alt-videos-and-clip-builder` (piece 13). The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).

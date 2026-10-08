@@ -32,12 +32,12 @@ attribution and routes to its act SOPs:
   post on `@turfmonstershow`: the code drafts the copy from the live record and
   the team's tags, Alex approves it, and it posts. The board does it with a
   button; this act covers the chat door and the board's exceptions.
-- [`tiktok-draft`](sops/tiktok-draft.md) - turn a clip's slug into a private
-  draft in Alex's TikTok inbox: the code picks the clip's primary version,
+- [`tiktok-draft`](sops/tiktok-draft.md) - turn a clip's slug into a
+  notification in Alex's TikTok inbox that opens the clip as a draft: the code picks the clip's primary version,
   writes the caption from the lead swapped athlete's team and its live record,
   and uploads it; Alex posts from his phone. The clip card does it with a
-  button; this act covers the chat door and a failed attempt. Built 2026-10-07
-  and waiting on TikTok keys.
+  button; this act covers the chat door and a failed attempt. Built 2026-10-07;
+  its Setup section connects the server through a sandbox TikTok app.
 
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.

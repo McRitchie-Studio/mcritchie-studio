@@ -21,7 +21,13 @@ module Tiktok
   #      which is what the viewer sees, even if the athlete has since moved;
   #   2. the athlete's CURRENT team (athletes.team_slug). Past teams (contracts)
   #      are never read, so a traded athlete never yields two teams.
-  #   Neither set: refused, naming the athlete.
+  #   Neither set: refused, naming the athlete ("has no team").
+  #   A team_slug that names NO ROW in `teams` is a different refusal, and it
+  #   stops the chain: the look (or, with no team on the look, the athlete)
+  #   says which team was meant, the table cannot supply it, and falling
+  #   through would caption another team or report "has no team" for a look
+  #   that names one. Production's teams table was empty on 2026-10-08 and did
+  #   exactly that.
   class ClipTeam
     Choice = Data.define(:entry, :team, :rule, :team_source)
 
@@ -66,8 +72,18 @@ module Tiktok
       look = entry.appearance_slug && Appearance.find_by(slug: entry.appearance_slug)
       return [look.team, "look"] if look&.team
 
-      athlete_team = Athlete.find_by(person_slug: entry.person_slug)&.team
-      athlete_team ? [athlete_team, "athlete"] : [nil, nil]
+      missing!(entry, "the look #{entry.look_name.inspect}", look.team_slug) if look&.team_slug.present?
+
+      athlete = Athlete.find_by(person_slug: entry.person_slug)
+      return [athlete.team, "athlete"] if athlete&.team
+
+      missing!(entry, "the athlete record", athlete.team_slug) if athlete&.team_slug.present?
+      [nil, nil]
+    end
+
+    def missing!(entry, holder, slug)
+      raise Refused, "#{entry.person_name}: #{holder} #{Team.missing_phrase(slug)}. " \
+                     "Load the teams on this server, or correct the team on #{holder}"
     end
   end
 end

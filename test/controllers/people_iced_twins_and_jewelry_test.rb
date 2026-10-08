@@ -50,6 +50,34 @@ class PeopleIcedTwinsAndJewelryTest < ActionDispatch::IntegrationTest
     assert_match "cannot have a twin of its own", flash[:alert]
   end
 
+  # [integration] The look form is a writer of team_slug: a slug with no team
+  # row files nothing and the operator reads why.
+  test "the look form refuses a team slug with no team row, says so, and files nothing" do
+    log_in_as users(:alex)
+
+    assert_no_difference -> { Appearance.count } do
+      post create_appearance_person_path(@person.slug), params: { appearance: { descriptor: "Comets white", team_slug: "test-comets" } }
+    end
+    assert_redirected_to person_path(@person.slug)
+    assert_match "The look names team test-comets, which is not in the teams table", flash[:alert]
+
+    assert_difference -> { Appearance.count } => 2 do
+      post create_appearance_person_path(@person.slug), params: { appearance: { descriptor: "Comets white", team_slug: "buffalo-bills" } }
+    end
+    assert_equal %w[buffalo-bills buffalo-bills], @person.appearances.order(:id).pluck(:team_slug)
+  end
+
+  test "an existing look whose team row is missing gets no twin, and the operator reads why" do
+    base = Appearance.create!(person_slug: @person.slug, descriptor: "Old kit", team_slug: "buffalo-bills")
+    base.update_column(:team_slug, "test-comets")
+    log_in_as users(:alex)
+
+    assert_no_difference -> { Appearance.count } do
+      post create_iced_twin_person_path(@person.slug), params: { appearance_slug: base.slug }
+    end
+    assert_match "No iced twin made: the look names team test-comets, which is not in the teams table.", flash[:alert]
+  end
+
   test "a non-admin makes no twin and no jewelry" do
     base = Appearance.create!(person_slug: @person.slug, descriptor: "Old kit")
     jewel = PersonJewelry.create!(person_slug: @person.slug, kind: "chain", name: "Rope", description: "gold rope")

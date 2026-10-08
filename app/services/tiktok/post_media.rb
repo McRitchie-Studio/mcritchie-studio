@@ -7,7 +7,7 @@ module Tiktok
   #
   # Two publish modes:
   #   :direct_post (default) — publishes to the public feed immediately
-  #   :inbox                 — sends to drafts, user finishes posting in app
+  #   :inbox                 — sends an inbox notification, user finishes posting in app
   #                             (lets us attach trending sounds manually before publishing)
   #
   # Source: PULL_FROM_URL pointed at our public-read S3 MP4. TikTok fetches
@@ -52,7 +52,12 @@ module Tiktok
     # processing succeeds. We don't poll-to-public-URL yet because TikTok's
     # status endpoint returns a `publicaly_available_post_id` only after the
     # video clears moderation, which can take 30s–minutes.
+    #
+    # A direct post publishes, so it needs video.publish: a connection
+    # authorized for drafts only is refused here, before TikTok is asked
+    # (Tiktok::OAuthClient::MissingScope, which says so in plain words).
     def call
+      OAuthClient.ensure_direct_post! if @publish_type == :direct_post
       json = init_publish
       publish_id = json.dig("data", "publish_id") or raise Error, "init missing publish_id: #{json.inspect}"
       { publish_id: publish_id, post_url: nil }

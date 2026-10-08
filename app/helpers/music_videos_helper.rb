@@ -26,13 +26,14 @@ module MusicVideosHelper
   # is on screen (MusicVideos::StitchTimeline, handover mid-overlap) and the
   # file it plays there, its primary version or, with none, the source chunk.
   # chunk_for is clip ordinal => source chunk; urls is object key => signed URL.
+  # Each segment carries its object key, so the page can swap in a fresh URL.
   def alt_watch_data(clips, chunk_for, urls)
     segments = MusicVideos::StitchTimeline.segments(clips)
     { duration_ms: MusicVideos::StitchTimeline.duration_ms(segments),
       segments: segments.zip(clips).map do |segment, clip|
         version = clip.primary_version
         key = version&.object_key || chunk_for[clip.chunk_ordinal]&.object_key
-        segment.to_h.merge(url: key && urls[key], source: version.nil?,
+        segment.to_h.merge(key:, url: key && urls[key], source: version.nil?,
                            label: version ? version.name.downcase : "source", flagged: clip.regenerate_requested?)
       end }
   end
