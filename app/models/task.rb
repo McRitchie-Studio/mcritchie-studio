@@ -124,25 +124,20 @@ class Task < ApplicationRecord
   # admin-gated TasksController#update; Api::V1::TasksController clamps a
   # caller-supplied "web" to "api". Attribution only: it gates no approval value.
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
-  # Names that live in a top-level column, so a devops write to them raises with
-  # the sentence below (both controllers rescue into a 422). Without this,
-  # normalize_devops_metadata would skip the key in silence and the column and a
-  # same-named key would diverge. A blank value is still skipped.
+  # Server-owned column names: the sweep and Task#block! write them, so a devops
+  # write to one raises with the sentence below (both controllers answer 422). A
+  # blank value is skipped.
   DEVOPS_COLUMN_KEYS = {
     "release_slug" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                       "(Release#record_members), never set by hand",
     "release_train" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                        "(Release#record_members), never set by hand",
     "block_kind" => "the tasks.block_kind column — stamped server-side by Task#block! " \
-                    "(POST /api/v1/tasks/:slug/block)",
-    # `--depends-on` writes the column; #shed_column_shadow_keys drops a value an
-    # older write parked under the devops key.
-    "dependencies" => "the tasks.dependencies column — set it with " \
-                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)",
-    # The epic chip and the `?epic=` filter read the column, never a devops key.
-    "epic_slug" => "the tasks.epic_slug column — set it with " \
-                   "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
+                    "(POST /api/v1/tasks/:slug/block)"
   }.freeze
+  # Column names a caller may set. A devops post naming one is a write to its
+  # column (.devops_column_writes); the devops hash never stores it.
+  DEVOPS_ROUTED_KEYS = %w[dependencies epic_slug].freeze
   # Devops keys that also live in an indexed top-level column, because hot paths
   # query them: the board sorts on approval_status, the merged-PR webhook finds a
   # task by pr_url and branch, and the Pokédex finds one by session_id. The JSON
@@ -286,7 +281,7 @@ class Task < ApplicationRecord
   after_commit :clear_stale_review_claim_on_submit,
                on: %i[create update],
                if: -> { previous_changes.key?("stage") && stage == "submitted" }
-  # #shed_column_shadow_keys enforces DEVOPS_COLUMN_KEYS at the last gate.
+  # #shed_column_shadow_keys keeps every column name out of the devops hash.
   # #restore_mascot_identity runs first of the mascot callbacks: a PATCH that omits
   # the mascot must not trigger a redraw. Then the session mascot re-derives on each
   # build-stage move, so a new agent's session gets its own Pokémon.
@@ -1413,7 +1408,7 @@ class Task < ApplicationRecord
   #   * a name not posted → unchanged
   #   * a name posted     → authoritative, blank included, so a field can be cleared
   # The posted-name set separates "absent" from "present and blank", which the
-  # normalized hash cannot. `& DEVOPS_KEYS` keeps a refused column name from also
+  # normalized hash cannot. `& DEVOPS_KEYS` keeps a column name from also
   # deleting. Pure; raises what normalize_devops_metadata raises (a 422 upstream).
   def self.merge_devops_metadata(existing, raw)
     normalized = normalize_devops_metadata(raw)
@@ -1474,6 +1469,27 @@ class Task < ApplicationRecord
           "through review."
   end
 
+  # The column writes a devops post carries under a routed name
+  # (DEVOPS_ROUTED_KEYS), as { "<column>" => value }. Both controllers merge it
+  # under their own params, so a column posted by its own name wins. A blank
+  # value writes nothing, and so does an echo of a shadow an old row still
+  # stores (`stored_devops`): a read-merge-write must not revive it. Pure.
+  def self.devops_column_writes(raw_devops, stored_devops = nil)
+    posted = (raw_devops || {}).to_h.transform_keys(&:to_s)
+    stored = (stored_devops || {}).to_h
+
+    DEVOPS_ROUTED_KEYS.each_with_object({}) do |key, writes|
+      value = routed_column_value(key, posted[key])
+      next if value.blank? || value == routed_column_value(key, stored[key])
+
+      writes[key] = value
+    end
+  end
+
+  def self.routed_column_value(key, raw)
+    key == "dependencies" ? normalize_devops_list(raw, split_commas: true) : raw.to_s.strip
+  end
+
   # The one canonical epic handle, shared by the write and the `for_epic` read:
   # strip, downcase, blank or "none" → nil. Validation decides legality, so a
   # refusal can quote what was sent.
@@ -1500,11 +1516,12 @@ class Task < ApplicationRecord
         end
       next if normalized_value.blank?
 
-      # A column-backed name raises and names its home. After the blank guard, before
+      # A server-owned name raises and names its home. After the blank guard, before
       # the whitelist, so it never decays into a silent skip.
       if (home = DEVOPS_COLUMN_KEYS[key])
         raise ArgumentError, "devops.#{key} is not writable — it lives in #{home}"
       end
+      # A routed name (DEVOPS_ROUTED_KEYS) drops here: .devops_column_writes carries it.
       next unless DEVOPS_KEYS.include?(key)
 
       normalized[key] = normalized_value
@@ -2591,17 +2608,15 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # Strip any devops key that shadows a column, on every save. Two layers on
-  # purpose: normalize_devops_metadata raises at the front door, and this sheds in
-  # silence for paths around it (a raw `metadata:` PATCH, legacy rows), where
-  # raising would brick saves that never named the key. Keep both.
+  # Strip any devops key that shadows a column, on every save: a raw `metadata:`
+  # write and legacy rows reach here without passing normalize_devops_metadata.
   def shed_column_shadow_keys
     return if metadata.blank?
 
     devops = metadata["devops"]
     return unless devops.is_a?(Hash)
 
-    DEVOPS_COLUMN_KEYS.each_key { |key| devops.delete(key) }
+    (DEVOPS_COLUMN_KEYS.keys + DEVOPS_ROUTED_KEYS).each { |key| devops.delete(key) }
   end
 
   # Carry the mascot handle across a write that blanked it (a blank post or a raw

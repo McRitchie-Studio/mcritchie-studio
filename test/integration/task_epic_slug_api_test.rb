@@ -76,24 +76,29 @@ class TaskEpicSlugApiTest < ActionDispatch::IntegrationTest
     assert_nil @task.reload.epic_slug, "nothing is stored on a refusal"
   end
 
-  # THE SHADOW-STORE REFUSAL. A devops write to the name must be a 422 naming the
-  # column and the flag that works — never a 200 for a write the chip and the
-  # filter would never see.
-  test "[integration] a devops epic_slug write is refused and names the column and --epic" do
+  # Guard catalog row 10.2: a devops post naming the epic is the column write.
+  test "[integration] a devops epic_slug write lands in the column" do
     @task.update!(epic_slug: "devops-v3")
 
     patch api_v1_task_path(@task.slug),
-          params: { devops: { kind: "chore", epic_slug: "typed-under-devops" } },
+          params: { devops: { kind: "chore", epic_slug: "Typed-Under-Devops" } },
+          headers: @headers, as: :json
+
+    assert_response :success
+    @task.reload
+    assert_equal "typed-under-devops", @task.epic_slug, "the model normalizes it like any epic write"
+    assert_equal "chore", @task.devops["kind"]
+    assert_nil @task.metadata.dig("devops", "epic_slug")
+  end
+
+  test "[integration] a devops epic_slug that is not a slug answers 422 with the rule" do
+    patch api_v1_task_path(@task.slug),
+          params: { devops: { epic_slug: "not a slug" } },
           headers: @headers, as: :json
 
     assert_response :unprocessable_entity
-    error = response.parsed_body["error"].to_s
-    assert_match(/devops\.epic_slug is not writable/, error)
-    assert_match(/tasks\.epic_slug column/, error)
-    assert_match(/--epic/, error, "the refusal must name the command that DOES work")
-    @task.reload
-    assert_equal "devops-v3", @task.epic_slug, "the column is untouched by a refused write"
-    assert_nil @task.metadata.dig("devops", "epic_slug")
+    assert_match(/must be a slug/, response.parsed_body["error"].to_s)
+    assert_nil @task.reload.epic_slug
   end
 
   # Omission means UNCHANGED — the same rule as every other column and devops name.

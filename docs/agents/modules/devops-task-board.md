@@ -1016,8 +1016,8 @@ bin/task field <slug> dependencies                      # read back, one slug pe
 replaces the list, that an out-of-release dependency is tolerated and an unknown
 slug refused); the flag is `bin/task#TOP_LIST_FLAGS`, and `Release::Ordering`
 (`app/models/release/ordering.rb#producer_first`) is what reads the column. A
-`devops` write to the name is refused with a 422 naming the column
-(`app/models/task.rb#DEVOPS_COLUMN_KEYS`), the same rule as `release_slug` above.
+`devops` write to the name is routed to the column
+(`app/models/task.rb#devops_column_writes`) and never stored under `devops`.
 
 ## Epic Slug — the epic a task belongs to
 
@@ -1042,9 +1042,9 @@ bin/task list --epic <epic-slug>                  # that epic's tasks (GET /api/
 Three rules, all of them the column-not-devops rule in different clothes:
 
 - It is a **top-level column, not a `devops` key.** Post it beside `devops` on
-  the API (`{"epic_slug": "devops-v3"}`), never inside it; a `devops` write to the
-  name is refused with a 422 naming the column (`Task::DEVOPS_COLUMN_KEYS`), and
-  any shadow a pre-wiring write parked there is shed on the next save.
+  the API (`{"epic_slug": "devops-v3"}`), not inside it; a `devops` write to the
+  name is routed to the column (`Task.devops_column_writes`), and any shadow a
+  pre-wiring write parked there is shed on the next save.
 - `null` or `"none"` clears it; a value that is not a slug is refused with a 422
   quoting the rule, so a handle the chip cannot print and the filter cannot match
   is never stored.

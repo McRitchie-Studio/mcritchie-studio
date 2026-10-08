@@ -500,25 +500,58 @@ module Api
         assert_not @task.devops.key?("dependencies"), "the column write must not also seed a devops shadow"
       end
 
-      # Two docs told agents to "declare `dependencies: [<task>]`" for months, so
-      # the devops namespace is exactly where the habit points. Strong params
-      # dropping it there would be a 200 for a write the conductor never sees.
-      test "[integration] a devops dependencies write is refused and names the column" do
+      # Guard catalog row 10.2: the devops namespace is where the habit points,
+      # so a post there is the column write.
+      test "[integration] a devops dependencies write lands in the column" do
         blocker = Task.create!(title: "Publish Engine Gem")
-        @task.update!(dependencies: [blocker.slug])
 
         patch api_v1_task_path(@task.slug),
-              params: { devops: { kind: "chore", dependencies: ["typed-under-devops"] } },
+              params: { devops: { kind: "chore", dependencies: [blocker.slug] } },
               headers: @headers, as: :json
 
-        assert_response :unprocessable_entity, "a write to a column-backed name must fail loudly"
-        assert_match(/devops\.dependencies is not writable/, response.parsed_body["error"].to_s)
-        assert_match(/tasks\.dependencies column/, response.parsed_body["error"].to_s)
-        assert_match(/--depends-on/, response.parsed_body["error"].to_s,
-                     "the refusal must name the command that DOES work")
-
+        assert_response :success
         @task.reload
-        assert_equal [blocker.slug], @task.dependencies, "the column is untouched by a refused write"
+        assert_equal [blocker.slug], @task.dependencies
+        assert_equal "chore", @task.devops["kind"]
+        assert_not @task.devops.key?("dependencies"), "the routed name is never stored under devops"
+      end
+
+      test "[integration] a devops dependencies write naming no task answers 422 with the reason" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { dependencies: ["typed-under-devops"] } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/name no task on this board/, response.parsed_body["error"].to_s)
+        assert_equal [], @task.reload.dependencies
+      end
+
+      test "[integration] echoing a legacy row's stored shadow leaves the column alone" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+        @task.update!(dependencies: [blocker.slug])
+        @task.update_column(:metadata, { "devops" => { "kind" => "chore", "dependencies" => ["never-read"] } }) # rubocop:disable Rails/SkipsModelValidations
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug", dependencies: ["never-read"] } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        @task.reload
+        assert_equal [blocker.slug], @task.dependencies
+        assert_equal "bug", @task.devops["kind"]
+        assert_not @task.devops.key?("dependencies"), "the save sheds the shadow"
+      end
+
+      test "[integration] a column posted by its own name wins over the devops spelling" do
+        first = Task.create!(title: "Publish Engine Gem")
+        second = Task.create!(title: "Adopt Engine Gem")
+
+        patch api_v1_task_path(@task.slug),
+              params: { dependencies: [first.slug], devops: { dependencies: [second.slug] } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal [first.slug], @task.reload.dependencies
       end
 
       # The ordering pass cannot tell an unresolvable slug from no dependency at

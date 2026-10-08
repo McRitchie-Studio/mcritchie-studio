@@ -4,8 +4,7 @@
 # card's epic chip prints and `/tasks?epic=<slug>` filters on.
 #
 # THE PROPERTY: the value rides the wire as a TOP-LEVEL column beside "devops",
-# never inside it (metadata.devops.epic_slug is the shadow store
-# Task::DEVOPS_COLUMN_KEYS refuses); `--epic none` reaches the wire as JSON null
+# never inside it (the column is the one store); `--epic none` reaches the wire as JSON null
 # rather than being dropped as falsy; an absent flag never mentions the column;
 # a non-slug dies at the flag; and the read-backs (`show`, `field`, `list
 # --epic`) resolve the COLUMN.

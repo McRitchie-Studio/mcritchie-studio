@@ -864,9 +864,8 @@ TOP_LIST_FLAGS = { "--depends-on" => "dependencies" }.freeze
 # JSON `null`, and a nil in `top` is falsy, so top_body has to presence-test the
 # KEY — the BOOL_FLAGS / TOP_LIST_FLAGS rule — which a plain TOP_FLAGS scalar
 # never needed. It lands in `top`, never in `scalars`: `scalars` is the DEVOPS
-# namespace, and metadata.devops.epic_slug is the shadow store
-# Task::DEVOPS_COLUMN_KEYS refuses (a value visible on the task page that no
-# chip and no filter would ever read).
+# namespace, and the column is the one store (the server routes a devops
+# spelling to it, Task.devops_column_writes).
 #
 # Validated for SLUG SHAPE here, where a human can still fix it, and lowercased
 # so the CLI and the model agree on the canonical form before the board sees it.
@@ -1491,9 +1490,8 @@ def parse_flags(argv, context: nil)
     elsif TOP_LIST_FLAGS.key?(arg)
       # Repeatable top-level LIST column. It accumulates in `top` rather than in
       # `lists` — `lists` is the DEVOPS namespace (build_devops nests every one of
-      # its keys under "devops"), and this value is a COLUMN. Landing it there
-      # would have written metadata.devops.dependencies: the exact shadow store
-      # Task::DEVOPS_COLUMN_KEYS exists to refuse, and the one nothing reads.
+      # its keys under "devops"), and this value is a COLUMN, posted by its own
+      # name (the server routes a devops spelling to it, Task.devops_column_writes).
       #
       # The four-wide [positionals, scalars, lists, top] contract is preserved by
       # aliasing into an existing bucket, exactly as MAP_FLAGS rides in `scalars`.

@@ -421,8 +421,8 @@ module Api
           # deleted; bin/lib/migration_collision.rb is the protection.)
           :requires_migration,
           # The epic handle (`bin/task create|begin|update --epic <slug>`), a
-          # TOP-LEVEL column like `dependencies` below it — never a devops key,
-          # which Task::DEVOPS_COLUMN_KEYS refuses with a 422 naming this field.
+          # TOP-LEVEL column like `dependencies` below it. A devops post naming
+          # either is routed to the column (Task.devops_column_writes).
           # `null` or `"none"` clears it; the model normalizes (lowercase, strip)
           # and refuses a value that is not a slug, so a 422 here quotes the rule
           # rather than storing a handle the `?epic=` filter would never match.
@@ -492,7 +492,9 @@ module Api
         # on a create that names no stage.
         effective_stage = attrs["stage"].presence || @task&.stage || Task.new.stage
         attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params, effective_stage)
-        attrs
+        # devops.dependencies and devops.epic_slug are column writes; a column
+        # posted by its own name wins.
+        attrs.reverse_merge(Task.devops_column_writes(raw_devops_params, @task&.devops))
       end
 
       def raw_devops_params

@@ -1687,6 +1687,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "textarea[name='task[devops][acceptance]']", text: /Original review continues without interruption/
   end
 
+  # Guard catalog row 10.2: the form's devops spelling writes the columns.
+  test "[integration] a form devops post naming dependencies and epic_slug writes the columns" do
+    log_in_as(@admin)
+    blocker = Task.create!(title: "Publish Engine Gem")
+    task = Task.create!(title: "Adopt Engine Gem")
+
+    patch task_path(task.slug),
+          params: { task: { devops: { kind: "chore", dependencies: blocker.slug, epic_slug: "devops-v3" } } }
+
+    assert_redirected_to task_path(task.slug)
+    task.reload
+    assert_equal [blocker.slug], task.dependencies
+    assert_equal "devops-v3", task.epic_slug
+    assert_equal({ "kind" => "chore" }, task.devops.slice("kind", "dependencies", "epic_slug"))
+  end
+
   test "[integration] the form saves a long title and the flash says so" do
     log_in_as(@admin)
 
