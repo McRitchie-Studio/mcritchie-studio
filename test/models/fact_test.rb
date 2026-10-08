@@ -158,6 +158,21 @@ class FactTest < ActiveSupport::TestCase
     IDENTITY_KEYS.each { |key| assert build(key: key, value: nil).save, "#{key} did not save as a pointer (control)" }
   end
 
+  test "[unit] a wallet's seed phrase or private key is never a value, whatever the key" do
+    words = %w[alpha bravo candy delta eagle flame grape hotel igloo joker karma lemon]
+    %w[seed-phrase wallet_seed mnemonic recovery-phrase private-key keypair client-secret api-key].each do |key|
+      assert_pointer_refusal(:value, key, subject_type: "app", subject_slug: "turf", key: key, value: "on file")
+      assert build(subject_type: "app", subject_slug: "turf", key: key, value: nil).save, "#{key} did not save as a pointer (control)"
+    end
+    { "12 words" => words.join(" "), "24 words" => (words * 2).join("\n"), "a byte array" => "[#{(1..64).to_a.join(", ")}]",
+      "a labelled key" => "private key: 5Kb8kLf9zgWQ" }.each do |label, value|
+      assert_pointer_refusal(:value, label, key: "deployer-note", value: value)
+    end
+    assert_pointer_refusal(:value, "a person's tax number", key: "tax-number", value: "on file")
+    { "deployer-note" => "we #{words[1..].join(" ")}", "token-mint" => "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "seed-round" => "closed in March" }.each { |key, value| assert build(key: key, value: value).save, "#{key} was refused (control)" }
+  end
+
   test "[unit] words beside an identity word stay ordinary keys (control)" do
     %w[account-manager account_executive accounting-firm accounts-payable-contact operating-bank business-card
        scorecard pinned-post licensing-model spinoff].each do |key|

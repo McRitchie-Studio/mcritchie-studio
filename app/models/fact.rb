@@ -32,9 +32,10 @@ class Fact < ApplicationRecord
   IDENTITY_KEY = /\b(ssn|social\ security|itin|password|passwd|pwd|passcode|passphrase|pin|
                   routing|aba|iban|cvv|cvc|passport|(?<!business\ )card|
                   acct|account(?!\ (manager|executive|rep|representative|team|owner))|
-                  drivers?\ licen[cs]e|licen[cs]e\ (number|num|no|id))\b/x
+                  drivers?\ licen[cs]e|licen[cs]e\ (number|num|no|id)|secrets?|api\ keys?|private\ key|key\ ?pair|
+                  seed\ phrase|wallet\ seed|mnemonic|recovery\ (phrase|key|codes?))\b/x
   # A person's tax id is their identity; a company's EIN is an ordinary fact.
-  PERSON_IDENTITY_KEY = /\b(ein|fein|tin|tax\ id|taxpayer\ id|licen[cs]e)\b/
+  PERSON_IDENTITY_KEY = /\b(ein|fein|tin|tax\ (id|number|num|no)|taxpayer|licen[cs]e)\b/
   # What a text is refused for, by the kind the refusal names.
   IDENTITY_VALUE = {
     "ssn" => /(?<!\d)\d{3}[-. ]\d{2}[-. ]\d{4}(?!\d)|\b(ssn|social security)\b\D{0,12}\d{4,}/i,
@@ -42,7 +43,10 @@ class Fact < ApplicationRecord
     "account number" => /\b(account|acct|iban)\b\D{0,12}\d{6,}/i,
     "passport or licence number" => /\b(passport|licen[cs]e)\b\D{0,12}\d{6,}/i,
     "pin" => /\bpin\b\s*(is|[:=#])\s*\d{4,}/i,
-    "password" => /\b(password|passwd|passcode|passphrase|pwd)\b\s*(is|[:=])\s*\S+/i
+    "password" => /\b(password|passwd|passcode|passphrase|pwd)\b\s*(is|[:=])\s*\S+/i,
+    # A wallet's words (12 to 24 short lowercase words and nothing else), or a keypair's byte array.
+    "seed phrase" => /\A\s*(?:[a-z]{3,8}\s+){11}(?:(?:[a-z]{3,8}\s+){3}){0,4}[a-z]{3,8}\s*\z/,
+    "private key" => /\[\s*(?:\d{1,3}\s*,\s*){31,}\d{1,3}\s*\]|\b(seed phrase|mnemonic|private key|secret key)\b\s*(is|[:=])\s*\S+/i
   }.freeze
   CARD_CANDIDATE = /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/
   # An unformatted run of this many digits reads as an account or id number.
