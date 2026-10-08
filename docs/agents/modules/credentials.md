@@ -124,6 +124,12 @@ The board API takes two bearers (design:
   session (or an admin's) whose soul is outside the author set; any stage to
   `archived` takes an admin session. Anything else answers 403 naming the
   transition. `reviewed` to `assembled` and `assembled` to `shipped` are unchecked.
+  The stage events (`events/<stage>/complete` and `/fail`) are checked the same way.
+  `bin/task` retries on the shared token after a 401, never after this 403. A
+  reviewer who zapped the PR is an author: release the claim (`bin/task
+  review-claim release <slug>`), then make the move, which rides the shared token
+  while that is accepted. To archive a task from its desk, run the move from
+  outside the desk.
 - **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
   everywhere for one release, with each use logged as `[agent-auth] legacy` (naming
   the dropped desk session when a desk fell back from one), so Turf

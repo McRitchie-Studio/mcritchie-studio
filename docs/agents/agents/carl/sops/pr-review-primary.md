@@ -196,6 +196,10 @@ tasks. If anything is missing, note it as a finding; do not guess.
      - **Order matters: merge → move**, so the task is `reviewed` **iff** its
        code is on `accepted`. If `gh pr merge` FAILS, leave the task `submitted`,
        resolve it on GitHub, and re-review.
+     - **After your own zap, release before the move.** A zap puts you in the
+       author set, so your review login answers 403 on the move to `reviewed`
+       ([`credentials.md`](../../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
+       Merge, run step 7's release, then move.
      - **No `merged` stamp.** The board derives the rung from GitHub and
        refreshes its `merged` column when the task lands on `reviewed`.
        `bin/task merged` is only a manual override for a PR GitHub cannot place.
