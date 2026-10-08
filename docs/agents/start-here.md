@@ -14,7 +14,7 @@ its invocation exactly.
 | Ecosystem map | `mcritchie-studio/docs/ECOSYSTEM.md` |
 | Fresh-machine rebuild | `mcritchie-studio/docs/agents/system/house-burn-down.md` |
 | DevOps v3 design (ratified 2026-09-24, landing in phases) | `mcritchie-studio/docs/agents/system/devops-v3-design.md` |
-| Agent sessions and capability APIs design (proposed, awaiting Alex's review; tiers, grants, capability matrix) | `mcritchie-studio/docs/agents/system/agent-sessions-design.md` |
+| Agent sessions and capability APIs design (decided; phase two in progress; tiers, grants, capability matrix) | `mcritchie-studio/docs/agents/system/agent-sessions-design.md` |
 | Guard catalog (proposed, awaiting Alex's decision; every refusal with delete, by construction or keep) | `mcritchie-studio/docs/agents/system/guard-catalog.md` |
 | Knowledge layer design (proposed, awaiting Alex's review; five tiers, the Drive shelf, the walker, who reads what) | `mcritchie-studio/docs/agents/system/knowledge-layer-design.md` |
 | Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
