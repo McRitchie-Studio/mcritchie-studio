@@ -290,6 +290,7 @@ require_relative "../lib/devops_list_flags"
 require_relative "../lib/approval_request_remedy"
 require_relative "lib/task_board"
 require_relative "lib/harness_key"
+require_relative "lib/held_session"
 require_relative "lib/block_recipe"
 require_relative "lib/bounce_ledger"
 require_relative "lib/task_column_fields"
@@ -1285,7 +1286,11 @@ end
 # across every Ruby the agents might run this under.
 def api(method, path, body = nil, opts = {})
   auth = opts.fetch(:auth, true)
-  session_token = auth ? desk_session_token(method, path) : nil
+  return admin_api(method, path, body) if auth && act_as_admin?
+
+  # A move to `archived` is an admin transition: the desk's studio login can never
+  # make it, so it is not offered.
+  session_token = auth && !archive_move?(method, path, body) ? desk_session_token(method, path) : nil
   res = TaskBoard.request(method, path, base_url: BASE_URL, token: session_token || (auth ? token : nil), body: body,
                                         headers: (auth && !session_token ? desk_session_dropped_header(method, path) : nil))
   if session_token && res.code.to_i == 401
@@ -1318,6 +1323,52 @@ def api(method, path, body = nil, opts = {})
   # The board's advice on a write that succeeded (a long title or bullet).
   Array(parsed["warnings"]).each { |warning| warn!("warning: #{warning}") } if parsed.is_a?(Hash)
   parsed
+end
+
+# TASK_AS_ADMIN=1 makes this run act as the admin soul whose login this harness
+# session holds (`bin/agent-activity heartbeat steffon|xan`, or
+# AGENT_ADMIN_SESSION_TOKEN): every call presents that login, the board records
+# the admin soul as the actor, and the admin-tier writes (a move to `archived`
+# above all) pass. It is asked for, never assumed: a harness session's admin login
+# is readable by every agent the harness spawns, so no command presents it unasked.
+ADMIN_ENV = "TASK_AS_ADMIN"
+
+def act_as_admin?
+  %w[1 true yes on].include?(ENV[ADMIN_ENV].to_s.strip.downcase)
+end
+
+def admin_login
+  return @admin_login if defined?(@admin_login)
+
+  @admin_login = HeldSession.find(env: ENV, projects_dir: HarnessKey.projects_dir, tier: "admin")
+end
+
+# One call under the admin login. There is no fallback: a run that asked to act
+# as an admin and cannot stops with the reason and the way to log in.
+def admin_api(method, path, body)
+  login = admin_login
+  unless login
+    die!("#{ADMIN_ENV} is set and this harness session holds no admin login. Run " \
+         "`bin/agent-activity heartbeat steffon` (or xan) and have the operator grant it, or export " \
+         "#{HeldSession::ADMIN_ENV} from `bin/rails agent_sessions:grant_admin`; then run this again")
+  end
+
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: login["token"], body: body)
+  parsed = TaskBoard.parse_body(res)
+  unless res.code.to_i.between?(200, 299)
+    hint = res.code.to_i == 401 ? " (the admin login ended; run `bin/agent-activity heartbeat #{login["soul"] || "steffon"}` for a new one)" : ""
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{hint}",
+         code: task_not_found_response?(res, parsed) ? EXIT_TASK_NOT_FOUND : 1)
+  end
+  Array(parsed["warnings"]).each { |warning| warn!("warning: #{warning}") } if parsed.is_a?(Hash)
+  parsed
+end
+
+# Does this request move a task to `archived`?
+def archive_move?(method, path, body)
+  return false unless method.to_s == "patch" && path.to_s.match?(%r{\A/api/v1/tasks/[^/?]+\z}) && body.is_a?(Hash)
+
+  (body["stage"] || body[:stage]).to_s == "archived"
 end
 
 # The desk this process runs in, which holds the studio login `begin` wrote
