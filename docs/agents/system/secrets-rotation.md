@@ -320,24 +320,25 @@ verified only that far — say so rather than recording a green verify.
 
 ## TikTok credentials (`TIKTOK_CLIENT_KEY/SECRET/REFRESH_TOKEN/OPEN_ID`)
 
-**Store:** 1Password item `🐊 TikTok` (4 fields) + Heroku config on `mcritchie-studio` + `.env` locally.
+**Store:** 1Password item `tiktok.studio.agents` in the `studio-agents` vault (fields `client-key`, `client-secret`, `refresh-token`, `open-id`, `scope`) + Heroku config on `mcritchie-studio` + `.env` locally. The `scope` field is a record of what TikTok granted; no server reads it.
 
 **Refresh token rotates roughly every 1 year, but use shortens it.** Watch for `invalid_grant` errors from `Tiktok::OAuthClient`.
 
 **Procedure (client key/secret — app-level, rarely changes):**
-1. https://developers.tiktok.com → your app → App information → regenerate Client Secret.
-2. Update 1Password `🐊 TikTok` fields `client key`, `client secret`.
-3. `heroku config:set TIKTOK_CLIENT_KEY=... TIKTOK_CLIENT_SECRET=... --app mcritchie-studio`.
+1. https://developers.tiktok.com → the sandbox app → regenerate Client Secret.
+2. Update the item's `client-key` and `client-secret`.
+3. Put both on the production app through `credential-filing`.
 
 **Procedure (refresh token + open_id — user-level, rotates with re-auth):**
-1. Visit `https://app.mcritchie.studio/admin/tiktok/connect` (admin-only).
-2. Authenticate as @turfmonstershow.
-3. The success page displays a fresh `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID`. Copy both.
-4. Update 1Password `🐊 TikTok` fields `refresh token`, `open id`.
-5. `heroku config:set TIKTOK_REFRESH_TOKEN=... TIKTOK_OPEN_ID=... --app mcritchie-studio`.
-6. Re-run `bin/ecosystem-build`.
+1. Visit `https://mcritchie.studio/admin/tiktok/connect` (admin-only).
+2. Sign in to TikTok as the sandbox app's target user.
+3. The page that comes back shows the refresh token, the open id and the granted scope, once.
+4. Update the item's `refresh-token`, `open-id` and `scope`.
+5. Put `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` on the production app through `credential-filing`.
 
-**Verify:** `bin/rails runner 'puts Tiktok::OAuthClient.new.access_token.present?'` returns `true`.
+The sign-in asks for drafts only. `TIKTOK_SCOPES` widens it; see `docs/topics/content-pipeline.md`, "TikTok API posting". When the sign-in does not connect, the page says why; the fixes are in the `tiktok-draft` SOP's "Setup".
+
+**Verify:** `bin/tiktok-draft --whoami --production` prints the account.
 
 ---
 
