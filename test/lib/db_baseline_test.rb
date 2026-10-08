@@ -158,6 +158,22 @@ class DbBaselineTest < ActiveSupport::TestCase
     assert_equal %w[releases tasks], entries.select { |entry| entry.kind == :view }.map(&:base).sort
   end
 
+  test "the committed schema holds every column the baseline creates; a dump short of one is named" do
+    schema = File.read(Rails.root.join("db/schema.rb"))
+    clean = DbBaseline.compare(schema, root: Rails.root)
+
+    assert_empty clean.short
+    assert_empty clean.absent
+    assert_not clean.behind
+
+    opener = %(  create_table "tasks", force: :cascade do |t|\n)
+    head, tail = schema.split(opener, 2)
+    older = (head + opener + tail.sub(/^    t\.string "title".*\n/, "")).sub(/version: [\d_]+/, "version: 2026_09_01_000000")
+    found = DbBaseline.compare("Running bin/rails db:schema:dump on a dyno\n#{older}\ntrailing noise", root: Rails.root)
+    assert_equal ["tasks lacks title"], found.short
+    assert found.behind
+  end
+
   # --- the marker, against a scratch Postgres schema inside the test transaction ---
 
   class MarkerTest < ActiveSupport::TestCase

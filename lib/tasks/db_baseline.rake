@@ -13,8 +13,16 @@ namespace :db do
       abort e.message
     end
 
-    desc "Read-only: report what the baseline finds in this database"
+    desc "Read-only: report what the baseline finds in this database, or in a schema dump (AGAINST=path)"
     task check: "db:load_config" do
+      if ENV["AGAINST"].present?
+        found = DbBaseline.compare(File.read(ENV["AGAINST"]), root: Rails.root)
+        puts "schema dump version: #{found.version}#{' (BEHIND the retired ledger; its remaining migrations are gone)' if found.behind}"
+        puts "baseline tables the dump lacks (db:migrate creates them): #{found.absent.empty? ? 'none' : found.absent.join(', ')}"
+        puts "tables short of baseline columns: #{found.short.empty? ? 'none' : found.short.join('; ')}"
+        exit(found.short.any? || found.behind ? 1 : 0)
+      end
+
       found = ActiveRecord::Base.connection_pool.with_connection do |connection|
         DbBaseline::Marker.new(connection: connection, migrate_dir: Rails.root.join("db/migrate")).report
       end

@@ -42,6 +42,30 @@ module DbBaseline
     basename[/\A\d+/].to_s
   end
 
+  # The columns a create_table block names, in a schema dump or a baseline migration.
+  def columns_in(text)
+    text.scan(/^\s+t\.(\w+) "(\w+)"/).reject { |type, _| %w[index check_constraint].include?(type) }.map(&:last)
+  end
+
+  # Compares a schema dump taken from another database with the committed baseline,
+  # without a connection. short: tables that lack baseline columns. absent: baseline
+  # tables the dump does not hold. behind: the dump predates the retired ledger's head.
+  Comparison = Struct.new(:version, :short, :absent, :behind, keyword_init: true)
+
+  def compare(schema_text, root:)
+    schema = Schema.new(schema_text)
+    held = schema.tables.to_h { |table| [table.name, columns_in(table.block.join("\n"))] }
+    tables = Marker.new(connection: nil, migrate_dir: File.join(root.to_s, "db/migrate")).entries.select { |entry| entry.kind == :table }
+    present, absent = tables.partition { |entry| held.key?(entry.name) }
+    short = present.filter_map do |entry|
+      missing = entry.columns - held.fetch(entry.name)
+      "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
+    end
+    record = File.join(root.to_s, RECORD)
+    through = File.exist?(record) ? YAML.load_file(record).fetch("retired_through") : "0"
+    Comparison.new(version: schema.version, short: short, absent: absent.map(&:name), behind: schema.version < through)
+  end
+
   # The name an engine's install step compares: no version, no scope.
   def bare_name(basename)
     basename.sub(/\A\d+_/, "").sub(/\..*\z/, "")
@@ -74,7 +98,8 @@ module DbBaseline
       body = lines[(lines.index(head) + 1)..]
       until body.empty?
         line = body.shift
-        next if line.strip.empty? || line.start_with?("  #") || line == "end"
+        break if line == "end"
+        next if line.strip.empty? || line.start_with?("  #")
 
         if line.start_with?("  enable_extension ")
           @extensions << line.strip
@@ -269,7 +294,7 @@ module DbBaseline
       if (table = text[/create_table "(\w+)"/, 1])
         @kind = :table
         @name = table
-        @columns = text.scan(/^\s+t\.(\w+) "(\w+)"/).reject { |type, _| %w[index check_constraint].include?(type) }.map(&:last)
+        @columns = DbBaseline.columns_in(text)
       elsif (view = text[/CREATE VIEW (\w+) AS/, 1])
         @kind = :view
         @name = view

@@ -319,9 +319,11 @@ baseline file. Code: `lib/db_baseline.rb`, `lib/tasks/db_baseline.rake`.
   names the columns it lacks. `bin/rails db:baseline:catch_up` replays the retired
   migrations out of git (the commit in `db/baseline.yml`), then migrates. A database
   with nothing to keep: `bin/rails db:drop db:prepare`.
-- **Read-only check.** `bin/rails db:baseline:check` reports what the baseline finds and
-  exits 1 on a table short of a column. On production:
-  `heroku run --no-tty -a mcritchie-studio -- bin/rails db:baseline:check`.
+- **Read-only check.** `bin/rails db:baseline:check` reports what the baseline finds in
+  the connected database and exits 1 on a table short of a column. Before a baseline
+  first deploys, check production from a dump instead, with no new code on the dyno:
+  `heroku run --no-tty -a mcritchie-studio -- bin/rails db:schema:dump SCHEMA=/dev/stdout > tmp/production-schema.rb`,
+  then `bin/rails db:baseline:check AGAINST=tmp/production-schema.rb`.
 
 Re-baseline after a schema facelift:
 
