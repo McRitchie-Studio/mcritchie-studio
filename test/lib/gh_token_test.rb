@@ -279,6 +279,53 @@ class GhTokenTest < Minitest::Test
     end
   end
 
+  # A stub `op` that fails every read, printing `stderr` first.
+  def failing_op(dir, stderr)
+    File.join(dir, "op-fail").tap do |op|
+      File.write(op, "#!/bin/sh\nprintf '%s\\n' '#{stderr}' >&2\nexit 1\n")
+      File.chmod(0o755, op)
+    end
+  end
+
+  # A failed 1Password read carries `op`'s own last stderr line in the refusal.
+  def test_a_failed_op_read_carries_ops_own_error
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_TOKEN_OP_BIN" => failing_op(dir, "[ERROR] dial tcp: lookup my.1password.com: no such host"))
+      out, err, status = run_token(env, "--identity", "deployer", "--force")
+
+      refute status.success?
+      assert_empty out
+      assert_includes err, "op said: [ERROR] dial tcp: lookup my.1password.com: no such host"
+    end
+  end
+
+  # Anything token- or key-shaped in that line is redacted, and the line is capped.
+  def test_ops_error_is_scrubbed_and_capped
+    Dir.mktmpdir do |dir|
+      noisy = "[ERROR] bad token ops_#{"a" * 60} or ghs_sTuBtOkEn #{"word " * 80}"
+      env = with_env(dir).merge("GH_TOKEN_OP_BIN" => failing_op(dir, noisy))
+      _out, err, status = run_token(env, "--identity", "deployer", "--force")
+
+      refute status.success?
+      assert_includes err, "op said: [ERROR] bad token [redacted] or [redacted]"
+      refute_match TOKEN_SHAPED, err
+      refute_includes err, "ops_"
+      assert_operator err[/op said: (.*?) — /m, 1].length, :<=, 200
+    end
+  end
+
+  # A line holding key material is dropped whole.
+  def test_ops_error_naming_key_material_is_dropped
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_TOKEN_OP_BIN" => failing_op(dir, "-----BEGIN RSA PRIVATE KEY----- abc"))
+      _out, err, status = run_token(env, "--identity", "deployer", "--force")
+
+      refute status.success?
+      refute_includes err, "op said"
+      refute_includes err, "PRIVATE KEY"
+    end
+  end
+
   # A corrupt cache is a cache MISS, never a failure — we can always mint again.
   #
   # ASSERTED AS A PROPERTY, NOT A SPELLING. This case used to pin only `{not json`,

@@ -5083,8 +5083,8 @@ def push_failure_message(repo, sha, cause)
       "no reconciling. Restore the network, then re-run `bin/release ship` — it resumes; do NOT re-run `prepare`."
   when :mint
     "could not mint the DEPLOYER token for the #{repo} push to #{short(sha)}, in two tries — the push was NOT " \
-      "attempted, so main has not moved. The mint's own error is above. The deployer needs " \
-      "OP_ADMIN_SERVICE_ACCOUNT_TOKEN in this shell (`source ~/.zprofile.admin`). " \
+      "attempted, so main has not moved. The mint's own error is above: act on what it names. If it says " \
+      "the vault could not be read on credentials, `source ~/.zprofile.admin` restores the admin token. " \
       "Then re-run `bin/release ship` — it resumes; do NOT re-run `prepare`."
   when :auth
     "could not push #{repo} origin/main to #{short(sha)} — git was REFUSED ON CREDENTIALS, not on the ref. " \
@@ -5118,7 +5118,8 @@ end
 PUSH_MINT_RETRY_SECONDS = 5
 
 # A fresh deployer token for one push: one mint, one retry, then an abort that
-# carries the mint's own error. The identity is named, never read from GH_APP_ITEM.
+# carries the mint's own error. The mint names the deployer; the push below
+# authenticates through the git credential helper, which reads GH_APP_ITEM.
 def mint_push_token(repo, sha)
   token = GhAuthRetry.mint(identity: "deployer")
   return token if token
@@ -5146,7 +5147,8 @@ def push_frozen_main(repo, sha)
   # CAPTURED, because the diagnosis below is READ from git rather than assumed.
   # It is echoed either way, so the operator still sees exactly what an uncaptured
   # push would have shown them.
-  # The push carries the token minted for it, never the GH_TOKEN the ship was launched with.
+  # The minted token rides the push as GH_TOKEN. Only the `gh auth git-credential`
+  # fallback helper reads it; gh-app-git-credential mints its own from GH_APP_ITEM.
   token = mint_push_token(repo, sha)
   out, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main", capture: true,
                env: gh_token_env(token))

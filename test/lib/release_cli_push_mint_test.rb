@@ -109,6 +109,58 @@ class ReleaseCliPushMintTest < ReleaseCliHarness
     end
   end
 
+  # --- the real broker: what bin/gh-token says when `op` fails -------------------
+
+  GH_TOKEN_BIN = File.expand_path("../../bin/gh-token", __dir__)
+
+  # The real bin/gh-token over a stub `op` that prints `op_stderr` and exits 1.
+  # The admin token is present (a fake), as it is in a ship shell.
+  def real_broker_setup(dir, op_stderr)
+    op = File.join(dir, "op")
+    File.write(op, "#!/bin/sh\necho '#{op_stderr}' >&2\nexit 1\n")
+    File.chmod(0o755, op)
+    <<~RUBY
+      ENV["GH_AUTH_TOKEN_BIN"] = #{GH_TOKEN_BIN.inspect}
+      ENV["GH_TOKEN_OP_BIN"] = #{op.inspect}
+      ENV["GH_TOKEN_MINT_BIN"] = "/usr/bin/false"
+      ENV["OP_ADMIN_SERVICE_ACCOUNT_TOKEN"] = "stub-admin-token"
+      def repo_path(_repo) = #{dir.inspect}
+      def sleep(seconds) = puts("SLEEP \#{seconds}")
+      def sh(*cmd, **) = (puts("PUSH") if cmd.include?("push"); ["", true])
+    RUBY
+  end
+
+  # [integration] 1Password unreachable over DNS: the ship names the network, not a credential.
+  def test_an_op_dns_failure_through_the_real_broker_names_the_network
+    Dir.mktmpdir do |dir|
+      dns = "[ERROR] 2026/01/01 00:00:00 could not read secret: dial tcp: lookup my.1password.com: no such host"
+      out = run_cli(["--yes"], setup: real_broker_setup(dir, dns),
+                    call: format(PUSH_CALL, %{push_frozen_main("sibling", "a" * 40)}))
+
+      assert_includes out, "ABORTED", out
+      assert_includes out, "no such host", "op's own words reach the ship log"
+      assert_includes out, "NETWORK failure"
+      refute_includes out, "~/.zprofile.admin", "a DNS outage is not a credential errand: #{out}"
+      refute_includes out, "PUSH"
+      refute_includes out, "stub-admin-token"
+    end
+  end
+
+  # The control: `op` refusing on auth through the same broker is a mint failure, not the network.
+  def test_an_op_auth_failure_through_the_real_broker_is_not_the_network
+    Dir.mktmpdir do |dir|
+      auth = "[ERROR] 2026/01/01 00:00:00 service account token is invalid"
+      out = run_cli(["--yes"], setup: real_broker_setup(dir, auth),
+                    call: format(PUSH_CALL, %{push_frozen_main("sibling", "a" * 40)}))
+
+      assert_includes out, "ABORTED", out
+      assert_includes out, "service account token is invalid"
+      assert_includes out, "could not mint the DEPLOYER token"
+      refute_includes out, "NETWORK failure"
+      refute_includes out, "PUSH"
+    end
+  end
+
   # --- the classifier ---
 
   # A helper that cannot resolve its host leaves git saying `could not read

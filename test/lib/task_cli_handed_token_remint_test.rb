@@ -66,7 +66,11 @@ class TaskCliHandedTokenRemintTest < Minitest::Test
   end
 
   def answer(path, bearer, refuse)
+    ended = JSON.generate("error" => "session ended", "error_code" => "SESSION_ENDED")
+    return ["401 Unauthorized", ended] if refuse == :session_ended && path != "/api/v1/auth"
+    return ["401 Unauthorized", JSON.generate("error" => "bad secret")] if refuse == :auth_too && path == "/api/v1/auth"
     return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
+    return ["401 Unauthorized", JSON.generate("error" => "token expired")] if refuse == :auth_too
     return ["401 Unauthorized", JSON.generate("error" => "token expired")] if refuse == :all || bearer == "Bearer #{refuse}"
 
     ["200 OK", JSON.generate("data" => { "slug" => "demo-task", "stage" => "building", "title" => "Demo Task",
@@ -87,6 +91,25 @@ class TaskCliHandedTokenRemintTest < Minitest::Test
     assert_includes err, "length #{"stub-token".length}"
     refute_includes err, "stub-token"
     refute_includes err, "tok-stale"
+  end
+
+  # [integration] A SESSION_ENDED 401 is about the agent session, not the bearer: no re-mint.
+  def test_a_session_ended_401_does_not_remint
+    requests, _out, err, status = run_task(["show", "demo-task", "--json"], handed: "tok-live", refuse: :session_ended)
+
+    refute status.success?
+    assert_match(/401/, err)
+    assert_empty requests.select { |r| r[:path] == "/api/v1/auth" }
+  end
+
+  # [integration] When the re-mint's own POST /api/v1/auth is refused, the error names that call.
+  def test_a_refused_remint_names_the_auth_call
+    _requests, _out, err, status = run_task(["show", "demo-task", "--json"], handed: "tok-stale", refuse: :auth_too)
+
+    refute status.success?
+    assert_includes err, "POST /api/v1/auth -> 401: bad secret"
+    refute_includes err, "a fresh bearer was refused too", "no fresh bearer was ever minted"
+    refute_includes err, "unset it to mint afresh"
   end
 
   # [integration] The control: a 401 on a bearer the CLI minted itself is not retried.

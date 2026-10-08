@@ -68,6 +68,7 @@
 require "json"
 require "fileutils"
 require "time"
+require "tempfile"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/op_vaults"
 require_relative "lib/op_meter"
@@ -211,10 +212,27 @@ def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
   # Metered (bin/lib/op_meter.rb) so a burst of mints is attributable to the
   # command that caused it. OpMeter.popen spawns nothing beyond this child, so
   # `$?` below still reports op's status and not the recorder's.
-  out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: "gh-token", err: File::NULL)
-  $?.success? ? out : ""
+  Tempfile.create("gh-token-op-err") do |err|
+    out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: "gh-token", err: err)
+    next out if $?.success?
+
+    @op_said = scrub_op_error(File.read(err.path))
+    ""
+  end
 rescue StandardError
   ""
+end
+
+OP_ERROR_MAX = 200
+SECRET_SHAPED = /\b(?:ops_|gh[a-z]_|github_pat_)\S+|[A-Za-z0-9+\/=_-]{40,}/
+
+# The last line `op` wrote to stderr on a failed read, cut to OP_ERROR_MAX with
+# anything token- or key-shaped redacted. "" when op wrote nothing.
+def scrub_op_error(stderr)
+  line = stderr.to_s.lines.map(&:strip).reject(&:empty?).last.to_s
+  return "" if line.empty? || line.include?("PRIVATE KEY")
+
+  line.gsub(SECRET_SHAPED, "[redacted]")[0, OP_ERROR_MAX]
 end
 
 def mint(identity)
@@ -229,8 +247,9 @@ def mint(identity)
     # same line, so `bin/setup-1pass-token --admin (is `op` signed in?)` is what the
     # operator would paste — a shell syntax error. The remedy must be the last
     # thing on the last line.
+    said = @op_said.to_s.empty? ? "" : "op said: #{@op_said} — "
     die!("could not read the #{identity} App credentials from 1Password " \
-         "(is `op` signed in?) — #{OpVaults.diagnose(lane)}")
+         "(is `op` signed in?) — #{said}#{OpVaults.diagnose(lane)}")
   end
 
   token = IO.popen({ "GH_APP_ID" => app_id, "GH_APP_PEM" => pem }, [MINT_BIN], &:read).to_s.strip

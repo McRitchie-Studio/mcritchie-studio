@@ -197,10 +197,15 @@ The push output is now captured, echoed, and CLASSIFIED, the same way
 `error: failed to push some refs to …` appears in **both** failures, so it is
 never the discriminator. Nothing forces in any case.
 
-The ship mints a fresh **deployer** token before each `main` push (`mint_push_token`)
-and hands it to that push, so a push never rides the `GH_TOKEN` the ship was
-launched with. A failed mint is retried once after 5 seconds; a second failure
-aborts before the push with the mint's own error, classified NETWORK when it names one.
+The ship mints a fresh **deployer** token before each `main` push (`mint_push_token`).
+The push itself authenticates through `gh-app-git-credential`, which reads `GH_APP_ITEM`
+and mints its own token; the pre-minted one rides the push as `GH_TOKEN`, which only the
+fallback helper (`gh auth git-credential`) reads. A failed mint is retried once after 5
+seconds; a second failure aborts before the push with the mint's own error. `bin/gh-token`
+carries `op`'s last stderr line in that error (`op said: …`, scrubbed and capped), so
+1Password unreachable over DNS is classified NETWORK. Any other mint failure reads MINT:
+act on what the error names; `source ~/.zprofile.admin` is the remedy only when it says
+the vault could not be read on credentials.
 
 **A dirty app primary no longer blocks a ship.** The preflight prints a NOTE plus
 a rescue (commit the stranded work to a labeled `rescue/<repo>-<timestamp>`
