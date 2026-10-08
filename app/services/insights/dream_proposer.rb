@@ -151,7 +151,7 @@ module Insights
     def privacy_reasons(text)
       screened = text.gsub(ACTIVITY_SLUG, "activity")
       reasons = PRIVACY_PATTERNS.select { |_, pattern| screened.match?(pattern) }.keys
-      reasons << "person_name" if person_named?(title)
+      reasons << "person_name" if person_named?(title, @task.slug)
       reasons
     end
 
@@ -289,9 +289,11 @@ module Insights
       end
     end
 
-    # A full name on the people table, souls excepted.
-    def person_named?(text)
-      pairs = text.downcase.scan(/[a-z][a-z'-]*/).each_cons(2).map { |pair| pair.join(" ") }.uniq
+    # A full name on the people table, souls excepted; a hyphen also separates words.
+    def person_named?(*texts)
+      pairs = texts.flat_map { |text| [ text.downcase, text.downcase.tr("-", " ") ] }.flat_map do |text|
+        text.scan(/[a-z][a-z'-]*/).each_cons(2).map { |pair| pair.join(" ") }
+      end.uniq
       pairs -= Task::SOUL_ROSTER.map { |slug| slug.tr("-_", "  ") }
       return false if pairs.empty?
 

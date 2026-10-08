@@ -164,6 +164,16 @@ class Insights::DreamProposerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_drops_a_draft_whose_slug_names_a_person_the_title_does_not
+    task = shipped_task("pay-lionel-messi-on-time", title: "Pay The Entrant Now")
+    contested(task, "OVERRULE")
+
+    assert_nil propose(task)
+    hyphened = shipped_task("dream-hyphened-name", title: "Pay Lionel-Messi On Time")
+    contested(hyphened, "OVERRULE")
+    assert_nil propose(hyphened)
+  end
+
   def test_an_unsound_tag_is_left_off_the_draft
     task = shipped_task("dream-tags")
     task.update!(metadata: task.metadata.deep_merge("devops" => { "shape" => "Not A Token", "risk_tags" => [ "money", "two words" ] }))
