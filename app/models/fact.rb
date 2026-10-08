@@ -49,6 +49,8 @@ class Fact < ApplicationRecord
     "private key" => /\[\s*(?:\d{1,3}\s*,\s*){31,}\d{1,3}\s*\]|\b(seed phrase|mnemonic|private key|secret key)\b\s*(is|[:=])\s*\S+/i
   }.freeze
   CARD_CANDIDATE = /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/
+  # An IBAN, compact or in its printed groups of four; .iban? checks the mod-97 sum.
+  IBAN_CANDIDATE = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/
   # An unformatted run of this many digits reads as an account or id number.
   LONG_NUMBER = 8
   LONG_NUMBER_KIND = "an unformatted number of #{LONG_NUMBER} or more digits".freeze
@@ -108,7 +110,13 @@ class Fact < ApplicationRecord
     return nil if string.empty?
 
     kind = IDENTITY_VALUE.find { |_, pattern| pattern.match?(string) }&.first
-    kind || ("card number" if string.scan(CARD_CANDIDATE).any? { |run| luhn?(run.delete("^0-9")) })
+    kind ||= "card number" if string.scan(CARD_CANDIDATE).any? { |run| luhn?(run.delete("^0-9")) }
+    kind || ("account number" if string.scan(IBAN_CANDIDATE).any? { |run| iban?(run.delete(" ")) })
+  end
+
+  # Is any leading 15 to 34 characters of `text` a valid IBAN? (A capitalised word may follow one.)
+  def self.iban?(text)
+    (15..[text.length, 34].min).any? { |n| (text[4...n] + text[0, 4]).gsub(/[A-Z]/) { |c| (c.ord - 55).to_s }.to_i % 97 == 1 }
   end
 
   # [[fact, [the facts it replaced, nearest first]], ...] for every fact in

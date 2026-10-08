@@ -173,6 +173,15 @@ class FactTest < ActiveSupport::TestCase
       "seed-round" => "closed in March" }.each { |key, value| assert build(key: key, value: value).save, "#{key} was refused (control)" }
   end
 
+  test "[unit] an IBAN is refused in its printed groups, under any key and in the note" do
+    iban = "GB82 WEST 1234 5698 7654 32"
+    assert_pointer_refusal(:value, "grouped", digits: "5698", subject_type: "company", subject_slug: "acme", key: "wire-details", value: iban)
+    assert_pointer_refusal(:value, "in a sentence", digits: "5698", key: "remit-to", value: "Wire to #{iban} PAID in full")
+    assert_pointer_refusal(:source_note, "the note", digits: "5698", source_note: "per the letter: #{iban.delete(" ")}")
+    assert build(key: "wire-details", value: iban.sub("82", "83")).save, "a failed checksum is not an IBAN (control)"
+    assert build(key: "part-number", value: "PO12 3456 7890").save, "a short grouped code saves (control)"
+  end
+
   test "[unit] words beside an identity word stay ordinary keys (control)" do
     %w[account-manager account_executive accounting-firm accounts-payable-contact operating-bank business-card
        scorecard pinned-post licensing-model spinoff].each do |key|
