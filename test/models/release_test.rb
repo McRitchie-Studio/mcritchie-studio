@@ -11,6 +11,40 @@ class ReleaseTest < ActiveSupport::TestCase
                  metadata: { "devops" => { "repositories" => [repo] } })
   end
 
+  # --- one active release (guard catalog row 10.5) ----------------------------
+  #
+  # The partial unique index index_releases_single_active is the construction: the
+  # table cannot hold two active rows. The validation beside it gives the refusal
+  # its reason, so a second open answers 422 and not the index's bare message.
+
+  test "[unit] a second active release is refused with the reason" do
+    Release.open!
+
+    error = assert_raises(ActiveRecord::RecordInvalid) { Release.open! }
+    assert_match(/another release is already active/, error.message)
+    assert_equal 1, Release.where(state: Release::ACTIVE_STATES).count
+  end
+
+  test "[unit] a shipped release leaves room for the next active one" do
+    Release.open!.update!(state: "shipped")
+
+    assert Release.open!.persisted?
+  end
+
+  # The control: with the validation skipped the database still refuses, in each
+  # active state.
+  test "[unit] the index refuses a second active release when the validation is skipped" do
+    Release.open!
+
+    Release::ACTIVE_STATES.each do |state|
+      second = Release.new(slug: "rel-second-#{state}", branch: Release::BRANCH, state: state)
+      error = assert_raises(ActiveRecord::RecordNotUnique) do
+        Release.transaction(requires_new: true) { second.save!(validate: false) }
+      end
+      assert_match(/index_releases_single_active/, error.message)
+    end
+  end
+
   # --- gem_only? / gem_release_artifacts (gem-only-deployments) ----------------
 
   test "[unit] gem_only? is true only when EVERY member ships as a gem" do

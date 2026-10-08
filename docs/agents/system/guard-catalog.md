@@ -238,7 +238,7 @@ created before the snapshot is the kept part of decision 8.
 | `Task::DEVOPS_COLUMN_KEYS` raise in `normalize_devops_metadata` | A column key written as a devops key → 422 | 156 of 1,586 tasks, 2026-09-02 | 1 | BY CONSTRUCTION: route `dependencies` and `epic_slug` to their columns; refuse only server-owned keys | applied: `guards-app-validations-and-api` (`Task.devops_column_writes` routes `dependencies` and `epic_slug` to their columns on both write paths; `release_slug`, `release_train` and `block_kind` still answer 422) |
 | `Task#normalize_devops_map_pair` | A `pr_urls` entry under the wrong repo | · | 1 | BY CONSTRUCTION: key by the URL's repo | applied: `guards-app-validations-and-api` (the server and `bin/task --pr-url-for` key each entry by the repo its url names; a value that is no PR url still answers 422) |
 | `Task#guard_approval_request_stage!` | "One sentence on three surfaces" | approval-write-drops-at-submitted | 1 | BY CONSTRUCTION: the CLI and the doc quote the 422 body | applied: `guards-app-validations-and-api` (the remedy is one sentence, `lib/approval_request_remedy.rb`, which the 422 and the `bin/task` drop warning both print and the board doc cites; the three-surface pin test is gone) |
-| `Release#at_most_one_active_release` | A second active release | · | 1 | BY CONSTRUCTION: a partial unique index | awaiting build: `guards-app-validations-and-api` (its card keeps the validation beside the index) |
+| `Release#at_most_one_active_release` | A second active release | · | 1 | BY CONSTRUCTION: a partial unique index | applied in part: `guards-app-validations-and-api` (the partial unique index `index_releases_single_active` is the construction and now has a test that bites with the validation skipped); kept: the validation, so a second open answers 422 with a reason |
 | `ReleaseEvent#required_usage_for_agent_completion` and three controllers' `validate_usage!` | Completion without usage, four copies | · | 2 | BY CONSTRUCTION: one concern | awaiting build: `guards-app-validations-and-api` |
 | `GateRunsController` re-implemented grain check; `TaskReviewClaimsController` bodiless 204 | A second copy; a refusal with no reason | · | 2 | BY CONSTRUCTION: let `RecordInvalid` speak; return the reason | awaiting build: `guards-app-validations-and-api` |
 | Task enums, dependencies and epic (normalize, then refuse), approval status, review check-in, intent event, builder stamp, clamps, race-tolerant create, `Ci::ReviewGate`, `ReviewPendingAction` (3), `DeskRecord` (2), `GateRun`, `Devops::Windows`, `Release#add` and states, `Release::Conductor`, `CredentialRecord`, learning and claim integrity, content claims, domain validations (one row for about 300 sites) | Invalid records; history rewrites; an auto-merge on one repo's CI | 2026-08-29 PR 1073; 2026-09-17 int4 clamp | 26 | KEEP. No stage-transition guard exists for tasks | kept: a KEEP needs nothing |
@@ -261,6 +261,7 @@ accept the builder's reason, or have the row applied.
 | Unroutable `post_deploy` command; `ShipSequence.missing_deploy_commands` | 7 | Both: the command comes from task metadata and the deploy script from a sibling checkout, and a load-time lint sees neither | Keep |
 | Dirty gem primary, at QA and at ship | 7 | Both guard the gem publish | Keep |
 | Registries in copies (applied in part) | 9 | `app_registry_test.rb` and `bin_help_flag_class_test.rb`: each is its own migration | Apply later; prerequisite: one task per test |
+| `Release#at_most_one_active_release` (applied in part) | 10 | The validation beside the index: it answers 422 naming the reason, where the index alone answers `RecordNotUnique` with "That record already exists" and an ErrorLog row | Keep |
 | Decision 8, the settlement winner limit (applied in part) | top ten | Contests created before the payout snapshot | Apply later; prerequisite: Alex's ruling on each contest the census finds |
 
 Three applied rows state a limit inside the construction, and no call is owed on
@@ -268,10 +269,6 @@ them: `--pr-url-for a,b=<url>` still refuses, because one URL cannot split
 (group 3); a board that answers a teardown record with a refusal still refuses
 (group 5); the review-lane docs test keeps its two entry-doc ordering checks
 (group 8).
-
-One queued row carries a decision ahead of its build: the card for
-`Release#at_most_one_active_release` keeps the validation, which answers 422
-with a reason, beside the unique index (group 10).
 
 ## What Alex decides
 
