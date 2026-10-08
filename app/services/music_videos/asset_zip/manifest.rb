@@ -130,13 +130,25 @@ module MusicVideos
           if sheet.nil?
             @missing << Missing.new(path:, label:, reason: "no character sheet has been built for this look yet")
             name = nil
-          elsif !Appearances::FetchableUrl.https?(sheet.image_url)
-            @missing << Missing.new(path:, label:, reason: "the sheet image is not on an https public host, so it was not fetched")
+          elsif (reason = sheet_refusal(sheet.image_url))
+            @missing << Missing.new(path:, label:, reason:)
             name = nil
           else
             @entries << Entry.new(path:, kind: :url, source: sheet.image_url, label:)
           end
           [entry, row, name]
+        end
+      end
+
+      # Why a sheet's image is not fetched, or nil. Asked once per sheet, which
+      # Appearances::FetchableUrl answers with one lookup per host per request.
+      # A host that could not be looked up is not a bad address, and says so.
+      def sheet_refusal(url)
+        case Appearances::FetchableUrl.https_verdict(url)
+        when Appearances::FetchableUrl::OK then nil
+        when Appearances::FetchableUrl::UNRESOLVED
+          "the sheet image's host could not be looked up when this zip was built, so it was not fetched; download again to retry"
+        else "the sheet image is not on an https public host, so it was not fetched"
         end
       end
 

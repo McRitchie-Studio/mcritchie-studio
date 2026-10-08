@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/url_guard_world"
 
 # THE PERSON PAGE'S LOOK ACTIONS ARE OPERATOR ACTIONS.
 #
@@ -9,6 +10,8 @@ require "test_helper"
 # operator's browser then loaded and the chunk hand-off gave out as the swap
 # reference.
 class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
+  include UrlGuardWorld
+
   SHEET = "https://cdn.example.com/sheets/test-look.png".freeze
 
   setup do
@@ -138,6 +141,19 @@ class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
       assert_redirected_to person_path(@person.slug)
       assert_equal Appearances::FetchableUrl::HTTPS_REFUSAL, flash[:alert], "refusing #{url.inspect}"
       assert_no_match(/attached/, flash[:notice].to_s)
+    end
+  end
+
+  # The next engine's guard looks the host up; a failed lookup is not a bad URL.
+  test "an image URL whose host could not be looked up files nothing and says it could not be checked" do
+    log_in_as users(:alex)
+    with_url_guard(unresolved: %w[dead.example.com]) do |lookups|
+      assert_no_difference("ErrorLog.count") { assert_nothing_written { attach!("https://dead.example.com/sheet.png") } }
+      assert_redirected_to person_path(@person.slug)
+      assert_equal Appearances::FetchableUrl::HTTPS_UNCHECKED, flash[:alert]
+      assert_match(/could not be looked up/, flash[:alert])
+      assert_not_equal Appearances::FetchableUrl::HTTPS_REFUSAL, flash[:alert]
+      assert_equal %w[dead.example.com], lookups
     end
   end
 end

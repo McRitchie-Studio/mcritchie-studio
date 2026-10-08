@@ -134,6 +134,13 @@ module Appearances
     module LiveCache
       def self.fetch(url)
         require "open-uri"
+        # FOLLOW-UP (needs the published gem, so it is not done here): this
+        # checks the URL and then URI.open resolves the name AGAIN and follows
+        # redirects unchecked. Move it to the engine's `vet_source_url!` +
+        # `pinned_http`. /tasks/url-guard-off-hot-paths, epic
+        # recast-video-pipeline piece 23. It asks the guard directly rather than
+        # through Appearances::FetchableUrl, so it is one lookup per mirrored
+        # photograph, in a job.
         Studio::ImageCache.validate_source_url!(url)
         URI.open(url, read_timeout: 30, redirect: true) do |io|
           body = io.read(Studio::ImageCache::MAX_REMOTE_BYTES + 1).to_s

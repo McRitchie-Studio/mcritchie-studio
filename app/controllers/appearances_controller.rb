@@ -230,6 +230,24 @@ class AppearancesController < ApplicationController
     @face_ranked = @search_rows.any?(&:face_scored?)
     @face_ranking_available = Appearances::FaceVisibility.available?
     set_generator
+    note_unchecked_photos
+  end
+
+  # PHOTOGRAPHS THIS PAGE LEFT OUT BECAUSE THEIR HOST COULD NOT BE LOOKED UP.
+  #
+  # The next engine's URL guard resolves each name (Appearances::FetchableUrl), and
+  # a failed lookup leaves the photograph out of every count above. That is one
+  # request's answer and the next may differ, so the page says it rather than
+  # showing a smaller identity with no reason. Hosts only: a path or a query can
+  # be a signed credential. Read last, after everything above has asked.
+  def note_unchecked_photos
+    left_out = Appearances::FetchableUrl.left_out(look: @appearance.slug)
+    return if left_out.empty?
+
+    hosts = left_out.map(&:last).uniq
+    flash.now[:alert] ||= "Some of this look's photos were left out of this page: " \
+                          "#{hosts.to_sentence} could not be looked up just now. " \
+                          "Nothing about them changed; reload to check again."
   end
 
   # WHAT THE OUTPUT PANEL NEEDS TO OFFER — OR TO REFUSE HONESTLY.

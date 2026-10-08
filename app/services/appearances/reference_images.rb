@@ -97,6 +97,9 @@ module Appearances
     # those are the more dangerous of the two, because nobody looked at them. One
     # opinion, two callers; this delegates rather than keeping a private copy that
     # would drift the day the engine tightens its ranges.
-    def fetchable?(url) = FetchableUrl.ok?(url)
+    #
+    # `ok_for?` rather than `ok?`: this is the identity's floor, and a photograph
+    # left out because its host could not be looked up is logged, not dropped quietly.
+    def fetchable?(url) = FetchableUrl.ok_for?(url, look: @appearance&.slug, what: "identity photo")
   end
 end

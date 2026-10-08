@@ -58,6 +58,10 @@ class Content
             else
               [:reuse, "#{rows.count(&:chosen?)} of #{rows.length} gathered photo(s) chosen"]
             end
+          # Left out for this request only, and no rule failed: say so beside
+          # whatever else is true, without changing the decision.
+          unchecked = set.unchecked_rows.length
+          detail += " (#{unchecked} left out: host could not be looked up just now)" if unchecked.positive?
           Asset.new(kind: "references", label: "Reference photos", decision: decision,
                     occupant: rows, detail: detail)
         end
@@ -158,10 +162,17 @@ class Content
 
       def operator_anchor
         url = @appearance.reference_url.presence
-        ok = url.present? && Appearances::FetchableUrl.ok?(url)
+        ok = url.present? &&
+             Appearances::FetchableUrl.ok_for?(url, look: @appearance.slug, what: Appearances::GenerateArtifact::IDENTITY_ANCHOR)
+        # A host that could not be looked up is not a missing photo: the remedy
+        # is to try again, not to add one.
+        unchecked = url.present? && Appearances::FetchableUrl.verdict(url) == Appearances::FetchableUrl::UNRESOLVED
+        missing = if unchecked then "the reference photo's host could not be looked up just now — try again in a moment"
+                  else "no reference photo — add one to the look"
+                  end
         Asset.new(kind: "anchor", label: "Anchor photo", decision: ok ? :reuse : :acquire,
                   occupant: (url if ok), url: (url if ok),
-                  detail: ok ? "operator reference photo" : "no reference photo — add one to the look")
+                  detail: ok ? "operator reference photo" : missing)
       end
 
       # WHEN EACH INPUT LAST CHANGED. The headshot's bytes change only when its rows

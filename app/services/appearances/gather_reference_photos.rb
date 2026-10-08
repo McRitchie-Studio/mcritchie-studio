@@ -614,7 +614,13 @@ module Appearances
     # identity AND bill us to look at it.
     def file(harvest)
       results = harvest.results
-      safe, unsafe = results.partition { |r| FetchableUrl.ok?(r.image_url) }
+      # ONE LOOKUP PER HOST: a search answer is many URLs from a few hosts, and
+      # FetchableUrl remembers each host's answer for the request or job. A
+      # result whose host could not be looked up is filed with the unsafe ones
+      # (nothing is known about where it points) and `ok_for?` logs it.
+      safe, unsafe = results.partition do |r|
+        FetchableUrl.ok_for?(r.image_url, look: @appearance&.slug, what: "search result")
+      end
 
       judgements = face_judgements(safe)
       ranked = safe.sort_by { |r| [-final_score(r, judgements), r.position.to_i] }

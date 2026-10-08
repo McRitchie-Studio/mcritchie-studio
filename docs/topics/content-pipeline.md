@@ -123,7 +123,7 @@ something is absent.
 | Finding more | `Appearances::ImageSearch` (façade) + `::Serper` (paid) + `::WikimediaCommons` (keyless) |
 | Ranking them | `Appearances::FaceVisibility` (vision, paid) over `Appearances::PhotoMerit` (free) |
 | Filing candidates | `Appearances::GatherReferencePhotos` → `appearance_reference_photos` |
-| URL safety | `Appearances::FetchableUrl` → `Studio::ImageCache.validate_source_url!` |
+| URL safety | `Appearances::FetchableUrl` → `Studio::ImageCache.validate_source_url!` (see "URL safety and DNS" below) |
 | Mint + record + poll | `Appearances::CreateCharacterReference` |
 | Storage | `appearances.higgsfield_reference_id` / `_status` / `_synced_at` |
 | Spending it | `Content::AssetsAgent#character_reference` (only when ready) |
@@ -666,6 +666,46 @@ Two further gaps to know before trusting the chain end to end:
   `logo_overlay: false`).
 - **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
   and returns the URL it was given.
+
+### URL safety and DNS
+
+`Appearances::FetchableUrl` is the one opinion about which URLs are handed to a
+fetcher, and it delegates to the engine's guard. What the guard checks depends on
+the studio-engine version the hub locks:
+
+- **The engine without name resolution** reads the URL's text only.
+- **The engine with it** (studio-engine PR 436 onward) also looks the host name up
+  and refuses a name with any non-public address. A lookup is uncached, takes up
+  to about six seconds for a name that never answers, and a name that cannot be
+  looked up raises `Studio::ImageCache::UnresolvedSourceHost`.
+
+The hub runs on both, so `FetchableUrl` answers one of three verdicts: `OK`,
+`REFUSED` (not a public address) or `UNRESOLVED` (the host could not be looked
+up). On the first engine `UNRESOLVED` never occurs. Three rules keep lookups off
+hot paths:
+
+1. **One lookup per host per request or job.** Verdicts are remembered per host
+   in `FetchableUrl::Memo`, a `CurrentAttributes` that Rails clears when the
+   request or job ends. Where nothing ends (a console, a rake task, one long
+   job), a verdict is asked again after `MEMO_TTL` (60 seconds). There is no
+   cross-request cache: DNS answers change, and a stale "ok" is the hole.
+2. **A web request spends at most `REQUEST_LOOKUP_BUDGET` (10 seconds) on
+   lookups.** `ApplicationController` sets it. Past it, a name not yet asked
+   about is `UNRESOLVED` without a lookup, so the worst case is the budget plus
+   the lookup in flight: 16 seconds. Jobs have no budget.
+3. **`PersonJewelry` validates `image_url` only when it changes.**
+
+`UNRESOLVED` is never treated as safe: the URL is left out. It is told apart from
+`REFUSED` wherever an operator reads the reason (the jewelry error, the attach
+flash, the asset zip's README), because the remedy is to try again rather than to
+fix the address. A look's photograph left out this way is logged once per look and
+host (`[fetchable_url] ... left out of look <slug>: host <host> could not be
+looked up`, host only) and the look page says so in a flash.
+
+Still owed, once the gem with `vet_source_url!` and `pinned_http` is published:
+`Appearances::MirrorCandidates::LiveCache.fetch` and
+`MusicVideos::AssetZip::Fetcher#remote` check a URL and then connect by name, which
+resolves it a second time. Both carry a `FOLLOW-UP` comment.
 
 ### Photo scouting — calibrating the machine's taste against the operator's
 

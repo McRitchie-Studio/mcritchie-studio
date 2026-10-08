@@ -9,10 +9,22 @@ module MusicVideos
     # STUDIO_S3_BACKEND selects, so production reads the production bucket),
     # or a sheet image over https.
     #
-    # A sheet URL is fetched only when Appearances::FetchableUrl.https? passes
-    # (https, a public host), and so is every redirect it answers with. The
-    # check reads the URL's text, so its limits are FetchableUrl's (no DNS
-    # pinning). Every failure is a FetchFailed with a short reason.
+    # A sheet URL is fetched only when Appearances::FetchableUrl.https_verdict
+    # passes (https, a public host), and so is every redirect it answers with.
+    # Every failure is a FetchFailed with a short reason.
+    #
+    # WHAT THAT CHECK PROVES depends on the engine the hub locks
+    # (Appearances::FetchableUrl says which does what). On the engine that reads
+    # only the URL's text, a public name pointing at a private address passes.
+    # On the next one the name is looked up and refused if any address is
+    # non-public. ON NEITHER IS THE ADDRESS PINNED: Net::HTTP below connects by
+    # NAME and resolves it again, so a name that answers differently between
+    # the check and the connection is still followed.
+    #
+    # FOLLOW-UP (needs the published gem, so it is not done here): replace the
+    # check and the Net::HTTP.start below with the engine's `vet_source_url!` +
+    # `pinned_http`, which connects to the address that was vetted.
+    # /tasks/url-guard-off-hot-paths, epic recast-video-pipeline piece 23.
     class Fetcher
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 20
@@ -62,7 +74,9 @@ module MusicVideos
       end
 
       def remote(url, hops = 0, &blk)
-        raise FetchFailed, "not an https public host" unless Appearances::FetchableUrl.https?(url)
+        verdict = Appearances::FetchableUrl.https_verdict(url)
+        raise FetchFailed, "the host could not be looked up just now" if verdict == Appearances::FetchableUrl::UNRESOLVED
+        raise FetchFailed, "not an https public host" unless verdict == Appearances::FetchableUrl::OK
 
         uri = URI.parse(url)
         location = nil

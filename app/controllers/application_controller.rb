@@ -20,6 +20,12 @@ class ApplicationController < ActionController::Base
   before_action :verify_session_token
   before_action :set_current_context
 
+  # A web request may spend ten seconds looking image hosts up, no more. On the
+  # next engine each URL-guard judgement is a DNS lookup of up to six seconds, and
+  # a page that judges several dead names would otherwise cross Heroku's thirty.
+  # Jobs set no budget. Appearances::FetchableUrl.
+  before_action { Appearances::FetchableUrl.limit_lookups }
+
   # Default-deny: every action needs an admin unless AdminWall lists it.
   include AdminWall
 

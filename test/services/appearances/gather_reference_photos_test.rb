@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../../support/url_guard_world"
 
 # [unit] FILING WHAT A SEARCH FOUND — every candidate, with the verdict on each.
 #
@@ -7,6 +8,8 @@ require "test_helper"
 # the same reason: a real query costs money PER CALL, so the suite must be handed
 # something that cannot reach out. `FakeSearch` below holds a literal Answer.
 class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
+  include UrlGuardWorld
+
   # A SEARCH THAT CANNOT SEARCH. No HTTP, no sockets, no key — it returns whatever
   # Answer it was built with and records what it was asked.
   class FakeSearch
@@ -248,6 +251,31 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     unsafe = AppearanceReferencePhoto.where(rejection_reason: AppearanceReferencePhoto::REJECTED_UNFETCHABLE)
     assert_equal 4, unsafe.count
     assert unsafe.none?(&:chosen?), "an unsafe URL must never reach the identity"
+  end
+
+  # The next engine's guard looks each host up, and a search answer is twenty
+  # URLs from a handful of hosts (/tasks/url-guard-off-hot-paths).
+  test "a search answer costs one lookup per distinct host, and a host that could not be looked up is logged" do
+    results = (1..6).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) } +
+              (7..9).map { |i| hit("https://photos.example.org/#{i}.jpg", position: i) } +
+              (10..11).map { |i| hit("https://dead.example.com/#{i}.jpg?sig=secret", position: i) }
+
+    warned = []
+    summary = nil
+    Rails.logger.stub(:warn, ->(message = nil, &blk) { warned << (message || blk&.call).to_s }) do
+      with_url_guard(unresolved: %w[dead.example.com]) do |lookups|
+        summary = Appearances::GatherReferencePhotos.call(
+          @look, search: FakeSearch.new(results: results), faces: looked_at(results), mirror: mirror
+        )
+        assert_equal %w[cdn.example.com dead.example.com photos.example.org], lookups.sort
+      end
+    end
+
+    assert_equal 2, summary.unfetchable, "a URL nobody could check is still not handed to a fetcher"
+    lines = warned.grep(/\[fetchable_url\]/)
+    assert_equal 1, lines.size, lines.inspect
+    assert_match(/search result left out of look #{@look.slug}: host dead\.example\.com could not be looked up/, lines.first)
+    assert_no_match(/secret/, lines.first)
   end
 
   # ORDER MATTERS: guard first, cap second. The other way round lets one

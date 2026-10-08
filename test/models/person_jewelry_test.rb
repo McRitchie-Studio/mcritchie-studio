@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/url_guard_world"
 
 # [unit] A person's jewelry, the source the iced-out sheet reads. Synthetic
 # person and pieces only: nothing here describes a real person's rings.
 class PersonJewelryTest < ActiveSupport::TestCase
+  include UrlGuardWorld
+
   setup do
     @person = Person.create!(first_name: "Novice", last_name: "Jewelcase")
   end
@@ -56,5 +59,48 @@ class PersonJewelryTest < ActiveSupport::TestCase
     assert_match(/\Ajewel-\h{12}\z/, ring.slug)
     assert_equal [ring, watch], @person.reload.jewelries.to_a
     assert_equal [ring], @person.jewelries.rings.to_a
+  end
+
+  # THE GUARD IS ASKED ABOUT THE IMAGE URL ONLY WHEN THE URL CHANGES. On the
+  # next engine each ask is a DNS lookup that can take seconds and can fail, and
+  # a rename must not be refused because a CDN's name did not look up.
+  test "saving a jewel whose image URL did not change asks the guard nothing" do
+    piece = jewel(image_url: "https://cdn.example.com/ring.png").tap(&:save!)
+    ActiveSupport::CurrentAttributes.clear_all
+
+    with_url_guard(unresolved: %w[cdn.example.com]) do |lookups|
+      piece = PersonJewelry.find(piece.id)
+      piece.update!(name: "Renamed chain", description: "A thinner gold chain")
+      assert piece.valid?
+      assert_equal [], lookups, "no lookup for a URL nobody touched"
+      assert_equal "Renamed chain", piece.reload.name
+    end
+  end
+
+  test "a changed or new image URL is looked up once, however often the record is validated" do
+    with_url_guard do |lookups|
+      piece = jewel(image_url: "https://cdn.example.com/ring.png")
+      assert piece.valid?
+      piece.save!
+      assert_equal %w[cdn.example.com], lookups, "valid? then save! is one lookup"
+
+      ActiveSupport::CurrentAttributes.clear_all
+      piece.image_url = "https://other.example.com/ring.png"
+      assert piece.valid?
+      assert_equal %w[cdn.example.com other.example.com], lookups
+    end
+  end
+
+  test "an image URL whose host could not be looked up reads as could not check, not as invalid" do
+    with_url_guard(unresolved: %w[dead.example.com]) do
+      unchecked = jewel(image_url: "https://dead.example.com/ring.png")
+      assert_not unchecked.valid?
+      assert_match(/could not be checked right now/, unchecked.errors[:image_url].sole)
+      assert_no_match(/must be an https/, unchecked.errors.full_messages.to_sentence)
+
+      refused = jewel(image_url: "http://dead.example.com/ring.png")
+      assert_not refused.valid?
+      assert_equal ["must be an https:// URL on a public host"], refused.errors[:image_url]
+    end
   end
 end
