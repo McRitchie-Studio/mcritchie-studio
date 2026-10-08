@@ -112,17 +112,23 @@ dreams against it (`bin/lib/dream_selector.rb`):
 | `topic` | 1 a word, 3 at most | the word is in the task's title or acceptance |
 
 A tag value the task does not carry scores 0. Topic words are compared in lower
-case, without a short list of stop words, and a plural matches its singular.
+case, without a short list of stop words, and a word over three letters loses
+one trailing `s`.
 
 The claim prints the 12 highest scores in rank order, ties in slug order, then
 the platform sequence under `### Platform dreams`. A soul with 12 dreams or fewer
-is shown them all. The block stays within 6,000 characters
-(`DreamBank::CALL_BUDGET`) and degrades in this order:
+has them all selected. The block stays within 6,000 characters
+(`DreamBank::CALL_BUDGET`), the selected dreams take that budget first, and the
+block degrades in this order:
 
 1. every dream with its Why;
 2. the selected dreams with their Why, the platform dreams without;
-3. no Why lines;
-4. whole dreams dropped from the lowest rank up, the platform dreams last.
+3. platform dreams dropped from the last up, until none is left;
+4. the selected dreams without their Why;
+5. selected dreams dropped from the lowest rank up.
+
+`test/lib/dream_bank_test.rb` pins the real bank: every soul's selected dreams
+fit the budget with their Why lines.
 
 The last line counts every approved dream the block does not show, in any
 sequence, and names the command that lists them:

@@ -241,6 +241,22 @@ class DreamBankTest < Minitest::Test
     assert_equal DreamBank.approved.size, DreamBank.platform.size + DreamBank.approved.reject(&:platform?).size
   end
 
+  # Growth that would trim a soul's selected dreams, or their Why lines, fails here.
+  def test_unit_every_souls_selected_dreams_fit_the_claim_budget_in_the_real_bank
+    approved = DreamBank.approved
+    DreamBank.roster.each_key do |soul|
+      picked = DreamSelector.select(DreamSelector.task({}), approved, soul: soul).picked
+      text = DreamBank.task_context(soul, approved, facts: {}, task: "some-task")
+
+      assert_operator text.size, :<=, DreamBank::CALL_BUDGET, soul
+      picked.each do |dream|
+        assert_includes text, DreamBank.dream_block(dream),
+                        "#{soul}: `#{dream.slug}` does not fit a claim with its Why. Shorten a dream or retire one."
+      end
+    end
+    assert_operator DreamBank.roster.keys.count { |soul| DreamBank.soul(soul).any? }, :>=, 2, "control: souls with dreams were read"
+  end
+
   def test_unit_index_matches_generator
     assert_equal DreamBank.index, File.read(File.join(DreamBank::DEFAULT_DIR, "INDEX.md")),
                  "docs/agents/dreams/INDEX.md is stale. Run `bin/dream index --write`."
