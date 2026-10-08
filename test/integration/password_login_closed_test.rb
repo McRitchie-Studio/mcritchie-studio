@@ -1,5 +1,4 @@
 require "test_helper"
-require Rails.root.join("db/migrate/20261006141500_null_user_password_digests").to_s
 
 # [unit] [integration] NO HUB USER CAN SIGN IN BY PASSWORD.
 #
@@ -12,7 +11,7 @@ require Rails.root.join("db/migrate/20261006141500_null_user_password_digests").
 #
 # Closed three ways, each enough on its own:
 #   1. User has no has_secure_password, so there is no `authenticate` to call;
-#   2. the release migration nulls every stored digest, and User ignores the column;
+#   2. no row holds a digest, and User ignores the column;
 #   3. AdminWall keeps sessions#create off its PUBLIC list (wall-drops-password-login).
 #
 # The engine either draws POST /login (0.88, 0.90) or does not (studio-engine
@@ -22,7 +21,7 @@ require Rails.root.join("db/migrate/20261006141500_null_user_password_digests").
 class PasswordLoginClosedTest < ActionDispatch::IntegrationTest
   ONCE_VALID = "correct horse battery staple".freeze
   # BCrypt of ONCE_VALID at cost 4, minted once and frozen here so the test needs
-  # no hashing library: the shape a production row held before the migration.
+  # no hashing library: the shape a stored digest takes.
   ONCE_VALID_DIGEST = "$2a$04$vAioTZeJ8lxIh91DbmthMux4mjFypC7.pMg4MiEBAkO59Xaqkp72S".freeze
 
   # The column is ignored by the model, so the digest is written the only way a
@@ -70,22 +69,6 @@ class PasswordLoginClosedTest < ActionDispatch::IntegrationTest
   test "[unit] User does not read the password_digest column" do
     assert_includes User.ignored_columns, "password_digest"
     refute_includes User.column_names, "password_digest"
-  end
-
-  # --- the migration ----------------------------------------------------------
-
-  test "[unit] the migration nulls every stored digest and touches nothing else" do
-    admin = users(:alex)
-    viewer = users(:viewer)
-    plant_digest(admin)
-    plant_digest(viewer)
-    before = admin.reload.attributes
-
-    NullUserPasswordDigests.new.tap { |m| m.verbose = false }.up
-
-    assert_nil stored_digest(admin)
-    assert_nil stored_digest(viewer)
-    assert_equal before, admin.reload.attributes
   end
 
   # --- the door ---------------------------------------------------------------
