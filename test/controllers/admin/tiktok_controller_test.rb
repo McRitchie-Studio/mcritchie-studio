@@ -151,6 +151,20 @@ class Admin::TiktokControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "callback says so when TikTok cannot be reached, and logs no error" do
+    with_tiktok_env do
+      state = begin_connect.fetch("state")
+      Net::HTTP.stub(:start, ->(*_args, **_opts) { raise SocketError, "getaddrinfo: nodename nor servname provided" }) do
+        assert_no_difference -> { ErrorLog.count } do
+          get admin_tiktok_callback_path, params: { state:, code: "code-1" }
+        end
+      end
+
+      assert_response :bad_request
+      assert_select "[data-tiktok-refusal]", text: /could not reach TikTok \(SocketError\)/
+    end
+  end
+
   test "callback reports a refused code exchange without a token and without an error log" do
     with_tiktok_env do
       tiktok_grants(nil, status: 400, body: JSON.generate(error: "invalid_grant", error_description: "Authorization code is expired."))

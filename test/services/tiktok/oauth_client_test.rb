@@ -56,6 +56,23 @@ class Tiktok::OAuthClientTest < ActiveSupport::TestCase
     end
   end
 
+  test "one refresh answers both the token and the scope, and a new sign-in is asked afresh" do
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      with_tiktok_env do
+        tiktok_grants("user.info.basic,video.upload")
+        Tiktok::OAuthClient.access_token
+        Tiktok::OAuthClient.granted_scopes
+        assert_equal 1, token_requests.size
+
+        with_tiktok_env("TIKTOK_REFRESH_TOKEN" => "a-second-sign-in") do
+          tiktok_grants("user.info.basic,video.upload,video.publish")
+          assert_includes Tiktok::OAuthClient.granted_scopes, "video.publish"
+          assert_equal ["a-second-sign-in"], token_requests.pluck(:refresh_token)
+        end
+      end
+    end
+  end
+
   test "a drafts-only connection is refused direct post in plain words" do
     with_tiktok_env do
       tiktok_grants("user.info.basic,video.upload")
