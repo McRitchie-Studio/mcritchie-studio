@@ -160,4 +160,24 @@ class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
 
     assert_equal few, many, "12 more logged-in cards cost more queries on [/tasks, /deployments]"
   end
+
+  # The epic page draws the same card from the same batch, so it owes the same answer.
+  test "[integration] the epic page's query count does not grow with logged-in cards" do
+    Task.delete_all
+    Agent.find_or_create_by!(slug: "carl") { |agent| agent.name = "Carl" }
+    shown = 2.times.flat_map { |i| create_logged_in_tasks(i) }
+    Task.where(slug: shown.map(&:slug)).update_all(epic_slug: "query-budget")
+
+    few = render_query_count(epic_path("query-budget"))
+    shown.each do |task|
+      assert_select "#card-#{task.slug} [data-test='task-card-soul']", { count: 1 },
+                    "#{task.stage}: the fixture has to reach the soul chip, or this measures nothing"
+    end
+
+    added = 6.times.flat_map { |i| create_logged_in_tasks(100 + i) }
+    Task.where(slug: added.map(&:slug)).update_all(epic_slug: "query-budget")
+    many = render_query_count(epic_path("query-budget"))
+
+    assert_equal few, many, "12 more logged-in cards cost #{many - few} more queries on /epics/<slug>"
+  end
 end

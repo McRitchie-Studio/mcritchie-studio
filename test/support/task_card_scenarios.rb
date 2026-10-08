@@ -26,6 +26,8 @@ module TaskCardScenarios
     submitted_cleared_block submitted_blocked
     reviewed reviewed_held_from_release reviewed_blocked
     assembled shipped archived activity_notes
+    reviewed_with_crew submitted_ci_failed submitted_ci_green
+    blocked_no_summary waiting_approval_lapsed assembled_colour_fallback
   ].freeze
 
   def task_card_scenario(name)
@@ -241,5 +243,54 @@ module TaskCardScenarios
     latest = Activity.create!(task_slug: task.slug, activity_type: "clarification", agent_slug: "avi",
                               description: "Which default wins when both flags are set on the same task?")
     { task: task, crew_board: :build, given: no_mascot.merge(latest_activity: latest, activity_count: 2) }
+  end
+
+  # An assigned task that walked to reviewed under two reviewers: data-agent, the
+  # filter's argument and the crew row all carry a soul.
+  def scenario_reviewed_with_crew
+    task = scenario_task("Snapshot reviewed with crew card", stage: "building", agent_slug: "pokemon")
+    task.submit!
+    task.record_intent_event(to_stage: "reviewed", reviewers: [{ "slug" => "carl", "weight" => "primary" },
+                                                              { "slug" => "avi", "weight" => "light" }])
+    task.review!
+    { task: task, crew_board: :deploy, given: with_mascot(single_type_mascot) }
+  end
+
+  def scenario_submitted_ci_failed
+    task = scenario_task("Snapshot submitted CI failed card", stage: "submitted",
+                         devops: { "pr_url" => "https://github.com/acme/app/pull/44" })
+    progress = Ci::CheckProgress.new(passed: 3, failed: 2, pending: 0, sha: "failed-head-sha")
+    { task: task, crew_board: :deploy, given: no_mascot.merge(ci_progress: progress) }
+  end
+
+  def scenario_submitted_ci_green
+    task = scenario_task("Snapshot submitted CI green card", stage: "submitted",
+                         devops: { "pr_url" => "https://github.com/acme/app/pull/45" })
+    progress = Ci::CheckProgress.new(passed: 5, failed: 0, pending: 0, sha: "green-head-sha")
+    { task: task, crew_board: :deploy, given: no_mascot.merge(ci_progress: progress) }
+  end
+
+  # A block whose note carries no summary: the bar falls back to the note itself.
+  def scenario_blocked_no_summary
+    task = scenario_task("Snapshot blocked no summary card", stage: "building")
+    task.block!(by: "carl", kind: "rework")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", agent_slug: "carl",
+                     description: "The empty state shows <b>raw</b> markup & \"quotes\" on a narrow column.")
+    { task: task, crew_board: :build, given: no_mascot }
+  end
+
+  # An approval request whose window has run out: the chip reads lapsed.
+  def scenario_waiting_approval_lapsed
+    task = scenario_task("Snapshot waiting approval lapsed card", stage: "building",
+                         devops: { "approval_status" => "waiting", "approval_requested_at" => (NOW - 3.hours).iso8601,
+                                   "local_url" => "http://localhost:3011/tasks" })
+    { task: task, crew_board: :build, given: no_mascot }
+  end
+
+  # No mascot row: the glow takes the colour stamped on the task.
+  def scenario_assembled_colour_fallback
+    task = scenario_task("Snapshot assembled colour fallback card", stage: "assembled",
+                         devops: { "mascot_color" => "#12ab34" })
+    { task: task, crew_board: :deploy, given: no_mascot }
   end
 end

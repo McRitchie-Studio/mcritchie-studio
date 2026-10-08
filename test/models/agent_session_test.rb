@@ -284,6 +284,16 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert_equal({}, AgentSession.live_by_task([]))
   end
 
+  # The soul chip names a studio login and nothing else. A client key is the one
+  # other tier the model lets carry a task_slug, so it is the one that proves the
+  # tier filter.
+  test "live_by_task names only a studio session, never another tier's on the same task" do
+    task = Task.create!(title: "Batch Tier", stage: "building")
+    AgentSession.create!(soul: "tyrion", tier: "client", issued_by: "runtime_key", label: "tier pin", task_slug: task.slug)
+
+    assert_equal({}, AgentSession.live_by_task([task]))
+  end
+
   test "a review_claim session is revoked when the claim changes hands or the task is resubmitted" do
     task = review_task
     first = claim(task).agent_session
