@@ -73,7 +73,7 @@ module Api
         task = Task.new(task_params)
         rescue_and_log(target: task) do
           task.save!
-          render_data(task, status: :created)
+          render_saved(task, status: :created)
         end
       rescue StandardError => e
         render_exception(e)
@@ -82,7 +82,7 @@ module Api
       def update
         rescue_and_log(target: @task) do
           @task.update!(task_params)
-          render_data(@task)
+          render_saved(@task)
         end
       rescue StandardError => e
         render_exception(e)
@@ -201,6 +201,13 @@ module Api
       # PR on the task branch into the column, and a later show serves it. bin/submit's
       # record step skips its write when this names the PR it opened, and writes the
       # url itself otherwise; its read-back verifies it either way.
+      # A saved task, with its naming advice beside `data` when the save drew any.
+      def render_saved(task, status: :ok)
+        body = { data: task }
+        body[:warnings] = task.warnings if task.warnings.any?
+        render json: body, status: status
+      end
+
       def derived_facts_json(task)
         { "pr_url_or_derived" => task.recorded_pr_url_enqueuing_fill }
       rescue StandardError => e

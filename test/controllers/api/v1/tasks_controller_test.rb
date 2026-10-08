@@ -886,19 +886,24 @@ module Api
         assert_equal "renamed task title here", @task.title
       end
 
-      test "create enforces the 3-5 word title (naming discipline)" do
+      test "[integration] a long title creates the task and answers with a warning" do
         post api_v1_tasks_path,
              params: { title: "way too many words in this task title now" }, # 9 words
              headers: @headers, as: :json
-        assert_response :unprocessable_entity
-        assert_match(/3-5 words/, JSON.parse(response.body)["error"])
+        assert_response :created
+        body = response.parsed_body
+        assert_equal "way too many words in this task title now", body.dig("data", "title")
+        assert_equal 1, body["warnings"].size
+        assert_match(/title is 9 words; 3-5 reads best/, body["warnings"].first)
       end
 
-      test "create enforces 5-12 word acceptance bullets" do
-        post api_v1_tasks_path,
-             params: { title: "valid four word title", devops: { acceptance: ["too short"] } },
-             headers: @headers, as: :json
-        assert_response :unprocessable_entity
+      test "[integration] a short acceptance bullet saves and answers with a warning" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { acceptance: ["too short"] } },
+              headers: @headers, as: :json
+        assert_response :success
+        assert_equal ["too short"], @task.reload.devops_acceptance
+        assert_match(/acceptance #1 is 2 words; 5-12 reads best/, response.parsed_body["warnings"].first)
       end
 
       test "create accepts a compliant title and acceptance" do
@@ -906,6 +911,7 @@ module Api
              params: { title: "valid four word title", devops: { acceptance: ["the user can log in fine"] } },
              headers: @headers, as: :json
         assert_response :created
+        assert_not response.parsed_body.key?("warnings"), "a save with nothing to say carries no warnings key"
       end
 
       # A scalar `event` (e.g. ?event=foo) used to raise TypeError in the

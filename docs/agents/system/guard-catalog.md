@@ -234,7 +234,7 @@ created before the snapshot is the kept part of decision 8.
 
 | Guard | Refuses → prevents | Trigger · fires | n | Disposition | Mark |
 |---|---|---|---|---|---|
-| `Task#title_within_word_range`, `Task#acceptance_bullets_within_word_range` | A long title or bullet | v3 section 7 | 2 | DELETE the refusal, keep a warning (v3 decided defaults and warnings) | awaiting build: `guards-app-validations-and-api` |
+| `Task#title_within_word_range`, `Task#acceptance_bullets_within_word_range` | A long title or bullet | v3 section 7 | 2 | DELETE the refusal, keep a warning (v3 decided defaults and warnings) | applied: `guards-app-validations-and-api` (both refusals and their tests are gone; a save answers with a `warnings` array, which `bin/task` and the form flash print) |
 | `Task::DEVOPS_COLUMN_KEYS` raise in `normalize_devops_metadata` | A column key written as a devops key → 422 | 156 of 1,586 tasks, 2026-09-02 | 1 | BY CONSTRUCTION: route `dependencies` and `epic_slug` to their columns; refuse only server-owned keys | awaiting build: `guards-app-validations-and-api` |
 | `Task#normalize_devops_map_pair` | A `pr_urls` entry under the wrong repo | · | 1 | BY CONSTRUCTION: key by the URL's repo | awaiting build: `guards-app-validations-and-api` |
 | `Task#guard_approval_request_stage!` | "One sentence on three surfaces" | approval-write-drops-at-submitted | 1 | BY CONSTRUCTION: the CLI and the doc quote the 422 body | awaiting build: `guards-app-validations-and-api` |

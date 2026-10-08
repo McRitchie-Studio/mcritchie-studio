@@ -1687,6 +1687,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "textarea[name='task[devops][acceptance]']", text: /Original review continues without interruption/
   end
 
+  test "[integration] the form saves a long title and the flash says so" do
+    log_in_as(@admin)
+
+    assert_difference "Task.count", 1 do
+      post tasks_path, params: { task: { title: "This form title runs well past five words" } }
+    end
+
+    assert_redirected_to task_path(Task.order(:created_at).last.slug)
+    assert_match(/Task created\. Note: title is 8 words; 3-5 reads best/, flash[:notice])
+  end
+
   test "[integration] create preserves followup task shape from form params" do
     log_in_as(@admin)
 

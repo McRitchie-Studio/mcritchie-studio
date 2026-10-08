@@ -154,7 +154,7 @@ class TasksController < ApplicationController
     @task = Task.new(task_params)
     rescue_and_log(target: @task) do
       @task.save!
-      redirect_to task_path(@task.slug), notice: "Task created."
+      redirect_to task_path(@task.slug), notice: saved_notice("Task created.")
     end
   rescue StandardError => e
     @agents = Agent.active.order(:position)
@@ -171,7 +171,7 @@ class TasksController < ApplicationController
       Current.task_event_actor = current_activity_agent_slug || current_user&.email
       @task.update!(task_params)
       respond_to do |format|
-        format.html { redirect_to task_path(@task.slug), notice: "Task updated." }
+        format.html { redirect_to task_path(@task.slug), notice: saved_notice("Task updated.") }
         format.json { render json: @task }
       end
     end
@@ -394,6 +394,11 @@ class TasksController < ApplicationController
       "source" => "task_conversation",
       "user_id" => current_user&.id
     ).compact
+  end
+
+  # The flash for a save, with the task's naming advice after it.
+  def saved_notice(text)
+    [text, *@task.warnings.map { |warning| "Note: #{warning}." }].join(" ")
   end
 
   def task_params

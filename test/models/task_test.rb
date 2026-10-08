@@ -1348,41 +1348,52 @@ class TaskTest < ActiveSupport::TestCase
                "a single held member holds the whole app so the marker never says 'shipping' over an ejected member"
   end
 
-  # --- Naming discipline: terse title + acceptance, agent_context ---
+  # --- Naming advice: a long or short title or bullet saves, and warns ---
 
-  test "title must be 3-5 words on create" do
-    assert Task.new(title: "fix the login").valid?               # 3
-    assert Task.new(title: "add a new login flow").valid?        # 5
-    assert_not Task.new(title: "fix login").valid?               # 2
-    assert_not Task.new(title: "add a brand new login flow now").valid? # 7
+  test "[unit] a title outside 3-5 words saves and warns" do
+    assert_empty Task.create!(title: "fix the login").warnings            # 3
+    assert_empty Task.create!(title: "add a new login flow").warnings     # 5
+
+    short = Task.create!(title: "fix login")                              # 2
+    assert_equal 1, short.warnings.size
+    assert_match(/title is 2 words; 3-5 reads best/, short.warnings.first)
+
+    long = Task.create!(title: "add a brand new login flow now")          # 7
+    assert long.persisted?
+    assert_match(/title is 7 words/, long.warnings.first)
   end
 
-  test "an existing task is grandfathered until its title actually changes" do
-    task = Task.create!(title: "valid four word title")
-    task.update!(stage: "building") # title untouched → not re-validated
-    assert_equal "building", task.reload.stage
-    assert_raises(ActiveRecord::RecordInvalid) do
-      task.update!(title: "now this title has far too many words to pass") # 9
-    end
+  test "[unit] a save that leaves the title alone draws no title warning" do
+    task = Task.create!(title: "now this title has far too many words to pass") # 9
+    assert_equal 1, task.warnings.size
+
+    task.update!(stage: "building")
+    assert_empty task.warnings, "the advice is for the field this save changed"
   end
 
-  test "each acceptance bullet must be 5-12 words on create" do
-    ok = Task.new(title: "acceptance length check",
-                  metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } }) # 6
-    assert ok.valid?
-    short = Task.new(title: "acceptance length check",
-                     metadata: { "devops" => { "acceptance" => ["too short here"] } }) # 3
-    assert_not short.valid?
+  test "[unit] an acceptance bullet outside 5-12 words saves and warns" do
+    ok = Task.create!(title: "acceptance length check",
+                      metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } }) # 6
+    assert_empty ok.warnings
+
+    short = Task.create!(title: "acceptance length again",
+                         metadata: { "devops" => { "acceptance" => ["the user can log in successfully",
+                                                                     "too short here"] } }) # 6, 3
+    assert_equal ["the user can log in successfully", "too short here"], short.reload.devops_acceptance
+
+    short.update!(metadata: short.metadata.deep_merge("devops" => { "acceptance" => ["too short"] })) # 2
+    assert_equal 1, short.warnings.size
+    assert_match(/acceptance #1 is 2 words/, short.warnings.first)
   end
 
-  test "acceptance is validated on change but unrelated devops updates are grandfathered" do
+  test "[unit] a devops write that leaves acceptance alone draws no bullet warning" do
     task = Task.create!(title: "acceptance change task",
-                        metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } })
-    task.update!(metadata: task.metadata.deep_merge("devops" => { "kind" => "bug" })) # acceptance untouched
+                        metadata: { "devops" => { "acceptance" => ["too short"] } }) # 2
+    assert_match(/acceptance #1 is 2 words; 5-12 reads best: too short/, task.warnings.first)
+
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "kind" => "bug" }))
     assert_equal "bug", task.devops_kind
-    assert_raises(ActiveRecord::RecordInvalid) do
-      task.update!(metadata: task.metadata.deep_merge("devops" => { "acceptance" => ["too short"] })) # 2
-    end
+    assert_empty task.warnings
   end
 
   test "agent_context stores free-form verbose detail" do

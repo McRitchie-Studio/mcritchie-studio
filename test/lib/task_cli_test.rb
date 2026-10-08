@@ -257,7 +257,9 @@ class TaskCliTest < Minitest::Test
       "metadata" => { "devops" => @stub_devops }
     }.merge(@stub_columns || {})
     Array(@stub_omit_columns).each { |key| data.delete(key) }
-    JSON.generate("data" => data.merge(@stub_progress || {}))
+    body = { "data" => data.merge(@stub_progress || {}) }
+    body["warnings"] = @stub_warnings if @stub_warnings
+    JSON.generate(body)
   end
 
   def devops_of(request)
@@ -275,6 +277,15 @@ class TaskCliTest < Minitest::Test
     assert_equal SESSION, devops["session_id"]
     assert_equal "claude", devops["session_provider"]
     assert_equal "feature", devops["kind"]
+  end
+
+  # The board saves a long title and says so; the CLI prints what it said.
+  def test_create_prints_the_boards_warnings_and_succeeds
+    @stub_warnings = ["title is 9 words; 3-5 reads best on the board (put detail in agent_context)"]
+    _requests, _out, err, status = run_task(["create", "--title", "Session demo task", "--kind", "feature"])
+
+    assert status.success?, err
+    assert_includes err, "warning: title is 9 words; 3-5 reads best"
   end
 
   def test_create_stamps_session_from_codex_thread_env

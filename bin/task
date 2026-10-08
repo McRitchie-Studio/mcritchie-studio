@@ -1331,6 +1331,8 @@ def api(method, path, body = nil, opts = {})
     die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{handed_token_hint(res) if auth}",
          code: task_not_found_response?(res, parsed) ? EXIT_TASK_NOT_FOUND : 1)
   end
+  # The board's advice on a write that succeeded (a long title or bullet).
+  Array(parsed["warnings"]).each { |warning| warn!("warning: #{warning}") } if parsed.is_a?(Hash)
   parsed
 end
 

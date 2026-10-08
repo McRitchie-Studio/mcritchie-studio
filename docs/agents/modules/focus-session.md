@@ -105,6 +105,7 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
   `epic_slug`, the first words of `--agent-context` carry the epic.
 - **Title 3 to 5 words; acceptance bullets 5 to 12 words.** Everything longer
   goes in `--agent-context`, including the piece number and the plan path.
+  Outside those ranges the board saves the task and answers with a warning.
 - Record the task slug in the plan's Pieces table the moment `begin` returns.
 - **The designed column is measured in minutes.** If you filed ahead of a free
   slot, that card's age is the cost of it; do not file the next one.

@@ -166,6 +166,7 @@ class Task < ApplicationRecord
   }.freeze
   # Human-facing fields are kept terse (so the operator can read the board at a
   # glance); agents put their verbose detail in `agent_context`.
+  # Outside these ranges a save succeeds and answers with a warning (#warnings).
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
   # `abandoned_prs` records each PR still open when an operator archived the task
@@ -227,12 +228,9 @@ class Task < ApplicationRecord
   validates :stage, inclusion: { in: STAGES }
   # `merged` is nil or a known git location; heartbeats read it as ground truth.
   validates :merged, inclusion: { in: MERGED_STATES }, allow_nil: true
-  # Naming discipline, gated on change so untouched old tasks still save.
-  validate :title_within_word_range, if: :title_changed?
   # agent_slug carries a foreign key; naming no agent is a validation error with
   # the reason (a 422), never the database's refusal.
   validate :agent_slug_names_an_agent, if: -> { agent_slug.present? && will_save_change_to_agent_slug? }
-  validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
   # Gated on change: a task must stay saveable after a dependency it named is
   # archived.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
@@ -293,6 +291,7 @@ class Task < ApplicationRecord
   # the mascot must not trigger a redraw. Then the session mascot re-derives on each
   # build-stage move, so a new agent's session gets its own Pokémon.
   before_save :shed_column_shadow_keys
+  before_save :collect_naming_warnings
   before_save :restore_mascot_identity
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
@@ -925,6 +924,11 @@ class Task < ApplicationRecord
 
   def devops_risk_tags
     devops_list("risk_tags")
+  end
+
+  # Naming advice from the last save; both task controllers answer with it.
+  def warnings
+    @warnings || []
   end
 
   def devops_acceptance
@@ -2809,13 +2813,24 @@ class Task < ApplicationRecord
     errors.add(:agent_slug, "names no agent (#{agent_slug})") unless Agent.exists?(slug: agent_slug)
   end
 
-  # Titles stay 3-5 words; detail belongs in agent_context.
-  def title_within_word_range
-    count = word_count(title)
-    return if TITLE_WORD_RANGE.cover?(count)
+  # Naming advice for the fields this save changes: a title outside 3-5 words, an
+  # acceptance bullet outside 5-12. Advice only; the save goes through.
+  def collect_naming_warnings
+    found = []
+    if title_changed? && !TITLE_WORD_RANGE.cover?(count = word_count(title))
+      found << "title is #{count} words; #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} reads best " \
+               "on the board (put detail in agent_context)"
+    end
+    if acceptance_changed?
+      devops_acceptance.each_with_index do |bullet, i|
+        count = word_count(bullet)
+        next if ACCEPTANCE_WORD_RANGE.cover?(count)
 
-    errors.add(:title, "must be #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} words " \
-                       "(was #{count}) — name it tightly; put detail in agent_context")
+        found << "acceptance ##{i + 1} is #{count} words; #{ACCEPTANCE_WORD_RANGE.first}-" \
+                 "#{ACCEPTANCE_WORD_RANGE.last} reads best: #{bullet.to_s.truncate(48)}"
+      end
+    end
+    @warnings = found
   end
 
   # Coerce `dependencies` into the flat list of slug strings Release::Ordering
@@ -2864,16 +2879,5 @@ class Task < ApplicationRecord
     errors.add(:dependencies, "name no task on this board: #{unknown.map(&:inspect).join(", ")} — " \
                               "Release::Ordering silently ignores a dependency it cannot resolve, " \
                               "so the sequencing you declared would never happen")
-  end
-
-  # Each acceptance bullet stays 5-12 words.
-  def acceptance_bullets_within_word_range
-    devops_acceptance.each_with_index do |bullet, i|
-      count = word_count(bullet)
-      next if ACCEPTANCE_WORD_RANGE.cover?(count)
-
-      errors.add(:base, "acceptance ##{i + 1} must be #{ACCEPTANCE_WORD_RANGE.first}-" \
-                        "#{ACCEPTANCE_WORD_RANGE.last} words (was #{count}): #{bullet.to_s.truncate(48)}")
-    end
   end
 end
