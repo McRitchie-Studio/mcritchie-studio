@@ -77,9 +77,9 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
-  # Every cli() gets a RECORDING spawner, so no test ever forks a real renewer, and an
-  # explicit anchor pid, so anchor resolution never depends on whether the suite runs
-  # under a `claude` process.
+  # Every cli() gets a RECORDING spawner and a RECORDING killer, so no test ever forks
+  # a real renewer or signals a real pid, and an explicit anchor pid, so anchor
+  # resolution never depends on whether the suite runs under a `claude` process.
   def cli(env: {}, data: {}, code: 200, routes: {}, projects_dir:)
     c = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION,
                                   "TASK_REVIEW_CLAIM_ANCHOR_PID" => Process.pid.to_s }.merge(env),
@@ -87,6 +87,8 @@ class ReviewClaimCliTest < Minitest::Test
     c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code, routes: routes))
     @spawned = []
     c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
+    @killed = []
+    c.instance_variable_set(:@killer, ->(pid) { @killed << pid })
     # No test keeps a login in the checkout the suite runs from.
     c.instance_variable_set(:@tree, -> { @tree })
     c
@@ -451,12 +453,27 @@ class ReviewClaimCliTest < Minitest::Test
       acquirer = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
       acquirer.run(["acquire", SLUG])
 
-      killed = []
-      releaser = cli(projects_dir: proj, code: 200, data: { "released" => true })
-      releaser.instance_variable_set(:@killer, ->(pid) { killed << pid })
-      releaser.run(["release", SLUG])
+      cli(projects_dir: proj, code: 200, data: { "released" => true }).run(["release", SLUG])
 
-      assert_equal [4242], killed, "the renewer must not outlive the review it was renewing"
+      assert_equal [4242], @killed, "the renewer must not outlive the review it was renewing"
+    end
+  end
+
+  # Control for the one above: with no renewer on record, release signals nothing.
+  def test_unit_release_signals_nothing_when_no_renewer_was_started
+    Dir.mktmpdir do |proj|
+      cli(projects_dir: proj, code: 200, data: { "released" => true }).run(["release", SLUG])
+
+      assert_empty @killed
+    end
+  end
+
+  # A cli() left on the real killer sends TERM to whatever holds the stub pid.
+  def test_unit_the_helper_never_leaves_the_real_killer_in_place
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+
+      refute_equal c.method(:terminate), c.instance_variable_get(:@killer)
     end
   end
 
