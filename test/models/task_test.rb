@@ -1200,10 +1200,12 @@ class TaskTest < ActiveSupport::TestCase
     assert_match(/names no repo/, error.message)
   end
 
-  test "[unit] normalize_devops_map REFUSES a url filed under the wrong repo" do
-    error = assert_raises(ArgumentError) { Task.normalize_devops_map("mcritchie-studio" => TURF_PR) }
-    assert_match(/wrong repo/, error.message)
-    assert_match(/turf-monster/, error.message, "the error names the repo the url actually points at")
+  # Guard catalog row 10.3: the url decides the key, so no entry sits under the
+  # wrong repo and there is nothing to refuse.
+  test "[unit] normalize_devops_map keys a hash entry by the repo its url names" do
+    assert_equal({ "turf-monster" => TURF_PR }, Task.normalize_devops_map("mcritchie-studio" => TURF_PR))
+    assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR },
+                 Task.normalize_devops_map("mcritchie-studio" => TURF_PR, "turf-monster" => HUB_PR))
   end
 
   test "[unit] normalize_devops_map REFUSES a list entry that names no repo" do

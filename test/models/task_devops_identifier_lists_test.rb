@@ -205,15 +205,12 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
     assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, metadata["pr_urls"])
   end
 
-  # The HASH form needs no comma rule of its own, and this pins WHY so nobody adds a
-  # redundant second guard: the entry is keyed by the repo its URL names, and a key
-  # that disagrees already raises. A joined key can never agree with one repo.
-  test "[unit] a joined pr_urls hash key still raises on the repo it disagrees with" do
-    error = assert_raises(ArgumentError) do
-      Task.normalize_devops_metadata("pr_urls" => { "turf-monster,mcritchie-studio" => TURF_PR })
-    end
+  # The hash form needs no comma rule: the entry is keyed by the repo its url
+  # names, so a joined key is never stored.
+  test "[unit] a joined pr_urls hash key is replaced by the repo the url names" do
+    metadata = Task.normalize_devops_metadata("pr_urls" => { "turf-monster,mcritchie-studio" => TURF_PR })
 
-    assert_match(/turf-monster,mcritchie-studio/, error.message)
+    assert_equal({ "turf-monster" => TURF_PR }, metadata["pr_urls"])
   end
 
   # A url whose own repo segment carries a comma named no real repo either way; after

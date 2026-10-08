@@ -625,17 +625,15 @@ module Api
         assert_nil @task.reload.devops["pr_urls"]
       end
 
-      test "[integration] a pr_urls url filed under the wrong repo is refused" do
+      test "[integration] a pr_urls url is keyed by the repo it names, whatever key it came under" do
+        turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+
         patch api_v1_task_path(@task.slug),
-              params: { devops: {
-                kind: "bug",
-                pr_urls: { "mcritchie-studio" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" }
-              } },
+              params: { devops: { kind: "bug", pr_urls: { "mcritchie-studio" => turf } } },
               headers: @headers, as: :json
 
-        assert_response :unprocessable_entity
-        assert_match(/wrong repo/, response.parsed_body["error"].to_s)
-        assert_match(/turf-monster/, response.parsed_body["error"].to_s)
+        assert_response :success
+        assert_equal({ "turf-monster" => turf }, @task.reload.devops["pr_urls"])
       end
 
       # Blanking a value is the API-level UNSET — every writer sends the whole

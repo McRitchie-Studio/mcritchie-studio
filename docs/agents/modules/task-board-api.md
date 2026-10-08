@@ -683,9 +683,10 @@ shape the CLI writes. A list of bare PR urls is also accepted and each url is
 keyed by the repo it names, but nothing ships that form.
 
 **Every value is validated, both shapes alike.** A url must parse as
-`github.com/<owner>/<repo>/pull/<n>`, and in the object form the **key must be
-the repo the url names** — filing turf's PR under `mcritchie-studio` is a 422,
-not a stored lie. A url naming no repo is a 422 too, never a silent drop. A
+`github.com/<owner>/<repo>/pull/<n>`, and each entry is **keyed by the repo its
+url names**: turf's PR posted under `mcritchie-studio` is stored under
+`turf-monster`, and `bin/task --pr-url-for` keys the same way before it merges.
+A url naming no repo is a 422, never a silent drop. A
 **blank** value is the exception: it drops, and that is how the API unsets one
 entry (the writers all send the whole map). This validation is why the register
 is evidence — before it, `{"turf-monster": "lol"}` stored `"lol"` verbatim and

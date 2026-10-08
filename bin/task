@@ -1469,6 +1469,14 @@ def parse_flags(argv, context: nil)
                          remedy: repo.split(",").map(&:strip).reject(&:empty?)
                                      .map { |name| "#{arg} #{name}=<that repo's own pr url>" }.join(" "))
       url = nil if MAP_CLEAR_VALUES.include?(url.downcase)
+      # The url decides the key, as on the server (Task.normalize_devops_map_pair),
+      # so a pair typed under another repo cannot replace that repo's entry in the
+      # client-side merge.
+      named = url && url[OpenPrGuard::PR_URL_PATTERN, 1].to_s.split("/").last
+      if named && named != repo
+        warn!("note: #{arg} #{repo}=<url> is filed under #{named}, the repo the url names")
+        repo = named
+      end
       (maps[MAP_FLAGS[arg]] ||= {})[repo] = url; i += 2
     elsif SIZE_FLAGS.key?(arg)
       value = argv[i + 1] || die!("#{arg} needs a value")

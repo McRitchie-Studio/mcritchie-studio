@@ -1821,15 +1821,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_nil @new_task.reload.devops["pr_urls"]
   end
 
-  test "[integration] a web devops edit 422s on a pr_urls url filed under the wrong repo" do
+  test "[integration] a web devops edit keys a pr_urls url by the repo it names" do
     log_in_as(@admin)
     turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
 
     patch task_path(@new_task.slug, format: :json),
           params: { task: { devops: { kind: "bug", pr_urls: { "mcritchie-studio" => turf } } } }
 
-    assert_response :unprocessable_entity
-    assert_match(/wrong repo/, JSON.parse(response.body)["error"])
+    assert_response :success
+    assert_equal({ "turf-monster" => turf }, @new_task.reload.devops["pr_urls"])
   end
 
   # === A board UI edit is a PARTIAL devops write ===

@@ -1530,27 +1530,22 @@ class Task < ApplicationRecord
 
   # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" } from
   # a Hash (the API and `bin/task --pr-url-for`) or a list or string of bare urls.
-  # Both shapes validate alike: each value must parse as a PR url and is keyed by
-  # the repo it names. A bad pair raises (a 422 upstream), since a skipped PR url is
-  # the failure this key exists to close.
+  # Either way each value must parse as a PR url and is keyed by the repo it names.
+  # A value that is no PR url raises (a 422 upstream), since a skipped PR url is the
+  # failure this key exists to close.
   def self.normalize_devops_map(value)
-    pairs =
-      if value.is_a?(Hash)
-        value.to_h.map { |repo, url| normalize_devops_map_pair(repo, url) }
-      else
-        # A PR url is an identifier, so the list branch splits commas; a joined entry
-        # would drop the second PR. The Hash branch needs no rule: a key must match its
-        # url's repo.
-        normalize_devops_list(value, split_commas: true).map { |url| normalize_devops_map_pair(nil, url) }
-      end
+    # A PR url is an identifier, so a string or list splits commas; a joined entry
+    # would drop the second PR.
+    urls = value.is_a?(Hash) ? value.to_h.values : normalize_devops_list(value, split_commas: true)
 
-    pairs.compact.to_h
+    urls.filter_map { |url| normalize_devops_map_pair(url) }.to_h
   end
 
-  # One validated `<repo> => <pr url>` pair, or nil for a blank value. A blank is
-  # the unset: writers send the whole map, so blanking a value removes it.
-  def self.normalize_devops_map_pair(repo, url)
-    repo = repo.to_s.strip
+  # One `<repo> => <pr url>` pair, or nil for a blank value. A blank is the unset:
+  # writers send the whole map, so blanking a value removes it. The key is the repo
+  # the url names; a caller's own key is not read, so no entry sits under the
+  # wrong repo.
+  def self.normalize_devops_map_pair(url)
     url = url.to_s.strip
     return nil if url.blank?
 
@@ -1559,11 +1554,6 @@ class Task < ApplicationRecord
       raise ArgumentError,
             "devops.pr_urls entry #{url.inspect} names no repo — expected a " \
             "github.com/<owner>/<repo>/pull/<n> url"
-    end
-    if repo.present? && repo != named
-      raise ArgumentError,
-            "devops.pr_urls entry #{repo.inspect} => #{url.inspect} is filed under the " \
-            "wrong repo — that url names #{named.inspect}"
     end
 
     [named, url]

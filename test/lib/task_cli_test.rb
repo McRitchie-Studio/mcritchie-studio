@@ -2255,6 +2255,22 @@ class TaskCliTest < Minitest::Test
                "a malformed pair must not PATCH a partial record"
   end
 
+  # Guard catalog row 10.3: the url decides the key, so a pair typed under the
+  # wrong repo joins the stored map beside that repo's own entry.
+  def test_pr_url_for_keys_a_pair_by_the_repo_its_url_names
+    hub = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836"
+    turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--pr-url-for", "mcritchie-studio=#{turf}"],
+      stub_devops: { "kind" => "feature", "pr_urls" => { "mcritchie-studio" => hub } }
+    )
+
+    assert status.success?, err
+    patch = requests.reverse.find { |r| r[:method] == "PATCH" }
+    assert_equal({ "mcritchie-studio" => hub, "turf-monster" => turf }, devops_of(patch)["pr_urls"])
+    assert_includes err, "is filed under turf-monster, the repo the url names"
+  end
+
   # --- REMOVING an entry: `--pr-url-for <repo>=none` --------------------------
   # An entry had to become removable. build_devops only ever MERGES and the server
   # drops an empty map, so before this a typo'd repo key was permanent — there was
