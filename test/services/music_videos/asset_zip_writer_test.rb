@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../../support/url_guard_world"
 require "socket"
 require "puma/client"
 
@@ -8,6 +9,8 @@ require "puma/client"
 # reads R2 as a stream, maps storage errors to a reason, and fetches sheet
 # images only from https public hosts, redirects included. No network.
 class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
+  include UrlGuardWorld
+
   Manifest = MusicVideos::AssetZip::Manifest
   Entry = Manifest::Entry
   FetchFailed = MusicVideos::AssetZip::FetchFailed
@@ -246,6 +249,18 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
       %w[http://assets.mcritchie.studio/s.png https://127.0.0.1/s.png https://localhost/s.png data:image/png;base64,AA].each do |url|
         error = assert_raises(FetchFailed, url) { fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: url, label: "s")) { flunk } }
         assert_equal "not an https public host", error.message
+      end
+    end
+  end
+
+  test "a sheet whose host could not be looked up is refused with its own reason, before any request" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    with_http(->(*) { flunk "no request may be made" }) do
+      with_url_guard(unresolved: %w[dead.example.com]) do
+        error = assert_raises(FetchFailed) do
+          fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: "https://dead.example.com/s.png", label: "s")) { flunk }
+        end
+        assert_equal "the host could not be looked up just now", error.message
       end
     end
   end

@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../../support/url_guard_world"
 require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 
 # [unit] The alt video asset zip's manifest (piece 17): folder and file names,
@@ -6,6 +7,8 @@ require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 # prompt's order, and the README's letters and missing list. No I/O. Wholly
 # synthetic people (db/seeds/data/lettered_video.rb).
 class MusicVideosAssetZipManifestTest < ActiveSupport::TestCase
+  include UrlGuardWorld
+
   Manifest = MusicVideos::AssetZip::Manifest
   ROOT = "test-artist-b-lettered-demo_alt_1".freeze
   CLIP3 = "#{ROOT}/clip_03_0040-0105".freeze
@@ -84,6 +87,25 @@ class MusicVideosAssetZipManifestTest < ActiveSupport::TestCase
     assert_match(/no character sheet/, reasons["sheet_2_C_88_test-receiver-zeta_home-white.png"])
     assert_includes m.readme, "sheet_1_B_04_test-passer-epsilon_home-white.png  Sheet 1 · Person B · Test Passer Epsilon > Home White: " \
                               "the sheet image is not on an https public host, so it was not fetched."
+  end
+
+  # The next engine's guard looks each sheet's host up (/tasks/url-guard-off-hot-paths).
+  test "sheets on one host cost one lookup, and a host that could not be looked up says so" do
+    with_url_guard do |lookups|
+      m = manifest
+      assert_operator m.entries.count { |e| e.kind == :url }, :>, 1, "the control: more than one sheet was judged"
+      assert_equal %w[assets.mcritchie.studio], lookups
+    end
+
+    ActiveSupport::CurrentAttributes.reset_all
+    with_url_guard(unresolved: %w[assets.mcritchie.studio]) do
+      m = manifest
+      assert(paths(m).none? { |p| p.include?("/sheets/") })
+      reasons = m.missing.map(&:reason).uniq
+      assert_equal 1, reasons.size, reasons.inspect
+      assert_match(/could not be looked up/, reasons.first)
+      assert_no_match(/not on an https public host/, m.readme)
+    end
   end
 
   test "a clip's zip holds only that clip and names it" do

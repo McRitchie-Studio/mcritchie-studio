@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../../support/url_guard_world"
 
 # [unit] THE COMPOSED PHOTOGRAPH LISTS — the floor plus the chosen search hits, one
 # list per generator, and the gallery that shows both halves.
@@ -19,6 +20,8 @@ require "test_helper"
 #
 # Nothing here reaches S3 or the network: ImageCache#url is pure string building.
 class Appearances::ReferenceSetTest < ActiveSupport::TestCase
+  include UrlGuardWorld
+
   setup do
     Appearance.delete_all
     AppearanceReferencePhoto.delete_all
@@ -368,5 +371,50 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
 
     assert_includes spy.image_urls, "https://cdn.example.com/found.jpg"
     assert_includes spy.image_urls.first, "/400.png", "the measured URL still leads the list"
+  end
+
+  # ── THE NEXT ENGINE'S GUARD LOOKS EACH NAME UP (/tasks/url-guard-off-hot-paths) ──
+
+  test "every list of one look costs one lookup per distinct host, not one per row per list" do
+    cache_headshot
+    4.times { |i| file_measured("https://cdn.example.com/a#{i}.jpg") }
+    4.times { |i| file_measured("https://photos.example.org/b#{i}.jpg") }
+
+    with_url_guard do |lookups|
+      set = Appearances::ReferenceSet.new(@look.reload)
+      assert_equal 9, set.call.length
+      set.generation_urls
+      set.refused_rows
+      set.gallery
+      Appearances::ReferenceSet.new(@look).call
+
+      names = lookups - [URI.parse(@athlete.headshot_url(width: 400)).host]
+      assert_equal %w[cdn.example.com photos.example.org], names.sort
+      assert_equal lookups.uniq, lookups, "no host is looked up twice in one request"
+    end
+  end
+
+  test "a chosen row whose host could not be looked up is left out, logged, and not called refused" do
+    cache_headshot
+    good = file_measured("https://cdn.example.com/good.jpg")
+    dead = file_measured("https://dead.example.com/gone.jpg?sig=secret")
+    wrong = file_measured("https://cdn.example.com/other.jpg", fill: 0.01)
+
+    warned = []
+    Rails.logger.stub(:warn, ->(message = nil, &blk) { warned << (message || blk&.call).to_s }) do
+      with_url_guard(unresolved: %w[dead.example.com]) do
+        set = Appearances::ReferenceSet.new(@look.reload)
+
+        assert_includes set.call, good.image_url
+        assert_not_includes set.call, dead.image_url
+        assert_equal [dead], set.unchecked_rows
+        assert_equal [wrong], set.refused_rows, "a row nobody could check did not fail a rule"
+      end
+    end
+
+    lines = warned.grep(/\[fetchable_url\]/)
+    assert_equal 1, lines.size, lines.inspect
+    assert_match(/chosen reference left out of look #{@look.slug}: host dead\.example\.com/, lines.first)
+    assert_no_match(/secret/, lines.first)
   end
 end
