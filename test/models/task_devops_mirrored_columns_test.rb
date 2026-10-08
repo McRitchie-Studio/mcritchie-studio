@@ -114,7 +114,10 @@ class TaskDevopsMirroredColumnsTest < ActiveSupport::TestCase
     assert_nil t.reload.read_attribute(:approval_status)
   end
 
+  # A row from before the CHECK: the constraint is not added over a stray value
+  # (db/migrate/*_add_state_checks.rb), so this is the table such a row lives in.
   test "[unit] a legacy odd value does not brick an unrelated save" do
+    Task.connection.execute "ALTER TABLE tasks DROP CONSTRAINT tasks_approval_status_known"
     t = task
     t.update_columns(approval_status: "legacy", metadata: t.metadata.deep_merge("devops" => { "approval_status" => "legacy" })) # rubocop:disable Rails/SkipsModelValidations
 

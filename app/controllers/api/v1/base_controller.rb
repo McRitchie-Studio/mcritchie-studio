@@ -143,7 +143,8 @@ module Api
       end
 
       def render_error(message, status: :unprocessable_entity, error_code: nil)
-        body = { error: message }
+        # A database refusal rendered from its own message never quotes the row.
+        body = { error: ConstraintViolationResponses.without_row(message) }
         body[:error_code] = error_code if error_code
         render json: body, status: status
       end
@@ -166,6 +167,11 @@ module Api
       }.freeze
 
       def render_exception(exception, status: :unprocessable_entity)
+        if ConstraintViolationResponses.refusal?(exception)
+          return render_error(ConstraintViolationResponses.reason_for(exception),
+                              status: :unprocessable_entity, error_code: ConstraintViolationResponses::ERROR_CODE)
+        end
+
         render_error(exception.message, status: status, error_code: error_code_for(exception))
       end
 

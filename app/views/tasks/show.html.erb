@@ -141,12 +141,6 @@
         <p class="label-upper">Created</p>
         <p class="text-heading text-sm"><%= @task.created_at.strftime("%b %d, %H:%M") %></p>
       </div>
-      <% if @task.queued_at %>
-        <div class="bg-surface-alt rounded-lg p-3">
-          <p class="label-upper">Queued</p>
-          <p class="text-heading text-sm"><%= @task.queued_at.strftime("%b %d, %H:%M") %></p>
-        </div>
-      <% end %>
       <% if @task.started_at %>
         <div class="bg-surface-alt rounded-lg p-3">
           <p class="label-upper">Started</p>
@@ -160,13 +154,6 @@
         </div>
       <% end %>
     </div>
-
-    <% if @task.error_message.present? %>
-      <div class="bg-danger/10 border border-danger/40 rounded-lg p-3 mb-4">
-        <p class="text-xs text-danger-ink uppercase tracking-wider mb-1">Error</p>
-        <p class="text-danger-ink text-sm"><%= @task.error_message %></p>
-      </div>
-    <% end %>
 
     <% if @task.devops? %>
       <div class="bg-surface-alt rounded-lg p-3 mb-4">

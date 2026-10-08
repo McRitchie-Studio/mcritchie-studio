@@ -43,5 +43,4 @@ failed_task:
   blocked_from: submitted
   blocked_by: avi
   block_kind: rework
-  error_message: Something went wrong
   position: 0

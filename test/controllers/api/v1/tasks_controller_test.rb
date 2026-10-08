@@ -255,6 +255,23 @@ module Api
                         "the holder's own last artifact is older than the idle window"
       end
 
+      # [integration] The stage list is one vocabulary (Task::STAGES): the model
+      # refuses a stage outside it with a 422 before the database's CHECK is asked.
+      test "unknown stage answers 422" do
+        patch api_v1_task_path(@task.slug), params: { stage: "limbo" }, headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/Stage is not included in the list/, JSON.parse(response.body)["error"])
+        assert_equal "designed", @task.reload.stage
+      end
+
+      test "control: a listed stage saves" do
+        patch api_v1_task_path(@task.slug), params: { stage: "building" }, headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal "building", @task.reload.stage
+      end
+
       test "update stores devops metadata" do
         patch api_v1_task_path(@task.slug),
               params: {

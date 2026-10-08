@@ -451,7 +451,6 @@ module Api
           # so every writer — this endpoint, the console, a fixture — owes the same
           # refusal. Strong params only decides what may be POSTED.
           dependencies: [],
-          required_skills: [],
           metadata: {}
         )
         attrs = permitted.except(:devops).to_h

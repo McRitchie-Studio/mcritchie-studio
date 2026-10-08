@@ -29,7 +29,10 @@ class TaskBlockKindValidationTest < ActionDispatch::IntegrationTest
     assert_nil @task.reload.blocked_at, "a refused block lands nothing"
   end
 
+  # A row from before the CHECK: the constraint is not added over a stray value
+  # (db/migrate/*_add_state_checks.rb), so this is the table such a row lives in.
   test "[unit] a row already holding an unknown kind still saves untouched" do
+    Task.connection.execute "ALTER TABLE tasks DROP CONSTRAINT tasks_block_kind_known"
     @task.update_columns(block_kind: "legacy-kind", blocked_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
 
     assert @task.reload.update(priority: 1), "the validation is gated on a change to block_kind"

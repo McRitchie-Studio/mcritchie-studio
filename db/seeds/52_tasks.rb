@@ -10,7 +10,7 @@ tasks_data = [
   # A block is a `building` ATTRIBUTE now (not a stage): this card rides the
   # Building column with a red glow, carrying blocked_at/blocked_from/blocked_by/
   # block_kind columns.
-  { title: "Fix mobile cart persistence bug",      stage: "building",  priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", error_message: "localStorage quota exceeded on iOS Safari private browsing", block_kind: "environment", blocked_by: "steffon" }
+  { title: "Fix mobile cart persistence bug",      stage: "building",  priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", block_kind: "environment", blocked_by: "steffon" }
 ]
 
 tasks_data.each do |data|
@@ -19,7 +19,6 @@ tasks_data.each do |data|
     t.stage = data[:stage]
     t.priority = data[:priority]
     t.agent_slug = data[:agent_slug]
-    t.error_message = data[:error_message]
 
     case data[:stage]
     when "building"  then t.started_at = 3.hours.ago
