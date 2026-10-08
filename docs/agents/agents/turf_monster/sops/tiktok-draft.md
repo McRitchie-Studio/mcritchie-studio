@@ -271,8 +271,9 @@ finished upload that looked failed and was drafted again.
 **Why the API door needs an admin session.** `--yes` is checked by the command,
 so anything holding a board token could call the endpoint without it. The
 server now holds the line (`Api::AgentSessionGate#require_admin_session_only!`).
-The grant is a rake task because the Approve tap of
-`mcritchie-studio/docs/agents/system/agent-sessions-design.md` is not built.
+The grant here is the hub-shell one. The board's two grants, the one-time code
+and the Approve tap, are in section 3 of
+`mcritchie-studio/docs/agents/system/agent-sessions-design.md`.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
 TikTok and the bucket itself and marks every attempt "stand-in". It never runs
