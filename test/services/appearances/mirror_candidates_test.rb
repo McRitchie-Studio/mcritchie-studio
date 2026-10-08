@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../../support/pinned_fetch_world"
 
 # [unit] TAKING OUR OWN COPY OF A CANDIDATE — what gets mirrored, what it is called in
 # the bucket, what we claim the bytes are, and what happens when any of it fails.
@@ -8,6 +9,8 @@ require "test_helper"
 # live_call_trap_test.rb, which proves the refusal rather than assuming it. `FakeCache`
 # below neither fetches nor uploads; it records what it was asked for.
 class Appearances::MirrorCandidatesTest < ActiveSupport::TestCase
+  include PinnedFetchWorld
+
   Mirror = Appearances::MirrorCandidates
 
   # A CACHE THAT CACHES NOTHING. Mimics Studio::ImageCache.cache!'s signature and its
@@ -328,5 +331,130 @@ class Appearances::MirrorCandidatesTest < ActiveSupport::TestCase
                        s3_key: "headshots/nfl/x/y/original.png", content_type: "image/png")
 
     assert_nil row.reload.hosted_url
+  end
+
+  # ── THE LIVE FETCH: WHERE IT CONNECTS ───────────────────────────────────────────
+  #
+  # The real LiveCache.fetch, over the engine's real client. The resolver is the
+  # test's and the socket is handed to a loopback server (PinnedFetchWorld), so no
+  # DNS is asked and nothing leaves this machine. `dials` is the address Net::HTTP
+  # asked the socket for: the thing a rebind would change.
+
+  PNG = "\x89PNG\r\n\x1A\nfake-png".b
+  LIVE = Appearances::MirrorCandidates::LiveCache
+  IMAGE = { "/a.png" => ["200 OK", { "Content-Type" => "image/png; charset=binary" }, PNG] }.freeze
+
+  test "[unit] the live fetch connects to the address the name was vetted against, as itself" do
+    with_local_http(IMAGE) do |server|
+      with_resolver("photos.example.com" => [PUBLIC]) do |lookups|
+        with_dials(to: server.port) do |dials|
+          body, served = LIVE.fetch("http://photos.example.com/a.png")
+
+          assert_equal PNG, body
+          assert_equal "image/png; charset=binary", served
+          assert_equal [PUBLIC], dials, "the connection is to the vetted address, not to the name"
+          assert_equal ["photos.example.com"], lookups
+          head = server.heads.pop(timeout: 5)
+          assert_match(/^Host: photos\.example\.com\r$/i, head, "the name still travels in the Host header")
+          assert_match(/^User-Agent: Ruby\r$/i, head, "Wikimedia refuses a request with no User-Agent")
+        end
+      end
+    end
+  end
+
+  test "[unit] mirror candidates refuse a disguised internal host" do
+    with_local_http(IMAGE) do |server|
+      with_dials(to: server.port) do |dials|
+        { "all internal" => ["10.0.0.7"], "one internal among public" => [PUBLIC, "169.254.169.254"],
+          "loopback, IPv4-mapped" => ["::ffff:127.0.0.1"] }.each do |what, addresses|
+          with_resolver("photos.example.com" => addresses) do
+            assert_raises(Studio::ImageCache::InvalidSourceURL, what) { LIVE.fetch("http://photos.example.com/a.png") }
+          end
+        end
+        assert_empty dials, "a refused host is never connected to"
+
+        # THE CONTROL: the same URL, the same server, a public answer.
+        with_resolver("photos.example.com" => [PUBLIC]) do
+          assert_equal PNG, LIVE.fetch("http://photos.example.com/a.png").first
+        end
+        assert_equal [PUBLIC], dials
+      end
+    end
+  end
+
+  # The whole mirror, with the live fetch behind it: the refused candidate costs
+  # itself and nothing else, and nothing is stored for it.
+  test "[unit] a candidate on a disguised internal host is not mirrored, and the others still are" do
+    cache = FakeCache.new
+    cache.define_singleton_method(:fetch) { |url| LIVE.fetch(url) }
+    inside = photo(url: "http://intranet.example.com/a.png")
+    outside = photo(url: "http://photos.example.com/a.png")
+
+    with_local_http(IMAGE) do |server|
+      with_resolver("intranet.example.com" => ["192.168.1.10"], "photos.example.com" => [PUBLIC]) do
+        with_dials(to: server.port) do |dials|
+          hosted = Mirror.call([inside, outside], cache: cache)
+
+          assert_equal [outside.image_url], hosted.keys
+          assert_equal [outside], cache.calls.map { |call| call[:owner] }
+          assert_equal [PUBLIC], dials
+        end
+      end
+    end
+  end
+
+  # A REBIND: the name answers a public address when it is vetted and the
+  # loopback when asked again. The fetch must not ask again, and must connect
+  # to what it vetted.
+  test "[unit] a name that answers differently a second time is still fetched at the vetted address" do
+    rebinding = ->(asked) { asked == 1 ? [PUBLIC] : ["127.0.0.1"] }
+    with_local_http(IMAGE) do |server|
+      with_resolver("photos.example.com" => rebinding) do |lookups|
+        with_dials(to: server.port) do |dials|
+          assert_equal PNG, LIVE.fetch("http://photos.example.com/a.png").first
+          assert_equal [PUBLIC], dials
+          assert_equal 1, lookups.size, "one lookup: the connection does not resolve the name again"
+
+          # THE CONTROL: this resolver does answer the loopback the second time,
+          # and a fetch that meets that answer is refused.
+          assert_raises(Studio::ImageCache::InvalidSourceURL) { LIVE.fetch("http://photos.example.com/a.png") }
+          assert_equal [PUBLIC], dials, "and it connects nowhere"
+        end
+      end
+    end
+  end
+
+  test "[unit] a redirect is vetted like the first URL, and one to an internal host is not followed" do
+    routes = IMAGE.merge("/moved.png" => ["302 Found", { "Location" => "http://cdn.example.com/a.png" }, ""],
+                         "/inward.png" => ["302 Found", { "Location" => "http://meta.example.com/latest/meta-data" }, ""],
+                         "/literal.png" => ["302 Found", { "Location" => "http://169.254.169.254/latest/meta-data" }, ""])
+    cdn = "151.101.1.69"
+    with_local_http(routes) do |server|
+      with_resolver("photos.example.com" => [PUBLIC], "cdn.example.com" => [cdn], "meta.example.com" => ["169.254.169.254"]) do
+        with_dials(to: server.port) do |dials|
+          assert_equal PNG, LIVE.fetch("http://photos.example.com/moved.png").first
+          assert_equal [PUBLIC, cdn], dials, "each hop connects to its own vetted address"
+
+          dials.clear
+          assert_raises(Studio::ImageCache::InvalidSourceURL) { LIVE.fetch("http://photos.example.com/inward.png") }
+          assert_raises(Studio::ImageCache::InvalidSourceURL) { LIVE.fetch("http://photos.example.com/literal.png") }
+          assert_equal [PUBLIC, PUBLIC], dials, "only the first hop of each was ever connected to"
+        end
+      end
+    end
+  end
+
+  test "[unit] a host that cannot be looked up is refused as unresolved, and a non-2xx answer still raises" do
+    with_local_http(IMAGE) do |server|
+      with_resolver("dead.example.com" => :fail, "photos.example.com" => [PUBLIC]) do
+        with_dials(to: server.port) do |dials|
+          assert_raises(Studio::ImageCache::UnresolvedSourceHost) { LIVE.fetch("http://dead.example.com/a.png") }
+          assert_empty dials
+
+          error = assert_raises(OpenURI::HTTPError) { LIVE.fetch("http://photos.example.com/gone.png") }
+          assert_equal "404", error.io.status.first
+        end
+      end
+    end
   end
 end

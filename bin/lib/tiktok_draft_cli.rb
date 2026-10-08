@@ -7,7 +7,7 @@ require_relative "harness_key"
 
 # The chat door of the tiktok-draft SOP
 # (docs/agents/agents/turf_monster/sops/tiktok-draft.md): one clip, by its slug,
-# into the operator's TikTok drafts, through the hub API. The server does the
+# to the operator's TikTok inbox, through the hub API. The server does the
 # work (Tiktok::DraftClip): it holds the TikTok keys and reads the version from
 # R2. This side decides nothing; it asks, prints and waits.
 #
@@ -119,7 +119,7 @@ module TiktokDraftCli
       print_clip(data)
       refused = data.dig("preview", "refused")
       raise Failure, "#{slug} cannot be drafted: #{refused}" if refused
-      raise Failure, "this server cannot draft: the TikTok keys are not set on it" unless data.dig("clip", "available")
+      raise Failure, "this server cannot draft: TikTok is not connected on it (--whoami says which half is missing)" unless data.dig("clip", "available")
 
       print_preview(data["preview"])
       attempt = create(slug)
@@ -168,11 +168,11 @@ module TiktokDraftCli
         raise Failure, "attempt #{id} is no longer listed for #{slug}" unless attempt
 
         if %w[delivered failed].include?(attempt["state"]) || @clock.call >= deadline
-          print_attempt(attempt)
+          print_attempt(attempt, steps: true)
           raise Failure, "attempt #{id} failed: #{attempt['error']}" if attempt["state"] == "failed"
 
           if attempt["state"] == "unknown"
-            @out.puts "the upload reached TikTok but its status is unknown: look in the TikTok drafts on the phone, and " \
+            @out.puts "the upload reached TikTok but its status is unknown: look in the TikTok inbox on the phone, and " \
                       "do not draft it again until you have. `bin/tiktok-draft #{slug} --status` reads TikTok again."
           elsif attempt["state"] != "delivered"
             @out.puts "still #{attempt['state']} after #{@wait}s: run `bin/tiktok-draft #{slug} --status` to read TikTok again."
@@ -197,7 +197,7 @@ module TiktokDraftCli
       @out.puts "  team: #{preview['team']}, from the #{preview['team_from']}; record #{preview.dig('facts', 'record')} " \
                 "read #{preview.dig('facts', 'read_at')} from #{preview.dig('facts', 'source')}"
       Array(preview["exceptions"]).each { |note| @out.puts "  CHECK: #{note}" }
-      @out.puts "caption (#{preview['caption_length']} of 2200 characters; paste it when you post):"
+      @out.puts "caption (#{preview['caption_length']} of 2200 characters; TikTok does not receive it, so paste it in the app):"
       @out.puts preview["caption"]
     end
 
@@ -205,15 +205,18 @@ module TiktokDraftCli
       attempts = Array(attempts)
       return @out.puts("no attempts yet") if attempts.empty?
 
-      attempts.each { |a| print_attempt(a) }
+      attempts.each { |a| print_attempt(a, steps: a.equal?(attempts.last)) }
     end
 
-    def print_attempt(a)
+    # `steps`: what the operator does next (the server's words), printed for
+    # the newest attempt only, so a long history does not repeat them.
+    def print_attempt(a, steps: false)
       line = "attempt #{a['id']}: Version #{a['version_number']} · #{a['state_label']}"
       line += " · TikTok #{a['tiktok_status']}" if a["tiktok_status"]
       line += " · publish_id #{a['publish_id']}" if a["publish_id"]
       @out.puts line
       @out.puts "  error: #{a['error']}" if a["error"]
+      Array(a["next_steps"]).each { |step| @out.puts "  next: #{step}" } if steps
     end
   end
 end

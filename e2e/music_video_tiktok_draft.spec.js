@@ -3,7 +3,7 @@
 // off for a clip with no generated version; pressing it on a clip with a
 // primary version submits once however often it is pressed and records one
 // attempt, and the card then shows the attempt
-// settle to "In your TikTok drafts" with the caption the code wrote, its Copy,
+// settle to "Sent to your TikTok inbox" with the caption the code wrote, its Copy,
 // and TikTok's publish id. Wholly synthetic data, seeded by e2e/seed.rb from
 // db/seeds/data/tiktok_draft_video.rb: its own video, so this never meets the
 // specs that work on the other demos.
@@ -73,7 +73,7 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   // Now the real press: one attempt.
   await expect(tiktok(1).getByRole("button", { name: "Draft to TikTok" })).toBeEnabled();
   await tiktok(1).getByRole("button", { name: "Draft to TikTok" }).click();
-  await expect(page.locator("body")).toContainText("Clip 1 is on its way to your TikTok drafts");
+  await expect(page.locator("body")).toContainText("Clip 1 is on its way to your TikTok inbox");
   await expect(tiktok(1)).toHaveAttribute("data-attempts", "1");
 
   // The upload runs in the background; the card shows it once it has settled.
@@ -83,7 +83,8 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   }).toPass({ timeout: 20_000 });
 
   const latest = tiktok(1).locator("[data-test='clip-tiktok-latest']");
-  await expect(latest.locator("[data-test='clip-tiktok-state']")).toHaveText("In your TikTok drafts");
+  await expect(latest.locator("[data-test='clip-tiktok-state']")).toHaveText("Sent to your TikTok inbox");
+  await expect(latest.locator("[data-test='clip-tiktok-caption-hint']")).toContainText("TikTok did not receive this caption");
   await expect(latest.locator("[data-test='clip-tiktok-caption']")).toHaveText("Bills 3-1 #nfl #nfltiktok #footballtiktok #bills #fyp");
   await expect(latest.locator("[data-test='clip-tiktok-copy']")).toBeVisible();
   await expect(latest.locator("[data-test='clip-tiktok-publish-id']")).toContainText("stand-in-");

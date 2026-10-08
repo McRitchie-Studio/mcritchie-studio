@@ -93,4 +93,35 @@ class Tiktok::ClipTeamTest < ActiveSupport::TestCase
     error = assert_raises(Tiktok::ClipTeam::Refused) { choose(build, 1) }
     assert_match(/swaps nobody/, error.message)
   end
+
+  # Production, 2026-10-08: the look said dallas-cowboys, the teams table was
+  # empty, and the refusal read "has no team". A slug with no row is its own
+  # refusal, and it names the slug.
+  test "a look that names a team with no row is refused by name, not as having no team" do
+    @alpha_look.update_column(:team_slug, "test-comets") # a row from before the validation
+    swap!(1, @alpha, @alpha_look)
+    error = assert_raises(Tiktok::ClipTeam::Refused) { choose(build, 1) }
+
+    assert_match(/Test Tiktok Alpha: the look "Home" names team test-comets, which is not in the teams table/, error.message)
+    assert_no_match(/has no team/, error.message)
+  end
+
+  test "a look whose team row is missing is refused even when the athlete's own team is on file" do
+    Athlete.create!(person_slug: @alpha.slug, sport: "football", slug: "test-tiktok-alpha-athlete", team_slug: "miami-dolphins")
+    @alpha_look.update_column(:team_slug, "test-comets")
+    swap!(1, @alpha, @alpha_look)
+
+    error = assert_raises(Tiktok::ClipTeam::Refused) { choose(build, 1) }
+    assert_match(/the look "Home" names team test-comets/, error.message)
+  end
+
+  test "an athlete record that names a team with no row is refused by name" do
+    Athlete.create!(person_slug: @alpha.slug, sport: "football", slug: "test-tiktok-alpha-athlete", team_slug: "test-comets")
+    @alpha_look.update!(team_slug: nil)
+    swap!(1, @alpha, @alpha_look)
+
+    error = assert_raises(Tiktok::ClipTeam::Refused) { choose(build, 1) }
+    assert_match(/Test Tiktok Alpha: the athlete record names team test-comets, which is not in the teams table/, error.message)
+    assert_no_match(/has no team/, error.message)
+  end
 end

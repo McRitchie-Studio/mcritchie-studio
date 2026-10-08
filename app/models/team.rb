@@ -25,6 +25,11 @@ class Team < ApplicationRecord
 
   before_validation :set_default_mascot, if: -> { self[:mascot].blank? && name.present? }
 
+  # How a record that names a team by slug says the row is not there: "the look
+  # names team dallas-cowboys, which is not in the teams table". One wording for
+  # Appearance's validation, the iced twin and Tiktok::ClipTeam.
+  def self.missing_phrase(slug) = "names team #{slug}, which is not in the teams table"
+
   scope :nfl, -> { where(league: "nfl") }
   scope :ncaa, -> { where(league: "ncaa") }
   scope :fifa, -> { where(league: "fifa") }

@@ -320,7 +320,7 @@ verified only that far — say so rather than recording a green verify.
 
 ## TikTok credentials (`TIKTOK_CLIENT_KEY/SECRET/REFRESH_TOKEN/OPEN_ID`)
 
-**Store:** 1Password item `tiktok.studio.agents` in the `studio-agents` vault (fields `client-key`, `client-secret`, `refresh-token`, `open-id`, `scope`) + Heroku config on `mcritchie-studio` + `.env` locally. The `scope` field is a record of what TikTok granted; no server reads it.
+**Store:** the client key and secret in the 1Password item `tiktok.studio.agents` in the `studio-agents` vault (fields `client-key`, `client-secret`) + Heroku config on `mcritchie-studio` + `.env` locally. The refresh token, the open id and the granted scope live in the hub's database (`tiktok_connections`, the token encrypted), written by the sign-in: nobody files them. `TIKTOK_REFRESH_TOKEN` / `TIKTOK_OPEN_ID` are a fallback, read only when no connection is stored; as of 2026-10-08 the item's `refresh-token` and `open-id` fields and production's pair are still filled from the hand-filed sign-in, and are to be retired (below).
 
 **Refresh token rotates roughly every 1 year, but use shortens it.** Watch for `invalid_grant` errors from `Tiktok::OAuthClient`.
 
@@ -332,9 +332,13 @@ verified only that far — say so rather than recording a green verify.
 **Procedure (refresh token + open_id — user-level, rotates with re-auth):**
 1. Visit `https://mcritchie.studio/admin/tiktok/connect` (admin-only).
 2. Sign in to TikTok as the sandbox app's target user.
-3. The page that comes back shows the refresh token, the open id and the granted scope, once.
-4. Update the item's `refresh-token`, `open-id` and `scope`.
-5. Put `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` on the production app through `credential-filing`.
+3. The hub stores the connection itself. The page that comes back says it is connected and saved, with the account, the granted scope and the refresh token's expiry day. It shows no token; nothing is copied to 1Password or Heroku.
+
+A refresh token TikTok rotates during a token refresh is saved over the stored one by `Tiktok::OAuthClient`.
+
+**The stored connection depends on the Active Record Encryption keys** (`ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `_DETERMINISTIC_KEY`, `_KEY_DERIVATION_SALT`). Production holds none of them as of 2026-10-08, and until it does the sign-in refuses before it asks TikTok for anything. Losing or rotating those keys makes the stored row unreadable: the server then counts as not connected (it does not fall back to the env pair), and the recovery is to sign in again at `/admin/tiktok/connect`, which replaces the row. So a rotation of the encryption keys is followed by a TikTok sign-in.
+
+**The hand-filed pair is retired after the first stored sign-in.** As of 2026-10-08 the 1Password item has all four fields filled and production holds `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID`. Once a stored sign-in probes clean, remove both from production config and blank the item's `refresh-token` and `open-id` (the `tiktok-draft` SOP, Setup step 6). To drop the stored connection, press Disconnect on the connected page; it says whether the env pair is still set.
 
 The sign-in asks for drafts only. `TIKTOK_SCOPES` widens it; see `docs/topics/content-pipeline.md`, "TikTok API posting". When the sign-in does not connect, the page says why; the fixes are in the `tiktok-draft` SOP's "Setup".
 

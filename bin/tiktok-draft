@@ -1,12 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# tiktok draft <clip-slug>: put one alt video clip's PRIMARY version into the
-# operator's TikTok drafts, with the caption the code writes. The chat door of
+# tiktok draft <clip-slug>: send one alt video clip's PRIMARY version to the
+# operator's TikTok inbox, and print the caption the code writes (TikTok does
+# not receive it; the operator pastes it in the app). The chat door of
 # the tiktok-draft SOP (docs/agents/agents/turf_monster/sops/tiktok-draft.md);
 # the clip card's "Draft to TikTok" button is the other door into the same
 # machine. The hub does the work: it holds the TikTok keys and reads the file
-# from R2. A draft is private on the phone until the operator posts it.
+# from R2. Nothing is posted until the operator opens the
+# inbox notification in the phone app and posts it.
 #
 #   bin/tiktok-draft <clip-slug> --dry-run             the caption and the athlete/team it rests on; writes nothing
 #   bin/tiktok-draft <clip-slug>                       draft it on the local hub (localhost:3000) and wait

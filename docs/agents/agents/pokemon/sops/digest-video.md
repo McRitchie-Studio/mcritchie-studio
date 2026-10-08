@@ -449,8 +449,8 @@ The cast cards are the working selection; an alt video keeps a snapshot.
 7. **Draft a clip to TikTok.** Every card shows its clip's **slug** under the
    name (`<source>-alt-<n>-clip-<NN>`, with **Copy slug**): the name the
    [`tiktok-draft`](../../turf_monster/sops/tiktok-draft.md) SOP takes.
-   **Draft to TikTok** on the card sends the clip's primary version into the
-   operator's TikTok drafts and shows the attempt with its code-written
+   **Draft to TikTok** on the card sends the clip's primary version to the
+   operator's TikTok inbox and shows the attempt with its code-written
    caption; it is off until the clip has a version and the server has TikTok
    keys. That SOP owns the rest.
 

@@ -1,17 +1,19 @@
 # TikTok Draft
-<!-- registry: clip slug in, a private draft in Alex's TikTok inbox and its code-written caption out -->
+<!-- registry: clip slug in, a notification in Alex's TikTok inbox and its code-written caption out -->
 
 ## Status: Built; step 0 says whether this server is connected
 
 This is Turf Monster's `tiktok-draft` SOP. It is an input-output machine. The
 input is **a clip's slug**, the name printed on every clip card of an alt video
-(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a draft in Alex's TikTok
-inbox**, holding that clip's primary version, and **a caption written by code**
+(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a notification in Alex's
+TikTok inbox** that opens that clip's primary version in the app's editor, and
+**a caption written by code**
 ("Cowboys 3-2 #nfl #nfltiktok #footballtiktok #dallascowboys #cowboys #fyp")
-for him to paste when he posts.
+for him to paste there. TikTok does not receive the caption, and it files
+nothing under Drafts.
 
-Alex posts from his phone. Nothing here publishes: a draft is private until he
-does.
+Alex posts from his phone ([On the phone](#on-the-phone)). Nothing here
+publishes.
 
 **Until the server is connected, step 0 fails and you stop there.** Connecting
 it is Alex's, once, under [Setup](#setup).
@@ -43,8 +45,9 @@ one. The second is told `a draft of <slug> is already …`.
 line is wrong, say why; Alex edits it on his phone, where the caption is pasted
 anyway. A record from memory is the worst thing this SOP can hand him.
 
-**One clip, on his word.** A draft is private, but it lands on his phone and
-TikTok limits how many pending drafts an app may hold. Praise for the caption
+**One clip, on his word.** Nothing is posted, but each draft lands on his
+phone as a notification, and TikTok limits how many pending uploads an app may
+hold. Praise for the caption
 is not his word; "draft it" or the button is.
 
 ## Scope
@@ -84,8 +87,8 @@ must print the account Alex expects on his phone. Then:
 
 | It says | Meaning | Action |
 |---|---|---|
-| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys | Stop. Report it; see [Setup](#setup) |
-| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the handshake at `/admin/tiktok/connect`, his to run |
+| `API 503: NOT_CONFIGURED …` | The server has no TikTok keys, or no account is connected; the message says which | Stop. Report it; see [Setup](#setup) |
+| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the sign-in at `/admin/tiktok/connect`, his to run; the hub stores what comes back |
 | Another account | The keys belong to the wrong account | Stop. Do not draft |
 
 ### 1. Dry run
@@ -104,6 +107,7 @@ each exception, and the caption with its length against TikTok's 2,200.
 | `cannot draft: Clip N has no generated version yet` | No MP4 was uploaded back for this clip | Tell Alex; the clip needs a version first |
 | `cannot draft: … swaps nobody` | The alt video replaces no one, so there is no athlete | Tell Alex. This clip has no caption by rule |
 | `cannot draft: <athlete> has no team` | Neither the look nor the athlete carries a team | Tell Alex; he sets the team on the look or the athlete, then re-run |
+| `cannot draft: <athlete>: the look "…" names team <slug>, which is not in the teams table` (or `the athlete record names team …`) | A team is named, but this server has no such team row | Not a missing team on the look. Report it: the teams must be loaded on the server ([Background](#background--not-needed-to-execute), "Where the teams come from"), or the slug is misspelled |
 | `cannot draft: … only an NFL team's record can be read` | The team is in another league | Tell Alex; this machine captions NFL teams only |
 | `cannot draft: could not read ESPN …` | The record could not be read | Wait and re-run. Never supply a record |
 | `CHECK: … has no slogan hashtag on file` | The team table has no slogan tag | The caption went out without one. Say so |
@@ -132,9 +136,9 @@ It ends on one of:
 
 | It prints | Meaning | Action |
 |---|---|---|
-| `attempt N: Version V · In your TikTok drafts · …` | TikTok says the draft is in his inbox | Tell Alex to open TikTok's inbox, and give him the caption |
+| `attempt N: Version V · Sent to your TikTok inbox · …` | TikTok sent the notification to his inbox | Give Alex the three `next:` lines it prints and the caption ([On the phone](#on-the-phone)) |
 | `still processing after 150s` | TikTok has the bytes and is still working | Run step 4 in a minute |
-| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok drafts. Run step 4. **Do not draft again** until he has looked |
+| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok inbox on the phone. Run step 4. **Do not draft again** until he has looked |
 | `attempt N failed: …` | TikTok refused, or the upload broke before it finished | Report TikTok's words. A retry is a new attempt, on his word |
 | `a draft of <slug> is already …` | An attempt is in flight | Run step 4. Do not draft twice |
 | `This session holds no admin login for this hub and AGENT_ADMIN_SESSION_TOKEN is not set` | No admin session is held | [The admin session](#the-admin-session) |
@@ -142,8 +146,25 @@ It ends on one of:
 | `API 401: SESSION_ENDED …` | The admin session expired or was revoked | Grant a fresh one |
 
 **TikTok takes no caption with a draft.** Its inbox upload accepts the file
-alone, so the caption does not travel. Give Alex the caption in chat; the
-clip's card also shows it with **Copy caption**.
+alone, so the caption does not travel, and the editor opens with the TikTok
+app's own hashtag prefilled. Give Alex the caption in chat; the clip's card
+also shows it with **Copy caption**. Never tell him the caption was sent.
+
+### On the phone
+
+What Alex does after `Sent to your TikTok inbox`. Give him these three steps
+every time; the card and the command print the same lines.
+
+1. **Open the notification.** The TikTok app on the phone, then **Inbox**, then
+   **System notifications**, then tap "Your content from McRitchie Studio is
+   ready". It opens the editor. The draft is not under Drafts until he saves it
+   there. The TikTok website shows the notification but, as far as we know,
+   cannot open the editor.
+2. **Paste the caption**, replacing the hashtag TikTok prefilled.
+3. **Turn on the AI-generated label**, under **Content disclosure and ads**,
+   before posting. These clips are AI video using a real athlete's likeness.
+
+Then he posts, or saves it to Drafts.
 
 ### 4. Status, and a card whose attempt failed
 
@@ -205,16 +226,20 @@ so, and Alex uses the card.
 
 `/music_videos/<source>/alt_videos/<n>`, on the clip's card, under its
 versions: **Draft to TikTok**. It is off, with the reason beside it, when the
-clip has no generated version or the server has no TikTok keys. After a click
+clip has no generated version or the server is not connected to TikTok. After a click
 the card shows the attempt: its state, the version sent, the caption with
-**Copy caption**, the rule that chose the team, TikTok's publish id, and any
-error. The button turns itself off as it submits. **Check TikTok** re-reads the
+**Copy caption** and a line saying TikTok did not receive it, the reminder to
+turn on the AI-generated label, the rule that chose the team, TikTok's publish
+id, and any error. An attempt that reads **Sent to your TikTok inbox** carries
+the next step: the phone app, Inbox, System notifications, tap the
+notification. The button turns itself off as it submits. **Check TikTok** re-reads the
 status of an attempt still processing, or uploaded with its status unknown.
 The card is open to a signed-in admin only, and needs no agent session.
 
 ## What good looks like
 
-- The draft on Alex's phone is the clip's primary version, and he asked for it.
+- The notification on Alex's phone opens the clip's primary version, and he asked for it.
+- He was told the caption did not travel, and to turn on the AI-generated label.
 - Every number in the caption was read in this run, and he was shown where from.
 - No `CHECK:` line went by without his seeing it.
 - Every attempt, failed or not, is on the clip's card.
@@ -228,7 +253,7 @@ card, never from memory.
 ## Setup
 
 Once per TikTok account, and again when the refresh token dies. Every step is
-Alex's to authorize; the sign-in (step 3) is his to do, in his browser.
+Alex's to authorize; the sign-in (step 4) is his to do, in his browser.
 
 The hub connects through a **sandbox** TikTok app. The production Turf Monster
 app was refused ("not approved for personal or company internal use"), and a
@@ -244,30 +269,70 @@ target users.
    the 1Password item `tiktok.studio.agents` (vault `studio-agents`), fields
    `client-key` and `client-secret`, and onto the production app through
    [`credential-filing`](../../steffon/sops/credential-filing.md). Never onto QA.
-3. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
-   signed in to TikTok as the target user. The page that comes back shows the
-   refresh token, the open id and the scope TikTok granted, once.
-4. **File what came back.** Fields `refresh-token`, `open-id` and `scope` on
-   the same item; `credential-filing` puts the first two on production. The
-   scope is a record: the server reads the granted scope from TikTok itself.
+3. **The encryption keys, before any sign-in.** The hub stores the refresh
+   token encrypted, so the production app must hold
+   `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`,
+   `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and
+   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. As of 2026-10-08 it holds
+   none of them. Generating and filing them is Steffon's
+   [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex's
+   word; never invent them in a session. Until they are set, step 4 refuses
+   before it asks TikTok for anything.
+4. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
+   signed in to TikTok as the target user; the hub stores the connection. The
+   page that comes back says it is connected and saved, and names the account,
+   the scope TikTok granted and the day the refresh token expires. It shows no
+   token: there is nothing to copy and nothing to file.
 5. **Probe.** Step 0 above. It is the first call that proves any of this.
+6. **Retire the hand-filed pair, once, after the first stored sign-in probes
+   clean.** Remove `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` from the
+   production app's config and blank the `refresh-token` and `open-id` fields
+   on `tiktok.studio.agents` (all four of its fields are filled as of
+   2026-10-08). Left in place, the pair is a second live credential, and the
+   server drafts from it whenever no connection is stored. Then run the probe
+   again.
 
-When step 3 does not connect, the page says why:
+**To disconnect**, press **Disconnect TikTok** on the connected page (it asks
+first). It deletes the stored connection and says whether the env pair is still
+set; if it is, drafting carries on from the pair until step 6 is done.
+
+Sign in again, the same way, when the probe reports a refused token or the
+expiry day nears: the same account's connection is updated in place.
+
+When step 4 does not connect, the page says why:
 
 | It says | Fix |
 |---|---|
 | `TikTok keys are not set on this server` | Step 2 |
+| `This server cannot store a TikTok connection: its encryption keys are not set` | Step 3 |
 | `The TikTok app lacks a permission this sign-in asked for` | Step 1: the products and the two scopes |
 | `This callback address is not registered on the TikTok app` | Step 1: the redirect URI, exactly |
 | `TikTok does not accept this client key` | Step 2: the key and secret are a mismatched pair, or a production app's |
 | `The signed-in TikTok account is not a target user of the sandbox app` | Step 1: Target Users, or sign in as the listed account |
-| `The sign-in was declined on TikTok` | Step 3 again |
+| `The sign-in was declined on TikTok` | Step 4 again |
+
+**A stored connection that cannot be read.** If the encryption keys are lost or
+changed after a sign-in, the stored refresh token can no longer be decrypted.
+The server then counts as not connected and says "the stored TikTok connection
+cannot be read; sign in again"; it does not fall back to the env pair. Step 4
+again replaces the row.
 
 **The sign-in asks for drafts only.** `user.info.basic` and `video.upload` are
 all this SOP needs. Direct post (`video.publish`) is not part of it; why, and
 how it is opted into, is in the Background.
 
 ## Background — not needed to execute
+
+**Where the connection lives.** The sign-in's callback stores one
+`TiktokConnection` row per TikTok account: the open id, the refresh token
+(encrypted at rest, Active Record Encryption), the granted scope, who connected
+it, and when the refresh token expires. Drafting uses the most recently
+connected account. When TikTok answers a token refresh with a new refresh
+token, the hub saves it over the stored one. `TIKTOK_REFRESH_TOKEN` and
+`TIKTOK_OPEN_ID` are a fallback only: `Tiktok::OAuthClient` reads the env pair
+when no connection is stored, and never writes to it. A stored connection that
+cannot be read is not "no connection": the pair does not stand in for it. The client key and
+secret stay in the environment.
 
 **The team rule.** The caption is about the team of the clip's lead swapped
 athlete, read from the alt video's swap snapshot (never the cast card as it
@@ -279,6 +344,26 @@ alt video's first swap. The team of that athlete, first match wins: the team on
 the look they wear in the clip; else the athlete's current team. Past teams are
 never read, so a traded athlete never yields two. `Tiktok::ClipTeam` holds the
 rule and its tests.
+
+**A team that is named but not on file.** A look or an athlete names its team
+by slug. When no team row carries that slug, the draft is refused in those
+words, naming the slug, and the rule does not fall through to the next source.
+On 2026-10-08 production's teams table was empty: a look that said
+`dallas-cowboys` read as "has no team". A look can no longer be saved, or have
+its team changed, to a slug with no team row; a look that already carries one
+still saves for other edits.
+
+**Where the teams come from.** The hub's NFL teams are written by
+`db/seeds/10_teams_nfl.rb`, and their metadata by `rake teams:backfill_metadata`.
+No migration and no deploy step loads them: a server whose teams table is empty
+needs both run, on Alex's word.
+
+**What the first real draft measured** (production, 2026-10-08, the sandbox
+app). TikTok's status read `SEND_TO_USER_INBOX` and the notification reached
+the phone's inbox within a few minutes. Nothing appeared under Drafts. The
+editor showed "Everyone can view this post", so a sandbox draft is not
+private-only: do not tell Alex it is. No caption arrived; the app's own hashtag
+was prefilled.
 
 **The recipe.** The mascot and the record, then the tags, lower case and never
 repeated: `#nfl`, `#nfltiktok`, `#footballtiktok`, the team's slogan tag from
@@ -298,7 +383,7 @@ the R2 host is not one. Chunk rules, limits and the status words are in
 **The record of an attempt.** `tiktok_drafts`: the clip's slug, the version
 number and its object, the caption, the facts it rests on, TikTok's
 `publish_id` and status, and the error. The job is never retried, because a
-retried upload is a second draft on the phone; a retry is a new attempt.
+retried upload is a second notification on the phone; a retry is a new attempt.
 
 **Why a draft cannot double.** Three guards, each against a different way to
 get two: the clip's row lock around the record (`Tiktok::DraftClip#record!`),
@@ -320,15 +405,19 @@ until 2026-10-08 and was refused. The sign-in now asks for
 `Tiktok::OAuthClient::DEFAULT_SCOPES`. Setting `TIKTOK_SCOPES` on the server
 (comma-separated, from `user.info.basic`, `video.upload`, `video.publish`, and
 never without the first two) widens the next sign-in; an unknown name stops
-`/admin/tiktok/connect` with a message naming it. Nothing stores the granted
-scope: every token refresh returns it, and the Starter Post direct-post button
+`/admin/tiktok/connect` with a message naming it. The stored
+connection records the scope the sign-in was granted, as a record; what a call
+may do is read from TikTok: every token refresh returns it, and the Starter Post direct-post button
 (`Tiktok::PostMedia`) is refused with "this TikTok connection was authorized
 for drafts only" unless that answer holds `video.publish`.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
-TikTok and the bucket itself and marks every attempt "stand-in". It never runs
+TikTok and the bucket itself and marks every attempt "stand-in". Its
+`/admin/tiktok/connect` skips TikTok and stores a connection named
+`stand-in-account`. It never runs
 in production.
 
 **AI-generated clips of real players.** TikTok has a policy on labelling
-synthetic media, and its app offers the label when a draft is posted. Whether
-these posts carry it is Alex's decision on the phone; nothing in this SOP sets it.
+synthetic media. The label is a switch in the app, under "Content disclosure
+and ads"; no API call here can set it, so it is step 3 of
+[On the phone](#on-the-phone), and the card says it on every attempt.
