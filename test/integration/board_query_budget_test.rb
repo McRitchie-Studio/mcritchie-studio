@@ -131,4 +131,33 @@ class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
     assert_equal few, many,
                  "5 more cards cost #{many - few} more queries on /tasks"
   end
+
+  # A LOGGED-IN card: a builder's studio session on a building task, and a
+  # reviewer's on a submitted one with its live review claim. The soul chip reads
+  # both from one page batch (AgentSession.live_by_task).
+  def create_logged_in_tasks(index)
+    building = Task.create!(title: "query budget logged in building #{index}", stage: "building")
+    AgentSession.create!(soul: "pokemon", tier: "studio", task_slug: building.slug, issued_by: "task_claim")
+    submitted = create_submitted_task("logged in #{index}")
+    TaskReviewClaim.acquire(task_slug: submitted.slug, session: "rev-#{index}", nonce: "n-#{index}", reviewer: "carl")
+    AgentSession.create!(soul: "carl", tier: "studio", task_slug: submitted.slug, issued_by: "review_claim")
+    [building, submitted]
+  end
+
+  test "[integration] logged-in cards show their soul and cost no query per card" do
+    Task.delete_all
+    Agent.find_or_create_by!(slug: "carl") { |agent| agent.name = "Carl" }
+    shown = 2.times.flat_map { |i| create_logged_in_tasks(i) }
+
+    few = [render_query_count(tasks_path), render_query_count(deployments_path)]
+    shown.each do |task|
+      assert_select "#card-#{task.slug} [data-test='task-card-soul']", { count: 1 },
+                    "#{task.stage}: the fixture has to reach the soul chip, or this measures nothing"
+    end
+
+    6.times { |i| create_logged_in_tasks(100 + i) }
+    many = [render_query_count(tasks_path), render_query_count(deployments_path)]
+
+    assert_equal few, many, "12 more logged-in cards cost more queries on [/tasks, /deployments]"
+  end
 end

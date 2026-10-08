@@ -97,24 +97,35 @@ class AgentSession < ApplicationRecord
     kept || issue_studio!(soul: value, task: task, issued_by: "review_claim", harness_session_id: harness_session_id)
   end
 
-  # { task slug => the newest live studio session on it } for `tasks`, in two
-  # queries however many tasks: the sessions, then the review claims a reviewer's
-  # login depends on. It agrees with #live? session by session.
+  # { task slug => the newest live studio session on it } for `tasks`, in at most
+  # two queries however many tasks: the sessions, then the review claims a
+  # reviewer's login depends on (none when the tasks carry theirs preloaded). It
+  # agrees with #live? session by session.
   def self.live_by_task(tasks, now: Time.current)
-    stages = Array(tasks).to_h { |task| [task.slug, task.stage] }
-    return {} if stages.empty?
+    by_slug = Array(tasks).index_by(&:slug)
+    return {} if by_slug.empty?
 
-    sessions = unrevoked.where("expires_at > ?", now).where(tier: "studio", task_slug: stages.keys)
+    sessions = unrevoked.where("expires_at > ?", now).where(tier: "studio", task_slug: by_slug.keys)
                         .order(issued_at: :desc).to_a
-    reviewed = sessions.select { |session| session.issued_by == "review_claim" }.map(&:task_slug).uniq
-    claims = reviewed.empty? ? {} : TaskReviewClaim.where(task_slug: reviewed).index_by(&:task_slug)
+    claims = review_claims_for(sessions.select { |session| session.issued_by == "review_claim" }, by_slug)
     sessions.each_with_object({}) do |session, live|
       slug = session.task_slug
       next if live.key?(slug)
 
-      live[slug] = session if session.studio_refusal(stages[slug], claims[slug], now).nil?
+      live[slug] = session if session.studio_refusal(by_slug[slug].stage, claims[slug], now).nil?
     end
   end
+
+  # { task slug => its TaskReviewClaim } for the tasks `sessions` name, read from
+  # each task's loaded association where it has one.
+  def self.review_claims_for(sessions, by_slug)
+    slugs = sessions.map(&:task_slug).uniq
+    loaded, unloaded = slugs.partition { |slug| by_slug[slug].association(:review_claim).loaded? }
+    claims = loaded.to_h { |slug| [slug, by_slug[slug].review_claim] }
+    claims.merge!(TaskReviewClaim.where(task_slug: unloaded).index_by(&:task_slug)) if unloaded.any?
+    claims
+  end
+  private_class_method :review_claims_for
 
   # Ends every review login on a task: its claim was released or changed hands.
   def self.revoke_review_claims!(task_slug, by:)

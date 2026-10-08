@@ -242,6 +242,48 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert_nil session.refusal_reason, "the same session is live while the claim is"
   end
 
+  # ---- the board's batch read -----------------------------------------------------
+
+  # live_by_task is the board's read and #live? is the API's; the card and a
+  # bearer must agree on who is logged in. Every state #live? separates is here.
+  test "live_by_task agrees with live? for every task, in two queries" do
+    building = Task.create!(title: "Batch Building", stage: "building")
+    builder = AgentSession.issue_studio!(soul: "pokemon", task: building, issued_by: "task_claim")
+    under_review = review_task
+    AgentSession.create!(soul: "pokemon", tier: "studio", task_slug: under_review.slug, issued_by: "task_claim",
+                         issued_at: 1.hour.ago)
+    reviewer = claim(under_review).agent_session
+    lapsed = review_task
+    claim(lapsed, session: "rev-2").agent_session
+    TaskReviewClaim.find_by(task_slug: lapsed.slug).update_columns(claim_expires_at: 1.minute.ago)
+    shipped = Task.create!(title: "Batch Shipped", stage: "shipped")
+    AgentSession.create!(soul: "pokemon", tier: "studio", task_slug: shipped.slug, issued_by: "task_claim")
+    revoked = Task.create!(title: "Batch Revoked", stage: "building")
+    AgentSession.issue_studio!(soul: "pokemon", task: revoked, issued_by: "task_claim").revoke!(by: "test")
+    expired = Task.create!(title: "Batch Expired", stage: "building")
+    AgentSession.issue_studio!(soul: "pokemon", task: expired, issued_by: "task_claim").update_columns(expires_at: 1.minute.ago)
+    tasks = [building, under_review, lapsed, shipped, revoked, expired, @task]
+
+    queries = 0
+    counter = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      queries += 1 unless payload[:cached] || payload[:name].to_s == "SCHEMA"
+    end
+    live = AgentSession.live_by_task(tasks)
+    ActiveSupport::Notifications.unsubscribe(counter)
+
+    assert_equal 2, queries, "the sessions, then the review claims"
+    preloaded = Task.where(slug: tasks.map(&:slug)).includes(:review_claim).to_a
+    assert_equal live.transform_values(&:slug), AgentSession.live_by_task(preloaded).transform_values(&:slug),
+                 "tasks carrying their review claim give the same answer"
+    assert_equal({ building.slug => builder.slug, under_review.slug => reviewer.slug }, live.transform_values(&:slug))
+    tasks.each do |task|
+      one_by_one = AgentSession.where(task_slug: task.slug, tier: "studio").order(issued_at: :desc).find(&:live?)
+      message = "#{task.title}: the batch and live? name the same session"
+      one_by_one ? assert_equal(one_by_one.slug, live[task.slug]&.slug, message) : assert_nil(live[task.slug], message)
+    end
+    assert_equal({}, AgentSession.live_by_task([]))
+  end
+
   test "a review_claim session is revoked when the claim changes hands or the task is resubmitted" do
     task = review_task
     first = claim(task).agent_session

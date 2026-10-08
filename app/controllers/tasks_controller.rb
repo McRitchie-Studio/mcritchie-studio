@@ -332,7 +332,9 @@ class TasksController < ApplicationController
     # :gate_runs rides along with :task_events because the claim chip reads BOTH for
     # its progress fact (last durable artifact + is a gate in flight) — preloading
     # only the events would leave the chip issuing a fresh gate query per live card.
-    scope = base.ordered.includes(:task_events, :gate_runs)
+    # :review_claim rides along too: a card under review asks whether its claim is
+    # live, and unloaded that is a query per such card.
+    scope = base.ordered.includes(:task_events, :gate_runs, :review_claim)
 
     stage_filter = params[:stage].presence
     if Task::STAGES.include?(stage_filter)

@@ -18,7 +18,7 @@ class EpicsController < ApplicationController
     @epic = EpicSummary.find(params[:slug])
     raise ActiveRecord::RecordNotFound, "no task carries epic #{params[:slug].inspect}" unless @epic
 
-    tasks = Task.for_epic(@epic.slug).includes(:task_events, :gate_runs)
+    tasks = Task.for_epic(@epic.slug).includes(:task_events, :gate_runs, :review_claim)
                 .order(updated_at: :desc).limit(SHOW_LIMIT).to_a
     load_task_cards(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
