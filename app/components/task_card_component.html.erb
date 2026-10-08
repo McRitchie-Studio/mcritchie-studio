@@ -1,0 +1,233 @@
+<%# The root is what Turbo replaces and removes, so it carries the id and no wrapper.
+    An inner click on a link or button clears the hover state, because a new tab
+    never fires mouseleave. A click that did not drag opens the task. %>
+<div id="card-<%= slug %>"
+     data-slug="<%= slug %>"
+     data-stage="<%= task.stage %>"
+     data-agent="<%= task.agent_slug %>"
+     data-apps="<%= repositories_csv %>"
+     data-href="<%= task_path(slug) %>"
+     <% if glow_kind %>data-stage-glow="<%= glow_kind %>"<% end %>
+     data-glow="<%= mascot_colour %>"
+     x-data="{ hovered: false, mx: 0, my: 0 }"
+     x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= repositories_csv %>')"
+     @mouseenter="hovered = true"
+     @mouseleave="hovered = false"
+     @click.capture="if ($event.target.closest('a, button')) { hovered = false; document.activeElement && document.activeElement.blur && document.activeElement.blur() }"
+     @mousedown="mx = $event.clientX; my = $event.clientY"
+     @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
+     style="<%= root_style %>"
+     class="<%= root_classes %>">
+
+  <%# The title is one line: it fades at the overflowing edge and scrolls while hovered. %>
+  <a href="<%= task_path(slug) %>"
+     class="block mb-1.5 hover:text-primary transition"
+     data-test="task-card-title"
+     title="<%= task.title %>">
+    <%= render "components/overflow_fade", text: task.title, scroll_when: "hovered",
+          class: "text-heading font-semibold text-sm" %>
+  </a>
+
+  <%# The claim chip states two facts: the dot says the builder's run is alive, the
+      text says what the task last produced and how long ago. The quiet tone is the
+      warning ink, which reads in both themes. %>
+  <% if claim_progress? %>
+    <% progress_seconds = task.progress_seconds_ago %>
+    <% progress_quiet = task.claim_progress_quiet? %>
+    <div class="flex items-center gap-1.5 mb-1.5 text-3xs <%= progress_quiet ? "text-warning-ink" : "text-muted" %>"
+         data-test="task-card-claim-progress"
+         data-progress-quiet="<%= progress_quiet %>"
+         title="<%= claim_progress_title(task, progress_seconds) %>">
+      <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0"></span>
+      <span class="truncate"><%= claim_progress_summary(task, progress_seconds) %></span>
+    </div>
+  <% end %>
+
+  <%# The crew: the mascot on the build lane, then who reviewed, assembled and
+      shipped. A logged-in soul sits on the crew row's corner, beside the mascot;
+      logged out, the row renders alone and unwrapped. %>
+  <% crew_row = crew %>
+  <% if agent_session %>
+    <div class="relative" data-test="task-card-soul-anchor">
+      <%= crew_row %>
+      <span class="<%= crew_row.present? ? "absolute -left-1 top-2 z-40" : "inline-flex mb-1" %> rounded-full ring-2 ring-surface"
+            data-test="task-card-soul"
+            data-soul="<%= agent_session.soul %>"
+            data-login="<%= agent_session.issued_by %>"
+            title="<%= soul_title %>">
+        <% if soul_agent %>
+          <%= render "components/agent_avatar", agent: soul_agent, size: "xxs", shiny: false %>
+        <% else %>
+          <span class="inline-flex items-center h-6 px-1.5 rounded-full text-3xs font-semibold bg-surface-alt text-secondary border border-subtle"><%= agent_session.soul %></span>
+        <% end %>
+      </span>
+    </div>
+  <% else %>
+    <%= crew_row %>
+  <% end %>
+
+  <%# Size, slug, epic chip, operator-window countdown, app emojis. The slug fades
+      on the right; the chips sit outside the fade. The window is read off the
+      preloaded block activity. %>
+  <div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
+    <% if task.po_size.present? %>
+      <span class="shrink-0 px-1.5 py-0.5 rounded text-3xs font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)" data-test="task-size-badge"><%= size_label %></span>
+    <% end %>
+    <code class="block text-3xs font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
+          style="<%= right_fade_style %>"><%= slug %></code>
+    <%= render "tasks/epic_chip", epic_slug: task.epic_slug %>
+    <%= render "tasks/window_chip", window: operator_window %>
+    <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
+  </div>
+
+  <%# Planning badges, rendered only when one is present. %>
+  <% if task.requires_migration || task.requires_release_conductor? %>
+    <div class="flex items-center justify-end gap-1 mb-1">
+      <% if task.requires_migration %>
+        <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>" title="Requires a migration">MIG</span>
+      <% end %>
+      <% if task.requires_release_conductor? %>
+        <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>" title="Requires release conductor lane">REL</span>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# The card-width status bars, stacked evenly with the CI meter below: the
+      approval request, the resubmission state, then the blocker's own summary. %>
+  <% if status_bars? %>
+    <div class="flex flex-col gap-1 mb-1">
+      <% if waiting_for_approval? %>
+        <%# With a local URL the bar mints a fresh single-use link on click
+            (GET /tasks/:slug/local_review); with none it is a notice. Only this
+            bar pulses. %>
+        <%= render "components/card_status_bar",
+              scheme: :amber, flashing: true,
+              label: "WAITING APPROVAL",
+              href: (local_url.present? ? local_review_task_path(slug) : nil),
+              link_data: (local_url.present? ? { "local-url" => local_url } : {}),
+              new_tab: true,
+              test_id: "operator-approval-waiting",
+              title: "Waiting for Mr. McRitchie's local demo approval — sign in and open it." %>
+      <% end %>
+      <%# Red when the PR head has not moved since the send-back, amber when it has. %>
+      <% if resubmission&.surfaced? %>
+        <%= render "components/card_status_bar",
+              scheme: resubmission.scheme,
+              label: resubmission.label,
+              href: task_path(slug), new_tab: false,
+              test_id: "resubmission-state",
+              title: resubmission.title %>
+      <% end %>
+      <% if unresolved_feedback %>
+        <%= render "components/card_status_bar",
+              scheme: :red,
+              label: unresolved_feedback.block_summary,
+              href: task_path(slug), new_tab: false,
+              test_id: "blocker-summary",
+              title: unresolved_feedback.block_summary %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# A reviewed task rides the next release by default, so only a held one says so. %>
+  <% if held_from_release? %>
+    <% release_app = task.release_repo.presence %>
+    <div class="mb-1.5" data-test="release-inclusion-marker" data-included="false" data-app="<%= release_app %>">
+      <%= render "components/card_status_bar",
+            scheme: :amber,
+            label: ["HELD FROM RELEASE", release_app].compact.join(" · "),
+            icon: "⏸️",
+            test_id: "release-inclusion-held",
+            title: "Held from the next release candidate by Avi's disposition (included_in_release:false) — enforced via bin/release prepare --task / bin/release eject." %>
+    </div>
+  <% end %>
+
+  <%# The PR's CI meter, on building and submitted cards. Its slot keeps a stable
+      id so a CI tick morphs the meter alone. %>
+  <% if ci_meter_stage?(task.stage) %>
+    <%= render "components/ci_progress_slot",
+          dom_id: "ci-progress-#{slug}",
+          progress: ci_progress, compact: true,
+          label: ci_meter_label(pr_url),
+          test_id: "task-ci-progress", href: pr_url,
+          wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
+  <% end %>
+
+  <%# QA and production links, when the task has them. %>
+  <% if qa_url || production_url %>
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
+      <% if qa_url %>
+        <%= link_to "QA", qa_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+      <% end %>
+      <% if production_url %>
+        <%= link_to "Prod", production_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Created on the left; the gem and kind emojis and the last update on the right. %>
+  <div class="flex items-center justify-between gap-2 mt-1 text-3xs text-muted whitespace-nowrap overflow-hidden"
+       data-test="task-card-updated-row">
+    <span class="flex items-center gap-1 whitespace-nowrap"
+          data-test="task-card-created"
+          title="<%= created_title %>">
+      <span aria-hidden="true">🌱</span><span><%= compact_created_stamp(task.created_at) %></span>
+    </span>
+    <span class="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+      <% if task.gem_release? %>
+        <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
+      <% end %>
+      <% if kind_emoji %>
+        <span title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
+      <% end %>
+      <span class="flex items-center gap-1" data-test="task-card-updated"
+            title="<%= updated_title %>">
+        <span aria-hidden="true">✏️</span><span><%= compact_updated_stamp(task.updated_at) %></span>
+      </span>
+    </span>
+  </div>
+
+  <%# The latest note: one line that scrolls while the card is hovered. %>
+  <% if latest_activity %>
+    <div class="mt-1 min-w-0 rounded-md border px-2 py-1 <%= task_activity_box_classes(latest_activity) %>"
+         data-test="activity-box"
+         data-activity-type="<%= latest_activity.activity_type %>">
+      <div class="flex min-w-0 items-center gap-1.5 mb-0 leading-none">
+        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"
+              data-test="activity-type-label"
+              title="<%= latest_activity.activity_type_description %>"><%= latest_activity.activity_type_label %></span>
+        <% if activity_count.to_i > 1 %>
+          <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
+        <% end %>
+      </div>
+      <div class="mt-1 min-w-0" data-test="activity-description"
+           title="<%= latest_activity.description %>">
+        <%= render "components/overflow_fade", text: latest_activity.description,
+              scroll_when: "hovered", class: "text-2xs leading-snug text-secondary" %>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Archive and delete, bled to the card's edges. Each stops the click so the card
+      does not open. %>
+  <div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
+    <% unless archived? %>
+      <button type="button" @click.stop="archiveTask('<%= slug %>')"
+              data-test="task-card-archive"
+              class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-warning-ink hover:bg-warning/20 transition" title="Archive">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+        </svg>
+        <span>Archive</span>
+      </button>
+    <% end %>
+    <button type="button" @click.stop="deleteTask('<%= slug %>')"
+            data-test="task-card-delete"
+            class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-danger-ink hover:bg-danger/20 transition <%= 'border-l border-subtle' unless archived? %>" title="Delete">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+      </svg>
+      <span>Delete</span>
+    </button>
+  </div>
+</div>

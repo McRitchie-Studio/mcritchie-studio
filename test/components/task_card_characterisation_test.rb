@@ -2,6 +2,7 @@
 
 require "test_helper"
 require_relative "../support/task_card_scenarios"
+require_relative "../support/task_card_rendering"
 
 # [component] The card's DOM in every state it branches on, compared with a
 # committed snapshot per state (test/fixtures/files/task_card/<state>.html).
@@ -11,6 +12,7 @@ require_relative "../support/task_card_scenarios"
 #   UPDATE_TASK_CARD_SNAPSHOTS=1 bin/rails test test/components/task_card_characterisation_test.rb
 class TaskCardCharacterisationTest < ActionView::TestCase
   include TaskCardScenarios
+  include TaskCardRendering
 
   SNAPSHOT_DIR = Rails.root.join("test/fixtures/files/task_card")
 
@@ -46,9 +48,7 @@ class TaskCardCharacterisationTest < ActionView::TestCase
   private
 
   def card_html(scenario)
-    task = scenario.fetch(:task).reload
-    render partial: "tasks/task_card",
-           locals: { task: task, agents: @agents, crew_board: scenario.fetch(:crew_board), **scenario.fetch(:given) }
+    render_task_card(scenario.fetch(:task).reload, crew_board: scenario.fetch(:crew_board), **scenario.fetch(:given))
   end
 
   # One tag per line, runs of whitespace collapsed, asset digests dropped.
