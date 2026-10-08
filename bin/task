@@ -2875,7 +2875,7 @@ when "begin"
   # `bin/submit <slug>` this replaced was wrong from every desk but the hub's.
   puts "next: build in the worktree, then hand off with:"
   puts "  #{Remedy.handoff(slug, worktree_dir, __dir__)}"
-  DreamBank.announce(builder, io: $stderr, task: slug)
+  DreamBank.announce(builder, io: $stderr, task: slug, facts: task.is_a?(Hash) ? task.merge("stage" => "building") : nil)
 when "update"
   usage = "usage: #{$PROGRAM_NAME} update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)
