@@ -702,10 +702,15 @@ fix the address. A look's photograph left out this way is logged once per look a
 host (`[fetchable_url] ... left out of look <slug>: host <host> could not be
 looked up`, host only) and the look page says so in a flash.
 
-Still owed, once the gem with `vet_source_url!` and `pinned_http` is published:
-`Appearances::MirrorCandidates::LiveCache.fetch` and
-`MusicVideos::AssetZip::Fetcher#remote` check a URL and then connect by name, which
-resolves it a second time. Both carry a `FOLLOW-UP` comment.
+The two fetches the hub makes itself from such a URL connect to the address that
+was vetted, so a name that answers differently a moment later is not followed
+(`/tasks/url-guard-remaining-fetchers`):
+`Appearances::MirrorCandidates::LiveCache.fetch` is the engine's own
+`Studio::ImageCache.fetch_response`, and `MusicVideos::AssetZip::Fetcher#remote`
+pairs `vet_source_url!` with `pinned_http`. Each vets every redirect the same way.
+Both ask the engine directly, so neither goes through the memo or the budget
+above: one lookup per fetched URL, in a job or in a streaming body. Their tests
+set the resolver and the socket (`test/support/pinned_fetch_world.rb`).
 
 ### Photo scouting — calibrating the machine's taste against the operator's
 

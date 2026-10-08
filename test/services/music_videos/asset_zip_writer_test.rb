@@ -1,5 +1,5 @@
 require "test_helper"
-require_relative "../../support/url_guard_world"
+require_relative "../../support/pinned_fetch_world"
 require "socket"
 require "puma/client"
 
@@ -7,9 +7,10 @@ require "puma/client"
 # entry as it is read, rolls a file that fails part way out of the archive and
 # lists it in the README (written last), never failing the zip; the Fetcher
 # reads R2 as a stream, maps storage errors to a reason, and fetches sheet
-# images only from https public hosts, redirects included. No network.
+# images only from https public hosts, redirects included, each over a
+# connection to the address its host was vetted against. No network, no DNS.
 class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
-  include UrlGuardWorld
+  include PinnedFetchWorld
 
   Manifest = MusicVideos::AssetZip::Manifest
   Entry = Manifest::Entry
@@ -243,48 +244,174 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
     thread&.kill
   end
 
-  test "a sheet URL off an https public host is refused before any request" do
+  SHEET = "https://assets.mcritchie.studio/s.png"
+
+  def sheet(url = SHEET) = Entry.new(path: "v_alt_1/c/sheets/s.png", kind: :url, source: url, label: "Sheet 1")
+
+  def sheet_bytes(fetcher, url = SHEET)
+    got = +""
+    fetcher.each_chunk(sheet(url)) { |b| got << b }
+    got
+  end
+
+  test "a sheet URL off an https public host is refused before any connection" do
     fetcher = MusicVideos::AssetZip::Fetcher.new
-    with_http(->(*) { flunk "no request may be made" }) do
-      %w[http://assets.mcritchie.studio/s.png https://127.0.0.1/s.png https://localhost/s.png data:image/png;base64,AA].each do |url|
-        error = assert_raises(FetchFailed, url) { fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: url, label: "s")) { flunk } }
+    with_http(->(*) { flunk "no connection may be made" }) do
+      %w[http://assets.mcritchie.studio/s.png https://127.0.0.1/s.png https://localhost/s.png https://127.1/s.png
+         data:image/png;base64,AA].each do |url|
+        error = assert_raises(FetchFailed, url) { fetcher.each_chunk(sheet(url)) { flunk } }
         assert_equal "not an https public host", error.message
       end
     end
   end
 
-  test "a sheet whose host could not be looked up is refused with its own reason, before any request" do
+  test "a sheet whose host could not be looked up is refused with its own reason, before any connection" do
     fetcher = MusicVideos::AssetZip::Fetcher.new
-    with_http(->(*) { flunk "no request may be made" }) do
-      with_url_guard(unresolved: %w[dead.example.com]) do
-        error = assert_raises(FetchFailed) do
-          fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: "https://dead.example.com/s.png", label: "s")) { flunk }
-        end
+    with_http(->(*) { flunk "no connection may be made" }) do
+      with_resolver("dead.example.com" => :fail) do
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet("https://dead.example.com/s.png")) { flunk } }
         assert_equal "the host could not be looked up just now", error.message
       end
     end
   end
 
-  test "a sheet streams over https; a redirect is followed only to another public https host" do
+  test "[unit] asset zip fetcher refuses a disguised internal host" do
     fetcher = MusicVideos::AssetZip::Fetcher.new
-    hosts = []
+    pins = []
+    with_http(->(host, address) { pins << [host, address]; ok(%w[png- bytes]) }) do
+      { "all internal" => ["10.0.0.7"], "one internal among public" => [PUBLIC, "169.254.169.254"],
+        "loopback, IPv4-mapped" => ["::ffff:127.0.0.1"] }.each do |what, addresses|
+        with_resolver("assets.mcritchie.studio" => addresses) do
+          error = assert_raises(FetchFailed, what) { fetcher.each_chunk(sheet) { flunk } }
+          assert_equal "not an https public host", error.message
+        end
+      end
+      assert_empty pins, "a refused host is never connected to"
+
+      # THE CONTROL: the same URL, a public answer.
+      with_resolver("assets.mcritchie.studio" => [PUBLIC]) { assert_equal "png-bytes", sheet_bytes(fetcher) }
+      assert_equal [["assets.mcritchie.studio", PUBLIC]], pins
+    end
+  end
+
+  test "a sheet streams over https; a redirect is followed only to another public https host, each at its vetted address" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    pins = []
+    cdn = "151.101.1.69"
     responses = {
       "assets.mcritchie.studio" => redirect("https://cdn.example.com/s.png"),
       "cdn.example.com" => ok(%w[png- bytes]),
       "evil.example.com" => redirect("https://169.254.169.254/latest/meta-data"),
+      "inward.example.com" => redirect("https://meta.example.com/latest/meta-data"),
+      "plain.example.com" => redirect("http://cdn.example.com/s.png"),
       "gone.example.com" => Net::HTTPNotFound.new("1.1", "404", "Not Found")
     }
-    with_http(->(host) { hosts << host; responses.fetch(host) }) do
-      got = +""
-      fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: "https://assets.mcritchie.studio/s.png", label: "s")) { |b| got << b }
-      assert_equal "png-bytes", got
-      assert_equal %w[assets.mcritchie.studio cdn.example.com], hosts
+    answers = responses.keys.index_with { [PUBLIC] }.merge("cdn.example.com" => [cdn], "meta.example.com" => ["169.254.169.254"])
+    with_http(->(host, address) { pins << [host, address]; responses.fetch(host) }) do
+      with_resolver(answers) do |lookups|
+        assert_equal "png-bytes", sheet_bytes(fetcher)
+        assert_equal [["assets.mcritchie.studio", PUBLIC], ["cdn.example.com", cdn]], pins
+        assert_equal %w[assets.mcritchie.studio cdn.example.com], lookups, "one lookup a hop"
 
-      error = assert_raises(FetchFailed) { fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: "https://evil.example.com/s.png", label: "s")) { flunk } }
-      assert_equal "not an https public host", error.message
-      error = assert_raises(FetchFailed) { fetcher.each_chunk(Entry.new(path: "s", kind: :url, source: "https://gone.example.com/s.png", label: "s")) { flunk } }
-      assert_equal "the host answered HTTP 404", error.message
+        %w[evil inward plain].each do |name|
+          pins.clear
+          error = assert_raises(FetchFailed, name) { fetcher.each_chunk(sheet("https://#{name}.example.com/s.png")) { flunk } }
+          assert_equal "not an https public host", error.message
+          assert_equal [["#{name}.example.com", PUBLIC]], pins, "the redirect's target is never connected to"
+        end
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet("https://gone.example.com/s.png")) { flunk } }
+        assert_equal "the host answered HTTP 404", error.message
+      end
     end
+  end
+
+  test "a redirect chain longer than the cap is a reason" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    hops = 0
+    with_http(->(*) { hops += 1; redirect("https://assets.mcritchie.studio/s.png?#{hops}") }) do
+      with_resolver("assets.mcritchie.studio" => [PUBLIC]) do
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet) { flunk } }
+        assert_equal "more than 3 redirects", error.message
+        assert_equal 4, hops
+      end
+    end
+  end
+
+  # A REBIND, over the engine's REAL client: only the socket is the test's
+  # (PinnedFetchWorld#with_dials refuses it and records what was asked for).
+  # The name answers a public address when it is vetted and the loopback when
+  # asked again; the connection must go to the first, without asking again.
+  test "[unit] a sheet host that answers differently a second time is still connected to at the vetted address" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    rebinding = ->(asked) { asked == 1 ? [PUBLIC] : ["127.0.0.1"] }
+    with_resolver("assets.mcritchie.studio" => rebinding) do |lookups|
+      with_dials do |dials|
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet) { flunk } }
+        assert_equal "the host could not be read (ECONNREFUSED)", error.message, "the test's socket refuses every connection"
+        assert_equal [PUBLIC], dials, "the connection is to the vetted address, not to the name"
+        assert_equal 1, lookups.size, "one lookup: the connection does not resolve the name again"
+
+        # THE CONTROL: this resolver does answer the loopback the second time,
+        # and a fetch that meets that answer is refused without connecting.
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet) { flunk } }
+        assert_equal "not an https public host", error.message
+        assert_equal [PUBLIC], dials
+      end
+    end
+  end
+
+  test "an address that cannot be reached falls through to the next vetted one, and to no other" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    with_resolver("assets.mcritchie.studio" => [PUBLIC_V6, PUBLIC]) do
+      with_dials do |dials|
+        assert_raises(FetchFailed) { fetcher.each_chunk(sheet) { flunk } }
+        assert_equal [PUBLIC, PUBLIC_V6], dials, "IPv4 first, then the rest, then stop"
+      end
+
+      pins = []
+      unreachable = lambda do |_host, address|
+        pins << address
+        address == PUBLIC ? raise(Errno::EHOSTUNREACH) : ok(%w[png- bytes])
+      end
+      with_http(unreachable) { assert_equal "png-bytes", sheet_bytes(fetcher) }
+      assert_equal [PUBLIC, PUBLIC_V6], pins
+    end
+  end
+
+  test "the connection is closed when the sheet is read, and when the reader goes away mid-body" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    with_resolver("assets.mcritchie.studio" => [PUBLIC]) do
+      opened = with_http(->(*) { ok(%w[png- bytes]) }) do |connections|
+        sheet_bytes(fetcher)
+        assert_raises(Puma::ConnectionError) { fetcher.each_chunk(sheet) { raise Puma::ConnectionError, "Socket timeout writing data" } }
+        connections
+      end
+      assert_equal 2, opened.size
+      assert(opened.none?(&:started?), "every connection is finished")
+      assert_equal [[5, 20]] * 2, opened.map { |http| [http.open_timeout, http.read_timeout] }, "the fetcher's own timeouts"
+    end
+  end
+
+  # The Writer over the real Fetcher: a refused or unresolved sheet is a line
+  # in the README like any other failed read, and the zip still finishes.
+  test "a refused and an unresolved sheet are README lines, and the rest of the zip is written" do
+    entries = [Entry.new(path: "v_alt_1/c/sheets/inside.png", kind: :url, source: "https://intranet.example.com/s.png", label: "Sheet 1"),
+               Entry.new(path: "v_alt_1/c/sheets/dead.png", kind: :url, source: "https://dead.example.com/s.png", label: "Sheet 2"),
+               Entry.new(path: "v_alt_1/c/sheets/fine.png", kind: :url, source: SHEET, label: "Sheet 3")]
+    files, io, result = nil
+    with_http(->(*) { ok(%w[png- bytes]) }) do
+      with_resolver("intranet.example.com" => ["192.168.1.10"], "dead.example.com" => :fail, "assets.mcritchie.studio" => [PUBLIC]) do
+        assert_no_difference -> { ErrorLog.count } do
+          files, io, result = write(entries, fetcher: MusicVideos::AssetZip::Fetcher.new)
+        end
+      end
+    end
+    assert_equal %w[v_alt_1/c/sheets/fine.png v_alt_1/README.txt], files.map(&:filename)
+    assert_equal "png-bytes", body(io, files.first)
+    readme = body(io, files.last)
+    assert_includes readme, "v_alt_1/c/sheets/inside.png: not an https public host"
+    assert_includes readme, "v_alt_1/c/sheets/dead.png: the host could not be looked up just now"
+    assert_equal 2, result.missing.size
   end
 
   private
@@ -301,17 +428,36 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
     response
   end
 
-  # Net::HTTP.start answers with the response the block picks for the host.
-  def with_http(pick)
-    http = Class.new do
-      define_method(:initialize) { |response| @response = response }
-      define_method(:request) { |_req, &blk| blk.call(@response) }
+  # The engine's pinned client, replaced: `pick` is called with the host and
+  # the address the connection was pinned to (nil when nothing was resolved)
+  # as it opens, and answers the response, or raises as a connection would.
+  # Yields every connection made.
+  class PinnedHttp
+    attr_accessor :open_timeout, :read_timeout
+
+    def initialize(pick, host, address)
+      @pick = pick
+      @host = host
+      @address = address
+      @started = false
     end
-    original = Net::HTTP.method(:start)
-    Net::HTTP.define_singleton_method(:start) { |host, *_args, **_opts, &blk| blk.call(http.new(pick.call(host))) }
-    yield
-  ensure
-    Net::HTTP.singleton_class.send(:remove_method, :start)
-    Net::HTTP.define_singleton_method(:start, original) unless Net::HTTP.respond_to?(:start)
+
+    def start
+      @response = @pick.call(@host, @address)
+      @started = true
+      self
+    end
+
+    def started? = @started
+
+    def finish = @started = false
+
+    def request(_request, &blk) = blk.call(@response)
+  end
+
+  def with_http(pick)
+    connections = []
+    pinned = ->(uri, address) { PinnedHttp.new(pick, uri.host, address).tap { |http| connections << http } }
+    Studio::ImageCache.stub(:pinned_http, pinned) { yield connections }
   end
 end
