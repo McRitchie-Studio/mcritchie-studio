@@ -7598,8 +7598,10 @@ def confirm_published_checksum!(repo, version, pushed_sha)
   served = Digest::SHA256.file(path).hexdigest
   if served != pushed_sha
     abort!("#{repo} #{version} was PUBLISHED, but RubyGems serves SHA-256 #{served[0, 12]}… and this ship pushed " \
-           "#{pushed_sha.to_s[0, 12]}…. Nothing is deployed. Do not ship: find out who else pushed #{version}, " \
-           "then advance past it (qa-release.md, the STRANDED GEM WORK row).")
+           "#{pushed_sha.to_s[0, 12]}…. Nothing is deployed. Someone else's build of #{version} is the one live. " \
+           "Re-run `bin/release ship`: it skips the push and compares the LIVE gem's contents with the candidate " \
+           "QA ran, proceeding only if they are equal. If it then refuses, advance past #{version} " \
+           "(qa-release.md, the STRANDED GEM WORK row).")
   end
   step("checksum: RubyGems serves #{repo} #{version} with SHA-256 #{served[0, 12]}…, the artifact this ship built")
 end

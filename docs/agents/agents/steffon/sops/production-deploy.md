@@ -178,28 +178,38 @@ be undone. In order, after production authority:
 4. **Wait until RubyGems serves it** (the `RELEASE_GEM_POLL_TIMEOUT` budget), then
    confirm the served `.gem`'s SHA-256 is the built artifact's.
 5. **Advance the gem repo's `main`.**
-6. **Re-lock each consumer to `x.y.z`**: drop the candidate requirement from the
-   `Gemfile` line, `bundle lock --update <gem> --conservative`, read the lock back,
-   and push one commit of `Gemfile` + `Gemfile.lock` on top of the frozen SHA to
-   `release`. The lock is read back because Bundler keeps a candidate that still
-   satisfies the pin.
-7. **Read CI for the re-lock commit** (the tree that deploys) before ANY app deploys.
-   Only green deploys.
-8. Deploy. After the seal, each gem repo's own lock is bumped to the finals on its
+6. **Re-lock each consumer to `x.y.z`**: `bundle lock --update <gem> --conservative`,
+   read the lock back, and push one commit on top of the frozen SHA to `release`.
+   The commit is normally `Gemfile.lock` alone; it carries `Gemfile` too when the
+   line held a candidate floor or a branch source, both rewritten to `~> x.y`. The
+   lock is read back because Bundler keeps a candidate that still satisfies the pin.
+7. **Read CI for each re-lock commit** (the tree that deploys), for every re-locked
+   consumer with a registry `test_cmd`, before the FIRST app deploys. Anything but
+   green there deploys nothing. **turf-monster is not read here**: it has no
+   conductor `test_cmd`, so the only read of its re-lock commit is the suite its own
+   `bin/deploy` runs in the ship workspace, and that runs at turf's turn, after the
+   hub has deployed. A red there stops turf's deploy and the ship; the hub is already
+   on the new release.
+8. **The backstop.** Before the first deploy the ship reads the lock at every SHA it
+   is about to deploy and refuses (`REFUSING TO DEPLOY a prerelease gem`) if one
+   names a prerelease of a registered gem, whatever prepared the release.
+9. Deploy. After the seal, each gem repo's own lock is bumped to the finals on its
    `accepted` (best-effort).
 
 **Where it can stop, and what a re-run does:**
 
 | The ship stops | The world | A re-run of `bin/release ship` |
 |---|---|---|
-| at the candidate preflight (step 1) | nothing moved | fix what it names (usually `prepare` again), then ship |
+| at the candidate preflight (step 1), including "the release record carries no candidate stamp" or names another candidate | nothing moved | the locks and the record disagree about what QA ran: re-run `prepare` with this tooling (it re-stamps and re-QAs), then ship |
 | "does NOT match `<candidate>`, the candidate QA ran" (step 2) | nothing published | do not ship this tree: re-run `prepare`, QA the new candidate, then ship |
 | after the push, before the tag | `x.y.z` live; no `v*` tag | skips the push, compares the LIVE gem with the candidate, pushes the missing tag, continues |
 | "the RubyGems CDN is still not serving it" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
-| "RubyGems serves SHA-256 …" (step 4) | `x.y.z` live and it is not what this ship built | **stop.** Find who pushed it; advance past it (qa-release's STRANDED GEM WORK row) and re-run `prepare` |
+| "RubyGems serves SHA-256 …" (step 4) | `x.y.z` live, and its bytes are not the artifact this ship built | skips the push and compares the LIVE gem's contents with the candidate. Equal (another build of the same tree): it proceeds. Different: it refuses (`LIVE on RubyGems and does NOT match`); then advance past the version (qa-release's STRANDED GEM WORK row) and re-run `prepare` |
 | after the gem's `main`, before a consumer's re-lock push | `x.y.z` live; consumers still lock the candidate; no app moved | skips the push, re-locks |
 | "did not land … resolves `<candidate>`, wanted `<version>`" (step 6) | the same; nothing was committed | wait for `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` to show `x.y.z`, then re-run |
 | at the re-lock commit's CI read (step 7), red, pending or interrupted | `x.y.z` live; the consumer's `release` is the frozen SHA plus the re-lock; **nothing deployed, no app `main` moved** | reuses the pushed re-lock and reads its CI again |
+| at turf-monster's own deploy suite, on its re-lock commit | `x.y.z` live; the hub deployed; turf's `main` advanced, turf not deployed | fix what the suite names; a re-run skips the hub as already live and runs turf's deploy again |
+| "REFUSING TO DEPLOY a prerelease gem" (step 8) | finals live; no app deployed, no app `main` moved | re-run `prepare` (consumers lock the live final and QA runs again), then ship |
 
 **A red re-lock commit.** The refusal names the commit (`THIS IS THE RE-LOCK COMMIT …`).
 It differs from the tree QA passed only in `Gemfile` and `Gemfile.lock`, and the final
@@ -208,8 +218,12 @@ rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defe
 fix it through a task on `accepted` and have Avi re-run `prepare`. The final stays
 published; consumers then lock it directly and QA runs again.
 
-Run `prepare` and `ship` from the same tooling version: an older `ship` does not
-re-lock a candidate.
+**An older ship must never follow a candidate.** A ship from tooling without the
+candidate flow publishes the final and deploys the frozen lock, candidate included.
+`prepare` refuses to publish a candidate unless the fixed-path install and the hub
+primary (working tree and `origin/main`) all carry the flow, and it stamps the
+release; this ship checks that stamp and runs the backstop in step 8. Do not start
+a ship from any other checkout of the hub.
 
 ### If the ship is KILLED after the deploy landed — finalize, do not re-deploy
 
@@ -261,7 +275,7 @@ A refused **`accepted`** advance (non-fatal):
 | Outcome | What it means | What you do |
 |---|---|---|
 | **AHEAD** | `accepted` carries everything that shipped and more | **Nothing.** |
-| **DIVERGED** | `accepted` is missing shipped content | Reconcile with a **merge** — recipe below |
+| **DIVERGED** | `accepted` is missing shipped content. After a gem release that includes the re-lock commit: that `accepted` still locks the candidate QA ran while `release` and `main` lock the final | Reconcile with a **merge** — recipe below. Left alone, the next sweep's promote merges it and the final's lock wins |
 | **UNDETERMINED** | the relation could not be read | `git -C <path> fetch origin && git -C <path> diff origin/accepted origin/main`: any addition or modification → reconcile; when in doubt, reconcile |
 
 **Never** reconcile with a bare `git push origin <sha>:refs/heads/accepted` (it destroys
@@ -297,7 +311,8 @@ same-tree green credited from the accepted head) and records a `ship_test_gate` 
 naming the source. Nothing runs locally, and it does not self-gate on G3's record.
 It reads twice for a consumer of a shipped gem: the frozen SHA before authority, and
 the re-lock commit after the final is published and before any deploy. Both reads use
-the rows below; the second adds the re-lock recovery text.
+the rows below; the second adds the re-lock recovery text. An app with no `test_cmd`
+(turf-monster) is read by neither: its `bin/deploy` runs its suite at its own turn.
 
 | You see | It means | You do |
 |---|---|---|

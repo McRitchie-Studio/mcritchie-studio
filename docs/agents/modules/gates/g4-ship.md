@@ -31,9 +31,13 @@ The gate window spans the whole irreversible half of the ship:
 - **The final gem publish** — each gem member's `x.y.z`, built from its frozen SHA
   and pushed only when its contents equal the release candidate QA ran. See
   [The final gem publish and the re-lock read](#the-final-gem-publish-and-the-re-lock-read).
-- **The re-lock read** (a second `ship_test_gate` SOP per re-locked consumer) —
-  GitHub CI's settled verdict for the commit that moves a consumer's lock from the
-  candidate to the final, read before any deploy.
+- **The re-lock read** (a second `ship_test_gate` SOP per re-locked consumer that
+  has a registry `test_cmd`) — GitHub CI's settled verdict for the commit that moves
+  a consumer's lock from the candidate to the final, read before the first deploy.
+  A self-gating consumer (turf-monster) has no such read: its own deploy suite is
+  the only verdict on its re-lock commit, and it runs at that app's turn.
+- **The prerelease backstop** — the lock at every SHA about to deploy is read, and
+  a prerelease of a registered gem refuses the ship.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
   or the repo's own `bin/deploy`, each with its `/up` hard-gate.
 - **Post-deploy hooks** — each member's `devops.post_deploy_cmd` against
@@ -171,7 +175,7 @@ actually need a checkout FOR?" has a two-line answer:
 | `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
 | `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
-| consumer re-lock commit (candidate → final; a branch ref → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
+| consumer re-lock commit (candidate → final, normally `Gemfile.lock` alone; a candidate floor or a branch ref on the line → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
 | final gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below). The candidate, at prepare, builds in the gem's ship workspace |
 
 Ref pushes keep every safety property of the old fast-forward: git refuses a
@@ -248,8 +252,8 @@ or not at all (`Release::ShipSequence.resumable_repin?`, then the lock read in
    write. Not merely "no branch refs left" — that weaker test would wave through a
    Gemfile someone pinned to the *wrong* version, and prod would build it.
 4. **The lock** — the head's `Gemfile.lock` resolves every version this run locks.
-   A Gemfile with the candidate requirement dropped over a lock still on the
-   candidate is valid to Bundler and is not this run's re-lock.
+   A candidate normally changes no Gemfile line, so the right Gemfile over a lock
+   still on the candidate is valid to Bundler and is not this run's re-lock.
 
 Anything else **fails closed** and aborts as drift. Refusing a resumable ship costs
 a conversation; completing an unresumable one costs production.
@@ -268,9 +272,10 @@ publishes the final. The acts, in order, after ship authority:
 | 2 | `gem push`, then tag `v<version>` | **no** | RubyGems rejects the push |
 | 3 | Wait until RubyGems serves it; the served `.gem`'s SHA-256 must be the built artifact's | read | the wait runs out, or the checksum differs: **nothing is deployed** |
 | 4 | Advance the gem repo's `main` | ref push | a refused push, classified as above |
-| 5 | Re-lock each consumer: drop the candidate requirement, `bundle lock --update <gem> --conservative`, read the lock back, push one commit of `Gemfile` + `Gemfile.lock` onto `release` | a commit on `release` | the lock does not resolve `x.y.z`, or `release` moved |
-| 6 | Read CI's settled verdict for each re-lock commit | read | anything but green: **no app deploys** |
-| 7 | Deploy the apps | | |
+| 5 | Re-lock each consumer: `bundle lock --update <gem> --conservative`, read the lock back, push one commit onto `release` (`Gemfile.lock`; plus `Gemfile` when the line held a candidate floor or a branch ref) | a commit on `release` | the lock does not resolve `x.y.z`, or `release` moved |
+| 6 | Read CI's settled verdict for each re-lock commit of a consumer with a `test_cmd` | read | anything but green: **no app deploys** |
+| 7 | Read the lock at every SHA about to deploy | read | a prerelease of a registered gem: **no app deploys** |
+| 8 | Deploy the apps, hub first; a self-gating consumer's own deploy suite is the read of its re-lock commit | | that suite red: that app and the ship stop, with earlier apps deployed |
 
 The candidate QA ran is read from each consumer's `Gemfile.lock` at its frozen SHA
 (a gem-only release: the `rc-` tag at the gem's frozen SHA), before authority; a
@@ -279,10 +284,17 @@ refuses the ship with nothing moved. A final already live (a re-run) skips act 2
 is compared with the candidate all the same.
 
 **Why act 6 exists.** The re-lock commit is one commit past the SHA QA froze, and it
-is what deploys. Its diff is `Gemfile` and `Gemfile.lock`, and act 1 proved the gem
-behind the new lock line is the gem QA ran, but the tree is new, so it earns its own
-verdict: one tree, one verdict. The read costs one CI run per consumer, about nine
-minutes for the hub, inside the poll window.
+is what deploys. Its diff is the lock (and the Gemfile line in the floor case), and
+act 1 proved the gem behind the new lock line is the gem QA ran, but the tree is
+new, so it earns its own verdict: one tree, one verdict. The read costs one CI run
+per consumer, about nine minutes for the hub, inside the poll window.
+
+**Which ship may follow a candidate.** `prepare` publishes a candidate only when the
+fixed-path install and the hub primary (working tree and `origin/main`) carry the
+candidate flow line, because a ship without it would publish the final and deploy
+the candidate lock. It stamps the release with the flow and the candidates; this
+gate refuses a candidate the stamp does not name, and act 7 refuses a prerelease
+lock whatever produced it.
 
 **A red re-lock commit refuses the ship before any deploy, with the final already
 published.** The refusal says so, and names the two ways forward: re-run that

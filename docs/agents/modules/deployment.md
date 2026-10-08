@@ -495,9 +495,10 @@ How a gem rides a release:
    gem); ANY failure aborts with **nothing published**. Phase 2 then publishes
    each validated gem's **candidate** (`x.y.z.rcN`, a prerelease built from the
    `origin/release` tree and tagged `rc-x.y.z.rcN`) and commits each consumer's
-   bump onto the consumer's `origin/accepted` and `origin/release`: the exact
-   candidate as a second requirement on the `Gemfile` line, and the lock from
-   `bundle lock --update <gem> --conservative`. The pre-QA gate's CI verdict
+   bump onto the consumer's `origin/accepted` and `origin/release`: normally
+   `Gemfile.lock` alone, resolved through an exact candidate requirement that
+   is on the `Gemfile` line only for the resolve (the committed line changes
+   only when the final would escape the pin). The pre-QA gate's CI verdict
    and the QA deploy read that post-bump SHA, so QA exercises a published
    artifact of the tree. A RubyGems push can never be re-pushed, which is why
    prepare never pushes `x.y.z`: a red QA strands a prerelease, not a version.
@@ -506,8 +507,9 @@ How a gem rides a release:
    `dependencies`) and, before any app deploy: builds `x.y.z` from the gem's
    frozen SHA, refuses unless its contents equal the candidate QA ran, pushes
    and tags it, confirms the served `.gem`'s checksum, re-locks each consumer
-   to `x.y.z` in one commit of `Gemfile` + `Gemfile.lock`, and reads CI's
-   verdict for that commit. Any refusal **aborts the ship** before an app
+   to `x.y.z` in one commit (normally `Gemfile.lock` alone), reads CI's
+   verdict for that commit where the consumer has a registry `test_cmd`, and
+   refuses to deploy any tree whose lock names a prerelease. Any refusal **aborts the ship** before an app
    deploys; the order and each recovery are in
    [`production-deploy.md`](../agents/steffon/sops/production-deploy.md).
 5. **Consumers deploy on the re-locked final.** QA builds the candidate lock

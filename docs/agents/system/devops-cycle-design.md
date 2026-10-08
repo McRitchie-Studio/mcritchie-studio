@@ -416,7 +416,7 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   parses, stranded-work guard, a swept consumer declares it) and aborts on ANY
   failure with nothing published; phase 2 publishes each gem's **candidate**
   (`x.y.z.rcN`, a prerelease of the `origin/release` tree) and commits each
-  consumer's `Gemfile` + `Gemfile.lock` bump onto it — so the pre-QA CI verdict
+  consumer's lock bump onto it — so the pre-QA CI verdict
   targets the post-bump SHA and QA bundles a published artifact. The gem member
   itself rides the release as a *record* (no QA deploy of its own); it is QA'd
   through the consuming app's lock. A RubyGems push can never be re-pushed, so
