@@ -20,6 +20,13 @@ module McritchieStudio
     # loaded twice, once by the require and once by the autoloader.
     config.autoload_lib(ignore: %w[assets tasks middleware])
 
+    # The hub's component previews, beside the engine's (which adds only its
+    # own path). The directory is its own autoload root, so a preview is
+    # TaskCardComponentPreview, not Previews::TaskCardComponentPreview, and the
+    # gallery (Lookbook at /admin/style/components) lists it.
+    config.autoload_paths << root.join("app/components/previews").to_s
+    config.view_component.previews.paths << root.join("app/components/previews").to_s
+
     # GZIP EVERY TEXT RESPONSE. Nothing in front of this app compresses — there is
     # no CDN (responses come back `via: heroku-router`, `server: Heroku`) and the
     # router does not do it for you. So /deployments was shipping 1,109,847 bytes of
