@@ -44,7 +44,7 @@ class TaskCliTest < Minitest::Test
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
-               fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil, refuse_bearer: nil,
+               fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
                stub_columns: {}, stub_omit_columns: [], stub_bounces: [],
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
@@ -87,8 +87,6 @@ class TaskCliTest < Minitest::Test
     # the API's exact "task not found" shape vs a router/route-style 404 page.
     @fail_get = fail_get
     @fail_get_body = fail_get_body
-    # When set, any request carrying exactly this bearer answers 401.
-    @refuse_bearer = refuse_bearer
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -143,9 +141,6 @@ class TaskCliTest < Minitest::Test
       requests << { method: method, path: path, body: body, headers: headers }
 
       status, payload = response_for(method, path, body)
-      if @refuse_bearer && headers["authorization"] == "Bearer #{@refuse_bearer}"
-        status, payload = "401 Unauthorized", JSON.generate("error" => "token expired")
-      end
       client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -1110,27 +1105,9 @@ class TaskCliTest < Minitest::Test
     assert_equal "Bearer stub-token", requests.last[:headers]["authorization"], "with the token the board minted"
   end
 
-  # [integration] A handed token the board refuses is replaced by one mint, and the
-  # call is retried with it. The note carries the new token's length, never a token.
-  def test_handed_token_401_remints_once
-    requests, out, err, status = run_task(["show", "demo-task", "--json"],
-                                          env: { "AGENT_API_TOKEN" => "tok-stale" }, refuse_bearer: "tok-stale")
-
-    assert status.success?, err
-    assert_equal "demo-task", JSON.parse(out)["slug"]
-    assert_equal 1, requests.count { |r| r[:path] == "/api/v1/auth" }, "exactly one re-mint"
-    assert_equal ["Bearer tok-stale", nil, "Bearer stub-token"],
-                 requests.first(3).map { |r| r[:headers]["authorization"] },
-                 "the refused call, the mint, then the same call with the minted bearer"
-    assert_equal requests[0][:path], requests[2][:path]
-    assert_includes err, "AGENT_API_TOKEN was refused"
-    assert_includes err, "length #{"stub-token".length}"
-    refute_includes err, "stub-token"
-    refute_includes err, "tok-stale"
-  end
-
-  # [integration] The control: a second 401, on the minted bearer, dies. One mint, no loop.
-  def test_a_second_401_after_the_remint_dies
+  # [integration] A handed token the board keeps refusing: one re-mint, then the
+  # refusal names the var. The re-mint itself: task_cli_handed_token_remint_test.rb.
+  def test_a_refused_handed_token_names_the_environment_variable
     requests, _out, err, status = run_task(["show", "demo-task", "--json"],
                                            env: { "AGENT_API_TOKEN" => "tok-stale" }, fail_get: 401,
                                            fail_get_body: JSON.generate("error" => "token expired"))
@@ -1138,20 +1115,7 @@ class TaskCliTest < Minitest::Test
     refute status.success?
     assert_match(/401/, err)
     assert_equal 1, requests.count { |r| r[:path] == "/api/v1/auth" }, "the re-mint happens once"
-    assert_includes err, "AGENT_API_TOKEN", "the refusal names the handed-in var"
-    assert_includes err, "a fresh bearer was refused too"
-    refute_includes err, "unset it to mint afresh", "the fresh mint has already been tried"
-  end
-
-  # [integration] The control: with no handed token a 401 is not retried.
-  def test_a_401_on_a_self_minted_token_is_not_retried
-    requests, _out, err, status = run_task(["show", "demo-task", "--json"],
-                                           env: { "AGENT_API_TOKEN" => nil }, fail_get: 401)
-
-    refute status.success?
-    assert_match(/401/, err)
-    assert_equal 1, requests.count { |r| r[:path] == "/api/v1/auth" }, "only the CLI's own first mint"
-    assert_equal 1, requests.count { |r| r[:path].start_with?("/api/v1/tasks/") }
+    assert_includes err, "AGENT_API_TOKEN was refused and a fresh bearer was refused too"
   end
 
   # The default `show` stays terse — it counts the acceptance items, it does not

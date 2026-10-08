@@ -125,23 +125,6 @@ class ReleaseCliHarness < Minitest::Test
     end
   end
 
-  # A token broker that answers every mint with a fake token and reaches nothing,
-  # so a push under test passes the ship's pre-mint. Memoized like stub_repo.
-  def self.token_broker
-    @token_broker ||= begin
-      dir = Dir.mktmpdir("release-cli-broker")
-      Minitest.after_run do
-        FileUtils.remove_entry(dir)
-      rescue StandardError
-        nil
-      end
-      File.join(dir, "gh-token").tap do |path|
-        File.write(path, "#!/bin/sh\necho stub-deployer-token\n")
-        File.chmod(0o755, path)
-      end
-    end
-  end
-
   # The SHA a stubbed `git rev-parse origin/release` answers with. The gate now
   # RESOLVES the SHA under test and pins its isolated workspace at it, so a stub
   # that answers rev-parse with "" aborts the gate ("no SHA to pin the isolated
@@ -238,8 +221,7 @@ class ReleaseCliHarness < Minitest::Test
     env = OutboundSeams.env(
       "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
-      "TASK_API_BASE" => UNROUTABLE_API_BASE,
-      "GH_AUTH_TOKEN_BIN" => self.class.token_broker
+      "TASK_API_BASE" => UNROUTABLE_API_BASE, "GH_AUTH_TOKEN_BIN" => ReleaseCliStubs.token_broker
     )
     last = nil
     SUBPROCESS_ATTEMPTS.times do

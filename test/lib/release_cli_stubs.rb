@@ -7,6 +7,23 @@
 # something" is to give the thing its own named home rather than append. A stub injected into a subprocess is a reusable fixture, not a
 # test, so it belongs here.
 module ReleaseCliStubs
+  # A token broker that answers every mint with a fake token and reaches nothing,
+  # so a push under test passes the ship's pre-mint. One per test process.
+  def self.token_broker
+    @token_broker ||= begin
+      dir = Dir.mktmpdir("release-cli-broker")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      File.join(dir, "gh-token").tap do |path|
+        File.write(path, "#!/bin/sh\necho stub-deployer-token\n")
+        File.chmod(0o755, path)
+      end
+    end
+  end
+
   # Makes solana-studio read as NOT self-gated.
   #
   # It registered a `release_check` on 2026-08-20, when it grew bin/release-check
