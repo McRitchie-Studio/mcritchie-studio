@@ -4,8 +4,9 @@
 # call: a revoke or an expiry here ends the session at once.
 #
 # Tiers and their scope:
-# - studio: a builder or reviewer. Scoped to ONE task (task_slug required), and
-#   live only while that task is building or under review.
+# - studio: a builder or reviewer. Scoped to ONE task (task_slug required). A
+#   builder's (task_claim) is live while that task is building or submitted; a
+#   reviewer's (review_claim) while it is submitted and its review claim is live.
 # - admin: Steffon and Xan. Unscoped within the admin tier; task_slug is always
 #   null, because the tier is the scope.
 # - client: Turf Monster and Tyrion. The model and the tier only; no endpoint
@@ -21,6 +22,8 @@ class AgentSession < ApplicationRecord
   STUDIO_ISSUERS = %w[task_claim review_claim].freeze
   # A studio session ends when its task leaves these stages.
   STUDIO_LIVE_STAGES = %w[building submitted].freeze
+  # A review_claim session ends at the verdict: `reviewed`, or a block's `building`.
+  REVIEW_LIVE_STAGES = %w[submitted].freeze
   TTL = { "studio" => 24.hours, "admin" => 8.hours, "client" => 24.hours }.freeze
   TOKEN_PURPOSE = :agent_session
 
@@ -58,6 +61,25 @@ class AgentSession < ApplicationRecord
       create!(soul: soul, tier: "studio", task_slug: task.slug, issued_by: issued_by,
               harness_session_id: harness_session_id)
     end
+  end
+
+  # The login a review claim carries: the reviewer's live one when `reuse` (the
+  # same instance acquiring again), else a new one. nil when `soul` has no review
+  # login to `task`: outside ReviewerSelector::POOL, an author, or the task is not
+  # submitted.
+  def self.for_review_claim(soul:, task:, harness_session_id: nil, reuse: false)
+    value = Task.canonical_soul(soul)
+    return nil unless task.stage == "submitted" && ReviewerSelector::POOL.include?(value)
+    return nil if studio_login_refusal(soul: value, task: task, issued_by: "review_claim")
+
+    kept = reuse && unrevoked.unexpired.for_task(task.slug)
+                             .where(soul: value, tier: "studio", issued_by: "review_claim").order(issued_at: :desc).first
+    kept || issue_studio!(soul: value, task: task, issued_by: "review_claim", harness_session_id: harness_session_id)
+  end
+
+  # Ends every review login on a task: its claim was released or changed hands.
+  def self.revoke_review_claims!(task_slug, by:)
+    unrevoked.for_task(task_slug).where(issued_by: "review_claim").find_each { |session| session.revoke!(by: by) }
   end
 
   # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
@@ -141,6 +163,7 @@ class AgentSession < ApplicationRecord
 
     stage = Task.where(slug: task_slug).pick(:stage)
     return "agent session #{slug} names task #{task_slug}, which no longer exists" if stage.nil?
+    return review_refusal_reason(stage, now) if issued_by == "review_claim"
     return nil if STUDIO_LIVE_STAGES.include?(stage)
 
     "agent session #{slug} ended when #{task_slug} left building and review (it is #{stage})"
@@ -155,6 +178,23 @@ class AgentSession < ApplicationRecord
     return false unless studio?
 
     task_slug.present? && task_slug == slug.to_s
+  end
+
+  # Why this session may not move `task` to `to` (a stage, or "blocked"), or nil
+  # when it may (agent-sessions-design.md, section 5). Checked: any stage to
+  # archived, and submitted to reviewed or blocked. The API answers 403 with this.
+  def transition_refusal(task, to)
+    from = task.stage
+    if to == "archived"
+      return admin? ? nil : "#{from} to archived is an admin transition; #{soul} holds a #{tier} session"
+    end
+    return nil unless from == "submitted" && %w[reviewed blocked].include?(to)
+
+    rule = "submitted to #{to} is made by a reviewer outside #{task.slug}'s author set"
+    return "#{rule}; #{soul} holds a #{issued_by} session" if studio? && issued_by != "review_claim"
+    return "#{rule}; #{soul} is one of its authors" if TaskReviewClaim.self_review?(task.slug, soul)
+
+    nil
   end
 
   def revoke!(by:)
@@ -178,6 +218,15 @@ class AgentSession < ApplicationRecord
   end
 
   private
+
+  def review_refusal_reason(stage, now)
+    unless REVIEW_LIVE_STAGES.include?(stage)
+      return "agent session #{slug} ended when #{task_slug} left review (it is #{stage})"
+    end
+    return nil if TaskReviewClaim.find_by(task_slug: task_slug)&.live?(now: now)
+
+    "agent session #{slug} is refused: the review claim on #{task_slug} is not live"
+  end
 
   def assign_defaults
     self.soul = Task.canonical_soul(soul) if soul.present?
