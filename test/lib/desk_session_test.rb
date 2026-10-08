@@ -66,6 +66,67 @@ class DeskSessionTest < ActiveSupport::TestCase
     end
   end
 
+  # ---- the review login, one file per task ---------------------------------------
+
+  def review_login(slug, now, token: "rev-tok", harness: OWNER)
+    { "slug" => "sess-r", "soul" => "carl", "task_slug" => slug, "token" => token,
+      "expires_at" => (now + 3600).utc.iso8601, "harness_session_id" => harness }
+  end
+
+  test "a review login is kept per task and leaves the desk's login alone" do
+    with_root do |root, now|
+      DeskSession.write_review(root, review_login("t-2", now))
+      DeskSession.write_review(root, review_login("t-3", now, token: "rev-3"))
+
+      assert_equal "rev-tok", DeskSession.token_for("t-2", root: root, harness_session_id: OWNER, now: now)
+      assert_equal "rev-3", DeskSession.token_for("t-3", root: root, harness_session_id: OWNER, now: now)
+      assert_equal "tok", DeskSession.token_for("t-1", root: root, harness_session_id: OWNER, now: now)
+      assert_equal 0o600, File.stat(DeskSession.review_path(root, "t-2")).mode & 0o777
+      assert DeskSession.review_path(root, "t-2").start_with?(File.join(root, ".git")), "inside the git directory"
+    end
+  end
+
+  test "a review login is withheld from another harness and once it nears expiry" do
+    with_root do |root, now|
+      DeskSession.write_review(root, review_login("t-2", now))
+
+      assert_nil DeskSession.token_for("t-2", root: root, harness_session_id: "harness-other", now: now)
+      assert_nil DeskSession.token_for("t-2", root: root, harness_session_id: OWNER, now: now + 3600 - 30)
+    end
+  end
+
+  test "a reviewer's login to the desk's own task is offered ahead of the desk's" do
+    with_root do |root, now|
+      DeskSession.write_review(root, review_login("t-1", now))
+
+      assert_equal "rev-tok", DeskSession.token_for("t-1", root: root, harness_session_id: OWNER, now: now)
+    end
+  end
+
+  test "a refused review login is forgotten and the desk's login survives it" do
+    with_root do |root, now|
+      DeskSession.write_review(root, review_login("t-1", now))
+
+      DeskSession.refused("t-1", root: root, harness_session_id: OWNER, now: now)
+
+      refute File.exist?(DeskSession.review_path(root, "t-1"))
+      assert_equal "tok", DeskSession.token_for("t-1", root: root, harness_session_id: OWNER, now: now)
+
+      # Control: with no review login, the refusal drops the desk's own.
+      DeskSession.refused("t-1", root: root, harness_session_id: OWNER, now: now)
+      assert_nil DeskSession.token_for("t-1", root: root, harness_session_id: OWNER, now: now)
+      assert_equal "sess-1", DeskSession.dropped_slug_for("t-1", root: root, harness_session_id: OWNER, now: now)
+    end
+  end
+
+  test "a slug that is no slug names no review file" do
+    with_root do |root, now|
+      assert_nil DeskSession.review_path(root, "../escape")
+      assert_nil DeskSession.write_review(root, review_login("../escape", now))
+      assert_nil DeskSession.token_for("../escape", root: root, harness_session_id: OWNER, now: now)
+    end
+  end
+
   private
 
   def with_root(harness_session_id: OWNER)

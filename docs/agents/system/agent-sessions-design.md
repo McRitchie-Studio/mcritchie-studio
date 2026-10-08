@@ -11,12 +11,16 @@ tiers, admin unscoped), `POST /api/v1/agent_sessions` for a studio login,
 `bin/task begin` logging the desk in (presented only by the harness session that
 logged in, and naming its slug on a shared-token fallback once dropped), the actor taken from the session on every
 board write, the tier and scope gates (`Api::AgentSessionGate`), and the shared
-secret kept beside it, logged as legacy. An admin session can be granted from a
+secret kept beside it, logged as legacy. A review claim (`bin/task
+claim-next-review`, `review-claim acquire`) logs the reviewer in to the claimed
+task, and a session's stage moves are checked against section 5 for `submitted`
+to `reviewed` or blocked and for `archived`. An admin session can be granted from a
 shell on the hub (`bin/rails agent_sessions:grant_admin`, added 2026-10-07): the
 shell is the grant, and it stands in for the Approve tap. The first endpoint that
 accepts ONLY an admin session, refusing the shared token too, is the TikTok draft
 create (`require_admin_session_only`). Not built yet: the Approve tap and the
-launch phrase, the `claim-next-review` login, and the soul on the board card.
+launch phrase, the section 5 checks on `reviewed` to `assembled` and `assembled`
+to `shipped`, and the soul on the board card.
 How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
 The idea in one paragraph: credentials move behind deterministic server APIs, and
