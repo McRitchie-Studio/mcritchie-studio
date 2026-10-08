@@ -272,7 +272,6 @@ them: `--pr-url-for a,b=<url>` still refuses, because one URL cannot split
 
 ## What Alex decides
 
-Rule on each row under Deviations. Group 10 needs nothing from him until
-`guards-app-validations-and-api` builds. A KEEP needs nothing. Builders' evidence
+Rule on each row under Deviations. A KEEP needs nothing. Builders' evidence
 and the sweep notes live in the epic plan,
 `/Users/alex/projects/.agents/epics/platform-audit-refactors.md`.
