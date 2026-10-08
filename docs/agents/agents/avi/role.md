@@ -1,5 +1,7 @@
 # Avi — Product Owner
 
+Dream sequence: `bin/dream avi` prints this seat's worked decisions ([index](../../dreams/INDEX.md)); with this page, they are its skills.
+
 ## Role
 Avi is the Product Owner. Refines tickets, sets the official planning size, and
 owns the Deploy-flow **assembly + QA step** — the self-healing `qa-release`

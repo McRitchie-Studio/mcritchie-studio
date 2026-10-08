@@ -257,8 +257,8 @@ hook_bin_dir() {
 #
 # `git archive HEAD -- bin` copies ALL of bin/, and a handful of those scripts boot
 # the Rails APPLICATION rather than require_relative-ing pure Ruby. The tooling tree
-# is not a Rails app and was never meant to be: TOOLING_PATHS is bin/, lib/, config/
-# and the pure app/models/{release,devops}. There is no Gemfile, no Gemfile.lock, no
+# is not a Rails app and was never meant to be: TOOLING_PATHS is bin/, lib/, config/,
+# the dream bank and the pure app/models/{release,devops}. There is no Gemfile, no Gemfile.lock, no
 # app/assets, no db/. A direct copy of such a script therefore died on first boot:
 #
 #   $ /Users/alex/projects/.agents/bin/reviewer-select --help

@@ -140,7 +140,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
 | **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
-| **Dreams**: good answers from past sessions, read at every start | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
+| **Dreams**: good answers from past sessions; the platform sequence at every start, a soul's with `bin/dream <soul>` | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
 ## SOP Registry

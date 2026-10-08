@@ -135,7 +135,7 @@ its invocation exactly.
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `dream` (the bank of good answers every session reads at start; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
+| `dream` (the bank of good answers, in a platform sequence and one per soul; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `focus-session` (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
