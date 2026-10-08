@@ -293,6 +293,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "task"                   => :own_guard,
     "devops-shift"           => :own_guard,
     "ledger-guard"           => :own_guard,
+    # Help anywhere prints usage; an argument it cannot place exits 2 before
+    # `index --write`. test/lib/dream_cli_test.rb runs both.
+    "dream"                  => :own_guard,
     # --- OptionParser ---------------------------------------------------------
     "submit"                 => :optparse,
     # submit-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
