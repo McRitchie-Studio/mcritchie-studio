@@ -127,7 +127,18 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
     c.instance_variable_set(:@api, (@api = FakeApi.new(projects_dir: projects_dir, data: data)))
     @spawned = []
     c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
+    # A RECORDING killer too: the real one sends TERM to whatever holds the stub pid.
+    @killed = []
+    c.instance_variable_set(:@killer, ->(pid) { @killed << pid })
     c
+  end
+
+  def test_unit_the_helper_never_leaves_the_real_killer_in_place
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj)
+
+      refute_equal c.method(:terminate), c.instance_variable_get(:@killer)
+    end
   end
 
   # ── The wall check: every real invocation still gets through ─────────────────
