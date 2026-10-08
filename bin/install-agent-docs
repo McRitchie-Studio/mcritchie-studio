@@ -208,7 +208,8 @@ fi
 # `cannot load such file` (four measured casualties on 2026-09-10). The desk-handoff
 # re-exec and the hub-move diagnosis were patches over that; this deletes the cause.
 #
-# WHAT IS INSTALLED: `git archive` of THIS tree's HEAD — bin/, lib/, config/, and the
+# WHAT IS INSTALLED: `git archive` of THIS tree's HEAD — bin/, lib/, config/, the
+# dream bank the session-start hook reads (docs/agents/dreams), and the
 # pure app/models/{release,devops} the scripts require_relative — into
 # $PROJECTS_DIR/.agents/tooling/<sha>/, a directory nothing ever checks out. The
 # scripts resolve the tree they ACT on from the cwd (RepoRoot.code_root), so the
@@ -225,7 +226,7 @@ fi
 # that started a moment ago may still be loading from one.
 TOOLING_ROOT="$PROJECTS_DIR/.agents/tooling"
 TOOLING_LINK="$PROJECTS_DIR/.agents/bin"
-TOOLING_PATHS=(bin lib config app/models/release app/models/devops .ruby-version)
+TOOLING_PATHS=(bin lib config app/models/release app/models/devops docs/agents/dreams .ruby-version)
 TOOLING_KEEP=3
 
 tooling_sha() {
