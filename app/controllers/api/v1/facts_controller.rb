@@ -10,11 +10,19 @@ module Api
     #
     # An agent session only: the shared token answers 401 and a client session 403.
     # A studio session reads and writes ordinary facts; admin reads and writes
-    # both. An identity-class value answers 422 IDENTITY_REFUSED; the caller
-    # stores a pointer (the key with no value and its source) instead.
+    # both. Identity data answers 422 IDENTITY_REFUSED wherever it is sent (the
+    # value, the key, the source, the subject); the caller stores a pointer (a key
+    # that names it, no value, and its source) instead.
+    #
+    # The request log names what a fact is about and never what it says: see
+    # #mask_logged_parameters.
     class FactsController < BaseController
       ENCRYPTION_ENV = %w[ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
                           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT].freeze
+      # The parameters the request log may show, each only while it reads as a name.
+      LOGGED_PARAMETERS = %w[subject_type subject_slug key sensitivity source_kind history].freeze
+      ROUTE_PARAMETERS = %w[controller action format slug].freeze
+      LOGGED_DIGITS = 3
 
       before_action :require_agent_session!
       before_action :require_encryption!
@@ -60,6 +68,29 @@ module Api
 
       private
 
+      # Runs before Rails logs the request, and before it wraps a flat body.
+      def process_action(*)
+        mask_logged_parameters(request.filtered_parameters)
+        super
+      end
+
+      # Masks every parameter but the names in LOGGED_PARAMETERS, whatever its
+      # JSON type, flat or under `fact`. The config filter can only rewrite a
+      # String, and a refused key, note or reference may carry the data itself.
+      def mask_logged_parameters(logged, nested: false)
+        logged.each do |name, value|
+          next if ROUTE_PARAMETERS.include?(name) && !nested
+          next mask_logged_parameters(value, nested: true) if name == "fact" && value.is_a?(Hash) && !nested
+
+          logged[name] = "[FILTERED]" unless LOGGED_PARAMETERS.include?(name) && loggable?(value)
+        end
+      end
+
+      def loggable?(value)
+        value.is_a?(String) && value.length <= Fact::KEY_MAX && Fact::KEY_FORMAT.match?(value) &&
+          value.count("0-9") <= LOGGED_DIGITS
+      end
+
       def require_agent_session!
         session = current_agent_session
         return render_session_refusal("a client session reads and writes no facts") if session&.client?
@@ -94,7 +125,7 @@ module Api
 
       def render_invalid(record)
         message = record.errors.full_messages.to_sentence
-        identity = message.include?("store a pointer to the original")
+        identity = message.include?(Fact::POINTER)
         render_error(message, error_code: identity ? "IDENTITY_REFUSED" : "VALIDATION_FAILED")
       end
 

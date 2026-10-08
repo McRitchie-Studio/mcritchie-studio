@@ -121,6 +121,112 @@ module Api
         assert_equal [true, nil], [body.dig("data", "pointer"), body.dig("data", "value")]
       end
 
+      BANK = "000123456789".freeze
+      SSN = "123-45-6789".freeze
+
+      def flat(session, **fact)
+        post api_v1_facts_path, headers: bearer(session), as: :json,
+                                params: { subject_type: "person", subject_slug: @person.slug, source_ref: "doc-2" }.merge(fact)
+      end
+
+      # Both body shapes answer the pointer refusal, store nothing and repeat no data.
+      def assert_identity_refused(label, *data, **fact)
+        %i[create flat].each do |shape|
+          assert_no_difference -> { Fact.count }, "#{label} (#{shape}) stored a fact" do
+            send(shape, @admin, **fact)
+          end
+          assert_response :unprocessable_entity, "#{label} (#{shape})"
+          assert_equal "IDENTITY_REFUSED", body["error_code"], "#{label} (#{shape})"
+          assert_match(/store a pointer to the original/, body["error"], "#{label} (#{shape})")
+          data.each { |text| assert_not_includes response.body, text, "#{label} (#{shape}) repeats the data" }
+        end
+      end
+
+      test "[integration] bank_account=digits answers 422 with the pointer message, nested and flat" do
+        assert_identity_refused("bank_account", BANK, key: "bank_account", value: BANK)
+        assert_identity_refused("checking-account", BANK, key: "checking-account", value: BANK)
+        assert_identity_refused("a long number under an ordinary key", BANK, key: "note", value: BANK)
+        assert_identity_refused("a JSON number", BANK.to_i.to_s, key: "note", value: BANK.to_i)
+        assert_identity_refused("a JSON number under an identity key", key: "card", value: 4321)
+
+        %i[create flat].each do |shape|
+          send(shape, @admin, key: "bank-#{shape}", value: "First National")
+          assert_response :created, "an ordinary key and value saves (control, #{shape})"
+          send(shape, @admin, key: "account-#{shape}", source_kind: "drive_file", source_ref: "1AbC")
+          assert_response :created, "the pointer saves (control, #{shape})"
+          assert_equal [true, nil], [body.dig("data", "pointer"), body.dig("data", "value")]
+        end
+      end
+
+      test "[integration] 'ssn: digits' sent as the key answers 422 with the pointer message, nested and flat" do
+        assert_identity_refused("a colon for the equals sign", SSN, key: "ssn: #{SSN}")
+        assert_identity_refused("the same with a value", SSN, key: "ssn: #{SSN}", value: "on file")
+        assert_identity_refused("digits joined to the key", SSN, key: "ssn-#{SSN}")
+        assert_identity_refused("a JSON number as the key", key: BANK.to_i)
+        assert_identity_refused("the reference", SSN, key: "note", value: "x", source_ref: "ssn #{SSN}")
+        assert_identity_refused("the note", BANK, key: "note", value: "x", source_note: "wire #{BANK}")
+        assert_equal 0, Fact.where("key LIKE ?", "%6789%").count
+
+        create(@admin, key: "ssn", source_kind: "drive_file", source_ref: "1AbC")
+        assert_response :created, "the pointer the message names saves (control)"
+      end
+
+      test "[integration] a key that is not a name, or a value that is not a scalar, answers 422 and stores nothing" do
+        { "a spaced key" => { key: "home town", value: "Firebaugh" }, "an upper-case key" => { key: "Hometown", value: "Firebaugh" },
+          "an array value" => { key: "note", value: [BANK] }, "a hash value" => { key: "note", value: { number: BANK } },
+          "an array key" => { key: ["ssn", SSN], value: "x" } }.each do |label, fact|
+          %i[create flat].each do |shape|
+            assert_no_difference -> { Fact.count }, label do
+              send(shape, @admin, **fact)
+            end
+            assert_response :unprocessable_entity, "#{label} (#{shape})"
+            assert_not_includes response.body, BANK
+          end
+        end
+
+        create(@admin, key: "hometown", value: "Firebaugh")
+        assert_response :created
+      end
+
+      test "[integration] a supersede passes the same refusal and leaves the predecessor current" do
+        pointer = record(key: "bank-account", value: nil, source_kind: "drive_file", source_ref: "drive-1")
+        { "a long number" => [@ordinary, { value: BANK }], "an ssn" => [@ordinary, { value: "his SSN is #{SSN}" }],
+          "a JSON number" => [@ordinary, { value: BANK.to_i }], "a note" => [@ordinary, { value: "x", source_note: "acct #{BANK}" }],
+          "a reference" => [@ordinary, { value: "x", source_ref: BANK }],
+          "a value for a pointer" => [pointer, { value: "First National" }] }.each do |label, (fact, attrs)|
+          [{ fact: { source_ref: "doc-9" }.merge(attrs) }, { source_ref: "doc-9" }.merge(attrs)].each do |params|
+            assert_no_difference -> { Fact.count }, label do
+              post supersede_api_v1_fact_path(fact.slug), headers: bearer(@admin), as: :json, params: params
+            end
+            assert_response :unprocessable_entity, label
+            assert_equal "IDENTITY_REFUSED", body["error_code"], label
+            [BANK, SSN].each { |text| assert_not_includes response.body, text, label }
+            assert fact.reload.current?, label
+          end
+        end
+
+        post supersede_api_v1_fact_path(pointer.slug), headers: bearer(@admin), as: :json, params: { fact: { source_ref: "drive-2" } }
+        assert_response :created, "a pointer is superseded by a pointer (control)"
+      end
+
+      test "[integration] a supersede with a blank sensitivity is refused; a sensitive fact stays sensitive" do
+        ["", "  "].each do |blank|
+          assert_no_difference -> { Fact.count } do
+            post supersede_api_v1_fact_path(@sensitive.slug), headers: bearer(@admin), as: :json,
+                                                              params: { fact: { value: "band eight", source_ref: "doc-9", sensitivity: blank } }
+          end
+          assert_response :unprocessable_entity
+          assert_match(/Sensitivity/, body["error"])
+          assert @sensitive.reload.current?
+        end
+
+        post supersede_api_v1_fact_path(@sensitive.slug), headers: bearer(@admin), as: :json,
+                                                          params: { fact: { value: "band eight", source_ref: "doc-9" } }
+        assert_response :created, "left out, the sensitivity is kept (control)"
+        assert_equal "sensitive", body.dig("data", "sensitivity")
+        assert_equal 0, Fact.readable_at("studio").where(key: "salary").count
+      end
+
       test "[integration] a studio session writes ordinary facts only; admin writes sensitive" do
         assert_no_difference -> { Fact.count } do
           create(@studio, key: "band", value: "seven", sensitivity: "sensitive")
@@ -187,6 +293,37 @@ module Api
         assert_equal 2, Fact.where(key: %w[nested top]).count, "both writes landed"
         assert_includes log.string, "Parameters", "the request log was captured (control)"
         [nested, top, ORDINARY, SENSITIVE].each { |value| assert_not_includes log.string, value }
+      end
+
+      test "[integration] no fact data reaches the log in a refused write: a number, a key, a note or a reference" do
+        number = 918_273_645_546
+        log = StringIO.new
+        logger = ActiveSupport::Logger.new(log)
+        logger.level = :debug
+        with_loggers(logger) do
+          flat(@admin, key: "top", value: number)
+          create(@admin, key: "nested", value: number)
+          flat(@admin, key: "small-number", value: 4321)
+          flat(@admin, key: "flag", value: true)
+          [{ key: "ssn: #{SSN}" }, { key: "pin-4321" }, { key: "note", value: "x", source_note: "wire #{BANK}" },
+           { key: "note", value: "x", source_ref: BANK }, { key: "note", valeu: "mistyped-value-3c1d" }].each do |fact|
+            create(@admin, **fact)
+            flat(@admin, **fact)
+          end
+          post supersede_api_v1_fact_path(@ordinary.slug), headers: bearer(@admin), as: :json, params: { value: number, source_ref: "d" }
+          flat(@admin, key: "hometown", value: "logged-control-value-2a9c")
+        end
+
+        assert_equal 1, Fact.where(key: %w[top nested ssn note hometown pin-4321]).count, "only the control landed"
+        # Booleans, not assert_includes: a failure must not print the log.
+        logged = log.string.lines.grep(/Parameters|Unpermitted/).join
+        assert logged.scan("Parameters:").size >= 16, "the request log was captured (control)"
+        assert logged.include?(%("key"=>"hometown")), "an ordinary key is logged (control)"
+        assert logged.include?(%("subject_slug"=>"#{@person.slug}")), "the subject is logged (control)"
+        [number.to_s, "4321", "=>true", SSN, BANK, "mistyped-value-3c1d", "logged-control-value-2a9c"].each_with_index do |text, at|
+          assert_not logged.include?(text), "the log carries fact data (item #{at})"
+        end
+        assert_not log.string.include?(number.to_s), "the number is nowhere in the log"
       end
 
       test "[integration] without encryption keys every facts call answers 503 with the ENV names" do

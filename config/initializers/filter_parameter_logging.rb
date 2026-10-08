@@ -16,7 +16,9 @@ Rails.application.config.filter_parameters += [
   /\Acontact_submission\.(phone|message)\z/,
   # A fact's value, nested (`fact.value`) and at the top level of a facts API
   # request. Scoped to that controller: a bare :value would mask every `value`
-  # param. Fact filters its own column.
+  # param. Fact filters its own column. The lambda below can only rewrite a
+  # String, so Api::V1::FactsController#mask_logged_parameters masks a number or
+  # a boolean, and every other parameter that is not a name.
   /\Afact\.value\z/,
   # An admin login's one-time code, nested and at the top level of its own API.
   /\Aagent_login_request\.code\z/,

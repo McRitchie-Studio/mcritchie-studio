@@ -9,7 +9,9 @@ require_relative "desk_session"
 require_relative "session_identity"
 
 # bin/fact: read and write a subject's facts through the hub API
-# (Api::V1::FactsController). This side decides nothing: it asks and prints.
+# (Api::V1::FactsController). The hub decides; this side asks and prints. It
+# sends a key, a subject or a fact slug only when each is a name, so data typed
+# into one never leaves the shell, and it repeats none of them in a refusal.
 #
 # The bearer is an agent session's token: AGENT_ADMIN_SESSION_TOKEN when the
 # shell holds one, else the studio session of the desk this runs in. The shared
@@ -21,6 +23,15 @@ module FactCli
   ADMIN_TOKEN_ENV = "AGENT_ADMIN_SESSION_TOKEN"
   SUBJECT_TYPES = %w[person company app].freeze
   SOURCE_KINDS = { "knowledge" => "knowledge_doc", "drive" => "drive_file" }.freeze
+  # Fact's own key grammar (Fact::KEY_FORMAT, KEY_MAX, LONG_NUMBER); fact_test.rb pins the three.
+  KEY_FORMAT = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
+  KEY_MAX = 64
+  LONG_NUMBER = 8
+  SUBJECT_SLUG = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
+  FACT_SLUG = /\Afact-[0-9a-f]+\z/
+  KEY_REFUSAL = "--add takes key=value, or a bare key for a pointer. The key is lowercase words and digits joined " \
+                "by a hyphen or an underscore (year-founded), #{KEY_MAX} characters at most, and carries no long " \
+                "number: a colon or a space is not the equals sign. Nothing was sent."
   USAGE = <<~TEXT
     Usage: bin/fact <subject> [--history] [--reveal]
            bin/fact <subject> --add key=value --source <doc> [--note TEXT] [--sensitive]
@@ -30,6 +41,8 @@ module FactCli
 
     <subject>  person/<slug>, company/<slug> or app/<slug>; a bare slug is a person
     <doc>      a knowledge doc id, or drive:<file id> for a Google Drive file
+    key        a name: lowercase words and digits joined by a hyphen or an underscore (year-founded).
+               A key that names identity data (ssn, bank-account, card, password) takes no value.
   TEXT
   NO_SESSION = "bin/fact needs an agent session, and the hub refuses the shared token. Run it from the desk of " \
                "a task you hold (bin/task begin logs the desk in), or hold an admin session's token in " \
@@ -64,15 +77,31 @@ module FactCli
     raise Failure, "--add needs --source: every fact names where it came from" if options[:add] && options[:source].to_s.empty?
     raise Failure, "--supersede needs --value and --source" if options[:supersede] && (options[:value].to_s.empty? || options[:source].to_s.empty?)
 
+    raise Failure, "--supersede and --retire take a fact slug (fact-<hex>). Nothing was sent." if by_slug && !FACT_SLUG.match?(by_slug)
+
     options[:subject] = subject(rest.first) unless by_slug
+    options[:pair] = pair(options[:add]) if options[:add]
     options
+  end
+
+  # [key, value] from "key=value", split at the first equals sign; a bare key
+  # has no value. A key that is not a name raises without being repeated.
+  def pair(raw)
+    key, value = raw.to_s.split("=", 2)
+    key = key.to_s.strip
+    raise Failure, KEY_REFUSAL unless key.length <= KEY_MAX && KEY_FORMAT.match?(key) && key.count("0-9") < LONG_NUMBER
+
+    [key, value]
   end
 
   # [type, slug] from "person/josh-allen"; a bare slug is a person.
   def subject(raw)
     type, slug = raw.to_s.include?("/") ? raw.to_s.split("/", 2) : ["person", raw.to_s]
-    raise Failure, "unknown subject type #{type.inspect}; one of #{SUBJECT_TYPES.join(", ")}" unless SUBJECT_TYPES.include?(type)
+    raise Failure, "unknown subject type; one of #{SUBJECT_TYPES.join(", ")}" unless SUBJECT_TYPES.include?(type)
     raise Failure, "the subject needs a slug" if slug.to_s.empty?
+    unless SUBJECT_SLUG.match?(slug) && slug.count("0-9") < LONG_NUMBER
+      raise Failure, "the subject slug is lowercase words and digits joined by hyphens, with no long number. Nothing was sent."
+    end
 
     [type, slug]
   end
@@ -152,7 +181,7 @@ module FactCli
 
     def add(options)
       type, slug = options.fetch(:subject)
-      key, value = options[:add].split("=", 2)
+      key, value = options.fetch(:pair)
       fact = { subject_type: type, subject_slug: slug, key: key, value: value, source_note: options[:note],
                sensitivity: ("sensitive" if options[:sensitive]) }.merge(FactCli.source(options[:source])).compact
       recorded("recorded", @api.post("/api/v1/facts", { fact: fact }))

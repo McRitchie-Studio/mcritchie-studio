@@ -42,7 +42,7 @@ session's context only when that session asks for it by id.
 |---|---|---|---|---|
 | **1 General** | The repo map and the capability pages | This repo, tracked and public | At boot, every session | Anything private: a counterparty, a figure, a contact detail, a key |
 | **2 Specialized** | Topic knowledge most sessions never need | Code-bound topics: the owning repo's docs. Business-bound topics: `notes/` in Drive | Only when the task names the topic; the map carries a one-line where-to-look index | Repo half: the tier 1 list. Drive half: identity data and credentials |
-| **3 Private facts** **(accepted)** | One thing known about a person, a company or an app | Encrypted `Fact` records on the hub | Never by itself; read by `bin/fact` for a named subject | Identity data (an SSN, a card, an account or routing number, a password): the key takes a pointer with no value. Privileged deal terms never go in an ordinary fact |
+| **3 Private facts** **(accepted)** | One thing known about a person, a company or an app | Encrypted `Fact` records on the hub | Never by itself; read by `bin/fact` for a named subject | Identity data (an SSN, a card, an account or routing number, a passport or licence number, a PIN, a password, a person's tax id, a long unformatted number): the key takes a pointer with no value, and the key itself is a name that carries no data. Privileged deal terms never go in an ordinary fact |
 | **4 Originals** | Source documents, and a digest row for each | Bytes: Google Drive. Digest row: `SourceDocument` on the hub. Derived text: one private R2 bucket | Never by itself; read by id | In Drive: credentials, keys, tokens and seed phrases. In git: any original's bytes. In R2: an original |
 | **5 Dreams** **(accepted)** | Worked decisions, each signed off by Alex | This repo, tracked and public | Platform dreams at session start; a soul's by relevance at a claim | Live data and open security detail ([`dream.md`](../modules/dream.md)) |
 
@@ -73,8 +73,9 @@ The trust classes are the session tiers of
 
 Every refusal is a JSON body with `error` (one sentence giving the reason) and
 `error_code`, as `app/controllers/concerns/api/agent_session_gate.rb#render_session_refusal`
-answers now. Three more tier 3 answers exist **(accepted)**: an identity-class
-value answers `422 IDENTITY_REFUSED` and names the pointer form; an app with no
+answers now. Three more tier 3 answers exist **(accepted)**: identity data in
+the value, the key, the source or the subject answers `422 IDENTITY_REFUSED`
+and names the pointer form; an app with no
 encryption keys answers `503 ENCRYPTION_NOT_CONFIGURED`
 (`app/controllers/api/v1/facts_controller.rb#require_encryption!`); a fact for a
 person the hub does not hold answers `422 VALIDATION_FAILED`. A `none` row answers
