@@ -532,6 +532,13 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # Facts about a person, a company or an app (agent sessions only).
+      resources :facts, only: [:index, :create], param: :slug do
+        member do
+          post :supersede
+          post :retire
+        end
+      end
       # Rename one record's slug with every row that names it (admin sessions).
       patch "slugs/:kind/:slug", to: "slug_renames#update", as: :slug_rename
       # The person/athlete projection turf-monster syncs from. Read-only by
