@@ -128,6 +128,13 @@ class Insights::DreamProposerTest < ActiveSupport::TestCase
     assert_nil propose(task)
   end
 
+  def test_a_souls_praise_of_its_own_call_proposes_nothing
+    task = shipped_task("dream-own-praise")
+    note(task, "handoff", "Kept the old reader; a good call on the retry.", by: "pokemon")
+
+    assert_nil propose(task)
+  end
+
   # Each title trips one rule; the control beside them is kept.
   PRIVATE_TITLES = {
     "person_name" => "Pay lionel messi On Time",

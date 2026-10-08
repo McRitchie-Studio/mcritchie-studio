@@ -217,7 +217,10 @@ module Insights
       decision = notes.reverse.find do |note|
         note.activity_type == "handoff" && after?(praise, note) && soul_of(note) && soul_of(note) != soul_of(praise)
       end
-      Signal.new(key: key, soul: (decision && soul_of(decision)) || builder, sources: slugs(decision, praise))
+      soul = (decision && soul_of(decision)) || builder
+      return nil if soul == soul_of(praise) # a soul's praise of its own call is no signal
+
+      Signal.new(key: key, soul: soul, sources: slugs(decision, praise))
     end
 
     def phrase?(note, list)
