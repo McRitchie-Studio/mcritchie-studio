@@ -103,7 +103,7 @@ class ReleaseCliDispatchRunTest < Minitest::Test
 
   # THE SECOND CAUSE OF A NIL RUN ID, which NO_RUN_CREATED above cannot express: the
   # pre-dispatch snapshot ANSWERS (100), `gh workflow run` is accepted — and then
-  # EVERY post-dispatch `gh run list` FAILS. newest_run_id returns nil on a failed
+  # EVERY post-dispatch `gh run list` FAILS. correlated_run_id returns nil on a failed
   # list, new_run_id returns nil on a nil argument, so the poll ends on the identical
   # `run_id.nil?` branch as a genuinely-never-created run while having observed
   # NOTHING. The count is what makes the two stubs different: this one fails reads

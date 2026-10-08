@@ -136,7 +136,7 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
     assert_equal "8", jq(S.correlated_run_jq("dw-a"), runs)
   end
 
-  def test_only_the_correlation_input_refusal_is_the_bridge
+  def test_only_the_correlation_input_refusal_is_recognised
     assert S.correlation_input_rejected?(
       %(could not create workflow dispatch event: HTTP 422: Unexpected inputs provided: ["correlation_id"])
     )
@@ -152,7 +152,7 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
     # Ours registers as 101, then a concurrent dispatch registers 102. Both are newer
     # than the baseline (100), so baseline selection watches 102.
     gh = github(%(register(101, "QA Deploy 0a0cc23 [\#{cid}]"); register(102, "QA Deploy 0a0cc23 [dw-concurrent]"); return ["", true]))
-    out = run_release(gh, guarded(DISPATCH) + REPORT + %(; puts("BASELINE-NEWEST \#{newest_run_id(#{WORKFLOW.inspect})}")))
+    out = run_release(gh, guarded(DISPATCH) + REPORT + %(; puts("BASELINE-NEWEST \#{run_list_read(#{WORKFLOW.inspect}).first.strip}")))
 
     assert_includes out, "NO-ABORT RESULT=true", out
     assert_includes out, "WATCHED 101", "the run carrying our correlation id is the one watched"
@@ -173,31 +173,14 @@ class ReleaseCliDispatchCorrelationTest < Minitest::Test
                     "the answered poll found no run carrying our marker: the never-created abort"
   end
 
-  # ── [integration] the one-release bridge ───────────────────────────────────────────
-
-  def test_a_default_branch_workflow_without_the_input_is_redispatched_once_without_it
-    gh = github(<<~RUBY)
-      if cid
-        return [%(could not create workflow dispatch event: HTTP 422: Unexpected inputs provided: ["correlation_id"]\n), false]
-      end
-      register(101, "QA Deploy")
-      return ["", true]
-    RUBY
-    out = run_release(gh, guarded(DISPATCH) + REPORT)
-
-    assert_includes out, "NO-ABORT RESULT=true", out
-    assert_includes out, "DISPATCHES 2", "one refused dispatch, one re-dispatch, never more"
-    assert_includes out, S.dispatch_argv(WORKFLOW, INPUTS).inspect, "the re-dispatch carries no correlation id"
-    assert_includes out, "does not declare `correlation_id` yet", "the bridge says what it did"
-    assert_includes out, "WATCHED 101", "the bridged dispatch is matched by the baseline, as before"
-  end
+  # A workflow that lacks the input is refused: release_dispatch_correlation_test.rb.
 
   def test_any_other_dispatch_refusal_is_not_retried
     gh = github(%(return ["HTTP 403: Resource not accessible by integration\n", false]))
     out = run_release(gh, guarded(DISPATCH) + REPORT)
 
     assert_includes out, "NO-ABORT RESULT=false", out
-    assert_includes out, "DISPATCHES 1", "only the correlation-input 422 may be re-dispatched"
+    assert_includes out, "DISPATCHES 1", "a refused dispatch is never sent again"
     assert_includes out, "HTTP 403: Resource not accessible", "gh's own error is printed"
     assert_includes out, "NOTHING WAS DEPLOYED"
   end

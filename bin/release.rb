@@ -557,7 +557,7 @@ end
 # seconds to register) until a run with a STRICTLY GREATER id appears — that run
 # is unambiguously ours (Release::ShipSequence.new_run_id owns that pure choice).
 #
-# FAILS CLOSED on a gh that won't answer. newest_run_id returns nil on a `gh run
+# FAILS CLOSED on a gh that won't answer. A run-list read answers nil on a `gh run
 # list` FAILURE (distinct from 0 = "no runs exist yet"): a transient failure of
 # the PRE-dispatch snapshot must NOT read as before_id=0, or the poll could latch
 # a pre-existing run. So we retry the snapshot, ABORT if it never answers, and in
@@ -632,22 +632,23 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # correlation id that the workflow's `run-name` stamps into the run's title, and
   # the poll below selects the run carrying it — so a concurrent dispatch of the
   # same workflow (another conductor, a hand run, a rollback) can never be watched
-  # in place of ours. The baseline above stays: it is the credential probe, the
-  # second belt in new_run_id, and the bridge's whole answer (next comment).
+  # in place of ours. The baseline above stays: it is the credential probe and the
+  # second belt in new_run_id. It never selects a run on its own.
   cid = dispatch_correlation_id
   args = Release::ShipSequence.dispatch_argv(workflow, (inputs || {}).merge(Release::ShipSequence::CORRELATION_INPUT => cid))
   dispatch_out, dispatched = gh_sh(*args, chdir: chdir, capture: true)
-  if !dispatched && Release::ShipSequence.correlation_input_rejected?(dispatch_out)
-    # THE ONE-RELEASE BRIDGE (Release::ShipSequence.correlation_input_rejected?):
-    # the default branch's workflow predates the input, GitHub refused with a 422,
-    # and a 422 creates no run — so one re-dispatch without the id is safe, and
-    # this dispatch alone is matched by the baseline, exactly as before.
-    say("  ↻ #{workflow} on the default branch does not declare `correlation_id` yet (HTTP 422, no run " \
-        "created) — re-dispatching without it; this run is matched by the pre-dispatch baseline.")
-    cid = nil
-    dispatch_out, dispatched = gh_sh(*Release::ShipSequence.dispatch_argv(workflow, inputs), chdir: chdir, capture: true)
-  end
   say(dispatch_out.strip) unless dispatch_out.to_s.strip.empty?
+  if !dispatched && Release::ShipSequence.correlation_input_rejected?(dispatch_out)
+    # NO CORRELATION, NO DISPATCH. A workflow without the input cannot stamp the id
+    # into its run name, so its run could not be told from another dispatcher's. A
+    # 422 creates no run, and there is no re-dispatch without the id.
+    say("  ⚠ #{workflow} on the default branch does not declare the `correlation_id` input (HTTP 422, no run " \
+        "created), so its run could not be told from another dispatch's — NOT re-dispatching without it. " \
+        "NOTHING WAS DEPLOYED; this is not a boot failure. Add the input and a `run-name` carrying " \
+        "`[${{ inputs.correlation_id }}]` to #{workflow} on the default branch (the hub's qa-deploy.yml is " \
+        "the reference), then re-run.")
+    return false
+  end
   unless dispatched
     # Same reason as above: `gh`'s error IS printed here (this call is not captured),
     # but the return still lands downstream as a boot verdict, so name the fact.
@@ -678,7 +679,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # Pinned by test_a_read_that_succeeds_before_the_list_goes_unreadable_does_not_claim_never_ran.
   saw_a_read = false
   20.times do
-    latest_id = cid ? correlated_run_id(workflow, cid, chdir: chdir) : newest_run_id(workflow, chdir: chdir)
+    latest_id = correlated_run_id(workflow, cid, chdir: chdir)
     saw_a_read = !latest_id.nil?
     # nil (a transient list failure) is SKIPPED, never compared to before_id.
     run_id = Release::ShipSequence.new_run_id(before_id, latest_id)
@@ -700,7 +701,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   #
   # TWO CAUSES, TWO MESSAGES — and this is the sharp edge. `run_id` is nil when the
   # poll's reads ANSWERED and none showed a run newer than the snapshot (GitHub
-  # genuinely holds none), and ALSO when they FAILED (newest_run_id nil →
+  # genuinely holds none), and ALSO when they FAILED (correlated_run_id nil →
   # new_run_id nil), where nothing about the deploy was observed at all. Which of
   # the two the poll ended on is decided by its LAST read — not by whether some
   # earlier read happened to succeed, because a read taken before GitHub could have
@@ -849,21 +850,12 @@ def poll_until_concluded(run_id, chdir:, poll:, unreadable_limit:)
   end
 end
 
-# The newest GitHub Actions run id for `workflow` — 0 when none exists yet, or
-# nil when `gh run list` FAILED. The nil-vs-0 distinction is load-bearing (see
-# dispatch_and_watch): a caller must not read a transient failure as "no runs".
-# jq `// empty` yields "" on an empty list, which `to_i` maps to the genuine 0.
-def newest_run_id(workflow, chdir: nil)
-  out, ok = run_list_read(workflow, chdir: chdir, token: $gh_lane_token)
-  return nil unless ok
-
-  out.strip.to_i
-end
-
 # The id of the run THIS dispatch created — the newest workflow_dispatch run whose
 # title carries `[<cid>]` — 0 when none does yet, nil when `gh run list` FAILED.
-# Same nil-vs-0 contract as newest_run_id, so the poll and both aborts read it
-# unchanged. `--limit 20` is the window a concurrent dispatch could push ours down.
+# The nil-vs-0 distinction is load-bearing (see dispatch_and_watch): a caller must
+# not read a transient failure as "no runs". jq `// empty` yields "" when no run
+# matches, which `to_i` maps to the genuine 0. `--limit 20` is the window a
+# concurrent dispatch could push ours down.
 def correlated_run_id(workflow, cid, chdir: nil)
   out, ok = sh("gh", "run", "list", "--workflow", workflow, "--event", "workflow_dispatch", "--limit", "20",
                "--json", "databaseId,displayTitle", "--jq", Release::ShipSequence.correlated_run_jq(cid),
@@ -877,8 +869,8 @@ end
 def dispatch_correlation_id = Release::ShipSequence.correlation_id
 
 # The raw `[out, ok]` of the newest-run-id read, WITHOUT the nil-folding above.
-# dispatch_and_watch's snapshot needs gh's words to classify the failure and to
-# print them; `newest_run_id` needs only the id. Same command, two questions.
+# dispatch_and_watch's pre-dispatch snapshot needs gh's words to classify the
+# failure and to print them.
 def run_list_read(workflow, chdir: nil, token: nil)
   sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
      "--json", "databaseId", "--jq", ".[0].databaseId // empty",

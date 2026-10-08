@@ -160,14 +160,12 @@ class Release
       %(map(select((.displayTitle // "") | contains(#{run_name_marker(cid).inspect}))) | .[0].databaseId // empty)
     end
 
-    # THE ONE-RELEASE BRIDGE. `gh workflow run` dispatches the workflow file on the
-    # DEFAULT branch, and `prepare` dispatches qa-deploy.yml BEFORE the release that
-    # adds the `correlation_id` input has reached main — so GitHub refuses that one
-    # dispatch with `HTTP 422: Unexpected inputs provided: ["correlation_id"]`. A
-    # 422 creates no run, so re-dispatching without the input cannot double a
-    # deploy; the shell then falls back to the snapshot baseline for that dispatch
-    # alone. Matched narrowly (the refusal AND the input's name) so no other
-    # dispatch failure is ever retried.
+    # A WORKFLOW WITHOUT THE INPUT. `gh workflow run` dispatches the workflow file on
+    # the DEFAULT branch, and GitHub refuses a dispatch naming an input that file
+    # does not declare: `HTTP 422: Unexpected inputs provided: ["correlation_id"]`.
+    # A 422 creates no run. The shell refuses there and never re-dispatches without
+    # the id, so a run is only ever selected by its marker. Matched narrowly (the
+    # refusal AND the input's name) so no other dispatch failure reads as this one.
     def correlation_input_rejected?(gh_output)
       out = gh_output.to_s
       out.include?("Unexpected inputs") && out.include?(CORRELATION_INPUT)
@@ -298,7 +296,7 @@ class Release
     # bin/release's registration poll ends with nil `run_id` when EITHER
     #   * its reads SUCCEEDED and none ever showed a run newer than the
     #     pre-dispatch snapshot — GitHub genuinely holds no run, OR
-    #   * its reads FAILED (`gh run list` non-zero → newest_run_id nil →
+    #   * its reads FAILED (`gh run list` non-zero → correlated_run_id nil →
     #     new_run_id nil) — the run list could not be observed.
     # They are the same nil and they are OPPOSITE facts. The first supports
     # "the deploy NEVER RAN"; the second supports nothing, because nothing was

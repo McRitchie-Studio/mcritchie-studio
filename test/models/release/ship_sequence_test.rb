@@ -1389,7 +1389,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   # THE DEFECT these pin (found in review of the abort above, before it shipped).
   # bin/release's registration poll returns a nil run id for TWO causes: every read
   # ANSWERED and showed no new run (GitHub holds none), or every read FAILED
-  # (`gh run list` non-zero → newest_run_id nil → new_run_id nil). Same nil,
+  # (`gh run list` non-zero → correlated_run_id nil → new_run_id nil). Same nil,
   # OPPOSITE facts. Reporting the first message for the second case tells an
   # operator "the deploy NEVER RAN … the app is still serving its OLD tree" and
   # hands them the dispatch command — on prod-deploy.yml, while that deploy may be
