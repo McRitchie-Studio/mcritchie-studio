@@ -31,7 +31,8 @@ require "yaml"
 # Run directly:
 #   bin/rails test test/lib/ci_asset_hook_routes_test.rb
 class CiAssetHookRoutesTest < ActiveSupport::TestCase
-  CI_YML = Rails.root.join(".github", "workflows", "ci.yml")
+  # The suite steps live in the called workflow; ci.yml only calls it.
+  CI_YML = Rails.root.join(".github", "workflows", "reusable-ci.yml")
 
   # Compared by BASENAME so a path can't hide them (`bin/rails`, `./bin/rake`, `rails`).
   RAILS_ENTRYPOINTS = %w[rails rake].freeze

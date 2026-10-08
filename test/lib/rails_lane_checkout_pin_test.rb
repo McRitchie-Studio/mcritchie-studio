@@ -10,7 +10,8 @@ require "minitest/autorun"
 require "yaml"
 
 class RailsLaneCheckoutPinTest < Minitest::Test
-  WORKFLOW = File.expand_path("../../.github/workflows/ci.yml", __dir__)
+  # The lanes live in the called workflow; ci.yml only calls it.
+  WORKFLOW = File.expand_path("../../.github/workflows/reusable-ci.yml", __dir__)
   LANE_JOBS = %w[rails_plan rails rails_executed_set].freeze
 
   def test_every_rails_lane_job_checks_out_github_sha

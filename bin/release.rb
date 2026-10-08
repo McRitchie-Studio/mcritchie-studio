@@ -3279,10 +3279,11 @@ def ci_poll_budget_for(repo, sha)
   listing, ok = git_capture("-C", path, "ls-tree", "--name-only", sha.to_s, ".github/workflows/")
   return ci_poll_timeout unless ok
 
+  # Keyed by path, so a job that calls a workflow in the same tree is sized by it.
   texts = listing.lines.map(&:strip).select { |f| f.end_with?(".yml", ".yaml") }.filter_map do |file|
     text, read = git_capture("-C", path, "show", "#{sha}:#{file}")
-    text if read
-  end
+    [file, text] if read
+  end.to_h
   CiPollBudget.budget_s(texts, floor: ci_poll_timeout, ceiling: ci_poll_ceiling)
 rescue StandardError
   ci_poll_timeout
