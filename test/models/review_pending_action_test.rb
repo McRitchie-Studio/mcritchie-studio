@@ -329,4 +329,25 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     assert_equal "cafe1234", first.merge_sha
     assert_equal ReviewPendingAction::PENDING, second.reload.state, "the re-arm still lands"
   end
+
+  # settle! writes `state` through update_all, which skips validations; the
+  # database's CHECK (review_pending_actions_state_known) holds STATES, so every
+  # state settle! accepts must be in it.
+  test "[unit] every state settle! can write is in STATES, and any other is refused before the write" do
+    assert_empty ReviewPendingAction::TERMINAL_STATES - ReviewPendingAction::STATES
+    assert_equal ReviewPendingAction::STATES.sort,
+                 StateCheckConstraints.new.constraint_values(StringStates.for_constraint("review_pending_actions_state_known")).sort
+
+    record_verdict
+    action = arm
+    assert_no_changes -> { action.reload.state } do
+      assert_raises(ArgumentError) { action.settle!(state: "limbo") }
+      assert_raises(ArgumentError) { action.settle!(state: ReviewPendingAction::PENDING) }
+    end
+    ReviewPendingAction::TERMINAL_STATES.each do |state|
+      record = ReviewPendingAction.find(action.id)
+      ReviewPendingAction.where(id: record.id).update_all(state: ReviewPendingAction::PENDING)
+      assert record.settle!(state: state), "settle! lands #{state}"
+    end
+  end
 end

@@ -126,4 +126,140 @@ class StateCheckCensusTest < ActiveSupport::TestCase
     capture_io { error = assert_raises(SystemExit) { Rake::Task["state_checks:census"].invoke } }
     assert_not error.success?
   end
+
+  def run_apply
+    Rails.application.load_tasks unless Rake::Task.task_defined?("state_checks:apply")
+    Rake::Task["state_checks:apply"].reenable
+    capture_io { Rake::Task["state_checks:apply"].invoke }.first
+  end
+
+  def signal = TriageFinding.find_by(slug: StateCheckConstraints::SIGNAL_SLUG)
+
+  # The post-deploy hook: the release stops on a hook that exits non-zero, so the
+  # rows never decide its exit.
+  test "[integration] state_checks:apply over a stray value and a NULL stage exits 0, settles the clean and records one finding" do
+    strand_legacy_rows
+    connection.execute "ALTER TABLE releases DROP CONSTRAINT releases_state_known"
+
+    out = nil
+    assert_difference "TriageFinding.count", 1 do
+      assert_nothing_raised { out = run_apply }
+    end
+
+    assert_equal :valid, row("releases.state").state, "a clean column is settled"
+    assert_equal :missing, row("tasks.approval_status").state, "a stray column stays unconstrained"
+    assert service.census.stage_nullable
+    assert_includes out, "STATE CHECKS UNSETTLED"
+    assert_includes out, "recorded as triage finding state-checks-unsettled (open)"
+
+    finding = signal
+    assert_equal "open", finding.status
+    assert_equal "State CHECK constraints unsettled: 2", finding.title
+    assert_includes finding.body, "- tasks.approval_status (tasks_approval_status_known): missing · 1 value(s) outside the list in 1 row(s)"
+    assert_includes finding.body, "- tasks.stage: nullable · NULL rows: 1"
+    assert_not_includes finding.body, "pending_review", "the finding carries counts, never a value"
+    assert_not_includes finding.body, tasks(:new_task).slug
+  end
+
+  test "[integration] a second apply rewrites the one finding, and a settled run dismisses it" do
+    strand_legacy_rows
+    run_apply
+    Task.where(stage: nil).update_all(stage: "archived")
+
+    assert_no_difference "TriageFinding.count" do
+      run_apply
+    end
+    assert_equal "State CHECK constraints unsettled: 1", signal.title
+    assert_not_includes signal.body, "tasks.stage: nullable"
+
+    signal.dismiss!
+    assert_no_difference("TriageFinding.count") { run_apply }
+    assert_equal "open", signal.status, "a finding dismissed while the column is still unsettled reopens"
+
+    Task.where(approval_status: "pending_review").update_all(approval_status: nil)
+    out = nil
+    assert_no_difference("TriageFinding.count") { out = run_apply }
+    assert_equal "dismissed", signal.status
+    assert_includes out, "state checks: every constraint valid, tasks.stage NOT NULL"
+  end
+
+  test "[integration] a settled apply records nothing" do
+    assert_no_difference("TriageFinding.count") { run_apply }
+  end
+
+  test "[integration] a lock not granted inside apply is named on the census, not raised" do
+    strand_legacy_rows
+    Task.where(approval_status: "pending_review").update_all(approval_status: nil)
+    stuck = service
+    stuck.define_singleton_method(:add) { |_column| raise ActiveRecord::LockWaitTimeout, "canceling statement due to lock timeout" }
+
+    census = stuck.apply
+
+    assert_equal "lock wait timeout", census.stopped
+    assert_not census.settled?
+    assert_includes census.unsettled_summary, "apply stopped early: lock wait timeout"
+  end
+
+  test "[integration] a survey the database cancels reads as unknown rows, never as clean" do
+    timed_out = service
+    timed_out.define_singleton_method(:strays) do |column|
+      raise ActiveRecord::QueryCanceled, "canceling statement due to statement timeout" if column.name == "tasks.merged"
+
+      {}
+    end
+
+    stray = timed_out.census.rows.find { |r| r.name == "tasks.merged" }
+
+    assert stray.unread
+    assert_not stray.clean?
+    assert_not stray.settled?
+    assert_includes stray.summary, "survey timed out"
+  end
+
+  test "[integration] control: an unexpected exception still fails state_checks:apply" do
+    boom = Class.new(StandardError)
+    broken = service
+    broken.define_singleton_method(:apply) { raise boom, "not a data condition" }
+
+    StateCheckConstraints.stub(:new, broken) do
+      assert_raises(boom) { run_apply }
+    end
+  end
+
+  test "[integration] a helper CHECK left by a half-finished NOT NULL is removed by the next run and by down" do
+    helper = -> { connection.select_value("SELECT 1 FROM pg_constraint WHERE conname = 'tasks_stage_present'") }
+    connection.execute "ALTER TABLE tasks ADD CONSTRAINT tasks_stage_present CHECK (stage IS NOT NULL) NOT VALID"
+
+    quietly { ValidateStateChecks.new.up }
+    assert_nil helper.call, "a re-run of up removes it"
+
+    connection.execute "ALTER TABLE tasks ADD CONSTRAINT tasks_stage_present CHECK (stage IS NOT NULL) NOT VALID"
+    service.apply
+    assert_nil helper.call, "apply removes it"
+
+    connection.execute "ALTER TABLE tasks ADD CONSTRAINT tasks_stage_present CHECK (stage IS NOT NULL) NOT VALID"
+    quietly { ValidateStateChecks.new.down }
+    assert_nil helper.call, "down removes it"
+    assert service.census.stage_nullable
+  end
+
+  test "[integration] a survey that times out in the add migration skips its column" do
+    connection.execute "ALTER TABLE releases DROP CONSTRAINT releases_state_known"
+    migration = AddStateChecks.new
+    slow = connection
+    real = slow.method(:select_rows)
+    slow.define_singleton_method(:select_rows) do |sql, *rest, **options|
+      raise ActiveRecord::QueryCanceled, "canceling statement due to statement timeout" if sql.include?("FROM \"releases\"")
+
+      real.call(sql, *rest, **options)
+    end
+
+    begin
+      quietly { assert_nothing_raised { migration.up } }
+    ensure
+      slow.singleton_class.send(:remove_method, :select_rows)
+    end
+
+    assert_equal :missing, row("releases.state").state
+  end
 end

@@ -12,14 +12,19 @@
 # outside the list would become unsaveable. A column that holds such a value
 # therefore takes no CHECK here: the migration names it and moves on, and
 # `bin/rails state_checks:apply` (the task's post_deploy_cmd) adds it once the
-# rows are resolved, exiting non-zero until then.
+# rows are resolved. That hook exits 0 while a column is unsettled and keeps one
+# open triage finding (`state-checks-unsettled`) naming the columns.
 #
-# Locks: the survey is a SELECT (ACCESS SHARE, blocks nothing). ADD CONSTRAINT
-# ... NOT VALID takes ACCESS EXCLUSIVE on its one table and scans no rows, so it
-# holds the lock for a catalog update. One statement per constraint, outside a
-# transaction, with a short lock_timeout: an ALTER that cannot take its lock is
-# retried, then left for state_checks:apply, so it never queues the board's
-# writers behind it.
+# Locks: the survey is a SELECT (ACCESS SHARE, blocks nothing); one the database
+# cancels on a statement timeout skips its column like a stray value does. ADD
+# CONSTRAINT ... NOT VALID takes ACCESS EXCLUSIVE on its one table and scans no
+# rows, so once granted it holds the lock for a catalog update. While it WAITS
+# for that lock behind a long transaction, every later read and write of the
+# table queues behind the request: up to the 5 second lock_timeout per try, three
+# tries with a pause between, so a board write can stall for up to five seconds
+# at a time during the release phase and then proceeds. An ALTER that never gets
+# its lock is left for state_checks:apply and the migration says so. One
+# statement per constraint, outside a transaction.
 class AddStateChecks < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 
@@ -64,11 +69,17 @@ class AddStateChecks < ActiveRecord::Migration[8.1]
     db.execute "RESET lock_timeout"
   end
 
+  # Each DROP takes ACCESS EXCLUSIVE for a catalog update, under the same
+  # lock_timeout; one that cannot take its lock fails the rollback, which resumes
+  # on a re-run.
   def down
+    db.execute "SET lock_timeout = '#{LOCK_TIMEOUT}'"
     CHECKS.each_key do |name|
       table, column = name.split(".")
       db.execute "ALTER TABLE #{db.quote_table_name(table)} DROP CONSTRAINT IF EXISTS #{db.quote_column_name("#{table}_#{column}_known")}"
     end
+  ensure
+    db.execute "RESET lock_timeout"
   end
 
   private
@@ -83,8 +94,13 @@ class AddStateChecks < ActiveRecord::Migration[8.1]
 
     list = values.map { |value| db.quote(value) }.join(", ")
     col = db.quote_column_name(column)
-    strays = db.select_rows("SELECT #{col}, COUNT(*) FROM #{db.quote_table_name(table)} " \
-                            "WHERE #{col} IS NOT NULL AND #{col} NOT IN (#{list}) GROUP BY #{col} ORDER BY #{col}")
+    strays = begin
+      db.select_rows("SELECT #{col}, COUNT(*) FROM #{db.quote_table_name(table)} " \
+                     "WHERE #{col} IS NOT NULL AND #{col} NOT IN (#{list}) GROUP BY #{col} ORDER BY #{col}")
+    rescue ActiveRecord::QueryCanceled
+      say "#{table}.#{column}: the survey timed out; left for bin/rails state_checks:apply"
+      return
+    end
     if strays.any?
       say "#{table}.#{column}: no CHECK added; rows hold values outside the list: " \
           "#{strays.map { |value, count| "#{value.to_s.truncate(40).inspect} x#{count}" }.join(", ")}"

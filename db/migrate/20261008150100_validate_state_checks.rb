@@ -4,7 +4,10 @@
 # Like step 1, this step cannot fail on a row: a constraint whose column holds a
 # value outside its list stays NOT VALID (still refusing new writes), and a NULL
 # tasks.stage leaves the column nullable; each is named, and
-# `bin/rails state_checks:apply` finishes the work once the rows are resolved.
+# `bin/rails state_checks:apply` (the post-deploy hook, which exits 0 and keeps
+# one triage finding while anything is left) finishes the work once the rows are
+# resolved. A survey or a VALIDATE the database cancels on a statement timeout is
+# skipped the same way.
 #
 # Locks: VALIDATE CONSTRAINT takes SHARE UPDATE EXCLUSIVE, which blocks neither
 # reads nor writes, for one scan of its table (milliseconds on `tasks`; the
@@ -14,7 +17,8 @@
 # validated under that same weak lock; SET NOT NULL then takes ACCESS EXCLUSIVE
 # but reads the validated CHECK as its proof and scans nothing; the helper CHECK
 # is dropped (ACCESS EXCLUSIVE, catalog only). The column already defaults to
-# "designed".
+# "designed". A helper left behind by a pass that stopped halfway is removed by
+# the next run and by `down`.
 #
 # One statement at a time, outside a transaction, with a short lock_timeout; a
 # statement that cannot take its lock is left for state_checks:apply.
@@ -35,7 +39,11 @@ class ValidateStateChecks < ActiveRecord::Migration[8.1]
   # A valid constraint is also a working NOT VALID one, and step 1's down removes
   # them; only the NOT NULL has an inverse.
   def down
+    db.execute "SET lock_timeout = '#{LOCK_TIMEOUT}'"
+    db.execute "ALTER TABLE tasks DROP CONSTRAINT IF EXISTS #{STAGE_PRESENT}"
     change_column_null :tasks, :stage, true
+  ensure
+    db.execute "RESET lock_timeout"
   end
 
   private
@@ -59,6 +67,8 @@ class ValidateStateChecks < ActiveRecord::Migration[8.1]
     end
 
     db.execute "ALTER TABLE #{db.quote_table_name(table)} VALIDATE CONSTRAINT #{db.quote_column_name(constraint)}"
+  rescue ActiveRecord::QueryCanceled
+    say "#{constraint}: timed out; left NOT VALID for bin/rails state_checks:apply"
   rescue ActiveRecord::CheckViolation
     say "#{constraint}: a row holds a value outside the list; left NOT VALID for bin/rails state_checks:apply"
   rescue ActiveRecord::LockWaitTimeout, ActiveRecord::Deadlocked
@@ -66,6 +76,8 @@ class ValidateStateChecks < ActiveRecord::Migration[8.1]
   end
 
   def require_task_stage
+    leftover = db.select_value("SELECT 1 FROM pg_constraint WHERE conrelid = 'tasks'::regclass AND conname = '#{STAGE_PRESENT}'")
+    db.execute "ALTER TABLE tasks DROP CONSTRAINT #{STAGE_PRESENT}" if leftover
     return unless db.select_value("SELECT is_nullable FROM information_schema.columns " \
                                   "WHERE table_schema = current_schema() AND table_name = 'tasks' AND column_name = 'stage'") == "YES"
 
@@ -75,12 +87,11 @@ class ValidateStateChecks < ActiveRecord::Migration[8.1]
       return
     end
 
-    db.execute "ALTER TABLE tasks DROP CONSTRAINT IF EXISTS #{STAGE_PRESENT}"
     db.execute "ALTER TABLE tasks ADD CONSTRAINT #{STAGE_PRESENT} CHECK (stage IS NOT NULL) NOT VALID"
     db.execute "ALTER TABLE tasks VALIDATE CONSTRAINT #{STAGE_PRESENT}"
     db.execute "ALTER TABLE tasks ALTER COLUMN stage SET NOT NULL"
     db.execute "ALTER TABLE tasks DROP CONSTRAINT #{STAGE_PRESENT}"
-  rescue ActiveRecord::CheckViolation, ActiveRecord::LockWaitTimeout, ActiveRecord::Deadlocked => e
+  rescue ActiveRecord::CheckViolation, ActiveRecord::LockWaitTimeout, ActiveRecord::Deadlocked, ActiveRecord::QueryCanceled => e
     say "tasks.stage: NOT NULL not set (#{e.class.name.demodulize}); left for bin/rails state_checks:apply"
   end
 end

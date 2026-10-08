@@ -57,9 +57,15 @@
   registered, or listed in `StringStates::UNCONSTRAINED` with its reason.
 - `bin/rails state_checks:census` is the read-only report (SELECTs only): each
   constraint's state, any value outside its list, and the values the unconstrained
-  columns hold. `bin/rails state_checks:apply` adds and validates each constraint
-  whose rows are clean. A constraint is never added over a stray value, because
-  Postgres checks a `NOT VALID` constraint on every later update of that row.
+  columns hold; it is run by hand and exits non-zero while anything is unsettled.
+  `bin/rails state_checks:apply` is the post-deploy hook: it adds and validates
+  each constraint whose rows are clean and exits 0 whatever the rows hold, because
+  the release stops on a hook that fails. What it could not settle (a stray
+  value, a NULL stage, a list that differs, a lock not granted) it prints and
+  keeps as one open triage finding, `state-checks-unsettled`, with constraint
+  names and counts; only an unexpected exception exits non-zero. A constraint is
+  never added over a stray value, because Postgres checks a `NOT VALID`
+  constraint on every later update of that row.
 - A column nothing reads is listed in `DeadColumns` and ignored by its model for
   one release before a migration drops it: the servers still running the previous
   release during a deploy name every column they know in each INSERT.
