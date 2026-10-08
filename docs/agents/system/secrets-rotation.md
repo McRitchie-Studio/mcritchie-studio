@@ -68,13 +68,13 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ## Hub `SECRET_KEY_BASE`
 
-**Store:** Heroku config on `mcritchie-studio` only. It has no 1Password home (see the rotation log). Turf Monster and every other app carry their own key; the 2026-10-07 fleet sweep found no app sharing the hub's.
+**Store:** Heroku config on `mcritchie-studio` only. It has no 1Password home. Turf Monster and every other app carry their own key.
 
 **What derives from it, and what a swap does to each** (measured against studio-engine 0.92.0 and Rails 8.1, task [`hub-rotates-secret-key-base`](https://mcritchie.studio/tasks/hub-rotates-secret-key-base)):
 
 | Consumer | At the swap |
 |----------|-------------|
-| Session cookie and every signed or encrypted cookie | **Meant to survive** while `OLD_SECRET_KEY_BASE` holds the old key (`config/initializers/secret_key_base_rotation.rb`), with Rails re-writing each one under the new key on the visitor's next request. **It did not on 2026-10-07:** every pre-swap session signed out once, because the initializer derived the old key's cookie secrets with SHA1 while real cookies are sealed with SHA256. Task [`rotation-derives-old-key-sha256`](https://mcritchie.studio/tasks/rotation-derives-old-key-sha256) fixed it: the old key is now derived with SHA256 stated explicitly, and `verify_rotation` seals its probe the way a live request did. See the rotation log below |
+| Session cookie and every signed or encrypted cookie | **Survives** while `OLD_SECRET_KEY_BASE` holds the old key (`config/initializers/secret_key_base_rotation.rb`): Rails reads each cookie under the old key and re-writes it under the new key on the visitor's next request. The initializer derives the old key's cookie secrets with SHA256 stated, the digest live cookies are sealed with |
 | Board API tokens (`message_verifier("api_auth")`) | **Breaks.** Every outstanding token answers 401. `bin/lib/agent_api.rb` callers drop the cache on a 401 and re-mint; `bin/session-insights` never does, so delete the cache (below). An in-flight `bin/submit` holds its own `AGENT_API_TOKEN`, so swap with no ship or release running |
 | Contact-form proof (`message_verifier(:contact_form)`, 1-day TTL) | **Breaks** for a form loaded before the swap: the row saves flagged `no_browser_proof`, and Alex is not notified |
 | Active Storage signed ids (`/rails/active_storage/...` URLs, direct-upload ids) | **Breaks** for URLs minted before the swap. The hub renders none in its own views (link previews use the service URL, `blob.url`), so the exposure is an in-flight direct upload |
@@ -88,60 +88,55 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 **Procedure.** Three steps, each its own card.
 
 1. **Ship the rotation code** (`hub-rotates-secret-key-base`). With `OLD_SECRET_KEY_BASE` unset it is a no-op.
-2. **Swap**, in one config change, only after step 1 runs in production. The release lane runs this, in a shell holding the `credential-rotation` SOP's `digest()` helper and `HEROKU_API_KEY`. No value is ever printed.
+2. **Swap**, only after step 1 runs in production. The release lane runs it from the hub checkout with `HEROKU_API_KEY` in the environment.
+
+   Before it:
+   - `/Users/alex/projects/.agents/bin/release status` shows no release or ship mid-run.
+   - `expected_old_prefix` in `config/secret_rotation.yml` names the live key (see **The expected prefix** below).
 
    ```bash
-   APP=mcritchie-studio
-   API="https://api.heroku.com/apps/$APP/config-vars"
-   hk() { curl -sS --fail-with-body -H "Accept: application/vnd.heroku+json; version=3" \
-            -H @<(printf 'Authorization: Bearer %s\n' "$HEROKU_API_KEY") "$@"; }
-
-   # Gate 0: the code is live, nothing is in flight, and the old key is the one we expect.
-   # HASH_DIGEST_CLASS exists only in the SHA256 fix (rotation-derives-old-key-sha256);
-   # the defective SHA1 build defines SecretKeyBaseRotation too, so the module alone proves nothing.
-   heroku run --exit-code --app "$APP" -- bin/rails runner \
-     'abort "ROTATION CODE MISSING" unless defined?(SecretKeyBaseRotation::HASH_DIGEST_CLASS); puts "ROTATION CODE PRESENT"'
-   /Users/alex/projects/.agents/bin/release status        # no release or ship mid-run
-   hk "$API" | jq 'has("OLD_SECRET_KEY_BASE")'            # false
-   OLD=$(hk "$API" | jq -r '.SECRET_KEY_BASE // empty')
-   printf '%s' "$OLD" | digest                            # starts 81febe43 (the leaked key); EMPTY = stop
-   NEW=$(ruby -rsecurerandom -e 'print SecureRandom.hex(64)')
-   printf '%s' "$NEW" | digest                            # differs from the line above
-
-   # The swap: ONE PATCH, so ONE release and ONE restart. Values travel by env and stdin, never argv.
-   OLD="$OLD" NEW="$NEW" jq -n '{OLD_SECRET_KEY_BASE: env.OLD, SECRET_KEY_BASE: env.NEW}' |
-     hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'   # 200
+   /Users/alex/projects/mcritchie-studio/bin/secret-key-base-swap swap
    ```
+
+   The script refuses, changing nothing, unless all of these hold:
+   - `SECRET_KEY_BASE` is set, is 128 hex characters, and its SHA-256 starts with `expected_old_prefix`.
+   - `OLD_SECRET_KEY_BASE` is unset.
+   - The SHA256 rotation code runs on the app: a one-off dyno defines `SecretKeyBaseRotation::HASH_DIGEST_CLASS`.
+   - The key it mints is 128 hex characters and differs from the live key.
+
+   It then sets both vars in ONE PATCH (one release, one restart), reads the config back, and exits 0 only when the stored prefixes match. It prints `old=` and `new=`, each a 16-character SHA-256 prefix, and never a key. Keys travel by stdin, never argv. `--help` exits 3 and an unrecognized argument exits 2, both before any Heroku read.
 
    **Checks**, in order:
    - `heroku releases --app mcritchie-studio -n 1` shows one release setting both vars.
-   - Stored: `hk "$API" | jq -r .SECRET_KEY_BASE | digest` equals the `NEW` digest; `hk "$API" | jq -r .OLD_SECRET_KEY_BASE | digest` starts `81febe43`.
-   - Live: `heroku run --exit-code --app mcritchie-studio -- bin/rails secret_key_base:verify_rotation` prints `runtime=` the `NEW` digest, `old=81febe43…`, `rotations signed=1 encrypted=1`, a `probe digest=SHA256 encrypted=true signed=true; SHA1 control encrypted=false signed=false` line, then `PASS`, and exits 0. Its probe is sealed with the derivation a live request on the old key used (the app's configured key-generator digest), never through `Rails.application.key_generator(old)`, and the SHA1 control must not read.
+   - Stored: the script's `stored SECRET_KEY_BASE=… OLD_SECRET_KEY_BASE=…` line carries its `new=` and `old=` prefixes.
+   - Live: `heroku run --exit-code --app mcritchie-studio -- bin/rails secret_key_base:verify_rotation` prints `runtime=` the `new=` prefix, `old=` the `old=` prefix, `rotations signed=1 encrypted=1`, a `probe digest=SHA256 encrypted=true signed=true; SHA1 control encrypted=false signed=false` line, then `PASS`, and exits 0. Its probe is sealed with the derivation a live request on the old key used (the app's configured key-generator digest), never through `Rails.application.key_generator(old)`, and the SHA1 control must not read.
    - `curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/up` and `/signin` answer 200 (`/login` is a 301 to `/signin`).
    - Real-cookie proof, which `verify_rotation` approximates but does not replace: before the swap, `curl -c jar.txt https://mcritchie.studio/signin` and unmask the page's `csrf-token` (`pad XOR token`, 32 + 32 bytes); after it, `curl -b jar.txt` the same page. The same unmasked token means the pre-swap session read. A new one means it did not.
    - Board tokens: the cached token now 401s (`curl -s -o /dev/null -w '%{http_code}\n' -H @<(printf 'Authorization: Bearer %s\n' "$(jq -r .token /Users/alex/projects/.agents/atomic-capture/token.json)") https://mcritchie.studio/api/v1/tasks`); then `rm -f /Users/alex/projects/.agents/atomic-capture/token.json` and `/Users/alex/projects/.agents/bin/task show hub-rotates-secret-key-base` succeeds on a fresh mint.
    - Sign-in persists: a browser signed in before the swap loads `https://mcritchie.studio/tasks` without a login (Alex's own session is the check at his next visit).
    - Watch `ErrorLog` and Sentry for 15 minutes for `InvalidSignature` or `InvalidMessage` spikes.
-   - `unset OLD NEW`.
 
    **Rollback** (symmetric, one PATCH, so sessions written under either key keep reading):
 
    ```bash
-   CUR=$(hk "$API" | jq -r '.SECRET_KEY_BASE // empty'); PREV=$(hk "$API" | jq -r '.OLD_SECRET_KEY_BASE // empty')
-   printf '%s' "$PREV" | digest                           # starts 81febe43; EMPTY = stop
-   CUR="$CUR" PREV="$PREV" jq -n '{SECRET_KEY_BASE: env.PREV, OLD_SECRET_KEY_BASE: env.CUR}' |
-     hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'
-   unset CUR PREV
+   /Users/alex/projects/mcritchie-studio/bin/secret-key-base-swap rollback
    ```
 
-   Re-run the checks with the digests swapped. If the app will not boot at all, `heroku releases:rollback --app mcritchie-studio` restores the prior config (old key, no `OLD_SECRET_KEY_BASE`). Sessions written during the window are then lost; everyone from before is fine.
-3. **Close the window** (its own card): `jq -n '{OLD_SECRET_KEY_BASE: null}' | hk -X PATCH "$API" -H "Content-Type: application/json" --data-binary @- -o /dev/null -w '%{http_code}\n'`. No code change is needed, since the initializer is a no-op when the var is unset; removing it is optional cleanup. Every day the var stays set is a day the leaked key can still forge a session, so prefer days to weeks.
+   It exchanges the two vars. It refuses, changing nothing, unless `OLD_SECRET_KEY_BASE` is set, is 128 hex characters, differs from `SECRET_KEY_BASE`, and has the `expected_old_prefix` SHA-256 prefix. Re-run the checks with the prefixes exchanged. If the app will not boot at all, `heroku releases:rollback --app mcritchie-studio` restores the prior config (old key, no `OLD_SECRET_KEY_BASE`). Sessions written during the window are then lost; everyone from before is fine.
+3. **Close the window** (its own card). No code change is needed, since the initializer is a no-op when the var is unset. While the var stays set the old key can still forge a session, so prefer days to weeks.
 
-**Last rotation:** 2026-10-07 14:53:29Z (08:53 MDT), by Steffon. Heroku release v567 set both vars in one guarded Platform API PATCH. The key moved from `81febe43dd82180e` to `a084112568cb48e9` (16-character SHA-256 prefixes), and the stored digests matched. `verify_rotation` printed PASS. `/up` and `/signin` answered 200, board tokens re-minted, and `ErrorLog` held 0 rows in the 19 minutes after, against 7 the hour before. No rollback.
+   ```bash
+   jq -n '{OLD_SECRET_KEY_BASE: null}' | curl -sS --fail-with-body -X PATCH \
+     -H "Accept: application/vnd.heroku+json; version=3" -H "Content-Type: application/json" \
+     -H @<(printf 'Authorization: Bearer %s\n' "$HEROKU_API_KEY") --data-binary @- \
+     -o /dev/null -w '%{http_code}\n' https://api.heroku.com/apps/mcritchie-studio/config-vars   # 200
+   ```
 
-**Defect found in this run.** Pre-swap sessions did **not** survive. A `_studio_session` the web wrote at 14:51Z failed to read on the web after the swap, yet a direct `MessageEncryptor` opens it under the old key with SHA256. The cause is that `SecretKeyBaseRotation.apply!` calls `Rails.application.key_generator(old)` while `config/initializers` runs, which is before Active Support's `after_initialize` sets `KeyGenerator.hash_digest_class = SHA256`. That call memoizes a SHA1 generator in `@key_generators[old]`. Measured on a dyno, `app.key_generator(old)` equals the SHA1 derivation and not the SHA256 one. `verify_rotation` writes and reads through that same cached generator, so it passes without proving anything about a real cookie. The result is that `OLD_SECRET_KEY_BASE` helps no legitimate visitor, while a holder of the old key can still forge a session through the SHA1 derivation, so close the window at once. Before the next rotation, derive with `ActiveSupport::KeyGenerator.new(old, iterations: 1000, hash_digest_class: OpenSSL::Digest::SHA256)` and test against a cookie the request path wrote. That fix is task [`rotation-derives-old-key-sha256`](https://mcritchie.studio/tasks/rotation-derives-old-key-sha256): `SecretKeyBaseRotation.key_generator` derives with `HASH_DIGEST_CLASS` (SHA256) stated, and `verify` seals its probe from the app's configured digest, independent of that memo, with a SHA1 probe as a control that must not read. Its tests run `apply!` under the SHA1 class default, as the initializer meets it at boot, and the integration test does the same against a real signed-in session cookie.
+   The same card sets `expected_old_prefix` to the swap's `new=` prefix. A rollback needs the pre-swap value, so the config changes only once the window is closed.
 
-**Window closed:** 2026-10-07 15:29:20Z (09:29 MDT), by Steffon, 36 minutes after the swap (task `close-old-hub-key-window`). Heroku release v568 removed `OLD_SECRET_KEY_BASE` in one guarded PATCH. `SECRET_KEY_BASE` was untouched and still reads `a084112568cb48e9`. After it, `verify_rotation` printed `old=EMPTY rotations signed=0 encrypted=0` and exited 1 (closed). `/up` and `/signin` answered 200, and a session created after the swap still read. In the 10 minutes after, `ErrorLog` recorded one unrelated row (a recurring Sidekiq job-uniqueness error), with no `InvalidSignature` or `InvalidMessage` and no 5xx. The three H27s logged were clients interrupted during the dyno restart.
+**The expected prefix.** `config/secret_rotation.yml` holds `expected_old_prefix`: the first 16 hex characters of the SHA-256 of the key a swap retires, which is the live key whenever no window is open. It is a prefix, never a full digest. Two sources give it without printing a key: the `new=` line of the previous swap, and the `runtime=` field of `heroku run --app mcritchie-studio -- bin/rails secret_key_base:verify_rotation`, which the dyno computes from the key it runs on (with the window closed the task exits 1 and still prints the field). Confirm the config against the `runtime=` field before a swap.
+
+**Past rotations:** the dated record is [`../archive/secrets-rotation-2026-10-07.md`](../archive/secrets-rotation-2026-10-07.md).
 
 ---
 

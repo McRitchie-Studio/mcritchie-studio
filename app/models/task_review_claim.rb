@@ -22,7 +22,8 @@ class TaskReviewClaim < ApplicationRecord
 
   # The acquire verdict: whether THIS instance now holds the review, the ClaimLease
   # disposition it was in, and the (updated) row for the skip/holder message.
-  Outcome = Struct.new(:acquired, :disposition, :claim, keyword_init: false)
+  # `agent_session` is the reviewer's login when the claim minted one.
+  Outcome = Struct.new(:acquired, :disposition, :claim, :agent_session, keyword_init: false)
 
   validates :task_slug, presence: true, uniqueness: true
 
@@ -32,8 +33,11 @@ class TaskReviewClaim < ApplicationRecord
   # same-instance → acquired; a DIFFERENT live instance holds it → not acquired
   # (the caller skips this task and moves to the next). Atomic under a row lock.
   # Returns an Outcome.
+  #
+  # `mint_session` also logs the reviewer in to the task (AgentSession.for_review_claim),
+  # inside the claim's lock. The API passes it only for a caller that holds no session.
   def self.acquire(task_slug:, session:, nonce:, label: nil, reviewer: nil, now: Time.current,
-                   ttl: ClaimLease::REVIEW_TTL_SECONDS)
+                   ttl: ClaimLease::REVIEW_TTL_SECONDS, mint_session: false)
     row = claim_row(task_slug)
     # THE SECOND LINE AGAINST SELF-REVIEW. `bin/reviewer-select` is the gate that
     # keeps a builder out of the reviewer seats — but a gate at SELECTION time only
@@ -88,7 +92,9 @@ class TaskReviewClaim < ApplicationRecord
         # DB-level raise is reachable and the rescue below suffices — but the review
         # lane's mutual exclusion is too load-bearing to rest on that staying true.
         ActiveRecord::Base.transaction(requires_new: true) { record_review_intent(row.task_slug, reviewer) }
-        outcome = Outcome.new(true, disposition, row)
+        AgentSession.revoke_review_claims!(row.task_slug, by: "review_claim_changed_hands") unless disposition == :same_instance
+        login = mint_session ? review_login(row.task_slug, reviewer, session, reuse: disposition == :same_instance) : nil
+        outcome = Outcome.new(true, disposition, row, login)
       end
     end
     outcome
@@ -150,6 +156,24 @@ class TaskReviewClaim < ApplicationRecord
     Rails.logger.warn("[review-claim] intent record failed for #{task_slug}: #{e.class}: #{e.message}")
     nil
   end
+
+  # The reviewer's login for a claim just taken, in its own savepoint: a failed
+  # mint leaves the lease standing and the reviewer on the shared token.
+  def self.review_login(task_slug, reviewer, harness_session_id, reuse:)
+    return nil if reviewer.to_s.strip.empty?
+
+    task = Task.find_by(slug: task_slug)
+    return nil unless task
+
+    ActiveRecord::Base.transaction(requires_new: true) do
+      AgentSession.for_review_claim(soul: reviewer, task: task, harness_session_id: harness_session_id.to_s.presence,
+                                    reuse: reuse)
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[review-claim] login failed for #{task_slug}: #{e.class}: #{e.message}")
+    nil
+  end
+  private_class_method :review_login
 
   # The renewal verdict. FOUR STATES, and they are deliberately not collapsed:
   #
@@ -294,6 +318,7 @@ class TaskReviewClaim < ApplicationRecord
 
   def self.drop(row, state)
     row.update!(claimed_session: nil, claim_nonce: nil, claim_expires_at: nil, holder_label: nil, acquired_at: nil)
+    AgentSession.revoke_review_claims!(row.task_slug, by: "review_claim_released")
     Release.new(state, row)
   end
   private_class_method :drop

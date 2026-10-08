@@ -4,6 +4,7 @@ require "tmpdir"
 require "socket"
 require "fileutils"
 require "json"
+require Rails.root.join("bin/lib/desk_session").to_s
 
 # [integration] `bin/task begin` logs the desk's soul in to the task it claimed,
 # keeps the session token inside the desk's git directory, and a later `bin/task`
@@ -24,6 +25,7 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
   BUILDER = "harness-builder".freeze
   REVIEWER = "harness-reviewer".freeze
   DROPPED = "X-Agent-Session-Dropped".freeze
+  REVIEW = "review-bearer".freeze
 
   test "begin logs the builder in and keeps the token in the desk's git directory" do
     with_desk do |dir, desk, requests|
@@ -155,7 +157,48 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
     end
   end
 
+  # ---- the review claim's login (DeskSession.write_review) ------------------------
+
+  test "a reviewer's write presents its review login, and the builder's keeps the desk's" do
+    with_desk do |dir, desk, requests|
+      begin_task(dir, desk)
+      keep_review_login(desk)
+      requests.clear
+
+      task_from(desk, dir, "block", SLUG, "--kind", "rework", "--agent", "carl", "--feedback", "needs a test",
+                harness: REVIEWER)
+      task_from(desk, dir, "update", SLUG, "--local-url", "http://localhost:3018/", harness: BUILDER)
+
+      writes = requests.select { |r| r[:line].start_with?("PATCH /api/v1/tasks/#{SLUG}") }
+      assert_equal ["Bearer #{REVIEW}", "Bearer #{SESSION}"], writes.map { |r| r[:auth] }, requests.inspect
+    end
+  end
+
+  test "a refused review login is forgotten and the write retries with the shared token" do
+    with_desk(refuse_session: REVIEW) do |dir, desk, requests|
+      begin_task(dir, desk)
+      file = keep_review_login(desk)
+      requests.clear
+
+      _out, err, status = task_from(desk, dir, "block", SLUG, "--kind", "rework", harness: REVIEWER)
+
+      assert status.success?, err
+      patches = requests.select { |r| r[:line].start_with?("PATCH") }
+      assert_equal ["Bearer #{REVIEW}", "Bearer #{SHARED}"], patches.map { |r| r[:auth] }
+      refute File.exist?(file), "the refused review login is deleted"
+      refute_includes err, REVIEW, "the token is never printed"
+      desk_file = File.join(dir, "gitdir", "agent-session.json")
+      assert_includes File.read(desk_file), SESSION, "the builder's login is untouched"
+    end
+  end
+
   private
+
+  def keep_review_login(desk)
+    DeskSession.write_review(desk, { "slug" => "sess-r", "soul" => "carl", "task_slug" => SLUG, "token" => REVIEW,
+                                     "expires_at" => (Time.now + 3600).utc.iso8601,
+                                     "harness_session_id" => REVIEWER })
+  end
 
   def begin_task(dir, desk)
     Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir), BIN, "begin", SLUG, "--agent", "pokemon",
@@ -227,7 +270,7 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
           elsif line.start_with?("POST /api/v1/agent_sessions") then [201, session]
           elsif line.start_with?("POST /api/v1/activities") then [201, { data: { slug: "activity-1" } }.to_json]
           elsif line.include?("/api/v1/activities") then [200, { data: [] }.to_json]
-          elsif refuse_session && auth == "Bearer #{SESSION}"
+          elsif refuse_session && auth == "Bearer #{refuse_session == true ? SESSION : refuse_session}"
             [401, { error: "agent session sess-x was revoked", error_code: "SESSION_ENDED" }.to_json]
           else [200, task]
           end

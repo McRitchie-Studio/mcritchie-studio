@@ -108,6 +108,28 @@ The board API takes two bearers (design:
   lives while the task is `building` or `submitted`, and expires after 24 hours. Its
   soul is the actor on every board write it makes; an `actor` or `by` param is
   ignored. It may write only its own task, and a release endpoint answers 403.
+- **A reviewer's session.** A review claim taken with the shared token
+  (`bin/task claim-next-review --agent <soul>`, `bin/task review-claim acquire`)
+  logs that reviewer in to the claimed task, when the soul is in the reviewer pool
+  and outside the task's author set. The claim's response carries the token, and
+  the command keeps it in `agent-review-sessions/<task>.json` inside the git
+  directory of the checkout it ran in, one file per claimed task. The harness
+  session that claimed presents it on `bin/task` writes to that task from that
+  checkout, ahead of a desk's own login. It lives while the task is `submitted`
+  and the claim is live: releasing the claim, a new holder, or a resubmission
+  revokes it, and a lapsed claim or a task at `reviewed` or blocked answers 401.
+  A light spawned in the claiming harness session writes as the claiming soul.
+- **Transitions under a session.** A move to `reviewed` from `designed`,
+  `building` or `submitted`, and a block of a `submitted` task, take a reviewer's
+  session (or an admin's) whose soul is outside the author set; any stage to
+  `archived` takes an admin session. Anything else answers 403 naming the
+  transition. `reviewed` to `assembled` and `assembled` to `shipped` are unchecked.
+  The stage events (`events/<stage>/complete` and `/fail`) are checked the same way.
+  `bin/task` retries on the shared token after a 401, never after this 403. A
+  reviewer who zapped the PR is an author: release the claim (`bin/task
+  review-claim release <slug>`), then make the move, which rides the shared token
+  while that is accepted. To archive a task from its desk, run the move from
+  outside the desk.
 - **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
   everywhere for one release, with each use logged as `[agent-auth] legacy` (naming
   the dropped desk session when a desk fell back from one), so Turf

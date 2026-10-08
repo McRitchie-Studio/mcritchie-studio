@@ -15,6 +15,7 @@ module Api
 
       before_action :set_task
       require_task_scope
+      before_action :require_transition_tier!, only: [:complete, :fail]
 
       def start
         event =
@@ -88,6 +89,14 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # The stage PATCH's check (TasksController#require_transition_tier!), for the
+      # two events that move a stage: a completed stage event and a failed one's block.
+      def require_transition_tier!
+        to = action_name == "fail" ? "blocked" : (normalized_stage if transition_stage?)
+        reason = to && current_agent_session&.transition_refusal(@task, to)
+        render_session_refusal(reason) if reason
       end
 
       def raw_stage

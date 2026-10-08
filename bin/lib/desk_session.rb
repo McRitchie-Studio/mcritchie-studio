@@ -28,9 +28,17 @@ require "fileutils"
 # DROPPED_HEADER, so the board's legacy-token log line names the desk's session
 # instead of reading as an anonymous shared-token call.
 #
+# A review claim's login is kept apart, one file per claimed task in
+# REVIEW_DIR beside the desk's file (`bin/task claim-next-review` and
+# `review-claim acquire` write it from the claim's response). One tree can hold
+# several, beside a desk's own login. For a write to its task it is offered ahead
+# of the desk's login, under the same owner rule.
+#
 # The token is a bearer credential: it lives in the file, never on stdout.
 module DeskSession
   FILE = "agent-session.json"
+  REVIEW_DIR = "agent-review-sessions"
+  SLUG = /\A[a-z0-9][a-z0-9-]*\z/
   MODE = 0o600
   # Stop using a token this many seconds before its session expires.
   REFRESH_MARGIN = 60
@@ -76,11 +84,22 @@ module DeskSession
     File.join(git_dir, FILE)
   end
 
+  # The review login's file for `slug` in the tree at `root`, or nil when `slug`
+  # is not a slug.
+  def review_path(root, slug)
+    return nil unless root && slug.to_s.match?(SLUG)
+
+    File.join(File.dirname(path(root)), REVIEW_DIR, "#{slug}.json")
+  end
+
   def read(root)
     return nil if root.nil?
 
-    file = path(root)
-    return nil unless File.file?(file)
+    read_file(path(root))
+  end
+
+  def read_file(file)
+    return nil unless file && File.file?(file)
 
     data = JSON.parse(File.read(file))
     data.is_a?(Hash) ? data : nil
@@ -89,7 +108,23 @@ module DeskSession
   end
 
   def write(root, session)
-    file = path(root)
+    write_file(path(root), session)
+  end
+
+  # Keep a review claim's login for the task it names. nil when it names no slug.
+  def write_review(root, session)
+    file = review_path(root, session["task_slug"])
+    file && write_file(file, session)
+  end
+
+  def clear_review(root, slug)
+    file = review_path(root, slug)
+    File.delete(file) if file && File.file?(file)
+  rescue StandardError
+    nil
+  end
+
+  def write_file(file, session)
     FileUtils.mkdir_p(File.dirname(file))
     File.write(file, JSON.pretty_generate(session), perm: MODE)
     File.chmod(MODE, file)
@@ -128,11 +163,35 @@ module DeskSession
 
   # The session token for a write to `slug` from the desk at `root`, or nil when
   # the desk holds no live login for that task or the caller is another harness.
+  # A review login to `slug` is offered ahead of the desk's own.
   def token_for(slug, root:, harness_session_id:, now: Time.now)
+    review = review_token_for(slug, root: root, harness_session_id: harness_session_id, now: now)
+    return review if review
+
     data = owned_session(slug, root: root, harness_session_id: harness_session_id)
     return nil unless data && !data["token"].to_s.empty?
 
     live?(data, now) ? data["token"] : nil
+  end
+
+  # The live review login's token for `slug`, for the harness that claimed it.
+  def review_token_for(slug, root:, harness_session_id:, now: Time.now)
+    owner = harness_session_id.to_s.strip
+    data = read_file(review_path(root, slug))
+    return nil unless data && !owner.empty? && data["harness_session_id"].to_s == owner
+    return nil if data["token"].to_s.empty? || data["task_slug"] != slug
+
+    live?(data, now) ? data["token"] : nil
+  end
+
+  # The board refused the token token_for offered for `slug`: forget the review
+  # login when that is what was offered, else drop the desk's.
+  def refused(slug, root:, harness_session_id:, now: Time.now)
+    if review_token_for(slug, root: root, harness_session_id: harness_session_id, now: now)
+      clear_review(root, slug)
+    else
+      drop(root, now: now)
+    end
   end
 
   # The slug of the owner's session for `slug` when that session no longer
