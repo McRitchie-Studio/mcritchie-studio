@@ -232,6 +232,14 @@ bin/release prepare --yes
 
    A candidate QA bounced is never locked again once the gem's tip moves, and nothing
    here can publish `x.y.z`.
+
+   **Two things a candidate changes for a consumer.** (1) The gem reports its version
+   as `x.y.z.rcN` (`Studio::VERSION`), which orders below `x.y.z`: a consumer test
+   asserting a floor of exactly `x.y.z` is red on the candidate tree, so raise such a
+   floor in the release after the gem's. (2) studio-engine's `bin/gem-drift-check`
+   lane compares the engine's lock with consumers' locks, so while a consumer locks a
+   solana-studio candidate that lane reads the engine as behind until the ship bumps
+   the engine's lock to the final.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that exact SHA
    IS the verdict**; nothing runs locally. It polls a pending run, passes only on green,
    and fails closed on everything else. It may **credit** an existing green for the same
