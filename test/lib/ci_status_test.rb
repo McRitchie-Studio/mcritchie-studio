@@ -705,6 +705,31 @@ class CiStatusTest < Minitest::Test
     end
   end
 
+  # GitHub can leave a concluded run at status in_progress (rails_plan did).
+  def test_check_runs_settle_on_a_present_conclusion_whatever_the_status
+    v = CiStatus.for_sha("o/r", "abc", check_runs(
+                           { "name" => "rails_plan", "status" => "in_progress", "conclusion" => "success" },
+                           { "name" => "lint", "status" => "completed", "conclusion" => "success" }
+                         ))
+    assert_equal :green, v[:state], "a run with a conclusion has reported its verdict"
+
+    red = CiStatus.for_sha("o/r", "abc", check_runs(
+                             { "name" => "rails_plan", "status" => "in_progress", "conclusion" => "failure" }
+                           ))
+    assert_equal :red, red[:state], "a concluded failure is red at any status"
+    assert_equal ["rails_plan"], red[:failing]
+  end
+
+  # The control: the same status with no conclusion still waits.
+  def test_check_runs_in_progress_without_a_conclusion_still_waits
+    ["", nil].each do |conclusion|
+      v = CiStatus.for_sha("o/r", "abc", check_runs(
+                             { "name" => "rails_plan", "status" => "in_progress", "conclusion" => conclusion }
+                           ))
+      assert_equal :pending, v[:state]
+    end
+  end
+
   def test_check_runs_a_failure_outranks_a_still_running_run
     v = CiStatus.parse_check_runs(check_runs(
                                     { "name" => "test", "status" => "completed", "conclusion" => "failure" },
