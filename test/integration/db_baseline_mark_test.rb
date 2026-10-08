@@ -2,9 +2,14 @@ require "test_helper"
 require "open3"
 require "pg"
 
-# [integration] The committed ledger, run for real against a scratch database:
-# a fresh database migrated from zero dumps db/schema.rb exactly, and a database
-# that already holds the tables is recorded and left untouched.
+# [integration] The committed ledger, run for real against scratch databases:
+# a fresh database migrated from zero holds the schema db/schema.rb describes, and a
+# database that already holds the tables is recorded and left untouched.
+#
+# db/schema.rb is committed load-stable: loading it and dumping again reproduces it
+# byte for byte. Postgres re-spells some expressions on a load (an IN list written by
+# a migration comes back as an array of text casts), so a from-zero migrate is
+# compared after one load, which is how every desk and CI database is built.
 class DbBaselineMarkTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
@@ -14,20 +19,33 @@ class DbBaselineMarkTest < ActiveSupport::TestCase
     base.path = "/#{@database}"
     @url = base.to_s
     @dump = Rails.root.join("tmp", "#{@database}.schema.rb").to_s
+    base.path = "/#{@database}_load"
+    @load_url = base.to_s
+    @load_dump = Rails.root.join("tmp", "#{@database}_load.schema.rb").to_s
     rails!("db:create")
   end
 
   teardown do
     rails!("db:drop", allow_failure: true)
-    FileUtils.rm_f(@dump)
+    rails!("db:drop", url: @load_url, allow_failure: true)
+    FileUtils.rm_f([ @dump, @load_dump ])
   end
 
-  def rails!(*tasks, allow_failure: false)
-    env = { "RAILS_ENV" => "test", "DATABASE_URL" => @url, "TEST_DATABASE_URL" => @url, "SCHEMA" => @dump,
+  def rails!(*tasks, url: @url, schema: @dump, allow_failure: false)
+    env = { "RAILS_ENV" => "test", "DATABASE_URL" => url, "TEST_DATABASE_URL" => url, "SCHEMA" => schema,
             "DISABLE_DATABASE_ENVIRONMENT_CHECK" => "1" }
     output, status = Open3.capture2e(env, "bin/rails", *tasks, chdir: Rails.root.to_s)
     flunk "bin/rails #{tasks.join(' ')} failed:\n#{output.last(2000)}" unless status.success? || allow_failure
     [output, status]
+  end
+
+  # The dump a database built by loading `dump` writes: the spelling a load settles on.
+  def loaded(dump)
+    rails!("db:create", "db:schema:load", url: @load_url, schema: dump)
+    rails!("db:schema:dump", url: @load_url, schema: @load_dump)
+    File.read(@load_dump)
+  ensure
+    rails!("db:drop", url: @load_url, allow_failure: true)
   end
 
   def scratch
@@ -48,10 +66,14 @@ class DbBaselineMarkTest < ActiveSupport::TestCase
   end
 
   test "fresh_migrate_matches_schema_rb, then old_ledger_db_migrates_nothing" do
-    # A fresh database, migrated from zero, dumps the committed schema.
+    # A fresh database, migrated from zero, holds the committed schema.
+    committed = File.read(Rails.root.join("db/schema.rb"))
     rails!("db:migrate")
-    assert_equal File.read(Rails.root.join("db/schema.rb")), File.read(@dump),
-                 "db:migrate on an empty database must dump db/schema.rb exactly"
+    migrated = File.read(@dump)
+    assert_equal committed, loaded(@dump),
+                 "db:migrate on an empty database must dump a schema that loads as db/schema.rb exactly"
+    assert_equal committed, loaded(Rails.root.join("db/schema.rb").to_s),
+                 "db/schema.rb must be load-stable: bin/rails db:schema:load db:schema:dump on a scratch database rewrites it"
 
     # The same database as the retired ledger left it: every table, no baseline version.
     before = scratch do |connection|
@@ -78,6 +100,6 @@ class DbBaselineMarkTest < ActiveSupport::TestCase
       assert_equal Dir[Rails.root.join("db/migrate/*.rb")].size, connection.exec("SELECT count(*) FROM schema_migrations").getvalue(0, 0).to_i,
                    "the ledger holds one row per migration file"
     end
-    assert_equal File.read(Rails.root.join("db/schema.rb")), File.read(@dump)
+    assert_equal migrated, File.read(@dump), "the mark changed what the database dumps"
   end
 end
