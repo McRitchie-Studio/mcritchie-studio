@@ -273,7 +273,7 @@ class ReviewClaimCli
       write_marker(sid, slug)
       start_renewer(sid, slug)
       keep_login(slug, data["agent_session"])
-      DreamBank.announce(reviewer, io: @err, task: slug)
+      DreamBank.announce(reviewer, io: @err, task: slug, facts: dream_facts(slug, reviewer))
       @out.puts("review-claim: ✅ #{slug} review claimed — this task is yours to review.")
       OK
     else
@@ -307,7 +307,7 @@ class ReviewClaimCli
       write_marker(sid, slug)
       start_renewer(sid, slug)
       keep_login(slug, data["agent_session"])
-      DreamBank.announce(reviewer, io: @err, task: slug)
+      DreamBank.announce(reviewer, io: @err, task: slug, facts: dream_facts(slug, reviewer))
       @out.puts(slug) # JUST the slug, so `slug=$(bin/task claim-next-review)` captures it
       OK
     else
@@ -1040,6 +1040,15 @@ class ReviewClaimCli
 
   def base(slug)
     "/api/v1/tasks/#{slug}"
+  end
+
+  # The board's task JSON for the dream selector; nil when no soul is reviewing or
+  # the read fails.
+  def dream_facts(slug, reviewer)
+    return nil if reviewer.to_s.empty?
+
+    res = get(base(slug))
+    ok?(res) ? parse_data(res) : nil
   end
 
   def post(path, body)

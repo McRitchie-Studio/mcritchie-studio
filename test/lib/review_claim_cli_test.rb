@@ -221,11 +221,15 @@ class ReviewClaimCliTest < Minitest::Test
   # can paint the face the instant a review starts. Explicit --agent wins; otherwise
   # the session's sticky .acting-agent (what every narration call already attributes
   # to) supplies it, so a reviewer narrating as itself needs no extra flag.
+  def claim_post(cli)
+    cli.instance_variable_get(:@api).posts.find { |p| p[:path].end_with?("/review_claim") }
+  end
+
   def test_unit_acquire_sends_the_explicit_reviewer_soul
     Dir.mktmpdir do |dir|
       c = cli(projects_dir: dir, data: { "acquired" => true })
       assert_equal 0, c.run(["acquire", SLUG, "--agent", "carl"])
-      body = c.instance_variable_get(:@api).posts.last[:body]
+      body = claim_post(c)[:body]
       assert_equal "carl", body["reviewer"], "the claim carries the reviewing soul"
     end
   end
@@ -237,7 +241,7 @@ class ReviewClaimCliTest < Minitest::Test
 
       c = cli(projects_dir: dir, data: { "acquired" => true })
       assert_equal 0, c.run(["acquire", SLUG])
-      assert_equal "shannon", c.instance_variable_get(:@api).posts.last[:body]["reviewer"]
+      assert_equal "shannon", claim_post(c)[:body]["reviewer"]
     end
   end
 
@@ -665,6 +669,78 @@ class ReviewClaimCliTest < Minitest::Test
 
       assert_equal ReviewClaimCli::SKIPPED, cli(projects_dir: proj, data: { "acquired" => false }).run(["acquire", SLUG, "--agent", "carl"])
       refute_includes @err.string, "dream sequence", "a refused claim loads nothing"
+    end
+  end
+
+  DREAM_FIXTURES = File.expand_path("../fixtures/dreams", __dir__)
+  PAYMENT_TASK = { "slug" => SLUG, "stage" => "submitted", "title" => "Payment Review",
+                   "metadata" => { "devops" => { "repositories" => ["turf-monster"], "risk_tags" => ["money"] } } }.freeze
+
+  def with_fixture_dreams
+    kept = ENV["DREAM_BANK_DIR"]
+    ENV["DREAM_BANK_DIR"] = DREAM_FIXTURES
+    yield
+  ensure
+    ENV["DREAM_BANK_DIR"] = kept
+  end
+
+  def task_reads(cli)
+    cli.instance_variable_get(:@api).posts.select { |p| p[:method] == :get }.map { |p| p[:path] }
+  end
+
+  def test_unit_acquire_prints_the_dreams_selected_for_the_task
+    with_fixture_dreams do
+      Dir.mktmpdir do |proj|
+        c = cli(projects_dir: proj, routes: { "/review_claim" => { "acquired" => true }, "/tasks/#{SLUG}" => PAYMENT_TASK })
+
+        assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG, "--agent", "carl"])
+        assert_equal ["/api/v1/tasks/#{SLUG}"], task_reads(c)
+        assert_includes @err.string, "## Carl's dream sequence · task #{SLUG}"
+        assert_operator @err.string.index("money-review-reads-the-ledger"), :<, @err.string.index("wait-for-the-light")
+        assert_includes @err.string, "### Platform dreams"
+        assert_includes @err.string, "14 not shown: bin/dream list --task #{SLUG}"
+        assert_equal "review-claim: ✅ #{SLUG} review claimed — this task is yours to review.\n", @out.string
+      end
+    end
+  end
+
+  def test_unit_acquire_with_an_unreadable_task_prints_the_whole_sequence
+    with_fixture_dreams do
+      Dir.mktmpdir do |proj|
+        c = cli(projects_dir: proj, routes: { "/review_claim" => { "acquired" => true }, "/tasks/#{SLUG}" => [500, {}] })
+
+        assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG, "--agent", "carl"]), "a failed read does not fail the claim"
+        assert_equal ["/api/v1/tasks/#{SLUG}"], task_reads(c)
+        assert_includes @err.string, "## Carl's dream sequence · task #{SLUG}"
+        assert_includes @err.string, "money-review-reads-the-ledger"
+        refute_includes @err.string, "### Platform dreams", "the unselected sequence"
+        refute_includes @err.string, "not shown"
+      end
+    end
+  end
+
+  def test_unit_a_claim_with_no_reviewing_soul_reads_no_task
+    with_fixture_dreams do
+      Dir.mktmpdir do |proj|
+        c = cli(projects_dir: proj, routes: { "/review_claim" => { "acquired" => true }, "/tasks/#{SLUG}" => PAYMENT_TASK })
+
+        assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG])
+        assert_empty task_reads(c)
+        assert_equal "", @err.string
+      end
+    end
+  end
+
+  def test_unit_claim_next_selects_on_stderr_and_stdout_stays_the_slug
+    with_fixture_dreams do
+      Dir.mktmpdir do |proj|
+        c = cli(projects_dir: proj, routes: { "/claim_next_review" => { "claimed" => { "slug" => SLUG } },
+                                              "/tasks/#{SLUG}" => PAYMENT_TASK })
+
+        assert_equal ReviewClaimCli::OK, c.run(["claim-next", "--agent", "carl"])
+        assert_equal "#{SLUG}\n", @out.string
+        assert_includes @err.string, "14 not shown: bin/dream list --task #{SLUG}"
+      end
     end
   end
 

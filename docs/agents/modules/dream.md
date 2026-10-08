@@ -41,23 +41,28 @@ SessionStart hook for Claude and Codex, prints a `## Dreams` block and a
 `### Helper agents` roster ahead of the insights. It reads the tracked files, so
 it needs no token and no board.
 
-A soul's sequence loads when the soul takes its seat. Each of these prints it:
+A soul's dreams load when the soul takes its seat. A command that names a task
+prints the dreams selected for that task ([below](#a-claim-loads-the-dreams-that-match-its-task));
+the others print the soul's whole sequence:
 
-| Command | Prints to |
-|---|---|
-| `bin/task begin … --agent <soul>` | stderr |
-| `bin/task review-claim acquire <slug> --agent <soul>` | stderr |
-| `bin/task claim-next-review --agent <soul>` | stderr; stdout stays the slug |
-| `bin/agent-activity heartbeat <soul>` | stdout |
-| `bin/dream <soul> [--task <slug>]` | stdout |
+| Command | Prints | To |
+|---|---|---|
+| `bin/task begin … --agent <soul>` | the selected set | stderr |
+| `bin/task review-claim acquire <slug> --agent <soul>` | the selected set | stderr |
+| `bin/task claim-next-review --agent <soul>` | the selected set | stderr; stdout stays the slug |
+| `bin/dream <soul> --task <slug>` | the selected set | stdout |
+| `bin/agent-activity heartbeat <soul>` | the whole sequence | stdout |
+| `bin/dream <soul>` | the whole sequence | stdout |
 
 The two review commands also use the session's acting soul when `--agent` is
-absent. A soul with no approved dream prints nothing from the first four.
+absent. A soul with no approved dream prints nothing from the three claim
+commands and the heartbeat.
 
 1. Read the whole block before your first decision.
 2. When your situation matches a dream's question, answer it the same way, or
    say why this case differs.
-3. A subagent launched as a soul runs `bin/dream <soul>` first.
+3. A subagent launched as a soul runs `bin/dream <soul>` first, with
+   `--task <slug>` when it was handed a task.
 4. If the session-start block is missing (a runtime with no hook, a hook
    failure), print it yourself:
 
@@ -89,9 +94,49 @@ insight feed under the cap, with every dream and the roster present. The dream
 that tips it over fails CI; it does not truncate in production. When that test
 goes red, shorten a dream, retire one, or tag it for the soul it belongs to.
 
-So the platform sequence is a curated set of about 25, not 100. A soul's sequence
-has no cap: it prints whole, with every Why. A loader that picks dreams by
-relevance is not built. Codex's hook limit has not been measured.
+So the platform sequence is a curated set of about 25, and the bank grows in the
+souls' sequences, which load by relevance. Codex's hook limit has not been
+measured.
+
+### A claim loads the dreams that match its task
+
+A claim reads the task from the board and scores each of the soul's approved
+dreams against it (`bin/lib/dream_selector.rb`):
+
+| The dream's tag | Scores | When |
+|---|---|---|
+| `repo` | 3 | the task names that repository |
+| `risk` | 3 | the task carries that risk tag |
+| `shape` | 2 | the task has that shape |
+| `stage` | 1 | the task is at that stage: `building` at a begin, `submitted` at a review |
+| `topic` | 1 a word, 3 at most | the word is in the task's title or acceptance |
+
+A tag value the task does not carry scores 0. Topic words are compared in lower
+case, without a short list of stop words, and a plural matches its singular.
+
+The claim prints the 12 highest scores in rank order, ties in slug order, then
+the platform sequence under `### Platform dreams`. A soul with 12 dreams or fewer
+is shown them all. The block stays within 6,000 characters
+(`DreamBank::CALL_BUDGET`) and degrades in this order:
+
+1. every dream with its Why;
+2. the selected dreams with their Why, the platform dreams without;
+3. no Why lines;
+4. whole dreams dropped from the lowest rank up, the platform dreams last.
+
+The last line counts every approved dream the block does not show, in any
+sequence, and names the command that lists them:
+
+```text
+6 not shown: bin/dream list --task <slug>
+```
+
+`bin/dream list --task <slug>` prints every approved dream with its score for the
+task and the path of its file. `bin/dream list` prints them unranked.
+
+Selection never fails a claim. When the task cannot be read, the claim prints the
+soul's whole sequence and `bin/dream` says so on stderr. When the bank cannot be
+read, the claim prints no dreams. The exit code is the claim's own.
 
 ## Act 2 — Capture (when a session earns one)
 
@@ -136,7 +181,10 @@ Tags are optional, and each takes one value or a list of lowercase tokens:
 | `shape` | the feature shape it applies to | not checked |
 | `risk` | the risk tag it applies to | not checked |
 | `stage` | the task stage it applies at | not checked |
-| `topic` | free words for the index | not checked |
+| `topic` | free words, matched against the task's title and acceptance | not checked |
+
+On a soul's dream the last five tags decide which claims load it. Spell each
+value as the board spells it (`turf-monster`, `payment`, `ui+db`, `submitted`).
 
 A file with an unknown front matter key, an unknown soul, or a tag value that is
 not one token loads nowhere. `test/lib/dream_bank_test.rb` fails on it, on a
@@ -154,7 +202,7 @@ Rules for a dream:
 - **No security detail.** Do not name a weakness that may still be open (which
   key is shared, what leaked). Say that one was found.
 - **Short.** Question, answer and why together stay under about 400 characters;
-  every character is spent out of the ceiling above.
+  every character is spent out of the ceiling above or a claim's 6,000.
 - **New dreams are `proposed`.** Never write `approved` yourself.
 
 ## Act 3 — Sign-off (Alex)
@@ -180,7 +228,9 @@ waiting, and ask for sign-off.
 | The bank | `docs/agents/dreams/platform/`, `docs/agents/dreams/<soul>/` |
 | Generated index | `docs/agents/dreams/INDEX.md` (`bin/dream index --write`) |
 | Parser, sequences and formatter | `bin/lib/dream_bank.rb` |
+| Selector | `bin/lib/dream_selector.rb` |
 | Session-start loader | `bin/session-insights` |
-| Soul loader | `bin/dream` |
+| Soul loader and list | `bin/dream` |
 | Installed copy the hook reads | `bin/install-agent-docs` (`TOOLING_PATHS`) |
-| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb` |
+| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb` |
+| Fixture bank the selector tests read | `test/fixtures/dreams/` |

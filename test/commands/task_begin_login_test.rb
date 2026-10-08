@@ -168,6 +168,45 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
     end
   end
 
+  test "begin on a Turf payment task prints the money and settlement dreams, not the docs-guard dream" do
+    bank = Rails.root.join("test/fixtures/dreams").to_s
+    payment = { title: "Settle Payout Once", repositories: ["turf-monster"], risk_tags: ["money"], shape: "backend",
+                acceptance: ["A retried payout pays one settlement"] }
+    with_desk(task: payment) do |dir, _desk, _requests|
+      out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir, "DREAM_BANK_DIR" => bank),
+                                        BIN, "begin", SLUG, "--agent", "pokemon", chdir: dir)
+
+      assert status.success?, err
+      assert_includes err, "## Pokémon's dream sequence · task #{SLUG}"
+      assert_operator err.index("(`settle-once-per-entry`)"), :<, err.index("(`money-moves-in-a-transaction`)")
+      assert_operator err.index("(`settlement-reads-the-snapshot`)"), :<, err.index("(`retried-webhook-is-deduplicated`)"),
+                      "the claim scores the task at `building`, whatever stage begin read"
+      assert_includes err, "### Platform dreams"
+      refute_includes err, "docs-guard-names-its-rule"
+      assert_includes err, "4 not shown: bin/dream list --task #{SLUG}"
+      refute_includes out, "dream sequence"
+    end
+
+    with_desk(task: { title: "Docs Guard Page", repositories: ["mcritchie-studio"], shape: "docs" }) do |dir, _desk, _requests|
+      _out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir, "DREAM_BANK_DIR" => bank),
+                                         BIN, "begin", SLUG, "--agent", "pokemon", chdir: dir)
+
+      assert status.success?, err
+      assert_includes err, "docs-guard-names-its-rule", "control: the same begin on a docs task loads it"
+    end
+  end
+
+  test "begin with no dream bank to read still claims and prints no sequence" do
+    with_desk do |dir, _desk, _requests|
+      _out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir,
+                                                        "DREAM_BANK_DIR" => File.join(dir, "no-bank")),
+                                         BIN, "begin", SLUG, "--agent", "pokemon", chdir: dir)
+
+      assert status.success?, err
+      refute_includes err, "dream sequence"
+    end
+  end
+
   # ---- the review claim's login (DeskSession.write_review) ------------------------
 
   test "a reviewer's write presents its review login, and the builder's keeps the desk's" do
@@ -237,7 +276,7 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
 
   # A temp projects dir with the desk begin will find, its `.git` pointer file
   # (as a real worktree has), stubbed worktree/preflight/move steps, and a sink.
-  def with_desk(refuse_session: false)
+  def with_desk(refuse_session: false, task: {})
     Dir.mktmpdir do |dir|
       desk = File.join(dir, "mcritchie-studio", ".worktrees", SLUG)
       FileUtils.mkdir_p(desk)
@@ -249,18 +288,19 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
         FileUtils.chmod(0o755, path)
       end
       requests = []
-      with_sink(requests, refuse_session: refuse_session) do |base|
+      with_sink(requests, refuse_session: refuse_session, task: task) do |base|
         @base = base
         yield dir, desk, requests
       end
     end
   end
 
-  def with_sink(requests, refuse_session:)
+  # `task` overrides the sink's task: `title`, and any devops field.
+  def with_sink(requests, refuse_session:, task: {})
     server = TCPServer.new("127.0.0.1", 0)
-    task = { data: { slug: SLUG, stage: "designed", title: "Probe Task",
-                     metadata: { devops: { worktree_slug: SLUG, repositories: ["mcritchie-studio"],
-                                           built_by: "pokemon" } } } }.to_json
+    devops = { worktree_slug: SLUG, repositories: ["mcritchie-studio"], built_by: "pokemon" }.merge(task.except(:title))
+    task = { data: { slug: SLUG, stage: "designed", title: task.fetch(:title, "Probe Task"),
+                     metadata: { devops: devops } } }.to_json
     session = { data: { slug: "sess-x", soul: "pokemon", tier: "studio", task_slug: SLUG,
                         expires_at: (Time.now + 3600).utc.iso8601, token: SESSION } }.to_json
     thread = Thread.new do
