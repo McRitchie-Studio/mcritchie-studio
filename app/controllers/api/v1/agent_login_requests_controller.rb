@@ -8,7 +8,8 @@ module Api
     #
     # All three are presented with the machine credential: a session cannot mint a
     # session. `code` and `collect` also need the collect key `create` returned and
-    # the harness session id it named. No response carries the code.
+    # the harness session id it named; a `create` that would replace an open request
+    # needs that request's collect key. No response carries the code.
     class AgentLoginRequestsController < BaseController
       STATUS = {
         forbidden: [ :forbidden, "LOGIN_FORBIDDEN" ],
@@ -18,7 +19,8 @@ module Api
         lapsed: [ :gone, "LOGIN_LAPSED" ],
         refused: [ :gone, "LOGIN_REFUSED" ],
         collected: [ :gone, "LOGIN_COLLECTED" ],
-        too_many: [ :too_many_requests, "TOO_MANY_PENDING" ]
+        open: [ :conflict, "LOGIN_OPEN" ],
+        too_many: [ :too_many_requests, "TOO_MANY_REQUESTS" ]
       }.freeze
 
       before_action :refuse_a_session
@@ -35,7 +37,8 @@ module Api
                               status: :unprocessable_entity, error_code: "VALIDATION_FAILED")
         end
 
-        login = AgentLoginRequest.request!(soul: params[:soul].to_s, harness_session_id: params[:harness_session_id])
+        login = AgentLoginRequest.request!(soul: params[:soul].to_s, harness_session_id: params[:harness_session_id],
+                                           collect_key: params[:collect_key])
         render_data(login.summary.merge("collect_key" => login.collect_key), status: :created)
       rescue ActiveRecord::RecordInvalid => e
         render_error(e.record.errors.full_messages.to_sentence, status: :unprocessable_entity,

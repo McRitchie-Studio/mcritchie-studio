@@ -5,8 +5,8 @@ require "test_helper"
 class AgentLoginRequestTest < ActiveSupport::TestCase
   HARNESS = "harness-one".freeze
 
-  def request(soul: "xan", harness: HARNESS)
-    AgentLoginRequest.request!(soul: soul, harness_session_id: harness)
+  def request(soul: "xan", harness: HARNESS, key: nil)
+    AgentLoginRequest.request!(soul: soul, harness_session_id: harness, collect_key: key)
   end
 
   def refusal(kind)
@@ -151,18 +151,53 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     assert_equal "xan", request(soul: "alex").soul
   end
 
-  test "a newer request from the same harness supersedes the older one" do
-    older = request
-    newer = request
+  test "a second post under the same harness id cannot refuse or replace the open request" do
+    real = request(soul: "steffon")
 
-    assert_equal [ "refused", "superseded by a newer request" ], [ older.reload.status, older.refusal_reason ]
+    assert_no_difference -> { AgentLoginRequest.count } do
+      message = refusal(:open) { request(soul: "steffon") }
+      assert_match(/already open under this harness session id/, message)
+      assert_not_includes message, real.slug
+      refusal(:open) { request(soul: "steffon", key: "guess") }
+    end
+    assert_equal "pending", real.reload.status
+    assert_equal [ real ], AgentLoginRequest.awaiting.to_a
+
+    session = real.approve!(by: "alex@test.com")
+    assert_equal session, real.collect!(collect_key: real.collect_key, harness_session_id: HARNESS)
+  end
+
+  test "the owner replaces its own open request with its collect key" do
+    older = request
+    newer = request(key: older.collect_key)
+
+    assert_equal [ "refused", "superseded by its owner's newer request" ], [ older.reload.status, older.refusal_reason ]
     assert_equal [ newer ], AgentLoginRequest.awaiting.to_a
   end
 
-  test "the table holds at most the cap of open requests" do
-    AgentLoginRequest::PENDING_CAP.times { |n| request(harness: "harness-#{n}") }
+  test "a lapsed request does not hold the harness id" do
+    request
+    travel(11.minutes) { assert request }
+  end
 
-    assert_match(/already pending/, refusal(:too_many) { request(harness: "harness-over") })
-    travel(11.minutes) { assert request(harness: "harness-over") } # control: lapsed ones free the room
+  test "a soul gets three requests a window, and a re-create does not reset the bound" do
+    first = request(harness: "harness-a")
+    second = request(harness: "harness-a", key: first.collect_key)
+    AgentLoginRequest::CODE_ATTEMPTS.times do
+      refusal(:wrong_code) { second.grant_with_code!(code: "WRONGWRG", collect_key: second.collect_key, harness_session_id: "harness-a") }
+    end
+    request(harness: "harness-b")
+
+    assert_match(/already has 3 admin login requests inside the 10-minute window/, refusal(:too_many) { request(harness: "harness-c") })
+    assert request(soul: "steffon", harness: "harness-c"), "the bound is per soul"
+    travel(11.minutes) { assert request(harness: "harness-c") } # control: the window frees the room
+  end
+
+  test "an operator's decline frees a slot" do
+    held = Array.new(AgentLoginRequest::SOUL_REQUESTS) { |n| request(harness: "harness-#{n}") }
+    refusal(:too_many) { request(harness: "harness-over") }
+
+    held.first.refuse!(by: "alex@test.com", reason: "declined by the operator")
+    assert request(harness: "harness-over")
   end
 end

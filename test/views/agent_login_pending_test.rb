@@ -4,6 +4,7 @@ require "test_helper"
 # admin, and nothing renders for anyone else.
 class AgentLoginPendingTest < ActionView::TestCase
   include StatusToneHelper
+  include Studio::AtTimeHelper
 
   setup do
     @login = AgentLoginRequest.request!(soul: "xan", harness_session_id: "harness-one")
@@ -19,6 +20,8 @@ class AgentLoginPendingTest < ActionView::TestCase
 
     assert_select "#admin-login-#{@login.slug}[data-soul='xan']" do
       assert_select "[data-test='admin-login-code']", text: @login.display_code
+      assert_select "[data-test='admin-login-slug']", text: @login.slug
+      assert_select "[data-test='admin-login-requested'] time[datetime]"
       assert_select "[data-test='admin-login-approve'][data-url='#{approve_agent_login_path(@login.slug)}']"
       assert_select "[data-test='admin-login-refuse'][data-url='#{refuse_agent_login_path(@login.slug)}']"
     end

@@ -578,8 +578,17 @@ class AgentActivityCli
   # `--wait` seconds (one attempt by default). The token goes to the AdminLogin
   # file, never to stdout.
   def admin_login(sid, soul, flags)
+    run_admin_login(sid, soul, flags)
+  rescue StandardError => e
+    warn_note("atomic-event: admin login failed (ignored): #{e.class}")
+  end
+
+  def run_admin_login(sid, soul, flags)
     held = AdminLogin.read(sid, projects_dir)
-    if held && held["soul"] == soul && AdminLogin.token_for(sid, projects_dir)
+    if held && held["soul"] != soul
+      logout_admin(sid)
+      held = nil
+    elsif held && AdminLogin.token_for(sid, projects_dir)
       return @out.puts("atomic-event: admin session #{held['session']} held as #{soul} until #{held['expires_at']}")
     end
 
@@ -594,14 +603,19 @@ class AgentActivityCli
     res = post("/api/v1/agent_login_requests", { "soul" => soul, "harness_session_id" => sid })
     data = res && res.code.to_i.between?(200, 299) ? parse_data(res) : {}
     unless present?(data["slug"]) && present?(data["collect_key"])
+      if res && res.code.to_i == 409
+        return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}. This session does not hold that " \
+                         "request: the operator should NOT approve it, and should Decline it on #{@api.base_url}/tasks")
+      end
       return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}")
     end
 
     request = { "soul" => soul, "request" => data["slug"], "collect_key" => data["collect_key"], "ends_at" => data["ends_at"] }
     AdminLogin.write(sid, projects_dir, request, env: @api.env)
     @out.puts("atomic-event: admin login #{data['slug']} requested for #{soul}, pending until #{data['ends_at']}. " \
-              "The operator approves it on #{@api.base_url}/tasks, or gives this session its one-time code " \
-              "for `heartbeat #{soul} --code <code>`")
+              "Operator: on #{@api.base_url}/tasks find the row that reads #{data['slug']} and answer only that row: " \
+              "Approve it, or give this session its one-time code for `heartbeat #{soul} --code <code>`. " \
+              "Decline any other row for #{soul}")
     request
   end
 
@@ -645,13 +659,19 @@ class AgentActivityCli
     { "collect_key" => request["collect_key"], "harness_session_id" => sid }
   end
 
-  # Revoke and forget the admin session this harness session holds, if any.
+  # Revoke and forget the admin login this harness session holds, if any. A
+  # revoke that does not land is said: the session then lives until it expires.
   def logout_admin(sid)
     held = AdminLogin.read(sid, projects_dir)
     return unless held
 
-    token = AdminLogin.token_for(sid, projects_dir)
-    @api.http_json(:delete, "/api/v1/agent_sessions/current", nil, bearer: token) if token
+    if (token = AdminLogin.token_for(sid, projects_dir))
+      res = @api.http_json(:delete, "/api/v1/agent_sessions/current", nil, bearer: token)
+      unless res && (res.code.to_i.between?(200, 299) || res.code.to_i == 401)
+        warn_note("atomic-event: admin session #{held['session']} was NOT revoked (#{refusal_of(res)}); " \
+                  "it is forgotten here and ends at #{held['expires_at']}")
+      end
+    end
     AdminLogin.clear(sid, projects_dir, env: @api.env)
   rescue StandardError
     nil

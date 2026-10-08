@@ -15,8 +15,12 @@ class AgentLoginRequest < ApplicationRecord
   STATUSES = %w[pending granted refused].freeze
   # Wrong codes a request takes before it is refused.
   CODE_ATTEMPTS = 5
-  # Unlapsed pending requests the table holds at once.
-  PENDING_CAP = 5
+  # Requests one soul gets inside one window. An operator's Decline frees its slot.
+  # With CODE_ATTEMPTS this bounds wrong codes per soul per window, and re-creating
+  # a request does not reset it.
+  SOUL_REQUESTS = 3
+  # decided_by values the server writes. Any other decider is the operator.
+  SYSTEM_DECIDERS = %w[reissue code_attempts].freeze
   CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789".freeze
   CODE_LENGTH = 8
 
@@ -53,19 +57,39 @@ class AgentLoginRequest < ApplicationRecord
     pending.where("requested_at > ?", now - window_length).order(:requested_at)
   end
 
-  # Post a request. An earlier open one from the same harness for the same soul is
-  # refused as superseded, so one harness holds one live code per soul.
-  def self.request!(soul:, harness_session_id:)
+  # Requests for `soul` that count against SOUL_REQUESTS: those posted inside the
+  # current window, less the ones the operator declined.
+  def self.counted(soul, now = Time.current)
+    where(soul: soul).where("requested_at > ?", now - window_length)
+                     .where("status <> 'refused' OR decided_by IN (?)", SYSTEM_DECIDERS)
+  end
+
+  # Post a request. One harness session holds one open request per soul: a second
+  # post is refused unless it presents the open request's collect key, which
+  # replaces it. The harness session id is asserted by the caller, so it proves
+  # nothing by itself.
+  def self.request!(soul:, harness_session_id:, collect_key: nil)
+    value = Task.canonical_soul(soul)
     transaction do
-      value = Task.canonical_soul(soul)
-      awaiting.where(soul: value, harness_session_id: harness_session_id.to_s)
-          .find_each { |prior| prior.refuse!(by: "reissue", reason: "superseded by a newer request") }
-      if awaiting.count >= PENDING_CAP
-        raise Refusal.new(:too_many, "#{PENDING_CAP} admin login requests are already pending; wait for one to lapse or be decided")
+      lock_soul(value)
+      prior = awaiting.find_by(soul: value, harness_session_id: harness_session_id.to_s)
+      if prior && !prior.key_matches?(collect_key)
+        raise Refusal.new(:open, "an admin login for #{value} is already open under this harness session id, pending until " \
+                                 "#{prior.window.ends_at.utc.iso8601}; present its collect key to replace it")
+      end
+      if counted(value).count >= SOUL_REQUESTS
+        raise Refusal.new(:too_many, "#{value} already has #{SOUL_REQUESTS} admin login requests inside the " \
+                                     "#{window_length.in_minutes.to_i}-minute window; wait, or have the operator decline one")
       end
 
+      prior&.refuse!(by: "reissue", reason: "superseded by its owner's newer request")
       create!(soul: value, harness_session_id: harness_session_id.to_s)
     end
+  end
+
+  # Serializes posts for one soul inside the caller's transaction.
+  def self.lock_soul(soul)
+    connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{connection.quote("agent_login_request:#{soul}")}))")
   end
 
   def self.digest(value)
@@ -97,6 +121,10 @@ class AgentLoginRequest < ApplicationRecord
 
   def display_code(now = Time.current)
     code(now)&.scan(/.{4}/)&.join("-")
+  end
+
+  def key_matches?(collect_key)
+    collect_key.present? && ActiveSupport::SecurityUtils.secure_compare(self.class.digest(collect_key), collect_digest)
   end
 
   # The operator's Approve tap. Returns the admin session.
@@ -213,8 +241,7 @@ class AgentLoginRequest < ApplicationRecord
   end
 
   def require_requester!(collect_key, harness_session_id)
-    key_ok = ActiveSupport::SecurityUtils.secure_compare(self.class.digest(collect_key), collect_digest)
-    return if key_ok && harness_session_id.to_s == self.harness_session_id
+    return if key_matches?(collect_key) && harness_session_id.to_s == self.harness_session_id
 
     raise Refusal.new(:forbidden, "#{slug} belongs to the harness session that requested it")
   end

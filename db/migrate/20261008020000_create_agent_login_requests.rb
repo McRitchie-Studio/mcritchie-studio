@@ -1,5 +1,5 @@
 # A request for an admin agent session (docs/agents/system/agent-sessions-design.md,
-# section 3). A new table, so the migration takes no lock on anything live.
+# section 3). A new table; its foreign key takes a brief lock on agent_sessions.
 class CreateAgentLoginRequests < ActiveRecord::Migration[8.1]
   def change
     create_table :agent_login_requests do |t|

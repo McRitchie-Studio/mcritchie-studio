@@ -16,8 +16,9 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
   def bearer(session) = { "Authorization" => "Bearer #{session.token}" }
   def body = JSON.parse(response.body)
 
-  def ask(headers = @legacy, soul: "xan", harness: HARNESS)
-    post "/api/v1/agent_login_requests", params: { soul: soul, harness_session_id: harness }, headers: headers, as: :json
+  def ask(headers = @legacy, soul: "xan", harness: HARNESS, key: nil)
+    post "/api/v1/agent_login_requests", params: { soul: soul, harness_session_id: harness, collect_key: key }.compact,
+                                         headers: headers, as: :json
   end
 
   # A posted request: [the row, its collect key].
@@ -74,12 +75,81 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
     assert_match(/harness_session_id is required/, body["error"])
   end
 
-  test "the sixth open request answers 429" do
-    AgentLoginRequest::PENDING_CAP.times { |n| posted(harness: "harness-#{n}") }
+  test "a soul's fourth request inside the window answers 429 until the operator declines one" do
+    logins = Array.new(AgentLoginRequest::SOUL_REQUESTS) { |n| posted(harness: "harness-#{n}").first }
 
     ask(harness: "harness-over")
     assert_response :too_many_requests
-    assert_equal "TOO_MANY_PENDING", body["error_code"]
+    assert_equal "TOO_MANY_REQUESTS", body["error_code"]
+    assert_match(/have the operator decline one/, body["error"])
+
+    log_in_as(users(:alex))
+    post refuse_agent_login_path(logins.first.slug), as: :json
+    ask(harness: "harness-over")
+    assert_response :created
+  end
+
+  # ---- the supersede hijack -----------------------------------------------------
+
+  test "a poster under the operator's harness id cannot replace the request the tap grants" do
+    real, real_key = posted(soul: "steffon")
+
+    assert_no_difference -> { AgentLoginRequest.count } do
+      ask(soul: "steffon")
+      assert_response :conflict
+      assert_equal "LOGIN_OPEN", body["error_code"]
+      assert_nil body["data"], "the refusal carries no collect key"
+      assert_not_includes response.body, real.slug
+      ask(soul: "steffon", key: "guess")
+      assert_response :conflict
+    end
+    assert_equal "pending", real.reload.status
+
+    log_in_as(users(:alex))
+    get tasks_path
+    assert_select "[data-test='admin-login-request']", 1
+    assert_select "#admin-login-#{real.slug} [data-test='admin-login-slug']", text: real.slug
+    approve(real)
+    assert_response :ok
+    get logout_path
+
+    collect(real, "guess")
+    assert_response :forbidden
+    collect(real, real_key)
+    assert_response :ok
+    assert body.dig("data", "token").present?
+  end
+
+  test "the owner's re-post with its collect key replaces its own request" do
+    older, key = posted
+
+    ask(key: key)
+    assert_response :created
+    newer = AgentLoginRequest.find_by!(slug: body.dig("data", "slug"))
+    assert_equal "refused", older.reload.status
+    assert_equal [ newer ], AgentLoginRequest.awaiting.to_a
+
+    collect(older, key)
+    assert_response :gone
+  end
+
+  test "a pre-emptive post under the harness id shows a slug the real session never printed" do
+    planted, = posted(soul: "steffon")
+
+    ask(soul: "steffon")
+    assert_response :conflict
+    log_in_as(users(:alex))
+    get tasks_path
+    assert_select "[data-test='admin-login-slug']", text: planted.slug, count: 1
+  end
+
+  test "the one-time code is filtered from the request log, on this endpoint only" do
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    params = { "controller" => "api/v1/agent_login_requests", "code" => "ABCD-EFGH", "collect_key" => "k", "slug" => "login-x" }
+
+    assert_equal [ "[FILTERED]", "[FILTERED]", "login-x" ], filter.filter(params).values_at("code", "collect_key", "slug")
+    assert_equal "[FILTERED]", filter.filter("agent_login_request" => { "code" => "ABCD-EFGH" }).dig("agent_login_request", "code")
+    assert_equal "abc", filter.filter("controller" => "omniauth_callbacks", "code" => "abc")["code"] # control
   end
 
   # ---- path 2: the Approve tap -------------------------------------------------
@@ -271,6 +341,8 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
       get path
       assert_response :ok
       assert_select "#admin-login-#{login.slug} [data-test='admin-login-code']", text: code
+      assert_select "#admin-login-#{login.slug} [data-test='admin-login-slug']", text: login.slug
+      assert_select "#admin-login-#{login.slug} [data-test='admin-login-requested'] time"
       assert_select "#admin-login-#{login.slug} [data-test='admin-login-approve'][data-url='#{approve_agent_login_path(login.slug)}']"
       assert_select "#admin-login-#{login.slug} [data-test='task-window-chip'][data-window-kind='admin_login']"
     end

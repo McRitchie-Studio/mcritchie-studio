@@ -1340,6 +1340,8 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal ["xan", "login-abc", COLLECT_KEY], held.values_at("soul", "request", "collect_key")
       assert_equal 0o600, File.stat(admin_login_file(proj)).mode & 0o777
       assert_match(/admin login login-abc requested for xan/, out)
+      assert_match(/find the row that reads login-abc and answer only that row/, out)
+      assert_match(/Decline any other row for xan/, out)
       assert_match(/still pending/, out)
       refute_includes out + err, COLLECT_KEY
     end
@@ -1428,6 +1430,54 @@ class AgentActivityCliTest < Minitest::Test
 
       assert_match(/admin login not collected — 410: login-abc was refused: declined by the operator/, err)
       refute File.exist?(admin_login_file(proj))
+    end
+  end
+
+  def test_integration_a_request_this_session_does_not_hold_is_named_for_decline
+    Dir.mktmpdir do |proj|
+      login_replies("agent_login_requests" => ["409 Conflict", JSON.generate(
+        "error" => "an admin login for xan is already open under this harness session id", "error_code" => "LOGIN_OPEN"
+      )])
+      requests, out, err, status = spawn_cli(%w[heartbeat xan], proj: proj)
+
+      assert_equal ["/api/v1/agent_login_requests"], login_calls(requests).map { |r| r[:path] }, "nothing to collect"
+      assert_match(/admin login not requested — 409: an admin login for xan is already open/, err)
+      assert_match(/should NOT approve it, and should Decline it/, err)
+      assert_match(/heartbeat set/, out, "the heartbeat itself still lands")
+      refute File.exist?(admin_login_file(proj))
+      assert_equal 0, status.exitstatus
+    end
+  end
+
+  def test_integration_a_heartbeat_as_the_other_admin_soul_revokes_the_held_session_first
+    Dir.mktmpdir do |proj|
+      login_replies("collect" => collected_reply)
+      run_cli(%w[heartbeat xan], proj: proj)
+      assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
+
+      login_replies
+      requests, out, err, = spawn_cli(%w[heartbeat steffon], proj: proj)
+      calls = requests.select { |r| r[:path].match?(LOGIN_PATHS) || r[:path] == "/api/v1/agent_sessions/current" }
+      assert_equal ["DELETE /api/v1/agent_sessions/current", "POST /api/v1/agent_login_requests"],
+                   calls.first(2).map { |r| "#{r[:method]} #{r[:path]}" }
+      assert_equal "Bearer #{ADMIN_TOKEN}", calls.first[:headers]["authorization"]
+      assert_equal "steffon", JSON.parse(calls[1][:body])["soul"]
+      held = JSON.parse(File.read(admin_login_file(proj)))
+      assert_equal ["steffon", nil], held.values_at("soul", "token")
+      refute_includes out + err, ADMIN_TOKEN
+    end
+  end
+
+  def test_integration_a_revoke_that_does_not_land_is_said
+    Dir.mktmpdir do |proj|
+      login_replies("collect" => collected_reply)
+      run_cli(%w[heartbeat xan], proj: proj)
+
+      login_replies("current" => ["500 Internal Server Error", JSON.generate("error" => "Internal server error")])
+      _requests, out, err, = spawn_cli(%w[heartbeat --clear], proj: proj)
+      assert_match(/admin session sess-admin was NOT revoked \(500: Internal server error\)/, err)
+      refute File.exist?(admin_login_file(proj))
+      refute_includes out + err, ADMIN_TOKEN
     end
   end
 
