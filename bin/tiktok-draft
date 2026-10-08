@@ -13,9 +13,12 @@
 #   bin/tiktok-draft <clip-slug> --production --yes    draft it on https://mcritchie.studio (Alex's word first)
 #
 # A draft needs an ADMIN agent session: the hub refuses the shared token on the
-# request that creates one. Grant it from a shell on that hub and hold its
-# token in AGENT_ADMIN_SESSION_TOKEN (`bin/rails agent_sessions:grant_admin`;
-# the refusal prints the exact line). --dry-run, --status and --whoami need none.
+# request that creates one. Ask the board for it (`bin/agent-activity heartbeat
+# xan|steffon`; Alex grants it on the tasks page) and this command presents the
+# login the harness session then holds. When the board cannot grant, a shell on
+# that hub can (`bin/rails agent_sessions:grant_admin` into
+# AGENT_ADMIN_SESSION_TOKEN; the refusal prints the exact line). --dry-run,
+# --status and --whoami need none.
 # --yes is required on every hub that is not this machine, however it is named.
 #   bin/tiktok-draft <clip-slug> --status              every attempt; re-reads TikTok for one still processing
 #   bin/tiktok-draft --whoami [--production]           the TikTok account the hub's keys post as
@@ -62,7 +65,8 @@ begin
   abort "tiktok-draft: #{refusal}" if refusal
 
   repo_root = File.expand_path("..", __dir__)
-  admin_token = TiktokDraftCli.admin_token(ENV[TiktokDraftCli::ADMIN_TOKEN_ENV])
+  admin_token = TiktokDraftCli.admin_token(ENV[TiktokDraftCli::ADMIN_TOKEN_ENV]) ||
+                TiktokDraftCli.held_admin_token(base_url: base_url)
   runner = TiktokDraftCli::Runner.new(
     api: DigestVideo::ApiClient.new(base_url:, repo_root:),
     admin_api: admin_token && DigestVideo::ApiClient.new(base_url:, repo_root:, bearer: admin_token),

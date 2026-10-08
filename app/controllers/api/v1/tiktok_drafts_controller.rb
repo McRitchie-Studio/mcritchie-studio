@@ -17,9 +17,11 @@ module Api
     # a prompt for the agent; this is the guard. Reading (the index, a dry run,
     # a status refresh, the probe) stays open to any board bearer.
     class TiktokDraftsController < BaseController
-      ADMIN_SESSION_HINT = "An admin soul (xan or steffon) is granted one from a shell on this hub: " \
-                           "`bin/rails agent_sessions:grant_admin` prints its token, and bin/tiktok-draft reads it " \
-                           "from AGENT_ADMIN_SESSION_TOKEN. The clip card's Draft to TikTok button is the other door".freeze
+      ADMIN_SESSION_HINT = "An admin soul (xan or steffon) asks the board for one with `bin/agent-activity heartbeat xan`, " \
+                           "the operator grants it on the tasks page, and bin/tiktok-draft presents it. When the board " \
+                           "cannot grant, a shell on this hub can: `bin/rails agent_sessions:grant_admin` prints a token " \
+                           "that bin/tiktok-draft reads from AGENT_ADMIN_SESSION_TOKEN. The clip card's Draft to TikTok " \
+                           "button is the other door".freeze
 
       require_admin_session_only only: :create, unless: :dry_run?
       before_action :set_clip, only: %i[index create]

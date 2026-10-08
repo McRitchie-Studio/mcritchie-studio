@@ -137,7 +137,7 @@ It ends on one of:
 | `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok drafts. Run step 4. **Do not draft again** until he has looked |
 | `attempt N failed: …` | TikTok refused, or the upload broke before it finished | Report TikTok's words. A retry is a new attempt, on his word |
 | `a draft of <slug> is already …` | An attempt is in flight | Run step 4. Do not draft twice |
-| `AGENT_ADMIN_SESSION_TOKEN is not set` | This shell holds no admin session | [The admin session](#the-admin-session) |
+| `This session holds no admin login for this hub and AGENT_ADMIN_SESSION_TOKEN is not set` | No admin session is held | [The admin session](#the-admin-session) |
 | `API 403: SESSION_FORBIDDEN …` | The token is not an admin session's | [The admin session](#the-admin-session) |
 | `API 401: SESSION_ENDED …` | The admin session expired or was revoked | Grant a fresh one |
 
@@ -163,23 +163,43 @@ new draft of that clip for 15 minutes.
 
 ### The admin session
 
-An admin session belongs to an admin soul (Xan or Steffon), lasts 8 hours, and
-is granted from a shell on the hub the draft goes to. The grant prints the
-token on stdout and nothing else, so take it straight into the shell's
-environment, where the command reads it:
+An admin session belongs to an admin soul (Xan or Steffon) and lasts 8 hours.
+The board grants it. Ask, from the session that will draft:
 
 ```bash
-# production (the deployer's Heroku access is the grant)
-export AGENT_ADMIN_SESSION_TOKEN="$(heroku run --no-tty -a mcritchie-studio -- bin/rails agent_sessions:grant_admin 2>/dev/null)"
+bin/agent-activity heartbeat xan          # or steffon; prints a login-… slug
+```
 
+Alex answers the row with that slug on the board's tasks page, inside ten
+minutes, one of two ways:
+
+- **The one-time code** on the row. He gives it to you, and you post it:
+  `bin/agent-activity heartbeat xan --code <code>`.
+- **The Approve tap** on the row. Then run `bin/agent-activity heartbeat xan`
+  again to collect.
+
+The login is kept for this harness session, owner-only, and is never printed.
+`bin/tiktok-draft` presents it to the board that granted it, and to no other hub.
+`bin/agent-activity heartbeat --clear` ends it.
+
+**When the board cannot grant** (it is down, or the draft goes to a local or
+desk hub, which has no board request to answer), a shell on that hub is the
+grant. It prints the token on stdout and nothing else, so take it straight into
+the shell's environment, where the command reads it:
+
+```bash
 # a local or desk hub
 export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"
+
+# production, only when the board cannot grant (the deployer's Heroku access is the grant)
+export AGENT_ADMIN_SESSION_TOKEN="$(heroku run --no-tty -a mcritchie-studio -- bin/rails agent_sessions:grant_admin 2>/dev/null)"
 ```
 
 `SOUL=steffon` names the other admin soul; `HOURS=1` shortens the session.
 Never print the token, paste it into chat, or write it to a file: it opens
-every admin-tier endpoint until it ends. If you hold no shell on the hub, you
-hold no admin lane: stop and say so, and Alex uses the card.
+every admin-tier endpoint until it ends. If the board does not grant you a
+login and you hold no shell on the hub, you hold no admin lane: stop and say
+so, and Alex uses the card.
 
 ## Door two: the card
 
@@ -271,9 +291,9 @@ finished upload that looked failed and was drafted again.
 **Why the API door needs an admin session.** `--yes` is checked by the command,
 so anything holding a board token could call the endpoint without it. The
 server now holds the line (`Api::AgentSessionGate#require_admin_session_only!`).
-The grant here is the hub-shell one. The board's two grants, the one-time code
-and the Approve tap, are in section 3 of
-`mcritchie-studio/docs/agents/system/agent-sessions-design.md`.
+The grant here is the board's: the one-time code or the Approve tap, section 3 of
+`mcritchie-studio/docs/agents/system/agent-sessions-design.md`. The hub-shell
+grant is the fallback for when the board cannot grant.
 
 **A local demo.** A hub started with `TIKTOK_DRAFT_STAND_IN=1` answers for
 TikTok and the bucket itself and marks every attempt "stand-in". It never runs
