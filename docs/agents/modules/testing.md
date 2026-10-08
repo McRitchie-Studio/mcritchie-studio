@@ -32,6 +32,24 @@ checks to `checks_run` as each stage completes.
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 
+### Where the hub's CI lanes live
+
+The hub's CI is two files. `.github/workflows/ci.yml` holds the workflow name (`CI`),
+the triggers and one job, `ci`, that calls `.github/workflows/reusable-ci.yml`. That
+file holds every lane (`static`, `javascript`, `island_animator`, `playwright`,
+`e2e_executed_set`, `rails_plan`, `rails`, `rails_executed_set`, `system`) and takes
+no inputs and no secrets.
+
+- The run is still one run named `CI` per commit, so every reader of the verdict by
+  workflow name or by commit reads it unchanged.
+- GitHub reports each lane's check as `ci / <job>`: `ci / static`, `ci / rails (1)`.
+  `bin/ci-scope-capture` keys a scope on the part after the slash.
+- A lane guard reads `reusable-ci.yml`; a trigger guard reads `ci.yml`.
+  `test/lib/ci_workflow_triggers_test.rb` pins the call between them: the caller job
+  carries `uses:` and nothing else.
+- To change a lane, edit `reusable-ci.yml`. A pull request runs the called file as its
+  own commit has it.
+
 **A receipt names the COMMIT its shard ran, and the Rails executed-set gate will not
 audit across two of them.** The gate re-derives the expected file set from a tree it
 checks out ITSELF, while the receipts were written by shards that checked out theirs. In
