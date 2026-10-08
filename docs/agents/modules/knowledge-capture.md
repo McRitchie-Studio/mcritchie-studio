@@ -151,11 +151,18 @@ $FACT --retire <fact-slug>
   - **A key that names identity data takes a pointer only**: `account`, `acct`,
     `card`, `routing`, `aba`, `iban`, `cvv`, `ssn`, `social-security`, `itin`,
     `passport`, `drivers-license`, `license-number`, `password`, `passcode`,
-    `pin`, alone or inside a longer key (`bank_account`, `checking-account`).
-    `account-manager` and `business-card` are ordinary keys.
-  - **A person's tax id is identity; a company's is not.** `ein`, `tin`, `tax-id`
-    and `license` take a pointer on a `person/<slug>` and a value on a company
-    or an app.
+    `pin`, `seed-phrase`, `mnemonic`, `recovery-phrase`, `private-key`,
+    `keypair`, `secret`, `api-key`, alone or inside a longer key
+    (`bank_account`, `checking-account`, `client-secret`). `account-manager`,
+    `business-card`, `seed-round` and `token-mint` are ordinary keys.
+  - **A credential is never a fact.** A wallet's 12 to 24 seed words, a
+    keypair's byte array and a printed IBAN are refused under any key. A
+    base58 or hex private key under a neutral key reads like a public address
+    or a signature and is NOT caught: credentials go to 1Password
+    ([`credentials.md`](credentials.md)), and a fact holds at most a pointer.
+  - **A person's tax id is identity; a company's is not.** `ein`, `tin`, `tax-id`,
+    `tax-number` and `license` take a pointer on a `person/<slug>` and a value
+    on a company or an app.
   - **A long unformatted number is refused**: eight or more digits in a row
     read as an account number. The numeric keys take their own: `phone`, `fax`,
     `mobile` (10 to 15 digits), `zip` (9), a date key such as `formed`,
