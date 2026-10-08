@@ -56,6 +56,7 @@ module ReleaseCliStubs
     def publish_gem(repo, version, before_push: nil) = $stdout.puts("PUBLISH-CALLED " + repo + " " + version)
     def confirm_published_checksum!(repo, version, _sha) = $stdout.puts("CHECKSUM-CONFIRMED " + repo + " " + version)
     def verify_live_final!(repo, version, candidate) = $stdout.puts("LIVE-FINAL-COMPARED " + repo + " " + version + " " + candidate)
+    def ensure_release_tag!(*) = nil
     self.singleton_class.prepend(Module.new do
       def git_capture(*args) = args.join(" ").include?("tag --points-at") ? ["rc-0.11.0.rc1\n", true] : super
     end)

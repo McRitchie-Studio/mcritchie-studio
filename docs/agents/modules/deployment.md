@@ -470,12 +470,11 @@ How a gem rides a release:
    `publish_gem`'s abort message names — reaches that skip with its entries
    still under `## Unreleased`: roll it by hand in the same COMMIT that sets the
    version, since `bin/dor-check` refuses a PR that edits it. A version the
-   sweep allocated reaches the skip already rolled (a re-run after an abort
-   between its `Release <version>` commit and its tag), because the roll rode
-   that commit. The skip is not the state between sweeps: prepare publishes and
-   tags in the same run — studio-engine `0.74.8` on `v0.74.8` at
-   `origin/release`, 2026-09-10. The 2026-09-09 reading of `0.74.7` against
-   `v0.74.6` fell inside one sweep, between its version commit and its tag.
+   sweep allocated reaches the skip already rolled, because the roll rode its
+   `Release <version>` commit. That skip is the ordinary state between a
+   prepare and its ship: the `v<version>` tag is pushed when the ship publishes
+   the final, so every re-run of prepare before then reads the version as
+   allocated already.
 
    **History.** Before 2026-09-09 prepare published and tagged without ever
    touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at
@@ -486,40 +485,46 @@ How a gem rides a release:
    publisher. turf-vault is the control that proves the cause — registered
    under `apps`, never published to RubyGems, its version bumped by a human who
    rolls the block in the same PR — and it carries **no drift at all**.
-3. **Prepare preflights EVERY swept gem, then publishes — before the gate and
-   QA.** `bin/release prepare` adds the gem to the release record without
-   merging a branch for it (it has none here), then runs the two-phase
-   producer-first sequence: phase 1 validates ALL swept gems (fail-closed
-   fetch of `origin/release`, version_file parses, the stranded-work guard —
-   commits past the last `v*` tag with an unbumped version ABORT loudly — and
-   a swept consuming app whose Gemfile declares the gem); ANY failure aborts
-   with **zero gems published**, because a RubyGems push can never be
-   re-pushed. Phase 2 then publishes each validated gem from the frozen
-   `origin/release` tree (skip-if-live), tags `v<version>`, and commits each
-   consumer's `Gemfile.lock` bump (`bundle lock --update <gem>
-   --conservative`) onto the consumer's `origin/release` — so the pre-QA
-   gate's CI verdict, the QA deploy, and the prod tree all read the SAME
-   post-bump SHA, and QA exercises the REAL published artifact.
-4. **Run Deployment re-verifies gems first, gated.** `bin/release ship` orders
-   members gems-before-apps (honoring `dependencies`) and, before any app
-   deploy, re-runs the publish as an idempotent verify: on the happy path
-   every version is already live (skip); it remains the real publish only for
-   a release prepared before the prepare-time publish existed. A failed
-   build/push **aborts the ship** before any app deploys.
-5. **Consumers deploy on the bumped lock.** The consumer's lock bump landed on
-   `origin/release` at prepare (step 3), so QA and prod both build the bumped
-   lock. Never deploy a consumer ahead of its gem.
-6. **Producers get their own locks bumped too, onto `accepted`.** A registered
-   gem is also a CONSUMER (studio-engine's Gemfile declares `solana-studio`),
-   and the step above only ever reached `app` members — so every publish used
-   to leave the engine's lock behind and redden EVERY open engine PR through
-   its own `bin/gem-drift-check` lane. `bump_producer_locks_for_accepted`
-   closes that, committing onto **`origin/accepted`** (where those PRs are
-   based, and nothing merges `release` back down). The sweep's other
-   `accepted` write is the step 2 version commit (`commit_gem_version!`) — a
-   version and its lockfile, never a consumer lock — so neither step stands in
-   for the other. `assert_no_lock_drift!` then refuses to leave any repo
-   resolving a just-published gem older than what was published.
+3. **Prepare preflights EVERY swept gem, then publishes a release candidate —
+   before the gate and QA.** `bin/release prepare` adds the gem to the release
+   record without merging a branch for it (it has none here), then runs the
+   two-phase producer-first sequence: phase 1 validates ALL swept gems
+   (fail-closed fetch of `origin/release`, version_file parses, the
+   stranded-work guard — commits past the last `v*` tag with an unbumped
+   version ABORT loudly — and a swept consuming app whose Gemfile declares the
+   gem); ANY failure aborts with **nothing published**. Phase 2 then publishes
+   each validated gem's **candidate** (`x.y.z.rcN`, a prerelease built from the
+   `origin/release` tree and tagged `rc-x.y.z.rcN`) and commits each consumer's
+   bump onto the consumer's `origin/accepted` and `origin/release`: the exact
+   candidate as a second requirement on the `Gemfile` line, and the lock from
+   `bundle lock --update <gem> --conservative`. The pre-QA gate's CI verdict
+   and the QA deploy read that post-bump SHA, so QA exercises a published
+   artifact of the tree. A RubyGems push can never be re-pushed, which is why
+   prepare never pushes `x.y.z`: a red QA strands a prerelease, not a version.
+4. **Run Deployment publishes the final, re-locks, and reads CI again.**
+   `bin/release ship` orders members gems-before-apps (honoring
+   `dependencies`) and, before any app deploy: builds `x.y.z` from the gem's
+   frozen SHA, refuses unless its contents equal the candidate QA ran, pushes
+   and tags it, confirms the served `.gem`'s checksum, re-locks each consumer
+   to `x.y.z` in one commit of `Gemfile` + `Gemfile.lock`, and reads CI's
+   verdict for that commit. Any refusal **aborts the ship** before an app
+   deploys; the order and each recovery are in
+   [`production-deploy.md`](../agents/steffon/sops/production-deploy.md).
+5. **Consumers deploy on the re-locked final.** QA builds the candidate lock
+   from prepare (step 3); production builds the ship's re-lock (step 4), which
+   differs from it in the gem's version string alone. Never deploy a consumer
+   ahead of its gem.
+6. **Producers get their own locks bumped too, onto `accepted`, by the ship.**
+   A registered gem is also a CONSUMER (studio-engine's Gemfile declares
+   `solana-studio`), and its PRs run `bin/gem-drift-check` against the lock on
+   `accepted`. After the apps deploy, `bump_producer_locks_for_accepted` commits
+   each producer's lock onto **`origin/accepted`** at the FINAL version; a
+   candidate never enters a gem repo's own lock. It is best-effort: a failure
+   warns and names the `bundle update` to run, and never stops a ship that has
+   deployed. The sweep's other `accepted` write to a gem repo is the step 2
+   version commit (`commit_gem_version!`) — a version and its lockfile, never a
+   consumer lock. At prepare, `assert_no_lock_drift!` refuses to leave a swept
+   consumer resolving a gem older than the candidate it was locked to.
 
 Operational notes:
 
@@ -532,9 +537,9 @@ Operational notes:
   published tag — commit the advanced version and re-run `prepare`, don't
   re-push. Never resolve it by editing a feature PR: `dor-check` refuses that.
 - The manual gem build remains documented in `studio-engine/docs/RELEASE.md`;
-  `bin/release prepare` automates that path (preflight → build → push → tag) as
-  the release conductor's producer-first step, and `bin/release ship` re-runs
-  it as the idempotent verify.
+  `bin/release prepare` automates it for the release candidate (preflight →
+  build → push → `rc-` tag) and `bin/release ship` for the final (build →
+  compare with the candidate → push → `v` tag → checksum).
 - Confirm a fresh publish with
   `https://rubygems.org/api/v1/versions/<gem>/latest.json`; `gem list -r` and
   `versions/<gem>.json` lag for minutes, and a version can never be pushed twice.
