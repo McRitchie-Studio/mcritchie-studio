@@ -144,6 +144,11 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
       def sh(*_a, **_k) = ["abc1234", true]
       def ci_verdict(_repo, _sha) = { state: :green }
       def accepted_workflow_sources(repo) = #{sources.inspect}[repo]
+      # These pin the refusal itself, so every repo reads as unflagged here. The
+      # per-repo flag is pinned in release_accepted_trigger_lint_flag_test.rb.
+      Release::AcceptedCertification.singleton_class.prepend(Module.new do
+        def trigger_linted?(_repo, _config) = false
+      end)
     RUBY
     if declared_ci_less
       # The guard resolves the name through Release::AcceptedCertification.blind →
