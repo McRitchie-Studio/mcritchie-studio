@@ -109,8 +109,32 @@ class LegacyAuthCensusTest < ActionDispatch::IntegrationTest
     LegacyAuthUse.record!(endpoint: "GET api/v1/tasks#index", caller: "bin/task", now: 10.days.ago)
     out, = census
 
-    assert_includes out, "last 7 day(s) (UTC): 0 request(s)"
-    assert_includes out, "ZERO: no request was authenticated by the shared secret in this period."
+    assert_includes out, "last 7 day(s) (UTC): 0 request(s), 0 outside the mint doors"
+    assert_includes out, "ZERO: no request outside the mint doors was authenticated by the shared secret in this period."
+  end
+
+  test "a use at a mint door does not hold the gate open, and any other use does" do
+    LegacyAuthUse::MINT_DOORS.each { |door| LegacyAuthUse.record!(endpoint: door, caller: "bin/task") }
+    out, = census
+    assert_includes out, "#{LegacyAuthUse::MINT_DOORS.size} request(s), 0 outside the mint doors"
+    assert_match(/^ZERO: /, out)
+    assert_no_match(/\*/, out)
+
+    LegacyAuthUse.record!(endpoint: "PATCH api/v1/tasks#update", caller: "bin/task")
+    out, = census
+    assert_includes out, "1 outside the mint doors"
+    assert_match(/^NOT ZERO: 1 request/, out)
+    assert_match(/1 \* PATCH api\/v1\/tasks#update/, out)
+  end
+
+  test "every mint door is a real action, and every action a harness key may POST is a mint door" do
+    posts = Rails.application.routes.routes.select { |r| r.verb == "POST" }
+                 .map { |r| "POST #{r.defaults[:controller]}##{r.defaults[:action]}" }
+    LegacyAuthUse::MINT_DOORS.each { |door| assert_includes posts, door }
+
+    keyed = [ Api::V1::AgentSessionsController, Api::V1::TaskReviewClaimsController, Api::V1::AgentLoginRequestsController ]
+            .flat_map { |c| c.harness_key_actions.map { |action| "POST #{c.controller_path}##{action}" } }
+    assert_empty (keyed & posts) - LegacyAuthUse::MINT_DOORS
   end
 
   test "the rake prints uses by endpoint and caller, the busiest first, and per day" do
@@ -119,9 +143,9 @@ class LegacyAuthCensusTest < ActionDispatch::IntegrationTest
     out, = census
 
     lines = out.lines.map(&:strip)
-    assert_includes lines.first, "4 request(s)"
-    assert_match(/\A3\s+POST api\/v1\/agent_actions#create\s+bin\/atomic-capture-hook\s+last /, lines[1])
-    assert_match(/\A1\s+GET api\/v1\/athletes#index\s+turf-monster\/sync_athletes/, lines[2])
+    assert_includes lines.first, "4 request(s), 4 outside the mint doors"
+    assert_match(/\A3 \* POST api\/v1\/agent_actions#create\s+bin\/atomic-capture-hook\s+last /, lines[2])
+    assert_match(/\A1 \* GET api\/v1\/athletes#index\s+turf-monster\/sync_athletes/, lines[3])
     assert_match(/By day: .*#{2.days.ago.utc.to_date} 1 · #{1.day.ago.utc.to_date} 0 · #{Time.current.utc.to_date} 3\z/, lines.last)
 
     _, err, status = census("DAYS" => "soon")

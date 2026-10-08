@@ -14,6 +14,18 @@ class LegacyAuthUse < ApplicationRecord
   CALLER = %r{\A[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\z}
   UNLABELLED = "unlabelled".freeze
   EXCHANGE = "POST api/v1/auth#create".freeze
+  # The doors the shared secret keeps when it stops writing: the exchange itself
+  # and the requests that mint a login. A machine with no harness key still uses
+  # them, so the gate for retiring the shared token reads the uses OUTSIDE these.
+  MINT_DOORS = [
+    EXCHANGE,
+    "POST api/v1/agent_sessions#create",
+    "POST api/v1/task_review_claims#acquire",
+    "POST api/v1/task_review_claims#claim_next",
+    "POST api/v1/agent_login_requests#create",
+    "POST api/v1/agent_login_requests#code",
+    "POST api/v1/agent_login_requests#collect"
+  ].freeze
 
   validates :day, :endpoint, :caller, :last_used_at, presence: true
 
@@ -45,6 +57,12 @@ class LegacyAuthUse < ApplicationRecord
                                     .pluck(:endpoint, :caller, Arel.sql("SUM(uses)"), Arel.sql("MAX(last_used_at)"))
                                     .map { |endpoint, caller, uses, last| { endpoint: endpoint, caller: caller, uses: uses.to_i, last_used_at: last } }
                                     .sort_by { |row| [ -row[:uses], row[:endpoint], row[:caller] ] }
+  end
+
+  # Uses outside the mint doors over the last `days` days: the number that must
+  # read zero before the shared token stops writing.
+  def self.outside_mint_doors(days: 7, now: Time.current)
+    since(now.utc - (days - 1).days).where.not(endpoint: MINT_DOORS).sum(:uses)
   end
 
   # Uses per day over the last `days` days, a zero for a day with none, oldest first.
