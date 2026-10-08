@@ -64,7 +64,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     page
 
-    assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok keys are not set on this server."
+    assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok is not connected on this server."
     assert_select "#{card(1)} form[data-test='clip-tiktok-draft'] button[disabled]"
   end
 

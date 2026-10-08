@@ -49,12 +49,18 @@ module Tiktok
 
       def stand_in? = !uploader.nil? && uploader.respond_to?(:stand_in?) && uploader.stand_in?
 
-      # Can this server make a draft at all? The four TikTok keys, or a stand-in.
+      # Can this server make a draft at all? The TikTok app's two keys and a
+      # connected account (the stored connection, or the env pair), or a stand-in.
       def available? = !uploader.nil? || OAuthClient.runtime_creds_present?
 
+      # Names the half that is missing: the app's keys, or the connection.
       def unavailable_reason
-        "the TikTok keys are not set on this server (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, " \
-          "TIKTOK_REFRESH_TOKEN, TIKTOK_OPEN_ID)"
+        unless OAuthClient.app_creds_present?
+          return "the TikTok keys are not set on this server (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET)"
+        end
+
+        "no TikTok account is connected to this server: an admin signs in at #{OAuthClient::CONNECT_PATH} " \
+          "and the hub stores the connection"
       end
     end
 

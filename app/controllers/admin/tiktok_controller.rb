@@ -1,7 +1,8 @@
 module Admin
-  # One-time OAuth handshake to obtain TIKTOK_REFRESH_TOKEN + TIKTOK_OPEN_ID
-  # for the @turfmonstershow account. After getting these values, copy them
-  # into ~/projects/.env.
+  # The sign-in that connects a TikTok account to the hub. /connect sends the
+  # admin to TikTok; /callback exchanges the code and stores the connection
+  # itself (TiktokConnection: the open id, and the refresh token encrypted).
+  # No token is rendered, flashed or logged, and nobody copies one by hand.
   class TiktokController < ApplicationController
     before_action :require_admin
 
@@ -27,11 +28,12 @@ module Admin
       end
 
       json = Tiktok::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
-      @access_token  = json["access_token"]
-      @refresh_token = json["refresh_token"]
-      @open_id       = json["open_id"]
-      @scope         = json["scope"]
-      @expires_in    = json["expires_in"]
+      @connection = TiktokConnection.store!(json, by: current_user.slug)
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+      # A validation message names the field that was missing, never its value.
+      reason = e.respond_to?(:record) ? e.record.errors.full_messages.to_sentence : "another sign-in for this account was being saved"
+      render plain: "TikTok answered, but the connection was not saved (#{reason}). Start the connect flow again.",
+             status: :unprocessable_entity
     rescue StandardError => e
       render plain: "TikTok token exchange failed: #{e.message}", status: :bad_request
     end

@@ -1,6 +1,7 @@
 require "net/http"
 require "uri"
 require "json"
+require "digest"
 
 module Tiktok
   # OAuth 2.0 client for the TikTok Content Posting API.
@@ -10,24 +11,46 @@ module Tiktok
   #   2. User logs into @turfmonstershow + grants video.upload + video.publish
   #   3. TikTok redirects back to /admin/tiktok/callback with ?code=...
   #   4. Callback page exchanges code for refresh_token + open_id
-  #   5. User copies the displayed values into .env
+  #   5. The callback stores them as the TiktokConnection; nobody copies a token
   #
   # Per-post flow:
-  #   Tiktok::OAuthClient.access_token  → exchanges refresh_token for short-lived access_token (cached 1 hour)
+  #   Tiktok::OAuthClient.access_token  → exchanges refresh_token for short-lived access_token (cached 50 minutes)
   #
-  # Required env vars:
-  #   TIKTOK_CLIENT_KEY     — from developer.tiktok.com (Client key)
-  #   TIKTOK_CLIENT_SECRET  — from developer.tiktok.com (Client secret)
-  #   TIKTOK_REFRESH_TOKEN  — long-lived refresh token from initial OAuth handshake
-  #   TIKTOK_OPEN_ID        — TikTok account open_id (returned with the refresh token)
+  # WHERE THE REFRESH TOKEN AND THE OPEN ID COME FROM (token_source): the stored
+  # connection, TiktokConnection.current, first; the env pair only when no
+  # connection is stored. When TikTok answers a refresh with a new refresh
+  # token, the stored connection is updated (TiktokConnection#rotate!). The env
+  # pair is read-only: nothing is written when it is the source.
+  #
+  # Env vars:
+  #   TIKTOK_CLIENT_KEY     — from developer.tiktok.com (Client key); required
+  #   TIKTOK_CLIENT_SECRET  — from developer.tiktok.com (Client secret); required
+  #   TIKTOK_REFRESH_TOKEN  — fallback only, for a server with no stored connection
+  #   TIKTOK_OPEN_ID        — fallback only, the pair of the refresh token
   class OAuthClient
     AUTH_URL  = "https://www.tiktok.com/v2/auth/authorize/".freeze
     TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/".freeze
 
     DEFAULT_SCOPES = %w[user.info.basic video.upload video.publish].freeze
+    CONNECT_PATH = "/admin/tiktok/connect".freeze
 
     class Error < StandardError; end
     class NotConfigured < Error; end
+
+    # Where the refresh token and the open id came from. `connection` is the
+    # stored TiktokConnection, or nil when the env pair answered.
+    TokenSource = Struct.new(:refresh_token, :open_id, :connection) do
+      def stored? = !connection.nil?
+
+      # Names the cached access token. A stored connection is named by its row
+      # and its sign-in time, so a rotated refresh token keeps the cache and a
+      # new sign-in drops it; the env pair is named by a digest of its token.
+      def cache_id
+        return "connection-#{connection.id}-#{connection.connected_at.to_i}" if stored?
+
+        "env-#{Digest::SHA256.hexdigest(refresh_token)[0, 16]}"
+      end
+    end
 
     class << self
       # Builds the user-facing authorize URL for the one-time OAuth handshake.
@@ -56,34 +79,49 @@ module Tiktok
         )
       end
 
-      # Exchanges TIKTOK_REFRESH_TOKEN for a short-lived access_token. Cached
-      # in Rails.cache for ~50 minutes (TikTok access tokens are 24h but cache
-      # generously to avoid hammering the token endpoint).
+      # Exchanges the refresh token (token_source) for a short-lived
+      # access_token. Cached in Rails.cache for ~50 minutes (TikTok access
+      # tokens are 24h but cache generously to avoid hammering the token
+      # endpoint). A refresh token TikTok rotated is saved to the stored
+      # connection before the access token is returned.
       def access_token
         ensure_runtime_creds!
-        Rails.cache.fetch("tiktok:access_token", expires_in: 50.minutes) do
+        source = token_source
+        Rails.cache.fetch("tiktok:access_token:#{source.cache_id}", expires_in: 50.minutes) do
           json = post_token(
             client_key:    ENV.fetch("TIKTOK_CLIENT_KEY"),
             client_secret: ENV.fetch("TIKTOK_CLIENT_SECRET"),
             grant_type:    "refresh_token",
-            refresh_token: ENV.fetch("TIKTOK_REFRESH_TOKEN")
+            refresh_token: source.refresh_token
           )
-          json["access_token"] or raise Error, "refresh response missing access_token: #{json.inspect}"
+          source.connection&.rotate!(json)
+          json["access_token"]
         end
       end
 
       def open_id
-        ENV.fetch("TIKTOK_OPEN_ID") { raise NotConfigured, "TIKTOK_OPEN_ID not set" }
+        token_source&.open_id or raise NotConfigured, "no TikTok account is connected (sign in at #{CONNECT_PATH})"
       end
 
       def app_creds_present?
         ENV["TIKTOK_CLIENT_KEY"].present? && ENV["TIKTOK_CLIENT_SECRET"].present?
       end
 
+      # The client key and secret, and a refresh token with its open id from
+      # either source.
       def runtime_creds_present?
-        app_creds_present? &&
-          ENV["TIKTOK_REFRESH_TOKEN"].present? &&
-          ENV["TIKTOK_OPEN_ID"].present?
+        app_creds_present? && !token_source.nil?
+      end
+
+      # The refresh token and open id in use: the stored connection first, then
+      # the env pair (both of the two, or it is no source). nil when neither.
+      def token_source
+        connection = TiktokConnection.current
+        return TokenSource.new(connection.refresh_token, connection.open_id, connection) if connection
+
+        token = ENV["TIKTOK_REFRESH_TOKEN"]
+        id = ENV["TIKTOK_OPEN_ID"]
+        TokenSource.new(token, id, nil) if token.present? && id.present?
       end
 
       private
@@ -93,7 +131,10 @@ module Tiktok
       end
 
       def ensure_runtime_creds!
-        raise NotConfigured, "TikTok creds incomplete (need CLIENT_KEY/CLIENT_SECRET/REFRESH_TOKEN/OPEN_ID)" unless runtime_creds_present?
+        return if runtime_creds_present?
+
+        raise NotConfigured, "TikTok is not connected: this server needs TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET, " \
+                             "and a sign-in at #{CONNECT_PATH}"
       end
 
       def post_token(params)

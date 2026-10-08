@@ -1,8 +1,8 @@
-<%# Draft to TikTok on one clip (recast pipeline, piece 19): the button that sends the clip's primary version into the operator's TikTok drafts (off until the clip has a primary version, and off when this server has no TikTok keys), then the latest attempt: its state, the version it sent, the caption the code wrote with a Copy (TikTok takes no caption with a draft, so it is pasted on the phone), TikTok's publish id and status, and any error. An attempt whose bytes are with TikTok (processing, or uploaded with its status unknown) carries Check TikTok, which reads the status again. Earlier attempts fold away below it. The same machine as bin/tiktok-draft. %>
+<%# Draft to TikTok on one clip (recast pipeline, piece 19): the button that sends the clip's primary version into the operator's TikTok drafts (off until the clip has a primary version, and off when this server is not connected to TikTok), then the latest attempt: its state, the version it sent, the caption the code wrote with a Copy (TikTok takes no caption with a draft, so it is pasted on the phone), TikTok's publish id and status, and any error. An attempt whose bytes are with TikTok (processing, or uploaded with its status unknown) carries Check TikTok, which reads the status again. Earlier attempts fold away below it. The same machine as bin/tiktok-draft. %>
 <% drafts = clip.tiktok_drafts.to_a %>
 <% latest = drafts.last %>
 <% available = Tiktok::DraftClip.available? %>
-<% blocker = if !primary then "No generated version yet: drop one above first." elsif !available then "TikTok keys are not set on this server." end %>
+<% blocker = if !primary then "No generated version yet: drop one above first." elsif !available then "TikTok is not connected on this server." end %>
 <div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-tiktok" data-attempts="<%= drafts.size %>"
      data-state="<%= latest&.state %>" data-enabled="<%= blocker.nil? %>">
   <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 min-w-0">

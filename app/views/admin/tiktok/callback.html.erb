@@ -1,31 +1,41 @@
-<section class="max-w-3xl mx-auto px-4 py-10 space-y-6">
-  <h1 class="text-3xl font-bold text-heading">TikTok connected ✅</h1>
+<%# What /admin/tiktok/callback shows once the sign-in is stored: which account, what TikTok granted, and when the refresh token dies. It renders the stored connection and no token: nothing here is to be copied anywhere. %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-tiktok-connected>
+  <h1 class="text-3xl font-bold text-heading">TikTok connected and saved</h1>
   <p class="text-secondary">
-    Copy the values below into <code class="text-primary">/Users/alex/projects/.env</code>.
-    The refresh token is long-lived (~365 days) — keep it secret. After that, restart the dev server to pick up the new env vars.
+    This server stored the connection, with its refresh token encrypted. There is nothing to copy:
+    drafting uses it from here on.
   </p>
 
-  <div class="card p-4 space-y-3 font-mono text-sm">
+  <dl class="card p-4 space-y-3 text-sm">
     <div>
-      <div class="text-muted text-xs mb-1">TIKTOK_REFRESH_TOKEN</div>
-      <div class="bg-inset p-3 rounded break-all"><%= @refresh_token %></div>
-    </div>
-    <div>
-      <div class="text-muted text-xs mb-1">TIKTOK_OPEN_ID</div>
-      <div class="bg-inset p-3 rounded break-all"><%= @open_id %></div>
+      <dt class="text-muted text-xs mb-1">Account</dt>
+      <dd class="text-heading font-semibold break-all" data-tiktok-field="account"><%= @connection.account %></dd>
     </div>
     <div>
-      <div class="text-muted text-xs mb-1">access_token (short-lived, do NOT save)</div>
-      <div class="bg-inset p-3 rounded break-all opacity-60"><%= @access_token %></div>
+      <dt class="text-muted text-xs mb-1">Granted by TikTok</dt>
+      <dd class="text-body break-words" data-tiktok-field="scope"><%= @connection.scope.presence || "TikTok named no scope" %></dd>
     </div>
-    <div class="text-xs text-muted">
-      scope: <code><%= @scope %></code> · expires_in: <%= @expires_in %>s
+    <div>
+      <dt class="text-muted text-xs mb-1">Refresh token expires</dt>
+      <dd class="text-body" data-tiktok-field="refresh-expires">
+        <% if @connection.refresh_expires_at %>
+          <%= @connection.refresh_expires_at.utc.strftime("%B %-d, %Y") %>
+          <span class="text-muted">(sign in again before then)</span>
+        <% else %>
+          TikTok gave no expiry
+        <% end %>
+      </dd>
     </div>
-  </div>
+    <div>
+      <dt class="text-muted text-xs mb-1">Connected</dt>
+      <dd class="text-body break-all" data-tiktok-field="connected">
+        <%= @connection.connected_at.utc.strftime("%B %-d, %Y at %H:%M UTC") %><% if @connection.connected_by.present? %> by <%= @connection.connected_by %><% end %>
+      </dd>
+    </div>
+  </dl>
 
-  <pre class="bg-inset p-3 rounded text-xs overflow-x-auto"># add to .env
-TIKTOK_CLIENT_KEY=<from developer.tiktok.com>
-TIKTOK_CLIENT_SECRET=<from developer.tiktok.com>
-TIKTOK_REFRESH_TOKEN=<%= @refresh_token %>
-TIKTOK_OPEN_ID=<%= @open_id %></pre>
+  <p class="text-secondary text-sm">
+    Prove it with <code class="text-primary">bin/tiktok-draft --whoami --production</code>: it prints the
+    account this connection posts as.
+  </p>
 </section>
