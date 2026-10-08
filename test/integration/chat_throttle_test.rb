@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/throttle_clock"
 
 # [integration] POST /chat is throttled per address and per signed-in user. Every
 # message costs an Anthropic call and signup is open, so no address and no account
@@ -7,7 +8,10 @@ require "test_helper"
 # answers 422 before the responder runs (a visitor's answers 401 before that), which
 # keeps every call offline.
 class ChatThrottleTest < ActionDispatch::IntegrationTest
+  include ThrottleClock
+
   setup do
+    start_throttle_period(Rack::Attack::CHAT_IP_PERIOD, Rack::Attack::CHAT_USER_PERIOD)
     @was_enabled = Rack::Attack.enabled
     @was_store = Rack::Attack.cache.store
     Rack::Attack.enabled = true
