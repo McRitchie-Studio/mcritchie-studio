@@ -15,10 +15,23 @@
 module ConstraintViolationResponses
   extend ActiveSupport::Concern
 
+  REFUSALS = [
+    ActiveRecord::InvalidForeignKey, ActiveRecord::RecordNotUnique,
+    ActiveRecord::CheckViolation, ActiveRecord::NotNullViolation
+  ].freeze
+  ERROR_CODE = "CONSTRAINT_VIOLATION".freeze
+  # Where the database's message starts quoting the refused row.
+  ROW_ECHO = /\s*DETAIL:\s+Failing row contains.*/m
+
   included do
-    rescue_from ActiveRecord::InvalidForeignKey, ActiveRecord::RecordNotUnique,
-                ActiveRecord::CheckViolation, ActiveRecord::NotNullViolation, with: :handle_constraint_violation
+    rescue_from(*REFUSALS, with: :handle_constraint_violation)
   end
+
+  def self.refusal?(exception) = REFUSALS.any? { |klass| exception.is_a?(klass) }
+
+  # A database message without the row it quotes, for a site that renders a
+  # rescued exception's own message.
+  def self.without_row(message) = message.to_s.sub(ROW_ECHO, "")
 
   # One field of the database's error report, or "".
   def self.diagnostic(exception, field)
@@ -98,11 +111,11 @@ module ConstraintViolationResponses
     end
 
     if is_a?(ActionController::API)
-      render json: { error: reason, error_code: "CONSTRAINT_VIOLATION" }, status: :unprocessable_entity
+      render json: { error: reason, error_code: ERROR_CODE }, status: :unprocessable_entity
     else
       respond_to do |format|
         format.html { redirect_back_or_to root_path, alert: reason }
-        format.json { render json: { error: reason, error_code: "CONSTRAINT_VIOLATION" }, status: :unprocessable_entity }
+        format.json { render json: { error: reason, error_code: ERROR_CODE }, status: :unprocessable_entity }
         format.any  { render plain: reason, status: :unprocessable_entity }
       end
     end

@@ -66,6 +66,11 @@ class ConstraintViolationResponsesTest < ActionDispatch::IntegrationTest
         end
       end
       head :ok
+    # The two shapes a controller's own rescue takes.
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless params[:via]
+
+      params[:via] == "render_exception" ? render_exception(e) : render_error(e.message)
     end
   end
 
@@ -151,6 +156,22 @@ class ConstraintViolationResponsesTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_equal "building", tasks(:new_task).reload.stage
+  end
+
+  test "[integration] a controller that rescues the refusal itself answers the reason, never the row" do
+    with_probe_route do
+      post "/__unique_probe", params: { kind: "check", slug: tasks(:new_task).slug, via: "render_exception" },
+                              headers: @headers, as: :json
+      assert_response :unprocessable_entity
+      assert_equal({ "error" => "Stage must be one of #{Task::STAGES.join(", ")}.", "error_code" => "CONSTRAINT_VIOLATION" },
+                   JSON.parse(response.body))
+
+      post "/__unique_probe", params: { kind: "check", slug: tasks(:new_task).slug, via: "message" }, headers: @headers, as: :json
+      assert_response :unprocessable_entity
+      assert_match(/violates check constraint "tasks_stage_known"\z/, JSON.parse(response.body)["error"])
+      assert_not_includes response.body, "Failing row"
+      assert_not_includes response.body, tasks(:new_task).title
+    end
   end
 
   # A web form whose write skips validations, through ApplicationController.
