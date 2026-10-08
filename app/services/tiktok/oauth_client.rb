@@ -30,6 +30,10 @@ module Tiktok
     class NotConfigured < Error; end
 
     class << self
+      # Stand-in for the token endpoint: (form params) -> [status Integer, body
+      # String]. nil means TikTok itself. Set in tests only.
+      attr_accessor :http
+
       # Builds the user-facing authorize URL for the one-time OAuth handshake.
       def authorize_url(redirect_uri:, state:, scopes: DEFAULT_SCOPES)
         ensure_app_creds!
@@ -97,17 +101,22 @@ module Tiktok
       end
 
       def post_token(params)
+        code, body = (http || method(:net_http)).call(params)
+        json = JSON.parse(body.presence || "{}")
+        unless (200..299).cover?(code) && json["access_token"]
+          raise Error, "TikTok token request failed (#{code}): #{body}"
+        end
+        json
+      end
+
+      def net_http(params)
         uri = URI(TOKEN_URL)
         req = Net::HTTP::Post.new(uri)
         req["Content-Type"]    = "application/x-www-form-urlencoded"
         req["Cache-Control"]   = "no-cache"
         req.set_form_data(params)
         resp = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |h| h.request(req) }
-        json = JSON.parse(resp.body || "{}")
-        unless resp.is_a?(Net::HTTPSuccess) && json["access_token"]
-          raise Error, "TikTok token request failed (#{resp.code}): #{resp.body}"
-        end
-        json
+        [resp.code.to_i, resp.body.to_s]
       end
     end
   end
