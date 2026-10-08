@@ -606,7 +606,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_020000) do
     t.text "voice_notes"
     t.index ["brand"], name: "index_characters_on_brand"
     t.index ["slug"], name: "index_characters_on_slug", unique: true
-    t.check_constraint "kind::text = ANY (ARRAY['mascot'::character varying, 'puppet'::character varying]::text[])", name: "characters_kind_known"
+    t.check_constraint "kind::text = ANY (ARRAY['mascot'::character varying::text, 'puppet'::character varying::text])", name: "characters_kind_known"
   end
 
   create_table "ci_check_jobs", force: :cascade do |t|

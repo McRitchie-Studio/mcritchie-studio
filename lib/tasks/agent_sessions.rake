@@ -7,8 +7,8 @@
 #   bin/rails agent_sessions:grant_admin SOUL=steffon HOURS=1
 #
 # A shell on the hub IS the grant: whoever can run this can already write the
-# database, so it adds a named, logged door and no new power. The Approve tap
-# the design describes is not built; this is the grant until it is.
+# database, so it adds a named, logged door and no new power. The board's grant
+# is AgentLoginRequest (the Approve tap, or the one-time code).
 #
 # STDOUT IS THE TOKEN AND NOTHING ELSE, so it can be taken without being read:
 #

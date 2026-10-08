@@ -42,6 +42,11 @@ cd /Users/alex/projects/mcritchie-studio
 bin/agent-activity heartbeat xan
 ```
 
+The command also posts an admin login request. Alex grants it with the Approve
+tap on the board, or gives you the request's one-time code for
+`bin/agent-activity heartbeat xan --code <code>`; run the heartbeat again to
+collect the session ([`credentials.md`](../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
+
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
 The heartbeat command makes activities self-attribute to Xan unless a delegated
 reviewer explicitly passes its own `--agent`.

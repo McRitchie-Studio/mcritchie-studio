@@ -136,9 +136,28 @@ The board API takes two bearers (design:
   Monster's two endpoints and installed hooks keep running.
 
 Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after
-8 hours. One is granted from a shell on the hub, which is the grant; the Approve
-tap is not built yet. The task prints the token on stdout and nothing else, so
-take it into the environment without reading it, and never paste or file it:
+8 hours. `bin/agent-activity heartbeat steffon|xan` posts an admin login request
+with the shared token, and the operator grants it one of two ways inside the
+ten-minute `admin_login` window (`config/release_builder.yml`):
+
+- **The launch code.** The board (`/tasks`, `/deployments`) shows an admin the
+  request with a one-time code. The operator puts the code in the launch phrase,
+  and the agent runs `bin/agent-activity heartbeat <soul> --code <code>`. The
+  code is bound to that request, is spent by one grant, and lapses with the
+  window. A wrong code answers 403 with the attempts left; the fifth refuses the
+  request. A phrase with no code grants nothing.
+- **The Approve tap** on the same row. `Decline` refuses the request.
+
+The harness session that asked collects the token once (`heartbeat <soul>` again,
+or `--wait <seconds>` to keep trying) and keeps it in
+`.agents/sessions/<harness session>.admin-login`, owner-only; it is never printed.
+`heartbeat --clear` and the session's end revoke it. A request that lapsed or was
+refused mints nothing, and the collect answers 410 with the reason. `bin/task`
+does not present this token yet.
+
+A shell on the hub is the third grant. The task prints the token on stdout and
+nothing else, so take it into the environment without reading it, and never
+paste or file it:
 
 ```bash
 export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"   # SOUL=steffon, HOURS=1 to narrow it
