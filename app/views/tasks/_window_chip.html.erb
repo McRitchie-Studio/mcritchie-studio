@@ -5,10 +5,11 @@
   epic chip on the task card and in the Next Release card's badge cluster; it
   renders NOTHING for a nil window, so a card with no clock carries no slot.
 
-  One chip, three kinds, told apart by tone and data-window-kind:
+  One chip, four kinds, told apart by tone and data-window-kind:
     approval    amber   devops.approval_requested_at + approval_minutes
     escalation  red     blocked_at + escalation_minutes on an `Escalated:` block
     production  sky     the release's ship_authorization request + production_minutes
+    admin_login amber   an admin login request + admin_login_minutes
 
   The clock is server-painted ("mm:ss", or the kind's lapsed label) and then
   advanced by the install-once ticker in tasks/_release_ticker (data-mode
@@ -29,10 +30,11 @@
   <% tones = {
        "approval"   => status_tone(:warning),
        "escalation" => status_tone(:danger),
-       "production" => status_tone(:primary)
+       "production" => status_tone(:primary),
+       "admin_login" => status_tone(:warning)
      } %>
-  <% glyphs = { "approval" => "👀", "escalation" => "⚖️", "production" => "🚀" } %>
-  <% names = { "approval" => "UI approval", "escalation" => "Escalation", "production" => "Production authority" } %>
+  <% glyphs = { "approval" => "👀", "escalation" => "⚖️", "production" => "🚀", "admin_login" => "🔑" } %>
+  <% names = { "approval" => "UI approval", "escalation" => "Escalation", "production" => "Production authority", "admin_login" => "Admin login" } %>
   <% lapsed = window.lapsed?(now) %>
   <% urgent = !lapsed && window.remaining_seconds(now) <= 60 %>
   <% title = "#{names.fetch(window.kind)} window: #{window.minutes} min from #{window.opened_at.utc.iso8601}" \

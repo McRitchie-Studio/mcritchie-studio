@@ -1,0 +1,64 @@
+<%# Open admin login requests (AgentLoginRequest), for an admin only: each row
+    carries the server-issued slug the requesting CLI prints, the one-time launch
+    code and the Approve and Decline taps. The slug is the handle to match: the
+    soul and the harness session id are whatever the poster sent. Rendered by the
+    page, never by a broadcast, so the code reaches no other viewer. %>
+<% logins = admin? ? AgentLoginRequest.awaiting.to_a : [] %>
+<% if logins.any? %>
+  <div class="mb-4 space-y-2" data-test="admin-login-requests">
+    <% logins.each do |login| %>
+      <div id="admin-login-<%= login.slug %>" data-test="admin-login-request" data-soul="<%= login.soul %>"
+           class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2 <%= status_tone(:warning, :panel) %>">
+        <span class="text-sm font-semibold text-heading">Admin login · <%= login.soul.titleize %></span>
+        <code class="select-all font-mono text-xs font-semibold text-heading" data-test="admin-login-slug"
+              title="Match this to the slug the agent's heartbeat printed before you approve or use the code"><%= login.slug %></code>
+        <span class="text-3xs text-muted" data-test="admin-login-requested">asked <%= at_time_tag(login.requested_at) %></span>
+        <span class="font-mono text-3xs text-muted" title="Harness session <%= login.harness_session_id %>, as the poster sent it">session …<%= login.harness_session_id.last(8) %></span>
+        <%= render "tasks/window_chip", window: login.window %>
+        <span class="flex items-center gap-2" data-test="admin-login-open">
+          <span class="text-xs text-muted">Launch code</span>
+          <code class="select-all font-mono text-sm font-bold tracking-widest text-heading" data-test="admin-login-code"><%= login.display_code %></code>
+        </span>
+        <span class="flex w-full items-center gap-2 sm:ml-auto sm:w-auto" data-test="admin-login-actions">
+          <button type="button" data-test="admin-login-approve" data-done="Granted"
+                  data-url="<%= approve_agent_login_path(login.slug) %>"
+                  title="Grant <%= login.slug %> an eight-hour admin session as <%= login.soul.titleize %>"
+                  class="shrink-0 rounded border border-primary bg-primary px-2 py-1 text-3xs font-bold uppercase tracking-wide text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  onclick="adminLoginAnswer(this)">Approve</button>
+          <button type="button" data-test="admin-login-refuse" data-done="Declined"
+                  data-url="<%= refuse_agent_login_path(login.slug) %>"
+                  title="Decline this request; nothing is granted"
+                  class="shrink-0 rounded border border-subtle bg-surface px-2 py-1 text-3xs font-bold uppercase tracking-wide text-body transition hover:bg-surface-alt disabled:cursor-wait disabled:opacity-60"
+                  onclick="adminLoginAnswer(this)">Decline</button>
+        </span>
+        <span class="hidden w-full text-xs text-body sm:w-auto" role="status" data-test="admin-login-result"></span>
+      </div>
+    <% end %>
+  </div>
+  <script>
+    // Posts one answer, then swaps the row's code and buttons for the outcome.
+    window.adminLoginAnswer = window.adminLoginAnswer || async function (btn) {
+      const row = btn.closest("[data-test='admin-login-request']");
+      const buttons = row.querySelectorAll("button");
+      const result = row.querySelector("[data-test='admin-login-result']");
+      const say = (text) => { result.textContent = text; result.classList.remove("hidden"); };
+      buttons.forEach((b) => { b.disabled = true; });
+      const csrf = document.querySelector("meta[name=csrf-token]")?.content;
+      try {
+        const res = await fetch(btn.dataset.url, { method: "POST", credentials: "same-origin",
+          headers: { "X-CSRF-Token": csrf, "Accept": "application/json" } });
+        if (res.ok) {
+          row.querySelector("[data-test='admin-login-open']").remove();
+          row.querySelector("[data-test='admin-login-actions']").remove();
+          row.dataset.state = btn.dataset.done.toLowerCase();
+          return say(btn.dataset.done + ". The code is spent.");
+        }
+        if (res.status === 401 || res.status === 403) say("Sign in as an admin to answer this request.");
+        else say((await res.json().catch(() => ({}))).error || "The answer did not land. Try again.");
+      } catch (e) {
+        say("The answer did not land. Try again.");
+      }
+      buttons.forEach((b) => { b.disabled = false; });
+    };
+  </script>
+<% end %>

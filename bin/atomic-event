@@ -59,6 +59,7 @@ require_relative "lib/agent_api"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/session_markers"
 require_relative "lib/session_identity"
+require_relative "lib/admin_login"
 require_relative "lib/dream_bank"
 
 class AgentActivityCli
@@ -132,7 +133,7 @@ class AgentActivityCli
           "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
           "reconcile [--session <id>] | " \
           "action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
-          "heartbeat <soul> | heartbeat --clear | " \
+          "heartbeat <soul> [--code <code>] [--wait <seconds>] | heartbeat --clear | " \
           "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
           "awaiting [--limit <n>]\n" \
           "       every subcommand also takes [--session <id>] except grade and awaiting.\n" \
@@ -211,9 +212,9 @@ class AgentActivityCli
                 --idempotency-key --started-at --completed-at --session]
     },
     "heartbeat" => {
-      synopsis: "atomic-event heartbeat <soul> | heartbeat --clear",
-      consequence: "the sticky acting-agent marker was NOT written or cleared",
-      bool: %w[--clear], value: %w[--agent --session], allow_positional: true
+      synopsis: "atomic-event heartbeat <soul> [--code <code>] [--wait <seconds>] | heartbeat --clear",
+      consequence: "the sticky acting-agent marker was NOT written or cleared, and no admin login was requested",
+      bool: %w[--clear], value: %w[--agent --session --code --wait], allow_positional: true
     },
     "grade" => {
       synopsis: "atomic-event grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard]",
@@ -428,6 +429,7 @@ class AgentActivityCli
     # Session end also drops any STICKY heartbeat agent + open-activity marker so
     # neither can leak into a later run that happens to reuse this session id.
     clear_acting_agent(sid)
+    logout_admin(sid)
     clear_open_activity(sid)
     clear_activity_usage_baselines(sid)
 
@@ -537,8 +539,9 @@ class AgentActivityCli
   # workflow, verify) as the soul, stacked over the stable base session mascot,
   # instead of the observed fall-back to the base mascot alone. An explicit
   # `--agent` on an individual `start`/`next` still WINS over the sticky, so a
-  # delegated reviewer keeps its own soul. Local-only (no HTTP) — writes a tiny
-  # per-session file beside the session marker; a fresh session never inherits it.
+  # delegated reviewer keeps its own soul. Writes a tiny per-session file beside
+  # the session marker; a fresh session never inherits it. No HTTP, except for an
+  # admin soul (steffon, xan), whose heartbeat also runs admin_login below.
   def heartbeat(argv, flags)
     sid = resolve_session_id(flags)
     return warn_note("atomic-event: no session id — nothing to set") unless present?(sid)
@@ -551,6 +554,7 @@ class AgentActivityCli
 
     if flags.key?("clear") || positional == "clear" || positional == "off"
       clear_acting_agent(sid)
+      logout_admin(sid)
       @out.puts("atomic-event: heartbeat cleared — activities return to the base session mascot")
       return
     end
@@ -565,6 +569,120 @@ class AgentActivityCli
     @out.puts("atomic-event: heartbeat set — every activity attributes to #{canonical} " \
               "(stacked over the base mascot) until `heartbeat --clear` or session end")
     DreamBank.announce(canonical, io: @out)
+    admin_login(sid, canonical, flags) if AdminLogin::SOULS.include?(canonical)
+  end
+
+  # An admin soul's heartbeat also asks for its admin session. It posts a login
+  # request, or resumes the one this harness session holds; `--code` grants it with
+  # the one-time code the board shows the operator; then it collects the token, for
+  # `--wait` seconds (one attempt by default). The token goes to the AdminLogin
+  # file, never to stdout.
+  def admin_login(sid, soul, flags)
+    run_admin_login(sid, soul, flags)
+  rescue StandardError => e
+    warn_note("atomic-event: admin login failed (ignored): #{e.class}")
+  end
+
+  def run_admin_login(sid, soul, flags)
+    held = AdminLogin.read(sid, projects_dir)
+    if held && held["soul"] != soul
+      logout_admin(sid)
+      held = nil
+    elsif held && AdminLogin.token_for(sid, projects_dir)
+      return @out.puts("atomic-event: admin session #{held['session']} held as #{soul} until #{held['expires_at']}")
+    end
+
+    request = AdminLogin.open_request(held, soul) || post_admin_login(sid, soul)
+    return unless request
+    return if present?(flags["code"]) && !send_admin_code(sid, request, flags["code"])
+
+    collect_admin_login(sid, soul, request, AdminLogin.wait_seconds(flags["wait"]))
+  end
+
+  def post_admin_login(sid, soul)
+    res = post("/api/v1/agent_login_requests", { "soul" => soul, "harness_session_id" => sid })
+    data = res && res.code.to_i.between?(200, 299) ? parse_data(res) : {}
+    unless present?(data["slug"]) && present?(data["collect_key"])
+      if res && res.code.to_i == 409
+        return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}. This session does not hold that " \
+                         "request: the operator should NOT approve it, and should Decline it on #{@api.base_url}/tasks")
+      end
+      return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}")
+    end
+
+    request = { "soul" => soul, "request" => data["slug"], "collect_key" => data["collect_key"], "ends_at" => data["ends_at"] }
+    AdminLogin.write(sid, projects_dir, request, env: @api.env)
+    @out.puts("atomic-event: admin login #{data['slug']} requested for #{soul}, pending until #{data['ends_at']}. " \
+              "Operator: on #{@api.base_url}/tasks find the row that reads #{data['slug']} and answer only that row: " \
+              "Approve it, or give this session its one-time code for `heartbeat #{soul} --code <code>`. " \
+              "Decline any other row for #{soul}")
+    request
+  end
+
+  def send_admin_code(sid, request, code)
+    res = post("/api/v1/agent_login_requests/#{request['request']}/code", admin_login_proof(sid, request).merge("code" => code.to_s))
+    return true if res && res.code.to_i.between?(200, 299)
+
+    AdminLogin.clear(sid, projects_dir, env: @api.env) if res && res.code.to_i == 410
+    warn_note("atomic-event: admin login code refused — #{refusal_of(res)}")
+    false
+  end
+
+  def collect_admin_login(sid, soul, request, wait)
+    deadline = Time.now + wait
+    loop do
+      res = post("/api/v1/agent_login_requests/#{request['request']}/collect", admin_login_proof(sid, request))
+      code = res ? res.code.to_i : 0
+      return keep_admin_session(sid, soul, parse_data(res)) if code.between?(200, 299)
+
+      unless code == 409
+        AdminLogin.clear(sid, projects_dir, env: @api.env) if [403, 404, 410].include?(code)
+        return warn_note("atomic-event: admin login not collected — #{refusal_of(res)}")
+      end
+      if Time.now + AdminLogin::POLL_SECONDS > deadline
+        return @out.puts("atomic-event: admin login #{request['request']} is still pending; run `heartbeat #{soul}` again to collect")
+      end
+
+      sleep(AdminLogin::POLL_SECONDS)
+    end
+  end
+
+  def keep_admin_session(sid, soul, data)
+    return warn_note("atomic-event: admin login not collected — the response carried no token") unless present?(data["token"])
+
+    AdminLogin.write(sid, projects_dir, { "soul" => soul, "session" => data["slug"], "token" => data["token"],
+                                          "expires_at" => data["expires_at"] }, env: @api.env)
+    @out.puts("atomic-event: admin session #{data['slug']} granted to #{soul} until #{data['expires_at']} (token kept, not printed)")
+  end
+
+  def admin_login_proof(sid, request)
+    { "collect_key" => request["collect_key"], "harness_session_id" => sid }
+  end
+
+  # Revoke and forget the admin login this harness session holds, if any. A
+  # revoke that does not land is said: the session then lives until it expires.
+  def logout_admin(sid)
+    held = AdminLogin.read(sid, projects_dir)
+    return unless held
+
+    if (token = AdminLogin.token_for(sid, projects_dir))
+      res = @api.http_json(:delete, "/api/v1/agent_sessions/current", nil, bearer: token)
+      unless res && (res.code.to_i.between?(200, 299) || res.code.to_i == 401)
+        warn_note("atomic-event: admin session #{held['session']} was NOT revoked (#{refusal_of(res)}); " \
+                  "it is forgotten here and ends at #{held['expires_at']}")
+      end
+    end
+    AdminLogin.clear(sid, projects_dir, env: @api.env)
+  rescue StandardError
+    nil
+  end
+
+  # The server's reason for a refusal, or what is known when it gave none.
+  def refusal_of(res)
+    return "no response" unless res
+
+    reason = (JSON.parse(res.body)["error"] rescue nil)
+    present?(reason) ? "#{res.code}: #{reason}" : "server said #{res.code}"
   end
 
   # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`

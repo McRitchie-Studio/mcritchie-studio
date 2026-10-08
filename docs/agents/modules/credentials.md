@@ -138,9 +138,37 @@ The board API takes two bearers (design:
   Monster's two endpoints and installed hooks keep running.
 
 Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after
-8 hours. One is granted from a shell on the hub, which is the grant; the Approve
-tap is not built yet. The task prints the token on stdout and nothing else, so
-take it into the environment without reading it, and never paste or file it:
+8 hours. `bin/agent-activity heartbeat steffon|xan` posts an admin login request
+with the shared token and prints its server-issued `login-…` slug. The board
+(`/tasks`, `/deployments`) shows an admin each open request with that slug: the
+operator answers only the row whose slug the agent printed, because the soul and
+the session id on a row are whatever the poster sent. He grants it one of two
+ways inside the ten-minute `admin_login` window (`config/release_builder.yml`):
+
+- **The launch code.** The row carries a one-time code. The operator puts the
+  code in the launch phrase, and the agent runs `bin/agent-activity heartbeat
+  <soul> --code <code>`, which grants and collects in one call. The code is bound
+  to that request, is spent by one grant, and lapses with the window. A wrong
+  code answers 403 with the attempts left; the fifth refuses the request. A
+  phrase with no code grants nothing.
+- **The Approve tap** on the same row. `Decline` refuses the request.
+
+One harness session holds one open request per soul: a second post under the
+same session id answers 409 unless it presents the open request's collect key. A
+soul gets three requests inside one window (429 after that); a Decline frees its
+slot. That bounds wrong codes at fifteen per soul per window.
+
+After an Approve tap the harness session that asked collects the token once
+(`heartbeat <soul>` again, or `--wait <seconds>` to keep trying) and keeps it in
+`.agents/sessions/<harness session>.admin-login`, owner-only; it is never printed.
+`heartbeat --clear`, a heartbeat as the other admin soul and the session's end
+revoke it. A request that lapsed or was
+refused mints nothing, and the collect answers 410 with the reason. `bin/task`
+does not present this token yet.
+
+A shell on the hub is the third grant. The task prints the token on stdout and
+nothing else, so take it into the environment without reading it, and never
+paste or file it:
 
 ```bash
 export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"   # SOUL=steffon, HOURS=1 to narrow it
