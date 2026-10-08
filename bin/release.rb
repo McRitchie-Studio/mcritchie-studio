@@ -4834,6 +4834,8 @@ end
 GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
 GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
 GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
+# One curl's ceiling. Without it a stalled read never returns and the deadline never fires.
+GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 
 # The .gem ARTIFACT the CDN serves, beside the compact index line. Both are needed
 # before a consumer can install: bundler RESOLVES through the index and then
@@ -4850,11 +4852,14 @@ def gem_version_indexed?(gem_name, version)
   injected = ENV["RELEASE_GEM_INDEXED"].to_s
   return injected == "yes" unless injected.empty?
 
-  out, status = Open3.capture2e("/usr/bin/curl", "-sf", format(GEM_INDEX_URL, gem_name))
+  # --max-time on both reads: a hung connection is a failed read the deadline can count.
+  out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
+                                format(GEM_INDEX_URL, gem_name))
   return false unless status.success?
   return false unless gem_index_lists?(out, version)
 
-  _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "-o", "/dev/null", format(GEM_FILE_URL, gem_name, version))
+  _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
+                              format(GEM_FILE_URL, gem_name, version))
   served.success?
 end
 
@@ -4905,8 +4910,13 @@ def install_published_gem(gem_name, version)
   return injected == "yes" unless injected.empty?
 
   gem_install_overlays.all? do |overlay|
-    _, ok = sh("gem", "install", gem_name, "-v", version.to_s, "--conservative", "--no-document",
-               capture: true, env: overlay)
+    out, ok = sh("gem", "install", gem_name, "-v", version.to_s, "--conservative", "--no-document",
+                 capture: true, env: overlay)
+    # Kept and printed: a failed install's own words are the diagnosis.
+    unless ok
+      say("  gem install #{gem_name} -v #{version} failed#{overlay.empty? ? '' : ' (mise ruby)'}:")
+      say(out.to_s.rstrip.empty? ? "    (no output)" : out.to_s.rstrip.gsub(/^/, "    "))
+    end
     ok
   end
 end
@@ -4930,9 +4940,10 @@ def await_published_gems!(published_gems)
 
   step("await: each published gem must be SERVED by the RubyGems CDN and INSTALLED here before anything reads it")
   pending.each do |gem_name, version|
-    elapsed = 0
+    # Wall time, so the curl calls and the installs count against the budget too.
+    started = monotonic_s
     until gem_version_indexed?(gem_name, version)
-      if gem_wait_expired?(elapsed)
+      if gem_wait_expired?(monotonic_s - started)
         abort!("published #{gem_name} #{version} but the RubyGems CDN is still not serving it (compact index + " \
                ".gem) after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks " \
                "are untouched, so `bin/release prepare` resumes cleanly once the index catches up. Bumping now " \
@@ -4941,12 +4952,11 @@ def await_published_gems!(published_gems)
       end
 
       sleep(GEM_POLL_INTERVAL)
-      elapsed += GEM_POLL_INTERVAL
     end
     say("  ✓ #{gem_name} #{version} is on the index — the CDN serves it")
 
     until install_published_gem(gem_name, version)
-      if gem_wait_expired?(elapsed)
+      if gem_wait_expired?(monotonic_s - started)
         abort!("published #{gem_name} #{version} and the CDN serves it, but `gem install #{gem_name} -v #{version}` " \
                "still fails on this machine after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed. " \
                "Install it by hand (`gem install #{gem_name} -v #{version}`, under the shell ruby AND " \
@@ -4956,7 +4966,6 @@ def await_published_gems!(published_gems)
       end
 
       sleep(GEM_POLL_INTERVAL)
-      elapsed += GEM_POLL_INTERVAL
     end
     say("  ✓ #{gem_name} #{version} is installed locally — safe to bump consumer locks")
     @gems_ready[[gem_name, version.to_s]] = true

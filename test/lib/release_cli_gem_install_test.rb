@@ -230,4 +230,28 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
     assert_includes out, "EVENTS=[]", out
     refute_includes out, "REFUSED"
   end
+
+  # A failed install's own output is the diagnosis; it is printed, not swallowed.
+  def test_failed_install_prints_output
+    setup = <<~RUBY
+      def gate_ruby_bin_dir = ""
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        ["ERROR:  Could not find a valid gem 'studio-engine' (= 0.92.2) in any repository", false]
+      end
+    RUBY
+    out = drive(%(puts "OK=" + install_published_gem("studio-engine", "0.92.2").to_s),
+                setup: setup, env: { "RELEASE_GEM_INSTALLED" => "" })
+
+    assert_includes out, "OK=false", out
+    assert_includes out, "Could not find a valid gem 'studio-engine' (= 0.92.2)", out
+  end
+
+  # THE CONTROL: a clean install prints nothing of its own.
+  def test_a_clean_install_prints_no_failure_block
+    out = drive(%(puts "OK=" + install_published_gem("studio-engine", "0.92.2").to_s),
+                setup: STUB_SH, env: { "RELEASE_GEM_INSTALLED" => "" })
+
+    assert_includes out, "OK=true", out
+    refute_match(/gem install .* failed/, out)
+  end
 end
