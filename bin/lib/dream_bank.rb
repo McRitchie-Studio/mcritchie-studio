@@ -201,9 +201,10 @@ module DreamBank
 
   # The dreams one claim loads: the soul's dreams that score highest against the
   # task's `facts` (the board's task JSON), then the platform sequence, then a line
-  # naming how many approved dreams are not shown. Within `budget` it drops the
-  # platform Why lines, then every Why, then whole dreams from the lowest rank up,
-  # the platform's last. "" when the soul is unknown or has no approved dream.
+  # naming how many approved dreams are not shown. The selected dreams take the
+  # `budget` first: it drops the platform Why lines, then platform dreams from the
+  # last up, then the selected Why lines, then selected dreams from the lowest
+  # rank up. "" when the soul is unknown or has no approved dream.
   def task_context(name, dreams, facts:, task:, budget: CALL_BUDGET, limit: DreamSelector::LIMIT, souls: roster)
     slug = canonical_soul(name)
     record = souls[slug]
@@ -212,20 +213,23 @@ module DreamBank
 
     total = selection.shown.size + selection.hidden.size
     head = "#{soul_heading(record, task)}\n#{soul_intro("The decisions for this seat that best match the task", slug)}"
-    render = lambda do |kept, why, platform_why|
-      task_blocks(head, kept - selection.universals, kept & selection.universals,
-                  why: why, platform_why: platform_why, hidden: total - kept.size, task: task)
+    render = lambda do |picked, universals, why, platform_why|
+      task_blocks(head, picked, universals, why: why, platform_why: platform_why,
+                  hidden: total - picked.size - universals.size, task: task)
     end
-    kept = selection.universals + selection.picked
-    [ [ true, true ], [ true, false ] ].each do |why, platform_why|
-      text = render.call(kept, why, platform_why)
+    picked = selection.picked
+    text = render.call(picked, selection.universals, true, true)
+    return text if fits?(text, budget)
+
+    selection.universals.size.downto(0) do |count|
+      text = render.call(picked, selection.universals.first(count), true, false)
       return text if fits?(text, budget)
     end
-    until kept.empty?
-      text = render.call(kept, false, false)
+    until picked.empty?
+      text = render.call(picked, [], false, false)
       return text if fits?(text, budget)
 
-      kept = kept[0...-1]
+      picked = picked[0...-1]
     end
     ""
   end

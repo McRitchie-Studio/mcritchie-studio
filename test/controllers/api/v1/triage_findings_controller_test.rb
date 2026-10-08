@@ -37,6 +37,25 @@ module Api
         refute_includes slugs, dismissed.slug
       end
 
+      test "[integration] index filters by slug and returns the body" do
+        wanted = TriageFinding.create!(title: "A wanted finding", body: "the body")
+        other = TriageFinding.create!(title: "Another finding")
+
+        get api_v1_triage_findings_path(slug: wanted.slug), headers: @headers
+        assert_response :success
+        rows = response.parsed_body["data"]
+        assert_equal [ wanted.slug ], rows.map { |f| f["slug"] }
+        assert_equal "the body", rows.first["body"]
+        refute_includes rows.map { |f| f["slug"] }, other.slug
+      end
+
+      test "[integration] index answers 422 to a slug that is not one slug" do
+        [ "slug[x]=y", "slug[]=a&slug[]=b", "slug=a%00b" ].each do |query|
+          get "#{api_v1_triage_findings_path}?#{query}", headers: @headers
+          assert_response :unprocessable_entity, query
+        end
+      end
+
       test "[integration] create without a title is rejected" do
         post api_v1_triage_findings_path, params: { body: "no title" }, headers: @headers, as: :json
         assert_response :unprocessable_entity

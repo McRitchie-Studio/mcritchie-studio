@@ -112,17 +112,23 @@ dreams against it (`bin/lib/dream_selector.rb`):
 | `topic` | 1 a word, 3 at most | the word is in the task's title or acceptance |
 
 A tag value the task does not carry scores 0. Topic words are compared in lower
-case, without a short list of stop words, and a plural matches its singular.
+case, without a short list of stop words, and a word over three letters loses
+one trailing `s`.
 
 The claim prints the 12 highest scores in rank order, ties in slug order, then
 the platform sequence under `### Platform dreams`. A soul with 12 dreams or fewer
-is shown them all. The block stays within 6,000 characters
-(`DreamBank::CALL_BUDGET`) and degrades in this order:
+has them all selected. The block stays within 6,000 characters
+(`DreamBank::CALL_BUDGET`), the selected dreams take that budget first, and the
+block degrades in this order:
 
 1. every dream with its Why;
 2. the selected dreams with their Why, the platform dreams without;
-3. no Why lines;
-4. whole dreams dropped from the lowest rank up, the platform dreams last.
+3. platform dreams dropped from the last up, until none is left;
+4. the selected dreams without their Why;
+5. selected dreams dropped from the lowest rank up.
+
+`test/lib/dream_bank_test.rb` pins the real bank: every soul's selected dreams
+fit the budget with their Why lines.
 
 The last line counts every approved dream the block does not show, in any
 sequence, and names the command that lists them:
@@ -205,6 +211,61 @@ Rules for a dream:
   every character is spent out of the ceiling above or a claim's 6,000.
 - **New dreams are `proposed`.** Never write `approved` yourself.
 
+### The grader proposes one at ship
+
+`Insights::TaskGrader` grades every task once when it ships. The same call asks
+`Insights::DreamProposer` for at most one proposed dream, from the task's notes.
+The signals and phrases are in `config/learning_loop.yml` under `dream`; the
+first signal in that order claims the proposal.
+
+| Signal | Fires when the task carries | The dream is for |
+|---|---|---|
+| `overruled_block` | a block, a `CONTEST:` clarification after it, then `RULING: OVERRULE` | the contest's author, else the task's builder |
+| `corrected_block` | a block, a `CONTEST:` clarification after it, then `RULING: ACCEPT` or `SPLIT` | the soul that raised the block |
+| `ruling` | a `RULING:` note naming `ACCEPT`, `OVERRULE` or `SPLIT` | the ruling's author |
+| `operator_praise` | a note containing an operator phrase | the author of the newest handoff before it by another soul, else the task's builder |
+| `review_praise` | a scout report or a handoff, by a soul other than the builder, containing a review phrase | the same |
+
+A signal whose soul is not in `config/souls.yml` is skipped, and the next is tried.
+
+The proposal is the triage finding `dream-proposal-<task-slug>`, whose body is
+the dream file. One finding per task: a second grade, or a dismissed finding,
+adds none. The grader writes no file, and a proposer failure is logged and
+leaves the grade recorded.
+
+**What a draft holds.** Note text is read to detect a signal and never copied.
+The draft is a fixed template per signal, filled from these fields only:
+
+- the task's slug, title, shape, repositories and risk tags;
+- each source activity's slug;
+- soul slugs, and the ruling's verdict word.
+
+**What is dropped.** A draft is dropped, with a log line naming the task slug
+and the rule and nothing else, when:
+
+- the task title or slug holds the first and last name of a row in the people table (a soul's is allowed);
+- the draft holds an email address, a phone number, a money amount, a run of
+  six or more digits, or a comma-grouped number. Activity slugs are not counted.
+
+A single name, a company name and a number under six digits pass the screen; the materializing session reads the draft against these rules.
+
+**Materialize it.** In a hub task desk:
+
+```bash
+/Users/alex/projects/.agents/bin/dream propose --materialize dream-proposal-<task-slug>
+```
+
+It writes `docs/agents/dreams/<soul>/<task-slug>.md` in that desk with
+`status: proposed`. It refuses outside a desk, refuses a finding that is not a
+proposed dream for one known soul, and never overwrites a file. Then:
+
+1. Read the source activities named in `source`, and rewrite the title, the
+   question, answer, why and the three sections to the decision the task made.
+   The title and the file name come from the task: reword or rename one that
+   names a client, a company or a person, because this repository is public.
+2. Run `bin/dream index --write` and commit both files.
+3. Ask Alex to sign off (Act 3). A proposed dream loads in no sequence; the index lists it `proposed`.
+
 ## Act 3 — Sign-off (Alex)
 
 Alex approves each dream. Present the proposed ones as a numbered table (slug,
@@ -219,7 +280,8 @@ question, answer) and ask which to approve, change or drop.
 
 Run Acts 2 and 3 for the current session: list the decisions from this session
 worth keeping, write them as `proposed`, show any other proposed dreams still
-waiting, and ask for sign-off.
+waiting, including the open `dream-proposal-*` findings
+(`bin/triage list --status open`), and ask for sign-off.
 
 ## Files
 
@@ -230,7 +292,9 @@ waiting, and ask for sign-off.
 | Parser, sequences and formatter | `bin/lib/dream_bank.rb` |
 | Selector | `bin/lib/dream_selector.rb` |
 | Session-start loader | `bin/session-insights` |
-| Soul loader and list | `bin/dream` |
+| Soul loader, list and materialize | `bin/dream` |
+| Ship-time proposer | `app/services/insights/dream_proposer.rb`, called by `app/services/insights/task_grader.rb` |
+| Signals and phrases | `config/learning_loop.yml` (`dream`) |
 | Installed copy the hook reads | `bin/install-agent-docs` (`TOOLING_PATHS`) |
-| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb` |
+| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb` |
 | Fixture bank the selector tests read | `test/fixtures/dreams/` |

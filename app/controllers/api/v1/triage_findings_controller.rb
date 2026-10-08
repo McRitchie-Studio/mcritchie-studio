@@ -4,9 +4,16 @@ module Api
     # task is deliberately absent — it is the operator's admin-gated web action
     # (TriageController#promote), the same lane split as approval grants.
     class TriageFindingsController < BaseController
+      SLUG = /\A[a-z0-9][a-z0-9-]*\z/
+
       def index
         findings = TriageFinding.recent
         findings = findings.where(status: params[:status]) if params[:status].present?
+        if params[:slug].present?
+          return render_error("slug must be one finding slug") unless params[:slug].to_s.match?(SLUG)
+
+          findings = findings.where(slug: params[:slug])
+        end
         result = paginate(findings)
         render_data(result[:records], meta: result[:meta])
       end

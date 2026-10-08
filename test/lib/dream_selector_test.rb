@@ -138,19 +138,51 @@ class DreamSelectorTest < Minitest::Test
     assert_includes mixed, "Why: A retry after a timeout pays the same entry again."
     refute_includes mixed, "Why: An accepted request is not a delivered one."
 
-    brief = context(budget: mixed.size - 1)
+    one = context(budget: mixed.size - 1)
+    assert_equal 12, one.scan("\nWhy: ").size, "a platform dream drops before a selected Why"
+    assert_includes one, "list-the-candidates"
+    refute_includes one, "report-what-you-verified", "the last platform dream drops first"
+    assert one.end_with?("5 not shown: bin/dream list --task settle-payout-once"), one[-80..]
+
+    none = context(budget: one.size - 1)
+    assert_equal 12, none.scan("\nWhy: ").size
+    refute_includes none, "### Platform dreams"
+    assert none.end_with?("6 not shown: bin/dream list --task settle-payout-once"), none[-80..]
+
+    brief = context(budget: none.size - 1)
     refute_includes brief, "\nWhy: "
-    assert_equal 14, brief.scan("**Q: ").size, "every dream survives the loss of the Why lines"
+    assert_equal 12, brief.scan("**Q: ").size, "every selected dream survives the loss of the Why lines"
 
     tight = context(budget: brief.size - 1)
     assert_operator tight.size, :<=, brief.size - 1
-    refute_includes tight, "retried-webhook-is-deduplicated", "the lowest-ranked pick drops first"
-    assert_includes tight, "report-what-you-verified", "the universals outlast the picks"
-    assert tight.end_with?("5 not shown: bin/dream list --task settle-payout-once"), tight[-80..]
+    refute_includes tight, "retried-webhook-is-deduplicated", "the lowest-ranked pick drops last of all"
+    assert_equal 11, tight.scan("**Q: ").size
+    assert tight.end_with?("7 not shown: bin/dream list --task settle-payout-once"), tight[-80..]
 
     assert_operator context.size, :<=, DreamBank::CALL_BUDGET
     assert_equal 6_000, DreamBank::CALL_BUDGET
     assert_equal "", context(budget: 10), "nothing prints when not even the heading fits"
+  end
+
+  def test_unit_twenty_platform_dreams_cost_no_selected_dream_or_why
+    extra = (1..18).map do |n|
+      DreamBank::Dream.new(slug: "platform-extra-#{n}", question: "Platform question number #{n}, long enough to cost room?",
+                           answer: "A platform answer of ordinary length, number #{n}. #{"It runs on. " * 8}".strip, why: "A platform reason.",
+                           status: "approved", tags: {}, home: "platform")
+    end
+    wide = bank + extra
+    selection = DreamSelector.select(payment_task, wide, soul: "pokemon")
+    assert_equal [ 12, 20 ], [ selection.picked.size, selection.universals.size ]
+    everything = DreamBank.task_context("pokemon", wide, facts: facts, task: "settle-payout-once", budget: nil)
+    assert_operator everything.size, :>, DreamBank::CALL_BUDGET, "control: the whole block is over the budget"
+
+    text = DreamBank.task_context("pokemon", wide, facts: facts, task: "settle-payout-once")
+
+    assert_operator text.size, :<=, DreamBank::CALL_BUDGET
+    selection.picked.each { |dream| assert_includes text, "(`#{dream.slug}`)\nA: #{dream.answer}\nWhy: #{dream.why}" }
+    shown = text.scan("**Q: ").size
+    assert_operator shown, :<, 32
+    assert text.end_with?("#{wide.count(&:approved?) - shown} not shown: bin/dream list --task settle-payout-once"), text[-80..]
   end
 
   def test_unit_a_soul_without_dreams_or_off_the_roster_gets_no_block

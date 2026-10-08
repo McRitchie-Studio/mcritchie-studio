@@ -209,7 +209,7 @@ Spawn the reviewer with this brief, filled in:
 ```text
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
-Claim by slug, naming that soul; the claim prints that soul's dream sequence, so read it before the diff:
+Claim by slug, naming that soul; the claim prints the dreams selected for the task, so read them before the diff:
   bin/task review-claim acquire <slug> --agent <xan for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.

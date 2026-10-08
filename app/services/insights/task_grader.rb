@@ -97,7 +97,7 @@ module Insights
     # task_slug index and gets the winner's row back.
     def grade!
       result = assessment
-      TaskGrade.transaction do
+      grade = TaskGrade.transaction do
         grade = TaskGrade.create!(
           task_slug: @task.slug, grader: GRADER, verdict: result.verdict,
           facts: result.facts, tripped: result.tripped.map { |t| t[:key] },
@@ -106,6 +106,9 @@ module Insights
         record_learning!(grade, result) if result.learning
         grade
       end
+      # Reached only by the call that created the grade; never raises.
+      DreamProposer.propose(@task, config: @config)
+      grade
     rescue ActiveRecord::RecordNotUnique
       TaskGrade.find_by(task_slug: @task.slug)
     end

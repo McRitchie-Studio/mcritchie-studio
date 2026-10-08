@@ -25,11 +25,7 @@ longer carries are frozen verbatim in
 
 ## Entry and preconditions
 
-Work from the hub primary as Carl:
-
-```bash
-cd /Users/alex/projects/mcritchie-studio
-```
+Work from the hub primary as Carl: `cd /Users/alex/projects/mcritchie-studio`.
 
 Read `/Users/alex/projects/AGENTS.md` and the repo docs for the change surface.
 
@@ -46,6 +42,8 @@ tasks. If anything is missing, note it as a finding; do not guess.
    ```bash
    bin/agent-activity start --category Verify --agent carl --task <task-slug> --reason "review: <task-slug>"
    ```
+
+   Then run `bin/dream carl --task <task-slug>` and read your dream sequence ([`dream.md`](../../../modules/dream.md)).
 
 2. **Summon your LIGHT: your call, one soul.** Preview the domain pick, or
    override it with your own judgment. Keep `--no-record`: a bare run RECORDS the
@@ -294,10 +292,8 @@ concludes green for the head you pinned. Ending on an armed merge is a clean exi
 ## Related
 
 - [`pr-review.md`](pr-review.md): the orchestrator SOP that claims PRs and spawns you.
-- [`pr-review-light.md`](pr-review-light.md): the focused second-read role SOP
-  your light runs.
+- [`pr-review-light.md`](pr-review-light.md): the second-read role SOP your light runs.
 - [`../role.md`](../role.md): Carl's REVIEW CHECKLIST.
-- [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md):
-  single-PR review primitive.
+- [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md): single-PR review primitive.
 - [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md):
   the G2 Review gate your lane (G2a) records into.
