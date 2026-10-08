@@ -360,10 +360,8 @@ class TasksController < ApplicationController
       @capped_stage_totals = Task.board_capped_stage_totals(base)
     end
 
-    load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
-    load_task_card_readers(tasks)
-    @agents = Agent.order(:position)
+    load_task_cards(tasks)
   end
 
   def load_review_process_context

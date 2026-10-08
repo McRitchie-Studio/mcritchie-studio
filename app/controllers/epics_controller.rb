@@ -20,9 +20,7 @@ class EpicsController < ApplicationController
 
     tasks = Task.for_epic(@epic.slug).includes(:task_events, :gate_runs)
                 .order(updated_at: :desc).limit(SHOW_LIMIT).to_a
-    load_board_task_conversation(tasks)
-    load_task_card_readers(tasks)
-    @agents = Agent.order(:position)
+    load_task_cards(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
     @drawn_count = tasks.size
   end
