@@ -4,6 +4,7 @@ answer: "Compare dates first. A snapshot speaks only for its own day; if the cla
 why: "Alex was about to answer a lender from that cross-check. A confident 'the record does not support it' would have had him dispute a figure that may be true."
 status: approved
 source: "2026-10-01 \u00b7 session c0844cf2"
+topic: [evidence, counterparty]
 ---
 
 # Cannot confirm or refute

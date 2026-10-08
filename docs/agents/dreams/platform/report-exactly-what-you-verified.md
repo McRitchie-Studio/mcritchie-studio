@@ -4,6 +4,7 @@ answer: "Say what you have: the service accepted it and returned this ID. Say wh
 why: "'Posted' and 'plays correctly' are two facts. Naming the gap costs a sentence and keeps 'done' meaning done."
 status: approved
 source: "2026-10-04 \u00b7 session 742948b0"
+topic: reporting
 ---
 
 # Report exactly what you verified

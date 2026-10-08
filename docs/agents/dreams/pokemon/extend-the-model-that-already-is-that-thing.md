@@ -4,6 +4,9 @@ answer: "First look for the model that already is that thing under another name.
 why: "A parallel table forks the data in two and every reader has to learn which half is true."
 status: approved
 source: "2026-09-17 \u00b7 session 64edbffd"
+soul: [pokemon, carl]
+shape: [backend, ui+db]
+topic: schema
 ---
 
 # Extend the model that already is that thing

@@ -4,6 +4,7 @@ answer: "No. Read the earlier thread from the mailbox itself, list what he alrea
 why: "A counterparty reads every message as a commitment. The filed record said no reply had gone out; one had, and the draft contradicted it twice."
 status: approved
 source: "2026-10-02 \u00b7 session 0485cef1"
+topic: [email, counterparty]
 ---
 
 # Read what was sent before drafting

@@ -4,6 +4,7 @@ answer: "The plain answer first ('not much, not on its own'), then the holdout n
 why: "He was about to build a product on it. A null result with numbers is a decision; a hopeful summary is a later surprise."
 status: approved
 source: "2026-10-03 \u00b7 session 50eca2ad"
+topic: reporting
 ---
 
 # Report the null result

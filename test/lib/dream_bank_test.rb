@@ -229,6 +229,39 @@ class DreamBankTest < Minitest::Test
     end
   end
 
+  def test_unit_every_dream_lives_in_the_directory_its_soul_tag_names
+    DreamBank.all.each do |dream|
+      assert_equal dream.sequence, dream.home, "#{dream.slug} is tagged for #{dream.sequence} and filed under #{dream.home}"
+    end
+  end
+
+  def test_unit_the_real_bank_has_both_sequences
+    assert_operator DreamBank.platform.size, :>=, 12
+    assert_operator DreamBank.soul("carl").size, :>=, 3
+    assert_equal DreamBank.approved.size, DreamBank.platform.size + DreamBank.approved.reject(&:platform?).size
+  end
+
+  def test_unit_index_matches_generator
+    assert_equal DreamBank.index, File.read(File.join(DreamBank::DEFAULT_DIR, "INDEX.md")),
+                 "docs/agents/dreams/INDEX.md is stale. Run `bin/dream index --write`."
+  end
+
+  def test_unit_index_lists_a_dream_under_every_sequence_it_loads_in
+    Dir.mktmpdir do |dir|
+      write(dir, "platform/universal.md", DREAM)
+      write(dir, "carl/review.md", tagged("soul: [carl, xan]\ntopic: [review, merge]", question: "Carl | Xan?"))
+
+      index = DreamBank.index(dir: dir)
+
+      assert_includes index, "2 dreams."
+      assert_includes index, "## Platform (1)"
+      assert_includes index, "## Carl (1)\n\nLoads at: `bin/dream carl`"
+      assert_includes index, "## Xan (1)"
+      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Xan? | topic: review, merge | approved |").size
+      refute_includes index, "## Jasper"
+    end
+  end
+
   private
 
   def write(dir, relative, text)

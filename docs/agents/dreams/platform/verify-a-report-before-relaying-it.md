@@ -4,6 +4,7 @@ answer: "Only what your own tool calls confirm. A report is testimony: check the
 why: "A review that never ran was once recorded on the board as merge-ready and repeated to Alex, because nothing distinguishes a real report from an imagined one."
 status: approved
 source: "2026-08-27 \u00b7 task adopt-engine-entry-confirmed"
+topic: [subagents, reporting]
 ---
 
 # Verify a report before relaying it
