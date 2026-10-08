@@ -1,13 +1,15 @@
 module Api
   module V1
-    # Admin login requests (docs/agents/system/agent-sessions-design.md, section 3).
+    # Login requests the operator grants (docs/agents/system/agent-sessions-design.md,
+    # section 3): an admin login, or with `kind: harness_key` and a `label` naming
+    # the machine, that machine's harness key.
     #
     #   POST /api/v1/agent_login_requests                post a request (steffon|xan)
     #   POST /api/v1/agent_login_requests/:slug/code     grant it with the one-time code
     #   POST /api/v1/agent_login_requests/:slug/collect  take the granted token, once
     #
-    # All three are presented with the machine credential: a session cannot mint a
-    # session. `code` and `collect` also need the collect key `create` returned and
+    # All three are presented with the machine credential (the shared token, or a
+    # harness key): a session cannot mint a session. `code` and `collect` also need the collect key `create` returned and
     # the harness session id it named; a `create` that would replace an open request
     # needs that request's collect key. No response carries the code.
     class AgentLoginRequestsController < BaseController
@@ -23,6 +25,7 @@ module Api
         too_many: [ :too_many_requests, "TOO_MANY_REQUESTS" ]
       }.freeze
 
+      accepts_harness_key :create, :code, :collect
       before_action :refuse_a_session
       before_action :set_request, only: %i[code collect]
 
@@ -38,7 +41,7 @@ module Api
         end
 
         login = AgentLoginRequest.request!(soul: params[:soul].to_s, harness_session_id: params[:harness_session_id],
-                                           collect_key: params[:collect_key])
+                                           collect_key: params[:collect_key], kind: params[:kind], label: params[:label])
         render_data(login.summary.merge("collect_key" => login.collect_key), status: :created)
       rescue ActiveRecord::RecordInvalid => e
         render_error(e.record.errors.full_messages.to_sentence, status: :unprocessable_entity,
@@ -66,7 +69,7 @@ module Api
 
       def set_request
         @login = AgentLoginRequest.find_by(slug: params[:slug].to_s)
-        render_error("admin login request not found", status: :not_found, error_code: "NOT_FOUND") unless @login
+        render_error("login request not found", status: :not_found, error_code: "NOT_FOUND") unless @login
       end
     end
   end

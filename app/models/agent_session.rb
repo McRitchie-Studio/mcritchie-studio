@@ -9,14 +9,20 @@
 #   reviewer's (review_claim) while it is submitted and its review claim is live.
 # - admin: Steffon and Xan. Unscoped within the admin tier; task_slug is always
 #   null, because the tier is the scope.
-# - client: Turf Monster and Tyrion. The model and the tier only; no endpoint
-#   accepts a client session yet.
+# - client: Turf Monster and Tyrion. A runtime key (issued_by runtime_key) reaches
+#   the endpoints CLIENT_ENDPOINTS lists for its soul and nothing else.
+# - harness: one machine's key. It mints studio logins at the doors a controller
+#   opens with `accepts_harness_key`, and is never the session a request acts as.
 #
 # A tier is set at login and never raised: the soul decides which tiers it may
 # hold, and nothing updates a row's tier, soul or scope after create.
 class AgentSession < ApplicationRecord
-  TIERS = %w[admin studio client].freeze
+  TIERS = %w[admin studio client harness].freeze
   ADMIN_SOULS = %w[steffon xan].freeze
+  # A harness key belongs to a machine, not a soul; its row names the logged-out
+  # builder.
+  HARNESS_SOUL = "pokemon".freeze
+  HARNESS_ISSUERS = %w[operator_grant launch_phrase].freeze
   CLIENT_SOULS = %w[turf-monster tyrion].freeze
   ISSUERS = %w[task_claim review_claim operator_grant launch_phrase runtime_key].freeze
   STUDIO_ISSUERS = %w[task_claim review_claim].freeze
@@ -25,9 +31,12 @@ class AgentSession < ApplicationRecord
   # A review_claim session ends at the verdict: `reviewed`, or a block's `building`.
   REVIEW_LIVE_STAGES = %w[submitted].freeze
   TTL = { "studio" => 24.hours, "admin" => 8.hours, "client" => 24.hours }.freeze
+  # A key the operator grants once and revokes by hand (a harness key, a client
+  # runtime key) carries an expiry this far out: none in effect.
+  KEY_LIFETIME = 100.years
   TOKEN_PURPOSE = :agent_session
 
-  attr_readonly :slug, :soul, :tier, :task_slug, :issued_by, :issued_at
+  attr_readonly :slug, :soul, :tier, :task_slug, :issued_by, :issued_at, :label
 
   validates :slug, presence: true, uniqueness: true
   validates :tier, inclusion: { in: TIERS }
@@ -41,6 +50,8 @@ class AgentSession < ApplicationRecord
   scope :unrevoked, -> { where(revoked_at: nil) }
   scope :unexpired, -> { where("expires_at > ?", Time.current) }
   scope :for_task, ->(slug) { where(task_slug: slug) }
+  # The long-lived keys: every harness key and every client runtime key.
+  scope :keys, -> { where(tier: "harness").or(where(issued_by: "runtime_key")) }
 
   # The tier a soul's own sessions are capped at, or nil for a slug that is no soul.
   def self.tier_for_soul(soul)
@@ -91,6 +102,13 @@ class AgentSession < ApplicationRecord
 
     now = Time.current
     create!(soul: soul, tier: "admin", issued_by: "operator_grant", issued_at: now, expires_at: now + length.hours)
+  end
+
+  # One machine's harness key, granted through an AgentLoginRequest of kind
+  # harness_key. `label` names the machine.
+  def self.grant_harness_key!(label:, issued_by:, harness_session_id: nil)
+    create!(soul: HARNESS_SOUL, tier: "harness", issued_by: issued_by, label: label.to_s.presence,
+            harness_session_id: harness_session_id)
   end
 
   # Why `soul` may not take a studio login to `task` by `issued_by`, or nil when it
@@ -150,6 +168,7 @@ class AgentSession < ApplicationRecord
   def admin? = tier == "admin"
   def studio? = tier == "studio"
   def client? = tier == "client"
+  def harness? = tier == "harness"
 
   def revoked? = revoked_at.present?
   def expired?(now = Time.current) = expires_at <= now
@@ -213,6 +232,7 @@ class AgentSession < ApplicationRecord
       "tier" => tier,
       "task_slug" => task_slug,
       "issued_by" => issued_by,
+      "label" => label,
       "issued_at" => issued_at&.iso8601,
       "expires_at" => expires_at&.iso8601,
       "revoked_at" => revoked_at&.iso8601
@@ -234,8 +254,10 @@ class AgentSession < ApplicationRecord
     self.soul = Task.canonical_soul(soul) if soul.present?
     self.slug ||= "sess-#{SecureRandom.hex(8)}"
     self.issued_at ||= Time.current
-    self.expires_at ||= issued_at + TTL.fetch(tier.to_s, TTL["studio"])
+    self.expires_at ||= issued_at + (key? ? KEY_LIFETIME : TTL.fetch(tier.to_s, TTL["studio"]))
   end
+
+  def key? = tier == "harness" || issued_by == "runtime_key"
 
   # Admin is for the admin souls only, client for the client souls only; studio is
   # any soul that is not a client. An admin soul may still hold a studio session
@@ -244,6 +266,8 @@ class AgentSession < ApplicationRecord
     capped = self.class.tier_for_soul(soul)
     if capped.nil?
       errors.add(:soul, "#{soul.inspect} is not a soul in config/souls.yml")
+    elsif tier == "harness"
+      errors.add(:soul, "a harness key is held as #{HARNESS_SOUL}, not #{soul}") unless soul == HARNESS_SOUL
     elsif tier == "admin" && capped != "admin"
       errors.add(:tier, "admin is held only by #{ADMIN_SOULS.join(" and ")}, not #{soul}")
     elsif tier == "client" && capped != "client"
@@ -257,6 +281,11 @@ class AgentSession < ApplicationRecord
     case tier
     when "admin"
       errors.add(:task_slug, "must be empty: an admin session is unscoped within the admin tier") if task_slug.present?
+    when "harness"
+      errors.add(:task_slug, "must be empty: a harness key is scoped to no task") if task_slug.present?
+      unless HARNESS_ISSUERS.include?(issued_by)
+        errors.add(:issued_by, "a harness key is granted by #{HARNESS_ISSUERS.join(" or ")}")
+      end
     when "studio"
       errors.add(:task_slug, "is required: a studio session is scoped to one task") if task_slug.blank?
       if issued_by.present? && !STUDIO_ISSUERS.include?(issued_by)

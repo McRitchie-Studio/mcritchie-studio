@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_135717) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -161,6 +161,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_135717) do
     t.datetime "decided_at"
     t.string "decided_by"
     t.string "harness_session_id", null: false
+    t.string "kind", default: "admin_login", null: false
+    t.string "label"
     t.string "phrase_digest", null: false
     t.string "refusal_reason"
     t.datetime "requested_at", null: false
@@ -179,6 +181,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_135717) do
     t.string "harness_session_id"
     t.datetime "issued_at", null: false
     t.string "issued_by", null: false
+    t.string "label"
     t.datetime "revoked_at"
     t.string "revoked_by"
     t.string "slug", null: false

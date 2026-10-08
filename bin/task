@@ -289,6 +289,7 @@ require_relative "../lib/feature_marker"
 require_relative "../lib/devops_list_flags"
 require_relative "../lib/approval_request_remedy"
 require_relative "lib/task_board"
+require_relative "lib/harness_key"
 require_relative "lib/block_recipe"
 require_relative "lib/bounce_ledger"
 require_relative "lib/task_column_fields"
@@ -1345,10 +1346,22 @@ def desk_session_dropped_header(method, path)
   slug ? { DeskSession::DROPPED_HEADER => slug } : nil
 end
 
-# Log the desk's soul in to the task it just claimed (agent sessions, phase one):
-# POST /api/v1/agent_sessions with the shared token, and keep the session token in
-# the desk. Never fatal: without a login the desk's writes use the shared token,
-# exactly as before.
+# POST a login mint with the machine credential: this machine's harness key
+# (bin/lib/harness_key.rb) when it holds one. A machine with no key, or whose key
+# the board answers 401 (revoked), mints with the shared token.
+def mint_request(path, body)
+  said = lambda do |res|
+    warn!("note: this machine's harness key was refused (#{TaskBoard.parse_body(res)["error"] || "HTTP 401"}); " \
+          "minting with the shared token")
+  end
+  HarnessKey.mint(HarnessKey.token(HarnessKey.projects_dir), fallback: -> { token }, refused: said) do |bearer|
+    TaskBoard.request(:post, path, base_url: BASE_URL, token: bearer, body: body)
+  end
+end
+
+# Log the desk's soul in to the task it just claimed: POST /api/v1/agent_sessions
+# with the machine credential (mint_request), and keep the session token in the
+# desk. Never fatal: without a login the desk's writes use the shared token.
 def desk_login(slug, worktree_dir, soul)
   if soul.to_s.strip.empty?
     warn!("begin login — #{slug} names no builder soul, so the desk holds no agent session; " \
@@ -1358,7 +1371,7 @@ def desk_login(slug, worktree_dir, soul)
 
   body = { "soul" => soul, "task_slug" => slug, "issued_by" => "task_claim",
            "harness_session_id" => session_identity.first }.compact
-  res = TaskBoard.request(:post, "/api/v1/agent_sessions", base_url: BASE_URL, token: token, body: body)
+  res = mint_request("/api/v1/agent_sessions", body)
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i == 201 && parsed.dig("data", "token")
     warn!("begin login — no agent session (POST /api/v1/agent_sessions -> #{res.code}: " \

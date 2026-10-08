@@ -38,7 +38,8 @@ class ReviewClaimCliTest < Minitest::Test
     # refusal it was) and a single canned answer would let both reads see the same
     # body. A suffix with no route falls back to the flat `data`/`code`, so every
     # existing test is untouched.
-    def initialize(projects_dir:, data: {}, code: 200, routes: {})
+    def initialize(projects_dir:, data: {}, code: 200, routes: {}, refused_bearers: [])
+      @refused_bearers = refused_bearers
       @projects_dir = projects_dir
       @data = data
       @code = code
@@ -56,8 +57,10 @@ class ReviewClaimCliTest < Minitest::Test
     def invalidate_token!(*) = nil
     def present?(value) = !value.to_s.strip.empty?
 
-    def http_json(method, path, body = nil, **)
-      @posts << { method: method, path: path, body: body }
+    def http_json(method, path, body = nil, **options)
+      @posts << { method: method, path: path, body: body, bearer: options[:bearer] }
+      return Resp.new(401, JSON.generate({ error: "revoked" })) if @refused_bearers.include?(options[:bearer])
+
       code, data = route_for(method, path)
       # A 204 carries NO body, exactly as the real board sends it — the renew path
       # must survive an empty answer rather than depending on canned JSON riding
@@ -82,11 +85,12 @@ class ReviewClaimCliTest < Minitest::Test
   # Every cli() gets a RECORDING spawner and a RECORDING killer, so no test ever forks
   # a real renewer or signals a real pid, and an explicit anchor pid, so anchor
   # resolution never depends on whether the suite runs under a `claude` process.
-  def cli(env: {}, data: {}, code: 200, routes: {}, projects_dir:)
+  def cli(env: {}, data: {}, code: 200, routes: {}, projects_dir:, refused_bearers: [])
     c = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION,
                                   "TASK_REVIEW_CLAIM_ANCHOR_PID" => Process.pid.to_s }.merge(env),
                            out: (@out = StringIO.new), err: (@err = StringIO.new))
-    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code, routes: routes))
+    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code, routes: routes,
+                                               refused_bearers: refused_bearers))
     @spawned = []
     c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
     @killed = []
@@ -156,6 +160,67 @@ class ReviewClaimCliTest < Minitest::Test
 
         cli(projects_dir: proj, env: env, data: { "released" => true, "state" => "released" }).run(["release", SLUG])
         assert_nil DeskSession.token_for(SLUG, root: tree, harness_session_id: HARNESS)
+      end
+    end
+  end
+
+  # ---- the harness key mints the review login ---------------------------------
+
+  def keep_harness_key(proj)
+    HarnessKey.write(proj, { "slug" => "sess-key", "label" => "test-mac", "token" => "HARNESS-KEY" },
+                     env: { "CLAUDE_PROJECTS_DIR" => proj })
+  end
+
+  def test_unit_a_claim_is_presented_with_the_machines_harness_key
+    Dir.mktmpdir do |proj|
+      keep_harness_key(proj)
+      { ["acquire", SLUG, "--agent", "carl"] => { "acquired" => true },
+        ["claim-next", "--agent", "carl"] => { "claimed" => { "slug" => SLUG } } }.each do |argv, data|
+        c = cli(projects_dir: proj, data: data)
+        c.run(argv)
+        claim = c.instance_variable_get(:@api).posts.find { |p| p[:method] == :post }
+        assert_equal "HARNESS-KEY", claim[:bearer], argv.first
+        refute_includes @out.string + @err.string, "HARNESS-KEY"
+      end
+
+      # A renew is not a mint: it keeps the shared token.
+      c = cli(projects_dir: proj, data: { "renewed" => true })
+      c.run(["renew", SLUG])
+      assert_equal ["tok"], c.instance_variable_get(:@api).posts.map { |p| p[:bearer] }.uniq
+    end
+  end
+
+  def test_unit_a_machine_with_no_harness_key_claims_with_the_shared_token
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true })
+      assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG, "--agent", "carl"])
+      assert_equal "tok", c.instance_variable_get(:@api).posts.first[:bearer]
+    end
+  end
+
+  def test_unit_a_refused_harness_key_falls_back_to_the_shared_token_and_says_so
+    Dir.mktmpdir do |proj|
+      keep_harness_key(proj)
+      c = cli(projects_dir: proj, data: { "acquired" => true }, refused_bearers: ["HARNESS-KEY"])
+
+      assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG, "--agent", "carl"])
+      claims = c.instance_variable_get(:@api).posts.select { |p| p[:path].end_with?("/review_claim") }
+      assert_equal %w[HARNESS-KEY tok], claims.map { |p| p[:bearer] }
+      assert_match(/harness key was not accepted \(HTTP 401\); claiming with the shared token/, @err.string)
+      refute_includes @out.string + @err.string, "HARNESS-KEY"
+    end
+  end
+
+  def test_unit_another_harness_sessions_release_leaves_the_review_login
+    Dir.mktmpdir do |proj|
+      with_tree do |tree|
+        cli(projects_dir: proj, env: { "CLAUDE_CODE_SESSION_ID" => HARNESS },
+            data: { "acquired" => true, "agent_session" => login_for(SLUG) }).run(["acquire", SLUG, "--agent", "carl"])
+
+        [{ "CLAUDE_CODE_SESSION_ID" => "another-harness" }, {}].each do |env|
+          cli(projects_dir: proj, env: env, data: { "released" => false }).run(["release", SLUG])
+          assert_equal "SECRET-TOKEN", DeskSession.token_for(SLUG, root: tree, harness_session_id: HARNESS), env.inspect
+        end
       end
     end
   end
