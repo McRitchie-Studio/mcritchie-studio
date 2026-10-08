@@ -49,6 +49,13 @@ module Api
         refute_includes rows.map { |f| f["slug"] }, other.slug
       end
 
+      test "[integration] index answers 422 to a slug that is not one slug" do
+        [ "slug[x]=y", "slug[]=a&slug[]=b", "slug=a%00b" ].each do |query|
+          get "#{api_v1_triage_findings_path}?#{query}", headers: @headers
+          assert_response :unprocessable_entity, query
+        end
+      end
+
       test "[integration] create without a title is rejected" do
         post api_v1_triage_findings_path, params: { body: "no title" }, headers: @headers, as: :json
         assert_response :unprocessable_entity
