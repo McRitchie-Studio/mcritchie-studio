@@ -202,6 +202,17 @@ class TaskCardComponentTest < ActionView::TestCase
     assert_empty classes.grep(%r{\Ahover:bg-danger/(?!10\z)}), "a stronger danger tint under danger ink misses AA"
   end
 
+  test "the archive action's hover tint is one the warning ink clears AA on" do
+    task = Task.create!(title: "Component archive tint card", stage: "designed")
+
+    render_task_card(task.reload)
+
+    classes = card_for(task).css("[data-test='task-card-archive']").first["class"].split
+    assert_includes classes, "hover:text-warning-ink"
+    assert_includes classes, "hover:bg-warning/10"
+    assert_empty classes.grep(%r{\Ahover:bg-warning/(?!10\z)}), "a stronger warning tint under warning ink misses AA"
+  end
+
   # Each gallery preview renders, and building one writes nothing: the gallery
   # runs in production against the production database.
   test "every preview renders its card and writes nothing" do
