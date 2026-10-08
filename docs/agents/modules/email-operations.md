@@ -25,7 +25,7 @@ here.
 | McRitchie Studio | `mcritchie-studio` | `http://localhost:3000` | `http://localhost:3000/_studio/local_emails` | `McRitchie Studio <team@mcritchie.studio>` | `Alex McRitchie <alex@mcritchie.studio>` | `studio_email_deliveries` / `Studio::EmailDelivery` |
 | Turf Monster | `turf-monster-mainnet` | `http://localhost:3100` | `http://localhost:3100/_studio/local_emails` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` | `email_deliveries` / `EmailDelivery` (legacy, see below) |
 | McRitchie Industries | `mcritchie-industries` | `http://localhost:3500` | `http://localhost:3500/_studio/local_emails` | `McRitchie Industries <team@mcritchie.studio>` | n/a | `studio_email_deliveries` / `Studio::EmailDelivery` |
-| Moms App | `obscure-plains-6405` | `http://localhost:3000` (unallocated — `bin/dev` defaults to 3000 and collides with the hub) | `http://localhost:<port>/_studio/local_emails` | `Moms App <team@mcritchie.studio>` | n/a | `studio_email_deliveries` / `Studio::EmailDelivery` |
+| Moms App | `moms-app` | `http://localhost:3000` (unallocated — `bin/dev` defaults to 3000 and collides with the hub) | `http://localhost:<port>/_studio/local_emails` | `Moms App <team@mcritchie.studio>` | n/a | `studio_email_deliveries` / `Studio::EmailDelivery` |
 | Future apps | TBD | reserve the app's hundred-block | `http://localhost:<port>/_studio/local_emails` | `App Name <team@app-domain>` | `Alex McRitchie <alex@app-domain>` or app-owned marketer | `studio_email_deliveries` — install it, see below |
 
 Transactional auth/security/account emails should use the `team@` convention.
