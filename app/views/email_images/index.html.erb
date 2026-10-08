@@ -6,7 +6,10 @@
       <h1 class="text-xl sm:text-2xl font-bold text-heading">Email images</h1>
       <p class="text-sm text-secondary">Header art for transactional email, generated from each brand's kit and approved here.</p>
     </div>
-    <%= link_to "Brand kits", email_brand_kits_path, class: "btn btn-sm btn-neutral sm:ml-auto", data: { test: "brand-kits-link" } %>
+    <div class="flex flex-wrap gap-2 sm:ml-auto">
+      <%= link_to "Email image generator", email_image_generators_path, class: "btn btn-sm btn-primary", data: { test: "generator-link" } %>
+      <%= link_to "Brand kits", email_brand_kits_path, class: "btn btn-sm btn-neutral", data: { test: "brand-kits-link" } %>
+    </div>
   </div>
 
   <div class="card p-4 sm:p-5 space-y-3" data-test="briefs">
