@@ -211,6 +211,27 @@ class MigrationCollisionTest < Minitest::Test
     assert_equal ["AddFooToBars"], installs.map { |i| i["class_name"] }
   end
 
+  # A branch that replaces a base migration (deletes it, adds one of the same class)
+  # leaves one copy on the merged tree. Only the branch's own deletions count.
+  def test_ref_installs_leaves_out_a_migration_this_branch_deletes
+    asked = nil
+    runner = lambda do |args|
+      case args.first
+      when "ls-tree" then "db/migrate/20260501000002_create_agents.rb\ndb/migrate/20260814010101_add_foo_to_bars.rb\n"
+      when "diff" then (asked = args) && "db/migrate/20260501000002_create_agents.rb\n"
+      else ""
+      end
+    end
+
+    installs = MigrationCollision.ref_installs("origin/accepted", &runner)
+
+    assert_equal ["AddFooToBars"], installs.map { |i| i["class_name"] }
+    assert_includes asked, "origin/accepted...HEAD"
+    assert_includes asked, "--no-renames"
+    mine = MigrationCollision.installs(["db/migrate/20260101000002_create_agents.rb"])
+    assert_empty MigrationCollision.report(mine, [{ "label" => "base", "kind" => "branch", "installs" => installs }])
+  end
+
   def test_ref_installs_with_no_ref_asks_nothing
     called = false
     assert_empty MigrationCollision.ref_installs(nil) { |_| called = true; "" }
