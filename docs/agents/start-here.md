@@ -126,7 +126,7 @@ its invocation exactly.
 | Turf Monster `post-to-x` SOP (winning team + video in, drafted and approved post on @turfmonstershow out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | Turf Monster `roster-sync` SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Turf Monster `sleeper-auction-watch` SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
-| Turf Monster `tiktok-draft` SOP (clip slug in, a private draft in Alex's TikTok inbox and its code-written caption out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
+| Turf Monster `tiktok-draft` SOP (clip slug in, a notification in Alex's TikTok inbox and its code-written caption out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
 | `Xan Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
 | Xan `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
 | Xan `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |

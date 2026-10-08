@@ -1,17 +1,19 @@
 # TikTok Draft
-<!-- registry: clip slug in, a private draft in Alex's TikTok inbox and its code-written caption out -->
+<!-- registry: clip slug in, a notification in Alex's TikTok inbox and its code-written caption out -->
 
 ## Status: Built; step 0 says whether this server is connected
 
 This is Turf Monster's `tiktok-draft` SOP. It is an input-output machine. The
 input is **a clip's slug**, the name printed on every clip card of an alt video
-(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a draft in Alex's TikTok
-inbox**, holding that clip's primary version, and **a caption written by code**
+(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a notification in Alex's
+TikTok inbox** that opens that clip's primary version in the app's editor, and
+**a caption written by code**
 ("Cowboys 3-2 #nfl #nfltiktok #footballtiktok #dallascowboys #cowboys #fyp")
-for him to paste when he posts.
+for him to paste there. TikTok does not receive the caption, and it files
+nothing under Drafts.
 
-Alex posts from his phone. Nothing here publishes: a draft is private until he
-does.
+Alex posts from his phone ([On the phone](#on-the-phone)). Nothing here
+publishes.
 
 **Until the server is connected, step 0 fails and you stop there.** Connecting
 it is Alex's, once, under [Setup](#setup).
@@ -43,8 +45,9 @@ one. The second is told `a draft of <slug> is already …`.
 line is wrong, say why; Alex edits it on his phone, where the caption is pasted
 anyway. A record from memory is the worst thing this SOP can hand him.
 
-**One clip, on his word.** A draft is private, but it lands on his phone and
-TikTok limits how many pending drafts an app may hold. Praise for the caption
+**One clip, on his word.** Nothing is posted, but each draft lands on his
+phone as a notification, and TikTok limits how many pending uploads an app may
+hold. Praise for the caption
 is not his word; "draft it" or the button is.
 
 ## Scope
@@ -104,6 +107,7 @@ each exception, and the caption with its length against TikTok's 2,200.
 | `cannot draft: Clip N has no generated version yet` | No MP4 was uploaded back for this clip | Tell Alex; the clip needs a version first |
 | `cannot draft: … swaps nobody` | The alt video replaces no one, so there is no athlete | Tell Alex. This clip has no caption by rule |
 | `cannot draft: <athlete> has no team` | Neither the look nor the athlete carries a team | Tell Alex; he sets the team on the look or the athlete, then re-run |
+| `cannot draft: <athlete>: the look "…" names team <slug>, which is not in the teams table` (or `the athlete record names team …`) | A team is named, but this server has no such team row | Not a missing team on the look. Report it: the teams must be loaded on the server ([Background](#background--not-needed-to-execute), "Where the teams come from"), or the slug is misspelled |
 | `cannot draft: … only an NFL team's record can be read` | The team is in another league | Tell Alex; this machine captions NFL teams only |
 | `cannot draft: could not read ESPN …` | The record could not be read | Wait and re-run. Never supply a record |
 | `CHECK: … has no slogan hashtag on file` | The team table has no slogan tag | The caption went out without one. Say so |
@@ -132,9 +136,9 @@ It ends on one of:
 
 | It prints | Meaning | Action |
 |---|---|---|
-| `attempt N: Version V · In your TikTok drafts · …` | TikTok says the draft is in his inbox | Tell Alex to open TikTok's inbox, and give him the caption |
+| `attempt N: Version V · Sent to your TikTok inbox · …` | TikTok sent the notification to his inbox | Give Alex the three `next:` lines it prints and the caption ([On the phone](#on-the-phone)) |
 | `still processing after 150s` | TikTok has the bytes and is still working | Run step 4 in a minute |
-| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok drafts. Run step 4. **Do not draft again** until he has looked |
+| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok inbox on the phone. Run step 4. **Do not draft again** until he has looked |
 | `attempt N failed: …` | TikTok refused, or the upload broke before it finished | Report TikTok's words. A retry is a new attempt, on his word |
 | `a draft of <slug> is already …` | An attempt is in flight | Run step 4. Do not draft twice |
 | `This session holds no admin login for this hub and AGENT_ADMIN_SESSION_TOKEN is not set` | No admin session is held | [The admin session](#the-admin-session) |
@@ -142,8 +146,25 @@ It ends on one of:
 | `API 401: SESSION_ENDED …` | The admin session expired or was revoked | Grant a fresh one |
 
 **TikTok takes no caption with a draft.** Its inbox upload accepts the file
-alone, so the caption does not travel. Give Alex the caption in chat; the
-clip's card also shows it with **Copy caption**.
+alone, so the caption does not travel, and the editor opens with the TikTok
+app's own hashtag prefilled. Give Alex the caption in chat; the clip's card
+also shows it with **Copy caption**. Never tell him the caption was sent.
+
+### On the phone
+
+What Alex does after `Sent to your TikTok inbox`. Give him these three steps
+every time; the card and the command print the same lines.
+
+1. **Open the notification.** The TikTok app on the phone, then **Inbox**, then
+   **System notifications**, then tap "Your content from McRitchie Studio is
+   ready". It opens the editor. The draft is not under Drafts until he saves it
+   there. The TikTok website shows the notification but, as far as we know,
+   cannot open the editor.
+2. **Paste the caption**, replacing the hashtag TikTok prefilled.
+3. **Turn on the AI-generated label**, under **Content disclosure and ads**,
+   before posting. These clips are AI video using a real athlete's likeness.
+
+Then he posts, or saves it to Drafts.
 
 ### 4. Status, and a card whose attempt failed
 
@@ -207,14 +228,18 @@ so, and Alex uses the card.
 versions: **Draft to TikTok**. It is off, with the reason beside it, when the
 clip has no generated version or the server has no TikTok keys. After a click
 the card shows the attempt: its state, the version sent, the caption with
-**Copy caption**, the rule that chose the team, TikTok's publish id, and any
-error. The button turns itself off as it submits. **Check TikTok** re-reads the
+**Copy caption** and a line saying TikTok did not receive it, the reminder to
+turn on the AI-generated label, the rule that chose the team, TikTok's publish
+id, and any error. An attempt that reads **Sent to your TikTok inbox** carries
+the next step: the phone app, Inbox, System notifications, tap the
+notification. The button turns itself off as it submits. **Check TikTok** re-reads the
 status of an attempt still processing, or uploaded with its status unknown.
 The card is open to a signed-in admin only, and needs no agent session.
 
 ## What good looks like
 
-- The draft on Alex's phone is the clip's primary version, and he asked for it.
+- The notification on Alex's phone opens the clip's primary version, and he asked for it.
+- He was told the caption did not travel, and to turn on the AI-generated label.
 - Every number in the caption was read in this run, and he was shown where from.
 - No `CHECK:` line went by without his seeing it.
 - Every attempt, failed or not, is on the clip's card.
@@ -280,6 +305,26 @@ the look they wear in the clip; else the athlete's current team. Past teams are
 never read, so a traded athlete never yields two. `Tiktok::ClipTeam` holds the
 rule and its tests.
 
+**A team that is named but not on file.** A look or an athlete names its team
+by slug. When no team row carries that slug, the draft is refused in those
+words, naming the slug, and the rule does not fall through to the next source.
+On 2026-10-08 production's teams table was empty: a look that said
+`dallas-cowboys` read as "has no team". A look can no longer be saved, or have
+its team changed, to a slug with no team row; a look that already carries one
+still saves for other edits.
+
+**Where the teams come from.** The hub's NFL teams are written by
+`db/seeds/10_teams_nfl.rb`, and their metadata by `rake teams:backfill_metadata`.
+No migration and no deploy step loads them: a server whose teams table is empty
+needs both run, on Alex's word.
+
+**What the first real draft measured** (production, 2026-10-08, the sandbox
+app). TikTok's status read `SEND_TO_USER_INBOX` and the notification reached
+the phone's inbox within about a minute. Nothing appeared under Drafts. The
+editor showed "Everyone can view this post", so a sandbox draft is not
+private-only: do not tell Alex it is. No caption arrived; the app's own hashtag
+was prefilled.
+
 **The recipe.** The mascot and the record, then the tags, lower case and never
 repeated: `#nfl`, `#nfltiktok`, `#footballtiktok`, the team's slogan tag from
 the team table, the mascot, `#fyp`. Six at most. The record and the tag
@@ -298,7 +343,7 @@ the R2 host is not one. Chunk rules, limits and the status words are in
 **The record of an attempt.** `tiktok_drafts`: the clip's slug, the version
 number and its object, the caption, the facts it rests on, TikTok's
 `publish_id` and status, and the error. The job is never retried, because a
-retried upload is a second draft on the phone; a retry is a new attempt.
+retried upload is a second notification on the phone; a retry is a new attempt.
 
 **Why a draft cannot double.** Three guards, each against a different way to
 get two: the clip's row lock around the record (`Tiktok::DraftClip#record!`),
@@ -330,5 +375,6 @@ TikTok and the bucket itself and marks every attempt "stand-in". It never runs
 in production.
 
 **AI-generated clips of real players.** TikTok has a policy on labelling
-synthetic media, and its app offers the label when a draft is posted. Whether
-these posts carry it is Alex's decision on the phone; nothing in this SOP sets it.
+synthetic media. The label is a switch in the app, under "Content disclosure
+and ads"; no API call here can set it, so it is step 3 of
+[On the phone](#on-the-phone), and the card says it on every attempt.
