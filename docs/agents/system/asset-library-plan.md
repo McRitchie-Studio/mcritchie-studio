@@ -44,7 +44,7 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 |---|---|
 | Object storage | Cloudflare R2; every app inherits McRitchie Studio's account |
 | Business documents for McRitchie Studio | Google Shared Drives. Egnyte declined: the Platform Business plan's 10-seat minimum ($2,640 a year) buys governance McRitchie Studio does not need yet |
-| Commercial Welding | **open.** An `Egnyte` login already sits in the `Commercial Welding` vault; decide after learning whether CW carries CMMC or ITAR obligations |
+| Commercial Welding | **open.** An `Egnyte` login already sits in the `Commercial Welding` vault; decide after learning whether CW carries CMMC or ITAR obligations. The proposed shelf, and where Egnyte slots in: [`knowledge-layer-design.md`](knowledge-layer-design.md) |
 | Public URLs | `assets.<domain>` per app, on the production bucket |
 | Backups | yes: Steffon's `r2-backup` SOP (`docs/agents/agents/steffon/sops/r2-backup.md`) (R2 has no versioning) |
 | Wave 2 order | `moms-app` → `commercial-welding` → `mcritchie-industries` → `mcritchie-studio` → `turf-monster` |
@@ -418,7 +418,7 @@ read-only on them for one audit.
 
 | Item | Owner |
 |---|---|
-| Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
+| Commercial Welding's document tier (Egnyte or Drive); decision 3 of [`knowledge-layer-design.md`](knowledge-layer-design.md) | Alex, after the compliance question |
 | Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon, before Wave 7 |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
 | What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
