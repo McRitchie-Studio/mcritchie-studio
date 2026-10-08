@@ -1920,7 +1920,7 @@ class ReleaseCliHarness < Minitest::Test
     clone, frozen = build_repin_fixture(dir)
     run_git(clone, "checkout", "-q", "--detach", frozen)
     File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n))
-    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  studio-engine (0.9.0)\n")
+    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  remote: https://rubygems.org/\n  specs:\n    studio-engine (0.9.0)\n")
     run_git(clone, "add", "-A")
     run_git(clone, "commit", "-q", "-m", "repin studio-engine ~> 0.9")
     repin1 = git_out(clone, "rev-parse", "HEAD")

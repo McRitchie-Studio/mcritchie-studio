@@ -65,15 +65,17 @@
 #          deploys — and BEFORE the gem publish, so gems publish the post-merge
 #          tree. Aborts loudly on a conflict or a push that did not take. A
 #          merge-forward commit is then carried onto `accepted` (a fast-forward).
-#       4d. GEM MEMBERS (publish-gems-before-qa) — two phases, because a RubyGems
-#          push is irreversible: preflight EVERY swept gem (fail-closed fetch,
-#          version bumped, stranded-work guard, changelog rollable, a swept
-#          consumer declares it; ANY failure aborts with ZERO gems published),
-#          THEN publish each to RubyGems + commit each consumer's lock bump onto
-#          origin/accepted and fast-forward origin/release to it — BEFORE the
-#          gate and QA, so `release` never carries a commit `accepted` lacks
-#          (ship's publish stays the idempotent verify). The version commit carries version_file +
-#          Gemfile.lock + the CHANGELOG rolled into the allocated version.
+#       4d. GEM MEMBERS — a RubyGems push is irreversible, so prepare publishes a
+#          RELEASE CANDIDATE (x.y.z.rcN) and `ship` publishes the final x.y.z.
+#          Preflight EVERY swept gem (fail-closed fetch, version bumped,
+#          stranded-work guard, changelog rollable, a swept consumer declares it;
+#          ANY failure aborts with nothing published), THEN publish each
+#          candidate (reusing one tagged at the release tip) + commit each
+#          consumer's Gemfile and lock bump onto origin/accepted and fast-forward
+#          origin/release to it — BEFORE the gate and QA, so `release` never
+#          carries a commit `accepted` lacks. The version commit carries
+#          version_file + Gemfile.lock + the CHANGELOG rolled into the allocated
+#          version.
 #       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
@@ -93,6 +95,9 @@
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
 #     Steffon's production-deploy: promotes the QA-green (assembled) RC to production:
+#     publish each gem's FINAL version (contents compared with the candidate QA ran,
+#     then the served checksum confirmed), re-lock each consumer to it in a commit
+#     of Gemfile + Gemfile.lock, read CI for that commit, then
 #     ff main → release branch per repo, push origin (stamping each repo's members
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
@@ -1611,7 +1616,11 @@ def publish_gem(repo, version, before_push: nil)
   # 3. Push to RubyGems.
   step("gem push: #{artifact}")
   _, pushed = sh("gem", "push", artifact)
-  abort!("gem push failed for #{repo} #{version} — already published? The RELEASE owns the version, not any PR: commit an advanced #{meta['version_file']} directly onto #{repo}'s `accepted` (a PR editing it is refused by bin/dor-check), then re-run prepare. Or check `gem signin`. Nothing downstream deployed.") unless pushed || DRY
+  abort!("gem push failed for #{repo} #{version}. Nothing downstream deployed. Check `gem signin` first, then " \
+         "re-run `bin/release ship`: it resumes. If RubyGems says the version exists but the listing does not " \
+         "show it, it was yanked and can never be pushed again: the RELEASE owns the version, not any PR, so " \
+         "commit an advanced #{meta['version_file']} directly onto #{repo}'s `accepted` (a PR editing it is " \
+         "refused by bin/dor-check), then re-run prepare.") unless pushed || DRY
 
   # 4. Tag the gem repo so the published version is reproducible from git.
   tag = "v#{version}"
@@ -4995,7 +5004,7 @@ end
 # index does. Called once per gem straight after its publish (so a later gem's
 # release-check finds it) and again by bump_consumer_locks_for_qa; the memo keeps
 # the second call to a lookup.
-def await_published_gems!(published_gems)
+def await_published_gems!(published_gems, resume: "bin/release prepare")
   return if published_gems.nil? || published_gems.empty?
 
   @gems_ready ||= {}
@@ -5010,7 +5019,7 @@ def await_published_gems!(published_gems)
       if gem_wait_expired?(monotonic_s - started)
         abort!("published #{gem_name} #{version} but the RubyGems CDN is still not serving it (compact index + " \
                ".gem) after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks " \
-               "are untouched, so `bin/release prepare` resumes cleanly once the index catches up. Bumping now " \
+               "are untouched, so `#{resume}` resumes cleanly once the index catches up. Bumping now " \
                "would commit a lock CI cannot install (bundler exits 7 in `Set up Ruby`), redding a lane and " \
                "aborting the release AFTER the publish became irreversible.")
       end
@@ -5025,7 +5034,7 @@ def await_published_gems!(published_gems)
                "still fails on this machine after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed. " \
                "Install it by hand (`gem install #{gem_name} -v #{version}`, under the shell ruby AND " \
                "`mise x ruby@#{Release::GateRuby::RUBY_PIN} -- gem install #{gem_name} -v #{version}`), then " \
-               "re-run `bin/release prepare`; the publish skips as already-live. Moving on would boot the next " \
+               "re-run `#{resume}`; the publish skips as already-live. Moving on would boot the next " \
                "gem's release-check against a lock this machine cannot load (Bundler::GemNotFound).")
       end
 
@@ -5644,7 +5653,7 @@ def skip_test_gate_reason
   @skip_test_gate_reason ||= opt_value("--reason").to_s.strip
 end
 
-def test_gate(repo, frozen_sha:)
+def test_gate(repo, frozen_sha:, relock: nil)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
     step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
@@ -5695,7 +5704,7 @@ def test_gate(repo, frozen_sha:)
                                                             diverged: verdict[:diverged])
   ok = Release::ShipSequence.ship_gate_pass?(kind)
   gate_sop("ship_test_gate", tree_verdict_sop(verdict, frozen_sha, cmd), ok)
-  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)) unless ok
+  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind) + (relock ? relock_gate_recovery(repo, relock) : "")) unless ok
 end
 
 # `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
@@ -6820,7 +6829,8 @@ def bump_producer_locks_for_accepted(published_gems)
     _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
     unless fetched
       say("  ⚠ #{repo}: git fetch failed — skipping the producer lock bump rather than bumping against a " \
-          "possibly-stale origin/#{ACCEPTED_BRANCH}; fix the remote and re-run `bin/release prepare`.")
+          "possibly-stale origin/#{ACCEPTED_BRANCH}; fix the remote, then run `bundle update #{wanted.join(' ')}` " \
+          "there on `#{ACCEPTED_BRANCH}`.")
       next
     end
 
@@ -6878,12 +6888,12 @@ def bump_producer_locks_for_accepted(published_gems)
       _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
       unless pushed
         say("  ⚠ #{repo}: could not push the producer lock bump to origin/#{ACCEPTED_BRANCH} (did it move?). " \
-            "Re-run `bin/release prepare` — it resumes — or run `bundle update #{touched.join(' ')}` there by hand.")
+            "Run `bundle update #{touched.join(' ')}` there by hand.")
         next
       end
 
       step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{ACCEPTED_BRANCH}")
-      (@prepare_live ||= []) << "#{repo}: producer lock bump #{bumps.join(', ')} committed + pushed to origin/#{ACCEPTED_BRANCH}"
+      (@ship_live ||= []) << "#{repo}: producer lock bump #{bumps.join(', ')} committed + pushed to origin/#{ACCEPTED_BRANCH}"
     end
   end
 end
@@ -6936,6 +6946,18 @@ def refuse_stray_candidates!(app_groups, published_gems)
 
   abort!("a consumer is locked to a release candidate this sweep is not testing — " \
          "#{findings.join('; ')}. #{STRAY_CANDIDATE_REMEDY}")
+end
+
+# The ship's producer lock bump and drift read, neither of which may stop a ship
+# that has already deployed.
+def settle_producer_locks(published_gems)
+  return if published_gems.empty?
+
+  bump_producer_locks_for_accepted(published_gems)
+  assert_no_lock_drift!([], published_gems)
+rescue SystemExit, StandardError => e
+  say("  ⚠ producer locks not settled (#{e.message.to_s[0, 300]}). The ship continues; run `bundle update " \
+      "#{published_gems.keys.join(' ')}` on the named gem repo's `#{ACCEPTED_BRANCH}`.")
 end
 
 # THE POST-CONDITION: after the sweep has bumped every lock it owns, does any repo
@@ -7290,32 +7312,52 @@ def restore_committed_artifacts(path, rels)
   (rels - tracked).each { |r| FileUtils.rm_f(File.join(path, r)) }
 end
 
-# Publish (or idempotently skip) one gem, then collapse its release → main at the
-# frozen SHA. Skip when the version is already LIVE. Yank safety is delegated to
-# `gem push` failing closed: a yanked number isn't in the listing → publish_needed?
-# is true → we try to push → RubyGems rejects re-pushing it → publish_gem aborts,
-# BEFORE any app deploys. Records the gem as live for the partial report.
-# `member_slugs` are the gem's release members — stamped `merged: "main"` once the
-# ff lands on origin (the interrupted-Avi crash-recovery signal).
-def ship_gem(repo, version, frozen, member_slugs = [])
+# Publish one gem's FINAL version from the QA-frozen SHA, then collapse its
+# release → main there. `candidate` is the prerelease QA ran (ship_gem_candidates).
+#
+# THE ORDER, and what each refusal leaves behind:
+#   1. final already live → skip the push, and compare the live final with the
+#      candidate (a re-run after an abort lands here and resumes).
+#   2. no candidate → refuse; nothing was published.
+#   3. build the final → compare its contents with the candidate's, file by file →
+#      refuse on any difference; nothing was published.
+#   4. `gem push` (irreversible) → tag v<version>.
+#   5. wait until RubyGems serves it → the served .gem's SHA-256 must be the built
+#      artifact's → refuse on a mismatch; nothing is deployed.
+# Yank safety is `gem push` failing closed: a yanked number is absent from the
+# listing, the push is attempted, and RubyGems rejects it before any app deploys.
+# `member_slugs` are stamped `merged: "main"` once the ff lands on origin.
+def ship_gem(repo, version, frozen, member_slugs = [], candidate: nil)
   abort!("could not resolve a version for gem #{repo} — check #{repo}/#{gem_meta_for(repo)['version_file']}") if version.empty? && !DRY
 
   if DRY
-    step("gem #{repo} #{version}: publish to RubyGems from #{short(frozen)} " \
-         "(skip if already live) → tag v#{version} → push #{repo} origin main → #{short(frozen)}")
+    step("gem #{repo} #{version}: build from #{short(frozen)} → verify its contents equal the candidate QA ran → " \
+         "publish to RubyGems (skip if already live) → verify the served .gem checksum → tag v#{version} → " \
+         "push #{repo} origin main → #{short(frozen)}")
     return
   end
 
   remote = rubygems_versions(repo)
   if !Release::ShipSequence.publish_needed?(version, remote)
     say("  gem #{repo} #{version} already live on RubyGems — skip publish (idempotent)")
+    verify_live_final!(repo, version, candidate) if candidate
   else
-    # No listing-based yank check: the versions API omits yanked versions entirely
-    # (no `yanked` field), so yank protection is delegated to `gem push` failing
-    # closed — RubyGems forbids re-pushing a yanked number, so publish_gem aborts
-    # loudly here (BEFORE any app deploy) if `version` was yanked.
+    if candidate.to_s.empty?
+      abort!("gem #{repo} #{version} is not on RubyGems and NO candidate of it was found: no consumer in this " \
+             "release locks one and no `#{Release::GemCandidate::TAG_PREFIX}#{version}.rc<n>` tag points at the " \
+             "frozen SHA #{short(frozen)}. A final is published only for a tree QA ran as a candidate. NOTHING " \
+             "was published or deployed. Re-run `bin/release prepare` (it publishes and QAs a candidate), then " \
+             "`bin/release ship`.")
+    end
     checkout_detached(repo, frozen) # build the artifact from the QA-frozen commit
-    publish_gem(repo, version)      # reused: release-check → build → push → tag
+    pushed_sha = nil
+    publish_gem(repo, version, before_push: lambda do |artifact|
+      verify_final_artifact!(repo, version, candidate, artifact, frozen)
+      pushed_sha = Digest::SHA256.file(artifact).hexdigest
+    end)
+    # Before the checksum read, and before anything locks it: RubyGems must SERVE it.
+    await_published_gems!({ repo => version }, resume: "bin/release ship")
+    confirm_published_checksum!(repo, version, pushed_sha)
   end
   @ship_live << "gem #{repo} #{version} live on RubyGems"
   push_frozen_main(repo, frozen)
@@ -7327,6 +7369,115 @@ def ship_gem(repo, version, frozen, member_slugs = [])
   record_merged_main(member_slugs)
 end
 
+# Download one published .gem from the RubyGems CDN (no credentials). The path, or
+# nil when the CDN did not serve it.
+#
+# RELEASE_GEM_FETCH is the test seam: "none" (armed by test/support/outbound_seams.rb,
+# so no test downloads anything) or a directory holding `<gem>-<version>.gem`.
+def fetch_published_gem(gem_name, version)
+  injected = ENV["RELEASE_GEM_FETCH"].to_s
+  unless injected.empty?
+    local = File.join(injected, "#{gem_name}-#{version}.gem")
+    return injected != "none" && File.exist?(local) ? local : nil
+  end
+
+  path = File.join(Dir.tmpdir, "release-fetched-#{gem_name}-#{version}-#{Process.pid}.gem")
+  _, status = Open3.capture2e("/usr/bin/curl", "-sfL", "--max-time", (GEM_CURL_MAX_TIME * 3).to_s, "-o", path,
+                              format(GEM_FILE_URL, gem_name, version))
+  status.success? && File.size?(path) ? path : nil
+end
+
+def gem_manifest(repo, path)
+  Release::GemCandidate.manifest(path, version_file: gem_meta_for(repo)["version_file"].to_s)
+end
+
+# The candidate QA ran, downloaded, or an abort that says nothing moved.
+def fetch_candidate!(repo, candidate, nothing)
+  fetch_published_gem(repo, candidate) ||
+    abort!("could not download #{repo} #{candidate} from RubyGems to compare it with the final. #{nothing} " \
+           "Re-run `bin/release ship` once `curl -sfI #{format(GEM_FILE_URL, repo, candidate)}` answers.")
+end
+
+# BEFORE THE PUSH: the final just built must carry the candidate's contents. The
+# two builds come from one commit, so any difference means the frozen SHA is not
+# the tree QA ran, or the primary built something else.
+def verify_final_artifact!(repo, version, candidate, artifact, frozen)
+  nothing = "NOTHING was published or deployed."
+  found = Release::GemCandidate.differences(gem_manifest(repo, fetch_candidate!(repo, candidate, nothing)),
+                                            gem_manifest(repo, artifact))
+  if found.any?
+    abort!("#{repo} #{version} built from #{short(frozen)} does NOT match #{candidate}, the candidate QA ran: " \
+           "#{found.first(8).join('; ')}#{found.size > 8 ? " (+#{found.size - 8} more)" : ''}. #{nothing} " \
+           "A final is published only for the tree QA passed: re-run `bin/release prepare` to publish and QA " \
+           "a candidate of this tree, then `bin/release ship`.")
+  end
+  step("checksum: #{repo} #{version} carries the same #{gem_manifest(repo, artifact)['files'].size} file(s) and " \
+       "dependencies as #{candidate}, the candidate QA ran")
+end
+
+# THE RESUME PATH: the final is already live (a ship that pushed it and then
+# stopped, or a hand publish). It is compared with the candidate all the same.
+def verify_live_final!(repo, version, candidate)
+  nothing = "Nothing was deployed by this run."
+  final_path = fetch_published_gem(repo, version) ||
+               abort!("could not download #{repo} #{version} from RubyGems to compare it with #{candidate}. " \
+                      "#{nothing} Re-run `bin/release ship`.")
+  found = Release::GemCandidate.differences(gem_manifest(repo, fetch_candidate!(repo, candidate, nothing)),
+                                            gem_manifest(repo, final_path))
+  if found.any?
+    abort!("#{repo} #{version} is LIVE on RubyGems and does NOT match #{candidate}, the candidate QA ran: " \
+           "#{found.first(8).join('; ')}. #{nothing} A published version cannot be replaced. Do not ship it: " \
+           "advance the version past #{version} (qa-release.md, the STRANDED GEM WORK row), re-run " \
+           "`bin/release prepare` and QA the new candidate.")
+  end
+  step("checksum: the live #{repo} #{version} carries the same contents as #{candidate}, the candidate QA ran")
+end
+
+# AFTER THE PUSH: what RubyGems serves must be the artifact this ship built.
+def confirm_published_checksum!(repo, version, pushed_sha)
+  path = fetch_published_gem(repo, version) ||
+         abort!("#{repo} #{version} was PUBLISHED, but its .gem could not be downloaded to confirm the checksum. " \
+                "Nothing is deployed. Re-run `bin/release ship`: the publish skips as live and the live gem is " \
+                "compared with the candidate.")
+  served = Digest::SHA256.file(path).hexdigest
+  if served != pushed_sha
+    abort!("#{repo} #{version} was PUBLISHED, but RubyGems serves SHA-256 #{served[0, 12]}… and this ship pushed " \
+           "#{pushed_sha.to_s[0, 12]}…. Nothing is deployed. Do not ship: find out who else pushed #{version}, " \
+           "then advance past it (qa-release.md, the STRANDED GEM WORK row).")
+  end
+  step("checksum: RubyGems serves #{repo} #{version} with SHA-256 #{served[0, 12]}…, the artifact this ship built")
+end
+
+# The candidate QA ran for each gem, read from the trees QA ran, plus every reason
+# the ship may not publish. Read-only: `git show` at the frozen SHAs and the `rc-`
+# tags at the gem's frozen SHA. Returns [{ gem => candidate or nil }, problems].
+def ship_gem_candidates(gem_groups, app_groups, ship_sha)
+  candidates = {}
+  problems = []
+  finals = {}
+  gem_groups.each do |group|
+    gem_name = group["repo"]
+    final = finals[gem_name] = gem_version_for(gem_name, group, ship_sha[gem_name])
+    resolved = app_groups.to_h do |app|
+      repo = app["repo"]
+      lock, ok = git_capture("-C", repo_path(repo), "show", "#{ship_sha[repo]}:Gemfile.lock")
+      [repo, ok ? Release::ShipSequence.locked_version(lock, gem_name) : nil]
+    end
+    candidate, found = Release::GemCandidate.qa_candidate(final, resolved)
+    problems.concat(found.map { |f| "#{gem_name} #{final}: #{f}" })
+    if candidate.nil? && found.empty? && resolved.values.compact.empty?
+      # No consumer locks it (a gem-only release): the candidate is the one tagged
+      # at the frozen SHA.
+      tags, = git_capture("-C", repo_path(gem_name), "tag", "--points-at", ship_sha[gem_name].to_s,
+                          "--list", "#{Release::GemCandidate::TAG_PREFIX}*")
+      candidate = Release::GemCandidate.candidates_of(final, tags.to_s.lines).max_by { |c| Release::GemCandidate.number_of(c) }
+    end
+    candidates[gem_name] = candidate
+  end
+  problems.concat(stray_candidate_findings(app_groups, finals) { |repo| ship_sha[repo] })
+  [candidates, problems]
+end
+
 # Is origin/release's head THIS RUN'S OWN re-pin of `frozen`, already pushed by a
 # ship that died partway (so the retry must REUSE it, not mint a rival)? The I/O seam
 # for Release::ShipSequence.resumable_repin? — it gathers the three facts and the
@@ -7336,7 +7487,7 @@ end
 # Any read that fails answers FALSE — never "probably fine". The caller then aborts
 # as un-QA'd drift, which is the correct fail-closed direction: refusing a resumable
 # ship costs a conversation, completing an unresumable one costs production.
-def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:)
+def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:, expect: {})
   # 1. ANCESTRY — head is frozen PLUS something, not a divergent line.
   _, ancestor = sh("git", "-C", workspace, "merge-base", "--is-ancestor", frozen, head, capture: true)
   return false unless ancestor
@@ -7349,40 +7500,51 @@ def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:)
   gemfile, gemfile_ok = git_capture("-C", workspace, "show", "#{head}:Gemfile")
   return false unless gemfile_ok
 
-  Release::ShipSequence.resumable_repin?(
+  return false unless Release::ShipSequence.resumable_repin?(
     ancestor: true,
     changed_files: diff.to_s.lines,
     head_gemfile: gemfile,
     expected_gemfile: expected_gemfile
   )
+
+  # 4. THE LOCK — it resolves every version this run would lock. A re-lock that
+  #    dropped the candidate requirement but kept the candidate in the lock has
+  #    the right Gemfile and the wrong gem.
+  lock, lock_ok = git_capture("-C", workspace, "show", "#{head}:Gemfile.lock")
+  lock_ok && expect.all? { |gem, version| Release::ShipSequence.lock_bump_landed?(lock, gem, version) }
 end
 
-# Auto-re-pin (D1): after ALL gems are live, before any app deploys, re-pin each
-# consumer's branch-ref'd gem line to the published `~> x.y` so prod builds
-# against the release, not a branch. Idempotent (already-pinned → no-op). One
-# pass per consumer; the re-pin commit ships on TOP of the frozen SHA (so only
-# frozen + the mechanical re-pin reach prod — guarded against un-QA'd drift).
+# RE-LOCK each consumer to the FINAL gem versions: after ALL gems are live, before
+# any app deploys. QA ran each consumer on a candidate (`"~> x.y", "x.y.z.rcN"` in
+# its Gemfile, x.y.z.rcN in its lock); production runs the final. So this drops the
+# candidate requirement, runs `bundle lock --update <gem> --conservative`, reads the
+# lock back, and commits the two files on TOP of the QA-frozen SHA. A source-ref line
+# (a branch or path) is re-pinned to `~> x.y` by the same pass. Idempotent: a consumer
+# already on the final is a no-op, and a re-lock a prior run pushed is reused.
 #
-# It builds that commit in the SHIP WORKSPACE, not the primary. It used to
-# `git checkout release` in the shared primary, write the Gemfile there, commit and
-# push — a checkout flip plus a commit in a tree a feature session may be using,
-# which is why the ship had to refuse a dirty primary in the first place. The
-# workspace is already pinned (detached) at the frozen SHA — exactly the base this
-# commit must sit on — so the commit is built there and pushed by ref
-# (`HEAD:refs/heads/release`, fast-forward-checked). The primary is never touched
-# and never even read.
+# The commit changes Gemfile and Gemfile.lock only, and the tree that deploys is
+# that commit, so run_relock_gate reads CI for it before any deploy.
+#
+# It builds that commit in the SHIP WORKSPACE, not the primary: the workspace is
+# pinned (detached) at the frozen SHA, exactly the base this commit must sit on, and
+# it is pushed by ref (`HEAD:refs/heads/release`, fast-forward-checked). The primary
+# is never touched and never read.
 def repin_consumers(app_groups, published_gems, ship_sha)
   return if published_gems.empty?
 
   gem_names = published_gems.keys
-  step("auto-repin consumers of #{gem_names.join(', ')} → ~> x.y (after all gems live, before any deploy)")
+  # RubyGems must serve every final before a lock names it (a re-run arrives here
+  # with the gems already live and this machine possibly without them).
+  await_published_gems!(published_gems, resume: "bin/release ship") unless DRY
+  step("re-lock consumers of #{gem_names.join(', ')} to the final version (after all gems live, before any deploy)")
   app_groups.each do |group|
     repo = group["repo"]
     path = repo_path(repo)
 
     if DRY
-      step("  #{repo}: re-pin any branch-ref'd published gem in Gemfile (ship workspace @ frozen) → " \
-           "bundle lock --update → commit + push origin #{RELEASE_BRANCH} (idempotent; no-op if already pinned)")
+      step("  #{repo}: drop the candidate requirement (and re-pin any branch-ref'd gem) in Gemfile (ship " \
+           "workspace @ frozen) → bundle lock --update <gem> --conservative → read the lock back → commit + " \
+           "push origin #{RELEASE_BRANCH} (idempotent; no-op if already on the final)")
       next
     end
 
@@ -7426,17 +7588,24 @@ def repin_consumers(app_groups, published_gems, ship_sha)
 
       frozen  = ship_sha[repo]
       text    = File.read(ws_gemfile)
-      pending = Release::ShipSequence.gems_to_repin(gem_names, text)
+      ws_lock = File.join(workspace, "Gemfile.lock")
+      pending = Release::ShipSequence.gems_to_relock(gem_names, text, File.exist?(ws_lock) ? File.read(ws_lock) : "")
       if pending.empty?
         say("  #{repo}: Gemfile at the frozen SHA is already pinned for #{gem_names.join(', ')} — no re-pin")
         next
+      end
+      # What QA ran, for the commit message and the gate's abort text.
+      was = pending.to_h { |gem| [gem, Release::GemfileRepin.candidate_pin(text, gem)] }
+      branch_refd = pending.select { |gem| Release::GemfileRepin.references_branch?(text, gem) }
+      pins = pending.map do |gem|
+        was[gem] ? "#{gem} #{published_gems[gem]} (QA ran #{was[gem]})" : "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}"
       end
 
       # EXACTLY what this run would write — computed up front, because it is both the
       # content we are about to commit AND the identity a prior partial ship's re-pin
       # must match to be reusable (see below).
       expected = text.dup
-      pending.each { |gem| expected = Release::GemfileRepin.rewrite(expected, gem, published_gems[gem]) }
+      pending.each { |gem| expected = Release::ShipSequence.locked_gemfile(expected, gem, published_gems[gem]) }
 
       # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
       # reads the TRUE remote (not a stale local origin/release ref), then require
@@ -7457,12 +7626,14 @@ def repin_consumers(app_groups, published_gems, ship_sha)
         # the act is already done: ship THAT commit rather than mint a rival with the
         # same tree, which is what wedged the retry — its push is non-fast-forward
         # against the re-pin already on the branch, and the ship could never complete.
-        if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected)
+        if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected,
+                            expect: pending.to_h { |gem| [gem, published_gems[gem]] })
           say("  #{repo}: the re-pin for #{short(frozen)} is ALREADY on origin/#{RELEASE_BRANCH} " \
               "(#{short(head)}) — a prior partial ship pushed it. REUSING that commit (minting a second " \
               "one would be a non-fast-forward and could never land).")
           @ship_live << "re-pin already live on origin/#{RELEASE_BRANCH} in #{repo} (#{short(head)})"
           ship_sha[repo] = head
+          relocked[repo] = { "from" => frozen, "to" => head, "pins" => pins }
           next
         end
 
@@ -7478,15 +7649,18 @@ def repin_consumers(app_groups, published_gems, ship_sha)
       # `bundle lock --update` that cannot see the version resolves the old one
       # and still exits 0. `expect:` puts that check INSIDE bundle_lock's
       # propagation ladder, so a slow index is waited out rather than aborting a
-      # ship that has already published gems and fast-forwarded mains. Propagation
-      # lag is far less likely here (these gems published back at prepare, not
-      # seconds ago), but "less likely" is not a guarantee, and this commit is the
-      # last thing between the frozen SHA and a production deploy.
-      pending.each { |gem| bundle_lock(workspace, gem, expect: published_gems[gem]) }
+      # ship that has just published the final. This commit is the last thing
+      # between the frozen SHA and a production deploy.
+      # --conservative for a candidate: only the gem itself may move off the tree QA
+      # ran. `expect:` is not optional here: with the requirement dropped, a lock
+      # still on the candidate satisfies the Gemfile and bundler would keep it.
+      pending.each do |gem|
+        bundle_lock(workspace, gem, conservative: !branch_refd.include?(gem), expect: published_gems[gem])
+      end
 
-      pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
-      _, committed = sh("git", "-C", workspace, "commit", "-m", "repin #{pins.join(', ')}", capture: true)
+      verb = was.values.any? ? "relock" : "repin"
+      _, committed = sh("git", "-C", workspace, "commit", "-m", "#{verb} #{pins.join(', ')}", capture: true)
       abort!("could not commit the re-pin in #{repo}'s ship workspace") unless committed
 
       # Push the detached commit onto `release` BY REF. Fast-forward-checked (no
@@ -7497,9 +7671,49 @@ def repin_consumers(app_groups, published_gems, ship_sha)
 
       new_head, = git_capture("-C", workspace, "rev-parse", "HEAD")
       ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
+      relocked[repo] = { "from" => frozen, "to" => new_head.strip, "pins" => pins }
       @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
     end
   end
+end
+
+# { repo => { "from" => QA-frozen SHA, "to" => the re-lock commit, "pins" => [...] } }
+# for every consumer this ship re-locked or found already re-locked.
+def relocked
+  @relocked ||= {}
+end
+
+# THE G4 READ FOR A RE-LOCK COMMIT. The re-lock moves a consumer one commit past the
+# SHA QA froze, and that commit is what deploys, so its own settled CI verdict is
+# read here: after the gems are final and the re-lock is pushed, before ANY app
+# deploys. Not green means no deploy, in any repo.
+def run_relock_gate(app_groups, ship_sha)
+  gated = app_groups.select { |g| relocked.key?(g["repo"]) }
+  if DRY
+    step("re-lock gate: GitHub CI's settled verdict for each consumer's re-lock commit (the tree that deploys) — " \
+         "read after the push, before any deploy; anything but green refuses the ship")
+    return
+  end
+  return if gated.empty?
+
+  say("")
+  step("re-lock gate: GitHub CI's settled verdict for each re-lock commit — the tree that deploys " \
+       "(read, not run — before any deploy)")
+  gated.each { |group| test_gate(group["repo"], frozen_sha: ship_sha[group["repo"]], relock: relocked[group["repo"]]) }
+end
+
+# What the operator is told when a re-lock commit's CI is not green: what is already
+# done, what is not, and the two ways forward.
+def relock_gate_recovery(repo, relock)
+  " THIS IS THE RE-LOCK COMMIT #{short(relock['to'])} (QA-frozen #{short(relock['from'])} + " \
+    "#{Array(relock['pins']).join(', ')}). ALREADY DONE and not undone: the final gem version is published and " \
+    "tagged, the gem repo's main is advanced, and origin/#{RELEASE_BRANCH} in #{repo} carries the re-lock. NOT " \
+    "done: no app's main has moved and NOTHING is deployed. The commit differs from the tree QA passed only in " \
+    "Gemfile and Gemfile.lock, and the final gem was verified to carry the candidate's contents, so first " \
+    "re-run the CI run for that commit (`gh run rerun <id>`, all jobs), then `#{RELEASE_SELF_CMD} ship`: the " \
+    "gem skips as live, the re-lock is reused, and this gate reads again. If the red reproduces it is a real " \
+    "defect: fix it through a task on `#{ACCEPTED_BRANCH}` and re-run `#{RELEASE_SELF_CMD} prepare` (the final " \
+    "stays published; consumers lock it directly and QA runs again)."
 end
 
 # "What's already live" pre-flight (live-only reads): per repo, is the gem
@@ -8371,6 +8585,22 @@ def ship
     end
   end
 
+  # 2a-ter. GEM CANDIDATE PREFLIGHT — read-only, before authority. Names the
+  # candidate QA ran for each gem (from the locks at the frozen SHAs) and refuses a
+  # release whose consumers disagree, lock something else, or hold a candidate of a
+  # gem this release does not carry.
+  qa_candidates = {}
+  if !DRY
+    qa_candidates, candidate_problems = ship_gem_candidates(gem_groups, app_groups, ship_sha)
+    if candidate_problems.any?
+      abort!("gem candidate preflight FAILED — #{candidate_problems.join('; ')}. Nothing has moved and nothing " \
+             "was published. #{STRAY_CANDIDATE_REMEDY}")
+    end
+    qa_candidates.each do |gem_name, candidate|
+      say("  gem #{gem_name}: #{candidate ? "QA ran candidate #{candidate}" : 'no candidate in the QA locks (the final is expected live)'}")
+    end
+  end
+
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
   #     BEFORE any deploy. `--mode ask|timed|auto` decides HOW (ship_authority!):
   #     ask is the confirm prompt (honours --yes + --dry-run as before), timed posts
@@ -8403,20 +8633,23 @@ def ship
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 
-  # 3. Gems FIRST (producer-first): publish (skip-if-live; yank safety = `gem push`
-  #    fails closed on a yanked number) + ff. On the happy path prepare already
-  #    published every gem member BEFORE QA (publish_gems_for_qa), so this is the
-  #    idempotent VERIFY — and the backstop for a release prepared before that.
-  published_gems = {} # repo => version — every gem now live; consumers re-pin to these
+  # 3. Gems FIRST (producer-first): publish each FINAL version. prepare published
+  #    only a candidate, so this is the first and only push of x.y.z: built from the
+  #    frozen SHA, compared with the candidate QA ran, pushed, tagged, then checked
+  #    against what RubyGems serves (ship_gem). An already-live final skips the push.
+  published_gems = {} # repo => version — every gem now live; consumers re-lock to these
   gem_groups.each do |group|
     repo    = group["repo"]
     version = gem_version_for(repo, group, ship_sha[repo])
-    ship_gem(repo, version, ship_sha[repo], Array(group["members"]).map { |m| m["slug"] })
+    ship_gem(repo, version, ship_sha[repo], Array(group["members"]).map { |m| m["slug"] }, candidate: qa_candidates[repo])
     published_gems[repo] = version
   end
 
-  # 4. Auto-re-pin consumers (after ALL gems live, before any app deploy).
+  # 4. Re-lock consumers to the finals (after ALL gems live, before any app deploy).
   repin_consumers(app_groups, published_gems, ship_sha)
+
+  # 4b. The re-lock commit is the tree that deploys: read ITS CI before any deploy.
+  run_relock_gate(app_groups, ship_sha)
 
   # 5. Apps hub-first, then satellites: test gate → prod adapter.
   app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
@@ -8434,6 +8667,11 @@ def ship
   #     seal alerts + prints the rollback but never aborts the ship). BEFORE step 6
   #     so post_release_notes reads the SAME verdict. See production_smoke_seal.
   seal_status = production_smoke_seal(app_groups, ship_sha, rel_slug)
+
+  # 5d. A gem repo is a consumer too (studio-engine locks solana-studio). Its own
+  #     lock moves to the FINAL here, on its `accepted`; never to a candidate.
+  #     Best-effort: production is already deployed.
+  settle_producer_locks(published_gems)
 
   # G4 verdict: every repo deployed, /up green, post-deploy hooks green — the
   # gate PASSED. The seal is G4's non-blocking closing beat: its result already

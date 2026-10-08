@@ -112,7 +112,7 @@ class ReleaseCliShipTest < ReleaseCliHarness
   def test_ship_dry_run_runs_the_auto_repin_pass
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    assert_includes out, "auto-repin consumers of studio-engine"
+    assert_includes out, "re-lock consumers of studio-engine"
     assert_includes out, "bundle lock --update", "re-pin re-locks the consumer against the published gem"
   end
 
@@ -201,7 +201,7 @@ class ReleaseCliShipTest < ReleaseCliHarness
     assert_equal "0.10.0", out, "with no frozen ref the resolver falls back to the local checkout"
   end
   def test_ship_publishes_a_version_bumped_gem_instead_of_skipping_it
-    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB)
+    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB + ReleaseCliStubs::FINAL_PUBLISH)
 
     assert_includes out, "PUBLISH-CALLED studio-engine 0.11.0",
                      "a gem bumped above the live version publishes (resolved from the frozen SHA)"
@@ -211,20 +211,20 @@ class ReleaseCliShipTest < ReleaseCliHarness
     assert_includes out, "studio-engine 0.11.0: not published — will publish"
   end
 
-  # [integration] publish-gems-before-qa's ship half: prepare already published
-  # 0.11.0 BEFORE QA, so ship's publish is the idempotent VERIFY — it skips the
-  # push (RubyGems forbids a re-push) and the train still completes the gem's
-  # release → main collapse.
+  # [integration] The ship's resume: a prior run already published 0.11.0, so
+  # this one skips the push (RubyGems forbids a re-push), compares the live gem
+  # with the candidate QA ran, and still completes the gem's release → main
+  # collapse.
   def test_ship_publish_is_an_idempotent_skip_after_prepare_already_published
     setup = PUBLISH_DECISION_STUB.sub(
       '[{ "number" => "0.10.0" }] # 0.10.0 LIVE, 0.11.0 not yet',
-      '[{ "number" => "0.10.0" }, { "number" => "0.11.0" }] # prepare already published 0.11.0'
+      '[{ "number" => "0.10.0" }, { "number" => "0.11.0" }] # a prior ship already published 0.11.0'
     )
-    out = run_cli(["--yes"], call: "ship", setup: setup)
+    out = run_cli(["--yes"], call: "ship", setup: setup + ReleaseCliStubs::FINAL_PUBLISH)
 
     assert_includes out, "studio-engine 0.11.0: LIVE on RubyGems — will skip", "the pre-flight sees it live"
     assert_includes out, "already live on RubyGems — skip publish", "ship verifies, never re-pushes"
-    refute_includes out, "PUBLISH-CALLED", "no second publish of a version prepare already pushed"
+    refute_includes out, "PUBLISH-CALLED", "no second publish of a version already pushed"
   end
   # [integration] THE acceptance: a dirty, off-main app primary — a live feature
   # session's floor — must NOT abort the ship. It gets a note and the deploy rides on.

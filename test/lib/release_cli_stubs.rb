@@ -48,4 +48,16 @@ module ReleaseCliStubs
       end
     end)
   RUBY
+
+  # The ship's final publish with its three RubyGems reads answered: a candidate
+  # tagged at the frozen SHA, and the two comparisons named instead of run. Their
+  # real behaviour is driven in release_ship_final_gem_test.rb.
+  FINAL_PUBLISH = <<~'RUBY'
+    def publish_gem(repo, version, before_push: nil) = $stdout.puts("PUBLISH-CALLED " + repo + " " + version)
+    def confirm_published_checksum!(repo, version, _sha) = $stdout.puts("CHECKSUM-CONFIRMED " + repo + " " + version)
+    def verify_live_final!(repo, version, candidate) = $stdout.puts("LIVE-FINAL-COMPARED " + repo + " " + version + " " + candidate)
+    self.singleton_class.prepend(Module.new do
+      def git_capture(*args) = args.join(" ").include?("tag --points-at") ? ["rc-0.11.0.rc1\n", true] : super
+    end)
+  RUBY
 end
