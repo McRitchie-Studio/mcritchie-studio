@@ -170,6 +170,32 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
       assert_includes out, "SHIPPED"
       refute_includes out, "PUSHED 0.96.0"
       refute_includes out, "CHECKOUT"
+      refute_includes out, "TAG-PUSHED", "the tag is on origin already (the stub answers ls-remote yes)"
+    end
+  end
+
+  # The stop between the push and the tag: the re-run finishes the tag, on the frozen SHA.
+  def test_a_rerun_pushes_the_release_tag_a_prior_ship_never_pushed
+    with_gems do |cdn, built|
+      build_gem(cdn, "0.96.0.rc1")
+      build_gem(cdn, "0.96.0")
+      no_tag = <<~'RUBY'
+        self.singleton_class.prepend(Module.new do
+          def sh(*a, **k)
+            return ["", false] if a.include?("ls-remote")
+            puts("TAGGED " + a.last(1).first[0, 7]) if a[0] == "git" && a.include?("tag")
+            super
+          end
+        end)
+      RUBY
+
+      out = run_cli(["--yes"], setup: ship_world(cdn: cdn, built: File.join(built, "unused.gem"), live: [{ "number" => "0.96.0" }]) + no_tag,
+                    call: ship_gem_call("0.96.0.rc1"))
+
+      assert_includes out, "TAGGED fffffff", out
+      assert_includes out, "TAG-PUSHED v0.96.0"
+      refute_includes out, "PUSHED 0.96.0"
+      assert_includes out, "SHIPPED"
     end
   end
 

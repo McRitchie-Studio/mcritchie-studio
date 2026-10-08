@@ -7342,7 +7342,10 @@ def ship_gem(repo, version, frozen, member_slugs = [], candidate: nil)
   remote = rubygems_versions(repo)
   if !Release::ShipSequence.publish_needed?(version, remote)
     say("  gem #{repo} #{version} already live on RubyGems — skip publish (idempotent)")
-    verify_live_final!(repo, version, candidate) if candidate
+    if candidate
+      verify_live_final!(repo, version, candidate)
+      ensure_release_tag!(repo, version, frozen)
+    end
   else
     if candidate.to_s.empty?
       abort!("gem #{repo} #{version} is not on RubyGems and NO candidate of it was found: no consumer in this " \
@@ -7369,6 +7372,22 @@ def ship_gem(repo, version, frozen, member_slugs = [], candidate: nil)
   # must never abort the train.
   restore_gem_primary(repo)
   record_merged_main(member_slugs)
+end
+
+# A ship that stopped between `gem push` and the tag left the final live with no
+# `v<version>` on origin, and the next allocation refuses a gem in that state. The
+# resume puts the tag where publish_gem would have: on the frozen SHA. Best-effort,
+# like the tag push it completes.
+def ensure_release_tag!(repo, version, frozen)
+  path = repo_path(repo)
+  tag  = "v#{version}"
+  _, on_origin = sh("git", "-C", path, "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/#{tag}", capture: true)
+  return if on_origin
+
+  step("git tag #{tag} in #{repo} at #{short(frozen)} — the final is live and its tag never reached origin")
+  sh("git", "-C", path, "tag", "-a", tag, "-m", "Release #{repo} #{tag}", frozen, capture: true)
+  _, pushed = sh("git", "-C", path, "push", "origin", tag, capture: true)
+  say("  ⚠ tag #{tag} did NOT reach origin — push it now: git -C #{path} push origin #{tag}") unless pushed
 end
 
 # Download one published .gem from the RubyGems CDN (no credentials). The path, or
