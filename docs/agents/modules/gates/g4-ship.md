@@ -28,6 +28,12 @@ The gate window spans the whole irreversible half of the ship:
   [The tree-verdict read](#the-tree-verdict-read-one-tree-one-verdict) below.
 - **Ship authority** — the explicit production confirm, after the gate and
   before any deploy.
+- **The final gem publish** — each gem member's `x.y.z`, built from its frozen SHA
+  and pushed only when its contents equal the release candidate QA ran. See
+  [The final gem publish and the re-lock read](#the-final-gem-publish-and-the-re-lock-read).
+- **The re-lock read** (a second `ship_test_gate` SOP per re-locked consumer) —
+  GitHub CI's settled verdict for the commit that moves a consumer's lock from the
+  candidate to the final, read before any deploy.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
   or the repo's own `bin/deploy`, each with its `/up` hard-gate.
 - **Post-deploy hooks** — each member's `devops.post_deploy_cmd` against
@@ -165,8 +171,8 @@ actually need a checkout FOR?" has a two-line answer:
 | `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
 | `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
-| gem re-pin commit | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
-| gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below) |
+| consumer re-lock commit (candidate → final; a branch ref → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
+| final gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below). The candidate, at prepare, builds in the gem's ship workspace |
 
 Ref pushes keep every safety property of the old fast-forward: git refuses a
 **non-fast-forward** ref update without `--force` (which the ship never passes),
@@ -230,8 +236,9 @@ mint `repin₂`, a distinct commit with an identical tree, whose push is
 non-fast-forward against `repin₁`.)
 
 The ship now asks whether a moved `origin/release` **is the re-pin this run would
-have written**, and reuses it instead of minting a rival. It qualifies on all three
-or not at all (`Release::ShipSequence.resumable_repin?`):
+have written**, and reuses it instead of minting a rival. It qualifies on all four
+or not at all (`Release::ShipSequence.resumable_repin?`, then the lock read in
+`bin/release.rb#resumable_repin?`):
 
 1. **Ancestry** — the frozen SHA is an ancestor of the head.
 2. **Shape** — the diff touches **only** `Gemfile` / `Gemfile.lock`. This preserves
@@ -240,9 +247,49 @@ or not at all (`Release::ShipSequence.resumable_repin?`):
 3. **Identity** — the head's Gemfile is **byte-identical** to what this run would
    write. Not merely "no branch refs left" — that weaker test would wave through a
    Gemfile someone pinned to the *wrong* version, and prod would build it.
+4. **The lock** — the head's `Gemfile.lock` resolves every version this run locks.
+   A Gemfile with the candidate requirement dropped over a lock still on the
+   candidate is valid to Bundler and is not this run's re-lock.
 
 Anything else **fails closed** and aborts as drift. Refusing a resumable ship costs
 a conversation; completing an unresumable one costs production.
+
+A reused re-lock is still handed to the re-lock read: its CI verdict is read on
+every run that ships it.
+
+### The final gem publish and the re-lock read
+
+`prepare` publishes a gem's release candidate and locks consumers to it; the ship
+publishes the final. The acts, in order, after ship authority:
+
+| # | Act | Undoable? | Refuses when |
+|---|---|---|---|
+| 1 | Build `x.y.z` from the gem's frozen SHA; compare it with the candidate QA ran (`Release::GemCandidate.differences`: every packaged file and the dependency list, the version literal aside) | yes | any difference, no candidate, or the candidate cannot be downloaded: **nothing is published** |
+| 2 | `gem push`, then tag `v<version>` | **no** | RubyGems rejects the push |
+| 3 | Wait until RubyGems serves it; the served `.gem`'s SHA-256 must be the built artifact's | read | the wait runs out, or the checksum differs: **nothing is deployed** |
+| 4 | Advance the gem repo's `main` | ref push | a refused push, classified as above |
+| 5 | Re-lock each consumer: drop the candidate requirement, `bundle lock --update <gem> --conservative`, read the lock back, push one commit of `Gemfile` + `Gemfile.lock` onto `release` | a commit on `release` | the lock does not resolve `x.y.z`, or `release` moved |
+| 6 | Read CI's settled verdict for each re-lock commit | read | anything but green: **no app deploys** |
+| 7 | Deploy the apps | | |
+
+The candidate QA ran is read from each consumer's `Gemfile.lock` at its frozen SHA
+(a gem-only release: the `rc-` tag at the gem's frozen SHA), before authority; a
+consumer on another version, or on a candidate of a gem the release does not carry,
+refuses the ship with nothing moved. A final already live (a re-run) skips act 2 and
+is compared with the candidate all the same.
+
+**Why act 6 exists.** The re-lock commit is one commit past the SHA QA froze, and it
+is what deploys. Its diff is `Gemfile` and `Gemfile.lock`, and act 1 proved the gem
+behind the new lock line is the gem QA ran, but the tree is new, so it earns its own
+verdict: one tree, one verdict. The read costs one CI run per consumer, about nine
+minutes for the hub, inside the poll window.
+
+**A red re-lock commit refuses the ship before any deploy, with the final already
+published.** The refusal says so, and names the two ways forward: re-run that
+commit's CI run and re-run `bin/release ship` (it resumes), or, for a red that
+reproduces, fix through a task on `accepted` and re-run `bin/release prepare`.
+The interruption table is in
+[`production-deploy.md`](../../agents/steffon/sops/production-deploy.md).
 
 **The one residual primary dependency: gem builds.** A gem is built from its own
 primary checkout, and `gem build` packages the files on disk — so a **modified
