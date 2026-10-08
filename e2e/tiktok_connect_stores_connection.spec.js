@@ -51,9 +51,8 @@ test("an admin connects TikTok and the page shows a saved connection and no toke
   let asked = "";
   page.once("dialog", (dialog) => { asked = dialog.message(); dialog.accept(); });
   await connected.getByRole("button", { name: "Disconnect TikTok" }).click();
-  const gone = page.locator("[data-tiktok-disconnected]");
-  await expect(gone.getByRole("heading", { level: 1 })).toHaveText("TikTok disconnected");
+  await expect(page).toHaveURL(/\/admin\/dashboard$/);
   expect(asked).toContain("Delete the stored TikTok connection");
-  await expect(gone.locator("[data-tiktok-field='deleted']")).toContainText("was deleted");
-  await expect(gone.locator("[data-tiktok-fallback]")).toContainText(/Drafting is (off|still on)/);
+  await expect(page.getByText("TikTok disconnected: the stored connection was deleted from this server.", { exact: false })).toBeVisible();
+  await expect(page.getByText(/Drafting is (off|still on):/)).toBeVisible();
 });

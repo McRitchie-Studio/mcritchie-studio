@@ -19,6 +19,12 @@ module Admin
     # TikTok's grant would be thrown away. So both actions refuse first.
     ENCRYPTION_NOT_SET = "This server cannot store a TikTok connection: its encryption keys are not set " \
                          "(#{TiktokConnection::ENCRYPTION_ENV.join(', ')}).".freeze
+    DISCONNECTED = "TikTok disconnected: the stored connection was deleted from this server.".freeze
+    NOTHING_STORED = "No TikTok connection was stored on this server, so nothing was deleted.".freeze
+    ENV_PAIR_STILL_SET = "Drafting is still on: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are set on this server, and it drafts " \
+                         "from them. Remove both from the server's config to turn drafting off.".freeze
+    ENV_PAIR_NOT_SET = "Drafting is off: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are not set on this server, so nothing " \
+                       "connects it to TikTok until an admin signs in again.".freeze
     ENCRYPTION_FIX = "Nothing was asked of TikTok. File the three keys on this server, then start again.".freeze
 
     # TikTok's `error` param on the callback => [what happened, what to do].
@@ -85,11 +91,15 @@ module Admin
 
     # Deletes every stored connection (the connected page's button, confirmed
     # there), then says what the server falls back to: with the env pair still
-    # set, drafting carries on from it.
+    # set, drafting carries on from it, and that is said as a warning.
     def disconnect
-      @deleted = TiktokConnection.delete_all
-      @env_pair = Tiktok::OAuthClient.env_pair_present?
-      render :disconnected
+      deleted = TiktokConnection.delete_all
+      said = deleted.zero? ? NOTHING_STORED : DISCONNECTED
+      if Tiktok::OAuthClient.env_pair_present?
+        redirect_to admin_dashboard_path, alert: "#{said} #{ENV_PAIR_STILL_SET}", status: :see_other
+      else
+        redirect_to admin_dashboard_path, notice: "#{said} #{ENV_PAIR_NOT_SET}", status: :see_other
+      end
     end
 
     private
