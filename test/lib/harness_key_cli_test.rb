@@ -42,7 +42,7 @@ class HarnessKeyCliTest < Minitest::Test
     @out = StringIO.new
     @err = StringIO.new
     HarnessKeyCli.new(argv, env: { "CLAUDE_PROJECTS_DIR" => proj, "CLAUDE_CODE_SESSION_ID" => "harness-1" },
-                            out: @out, err: @err, api: @api, sleeper: ->(_) {}).run
+                            out: @out, err: @err, api: @api, sleeper: ->(_) { }).run
   end
 
   def pin(proj) = { "CLAUDE_PROJECTS_DIR" => proj }

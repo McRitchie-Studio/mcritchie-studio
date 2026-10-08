@@ -439,6 +439,97 @@ class AgentApiTest < Minitest::Test
     end
   end
 
+  # ── [unit] AgentApi.call: a login first, the shared token behind it ─────────
+
+  Answer = Struct.new(:code)
+
+  # A stand-in client: answers each bearer with a canned status, recording the order.
+  class ScriptedApi
+    attr_reader :bearers, :invalidated
+
+    def initialize(answers, token: "SHARED")
+      @answers = answers
+      @token = token
+      @bearers = []
+    end
+
+    def token = @token
+    def invalidate_token! = (@invalidated = true)
+
+    def http_json(_method, _path, _body, bearer:)
+      @bearers << bearer
+      code = @answers[bearer]
+      code && Answer.new(code.to_s)
+    end
+  end
+
+  LOGIN = { "token" => "LOGIN", "soul" => "xan", "tier" => "admin" }.freeze
+
+  def test_unit_call_presents_the_login_and_makes_no_second_call_when_it_is_answered
+    { 201 => "created", 403 => "a refusal under the login is the answer", 500 => "an error is not retried" }.each do |code, why|
+      api = ScriptedApi.new({ "LOGIN" => code })
+      assert_equal code.to_s, AgentApi.call(api, :post, "/x", {}, session: LOGIN).code, why
+      assert_equal %w[LOGIN], api.bearers, why
+    end
+  end
+
+  def test_unit_call_falls_back_to_the_shared_token_only_when_the_login_ended
+    api = ScriptedApi.new({ "LOGIN" => 401, "SHARED" => 201 })
+    assert_equal "201", AgentApi.call(api, :post, "/x", {}, session: LOGIN).code
+    assert_equal %w[LOGIN SHARED], api.bearers
+
+    silent = ScriptedApi.new({ "SHARED" => 201 })
+    assert_nil AgentApi.call(silent, :post, "/x", {}, session: LOGIN), "a board that did not answer is not asked twice"
+    assert_equal %w[LOGIN], silent.bearers
+  end
+
+  def test_unit_call_with_no_login_uses_the_shared_token_and_drops_its_cache_on_401
+    api = ScriptedApi.new({ "SHARED" => 401 })
+    assert_equal "401", AgentApi.call(api, :get, "/x").code
+    assert_equal %w[SHARED], api.bearers
+    assert api.invalidated
+  end
+
+  def test_unit_call_in_degraded_mode_sends_nothing_without_a_login
+    api = ScriptedApi.new({ "LOGIN" => 401 }, token: nil)
+    assert_nil AgentApi.call(api, :post, "/x", {})
+    assert_empty api.bearers, "no login and no shared token: the call is not made"
+
+    assert_equal "401", AgentApi.call(api, :post, "/x", {}, session: LOGIN).code, "an ended login's refusal is returned"
+    assert_equal %w[LOGIN], api.bearers
+  end
+
+  # ── [integration] the shared token turned off, and the caller header ────────
+
+  def test_integration_the_shared_token_off_mints_nothing_and_reads_no_secret
+    Dir.mktmpdir do |proj|
+      with_stub_server do |port, requests|
+        write_token_cache(proj, "token" => "cached-token", "expires_at" => (Time.now + 3600).utc.iso8601)
+        %w[off OFF 0 false no].each do |value|
+          api = client("CLAUDE_PROJECTS_DIR" => proj, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}",
+                       "AGENT_API_SECRET" => "test-secret", "AGENT_LEGACY_TOKEN" => value)
+          refute api.legacy_token_allowed?, value
+          assert_nil api.token, "#{value}: neither the cache nor a mint answers"
+        end
+        assert_empty requests
+
+        # Control: the same machine with the switch unset reads its cache.
+        assert_equal "cached-token", client("CLAUDE_PROJECTS_DIR" => proj, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}").token
+      end
+    end
+  end
+
+  def test_integration_every_request_names_the_calling_script
+    Dir.mktmpdir do |proj|
+      with_stub_server do |port, requests|
+        api = client("CLAUDE_PROJECTS_DIR" => proj, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}")
+        api.http_get("/api/v1/insights", bearer: "tok")
+
+        assert_equal "bin/#{File.basename($PROGRAM_NAME)}"[0, 64], requests.first[:headers]["x-agent-caller"]
+      end
+    end
+  end
+
   private
 
   def timeouts_of(script)

@@ -644,6 +644,36 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  # The hook presents a login the harness session holds; an action records the
+  # `agent` lane, so the login only authenticates the call.
+  def test_integration_hook_presents_a_held_login_and_mints_no_shared_token
+    Dir.mktmpdir do |proj|
+      AdminLogin.write(SESSION, proj, { "soul" => "xan", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+                                        "expires_at" => (Time.now + 3600).utc.iso8601 }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      event = { "session_id" => SESSION, "cwd" => "/nope", "tool_name" => "Bash",
+                "tool_input" => { "command" => "ls -la" }, "tool_response" => { "stdout" => "total 0", "interrupted" => false } }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+
+      post = requests.find { |r| r[:path] == "/api/v1/agent_actions" }
+      assert_equal "Bearer ADMIN-TOKEN", post[:headers]["authorization"]
+      assert_equal "agent", JSON.parse(post[:body])["actor"]
+      assert_equal "bin/atomic-capture-hook", post[:headers]["x-agent-caller"]
+      assert_nil requests.find { |r| r[:path] == "/api/v1/auth" }
+    end
+  end
+
+  # Degraded mode: the shared token off and no login. The hook sends nothing.
+  def test_integration_hook_in_degraded_mode_sends_nothing
+    Dir.mktmpdir do |proj|
+      event = { "session_id" => SESSION, "cwd" => "/nope", "tool_name" => "Bash",
+                "tool_input" => { "command" => "ls -la" }, "tool_response" => { "stdout" => "total 0", "interrupted" => false } }
+
+      assert_empty run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj, "AGENT_LEGACY_TOKEN" => "off" })
+      # Control: the same event with the shared token on is posted.
+      refute_empty run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+    end
+  end
+
   def test_integration_codex_transcript_event_posts_action_with_usage
     Dir.mktmpdir do |proj|
       Dir.mktmpdir do |home|

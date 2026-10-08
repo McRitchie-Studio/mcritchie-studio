@@ -142,16 +142,26 @@ class SessionInsights
   # invalidation here — a stale token just means a silent no-insights start; the
   # narration stack (which runs all session) handles the cache refresh.
   def fetch_insights
-    tok = @api.token
-    return nil unless tok
-
-    res = @api.http_get("/api/v1/insights?limit=#{limit}", bearer: tok)
+    res = insights_response
     return nil unless res && res.code.to_i.between?(200, 299)
 
     body = JSON.parse(res.body)
     body.is_a?(Hash) ? Array(body["data"]) : nil
   rescue StandardError
     nil
+  end
+
+  # The read presents a login this harness session holds when there is one, else
+  # the shared token; with neither there is no read and the start is silent.
+  def insights_response
+    path = "/api/v1/insights?limit=#{limit}"
+    session = @api.held_session
+    if session
+      res = @api.http_get(path, bearer: session["token"])
+      return res unless res.nil? || res.code.to_i == 401
+    end
+    tok = @api.token
+    tok && @api.http_get(path, bearer: tok)
   end
 
   def limit

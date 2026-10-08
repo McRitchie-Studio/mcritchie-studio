@@ -8,6 +8,7 @@ require "fileutils"
 require_relative "op_vaults"
 require_relative "op_meter"
 require_relative "projects_root"
+require_relative "held_session"
 require_relative "../../lib/task_usage_sandbox"
 
 # AgentApi — the ONE agent-API client behind the narration/insights bin stack
@@ -66,6 +67,35 @@ class AgentApi
   SECRET_REF = OpVaults.ref("Agent API Secret", "AGENT_API_SECRET")
   # Reuse a cached token until this margin (seconds) before its 24h expiry.
   TOKEN_REFRESH_MARGIN = 300
+  # `AGENT_LEGACY_TOKEN=off` stops this client using the shared secret's token at
+  # all: a call then needs a login (HeldSession), and without one it is not made.
+  # That is the degraded mode: nothing is recorded, and no actor is declared
+  # under a credential that names nobody.
+  LEGACY_ENV = "AGENT_LEGACY_TOKEN"
+  LEGACY_OFF = %w[off 0 false no].freeze
+  # The request header that names the calling script in the board's legacy-use
+  # census (LegacyAuthUse). Client-asserted; the board uses it for counting only.
+  CALLER_HEADER = "X-Agent-Caller"
+
+  # One call that presents a login first. `session` is a HeldSession login, or nil.
+  # The shared token is used when there is no login, or when the board answers the
+  # login 401 (it ended); any other answer under the login is returned as it is.
+  # With the shared token off (LEGACY_ENV) and no usable login the call is not
+  # made, or the login's 401 is returned. `api` is an AgentApi, or a stand-in with
+  # #token, #http_json and #invalidate_token!.
+  def self.call(api, method, path, body = nil, session: nil)
+    res = nil
+    if session && !session["token"].to_s.empty?
+      res = api.http_json(method, path, body, bearer: session["token"])
+      return res unless res && res.code.to_i == 401
+    end
+    token = api.token
+    return res unless token
+
+    res = api.http_json(method, path, body, bearer: token)
+    api.invalidate_token! if res && res.code.to_i == 401
+    res
+  end
 
   # The repo this script stack ships in (bin/lib/ → two levels up) — the CONFIG
   # anchor for the .env secret fallback. A worktree ships its own bin/, so this
@@ -97,9 +127,21 @@ class AgentApi
 
   # ── Token: mint once, cache to disk under the 24h expiry ──────────────────
 
+  def legacy_token_allowed?
+    !LEGACY_OFF.include?(@env[LEGACY_ENV].to_s.strip.downcase)
+  end
+
+  # The logins this harness session holds (HeldSession), for #call's `session:`.
+  def held_session(soul: nil, tier: nil, session_id: nil)
+    HeldSession.find(env: @env, projects_dir: projects_dir, soul: soul, tier: tier, session_id: session_id)
+  end
+
   # The bearer token — the unexpired disk cache when present, else minted via
-  # POST /api/v1/auth and written back to the cache. nil on any failure.
+  # POST /api/v1/auth and written back to the cache. nil on any failure, and nil
+  # when the shared token is turned off (LEGACY_ENV).
   def token
+    return nil unless legacy_token_allowed?
+
     cached = read_cached_token
     return cached if cached
 
@@ -284,6 +326,7 @@ class AgentApi
     uri = URI.join(base_url, path)
     req = klass.new(uri)
     req["Authorization"] = "Bearer #{bearer}" if bearer
+    req[CALLER_HEADER] = "bin/#{File.basename($PROGRAM_NAME.to_s)}"[0, 64]
     if body
       req["Content-Type"] = "application/json"
       req.body = JSON.generate(body)

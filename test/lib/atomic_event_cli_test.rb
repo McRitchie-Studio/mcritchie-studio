@@ -216,6 +216,56 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  # ── [integration] narration presents a login the harness session holds ─────
+
+  def keep_admin_login(proj, soul)
+    AdminLogin.write(SESSION, proj, { "soul" => soul, "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+                                      "expires_at" => (Time.now + 3600).utc.iso8601 }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+  end
+
+  def bearers(requests, path) = requests.select { |r| r[:path] == path }.map { |r| r[:headers]["authorization"] }
+
+  def test_integration_a_lane_whose_soul_holds_a_login_narrates_under_it
+    Dir.mktmpdir do |proj|
+      keep_admin_login(proj, "xan")
+      requests = run_cli(%w[start --category Explore --reason read-the-board --agent xan], proj: proj)
+      requests += run_cli(%w[end --outcome done --agent xan], proj: proj)
+
+      assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities")
+      assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities/close")
+      assert_empty bearers(requests, "/api/v1/auth"), "no shared token is minted for a call the login carries"
+      assert_equal "bin/atomic-event", requests.first[:headers]["x-agent-caller"]
+    end
+  end
+
+  def test_integration_another_lane_of_the_same_harness_borrows_no_login
+    Dir.mktmpdir do |proj|
+      keep_admin_login(proj, "xan")
+      # A builder the same harness spawned declares its own lane: the admin login is
+      # Xan's, so the call keeps the shared token and the lane it declared.
+      requests = run_cli(%w[start --category Explore --reason build-the-task --agent pokemon], proj: proj)
+      requests += run_cli(%w[start --category Explore --reason no-lane-declared], proj: proj)
+
+      assert_equal ["Bearer stub-token", "Bearer stub-token"], bearers(requests, "/api/v1/agent_activities")
+      assert_equal "pokemon", JSON.parse(requests.find { |r| r[:path] == "/api/v1/agent_activities" }[:body])["agent"]
+    end
+  end
+
+  def test_integration_degraded_mode_records_nothing_without_a_login
+    Dir.mktmpdir do |proj|
+      off = { "AGENT_LEGACY_TOKEN" => "off" }
+      requests, _out, _err, status = spawn_cli(%w[start --category Explore --reason build-the-task --agent pokemon],
+                                               proj: proj, env: off)
+      assert_empty requests, "no login and the shared token off: nothing is sent, and no actor is declared"
+      assert status.success?, "narration never fails the caller"
+
+      # Control: the lane that holds a login still narrates.
+      keep_admin_login(proj, "xan")
+      requests = run_cli(%w[start --category Explore --reason read-the-board --agent xan], proj: proj, env: off)
+      assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities")
+    end
+  end
+
   def test_integration_start_records_the_open_activity_marker
     Dir.mktmpdir do |proj|
       run_cli(%W[start --session #{SESSION} --category Explore --reason find-issue-with-api], proj: proj)
@@ -838,8 +888,8 @@ class AgentActivityCliTest < Minitest::Test
   # Shell out to the real CLI against a one-shot stub server; returns the recorded
   # requests. chdir into the isolated proj dir so no stray .agent-context.json up
   # the real tree leaks into the marker resolution.
-  def run_cli(argv, proj:, with_session_env: true, stdin: nil)
-    spawn_cli(argv, proj: proj, with_session_env: with_session_env, stdin: stdin).first
+  def run_cli(argv, proj:, with_session_env: true, stdin: nil, env: {})
+    spawn_cli(argv, proj: proj, with_session_env: with_session_env, stdin: stdin, env: env).first
   end
 
   # The SAME spawn, returning the child's [stdout, stderr, status] instead of the
@@ -851,13 +901,13 @@ class AgentActivityCliTest < Minitest::Test
   end
 
   # Returns [requests, out, err, status].
-  def spawn_cli(argv, proj:, with_session_env: true, stdin: nil)
+  def spawn_cli(argv, proj:, with_session_env: true, stdin: nil, env: {})
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
     thread = Thread.new { serve(server, requests) }
 
-    env = base_env(proj).merge("ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}")
+    env = base_env(proj).merge("ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}").merge(env)
     env["CLAUDE_CODE_SESSION_ID"] = SESSION if with_session_env && !argv.include?("--session")
     opts = { chdir: proj }
     opts[:stdin_data] = stdin unless stdin.nil?

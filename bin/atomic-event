@@ -361,7 +361,7 @@ class AgentActivityCli
       "stage"         => marker["stage"],
       "agent"         => agent,
       "supervisor"    => flags["supervisor"].to_s.strip
-    }.merge(prefix_keys(prior_usage, "prior_")).reject { |_, v| v.to_s.empty? })
+    }.merge(prefix_keys(prior_usage, "prior_")).reject { |_, v| v.to_s.empty? }, session: narration_session(sid, agent))
 
     # DETERMINISTIC attribution: record the just-opened activity id in a local
     # marker so the capture hook pins subsequent actions to THIS activity.
@@ -399,7 +399,7 @@ class AgentActivityCli
       # (e.g. `User.find_by(email: ...)`); --key-lang overrides the inferred badge.
       "key_method"      => flags["key-method"].to_s.strip,
       "key_method_lang" => flags["key-lang"].to_s.strip
-    }.merge(usage).reject { |_, v| v.to_s.empty? })
+    }.merge(usage).reject { |_, v| v.to_s.empty? }, session: narration_session(sid, agent))
 
     # Activity closed — clear the marker so actions after it attribute to nothing
     # until the next activity opens.
@@ -518,7 +518,7 @@ class AgentActivityCli
       "task_slug"         => marker["task_slug"],
       "mascot"            => marker["mascot"],
       "stage"             => marker["stage"]
-    }.reject { |_, v| v.to_s.empty? })
+    }.reject { |_, v| v.to_s.empty? }, session: action_session(sid))
 
     report(res, "action · #{summary}")
   end
@@ -847,15 +847,31 @@ class AgentActivityCli
 
   # ── HTTP + auth (the shared AgentApi client; 401 drops the cached token) ───
 
-  def post(path, body)
-    tok = @api.token
-    return nil unless tok
-
-    res = @api.http_json(:post, path, body, bearer: tok)
-    @api.invalidate_token! if res && res.code.to_i == 401
-    res
+  # `session` is a login to present first (AgentApi.call); nil keeps the shared token.
+  def post(path, body, session: nil)
+    AgentApi.call(@api, :post, path, body, session: session)
   rescue StandardError => e
     warn_note("atomic-event POST #{path} failed (ignored): #{e.class}")
+    nil
+  end
+
+  # The login a narration call presents: one this harness session holds whose soul
+  # is the lane the call declares, so the board stamps what the call would have
+  # sent. A lane with no matching login (the logged-out builder, or another agent
+  # of the same harness) keeps the shared token.
+  def narration_session(sid, agent)
+    return nil unless present?(agent)
+
+    @api.held_session(soul: agent, session_id: sid)
+  rescue StandardError
+    nil
+  end
+
+  # The login an action presents: any this harness session holds. An action
+  # records the `agent` lane, never a soul, so the login only authenticates it.
+  def action_session(sid)
+    @api.held_session(session_id: sid)
+  rescue StandardError
     nil
   end
 
