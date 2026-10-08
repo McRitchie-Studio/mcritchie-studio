@@ -386,11 +386,13 @@ class ReleaseCliHarness < Minitest::Test
           ["", true]
         end
         def with_ship_workspace(_repo) = yield
-        # The workspace starts with a Gemfile.lock resolving the OLD version —
-        # what a consumer checkout really looks like before the bump.
+        # A Gemfile.lock on the OLD version, and the gem's version file at the final.
+        def gem_artifact_version(artifact) = File.basename(artifact, ".gem").split("-").last
+        def release_entry_points = {} # the machine's other checkouts are not this fixture's
         def ship_workspace!(repo, _sha)
           dir = File.join(Dir.tmpdir, "prep-ws-#{Process.pid}-#{repo}")
-          FileUtils.mkdir_p(dir)
+          FileUtils.mkdir_p(File.join(dir, "lib/studio"))
+          File.write(File.join(dir, "lib/studio/version.rb"), %(VERSION = "#{PUBLISHED_VERSION}"\n))
           File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.10"\n))
           File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
             GEM
@@ -408,10 +410,8 @@ class ReleaseCliHarness < Minitest::Test
         # leaves the old one when the index has not propagated. Both exit 0.
         #
         # This stands in for the `bundle` INVOCATION, so it keeps bundle_lock's
-        # full signature (including `expect:`); the LADDER itself — retry on a
-        # stale resolution, then abort — is driven for real in
-        # test_prepare_retries_then_aborts_when_the_lock_never_lands, which stubs
-        # `sh` instead of this.
+        # full signature (including `expect:`); the LADDER itself is driven for
+        # real in the tests that stub `sh` instead of this.
         # Stubbed for the same reason bundle_lock is: these tests are about the
         # BUMP flow, and the install does real bundler/rails work in a workspace
         # that is a bare tmpdir here. Its own behaviour — the bundle-first order,
@@ -424,7 +424,7 @@ class ReleaseCliHarness < Minitest::Test
           $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative} expect=#{expect}")
           lock = File.join(path, "Gemfile.lock")
           File.write(lock, File.read(lock).sub(/^    #{Regexp.escape(gem)} \([^)]+\)$/,
-                                               "    #{gem} (#{PUBLISHED_VERSION})"))
+                                               "    #{gem} (#{expect || PUBLISHED_VERSION})"))
         end
         def sh(*a, **k)
           g = gate_git(a, k)
@@ -1921,7 +1921,7 @@ class ReleaseCliHarness < Minitest::Test
     clone, frozen = build_repin_fixture(dir)
     run_git(clone, "checkout", "-q", "--detach", frozen)
     File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n))
-    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  studio-engine (0.9.0)\n")
+    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  remote: https://rubygems.org/\n  specs:\n    studio-engine (0.9.0)\n")
     run_git(clone, "add", "-A")
     run_git(clone, "commit", "-q", "-m", "repin studio-engine ~> 0.9")
     repin1 = git_out(clone, "rev-parse", "HEAD")

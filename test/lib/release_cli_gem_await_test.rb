@@ -137,4 +137,56 @@ class ReleaseCliGemAwaitTest < Minitest::Test
     assert_includes out, "PASSED_WAIT", "an indexed gem must let the bump run: #{out}"
     assert_match(/is on the index/, out)
   end
+
+  # ── the deadline is WALL time ─────────────────────────────────────────────
+
+  # Every index read costs 40 fake seconds and the sleeps cost nothing, so only a
+  # deadline that counts the curl time can expire: 100s is passed on the third read.
+  CLOCKED_CURL = <<~RUBY
+    $clock = 0.0
+    $curls = []
+    def monotonic_s = $clock
+    def sleep(_seconds) = nil
+    status = Struct.new(:ok) { def success? = ok }
+    Open3.define_singleton_method(:capture2e) do |*cmd|
+      $curls << cmd
+      $clock += 40
+      ["", status.new(false)]
+    end
+  RUBY
+
+  def test_elapsed_counts_curl_time
+    call = CLOCKED_CURL + %(at_exit { puts "READS=" + $curls.size.to_s }\n) +
+           %(await_published_gems!({ "studio-engine" => "0.49.0" }); puts "PROCEEDED")
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "", "RELEASE_GEM_POLL_TIMEOUT" => "100" })
+
+    assert_includes out, "REFUSED", out
+    assert_includes out, "READS=3", "the wait must end on the read that crosses 100s of wall time: #{out}"
+    refute_includes out, "PROCEEDED"
+  end
+
+  def test_index_probe_passes_max_time
+    call = CLOCKED_CURL + %(gem_version_indexed?("studio-engine", "0.49.0"); puts $curls.first.inspect)
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "" })
+
+    assert_match(/"--max-time", "\d+"/, out, "a stalled read must be bounded, or the deadline never fires: #{out}")
+  end
+
+  # The .gem read is the second curl; it needs the same bound.
+  def test_the_artifact_probe_passes_max_time_too
+    call = <<~RUBY
+      $curls = []
+      status = Struct.new(:ok) { def success? = ok }
+      Open3.define_singleton_method(:capture2e) do |*cmd|
+        $curls << cmd
+        ["0.49.0 a:~> 1|checksum:x\n", status.new(true)]
+      end
+      puts "SERVED=" + gem_version_indexed?("studio-engine", "0.49.0").to_s
+      puts "BOUNDED=" + $curls.all? { |c| c.include?("--max-time") }.to_s + " " + $curls.size.to_s
+    RUBY
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "" })
+
+    assert_includes out, "SERVED=true", out
+    assert_includes out, "BOUNDED=true 2", out
+  end
 end

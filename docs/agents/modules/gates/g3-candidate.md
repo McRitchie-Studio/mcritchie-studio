@@ -25,6 +25,14 @@ The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 The gate window spans prepare's whole test-and-deploy half, and every test SOP
 run inside it rides the close:
 
+- **Gems ride G3 as a release candidate.** Before the window opens, prepare
+  publishes `x.y.z.rcN` of each swept gem and commits each consumer's lock onto it
+  (qa-release step 4d). So the tree G3 reads CI for, and the tree QA deploys, bundle
+  a published artifact of the gem's release tip. G3 never sees the final `x.y.z`:
+  [G4 Ship](g4-ship.md) publishes it, proves it carries the candidate's contents,
+  re-locks consumers to it and reads CI for that re-lock commit. A red G3 therefore
+  strands a prerelease and no version.
+
 - **Pre-QA suite** (`pre_qa_gate` SOPs, one per app) — each app's registered
   `qa_test_cmd` (`config/release_repos.yml`) names the suite CI ran; the gate
   READS CI's verdict for it on `origin/release` BEFORE any QA deploy, and the SOP
@@ -274,7 +282,7 @@ above `RELEASE_CI_POLL_CEILING` (default 7200s); an unreadable workflow set keep
 1200s floor. Only workflows that trigger on `push` or `pull_request` count: a schedule-,
 `workflow_dispatch`- or `workflow_run`-only workflow (r2-backup, devnet-nightly) never runs
 on the SHA. A hold past one hour re-mints the GitHub App read token, which lives 3600s
-(`CiStatus.gh_read_status`, task `ci-poll-refreshes-its-token`). The gem publish gate uses the same budget, because studio-engine's verdict
+(`CiStatus.gh_read_status`, task `ci-poll-refreshes-its-token`). The gem candidate publish gate uses the same budget, because studio-engine's verdict
 includes Consumer CI, which outlasts 1200s on a fresh tip
 (`bin/lib/ci_poll_budget.rb`, task `gem-gate-outwaits-consumer-ci`). Only the wait on a
 pending verdict widens: red and unreadable still abort on the first read.
@@ -314,9 +322,9 @@ poll* (a declined credit changes nothing — the table above is untouched):
   nothing and falls through to the release SHA's own poll; a vanished/absent run
   or a wait that times out likewise falls through (the wait shares the gate's
   poll deadline, so it never doubles the wall-clock). Every non-credit **logs
-  which condition fired**. A consumer lock-bump commit riding `release` (gems
-  publish before QA) breaks tree identity by design — the post-bump SHA earns
-  its own polled verdict.
+  which condition fired**. A consumer lock-bump commit riding `release` (a gem's
+  release candidate publishes before QA and its consumers lock it) breaks tree
+  identity by design — the post-bump SHA earns its own polled verdict.
 
 A credited pass records the source in `qa_gates[repo]["ci"]["credited"]` — for
 the tree credit, both full SHAs plus the shared tree — so the audit trail always

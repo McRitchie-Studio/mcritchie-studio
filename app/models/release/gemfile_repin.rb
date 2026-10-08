@@ -114,6 +114,85 @@ class Release
       end.join
     end
 
+    # --- the release candidate ----------------------------------------------------
+    #
+    # Bundler resolves a prerelease only when a requirement names one, and then
+    # KEEPS it in the lock for as long as the Gemfile's own requirement admits it.
+    # So a candidate enters a consumer's lock through an exact requirement that is
+    # on the line only while `bundle lock` resolves (pin_candidate, then
+    # drop_candidate), and the committed Gemfile is the one the final would get.
+    #
+    # One case needs the committed line to change: the final escapes the pin
+    # (`1.0.0` over `"~> 0.95"`) or the line is a source ref. The pin the final
+    # would get, `"~> 1.0"`, EXCLUDES `1.0.0.rc1`, because a prerelease sorts below
+    # its final. There the line carries the same range with the candidate as its
+    # floor (candidate_range), and the ship rewrites it to `"~> 1.0"`.
+
+    # `"~> A.B"` for `final`, opened downward to admit `candidate`.
+    def candidate_range(candidate)
+      final = candidate.to_s.sub(/\.rc\d+\z/, "")
+      upper = Gem::Version.new(pessimistic_constraint(final).delete_prefix("~> ")).bump
+      [">= #{candidate}", "< #{upper}"]
+    end
+
+    # Rewrite the gem's line (a plain pin or a source ref) to candidate_range,
+    # keeping a plain pin's options, the indentation and any trailing comment.
+    def rewrite_candidate_range(gemfile_text, gem_name, candidate)
+      range = candidate_range(candidate).map { |r| "\"#{r}\"" }
+      gemfile_text.to_s.each_line.map do |line|
+        next line unless gem_declaration?(line, gem_name)
+
+        body    = line.chomp
+        keep    = source_ref?(line) ? [] : line_args(line, gem_name).reject { |arg| arg.match?(REQUIREMENT_STRING) }
+        "#{body[/\A[ \t]*/]}gem #{["\"#{gem_name}\"", *range, *keep].join(', ')}#{body[/\s*#.*\z/]}#{line[/\r?\n\z/]}"
+      end.join
+    end
+
+    # The first prerelease version a requirement on the gem's line names, or nil.
+    def prerelease_requirement(gemfile_text, gem_name)
+      version_requirements(gemfile_text, gem_name)
+        .map { |r| r[/\d[\w.\-]*\z/].to_s }
+        .find { |v| Gem::Version.correct?(v) && Gem::Version.new(v).prerelease? }
+    end
+
+    # A quoted exact candidate requirement, with the comma that leads it.
+    CANDIDATE_ARG = /\s*,\s*(['"])=?\s*(\d+\.\d+\.\d+\.rc\d+)\1/
+
+    # The candidate version pinned on the gem's line, or nil.
+    def candidate_pin(gemfile_text, gem_name)
+      line = gem_line_for(gemfile_text, gem_name)
+      line && strip_comment(line)[CANDIDATE_ARG, 2]
+    end
+
+    # Add the exact `candidate` to the gem's line, replacing one already there, for
+    # the resolve only. It goes after the line's own requirement strings and before
+    # its options. A source-ref line is left alone: give it a version line first.
+    def pin_candidate(gemfile_text, gem_name, candidate)
+      edit_gem_line(gemfile_text, gem_name) do |head, rest|
+        rest = rest.sub(CANDIDATE_ARG, "")
+        requirements = rest[/\A(?:\s*,\s*(['"])[^'"]*\1)*/]
+        "#{head}#{requirements}, \"#{candidate}\"#{rest.delete_prefix(requirements)}"
+      end
+    end
+
+    # Remove the candidate requirement from the gem's line. Idempotent.
+    def drop_candidate(gemfile_text, gem_name)
+      edit_gem_line(gemfile_text, gem_name) { |head, rest| "#{head}#{rest.sub(CANDIDATE_ARG, '')}" }
+    end
+
+    # Yield (`gem "<name>"`, the code after it) for the gem's plain-pin line and put
+    # the block's answer back with the line's comment and ending.
+    def edit_gem_line(gemfile_text, gem_name)
+      gemfile_text.to_s.each_line.map do |line|
+        next line unless gem_declaration?(line, gem_name) && !source_ref?(line)
+
+        code    = strip_comment(line)
+        head    = code[/\A[ \t]*gem\s+(['"])#{Regexp.escape(gem_name.to_s)}\1/]
+        comment = line.chomp.delete_prefix(code)
+        "#{yield(head, code.delete_prefix(head))}#{comment}#{line[/\r?\n\z/]}"
+      end.join
+    end
+
     # --- internals -----------------------------------------------------------
 
     # A quoted version-requirement argument: "~> 0.10", ">= 1.0", "0.8.0".

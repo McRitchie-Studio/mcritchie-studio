@@ -202,7 +202,10 @@ class StateStoreContainmentTest < Minitest::Test
       "session_marker_persona" => "READ — reads the marker to pick the session's mascot"
     },
     "bin/release.rb" => {
-      "primary_checkout_lock_dir" => "BUILDER — pure resolver; guarded_lock_dir launders before mkdir_p"
+      "primary_checkout_lock_dir" => "BUILDER — pure resolver; guarded_lock_dir launders before mkdir_p",
+      "release_entry_points" => "READ — reads the installed tooling's bin/release.rb as text, to ask whether a " \
+                                "ship started from the fixed path carries the gem candidate flow; it names no " \
+                                "state store, writes nothing and creates nothing"
     },
     "bin/agent-worktree" => {
       "agent_registry_dir" => "BUILDER — the root the three worktree stores hang off",

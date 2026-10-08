@@ -492,6 +492,66 @@ class Release
       end
     end
 
+    # The Gemfile text a consumer COMMITS for `version` of a published gem.
+    #
+    # A final: what bumped_gemfile decides, with a candidate floor (see below)
+    # rewritten to the final's `"~> A.B"`.
+    # A candidate (`x.y.z.rcN`): the SAME text the final would get whenever that
+    # text admits the candidate, which is every in-range bump, so the Gemfile does
+    # not change and the candidate rides the lock alone. When the final's pin would
+    # exclude its own candidate (the final escapes the pin, or the line is a source
+    # ref), the line carries GemfileRepin.candidate_range instead.
+    def locked_gemfile(gemfile_text, gem_name, version)
+      text = Release::GemfileRepin.drop_candidate(gemfile_text, gem_name)
+      unless Release::GemCandidate.candidate?(version)
+        return Release::GemfileRepin.rewrite_pin(text, gem_name, version) if Release::GemfileRepin.prerelease_requirement(text, gem_name)
+
+        return bumped_gemfile(text, gem_name, version)
+      end
+
+      case consumer_bump_action(text, gem_name, Release::GemCandidate.final_of(version))
+      when :rewrite_source, :rewrite_pin then Release::GemfileRepin.rewrite_candidate_range(text, gem_name, version)
+      else text
+      end
+    end
+
+    # The Gemfile `bundle lock` RESOLVES a candidate from: the committed text plus
+    # the exact candidate requirement. Written, locked, and replaced by the
+    # committed text before anything is staged.
+    def resolving_gemfile(committed_text, gem_name, version)
+      return committed_text.to_s unless Release::GemCandidate.candidate?(version)
+
+      Release::GemfileRepin.pin_candidate(committed_text, gem_name, version)
+    end
+
+    # Does the committed line admit `version`? What makes a candidate line usable.
+    def line_admits?(gemfile_text, gem_name, version)
+      Release::GemfileRepin.constraint_allows?(Release::GemfileRepin.version_requirements(gemfile_text, gem_name), version)
+    end
+
+    # The published gems a consumer must re-lock before it deploys: its Gemfile line
+    # is a source ref or names a prerelease, or its lock resolves a prerelease. The
+    # lock is the usual witness: a candidate normally changes nothing in the Gemfile.
+    def gems_to_relock(published_gem_names, gemfile_text, lockfile_text = "")
+      Array(published_gem_names).select do |gem_name|
+        Release::GemfileRepin.references_branch?(gemfile_text, gem_name) ||
+          Release::GemfileRepin.prerelease_requirement(gemfile_text, gem_name) ||
+          prerelease_locked?(lockfile_text, gem_name)
+      end
+    end
+
+    def prerelease_locked?(lockfile_text, gem_name)
+      prerelease_version?(locked_version(lockfile_text, gem_name))
+    end
+
+    # False for nil or blank. A version nobody can parse is not a release.
+    def prerelease_version?(version)
+      text = version.to_s.strip
+      !text.empty? && Gem::Version.new(text).prerelease?
+    rescue ArgumentError
+      true
+    end
+
     # The body of a Gemfile.lock's `GEM` sections — the RubyGems-sourced
     # resolutions only.
     #

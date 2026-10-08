@@ -121,7 +121,7 @@ class ReleaseCliConductorTest < ReleaseCliHarness
   # [integration] ship records a Steffon deploy span end-to-end (the publish-decision
   # stub runs the real ship flow under --yes with only the git/gem/heroku I/O stubbed).
   def test_ship_narrates_a_steffon_deploy_span
-    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB + NARRATION_CAPTURE)
+    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB + ReleaseCliStubs::FINAL_PUBLISH + NARRATION_CAPTURE)
 
     assert_includes out, "ATOMIC start --category Remote --reason ship → prod --agent steffon",
                      "ship opens a Steffon span after ship authority"

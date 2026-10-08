@@ -312,5 +312,11 @@ module OutboundSeams
     # write the developer's gem home, so the default is the non-blocking answer, for
     # the same reason as above. release_cli_gem_install_test.rb sets it per case.
     ENV["RELEASE_GEM_INSTALLED"] = "yes"
+
+    # THE PUBLISHED .gem DOWNLOAD. The ship downloads a gem's candidate and its
+    # final from the RubyGems CDN to compare them. "none" answers "not served", so
+    # an un-seamed test refuses instead of reaching the network; a test of the
+    # comparison points this at a directory of gems it built.
+    ENV["RELEASE_GEM_FETCH"] = "none"
   end
 end
