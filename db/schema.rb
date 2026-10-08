@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2237,6 +2237,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.string "warning"
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
+  end
+
+  create_table "tiktok_connections", force: :cascade do |t|
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "open_id", null: false
+    t.datetime "refresh_expires_at"
+    t.text "refresh_token", null: false
+    t.datetime "refreshed_at"
+    t.string "scope"
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_tiktok_connections_on_connected_at"
+    t.index ["open_id"], name: "index_tiktok_connections_on_open_id", unique: true
   end
 
   create_table "tiktok_drafts", force: :cascade do |t|

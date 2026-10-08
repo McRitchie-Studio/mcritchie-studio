@@ -92,12 +92,12 @@ class TiktokDraftCliTest < Minitest::Test
     assert(api.calls.none? { |c| c.first == :post })
   end
 
-  def test_a_server_without_keys_stops_before_the_post
+  def test_a_server_not_connected_to_tiktok_stops_before_the_post
     api = FakeApi.new(available: false)
     run, = runner(api)
 
     error = assert_raises(TiktokDraftCli::Failure) { run.draft(SLUG) }
-    assert_match(/TikTok keys are not set/, error.message)
+    assert_match(/TikTok is not connected on it/, error.message)
     assert(api.calls.none? { |c| c.first == :post })
   end
 

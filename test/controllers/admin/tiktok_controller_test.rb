@@ -112,20 +112,24 @@ class Admin::TiktokControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "callback shows the granted scope, the refresh token and the open id to file, and no access token" do
+  test "callback stores the connection and shows the account and the granted scope, and no token to file" do
     with_tiktok_env do
       tiktok_grants("user.info.basic,video.upload")
       state = begin_connect.fetch("state")
-      get admin_tiktok_callback_path, params: { state:, code: "code-1" }
+      assert_difference -> { TiktokConnection.count }, 1 do
+        get admin_tiktok_callback_path, params: { state:, code: "code-1" }
+      end
 
       assert_response :success
       assert_equal "authorization_code", token_requests.last[:grant_type]
-      assert_select "[data-tiktok-field='refresh-token']", text: "rft.test"
-      assert_select "[data-tiktok-field='open-id']", text: "open-test"
+      assert_equal "rft.test", TiktokConnection.current.refresh_token
+      assert_select "[data-tiktok-field='account']", text: "open-test" # the control: this answer's values do reach the page
       assert_select "[data-tiktok-field='scope']", text: "user.info.basic,video.upload"
       assert_select "[data-tiktok-grant]", text: /drafts only/i
+      assert_select "[data-tiktok-field='refresh-token']", count: 0
+      assert_not_includes response.body, "rft.test"
       assert_not_includes response.body, "act.test"
-      assert_includes response.body, "tiktok.studio.agents"
+      assert_not_includes response.body, "tiktok.studio.agents", "nothing is filed by hand"
     end
   end
 

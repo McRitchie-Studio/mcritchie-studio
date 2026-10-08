@@ -64,7 +64,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     page
 
-    assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok keys are not set on this server."
+    assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok is not connected on this server."
     assert_select "#{card(1)} form[data-test='clip-tiktok-draft'] button[disabled]"
   end
 
@@ -94,6 +94,49 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a stored connection that cannot be read turns the button off; the page does not break" do
+    Tiktok::DraftClip.uploader = nil
+    keys = { "TIKTOK_CLIENT_KEY" => "synthetic-client-key", "TIKTOK_CLIENT_SECRET" => "synthetic-client-secret",
+             "TIKTOK_REFRESH_TOKEN" => "rft.synthetic-env", "TIKTOK_OPEN_ID" => "open-synthetic-env" }
+    originals = keys.keys.index_with { |k| ENV[k] }
+    keys.each { |k, v| ENV[k] = v }
+    TiktokConnection.store!({ "open_id" => "open-synthetic-1", "refresh_token" => "rft.synthetic-stored" }, by: "alex")
+    log_in_as users(:alex)
+
+    page
+    assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='true']" # the control: readable, the button is on
+
+    other = ActiveRecord::Encryption::DerivedSecretKeyProvider.new("another-synthetic-primary-key-987654321")
+    ActiveRecord::Encryption.with_encryption_context(key_provider: other) do
+      page
+      assert_response :success
+      assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='false']"
+      assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok is not connected on this server."
+
+      post music_video_alt_video_clip_tiktok_drafts_path(@video, @alt, 1)
+      assert_match(/the stored TikTok connection cannot be read; sign in again/, flash[:alert])
+      assert_equal 0, TiktokDraft.count
+    end
+  ensure
+    originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
+
+  test "a failed latest attempt shows its error and caption, and neither the paste hint nor the AI label line" do
+    TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "Bills 3-2", state: "failed",
+                        error: "TikTok refused chunk 1 of 1 (HTTP 400)")
+    log_in_as users(:alex)
+    page
+
+    assert_select "#{card(1)} [data-test='clip-tiktok-latest'][data-state='failed']" do
+      assert_select "[data-test='clip-tiktok-error']", /HTTP 400/
+      assert_select "[data-test='clip-tiktok-caption']", "Bills 3-2"
+      # Nothing reached the app: there is no draft to paste over or to label.
+      assert_select "[data-test='clip-tiktok-caption-hint']", 0
+      assert_select "[data-test='clip-tiktok-ai-label']", 0
+      assert_select "[data-test='clip-tiktok-next-step']", 0
+    end
+  end
+
   test "a failed attempt shows its error, and earlier attempts fold under the latest" do
     TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "c", state: "failed",
                         error: "TikTok refused chunk 1 of 1 (HTTP 400)", created_at: 2.hours.ago)
@@ -109,6 +152,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
       # never travels, so its hint shows whatever the state.
       assert_select "[data-test='clip-tiktok-next-step']", 0
       assert_select "[data-test='clip-tiktok-caption-hint']", /TikTok did not receive this caption/
+      assert_select "[data-test='clip-tiktok-ai-label']", /AI-generated label/
       assert_select "[data-test='clip-tiktok-stand-in']", "stand-in"
     end
     assert_select "#{card(1)} [data-test='clip-tiktok-history'] [data-test='clip-tiktok-attempt'][data-state='failed']", /HTTP 400/

@@ -119,7 +119,7 @@ module TiktokDraftCli
       print_clip(data)
       refused = data.dig("preview", "refused")
       raise Failure, "#{slug} cannot be drafted: #{refused}" if refused
-      raise Failure, "this server cannot draft: the TikTok keys are not set on it" unless data.dig("clip", "available")
+      raise Failure, "this server cannot draft: TikTok is not connected on it (--whoami says which half is missing)" unless data.dig("clip", "available")
 
       print_preview(data["preview"])
       attempt = create(slug)

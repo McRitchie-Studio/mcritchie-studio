@@ -285,7 +285,7 @@ Rails.application.routes.draw do
   Studio.routes(self)
 
   # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
-  # to authorize @turfmonstershow and capture refresh_token + open_id.
+  # to authorize @turfmonstershow; the callback stores the connection.
   # Resend inbound (email.received, svix-signed) -> the desk capture queue.
   post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
   # Delivery, bounce, complaint and engagement events for broadcast email.
@@ -314,6 +314,8 @@ Rails.application.routes.draw do
 
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
+    # Deletes the stored connection (the button on the connected page).
+    delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
   end
 
   # HTML
