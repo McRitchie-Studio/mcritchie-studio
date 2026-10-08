@@ -57,6 +57,7 @@ module ReleaseCliStubs
     def confirm_published_checksum!(repo, version, _sha) = $stdout.puts("CHECKSUM-CONFIRMED " + repo + " " + version)
     def verify_live_final!(repo, version, candidate) = $stdout.puts("LIVE-FINAL-COMPARED " + repo + " " + version + " " + candidate)
     def ensure_release_tag!(*) = nil
+    def gem_stamp_problems(*) = [] # these fixtures' conductor carries no release metadata
     self.singleton_class.prepend(Module.new do
       def git_capture(*args) = args.join(" ").include?("tag --points-at") ? ["rc-0.11.0.rc1\n", true] : super
     end)
