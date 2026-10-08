@@ -25,6 +25,10 @@
                     class: "font-semibold text-primary hover:underline", data: { test: "featured-character" } %>
       </p>
     <% end %>
+    <p class="text-sm">
+      <%= link_to "Email image generator: model, examples and the prompt to copy →", email_image_generator_path(@kit.key),
+                  class: "font-semibold text-primary hover:underline", data: { test: "generator-link" } %>
+    </p>
     <p class="text-2xs text-muted">
       Agents: <span class="font-mono break-all">bin/email-image assets <%= @kit.key %></span> prints and downloads everything on this page.
     </p>

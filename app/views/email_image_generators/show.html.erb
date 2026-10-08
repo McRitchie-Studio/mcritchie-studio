@@ -1,0 +1,129 @@
+<%# ONE KIT'S GENERATOR PAGE: the character model (or, for a kit no character
+    fronts, the kit's references), up to four example headers, and the copy box
+    that fills the `email-image` SOP prompt live. The template is
+    EmailImages::GeneratorPrompt's; this view only swaps its tokens, the same
+    one-pass way. Admin only (EmailImageGeneratorsController#show). %>
+<% kit = @page.kit %>
+<% character = @page.character %>
+<% prompt_config = { template: @page.prompt_template, blanks: EmailImages::GeneratorPrompt::BLANKS } %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <%= link_to "Generator", email_image_generators_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono break-all"><%= kit.key %></span>
+  </nav>
+
+  <div class="flex flex-wrap items-start gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading break-words"><%= kit.label %> email images</h1>
+      <p class="text-sm text-secondary">Copy the prompt below into a Claude Code session; the agent runs the <span class="font-mono"><%= EmailImages::GeneratorPrompt::SOP %></span> SOP with you.</p>
+    </div>
+    <%= link_to "Brand kit", email_brand_kit_path(kit.key), class: "btn btn-sm btn-neutral sm:ml-auto", data: { test: "brand-kit-link" } %>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-5 lg:items-start">
+    <% if character %>
+      <div class="card p-4 sm:p-5 space-y-3 min-w-0 lg:col-span-3" data-test="character-model">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <h2 class="text-sm font-bold text-heading">Model</h2>
+          <%= link_to character.name, character_path(character), class: "text-sm font-semibold text-primary hover:underline",
+                      data: { test: "character-link" } %>
+          <% if @page.look %>
+            <span class="badge text-3xs bg-surface-alt text-muted border-subtle" data-test="model-look"><%= @page.look.descriptor %></span>
+          <% end %>
+        </div>
+        <% if (image = @page.model_image) %>
+          <figure class="space-y-1" data-test="model-image" data-source="<%= image.source %>">
+            <a href="<%= image.url %>" target="_blank" rel="noopener" class="block rounded-lg border border-subtle bg-surface-alt overflow-hidden">
+              <img src="<%= image.url %>" alt="<%= character.name %>: <%= image.label %>" class="w-full max-h-[32rem] object-contain">
+            </a>
+            <figcaption class="text-3xs text-muted break-words" data-test="model-caption"><%= image.label %></figcaption>
+          </figure>
+        <% else %>
+          <p class="text-2xs text-muted" data-test="model-missing">
+            <%= character.name %> has no art yet. Add it on <%= link_to "his character page", character_path(character), class: "text-primary hover:underline" %>.
+          </p>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="card p-4 sm:p-5 space-y-3 min-w-0 lg:col-span-3" data-test="kit-model">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <h2 class="text-sm font-bold text-heading">Model</h2>
+          <p class="text-3xs text-muted">No character fronts this brand; the generator draws the kit's own mark.</p>
+        </div>
+        <div class="grid gap-3 grid-cols-2 sm:grid-cols-3">
+          <% kit.references.each do |ref| %>
+            <figure class="space-y-1 min-w-0" data-test="kit-reference" data-role="<%= ref.role %>">
+              <div class="aspect-square rounded border border-subtle bg-surface-alt flex items-center justify-center overflow-hidden">
+                <img src="<%= ref.display_url %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
+              </div>
+              <figcaption class="text-3xs text-muted break-words"><%= ref.role %> &middot; <%= ref.label %></figcaption>
+            </figure>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <div class="card p-4 sm:p-5 space-y-3 min-w-0 lg:col-span-2" data-test="copy-box"
+         x-data="{ cfg: <%= prompt_config.to_json %>, email: '', headline: '', mood: '', copied: false,
+                   get prompt() {
+                     const typed = { email: this.email, headline: this.headline, mood: this.mood };
+                     const values = {};
+                     for (const key in typed) { values[key] = typed[key].trim().replace(/\s+/g, ' ') || this.cfg.blanks[key]; }
+                     return this.cfg.template.replace(/\{\{(\w+)\}\}/g, (token, key) => (key in values ? values[key] : token));
+                   },
+                   copy() {
+                     navigator.clipboard.writeText(this.prompt)
+                       .then(() => { this.copied = true; setTimeout(() => { this.copied = false; }, 1400); })
+                       .catch(() => this.$refs.prompt.select());
+                   } }">
+      <h2 class="text-sm font-bold text-heading">Prompt to copy</h2>
+      <div class="space-y-2">
+        <div>
+          <label for="generator-email" class="block text-2xs font-semibold text-heading mb-1">Email (key or name)</label>
+          <input id="generator-email" type="text" x-model="email" maxlength="120" placeholder="welcome" class="input-field w-full text-sm" data-test="input-email">
+        </div>
+        <div>
+          <label for="generator-headline" class="block text-2xs font-semibold text-heading mb-1">Headline</label>
+          <input id="generator-headline" type="text" x-model="headline" maxlength="160" placeholder="Your picks are in" class="input-field w-full text-sm" data-test="input-headline">
+        </div>
+        <div>
+          <label for="generator-mood" class="block text-2xs font-semibold text-heading mb-1">Look / mood (optional)</label>
+          <input id="generator-mood" type="text" x-model="mood" maxlength="160" placeholder="arms raised, celebrating" class="input-field w-full text-sm" data-test="input-mood">
+        </div>
+      </div>
+      <textarea x-ref="prompt" readonly rows="5" :value="prompt" aria-label="Prompt to copy"
+                class="input-field w-full font-mono text-xs leading-relaxed" data-test="prompt"><%= @page.prompt %></textarea>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" @click="copy()" class="btn btn-sm btn-primary" data-test="copy-prompt">
+          <span x-text="copied ? 'Copied' : 'Copy'">Copy</span>
+        </button>
+        <span class="text-3xs text-muted">Then paste it into Claude Code.</span>
+      </div>
+      <p class="text-3xs text-muted">
+        CLI: <span class="font-mono break-all" data-test="cli-hint"><%= @page.cli_hint %></span> lists and downloads the kit's assets.
+      </p>
+    </div>
+  </div>
+
+  <div class="card p-4 sm:p-5 space-y-3" data-test="examples">
+    <h2 class="text-sm font-bold text-heading">Examples</h2>
+    <% if @page.examples.empty? %>
+      <p class="text-2xs text-muted">No approved header or style anchor for this brand yet.</p>
+    <% else %>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <% @page.examples.each do |example| %>
+          <figure class="rounded-lg border border-subtle bg-surface p-3 space-y-2 min-w-0" data-test="example" data-source="<%= example.source %>">
+            <img src="<%= example.url %>" alt="<%= example.label %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
+            <figcaption class="space-y-0.5">
+              <span class="badge text-3xs bg-primary/10 text-primary border-primary/40"><%= example.source %></span>
+              <p class="text-xs text-heading font-semibold break-words" data-test="example-label"><%= example.label %></p>
+            </figcaption>
+          </figure>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>

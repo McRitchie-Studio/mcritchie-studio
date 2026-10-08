@@ -165,6 +165,10 @@ Rails.application.routes.draw do
   # assets, its approved headers and open briefs, and the uploaded references.
   # Declared BEFORE resources :email_images, whose show route would otherwise
   # read "brand_kits" as a brief slug. Task email-brand-asset-page.
+  # The generator page (task email-image-generator-page): character model,
+  # examples and the copy-paste SOP prompt. Also declared before the resources.
+  get "email_images/generator", to: "email_image_generators#index", as: :email_image_generators
+  get "email_images/generator/:kit", to: "email_image_generators#show", as: :email_image_generator
   get "email_images/brand_kits", to: "email_brand_kits#index", as: :email_brand_kits
   get "email_images/brand_kits/:kit", to: "email_brand_kits#show", as: :email_brand_kit
   post "email_images/brand_kits/:kit/references", to: "email_brand_kits#create_reference",
