@@ -92,7 +92,7 @@ class DbBaselineMarkTest < ActiveSupport::TestCase
 
     # Marked by db:migrate itself: nothing runs, nothing changes but the ledger.
     output, = rails!("db:migrate")
-    assert_match(/db:baseline:mark recorded \d+ baseline versions; no table changed/, output)
+    assert_match(/db:baseline:mark recorded \d+ baseline versions in test; no table changed/, output)
     assert_no_match(/^== /, output, "db:migrate ran a migration on a database that already held every table")
     scratch do |connection|
       assert_equal before, fingerprint(connection)

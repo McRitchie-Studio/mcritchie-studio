@@ -1,17 +1,19 @@
 namespace :db do
   namespace :baseline do
-    desc "Record the baseline's versions where the database already holds its tables (changes no table)"
-    task mark: "db:load_config" do
-      pool = ActiveRecord::Base.connection_pool
-      result = pool.with_connection do |connection|
-        DbBaseline::Marker.new(connection: connection, migrate_dir: Rails.root.join("db/migrate")).mark!
+    mark = lambda do |environments|
+      environments.each do |environment|
+        marked = DbBaseline.mark_environment!(environment, migrate_dir: Rails.root.join("db/migrate"))
+        puts "db:baseline:mark recorded #{marked} baseline versions in #{environment}; no table changed" if marked.positive?
       end
-      puts "db:baseline:mark recorded #{result.marked.size} baseline versions; no table changed" if result.marked.any?
-    rescue ActiveRecord::NoDatabaseError
-      # No database yet: db:prepare creates it and loads the schema.
     rescue DbBaseline::Error => e
       abort e.message
     end
+
+    desc "Record the baseline's versions where the database already holds its tables (changes no table)"
+    task(mark: "db:load_config") { mark.call([ Rails.env ]) }
+
+    # db:prepare in development migrates the test database too, so both are marked first.
+    task(mark_prepared: "db:load_config") { mark.call(DbBaseline.prepared_environments(Rails.env)) }
 
     desc "Read-only: report what the baseline finds in this database, or in a schema dump (AGAINST=path)"
     task check: "db:load_config" do
@@ -44,13 +46,10 @@ namespace :db do
 end
 
 # The release phase runs db:migrate and desks run db:prepare, so the mark runs ahead of both.
-%w[db:migrate db:prepare].each { |name| Rake::Task[name].enhance(["db:baseline:mark"]) }
+Rake::Task["db:migrate"].enhance([ "db:baseline:mark" ])
+Rake::Task["db:prepare"].enhance([ "db:baseline:mark_prepared" ])
 
 # db:test:prepare keeps a test database whose schema.rb is unchanged, so its ledger is marked after.
 Rake::Task["db:test:prepare"].enhance do
-  ActiveRecord::Tasks::DatabaseTasks.with_temporary_pool_for_each(env: "test") do |pool|
-    pool.with_connection do |connection|
-      DbBaseline::Marker.new(connection: connection, migrate_dir: Rails.root.join("db/migrate")).mark!
-    end
-  end
+  DbBaseline.mark_environment!("test", migrate_dir: Rails.root.join("db/migrate"))
 end

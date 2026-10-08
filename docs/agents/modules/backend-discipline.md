@@ -310,7 +310,9 @@ baseline file. Code: `lib/db_baseline.rb`, `lib/tasks/db_baseline.rake`.
   never dumps to schema.rb, so a database loaded from the schema (test, a fresh desk)
   has none.
 - **An existing database is never re-migrated.** `db:baseline:mark` runs ahead of
-  `db:migrate` and `db:prepare`, and after `db:test:prepare`. Where the database holds a
+  `db:migrate` and `db:prepare`, after `db:test:prepare`, and when the test suite boots
+  (`test/test_helper.rb`). `db:prepare` marks every database it migrates: a bare
+  development run covers the test database too. Where the database holds a
   table with every baseline column, it records that migration's version; it writes
   `schema_migrations` rows and nothing else. A table that is absent is left for its
   migration to create. The retired versions stay in the ledger and read `NO FILE` in
@@ -333,15 +335,22 @@ Re-baseline after a schema facelift:
    `--dry-run`. Migrations newer than that schema stay as files, so production still
    runs them on its next deploy.
 4. `bin/rails test test/lib/db_baseline_test.rb test/integration/db_baseline_mark_test.rb`:
-   a fresh database migrated from zero must dump `db/schema.rb` exactly, and a database
-   that already holds the tables must migrate nothing.
+   a fresh database migrated from zero must dump a schema that loads as `db/schema.rb`
+   exactly, `db/schema.rb` must load and dump as itself, and a database that already
+   holds the tables must migrate nothing.
 
 Traps:
 
-- Postgres rewrites a check-constraint or partial-index expression each time it is
-  loaded, so a database built by migrations and one loaded from schema.rb can dump the
-  same constraint in two spellings. `db/schema.rb` holds what a fresh migrate dumps;
-  after `db:migrate` in a desk, keep only your own hunks of the schema diff.
+- Postgres rewrites a check-constraint or partial-index expression when it is loaded,
+  so a database built by migrations and one loaded from schema.rb can dump the same
+  constraint in two spellings (`ARRAY['a'::character varying]::text[]` from an `IN`
+  list in a migration, `ARRAY['a'::character varying::text]` after a load).
+  `db/schema.rb` holds the load-stable spelling: loading it and dumping again
+  reproduces it byte for byte, which is what every desk and CI database dumps. A
+  migration that adds such an expression dumps the other spelling on the database that
+  ran it; before committing, settle the file with
+  `bin/rails db:schema:load db:schema:dump` on a scratch database. The mark test fails
+  on a `db/schema.rb` that is not load-stable.
 - `bin/release` refuses to roll back past a release that adds migration files, and a
   re-baseline adds one per table.
 

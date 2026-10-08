@@ -66,6 +66,25 @@ module DbBaseline
     Comparison.new(version: schema.version, short: short, absent: absent.map(&:name), behind: schema.version < through)
   end
 
+  # The environments db:prepare migrates: a bare development run prepares test too.
+  def prepared_environments(environment, env: ENV)
+    environments = [environment.to_s]
+    environments << "test" if environment.to_s == "development" && env["SKIP_TEST_DATABASE"].blank? && env["DATABASE_URL"].blank?
+    environments
+  end
+
+  # Marks every database of an environment and returns how many versions it recorded.
+  # A database that does not exist yet is left for db:prepare to create.
+  def mark_environment!(environment, migrate_dir:)
+    marked = 0
+    ActiveRecord::Tasks::DatabaseTasks.with_temporary_pool_for_each(env: environment.to_s) do |pool|
+      marked += pool.with_connection { |connection| Marker.new(connection: connection, migrate_dir: migrate_dir).mark! }.marked.size
+    rescue ActiveRecord::NoDatabaseError
+      next
+    end
+    marked
+  end
+
   # The name an engine's install step compares: no version, no scope.
   def bare_name(basename)
     basename.sub(/\A\d+_/, "").sub(/\..*\z/, "")

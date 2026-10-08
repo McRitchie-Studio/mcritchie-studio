@@ -174,6 +174,45 @@ class DbBaselineTest < ActiveSupport::TestCase
     assert found.behind
   end
 
+  test "prepared_environments names every environment db:prepare migrates, as Rails does" do
+    rails = lambda do |environment, env|
+      seen = []
+      original = ENV.to_h.slice("DATABASE_URL", "SKIP_TEST_DATABASE")
+      begin
+        %w[DATABASE_URL SKIP_TEST_DATABASE].each { |key| env.key?(key) ? ENV[key] = env[key] : ENV.delete(key) }
+        ActiveRecord::Tasks::DatabaseTasks.send(:each_current_environment, environment) { |name| seen << name }
+      ensure
+        %w[DATABASE_URL SKIP_TEST_DATABASE].each { |key| original.key?(key) ? ENV[key] = original[key] : ENV.delete(key) }
+      end
+      seen
+    end
+
+    assert_equal %w[development test], DbBaseline.prepared_environments("development", env: {})
+    [
+      [ "development", {} ],
+      [ "development", { "DATABASE_URL" => "postgresql://localhost/desk" } ],
+      [ "development", { "SKIP_TEST_DATABASE" => "1" } ],
+      [ "test", {} ],
+      [ "production", {} ]
+    ].each do |environment, env|
+      assert_equal rails.call(environment, env), DbBaseline.prepared_environments(environment, env: env), "#{environment} #{env.inspect}"
+    end
+  end
+
+  test "db:prepare marks every environment it migrates; db:migrate marks its own" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("db:baseline:mark")
+
+    assert_includes Rake::Task["db:prepare"].prerequisites, "db:baseline:mark_prepared"
+    assert_includes Rake::Task["db:migrate"].prerequisites, "db:baseline:mark"
+  end
+
+  test "the suite marks the test database before rails/test_help checks for pending migrations" do
+    helper = File.read(Rails.root.join("test/test_helper.rb"))
+    mark = helper.index(%(DbBaseline.mark_environment!("test"))
+    assert mark, "test/test_helper.rb no longer marks the test database"
+    assert_operator mark, :<, helper.index(%(require "rails/test_help"))
+  end
+
   # --- the marker, against a scratch Postgres schema inside the test transaction ---
 
   class MarkerTest < ActiveSupport::TestCase
