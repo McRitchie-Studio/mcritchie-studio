@@ -280,6 +280,13 @@ class AgentSessionTest < ActiveSupport::TestCase
     end
     assert_nil builder.transition_refusal(task, "building")
 
+    # A builder cannot skip review either; a block of a building task is its own.
+    task.update_column(:stage, "building")
+    assert_match(/building to reviewed .* pokemon holds a task_claim session/, builder.transition_refusal(task, "reviewed"))
+    assert_nil builder.transition_refusal(task, "blocked")
+    assert_nil builder.transition_refusal(task, "submitted")
+    task.update_column(:stage, "submitted")
+
     # A reviewer who joins the author set (a fix-forward) is no longer outside it.
     task.update_column(:metadata, { "devops" => { "built_by" => "pokemon", "builders" => %w[pokemon carl] } })
     assert_match(/carl is one of its authors/, reviewer.transition_refusal(task.reload, "reviewed"))

@@ -13,8 +13,8 @@ logged in, and naming its slug on a shared-token fallback once dropped), the act
 board write, the tier and scope gates (`Api::AgentSessionGate`), and the shared
 secret kept beside it, logged as legacy. A review claim (`bin/task
 claim-next-review`, `review-claim acquire`) logs the reviewer in to the claimed
-task, and a session's stage moves are checked against section 5 for `submitted`
-to `reviewed` or blocked and for `archived`. An admin session can be granted from a
+task, and a session's stage moves are checked against section 5 for the review
+verdict (`reviewed`, or a block of a `submitted` task) and for `archived`. An admin session can be granted from a
 shell on the hub (`bin/rails agent_sessions:grant_admin`, added 2026-10-07): the
 shell is the grant, and it stands in for the Approve tap. The first endpoint that
 accepts ONLY an admin session, refusing the shared token too, is the TikTok draft

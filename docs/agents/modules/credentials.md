@@ -119,9 +119,10 @@ The board API takes two bearers (design:
   and the claim is live: releasing the claim, a new holder, or a resubmission
   revokes it, and a lapsed claim or a task at `reviewed` or blocked answers 401.
   A light spawned in the claiming harness session writes as the claiming soul.
-- **Transitions under a session.** `submitted` to `reviewed` or blocked takes a
-  reviewer's session (or an admin's) whose soul is outside the author set; any
-  stage to `archived` takes an admin session. Anything else answers 403 naming the
+- **Transitions under a session.** A move to `reviewed` from `designed`,
+  `building` or `submitted`, and a block of a `submitted` task, take a reviewer's
+  session (or an admin's) whose soul is outside the author set; any stage to
+  `archived` takes an admin session. Anything else answers 403 naming the
   transition. `reviewed` to `assembled` and `assembled` to `shipped` are unchecked.
 - **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
   everywhere for one release, with each use logged as `[agent-auth] legacy` (naming

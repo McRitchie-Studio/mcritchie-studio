@@ -79,7 +79,7 @@ class AgentSession < ApplicationRecord
 
   # Ends every review login on a task: its claim was released or changed hands.
   def self.revoke_review_claims!(task_slug, by:)
-    unrevoked.for_task(task_slug).where(issued_by: "review_claim").find_each { |session| session.revoke!(by: by) }
+    unrevoked.for_task(task_slug).where(issued_by: "review_claim").update_all(revoked_at: Time.current, revoked_by: by)
   end
 
   # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
@@ -182,15 +182,17 @@ class AgentSession < ApplicationRecord
 
   # Why this session may not move `task` to `to` (a stage, or "blocked"), or nil
   # when it may (agent-sessions-design.md, section 5). Checked: any stage to
-  # archived, and submitted to reviewed or blocked. The API answers 403 with this.
+  # archived, a build stage (Task::BUILD_STAGES) to reviewed, and submitted to
+  # blocked. The API answers 403 with this.
   def transition_refusal(task, to)
     from = task.stage
     if to == "archived"
       return admin? ? nil : "#{from} to archived is an admin transition; #{soul} holds a #{tier} session"
     end
-    return nil unless from == "submitted" && %w[reviewed blocked].include?(to)
+    verdict = (to == "reviewed" && Task::BUILD_STAGES.include?(from)) || (to == "blocked" && from == "submitted")
+    return nil unless verdict
 
-    rule = "submitted to #{to} is made by a reviewer outside #{task.slug}'s author set"
+    rule = "#{from} to #{to} is made by a reviewer outside #{task.slug}'s author set"
     return "#{rule}; #{soul} holds a #{issued_by} session" if studio? && issued_by != "review_claim"
     return "#{rule}; #{soul} is one of its authors" if TaskReviewClaim.self_review?(task.slug, soul)
 
