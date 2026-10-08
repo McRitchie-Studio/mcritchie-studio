@@ -183,14 +183,13 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
   end
 
   # The incident, end to end through the real publish loop: an ALREADY-LIVE
-  # solana-studio, then studio-engine to publish. solana-studio must be installed
-  # BEFORE studio-engine's release-check runs; and if it cannot be, studio-engine
-  # must never publish.
+  # solana-studio, then a studio-engine candidate to publish. solana-studio must be
+  # installed BEFORE studio-engine's release-check runs; and if it cannot be,
+  # studio-engine must never publish.
   PUBLISH_STUBS = <<~RUBY
     $events = []
-    def checkout_detached(repo, _sha) = $events << "checkout " + repo
-    def restore_gem_primary(repo) = $events << "restore " + repo
-    def publish_gem(repo, version) = $events << "publish " + repo + " " + version
+    def publish_gem(repo, version, **) = $events << "publish-final " + repo + " " + version
+    def publish_gem_candidate(repo, _tip, _final, candidate) = $events << "publish " + repo + " " + candidate
     def install_published_gem(gem_name, version)
       $events << "install " + gem_name + " " + version
       ENV["RELEASE_GEM_INSTALLED"] != "no"
@@ -198,16 +197,17 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
   RUBY
 
   PLAN = %([{ "repo" => "solana-studio", "version" => "0.12.3", "already_live" => true, "tip" => "f326214" },
-            { "repo" => "studio-engine", "version" => "0.92.2", "already_live" => false, "tip" => "cd37a71" }])
+            { "repo" => "studio-engine", "version" => "0.92.2", "already_live" => false, "tip" => "cd37a71",
+              "candidate" => "0.92.2.rc1", "candidate_live" => false }])
 
   def test_an_already_live_upstream_gem_is_installed_before_the_next_gem_publishes
     out = drive(%(p = publish_gems_for_qa(#{PLAN}); puts JSON.generate($events); puts JSON.generate(p)),
                 setup: PUBLISH_STUBS)
     events, published = out.lines.last(2).map { |l| JSON.parse(l) }
 
-    assert_equal ["install solana-studio 0.12.3", "checkout studio-engine", "publish studio-engine 0.92.2",
-                  "restore studio-engine", "install studio-engine 0.92.2"], events, out
-    assert_equal({ "solana-studio" => "0.12.3", "studio-engine" => "0.92.2" }, published)
+    assert_equal ["install solana-studio 0.12.3", "publish studio-engine 0.92.2.rc1",
+                  "install studio-engine 0.92.2.rc1"], events, out
+    assert_equal({ "solana-studio" => "0.12.3", "studio-engine" => "0.92.2.rc1" }, published)
   end
 
   def test_a_gem_that_cannot_be_installed_stops_the_next_publish

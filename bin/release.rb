@@ -1588,7 +1588,7 @@ end
 # --- gem publishing (producer-first) ---------------------------------------
 # Build + push one gem, then tag its repo. Each failure aborts loudly with the
 # fix, never swallowed — a half-published release is worse than a stopped one.
-def publish_gem(repo, version)
+def publish_gem(repo, version, before_push: nil)
   path = repo_path(repo)
   abort!("gem repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
 
@@ -1598,16 +1598,15 @@ def publish_gem(repo, version)
 
   # 1. Gate on the gem's own release-check (--build = syntax + unit + build) when
   #    it ships one, so a red gem never gets pushed.
-  if (rc = meta["release_check"]) && (DRY || File.exist?(File.join(path, rc)))
-    step("gem check: #{repo} #{rc} --build")
-    _, ok = run_test_scope("gem_release_check", rc, "--build", chdir: path, repo: repo, label: "#{rc} --build")
-    abort!("#{repo} release-check failed — fix before publishing (nothing pushed)") unless ok || DRY
-  end
+  gem_release_check!(repo)
 
   # 2. Build the push artifact at a known path.
   step("gem build: #{repo} #{gemspec} → #{artifact}")
   _, built = sh("gem", "build", gemspec, "--output", artifact, chdir: path)
   abort!("gem build failed for #{repo} #{version} — aborting before push") unless built || DRY
+
+  # The ship's last look at the artifact: it aborts here, with nothing pushed.
+  before_push&.call(artifact) unless DRY
 
   # 3. Push to RubyGems.
   step("gem push: #{artifact}")
@@ -1630,6 +1629,78 @@ def publish_gem(repo, version)
     say("  ⚠ tag #{tag} did NOT reach origin — push it now: git -C #{path} push origin #{tag}. Until it " \
         "lands, a sweep from any clone without it REFUSES #{repo} (/tasks/untagged-gem-publish-strands-work)")
   end
+end
+
+# The gem's own release-check (--build), run in its primary at the checked-out tip.
+def gem_release_check!(repo)
+  path = repo_path(repo)
+  rc = gem_meta_for(repo)["release_check"]
+  return unless rc && (DRY || File.exist?(File.join(path, rc)))
+
+  step("gem check: #{repo} #{rc} --build")
+  _, ok = run_test_scope("gem_release_check", rc, "--build", chdir: path, repo: repo, label: "#{rc} --build")
+  abort!("#{repo} release-check failed — fix before publishing (nothing pushed)") unless ok || DRY
+end
+
+# Build and push one gem's RELEASE CANDIDATE (x.y.z.rcN) from `tip`, then tag it.
+# The tree at `tip` declares the final x.y.z and stays that way: the candidate's
+# version is written into the gem's ship workspace for the build and put back. A
+# candidate can be published again under the next number, so a failure here costs
+# a re-run and no version.
+def publish_gem_candidate(repo, tip, final, candidate)
+  path         = repo_path(repo)
+  meta         = gem_meta_for(repo)
+  gemspec      = meta["gemspec"].to_s.empty? ? "#{repo}.gemspec" : meta["gemspec"]
+  version_file = meta["version_file"].to_s
+  artifact     = File.join(Dir.tmpdir, "release-#{repo}-#{candidate}.gem")
+
+  return if DRY
+
+  checkout_detached(repo, tip)
+  gem_release_check!(repo)
+  restore_gem_primary(repo)
+
+  with_ship_workspace(repo) do
+    workspace = ship_workspace!(repo, tip)
+    ws_version = File.join(workspace, version_file)
+    original   = File.exist?(ws_version) ? File.read(ws_version) : ""
+    rewritten  = Release::GemCandidate.rewrite_version(original, final, candidate)
+    abort!("#{repo}: #{version_file} at #{short(tip)} does not declare exactly #{final} — refusing to build " \
+           "candidate #{candidate} from it. NOTHING was published") if rewritten.nil?
+
+    begin
+      File.write(ws_version, rewritten)
+      step("gem build (candidate): #{repo} #{gemspec} at #{candidate} → #{artifact}")
+      _, built = sh("gem", "build", gemspec, "--output", artifact, chdir: workspace)
+      abort!("gem build failed for #{repo} #{candidate} — NOTHING was published") unless built
+    ensure
+      File.write(ws_version, original)
+    end
+  end
+
+  built_version = gem_artifact_version(artifact)
+  abort!("#{repo}: the candidate build carries version #{built_version.inspect}, not #{candidate} — refusing " \
+         "to push it. NOTHING was published") unless built_version == candidate
+
+  step("gem push (candidate): #{artifact} — a prerelease; the final #{final} is pushed by `bin/release ship`")
+  _, pushed = sh("gem", "push", artifact)
+  abort!("gem push failed for #{repo} candidate #{candidate}. No final version was pushed and nothing was " \
+         "bumped or deployed. Check `gem signin`, then re-run `bin/release prepare`: it publishes the next " \
+         "free candidate number.") unless pushed
+
+  # Tagged AFTER the push, so a tag always names a candidate that was published.
+  tag = Release::GemCandidate.tag(candidate)
+  sh("git", "-C", path, "tag", "-a", tag, "-m", "Candidate #{repo} #{candidate}", tip, capture: true)
+  _, tagged = sh("git", "-C", path, "push", "origin", tag, capture: true)
+  say("  ⚠ tag #{tag} did NOT reach origin — a sweep from another clone publishes a fresh candidate " \
+      "instead of reusing #{candidate}: git -C #{path} push origin #{tag}") unless tagged
+end
+
+# The version a built .gem declares, or "" when it cannot be read.
+def gem_artifact_version(artifact)
+  Gem::Package.new(artifact).spec.version.to_s
+rescue StandardError
+  ""
 end
 
 # --- init ------------------------------------------------------------------
@@ -3814,51 +3885,43 @@ def prepare
   #     aborts with ZERO gems published.
   merge_forward_release_branches(app_groups, gem_groups: gem_groups)
 
-  # 4d. PRODUCER-FIRST GEM PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward
-  #     (4c), so every gem publishes the post-merge release tree, and BEFORE the
-  #     pre-QA gate and any QA deploy (publish-gems-before-qa). TWO PHASES,
-  #     because a RubyGems push can never be re-pushed: phase 1 VALIDATES every
-  #     swept gem (fail-closed fetch, version parses, stranded-work guard, a
-  #     swept consumer declares it) and aborts on ANY failure with ZERO gems
-  #     published; only then does phase 2 publish and commit each consumer's
-  #     Gemfile.lock bump onto its `accepted` and fast-forward its `release` to
-  #     that commit. Ordering is load-bearing: the lock commits land BEFORE
-  #     pre_qa_gate resolves origin/release, so the CI verdict targets the
-  #     post-bump SHA, QA bundles the new lock, and prod ships the exact tree QA
-  #     tested; and because `accepted` carries the bump too, that SHA is the
-  #     `accepted` head, so the gate credits its verdict by SHA. Ship's publish
-  #     stays as the idempotent verify (already-live → skip).
+  # 4d. GEM CANDIDATE PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward (4c), so
+  #     every candidate is built from the post-merge release tree, and BEFORE the
+  #     pre-QA gate and any QA deploy.
   #
-  #     PHASE 0 leads: ALLOCATE each swept gem's version from its members and
-  #     commit it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
-  #     origin/accepted, then promote that onto origin/release. It runs above
-  #     phase 1 because phase 1's stranded-work guard is the BACKSTOP for
-  #     allocation not happening — the guard stays armed and still aborts when
-  #     the version has not advanced, it just has nothing left to catch on the
-  #     happy path. Ordering is the same fail-closed rule as everything else
-  #     here: the version must be settled and pushed BEFORE the first
-  #     irreversible `gem push`, never after.
+  #     prepare publishes a RELEASE CANDIDATE (x.y.z.rcN), never the final: a
+  #     RubyGems version can never be re-pushed, so the final x.y.z waits for
+  #     `bin/release ship`, after QA is green and production is granted. A red QA
+  #     strands only a prerelease, and the next sweep reuses x.y.z.
+  #
+  #     PHASE 0 ALLOCATES each swept gem's final version from its members and
+  #     commits it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
+  #     origin/accepted, then promotes that onto origin/release. PHASE 1 VALIDATES
+  #     every swept gem (fail-closed fetch, version parses, clean-env CI verdict,
+  #     stranded-work guard, a swept consumer declares it) and aborts on ANY failure
+  #     with nothing published. PHASE 2 publishes each candidate (or reuses the one
+  #     tagged at this tip) and commits each consumer's Gemfile + Gemfile.lock bump
+  #     onto its `accepted`, then fast-forwards its `release` to that commit. The
+  #     lock commits land BEFORE pre_qa_gate resolves origin/release, so the CI
+  #     verdict and QA both read the post-bump SHA. The ship then publishes the
+  #     final from the frozen gem SHA, re-locks each consumer to it in a commit that
+  #     changes only Gemfile and Gemfile.lock, and reads CI for THAT commit before
+  #     any deploy.
   allocate_gem_versions!(gem_groups, label: slug)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
-  # BIND the publish map. It is the authoritative record of what each gem actually
-  # published (or was already live at), and the member-provenance line below needs
-  # it — that line used to re-derive the version from the primary checkout, which
-  # sits on `main` and is a release behind by construction. See
-  # Release::GemVersion.reported_version.
+  # BIND the publish map: { gem => the version consumers lock for QA } (a candidate,
+  # or the final when it was already live). The member-provenance line below reads
+  # it rather than the primary checkout, which sits on `main` and is a release
+  # behind by construction. See Release::GemVersion.reported_version.
   published_gems = publish_gems_for_qa(gem_plan)
   bump_consumer_locks_for_qa(app_groups, published_gems)
+  refuse_stray_candidates!(app_groups, published_gems)
 
-  #     4e. PRODUCER LOCK BUMP + THE DRIFT POST-CONDITION. A registered gem is a
-  #     CONSUMER too — studio-engine's Gemfile declares solana-studio — and 4d
-  #     above only ever bumped `app` members, so every publish left the engine's
-  #     own lock behind and reddened every open engine PR. It is a separate step
-  #     rather than another entry in `app_groups` for four reasons argued at
-  #     bump_producer_locks_for_accepted, the sharpest being that a producer's
-  #     bump is a DEVELOPMENT fact that rides the NEXT release, while 4d's is a
-  #     DEPLOY fact that `release` carries now. Then ASSERT the effect: no repo may be
-  #     left resolving a gem this sweep published older than the published version.
-  bump_producer_locks_for_accepted(published_gems)
-  assert_no_lock_drift!(app_groups, published_gems)
+  #     4e. THE DRIFT POST-CONDITION: no swept consumer may be left resolving a gem
+  #     older than the version this sweep locked. Producers (a gem repo that consumes
+  #     another gem) are bumped by the SHIP, to the final: a candidate never enters a
+  #     gem repo's own lock.
+  assert_no_lock_drift!(app_groups, published_gems, producers: false)
 
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
@@ -3898,8 +3961,8 @@ def prepare
   #    by PR merges, so there's NO branch-cut/member-merge here — and no
   #    merge-forward either: that moved to step 4c, above the gate, so this loop
   #    deploys exactly the tree the gate certified. Gems are NOT deployed — they
-  #    ride the release as a record, already published at 4d above (ship
-  #    re-verifies idempotently).
+  #    ride the release as a record; their candidate was published at 4d above and
+  #    the ship publishes the final.
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
   qa_smoke_started = false
@@ -3911,7 +3974,7 @@ def prepare
     if group["kind"] == "gem"
       members.each do |m|
         member_version = Release::GemVersion.reported_version(published_gems, repo, gem_version_local(repo))
-        step("gem member #{m['slug']} (#{repo} #{member_version}) — rides the release; published BEFORE this QA deploy (step 4d), QA'd via its consuming app's bumped lock")
+        step("gem member #{m['slug']} (#{repo} #{member_version}) — rides the release; its candidate was published BEFORE this QA deploy (step 4d) and QA runs it through the consuming app's lock; `bin/release ship` publishes the final")
       end
       # Freeze the gem's origin/release HEAD into qa_shas, exactly like apps do at
       # the bottom of this loop. Without an entry the gem gets NO frozen SHA, so
@@ -4150,9 +4213,9 @@ rescue SystemExit
   # WHAT IS ALREADY IRREVERSIBLE — the prepare-side twin of the ship's
   # "Already live this run" (@ship_live). By the time a mid-sweep abort fires, the
   # batch accepted→release PRs may be merged, earlier repos may have merged their
-  # merge-forward onto origin/release, gems may be PUBLISHED to RubyGems (which
-  # can never be un-pushed), and consumer lock bumps may be committed onto
-  # origin/release. Without this the abort message
+  # merge-forward onto origin/release, gem CANDIDATES may be published to RubyGems
+  # (prereleases; no final version is pushed here), and consumer lock bumps may be
+  # committed onto origin/release. Without this the abort message
   # is the operator's last word, and a message that says "nothing was committed"
   # invites a "just reset release" cleanup that would drop the batch merge and
   # strand a published gem. Ship prints this and prepare did not; now both do.
@@ -4160,7 +4223,7 @@ rescue SystemExit
     warn("")
     warn("✗ Prepare ABORTED partway — these are ALREADY DONE and are NOT undone by the abort:")
     @prepare_live.each { |line| warn("    ✓ #{line}") }
-    warn("  Re-run `bin/release prepare` to resume: published gems skip, merges are idempotent,")
+    warn("  Re-run `bin/release prepare` to resume: a published candidate is reused, merges are idempotent,")
     warn("  and an already-correct lock commits nothing. Do NOT reset `release` to undo them.")
   end
   raise
@@ -5707,29 +5770,21 @@ def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
          "resolves through — then re-run; it resumes.")
 end
 
-# --- prepare-side gem publish (producer-first, BEFORE the pre-QA gate + QA) ----
+# --- prepare-side gem candidate publish (producer-first, BEFORE the pre-QA gate + QA) ----
 #
-# WHY AT PREPARE (publish-gems-before-qa): ship used to be the first publish, so
-# QA never tested what prod would build — the consumer's QA deploy bundled its
-# COMMITTED Gemfile.lock (the OLD gem), ship then published the new gem and
-# repinned, and prod built a tree QA never saw. Worse, an unbumped version_file
-# made the ship publish silently self-skip (publish_needed? false), STRANDING
-# gem commits with every gate green. prepare now mirrors ship's producer-first
-# sequence up front: publish each swept gem member's origin/release version,
-# then commit each consumer's lock bump onto its release branch — BEFORE the
-# pre-QA gate reads CI's verdict and BEFORE any QA deploy, so the gate's SHA,
-# the QA tree, and the prod tree are the SAME tree.
+# QA must test what production builds, and a RubyGems version can never be
+# re-pushed. Both hold when prepare publishes a RELEASE CANDIDATE of each swept gem
+# (x.y.z.rcN, a prerelease) and the ship publishes the final x.y.z from the same
+# tree: the pre-QA gate and QA bundle the candidate through each consumer's
+# committed lock, and a QA bounce strands a prerelease, never a version.
 #
-# THE ACCEPTED COST: a publish is irreversible (RubyGems forbids re-pushing a
-# number), so a QA bounce can orphan a published version — the next fix bumps
-# PAST it and the dead number just sits on RubyGems, harmless. That trade is
-# deliberate: an occasional dead version buys QA testing the real artifact.
+# The candidate differs from the final in one string, the version literal. The ship
+# proves that before its push (ship_gem compares the two built gems file by file)
+# and proves the push after it (the served .gem's checksum is the built one's).
 #
-# Ship's publish stays, now as the idempotent VERIFY: on the happy path every
-# version is already live (skip), and it remains the backstop for a release
-# prepared before this change. Everything here is idempotent for the
-# self-healing re-run: already-live versions skip, an already-bumped lock
-# commits nothing.
+# Everything here is idempotent for the self-healing re-run: a candidate tagged at
+# the current release tip is reused, a moved tip gets the next number, an
+# already-bumped lock commits nothing.
 
 # PHASE 0 — ALLOCATE THE VERSION. The release owns the version, so THIS is where
 # it gets written; every phase below only reads it.
@@ -6137,15 +6192,17 @@ def validate_gems_for_qa(gem_groups, app_groups)
   return [] if gem_groups.empty?
 
   say("")
-  step("gem publish (producer-first, BEFORE the pre-QA gate + any QA deploy): " \
-       "preflight EVERY swept gem, then publish from origin/#{RELEASE_BRANCH}, then bump consumer locks")
+  step("gem candidate publish (producer-first, BEFORE the pre-QA gate + any QA deploy): " \
+       "preflight EVERY swept gem, then publish a release candidate from origin/#{RELEASE_BRANCH}, then bump " \
+       "consumer locks to it — the final version is published by `bin/release ship`")
 
   if DRY
     gem_groups.each do |group|
       step("  gem #{group['repo']}: preflight (fail-closed fetch → version parses → stranded-work guard " \
            "(commits past the last tag with an unbumped version_file ABORT) → a swept consumer declares " \
-           "the gem) — ALL swept gems validate BEFORE the first irreversible push → then publish the " \
-           "origin/#{RELEASE_BRANCH} version to RubyGems (skip if already live) → tag v<version>")
+           "the gem) — ALL swept gems validate BEFORE the first push → then publish candidate " \
+           "<version>.rc<n> of the origin/#{RELEASE_BRANCH} tree to RubyGems (reuse the one tagged at this " \
+           "tip) → tag rc-<version>.rc<n>")
     end
     return gem_groups.map { |g| { "repo" => g["repo"], "version" => "", "dry" => true } }
   end
@@ -6232,8 +6289,11 @@ def validate_gems_for_qa(gem_groups, app_groups)
       next
     end
 
-    plan << { "repo" => repo, "tip" => tip, "version" => version,
-              "already_live" => !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo)) }
+    # Which version consumers lock for QA: the final when it is already live, else
+    # a candidate of it (reused when one is live and tagged at this tip).
+    candidate = gem_candidate_plan(repo, path, tip, version)
+    plan << { "repo" => repo, "tip" => tip, "version" => version, "already_live" => candidate.final_live?,
+              "candidate" => candidate.final_live? ? nil : candidate.version, "candidate_live" => candidate.reuse? }
   end
 
   if failures.any?
@@ -6241,6 +6301,16 @@ def validate_gems_for_qa(gem_groups, app_groups)
            "first irreversible push):\n  - " + failures.join("\n  - "))
   end
   plan
+end
+
+# The candidate decision for one gem at its release tip (Release::GemCandidate.plan):
+# the RubyGems listing, the `rc-` tags at the tip, and every `rc-` tag in the repo.
+# The caller has already fetched with --tags.
+def gem_candidate_plan(repo, path, tip, final)
+  at_tip, = git_capture("-C", path, "tag", "--points-at", tip, "--list", "#{Release::GemCandidate::TAG_PREFIX}*")
+  all, = git_capture("-C", path, "tag", "--list", "#{Release::GemCandidate::TAG_PREFIX}*")
+  Release::GemCandidate.plan(final: final, live: rubygems_versions(repo),
+                             tip_tags: at_tip.to_s.lines.map(&:strip), all_tags: all.to_s.lines.map(&:strip))
 end
 
 # Phase 1's consumer read: each swept app's Gemfile AT origin/release, behind a
@@ -6266,10 +6336,9 @@ def validated_consumer_gemfiles(app_groups, failures)
   end
 end
 
-# PHASE 2 — the irreversible loop, run ONLY after phase 1 validated every swept
-# gem. No new decisions here: the plan carries the tip, version, and live-state
-# phase 1 resolved. Idempotent for the self-healing re-run: already-live
-# versions skip.
+# PHASE 2 — the publish loop, run ONLY after phase 1 validated every swept gem. No
+# new decisions here: the plan carries the tip, the final version and the candidate
+# phase 1 resolved.
 # THE CLEAN-ENV VERDICT FOR A GEM'S TIP — the check in front of the one
 # irreversible step in this whole pipeline.
 #
@@ -6330,6 +6399,9 @@ def gem_ci_abort(repo, sha, version, ci)
     "re-run it, then re-run this sweep."
 end
 
+# Returns { repo => the version consumers LOCK for QA }: a candidate x.y.z.rcN, or
+# the final when it was already live. No final version is ever pushed here; that is
+# `bin/release ship`'s act, after QA is green.
 def publish_gems_for_qa(gem_plan)
   return {} if gem_plan.empty?
 
@@ -6337,29 +6409,34 @@ def publish_gems_for_qa(gem_plan)
   gem_plan.each do |gem|
     repo = gem["repo"]
     if gem["dry"]
+      step("  gem #{repo}: gem build + gem push (candidate) <version>.rc<n> — a prerelease; the final " \
+           "<version> is pushed by `bin/release ship`")
       published[repo] = ""
       next
     end
 
+    final  = gem["version"]
+    locked = gem["candidate"].to_s.empty? ? final : gem["candidate"]
     if gem["already_live"]
-      say("  gem #{repo} #{gem['version']} already live on RubyGems — skip publish (idempotent re-run)")
+      say("  gem #{repo} #{final} is already live on RubyGems — consumers lock the final; no candidate")
+    elsif gem["candidate_live"]
+      say("  gem #{repo} candidate #{locked} is already live and tagged at #{short(gem['tip'])} — " \
+          "skip publish (idempotent re-run)")
     else
-      step("  gem #{repo} #{gem['version']}: publish from origin/#{RELEASE_BRANCH} (#{short(gem['tip'])}) — " \
-           "QA must test consumers against the REAL published artifact")
-      checkout_detached(repo, gem["tip"]) # build from the exact release tree
-      publish_gem(repo, gem["version"])   # reused: release-check → build → push → tag
-      restore_gem_primary(repo)
-      # IRREVERSIBLE: a RubyGems version can never be re-pushed. Record it so a
-      # later abort can tell the operator what is already live (see prepare's
-      # rescue arm) instead of implying the run left nothing behind.
-      (@prepare_live ||= []) << "gem #{repo} #{gem['version']} PUBLISHED to RubyGems (cannot be un-pushed)"
+      step("  gem #{repo} #{final}: publish candidate #{locked} from origin/#{RELEASE_BRANCH} " \
+           "(#{short(gem['tip'])}) — QA tests consumers against a published artifact of this tree")
+      publish_gem_candidate(repo, gem["tip"], final, locked)
+      # A candidate is a prerelease and costs nothing to abandon, but it is live:
+      # a later abort says so (see prepare's rescue arm).
+      (@prepare_live ||= []) << "gem #{repo} candidate #{locked} PUBLISHED to RubyGems (a prerelease; " \
+                                "the final #{final} is NOT published)"
     end
     # SERVED and INSTALLED before the NEXT gem publishes. The plan is producer-first,
     # so a later gem's release-check boots a lock pinning this one; and an
     # already-live gem waits too, because a re-run is exactly when this machine is
     # likeliest to lack it (see await_published_gems!).
-    await_published_gems!(repo => gem["version"]) unless DRY
-    published[repo] = gem["version"]
+    await_published_gems!(repo => locked) unless DRY
+    published[repo] = locked
   end
   published
 end
@@ -6536,12 +6613,14 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
   gem_names = published_gems.keys
   step("bump consumer locks for #{gem_names.join(', ')} on origin/#{ACCEPTED_BRANCH}, then fast-forward " \
-       "origin/#{RELEASE_BRANCH} to it — the pre-QA gate, QA, and prod must all build this SAME committed lock")
+       "origin/#{RELEASE_BRANCH} to it — the pre-QA gate and QA build this committed lock; the ship re-locks " \
+       "a candidate to its final")
   app_groups.each do |group|
     repo = group["repo"]
 
     if DRY
-      step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{RELEASE_BRANCH} " \
+      step("  #{repo}: pin the candidate exactly in the Gemfile → bundle lock --update <gem> --conservative in " \
+           "the ship workspace @ origin/#{RELEASE_BRANCH} " \
            "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
            "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
            "commit + push origin #{ACCEPTED_BRANCH}, then fast-forward origin #{RELEASE_BRANCH} to it " \
@@ -6575,8 +6654,10 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         next
       end
 
+      # A candidate rides an exact second requirement on the gem's line; Bundler
+      # resolves a prerelease only when one is named (Release::ShipSequence.locked_gemfile).
       expected = text.dup
-      touched.each { |gem_name| expected = Release::ShipSequence.bumped_gemfile(expected, gem_name, published_gems[gem_name]) }
+      touched.each { |gem_name| expected = Release::ShipSequence.locked_gemfile(expected, gem_name, published_gems[gem_name]) }
       File.write(ws_gemfile, expected) if expected != text
       # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF — and RIDE THE LADDER while
       # doing it. `bundle lock --update` exits 0 whether or not it could SEE the
@@ -6807,6 +6888,56 @@ def bump_producer_locks_for_accepted(published_gems)
   end
 end
 
+# A CANDIDATE NOBODY IS FINALIZING. A consumer lock on a prerelease of a registered
+# gem is sound only while this release carries that gem at that version: the ship
+# then re-locks it to the final. Ejecting the gem member, or a candidate left on
+# `accepted` by a candidate that never shipped, leaves the lock on a prerelease, and
+# Bundler keeps such a lock for as long as it satisfies the Gemfile pin. `wanted` is
+# { gem => the version this run locks or finalizes }; `ref_for` names the tree read.
+# Returns the findings as sentences; an unreadable lock is not a consumer.
+def stray_candidate_findings(app_groups, wanted, &ref_for)
+  registered = RELEASE_REPOS.fetch("gems", {}).keys
+  app_groups.flat_map do |group|
+    repo = group["repo"]
+    path = repo_path(repo)
+    next [] unless Dir.exist?(path)
+
+    ref = ref_for.call(repo).to_s
+    lock, ok = git_capture("-C", path, "show", "#{ref}:Gemfile.lock")
+    next [] unless ok
+
+    gemfile, = git_capture("-C", path, "show", "#{ref}:Gemfile")
+    registered.filter_map do |gem_name|
+      resolved = Release::ShipSequence.locked_version(lock, gem_name).to_s
+      pinned   = Release::GemfileRepin.candidate_pin(gemfile.to_s, gem_name).to_s
+      held     = [resolved, pinned].find { |v| Release::ShipSequence.prerelease_version?(v) }
+      next if held.nil?
+
+      want = wanted[gem_name].to_s
+      next if !want.empty? && [held, Release::GemCandidate.final_of(held)].include?(want)
+
+      "#{repo} locks #{gem_name} #{held} at #{short(ref)}, and this release " \
+        "#{want.empty? ? "does not carry #{gem_name}" : "carries #{gem_name} #{want}"}"
+    end
+  end
+end
+
+STRAY_CANDIDATE_REMEDY =
+  "A prerelease must never reach production. Either put the gem's task back on this release, so the ship " \
+  "publishes the final and re-locks to it, or land a task on the consumer's `accepted` that restores its " \
+  "Gemfile line and runs `bundle lock --update <gem> --conservative` back to the last released version; " \
+  "then re-run `bin/release prepare`."
+
+def refuse_stray_candidates!(app_groups, published_gems)
+  return if DRY
+
+  findings = stray_candidate_findings(app_groups, published_gems) { |_repo| "origin/#{RELEASE_BRANCH}" }
+  return if findings.empty?
+
+  abort!("a consumer is locked to a release candidate this sweep is not testing — " \
+         "#{findings.join('; ')}. #{STRAY_CANDIDATE_REMEDY}")
+end
+
 # THE POST-CONDITION: after the sweep has bumped every lock it owns, does any repo
 # still resolve a gem this sweep published OLDER than the version published?
 #
@@ -6827,14 +6958,14 @@ end
 # WHAT IT CANNOT SEE: a repo with no sibling checkout has no lock to read, so it is
 # absent from the map rather than counted as aligned. bump_producer_locks_for_
 # accepted warns loudly in that case, which is the only signal there is.
-def assert_no_lock_drift!(app_groups, published_gems)
+def assert_no_lock_drift!(app_groups, published_gems, producers: true)
   return if DRY || published_gems.empty?
 
   resolutions = {}
   seen = {}
 
-  readers = app_groups.map { |g| [ g["repo"], RELEASE_BRANCH ] } +
-            RELEASE_REPOS.fetch("gems", {}).keys.map { |repo| [ repo, ACCEPTED_BRANCH ] }
+  readers = app_groups.map { |g| [ g["repo"], RELEASE_BRANCH ] }
+  readers += RELEASE_REPOS.fetch("gems", {}).keys.map { |repo| [ repo, ACCEPTED_BRANCH ] } if producers
 
   readers.each do |(repo, branch)|
     next if seen[repo]

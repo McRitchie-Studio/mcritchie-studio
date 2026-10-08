@@ -517,10 +517,15 @@ class Release
     end
 
     def prerelease_locked?(lockfile_text, gem_name)
-      resolved = locked_version(lockfile_text, gem_name)
-      !resolved.nil? && Gem::Version.new(resolved).prerelease?
+      prerelease_version?(locked_version(lockfile_text, gem_name))
+    end
+
+    # False for nil or blank. A version nobody can parse is not a release.
+    def prerelease_version?(version)
+      text = version.to_s.strip
+      !text.empty? && Gem::Version.new(text).prerelease?
     rescue ArgumentError
-      true # a version nobody can parse is not a release
+      true
     end
 
     # The body of a Gemfile.lock's `GEM` sections — the RubyGems-sourced

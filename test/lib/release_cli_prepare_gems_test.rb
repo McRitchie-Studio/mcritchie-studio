@@ -33,9 +33,9 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     assert_operator publish, :<, bump,   "gems publish before any consumer lock bump (producer-first)"
     assert_operator bump, :<, gate,      "the lock bump commits BEFORE the pre-QA gate reads origin/release"
     assert_operator gate, :<, deploy,    "the gate still precedes the QA deploy"
-    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
-                    "a single-gem bump uses conservative lock semantics"
-    assert_includes out, "committed studio-engine 1.0.0",
+    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0.rc1",
+                    "a single-gem bump uses conservative lock semantics, and locks the candidate"
+    assert_includes out, "committed studio-engine 1.0.0.rc1",
                     "the bump commit narrates what landed on origin/release"
   end
 
@@ -44,13 +44,13 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # that escapes it.
   def test_prepare_rewrites_the_consumer_pin_only_when_the_published_version_escapes_it
     escaped = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0"))
-    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0"),
-                    "a major bump escapes `~> 0.10` — the pin advances with the lock"
+    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0", "1.0.0.rc1"),
+                    "a major bump escapes `~> 0.10` — the pin advances, under the exact candidate"
 
     held = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0"))
-    assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"),
-                    "a minor bump is WITHIN `~> 0.10` — lock-only, the pin stays"
-    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0"
+    assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10", "0.11.0.rc1"),
+                    "a minor bump is WITHIN `~> 0.10` — the pin stays, plus the exact candidate"
+    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0.rc1"
   end
 
   # [integration] The STRANDED-WORK guard: origin/release ahead of the last
@@ -205,7 +205,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     out = run_cli(["--yes"], call: "prepare",
                   setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false, tag: "v1.0.0", ahead: ""))
 
-    assert_includes out, "already live on RubyGems — skip publish", "an already-published version skips"
+    assert_includes out, "already live on RubyGems — consumers lock the final", "a live final publishes nothing"
     assert_includes out, "nothing to commit (idempotent re-run)", "an already-bumped lock commits nothing"
     refute_includes out, "GEM-BUILD"
     refute_includes out, "GEM-PUSH"
@@ -316,7 +316,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     assert_includes out, "DOWNGRADE", "the abort names the downgrade it prevented"
     assert_includes out, "past the last published tag v0.10.0", "the abort names the REAL tag"
     refute_includes out, "NO-ABORT"
-    refute_includes out, "already live on RubyGems — skip publish",
+    refute_includes out, "already live on RubyGems — consumers lock the final",
                     "the misleading idempotent-skip line must NOT appear for a backward version"
     refute_includes out, "GEM-PUSH", "zero gems publish on a backward version"
     refute_includes out, %(GEMFILE-AFTER gem "studio-engine", "~> 0.9"),
