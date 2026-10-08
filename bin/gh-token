@@ -226,13 +226,14 @@ end
 OP_ERROR_MAX = 200
 SECRET_SHAPED = /\b(?:ops_|gh[a-z]_|github_pat_)\S+|[A-Za-z0-9+\/=_-]{40,}/
 
-# The last line `op` wrote to stderr on a failed read, cut to OP_ERROR_MAX with
-# anything token- or key-shaped redacted. "" when op wrote nothing.
+# The last line `op` wrote to stderr on a failed read, token- and key-shaped text redacted,
+# cut to its LAST OP_ERROR_MAX characters (op names the cause last). "" when op wrote nothing.
 def scrub_op_error(stderr)
   line = stderr.to_s.lines.map(&:strip).reject(&:empty?).last.to_s
   return "" if line.empty? || line.include?("PRIVATE KEY")
 
-  line.gsub(SECRET_SHAPED, "[redacted]")[0, OP_ERROR_MAX]
+  scrubbed = line.gsub(SECRET_SHAPED, "[redacted]")
+  scrubbed[-OP_ERROR_MAX..] || scrubbed
 end
 
 def mint(identity)

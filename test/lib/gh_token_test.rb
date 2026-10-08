@@ -302,15 +302,29 @@ class GhTokenTest < Minitest::Test
   # Anything token- or key-shaped in that line is redacted, and the line is capped.
   def test_ops_error_is_scrubbed_and_capped
     Dir.mktmpdir do |dir|
-      noisy = "[ERROR] bad token ops_#{"a" * 60} or ghs_sTuBtOkEn #{"word " * 80}"
+      noisy = "#{"word " * 80}[ERROR] bad token ops_#{"a" * 60} or ghs_sTuBtOkEn"
       env = with_env(dir).merge("GH_TOKEN_OP_BIN" => failing_op(dir, noisy))
       _out, err, status = run_token(env, "--identity", "deployer", "--force")
 
       refute status.success?
-      assert_includes err, "op said: [ERROR] bad token [redacted] or [redacted]"
+      assert_includes err, "[ERROR] bad token [redacted] or [redacted] — "
       refute_match TOKEN_SHAPED, err
       refute_includes err, "ops_"
       assert_operator err[/op said: (.*?) — /m, 1].length, :<=, 200
+    end
+  end
+
+  # op 2.34.0's wording for an unreachable host overruns the cap and names the cause LAST.
+  def test_the_cap_keeps_the_cause_op_names_last
+    Dir.mktmpdir do |dir|
+      real = "[ERROR] 2026/01/01 00:00:00 could not read secret op://studio-agents-admin/github.mcritchie-admin/app-id: " \
+             'error initializing client: Get "https://my.1password.com/api/v2/account/keysets?__t=1791437253.376": ' \
+             "dial tcp: lookup my.1password.com: no such host"
+      env = with_env(dir).merge("GH_TOKEN_OP_BIN" => failing_op(dir, real))
+      _out, err, _status = run_token(env, "--identity", "deployer", "--force")
+
+      assert_operator real.length, :>, 200, "the fixture must overrun the cap"
+      assert_includes err, "dial tcp: lookup my.1password.com: no such host — "
     end
   end
 
