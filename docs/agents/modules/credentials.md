@@ -102,7 +102,8 @@ The board API takes two bearers (design:
 [`../system/agent-sessions-design.md`](../system/agent-sessions-design.md)).
 
 - **An agent session.** `bin/task begin` logs the desk's soul in to the task it
-  claimed (`POST /api/v1/agent_sessions`, presented with the shared token) and keeps
+  claimed (`POST /api/v1/agent_sessions`, presented with the machine's harness
+  key, or with the shared token on a machine that holds none) and keeps
   the session token in `agent-session.json` inside the desk's git directory,
   owner-only, where no commit can reach it, with the harness session (Claude or
   Codex) that ran `begin`. Only that harness session presents it: anyone else running
@@ -110,7 +111,8 @@ The board API takes two bearers (design:
   lives while the task is `building` or `submitted`, and expires after 24 hours. Its
   soul is the actor on every board write it makes; an `actor` or `by` param is
   ignored. It may write only its own task, and a release endpoint answers 403.
-- **A reviewer's session.** A review claim taken with the shared token
+- **A reviewer's session.** A review claim taken with the harness key or the
+  shared token
   (`bin/task claim-next-review --agent <soul>`, `bin/task review-claim acquire`)
   logs that reviewer in to the claimed task, when the soul is in the reviewer pool
   and outside the task's author set. The claim's response carries the token, and
@@ -130,12 +132,82 @@ The board API takes two bearers (design:
   `bin/task` retries on the shared token after a 401, never after this 403. A
   reviewer who zapped the PR is an author: release the claim (`bin/task
   review-claim release <slug>`), then make the move, which rides the shared token
-  while that is accepted. To archive a task from its desk, run the move from
-  outside the desk.
+  while that is accepted. With an admin login held, an admin outside the author
+  set makes it instead: `TASK_AS_ADMIN=1 bin/task move <slug> reviewed`.
+  `bin/task` never offers a desk's studio login on a move to `archived`: that
+  move rides the shared token while it is accepted, or the admin login with
+  `TASK_AS_ADMIN=1 bin/task move <slug> archived`.
+- **Acting as an admin.** `TASK_AS_ADMIN=1` makes one `bin/task` run present the
+  admin login this harness session holds, on every call. The board records the
+  admin soul as the actor. A run that holds no admin login, or whose login the
+  board ended, stops and names how to log in; it never falls back. No command
+  presents the admin login unasked, because every agent a harness spawns can read
+  it.
 - **The shared token** from `AGENT_API_SECRET` (`POST /api/v1/auth`). It still works
-  everywhere for one release, with each use logged as `[agent-auth] legacy` (naming
-  the dropped desk session when a desk fell back from one), so Turf
-  Monster's two endpoints and installed hooks keep running.
+  everywhere it did, with each use logged as `[agent-auth] legacy` (naming
+  the dropped desk session when a desk fell back from one) and counted in the
+  legacy-use census, so Turf Monster's two endpoints, installed hooks and older
+  checkouts keep running. It stops writing only after the census reads zero
+  ([The legacy-use census](#the-legacy-use-census)).
+
+### The harness key
+
+A harness key is one machine's credential for minting logins. It mints the studio
+login at a task claim and at a review claim, and posts login requests; every other
+endpoint answers it 403. The operator grants it once per machine:
+
+```bash
+bin/harness-key request                 # prints a login-… slug; the board row reads "Harness key · <machine>"
+bin/harness-key collect --code <code>   # with the row's one-time code; or `collect` alone after the Approve tap
+bin/harness-key status                  # the slug, the machine and the key's length; whether the board accepts it
+```
+
+The key is kept in `<projects>/.agents/harness-key.json`, owner-only, and no
+command prints it. It has no expiry: `bin/rails agent_sessions:keys` lists every
+key without a value, and `bin/rails agent_sessions:revoke SLUG=<sess-…>` ends one
+at once. A machine with no key, or whose key was revoked, mints with the shared
+token and says so.
+
+### Turf Monster's runtime key
+
+Turf Monster's two hub calls (`GET /api/v1/athletes`, `POST /api/v1/game_recaps`)
+take a client runtime key that reaches those two endpoints and nothing else. A
+hub shell mints it, and stdout is the key and nothing else:
+
+```bash
+bin/rails agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=turf-production
+```
+
+Steffon takes that output straight into Turf's config as `STUDIO_RUNTIME_KEY`
+under the [`credential-rotation`](../agents/steffon/sops/credential-rotation.md)
+SOP, never reading it. Turf presents the key when the variable is set and
+exchanges `AGENT_API_SECRET` while it is not. A refused key fails the call and
+does not fall back, so a wrong key shows as a failed sync or a
+`recap_push_failed` anomaly.
+
+### The legacy-use census
+
+Every request the shared token authenticates is counted per day, by endpoint and
+by the script that called (`X-Agent-Caller`; a request that names none counts as
+`unlabelled`). The count holds no token. An admin reads it from a hub shell:
+
+```bash
+bin/rails agent_auth:legacy_census DAYS=7
+```
+
+The first line gives the total and the count outside the mint doors (the exchange
+of the secret and the requests that mint a login, which the secret keeps). A line
+marked `*` is a use outside them. The shared token stops writing only after that
+count reads zero on production for the period Alex chooses.
+
+### Hooks and narration
+
+`bin/agent-activity`, the capture hook, `bin/session-insights` and the release
+conductor's claim present a login the harness session holds and fall back to the
+shared token only when the board answers the login 401. Narration presents a
+login only when its soul is the lane the call declares. `AGENT_LEGACY_TOKEN=off`
+is the degraded mode: the shared token is neither read nor minted, a call with a
+login is made under it, and a call with none is not made, so nothing is recorded.
 
 Admin sessions (Steffon, Xan) are unscoped within the admin tier and expire after
 8 hours. `bin/agent-activity heartbeat steffon|xan` posts an admin login request
@@ -164,19 +236,21 @@ After an Approve tap the harness session that asked collects the token once
 `heartbeat --clear`, a heartbeat as the other admin soul and the session's end
 revoke it. A request that lapsed or was
 refused mints nothing, and the collect answers 410 with the reason. `bin/task`
-does not present this token yet.
+presents this token when asked (`TASK_AS_ADMIN=1`), `bin/tiktok-draft` presents
+it to the board that granted it, and the release conductor's claim presents it.
 
-A shell on the hub is the third grant. The task prints the token on stdout and
-nothing else, so take it into the environment without reading it, and never
-paste or file it:
+A shell on the hub is the third grant, for when the board cannot grant. The task
+prints the token on stdout and nothing else, so take it into the environment
+without reading it, and never paste or file it:
 
 ```bash
 export AGENT_ADMIN_SESSION_TOKEN="$(bin/rails agent_sessions:grant_admin)"   # SOUL=steffon, HOURS=1 to narrow it
 ```
 
-Most admin-tier endpoints still pass the shared token for one release. An
-endpoint declared `require_admin_session_only` does not: today that is the TikTok
-draft create, which `bin/tiktok-draft` reaches with the variable above. Every refusal answers
+Most admin-tier endpoints still pass the shared token. An endpoint declared
+`require_admin_session_only` does not: today that is the TikTok draft create,
+which `bin/tiktok-draft` reaches with the board's admin login or the variable
+above. Every refusal answers
 401 (the session ended: revoked, expired, or the task moved on) or 403 (tier or
 scope) with the reason. `GET /api/v1/agent_sessions/current` says who a bearer is;
 `DELETE` on the same path logs out.

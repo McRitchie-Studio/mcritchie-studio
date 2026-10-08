@@ -119,7 +119,7 @@ caption exactly as printed.
 
 Creating a draft needs an **admin session**: the hub refuses the shared token
 and a builder's session on this one request. Steps 0, 1 and 4 need none. Get
-one first ([The admin session](#the-admin-session)), then, in the same shell:
+one first ([The admin session](#the-admin-session)), then, in the same session:
 
 ```bash
 bin/tiktok-draft <clip-slug> --production --yes

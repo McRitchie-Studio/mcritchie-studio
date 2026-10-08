@@ -80,7 +80,7 @@ name the cursor can hold, so all three are spelled out here:
 
 | Condition | Cursor status | Rake exit |
 |---|---|---|
-| No `AGENT_API_SECRET` | `skipped` | **0** |
+| Neither `STUDIO_RUNTIME_KEY` nor `AGENT_API_SECRET` | `skipped` | **0** |
 | Hub unreachable, non-2xx, bad token, unparseable body, or any other exception | `failed` | **non-zero** |
 | Run completed and refused one or more namesakes | `ok_with_collisions` | **0**, deliberately |
 
@@ -125,10 +125,16 @@ not — by design.
 
 ### Auth
 
-Both flows share one bearer lane: `POST /api/v1/auth` with the shared
-`AGENT_API_SECRET` returns a 24-hour token
+Both flows read one credential (`turf-monster/app/services/studio/`): Turf's own
+runtime key, `STUDIO_RUNTIME_KEY`, presented as the bearer with no exchange. The
+hub mints it for the turf-monster client soul, and it reaches these two endpoints
+and nothing else (`app/models/agent_session.rb`, `CLIENT_ENDPOINTS`). While the
+variable is unset, both flows exchange the shared `AGENT_API_SECRET` at
+`POST /api/v1/auth` for a 24-hour token
 (`app/controllers/api/v1/auth_controller.rb#create`). Measured 2026-09-24: the
-secret is present on both `mcritchie-studio` and `turf-monster-mainnet`.
+secret is present on both `mcritchie-studio` and `turf-monster-mainnet`; the
+runtime key is set by Steffon's swap
+([`credentials.md`](../agents/modules/credentials.md#turf-monsters-runtime-key)).
 
 **`STUDIO_API_BASE` is a turf-monster-side override, not a shared one.** Both of
 turf-monster's clients read it and fall through to the

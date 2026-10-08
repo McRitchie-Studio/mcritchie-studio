@@ -211,8 +211,8 @@ Read three things:
    not the sync's business.
 2. **`missing_gsis` is 0.** A single athlete without a league ID cannot be
    synced at all and cannot be matched by any later importer.
-3. **`last_status` is `ok`.** `skipped` means `AGENT_API_SECRET` is unset on
-   that app and nothing ran. `failed` means the run did not complete — usually
+3. **`last_status` is `ok`.** `skipped` means neither `STUDIO_RUNTIME_KEY` nor
+   `AGENT_API_SECRET` is set on that app and nothing ran. `failed` means the run did not complete — usually
    the provider was unreachable, but the service rescues `StandardError`, so any
    crash lands here; the cursor's `detail` says which, recorded by CLASS for
    anything we did not raise ourselves.
@@ -256,9 +256,9 @@ nothing errors. That is why this step is not optional.
   dropping rows and a third run will not find it. A gap between the two TOTALS is
   not this condition and never was; turf-monster carries its own pre-sync rows by
   design.
-- **`last_status: skipped`** — `AGENT_API_SECRET` is missing on that app. It is
-  the same shared secret both apps already hold; this is a config gap, not a
-  data problem.
+- **`last_status: skipped`** — the app holds no hub credential: neither its own
+  `STUDIO_RUNTIME_KEY` nor the shared `AGENT_API_SECRET`. This is a config gap,
+  not a data problem.
 - **A namesake's slug changed unexpectedly** — two players sharing a name is
   normal but a slug CHANGING is not, because other records point at it. Report
   which player. Measured 2026-09-21 against the feed under the master's filter:
