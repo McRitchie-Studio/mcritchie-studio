@@ -120,6 +120,7 @@
         <% end %>
       </div>
     <% end %>
+    <%= render "tasks/release_lane_lease", release: rel, variant: variant %>
     <%# Second row: release meta — task count, QA/Prod links, deployed SHA. %>
     <div class="mt-1 flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>

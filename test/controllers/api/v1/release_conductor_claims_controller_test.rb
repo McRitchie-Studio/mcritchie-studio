@@ -36,6 +36,27 @@ module Api
         assert_equal "Machamp", body.dig("holder", "label")
       end
 
+      test "[integration] the claim is held under the soul of the login that took it, never a param" do
+        admin = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
+        post conductor_claim_api_v1_release_path(SLUG),
+             params: { role: "deployer", session: "A", nonce: "a", soul: "forged", holder_soul: "forged" },
+             headers: { "Authorization" => "Bearer #{admin.token}" }, as: :json
+        assert_response :ok
+        assert_equal "steffon", response.parsed_body.dig("data", "holder", "soul")
+
+        acquire(session: "B", nonce: "b", role: "assembler")
+        assert_nil response.parsed_body.dig("data", "holder", "soul"), "the shared token names no soul"
+      end
+
+      test "[integration] a refused second session is handed the holder's sentence" do
+        acquire(session: "sess-first-9b57", nonce: "a", label: "Snorlax")
+        acquire(session: "sess-second-41cd", nonce: "b")
+
+        sentence = response.parsed_body.dig("data", "holder", "sentence")
+        assert_match(/\ASnorlax \(session …9b57\) is assembling #{SLUG} since \w{3} \d+, \d{2}:\d{2} UTC\.\z/, sentence)
+        refute_includes response.body, "sess-second-41cd"
+      end
+
       test "[integration] a second session is refused and sees the holder" do
         acquire(session: "A", nonce: "a", label: "Snorlax")
         acquire(session: "B", nonce: "b")

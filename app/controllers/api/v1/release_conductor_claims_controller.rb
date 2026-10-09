@@ -80,7 +80,8 @@ module Api
           role:         claim_params[:role],
           session:      claim_params[:session],
           nonce:        claim_params[:nonce],
-          label:        claim_params[:label]
+          label:        claim_params[:label],
+          soul:         holder_soul
         )
         render_data({
           "acquired"    => outcome.acquired,
@@ -118,7 +119,8 @@ module Api
 
         outcome = ReleaseConductorClaim.reassign(
           release_slug: params[:slug], role: claim_params[:role],
-          session: claim_params[:session], nonce: claim_params[:nonce], label: claim_params[:label]
+          session: claim_params[:session], nonce: claim_params[:nonce], label: claim_params[:label],
+          soul: holder_soul
         )
         render_data({
           "reassigned"  => outcome.acquired,
@@ -193,6 +195,13 @@ module Api
           notes_completed: release.event_completed?("release_notes"),
           members_all_shipped: !release.tasks.where.not(stage: "shipped").exists?
         ).any?
+      end
+
+      # The soul the claim is held under: the login this call presented. Read from
+      # the server's own session row, never from a param, so a caller cannot name
+      # itself. nil under the shared token, which names no soul.
+      def holder_soul
+        Current.agent_session&.soul
       end
 
       def claim_params

@@ -4539,6 +4539,12 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
   #    Deliberately UNSCOPED by repo: `prepare` run bare sweeps every `reviewed`
   #    task and derives its promote repos from them, so other-REPO parked work
   #    rides out too — a per-repo git read alone would never see it.
+  #    `lane` rides the same call: the release lane in the Next Release card's own
+  #    sentences (Release::LaneLease): who is assembling, who is shipping, what the
+  #    production grant covers. A board that predates the module answers nil and
+  #    the report prints no lane. The lane is display only: a failure inside its
+  #    read answers one "lane: unavailable" line, so it never fails this call,
+  #    which `prepare` also makes.
   step("read (read-only): tasks riding `release` + tasks parked on `accepted` + Release.current")
   board = conductor(
     "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
@@ -4546,7 +4552,9 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     "accepted = Task.where(stage: 'reviewed', merged: 'accepted')" \
     ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
     "r = Release.current; " \
-    "puts({ pending: pending, accepted: accepted, " \
+    "lane = begin; defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
+    "rescue StandardError => e; ['lane: unavailable (' + e.class.name + ')']; end; " \
+    "puts({ pending: pending, accepted: accepted, lane: lane, " \
     "release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
     read_only: true
   )
@@ -4555,6 +4563,7 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
   if report_release
     rel = board["release"]
     say("  current release: #{rel ? "#{rel['slug']} (#{rel['state']})" : 'none active'}") if rel || !DRY
+    Array(board["lane"]).each { |line| say("    #{line}") }
   end
 
   # 2. Git signal, BOTH rungs, from ONE fetch per repo. Skipped under --dry-run

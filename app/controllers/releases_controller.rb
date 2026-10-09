@@ -55,7 +55,8 @@ class ReleasesController < ApplicationController
       event = release.grant_ship_authorization!(
         actor: current_user&.email,
         source: "web",
-        metadata: { "granted_from" => "deployments" }
+        metadata: { "granted_from" => "deployments" },
+        approver: current_user
       )
       respond_to do |format|
         format.json { render json: { data: release.ship_authorization_state.merge("event_id" => event.id) } }

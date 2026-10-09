@@ -1,0 +1,139 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require_relative "../lib/release_cli_harness"
+
+# [integration] `bin/release status` prints the sentences the Next Release card
+# shows. The loop is run for real, with only the transport stood in: the CLI's own
+# board snippet is captured, evaluated here against this database, and its answer
+# handed back to the CLI, whose output is then compared with the rendered card.
+class ReleaseStatusLaneTest < ActionDispatch::IntegrationTest
+  # The subprocess runner the bin/release CLI suite uses (sealed PATH, no board).
+  class Cli < ReleaseCliHarness; end
+  GIT_STUB = %(def ladder_ahead_states = { "release" => [], "accepted" => [], "unreadable" => [] }\n)
+
+  setup { log_in_as(users(:alex)) }
+
+  setup do
+    Release.delete_all
+    ReleaseConductorClaim.delete_all
+    SessionMascot.delete_all
+    @cli = Cli.new("release_status_lane")
+  end
+
+  # What `bin/release status` sends to the board.
+  def status_snippet
+    out = @cli.run_cli(["status"], call: "status", setup: GIT_STUB + <<~RUBY)
+      def conductor(ruby, read_only: false)
+        puts("SNIPPET=" + [ruby].pack("m0"))
+        { "pending" => [], "accepted" => [], "release" => nil }
+      end
+    RUBY
+    out[/^\s*SNIPPET=(\S+)/, 1].unpack1("m0")
+  end
+
+  # The board's answer to that snippet, from this database.
+  def board_answer(snippet)
+    printed, = capture_io { eval(snippet, TOPLEVEL_BINDING.dup, "bin/release status snippet") } # rubocop:disable Security/Eval
+    JSON.parse(printed.lines.reverse.find { |line| line.strip.start_with?("{") })
+  end
+
+  def status_output(answer)
+    @cli.run_cli(["status"], call: "status",
+                             setup: GIT_STUB + "def conductor(ruby, read_only: false) = #{answer.inspect}\n")
+  end
+
+  def card_sentences
+    get deployments_path
+    css_select("#current-release [data-test='release-lane-sentence']").map { |node| node["title"] }
+  end
+
+  test "[integration] bin/release status prints the card's sentences, in the card's order" do
+    release = Release.open!
+    release.add(Task.create!(title: "status lane first member task", stage: "reviewed"))
+    ReleaseConductorClaim.acquire(release_slug: release.slug, role: "assembler", session: "sess-assembler-9b57",
+                                  nonce: "n", soul: "steffon", label: "Onix")
+    release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
+                          metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601,
+                                      "window_minutes" => 30 })
+    release.grant_ship_authorization!(actor: users(:alex).email, source: "web", approver: users(:alex))
+    late = Task.create!(title: "status lane late member task", stage: "reviewed")
+    release.add(late)
+
+    answer = board_answer(status_snippet)
+    out = status_output(answer)
+    card = card_sentences
+
+    assert_equal 5, card.size, "assembler, deployer, and three grant sentences"
+    assert_includes card, "Joined after approval: #{late.slug}."
+    printed = out.lines.map(&:strip)
+    positions = card.map { |sentence| printed.index(sentence) }
+    refute_includes positions, nil, "every card sentence is printed verbatim:\n#{out}"
+    assert_equal positions.sort, positions, "in the card's order"
+    assert_operator positions.first, :>, printed.index("current release: #{release.slug} (assembling)")
+  end
+
+  test "[integration] status prints the card's words for a row with no web approval" do
+    rows = {
+      "Recorded by the conductor CLI in ask mode (run as alex)" =>
+        ["ask", { source: "conductor", actor: "alex", metadata: { "mode" => "ask", "granted_via" => "confirm" } }],
+      "Authorized" =>
+        ["timed", { source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web" } }],
+      "No approval was given: the window lapsed" =>
+        ["timed", { source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web", "lapsed" => true } }]
+    }
+    snippet = status_snippet
+    rows.each do |opening, (mode, attrs)|
+      ReleaseEvent.delete_all
+      Release.delete_all
+      release = Release.open!
+      release.record_event!(step: "ship_authorized", status: "started", source: "conductor", metadata: { "mode" => mode })
+      release.record_event!(step: "ship_authorized", status: "completed", **attrs)
+
+      printed = status_output(board_answer(snippet)).lines.map(&:strip)
+      card = card_sentences
+
+      answer = card.find { |sentence| sentence.start_with?(opening) }
+      assert answer, "#{opening}: the card states it:\n#{card.join("\n")}"
+      card.each { |sentence| assert_includes printed, sentence, "status prints the card's sentence verbatim" }
+      refute(printed.any? { |line| line.match?(/Approved by|Confirmed|Alex McRitchie/) }, printed.join("\n"))
+    end
+  end
+
+  test "[integration] a failure inside the lane read prints lane unavailable and never fails the board read" do
+    release = Release.open!
+    snippet = status_snippet
+    assert_includes snippet, "defined?(Release::LaneLease)"
+
+    original = Release::LaneLease.method(:status_lines)
+    Release::LaneLease.define_singleton_method(:status_lines) { |*| nil.no_such_method }
+    answer = board_answer(snippet)
+    out = status_output(answer)
+
+    assert_equal ["lane: unavailable (NoMethodError)"], answer["lane"],
+                 "a failure is stated, not served as nil like a board that predates the lane"
+    assert_equal({ "slug" => release.slug, "state" => "assembling" }, answer["release"], "the rest of the read is whole")
+    assert_includes out, "current release: #{release.slug} (assembling)"
+    assert_includes out.lines.map(&:strip), "lane: unavailable (NoMethodError)"
+
+    # Control: with the read working, the same snippet serves the sentences.
+    Release::LaneLease.define_singleton_method(:status_lines, original)
+    healthy = board_answer(snippet)["lane"]
+    assert_equal Release::LaneLease.status_lines(release), healthy
+    refute_includes healthy.join(" "), "unavailable"
+  ensure
+    Release::LaneLease.define_singleton_method(:status_lines, original) if original
+  end
+
+  test "[integration] with no release, status names a prepare that is forming the next one" do
+    ReleaseConductorClaim.acquire(release_slug: ReleaseConductorClaim::FORMING_SLUG, role: "assembler",
+                                  session: "sess-forming-77aa", nonce: "n", label: "Onix")
+
+    answer = board_answer(status_snippet)
+    out = status_output(answer)
+
+    assert_nil answer["release"]
+    assert_includes out, "current release: none active"
+    assert_match(/Onix \(session …77aa\) is assembling the next release since/, out)
+  end
+end
