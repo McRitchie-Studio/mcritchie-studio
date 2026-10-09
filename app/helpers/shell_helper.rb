@@ -14,9 +14,13 @@ module ShellHelper
   # (components/_page_header, or one written by hand) the brand is drawn as a
   # div with the same classes, so the page's title is the outline's only h1.
   #
+  # Signed in, the engine's icon slot carries what a phone's bar needs
+  # (layouts/_navbar_phone_account).
+  #
   #   page_html  the rendered page body, as the layout's `yield` returns it
   def hub_navbar(page_html: nil)
-    navbar = render("layouts/navbar", show_logout_link: true)
+    phone_account = render("layouts/navbar_phone_account") if logged_in?
+    navbar = render("layouts/navbar", show_logout_link: true, extra_icons_html: phone_account)
     page_heading?(page_html) ? brand_without_heading(navbar) : navbar
   end
 

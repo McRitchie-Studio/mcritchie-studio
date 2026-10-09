@@ -42,6 +42,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
       assert_select "button[title='Toggle theme']", minimum: 1
       assert_select "a[href=?]", logout_path, count: 0
       assert_select "[data-nav-account]", count: 0
+      assert_select "[data-nav-phone-name], .nav-phone-tools", count: 0
     end
     assert_select "header[x-data='navCollapse()']", count: 0
     assert_select "#studio-link-sidebar", 1
@@ -58,6 +59,10 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
       assert_select "button[data-link-sidebar-trigger][aria-label='Toggle links menu']", minimum: 1
       assert_select "button[title='Toggle theme']", minimum: 1
       assert_select "a[href=?]", login_path, count: 0
+      # A phone draws the name above Log out; the account link names it for assistive tech.
+      assert_select "[data-nav-phone-name][aria-hidden='true']", text: users(:viewer).display_name, count: 1
+      assert_select ".nav-phone-tools button[data-link-sidebar-trigger]", 1
+      assert_select ".nav-phone-tools button[title='Toggle theme']", 1
     end
   end
 
