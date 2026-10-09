@@ -462,6 +462,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "statusline"             => :accepted_gap, # writes throttle markers, spawns a lease heartbeat
     "gh-app-mint-token"      => :accepted_gap, # no local write, but prints a live installation token
     "pr-status"              => :accepted_gap, # read-only gh pr view
+    "merge-permit"           => :accepted_gap, # read-only: GETs the task, its scout reports and the PR; never merges
     "ci-scope-capture"       => :accepted_gap, # best-effort telemetry POST; always exits 0
     "session-insights"       => :accepted_gap, # read-only GET
     "atomic-capture-hook"    => :accepted_gap, # stdin hook; a bare probe hits its rescue

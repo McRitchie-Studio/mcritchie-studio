@@ -67,6 +67,7 @@ class MergePermitCli
   def parse(argv)
     options = {}
     rest = OptionParser.new do |opts|
+      opts.banner = USAGE
       opts.on("--agent SOUL") { |value| options[:agent] = value }
       opts.on("--head SHA") { |value| options[:head] = value }
       opts.on("--json") { options[:json] = true }
