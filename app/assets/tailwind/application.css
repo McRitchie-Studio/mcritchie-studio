@@ -450,13 +450,34 @@
     --nav-title-lead-size: var(--nav-title-size);
     --nav-title-lead: calc(2rem - 0.5rem * var(--nav-p, 0));      /* line box, 32px -> 24px */
   }
-  /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks a two-span title
-     into a column; this h1 is a bare text node plus one span and never stacked.
-     Measured at 390/767px, the column made the collapsed title 24px -> 44px and
-     the expanded row 84px -> 108px. Row + wrap keeps the old shape (one line
-     where it fits, a natural wrap where not); the first-child pull, meant for
-     the upper word of a stack, is reset so it cannot shave the last word.
-     Adopting the stack is a design choice for its own task. */
+  /* THE ENGINE'S NAVBAR, DRESSED FOR THIS APP. The header is layouts/_navbar
+     from studio-engine; these rules are what this app's look asks of it.
+
+     z-index: the engine writes z-50 on the header, and this app's layers are
+     the engine's own scale, where the pinned navbar is --z-nav. The lane
+     headers and the app strip pin beneath it and must never paint over it.
+
+     Width: the row is as wide as the page column (max-w-7xl, the wrapper in
+     layouts/application), so the logo sits above the page's left edge and the
+     account above its right edge.
+
+     Logo: logo-icon.svg is drawn in white. It is inverted on the light theme,
+     and it is a mark, not an avatar, so it takes no circle and no shadow.
+
+     Log out: below 768px the icons leave the account column for the phone row
+     and the column has nothing left to size it, so the bar under the name
+     keeps room for its one link and the link stays on one line. */
+  .nav-shell[data-pin="nav"] { z-index: var(--z-nav); }
+  .nav-shell > .nav-row { max-width: 80rem; margin-inline: auto; }
+  .nav-shell .nav-logo { filter: invert(1); border-radius: 0; box-shadow: none; }
+  .dark .nav-shell .nav-logo { filter: none; }
+  .nav-shell div:has(> .nav-bar-text) { min-width: 3.5rem; }
+  .nav-shell .nav-bar-text { white-space: nowrap; }
+  /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
+     words into a column; this app keeps them on one line where they fit and
+     lets them wrap where they do not, which holds the phone header a row
+     shorter. The first-child pull, meant for the upper word of a stack, is
+     reset so it cannot shave the last word. */
   @media (max-width: 767px) {
     .nav-shell .nav-title { flex-direction: row; flex-wrap: wrap; gap: 0 0.25em; }
     .nav-shell .nav-title span:first-child { margin-bottom: 0; }
