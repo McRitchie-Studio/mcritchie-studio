@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Admin dashboard", "Deployments", "Theme", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -147,7 +147,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal ["NFL", "Services", "Apps"], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
-    refute_includes labels, "Dashboard"
+    refute_includes labels, "Studio dashboard"
+    refute_includes labels, "Admin dashboard"
     refute_includes labels, "Agents"
     refute_includes labels, "Builders"
     refute_includes labels, "Teams"
@@ -240,10 +241,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def tasks_path = "/tasks"
   def news_index_path = "/news"
   def contents_path = "/contents"
-  # ADDING A LINK TO LinkTreeHelper MEANS ADDING ITS STUB HERE. This class is an
-  # ActiveSupport::TestCase and includes the helper directly, so no route helper is
-  # defined for it — a new link raises NameError in EVERY test in this file, which is how
-  # the Models link took CI red on 2026-09-27 while the page itself was green.
+  # ADDING A PAGE TO THE SIDEBAR IN config/navigation.yml MEANS ADDING ITS STUB HERE.
+  # This class is an ActiveSupport::TestCase and includes the helper directly, so no
+  # route helper is defined for it: a new link raises NoMethodError in every test in
+  # this file.
   def model_pipeline_path = "/model_pipeline"
   def broadcasts_path = "/broadcasts"
   def contacts_path = "/contacts"
@@ -274,4 +275,5 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def merge_people_path = "/people/merge"
   def duplicates_people_path = "/people/duplicates"
   def alt_videos_path = "/alt_videos"
+  def error_logs_path = "/error_logs"
 end
