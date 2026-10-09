@@ -195,9 +195,14 @@ stage events' complete and fail
 both through `AgentSession#transition_refusal`.
 
 The task API returns the newest studio session on the task that is live
-(`AgentSession#live?`). The board card does not show
-the soul, the tier or the expiry yet, and the sticky heartbeat marker still
-attributes activities.
+(`AgentSession#live?`). The board card shows that session's soul on the corner
+of its crew row, beside the mascot, with the login (builder or reviewer) in the
+tooltip; logged out, the Pokémon stands alone. Both boards, the epic page and
+the live stream draw the one `TaskCardComponent`, which reads a page of sessions
+in one batch (`AgentSession.live_by_task`, pinned to `#live?` by test). Only a
+studio session names a task, so an admin, client or harness session reaches no
+card. The card does not show the tier or the expiry, and the sticky heartbeat
+marker still attributes activities.
 
 ## 6. Prompt-injection containment
 
@@ -246,7 +251,7 @@ and a ship recovery read it as they do now. None of this section is built.
 | The facts API, session-only | `facts-primitive-and-endpoints` | shipped |
 | **Stage A of the shared secret's retirement**: the harness key, Turf's runtime key, hooks and the conductor's claim presenting a login, `bin/task` acting as an admin when asked, and the legacy-use census. The shared token is still accepted everywhere it was | `retire-shared-secret-fallback` | built |
 | **Stage B**: the shared token stops writing (the list below) | none filed; it is filed when the census reads zero | waits on the census |
-| The soul on the board card; the tier and the expiry are on no card | `task-card-becomes-component` | designed |
+| The soul on the board card; the tier and the expiry are on no card | `task-card-becomes-component` | built |
 | The checks on `reviewed` to `assembled` and `assembled` to `shipped`; the capability endpoints of section 4 marked not built; break-glass logging (section 7) | none filed | |
 | One leases table for review, release and shift claims (epic piece 5e) | none filed | |
 | The client runtime for an outward-facing channel, Turf Monster's TikTok DMs first (epic piece 3f) | none filed | |

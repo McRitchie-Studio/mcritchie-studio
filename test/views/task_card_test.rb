@@ -1,9 +1,12 @@
 require "test_helper"
+require_relative "../support/task_card_rendering"
 
-# [component] the extracted board card partial renders standalone (the unit the
-# broadcaster re-renders for a live push), with the slug/stage data hooks the
-# client uses to find, move, and replace it.
+# [component] TaskCardComponent renders standalone (the unit the broadcaster
+# re-renders for a live push), with the slug/stage data hooks the client uses to
+# find, move, and replace it.
 class TaskCardTest < ActionView::TestCase
+  include TaskCardRendering
+
   TypeColor = Struct.new(:key, :color, :rank, :emoji, keyword_init: true)
 
   setup do
@@ -48,7 +51,7 @@ class TaskCardTest < ActionView::TestCase
   test "renders the card with the slug/stage data hooks and the title" do
     task = Task.create!(title: "Card render task", stage: "submitted")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     assert_select "#card-#{task.slug}[data-slug='#{task.slug}'][data-stage='submitted']"
     assert_includes rendered, "Card render task"
@@ -58,7 +61,7 @@ class TaskCardTest < ActionView::TestCase
     task = Task.create!(title: "Blocked tone task", stage: "building")
     task.block!(by: "avi", kind: "rework") # a block is a building attribute now
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "blocked", card["data-stage-glow"]
@@ -85,9 +88,7 @@ class TaskCardTest < ActionView::TestCase
                              primary_type: "water", generation: 2)
     type_enumerals = { "water" => TypeColor.new(color: "#6390F0", rank: 10, emoji: "💧") }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals)
 
     card = css_select("#card-#{task.slug}").first
     assert_nil card["data-stage-glow"]
@@ -110,9 +111,7 @@ class TaskCardTest < ActionView::TestCase
       "flying" => TypeColor.new(key: "flying", color: "#6890F0", rank: 200, emoji: "💨")
     }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "review", card["data-stage-glow"]
@@ -136,9 +135,7 @@ class TaskCardTest < ActionView::TestCase
       "flying" => TypeColor.new(key: "flying", color: "#A98FF3", rank: 200, emoji: "💨")
     }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "review", card["data-stage-glow"]
@@ -158,7 +155,7 @@ class TaskCardTest < ActionView::TestCase
       }
     )
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "approval", card["data-stage-glow"]
@@ -195,7 +192,7 @@ class TaskCardTest < ActionView::TestCase
     )
     task.submit!
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "approval", card["data-stage-glow"],
@@ -235,14 +232,12 @@ class TaskCardTest < ActionView::TestCase
     assert task.waiting_for_operator_approval?,
       "the fixture has to actually carry the request, or this test pins nothing"
 
-    render partial: "tasks/task_card",
-           locals: { task: task, agents: @agents, crew_board: :deploy, review_in_progress: false }
+    render_task_card(task, crew_board: :deploy, review_in_progress: false)
     unattended = css_select("#card-#{task.slug}").last
     assert_equal "approval", unattended["data-stage-glow"],
       "with nobody on it, the carried request is what the card should be shouting"
 
-    render partial: "tasks/task_card",
-           locals: { task: task, agents: @agents, crew_board: :deploy, review_in_progress: true }
+    render_task_card(task, crew_board: :deploy, review_in_progress: true)
     attended = css_select("#card-#{task.slug}").last
 
     assert_equal "review", attended["data-stage-glow"],
@@ -276,7 +271,7 @@ class TaskCardTest < ActionView::TestCase
     task.submit!
     task.review!
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     card = css_select("#card-#{task.slug}").first
     assert_not_equal "approval", card["data-stage-glow"],
@@ -300,7 +295,7 @@ class TaskCardTest < ActionView::TestCase
       reviewers: [{ "slug" => "carl", "weight" => "primary" }]
     )
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     %w[review-waiting review-in-progress unresolved-feedback cleared-feedback].each do |flag|
       assert_select "[data-test='#{flag}']", { count: 0 }, "the '#{flag}' flag must be gone from the card"
@@ -314,7 +309,7 @@ class TaskCardTest < ActionView::TestCase
                           "local_url" => "http://localhost:3001/demo",
                         } })
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     # created (🌱, left) + updated (✏️, right) absolute stamps live in the footer row
     assert_select "[data-test='task-card-updated-row'] [data-test='task-card-created']", count: 1
@@ -330,7 +325,7 @@ class TaskCardTest < ActionView::TestCase
     task = Task.create!(title: "Reviewed glow task", stage: "reviewed",
                         metadata: { "devops" => { "mascot_color" => "#22d3ee" } })
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "reviewed", card["data-stage-glow"]
@@ -346,7 +341,7 @@ class TaskCardTest < ActionView::TestCase
     task = Task.create!(title: "Reviewed inclusion default", stage: "reviewed",
                         metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/5" } })
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     assert task.included_in_release?, "sanity: the default reviewed disposition is included"
     # The green IN RELEASE bar was dropped as noise — included is the default on every
@@ -362,7 +357,7 @@ class TaskCardTest < ActionView::TestCase
                           "included_in_release" => "false"
                         } })
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     marker = css_select("[data-test='release-inclusion-marker']").first
     assert_equal "false", marker["data-included"]
@@ -378,7 +373,7 @@ class TaskCardTest < ActionView::TestCase
     %w[submitted assembled building].each do |stage|
       task = Task.create!(title: "No marker #{stage}", stage: stage,
                           metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/7" } })
-      render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+      render_task_card(task.reload, crew_board: :deploy)
       assert_select "[data-test='release-inclusion-marker']", { count: 0 },
                     "the inclusion marker must not render on the #{stage} stage"
     end
@@ -394,16 +389,13 @@ class TaskCardTest < ActionView::TestCase
     reviewed = Task.create!(title: "ci meter reviewed card", stage: "reviewed",
                             metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
 
-    render partial: "tasks/task_card",
-           locals: { task: building.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    render_task_card(building.reload, crew_board: :deploy, ci_progress: nil)
     assert_select "#ci-progress-#{building.slug}", 1, "a building card carries the stable CI slot while it ships"
 
-    render partial: "tasks/task_card",
-           locals: { task: submitted.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    render_task_card(submitted.reload, crew_board: :deploy, ci_progress: nil)
     assert_select "#ci-progress-#{submitted.slug}", 1, "a submitted card carries the stable CI slot"
 
-    render partial: "tasks/task_card",
-           locals: { task: reviewed.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    render_task_card(reviewed.reload, crew_board: :deploy, ci_progress: nil)
     assert_select "#ci-progress-#{reviewed.slug}", 0, "past submitted the CI meter is stale noise — the whole slot is gone"
   end
 
@@ -412,8 +404,7 @@ class TaskCardTest < ActionView::TestCase
                             metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/11" } })
     progress = Ci::CheckProgress.new(passed: 3, failed: 0, pending: 2, sha: "building-head-sha")
 
-    render partial: "tasks/task_card",
-           locals: { task: building.reload, agents: @agents, crew_board: :deploy, ci_progress: progress }
+    render_task_card(building.reload, crew_board: :deploy, ci_progress: progress)
 
     assert_select "#card-#{building.slug} [data-test='task-card-ci-progress']", 1
     assert_select "#card-#{building.slug} [data-test='ci-check-symbol']", 5, "one icon per check, mid-run"
@@ -430,9 +421,7 @@ class TaskCardTest < ActionView::TestCase
       "flying" => TypeColor.new(color: "#A98FF3", rank: 200, emoji: "💨")
     }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "assembled", card["data-stage-glow"]
@@ -502,10 +491,8 @@ class TaskCardTest < ActionView::TestCase
     first = Task.create!(title: "Alpha glow motion", stage: "assembled")
     second = Task.create!(title: "Omega glow motion", stage: "assembled")
 
-    render inline: <<~ERB, locals: { first: first.reload, second: second.reload, agents: @agents }
-      <%= render partial: "tasks/task_card", locals: { task: first, agents: agents, crew_board: :deploy } %>
-      <%= render partial: "tasks/task_card", locals: { task: second, agents: agents, crew_board: :deploy } %>
-    ERB
+    render_task_card(first.reload, crew_board: :deploy)
+    render_task_card(second.reload, crew_board: :deploy)
 
     styles = [first, second].map { |task| css_select("#card-#{task.slug}").first["style"] }
     offsets = styles.map { |style| style[/--studio-border-glow-offset: ([^;]+)/, 1] }
@@ -525,9 +512,7 @@ class TaskCardTest < ActionView::TestCase
                              primary_type: "electric", generation: 1)
     type_enumerals = { "electric" => TypeColor.new(color: "#F7D02C", rank: 400, emoji: "⚡") }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "assembled", card["data-stage-glow"]
@@ -546,9 +531,7 @@ class TaskCardTest < ActionView::TestCase
       "flying" => TypeColor.new(key: "flying", color: "#A98FF3", rank: 200, emoji: "💨")
     }
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals }
+    render_task_card(task.reload, crew_board: :deploy, mascot: mascot, type_enumerals: type_enumerals)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "assembled", card["data-stage-glow"]
@@ -563,9 +546,7 @@ class TaskCardTest < ActionView::TestCase
                                 description: "First note")
     Activity.create!(task_slug: task.slug, activity_type: "comment", description: "Second note")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     latest_activity: activity, activity_count: 2 }
+    render_task_card(task.reload, crew_board: :deploy, latest_activity: activity, activity_count: 2)
 
     label = css_select("[data-test='activity-box'] span").first
     assert_equal "Handoff", label.text,
@@ -577,9 +558,7 @@ class TaskCardTest < ActionView::TestCase
     activity = Activity.create!(task_slug: task.slug, activity_type: "clarification",
                                 description: "Can you confirm whether the docs example should mention PR comments?")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     latest_activity: activity, activity_count: 1 }
+    render_task_card(task.reload, crew_board: :deploy, latest_activity: activity, activity_count: 1)
 
     box = css_select("[data-test='activity-box']").first
     assert_equal "clarification", box["data-activity-type"]
@@ -596,7 +575,7 @@ class TaskCardTest < ActionView::TestCase
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "carl")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     crew_index = rendered.index('data-test="stage-agent-avatars"')
     slug_index = rendered.index('data-test="task-slug-row"')
@@ -618,9 +597,7 @@ class TaskCardTest < ActionView::TestCase
     activity = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
                                 description: "PR does not meet acceptance yet.")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     latest_activity: activity, activity_count: 1 }
+    render_task_card(task.reload, crew_board: :deploy, latest_activity: activity, activity_count: 1)
 
     updated_index = rendered.index('data-test="task-card-updated-row"')
     activity_index = rendered.index('data-test="activity-box"')
@@ -630,13 +607,11 @@ class TaskCardTest < ActionView::TestCase
     assert_operator updated_index, :<, activity_index
   end
 
-  test "the partial is self-contained (no board @ivars) — renders with only its locals" do
+  test "the card is self-contained (no board @ivars): it renders from its declared inputs" do
     task = Task.create!(title: "Standalone card task", stage: "designed")
 
     assert_nothing_raised do
-      render partial: "tasks/task_card",
-             locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                       mascot: nil, latest_activity: nil, activity_count: 0 }
+      render_task_card(task.reload, crew_board: :deploy, mascot: nil, latest_activity: nil, activity_count: 0)
     end
     assert_select "#card-#{task.slug}"
   end
@@ -644,9 +619,7 @@ class TaskCardTest < ActionView::TestCase
   test "[component] a cleared-block card wears the amber re-review tone (the badge is dropped; the tone carries it)" do
     task = Task.create!(title: "Cleared block card", stage: "submitted")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     unresolved_feedback: nil, ever_blocked: true }
+    render_task_card(task.reload, crew_board: :deploy, unresolved_feedback: nil, ever_blocked: true)
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"].split, "bg-warning/10"
@@ -661,9 +634,7 @@ class TaskCardTest < ActionView::TestCase
     feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
                                 description: "please fix it")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     unresolved_feedback: feedback, ever_blocked: true }
+    render_task_card(task.reload, crew_board: :deploy, unresolved_feedback: feedback, ever_blocked: true)
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"].split, "bg-danger/10"
@@ -691,7 +662,7 @@ class TaskCardTest < ActionView::TestCase
       task = Task.create!(title: "Blocked #{stage} card", stage: stage)
       Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix it")
 
-      render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+      render_task_card(task.reload, crew_board: :deploy)
 
       card = css_select("#card-#{task.slug}").first
       assert_includes card["class"].split, "bg-danger/10", "#{stage}: the inner tint still says blocked"
@@ -709,7 +680,7 @@ class TaskCardTest < ActionView::TestCase
     task = Task.create!(title: "Blocked reviewed glow", stage: "reviewed")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix it")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render_task_card(task.reload, crew_board: :deploy)
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "reviewed", card["data-stage-glow"]
@@ -725,9 +696,7 @@ class TaskCardTest < ActionView::TestCase
                                 description: "The stage transition bypasses the server guard; re-gate it before resubmit.",
                                 metadata: { "summary" => "Stage move skips server guard" })
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     unresolved_feedback: feedback, ever_blocked: true }
+    render_task_card(task.reload, crew_board: :deploy, unresolved_feedback: feedback, ever_blocked: true)
 
     bar = css_select("a[data-test='blocker-summary']").first
     assert bar, "an unresolved blocker renders the summary bar"
@@ -762,9 +731,7 @@ class TaskCardTest < ActionView::TestCase
   test "[component] a never-blocked submitted card stays plain" do
     task = Task.create!(title: "Never blocked card", stage: "submitted")
 
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     unresolved_feedback: nil, ever_blocked: false }
+    render_task_card(task.reload, crew_board: :deploy, unresolved_feedback: nil, ever_blocked: false)
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"], "bg-surface"
@@ -787,7 +754,7 @@ class TaskCardTest < ActionView::TestCase
   end
 
   def render_card(task)
-    render partial: "tasks/task_card", locals: { task: task, agents: @agents, crew_board: :build }
+    render_task_card(task, crew_board: :build)
   end
 
   test "[component] a live-claimed building card states its last durable progress, not just liveness" do

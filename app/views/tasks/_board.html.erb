@@ -52,11 +52,7 @@
 
      offscreen[stage] = stage_total - Task.board_column_tasks(@tasks_by_stage, stage).size
    end %>
-<%# Mascot + type-colour maps built once — the 151 are tiny, so one query beats an
-    N+1 across cards (each card's data-glow is then a hash lookup). %>
-<% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
-<% type_enumerals  = Pokemon.type_enumerals %>
-<%# Build board (/tasks) → :build crew; the shared card partial reads it. %>
+<%# Build board (/tasks) → :build crew; the card reads it. %>
 <% crew_board = stages.include?("reviewed") ? :deploy : :build %>
 <%# App-filter chips are built from the repos actually present on the board. %>
 <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
@@ -297,11 +293,11 @@ document.addEventListener('turbo:before-cache', function() {
     </div>
   <% end %>
 
-  <%# The board — rendered by the engine primitive. Columns are the stage keys
-      each card is tasks/_task_card, bound to :task with the same
-      preloaded per-card locals the board loop always passed. A cross-column drop
-      PATCHes { task: { stage } } (the update action); a reorder POSTs the DOM-
-      ordered slugs to the shared reorder action. %>
+  <%# The board — rendered by the engine primitive. Columns are the stage keys;
+      the primitive renders its card by partial name, so each card is the thin
+      tasks/_task_card, which renders TaskCardComponent from the page's one batch.
+      A cross-column drop PATCHes { task: { stage } } (the update action); a
+      reorder POSTs the DOM-ordered slugs to the shared reorder action. %>
   <% if @stage_filter.present? %>
     <% stage_pager = { stage: @stage_filter, page: @stage_page, page_count: @stage_page_count,
                        drawn: Task.board_column_tasks(@tasks_by_stage, @stage_filter).size } %>
@@ -320,23 +316,7 @@ document.addEventListener('turbo:before-cache', function() {
         },
         card_partial: "tasks/task_card",
         card_as: :task,
-        card_locals: ->(task) {
-          {
-            agents: @agents, crew_board: crew_board,
-            mascot: pokemon_by_slug[task.devops_field("mascot")], type_enumerals: type_enumerals,
-            latest_activity: @latest_task_activities[task.slug],
-            activity_count: @task_activity_counts[task.slug].to_i,
-            unresolved_feedback: @unresolved_feedback_activities[task.slug],
-            resubmission: @resubmissions&.fetch(task.slug, nil),
-            ever_blocked: @ever_blocked_slugs&.include?(task.slug),
-            ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
-            # The board's own preload, handed in explicitly: this runs per card,
-            # and without it review_in_progress? costs two task_events queries
-            # each. Explicit because the model defaults to SQL on purpose — see
-            # Task#open_intents_for.
-            review_in_progress: task.review_in_progress?(events: task.task_events.to_a)
-          }
-        },
+        card_locals: ->(task) { { preloads: @task_cards.preloads_for(task), crew_board: crew_board } },
         reorder_url: reorder_tasks_path(format: :json),
         reorder_payload: :slugs,
         move_url: "/tasks/:id.json",

@@ -283,8 +283,8 @@ test("a live block transition inserts a missing card into the Building column", 
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
   // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
   // leaves the stage alone, so data-stage never becomes "blocked". The card marks
-  // the block with data-stage-glow instead (_task_card.html.erb line 140, from
-  // card_glow_kind). NOT data-glow — that is the MASCOT'S signature colour (line 142),
+  // the block with data-stage-glow instead (TaskCardComponent#glow_kind).
+  // NOT data-glow — that is the MASCOT'S signature colour (#mascot_colour),
   // and asserting it was a bug in the first cut of this repair: the specs stay
   // @quarantine so CI never ran them and nothing caught it. Verified against the real
   // rendered card while proving /tasks/broadcast-block-to-board.
@@ -347,8 +347,8 @@ test("the tasks board updates a blocked card live in the Building column", async
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
   // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
   // leaves the stage alone, so data-stage never becomes "blocked". The card marks
-  // the block with data-stage-glow instead (_task_card.html.erb line 140, from
-  // card_glow_kind). NOT data-glow — that is the MASCOT'S signature colour (line 142),
+  // the block with data-stage-glow instead (TaskCardComponent#glow_kind).
+  // NOT data-glow — that is the MASCOT'S signature colour (#mascot_colour),
   // and asserting it was a bug in the first cut of this repair: the specs stay
   // @quarantine so CI never ran them and nothing caught it. Verified against the real
   // rendered card while proving /tasks/broadcast-block-to-board.

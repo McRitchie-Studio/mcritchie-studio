@@ -1,0 +1,61 @@
+<div id="card-snapshot-assembled-colour-fallback-card" data-slug="snapshot-assembled-colour-fallback-card" data-stage="assembled" data-agent="" data-apps="" data-href="/tasks/snapshot-assembled-colour-fallback-card" data-stage-glow="assembled" data-glow="#12ab34" x-data="{ hovered: false, mx: 0, my: 0 }" x-show="matchesFilter('') && appVisible('')" @mouseenter="hovered = true" @mouseleave="hovered = false" @click.capture="if ($event.target.closest('a, button')) { hovered = false; document.activeElement && document.activeElement.blur && document.activeElement.blur() }" @mousedown="mx = $event.clientX; my = $event.clientY" @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href" style="--studio-border-glow-offset: 242%; --studio-border-glow-duration: 23s; --studio-border-glow-angle: 52deg; --task-card-glow-color: #12ab34; --task-card-glow-color-a: #12ab34; --task-card-glow-color-b: #12ab34; --task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent); --task-card-glow-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color-a) 44%, transparent), 0 0 34px color-mix(in srgb, var(--task-card-glow-color-b) 38%, transparent), 0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent), 0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent); border-color: var(--task-card-glow-border-color); box-shadow: var(--task-card-glow-shadow); --task-pulse-delay: -1367ms; --task-pulse-duration: 2267ms;" class="kanban-card relative bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt task-card-stage-glow task-card-stage-glow-assembled studio-border-glow rounded-lg border p-3 cursor-pointer transition group">
+<a href="/tasks/snapshot-assembled-colour-fallback-card" class="block mb-1.5 hover:text-primary transition" data-test="task-card-title" title="Snapshot assembled colour fallback card">
+<div class="relative overflow-hidden min-w-0" data-overflow-fade x-data="{ overflowPx: 0, overflows: false, speed: 60, _ro: null, _dead: false, fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)', fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)', init() { this.$nextTick(() => { if (this._dead) return this.measure() if (!window.ResizeObserver) return this._ro = new ResizeObserver(() => this.measure()) this._ro.observe(this.$el) this._ro.observe(this.$refs.fadeInner) }) }, destroy() { this._dead = true if (this._ro) { this._ro.disconnect(); this._ro = null } }, measure() { this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth) this.overflows = this.overflowPx > 1 } }" :style="!overflows ? '' : ((hovered) ? fadeLeft : fadeRight)">
+<span x-ref="fadeInner" class="inline-block whitespace-nowrap will-change-transform transition-transform ease-linear text-heading font-semibold text-sm" :style="'transition-duration: ' + Math.round(overflowPx / speed * 1000) + 'ms; transform: translateX(' + ((overflows && (hovered)) ? -overflowPx : 0) + 'px)'"> Snapshot assembled colour fallback card </span>
+</div>
+</a>
+<div class="grid grid-rows-1 items-center h-14 grid-cols-4 gap-1 mt-3 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+<div class="flex justify-center">
+<div class="rounded-full border-2 border-dashed border-white/15 w-10 h-10" data-test="crew-empty" data-lane="build">
+</div>
+</div>
+<div class="flex justify-center">
+<div class="rounded-full border-2 border-dashed border-white/15 w-10 h-10" data-test="crew-empty" data-lane="review">
+</div>
+</div>
+<div class="flex justify-start">
+<div class="relative" data-test="crew-cluster" data-lane="assembled">
+<div class="flex items-end -space-x-6 origin-center" data-test="crew-stack">
+<div class="rounded-full relative ring-2 z-30 ring-primary/70 transition-transform duration-200 ease-out group-hover:scale-150 group-focus-within:scale-150 hover:scale-150 motion-reduce:transition-none motion-reduce:transform-none origin-right group-hover:translate-x-3 group-focus-within:translate-x-3 hover:translate-x-3" title="Avi" data-test="crew-stack-avatar" data-stack-position="top">
+<span class="w-10 h-10 rounded-full flex items-center justify-center relative flex-shrink-0" style="background-color: #3B82F6;">
+<span class="text-white font-bold text-sm">A</span>
+</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex justify-center">
+<div class="rounded-full border-2 border-dashed border-white/15 w-10 h-10" data-test="crew-empty" data-lane="shipped">
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
+<code class="block text-3xs font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1" style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">snapshot-assembled-colour-fallback-card</code>
+</div>
+<div class="flex items-center justify-between gap-2 mt-1 text-3xs text-muted whitespace-nowrap overflow-hidden" data-test="task-card-updated-row">
+<span class="flex items-center gap-1 whitespace-nowrap" data-test="task-card-created" title="Created Oct 1, 2026 6:00pm">
+<span aria-hidden="true">🌱</span>
+<span>Oct 1 6:00p</span>
+</span>
+<span class="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+<span class="flex items-center gap-1" data-test="task-card-updated" title="Updated Oct 1, 2026 6:00pm">
+<span aria-hidden="true">✏️</span>
+<span>6:00p</span>
+</span>
+</span>
+</div>
+<div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
+<button type="button" @click.stop="archiveTask('snapshot-assembled-colour-fallback-card')" data-test="task-card-archive" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-warning-ink hover:bg-warning/10 transition" title="Archive">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+</svg>
+<span>Archive</span>
+</button>
+<button type="button" @click.stop="deleteTask('snapshot-assembled-colour-fallback-card')" data-test="task-card-delete" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-danger-ink hover:bg-danger/10 transition border-l border-subtle" title="Delete">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+</svg>
+<span>Delete</span>
+</button>
+</div>
+</div>

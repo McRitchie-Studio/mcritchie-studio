@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/task_card_rendering"
 
 # [component] tasks/_epic_chip — the connective tissue between an epic and its
 # tasks on the board. The partial prints the task's epic slug as a chip linking
@@ -8,6 +9,8 @@ require "test_helper"
 # live push — with the full-page and turbo-stream paths pinned by
 # test/integration/board_epic_filter_test.rb.
 class TaskEpicChipTest < ActionView::TestCase
+  include TaskCardRendering
+
   include StatusToneHelper
   setup do
     Agent.create!(name: "Carl", slug: "carl")
@@ -44,7 +47,7 @@ class TaskEpicChipTest < ActionView::TestCase
   test "[component] the card seats the chip beside the task slug when the task has an epic" do
     task = Task.create!(title: "Epic chip card task", stage: "building", epic_slug: "devops-v3")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     assert_select "#card-#{task.slug} [data-test='task-slug-row'] code", text: task.slug
     assert_select "#card-#{task.slug} [data-test='task-slug-row'] [data-test='task-epic-chip'][href='/tasks?epic=devops-v3']",
@@ -54,7 +57,7 @@ class TaskEpicChipTest < ActionView::TestCase
   test "[component] the card omits the chip when the task has no epic" do
     task = Task.create!(title: "No epic card task", stage: "building")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     assert_select "#card-#{task.slug} [data-test='task-slug-row'] code", text: task.slug
     assert_select "#card-#{task.slug} [data-test='task-epic-chip']", count: 0
