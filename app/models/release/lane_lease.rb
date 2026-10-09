@@ -19,7 +19,8 @@ class Release
   # these sentences name every later joiner.
   #
   # WHO APPROVED is read from one place: the owner_grant marker the web Approve
-  # writes. A row without it states how it was recorded and names no approver.
+  # writes, and only when its signature verifies for the row it sits on. A row
+  # without a verified marker states how it was recorded and names no approver.
   #
   # WHAT IS SHOWN OF A HOLDER: its mascot, its soul, the last four characters of its
   # session id, and since when. Never the nonce and never the whole session id.
@@ -28,8 +29,12 @@ class Release
     SCOPE_KEY = "scope"
     # The reserved metadata key that proves a web approval. Release#record_event!
     # writes it from the signed-in admin of the Approve request and removes it from
-    # any caller's metadata, so its presence is the server's word, not a client's.
+    # any caller's metadata. Its presence proves nothing: a row stored by code with
+    # no strip, or written straight to the table, can carry the key. The proof is
+    # the marker's signature, which the app's secret alone produces.
     OWNER_GRANT_KEY = "owner_grant"
+    OWNER_GRANT_VERIFIER = "release-owner-grant"
+    OWNER_GRANT_PURPOSE = :release_owner_grant
     RECORDER_MAX = 60
     ROLE_VERBS = { "assembler" => "assembling", "deployer" => "shipping" }.freeze
     ROLE_TITLES = { "assembler" => "Assembling", "deployer" => "Shipping" }.freeze
@@ -148,10 +153,9 @@ class Release
 
     # The one sentence that states how the request was answered. It says only what
     # the record proves. A lapse flag always reads as a lapse. A person is named as
-    # approver only off the owner_grant marker, which the web Approve alone writes
-    # and Release#record_event! strips from every caller's metadata: `actor`,
-    # `source` and `granted_via` are a caller's to set, so they never name an
-    # approver. Every other row names its recorder as a recorder, in a tone that is
+    # approver only off an owner_grant marker whose signature verifies for this row
+    # (the web Approve alone writes one): `actor`, `source`, `granted_via` and an
+    # unsigned marker are a caller's to set, so they never name an approver. Every other row names its recorder as a recorder, in a tone that is
     # never the success tone.
     def answer_sentence(answer, mode)
       at = Stamp.new(answer.occurred_at, "at")
@@ -182,25 +186,63 @@ class Release
       ActiveModel::Type::Boolean.new.cast(answer.metadata.to_h["lapsed"]) == true
     end
 
-    # The owner_grant marker of an answer that is an approval, or nil. A lapse is
-    # never an approval, whatever else its row carries.
-    def owner_grant(answer)
-      marker = answer.metadata.to_h[OWNER_GRANT_KEY]
-      marker.is_a?(Hash) && marker["user_id"].present? && !lapsed?(answer) ? marker : nil
+    # The marker the web Approve stores: who tapped and when, with a signature over
+    # the row it belongs to. The signature is an ActiveSupport::MessageVerifier
+    # digest keyed off the app's secret_key_base, so no caller can compute one.
+    def owner_grant_marker(release_slug:, step:, idempotency_key:, user:, at: Time.current)
+      marker = { "user_id" => user.id, "user_slug" => user.slug, "at" => at.utc.iso8601 }
+      claim = owner_grant_claim(release_slug: release_slug, step: step, idempotency_key: idempotency_key, marker: marker)
+      marker.merge("sig" => owner_grant_verifier.generate(claim, purpose: OWNER_GRANT_PURPOSE))
     end
 
-    # The approver's name, read from the marker's own user and from nothing a
-    # caller sets. nil when the answer carries no marker.
-    def approver_name(answer)
-      marker = owner_grant(answer)
-      return nil unless marker
+    # What a signature covers: the release, the step, the row's idempotency key, the
+    # user and the time. A signature lifted onto another release, step or row
+    # carries a different claim and does not verify there.
+    def owner_grant_claim(release_slug:, step:, idempotency_key:, marker:)
+      [release_slug.to_s, step.to_s, idempotency_key.to_s, marker["user_id"].to_s, marker["at"].to_s]
+    end
 
-      User.find_by(id: marker["user_id"])&.name.presence || marker["user_slug"].presence || "the owner"
+    def owner_grant_verifier
+      Rails.application.message_verifier(OWNER_GRANT_VERIFIER)
+    end
+
+    # The owner_grant marker of an answer that is an approval, or nil: the marker
+    # counts only when its signature verifies for THIS row's release, step and
+    # idempotency key. A lapse is never an approval, whatever else its row carries.
+    def owner_grant(answer)
+      marker = answer.metadata.to_h[OWNER_GRANT_KEY]
+      return nil unless marker.is_a?(Hash) && marker["user_id"].present? && !lapsed?(answer)
+      return nil if answer.idempotency_key.blank?
+
+      marker if owner_grant_signed?(answer, marker)
+    end
+
+    def owner_grant_signed?(answer, marker)
+      signature = marker["sig"]
+      return false unless signature.is_a?(String) && signature.present?
+
+      signed = owner_grant_verifier.verified(signature, purpose: OWNER_GRANT_PURPOSE)
+      expected = owner_grant_claim(release_slug: answer.release_slug, step: answer.step,
+                                   idempotency_key: answer.idempotency_key, marker: marker)
+      signed.is_a?(Array) && signed == expected
+    end
+
+    # The user a verified marker names, or nil: no verified marker, or an id that
+    # matches no user.
+    def approver(answer)
+      marker = owner_grant(answer)
+      marker && User.find_by(id: marker["user_id"])
+    end
+
+    # The approver's name, from the User record the verified marker names and from
+    # nothing the row states. nil reads as "approver not recorded".
+    def approver_name(answer)
+      approver(answer)&.name.presence
     end
 
     # What the answer covers, and every member that joined or left after it.
     def scope_sentences(answer, members, shipped:)
-      moment = owner_grant(answer) ? "approval" : "authorization"
+      moment = approver_name(answer) ? "approval" : "authorization"
       recorded = recorded_members(answer)
       lead = shipped ? "Covered every task on this release when it shipped" : "Covers every task on this release when it ships"
       now_word = shipped ? "at ship" : "now"

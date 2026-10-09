@@ -690,8 +690,9 @@ class Release < ApplicationRecord
   # `owner_grant` is the web Approve's own keyword: the signed-in admin of that
   # request, passed by ReleasesController#authorize_ship through
   # #grant_ship_authorization! and by nothing else. It becomes the reserved
-  # `metadata.owner_grant` marker; the same key in a caller's metadata is dropped
-  # on every write, so no client can state who approved.
+  # `metadata.owner_grant` marker, signed with the app's own secret; the same key
+  # in a caller's metadata is dropped on every write, so no client can state who
+  # approved.
   def record_event!(step:, status:, owner_grant: nil, **attrs)
     attrs = without_owner_grant(attrs)
     if step.to_s == SHIP_AUTHORIZATION_STEP && status.to_s == "completed"
@@ -1088,9 +1089,16 @@ class Release < ApplicationRecord
     attrs.merge(metadata: metadata.to_h.stringify_keys.except(key))
   end
 
-  # Who approved, as the server saw it: the signed-in admin of the Approve request.
+  # Who approved, as the server saw it: the signed-in admin of the Approve request,
+  # signed for this release, step and idempotency key (Release::LaneLease
+  # .owner_grant_marker). A write with no idempotency key gets no marker: the key
+  # is what binds the signature to one row.
   def with_owner_grant(attrs, user)
-    marker = { "user_id" => user.id, "user_slug" => user.slug, "at" => Time.current.utc.iso8601 }
+    key = attrs[:idempotency_key].to_s.strip
+    return attrs if key.empty?
+
+    marker = Release::LaneLease.owner_grant_marker(release_slug: slug, step: SHIP_AUTHORIZATION_STEP,
+                                                   idempotency_key: key, user: user)
     attrs.merge(metadata: attrs[:metadata].to_h.merge(Release::LaneLease::OWNER_GRANT_KEY => marker))
   end
 

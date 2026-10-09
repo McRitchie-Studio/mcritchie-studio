@@ -4542,7 +4542,9 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
   #    `lane` rides the same call: the release lane in the Next Release card's own
   #    sentences (Release::LaneLease): who is assembling, who is shipping, what the
   #    production grant covers. A board that predates the module answers nil and
-  #    the report prints no lane.
+  #    the report prints no lane. The lane is display only: a failure inside its
+  #    read answers one "lane: unavailable" line, so it never fails this call,
+  #    which `prepare` and `ship` also make.
   step("read (read-only): tasks riding `release` + tasks parked on `accepted` + Release.current")
   board = conductor(
     "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
@@ -4550,7 +4552,8 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     "accepted = Task.where(stage: 'reviewed', merged: 'accepted')" \
     ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
     "r = Release.current; " \
-    "lane = defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
+    "lane = begin; defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
+    "rescue StandardError => e; ['lane: unavailable (' + e.class.name + ')']; end; " \
     "puts({ pending: pending, accepted: accepted, lane: lane, " \
     "release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
     read_only: true
