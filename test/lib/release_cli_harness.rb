@@ -35,9 +35,10 @@ require_relative "release_cli_stubs"
 require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../support/release_archive_seams"
-
+require_relative "../support/subprocess_tmpdir"
 
 class ReleaseCliHarness < Minitest::Test
+  include SubprocessTmpdir # each test's subprocesses resolve Dir.tmpdir inside a directory of its own
   WRAPPER = File.expand_path("../../bin/release", __dir__)
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
@@ -219,7 +220,7 @@ class ReleaseCliHarness < Minitest::Test
     # invoked by RELATIVE PATH (bin/prod-smoke, bin/clean-artifacts), which is why
     # ReleaseArchiveSeams exists for the archive path.
     env = OutboundSeams.env(
-      "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir,
+      "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir, "TMPDIR" => subprocess_tmpdir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
       "TASK_API_BASE" => UNROUTABLE_API_BASE, "GH_AUTH_TOKEN_BIN" => ReleaseCliStubs.token_broker
     )
@@ -290,7 +291,6 @@ class ReleaseCliHarness < Minitest::Test
       ] }
     end
   RUBY
-
 
   # --- confirm: a non-interactive shell ABORTS loudly (never a silent no-op) ---
   # The old `$stdin.gets.to_s.strip.casecmp("y").zero?` returned FALSE on EOF, so
