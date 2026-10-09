@@ -688,6 +688,7 @@ class Release < ApplicationRecord
   end
 
   def record_event!(step:, status:, **attrs)
+    attrs = with_grant_scope(attrs) if step.to_s == SHIP_AUTHORIZATION_STEP && status.to_s == "completed"
     event = ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
     stamp_stage_for_event(step, status, at: event.occurred_at)
     event
@@ -1053,6 +1054,15 @@ class Release < ApplicationRecord
     return unless stage
 
     stamp_stage!(stage, at: at || Time.current)
+  end
+
+  # Every answer to a ship-authority request carries what it covers: the policy and
+  # the member set at that moment (Release::LaneLease.scope_for). Stamped here, on
+  # the one write every path shares, and written last so a caller's own `scope` is
+  # replaced: the record states what the release held, never what a client said.
+  def with_grant_scope(attrs)
+    metadata = attrs[:metadata].to_h.stringify_keys
+    attrs.merge(metadata: metadata.merge(Release::LaneLease::SCOPE_KEY => Release::LaneLease.scope_for(self)))
   end
 
   def at_most_one_active_release

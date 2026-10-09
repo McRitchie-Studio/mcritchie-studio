@@ -55,12 +55,19 @@ class ReleaseConductorClaim < ApplicationRecord
     self.role = role.to_s.strip.downcase.presence
   end
 
+  # A claim taken, handed over or released changes who the Next Release card names,
+  # so it pushes that card to every open /deployments. A renew moves only the lease
+  # expiry and pushes nothing: the renewer beats every few seconds and the card
+  # would redraw byte-identically each time.
+  HOLDER_COLUMNS = %w[claimed_session claim_nonce holder_label holder_soul].freeze
+  after_commit :broadcast_release_card, if: -> { (saved_changes.keys & HOLDER_COLUMNS).any? }
+
   # Try to take (or renew) the (release, role) for this live instance. Unclaimed /
   # expired / same-instance → acquired; a DIFFERENT live instance holds it → not
   # acquired (the caller stands down). A same-instance re-acquire is a renew, which is
   # what lets an interrupted ship re-run RESUME instead of stranding. Atomic under a
   # row lock. Returns an Outcome.
-  def self.acquire(release_slug:, role:, session:, nonce:, label: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+  def self.acquire(release_slug:, role:, session:, nonce:, label: nil, soul: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
     row = claim_row(release_slug, role)
     outcome = nil
     row.with_lock do
@@ -76,6 +83,9 @@ class ReleaseConductorClaim < ApplicationRecord
           # unclaimed) do NOT inherit the PRIOR holder's label — reset to the new
           # holder's label, or nil, exactly as acquired_at resets below.
           holder_label:     label.to_s.strip.presence || (disposition == :same_instance ? row.holder_label : nil),
+          # the soul follows the same rule: a holder keeps its own, a new holder
+          # never inherits the prior one's.
+          holder_soul:      soul.to_s.strip.presence || (disposition == :same_instance ? row.holder_soul : nil),
           # keep the original acquired_at across a same-instance renewal; stamp it
           # fresh only when the claim genuinely changes hands.
           acquired_at:      (disposition == :same_instance ? (row.acquired_at || now) : now)
@@ -97,7 +107,7 @@ class ReleaseConductorClaim < ApplicationRecord
   # operator-gated controller action reaches it (a plain `acquire` can never steal a
   # live claim, and never will). Atomic under the same row lock as acquire. Returns an
   # Outcome with `disposition: :reassigned` (always acquired).
-  def self.reassign(release_slug:, role:, session:, nonce:, label: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+  def self.reassign(release_slug:, role:, session:, nonce:, label: nil, soul: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
     row = claim_row(release_slug, role)
     row.with_lock do
       # A same-instance reassign (the operator re-arming a claim this session already
@@ -109,6 +119,7 @@ class ReleaseConductorClaim < ApplicationRecord
         claim_nonce:      nonce.to_s,
         claim_expires_at: now + ttl,
         holder_label:     label.to_s.strip.presence || (same ? row.holder_label : nil),
+        holder_soul:      soul.to_s.strip.presence || (same ? row.holder_soul : nil),
         acquired_at:      (same ? (row.acquired_at || now) : now)
       )
     end
@@ -142,7 +153,8 @@ class ReleaseConductorClaim < ApplicationRecord
     row.with_lock do
       next unless ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now) == :same_instance
 
-      row.update!(claimed_session: nil, claim_nonce: nil, claim_expires_at: nil, holder_label: nil, acquired_at: nil)
+      row.update!(claimed_session: nil, claim_nonce: nil, claim_expires_at: nil, holder_label: nil,
+                    holder_soul: nil, acquired_at: nil)
       released = true
     end
     released
@@ -199,16 +211,30 @@ class ReleaseConductorClaim < ApplicationRecord
   end
 
   # The holder descriptor the CLI stand-down message + the status read render.
+  # `sentence` is the lane sentence the Next Release card shows for this role
+  # (Release::LaneLease), so the stand-down and the card read as one text.
   def holder_info(now: Time.current)
+    lane_holder = Release::LaneLease.holder(self)
     {
       "release_slug"  => release_slug,
       "role"          => role,
       "session"       => claimed_session,
       "label"         => holder_label,
+      "soul"          => holder_soul,
+      "mascot"        => lane_holder.mascot,
+      "sentence"      => Release::LaneLease.holder_sentence(lane_holder).to_s,
       "acquired_at"   => acquired_at&.utc&.iso8601,
       "expires_at"    => claim_expires_at&.utc&.iso8601,
       "heartbeat_age" => heartbeat_age(now: now),
       "live"          => live?(now: now)
     }
+  end
+
+  private
+
+  # Guarded by Studio::Cable.safe_broadcast inside the broadcaster, so a cable
+  # failure never breaks the claim write.
+  def broadcast_release_card
+    DeploymentsBroadcaster.release_modules(fx: "release_claim.#{role}", slots: [:current])
   end
 end
