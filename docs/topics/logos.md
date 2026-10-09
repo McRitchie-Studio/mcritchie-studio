@@ -1,7 +1,8 @@
 # Logos
 
 > **When to read this:** Drawing a brand's Navbar Logo, adding a brand or a
-> weight to the logo data, or building on `Logos::NavbarLogo`. Colours and the
+> weight to the logo data, building on `Logos::NavbarLogo`, or changing the
+> logo gallery at `/logos`. Colours and the
 > live navbar are in [`theme.md`](theme.md).
 
 The **Navbar Logo** (the main logo) is drawn from two things: an ICON (vector
@@ -54,6 +55,29 @@ bin/rails 'logos:navbar[studio,/some/dir]'      # or into a directory you name
 
 It writes 24 files per brand, named
 `<brand>-rule<3|4>-<homogeneous|first|second>-<light|dark>[-guides].svg`.
+
+## The gallery
+
+A read-only admin gallery (`LogosController`) shows the library's output. It
+stores nothing: choosing a logo for a brand waits for the brand kit record. It is
+linked from the admin sidebar as **Logos**.
+
+| Route | Shows |
+|-------|-------|
+| `/logos` | One row per brand in `config/logo_brands.yml`: its rule-of-4 logo with the second word leading, on a light and a dark plate; Montserrat and the weights the brand uses; its fills as swatches. |
+| `/logos/:brand` | Every logo, by rule and then by text, each on a light and a dark plate, with **Download** and **Copy SVG**. `?guides=1` swaps every logo for its guide drawing. |
+| `/logos/:brand/navbar` | One logo as `image/svg+xml`. Params: `rule` (`3`, `4`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`), `guides` (`0`, `1`); an absent one takes the library's default. `download=1` sends it as an attachment named `<brand>-navbar-rule<3|4>-<text>-<tone>[-guides].svg`. |
+
+- An unknown brand is a 404. Any other param the library or the parser refuses
+  is a 422 whose body is the reason in plain text.
+- `Logos::Variant` (`lib/logos/variant.rb`) reads the params and gives each logo
+  its filename and its accessible name.
+- The plates are fixed colours (`LogosHelper::LOGO_PLATES`), not theme tokens: a
+  logo's fills are baked per tone, so its plate must not follow the hub theme.
+- The logo route has no `.svg` extension. An extension sets the request format,
+  and the admin wall answers a non-HTML format with a bare 401 or 403.
+- The Industries icon is drawn flat (two solid layers), without the marketing
+  kit's steel gradient and tick marks.
 
 ## The data
 
