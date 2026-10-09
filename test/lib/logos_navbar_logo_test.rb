@@ -25,6 +25,9 @@ class LogosNavbarLogoTest < Minitest::Test
   # SHA-256 over every Studio and Industries example ("<key>\n<svg>" each, in `examples` order), taken on
   # `accepted` before the two brands were added: neither brand's logos may change by a byte.
   ORIGINAL_BRANDS_DIGEST = "b3dd0ef4b8a4a56f2ad55ebfa4b12f60ed4542cf1e18fdcb4723637e5a124dc0"
+  # The same digest over every Turf Monster and Commercial Welding example, taken on `accepted` before the
+  # watermark tone was added (task logo-gallery-context-dropdown): a third tone may not move light or dark.
+  ADDED_BRANDS_DIGEST = "087d05d81ed367d276b82e29637395efed28bec65c7b3d9692b193d8e7878736"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -218,6 +221,11 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
     all = %w[studio industries].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
     assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+  end
+
+  def test_turf_and_welding_light_and_dark_logos_are_unchanged_to_the_byte
+    all = %w[turf welding].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
+    assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
   end
 
   def test_the_added_brands_match_the_prototypes_proportions
