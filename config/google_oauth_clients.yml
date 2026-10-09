@@ -1,0 +1,13 @@
+# The Google OAuth clients the deployed apps sign in with, by client id. Ids are
+# identifiers, not secrets: every browser sees them in the sign-in redirect.
+#
+# Read by Devops::GoogleOAuthClients. A development or test boot whose
+# GOOGLE_CLIENT_ID is one of these refuses, so a local env file can never carry a
+# production client (and, with it, a production client secret). Local sign-in
+# uses the dev-only client in the agent vault, written by bin/dev-google-client.
+#
+# Add a row when an app gets its own client; the hub and tax-studio share one.
+production:
+  mcritchie-studio: 999864627557-9sol5d7l7hnmonhth33d180k068mf0b8.apps.googleusercontent.com
+  tax-studio: 999864627557-9sol5d7l7hnmonhth33d180k068mf0b8.apps.googleusercontent.com
+  turf-monster-mainnet: 999864627557-beasrik0jip0j3gjnaaorr59a0eb92j2.apps.googleusercontent.com
