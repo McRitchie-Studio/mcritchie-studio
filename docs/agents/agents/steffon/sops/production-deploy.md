@@ -163,9 +163,15 @@ approval not recorded`.
 
 **Who the line names.** `Approved by <name>` prints only for the Approve button on
 `/deployments`: that request stamps `metadata.owner_grant` (the signed-in admin's
-id, slug and the time), and the board removes that key from the metadata of every
-other write, so no caller can state who approved. Every other answer says how it
-was recorded and names no approver:
+id, slug and the time) and signs it with the hub's own secret for that release,
+step and event. The board removes the key from the metadata of every other write,
+and the line names a person only when the signature verifies for the row it sits
+on and the user exists, so no caller can state who approved: an unsigned marker,
+or one copied from another release or event, reads as no marker. The name is the
+user record's, never text from the row. A `SECRET_KEY_BASE` rotation makes every
+earlier signature unverifiable, so approvals recorded before it read `approver not
+recorded`: the line under-claims and never over-claims. Every other answer says
+how it was recorded and names no approver:
 
 | The record | The line |
 |------------|----------|
@@ -174,11 +180,15 @@ was recorded and names no approver:
 | `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
 | A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
 | A `ship_authorized` completion posted to the events API | `Recorded through the events API by <actor> at <time>; no web approval.` |
-| A row marked as from the web that carries no `owner_grant` (one recorded before the marker, or one a caller labelled) | `Authorized at <time> (<mode> mode); approver not recorded.` |
+| A row marked as from the web that carries no verified `owner_grant` (one recorded before the marker, one a caller labelled, or one signed under a rotated secret) | `Authorized at <time> (<mode> mode); approver not recorded.` |
 
 The line describes the record; it does not change what grants authority. A row
 with no approver named covers the release exactly as before, and its scope line
 reads `at authorization` in place of `at approval`.
+
+`bin/release status` reads the lane for display only. A failure inside that read
+prints `lane: unavailable (<error class>)` under the current release and the
+command carries on; it never fails `status` or `prepare`, which make the same read.
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
   sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.

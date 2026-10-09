@@ -4544,7 +4544,7 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
   #    production grant covers. A board that predates the module answers nil and
   #    the report prints no lane. The lane is display only: a failure inside its
   #    read answers one "lane: unavailable" line, so it never fails this call,
-  #    which `prepare` and `ship` also make.
+  #    which `prepare` also makes.
   step("read (read-only): tasks riding `release` + tasks parked on `accepted` + Release.current")
   board = conductor(
     "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
