@@ -39,7 +39,7 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
                           metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601,
                                       "window_minutes" => 30 })
-    release.grant_ship_authorization!(actor: users(:alex).email, source: "web")
+    release.grant_ship_authorization!(actor: users(:alex).email, source: "web", approver: users(:alex))
     [first, member!(release, "late")]
   end
 
@@ -115,6 +115,142 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
 
     assert_includes card_sentences("#current-release", lane: "grant"),
                     "Covers every task on this release when it ships: member set at authorization not recorded, 1 now."
+  end
+
+  # --- who approved: the web Approve alone names a person ---------------------------
+
+  API_HEADERS = lambda do
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
+    { "Authorization" => "Bearer #{token}" }
+  end
+
+  def timed_request!(release)
+    release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
+                          metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601,
+                                      "window_minutes" => 30 })
+  end
+
+  # The grant row of the card: [[sentence, tone], ...].
+  def grant_row
+    get deployments_path
+    css_select("#current-release [data-lane='grant'] [data-test='release-lane-sentence']")
+      .map { |node| [node["title"], node["data-tone"]] }
+  end
+
+  # The shared-token call that states the owner approved on the web.
+  def forge_web_grant!(release, metadata: {})
+    post "/api/v1/releases/#{release.slug}/events/ship_authorized/complete",
+         params: { event: { actor: users(:alex).email, source: "web",
+                            metadata: { granted_via: "web" }.merge(metadata) } },
+         headers: API_HEADERS.call, as: :json
+    assert_response :created
+    release.release_events.for_step("ship_authorized").completed.order(:id).last
+  end
+
+  test "[integration] the Approve button's row names the signed-in admin as approver, scope intact" do
+    release = Release.open!
+    first = member!(release, "first")
+    timed_request!(release)
+
+    post authorize_ship_deployment_path(release.slug), as: :json
+    assert_response :success
+    late = member!(release, "late")
+
+    grant = release.reload.ship_authorization_grant
+    assert_equal users(:alex).id, grant.metadata.dig("owner_grant", "user_id")
+    assert_equal({ "policy" => "release_at_ship", "member_slugs" => [first.slug] }, grant.metadata["scope"])
+    row = grant_row
+    assert_match(/\AApproved by Alex McRitchie at .+ UTC, timed mode\.\z/, row[0][0])
+    assert_equal "success", row[0][1]
+    assert_equal ["Covers every task on this release when it ships: 1 at approval, 2 now.", "warning"], row[1]
+    assert_equal ["Joined after approval: #{late.slug}.", "warning"], row[2]
+  end
+
+  test "[integration] control: a signed-in user who is not an admin records no approval" do
+    release = Release.open!
+    timed_request!(release)
+    log_in_as(users(:viewer))
+
+    post authorize_ship_deployment_path(release.slug), as: :json
+
+    refute release.reload.ship_authorization_granted?
+    assert_empty release.release_events.for_step("ship_authorized").completed
+  end
+
+  test "[integration] a shared-token row claiming the owner's web approval names no approver on the card" do
+    release = Release.open!
+    member!(release, "first")
+    timed_request!(release)
+
+    event = forge_web_grant!(release)
+
+    assert release.reload.ship_authorization_granted?, "the events API accepts the row exactly as it did"
+    assert_equal users(:alex).email, event.actor
+    assert_equal "web", event.source
+    row = grant_row
+    assert_match(/\AAuthorized at .+ UTC \(timed mode\); approver not recorded\.\z/, row[0][0])
+    assert_equal "muted", row[0][1]
+    assert_equal "Covers every task on this release when it ships: 1 at authorization, 1 now.", row[1][0]
+    card = css_select("#current-release [data-test='release-lane-lease']").first.to_html
+    refute_includes card, "Approved by"
+    refute_includes card, "Alex McRitchie"
+    assert_select "#current-release [data-test='release-lane-sentence'][data-tone='success']", 0
+  end
+
+  test "[integration] the same row with a lapse flag prints the lapse" do
+    release = Release.open!
+    timed_request!(release)
+
+    forge_web_grant!(release, metadata: { lapsed: true })
+
+    refute release.reload.ship_authorization_granted?
+    row = grant_row
+    assert_match(/\ANo approval was given: the window lapsed at .+ UTC and the ship proceeded on green, timed mode\.\z/, row[0][0])
+    assert_equal "warning", row[0][1]
+    assert_select "#current-release [data-lane='grant']", text: /Approved by/, count: 0
+  end
+
+  test "[integration] the events API drops a caller's owner_grant and keeps the rest of its metadata" do
+    release = Release.open!
+    timed_request!(release)
+    marker = { user_id: users(:alex).id, user_slug: "alex", at: Time.current.utc.iso8601 }
+
+    event = forge_web_grant!(release, metadata: { owner_grant: marker, note: "kept" })
+
+    assert_nil event.metadata["owner_grant"]
+    assert_equal "kept", event.metadata["note"]
+    assert_equal "web", event.metadata["granted_via"]
+    assert_match(/\AAuthorized at .+; approver not recorded\.\z/, grant_row[0][0])
+  end
+
+  test "[integration] the card paints each kind of answer in its own words and tone" do
+    usage = { model: "test-model", tokens_in: 1, tokens_out: 1, cost: 0 }
+    kinds = {
+      "ask under --yes" => [{ source: "conductor", actor: "alex", metadata: { "mode" => "ask", "granted_via" => "confirm" } },
+                            /\ARecorded by the conductor CLI in timed mode \(run as alex\) at .+ UTC; no web approval\.\z/, "warning"],
+      "auto" => [{ source: "conductor", actor: "alex", metadata: { "granted_via" => "auto" } },
+                 /\AProceeded on green with no approval asked at .+ UTC \(timed mode\)\.\z/, "warning"],
+      "events API" => [{ source: "api", actor: "avi", metadata: {}, **usage },
+                       /\ARecorded through the events API by avi at .+ UTC; no web approval\.\z/, "warning"],
+      "legacy web" => [{ source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web" } },
+                       /\AAuthorized at .+ UTC \(timed mode\); approver not recorded\.\z/, "muted"],
+      "lapse" => [{ source: "conductor", metadata: { "lapsed" => true, "granted_via" => "window-lapse" } },
+                  /\ANo approval was given: the window lapsed at .+ UTC and the ship proceeded on green, timed mode\.\z/, "warning"]
+    }
+    kinds.each do |kind, (attrs, words, tone)|
+      ReleaseEvent.delete_all
+      Release.delete_all
+      release = Release.open!
+      timed_request!(release)
+      release.record_event!(step: "ship_authorized", status: "completed", **attrs)
+
+      sentence, shown_tone = grant_row.first
+      assert_match words, sentence, kind
+      assert_equal tone, shown_tone, kind
+      visible = css_select("#current-release [data-lane='grant'] [data-test='release-lane-sentence']").first.text.squish
+      head, tail = sentence.split(/at .+ UTC/, 2)
+      assert visible.start_with?(head) && visible.end_with?(tail), "#{kind}: the visible words are the title's: #{visible}"
+    end
   end
 
   test "[integration] the Last Release card keeps the grant and drops the holders" do
@@ -217,7 +353,9 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
                           metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601,
                                       "window_minutes" => 30 })
-    granted = pushed_card { release.grant_ship_authorization!(actor: users(:alex).email, source: "web") }
+    granted = pushed_card do
+      release.grant_ship_authorization!(actor: users(:alex).email, source: "web", approver: users(:alex))
+    end
     assert_includes granted, "Approved by Alex McRitchie"
     assert_includes granted, "Covers every task on this release when it ships: 1 at approval, 1 now."
   end

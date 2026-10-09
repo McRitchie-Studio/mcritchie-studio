@@ -4550,7 +4550,7 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     "accepted = Task.where(stage: 'reviewed', merged: 'accepted')" \
     ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
     "r = Release.current; " \
-    "lane = begin; Release::LaneLease.status_lines(r); rescue NameError; nil; end; " \
+    "lane = defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
     "puts({ pending: pending, accepted: accepted, lane: lane, " \
     "release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
     read_only: true

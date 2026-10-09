@@ -29,7 +29,20 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
   end
 
   def approve!(at: NOW + 5.minutes)
-    travel_to(at) { @rel.grant_ship_authorization!(actor: users(:alex).email, source: "web") }
+    travel_to(at) { @rel.grant_ship_authorization!(actor: users(:alex).email, source: "web", approver: users(:alex)) }
+  end
+
+  # A `ship_authorized completed` row as a caller writes it: no approver keyword.
+  # An api or agent completion owes usage (EventUsage), so those rows carry it.
+  USAGE = { model: "test-model", tokens_in: 1, tokens_out: 1, cost: 0 }.freeze
+
+  def answer!(at: NOW + 2.minutes, **attrs)
+    attrs = USAGE.merge(attrs) if %w[api agent].include?(attrs[:source])
+    travel_to(at) { @rel.record_event!(step: "ship_authorized", status: "completed", **attrs) }
+  end
+
+  def sentences(now: NOW + 10.minutes)
+    Release::LaneLease.grant_sentences(@rel.reload, now: now)
   end
 
   def lines(now: NOW + 10.minutes)
@@ -164,24 +177,11 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
     assert_equal "Covered every task on this release when it shipped: 1 at approval, 2 at ship.", lines[1]
   end
 
-  test "[unit] each way authority is taken reads as what it was" do
-    request!(mode: "ask")
-    assert_equal ["Production approval is waiting at the conductor's prompt, ask mode."], lines
-    travel_to(NOW + 2.minutes) do
-      @rel.record_event!(step: "ship_authorized", status: "completed", source: "conductor", actor: "steffon",
-                         metadata: { "mode" => "ask", "granted_via" => "confirm" })
-    end
-    assert_equal "Confirmed at the conductor's prompt by steffon at Oct 8, 01:32 UTC, ask mode.", lines.first
-    assert_equal "Covers every task on this release when it ships: 0 at authorization, 0 now.", lines.second
-  end
-
   test "[unit] a lapse is stated as no approval, never as one" do
     ends_at = NOW + 30.minutes
     request!(ends_at: ends_at)
-    travel_to(ends_at) do
-      @rel.record_event!(step: "ship_authorized", status: "completed", source: "conductor", actor: "steffon",
-                         metadata: { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse" })
-    end
+    answer!(at: ends_at, source: "conductor", actor: "steffon",
+            metadata: { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse" })
 
     out = lines(now: ends_at + 1.minute)
     assert_equal "No approval was given: the window lapsed at Oct 8, 02:00 UTC and the ship proceeded on green, timed mode.", out.first
@@ -189,13 +189,176 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
     assert(out.none? { |line| line.start_with?("Approved") })
   end
 
-  test "[unit] an answer through any other door names the door" do
+  # --- who approved: only the web Approve's marker names a person -----------------
+
+  APPROVER_WORDS = /Approved by|Confirmed/
+
+  test "[unit] the web Approve's marker is the signed-in admin, and the sentence names that user" do
     request!
-    travel_to(NOW + 3.minutes) do
-      @rel.record_event!(step: "ship_authorized", status: "completed", source: "script", actor: "some-script", metadata: {})
+    grant = approve!
+
+    marker = grant.reload.metadata["owner_grant"]
+    assert_equal users(:alex).id, marker["user_id"]
+    assert_equal %w[at user_id user_slug], marker.keys.sort
+    assert_equal "2026-10-08T01:35:00Z", marker["at"]
+    assert_equal "Approved by Alex McRitchie at Oct 8, 01:35 UTC, timed mode.", lines.first
+    assert_equal :success, sentences.first.tone
+  end
+
+  test "[unit] the approver's name is the marker's user, never the row's actor" do
+    request!
+    travel_to(NOW + 5.minutes) do
+      @rel.grant_ship_authorization!(actor: "somebody-else@example.com", source: "web", approver: users(:alex))
     end
 
-    assert_equal "Authorized by some-script through script at Oct 8, 01:33 UTC, timed mode.", lines.first
+    assert_equal "Approved by Alex McRitchie at Oct 8, 01:35 UTC, timed mode.", lines.first
+  end
+
+  test "[unit] ask mode under --yes: the row ship records reads as a CLI record, not a person's confirmation" do
+    require Rails.root.join("bin/lib/ship_authority").to_s
+    member!("first")
+    # bin/release ship --mode ask --yes from an agent shell: `confirm` answers true
+    # with no prompt shown, and the actor is ENV["USER"].
+    recorder = lambda do |status, metadata|
+      travel_to(NOW + (status == "started" ? 0 : 2.minutes)) do
+        Release::Conductor.record_event!(release: @rel, step: ShipAuthority::STEP, status: status, actor: "alex",
+                                         source: "conductor", metadata: metadata,
+                                         idempotency_key: [@rel.slug, ShipAuthority::STEP, status].join(":"))
+      end
+    end
+    result = ShipAuthority.take!(mode: "ask", release_slug: @rel.slug, minutes: 30, recorder: recorder,
+                                 reader: ->(**) { }, confirmer: ->(_prompt) { true }, say: ->(_line) { })
+
+    assert_equal :confirmed, result
+    assert @rel.reload.ship_authorization_granted?, "authority is recorded exactly as it was"
+    assert_equal "confirm", @rel.ship_authorization_grant.metadata["granted_via"]
+    assert_equal [
+      "Recorded by the conductor CLI in ask mode (run as alex) at Oct 8, 01:32 UTC; no web approval.",
+      "Covers every task on this release when it ships: 1 at authorization, 1 now."
+    ], lines
+    assert_equal :warning, sentences.first.tone
+    assert_no_match APPROVER_WORDS, lines.join(" ")
+  end
+
+  test "[unit] a row that claims the web, the owner and a web grant, with no marker, names no approver" do
+    member!("first")
+    request!
+    answer!(source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web" })
+
+    assert @rel.reload.ship_authorization_granted?, "the row still grants, as it does today"
+    assert_equal [
+      "Authorized at Oct 8, 01:32 UTC (timed mode); approver not recorded.",
+      "Covers every task on this release when it ships: 1 at authorization, 1 now."
+    ], lines
+    assert_equal :muted, sentences.first.tone
+    assert_no_match APPROVER_WORDS, lines.join(" ")
+    refute_includes lines.join(" "), "Alex McRitchie"
+  end
+
+  test "[unit] the same row with a lapse flag reads as the lapse" do
+    request!
+    answer!(source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web", "lapsed" => true })
+
+    refute @rel.reload.ship_authorization_granted?
+    assert_equal "No approval was given: the window lapsed at Oct 8, 01:32 UTC and the ship proceeded on green, timed mode.", lines.first
+    assert_equal :warning, sentences.first.tone
+    assert_no_match APPROVER_WORDS, lines.join(" ")
+  end
+
+  test "[unit] a lapse flag reads as the lapse even on a row that carries the marker" do
+    request!
+    grant = approve!
+    grant.update_columns(metadata: grant.metadata.merge("lapsed" => true))
+
+    assert_match(/\ANo approval was given: the window lapsed/, lines.first)
+    assert_equal "Covers every task on this release when it ships: 0 at authorization, 0 now.", lines.second
+    assert_no_match APPROVER_WORDS, lines.join(" ")
+  end
+
+  test "[unit] a caller's own owner_grant is removed from the metadata of every event" do
+    forged = { "user_id" => users(:alex).id, "user_slug" => users(:alex).slug, "at" => NOW.iso8601 }
+    request!
+    answer = answer!(source: "web", actor: users(:alex).email,
+                     metadata: { "granted_via" => "web", "owner_grant" => forged })
+    shown = lines.first
+    symbol = @rel.record_event!(step: "ship_authorized", status: "completed", source: "web",
+                                metadata: { owner_grant: forged, note: "kept" })
+    other = @rel.record_event!(step: "deploy_prod", status: "completed", source: "conductor",
+                               metadata: { "owner_grant" => forged, "note" => "kept" })
+
+    assert_nil answer.reload.metadata["owner_grant"]
+    assert_equal "web", answer.metadata["granted_via"], "nothing else of the caller's metadata is touched"
+    assert_nil symbol.reload.metadata["owner_grant"]
+    assert_equal "kept", symbol.metadata["note"]
+    assert_equal({ "note" => "kept" }, other.reload.metadata)
+    assert_equal "Authorized at Oct 8, 01:32 UTC (timed mode); approver not recorded.", shown
+  end
+
+  test "[unit] the conductor's recorder passes on neither the marker nor the approver keyword" do
+    forged = { "user_id" => users(:alex).id, "user_slug" => users(:alex).slug, "at" => NOW.iso8601 }
+    request!
+    event = travel_to(NOW + 2.minutes) do
+      Release::Conductor.record_event!(release: @rel, step: "ship_authorized", status: "completed", source: "conductor",
+                                       actor: "alex", owner_grant: users(:alex),
+                                       metadata: { "mode" => "timed", "granted_via" => "web", "owner_grant" => forged })
+    end
+
+    assert_nil event.reload.metadata["owner_grant"]
+    assert_equal "Recorded by the conductor CLI in timed mode (run as alex) at Oct 8, 01:32 UTC; no web approval.", lines.first
+  end
+
+  test "[unit] control: the approver keyword takes a saved user and nothing else" do
+    request!
+    event = @rel.record_event!(step: "ship_authorized", status: "completed", source: "web",
+                               owner_grant: { "user_id" => users(:alex).id })
+    assert_nil event.reload.metadata["owner_grant"]
+
+    asked = @rel.record_event!(step: "ship_authorized", status: "started", source: "conductor",
+                               owner_grant: users(:alex), metadata: { "mode" => "ask" })
+    assert_nil asked.reload.metadata["owner_grant"], "only an answer carries the marker"
+  end
+
+  test "[unit] auto mode says nobody was asked" do
+    request!(mode: "auto")
+    answer!(source: "conductor", actor: "alex", metadata: { "mode" => "auto", "granted_via" => "auto" })
+
+    assert_equal "Proceeded on green with no approval asked at Oct 8, 01:32 UTC (auto mode).", lines.first
+    assert_equal :warning, sentences.first.tone
+  end
+
+  test "[unit] a row through the events API names its recorder as a recorder" do
+    request!
+    answer!(at: NOW + 3.minutes, source: "api", actor: users(:alex).email, metadata: { "granted_via" => "web" })
+
+    assert_equal "Recorded through the events API by #{users(:alex).email} at Oct 8, 01:33 UTC; no web approval.", lines.first
+    assert_equal :warning, sentences.first.tone
+    assert_no_match APPROVER_WORDS, lines.join(" ")
+    refute_includes lines.join(" "), "Alex McRitchie"
+  end
+
+  test "[unit] a recorder with no name reads as unnamed, and a long one is cut" do
+    request!
+    answer!(source: "script", metadata: {})
+    assert_equal "Recorded through the events API by an unnamed caller at Oct 8, 01:32 UTC; no web approval.", lines.first
+
+    answer!(at: NOW + 3.minutes, source: "script", actor: "x" * 200, metadata: {})
+    assert_operator lines.first.size, :<, 140
+  end
+
+  test "[unit] no row without the marker reads as an approval or in the success tone" do
+    request!
+    sources = %w[web conductor api agent script]
+    vias = ["web", "confirm", "auto", "grant", nil]
+    sources.product(vias, [true, false]).each_with_index do |(source, via, lapsed), index|
+      metadata = { "granted_via" => via, "lapsed" => lapsed }.compact
+      answer!(at: NOW + 2.minutes + index.seconds, source: source, actor: users(:alex).email, metadata: metadata)
+      shown = @rel.reload.ship_authorization_grant || @rel.ship_authorization_lapse
+      sentence = Release::LaneLease.answer_sentence(shown, "timed")
+
+      assert_no_match APPROVER_WORDS, sentence.to_s, "#{source}/#{via}/#{lapsed}"
+      refute_includes sentence.to_s, "Alex McRitchie"
+      refute_equal :success, sentence.tone, "#{source}/#{via}/#{lapsed}"
+    end
   end
 
   # --- the holders ----------------------------------------------------------------
@@ -249,6 +412,22 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
     assert_equal holder_lines.first, info["sentence"]
     assert_equal "steffon", info["soul"]
     assert_equal "Snorlax", info["mascot"]
+  end
+
+  test "[unit] a failure building the sentence leaves the holder descriptor served without one" do
+    claim!("assembler", session: "sess-assembler-9b57", soul: "steffon", label: "Snorlax")
+    original = Release::LaneLease.method(:holder_sentence)
+    Release::LaneLease.define_singleton_method(:holder_sentence) { |*| raise NoMethodError, "a bug in the sentence" }
+
+    info = travel_to(NOW + 30.seconds) { ReleaseConductorClaim.status_for(@rel.slug, "assembler") }
+
+    assert_nil info["sentence"]
+    assert_nil info["mascot"]
+    assert_equal "sess-assembler-9b57", info["session"]
+    assert_equal "Snorlax", info["label"]
+    assert info["live"]
+  ensure
+    Release::LaneLease.define_singleton_method(:holder_sentence, original) if original
   end
 
   test "[unit] the forming claim reads as the next release" do

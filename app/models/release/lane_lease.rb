@@ -18,11 +18,19 @@ class Release
   # member set at the moment it was given (Release#record_event! stamps it) and
   # these sentences name every later joiner.
   #
+  # WHO APPROVED is read from one place: the owner_grant marker the web Approve
+  # writes. A row without it states how it was recorded and names no approver.
+  #
   # WHAT IS SHOWN OF A HOLDER: its mascot, its soul, the last four characters of its
   # session id, and since when. Never the nonce and never the whole session id.
   module LaneLease
     POLICY = "release_at_ship"
     SCOPE_KEY = "scope"
+    # The reserved metadata key that proves a web approval. Release#record_event!
+    # writes it from the signed-in admin of the Approve request and removes it from
+    # any caller's metadata, so its presence is the server's word, not a client's.
+    OWNER_GRANT_KEY = "owner_grant"
+    RECORDER_MAX = 60
     ROLE_VERBS = { "assembler" => "assembling", "deployer" => "shipping" }.freeze
     ROLE_TITLES = { "assembler" => "Assembling", "deployer" => "Shipping" }.freeze
     STAMP_FORMAT = "%b %-d, %H:%M UTC"
@@ -138,25 +146,61 @@ class Release
       end
     end
 
+    # The one sentence that states how the request was answered. It says only what
+    # the record proves. A lapse flag always reads as a lapse. A person is named as
+    # approver only off the owner_grant marker, which the web Approve alone writes
+    # and Release#record_event! strips from every caller's metadata: `actor`,
+    # `source` and `granted_via` are a caller's to set, so they never name an
+    # approver. Every other row names its recorder as a recorder, in a tone that is
+    # never the success tone.
     def answer_sentence(answer, mode)
       at = Stamp.new(answer.occurred_at, "at")
-      via = answer.metadata.to_h["granted_via"].presence || answer.source.to_s
-      actor = actor_name(answer.actor)
-      parts =
-        case via
-        when "web"          then ["Approved by #{actor} ", at, ", #{mode} mode."]
-        when "confirm"      then ["Confirmed at the conductor's prompt by #{actor} ", at, ", #{mode} mode."]
-        when "auto"         then ["Proceeded on green with no approval asked ", at, ", #{mode} mode."]
-        when "window-lapse" then ["No approval was given: the window lapsed ", at, " and the ship proceeded on green, #{mode} mode."]
-        else ["Authorized by #{actor} through #{via} ", at, ", #{mode} mode."]
+      if lapsed?(answer)
+        return Sentence.new(["No approval was given: the window lapsed ", at,
+                             " and the ship proceeded on green, #{mode} mode."], :warning)
+      end
+      approver = approver_name(answer)
+      return Sentence.new(["Approved by #{approver} ", at, ", #{mode} mode."], :success) if approver
+
+      recorder = recorder_name(answer.actor)
+      case answer.source.to_s
+      when "web"
+        Sentence.new(["Authorized ", at, " (#{mode} mode); approver not recorded."], :muted)
+      when "conductor"
+        if answer.metadata.to_h["granted_via"].to_s == "auto"
+          Sentence.new(["Proceeded on green with no approval asked ", at, " (#{mode} mode)."], :warning)
+        else
+          Sentence.new(["Recorded by the conductor CLI in #{mode} mode (run as #{recorder}) ", at,
+                        "; no web approval."], :warning)
         end
-      Sentence.new(parts, via == "web" ? :success : :warning)
+      else
+        Sentence.new(["Recorded through the events API by #{recorder} ", at, "; no web approval."], :warning)
+      end
+    end
+
+    def lapsed?(answer)
+      ActiveModel::Type::Boolean.new.cast(answer.metadata.to_h["lapsed"]) == true
+    end
+
+    # The owner_grant marker of an answer that is an approval, or nil. A lapse is
+    # never an approval, whatever else its row carries.
+    def owner_grant(answer)
+      marker = answer.metadata.to_h[OWNER_GRANT_KEY]
+      marker.is_a?(Hash) && marker["user_id"].present? && !lapsed?(answer) ? marker : nil
+    end
+
+    # The approver's name, read from the marker's own user and from nothing a
+    # caller sets. nil when the answer carries no marker.
+    def approver_name(answer)
+      marker = owner_grant(answer)
+      return nil unless marker
+
+      User.find_by(id: marker["user_id"])&.name.presence || marker["user_slug"].presence || "the owner"
     end
 
     # What the answer covers, and every member that joined or left after it.
     def scope_sentences(answer, members, shipped:)
-      via = answer.metadata.to_h["granted_via"].to_s
-      moment = via == "web" ? "approval" : "authorization"
+      moment = owner_grant(answer) ? "approval" : "authorization"
       recorded = recorded_members(answer)
       lead = shipped ? "Covered every task on this release when it shipped" : "Covers every task on this release when it ships"
       now_word = shipped ? "at ship" : "now"
@@ -205,14 +249,10 @@ class Release
       session_mascot&.pokemon&.display_name(gender: session_mascot.gender).presence
     end
 
-    # The operator's name for a web grant (the Approve records an email); any other
-    # actor reads as recorded.
-    def actor_name(actor)
-      value = actor.to_s.strip
-      return "the operator" if value.empty?
-      return value unless value.include?("@")
-
-      User.find_by(email: value)&.name.presence || value
+    # The recorder of a row with no web approval, as the row states it. The value is
+    # the caller's own, so it prints as recorded and is never resolved to a person.
+    def recorder_name(actor)
+      actor.to_s.strip.truncate(RECORDER_MAX).presence || "an unnamed caller"
     end
   end
 end

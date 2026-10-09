@@ -213,16 +213,19 @@ class ReleaseConductorClaim < ApplicationRecord
   # The holder descriptor the CLI stand-down message + the status read render.
   # `sentence` is the lane sentence the Next Release card shows for this role
   # (Release::LaneLease), so the stand-down and the card read as one text.
+  # The sentence is display: a failure building it leaves `mascot` and `sentence`
+  # nil (the CLI then composes its own holder line) and never fails the response,
+  # which is served after the claim write has committed.
   def holder_info(now: Time.current)
-    lane_holder = Release::LaneLease.holder(self)
+    lane = lane_display
     {
       "release_slug"  => release_slug,
       "role"          => role,
       "session"       => claimed_session,
       "label"         => holder_label,
       "soul"          => holder_soul,
-      "mascot"        => lane_holder.mascot,
-      "sentence"      => Release::LaneLease.holder_sentence(lane_holder).to_s,
+      "mascot"        => lane[:mascot],
+      "sentence"      => lane[:sentence],
       "acquired_at"   => acquired_at&.utc&.iso8601,
       "expires_at"    => claim_expires_at&.utc&.iso8601,
       "heartbeat_age" => heartbeat_age(now: now),
@@ -231,6 +234,14 @@ class ReleaseConductorClaim < ApplicationRecord
   end
 
   private
+
+  def lane_display
+    lane_holder = Release::LaneLease.holder(self)
+    { mascot: lane_holder.mascot, sentence: Release::LaneLease.holder_sentence(lane_holder).to_s }
+  rescue StandardError => e
+    Rails.logger.warn("[release-claim] lane sentence failed for #{release_slug}/#{role}: #{e.class}: #{e.message}")
+    {}
+  end
 
   # Guarded by Studio::Cable.safe_broadcast inside the broadcaster, so a cable
   # failure never breaks the claim write.

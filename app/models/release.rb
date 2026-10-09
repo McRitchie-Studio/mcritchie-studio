@@ -687,8 +687,17 @@ class Release < ApplicationRecord
     self
   end
 
-  def record_event!(step:, status:, **attrs)
-    attrs = with_grant_scope(attrs) if step.to_s == SHIP_AUTHORIZATION_STEP && status.to_s == "completed"
+  # `owner_grant` is the web Approve's own keyword: the signed-in admin of that
+  # request, passed by ReleasesController#authorize_ship through
+  # #grant_ship_authorization! and by nothing else. It becomes the reserved
+  # `metadata.owner_grant` marker; the same key in a caller's metadata is dropped
+  # on every write, so no client can state who approved.
+  def record_event!(step:, status:, owner_grant: nil, **attrs)
+    attrs = without_owner_grant(attrs)
+    if step.to_s == SHIP_AUTHORIZATION_STEP && status.to_s == "completed"
+      attrs = with_grant_scope(attrs)
+      attrs = with_owner_grant(attrs, owner_grant) if owner_grant.is_a?(User) && owner_grant.persisted?
+    end
     event = ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
     stamp_stage_for_event(step, status, at: event.occurred_at)
     event
@@ -781,7 +790,10 @@ class Release < ApplicationRecord
   # A timed request's key carries its window end (ShipAuthority.idempotency_key
   # derives the same string), so a re-run's grant is a fresh row rather than the
   # previous run's, which would sit before the new request and grant nothing.
-  def grant_ship_authorization!(actor:, source: "web", metadata: {})
+  #
+  # `approver` is the signed-in admin whose tap this is. Only the web Approve
+  # passes it, and it is what lets the lane sentence name a person as approver.
+  def grant_ship_authorization!(actor:, source: "web", metadata: {}, approver: nil)
     ends_at = ship_authorization_request&.metadata.to_h&.dig("window_ends_at").to_s
     key = "#{slug}:#{SHIP_AUTHORIZATION_STEP}:completed"
     key = "#{key}:#{ends_at}" if ends_at.present?
@@ -789,7 +801,8 @@ class Release < ApplicationRecord
       step: SHIP_AUTHORIZATION_STEP, status: "completed",
       actor: actor.to_s.strip.presence, source: source,
       idempotency_key: key,
-      metadata: metadata.to_h.merge("granted_via" => source)
+      metadata: metadata.to_h.merge("granted_via" => source),
+      owner_grant: approver
     )
   end
 
@@ -1063,6 +1076,22 @@ class Release < ApplicationRecord
   def with_grant_scope(attrs)
     metadata = attrs[:metadata].to_h.stringify_keys
     attrs.merge(metadata: metadata.merge(Release::LaneLease::SCOPE_KEY => Release::LaneLease.scope_for(self)))
+  end
+
+  # The reserved marker is the server's to write. A caller's copy is removed from
+  # the metadata of every event, whatever the step, before anything is stored.
+  def without_owner_grant(attrs)
+    key = Release::LaneLease::OWNER_GRANT_KEY
+    metadata = attrs[:metadata]
+    return attrs unless metadata.respond_to?(:to_h) && metadata.to_h.stringify_keys.key?(key)
+
+    attrs.merge(metadata: metadata.to_h.stringify_keys.except(key))
+  end
+
+  # Who approved, as the server saw it: the signed-in admin of the Approve request.
+  def with_owner_grant(attrs, user)
+    marker = { "user_id" => user.id, "user_slug" => user.slug, "at" => Time.current.utc.iso8601 }
+    attrs.merge(metadata: attrs[:metadata].to_h.merge(Release::LaneLease::OWNER_GRANT_KEY => marker))
   end
 
   def at_most_one_active_release

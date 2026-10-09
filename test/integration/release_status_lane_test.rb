@@ -56,7 +56,7 @@ class ReleaseStatusLaneTest < ActionDispatch::IntegrationTest
     release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
                           metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601,
                                       "window_minutes" => 30 })
-    release.grant_ship_authorization!(actor: users(:alex).email, source: "web")
+    release.grant_ship_authorization!(actor: users(:alex).email, source: "web", approver: users(:alex))
     late = Task.create!(title: "status lane late member task", stage: "reviewed")
     release.add(late)
 
@@ -71,6 +71,45 @@ class ReleaseStatusLaneTest < ActionDispatch::IntegrationTest
     refute_includes positions, nil, "every card sentence is printed verbatim:\n#{out}"
     assert_equal positions.sort, positions, "in the card's order"
     assert_operator positions.first, :>, printed.index("current release: #{release.slug} (assembling)")
+  end
+
+  test "[integration] status prints the card's words for a row with no web approval" do
+    rows = {
+      "Recorded by the conductor CLI in ask mode (run as alex)" =>
+        ["ask", { source: "conductor", actor: "alex", metadata: { "mode" => "ask", "granted_via" => "confirm" } }],
+      "Authorized" =>
+        ["timed", { source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web" } }],
+      "No approval was given: the window lapsed" =>
+        ["timed", { source: "web", actor: users(:alex).email, metadata: { "granted_via" => "web", "lapsed" => true } }]
+    }
+    snippet = status_snippet
+    rows.each do |opening, (mode, attrs)|
+      ReleaseEvent.delete_all
+      Release.delete_all
+      release = Release.open!
+      release.record_event!(step: "ship_authorized", status: "started", source: "conductor", metadata: { "mode" => mode })
+      release.record_event!(step: "ship_authorized", status: "completed", **attrs)
+
+      printed = status_output(board_answer(snippet)).lines.map(&:strip)
+      card = card_sentences
+
+      answer = card.find { |sentence| sentence.start_with?(opening) }
+      assert answer, "#{opening}: the card states it:\n#{card.join("\n")}"
+      card.each { |sentence| assert_includes printed, sentence, "status prints the card's sentence verbatim" }
+      refute(printed.any? { |line| line.match?(/Approved by|Confirmed|Alex McRitchie/) }, printed.join("\n"))
+    end
+  end
+
+  test "[integration] a failure inside the lane read is not swallowed as a board that predates it" do
+    snippet = status_snippet
+    assert_includes snippet, "defined?(Release::LaneLease)"
+    refute_includes snippet, "rescue"
+
+    original = Release::LaneLease.method(:status_lines)
+    Release::LaneLease.define_singleton_method(:status_lines) { |*| nil.no_such_method }
+    assert_raises(NoMethodError) { board_answer(snippet) }
+  ensure
+    Release::LaneLease.define_singleton_method(:status_lines, original) if original
   end
 
   test "[integration] with no release, status names a prepare that is forming the next one" do
