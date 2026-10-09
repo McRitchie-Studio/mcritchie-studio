@@ -294,8 +294,8 @@ Rails.application.routes.draw do
 
   Studio.routes(self)
 
-  # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
-  # to authorize @turfmonstershow; the callback stores the connection.
+  # TikTok OAuth handshake (admin-only): /admin/tiktok shows the connection and
+  # starts the sign-in (/admin/tiktok/connect); the callback stores the connection.
   # Resend inbound (email.received, svix-signed) -> the desk capture queue.
   post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
   # Delivery, bounce, complaint and engagement events for broadcast email.
@@ -322,9 +322,12 @@ Rails.application.routes.draw do
     get "ai_builder_multiple", to: "ai_builder_multiple#index"
     get "ai_builder_multiple/commit_history", to: "ai_builder_multiple#commit_history", as: :ai_builder_multiple_commit_history
 
+    # The standing page: is a TikTok account connected, as whom, and the
+    # Sign in and Disconnect actions. No token is ever rendered on it.
+    get "tiktok", to: "tiktok#show", as: :tiktok
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
-    # Deletes the stored connection (the button on the connected page).
+    # Deletes the stored connection (the button on the standing page).
     delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
   end
 

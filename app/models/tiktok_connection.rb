@@ -40,23 +40,28 @@ class TiktokConnection < ApplicationRecord
     def store!(grant, by:, now: Time.current)
       attempts = 0
       begin
-        connection = find_or_initialize_by(open_id: grant["open_id"].to_s)
-        # A row whose token can no longer be read is replaced, not updated:
-        # signing in again is the recovery for a lost or changed key.
-        unless connection.new_record? || connection.readable?
-          where(id: connection.id).delete_all
-          connection = new(open_id: connection.open_id)
+        # One transaction: the delete of an unreadable row and the save that
+        # replaces it land together or not at all, so a save that fails (an
+        # answer with no refresh token) cannot leave the account with no row.
+        transaction(requires_new: true) do
+          connection = find_or_initialize_by(open_id: grant["open_id"].to_s)
+          # A row whose token can no longer be read is replaced, not updated:
+          # signing in again is the recovery for a lost or changed key.
+          unless connection.new_record? || connection.readable?
+            where(id: connection.id).delete_all
+            connection = new(open_id: connection.open_id)
+          end
+          connection.assign_attributes(
+            refresh_token: grant["refresh_token"].to_s,
+            scope: grant["scope"].to_s.presence,
+            connected_by: by,
+            connected_at: now,
+            refreshed_at: nil,
+            refresh_expires_at: expiry(grant, now)
+          )
+          connection.save!
+          connection
         end
-        connection.assign_attributes(
-          refresh_token: grant["refresh_token"].to_s,
-          scope: grant["scope"].to_s.presence,
-          connected_by: by,
-          connected_at: now,
-          refreshed_at: nil,
-          refresh_expires_at: expiry(grant, now)
-        )
-        connection.save!
-        connection
       rescue ActiveRecord::RecordNotUnique # two sign-ins for one new account, at once
         retry if (attempts += 1) < 2
         raise

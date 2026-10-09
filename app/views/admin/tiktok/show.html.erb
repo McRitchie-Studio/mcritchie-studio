@@ -1,0 +1,163 @@
+<%# The standing TikTok connection page (/admin/tiktok): whether an account is connected and from where (a stored connection, the server's fallback env pair, or nothing), the stored connection's account, granted scope, who connected it and when, when its refresh token dies and whether the row can still be read; whether the env pair, the app's keys and the encryption keys are set, by NAME only; and the two actions, Sign in and Disconnect. It renders no token and no part of one, and no value of any env var. %>
+<% status = {
+     stored: ["Connected", "bg-success/10 text-success-ink border-success/40"],
+     unreadable: ["Not connected: the stored connection cannot be read", "bg-warning/10 text-warning-ink border-warning/40"],
+     env: ["Connected from the server's config", "bg-primary/10 text-primary border-primary/20"],
+     none: ["Not connected", "bg-warning/10 text-warning-ink border-warning/40"]
+   }.fetch(@source) %>
+<% can_sign_in = @encryption_ready && (@app_keys || @stand_in) %>
+<% set = ->(on) { on ? "set" : "not set" } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="tiktok-connection" data-source="<%= @source %>">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">TikTok connection</h1>
+    <p class="text-secondary mt-2">
+      The TikTok account this server drafts to. No token is shown here or anywhere else: nothing on this page is to be copied.
+    </p>
+  </div>
+
+  <div class="card p-4 space-y-2" data-test="tiktok-status">
+    <span class="badge text-xs <%= status.last %>" data-test="tiktok-status-badge"><%= status.first %></span>
+    <p class="text-body text-sm" data-test="tiktok-status-detail">
+      <% case @source %>
+      <% when :stored %>
+        <% if !@can_draft %>
+          <span class="font-semibold text-warning-ink">video.upload was not granted</span>, so this connection cannot draft.
+          Sign in again and leave the upload permission on.
+        <% elsif @direct_post %>
+          <span class="font-semibold text-heading">Drafts and direct post.</span>
+          This connection can upload to the TikTok inbox and publish to the public feed.
+        <% else %>
+          <span class="font-semibold text-heading">Drafts only.</span>
+          This connection can upload to the TikTok inbox. It cannot publish.
+        <% end %>
+      <% when :unreadable %>
+        A connection is stored, but it was encrypted with keys this server no longer has. It counts as not connected,
+        and the server's config does not stand in for it. Sign in again to replace it.
+      <% when :env %>
+        No connection is stored here. Drafting uses the pair in the server's config
+        (<span class="font-mono text-xs">TIKTOK_REFRESH_TOKEN</span>, <span class="font-mono text-xs">TIKTOK_OPEN_ID</span>).
+        Sign in to store a connection instead; the stored one is then used first.
+      <% else %>
+        Nothing connects this server to TikTok. Sign in as the account the drafts should land in.
+      <% end %>
+    </p>
+  </div>
+
+  <% if @connection %>
+    <dl class="card p-4 space-y-3 text-sm" data-test="tiktok-stored">
+      <div>
+        <dt class="text-muted text-xs mb-1">Account</dt>
+        <dd class="text-heading font-semibold break-all" data-tiktok-field="account"><%= @connection.account %></dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Granted by TikTok</dt>
+        <dd class="text-body break-words" data-tiktok-field="scope"><%= @connection.scope.presence || "TikTok named no scope" %></dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Connected</dt>
+        <dd class="text-body break-all" data-tiktok-field="connected">
+          <%= @connection.connected_at.utc.strftime("%B %-d, %Y at %H:%M UTC") %><% if @connection.connected_by.present? %> by <%= @connection.connected_by %><% end %>
+        </dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Refresh token expires</dt>
+        <dd class="text-body" data-tiktok-field="refresh-expires">
+          <% if @connection.refresh_expires_at.nil? %>
+            TikTok gave no expiry
+          <% elsif @connection.refresh_expires_at.past? %>
+            <span class="font-semibold text-warning-ink">Expired <%= @connection.refresh_expires_at.utc.strftime("%B %-d, %Y") %></span>
+            <span class="text-muted">(sign in again)</span>
+          <% else %>
+            <%= @connection.refresh_expires_at.utc.strftime("%B %-d, %Y") %>
+            <span class="text-muted">(sign in again before then)</span>
+          <% end %>
+        </dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Stored token</dt>
+        <dd class="text-body" data-tiktok-field="readable" data-readable="<%= @readable %>">
+          <% if @readable %>
+            Readable with this server's encryption keys
+          <% else %>
+            <span class="font-semibold text-warning-ink">Cannot be read</span> with this server's encryption keys
+          <% end %>
+        </dd>
+      </div>
+    </dl>
+  <% end %>
+
+  <dl class="card p-4 space-y-3 text-sm" data-test="tiktok-server">
+    <div>
+      <dt class="text-muted text-xs mb-1">Fallback pair in the server's config</dt>
+      <dd class="text-body break-words" data-tiktok-field="env-pair" data-set="<%= @env_pair %>">
+        <span class="font-mono text-xs">TIKTOK_REFRESH_TOKEN</span> and <span class="font-mono text-xs">TIKTOK_OPEN_ID</span>:
+        <span class="font-semibold text-heading"><%= set.(@env_pair) %></span>.
+        <span class="text-muted">Used only while no connection is stored.</span>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted text-xs mb-1">TikTok app keys</dt>
+      <dd class="text-body break-words" data-tiktok-field="app-keys" data-set="<%= @app_keys %>">
+        <span class="font-mono text-xs">TIKTOK_CLIENT_KEY</span> and <span class="font-mono text-xs">TIKTOK_CLIENT_SECRET</span>:
+        <span class="font-semibold text-heading"><%= set.(@app_keys) %></span>.
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted text-xs mb-1">Encryption</dt>
+      <dd class="text-body break-words" data-tiktok-field="encryption" data-ready="<%= @encryption_ready %>">
+        <% if @encryption_ready %>
+          <span class="font-semibold text-heading">Ready.</span> This server can store a connection.
+        <% else %>
+          <span class="font-semibold text-warning-ink">Not ready.</span> This server cannot store a connection until its encryption keys are set:
+          <span class="font-mono text-xs"><%= TiktokConnection::ENCRYPTION_ENV.join(", ") %></span>.
+        <% end %>
+      </dd>
+    </div>
+    <% if @stand_in %>
+      <div>
+        <dt class="text-muted text-xs mb-1">Stand-in</dt>
+        <dd class="text-body" data-tiktok-field="stand-in">This server's stand-in answers for TikTok: a sign-in here reaches nothing outside it.</dd>
+      </div>
+    <% end %>
+  </dl>
+
+  <div class="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="tiktok-sign-in-card">
+    <p class="text-sm text-body min-w-0">
+      <span class="font-semibold text-heading"><%= @connection ? "Sign in again." : "Sign in." %></span>
+      <% if can_sign_in %>
+        Sends you to TikTok, then stores the connection here.<% if @connection %> The same account's connection is replaced.<% end %>
+      <% elsif !@encryption_ready %>
+        Off until this server's encryption keys are set: the connection could not be stored.
+      <% else %>
+        Off until <span class="font-mono text-xs">TIKTOK_CLIENT_KEY</span> and <span class="font-mono text-xs">TIKTOK_CLIENT_SECRET</span> are set on this server.
+      <% end %>
+    </p>
+    <% if can_sign_in %>
+      <%= link_to(@connection ? "Sign in again" : "Sign in with TikTok", admin_tiktok_connect_path,
+                  class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 text-center", data: { test: "tiktok-sign-in", turbo: false }) %>
+    <% end %>
+  </div>
+
+  <div class="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="tiktok-disconnect-card">
+    <p class="text-sm text-body min-w-0">
+      <span class="font-semibold text-heading">Disconnect.</span>
+      <% if @connection %>
+        Deletes the stored connection from this server. Signing in again connects it back.
+        <% if @env_pair %>Drafting then carries on from the pair in the server's config.<% end %>
+      <% elsif @env_pair %>
+        Nothing is stored here to delete. To turn drafting off, remove
+        <span class="font-mono text-xs">TIKTOK_REFRESH_TOKEN</span> and <span class="font-mono text-xs">TIKTOK_OPEN_ID</span> from the server's config.
+      <% else %>
+        Nothing is stored here to delete.
+      <% end %>
+    </p>
+    <% if @connection %>
+      <%= button_to "Disconnect TikTok", admin_tiktok_disconnect_path, method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto shrink-0",
+                    form: { class: "shrink-0", data: { test: "tiktok-disconnect", turbo_confirm: "Delete the stored TikTok connection from this server?" } } %>
+    <% end %>
+  </div>
+
+  <p class="text-secondary text-sm">
+    Prove a connection with <code class="text-primary">bin/tiktok-draft --whoami --production</code>: it prints the account it posts as.
+  </p>
+</section>
