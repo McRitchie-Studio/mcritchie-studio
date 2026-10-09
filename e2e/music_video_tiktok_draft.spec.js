@@ -91,4 +91,39 @@ test("the operator drafts a clip to TikTok and sees the recorded draft", async (
   await expect(latest.locator("[data-test='clip-tiktok-stand-in']")).toBeVisible();
   await expect(latest.locator("[data-test='clip-tiktok-team-rule']")).toContainText("Sample Rusher Eta, the clip's target, by the look's team");
   await expect(latest).toContainText("Version 1");
+
+  // The caption travels only by this button (TikTok does not receive it), so it
+  // says "Copied" only when the browser took the text. First the control: the
+  // clipboard takes it.
+  const copy = latest.locator("[data-test='clip-tiktok-copy']");
+  const manual = latest.locator("[data-test='clip-tiktok-copy-manual']");
+  const clipboard = (takes) => page.evaluate((ok) => {
+    window.__clipboardAsked = 0;
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: () => { window.__clipboardAsked += 1; return ok ? Promise.resolve() : Promise.reject(new DOMException("blocked", "NotAllowedError")); },
+    } });
+  }, takes);
+  await clipboard(true);
+  await copy.click();
+  await expect(copy).toHaveText("Copied");
+  await expect(manual).toBeHidden();
+  await expect(copy).toHaveText("Copy caption");
+
+  // Now the browser blocks both ways: the clipboard API rejects and
+  // execCommand("copy") answers false. The card says so, selects the caption
+  // to be copied by hand, and never says "Copied".
+  await clipboard(false);
+  await page.evaluate(() => {
+    window.__labels = [];
+    const button = document.querySelector("[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-tiktok-copy']");
+    new MutationObserver(() => window.__labels.push(button.textContent.trim())).observe(button, { subtree: true, childList: true, characterData: true });
+    document.execCommand = () => { window.__execAsked = (window.__execAsked || 0) + 1; return false; };
+  });
+  await copy.click();
+  await expect(manual).toBeVisible();
+  await expect(manual).toHaveText("Copy is blocked here: the caption is selected, so copy it from there.");
+  // Both ways were tried, and the label never left "Copy caption" on the way here.
+  expect(await page.evaluate(() => [window.__clipboardAsked, window.__execAsked, window.__labels])).toEqual([1, 1, []]);
+  await expect(copy).toHaveText("Copy caption");
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe("Bills 3-1 #nfl #nfltiktok #footballtiktok #bills #fyp");
 });

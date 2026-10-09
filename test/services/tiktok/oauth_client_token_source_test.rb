@@ -302,4 +302,36 @@ class Tiktok::OAuthClientTokenSourceTest < ActiveSupport::TestCase
 
     assert_equal [FROM_ENV, STORED], @sent.map { |p| p[:refresh_token] }
   end
+  # A Struct prints its members: without a mask, a console that echoed
+  # Tiktok::OAuthClient.token_source would print the refresh token.
+  test "[unit] a token source never prints its token: inspect, to_s, pp and string interpolation" do
+    require "pp"
+    stored = Tiktok::OAuthClient::TokenSource.new(STORED, "open-stored", connect)
+    from_env = Tiktok::OAuthClient::TokenSource.new(FROM_ENV, "open-from-env", nil)
+
+    { stored => STORED, from_env => FROM_ENV }.each do |source, token|
+      printed = [source.inspect, source.to_s, "#{source}", source.pretty_inspect, [source].inspect, { source: }.inspect,
+                 (raise "boom #{source.inspect}" rescue $ERROR_INFO.message)]
+      printed.each do |text|
+        assert_not_includes text, token
+        assert_no_match(/rft\.|synthetic-(stored|from-env)/, text)
+        assert_includes text, "refresh_token=[FILTERED]"
+      end
+    end
+
+    assert_equal "#<Tiktok::OAuthClient::TokenSource env open_id=\"open-from-env\" refresh_token=[FILTERED]>", from_env.inspect
+    assert_match(/\A#<Tiktok::OAuthClient::TokenSource connection=\d+ open_id="open-stored" refresh_token=\[FILTERED\]>\z/, stored.inspect)
+    # The mask is only on what is printed: the client still reads the token.
+    assert_equal STORED, stored.refresh_token
+    assert_equal [FROM_ENV, "open-from-env", nil], from_env.to_a
+  end
+
+  # THE CONTROL: a plain Struct of the same shape does print it, which is what
+  # the check above would catch.
+  test "[unit] a Struct with no mask prints its token (the control)" do
+    plain = Struct.new(:refresh_token, :open_id, :connection).new(FROM_ENV, "open-from-env", nil)
+
+    assert_includes plain.inspect, FROM_ENV
+  end
+
 end

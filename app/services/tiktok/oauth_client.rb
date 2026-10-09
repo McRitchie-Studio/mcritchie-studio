@@ -82,6 +82,20 @@ module Tiktok
 
         "env-#{Digest::SHA256.hexdigest(refresh_token)[0, 16]}"
       end
+
+      # A Struct prints every member, so a console that echoes a token source
+      # (or an error message that inspects one) would print the refresh token.
+      # This says where it came from and whether a token is held, never the
+      # token or any part of it.
+      def inspect
+        from = stored? ? "connection=#{connection.id}" : "env"
+        "#<Tiktok::OAuthClient::TokenSource #{from} open_id=#{open_id.inspect} " \
+          "refresh_token=#{refresh_token.nil? ? 'nil' : '[FILTERED]'}>"
+      end
+      alias_method :to_s, :inspect
+
+      # `pp` and a console's pretty printer read members directly, not inspect.
+      def pretty_print(printer) = printer.text(inspect)
     end
 
     class << self

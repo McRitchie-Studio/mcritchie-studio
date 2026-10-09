@@ -214,7 +214,15 @@ gem "sentry-rails"
 # config/initializers/studio.rb sets, and makes the component gallery opt-in by
 # bundle (task hub-shows-lookbook-gallery-live). Below 0.92 that setter raises
 # NoMethodError at boot.
-gem "studio-engine", "~> 0.92"
+#
+# 0.95 is the floor now: it is the first engine with the URL guard that looks a
+# host name up and hands back the addresses it vetted
+# (Studio::ImageCache.vet_source_url!, .pinned_http and UnresolvedSourceHost),
+# which MusicVideos::AssetZip::Fetcher and Appearances::FetchableUrl call by
+# name (task url-guard-remaining-fetchers). On 0.92 to 0.94 the asset zip's
+# sheet fetch raises NoMethodError. The lock was already past it; only the
+# floor moved (task recast-wrap-loose-ends).
+gem "studio-engine", "~> 0.95"
 
 # The component gallery (Lookbook at /admin/style/components, admins only; the
 # engine's router constraint answers everyone else 404). studio-engine never

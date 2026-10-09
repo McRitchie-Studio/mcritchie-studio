@@ -454,6 +454,17 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    caption; it is off until the clip has a version and the server has TikTok
    keys. That SOP owns the rest.
 
+   **A clip can be captioned only when the hub has its teams loaded and the
+   look names a team that exists.** The caption is about the team on the look
+   the lead swapped athlete wears (else the athlete's current team), and that
+   team must be a row in the hub's `teams` table. Production's `teams` table
+   was empty until 2026-10-08, when the 32 NFL teams were seeded from
+   `db/seeds/10_teams_nfl.rb` and `rake teams:backfill_metadata`; until then
+   every draft was refused. No migration or deploy step loads teams, so check
+   a new server before promising a draft, and set the team on the look when
+   the cast card makes it. The refusals and their fixes are in
+   [`tiktok-draft`](../../turf_monster/sops/tiktok-draft.md), step 1.
+
 A clip keeps its chunk's window. If the source is re-tiled at another length,
 the card says its window is no longer cut; build a new alt video.
 

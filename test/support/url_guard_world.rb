@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
-# THE ENGINE'S URL GUARD, IN EITHER OF THE TWO WORLDS THE HUB MUST RUN IN.
+# THE ENGINE'S URL GUARD, WITH ITS LOOKUPS DECIDED BY THE TEST.
 #
-# The engine the hub locks today reads a URL's text and resolves nothing. The
-# next one also looks the host name up, and raises
+# The engine looks a URL's host name up, and raises
 # Studio::ImageCache::UnresolvedSourceHost (a subclass of InvalidSourceURL)
-# when the lookup fails. Neither does DNS under a Rails test environment, so a
+# when the lookup fails. It does no DNS under a Rails test environment, so a
 # test that cares about lookups stands in for the guard here.
 #
 #   with_url_guard(unresolved: %w[dead.example.com]) do |lookups|
@@ -13,40 +12,32 @@
 #     assert_equal %w[cdn.example.com], lookups
 #   end
 #
-# The stand-in runs the REAL guard first (so text refusals stay the engine's),
-# then records the host as one lookup, then fails the hosts named `unresolved`.
-# `lookups` therefore holds one entry per lookup the next engine would make.
+# The stand-in runs the REAL guard first, on the text only (so text refusals
+# stay the engine's), then records the host as one lookup, then fails the hosts
+# named `unresolved` with the engine's own error. `lookups` therefore holds one
+# entry per lookup the engine would make. A call with `resolver: nil` is the
+# engine's "judge the text only" and records nothing. No real DNS, no real HTTP.
 #
-# `engine: :next` raises a class NAMED like the new one: the gem's own when the
-# locked gem has it, otherwise a stand-in defined for the block. `engine:
-# :current` hides the constant for the block and never fails a lookup, which is
-# what the locked engine does. No real DNS, no real HTTP.
+# Until the Gemfile's floor reached 0.95 this also stood in for an engine that
+# resolved nothing (`engine: :current`); the hub no longer runs on one.
 module UrlGuardWorld
-  CONST = :UnresolvedSourceHost
-
-  def with_url_guard(unresolved: [], engine: :next, slow: {}, &block)
+  def with_url_guard(unresolved: [], slow: {}, &block)
     lookups = []
     real = Studio::ImageCache.method(:validate_source_url!)
-    with_unresolved_constant(engine) do |error_class|
-      guard = lambda do |url, **options|
-        # Today's guard takes no keywords; the next one reads `resolver: nil` as
-        # "judge the text only".
-        raise ArgumentError, "unknown keyword: #{options.keys.first.inspect}" if options.any? && engine == :current
+    guard = lambda do |url, **options|
+      uri = real.call(url, resolver: nil)
+      next uri if options.key?(:resolver) && options[:resolver].nil?
 
-        uri = real.call(url)
-        next uri if options.key?(:resolver) && options[:resolver].nil?
-
-        host = uri.host.to_s.downcase
-        lookups << host
-        UrlGuardWorld.advance(slow[host]) if slow[host]
-        if error_class && unresolved.include?(host)
-          raise error_class, "URL host #{host.inspect} could not be resolved: test"
-        end
-
-        uri
+      host = uri.host.to_s.downcase
+      lookups << host
+      UrlGuardWorld.advance(slow[host]) if slow[host]
+      if unresolved.include?(host)
+        raise Studio::ImageCache::UnresolvedSourceHost, "URL host #{host.inspect} could not be resolved: test"
       end
-      Studio::ImageCache.stub(:validate_source_url!, guard) { block.call(lookups) }
+
+      uri
     end
+    Studio::ImageCache.stub(:validate_source_url!, guard) { block.call(lookups) }
   end
 
   # A clock a test can move, for the memo's age cap and the lookup budget.
@@ -61,22 +52,5 @@ module UrlGuardWorld
     attr_accessor :now
 
     def advance(seconds) = self.now = now.to_f + seconds
-  end
-
-  private
-
-  def with_unresolved_constant(engine)
-    cache = Studio::ImageCache
-    original = cache.const_get(CONST) if cache.const_defined?(CONST, false)
-    if engine == :current
-      cache.send(:remove_const, CONST) if original
-      yield nil
-    else
-      cache.const_set(CONST, Class.new(cache::InvalidSourceURL)) unless original
-      yield cache.const_get(CONST)
-    end
-  ensure
-    cache.send(:remove_const, CONST) if cache.const_defined?(CONST, false) && !original
-    cache.const_set(CONST, original) if original && !cache.const_defined?(CONST, false)
   end
 end
