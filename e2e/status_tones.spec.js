@@ -67,3 +67,32 @@ test("the blocked crew badge reads in both themes", async ({ page }) => {
     expect(measured[0].ratio, `${theme}: ✕ contrast`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
   });
 });
+
+// The card's footer actions turn to their ink on their own hover tint: Archive
+// to the warning ink, Delete to the danger ink. The blocked card is the worst
+// case: its hovered ground is already danger-tinted. Each action is its own
+// literal test, because the lane's census counts declarations.
+async function expectActionReadsOnHover(page, name, tint) {
+  await page.goto("/tasks");
+  const selector = `#card-task-ea8541e4b5b6 [data-test='task-card-${name}']`;
+  const action = page.locator(selector);
+  await expect(action).toBeVisible();
+  await expect(action).toHaveClass(new RegExp(`(^|\\s)hover:bg-${tint}\\/10(\\s|$)`));
+
+  await eachTheme(page, async (theme) => {
+    await action.hover();
+    // The ink and the tint arrive over a colour transition, so poll the measure.
+    await expect
+      .poll(async () => (await page.evaluate(CONTRAST, selector))[0].ratio, { message: `${theme}: ${name} on hover` })
+      .toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
+    await page.mouse.move(0, 0);
+  });
+}
+
+test("the card's archive action reads on its hover tint in both themes", async ({ page }) => {
+  await expectActionReadsOnHover(page, "archive", "warning");
+});
+
+test("the card's delete action reads on its hover tint in both themes", async ({ page }) => {
+  await expectActionReadsOnHover(page, "delete", "danger");
+});

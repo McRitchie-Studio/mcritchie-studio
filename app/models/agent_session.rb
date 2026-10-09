@@ -97,6 +97,36 @@ class AgentSession < ApplicationRecord
     kept || issue_studio!(soul: value, task: task, issued_by: "review_claim", harness_session_id: harness_session_id)
   end
 
+  # { task slug => the newest live studio session on it } for `tasks`, in at most
+  # two queries however many tasks: the sessions, then the review claims a
+  # reviewer's login depends on (none when the tasks carry theirs preloaded). It
+  # agrees with #live? session by session.
+  def self.live_by_task(tasks, now: Time.current)
+    by_slug = Array(tasks).index_by(&:slug)
+    return {} if by_slug.empty?
+
+    sessions = unrevoked.where("expires_at > ?", now).where(tier: "studio", task_slug: by_slug.keys)
+                        .order(issued_at: :desc).to_a
+    claims = review_claims_for(sessions.select { |session| session.issued_by == "review_claim" }, by_slug)
+    sessions.each_with_object({}) do |session, live|
+      slug = session.task_slug
+      next if live.key?(slug)
+
+      live[slug] = session if session.studio_refusal(by_slug[slug].stage, claims[slug], now).nil?
+    end
+  end
+
+  # { task slug => its TaskReviewClaim } for the tasks `sessions` name, read from
+  # each task's loaded association where it has one.
+  def self.review_claims_for(sessions, by_slug)
+    slugs = sessions.map(&:task_slug).uniq
+    loaded, unloaded = slugs.partition { |slug| by_slug[slug].association(:review_claim).loaded? }
+    claims = loaded.to_h { |slug| [slug, by_slug[slug].review_claim] }
+    claims.merge!(TaskReviewClaim.where(task_slug: unloaded).index_by(&:task_slug)) if unloaded.any?
+    claims
+  end
+  private_class_method :review_claims_for
+
   # Ends every review login on a task: its claim was released or changed hands.
   def self.revoke_review_claims!(task_slug, by:)
     unrevoked.for_task(task_slug).where(issued_by: "review_claim").update_all(revoked_at: Time.current, revoked_by: by)
@@ -201,8 +231,15 @@ class AgentSession < ApplicationRecord
     return nil unless studio?
 
     stage = Task.where(slug: task_slug).pick(:stage)
+    claim = TaskReviewClaim.find_by(task_slug: task_slug) if issued_by == "review_claim" && REVIEW_LIVE_STAGES.include?(stage)
+    studio_refusal(stage, claim, now)
+  end
+
+  # Why a studio session is refused given its task's `stage` and review `claim`,
+  # or nil. The one rule #refusal_reason and .live_by_task both apply.
+  def studio_refusal(stage, claim, now = Time.current)
     return "agent session #{slug} names task #{task_slug}, which no longer exists" if stage.nil?
-    return review_refusal_reason(stage, now) if issued_by == "review_claim"
+    return review_refusal_reason(stage, claim, now) if issued_by == "review_claim"
     return nil if STUDIO_LIVE_STAGES.include?(stage)
 
     "agent session #{slug} ended when #{task_slug} left building and review (it is #{stage})"
@@ -271,11 +308,11 @@ class AgentSession < ApplicationRecord
 
   private
 
-  def review_refusal_reason(stage, now)
+  def review_refusal_reason(stage, claim, now)
     unless REVIEW_LIVE_STAGES.include?(stage)
       return "agent session #{slug} ended when #{task_slug} left review (it is #{stage})"
     end
-    return nil if TaskReviewClaim.find_by(task_slug: task_slug)&.live?(now: now)
+    return nil if claim&.live?(now: now)
 
     "agent session #{slug} is refused: the review claim on #{task_slug} is not live"
   end

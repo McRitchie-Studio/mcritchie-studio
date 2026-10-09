@@ -1,0 +1,77 @@
+<div id="card-snapshot-waiting-approval-card" data-slug="snapshot-waiting-approval-card" data-stage="building" data-agent="" data-apps="" data-href="/tasks/snapshot-waiting-approval-card" data-stage-glow="approval" data-glow="#6390F0" x-data="{ hovered: false, mx: 0, my: 0 }" x-show="matchesFilter('') && appVisible('')" @mouseenter="hovered = true" @mouseleave="hovered = false" @click.capture="if ($event.target.closest('a, button')) { hovered = false; document.activeElement && document.activeElement.blur && document.activeElement.blur() }" @mousedown="mx = $event.clientX; my = $event.clientY" @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href" style="--studio-border-glow-offset: 313%; --studio-border-glow-duration: 21s; --studio-border-glow-angle: 41deg; --task-card-glow-color: #6390F0; --task-card-glow-color-a: #6390F0; --task-card-glow-color-b: #6390F0; --task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent); --task-card-glow-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 46%, transparent), 0 0 26px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), 0 0 72px color-mix(in srgb, var(--task-card-glow-color) 18%, transparent); border-color: var(--task-card-glow-border-color); box-shadow: var(--task-card-glow-shadow); --task-pulse-delay: -1216ms; --task-pulse-duration: 2316ms;" class="kanban-card relative bg-warning/10 border-warning/40 hover:border-warning hover:bg-warning/20 task-card-stage-glow task-card-stage-glow-approval studio-border-glow rounded-lg border p-3 cursor-pointer transition group">
+<a href="/tasks/snapshot-waiting-approval-card" class="block mb-1.5 hover:text-primary transition" data-test="task-card-title" title="Snapshot waiting approval card">
+<div class="relative overflow-hidden min-w-0" data-overflow-fade x-data="{ overflowPx: 0, overflows: false, speed: 60, _ro: null, _dead: false, fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)', fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)', init() { this.$nextTick(() => { if (this._dead) return this.measure() if (!window.ResizeObserver) return this._ro = new ResizeObserver(() => this.measure()) this._ro.observe(this.$el) this._ro.observe(this.$refs.fadeInner) }) }, destroy() { this._dead = true if (this._ro) { this._ro.disconnect(); this._ro = null } }, measure() { this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth) this.overflows = this.overflowPx > 1 } }" :style="!overflows ? '' : ((hovered) ? fadeLeft : fadeRight)">
+<span x-ref="fadeInner" class="inline-block whitespace-nowrap will-change-transform transition-transform ease-linear text-heading font-semibold text-sm" :style="'transition-duration: ' + Math.round(overflowPx / speed * 1000) + 'ms; transform: translateX(' + ((overflows && (hovered)) ? -overflowPx : 0) + 'px)'"> Snapshot waiting approval card </span>
+</div>
+</a>
+<div class="grid grid-rows-1 items-center h-14 grid-cols-3 gap-1 mt-3 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+<div class="flex justify-start">
+<div class="relative" data-test="crew-cluster" data-lane="designed">
+<div class="flex items-end -space-x-8 origin-left" data-test="crew-stack">
+<div class="rounded-full relative ring-2 z-30 ring-primary/70 transition-transform duration-200 ease-out group-hover:scale-150 group-focus-within:scale-150 hover:scale-150 motion-reduce:transition-none motion-reduce:transform-none origin-left group-hover:-translate-x-3 group-focus-within:-translate-x-3 hover:-translate-x-3" title="Totodile" data-test="crew-stack-avatar" data-stack-position="top">
+<span class="w-14 h-14 rounded-full flex items-center justify-center relative flex-shrink-0" style="background-color: #EF4444;">
+<span class="text-white font-bold text-xl">T</span>
+</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex justify-start">
+<div class="relative" data-test="crew-cluster" data-lane="building">
+<div class="flex items-end -space-x-8 origin-center" data-test="crew-stack">
+<div class="rounded-full relative ring-2 z-30 ring-primary/70 transition-transform duration-200 ease-out group-hover:scale-150 group-focus-within:scale-150 hover:scale-150 motion-reduce:transition-none motion-reduce:transform-none origin-right group-hover:translate-x-3 group-focus-within:translate-x-3 hover:translate-x-3" title="Totodile" data-test="crew-stack-avatar" data-stack-position="top">
+<span class="w-14 h-14 rounded-full flex items-center justify-center relative flex-shrink-0" style="background-color: #EF4444;">
+<span class="text-white font-bold text-xl">T</span>
+</span>
+</div>
+</div>
+<span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[9px] font-semibold leading-none bg-success/30 text-success-ink border border-success/40 ring-1 ring-surface tabular-nums animate-pulse" data-test="crew-live" x-data="{ start: 1790877600, now: Math.floor(Date.now() / 1000) }" x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)" x-text="window.elapsedLabel(now - start)">…</span>
+</div>
+</div>
+<div class="flex justify-center">
+<div class="rounded-full border-2 border-dashed border-white/15 w-14 h-14" data-test="crew-empty" data-lane="submitted">
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
+<code class="block text-3xs font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1" style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">snapshot-waiting-approval-card</code>
+<a href="/tasks?epic=devops-v3" data-test="task-epic-chip" data-epic="devops-v3" title="Epic devops-v3 — show only this epic's tasks" class="inline-flex items-center shrink-0 max-w-[9rem] px-1.5 py-0.5 rounded text-3xs font-semibold leading-none truncate transition bg-primary/10 text-heading border border-primary/40 hover:bg-primary/20">devops-v3</a>
+<span data-test="task-window-chip" data-window-kind="approval" data-window-ends-at="1790878200" data-window-state="open" title="UI approval window: 10 min from 2026-10-01T18:00:00Z — 10:00 left; on lapse: unanswered, proceeding" aria-label="UI approval window: 10 min from 2026-10-01T18:00:00Z — 10:00 left; on lapse: unanswered, proceeding" class="inline-flex items-center gap-1 shrink-0 max-w-[11rem] px-1.5 py-0.5 rounded text-3xs font-semibold leading-none tabular-nums border bg-warning/10 text-warning-ink border border-warning/40 data-[window-state=lapsed]:opacity-70 data-[window-urgent=true]:motion-safe:animate-pulse">
+<span aria-hidden="true" class="text-[9px] leading-none">👀</span>
+<span class="truncate" data-test="task-window-clock" data-release-ticker data-mode="window" data-ends-at="1790878200" data-lapsed-label="unanswered, proceeding">10:00</span>
+</span>
+</div>
+<div class="flex flex-col gap-1 mb-1">
+<a class="w-full rounded border px-2 py-1 flex items-center justify-center gap-1.5 text-3xs font-bold leading-tight bg-warning text-black border-warning/40 shadow-sm hover:brightness-110 motion-safe:animate-pulse transition cursor-pointer" style="animation-delay: var(--task-pulse-delay, 0s); animation-duration: var(--task-pulse-duration, 2s);" target="_blank" rel="noopener" @click.stop="true" title="Waiting for Mr. McRitchie&#39;s local demo approval — sign in and open it." data-test="operator-approval-waiting" data-local-url="http://localhost:3011/tasks" href="/tasks/snapshot-waiting-approval-card/local_review">
+<span>WAITING APPROVAL</span>
+</a>
+</div>
+<div id="ci-progress-snapshot-waiting-approval-card" data-test="ci-progress-snapshot-waiting-approval-card-slot">
+</div>
+<div class="flex items-center justify-between gap-2 mt-1 text-3xs text-muted whitespace-nowrap overflow-hidden" data-test="task-card-updated-row">
+<span class="flex items-center gap-1 whitespace-nowrap" data-test="task-card-created" title="Created Oct 1, 2026 6:00pm">
+<span aria-hidden="true">🌱</span>
+<span>Oct 1 6:00p</span>
+</span>
+<span class="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+<span class="flex items-center gap-1" data-test="task-card-updated" title="Updated Oct 1, 2026 6:00pm">
+<span aria-hidden="true">✏️</span>
+<span>6:00p</span>
+</span>
+</span>
+</div>
+<div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
+<button type="button" @click.stop="archiveTask('snapshot-waiting-approval-card')" data-test="task-card-archive" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-warning-ink hover:bg-warning/10 transition" title="Archive">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+</svg>
+<span>Archive</span>
+</button>
+<button type="button" @click.stop="deleteTask('snapshot-waiting-approval-card')" data-test="task-card-delete" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-danger-ink hover:bg-danger/10 transition border-l border-subtle" title="Delete">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+</svg>
+<span>Delete</span>
+</button>
+</div>
+</div>

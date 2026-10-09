@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/task_card_rendering"
 
 # [component] tasks/_window_chip — the live countdown for an operator window
 # (Devops::Windows, design section 6), seated beside the epic chip on the board
@@ -6,6 +7,8 @@ require "test_helper"
 # re-renders for a live push); the full-page and turbo-stream paths are pinned
 # by test/integration/board_window_chip_test.rb.
 class TaskWindowChipTest < ActionView::TestCase
+  include TaskCardRendering
+
   include StatusToneHelper
   NOW = Time.utc(2026, 9, 24, 20, 0, 0)
 
@@ -82,7 +85,7 @@ class TaskWindowChipTest < ActionView::TestCase
     task.reload
     assert task.devops["approval_requested_at"].present?, "the request stamp is what the window derives from"
 
-    render partial: "tasks/task_card", locals: { task: task, agents: @agents, crew_board: :build }
+    render_task_card(task, crew_board: :build)
 
     assert_select "#card-#{task.slug} [data-test='task-slug-row'] [data-test='task-epic-chip'] + [data-test='task-window-chip'][data-window-kind='approval']"
     assert_select "#card-#{task.slug} [data-test='operator-approval-waiting']", { count: 1 },
@@ -97,8 +100,7 @@ class TaskWindowChipTest < ActionView::TestCase
                      description: "POLICY QUESTION for Alex.", metadata: { "summary" => "Escalated: which default wins", "kind" => "dependency" })
     task.reload
 
-    render partial: "tasks/task_card", locals: { task: task, agents: @agents, crew_board: :build,
-                                                unresolved_feedback: task.unresolved_feedback_activity }
+    render_task_card(task, crew_board: :build, unresolved_feedback: task.unresolved_feedback_activity)
 
     assert_select "#card-#{task.slug} [data-test='task-window-chip']", count: 1
     assert_select "#card-#{task.slug} [data-test='task-window-chip'][data-window-kind='escalation']"
@@ -111,8 +113,7 @@ class TaskWindowChipTest < ActionView::TestCase
                      description: "Fix the spacing.", metadata: { "summary" => "Spacing off on the chip", "kind" => "rework" })
     task.reload
 
-    render partial: "tasks/task_card", locals: { task: task, agents: @agents, crew_board: :build,
-                                                unresolved_feedback: task.unresolved_feedback_activity }
+    render_task_card(task, crew_board: :build, unresolved_feedback: task.unresolved_feedback_activity)
 
     assert_select "#card-#{task.slug} [data-test='task-window-chip']", count: 0
   end
@@ -120,7 +121,7 @@ class TaskWindowChipTest < ActionView::TestCase
   test "[component] the card omits the chip when nothing is waiting on the operator" do
     task = Task.create!(title: "Window chip quiet card", stage: "building")
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+    render_task_card(task.reload, crew_board: :build)
 
     assert_select "#card-#{task.slug} [data-test='task-window-chip']", count: 0
   end
