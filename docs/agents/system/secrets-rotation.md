@@ -165,13 +165,13 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 | Where | Item | Vault | Field label |
 |---|---|---|---|
 | Local `.env` | none: `bin/ecosystem-build` stopped writing `solana.turf.admin` (`BLSBw8fX…`) on 2026-10-06, and that key was rotated out and archived on 2026-10-09 (see **Solana governance key** below); `SOLANA_ADMIN_KEY` is production-only | — | — |
-| `turf-monster-mainnet` + `turf-monster-qa` Heroku config | `agent.xan.solana` (`8K81…`) | `studio-agents` (NOT the admin vault: measured 2026-10-08, the admin vault holds no Solana item but `solana.turf.governance`) | `private key`, SPACED |
+| `turf-monster-mainnet` + `turf-monster-qa` Heroku config | `agent.xan.solana` (`8K81…`) | `studio-agents-admin` | `private key`, SPACED |
 
-> **Open question for Mr. McRitchie (2026-10-08):** `agent.xan.solana` is
-> production's `SOLANA_ADMIN_KEY` on both apps (a 2026-10-09 derivation of the
-> Heroku values reads `8K81…` on each) and it sits in `studio-agents`, the vault
-> every agent's token opens. This runbook said `studio-agents-admin` until
-> 2026-10-09. Moving it there is a decision, not a doc fix.
+> **Where it lives is measured, not assumed.** This row said `studio-agents-admin`
+> from 2026-09-15, but the item stayed in `studio-agents`, which every agent's
+> token opens, until 2026-10-09. That day it was copied into the admin vault
+> (verified to derive to `8K81…`) and the original archived. A 2026-10-09
+> derivation of both apps' Heroku values reads `8K81…`.
 
 > **That split is deliberate and temporary (2026-09-15).** The turf keys were
 > refiled entity-first into three agent-readable items — `solana.turf.admin`
@@ -195,7 +195,7 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 2. Convert the keypair file to the base58 form the env var and 1Password both hold: `bin/rails runner "require 'json'; puts Solana::Keypair.encode_base58(JSON.parse(File.read('/tmp/new-admin.json')).pack('C*'))"` — 88 characters. **There is no `secret_key_base58` method**; this step named one until 2026-09-15 and an operator following it mid-rotation got `NoMethodError`. `to_base58` is the PUBLIC key, and `encode_base58` needs a packed binary String, not the parsed array — verified round-tripping through `from_base58` on 2026-09-15.
 3. Get the public address: `solana-keygen pubkey /tmp/new-admin.json`.
 4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. **Confirm the signer set for the cluster you are rotating** — this procedure ends on `turf-monster-mainnet` (step 6), so assume mainnet unless you have checked. `turf-vault/docs/CURRENT_DEPLOYMENT.md` records the program ID, upgrade authority, threshold and signer set for each cluster under its own heading — read `## Mainnet`, not `## Devnet`. (`turf-vault/scripts/squad.json`'s `members` is what `scripts/initialize-mainnet.js` builds its `initialize` signer array from; it is a script input and the historical record, not the deployment record.) Verify live truth on-chain before signing: `solana program show <PROGRAM_ID> --url <mainnet-beta|devnet>` for the upgrade authority, then read `VaultState` (`seeds = [b"vault"]` against that program ID) for the signers and threshold. `turf-vault/docs/KEY_ROTATION.md` is a SUPERSEDED plan — read it for background, never as the procedure.
-5. Update 1Password `agent.xan.solana` (vault `studio-agents`, where it lives today; see the open question above) -> field `private key` -> paste the new base58 secret. Save. **Mind which item you are in**: the `solana.turf.*` items in `studio-agents` spell the field `private-key`; `agent.xan.solana` and `solana.turf.governance` spell it `private key`, with a space.
+5. Update 1Password `agent.xan.solana` (vault `studio-agents-admin`, admin token) -> field `private key` -> paste the new base58 secret. Save. **Mind which item you are in**: the `solana.turf.*` items in `studio-agents` spell the field `private-key`; `agent.xan.solana` and `solana.turf.governance` spell it `private key`, with a space.
 6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.
 8. Delete `/tmp/new-admin.json` (it contains the unencrypted secret). "Securely" is not available here: macOS has no `shred`, and `man rm` says `-P` "has no effect". On APFS the guarantee is *unlinked*, not *erased* — so keep the window short and treat the plaintext as exposed if the disk is ever suspect.
@@ -246,17 +246,19 @@ local env files on many desks. The rotation, the reference for the next one:
    `squad-inventory.js` (the autonomy line must read as before: mainnet HANDOFF,
    devnet AUTONOMOUS).
 6. **Empty the old key, then archive it.** `scripts/ceremony/sweep-admin-seat.js`
-   refuses until the old key is out of the multisig, and its dry run simulates
-   without a key. Then `op item delete <id> --vault studio-agents --archive`.
+   (SOL) refuses until the old key is out of the multisig, and
+   `sweep-admin-tokens.js` (canonical USDC and USDT only) empties and closes its
+   token accounts. Both dry runs simulate without a key. Then `op item delete <id> --vault studio-agents --archive`.
    Prove revocation by DERIVATION, not by grepping the address: a grep for a
    public key cannot see a secret. Derive the public key of every keypair-shaped
    value in Heroku config and local `.env*` files, and print names and public
    keys only.
 
-**Still open after 2026-10-09:** `BLSBw8…` owns two mainnet token accounts the SOL
-sweep did not move (19.841973 USDT in `6mQPMWhA…`, 0.0011 USDC in `4gaXvUY4…`).
-It also holds about 3.69 SOL on devnet, which has no value. Moving the tokens
-needs the archived key as owner, and any funded key can pay the fee.
+**Emptied 2026-10-09:** on mainnet `BLSBw8…` reads 0 SOL and owns no token
+accounts. `sweep-admin-seat.js` moved the SOL, and `sweep-admin-tokens.js` moved
+19.841973 USDT and 0.0011 USDC to `7ZDJp7FU…` and closed both accounts, paid by
+`4bKNSqkr…`. Both read the key from the 1Password archive without unarchiving
+it. About 3.69 devnet SOL remains, which has no value.
 
 ---
 
@@ -481,7 +483,8 @@ public, and the log records WHAT and WHEN, never what the value is.
 | Date (UTC) | 1Password item | Reason | Stores updated | How verified | Old value revoked | Task |
 |------------|----------------|--------|----------------|--------------|-------------------|------|
 | 2026-10-07 | _(none: `SECRET_KEY_BASE` has no 1Password home; Heroku config is its only store)_ | `tax-studio` shared the hub's `SECRET_KEY_BASE`, so either app could forge or read the other's cookies and message verifiers | Heroku `tax-studio` (release v29); hub key untouched | env digests of `tax-studio` and `mcritchie-studio` now differ; the runtime `secret_key_base` matches the new env value; `/up` 200, `/login` 200; a fleet sweep of 18 apps (env and runtime digests) found no other shared pair | n/a: the old value is the hub's live key, still in service | https://mcritchie.studio/tasks/split-tax-studio-secret-key |
-| 2026-10-09 | `solana.turf.governance` (`studio-agents-admin`) replaces `solana.turf.admin` (`studio-agents`, now archived) | `solana.turf.admin` (`BLSBw8fX…`), a seat on both turf-vault Squads, had sat in local env files on many desks | Squads mainnet config tx #6 (executed 16:42:51 UTC by Mr. McRitchie) and devnet #19 (16:48:36 UTC; third vote by the outgoing key on his instruction): `removeMember BLSBw8…` + `addMember 4bKNSqkr…` mask 7, threshold 3; turf-vault roster and `CURRENT_DEPLOYMENT.md` | `check_squads_rotation` PASS on both clusters; `check-signer-slots.js` shows VaultState unchanged; `squad-inventory.js` reads mainnet HANDOFF 2 of 5 and devnet AUTONOMOUS 3 of 5, as before; no Heroku config value (`turf-monster-mainnet`, `turf-monster-qa`) or local `.env*` file (284 scanned) derives to `BLSBw8…` | yes: off both multisigs; its SOL moved by Mr. McRitchie's ruling (0.5 to `4bKNSqkr…`, the rest to `7ZDJp7FU…`), now 0 SOL; item archived. Its two token accounts remain (see the section) | https://mcritchie.studio/tasks/rotate-mainnet-admin-key |
+| 2026-10-09 | `solana.turf.governance` (`studio-agents-admin`) replaces `solana.turf.admin` (`studio-agents`, now archived) | `solana.turf.admin` (`BLSBw8fX…`), a seat on both turf-vault Squads, had sat in local env files on many desks | Squads mainnet config tx #6 (executed 16:42:51 UTC by Mr. McRitchie) and devnet #19 (16:48:36 UTC; third vote by the outgoing key on his instruction): `removeMember BLSBw8…` + `addMember 4bKNSqkr…` mask 7, threshold 3; turf-vault roster and `CURRENT_DEPLOYMENT.md` | `check_squads_rotation` PASS on both clusters; `check-signer-slots.js` shows VaultState unchanged; `squad-inventory.js` reads mainnet HANDOFF 2 of 5 and devnet AUTONOMOUS 3 of 5, as before; no Heroku config value (`turf-monster-mainnet`, `turf-monster-qa`) or local `.env*` file (284 scanned) derives to `BLSBw8…` | yes: off both multisigs; on Mr. McRitchie's rulings its SOL went to `4bKNSqkr…` (0.5) and `7ZDJp7FU…` (the rest), and its USDT and USDC went to `7ZDJp7FU…` with both token accounts closed. It reads 0 SOL with no token accounts; item archived | https://mcritchie.studio/tasks/rotate-mainnet-admin-key |
+| 2026-10-09 | `agent.xan.solana` moved from `studio-agents` (archived) to `studio-agents-admin`; same value, not rotated | Production's `SOLANA_ADMIN_KEY` (`8K81…`) sat in the vault every agent's token opens | 1Password only; `turf-vault` roster seat `xan` now reads the admin vault with the admin token. No Heroku change: the value is unchanged | the admin copy derives to `8K81…` and every field matches; the default token reads neither the archived original nor the admin copy; a live resolve of all five turf-vault roster seats derives correctly | n/a: the value moved and was not rotated; the agent-readable copy is archived | https://mcritchie.studio/tasks/rotate-mainnet-admin-key |
 
 ---
 
