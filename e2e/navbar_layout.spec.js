@@ -111,8 +111,12 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
   await expectNavbarContained(page);
 
-  // At rest the header is two rows and the brand keeps one line.
-  expect((await page.locator("header.nav-shell").boundingBox()).height).toBe(129);
+  // The name costs the bar no room: without it the header is the same height,
+  // so the brand wraps no sooner. (The height itself depends on the font.)
+  const header = page.locator("header.nav-shell");
+  const withName = (await header.boundingBox()).height;
+  await name.evaluate((element) => { element.style.display = "none"; });
+  expect((await header.boundingBox()).height).toBe(withName);
   await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
   await expect(page.locator(".nav-phone-tools")).toBeHidden();
 });
