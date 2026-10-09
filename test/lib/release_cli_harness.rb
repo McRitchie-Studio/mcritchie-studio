@@ -1156,10 +1156,10 @@ class ReleaseCliHarness < Minitest::Test
   # (defaults to a measured-and-level mcritchie-studio, the normal state).
   def status_stub(pending:, ahead:, accepted: [],
                   accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
-                  unreadable: [], lane: nil)
+                  unreadable: [])
     <<~RUBY
       def conductor(ruby, read_only: false)
-        { "pending" => #{pending.inspect}, "accepted" => #{accepted.inspect}, "lane" => #{lane.inspect},
+        { "pending" => #{pending.inspect}, "accepted" => #{accepted.inspect},
           "release" => { "slug" => "rel-cli", "state" => "assembling" } }
       end
       def ladder_ahead_states
