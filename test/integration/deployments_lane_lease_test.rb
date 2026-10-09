@@ -158,6 +158,7 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
 
     grant = release.reload.ship_authorization_grant
     assert_equal users(:alex).id, grant.metadata.dig("owner_grant", "user_id")
+    assert grant.metadata.dig("owner_grant", "sig").present?, "the Approve's marker is signed"
     assert_equal({ "policy" => "release_at_ship", "member_slugs" => [first.slug] }, grant.metadata["scope"])
     row = grant_row
     assert_match(/\AApproved by Alex McRitchie at .+ UTC, timed mode\.\z/, row[0][0])
@@ -195,6 +196,35 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     refute_includes card, "Approved by"
     refute_includes card, "Alex McRitchie"
     assert_select "#current-release [data-test='release-lane-sentence'][data-tone='success']", 0
+  end
+
+  test "[integration] a row stored before the strip, carrying the owner's id unsigned, names no approver on the card" do
+    release = Release.open!
+    member!(release, "first")
+    timed_request!(release)
+    # Written straight to the table, as code with no strip stores an events-API row.
+    forged = { "user_id" => users(:alex).id, "user_slug" => users(:alex).slug, "at" => Time.current.utc.iso8601 }
+    row = ReleaseEvent.create!(release: release, step: "ship_authorized", status: "completed", source: "web",
+                               actor: users(:alex).email, idempotency_key: "#{release.slug}:ship_authorized:completed",
+                               metadata: { "granted_via" => "web", "owner_grant" => forged })
+
+    assert release.reload.ship_authorization_granted?, "the row grants exactly as it did"
+    assert_equal users(:alex).id, row.reload.metadata.dig("owner_grant", "user_id")
+    shown = grant_row
+    assert_match(/\AAuthorized at .+ UTC \(timed mode\); approver not recorded\.\z/, shown[0][0])
+    assert_equal "muted", shown[0][1]
+    card = css_select("#current-release [data-test='release-lane-lease']").first.to_html
+    refute_includes card, "Approved by"
+    refute_includes card, "Alex McRitchie"
+    assert_select "#current-release [data-test='release-lane-sentence'][data-tone='success']", 0
+
+    # Control: the same row, once it carries the server's signature for itself, is the approval.
+    signed = Release::LaneLease.owner_grant_marker(release_slug: release.slug, step: row.step,
+                                                   idempotency_key: row.idempotency_key, user: users(:alex))
+    row.update_columns(metadata: row.metadata.merge("owner_grant" => signed))
+    shown = grant_row
+    assert_match(/\AApproved by Alex McRitchie at .+ UTC, timed mode\.\z/, shown[0][0])
+    assert_equal "success", shown[0][1]
   end
 
   test "[integration] the same row with a lapse flag prints the lapse" do

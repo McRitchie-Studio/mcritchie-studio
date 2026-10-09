@@ -100,14 +100,27 @@ class ReleaseStatusLaneTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] a failure inside the lane read is not swallowed as a board that predates it" do
+  test "[integration] a failure inside the lane read prints lane unavailable and never fails the board read" do
+    release = Release.open!
     snippet = status_snippet
     assert_includes snippet, "defined?(Release::LaneLease)"
-    refute_includes snippet, "rescue"
 
     original = Release::LaneLease.method(:status_lines)
     Release::LaneLease.define_singleton_method(:status_lines) { |*| nil.no_such_method }
-    assert_raises(NoMethodError) { board_answer(snippet) }
+    answer = board_answer(snippet)
+    out = status_output(answer)
+
+    assert_equal ["lane: unavailable (NoMethodError)"], answer["lane"],
+                 "a failure is stated, not served as nil like a board that predates the lane"
+    assert_equal({ "slug" => release.slug, "state" => "assembling" }, answer["release"], "the rest of the read is whole")
+    assert_includes out, "current release: #{release.slug} (assembling)"
+    assert_includes out.lines.map(&:strip), "lane: unavailable (NoMethodError)"
+
+    # Control: with the read working, the same snippet serves the sentences.
+    Release::LaneLease.define_singleton_method(:status_lines, original)
+    healthy = board_answer(snippet)["lane"]
+    assert_equal Release::LaneLease.status_lines(release), healthy
+    refute_includes healthy.join(" "), "unavailable"
   ensure
     Release::LaneLease.define_singleton_method(:status_lines, original) if original
   end

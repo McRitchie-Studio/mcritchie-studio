@@ -199,7 +199,7 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
 
     marker = grant.reload.metadata["owner_grant"]
     assert_equal users(:alex).id, marker["user_id"]
-    assert_equal %w[at user_id user_slug], marker.keys.sort
+    assert_equal %w[at sig user_id user_slug], marker.keys.sort
     assert_equal "2026-10-08T01:35:00Z", marker["at"]
     assert_equal "Approved by Alex McRitchie at Oct 8, 01:35 UTC, timed mode.", lines.first
     assert_equal :success, sentences.first.tone
@@ -316,6 +316,199 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
     asked = @rel.record_event!(step: "ship_authorized", status: "started", source: "conductor",
                                owner_grant: users(:alex), metadata: { "mode" => "ask" })
     assert_nil asked.reload.metadata["owner_grant"], "only an answer carries the marker"
+  end
+
+  # --- the marker counts only when its signature verifies for its own row ---------
+
+  LEGACY = "Authorized at Oct 8, 01:32 UTC (timed mode); approver not recorded."
+  GRANT_KEY = "grant-row-key"
+
+  # A `ship_authorized completed` row stored as code with no strip stores it:
+  # written straight to the table, whatever metadata it is handed.
+  def plant!(release: @rel, key: GRANT_KEY, marker: nil, at: NOW + 2.minutes, **metadata)
+    metadata = { "granted_via" => "web" }.merge(metadata.stringify_keys)
+    metadata["owner_grant"] = marker if marker
+    ReleaseEvent.create!(release: release, step: "ship_authorized", status: "completed", source: "web",
+                         actor: users(:alex).email, occurred_at: at, idempotency_key: key, metadata: metadata)
+  end
+
+  def unsigned_marker(user_id: users(:alex).id, slug: users(:alex).slug)
+    { "user_id" => user_id, "user_slug" => slug, "at" => (NOW + 2.minutes).iso8601 }
+  end
+
+  # A marker signed here with the app's own verifier, over whichever claim the
+  # test names; the defaults are the claim of a row from plant!.
+  def signed_marker(release_slug: @rel.slug, step: "ship_authorized", key: GRANT_KEY, user_id: users(:alex).id,
+                    slug: users(:alex).slug, verifier: Release::LaneLease.owner_grant_verifier,
+                    purpose: Release::LaneLease::OWNER_GRANT_PURPOSE)
+    marker = unsigned_marker(user_id: user_id, slug: slug)
+    claim = Release::LaneLease.owner_grant_claim(release_slug: release_slug, step: step, idempotency_key: key, marker: marker)
+    marker.merge("sig" => verifier.generate(claim, purpose: purpose))
+  end
+
+  def remark!(row, marker)
+    row.update_columns(metadata: row.metadata.merge("owner_grant" => marker))
+    row.reload
+  end
+
+  def shown(row)
+    Release::LaneLease.answer_sentence(row, "timed")
+  end
+
+  def assert_no_approver(row, label = nil)
+    sentence = shown(row)
+    assert_equal LEGACY, sentence.to_s, label
+    assert_equal :muted, sentence.tone, label
+    assert_no_match APPROVER_WORDS, sentence.to_s, label
+    refute_includes sentence.to_s, "Alex McRitchie", label
+    assert_nil Release::LaneLease.approver_name(row), label
+  end
+
+  test "[unit] an unsigned marker with the owner's real id, stored with no strip, names no approver" do
+    member!("first")
+    request!
+    row = plant!(marker: unsigned_marker)
+
+    assert_equal users(:alex).id, row.reload.metadata.dig("owner_grant", "user_id"), "the row carries the forged marker"
+    assert @rel.reload.ship_authorization_granted?, "the row still grants, as it does today"
+    assert_no_approver(row)
+    assert_equal [LEGACY, "Covers every task on this release when it ships: member set at authorization not recorded, 1 now."], lines
+    assert_equal [:muted, :muted], sentences.map(&:tone)
+
+    ["", "not-a-signature", 5, { "sig" => "x" }, nil].each do |sig|
+      assert_no_approver(remark!(row, unsigned_marker.merge("sig" => sig)), sig.inspect)
+    end
+
+    # Control: the same row with a signature over its own claim is an approval.
+    remark!(row, signed_marker)
+    assert_equal "Approved by Alex McRitchie at Oct 8, 01:32 UTC, timed mode.", shown(row).to_s
+    assert_equal :success, shown(row).tone
+    assert_match(/member set at approval not recorded/, lines.second)
+  end
+
+  test "[unit] a real approval's marker copied onto another release's row is not an approval" do
+    request!
+    real = approve!
+    copied = real.reload.metadata["owner_grant"]
+    @rel.update_columns(state: "shipped", shipped_at: NOW + 20.minutes)
+    later = Release.open!
+    refute_equal @rel.slug, later.slug
+    # The same idempotency key, user and time: only the release differs.
+    row = plant!(release: later, key: real.idempotency_key, marker: copied, at: real.occurred_at)
+
+    assert_equal copied, row.reload.metadata["owner_grant"]
+    assert_nil Release::LaneLease.approver_name(row)
+    assert_match(/\AAuthorized at .+ \(timed mode\); approver not recorded\.\z/, shown(row).to_s)
+    assert_equal :muted, shown(row).tone
+    # Control: on the row it was signed for, the same marker is the approval.
+    assert_equal "Alex McRitchie", Release::LaneLease.approver_name(real)
+    assert_equal :success, shown(real).tone
+  end
+
+  test "[unit] a signature made for another step, another row or another user does not verify" do
+    request!
+    row = plant!
+
+    assert_no_approver(remark!(row, signed_marker(step: "deploy_prod")), "another step")
+    assert_no_approver(remark!(row, signed_marker(key: "another-row-key")), "another row of this release")
+    viewer = signed_marker(user_id: users(:viewer).id)
+    assert_no_approver(remark!(row, viewer.merge("user_id" => users(:alex).id)), "signed for another user")
+    assert_no_approver(remark!(row, signed_marker.merge("at" => NOW.iso8601)), "another time")
+    assert_no_approver(remark!(row, signed_marker(purpose: :api_auth)), "another purpose")
+    assert_no_approver(remark!(row, signed_marker(verifier: Rails.application.message_verifier("api_auth"))), "another verifier")
+
+    # A real approval's marker, moved to a second row of the same release.
+    real = approve!
+    assert_equal "Alex McRitchie", Release::LaneLease.approver_name(real.reload)
+    assert_no_approver(remark!(row, real.metadata["owner_grant"]), "a real marker on another row")
+
+    # Control: the same helper, signing this row's own claim, is an approval.
+    assert_equal "Approved by Alex McRitchie at Oct 8, 01:32 UTC, timed mode.", shown(remark!(row, signed_marker)).to_s
+  end
+
+  test "[unit] a verified marker whose user does not exist prints nothing from the row" do
+    member!("first")
+    request!
+    gone = User.maximum(:id) + 1000
+    row = plant!(marker: signed_marker(user_id: gone, slug: "Alex McRitchie"))
+
+    assert Release::LaneLease.owner_grant(row), "the signature itself verifies"
+    assert_no_approver(row)
+    assert_match(/member set at authorization not recorded/, lines.second)
+
+    # Control: the name is the User record's, whatever slug text the marker carries.
+    remark!(row, signed_marker(slug: "somebody-else"))
+    assert_equal "Approved by Alex McRitchie at Oct 8, 01:32 UTC, timed mode.", shown(row).to_s
+  end
+
+  test "[unit] a write with no idempotency key gets no marker, and a keyless row verifies none" do
+    request!
+    event = @rel.record_event!(step: "ship_authorized", status: "completed", source: "web", owner_grant: users(:alex))
+    assert_nil event.reload.metadata["owner_grant"]
+
+    row = plant!(key: nil, marker: signed_marker(key: ""))
+    assert_nil row.reload.idempotency_key
+    assert_no_approver(row)
+  end
+
+  # --- the data migration that strips stored markers ------------------------------
+
+  def strip_stored_markers!
+    require Rails.root.glob("db/migrate/*_strip_owner_grant_from_release_events.rb").sole.to_s
+    ActiveRecord::Migration.suppress_messages { StripOwnerGrantFromReleaseEvents.new.up }
+  end
+
+  # { id => [metadata as text, updated_at, the row version's physical address] }
+  def stored_rows
+    ReleaseEvent.connection.select_rows(
+      "SELECT id, metadata::text, updated_at::text, ctid::text FROM release_events ORDER BY id"
+    ).to_h { |id, *rest| [id, rest] }
+  end
+
+  test "[unit] the migration strips owner_grant from stored rows and leaves every other key as it was" do
+    rest = { "granted_via" => "web", "mode" => "timed", "note" => "café → ok", "n" => 1.5, "flag" => false, "none" => nil,
+             "scope" => { "policy" => "release_at_ship", "member_slugs" => %w[b a] } }
+    forged = plant!(key: "k-forged", marker: unsigned_marker, **rest)
+    signed = plant!(key: "k-signed", marker: signed_marker(key: "k-signed"), **rest)
+    scalar = plant!(key: "k-scalar", marker: "alex")
+    plain = plant!(key: "k-plain", **rest)
+    nested = plant!(key: "k-nested", note: { "owner_grant" => unsigned_marker })
+    other = ReleaseEvent.create!(release: @rel, step: "deploy_prod", status: "completed", source: "conductor",
+                                 metadata: { "owner_grant" => unsigned_marker, "sha" => "abc" })
+    empty = ReleaseEvent.create!(release: @rel, step: "deploy_qa", status: "started", source: "conductor")
+    before = stored_rows
+    wanted = [forged, signed, scalar, plain, nested, other, empty].to_h { |row| [row.id, row.reload.metadata.except("owner_grant")] }
+
+    strip_stored_markers!
+    after = stored_rows
+
+    assert_equal 0, ReleaseEvent.where("jsonb_exists(metadata, 'owner_grant')").count
+    wanted.each { |id, metadata| assert_equal metadata, ReleaseEvent.find(id).metadata }
+    assert_equal rest.merge("granted_via" => "web"), forged.reload.metadata
+    assert_equal({ "sha" => "abc" }, other.reload.metadata, "any step's row is stripped")
+    assert_equal unsigned_marker, nested.reload.metadata.dig("note", "owner_grant"), "only the top-level key is the marker"
+    # Control: a row without the key is not rewritten at all; a stripped row keeps its other columns.
+    [plain, nested, empty].each { |row| assert_equal before[row.id], after[row.id] }
+    [forged, signed, scalar, other].each do |row|
+      refute_equal before[row.id].first, after[row.id].first
+      assert_equal before[row.id].second, after[row.id].second, "updated_at is left alone"
+    end
+    assert_no_approver(forged.reload)
+    assert_no_approver(signed.reload)
+
+    strip_stored_markers!
+    assert_equal after, stored_rows, "a second run rewrites no row"
+  end
+
+  test "[unit] the migration's down is a no-op" do
+    row = plant!(marker: unsigned_marker)
+    strip_stored_markers!
+    before = stored_rows
+
+    ActiveRecord::Migration.suppress_messages { StripOwnerGrantFromReleaseEvents.new.down }
+
+    assert_equal before, stored_rows
+    assert_nil row.reload.metadata["owner_grant"]
   end
 
   test "[unit] auto mode says nobody was asked" do
