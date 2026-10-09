@@ -11,7 +11,32 @@
 # stand-in's publish_id starts "stand-in-" and the attempt's facts say
 # stand_in: true, so a demo draft can never be mistaken for one on the phone.
 # The real upload is pinned by test/services/tiktok/inbox_upload_test.rb.
+#
+# THE SIGN-IN has a stand-in too (SignIn), so /admin/tiktok/connect can be
+# walked without a TikTok app: the authorize step comes straight back to the
+# callback, and the code exchange answers a synthetic grant. The callback, the
+# stored TiktokConnection and the page are real. Every value it answers starts
+# "stand-in-", so the stored connection names itself as one.
 module TiktokDraftStandIn
+  class SignIn
+    CODE = "stand-in-code"
+    OPEN_ID = "stand-in-account"
+    YEAR = 365 * 24 * 60 * 60
+
+    # Where TikTok would send the admin back to, having signed in.
+    def authorize_url(redirect_uri:, state:, scopes: nil) # rubocop:disable Lint/UnusedMethodArgument
+      "#{redirect_uri}?#{URI.encode_www_form(code: CODE, state:)}"
+    end
+
+    def exchange_code(code:, redirect_uri:) # rubocop:disable Lint/UnusedMethodArgument
+      raise Tiktok::OAuthClient::Error, "the stand-in takes only its own code" unless code == CODE
+
+      { "access_token" => "stand-in-access-#{SecureRandom.hex(8)}", "refresh_token" => "stand-in-refresh-#{SecureRandom.hex(8)}",
+        "open_id" => OPEN_ID, "scope" => Tiktok::OAuthClient::DEFAULT_SCOPES.join(","),
+        "expires_in" => 86_400, "refresh_expires_in" => YEAR, "token_type" => "Bearer" }
+    end
+  end
+
   class Uploader
     def stand_in? = true
 
@@ -34,6 +59,7 @@ module TiktokDraftStandIn
   def self.install!
     Tiktok::DraftClip.uploader = Uploader.new
     Tiktok::DraftClip.reader = Reader.new
+    Tiktok::OAuthClient.sign_in_stand_in = SignIn.new
   end
 end
 
@@ -43,7 +69,7 @@ if !Rails.env.production? && (ENV["TIKTOK_DRAFT_STAND_IN"] == "1" || (Rails.env.
     # The e2e lane reads the same fixed season the X card's draft reads.
     Tiktok::DraftClip.fetch = Content::DraftXCopy.fetch if Rails.env.test?
     # The test adapter only records jobs; run the upload in-process so the
-    # page can reach "In your TikTok drafts". Scoped to this one job.
+    # page can reach "Sent to your TikTok inbox". Scoped to this one job.
     TiktokDraftJob.queue_adapter = :async if Rails.env.test?
   end
 end

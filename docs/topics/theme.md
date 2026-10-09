@@ -11,12 +11,13 @@
 - **Success accent**: `#4BAF50` Green (default) — flash notices, success toasts, active status dots
 - **Font**: Montserrat (weights 400-900)
 - **Logo**: SVG icon (`app/assets/images/logo-icon.svg`) + "McRitchie **Studio**" (Studio in violet)
+- **Navbar Logo generator**: `Logos::NavbarLogo` draws a brand's logo from an icon and a name as pure vector. See [`logos.md`](logos.md).
 
 ## Navbar
 
 Custom navbar in `application.html.erb` (not the engine partial), adopting the engine's scroll-linked collapse: `nav-shell` + `x-data="navCollapse()"` (studio-engine `layouts/studio/_head`) writes `--nav-p` from scrollY once per frame, and the app's `.nav-shell` band in `application.css` sizes the logo 32→20px, the title 24→16px, and the row padding `py-6→py-2` off it with `calc()` — no timed transition, so nothing positioned off the header lags it. The `scrolled` state the primitive still exposes only swaps the transparent border for `border-subtle` + `shadow-lg`. `data-pin="nav"` publishes `--pin-nav-h`/`--pin-nav-bottom`, which the task board's pinned app strip and lane headers position off in CSS. Under 768px the title stays one line (the engine's stacked mobile band is not adopted). Desktop nav: "Agents" and "Builders" links with tokenized hover surfaces. Mobile sub-navbar has the same links and the gear/moon icons for logged-out visitors. Logged in: renders the app-level `_user_nav` override with `show_logout_link: true`.
 
-The gear, username, and profile image all toggle the fixed link sidebar (`components/_link_sidebar.html.erb`). The sidebar is full width on mobile, a right rail on desktop, and uses `.studio-link-sidebar-layer` so it sits above page content. Its public and admin trees come from `LinkTreeHelper`: `/links` and `/admin/links` render those same sections, while the sidebar combines public links with admin sections only when `admin?` is true.
+The gear, username, and profile image all toggle the fixed link sidebar (`components/_link_sidebar.html.erb`). The sidebar is full width on mobile, a right rail on desktop, and uses `.studio-link-sidebar-layer` so it sits above page content. Its public and admin trees come from `LinkTreeHelper`, which builds them from the navigation registry (`config/navigation.yml`): `/links` and `/admin/links` render those same sections, while the sidebar combines public links with admin sections only when `admin?` is true. An entry shows when its page's audience is public or the viewer is an admin.
 
 ## Token Usage Rules
 

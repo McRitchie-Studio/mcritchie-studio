@@ -3,7 +3,7 @@ require "uri"
 require "json"
 
 module Tiktok
-  # Puts one MP4 into a TikTok user's drafts ("inbox") through the Content
+  # Sends one MP4 to a TikTok user's inbox (a notification, not a Drafts entry) through the Content
   # Posting API, sending the bytes ourselves: source FILE_UPLOAD, in chunks
   # (recast pipeline, piece 19).
   #
@@ -26,7 +26,8 @@ module Tiktok
   # one to three chunks. MAX_BYTES is our own cap, far below TikTok's 4 GB.
   #
   # The inbox upload takes NO caption: TikTok's inbox endpoint accepts only the
-  # source. The operator pastes the caption when he posts from the phone.
+  # source, and prefills the app's own hashtag. The operator pastes the caption
+  # over it when he posts from the phone.
   class InboxUpload
     INIT_URL = PostMedia::INBOX_INIT_URL
     STATUS_URL = PostMedia::STATUS_URL

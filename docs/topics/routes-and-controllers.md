@@ -5,9 +5,39 @@
 ## HTML Routes
 
 Every HTML route needs an admin unless `AdminWall::PUBLIC` in
-`app/controllers/concerns/admin_wall.rb` lists it; that list is the one place a page
-becomes public, and `test/integration/admin_wall_test.rb` walks the route table to
-prove it. A controller never spells its own `skip_before_action :require_authentication`.
+`app/controllers/concerns/admin_wall.rb` lists it, and
+`test/integration/admin_wall_test.rb` walks the route table to prove it. A controller
+never spells its own `skip_before_action :require_authentication`.
+
+`AdminWall::PUBLIC` has two sources and no third:
+
+- **A page** becomes public in the navigation registry, `config/navigation.yml`: set
+  its entry to `audience: public`. An entry is keyed by its route name and names the
+  `controller#action` it serves; `test/models/navigation_test.rb` holds the two equal.
+  A page with no entry is admin-only.
+- **A public action that is not a site page** (a form post, a probe, a tracking pixel,
+  an auth door) goes in `AdminWall::PUBLIC_ACTIONS`.
+
+Either edit also needs the action added to `EXPECTED_PUBLIC` in
+`test/integration/admin_wall_public_set_test.rb`, which pins the whole public set and
+fails until the three agree.
+
+### Adding a page to a nav
+
+The link sidebar, `/links`, `/admin/links` and the section sub-navs all read
+`config/navigation.yml` (`app/models/navigation.rb`):
+
+1. Add the page under `pages`, keyed by its route name, with `page`, `audience`,
+   `label` and, for the sidebar, `emoji`, `hover_emoji` and `desc`.
+2. Place it: add the key to a `sidebar` section, or add an item to a `sub_navs` entry
+   (`only`, `except` and `hide_when_current` decide where it shows).
+3. A sidebar page also needs a path stub in `test/helpers/link_tree_helper_test.rb`.
+
+A view draws a sub-nav with `render "components/sub_nav", nav: :board_sections,
+current: :epics`, where `current` is the registry key of the page being shown; the
+link to that page carries `aria-current="page"`. `components/_page_header` draws the
+sub-nav above the page's one `h1`. An entry shows when its page is public or the
+viewer is an admin.
 Public today: the landing, legal, about, packages, `/build` funnel, `/contact`,
 `/schedule`, `/links`, unsubscribe and email-tracking pages, sign-in, the NFL pages,
 and `/tasks/:slug/local_review`.

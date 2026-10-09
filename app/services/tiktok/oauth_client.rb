@@ -10,12 +10,25 @@ module Tiktok
   #   1. /admin/tiktok/connect redirects to TikTok's sign-in, asking for requested_scopes
   #   2. The operator signs in as the account the drafts should land in
   #   3. TikTok redirects to /admin/tiktok/callback with ?code=... (or ?error=...)
-  #   4. The callback exchanges the code and shows the refresh token, the open
-  #      id and the scope TikTok granted, once, for filing in 1Password
+  #   4. The callback exchanges the code and stores the connection itself
+  #      (TiktokConnection). No token is shown and nobody copies one
   #
   # Per-post flow:
-  #   access_token    exchanges TIKTOK_REFRESH_TOKEN for a short-lived token (cached 50 min)
+  #   access_token    exchanges the refresh token for a short-lived token (cached 50 min)
   #   granted_scopes  the scope TikTok names in that same answer
+  #
+  # WHERE THE REFRESH TOKEN AND THE OPEN ID COME FROM (token_source): the stored
+  # connection, TiktokConnection.current, first; the env pair only when no
+  # connection is stored. When TikTok answers a refresh with a new refresh
+  # token, the stored connection is updated (TiktokConnection#rotate!). The env
+  # pair is read-only: nothing is written when it is the source.
+  #
+  # A STORED CONNECTION THAT CANNOT BE READ (the app's encryption keys were
+  # lost or changed) is no source, and the env pair does NOT stand in for it: a
+  # dead row behind a live-looking fallback would hide the loss. The server
+  # counts as not connected, connection_problem says why, and signing in again
+  # replaces the row. A disconnect deletes the row, and then the env pair
+  # answers again.
   #
   # WHAT THE SIGN-IN ASKS FOR. Drafts only, by default: DEFAULT_SCOPES. The hub's
   # clip drafting uploads to the inbox (video.upload) and never publishes, and
@@ -33,8 +46,8 @@ module Tiktok
   # Env vars:
   #   TIKTOK_CLIENT_KEY     — the developer app's client key
   #   TIKTOK_CLIENT_SECRET  — the developer app's client secret
-  #   TIKTOK_REFRESH_TOKEN  — long-lived refresh token from the sign-in
-  #   TIKTOK_OPEN_ID        — the TikTok account's open_id (shown with the refresh token)
+  #   TIKTOK_REFRESH_TOKEN  — fallback only, for a server with no stored connection
+  #   TIKTOK_OPEN_ID        — fallback only, the pair of that refresh token
   #   TIKTOK_SCOPES         — optional; unset means DEFAULT_SCOPES
   class OAuthClient
     AUTH_URL  = "https://www.tiktok.com/v2/auth/authorize/".freeze
@@ -55,13 +68,37 @@ module Tiktok
     # The connection does not hold the scope the call needs.
     class MissingScope < Error; end
 
+    # Where the refresh token and the open id came from. `connection` is the
+    # stored TiktokConnection, or nil when the env pair answered.
+    TokenSource = Struct.new(:refresh_token, :open_id, :connection) do
+      def stored? = !connection.nil?
+
+      # Names the cached grant. A stored connection is named by its row and its
+      # sign-in time, so a rotated refresh token keeps the entry and a new
+      # sign-in drops it; the env pair is named by a digest of its token. The
+      # two prefixes keep a stored connection and an env pair apart.
+      def cache_id
+        return "connection-#{connection.id}-#{connection.connected_at.to_i}" if stored?
+
+        "env-#{Digest::SHA256.hexdigest(refresh_token)[0, 16]}"
+      end
+    end
+
     class << self
       # Stand-in for the token endpoint: (form params) -> [status Integer, body
       # String]. nil means TikTok itself. Set in tests only.
       attr_accessor :http
 
+      # Stand-in for TikTok's side of the sign-in: an object answering
+      # authorize_url and exchange_code as the two methods below do. nil means
+      # TikTok itself. Set by config/initializers/tiktok_draft_stand_in.rb for
+      # the e2e lane and a local demo, never in production.
+      attr_accessor :sign_in_stand_in
+
       # Builds the user-facing authorize URL for the one-time OAuth handshake.
       def authorize_url(redirect_uri:, state:, scopes: nil)
+        return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes:) if sign_in_stand_in
+
         ensure_app_creds!
         scopes ||= requested_scopes
         params = {
@@ -77,6 +114,8 @@ module Tiktok
       # Exchanges an authorization code for an access_token + refresh_token + open_id.
       # Returns the parsed JSON response.
       def exchange_code(code:, redirect_uri:)
+        return sign_in_stand_in.exchange_code(code:, redirect_uri:) if sign_in_stand_in
+
         ensure_app_creds!
         post_token(
           client_key:    ENV.fetch("TIKTOK_CLIENT_KEY"),
@@ -127,22 +166,49 @@ module Tiktok
         raise MissingScope, "this TikTok connection was authorized for drafts only (granted: #{granted.join(', ')}). " \
                             "A direct post needs #{DIRECT_POST_SCOPE}: add Direct Post to the TikTok app, set " \
                             "#{SCOPES_ENV}=#{KNOWN_SCOPES.join(',')}, and connect again at #{CONNECT_PATH}. " \
-                            "Send to drafts still works."
+                            "Send to TikTok inbox still works."
       end
 
       def open_id
-        ENV.fetch("TIKTOK_OPEN_ID") { raise NotConfigured, "TIKTOK_OPEN_ID not set" }
+        token_source&.open_id or raise NotConfigured, not_connected_reason
       end
+
+      # Why a stored connection is no source, in plain words; nil when there is
+      # none stored or it reads fine.
+      def connection_problem
+        connection = TiktokConnection.current
+        "#{TiktokConnection::UNREADABLE} at #{CONNECT_PATH}" if connection && !connection.readable?
+      end
+
+      # Is the env pair set? Both names, or it is no pair.
+      def env_pair_present? = ENV["TIKTOK_REFRESH_TOKEN"].present? && ENV["TIKTOK_OPEN_ID"].present?
 
       def app_creds_present?
         ENV["TIKTOK_CLIENT_KEY"].present? && ENV["TIKTOK_CLIENT_SECRET"].present?
       end
 
+      # The client key and secret, and a refresh token with its open id from
+      # either source.
       def runtime_creds_present?
-        app_creds_present? &&
-          ENV["TIKTOK_REFRESH_TOKEN"].present? &&
-          ENV["TIKTOK_OPEN_ID"].present?
+        app_creds_present? && !token_source.nil?
       end
+
+      # The refresh token and open id in use: the stored connection first, then
+      # the env pair (both of the two, or it is no source). nil when neither,
+      # and nil when a connection is stored but cannot be read: the env pair
+      # never stands in for an unreadable row.
+      def token_source
+        connection = TiktokConnection.current
+        if connection
+          return connection.readable? ? TokenSource.new(connection.refresh_token, connection.open_id, connection) : nil
+        end
+
+        TokenSource.new(ENV["TIKTOK_REFRESH_TOKEN"], ENV["TIKTOK_OPEN_ID"], nil) if env_pair_present?
+      end
+
+      # A granted or asked scope list, as TikTok and TIKTOK_SCOPES write one:
+      # names parted by commas, whitespace, or both.
+      def split_scopes(list) = list.to_s.split(/[\s,]+/).reject(&:empty?).uniq
 
       private
 
@@ -151,37 +217,47 @@ module Tiktok
       end
 
       def ensure_runtime_creds!
-        raise NotConfigured, "TikTok creds incomplete (need CLIENT_KEY/CLIENT_SECRET/REFRESH_TOKEN/OPEN_ID)" unless runtime_creds_present?
+        return if runtime_creds_present?
+
+        raise NotConfigured, not_connected_reason
       end
 
-      # One refresh of TIKTOK_REFRESH_TOKEN, cached for 50 minutes (TikTok's
-      # access tokens last 24 hours): the access token, and the scope TikTok
-      # names with it. Nothing else from the answer is kept. The cache key
-      # turns with the refresh token, so a new sign-in is never answered with
-      # the last connection's scope.
+      def not_connected_reason
+        connection_problem || "TikTok is not connected: this server needs TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET, " \
+                              "and a sign-in at #{CONNECT_PATH}"
+      end
+
+      # One refresh of the refresh token in use (token_source), cached for 50
+      # minutes (TikTok's access tokens last 24 hours): the access token, and
+      # the scope TikTok names with it. Nothing else from the answer is cached.
+      # A refresh token TikTok rotated is saved to the stored connection here,
+      # inside the refresh, before the grant is returned: the old one may be
+      # dead already. The cache key (TokenSource#cache_id) turns with a new
+      # sign-in, so it is never answered with the last connection's scope, and
+      # does not turn with a rotation, so the entry is not stranded.
       def grant
         ensure_runtime_creds!
-        connection = Digest::SHA256.hexdigest(ENV.fetch("TIKTOK_REFRESH_TOKEN"))[0, 16]
-        Rails.cache.fetch("tiktok:grant:#{connection}", expires_in: 50.minutes) do
+        source = token_source
+        Rails.cache.fetch("tiktok:grant:#{source.cache_id}", expires_in: 50.minutes) do
           json = post_token(
             client_key:    ENV.fetch("TIKTOK_CLIENT_KEY"),
             client_secret: ENV.fetch("TIKTOK_CLIENT_SECRET"),
             grant_type:    "refresh_token",
-            refresh_token: ENV.fetch("TIKTOK_REFRESH_TOKEN")
+            refresh_token: source.refresh_token
           )
+          source.connection&.rotate!(json, sent: source.refresh_token)
           { "access_token" => json["access_token"], "scope" => json["scope"].to_s }
         end
       end
 
-      def split_scopes(list) = list.to_s.split(",").map(&:strip).reject(&:empty?).uniq
-
       # A refusal carries TikTok's `error` and `error_description` and never
-      # the answer's body: a body can hold a token.
+      # the answer's body: a body can hold a token. Each is taken only when it
+      # is a String, so an object nested under either name is never printed.
       def post_token(params)
         code, body = (http || method(:net_http)).call(params)
         json = parse(body)
         unless (200..299).cover?(code) && json["access_token"].present?
-          reason = [json["error"], json["error_description"]].map { |part| part.to_s.strip }.reject(&:empty?).join(": ")
+          reason = [json["error"], json["error_description"]].grep(String).map(&:strip).reject(&:empty?).join(": ")
           raise Error, "TikTok token request failed (HTTP #{code}): #{reason.presence || 'TikTok gave no reason'}"[0, 400]
         end
         json

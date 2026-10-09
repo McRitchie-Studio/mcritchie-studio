@@ -44,13 +44,11 @@ module Appearances
   # point somewhere else a moment later (DNS rebinding), and closing that needs
   # the vetted address handed to the HTTP client. Most of these bytes are
   # fetched by Higgsfield, not by us, so that hardening is theirs to have. The
-  # two fetches the hub makes itself by name are named in FOLLOW-UP below.
-  #
-  # FOLLOW-UP (needs the published gem, so it is not done here): move
-  # Appearances::MirrorCandidates::LiveCache.fetch and
-  # MusicVideos::AssetZip::Fetcher#remote to the engine's `vet_source_url!` +
-  # `pinned_http`, so each connects to the address that was vetted.
-  # /tasks/url-guard-off-hot-paths, epic recast-video-pipeline piece 23.
+  # two fetches the hub makes itself by URL do hand the vetted address to the
+  # client, and ask the engine directly for it rather than this module:
+  # Appearances::MirrorCandidates::LiveCache.fetch (the engine's own
+  # `fetch_response`) and MusicVideos::AssetZip::Fetcher#remote
+  # (`vet_source_url!` + `pinned_http`).
   module FetchableUrl
     OK = :ok                 # hand it to a fetcher
     REFUSED = :refused       # not a public http(s) address, on its text or where it points

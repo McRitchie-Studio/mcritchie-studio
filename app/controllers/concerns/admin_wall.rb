@@ -3,10 +3,21 @@
 # SIGNED_IN names it (any signed-in user). An admin wall rather than a login wall
 # because hub signup is open: a plain login keeps nobody out.
 #
-# A route added tomorrow is walled until someone lists it here.
-# test/integration/admin_wall_test.rb walks the route table and requests every
-# walled route as a visitor and as a signed-in non-admin, so a new public page is
-# a deliberate edit of this file, never an accident.
+# PUBLIC has two sources, and no third:
+#
+#   PUBLIC_PAGES    the pages config/navigation.yml declares `audience: public`.
+#                   The navs and the wall read the same entries, so a link shown
+#                   to a visitor and the page behind it cannot disagree.
+#   PUBLIC_ACTIONS  the explicit list below: public actions that are not site
+#                   pages (form posts, probes, tracking pixels, redirects) and
+#                   the auth, unsubscribe and local-development doors, whose
+#                   screens belong to a flow rather than to the site's navigation.
+#
+# A route added tomorrow is walled until someone lists it in one of the two.
+# test/integration/admin_wall_public_set_test.rb pins the whole public set as an
+# explicit list, and test/integration/admin_wall_test.rb walks the route table and
+# requests every walled route as a visitor and as a signed-in non-admin, so a new
+# public page is a deliberate edit a reviewer sees, never an accident.
 #
 # Outside the wall by construction, because they do not inherit ApplicationController:
 # the bearer-gated /api/v1 namespace (Api::V1::BaseController), the HMAC-signed
@@ -14,27 +25,17 @@
 module AdminWall
   extend ActiveSupport::Concern
 
-  # controller_path => actions any visitor may reach.
-  PUBLIC = {
-    # Marketing, legal and the customer funnel.
-    "landing" => %w[index terms privacy about],
-    "packages" => %w[index stack],
-    "build" => %w[new create show check],
-    "contact_submissions" => %w[new create],
-    "links" => %w[index],
-    "schedule" => %w[index],
+  # controller_path => page actions any visitor may open, from the registry.
+  PUBLIC_PAGES = Navigation.public_actions.transform_values(&:freeze).freeze
+
+  # controller_path => actions any visitor may reach that are not site pages.
+  PUBLIC_ACTIONS = {
+    # The customer funnel's writes and its live subdomain probe.
+    "build" => %w[create check],
+    "contact_submissions" => %w[create],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.
     "unsubscribes" => %w[show create resubscribe],
     "email_tracking" => %w[open click goal],
-    # The NFL pages.
-    "nfl" => %w[index rosters],
-    "rankings" => %w[quarterback offensive_line receiving rushing defense pass_rush coverage
-                     prospects coaches pass_first team_unit player_impact],
-    "games" => %w[season week show],
-    "depth_charts" => %w[show],
-    "lineup_graphics" => %w[show],
-    "team_grades" => %w[show],
-    "contracts" => %w[index],
     # The board's WAITING APPROVAL button: it must work logged out, because it
     # hands off to the desk's own sign-in (TasksController#local_review).
     "tasks" => %w[local_review],
@@ -52,6 +53,9 @@ module AdminWall
     "dev/board" => %w[generate move delete ship_release open_release advance_release
                       reset_release rebroadcast_release_modules]
   }.transform_values(&:freeze).freeze
+
+  # controller_path => actions any visitor may reach: the pages plus the actions.
+  PUBLIC = PUBLIC_PAGES.merge(PUBLIC_ACTIONS) { |_, pages, actions| (pages + actions).freeze }.freeze
 
   # controller_path => actions any signed-in user may reach: their own account and
   # their own /build request.

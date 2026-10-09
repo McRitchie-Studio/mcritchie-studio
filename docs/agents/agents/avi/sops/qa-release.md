@@ -51,6 +51,10 @@ BEFORE the irreversible promote, renewed for the sweep's life, released on compl
 - **Stand down** — `🛑 <release> assembler already held — STAND DOWN` names the holder
   and **aborts before anything merges or deploys**. Announce the holder and STOP; its
   lease lapses ~120s after that session dies, and a re-run then resumes.
+  The holder line is the sentence the Next Release card shows for the role, for
+  example `Mawile (steffon, session …9b57) is assembling <release> since Oct 8, 01:30
+  UTC.`: mascot, soul, the last four characters of the session id, and since when.
+  `bin/release status` prints the same lane under `current release:`.
 - **Resume** — re-running YOUR OWN interrupted prepare re-acquires the same claim.
 - **Fail-open** — a claim-transport hiccup never wedges the sweep; it proceeds unclaimed.
 

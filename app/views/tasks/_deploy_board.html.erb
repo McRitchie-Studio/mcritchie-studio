@@ -458,12 +458,12 @@ document.addEventListener('turbo:before-cache', function() {
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">
     <%= render "agent_login_requests/pending" %>
-    <%= render "board_top_links", current: current_page %>
+    <%= render "components/sub_nav", nav: :board_sections, current: current_page %>
     <div class="flex items-center gap-4 flex-wrap">
       <h2 class="text-2xl font-bold text-heading"><%= title %></h2>
       <%# Toggle sits directly right of the title (where you are → switch boards);
           New Task / Archived are pushed to the far right with ml-auto. %>
-      <%= render "page_nav", current: current_page %>
+      <%= render "components/sub_nav", nav: :board_views, current: current_page %>
       <% if columns.size > 4 %>
         <%# Below 1400px the upstream lanes collapse (Building stays — it carries
             blocked, needs-attention tasks); this reveals all six (x-scroll).

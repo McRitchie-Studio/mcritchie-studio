@@ -1,21 +1,17 @@
 <% content_for :title, "Triage · McRitchie Studio" %>
 
 <section class="space-y-6">
-  <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-    <div>
-      <p class="text-sm font-semibold text-primary uppercase tracking-wider">Findings Inbox</p>
-      <h2 class="text-3xl font-bold text-heading mt-1">Triage</h2>
-      <p class="text-secondary mt-2 max-w-3xl">
-        Agent-discovered follow-ups land here instead of becoming tasks.
-        A finding costs nothing sitting in this inbox; a task costs a worktree, a
-        review, and a release slot. Promote what deserves one.
-      </p>
-    </div>
-    <div class="flex flex-col gap-2 md:items-end">
-      <%= render "tasks/page_nav", current: "triage" %>
-      <p class="text-sm text-muted md:text-right"><%= pluralize(@findings.size, "open finding") %></p>
-    </div>
-  </div>
+  <% description = capture do %>
+    Agent-discovered follow-ups land here instead of becoming tasks.
+    A finding costs nothing sitting in this inbox; a task costs a worktree, a
+    review, and a release slot. Promote what deserves one.
+  <% end %>
+  <%= render layout: "components/page_header",
+        locals: { title: "Triage", eyebrow: "Findings Inbox", description: description,
+                  sub_nav: { nav: :board_sections, current: :triage } } do %>
+    <%= render "components/sub_nav", nav: :board_views, current: :triage %>
+    <p class="text-sm text-muted sm:ml-auto" data-test="triage-open-count"><%= pluralize(@findings.size, "open finding") %></p>
+  <% end %>
 
   <section class="card overflow-hidden">
     <div class="p-5 border-b border-subtle">

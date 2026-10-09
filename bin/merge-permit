@@ -1,0 +1,109 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# merge-permit — may this soul merge this task's PR into `accepted`?
+#
+#   bin/merge-permit <task-slug> --agent <soul> --head <validated-sha> [--json]
+#
+# The documentation seat (xan) merges a PR only when its diff measures `docs`
+# (prose, inert media and docs-guard tests) at the head being merged, after a
+# merge-ready verdict recorded for that head, and never her own work. Run it as
+# the line before `gh pr merge` (pr-review-primary.md, step 6); on a permit it
+# prints the head-pinned merge to run. It reads and never writes or merges.
+#
+# Exit 0 = PERMIT · 2 = REFUSED (the line names the rule and who merges) ·
+# 1 = NO PERMIT (a read failed). The rule itself: bin/lib/merge_permission.rb.
+
+require "json"
+require "uri"
+require "yaml"
+require_relative "lib/task_board"
+require_relative "lib/board_read"
+require_relative "lib/ci_status"
+require_relative "lib/pr_file_list"
+require_relative "lib/merge_permit_cli"
+
+BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://mcritchie.studio")
+DOTENV = File.expand_path("../.env", __dir__)
+SOULS_PATH = File.expand_path("../config/souls.yml", __dir__)
+
+# The board reads: the task record and its activities, newest first.
+class PermitBoard
+  PAGES = 5
+
+  def task(slug)
+    res = get("/api/v1/tasks/#{URI.encode_www_form_component(slug)}")
+    refusal = BoardRead.refusal(res, what: "task #{slug}")
+    return [nil, refusal] if refusal
+
+    data = TaskBoard.parse_body(res)["data"]
+    data.is_a?(Hash) ? [data, nil] : [nil, "the board answered without a task record"]
+  end
+
+  def scout_reports(slug)
+    rows = []
+    (1..PAGES).each do |page|
+      query = URI.encode_www_form(task_slug: slug, per_page: 100, page: page)
+      res = get("/api/v1/activities?#{query}")
+      refusal = BoardRead.refusal(res, what: "activities for #{slug}")
+      return [nil, refusal] if refusal
+
+      batch = Array(TaskBoard.parse_body(res)["data"])
+      rows.concat(batch)
+      break if batch.size < 100 || rows.any? { |row| row.is_a?(Hash) && row.dig("metadata", "kind") == "scout_report" }
+    end
+    [rows, nil]
+  end
+
+  private
+
+  def get(path)
+    TaskBoard.request(:get, path, base_url: BASE_URL, token: token)
+  end
+
+  def token
+    @token ||= TaskBoard.handed_token ||
+               TaskBoard.mint_token(base_url: BASE_URL, secret: TaskBoard.agent_secret(DOTENV)) ||
+               raise("no board token (AGENT_API_TOKEN, AGENT_API_SECRET, .env or 1Password)")
+  end
+end
+
+# The GitHub reads, through CiStatus.gh_read_status (one token mint and retry).
+class PermitGithub
+  def head(pr_url)
+    read("pr", "view", pr_url, "--json", "headRefOid", "--jq", ".headRefOid") { |raw| raw.strip[/\A\h{40}\z/] }
+  end
+
+  def files(pr_url)
+    owner, repo, number = PrFileList.parse_url(pr_url)
+    return [nil, "#{pr_url} is not a GitHub pull-request URL"] unless owner
+
+    read(*PrFileList.gh_args(owner, repo, number)) { |raw| PrFileList.parse(raw) }
+  end
+
+  def commit_text(pr_url)
+    owner, repo, number = PrFileList.parse_url(pr_url)
+    return [nil, "#{pr_url} is not a GitHub pull-request URL"] unless owner
+
+    read("api", "--paginate", "repos/#{owner}/#{repo}/pulls/#{number}/commits", "--jq",
+         ".[] | .commit.author.email, .commit.committer.email, .commit.message") { |raw| raw }
+  end
+
+  private
+
+  def read(*args)
+    raw, ok = CiStatus.gh_read_status(*args)
+    return [nil, raw.to_s.lines.map(&:strip).reject(&:empty?).last.to_s[0, 160]] unless ok
+
+    value = yield(raw.to_s)
+    value ? [value, nil] : [nil, "gh answered without the value asked for"]
+  end
+end
+
+souls = begin
+  YAML.safe_load_file(SOULS_PATH).fetch("souls").map { |soul| soul.fetch("slug") }
+rescue StandardError
+  []
+end
+
+exit MergePermitCli.new(board: PermitBoard.new, github: PermitGithub.new, souls: souls).run(ARGV)

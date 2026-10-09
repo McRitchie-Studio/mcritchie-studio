@@ -851,8 +851,10 @@ class Release
       checks
     end
 
+    # `owner_grant` belongs to the web Approve alone, so it is not passed on from
+    # here: an event recorded through the conductor never names an approver.
     def record_event!(release:, step:, status:, **attrs)
-      release.record_event!(step: step, status: status, **attrs)
+      release.record_event!(step: step, status: status, **attrs.except(:owner_grant))
     end
 
     # Build + deliver release notes for a shipped release — reusing the exact

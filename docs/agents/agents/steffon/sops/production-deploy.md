@@ -71,6 +71,8 @@ mutation. There is **no `bin/devops-shift acquire avi` step for the ship any mor
   names the holder, then the ship **aborts before any deploy** with `deployer claim for
   <release> is held by another live release conductor — standing down (see the holder
   above).` Announce it and STOP (a dead holder lapses in ~120s).
+  The holder line is the Next Release card's own sentence for the role (mascot,
+  soul, session tail, since when); `bin/release status` prints the same lane.
 - **Resume** — re-running your own interrupted ship re-acquires the same claim.
 - **Fail-open** — a claim-transport hiccup never wedges the ship.
 
@@ -148,6 +150,45 @@ while its NEW window is open. The re-run posts a fresh window (its own request e
 keyed by its end), and a grant counts only for the latest request — an Approve clicked
 before the re-run answers the old request and authorizes nothing. The grant stays one
 row per window however it lands.
+
+**What a grant covers.** A production grant covers everything on the release at ship
+time. A task that joins after the grant rides on it; no second approval is asked. The
+grant record keeps the member set at the moment it was given
+(`metadata.scope.member_slugs`, with `policy: release_at_ship`), and the Next Release
+card and `bin/release status` state it: `Approved by <name> at <time>, timed mode.
+Covers every task on this release when it ships: 6 at approval, 16 now. Joined after
+approval: <slugs>.` Read that line before the deploy step; it is what the approval
+now carries. A grant recorded before the member set was kept reads `member set at
+approval not recorded`.
+
+**Who the line names.** `Approved by <name>` prints only for the Approve button on
+`/deployments`: that request stamps `metadata.owner_grant` (the signed-in admin's
+id, slug and the time) and signs it with the hub's own secret for that release,
+step and event. The board removes the key from the metadata of every other write,
+and the line names a person only when the signature verifies for the row it sits
+on and the user exists, so no caller can state who approved: an unsigned marker,
+or one copied from another release or event, reads as no marker. The name is the
+user record's, never text from the row. A `SECRET_KEY_BASE` rotation makes every
+earlier signature unverifiable, so approvals recorded before it read `approver not
+recorded`: the line under-claims and never over-claims. Every other answer says
+how it was recorded and names no approver:
+
+| The record | The line |
+|------------|----------|
+| The Approve button | `Approved by <name> at <time>, <mode> mode.` |
+| `bin/release ship --mode ask` (with or without `--yes`) | `Recorded by the conductor CLI in ask mode (run as <actor>) at <time>; no web approval.` |
+| `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
+| A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
+| A `ship_authorized` completion posted to the events API | `Recorded through the events API by <actor> at <time>; no web approval.` |
+| A row marked as from the web that carries no verified `owner_grant` (one recorded before the marker, one a caller labelled, or one signed under a rotated secret) | `Authorized at <time> (<mode> mode); approver not recorded.` |
+
+The line describes the record; it does not change what grants authority. A row
+with no approver named covers the release exactly as before, and its scope line
+reads `at authorization` in place of `at approval`.
+
+`bin/release status` reads the lane for display only. A failure inside that read
+prints `lane: unavailable (<error class>)` under the current release and the
+command carries on; it never fails `status` or `prepare`, which make the same read.
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
   sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.

@@ -1,42 +1,10 @@
+# The link sidebar, /links and /admin/links, built from the navigation registry
+# (config/navigation.yml). An entry shows when its page is public or the viewer
+# is an admin, so a section holding only admin pages never reaches a visitor.
 module LinkTreeHelper
+  # The general sections, then the satellite apps.
   def public_link_sections
-    sections = []
-
-    # Studio and Directory show only to admins: they lead behind the admin wall
-    # (AdminWall). NFL is public on purpose: both of its pages are in
-    # AdminWall::PUBLIC (nfl#index, games#season), so a visitor gets it too.
-    if admin?
-      sections << { title: "Studio", links: [
-        { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
-        { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
-        { label: "Builders", href: builders_path, emoji: "🏗️", hover_emoji: "🚀", desc: "Builder roster + commit pace" },
-        { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
-        { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
-        { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
-        { label: "Models", href: model_pipeline_path, emoji: "🪪", hover_emoji: "🎭", desc: "Character model pipeline" },
-      ] }
-    end
-
-    sections << { title: "NFL", links: [
-      { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
-      { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
-    ] }
-
-    if admin?
-      sections << { title: "Directory", links: [
-        { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
-        { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
-        { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
-      ] }
-    end
-
-    # Public on purpose: the App Builder is the funnel's front door and the
-    # packages page is where customers compare the tiers, so both are reachable
-    # without an account.
-    sections << { title: "Services", links: [
-      { label: "App Builder", href: build_path, emoji: "🧱", hover_emoji: "✨", desc: "Describe an app and we build it" },
-      { label: "Packages", href: packages_path, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Pro, Growth and Enterprise tiers" },
-    ] }
+    sections = registry_link_sections(:general)
 
     if defined?(Satellite) && Satellite.active.any?
       sections << {
@@ -57,46 +25,7 @@ module LinkTreeHelper
   end
 
   def admin_link_sections
-    [
-      { title: "Site", links: [
-        { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", hover_emoji: "🔬", desc: "Users + request logs" },
-        { label: "Deployments", href: deployments_path, emoji: "🚀", hover_emoji: "📦", desc: "Deploy lane board" },
-        { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
-        { label: "Design System", href: admin_style_path, emoji: "🎨", hover_emoji: "🧩", desc: "Theme · Modals · Tricks · Tasks" },
-        { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
-        { label: "Emails", href: admin_emails_path, emoji: "✉️", hover_emoji: "🖼️", desc: "Transactional emails + their banners" },
-        { label: "Link preview", href: admin_link_preview_path, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" },
-        { label: "Assets", href: asset_browser_path, emoji: "🗄️", hover_emoji: "🎞️", desc: "Object store as a folder tree" },
-      ] },
-      # The client side of the business: what the funnel brought in, what each
-      # client runs on, and the credentials behind it.
-      { title: "Clients", links: [
-        { label: "App requests", href: build_requests_path, emoji: "🧱", hover_emoji: "📥", desc: "Every app requested through /build" },
-        { label: "Stack", href: stack_path, emoji: "🥞", hover_emoji: "🧭", desc: "Each client's tier and software" },
-        { label: "Credentials", href: credentials_path, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" },
-      ] },
-      # The mailing list and what is sent to it.
-      { title: "Email", links: [
-        { label: "Broadcasts", href: broadcasts_path, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email" },
-        { label: "Contacts", href: contacts_path, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live" },
-        { label: "Email analytics", href: broadcast_analytics_path, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health" },
-      ] },
-      { title: "Ops", links: [
-        { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },
-        { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", hover_emoji: "🔐", desc: "OAuth handshake" },
-        { label: "Activities", href: activities_agents_path, emoji: "🎭", hover_emoji: "🎬", desc: "Cross-session agent activity feed" },
-      ] },
-      { title: "Data", links: [
-        { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", hover_emoji: "🤖", desc: "GitHub public commit pace backtest" },
-        { label: "News workflow", href: workflow_news_index_path, emoji: "🛠️", hover_emoji: "🧭", desc: "Intake → conclude board" },
-        { label: "Merge people", href: merge_people_path, emoji: "🔀", hover_emoji: "✅", desc: "Resolve duplicate people" },
-        { label: "Duplicates", href: duplicates_people_path, emoji: "👥", hover_emoji: "🧹", desc: "Duplicate candidates" },
-      ] },
-      # The recast pipeline: every generated version of every source video.
-      { title: "Video", links: [
-        { label: "Alt videos", href: alt_videos_path, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress" },
-      ] },
-    ]
+    registry_link_sections(:admin)
   end
 
   def sidebar_link_sections
@@ -105,6 +34,15 @@ module LinkTreeHelper
   end
 
   private
+
+  def registry_link_sections(group)
+    Navigation.sidebar(group).filter_map do |section|
+      links = section.pages.select { |page| page.public? || admin? }.map do |page|
+        { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc }
+      end
+      { title: section.title, links: links } if links.any?
+    end
+  end
 
   def satellite_hover_emoji(slug)
     {

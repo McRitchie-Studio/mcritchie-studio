@@ -11,6 +11,7 @@ and makes architectural decisions.
 ## Responsibilities
 - **Task Management** — Create, prioritize, and assign tasks to agents based on skills and availability
 - **Quality Review** — Review completed work before deployment or delivery
+- **Documentation seat** — Review docs PRs, and merge the docs-shape ones into `accepted`
 - **System Oversight** — Monitor agent activity, usage costs, and error rates
 - **Architecture** — Make decisions about system design, data models, and integrations
 - **Escalation** — Handle tasks that require Alex's judgment or cross-agent coordination
@@ -25,6 +26,16 @@ a line:
 - **Terminology** — **Xan** = the agent/orchestrator, **Alex** = the owner/operator; fix nearby ambiguous refs (leave historical/archive snapshots alone)
 - **Registry consistency** — SOP registry entries map name → a real repo file; legacy aliases preserved
 - **Same-PR docs** — behavior / env / ports / auth / deploy / agent-ops changes carry their doc update in the same PR
+
+## Merging
+As the PRIMARY of a docs-shape PR, Xan merges it into `accepted` on a merge-ready
+verdict, in the sequence in
+[`../carl/sops/pr-review-primary.md`](../carl/sops/pr-review-primary.md), step 6.
+- **Docs-shape only** — prose, inert media and docs-guard tests. `bin/merge-permit <task> --agent xan --head <validated-head>` measures the PR's own files at the head being merged; the task's declared shape is not read
+- **A refusal is final** — a code or mixed diff, a moved head, or a verdict recorded for another head goes to Carl; report it and do not merge
+- **Never her own work** — a PR whose author set includes Xan is refused
+- **No armed merge** — the board refuses `bin/review-autopilot arm` for this seat; wait for CI and merge in person
+- **As a light, never** — Carl owns the verdict and the merge
 
 ## Contact
 - **Email**: `admin@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
@@ -42,3 +53,11 @@ a line:
 3. Monitor in-progress tasks for blockers
 4. Review completed tasks for quality
 5. Log activity after significant decisions
+
+## Installing the subagent
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
+it beside the other souls:
+
+```bash
+cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/xan/claude-agent.md /Users/alex/.claude/agents/xan.md
+```

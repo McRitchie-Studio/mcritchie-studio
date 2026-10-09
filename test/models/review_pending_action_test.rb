@@ -63,6 +63,42 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     assert_raises(ReviewPendingAction::Unauthorised) { arm }
   end
 
+  # ── the documentation seat does not arm ───────────────────────────────────
+  #
+  # An armed merge measures no diff, and the documentation seat may merge only a
+  # diff measured docs-shape (bin/lib/merge_permission.rb). So she merges in person.
+  test "the documentation seat cannot arm a merge, under either slug" do
+    record_verdict
+
+    %w[xan alex].each do |seat|
+      error = assert_raises(ReviewPendingAction::Unauthorised) { arm(authorized_by: seat) }
+
+      assert_match(/xan holds the documentation seat, which merges docs-shape PRs only and in person/, error.message)
+      assert_match(/bin\/merge-permit <task> --agent xan --head/, error.message)
+      assert_match(/Carl, the standing primary, may arm/, error.message)
+    end
+    assert_equal 0, ReviewPendingAction.count
+    # CONTROL: the same task and verdict arm for the standing primary.
+    assert arm(authorized_by: "carl").pending?
+  end
+
+  # The refusal is about who ARMS. Xan's light merge-ready standing as the latest
+  # report still lets Carl arm, exactly as before.
+  test "the documentation seat's verdict still authorises another soul's arm" do
+    Agent.find_or_create_by!(slug: "xan") { |a| a.name = "Xan" }
+    record_verdict(agent: "xan")
+
+    assert_equal "carl", arm(authorized_by: "carl").authorized_by
+    assert_nil ReviewPendingAction.seat_refusal_reason(nil, "", "carl", "steffon")
+  end
+
+  # Two spellings of one rule: the model's list and the merge primitive's.
+  test "the shape-limited seats match the merge primitive's" do
+    require Rails.root.join("bin/lib/merge_permission").to_s
+
+    assert_equal MergePermission::SHAPE_LIMITED.keys.sort, ReviewPendingAction::SHAPE_LIMITED_SEATS.sort
+  end
+
   # The trigger JOINs on repo + head_sha. An action armed with a bare repo slug or
   # an uppercased sha would never be found by its own trigger — invisible rather
   # than refused, which is the worst failure mode available.

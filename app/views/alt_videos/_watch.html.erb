@@ -1,4 +1,4 @@
-<%# Where the alt video stands (clips with a primary version, flagged clips) and Watch full video: a modal that plays the primary versions back to back as if stitched, with no stitched file. Each clip hands over to the next at the middle of their overlap, over the original source audio; a clip with no version plays its source chunk, marked. The player is built only while the modal is open. %>
+<%# Where the alt video stands (clips with a primary version, flagged clips) and Watch full video: a modal that plays the primary versions back to back as if stitched, with no stitched file. Each clip hands over to the next at the middle of their overlap, over the original source audio; a clip with no version plays its source chunk, marked. The player is built only while the modal is open, and takes the page's freshest signed links as it is built; a file whose link has lapsed mid-watch is fetched again on a fresh one (signedLinks, music_videos/_player_scripts). %>
 <% with_primary, total = alt_video.progress %>
 <% flagged = clips.select(&:regenerate_requested?) %>
 <div class="card p-4 mb-4 flex flex-col gap-3 min-w-0" data-test="alt-progress" data-ready="<%= alt_video.ready_to_stitch? %>"
@@ -53,10 +53,12 @@
                 x-text="nowLabel" data-test="stitch-now"></span>
           <p x-show="missing" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
              data-test="stitch-missing">This clip's file is not reachable.</p>
+          <p x-show="!missing && renewing && !failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-body"
+             data-test="stitch-link-refreshing">This link expired: getting a fresh one…</p>
           <p x-show="!missing && failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
-             data-test="stitch-load-failed">This clip's file did not load. The signed links last <%= AltVideosController::SIGNED_URL_TTL / 60 %> minutes: reload the page.</p>
+             data-test="stitch-load-failed">This clip's file did not load, on a fresh link.</p>
         </div>
-        <audio x-ref="audio" preload="auto" <% if audio_url %>src="<%= audio_url %>"<% end %> @error="audioFailed()" @ended="pause()" data-test="stitch-audio"></audio>
+        <audio x-ref="audio" preload="auto" <% if audio_url %>src="<%= audio_url %>" data-signed-key="<%= video.source_object_key %>"<% end %> @error="audioFailed()" @ended="pause()" data-test="stitch-audio"></audio>
 
         <div class="p-4 flex flex-col gap-3 min-w-0">
           <div class="flex items-center gap-3 min-w-0">

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -173,7 +173,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["agent_session_slug"], name: "index_agent_login_requests_on_agent_session_slug"
     t.index ["slug"], name: "index_agent_login_requests_on_slug", unique: true
     t.index ["status", "requested_at"], name: "index_agent_login_requests_on_status_and_requested_at"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'granted'::character varying, 'refused'::character varying]::text[])", name: "agent_login_requests_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'granted'::character varying::text, 'refused'::character varying::text])", name: "agent_login_requests_status_known"
   end
 
   create_table "agent_sessions", force: :cascade do |t|
@@ -268,7 +268,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["subdomain"], name: "index_app_requests_on_holding_subdomain", unique: true, where: "((subdomain IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('building'::character varying)::text, ('live'::character varying)::text])))"
     t.index ["token"], name: "index_app_requests_on_token", unique: true
     t.index ["user_id"], name: "index_app_requests_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'queued'::character varying, 'building'::character varying, 'live'::character varying, 'cancelled'::character varying]::text[])", name: "app_requests_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'queued'::character varying::text, 'building'::character varying::text, 'live'::character varying::text, 'cancelled'::character varying::text])", name: "app_requests_status_known"
   end
 
   create_table "appearance_reference_photos", force: :cascade do |t|
@@ -336,7 +336,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["slug"], name: "index_appearances_on_slug", unique: true
     t.index ["stage", "position"], name: "index_appearances_board_rank", where: "(retired_at IS NULL)"
     t.check_constraint "num_nonnulls(person_slug, character_slug) = 1", name: "appearances_exactly_one_owner"
-    t.check_constraint "stage::text = ANY (ARRAY['designed'::character varying, 'defined'::character varying, 'source'::character varying, 'model'::character varying, 'generation'::character varying]::text[])", name: "appearances_stage_known"
+    t.check_constraint "stage::text = ANY (ARRAY['designed'::character varying::text, 'defined'::character varying::text, 'source'::character varying::text, 'model'::character varying::text, 'generation'::character varying::text])", name: "appearances_stage_known"
   end
 
   create_table "apps", force: :cascade do |t|
@@ -567,7 +567,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_broadcasts_on_slug", unique: true
     t.index ["status"], name: "index_broadcasts_on_status"
-    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'sent'::character varying]::text[])", name: "broadcasts_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'sent'::character varying::text])", name: "broadcasts_status_known"
   end
 
   create_table "builders", force: :cascade do |t|
@@ -804,7 +804,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["stage"], name: "index_contents_on_stage"
     t.index ["team_slug"], name: "index_contents_on_team_slug"
     t.index ["workflow"], name: "index_contents_on_workflow"
-    t.check_constraint "stage::text = ANY (ARRAY['idea'::character varying, 'hook'::character varying, 'script'::character varying, 'assets'::character varying, 'assembly'::character varying, 'posted'::character varying, 'reviewed'::character varying]::text[])", name: "contents_stage_known"
+    t.check_constraint "stage::text = ANY (ARRAY['idea'::character varying::text, 'hook'::character varying::text, 'script'::character varying::text, 'assets'::character varying::text, 'assembly'::character varying::text, 'posted'::character varying::text, 'reviewed'::character varying::text])", name: "contents_stage_known"
   end
 
   create_table "contracts", force: :cascade do |t|
@@ -841,7 +841,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["credential_vault_slug", "title"], name: "index_credential_records_on_credential_vault_slug_and_title", unique: true
     t.index ["service"], name: "index_credential_records_on_service"
     t.index ["status"], name: "index_credential_records_on_status"
-    t.check_constraint "status::text = ANY (ARRAY['filed'::character varying, 'empty'::character varying, 'retired'::character varying, 'missing'::character varying]::text[])", name: "credential_records_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['filed'::character varying::text, 'empty'::character varying::text, 'retired'::character varying::text, 'missing'::character varying::text])", name: "credential_records_status_known"
   end
 
   create_table "credential_vaults", force: :cascade do |t|
@@ -857,7 +857,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.string "workspace_domain"
     t.index ["slug"], name: "index_credential_vaults_on_slug", unique: true
     t.index ["workspace_domain"], name: "index_credential_vaults_on_workspace_domain"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'reserved'::character varying, 'retired'::character varying]::text[])", name: "credential_vaults_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'reserved'::character varying::text, 'retired'::character varying::text])", name: "credential_vaults_status_known"
   end
 
   create_table "depth_chart_entries", force: :cascade do |t|
@@ -903,7 +903,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["s3_key"], name: "index_desk_capture_items_on_s3_key", unique: true
     t.index ["source", "history_id"], name: "index_desk_capture_items_on_source_and_history_id"
     t.index ["status", "received_at"], name: "index_desk_capture_items_on_status_and_received_at"
-    t.check_constraint "status::text = ANY (ARRAY['received'::character varying, 'quarantined'::character varying, 'filed'::character varying, 'ignored'::character varying]::text[])", name: "desk_capture_items_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['received'::character varying::text, 'quarantined'::character varying::text, 'filed'::character varying::text, 'ignored'::character varying::text])", name: "desk_capture_items_status_known"
   end
 
   create_table "desk_records", force: :cascade do |t|
@@ -948,7 +948,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["resolved_on"], name: "index_desk_records_on_resolved_on"
     t.index ["status"], name: "index_desk_records_on_status"
     t.index ["worktree_path", "resolved_on"], name: "index_desk_records_on_worktree_path_and_resolved_on"
-    t.check_constraint "status::text = ANY (ARRAY['live'::character varying, 'candidate'::character varying, 'removing'::character varying, 'removed'::character varying, 'leaked'::character varying]::text[])", name: "desk_records_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['live'::character varying::text, 'candidate'::character varying::text, 'removing'::character varying::text, 'removed'::character varying::text, 'leaked'::character varying::text])", name: "desk_records_status_known"
   end
 
   create_table "desk_snapshots", force: :cascade do |t|
@@ -1260,7 +1260,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.string "status", default: "running", null: false
     t.datetime "updated_at", null: false
     t.index ["source", "started_at"], name: "index_import_runs_on_source_and_started_at"
-    t.check_constraint "status::text = ANY (ARRAY['running'::character varying, 'ok'::character varying, 'failed'::character varying]::text[])", name: "import_runs_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['running'::character varying::text, 'ok'::character varying::text, 'failed'::character varying::text])", name: "import_runs_status_known"
   end
 
   create_table "knowledge_sources", force: :cascade do |t|
@@ -1344,7 +1344,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.index ["platform", "source_id"], name: "index_music_videos_on_platform_and_source_id", unique: true
     t.index ["slug"], name: "index_music_videos_on_slug", unique: true
-    t.check_constraint "stage::text = ANY (ARRAY['digested'::character varying, 'cast_confirmed'::character varying, 'clips_ready'::character varying]::text[])", name: "music_videos_stage_known"
+    t.check_constraint "stage::text = ANY (ARRAY['digested'::character varying::text, 'cast_confirmed'::character varying::text, 'clips_ready'::character varying::text])", name: "music_videos_stage_known"
   end
 
   create_table "news", force: :cascade do |t|
@@ -1388,7 +1388,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["slug"], name: "index_news_on_slug", unique: true
     t.index ["stage", "position"], name: "index_news_on_stage_and_position"
     t.index ["stage"], name: "index_news_on_stage"
-    t.check_constraint "stage::text = ANY (ARRAY['new'::character varying, 'reviewed'::character varying, 'processed'::character varying, 'refined'::character varying, 'concluded'::character varying, 'archived'::character varying]::text[])", name: "news_stage_known"
+    t.check_constraint "stage::text = ANY (ARRAY['new'::character varying::text, 'reviewed'::character varying::text, 'processed'::character varying::text, 'refined'::character varying::text, 'concluded'::character varying::text, 'archived'::character varying::text])", name: "news_stage_known"
   end
 
   create_table "people", force: :cascade do |t|
@@ -1507,6 +1507,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.string "claimed_session"
     t.datetime "created_at", null: false
     t.string "holder_label"
+    t.string "holder_soul"
     t.string "release_slug", null: false
     t.string "role", null: false
     t.datetime "updated_at", null: false
@@ -1537,7 +1538,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["release_slug", "idempotency_key"], name: "index_release_events_on_release_slug_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["release_slug", "occurred_at"], name: "index_release_events_on_release_slug_and_occurred_at"
     t.index ["release_slug", "step", "status"], name: "index_release_events_on_release_slug_and_step_and_status"
-    t.check_constraint "status::text = ANY (ARRAY['started'::character varying, 'completed'::character varying, 'failed'::character varying]::text[])", name: "release_events_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['started'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text])", name: "release_events_status_known"
   end
 
   create_table "releases", force: :cascade do |t|
@@ -1572,7 +1573,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
-    t.check_constraint "state::text = ANY (ARRAY['assembling'::character varying, 'assembled'::character varying, 'shipped'::character varying, 'abandoned'::character varying]::text[])", name: "releases_state_known"
+    t.check_constraint "state::text = ANY (ARRAY['assembling'::character varying::text, 'assembled'::character varying::text, 'shipped'::character varying::text, 'abandoned'::character varying::text])", name: "releases_state_known"
   end
 
   create_table "review_pending_actions", force: :cascade do |t|
@@ -1602,7 +1603,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["state", "expires_at"], name: "index_review_pending_actions_on_state_and_expires_at"
     t.index ["task_slug"], name: "index_review_pending_actions_on_live_task_slug", unique: true, where: "((state)::text = 'pending'::text)"
     t.index ["task_slug"], name: "index_review_pending_actions_on_task_slug"
-    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'executed'::character varying, 'expired'::character varying, 'refused'::character varying, 'disarmed'::character varying]::text[])", name: "review_pending_actions_state_known"
+    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'executed'::character varying::text, 'expired'::character varying::text, 'refused'::character varying::text, 'disarmed'::character varying::text])", name: "review_pending_actions_state_known"
   end
 
   create_table "roster_spots", force: :cascade do |t|
@@ -1851,7 +1852,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["knowledge_source_id", "external_id"], name: "index_source_documents_on_knowledge_source_id_and_external_id", unique: true
     t.index ["knowledge_source_id", "status"], name: "index_source_documents_on_knowledge_source_id_and_status"
     t.index ["knowledge_source_id"], name: "index_source_documents_on_knowledge_source_id"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'missing'::character varying]::text[])", name: "source_documents_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'missing'::character varying::text])", name: "source_documents_status_known"
   end
 
   create_table "stack_clients", force: :cascade do |t|
@@ -1897,7 +1898,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["broadcast_id"], name: "index_staged_emails_on_broadcast_id"
     t.index ["contact_id"], name: "index_staged_emails_on_contact_id"
     t.index ["delivery_token"], name: "index_staged_emails_on_delivery_token", unique: true, where: "(delivery_token IS NOT NULL)"
-    t.check_constraint "status::text = ANY (ARRAY['staged'::character varying, 'approved'::character varying, 'sent'::character varying, 'cancelled'::character varying, 'skipped'::character varying]::text[])", name: "staged_emails_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['staged'::character varying::text, 'approved'::character varying::text, 'sent'::character varying::text, 'cancelled'::character varying::text, 'skipped'::character varying::text])", name: "staged_emails_status_known"
   end
 
   create_table "studio_email_deliveries", force: :cascade do |t|
@@ -2169,10 +2170,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["stage", "created_at"], name: "index_tasks_on_stage_and_created_at"
     t.index ["stage", "position"], name: "index_tasks_on_stage_and_position"
     t.index ["stage"], name: "index_tasks_on_stage"
-    t.check_constraint "approval_status::text = ANY (ARRAY['waiting'::character varying, 'approved'::character varying, 'changes_requested'::character varying, 'none'::character varying]::text[])", name: "tasks_approval_status_known"
-    t.check_constraint "block_kind::text = ANY (ARRAY['environment'::character varying, 'rework'::character varying, 'dependency'::character varying]::text[])", name: "tasks_block_kind_known"
-    t.check_constraint "merged::text = ANY (ARRAY['accepted'::character varying, 'release'::character varying, 'main'::character varying]::text[])", name: "tasks_merged_known"
-    t.check_constraint "stage::text = ANY (ARRAY['designed'::character varying, 'building'::character varying, 'submitted'::character varying, 'reviewed'::character varying, 'assembled'::character varying, 'shipped'::character varying, 'archived'::character varying]::text[])", name: "tasks_stage_known"
+    t.check_constraint "approval_status::text = ANY (ARRAY['waiting'::character varying::text, 'approved'::character varying::text, 'changes_requested'::character varying::text, 'none'::character varying::text])", name: "tasks_approval_status_known"
+    t.check_constraint "block_kind::text = ANY (ARRAY['environment'::character varying::text, 'rework'::character varying::text, 'dependency'::character varying::text])", name: "tasks_block_kind_known"
+    t.check_constraint "merged::text = ANY (ARRAY['accepted'::character varying::text, 'release'::character varying::text, 'main'::character varying::text])", name: "tasks_merged_known"
+    t.check_constraint "stage::text = ANY (ARRAY['designed'::character varying::text, 'building'::character varying::text, 'submitted'::character varying::text, 'reviewed'::character varying::text, 'assembled'::character varying::text, 'shipped'::character varying::text, 'archived'::character varying::text])", name: "tasks_stage_known"
   end
 
   create_table "team_rankings", force: :cascade do |t|
@@ -2239,6 +2240,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
   end
 
+  create_table "tiktok_connections", force: :cascade do |t|
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "open_id", null: false
+    t.datetime "refresh_expires_at"
+    t.text "refresh_token", null: false
+    t.datetime "refreshed_at"
+    t.string "scope"
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_tiktok_connections_on_connected_at"
+    t.index ["open_id"], name: "index_tiktok_connections_on_open_id", unique: true
+  end
+
   create_table "tiktok_drafts", force: :cascade do |t|
     t.bigint "byte_size"
     t.text "caption", null: false
@@ -2261,7 +2277,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.index ["clip_slug", "created_at"], name: "index_tiktok_drafts_on_clip_slug_and_created_at"
     t.index ["publish_id"], name: "index_tiktok_drafts_on_publish_id", unique: true, where: "(publish_id IS NOT NULL)"
     t.index ["state"], name: "index_tiktok_drafts_on_state"
-    t.check_constraint "state::text = ANY (ARRAY['queued'::character varying, 'uploading'::character varying, 'processing'::character varying, 'unknown'::character varying, 'delivered'::character varying, 'failed'::character varying]::text[])", name: "tiktok_drafts_state_known"
+    t.check_constraint "state::text = ANY (ARRAY['queued'::character varying::text, 'uploading'::character varying::text, 'processing'::character varying::text, 'unknown'::character varying::text, 'delivered'::character varying::text, 'failed'::character varying::text])", name: "tiktok_drafts_state_known"
   end
 
   create_table "tracked_github_builder_repos", force: :cascade do |t|
@@ -2304,8 +2320,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_triage_findings_on_slug", unique: true
     t.index ["status"], name: "index_triage_findings_on_status"
-    t.check_constraint "prior_art::text = ANY (ARRAY['unknown'::character varying, 'none'::character varying, 'found'::character varying]::text[])", name: "triage_findings_prior_art_known"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'promoted'::character varying, 'dismissed'::character varying]::text[])", name: "triage_findings_status_known"
+    t.check_constraint "prior_art::text = ANY (ARRAY['unknown'::character varying::text, 'none'::character varying::text, 'found'::character varying::text])", name: "triage_findings_prior_art_known"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'promoted'::character varying::text, 'dismissed'::character varying::text])", name: "triage_findings_status_known"
   end
 
   create_table "usages", force: :cascade do |t|
@@ -2388,7 +2404,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.integer "target_performer"
     t.datetime "updated_at", null: false
     t.index ["music_video_slug", "kind", "ordinal"], name: "index_video_clips_on_music_video_slug_and_kind_and_ordinal", unique: true
-    t.check_constraint "status::text = ANY (ARRAY['proposed'::character varying, 'approved'::character varying, 'rejected'::character varying]::text[])", name: "video_clips_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['proposed'::character varying::text, 'approved'::character varying::text, 'rejected'::character varying::text])", name: "video_clips_status_known"
   end
 
   create_table "video_performers", force: :cascade do |t|
@@ -2431,7 +2447,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.integer "width"
     t.index ["alt_video_slug", "number"], name: "index_video_stitches_on_alt_video_slug_and_number", unique: true
     t.index ["object_key"], name: "index_video_stitches_on_object_key", unique: true
-    t.check_constraint "state::text = ANY (ARRAY['requested'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying]::text[])", name: "video_stitches_state_known"
+    t.check_constraint "state::text = ANY (ARRAY['requested'::character varying::text, 'running'::character varying::text, 'done'::character varying::text, 'failed'::character varying::text])", name: "video_stitches_state_known"
   end
 
   create_table "workspace_accounts", force: :cascade do |t|
@@ -2448,7 +2464,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.datetime "updated_at", null: false
     t.index ["domain"], name: "index_workspace_accounts_on_domain", unique: true
     t.index ["subject"], name: "index_workspace_accounts_on_subject", unique: true
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'active'::character varying, 'revoked'::character varying, 'severed'::character varying]::text[])", name: "workspace_accounts_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'active'::character varying::text, 'revoked'::character varying::text, 'severed'::character varying::text])", name: "workspace_accounts_status_known"
   end
 
   create_table "workspace_mailboxes", force: :cascade do |t|
@@ -2463,7 +2479,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_160100) do
     t.bigint "workspace_account_id", null: false
     t.index ["address"], name: "index_workspace_mailboxes_on_address", unique: true
     t.index ["workspace_account_id"], name: "index_workspace_mailboxes_on_workspace_account_id"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'active'::character varying, 'revoked'::character varying]::text[])", name: "workspace_mailboxes_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'active'::character varying::text, 'revoked'::character varying::text])", name: "workspace_mailboxes_status_known"
   end
 
   add_foreign_key "action_grades", "activities", column: "source_activity_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify

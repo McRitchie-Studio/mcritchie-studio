@@ -9,28 +9,29 @@ module MusicVideos
     # STUDIO_S3_BACKEND selects, so production reads the production bucket),
     # or a sheet image over https.
     #
-    # A sheet URL is fetched only when Appearances::FetchableUrl.https_verdict
-    # passes (https, a public host), and so is every redirect it answers with.
-    # Every failure is a FetchFailed with a short reason.
+    # A sheet URL is fetched only when it is https and the engine's URL guard
+    # (`Studio::ImageCache.vet_source_url!`) passes it: a public host, however
+    # it is written and wherever its name resolves. The connection is then made
+    # to the ADDRESS THAT WAS VETTED (`Studio::ImageCache.pinned_http`), so a
+    # name that answers differently a moment later is not followed. Every
+    # redirect is a new URL and gets the same check and its own pinned
+    # connection. Every failure is a FetchFailed with a short reason, which the
+    # Writer lists in the README; it never ends the zip.
     #
-    # WHAT THAT CHECK PROVES depends on the engine the hub locks
-    # (Appearances::FetchableUrl says which does what). On the engine that reads
-    # only the URL's text, a public name pointing at a private address passes.
-    # On the next one the name is looked up and refused if any address is
-    # non-public. ON NEITHER IS THE ADDRESS PINNED: Net::HTTP below connects by
-    # NAME and resolves it again, so a name that answers differently between
-    # the check and the connection is still followed.
-    #
-    # FOLLOW-UP (needs the published gem, so it is not done here): replace the
-    # check and the Net::HTTP.start below with the engine's `vet_source_url!` +
-    # `pinned_http`, which connects to the address that was vetted.
-    # /tasks/url-guard-off-hot-paths, epic recast-video-pipeline piece 23.
+    # The guard is asked directly, not through Appearances::FetchableUrl: that
+    # module remembers a verdict, and this needs the addresses. So each fetched
+    # sheet is one lookup (the engine allows it six seconds), made while the
+    # body streams, where no request budget applies. Under a Rails test
+    # environment the engine resolves nothing unless a test sets a resolver.
     class Fetcher
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 20
       MAX_REDIRECTS = 3
       # A character sheet is a few MB; a host streaming past this is refused.
       MAX_REMOTE_BYTES = 50 * 1024 * 1024
+      # A connection that never opened: the next vetted address is tried.
+      UNREACHABLE = [Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, Errno::EADDRNOTAVAIL,
+                     Net::OpenTimeout, SocketError].freeze
 
       def initialize(client: nil, bucket: nil)
         @client = client
@@ -74,14 +75,10 @@ module MusicVideos
       end
 
       def remote(url, hops = 0, &blk)
-        verdict = Appearances::FetchableUrl.https_verdict(url)
-        raise FetchFailed, "the host could not be looked up just now" if verdict == Appearances::FetchableUrl::UNRESOLVED
-        raise FetchFailed, "not an https public host" unless verdict == Appearances::FetchableUrl::OK
-
-        uri = URI.parse(url)
+        vetted = vet(url)
         location = nil
-        Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
-          http.request(Net::HTTP::Get.new(uri)) do |response|
+        connected(vetted) do |http|
+          http.request(Net::HTTP::Get.new(vetted.uri)) do |response|
             case response
             when Net::HTTPSuccess then read_capped(response, &blk)
             when Net::HTTPRedirection then location = URI.join(url, response["location"].to_s).to_s
@@ -98,6 +95,40 @@ module MusicVideos
       rescue SocketError, Timeout::Error, OpenSSL::SSL::SSLError, SystemCallError, IOError, Net::HTTPBadResponse,
              Net::ProtocolError => e
         raise FetchFailed, "the host could not be read (#{e.class.name.demodulize})"
+      end
+
+      # The URL, vetted: https only, and the addresses its host was vetted
+      # against. A name that could not be looked up is not a bad address, and
+      # says so.
+      def vet(url)
+        raise FetchFailed, "not an https public host" unless URI.parse(url.to_s).scheme.to_s.casecmp?("https")
+
+        Studio::ImageCache.vet_source_url!(url.to_s)
+      rescue Studio::ImageCache::UnresolvedSourceHost
+        raise FetchFailed, "the host could not be looked up just now"
+      rescue Studio::ImageCache::InvalidSourceURL, URI::InvalidURIError
+        raise FetchFailed, "not an https public host"
+      end
+
+      # An open connection to the first vetted address that accepts one, closed
+      # when the block ends. An address that cannot be reached (an AAAA record
+      # where there is no IPv6 route) falls through to the next; the last one's
+      # error is raised. No bytes have been yielded when this moves on.
+      def connected(vetted)
+        addresses = vetted.addresses.presence || [nil]
+        http = nil
+        addresses.each_with_index do |address, index|
+          http = Studio::ImageCache.pinned_http(vetted.uri, address)
+          http.open_timeout = OPEN_TIMEOUT
+          http.read_timeout = READ_TIMEOUT
+          http.start
+          break
+        rescue *UNREACHABLE
+          raise if index == addresses.size - 1
+        end
+        yield http
+      ensure
+        http.finish if http&.started?
       end
 
       def read_capped(response)

@@ -7,7 +7,7 @@ module Tiktok
   #
   # Two publish modes:
   #   :direct_post (default) — publishes to the public feed immediately
-  #   :inbox                 — sends to drafts, user finishes posting in app
+  #   :inbox                 — sends an inbox notification, user finishes posting in app
   #                             (lets us attach trending sounds manually before publishing)
   #
   # Source: PULL_FROM_URL pointed at our public-read S3 MP4. TikTok fetches

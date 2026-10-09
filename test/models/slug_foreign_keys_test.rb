@@ -1,11 +1,10 @@
 require "test_helper"
 require "rake"
-require Rails.root.join("db/migrate/20261007210100_validate_slug_foreign_keys")
 
 # [integration] The slug foreign keys against the census: every resolved column
 # carries a validated key to its parent's slug with ON UPDATE CASCADE, or is
-# listed in SlugCensus::UNCONSTRAINED with its reason; and the validate step
-# resolves orphans the way the census reading asked.
+# listed in SlugCensus::UNCONSTRAINED with its reason; and the cleanup resolves
+# orphans the way the census reading asked.
 class SlugForeignKeysTest < ActiveSupport::TestCase
   def connection = ActiveRecord::Base.connection
   def census = SlugCensus.new
@@ -75,12 +74,10 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     end
   end
 
-  # --- the validate step -----------------------------------------------------
-
-  def migration = ValidateSlugForeignKeys.new.tap { |m| m.verbose = false }
+  # --- the cleanup -----------------------------------------------------------
 
   # Drops the keys, lets the block write rows that dangle, and puts the keys back
-  # NOT VALID, the state step 1 leaves production in. DDL is transactional in
+  # NOT VALID, the state a key over dirty rows sits in. DDL is transactional in
   # Postgres, so the test's rollback restores them. All the dangling writes go in
   # one block: Postgres re-checks every key on an UPDATE of a row its own
   # transaction inserted, even when that key did not change.
@@ -93,7 +90,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     end
   end
 
-  test "[integration] constraints added NOT VALID then validated; every census orphan is resolved or listed" do
+  test "[integration] the cleanup validates NOT VALID keys; every census orphan is resolved or listed" do
     note = action = desk = nil
     with_keys_not_valid(["activities", "agent_slug", "agents", nil], %w[activities task_slug tasks nullify],
                         %w[agent_actions task_slug tasks nullify], %w[desk_records app_slug apps nullify],
@@ -108,10 +105,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
       tasks(:new_task).update_columns(agent_slug: "Xan")
     end
 
-    assert_no_changes -> { [note.reload.agent_slug, action.reload.task_slug, desk.reload.app_slug] } do
-      migration.up
-    end
-    assert_not validated?("activities", "agent_slug"), "the migration writes no rows and leaves a dirty key NOT VALID"
+    assert_not validated?("activities", "agent_slug"), "a dirty key sits NOT VALID until the cleanup"
     assert_not validated?("agent_actions", "task_slug")
 
     report = SlugKeyCleanup.new.run
@@ -135,28 +129,11 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     assert_empty second.validated
   end
 
-  test "[integration] the migration validates a clean key itself" do
-    with_keys_not_valid(["usages", "agent_slug", "agents", nil]) { nil }
-
-    migration.up
-
-    assert validated?("usages", "agent_slug")
-  end
-
   test "[integration] slug_keys:clean prints counts and validates" do
     Rails.application.load_tasks unless Rake::Task.task_defined?("slug_keys:clean")
     Rake::Task["slug_keys:clean"].reenable
     out, = capture_io { Rake::Task["slug_keys:clean"].invoke }
 
     assert_includes out, "nothing to clean"
-  end
-
-  test "[integration] a dangling slug in a NOT NULL column stops the validate step with its name" do
-    with_keys_not_valid(["contracts", "person_slug", "people", nil]) do
-      contracts(:messi_argentina).update_columns(person_slug: "nobody-on-file")
-    end
-
-    error = assert_raises(ActiveRecord::MigrationError) { migration.up }
-    assert_match "contracts.person_slug (1 rows name no people row)", error.message
   end
 end

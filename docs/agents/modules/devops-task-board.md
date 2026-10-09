@@ -258,6 +258,21 @@ so a grant and the ship's own completion stamp are one row. `bin/release ship
 `production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
 `production-deploy` SOP.
 
+**The release lane on the card.** The Next Release card says who is assembling the
+release, who is shipping it, and what the production grant covers, in the sentences
+`bin/release status` and a claim stand-down print (`Release::LaneLease` is the one
+source). A holder is named by mascot, soul, the last four characters of its session
+id, and since when. A grant covers everything on the release at ship time: the
+`ship_authorized completed` event keeps the member set it was given over
+(`metadata.scope`), and the card counts and names every member that joined after
+it. The card names a person as approver only for the Approve button, which stamps
+`metadata.owner_grant` from the signed-in admin and signs it; the board strips that
+key from every other write and counts a marker only when its signature verifies for
+its own row, so any other answer reads as recorded, with no approver (the
+lines are tabled in Steffon's `production-deploy` SOP). The Last Release card keeps
+the grant line as the record of what the approval carried. A claim taken or released and a grant recorded each update an open
+`/deployments` without a reload.
+
 ## Task Conversation and QA Feedback
 
 The task board owns the durable conversation for an increment. `/tasks` cards

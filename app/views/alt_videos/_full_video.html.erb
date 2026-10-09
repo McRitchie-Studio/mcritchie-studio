@@ -73,14 +73,14 @@
       <% end %>
       <% if url %>
         <video controls playsinline preload="metadata" src="<%= url %>" class="w-full max-h-[60vh] bg-black rounded-lg"
-               data-test="full-video-player" data-key="<%= latest.object_key %>"></video>
+               data-test="full-video-player" data-key="<%= latest.object_key %>" data-signed-key="<%= latest.object_key %>"></video>
       <% else %>
         <p class="text-sm text-muted break-all" data-test="full-video-unreachable">Stitched file not reachable: <%= latest.object_key.split("/").last %></p>
       <% end %>
       <div class="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
         <% if (download = downloads[latest.object_key]) %>
           <%= link_to "Download #{latest.name.downcase}", download, download: latest.object_key.split("/").last,
-                      class: "btn btn-outline btn-sm", data: { test: "full-video-download" } %>
+                      class: "btn btn-outline btn-sm", data: { test: "full-video-download", signed_key: latest.object_key, signed_as: "download" } %>
         <% end %>
         <p class="text-xs text-muted min-w-0 break-words" data-test="full-video-takes">
           Versions <%= latest.take_list %> · finished <%= l(latest.finished_at, format: :short) %>
@@ -108,7 +108,8 @@
               <span class="text-muted">· <%= stitch.state %> · versions <%= stitch.take_list %><% if stitch.done? %> · <%= take_size(stitch.byte_size) %><% end %><% if stitch.failed? %> · <%= stitch.failure_reason %><% end %></span>
             </span>
             <% if stitch.done? && (download = downloads[stitch.object_key]) %>
-              <%= link_to "Download", download, download: stitch.object_key.split("/").last, class: "text-primary hover:underline shrink-0" %>
+              <%= link_to "Download", download, download: stitch.object_key.split("/").last, class: "text-primary hover:underline shrink-0",
+                          data: { signed_key: stitch.object_key, signed_as: "download" } %>
             <% end %>
           </li>
         <% end %>

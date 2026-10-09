@@ -12,6 +12,10 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 - Diagnosis: `heroku run bin/rails db:migrate --app mcritchie-studio` errors out. Usually a duplicate column or missing dependency.
 - Fix: Check `heroku logs --tail --app mcritchie-studio` for the exact SQL error. If a migration was partially applied, connect via `heroku pg:psql --app mcritchie-studio` and inspect `schema_migrations` table.
 
+**Release phase stops at `db:baseline:mark`**
+- Diagnosis: the release log reads `db:baseline:mark changed nothing: this database stopped partway through the retired migrations` and names the columns a table lacks. No table, row or ledger entry changed, and the previous release is still serving.
+- Fix: do not retry the deploy. Read production's schema, read-only: `heroku run --no-tty -a mcritchie-studio -- bin/rails db:schema:dump SCHEMA=/dev/stdout > tmp/production-schema.rb`, then `bin/rails db:baseline:check AGAINST=tmp/production-schema.rb` locally. Regenerate the baseline from that dump (`bin/db-baseline --schema tmp/production-schema.rb`) and ship the missing columns as an ordinary migration. `db:baseline:catch_up` needs git history and is for a local database. Procedure: `docs/agents/modules/backend-discipline.md, "The Migration Baseline"`.
+
 **Missing RAILS_MASTER_KEY**
 - Diagnosis: App crashes on boot with `ActiveSupport::MessageEncryptor::InvalidMessage`.
 - Fix: `heroku config:set RAILS_MASTER_KEY=$(cat config/master.key) --app mcritchie-studio`

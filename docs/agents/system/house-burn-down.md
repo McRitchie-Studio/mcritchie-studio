@@ -375,11 +375,16 @@ X_ACCESS_TOKEN=...
 X_ACCESS_TOKEN_SECRET=...
 HIGGSFIELD_API_KEY=...                # 1Password: "higgsfield.studio.agents" (studio-agents), field
 HIGGSFIELD_API_SECRET=...             #   "api-key" = <KEY_ID>:<KEY_SECRET>; split on the first colon
-TIKTOK_CLIENT_KEY=...                 # "🐊 TikTok" — NOT FILED in any readable vault (2026-09-22) and
-                                      # absent from prod config; get it from the TikTok developer console
-TIKTOK_CLIENT_SECRET=...
-TIKTOK_REFRESH_TOKEN=...
-TIKTOK_OPEN_ID=...
+TIKTOK_CLIENT_KEY=...                 # 1Password: "tiktok.studio.agents" (studio-agents), fields "client-key" and
+TIKTOK_CLIENT_SECRET=...              #   "client-secret": the sandbox app's pair, also on prod config (2026-10-08)
+# The TikTok connection (refresh token, open id) is not a filed value: it lives in the hub's
+# tiktok_connections table. To recover it, sign in again at /admin/tiktok/connect.
+# TIKTOK_REFRESH_TOKEN / TIKTOK_OPEN_ID are a fallback, read only when no connection is stored.
+# ACTIVE_RECORD_ENCRYPTION_* is never set here (production-only list; development uses fixed keys).
+# The deployed sets live in Heroku config and in 1Password (studio-applications), filed 2026-10-08:
+#   "active-record-encryption.studio.applications" (production), "active-record-encryption.studio-qa.applications" (QA).
+# Stored fact values do not recover without their app's set; the TikTok connection recovers by signing in again.
+# A restored app gets its filed set back from its own item, never a new one (credentials.md, "Fact encryption keys").
 AWS_ACCESS_KEY_ID=...                 # S3 ImageCache bucket
 AWS_SECRET_ACCESS_KEY=...
 SES_AWS_ACCESS_KEY_ID=...             # 1Password: agent.aws.mcritchie-ses, SES API checks only
@@ -534,7 +539,7 @@ These are the surprises from the last burn-down. Pre-baked into the steps above;
 
 8. **Sidekiq dies silently without Redis** — Turf Monster's `bin/tm up` preflights Redis before starting Sidekiq. If running manually, check `brew services list | grep redis` first.
 
-9. **TikTok app is in review** (submitted 2026-05-04) — only sandbox + manual posting paths work until Content Posting API approval. Don't expect API-direct posts to publish.
+9. **TikTok posts through a sandbox app** (since 2026-10-08; the production developer app, submitted 2026-05-04, was refused). It drafts only to the accounts listed as its target users, and the sign-in asks for drafts only, so don't expect API-direct posts to publish. Recovery of the TikTok connection is to sign in again at `/admin/tiktok/connect`; the hub stores it.
 
 10. **`RAILS_MASTER_KEY` is a hard prerequisite for `turf-monster db:seed`** — not just for booting. `db/seeds/users.rb` calls `User#generate_managed_wallet!`, which encrypts the wallet's private key via `Rails.application.credentials.secret_key_base[0, 32]`. Without the master key, that returns nil and the seed dies. Restore the key **before** running `db:create db:migrate db:seed`.
 

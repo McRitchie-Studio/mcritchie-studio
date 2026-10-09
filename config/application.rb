@@ -61,9 +61,11 @@ module McritchieStudio
     config.middleware.insert_after ActionDispatch::Static, Rack::Deflater,
                                    if: ->(_env, _status, headers, _body) { !headers["content-type"].to_s.start_with?("application/zip") }
 
-    # Active Record Encryption (Fact#value). Production and QA set all three
-    # names; development and test fall back to the fixed keys in their own
-    # environment file. Unset in production, the app boots and facts answer 503.
+    # Active Record Encryption (Fact#value, TiktokConnection#refresh_token).
+    # Production and QA must set all three names; as of 2026-10-08 neither holds
+    # any of them. Development and test fall back to the fixed keys in their own
+    # environment file. Unset in production, the app boots, facts answer 503,
+    # and the TikTok sign-in refuses before it asks TikTok for anything.
     %w[primary_key deterministic_key key_derivation_salt].each do |name|
       value = ENV["ACTIVE_RECORD_ENCRYPTION_#{name.upcase}"].presence
       config.active_record.encryption[name] = value if value

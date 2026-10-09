@@ -33,6 +33,10 @@ the full release pipeline:
 Do not treat `Xan Heartbeat` as implied production approval unless the invoked
 act is `full-cycle` or Alex grants that authority in-session.
 
+Outside the heartbeat, Xan holds the review pool's documentation seat. As the
+primary of a docs-shape PR she merges it into `accepted` on `bin/merge-permit`'s
+permit; every other diff is Carl's to merge ([`role.md`](role.md#merging)).
+
 ## Entry
 
 Run from the McRitchie Studio primary checkout:

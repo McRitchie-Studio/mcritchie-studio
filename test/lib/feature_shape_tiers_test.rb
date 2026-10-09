@@ -64,7 +64,8 @@ require "yaml"
 class FeatureShapeTiersTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   FEATURE_SHAPES = File.join(ROOT, "config/feature_shapes.yml")
-  CI_YML = File.join(ROOT, ".github/workflows/ci.yml")
+  # The lanes live in the called workflow; ci.yml only calls it.
+  CI_YML = File.join(ROOT, ".github/workflows/reusable-ci.yml")
   FAST_CHECK = File.join(ROOT, "bin/fast-check")
 
   # The CANONICAL SPEC — the doc an agent actually reads to size its testing. It carries its

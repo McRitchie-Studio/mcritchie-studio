@@ -1,18 +1,18 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require Rails.root.join("db/migrate/20260711160000_create_timeline_views.rb").to_s
+Dir[Rails.root.join("db/migrate/*_create_{task,release}_timeline_view.rb")].each { |path| require path }
 
-# The task_timeline / release_timeline views are created by a raw `CREATE VIEW`
-# migration that does NOT dump to the :ruby schema, so a fresh db:schema:load
-# (this test DB) never has them. Rather than back a test on their pre-existence
-# (the caveat), this runs the migration's own up/down and asserts the view SHAPE
-# — every lifecycle timestamp, in logical progress order — so a dropped, renamed,
-# or mis-ordered column in the CREATE VIEW SQL fails loudly here instead of in a
-# reviewer's head. Lives in test/db (not test/models) because there is no model.
+# The task_timeline / release_timeline views are raw `CREATE VIEW` SQL
+# (db/views/*.sql, one baseline migration each), which does NOT dump to the :ruby
+# schema, so a fresh db:schema:load (this test DB) never has them. Rather than back
+# a test on their pre-existence, this runs each migration's own up/down and asserts
+# the view SHAPE — every lifecycle timestamp, in logical progress order — so a
+# dropped, renamed, or mis-ordered column in the SQL fails loudly here instead of
+# in a reviewer's head. Lives in test/db (not test/models) because there is no model.
 class TimelineViewsTest < ActiveSupport::TestCase
   # The exact projection order the operator reads left-to-right (must match the
-  # migration's SELECT lists verbatim).
+  # SELECT lists in db/views verbatim).
   TASK_TIMELINE_COLUMNS = %w[
     slug title stage blocked_at blocked_from blocked_by block_kind
     created_at updated_at
@@ -33,13 +33,20 @@ class TimelineViewsTest < ActiveSupport::TestCase
   ].freeze
 
   setup do
-    @migration = CreateTimelineViews.new
-    @migration.verbose = false
-    @migration.up
+    @migrations = [CreateTaskTimelineView, CreateReleaseTimelineView].map { |view| view.new.tap { |m| m.verbose = false } }
+    @migrations.each(&:up)
   end
 
   teardown do
-    @migration.down
+    @migrations.each(&:down)
+  end
+
+  test "[integration] each view's migration carries the SQL in db/views" do
+    %w[task_timeline release_timeline].each do |name|
+      sql = File.read(Rails.root.join("db/views/#{name}.sql")).squish
+      migration = File.read(Dir[Rails.root.join("db/migrate/*_create_#{name}_view.rb")].sole).squish
+      assert_includes migration, sql, "#{name}: run bin/db-baseline after editing db/views/#{name}.sql"
+    end
   end
 
   test "[integration] task_timeline projects the task lifecycle columns in order" do

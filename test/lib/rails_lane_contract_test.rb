@@ -29,7 +29,8 @@ require_relative "../../bin/lib/test_shard"
 class RailsLaneContractTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   CONTRACT_PATH = File.join(ROOT, "config", "rails_lane.yml")
-  CI_YML = File.join(ROOT, ".github", "workflows", "ci.yml")
+  # The lanes live in the called workflow; ci.yml only calls it.
+  CI_YML = File.join(ROOT, ".github", "workflows", "reusable-ci.yml")
 
   def contract
     @contract ||= TestShard.load_contract(CONTRACT_PATH)
@@ -112,7 +113,7 @@ class RailsLaneContractTest < Minitest::Test
     ci = YAML.safe_load_file(CI_YML, aliases: true)
     plan = ci.dig("jobs", "rails_plan")
 
-    refute_nil plan, "ci.yml has no `rails_plan` job to read the shard matrix from config/rails_lane.yml"
+    refute_nil plan, "reusable-ci.yml has no `rails_plan` job to read the shard matrix from config/rails_lane.yml"
     assert_includes plan.fetch("steps").map { |step| step["run"].to_s }.join("\n"), "bin/ci-shard --matrix"
     assert_equal "rails_plan", ci.dig("jobs", "rails", "needs")
     assert_equal "${{ fromJSON(needs.rails_plan.outputs.shards) }}", ci.dig("jobs", "rails", "strategy", "matrix", "shard"),

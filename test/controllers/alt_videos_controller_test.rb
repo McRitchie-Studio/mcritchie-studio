@@ -358,6 +358,118 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_equal bare, count.call, "eight versions over four clips render with the same queries as none"
   end
 
+  # [integration] The links endpoint: the page's signed URLs again, as JSON, for
+  # a page left open past the fifteen minutes they last. What it proves: who is
+  # answered and how (a status the page can read, never a redirect), that the
+  # answer holds exactly the keys the page shows, and that nothing in the
+  # request can add a key. It does not prove a URL opens: the fixture store
+  # signs nothing real.
+  JSON_FETCH = { "Accept" => "application/json" }.freeze
+
+  test "the links endpoint answers a signed-out fetch 401 and a non-admin 403, with no link" do
+    built = AltVideo.build_from!(@video)
+
+    get links_music_video_alt_video_path(@video, built), headers: JSON_FETCH
+    assert_response :unauthorized
+    assert_equal({ "error" => "unauthenticated" }, JSON.parse(response.body))
+
+    log_in_as users(:viewer)
+    get links_music_video_alt_video_path(@video, built), headers: JSON_FETCH
+    assert_response :forbidden
+    assert_no_match(/fixture\.invalid/, response.body)
+    # Opened as a page it is walled like every other: a redirect, and still no link.
+    get links_music_video_alt_video_path(@video, built)
+    assert_redirected_to root_path
+  end
+
+  test "the links endpoint signs the page's own files again, and no key the request names" do
+    AltVideo.build_from!(@video)
+    alt.clips.each { |c| TiledVideo.version!(c, number: 1, at: 1.hour.ago) }
+    TiledVideo.version!(clip(2), number: 2)
+    stitch = MusicVideos::RequestStitch.new(alt.reload).call.stitch
+    stitch.update!(state: "done", duration_ms: 95_000, byte_size: 4_096, finished_at: Time.current)
+    # Another alt video of the same source: its versions are not this page's.
+    other = AltVideo.build_from!(@video)
+    foreign = TiledVideo.version!(other.clips.first, number: 1).object_key
+    log_in_as users(:alex)
+
+    get music_video_alt_video_path(@video, alt)
+    shown = css_select("[data-signed-key]").map { |el| el["data-signed-key"] }.uniq
+
+    freeze_time do
+      get links_music_video_alt_video_path(@video, alt), params: { keys: [foreign, "secrets/elsewhere.mp4"], key: foreign }, headers: JSON_FETCH
+      assert_response :ok
+      assert_equal "no-store", response.headers["Cache-Control"]
+      body = JSON.parse(response.body)
+
+      chunk_keys = @video.video_chunks.map(&:object_key)
+      version_keys = alt.reload.clips.flat_map { |c| c.versions.map(&:object_key) }
+      assert_equal 5, version_keys.size
+      assert_equal (chunk_keys + version_keys + [@video.source_object_key, stitch.object_key]).sort, body["inline"].keys.sort
+      assert_equal (chunk_keys + [stitch.object_key]).sort, body["download"].keys.sort
+      assert_not_includes body["inline"].keys, foreign
+      assert_no_match(/elsewhere|#{Regexp.escape(foreign)}/, response.body)
+      body["inline"].each { |key, url| assert_equal "https://fixture.invalid/#{key}?X-Amz-Expires=900&X-Amz-Signature=fixture", url }
+      assert_match(/response-content-disposition=attachment/, body["download"].fetch(stitch.object_key))
+
+      assert_equal 900, body["ttl"]
+      assert_equal (Time.current.to_f * 1000).round, body["signed_at"]
+      assert_equal 15.minutes.from_now.iso8601, body["expires_at"]
+    end
+
+    # Every element the page marks for a fresh link gets one.
+    assert_operator shown.size, :>=, 6
+    assert_empty shown - JSON.parse(response.body)["inline"].keys
+  end
+
+  test "the links endpoint says so when the store cannot sign" do
+    AltVideo.build_from!(@video)
+    store = Object.new
+    store.define_singleton_method(:signed_url) { |**| raise AssetBrowser::Unavailable, "NotConfigured" }
+    log_in_as users(:alex)
+    AssetBrowser.stub(:source, store) { get links_music_video_alt_video_path(@video, alt), headers: JSON_FETCH }
+
+    assert_response :service_unavailable
+    assert_equal({ "error" => "storage_unreachable" }, JSON.parse(response.body))
+  end
+
+  # [component] What the page hands the refresher: where to ask, how long the
+  # links last and when they were signed; each player, frame and link marked
+  # with its object key; the watch timeline's segments keyed the same way.
+  test "the page marks every signed file with its key and says when its links were signed" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    TiledVideo.version!(alt.clips.find { |c| c.chunk_ordinal == 3 }, number: 1)
+    chunk = video.video_chunks.find_by!(ordinal: 3)
+    version = alt.reload.clips.find { |c| c.chunk_ordinal == 3 }.primary_version
+    log_in_as users(:alex)
+
+    freeze_time do
+      get music_video_alt_video_path(video, alt)
+      assert_select "[data-test='alt-video'][data-links-url=?][data-links-ttl='900'][data-links-signed-at=?]",
+                    links_music_video_alt_video_path(video, alt), (Time.current.to_f * 1000).round.to_s
+    end
+    assert_select "[data-test='alt-clip'][data-ordinal='3']" do
+      assert_select "video[data-test='clip-player'][data-signed-key=?]", chunk.object_key
+      assert_select "video[data-test='clip-version-player'][data-signed-key=?]", version.object_key
+      assert_select "[data-test='clip-link-refreshing'][x-show='renewing.original']", /This link expired: getting a fresh one/
+      assert_select "[data-test='clip-version-link-refreshing'][x-show='renewing.version']"
+      frame = chunk.reference_frame_list.first["object_key"]
+      assert_select "[data-test='clip-frame'] a[data-signed-key=?]:not([data-signed-as]) img[data-signed-key=?]", frame, frame
+      assert_select "[data-test='clip-frame-download'][data-signed-key=?][data-signed-as='download']", frame
+      assert_select "[data-test='clip-chunk-download'][data-signed-key=?][data-signed-as='download']", chunk.object_key
+      assert_select "[data-test='clip-version-open'][data-signed-key=?]", version.object_key
+    end
+    assert_select "[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-solo'] video[data-signed-key]"
+    assert_select "[data-test='links-status'][x-cloak]"
+    assert_equal alt.clips.map { |c| c.primary_version&.object_key || video.video_chunks.find { |k| k.ordinal == c.chunk_ordinal }.object_key },
+                 timeline["segments"].map { |s| s["key"] }
+    # Every marked element carries the URL the same key signs to.
+    css_select("[data-signed-key]").each do |el|
+      assert_includes el["src"] || el["href"], "https://fixture.invalid/#{el['data-signed-key']}?"
+    end
+  end
+
   test "the admin links reach the index" do
     log_in_as users(:alex)
     get admin_links_path
