@@ -88,7 +88,7 @@ class ReleaseCliSubprocessTmpdirTest < Minitest::Test
 
   def test_the_directory_is_removed_when_the_test_ends
     worker = ReleaseShipFinalGemTest.new("cleanup")
-    dir = worker.eval_helper(%(File.write(File.join(Dir.tmpdir, "left-behind.gem"), "x"); Dir.tmpdir))
+    dir = worker.eval_helper(%(File.write(File.join(Dir.tmpdir, "left-behind.gem"), "x").then { Dir.tmpdir }))
     assert File.exist?(File.join(dir, "left-behind.gem")), "the subprocess wrote into it"
 
     worker.after_teardown
