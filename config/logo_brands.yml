@@ -19,6 +19,11 @@
 #            word under highlight: weight; `accent` is the leading word under
 #            highlight: colour; `icon` maps each icon layer role to a fill;
 #            `icon_key` (optional) names a different icon for this tone.
+# watermark  optional: the watermark logo (the whole logo in one colour, slightly
+#            transparent, for placing over a photograph). `fill` (default
+#            "#FFFFFF"), `opacity` (greater than 0, at most 1; default 0.6) and
+#            `icon_key`, a single-colour icon for a brand whose own icon would
+#            fill in solid when every layer takes the one colour.
 #
 # Fills are solid #hex only: no gradients.
 
@@ -69,6 +74,8 @@ turf:
       text: "#FFFFFF"
       accent: "#4BAF50"
       icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+  watermark:
+    icon_key: turf_mono
 
 welding:
   name: COMMERCIAL WELDING
@@ -86,3 +93,5 @@ welding:
       text: "#FFFFFF"
       accent: "#F08A5A"
       icon: { primary: "#FFFFFF" }
+  watermark:
+    icon_key: welding_mono

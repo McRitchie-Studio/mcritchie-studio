@@ -11,6 +11,10 @@ module Logos
   #
   #   Logos::NavbarLogo.new("industries").svg(rule: 4, text: :second, tone: :dark)
   #
+  # A logo has no background: the SVG is transparent wherever it draws nothing.
+  # `tone: :watermark` is the whole logo in ONE fill inside one translucent
+  # group, for placing over a photograph.
+  #
   # The icon is H units tall. Rule of 3: the capitals are one of three rows.
   # Rule of 4: the capitals fill the middle two of four rows. Either way the
   # name is centred on the icon. Rules and data: docs/topics/logos.md.
@@ -20,7 +24,10 @@ module Logos
     H = 300.0
     RULES = { 3 => 1, 4 => 2 }.freeze          # rows the icon spans => rows the capitals span
     TEXTS = %i[homogeneous first second].freeze
-    TONES = %i[light dark].freeze
+    TONES = %i[light dark watermark].freeze
+    BAKED = %i[light dark].freeze               # the tones whose fills a style lists; `examples` draws these
+    WATERMARK = { "fill" => "#FFFFFF", "opacity" => 0.6 }.freeze
+    WATERMARK_KEYS = %w[fill opacity icon_key].freeze
     HIGHLIGHTS = %w[weight colour].freeze
     SPACE_WEIGHT = 300                         # the word space is this weight's " " advance
     GUIDE = "#D4189F"
@@ -32,7 +39,7 @@ module Logos
     NUMBER = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/
     CALL = /(?:translate|scale|rotate|matrix)\(#{NUMBER}(?:[ ,]#{NUMBER})*\)/
     TRANSFORM = /\A#{CALL}(?: #{CALL})*\z/
-    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json].freeze
+    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json].freeze
     ROOT = File.expand_path("../..", __dir__)
 
     Layout = Struct.new(:count, :row, :cap, :baseline, :icon_width, :gap, :name_left, :letters, :width, keyword_init: true)
@@ -56,7 +63,8 @@ module Logos
     def initialize(brand, styles: self.class.styles, icons: self.class.icons, letterings: self.class.letterings)
       @brand = brand.to_s
       @style = styles[@brand] or raise Error, "unknown brand #{@brand.inspect}: expected one of #{styles.keys.join(', ')}"
-      @icons = TONES.to_h { |tone| [tone, checked_icon(@style.dig("tones", tone.to_s, "icon_key") || @style["icon"], icons)] }
+      @watermark = checked_watermark
+      @icons = TONES.to_h { |tone| [tone, checked_icon(icon_key(tone), icons)] }
       @words = @style["name"].to_s.split
       raise Error, "brand #{@brand}: the name must be exactly two words, got #{@words.size} (#{@style['name'].inspect})" unless @words.size == 2
       raise Error, "brand #{@brand}: highlight must be one of #{HIGHLIGHTS.join(', ')}, got #{@style['highlight'].inspect}" unless HIGHLIGHTS.include?(@style["highlight"])
@@ -69,6 +77,9 @@ module Logos
 
     # What the brand's page says about where its art came from (optional).
     def note = @style["note"]
+
+    # "weight" or "colour": how one word leads the other. A watermark has one colour, so only weight shows in it.
+    def highlight = @style["highlight"]
 
     # The geometry alone, in design units (the icon is H tall, x = 0 is its left edge).
     # `tone:` matters only to a brand whose tones name different icons.
@@ -92,15 +103,13 @@ module Logos
       raise Error, "unknown tone #{tone.inspect}: expected one of #{TONES.join(', ')}" unless TONES.include?(tone)
 
       box = layout(rule:, text:, tone:)
-      fills = @style.fetch("tones").fetch(tone.to_s)
-      colours = word_colours(text, fills)
-      body = icon_markup(@icons.fetch(tone), fills.fetch("icon")) + box.letters.map { |l| letter_markup(l, box, colours[l[:word]]) }.join
+      body = tone == :watermark ? watermark_markup(box) : drawing(box, tone, *fills(tone, text))
       guides ? document(body + guide_markup(box), box.width, **GUIDE_PAD) : document(body, box.width)
     end
 
-    # Every example for the brand: 2 rules x 3 texts x 2 tones, each with its guide drawing.
+    # Every light and dark example for the brand: 2 rules x 3 texts x 2 tones, each with its guide drawing.
     def examples
-      RULES.keys.product(TEXTS, TONES, [false, true]).map do |rule, text, tone, guides|
+      RULES.keys.product(TEXTS, BAKED, [false, true]).map do |rule, text, tone, guides|
         key = [brand, "rule#{rule}", text, tone, ("guides" if guides)].compact.join("-")
         { key:, rule:, text:, tone:, guides:, svg: svg(rule:, text:, tone:, guides:) }
       end
@@ -108,7 +117,42 @@ module Logos
 
     private
 
-    def by_weight? = @style["highlight"] == "weight"
+    def by_weight? = highlight == "weight"
+
+    def icon_key(tone)
+      (tone == :watermark ? @watermark["icon_key"] : @style.dig("tones", tone.to_s, "icon_key")) || @style["icon"]
+    end
+
+    # The style's optional `watermark:` map over the defaults, checked: a #hex fill and an opacity in (0, 1].
+    def checked_watermark
+      given = @style["watermark"] || {}
+      unless given.is_a?(Hash) && (given.keys - WATERMARK_KEYS).empty?
+        raise Error, "brand #{brand}: watermark must be a map of #{WATERMARK_KEYS.join(', ')}, got #{given.inspect[0, 80]}"
+      end
+      mark = WATERMARK.merge(given)
+      hex(mark["fill"])
+      opacity = mark["opacity"]
+      unless (opacity.is_a?(Integer) || opacity.is_a?(Float)) && opacity.positive? && opacity <= 1
+        raise Error, "brand #{brand}: watermark opacity must be a number greater than 0 and at most 1, got #{opacity.inspect}"
+      end
+      mark
+    end
+
+    # [each icon layer role's fill, [first word's fill, second word's fill]] for a light or dark logo.
+    def fills(tone, text)
+      baked = @style.fetch("tones").fetch(tone.to_s)
+      [baked.fetch("icon"), word_colours(text, baked)]
+    end
+
+    def drawing(box, tone, icon_fills, colours)
+      icon_markup(@icons.fetch(tone), icon_fills) + box.letters.map { |l| letter_markup(l, box, colours[l[:word]]) }.join
+    end
+
+    # One fill on every path, inside ONE translucent group: opacity on each path would compound where layers overlap.
+    def watermark_markup(box)
+      fill = @watermark["fill"]
+      %(<g opacity="#{format('%g', @watermark['opacity'])}">#{drawing(box, :watermark, Hash.new(fill), [fill, fill])}</g>)
+    end
     def space = @lettering ? @lettering.fetch("space") : glyph(" ", SPACE_WEIGHT)["adv"]
 
     # A brand's own traced lettering (style `lettering:`), or nil when it is set in Montserrat.

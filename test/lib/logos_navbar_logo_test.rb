@@ -5,6 +5,8 @@
 # the guide drawing, the vector-only output, and the refusals. Task
 # add-turf-and-welding-logos adds a brand's own traced lettering, tracking, an
 # icon per tone, and the checks on every path the library writes into markup.
+# Task logo-gallery-context-dropdown adds the watermark tone: one fill, one
+# translucent group, a single-colour icon where the brand needs one.
 
 require "digest"
 require "minitest/autorun"
@@ -208,7 +210,7 @@ class LogosNavbarLogoTest < Minitest::Test
     bad_fill = style.(tones: { "light" => { "text" => %(red"/><image href="x), "icon" => { "primary" => "#000000" } } })
     assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: bad_fill).svg })
     # The guard is anchored at both ends: a hex that only STARTS a longer value, or ends in a newline, is refused.
-    [%(#000"/><script>), "#000000\n", "x#000000"].each do |fill|
+    [%(#000"/><script>), "#000000\n", "\n#000000", "x#000000"].each do |fill|
       unanchored = style.(tones: { "light" => { "text" => "#000000", "icon" => { "primary" => fill } } })
       assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: unanchored).svg }, fill.inspect)
       text_fill = style.(tones: { "light" => { "text" => fill, "icon" => { "primary" => "#000000" } } })
@@ -316,7 +318,7 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [5, 9, 6 * 95, 17], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [6, 10, 6 * 95, 17], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
@@ -331,13 +333,13 @@ class LogosNavbarLogoTest < Minitest::Test
       assert_match pattern, message, value.inspect
     end
     # Anchored at both ends: path data that only STARTS clean, or ends in a newline, is refused.
-    [HOSTILE, "M0,0 L1,1 Z\n", "\nM0,0", "M0,0 url(#x)", "M0,0<", "M0 0 & L1 1", nil, 7, ["M0,0"]].each do |d|
+    [HOSTILE, "M0,0 L1,1 Z\n", "\nM0,0", %("), %(M0,0"), "M0,0 url(#x)", "M0,0<", "M0 0 & L1 1", nil, 7, ["M0,0"]].each do |d|
       refuse.(/icon studio layer "primary" has a path that is not SVG path data/, d) { |icon| icon["layers"][0]["d"] = d }
     end
     ["evenodd\n", %(evenodd"/><script>), "EVENODD", "", nil, "inherit"].each do |rule|
       refuse.(/icon studio layer "primary" has fill rule .*expected nonzero or evenodd/m, rule) { |icon| icon["layers"][0]["fill_rule"] = rule }
     end
-    [%(translate(1,2)"><script>), "translate(1,2)\n", "skewX(3)", "translate(a)", "translate()", "url(#x)", "", " scale(2)", "scale(2) ",
+    [%(translate(1,2)"><script>), "translate(1,2)\n", "\ntranslate(1,2)", "skewX(3)", "translate(a)", "translate()", "url(#x)", "", " scale(2)", "scale(2) ",
      "scale(2);rotate(3)", "translate(1,2", 5, ["scale(2)"]].each do |transform|
       refuse.(/icon studio has a transform that is not a list of translate, scale, rotate or matrix calls/, transform) { |icon| icon["transform"] = transform }
     end
@@ -369,6 +371,90 @@ class LogosNavbarLogoTest < Minitest::Test
     with_glyphs(glyphs) do
       assert_match(/a letter of "STUDIO" has a path that is not SVG path data/, refusal { Logo.new("studio") })
       assert_kind_of Logo, Logo.new("industries"), "industries sets no letter at weight 800"
+    end
+  end
+
+  def test_a_watermark_is_the_whole_logo_in_one_fill_inside_one_translucent_group
+    Logo.brands.each do |brand|
+      logo = Logo.new(brand)
+      Logo::RULES.keys.product(Logo::TEXTS).each do |rule, text|
+        svg = logo.svg(rule:, text:, tone: :watermark)
+        xml = doc(svg)
+        assert_empty xml.errors
+        assert_equal %w[g path svg], xml.xpath("//*").map(&:name).uniq.sort, "#{brand}: still paths only"
+        group = xml.root.element_children
+        assert_equal [["g", "0.6"]], group.map { |g| [g.name, g["opacity"]] }, "#{brand}: one group carries the opacity"
+        assert_equal 1, svg.scan("opacity").size, "#{brand}: no path or inner group has an opacity of its own"
+        paths = xml.css("path")
+        assert_equal ["#FFFFFF"], paths.map { |p| p["fill"] }.uniq, "#{brand} rule #{rule} #{text}: every path takes the one fill"
+        assert_equal paths.size, group.first.css("path").size, "#{brand}: every path is inside the group"
+        assert_equal doc(logo.svg(rule:, text:, tone: :light)).root["viewBox"], xml.root["viewBox"], "#{brand} rule #{rule} #{text}: the light logo's box"
+        assert_equal logo.layout(rule:, text:, tone: :light).to_h, logo.layout(rule:, text:, tone: :watermark).to_h
+      end
+    end
+  end
+
+  def test_a_watermark_draws_a_single_colour_icon_where_the_brand_names_one
+    icon_paths = ->(brand) { doc(Logo.new(brand).svg(tone: :watermark)).css("path:not([transform])").map { |p| [p["d"], p["fill-rule"]] } }
+    layers = ->(key) { Logo.icons.fetch(key).fetch("layers").map { |layer| [layer["d"], layer["fill_rule"]] } }
+    # Turf Monster's three-layer head in one fill is a solid blob: its watermark must be the linework icon.
+    assert_equal layers.("turf_mono"), icon_paths.("turf")
+    assert_equal 1, icon_paths.("turf").size
+    refute_includes Logo.icons.fetch("turf").fetch("layers").map { |layer| layer["d"] }, icon_paths.("turf").first.first
+    assert_equal layers.("welding_mono"), icon_paths.("welding")
+    # A brand that names none keeps its own icon, every layer in the one fill.
+    assert_equal layers.("studio"), icon_paths.("studio")
+    assert_equal layers.("industries"), icon_paths.("industries")
+    assert_equal 2, icon_paths.("industries").size
+
+    plain = { "x" => Logo.styles.fetch("turf").except("watermark") }
+    assert_equal layers.("turf"), doc(Logo.new("x", styles: plain).svg(tone: :watermark)).css("path:not([transform])").map { |p| [p["d"], p["fill-rule"]] }
+    missing = { "x" => Logo.styles.fetch("turf").merge("watermark" => { "icon_key" => "anvil" }) }
+    assert_match(/no icon "anvil" in the icon data/, refusal { Logo.new("x", styles: missing) })
+    hostile = icons_with("turf_mono") { |icon| icon["layers"][0]["d"] = HOSTILE }
+    assert_match(/icon turf_mono layer "primary" has a path/, refusal { Logo.new("turf", icons: hostile) })
+  end
+
+  def test_a_watermark_keeps_the_weights_and_loses_the_colours
+    weights = ->(text) { letters(industries.svg(text:, tone: :watermark)).map { |p| p["d"] } }
+    assert_equal letters(industries.svg(text: :first)).map { |p| p["d"] }, weights.(:first)
+    assert_equal 3, Logo::TEXTS.map(&weights).uniq.size, "a brand that leads by weight still has three texts"
+
+    %w[turf welding].each do |brand|
+      logo = Logo.new(brand)
+      assert_equal "colour", logo.highlight
+      assert_equal 1, Logo::TEXTS.map { |text| logo.svg(text:, tone: :watermark) }.uniq.size, "#{brand} leads by colour: one colour, one watermark"
+    end
+    assert_equal %w[weight weight], [industries.highlight, Logo.new("studio").highlight]
+  end
+
+  def test_a_watermarks_guides_are_drawn_at_full_strength_outside_the_group
+    xml = doc(industries.svg(rule: 4, text: :second, tone: :watermark, guides: true))
+    xml.remove_namespaces!
+    assert_equal %w[g line line line line line line line text text text text], xml.root.element_children.map(&:name).sort
+    assert_equal "0.6", xml.root.at_css("g")["opacity"]
+    assert_empty xml.css("g line, g text")
+    assert_equal doc(industries.svg(rule: 4, text: :second, guides: true)).root["viewBox"], xml.root["viewBox"]
+    assert_equal [Logo::GUIDE], xml.css("line").map { |l| l["stroke"] }.uniq
+  end
+
+  def test_a_style_may_set_the_watermarks_fill_and_opacity_and_a_bad_one_is_refused
+    mark = ->(value) { studio_style(watermark: value) }
+    xml = doc(Logo.new("x", styles: mark.({ "fill" => "#102030", "opacity" => 0.25 })).svg(tone: :watermark))
+    assert_equal ["0.25", ["#102030"]], [xml.root.element_children.first["opacity"], xml.css("path").map { |p| p["fill"] }.uniq]
+    assert_equal "1", doc(Logo.new("x", styles: mark.({ "opacity" => 1 })).svg(tone: :watermark)).root.element_children.first["opacity"]
+    assert_equal Logo.new("studio").svg(tone: :watermark), Logo.new("x", styles: mark.({})).svg(tone: :watermark), "an empty map is the defaults"
+    assert_equal Logo.new("studio").svg(tone: :dark), Logo.new("x", styles: mark.({ "fill" => "#102030" })).svg(tone: :dark), "the map touches no other tone"
+
+    [0, 0.0, -0.1, 1.01, 2, "0.5", nil, true, Float::NAN, Float::INFINITY, [0.5]].each do |opacity|
+      message = refusal { Logo.new("x", styles: mark.({ "opacity" => opacity })) }
+      assert_match(/watermark opacity must be a number greater than 0 and at most 1, got/, message, opacity.inspect)
+    end
+    [%(#FFF"/><script>), "#FFFFFF\n", "\n#FFFFFF", "white", nil, 7].each do |fill|
+      assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: mark.({ "fill" => fill })) }, fill.inspect)
+    end
+    ["#FFFFFF", ["fill"], { "colour" => "#FFFFFF" }, { "fill" => "#FFFFFF", "blur" => 2 }].each do |value|
+      assert_match(/watermark must be a map of fill, opacity, icon_key, got/, refusal { Logo.new("x", styles: mark.(value)) }, value.inspect)
     end
   end
 end
