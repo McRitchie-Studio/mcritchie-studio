@@ -71,6 +71,8 @@ mutation. There is **no `bin/devops-shift acquire avi` step for the ship any mor
   names the holder, then the ship **aborts before any deploy** with `deployer claim for
   <release> is held by another live release conductor — standing down (see the holder
   above).` Announce it and STOP (a dead holder lapses in ~120s).
+  The holder line is the Next Release card's own sentence for the role (mascot,
+  soul, session tail, since when); `bin/release status` prints the same lane.
 - **Resume** — re-running your own interrupted ship re-acquires the same claim.
 - **Fail-open** — a claim-transport hiccup never wedges the ship.
 
@@ -148,6 +150,16 @@ while its NEW window is open. The re-run posts a fresh window (its own request e
 keyed by its end), and a grant counts only for the latest request — an Approve clicked
 before the re-run answers the old request and authorizes nothing. The grant stays one
 row per window however it lands.
+
+**What a grant covers.** A production grant covers everything on the release at ship
+time. A task that joins after the grant rides on it; no second approval is asked. The
+grant record keeps the member set at the moment it was given
+(`metadata.scope.member_slugs`, with `policy: release_at_ship`), and the Next Release
+card and `bin/release status` state it: `Approved by <who> at <time>, timed mode.
+Covers every task on this release when it ships: 6 at approval, 16 now. Joined after
+approval: <slugs>.` Read that line before the deploy step; it is what the approval
+now carries. A grant recorded before the member set was kept reads `member set at
+approval not recorded`.
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
   sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.
