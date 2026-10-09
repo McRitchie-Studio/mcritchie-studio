@@ -4,6 +4,12 @@ import "dropping_text"
 import "alex_chat"
 import "depth_chart"
 
+// How a board page's chrome reaches the engine board it wraps (board/engine_board).
+// Installed here, on every page, so it is there before Alpine initialises a board
+// and before Turbo brings one.
+import { installEngineBoard } from "board/engine_board"
+installEngineBoard()
+
 // Charts for /intelligence (task-development trends dashboard). chart.js is the
 // self-contained jsDelivr/esm.sh "auto" bundle (controllers + scales already
 // registered, @kurkle/color inlined). chartkick attaches window.Chartkick and

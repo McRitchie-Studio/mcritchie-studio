@@ -21,7 +21,7 @@
 
 <%# contentBoardChrome — owns the per-card delete write the primitive stays neutral on,
     delegating the shared toast + count refresh back to the inner studioBoard via
-    Alpine.$data. The FOCUS toggle is NOT here — it lives on the studioBoard chrome-state
+    window.HubEngineBoard (board/engine_board). The FOCUS toggle is NOT here — it lives on the studioBoard chrome-state
     home (board_state), reached by the column labels. %>
 <script>
 function contentBoardChrome() {
@@ -30,7 +30,7 @@ function contentBoardChrome() {
 
     boardData() {
       const section = this.$el.querySelector('[data-test="studio-board"]');
-      return (section && window.Alpine && window.Alpine.$data) ? window.Alpine.$data(section) : null;
+      return (section && window.HubEngineBoard) ? window.HubEngineBoard.scope(section) : null;
     },
     boardToast(msg, type) {
       const d = this.boardData();
