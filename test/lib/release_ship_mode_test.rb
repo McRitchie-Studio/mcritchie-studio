@@ -126,7 +126,26 @@ class ReleaseShipModeTest < Minitest::Test
   def test_ship_refuses_an_unknown_mode_before_anything_moves
     out = run_release(["--dry-run", "--mode", "sometimes"], setup: SHIP_STUB,
                       call: %{begin; ship; rescue SystemExit => e; puts("ABORTED: " + e.message); end})
-    assert_includes out, "ABORTED: ✗ --mode must be one of ask|timed|auto, got \"sometimes\""
+    assert_includes out, "ABORTED: ✗ --mode must be one of ask|timed|auto|cleared, got \"sometimes\""
+    refute_includes out, "shipping rel-ship", "the abort lands before the release is even resolved"
+  end
+
+  def test_ship_cleared_records_the_chat_grant_with_no_window
+    out = run_release(["--dry-run", "--mode", "cleared", "--clearance", "ship it, this message is my clearance"],
+                      setup: SHIP_STUB + RECORD_EVENT_STUB, call: "ship")
+    assert_includes out, "taking production authority (--mode cleared)"
+    assert_includes out, "EVENT rel-ship ship_authorized:started key=nil mode=cleared"
+    assert_includes out, "EVENT rel-ship ship_authorized:completed key=nil mode=cleared"
+    assert_includes out, "cleared in chat by alex"
+    assert_includes out, "ship authority: cleared (--mode cleared)"
+    refute_includes out, "production window", "a cleared ship posts no window and waits on no button"
+  end
+
+  def test_ship_refuses_cleared_with_no_clearance_before_anything_moves
+    out = run_release(["--dry-run", "--mode", "cleared"], setup: SHIP_STUB + RECORD_EVENT_STUB,
+                      call: %{begin; ship; rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+    assert_includes out, "ABORTED: ✗ --mode cleared needs --clearance"
+    refute_includes out, "EVENT rel-ship", "nothing is recorded before the refusal"
     refute_includes out, "shipping rel-ship", "the abort lands before the release is even resolved"
   end
 
