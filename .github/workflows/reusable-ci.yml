@@ -180,7 +180,13 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        # The official image, pulled from ECR Public rather than Docker Hub: the
+        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
+        # afternoon and every lane with a database dies at setup
+        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
+        # anonymous limit and no credential. Major pinned to production's (17);
+        # test/lib/ci_service_images_test.rb holds the three services to one name.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -433,7 +439,13 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        # The official image, pulled from ECR Public rather than Docker Hub: the
+        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
+        # afternoon and every lane with a database dies at setup
+        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
+        # anonymous limit and no credential. Major pinned to production's (17);
+        # test/lib/ci_service_images_test.rb holds the three services to one name.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -586,7 +598,13 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        # The official image, pulled from ECR Public rather than Docker Hub: the
+        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
+        # afternoon and every lane with a database dies at setup
+        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
+        # anonymous limit and no credential. Major pinned to production's (17);
+        # test/lib/ci_service_images_test.rb holds the three services to one name.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
