@@ -462,6 +462,41 @@ module ApplicationHelper
     "#{prefix}: #{name}"
   end
 
+  # THE RELEASE LANE, as the rows a release card shows: who is assembling, who is
+  # shipping, and what the production grant covers (Release::LaneLease, the one
+  # source `bin/release status` and the claim stand-down print too). The Next
+  # Release card shows all three; the Last Release card keeps the grant alone, the
+  # record of what the approval carried. A row with no sentence is dropped.
+  # Read-only, and safe on the live push: nothing here depends on the viewer.
+  def release_lane_lease_rows(release, variant:)
+    return [] if release.blank?
+
+    rows = []
+    if variant == :current
+      Release::LaneLease.holders(release.slug).each_value do |holder|
+        rows << { key: holder.role, title: Release::LaneLease::ROLE_TITLES.fetch(holder.role),
+                  sentences: [Release::LaneLease.holder_sentence(holder)] }
+      end
+    end
+    rows << { key: "grant", title: "Production", sentences: Release::LaneLease.grant_sentences(release) }
+    rows.reject { |row| row[:sentences].empty? }
+  end
+
+  # One lane sentence as card text: the same words the CLI prints, with each time
+  # slot drawn by the "at" primitive so the clock is the reader's.
+  def lane_lease_sentence(sentence)
+    safe_join(sentence.parts.map do |part|
+      part.is_a?(Release::LaneLease::Stamp) ? at_time_tag(part.time, prefix: part.prefix) : part
+    end)
+  end
+
+  # The Next Release card's empty-state hint: a prepare that is creating the next
+  # release holds the forming claim before any release exists, so the card names it.
+  def next_release_empty_hint
+    Release::LaneLease.status_lines(nil).first ||
+      "Merge a reviewed task, or launch a Workflows heartbeat, to establish one."
+  end
+
   # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's
   # progress bar — blank until the task has a PR with a CI run, which now happens
   # while it is still BUILDING (bin/submit opens the PR, then waits on CI). The board preloads these in one batch (@ci_progress_by_slug); this is
@@ -915,6 +950,9 @@ module ApplicationHelper
       # The production window: a ship request posting or a grant landing moves the
       # card (the countdown chip appears / drops), so the live push must flash it.
       release.ship_authorization_window&.ends_at&.to_i, release.ship_authorization_granted?,
+      # The lane: a claim taken or released, a grant's scope, a later joiner. A
+      # digest, so the attribute carries no holder detail of its own.
+      Digest::SHA1.hexdigest(Release::LaneLease.sentences(release).map(&:to_s).join("|")).first(12),
       release.tasks.order(:position).pluck(:slug, :stage)
     ].flatten.join("|")
   end
