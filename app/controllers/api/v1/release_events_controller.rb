@@ -11,6 +11,14 @@ module Api
         "production_deploying" => "deploy_prod"
       }.freeze
 
+      ADMIN_SESSION_HINT = "The ship_authorized step is production authority. An admin soul asks the board for a " \
+                           "session with `bin/agent-activity heartbeat steffon` and the operator grants it on the " \
+                           "tasks page. The Approve button on /deployments is the other door".freeze
+
+      # Production authority takes an admin session and nothing else; the gate
+      # answers before the release is looked up. Every other step keeps the
+      # lenient gate, which the shared token passes.
+      require_admin_session_only if: :ship_authorization_step?
       before_action :set_release
       require_admin_session
 
@@ -75,6 +83,12 @@ module Api
           "stage_stamps" => @release.stage_stamps
         }
       end
+
+      def ship_authorization_step?
+        normalized_step == Release::SHIP_AUTHORIZATION_STEP
+      end
+
+      def admin_session_hint = ADMIN_SESSION_HINT
 
       def normalized_step
         raw = params[:step].to_s.strip

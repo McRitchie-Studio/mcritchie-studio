@@ -2,16 +2,23 @@
 # draws a brand's Navbar Logo from. Rules and rake task: docs/topics/logos.md.
 #
 # name       two words; the logo sets them on one line beside the icon
-# icon       a key in lib/logos/data/brand_icons.json
+# icon       a key in the icon data (lib/logos/data/brand_icons*.json)
+# lettering  optional: a key in lib/logos/data/brand_lettering.json. The name is
+#            then set from the brand's own traced letters, not Montserrat: one
+#            weight, so `highlight: colour` only, and no `heavy`, `light` or
+#            `tracking`
 # highlight  how one word leads the other:
 #              weight  the leading word is `heavy`, the other `light`
 #              colour  both words are `heavy`; the leading word takes `accent`
 # heavy      Montserrat weight for homogeneous text and the leading word
 # light      the quiet word's weight (highlight: weight only)
+# tracking   optional: extra space after every letter, in em (negative tightens)
+# note       optional: one line the brand's page shows about where its art came from
 # tones      fills for a light and a dark background. `text` is the name's
 #            colour; `quiet` (optional, defaults to `text`) is the non-leading
 #            word under highlight: weight; `accent` is the leading word under
-#            highlight: colour; `icon` maps each icon layer role to a fill.
+#            highlight: colour; `icon` maps each icon layer role to a fill;
+#            `icon_key` (optional) names a different icon for this tone.
 #
 # Fills are solid #hex only: no gradients.
 
@@ -35,6 +42,7 @@ industries:
   highlight: weight
   heavy: 700
   light: 300
+  note: The Industries icon is drawn flat here, as two solid layers, without the marketing kit's steel gradient and tick marks. That is deliberate in this first version.
   tones:
     light:
       text: "#262A30"
@@ -44,3 +52,37 @@ industries:
       text: "#F4F5F7"
       quiet: "#D3D6DA"
       icon: { primary: "#D3D6DA", edge: "#FFFFFF" }
+
+turf:
+  name: Turf Monster
+  icon: turf
+  highlight: colour
+  heavy: 800
+  tracking: -0.025
+  note: The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours.
+  tones:
+    light:
+      text: "#1A1535"
+      accent: "#4BAF50"
+      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+    dark:
+      text: "#FFFFFF"
+      accent: "#4BAF50"
+      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+
+welding:
+  name: COMMERCIAL WELDING
+  icon: welding
+  lettering: welding
+  highlight: colour
+  note: The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  tones:
+    light:
+      text: "#2D5E8E"
+      accent: "#D7602E"
+      icon: { primary: "#2D5E8E", accent: "#D7602E" }
+    dark:
+      icon_key: welding_mono
+      text: "#FFFFFF"
+      accent: "#F08A5A"
+      icon: { primary: "#FFFFFF" }

@@ -16,10 +16,14 @@ module LogosHelper
               data: { test: "logo-image" }
   end
 
-  # The Montserrat weights a brand sets its name in, heaviest first.
-  def logo_brand_weights(brand)
+  # What a brand's name is set in, as [typeface, detail]: Montserrat and its
+  # weights (heaviest first), or the brand's own traced lettering.
+  def logo_brand_typeface(brand)
     style = Logos::NavbarLogo.styles.fetch(brand)
-    [style["heavy"], (style["light"] if style["highlight"] == "weight")].compact.uniq
+    return ["Traced from its own lettering", "(typeface not identified)"] if style["lettering"]
+
+    weights = [style["heavy"], (style["light"] if style["highlight"] == "weight")].compact.uniq
+    ["Montserrat", "#{'weight'.pluralize(weights.size)} #{weights.join(' and ')}"]
   end
 
   # Every fill the brand's logos use, per tone, in the order the style lists them.

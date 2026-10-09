@@ -62,10 +62,12 @@ module McritchieStudio
                                    if: ->(_env, _status, headers, _body) { !headers["content-type"].to_s.start_with?("application/zip") }
 
     # Active Record Encryption (Fact#value, TiktokConnection#refresh_token).
-    # Production and QA must set all three names; as of 2026-10-08 neither holds
-    # any of them. Development and test fall back to the fixed keys in their own
-    # environment file. Unset in production, the app boots, facts answer 503,
-    # and the TikTok sign-in refuses before it asks TikTok for anything.
+    # Production and QA must set all three names. Where each app's set is filed,
+    # and what its config holds, is recorded in docs/agents/modules/credentials.md
+    # ("Fact encryption keys"), not here. Development and test fall back to the
+    # fixed keys in their own environment file. Unset in production, the app
+    # boots, facts answer 503, and the TikTok sign-in refuses before it asks
+    # TikTok for anything.
     %w[primary_key deterministic_key key_derivation_salt].each do |name|
       value = ENV["ACTIVE_RECORD_ENCRYPTION_#{name.upcase}"].presence
       config.active_record.encryption[name] = value if value

@@ -4,16 +4,12 @@
 # gallery over Logos::NavbarLogo. The index lists each brand in
 # config/logo_brands.yml; a brand page shows its twelve Navbar Logos by rule and
 # text on a light and a dark plate, with their guide drawings behind one
-# toggle; /navbar serves one logo as SVG, inline or as a download.
+# toggle and the brand's `note` on where its art came from; /navbar serves one
+# logo as SVG, inline or as a download.
 #
 # No model and nothing stored: choosing a logo waits for the brand kit record.
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
-  # What a brand page says about its own data, in one line.
-  NOTES = {
-    "industries" => "The Industries icon is drawn flat here, as two solid layers, without the marketing kit's steel gradient and tick marks. That is deliberate in this first version."
-  }.freeze
-
   before_action :require_admin
   before_action :set_logo, except: :index
 
@@ -29,7 +25,6 @@ class LogosController < ApplicationController
   def show
     @guides = Logos::Variant.flag(params[:guides], "guides")
     @variants = Logos::Variant.all(@logo, guides: @guides)
-    @note = NOTES[@logo.brand]
   end
 
   def navbar

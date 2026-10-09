@@ -152,6 +152,93 @@ module Api
         assert fresh.assembling_started_at.present?
         assert_equal "assembling", fresh.current_stage
       end
+
+      # --- ship_authorized: production authority takes an admin session ---------
+
+      def ship_authorized_path(action) = "/api/v1/releases/#{@release.slug}/events/ship_authorized/#{action}"
+
+      def session_headers(session) = { "Authorization" => "Bearer #{session.token}" }
+
+      def timed_request!
+        @release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
+                               metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601 })
+      end
+
+      def assert_refused_for_want_of_an_admin_session(holder)
+        assert_response :forbidden
+        body = response.parsed_body
+        assert_equal "SESSION_FORBIDDEN", body["error_code"]
+        assert_match(/needs an admin session; #{holder}/, body["error"])
+        assert_match(/bin\/agent-activity heartbeat steffon/, body["error"], "the refusal says how to get one")
+      end
+
+      test "[unit] the shared token posting ship_authorized completed answers 403 and grants nothing" do
+        timed_request!
+
+        assert_no_difference -> { ReleaseEvent.count } do
+          post ship_authorized_path("complete"),
+               params: { event: { actor: "alex@mcritchie.studio", source: "web", metadata: { granted_via: "web" } } },
+               headers: @headers, as: :json
+        end
+
+        assert_refused_for_want_of_an_admin_session("the shared token carries no session")
+        refute @release.reload.ship_authorization_granted?
+        refute @release.ship_authorization_state["granted"], "the read bin/release ship polls"
+      end
+
+      test "[unit] an admin session posting ship_authorized completed records the grant" do
+        timed_request!
+        session = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
+
+        assert_difference -> { ReleaseEvent.where(step: "ship_authorized", status: "completed").count }, 1 do
+          post ship_authorized_path("complete"),
+               params: { event: { actor: "someone-else", source: "web", metadata: { granted_via: "web" } } },
+               headers: session_headers(session), as: :json
+        end
+
+        assert_response :created
+        assert @release.reload.ship_authorization_granted?
+        assert_equal "steffon", @release.ship_authorization_grant.actor, "the actor is the session's soul"
+      end
+
+      test "[unit] a studio session posting ship_authorized completed is refused with the way in" do
+        timed_request!
+        task = Task.create!(title: "Ship Authority Studio Session", stage: "building")
+        session = AgentSession.issue_studio!(soul: "pokemon", task: task, issued_by: "task_claim")
+
+        assert_no_difference -> { ReleaseEvent.count } do
+          post ship_authorized_path("complete"), params: { event: { source: "web" } },
+               headers: session_headers(session), as: :json
+        end
+
+        assert_refused_for_want_of_an_admin_session("pokemon holds a studio session")
+        refute @release.reload.ship_authorization_granted?
+      end
+
+      test "[unit] the shared token cannot open or fail a ship_authorized request either" do
+        %w[start fail].each do |action|
+          assert_no_difference -> { ReleaseEvent.count }, action do
+            post ship_authorized_path(action), params: { event: { actor: "avi" } }, headers: @headers, as: :json
+          end
+          assert_refused_for_want_of_an_admin_session("the shared token carries no session")
+        end
+        assert_nil @release.reload.ship_authorization_request
+      end
+
+      test "[unit] the admin gate answers before the release is looked up" do
+        post "/api/v1/releases/no-such-release/events/ship_authorized/complete",
+             params: { event: { source: "web" } }, headers: @headers, as: :json
+
+        assert_refused_for_want_of_an_admin_session("the shared token carries no session")
+      end
+
+      test "[unit] control: the shared token still records every other release step" do
+        assert_difference -> { ReleaseEvent.count }, 1 do
+          post "/api/v1/releases/#{@release.slug}/events/ship_gate/start",
+               params: { event: { actor: "avi" } }, headers: @headers, as: :json
+        end
+        assert_response :created
+      end
     end
   end
 end

@@ -734,10 +734,10 @@ class Release < ApplicationRecord
   # --- Production authority: the ship_authorization window ---------------------
   # `bin/release ship --mode timed` posts ONE `ship_authorized started` event whose
   # metadata carries the window end; the operator grants with the Approve button
-  # on /deployments (ReleasesController#authorize_ship) or the events API, which
-  # records the ONE `ship_authorized completed` event under the conductor's own
-  # idempotency key — so the grant and ship's own completion stamp are the same
-  # row, never two. Everything below is DERIVED from those events
+  # on /deployments (ReleasesController#authorize_ship) or, under an admin session,
+  # the events API, which records the ONE `ship_authorized completed` event under
+  # the conductor's own idempotency key — so the grant and ship's own completion
+  # stamp are the same row, never two. Everything below is DERIVED from those events
   # (Devops::Windows, design section 6): no column, nothing to keep in step.
   #
   # Both answers are SCOPED TO THE LATEST REQUEST. A completion recorded before
