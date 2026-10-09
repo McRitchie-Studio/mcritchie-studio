@@ -970,9 +970,9 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_includes argv, "test:system", "the gate names the system tier"
 
     assert_includes ci_runs("rails"), "bin/ci-shard --shard=${{ matrix.shard }}/${{ strategy.job-total }}",
-                    "ci.yml's `rails` job no longer runs the sharded base tier the gate names"
+                    "reusable-ci.yml's `rails` job no longer runs the sharded base tier the gate names"
     assert_includes ci_runs("system"), "bin/rails db:test:prepare test:system",
-                    "ci.yml's `system` job no longer runs the system tier the gate names"
+                    "reusable-ci.yml's `system` job no longer runs the system tier the gate names"
   end
 
   test "the hub's ship gate names the same suite as its pre-QA gate" do
@@ -997,9 +997,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   private
-    # The `run:` bodies of one job in the hub's own ci.yml, stripped.
+    # The `run:` bodies of one job in the hub's suite, stripped. The jobs live in
+    # reusable-ci.yml, which the hub's ci.yml calls.
     def ci_runs(job)
-      ci = YAML.safe_load(Rails.root.join(".github/workflows/ci.yml").read, aliases: true)
+      ci = YAML.safe_load(Rails.root.join(".github/workflows/reusable-ci.yml").read, aliases: true)
       steps = ci.dig("jobs", job, "steps") || []
       steps.filter_map { |step| step["run"]&.strip }
     end

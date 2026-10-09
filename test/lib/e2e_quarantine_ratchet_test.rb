@@ -84,7 +84,8 @@ class E2eQuarantineRatchetTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   E2E_DIR = File.join(ROOT, "e2e")
   CONFIG_PATH = File.join(ROOT, "playwright.config.js")
-  CI_PATH = File.join(ROOT, ".github", "workflows", "ci.yml")
+  # The lanes live in the called workflow; ci.yml only calls it.
+  CI_PATH = File.join(ROOT, ".github", "workflows", "reusable-ci.yml")
   CONTRACT_REL = "config/e2e_lane.yml"
   CONTRACT_PATH = File.join(ROOT, CONTRACT_REL)
 

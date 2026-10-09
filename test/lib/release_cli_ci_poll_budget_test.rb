@@ -96,6 +96,44 @@ class CiPollBudgetTest < Minitest::Test
     assert_equal 1200, CiPollBudget.budget_s([": : not yaml ["], floor: 1200, ceiling: 7200)
   end
 
+  CALLER = "on:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n  ci:\n    uses: ./.github/workflows/reusable-ci.yml\n"
+  CALLED = "on:\n  workflow_call:\njobs:\n  plan:\n    timeout-minutes: 5\n  rails:\n    needs: plan\n    timeout-minutes: 45\n  gate:\n    needs: rails\n    timeout-minutes: 45\n"
+
+  def test_a_job_that_calls_a_local_workflow_is_sized_by_the_called_chain
+    files = { ".github/workflows/ci.yml" => CALLER, ".github/workflows/reusable-ci.yml" => CALLED }
+
+    assert_equal 95, CiPollBudget.critical_path_minutes(CALLER, called: files)
+    assert_equal (95 * 60) + CiPollBudget::HEADROOM_S, CiPollBudget.budget_s(files, floor: 0, ceiling: 99_999)
+  end
+
+  def test_a_called_workflow_alone_never_sizes_the_budget
+    assert_equal 1200, CiPollBudget.budget_s({ ".github/workflows/reusable-ci.yml" => CALLED }, floor: 1200, ceiling: 7200),
+                 "workflow_call starts no run of its own"
+  end
+
+  def test_a_call_that_cannot_be_read_counts_as_githubs_default
+    assert_equal 360, CiPollBudget.critical_path_minutes(CALLER), "no map: the called file is unread"
+    assert_equal 360, CiPollBudget.critical_path_minutes(CALLER, called: { ".github/workflows/other.yml" => CALLED })
+    remote = CALLER.sub("./.github/workflows/reusable-ci.yml", "McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main")
+    assert_equal 360, CiPollBudget.critical_path_minutes(remote, called: { ".github/workflows/reusable-ci.yml" => CALLED })
+  end
+
+  def test_a_workflow_that_calls_itself_does_not_hang
+    looped = { ".github/workflows/ci.yml" => CALLER.sub("reusable-ci.yml", "ci.yml") }
+
+    assert_equal 360, CiPollBudget.critical_path_minutes(looped.values.first, called: looped)
+  end
+
+  def test_the_hubs_own_ci_is_sized_by_its_called_suite
+    dir = File.expand_path("../../.github/workflows", __dir__)
+    files = Dir[File.join(dir, "*.yml")].to_h { |path| [".github/workflows/#{File.basename(path)}", File.read(path)] }
+    chain = CiPollBudget.critical_path_minutes(files.fetch(".github/workflows/ci.yml"), called: files)
+
+    assert_operator chain, :<, CiPollBudget::GITHUB_DEFAULT_JOB_MINUTES,
+                    "ci.yml's call must resolve to reusable-ci.yml's job timeouts, or every gate waits out the ceiling"
+    assert_equal chain, CiPollBudget.critical_path_minutes(files.fetch(".github/workflows/reusable-ci.yml"))
+  end
+
   def test_the_floor_wins_when_the_operator_widened_past_the_chain
     assert_equal 9000, CiPollBudget.budget_s([CONSUMER_CI_SHAPE], floor: 9000, ceiling: 7200)
   end

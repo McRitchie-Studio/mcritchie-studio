@@ -104,7 +104,43 @@ require "minitest/autorun"
 require "yaml"
 
 class CiWorkflowTriggersTest < Minitest::Test
+  # TWO FILES, ONE WORKFLOW. ci.yml holds the triggers and one job that calls
+  # reusable-ci.yml, which holds every lane. The trigger guards read CI_YML, the lane
+  # guards read SUITE_YML, and the caller guards (caller_deviations, suite_interface)
+  # pin the seam between them, so a lane guard reading SUITE_YML is reading what a
+  # push runs.
   CI_YML = File.expand_path("../../.github/workflows/ci.yml", __dir__)
+  SUITE_YML = File.expand_path("../../.github/workflows/reusable-ci.yml", __dir__)
+  WORKFLOW_FILES = [CI_YML, SUITE_YML].freeze
+  SUITE_CALL = "./.github/workflows/reusable-ci.yml"
+
+  # Every way ci.yml differs from "triggers plus one bare call to the suite". The
+  # caller job may carry `uses:` and nothing else: an `if:` skips every lane and the
+  # run still reads green, `with:` and `secrets:` feed a called workflow that takes
+  # neither, and a `strategy:` or `needs:` changes what runs and when. The root may
+  # carry `name`, `on` and `jobs` only, which refuses `concurrency`, `env`,
+  # `permissions` and `run-name` by construction.
+  def caller_deviations(yaml_text)
+    doc = YAML.safe_load(yaml_text)
+    found = (doc.keys - ["name", true, "on", "jobs"]).map { |key| "root key `#{key}`" }
+    jobs = doc.fetch("jobs", {})
+    found << "#{jobs.size} jobs (#{jobs.keys.join(", ")}), not one call" unless jobs.size == 1
+
+    jobs.each do |name, job|
+      next found << "job `#{name}` is not a mapping" unless job.is_a?(Hash)
+
+      found << "job `#{name}` calls `#{job["uses"]}`, not `#{SUITE_CALL}`" unless job["uses"] == SUITE_CALL
+      found.concat((job.keys - ["uses"]).map { |key| "job `#{name}` carries `#{key}:`" })
+    end
+    found
+  end
+
+  # What the called workflow accepts from a caller: its `on:` block. It must be a bare
+  # `workflow_call:`, with no inputs and no secrets. An input is the one value a lane
+  # condition could read from outside this file, and with none declared no caller can
+  # switch a lane off.
+  def suite_interface(yaml_text) = triggers(yaml_text)
+
 
   # The e2e lane's contract — the ONE place the sanctioned exclusion's value is written down,
   # shared with test/lib/e2e_quarantine_ratchet_test.rb and bin/e2e-executed-set-check.
@@ -235,7 +271,8 @@ class CiWorkflowTriggersTest < Minitest::Test
   #       test, and a worthwhile one.)
   #     · indirection the pattern cannot follow — a composite action, a reusable workflow
   #       (`uses:`), or a `shell:` wrapper that runs the suite somewhere this file cannot
-  #       read.
+  #       read. The ONE call it does follow is ci.yml's to reusable-ci.yml, pinned by
+  #       caller_deviations; a `uses:` inside a lane is still out of sight.
   #     · the $GITHUB_ENV walk keys on a literal `KEY=` write, so a `KEY<<EOF` HEREDOC form
   #       in an EARLIER step slips past it (task env-walk-heredoc-blind-spot, still open).
   #       The positive invariant catches this ONLY when the heredoc sits in the SUITE
@@ -1303,7 +1340,7 @@ class CiWorkflowTriggersTest < Minitest::Test
     # verbatim `run:` body in ci.yml, every positive guard in this file starts asserting
     # things about an empty set — a guard that guards nothing, which is the exact failure
     # mode the `on:`-boolean trap at the top of this file describes.
-    yaml_text = File.read(CI_YML)
+    yaml_text = File.read(SUITE_YML)
 
     suite = suite_command_lanes(yaml_text)
     refute_empty suite,
@@ -1318,7 +1355,7 @@ class CiWorkflowTriggersTest < Minitest::Test
 
     gate = command_lanes(yaml_text, RAILS_EXECUTED_SET_COMMAND)
     refute_empty gate,
-                 "no step in the LIVE ci.yml runs bin/rails-executed-set-check. For a SHARDED " \
+                 "no step in the LIVE reusable-ci.yml runs bin/rails-executed-set-check. For a SHARDED " \
                  "suite that gate is the only thing that can tell four green checks over the " \
                  "whole suite from four green checks over four empty buckets."
   end
@@ -1426,13 +1463,13 @@ class CiWorkflowTriggersTest < Minitest::Test
   # verdict, ANY condition fails — not merely the three `github.*` spellings a reviewer
   # happened to show me. That is the difference between a guard and a scoreboard.
   def test_integration_the_suite_runs_UNCONDITIONALLY_on_a_release_push
-    yaml_text = File.read(CI_YML)
+    yaml_text = File.read(SUITE_YML)
 
     VERDICT_COMMANDS.each do |description, pattern|
       lanes = command_lanes(yaml_text, pattern)
 
       refute_empty lanes,
-                   "NO step in ci.yml runs #{description} (matching #{pattern.source}). A " \
+                   "NO step in reusable-ci.yml runs #{description} (matching #{pattern.source}). A " \
                    "release push would produce GREEN checks having executed zero tests — " \
                    "and #514's SHA-addressed auditor would read that empty-but-green run " \
                    "as a clean verdict and certify an RC that CI never tested. A false RED " \
@@ -1474,9 +1511,9 @@ class CiWorkflowTriggersTest < Minitest::Test
   # path filter, no continue-on-error check — and it was mutation-confirmed to keep BOTH
   # this file and feature_shape_tiers_test.rb green while the lane executed one spec.
   def test_integration_the_e2e_lane_runs_the_WHOLE_suite_not_a_selection
-    lanes = e2e_command_lanes(File.read(CI_YML))
+    lanes = e2e_command_lanes(File.read(SUITE_YML))
 
-    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+    refute_empty lanes, "no reusable-ci.yml step runs the playwright suite — see the primary guard"
 
     lanes.each do |job_name, _job, step|
       narrowing = e2e_narrowing_args(step["run"].to_s)
@@ -1508,9 +1545,9 @@ class CiWorkflowTriggersTest < Minitest::Test
   def test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value
     contract = YAML.safe_load_file(E2E_CONTRACT)
     tag = contract.fetch("quarantine_tag")
-    lanes = e2e_command_lanes(File.read(CI_YML))
+    lanes = e2e_command_lanes(File.read(SUITE_YML))
 
-    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+    refute_empty lanes, "no reusable-ci.yml step runs the playwright suite — see the primary guard"
 
     lanes.each do |job_name, _job, step|
       values = grep_invert_values(step["run"].to_s)
@@ -1562,9 +1599,9 @@ class CiWorkflowTriggersTest < Minitest::Test
     # check out the full history. Asserting it of only one would pass on a workflow where
     # three shards out of four cannot see the baseline — which is a red build nobody can
     # reproduce, arriving whenever a file moves bucket.
-    lanes = suite_command_lanes(File.read(CI_YML))
+    lanes = suite_command_lanes(File.read(SUITE_YML))
 
-    refute_empty lanes, "no ci.yml step runs the sharded rails suite — see the primary guard"
+    refute_empty lanes, "no reusable-ci.yml step runs the sharded rails suite — see the primary guard"
 
     shallow = lanes.filter_map do |job_name, job, _step|
       checkouts = Array(job["steps"]).select { |s| s.is_a?(Hash) && s["uses"].to_s.start_with?("actions/checkout") }
@@ -1599,9 +1636,9 @@ class CiWorkflowTriggersTest < Minitest::Test
   # broke the receipt" instead of "e2e_executed_set found no reports", which is the difference
   # between a five-second fix and an afternoon.
   def test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on
-    lanes = e2e_command_lanes(File.read(CI_YML))
+    lanes = e2e_command_lanes(File.read(SUITE_YML))
 
-    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+    refute_empty lanes, "no reusable-ci.yml step runs the playwright suite — see the primary guard"
 
     lanes.each do |job_name, _job, step|
       run = step["run"].to_s
@@ -1620,7 +1657,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
   # ====================================================================================
   def test_integration_the_suite_run_script_is_EXACTLY_the_pinned_command
-    foreign = suite_lanes_with_a_foreign_script(File.read(CI_YML))
+    foreign = suite_lanes_with_a_foreign_script(File.read(SUITE_YML))
 
     assert_empty foreign,
                  "#{foreign.inspect} — the suite lane's `run:` script must be EXACTLY " \
@@ -1635,7 +1672,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
 
   def test_integration_the_suite_lane_is_not_narrowed_by_env
-    lanes = narrowing_env_lanes(File.read(CI_YML))
+    lanes = narrowing_env_lanes(File.read(SUITE_YML))
 
     assert_empty lanes,
                  "#{lanes.inspect} set #{NARROWING_ENV_KEYS.join("/")} on the lane that IS the " \
@@ -1663,8 +1700,8 @@ class CiWorkflowTriggersTest < Minitest::Test
   }.freeze
 
   def test_integration_the_static_lane_still_runs_all_three_checks
-    job = jobs_of(File.read(CI_YML))["static"]
-    refute_nil job, "no `static` job in ci.yml — it holds brakeman, importmap audit and rubocop"
+    job = jobs_of(File.read(SUITE_YML))["static"]
+    refute_nil job, "no `static` job in reusable-ci.yml — it holds brakeman, importmap audit and rubocop"
 
     bodies = Array(job["steps"]).grep(Hash).filter_map { |step| step["run"] }.join("\n")
     missing = STATIC_CHECKS.reject { |_name, pattern| bodies.match?(pattern) }.keys
@@ -1685,8 +1722,8 @@ class CiWorkflowTriggersTest < Minitest::Test
     # `always()` restores the old behaviour: every check runs, and the job still reports RED
     # if any failed. It cannot EXCLUDE a step, only force one, which is why it is the single
     # condition this file permits anywhere.
-    job = jobs_of(File.read(CI_YML))["static"]
-    refute_nil job, "no `static` job in ci.yml"
+    job = jobs_of(File.read(SUITE_YML))["static"]
+    refute_nil job, "no `static` job in reusable-ci.yml"
 
     checks = Array(job["steps"]).grep(Hash).select do |step|
       STATIC_CHECKS.values.any? { |pattern| step["run"].to_s.match?(pattern) }
@@ -1704,7 +1741,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # ====================================================================================
 
   def test_integration_no_lane_reports_green_over_failing_tests
-    lanes = continue_on_error_lanes(File.read(CI_YML))
+    lanes = WORKFLOW_FILES.flat_map { |path| continue_on_error_lanes(File.read(path)) }
 
     assert_empty lanes,
                  "#{lanes.inspect} set `continue-on-error: true` — the lane RUNS, the " \
@@ -1740,7 +1777,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
 
   def test_integration_no_job_opts_out_of_the_release_push_verdict
-    skipped = jobs_skipping_release_push(File.read(CI_YML))
+    skipped = WORKFLOW_FILES.flat_map { |path| jobs_skipping_release_push(File.read(path)) }
 
     assert_empty skipped,
                  "job(s) #{skipped.inspect} carry a github event-context condition " \
@@ -1754,8 +1791,84 @@ class CiWorkflowTriggersTest < Minitest::Test
                  "deliberately."
   end
 
+  # ---- the seam between ci.yml and the called suite -----------------------------------
+
+  CALLER = <<~YAML
+    name: CI
+    on:
+      pull_request:
+      push:
+        branches: [ main, release, accepted ]
+    jobs:
+      ci:
+        uses: ./.github/workflows/reusable-ci.yml
+  YAML
+
+  def test_unit_a_bare_call_to_the_suite_has_no_deviation
+    assert_empty caller_deviations(CALLER)
+  end
+
+  def test_unit_a_condition_on_the_caller_job_is_a_deviation
+    gated = CALLER + "    if: github.event_name == 'pull_request'\n"
+
+    assert_equal ["job `ci` carries `if:`"], caller_deviations(gated)
+  end
+
+  def test_unit_inputs_secrets_and_a_matrix_on_the_caller_job_are_deviations
+    fed = CALLER + "    with: { playwright: false }\n    secrets: inherit\n    strategy: { matrix: { lane: [1] } }\n"
+
+    assert_equal ["job `ci` carries `with:`", "job `ci` carries `secrets:`", "job `ci` carries `strategy:`"],
+                 caller_deviations(fed)
+  end
+
+  def test_unit_a_call_to_another_workflow_is_a_deviation
+    elsewhere = CALLER.sub("./.github/workflows/reusable-ci.yml", "McRitchie-Studio/other/.github/workflows/reusable-ci.yml@main")
+
+    assert_equal 1, caller_deviations(elsewhere).size
+    assert_match(/not `#{Regexp.escape(SUITE_CALL)}`/, caller_deviations(elsewhere).first)
+  end
+
+  def test_unit_a_second_job_beside_the_call_is_a_deviation
+    doubled = CALLER + "  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n"
+
+    assert_includes caller_deviations(doubled), "2 jobs (ci, extra), not one call"
+    assert_includes caller_deviations(doubled), "job `extra` carries `runs-on:`"
+  end
+
+  def test_unit_a_root_concurrency_or_env_block_on_the_caller_is_a_deviation
+    assert_equal ["root key `concurrency`"], caller_deviations(CALLER + "concurrency: ci\n")
+    assert_equal ["root key `env`"], caller_deviations(CALLER + "env:\n  TESTOPTS: -n /none/\n")
+  end
+
+  def test_unit_a_called_workflow_that_declares_inputs_is_not_a_bare_interface
+    bare = "on:\n  workflow_call:\njobs: {}\n"
+    with_inputs = "on:\n  workflow_call:\n    inputs:\n      playwright: { type: boolean, default: true }\njobs: {}\n"
+
+    assert_equal({ "workflow_call" => nil }, suite_interface(bare))
+    refute_equal({ "workflow_call" => nil }, suite_interface(with_inputs))
+  end
+
+  def test_integration_ci_yml_is_one_bare_call_to_the_suite
+    deviations = caller_deviations(File.read(CI_YML))
+
+    assert_empty deviations,
+                 "ci.yml must be its triggers plus ONE job that calls #{SUITE_CALL} and carries " \
+                 "nothing else. Found: #{deviations.join("; ")}. Every lane guard in this file reads " \
+                 "reusable-ci.yml on the strength of that call: a second job is unguarded, a " \
+                 "condition on the call skips every lane while the run reads green, and a call " \
+                 "to another file runs a suite no guard here has read."
+  end
+
+  def test_integration_the_called_suite_takes_no_inputs_and_no_secrets
+    assert_equal({ "workflow_call" => nil }, suite_interface(File.read(SUITE_YML)),
+                 "reusable-ci.yml's `on:` must be a bare `workflow_call:`. A second trigger " \
+                 "starts a run of its own beside ci.yml's, and an input or a secret is a value " \
+                 "a lane could be conditioned on from outside the file. Lane toggles for a " \
+                 "second caller need the lane guards rewritten first, deliberately.")
+  end
+
   def test_integration_no_concurrency_block_can_cancel_a_release_run
-    holders = concurrency_holders(File.read(CI_YML))
+    holders = WORKFLOW_FILES.flat_map { |path| concurrency_holders(File.read(path)) }
 
     assert_empty holders,
                  "#{holders.inspect} carry a `concurrency:` block. Back-to-back release " \

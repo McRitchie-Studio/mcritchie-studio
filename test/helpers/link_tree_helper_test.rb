@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -234,6 +234,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   def dashboard_path = "/dashboard"
+  def logos_path = "/logos"
   def agents_path = "/agents"
   def builders_path = "/builders"
   def tasks_path = "/tasks"

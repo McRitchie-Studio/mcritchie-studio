@@ -174,6 +174,13 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/no Montserrat weight 950/, refusal { Logo.new("x", styles: style.(heavy: 950)) })
     bad_fill = style.(tones: { "light" => { "text" => %(red"/><image href="x), "icon" => { "primary" => "#000000" } } })
     assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: bad_fill).svg })
+    # The guard is anchored at both ends: a hex that only STARTS a longer value, or ends in a newline, is refused.
+    [%(#000"/><script>), "#000000\n", "x#000000"].each do |fill|
+      unanchored = style.(tones: { "light" => { "text" => "#000000", "icon" => { "primary" => fill } } })
+      assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: unanchored).svg }, fill.inspect)
+      text_fill = style.(tones: { "light" => { "text" => fill, "icon" => { "primary" => "#000000" } } })
+      assert_match(/is not a #hex colour/, refusal { Logo.new("x", styles: text_fill).svg }, fill.inspect)
+    end
     no_role = style.(tones: { "light" => { "text" => "#000000", "icon" => {} } })
     assert_match(/no fill for icon layer "primary"/, refusal { Logo.new("x", styles: no_role).svg })
   end

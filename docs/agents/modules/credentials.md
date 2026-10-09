@@ -87,7 +87,7 @@ left alone.
 | `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
 | `MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)` | mainnet's opens every custodial mainnet wallet; development falls back to `secret_key_base` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | live Stripe on `turf-monster-mainnet`; local runs test mode |
-| `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value; development uses the fixed keys in `config/environments/development.rb` |
+| `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value and the stored TikTok connection; development uses the fixed keys in `config/environments/development.rb` |
 
 Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
 
@@ -261,9 +261,17 @@ ordinary facts; sensitive facts need the admin session.
 
 ## Fact encryption keys
 
-`Fact#value` is encrypted with Active Record Encryption. Production and QA read
-three config vars, generated once per app with `bin/rails db:encryption:init` and
-filed through [`credential-filing`](../agents/steffon/sops/credential-filing.md):
+`Fact#value` is encrypted with Active Record Encryption, and so is the stored
+TikTok connection (`TiktokConnection#refresh_token`). Production and QA read
+three config vars, one set per app. Both sets were filed on 2026-10-08 through
+[`credential-filing`](../agents/steffon/sops/credential-filing.md), in the
+`studio-applications` vault: `active-record-encryption.studio.applications`
+(production, `mcritchie-studio`) and
+`active-record-encryption.studio-qa.applications` (QA, `mcritchie-studio-qa`),
+fields `primary-key`, `deterministic-key` and `key-derivation-salt`. As of
+2026-10-08 each app's config holds all three names, each value matched its
+vault field by digest, and production had no stored fact when they were set
+([`credential-inventory.md`](credential-inventory.md)).
 
 | Config var | Holds |
 |---|---|
@@ -273,9 +281,34 @@ filed through [`credential-filing`](../agents/steffon/sops/credential-filing.md)
 
 - Without them the app boots, `/api/v1/facts` answers 503 naming the vars, and
   the person page says facts cannot be read.
-- Losing the primary key or the salt makes every stored value unreadable. Keep
-  them in 1Password before the first fact is written, and never change one in
-  place.
+- **Recovery, when an app's config has lost them and its 1Password item is
+  intact** (a restored app that carries an existing database is this case): set
+  the same three values back from that app's own item, field `primary-key` to
+  `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `deterministic-key` to
+  `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and `key-derivation-salt` to
+  `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`, through
+  [`credential-filing`](../agents/steffon/sops/credential-filing.md), with no
+  command that prints a value. Never generate a new set for an app that holds
+  stored values: a new set makes every one of them unreadable.
+- **A fresh app with an empty database** gets its own new set, generated with
+  `bin/rails db:encryption:init` and filed under its own new item. Never file
+  over an existing item: that overwrites the filed copy of a set some database
+  still needs.
+- **To confirm an app holds them, ask by name, never by printing a value.** Per
+  name, `heroku config --json --app <app> | jq '(.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY // "") != ""'`
+  answers `true` only when the name is present and non-empty; the same
+  expression on an absent name answers `false`, which is the control
+  ([`house-burn-down.md`](../system/house-burn-down.md), the hub `.env` block,
+  where the idiom comes from).
+- Losing the primary key or the salt from both the app's config and its item
+  makes every stored fact value unreadable, and nothing recovers one. The
+  stored TikTok connection becomes unreadable too; that one recovers by signing
+  in again at `/admin/tiktok/connect`.
+- These keys are not rotated on a cadence, and none is changed in place. A
+  forced change (a compromise) loses the stored facts and needs a TikTok
+  sign-in, so it is a recovery event, not a rotation.
+- The two apps hold different sets. Never copy production's set to QA or the
+  reverse.
 - Development and test use fixed keys from `config/environments/`, which guard
   no real data. No key is committed for production, and the production values
   are on the [production-only list](#production-only-keys), so no restore copies
