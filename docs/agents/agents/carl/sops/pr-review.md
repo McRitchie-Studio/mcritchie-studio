@@ -17,7 +17,10 @@ summons a light specialist at his discretion, drives the verdict, and merges.
 
 A focus session reviews its own epic's PRs by tier instead
 ([`../../../modules/focus-session.md`](../../../modules/focus-session.md)): there,
-a prose-only PR gets Xan alone. This sweep runs Carl plus a light on every PR.
+a prose-only PR gets Xan alone, who reviews and merges it. The documentation
+seat merges docs-shape PRs only, measured by `bin/merge-permit` at the merge
+([`pr-review-primary.md`](pr-review-primary.md)); every other PR is Carl's to
+merge. This sweep runs Carl plus a light on every PR.
 The rationale and incident history this page no longer carries are frozen
 verbatim in [`../../../archive/pr-review-2026-09-25.md`](../../../archive/pr-review-2026-09-25.md).
 

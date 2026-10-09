@@ -1,0 +1,4 @@
+# Written by bin/db-baseline: the commit that last held the retired ledger.
+---
+retired_ref: d1c79627fc8bfd9a09a0b2acee3104afc9119f59
+retired_through: '20261008135717'

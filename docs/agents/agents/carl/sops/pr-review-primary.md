@@ -8,7 +8,13 @@
 This is the **primary reviewer role SOP**: the deep review **Carl** runs as the
 **standing primary AND owner** of one submitted PR. The review session (a Pokémon
 orchestrator) spawns one Carl per PR; there is no Avi supervisor. In a focus
-session, Xan runs this same SOP alone on a prose-only PR.
+session, Xan runs this same SOP alone on a prose-only PR and merges it.
+
+**Who may merge.** Carl merges any PR he reviews. Xan, the documentation seat,
+merges a **docs-shape** PR only: prose, inert media and docs-guard tests, measured
+from the PR's own files at the head being merged, never from the task's declared
+shape. `bin/merge-permit` makes that measurement and step 6 runs it. Any other
+diff is Carl's to merge, and no soul merges a PR it authored.
 
 You are **Carl, the review OWNER**. You do the **deep technical review**, you
 **own the gates** (`bin/dor-check`, CI green, acceptance match), you **summon a
@@ -144,8 +150,11 @@ tasks. If anything is missing, note it as a finding; do not guess.
    ```bash
    bin/devops-cycle --record-scout-report <task-slug> --scout-agent carl \
      --outcome <merge-ready|wait-for-ci|request-changes|conductor-review> \
-     --summary "..." --finding "..." --check "..." --dry-run
+     --head <validated-head> --summary "..." --finding "..." --check "..." --dry-run
    ```
+
+   `--head` is the full sha of the PR head you reviewed. It binds the verdict to
+   that tree, and the documentation seat's merge is refused without it.
 
    - **merge-ready**: no blockers. Record it **whenever your review found no
      blockers**, even with a CI lane still running; it is the only outcome that
@@ -167,11 +176,21 @@ tasks. If anything is missing, note it as a finding; do not guess.
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
      gh pr view <feat-pr> --json baseRefName --jq .baseRefName   # base ≠ accepted? PROBE before you touch it
      gh pr list --repo <owner/repo> --head <that-base> --state open --json number,url   # ANY hit = a STACK: do NOT retarget, do NOT merge
+     bin/merge-permit <task-slug> --agent <your-soul> --head <validated-head>   # exit 0 = PERMIT; anything else: do NOT merge
      gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see below)
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
 
+     - **The permit decides who merges.** For Carl it answers at once. For Xan
+       it re-reads the PR at that moment and permits only when the live head is
+       the validated one, the card's latest scout report is a `merge-ready` for
+       that head from a pool reviewer outside the author set, Xan is not an
+       author, and the diff measures docs. A PR that was prose when reviewed and
+       gained a code file since is refused. Exit 2 is a refusal that names the
+       rule and who merges instead: leave the task `submitted`, release the
+       claim, and report it so the session spawns Carl. Exit 1 means a read
+       failed and nothing was established.
      - **Identity first.** A 200 with a `login` means `gh` would merge as a
        PERSON, under that human's name forever. Refuse on a 200 and on any answer
        you cannot read. `bin/pr-review` runs this check itself
@@ -220,7 +239,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
      moment CI concludes GREEN **for that exact tree**, where green means every
      workflow GitHub ran on it. Red, pending, cancelled, and **absent** check-runs
      do nothing; a moved head is refused; an expired window does not run late; and
-     it stands down while a live review claim is held.
+     it stands down while a live review claim is held. **The documentation seat
+     does not arm:** an armed merge measures no diff, so the board refuses it for
+     Xan. She waits for CI and merges in person on the permit.
      - Arming is REFUSED unless the task's **latest** scout report is
        `merge-ready`. To change your mind, record a later scout report; the armed
        merge refuses at fire time. You do not have to disarm. The latest report

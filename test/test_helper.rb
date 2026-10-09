@@ -83,6 +83,15 @@ ENV["OPENAI_NO_LIVE_CALLS"] = "1"
 # constant so a rename cannot disarm the suite in silence.
 ENV["APPEARANCES_NO_LIVE_CALLS"] = "1"
 require_relative "../config/environment"
+# A test database built before the migration baseline holds every table and none of
+# the baseline's versions. Recording them here lets rails/test_help find nothing pending.
+# One short of baseline columns is recorded nowhere: rails/test_help rebuilds it from
+# db/schema.rb, as it does any test database behind the schema.
+begin
+  DbBaseline.mark_environment!("test", migrate_dir: Rails.root.join("db/migrate"))
+rescue DbBaseline::Error
+  nil
+end
 require "rails/test_help"
 
 # Draw the route set NOW — under the real (local) test env, before any test can

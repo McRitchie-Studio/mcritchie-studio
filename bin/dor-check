@@ -122,6 +122,7 @@ require_relative "lib/ci_status"
 require_relative "lib/task_pr_set"
 require_relative "lib/ci_gate"
 require_relative "lib/code_diff"
+require_relative "lib/pr_file_list"
 require_relative "lib/ruby_comment_diff"
 require_relative "lib/test_only_diff"
 require_relative "lib/client_surface_diff"
@@ -861,16 +862,14 @@ def read_pr_files(url)
   # sides. A renamed entry with no previous_filename shouldn't happen per the API
   # contract — if it ever does, the sentinel below has no prose extension, so it
   # classifies as behavioral and the diff GATES. Fail closed by construction.
-  owner, repo, number = pr.match(%r{github\.com/([^/]+)/([^/]+)/pull/(\d+)})&.captures
+  # The read itself is PrFileList's, shared with bin/merge-permit.
+  owner, repo, number = PrFileList.parse_url(pr)
   return { files: nil, state: :no_pr } unless owner
 
-  raw, ok = CiStatus.gh_read_status(
-    "api", "--paginate", "repos/#{owner}/#{repo}/pulls/#{number}/files", "--jq",
-    '.[] | .filename, (if .status == "renamed" then (.previous_filename // "unknown-rename-source") else empty end)'
-  )
+  raw, ok = CiStatus.gh_read_status(*PrFileList.gh_args(owner, repo, number))
   return failed_pr_file_read(raw) unless ok
 
-  files = raw.to_s.split("\n").map(&:strip).reject(&:empty?)
+  files = PrFileList.parse(raw)
   files.empty? ? { files: nil, state: :empty } : { files: files, state: :ok }
 end
 
