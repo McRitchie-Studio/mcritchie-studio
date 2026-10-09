@@ -265,8 +265,11 @@ source). A holder is named by mascot, soul, the last four characters of its sess
 id, and since when. A grant covers everything on the release at ship time: the
 `ship_authorized completed` event keeps the member set it was given over
 (`metadata.scope`), and the card counts and names every member that joined after
-it. The Last Release card keeps the grant line as the record of what the approval
-carried. A claim taken or released and a grant recorded each update an open
+it. The card names a person as approver only for the Approve button, which stamps
+`metadata.owner_grant` from the signed-in admin; the board strips that key from
+every other write, and any other answer reads as recorded, with no approver (the
+lines are tabled in Steffon's `production-deploy` SOP). The Last Release card keeps
+the grant line as the record of what the approval carried. A claim taken or released and a grant recorded each update an open
 `/deployments` without a reload.
 
 ## Task Conversation and QA Feedback

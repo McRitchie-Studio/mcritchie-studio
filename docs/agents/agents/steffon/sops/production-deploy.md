@@ -155,11 +155,30 @@ row per window however it lands.
 time. A task that joins after the grant rides on it; no second approval is asked. The
 grant record keeps the member set at the moment it was given
 (`metadata.scope.member_slugs`, with `policy: release_at_ship`), and the Next Release
-card and `bin/release status` state it: `Approved by <who> at <time>, timed mode.
+card and `bin/release status` state it: `Approved by <name> at <time>, timed mode.
 Covers every task on this release when it ships: 6 at approval, 16 now. Joined after
 approval: <slugs>.` Read that line before the deploy step; it is what the approval
 now carries. A grant recorded before the member set was kept reads `member set at
 approval not recorded`.
+
+**Who the line names.** `Approved by <name>` prints only for the Approve button on
+`/deployments`: that request stamps `metadata.owner_grant` (the signed-in admin's
+id, slug and the time), and the board removes that key from the metadata of every
+other write, so no caller can state who approved. Every other answer says how it
+was recorded and names no approver:
+
+| The record | The line |
+|------------|----------|
+| The Approve button | `Approved by <name> at <time>, <mode> mode.` |
+| `bin/release ship --mode ask` (with or without `--yes`) | `Recorded by the conductor CLI in ask mode (run as <actor>) at <time>; no web approval.` |
+| `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
+| A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
+| A `ship_authorized` completion posted to the events API | `Recorded through the events API by <actor> at <time>; no web approval.` |
+| A row marked as from the web that carries no `owner_grant` (one recorded before the marker, or one a caller labelled) | `Authorized at <time> (<mode> mode); approver not recorded.` |
+
+The line describes the record; it does not change what grants authority. A row
+with no approver named covers the release exactly as before, and its scope line
+reads `at authorization` in place of `at approval`.
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
   sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.
