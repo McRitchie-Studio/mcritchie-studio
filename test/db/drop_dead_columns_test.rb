@@ -89,6 +89,6 @@ class DropDeadColumnsTest < ActiveSupport::TestCase
   private
 
   def assert_nil_or_equal(expected, actual, message)
-    expected.nil? ? assert_nil(actual, message) : assert_equal(expected, actual, message)
+    expected.nil? ? assert_nil(actual, message) : assert_equal(expected, actual.to_s, message)
   end
 end
