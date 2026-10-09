@@ -637,6 +637,7 @@ def print_human(decision, pr_url, log_line)
   # the vocabulary via ReviewerSelector), so the CLI never hardcodes the role.
   puts seat_line(primary["weight"].to_s.upcase, primary)
   puts seat_line(light["weight"].to_s.upcase, light)
+  puts "merge:           #{decision["merge_rule"]}" if decision["merge_rule"]
   puts
   puts "tiebreak (auditable — also logged to Rails.logger):"
   puts "  candidates: #{decision["candidates"].join(", ")}"

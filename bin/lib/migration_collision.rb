@@ -258,7 +258,11 @@ module MigrationCollision
 
     tree = runner.call(["ls-tree", "-r", "--name-only", ref, "--", MIGRATION_DIR])
     grep = runner.call(["grep", "-z", "-n", "-F", PROVENANCE_NEEDLE, ref, "--", MIGRATION_DIR])
-    installs(parse_ls_tree(tree), parse_grep(grep, ref))
+    # A migration this branch deletes is not on the merged tree, so it cannot collide
+    # with the file that replaces it. Three dots: the branch's own side of the diff only,
+    # so a migration the ref gained since the branch forked still counts.
+    gone = runner.call(["diff", "--no-renames", "--diff-filter=D", "--name-only", "#{ref}...HEAD", "--", MIGRATION_DIR])
+    installs(parse_ls_tree(tree) - gone.to_s.split("\n").map(&:strip), parse_grep(grep, ref))
   end
 
   PROVENANCE_NEEDLE = "This migration comes from"

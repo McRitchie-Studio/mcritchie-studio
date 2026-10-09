@@ -152,6 +152,13 @@ class ReviewerSelector
   # (deep review + owner), so he is never a light-pool pick.
   STANDING_PRIMARY = "carl"
 
+  # The Documentation seat. It may MERGE a PR as well as review it, but only one
+  # whose diff measures `docs` at the head being merged; bin/merge-permit decides
+  # that from the PR's files (bin/lib/merge_permission.rb), never from the task's
+  # declared shape, which is all this class reads. Every other diff is merged by
+  # the standing primary. #merge_rule is the sentence the decision carries.
+  DOCS_SEAT = "xan"
+
   # The soul who runs qa-release — the accepted→release sweep + the QA deploy at the
   # `assembled` step — excluded from the light pool by default so a reviewer never
   # gates their own QA (no self-gating). After the 2026-07-22 reslot this is AVI (he
@@ -448,6 +455,8 @@ class ReviewerSelector
       "kept_busy" => kept_busy,
       "candidates" => candidate_slugs,
       "reviewers" => [seat(primary, needs, self.class.primary_role), seat(light, needs, self.class.light_role)],
+      # WHO MAY MERGE, said beside the pair so a session reads it where it reads the seats.
+      "merge_rule" => merge_rule(primary, light),
       "ranked" => ranked.map { |c| ranked_view(c) }
     }
   end
@@ -455,6 +464,18 @@ class ReviewerSelector
   private
 
   attr_reader :task, :qa_owner, :busy, :logger, :random
+
+  # Who may merge this PR on a merge-ready verdict. The documentation seat is
+  # named only when it is seated, which already means it is outside the author set.
+  def merge_rule(primary, light)
+    other = primary[:slug] == DOCS_SEAT ? "a primary outside the author set" : primary[:slug]
+    unless [primary[:slug], light[:slug]].include?(DOCS_SEAT)
+      return "#{other} merges on merge-ready; the documentation seat (#{DOCS_SEAT}) is not seated on this PR"
+    end
+
+    "#{DOCS_SEAT}, the documentation seat, may merge this PR only when its diff measures docs at the head " \
+      "being merged (bin/merge-permit <task> --agent #{DOCS_SEAT} --head <sha>); #{other} merges any other diff"
+  end
 
   # True when the caller ran a busy query (or handed one in). See #initialize.
   def busy_asked?

@@ -1,4 +1,146 @@
-<%# The players and controls the cast page and the alt video page share: a clip row's lazy preview and prompt copy, the full-video player that plays clips back to back as if stitched, a stitch's progress poll, and a clip's drop zone. Rendered once per page. %>
+<%# The players and controls the cast page and the alt video page share: a clip row's lazy preview and prompt copy, the full-video player that plays clips back to back as if stitched, a stitch's progress poll, a clip's drop zone, and signedLinks, which keeps the alt video page's signed links fresh. Rendered once per page. %>
+<script>
+  // The page's signed links, kept fresh. Every video, image and link the alt
+  // video page shows is a signed URL that lapses SIGNED_URL_TTL after it was
+  // signed, and the page is left open far longer than that. Each such element
+  // names its object key (data-signed-key; data-signed-as="download" for the
+  // save-as link), so fresh URLs can be swapped in from the page's links
+  // endpoint (AltVideosController#links), keyed the same way.
+  //
+  // When it asks: a minute before the links lapse while the tab is showing,
+  // on coming back to a tab whose links have lapsed, and when a player fails
+  // on a link that is old (recover). One request at a time. A player that
+  // fails on a link that is still fresh is not asked about again: that file is
+  // missing, and the player says so.
+  //
+  // start() reads the section's data-links-* and is a no-op without them (the
+  // cast page renders these scripts too, and its links are not refreshed).
+  if (window.signedLinks) window.signedLinks.stop();
+  window.signedLinks = {
+    LEAD_MS: 60000,
+    url: null, ttlMs: 0, signedAt: 0, gen: 0, inline: {}, download: {}, inFlight: null, timer: null, state: "",
+    start() {
+      this.stop();
+      const root = document.querySelector("[data-links-url]");
+      if (!root) return;
+      this.url = root.dataset.linksUrl;
+      this.ttlMs = Number(root.dataset.linksTtl) * 1000;
+      // The server's signing time, unless this clock runs behind it: a page
+      // shown again from the browser's cache carries links as old as it is.
+      this.signedAt = Math.min(Date.now(), Number(root.dataset.linksSignedAt) || Date.now());
+      this.gen = 0; this.inline = {}; this.download = {}; this.inFlight = null;
+      this.schedule();
+      if (!window.__signedLinksBound) {
+        window.__signedLinksBound = true;
+        // A page Turbo shows again from its cache runs no inline script: start from its markup.
+        document.addEventListener("turbo:load", () => { if (!window.signedLinks.url) window.signedLinks.start(); });
+        document.addEventListener("visibilitychange", () => window.signedLinks.woke());
+        window.addEventListener("pageshow", () => window.signedLinks.woke());
+        // Images and the plain players report here; the Alpine players call recover() themselves.
+        document.addEventListener("error", (event) => {
+          const el = event.target;
+          if (el instanceof Element && el.matches("img[data-signed-key], video[data-signed-key]:not([x-ref])")) window.signedLinks.recover(el);
+        }, true);
+      }
+    },
+    stop() { clearTimeout(this.timer); this.timer = null; this.url = null; },
+    fresh() { return Date.now() < this.signedAt + this.ttlMs - this.LEAD_MS; },
+    // An element whose link is worth replacing: older than the newest set, or lapsed.
+    stale(el) { return !!this.url && ((el.__linkGen || 0) < this.gen || !this.fresh()); },
+    schedule() {
+      clearTimeout(this.timer);
+      if (!this.url) return;
+      const wait = Math.max(1000, this.signedAt + this.ttlMs - this.LEAD_MS - Date.now());
+      this.timer = setTimeout(() => this.woke(), wait);
+    },
+    // The timer fired, or the tab came back: refresh if the links have lapsed.
+    // A hidden tab waits until it is looked at again.
+    woke() {
+      if (!this.url || document.hidden || this.fresh()) return;
+      this.refresh();
+    },
+    say(state) {
+      this.state = state;
+      window.dispatchEvent(new CustomEvent("signed-links", { detail: { state } }));
+    },
+    // Fresh links for the whole page. Resolves true when they are in place.
+    refresh() {
+      if (!this.url) return Promise.resolve(false);
+      if (this.inFlight) return this.inFlight;
+      this.say("refreshing");
+      const asked = Date.now();
+      this.inFlight = fetch(this.url, { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store" })
+        .then((resp) => {
+          // fetch resolves on a 401 or a 500 alike: the status is the answer.
+          if (resp.status === 401 || resp.status === 403) { const e = new Error("signin"); e.signin = true; throw e; }
+          if (!resp.ok) throw new Error(String(resp.status));
+          return resp.json();
+        })
+        .then((body) => {
+          this.inline = body.inline || {}; this.download = body.download || {};
+          if (body.ttl) this.ttlMs = Number(body.ttl) * 1000;
+          this.signedAt = asked;
+          this.gen += 1;
+          this.apply(document);
+          this.schedule();
+          this.say("fresh");
+          return true;
+        })
+        .catch((error) => { this.say(error && error.signin ? "signin" : "failed"); return false; })
+        .finally(() => { this.inFlight = null; });
+      return this.inFlight;
+    },
+    // The newest URL for a key, or null when none has been fetched for it.
+    urlFor(key, as) { return (as === "download" ? this.download : this.inline)[key] || null; },
+    // Bring every marked element under root onto the newest links.
+    apply(root) {
+      if (!this.gen) return;
+      root.querySelectorAll("[data-signed-key]").forEach((el) => this.point(el, false));
+    },
+    // Point one element at its newest URL. A player keeps its place (and goes
+    // on playing if it was). Left alone unless forced: a player that is
+    // playing (swapping would cut it off; it comes here when it fails) and an
+    // image already on screen. Returns false when there is no URL for it.
+    point(el, force) {
+      const url = this.urlFor(el.dataset.signedKey, el.dataset.signedAs);
+      if (!url) return false;
+      const attr = el.tagName === "A" ? "href" : "src";
+      const old = el.getAttribute(attr) || "";
+      const hash = old.indexOf("#") >= 0 ? old.slice(old.indexOf("#")) : "";
+      const media = el instanceof HTMLMediaElement;
+      const broken = media && !!el.error;
+      if (!force && !broken) {
+        if (media && !el.paused && !el.ended) return true;
+        if (el.tagName === "IMG" && el.complete && el.naturalWidth > 0) return true;
+      }
+      el.__linkGen = this.gen;
+      if (!force && !broken && old === url + hash) return true;
+      if (!media) { el.setAttribute(attr, url + hash); return true; }
+      const at = el.currentTime, playing = !el.paused && !el.ended;
+      // clipPair: the seeks below are the page's, not the operator's.
+      el.__quietUntil = performance.now() + 2000;
+      // The place rides in on the URL's own time fragment (as the first frame
+      // does, #t=0.001), and a browser that ignores it is seeked there.
+      el.src = at > 0.001 ? url + "#t=" + at.toFixed(3) : url + hash;
+      if (at > 0.001) {
+        el.addEventListener("loadedmetadata", () => {
+          if (Math.abs(el.currentTime - at) > 0.05) { el.__quietUntil = performance.now() + 400; el.currentTime = at; }
+        }, { once: true });
+      }
+      if (playing) el.play().catch(() => {});
+      return true;
+    },
+    // A player or image failed. Resolves true when it now sits on a fresh
+    // link (it is loading again), false when there is none to give it.
+    async recover(el) {
+      if (!this.stale(el)) return false;
+      if (!this.fresh() && !(await this.refresh())) return false;
+      const broken = el instanceof HTMLMediaElement ? !!el.error : (el.tagName === "IMG" && el.naturalWidth === 0);
+      if (el.__linkGen === this.gen && !broken) return true;
+      return this.point(el, true);
+    },
+  };
+</script>
 <script>
   // One clip row: load the signed clip only when asked, and copy its prompt.
   window.clipRow = function () {
@@ -62,17 +204,24 @@
   // version is the clock; while playing, the original is nudged back onto it
   // (playback rate 0.95/1.05 past 40 ms, about a frame; a hard seek past
   // 100 ms, which also closes the head start one player gets at Play both), so they stay within a frame or two.
+  //
+  // A player that fails (lost) is first given a fresh link when its own has
+  // lapsed: it says so (renewing), reloads at the same place, and goes on with
+  // the play that was asked for. Only a failure on a fresh link is the file's
+  // (failed). "This browser would not start both players" (blocked) is said
+  // only when the browser refused to play, never for a file that did not load.
   window.clipPair = function () {
     const NUDGE = 0.04, JUMP = 0.1, SEEK_LEAD = 0.05;
     return {
-      linked: false, started: false, playing: false, blocked: false,
-      t: 0, duration: 0, frame: null, failed: { original: false, version: false },
+      linked: false, started: false, playing: false, blocked: false, again: false,
+      t: 0, duration: 0, frame: null, failed: { original: false, version: false }, renewing: { original: false, version: false },
       get pair() { return [this.$refs.original, this.$refs.version].filter(Boolean); },
       get state() { return this.playing ? "playing" : (this.linked ? "paused" : "idle"); },
       get label() { return this.playing ? "Pause both" : (this.linked ? "Resume both" : "Play both"); },
       init() {
         this.pair.forEach((video) => {
           const firstFrame = () => {
+            this.failed[video === this.$refs.original ? "original" : "version"] = false;
             if (video.paused && video.currentTime === 0) video.currentTime = 0.001;
             this.measure();
           };
@@ -84,6 +233,31 @@
         });
       },
       destroy() { cancelAnimationFrame(this.frame); },
+      // A player's file did not load. On a lapsed link: fetch a fresh one, load
+      // it at the same place, and play again if a play was waiting on it.
+      lost(which) {
+        const video = this.$refs[which], links = window.signedLinks;
+        if (!links || !links.stale(video)) { this.failed[which] = true; this.again = false; return; }
+        // A play was under way: stop both now, and start them again on the fresh link.
+        if (this.playing || (!this.$refs.version && this.started && !video.paused)) { this.again = true; this.pause(); }
+        this.renewing[which] = true;
+        links.recover(video).then((ok) => {
+          this.renewing[which] = false;
+          if (!ok) { this.failed[which] = true; this.again = false; return; }
+          if (this.again && !this.renewing.original && !this.renewing.version) { this.again = false; this.replay(); }
+        });
+      },
+      // A play() that was refused: by the browser (it wants a press on each
+      // player), or because the file did not load, which lost() is seeing to.
+      stopped(error) {
+        if (error && error.name === "NotAllowedError") this.blocked = true;
+        else if (this.pair.some((v) => v.error) || this.renewing.original || this.renewing.version) this.again = true;
+        this.pause();
+      },
+      replay() {
+        if (!this.$refs.version) { this.playOriginal(); return; }
+        if (this.linked) this.resume(); else this.start();
+      },
       // A seek made here (start, scrub, a peer following, a drift fix) is not
       // the operator's: its seeking event must not move the other player, or
       // fixing the muted original would drag the version's sound along.
@@ -131,7 +305,7 @@
         original.playbackRate = 1;
         this.seekTo(original, 0); this.seekTo(version, 0); this.t = 0;
         this.playing = true;
-        Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
+        Promise.all([original.play(), version.play()]).catch((error) => this.stopped(error));
         this.loop();
       },
       resume() {
@@ -139,8 +313,8 @@
         original.muted = true;
         if (version.ended) { this.start(); return; }
         this.seekTo(original, version.currentTime);
-        this.playing = true;
-        Promise.all([original.play(), version.play()]).catch(() => { this.blocked = true; this.pause(); });
+        this.playing = true; this.blocked = false;
+        Promise.all([original.play(), version.play()]).catch((error) => this.stopped(error));
         this.loop();
       },
       pause() {
@@ -149,6 +323,7 @@
         this.pair.forEach((v) => { if (!v.paused) v.pause(); });
       },
       toggle() {
+        this.again = false;
         if (this.playing) this.pause();
         else if (this.linked) this.resume();
         else this.start();
@@ -161,7 +336,7 @@
       // Single preview (no version yet): play the source chunk.
       playOriginal() {
         this.started = true;
-        this.$refs.original.play().catch(() => {});
+        this.$refs.original.play().catch(() => { if (this.$refs.original.error || this.renewing.original) this.again = true; });
       },
       // While playing: keep the original on the version's clock.
       loop() {
@@ -191,17 +366,32 @@
   // audio is the clock; the two muted videos follow it, one on screen and one
   // holding the next clip ready. Built when the modal opens, torn down (and
   // paused) when it closes, so nothing loads while the page is only read.
+  // Its files are signed links: it takes the page's freshest as it is built
+  // and whenever they are refreshed (signedLinks), and a clip or the audio
+  // that fails on a lapsed link is loaded again on a fresh one.
   window.stitchPreview = function () {
     return {
       segments: [], durationMs: 0, t: 0, index: 0, active: 0, playing: false, audioOk: true,
-      frame: null, wallBase: 0, wallAt: 0, failed: [false, false],
+      frame: null, wallBase: 0, wallAt: 0, failed: [false, false], renewing: false, onLinks: null,
       init() {
         const data = JSON.parse(this.$root.dataset.timeline);
         this.segments = data.segments; this.durationMs = data.duration_ms;
         this.audioOk = !!this.$refs.audio.getAttribute("src");
+        // The modal is built from the page as it was rendered: bring it onto the newest links.
+        if (window.signedLinks) window.signedLinks.apply(this.$root);
+        this.relink();
+        this.onLinks = (event) => { if (event.detail.state === "fresh") this.relink(); };
+        window.addEventListener("signed-links", this.onLinks);
         if (this.segments.length) this.show(0);
       },
-      destroy() { this.pause(); },
+      destroy() { window.removeEventListener("signed-links", this.onLinks); this.pause(); },
+      // Each segment's file on the newest link. The two videos keep the link
+      // they are playing; a later cue, or a failure, moves them over.
+      relink() {
+        const links = window.signedLinks;
+        if (!links || !links.gen) return;
+        this.segments.forEach((seg) => { if (seg.key) seg.url = links.urlFor(seg.key) || seg.url; });
+      },
       get now() { return this.segments[this.index] || null; },
       get missing() { return !!this.now && !this.now.url; },
       get nowLabel() { return this.now ? "Clip " + this.now.ordinal + " · " + this.now.label : ""; },
@@ -215,9 +405,34 @@
         return this.wallBase + (performance.now() - this.wallAt);
       },
       startWall() { this.wallBase = this.t; this.wallAt = performance.now(); },
-      audioFailed() { this.audioOk = false; this.startWall(); },
-      // A video whose file would not load (an expired link, a format the browser cannot play).
-      loadFailed(which) { if ([this.$refs.a, this.$refs.b][which].getAttribute("src")) this.failed[which] = true; },
+      // The source audio would not load. On a lapsed link it is loaded again
+      // on a fresh one, at the same place; otherwise the player runs silent.
+      audioFailed() {
+        const links = window.signedLinks, audio = this.$refs.audio;
+        const silent = () => { this.audioOk = false; this.startWall(); };
+        if (!links || !links.stale(audio)) { silent(); return; }
+        links.recover(audio).then((ok) => {
+          if (!ok) silent();
+          else if (this.playing) audio.play().catch(() => silent());
+        });
+      },
+      // A video whose file would not load. On a lapsed link: fetch a fresh one
+      // and cue the clip again. On a fresh link it is the file (a missing
+      // object, a format the browser cannot play), and the player says so.
+      loadFailed(which) {
+        const video = [this.$refs.a, this.$refs.b][which], links = window.signedLinks;
+        if (!video.getAttribute("src")) return;
+        if (!links || !links.stale(video)) { this.failed[which] = true; return; }
+        this.renewing = true;
+        const ready = links.fresh() ? Promise.resolve(true) : links.refresh();
+        ready.then((ok) => {
+          this.renewing = false;
+          if (!ok) { this.failed[which] = true; return; }
+          this.relink();
+          video.dataset.ordinal = "";
+          this.show(this.index);
+        });
+      },
       // The last segment that has started by ms.
       indexAt(ms) {
         let found = 0;
@@ -231,6 +446,7 @@
         if (video.dataset.ordinal !== String(seg.ordinal)) {
           video.dataset.ordinal = String(seg.ordinal);
           this.failed[video === this.$refs.a ? 0 : 1] = false;
+          video.__linkGen = window.signedLinks ? window.signedLinks.gen : 0;
           video.src = seg.url;
         }
         let want = Math.max(0, (ms - seg.start_ms) / 1000);

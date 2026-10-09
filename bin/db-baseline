@@ -1,0 +1,52 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/db-baseline — rewrite db/migrate as one create migration per table.
+#
+#   bin/db-baseline                   baseline db/schema.rb
+#   bin/db-baseline --schema PATH     baseline the schema production holds (default db/schema.rb)
+#   bin/db-baseline --dry-run         print what would be written, retired and kept
+#
+# Migrations newer than the schema's version are kept, so a schema taken from
+# production leaves the migrations production has not run in place. Installed
+# engine migrations are always kept. Changes files only; it opens no database.
+# Procedure: docs/agents/modules/backend-discipline.md, "The Migration Baseline"
+require "optparse"
+
+options = { schema: File.expand_path("../db/schema.rb", __dir__) }
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/db-baseline [--schema PATH] [--dry-run]"
+  opts.on("--schema PATH", "the schema production holds (default db/schema.rb)") { |path| options[:schema] = File.expand_path(path) }
+  opts.on("--dry-run", "print what would be written, retired and kept") { options[:dry_run] = true }
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "bin/db-baseline: #{e.message}\n#{parser.banner}"
+end
+abort "bin/db-baseline: unexpected argument #{ARGV.first}\n#{parser.banner}" if ARGV.any?
+
+require_relative "../config/environment"
+
+engine_names = Rails::Engine.subclasses.flat_map do |engine|
+  Array(engine.paths["db/migrate"]&.existent).flat_map { |dir| Dir.children(dir) }.map { |file| DbBaseline.bare_name(file) }
+end
+generator = DbBaseline::Generator.new(root: Rails.root, schema_text: File.read(options[:schema]), engine_names: engine_names)
+
+begin
+  if options[:dry_run]
+    summary = { written: generator.migrations.keys, retired: generator.retired, kept: generator.kept }
+  else
+    dirty, = Open3.capture2("git", "-C", Rails.root.to_s, "status", "--porcelain", "--", "db/migrate")
+    abort "bin/db-baseline: commit or discard the changes under db/migrate first; the retired ledger is replayed from HEAD" unless dirty.strip.empty?
+
+    ref, = Open3.capture2("git", "-C", Rails.root.to_s, "rev-parse", "HEAD")
+    summary = generator.write!(ref: ref.strip)
+  end
+rescue DbBaseline::Error => e
+  abort "bin/db-baseline: #{e.message}"
+end
+
+puts "schema version #{generator.schema.version}: #{summary[:written].size} baseline migrations, " \
+     "#{summary[:retired].size} retired, #{summary[:kept].size} kept"
+summary[:kept].each { |file| puts "  kept #{file}" }

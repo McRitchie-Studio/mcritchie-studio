@@ -67,6 +67,14 @@ class Appearance < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
   validates :descriptor, presence: true
   validate :exactly_one_owner
+  # A LOOK MAY NOT NAME A TEAM THAT IS NOT ON FILE. `belongs_to :team` above is
+  # optional and keyed by slug, so a slug with no row resolves to nil and reads
+  # everywhere as "no team": the first real TikTok draft (2026-10-08) was
+  # refused "has no team" for a look that said dallas-cowboys, because
+  # production's teams table was empty. Checked on create and when the slug
+  # changes ONLY, so a row that already carries a dangling slug still saves for
+  # an unrelated edit (its jersey number, its stage).
+  validate :team_slug_names_a_team, if: -> { team_slug.present? && (new_record? || team_slug_changed?) }
 
   # NULL IS A REAL AND COMMON VALUE: "nobody has ever dragged this look". It is not
   # the same as "designed", and `allow_nil` is what keeps the two distinguishable —
@@ -100,6 +108,10 @@ class Appearance < ApplicationRecord
   def retired? = retired_at.present?
 
   def music_video_look? = music_video_slug.present?
+
+  # The look names a team (team_slug) that has no row in `teams`, so `team` is
+  # nil though a team was meant. Not the same as carrying no team.
+  def team_missing? = team_slug.present? && !Team.exists?(slug: team_slug)
 
   # WHO WEARS THIS LOOK: the Person or the Character, whichever is set.
   def owner = character_owned? ? character : person
@@ -348,6 +360,10 @@ class Appearance < ApplicationRecord
     [Person, Character].each do |owners|
       owners.where(id: Array((@default_holder_ids || {})[owners.name])).find_each(&:resolve_default_appearance!)
     end
+  end
+
+  def team_slug_names_a_team
+    errors.add(:base, "The look #{Team.missing_phrase(team_slug)}") if team_missing?
   end
 
   def exactly_one_owner

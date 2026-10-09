@@ -294,6 +294,66 @@ Persist external IDs, transaction signatures, payment intent IDs, and webhook ev
 - Put state transitions behind named methods instead of scattered status assignment.
 - Keep jobs and seeds idempotent.
 
+## The Migration Baseline
+
+`db/migrate` holds one create migration per table (`20260101NNNNNN_create_<table>.rb`),
+so a new machine reads each model as it is. `bin/db-baseline` writes them from a
+schema.rb. Change the schema with a new, normally timestamped migration; never edit a
+baseline file. Code: `lib/db_baseline.rb`, `lib/tasks/db_baseline.rake`.
+
+- **What sits beside the baseline.** Installed engine migrations (`*.studio_engine.rb`),
+  which create the engine's own tables. Native files that hold an engine migration's
+  name, so the engine's install step skips them (`create_active_storage_tables`,
+  `allow_null_image_cache_owner`, and `DbBaseline::HELD_NAMES` for a name the engine
+  has yet to ship). Any migration newer than the schema the baseline was written from.
+- **Views.** The SQL lives in `db/views/<name>.sql`, one baseline migration each. A view
+  never dumps to schema.rb, so a database loaded from the schema (test, a fresh desk)
+  has none.
+- **An existing database is never re-migrated.** `db:baseline:mark` runs ahead of
+  `db:migrate` and `db:prepare`, after `db:test:prepare`, and when the test suite boots
+  (`test/test_helper.rb`). `db:prepare` marks every database it migrates: a bare
+  development run covers the test database too. Where the database holds a
+  table with every baseline column, it records that migration's version; it writes
+  `schema_migrations` rows and nothing else. A table that is absent is left for its
+  migration to create. The retired versions stay in the ledger and read `NO FILE` in
+  `db:migrate:status`.
+- **A database partway through the retired migrations stops the run, unchanged**, and
+  names the columns it lacks. `bin/rails db:baseline:catch_up` replays the retired
+  migrations out of git (the commit in `db/baseline.yml`), then migrates. A database
+  with nothing to keep: `bin/rails db:drop db:prepare`.
+- **Read-only check.** `bin/rails db:baseline:check` reports what the baseline finds in
+  the connected database and exits 1 on a table short of a column. Before a baseline
+  first deploys, check production from a dump instead, with no new code on the dyno:
+  `heroku run --no-tty -a mcritchie-studio -- bin/rails db:schema:dump SCHEMA=/dev/stdout > tmp/production-schema.rb`,
+  then `bin/rails db:baseline:check AGAINST=tmp/production-schema.rb`.
+
+Re-baseline after a schema facelift:
+
+1. Bring every database you keep to head; catch-up reaches back one baseline.
+2. Take the schema production holds: `git show origin/main:db/schema.rb > tmp/production-schema.rb`.
+3. `bin/db-baseline --schema tmp/production-schema.rb --dry-run`, then without
+   `--dry-run`. Migrations newer than that schema stay as files, so production still
+   runs them on its next deploy.
+4. `bin/rails test test/lib/db_baseline_test.rb test/integration/db_baseline_mark_test.rb`:
+   a fresh database migrated from zero must dump a schema that loads as `db/schema.rb`
+   exactly, `db/schema.rb` must load and dump as itself, and a database that already
+   holds the tables must migrate nothing.
+
+Traps:
+
+- Postgres rewrites a check-constraint or partial-index expression when it is loaded,
+  so a database built by migrations and one loaded from schema.rb can dump the same
+  constraint in two spellings (`ARRAY['a'::character varying]::text[]` from an `IN`
+  list in a migration, `ARRAY['a'::character varying::text]` after a load).
+  `db/schema.rb` holds the load-stable spelling: loading it and dumping again
+  reproduces it byte for byte, which is what every desk and CI database dumps. A
+  migration that adds such an expression dumps the other spelling on the database that
+  ran it; before committing, settle the file with
+  `bin/rails db:schema:load db:schema:dump` on a scratch database. The mark test fails
+  on a `db/schema.rb` that is not load-stable.
+- `bin/release` refuses to roll back past a release that adds migration files, and a
+  re-baseline adds one per table.
+
 ## Verification
 
 Backend changes should include the narrowest meaningful automated test. For provider workflows, also verify the local callback path or document the exact external dependency blocking verification.

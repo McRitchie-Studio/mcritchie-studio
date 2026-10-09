@@ -38,7 +38,12 @@ module CiPollBudget
   # expression GitHub resolves at run time) counts as GitHub's 360-minute default, and
   # the ceiling then bounds it. A `needs:` cycle or unknown name is ignored rather than
   # trusted: GitHub would refuse such a workflow outright.
-  def critical_path_minutes(yaml_text)
+  #
+  # A job that CALLS a workflow (`uses: ./.github/workflows/x.yml`) cannot declare a
+  # timeout: it runs for as long as the called file's own chain. `called` maps a
+  # workflow path to its text so that chain is read; a call whose file is not in the
+  # map (another repo, or an unread set) counts as GitHub's default.
+  def critical_path_minutes(yaml_text, called: {}, calling: [])
     doc = YAML.safe_load(yaml_text.to_s, aliases: true)
     jobs = doc.is_a?(Hash) ? doc["jobs"] : nil
     return nil unless jobs.is_a?(Hash) && jobs.any?
@@ -50,14 +55,25 @@ module CiPollBudget
 
       job = jobs[name]
       before = Array(job["needs"]).map(&:to_s).map { |dep| longest.call(dep, seen + [name]) }.max || 0
-      memo[name] = before + job_minutes(job)
+      memo[name] = before + job_minutes(job, called: called, calling: calling)
     end
     jobs.keys.map { |name| longest.call(name.to_s, []) }.max
   rescue StandardError
     nil
   end
 
-  def job_minutes(job)
+  LOCAL_CALL = %r{\A\./(\.github/workflows/[^/@]+\.ya?ml)\z}
+
+  def job_minutes(job, called: {}, calling: [])
+    path = job["uses"].to_s[LOCAL_CALL, 1]
+    if path
+      # `calling` stops a workflow that calls itself, which GitHub refuses anyway.
+      text = calling.include?(path) ? nil : called.to_h[path]
+      return critical_path_minutes(text, called: called, calling: calling + [path]) || GITHUB_DEFAULT_JOB_MINUTES if text
+
+      return GITHUB_DEFAULT_JOB_MINUTES
+    end
+
     raw = job["timeout-minutes"]
     raw.is_a?(Numeric) && raw.positive? ? raw.ceil : GITHUB_DEFAULT_JOB_MINUTES
   end
@@ -85,11 +101,15 @@ module CiPollBudget
     false
   end
 
-  # Seconds to hold a pending verdict, given every workflow text on the SHA. Only the
-  # gating workflows count. Returns the floor when none yields a chain, so an unreadable
-  # set never widens the wait.
-  def budget_s(workflow_texts, floor:, ceiling:)
-    chains = Array(workflow_texts).select { |text| gating?(text) }.filter_map { |text| critical_path_minutes(text) }
+  # Seconds to hold a pending verdict, given every workflow on the SHA: a map of path to
+  # text, or a bare list of texts (which cannot resolve a call). Only the gating
+  # workflows count; a called workflow sizes the wait through the job that calls it.
+  # Returns the floor when none yields a chain, so an unreadable set never widens the
+  # wait.
+  def budget_s(workflows, floor:, ceiling:)
+    called = workflows.is_a?(Hash) ? workflows : {}
+    texts = workflows.is_a?(Hash) ? workflows.values : Array(workflows)
+    chains = texts.select { |text| gating?(text) }.filter_map { |text| critical_path_minutes(text, called: called) }
     return floor if chains.empty?
 
     sized = (chains.max * 60) + HEADROOM_S

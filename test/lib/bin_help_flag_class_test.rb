@@ -108,6 +108,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "openclaw-workspace"     => :optparse,
     # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
     "sop-registry"           => :optparse,
+    # Rewrites db/migrate; the parse (and --help) comes before any file is touched,
+    # and an unknown flag or a stray argument aborts with the usage line.
+    "db-baseline"            => :optparse,
     # Asks the board for this machine's harness key and keeps it. `--help` is wired
     # through OptionParser and prints before dispatch; an unknown flag, an unknown
     # command and a stray positional all refuse before any request or write.
@@ -462,6 +465,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "statusline"             => :accepted_gap, # writes throttle markers, spawns a lease heartbeat
     "gh-app-mint-token"      => :accepted_gap, # no local write, but prints a live installation token
     "pr-status"              => :accepted_gap, # read-only gh pr view
+    "merge-permit"           => :accepted_gap, # read-only: GETs the task, its scout reports and the PR; never merges
     "ci-scope-capture"       => :accepted_gap, # best-effort telemetry POST; always exits 0
     "session-insights"       => :accepted_gap, # read-only GET
     "atomic-capture-hook"    => :accepted_gap, # stdin hook; a bare probe hits its rescue

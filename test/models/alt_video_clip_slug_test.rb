@@ -5,8 +5,7 @@ require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 
 # [unit] An alt video clip's slug (recast pipeline, piece 19): the readable
 # name the operator hands to the tiktok-draft SOP. Assigned when Build Clips
-# makes the clip, "<alt video slug>-clip-<NN>", unique, and the same rule the
-# migration backfilled existing clips with. Wholly synthetic.
+# makes the clip, "<alt video slug>-clip-<NN>", and unique. Wholly synthetic.
 class AltVideoClipSlugTest < ActiveSupport::TestCase
   setup do
     @video = TiledVideo.seed!
@@ -38,20 +37,5 @@ class AltVideoClipSlugTest < ActiveSupport::TestCase
 
   test "a clip is found by its slug" do
     assert_equal @alt.clips.third, AltVideoClip.find_by!(slug: "test-artist-a-tiled-demo-alt-1-clip-03")
-  end
-
-  # The backfill is SQL in the migration; the model is Ruby. Pin that they agree,
-  # past two digits too (a bare lpad would cut 100 to "10").
-  test "the migration's backfill expression writes what the model writes" do
-    migration = File.read(Rails.root.join("db/migrate/20261007230000_add_clip_slugs_and_tiktok_drafts.rb"))
-    expression = migration[/SET slug = (.+)$/, 1]
-    refute_nil expression, "the backfill moved: re-anchor this test"
-
-    [1, 3, 9, 10, 12, 100, 123].each do |n|
-      sql = ActiveRecord::Base.connection.select_value(
-        "SELECT #{expression.gsub('alt_video_slug', "'x-alt-1'").gsub('chunk_ordinal', n.to_s)}"
-      )
-      assert_equal AltVideoClip.slug_for("x-alt-1", n), sql, "ordinal #{n}"
-    end
   end
 end

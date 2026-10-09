@@ -1,5 +1,5 @@
 module Tiktok
-  # A clip's primary version into the operator's TikTok drafts (recast
+  # A clip's primary version to the operator's TikTok inbox (recast
   # pipeline, piece 19). Both doors use it: the clip card's "Draft to TikTok"
   # button and bin/tiktok-draft through the API.
   #
@@ -16,8 +16,8 @@ module Tiktok
   #                          poll TikTok's status for up to POLL_FOR.
   #   refresh(draft)         one more status read for a draft TikTok holds.
   #
-  # A draft is private in the operator's TikTok inbox until he posts it from
-  # the phone; nothing here publishes.
+  # TikTok sends the operator an inbox notification; he opens it in the phone
+  # app and posts it or saves it to Drafts. Nothing here publishes.
   #
   # ONE PRESS, ONE DRAFT. check! reads the attempts and then ESPN (three
   # requests, seconds), so two presses can both pass it before either records.
@@ -49,12 +49,19 @@ module Tiktok
 
       def stand_in? = !uploader.nil? && uploader.respond_to?(:stand_in?) && uploader.stand_in?
 
-      # Can this server make a draft at all? The four TikTok keys, or a stand-in.
+      # Can this server make a draft at all? The TikTok app's two keys and a
+      # connected account (the stored connection, or the env pair), or a stand-in.
       def available? = !uploader.nil? || OAuthClient.runtime_creds_present?
 
+      # Names the half that is missing: the app's keys, or the connection.
       def unavailable_reason
-        "the TikTok keys are not set on this server (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, " \
-          "TIKTOK_REFRESH_TOKEN, TIKTOK_OPEN_ID)"
+        unless OAuthClient.app_creds_present?
+          return "the TikTok keys are not set on this server (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET)"
+        end
+
+        OAuthClient.connection_problem ||
+          "no TikTok account is connected to this server: an admin signs in at #{OAuthClient::CONNECT_PATH} " \
+          "and the hub stores the connection"
       end
     end
 
@@ -214,7 +221,7 @@ module Tiktok
       Rails.logger.warn("[tiktok-draft] attempt #{draft.id} uploaded, status unknown: #{error.class.name}: #{error.message}")
       draft.update_columns( # rubocop:disable Rails/SkipsModelValidations
         state: "unknown", publish_id:, uploaded_at: draft.uploaded_at || @now.call, polled_at: @now.call, updated_at: @now.call,
-        error: "The upload reached TikTok, but its status could not be read (#{error.class.name}). Check your TikTok drafts: " \
+        error: "The upload reached TikTok, but its status could not be read (#{error.class.name}). #{TiktokDraft::UNKNOWN_STEP}: " \
                "it may already be there. Check TikTok reads the status again; do not draft this clip again until you have looked."
       )
       draft

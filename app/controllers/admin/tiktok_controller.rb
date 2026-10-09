@@ -1,15 +1,31 @@
 module Admin
   # The one-time sign-in that connects a TikTok account to the hub. /connect
-  # sends the admin to TikTok; /callback shows what came back, once: the
-  # refresh token, the open id and the scope TikTok granted, for filing in
-  # 1Password (item tiktok.studio.agents). The hub stores none of them itself.
+  # sends the admin to TikTok; /callback exchanges the code and stores the
+  # connection itself (TiktokConnection: the open id, the granted scope, and
+  # the refresh token encrypted). No token is rendered, flashed or logged, and
+  # nobody copies one by hand.
+  #
+  # /disconnect deletes the stored connection.
   #
   # Neither action writes an ErrorLog row for an answer it expects: keys not
   # set, a bad TIKTOK_SCOPES, or a refusal from TikTok. Each gets plain words.
   class TiktokController < ApplicationController
     before_action :require_admin
+    # The callback's URL carries a single-use auth code: no cache keeps the page.
+    before_action(only: :callback) { response.headers["Cache-Control"] = "no-store" }
 
     KEYS_NOT_SET = "TikTok keys are not set on this server".freeze
+    # Without the app's encryption keys the connection cannot be stored, and
+    # TikTok's grant would be thrown away. So both actions refuse first.
+    ENCRYPTION_NOT_SET = "This server cannot store a TikTok connection: its encryption keys are not set " \
+                         "(#{TiktokConnection::ENCRYPTION_ENV.join(', ')}).".freeze
+    DISCONNECTED = "TikTok disconnected: the stored connection was deleted from this server.".freeze
+    NOTHING_STORED = "No TikTok connection was stored on this server, so nothing was deleted.".freeze
+    ENV_PAIR_STILL_SET = "Drafting is still on: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are set on this server, and it drafts " \
+                         "from them. Remove both from the server's config to turn drafting off.".freeze
+    ENV_PAIR_NOT_SET = "Drafting is off: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are not set on this server, so nothing " \
+                       "connects it to TikTok until an admin signs in again.".freeze
+    ENCRYPTION_FIX = "Nothing was asked of TikTok. File the three keys on this server, then start again.".freeze
 
     # TikTok's `error` param on the callback => [what happened, what to do].
     # Anything else is shown in TikTok's own words (unknown_refusal).
@@ -37,6 +53,8 @@ module Admin
     }.freeze
 
     def connect
+      return redirect_to(admin_dashboard_path, alert: "#{ENCRYPTION_NOT_SET} #{ENCRYPTION_FIX}") unless TiktokConnection.encryption_ready?
+
       url = Tiktok::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state)
       redirect_to url, allow_other_host: true
     rescue Tiktok::OAuthClient::NotConfigured
@@ -51,18 +69,37 @@ module Admin
         return render plain: "OAuth state mismatch — restart the connect flow.", status: :bad_request
       end
       return refuse_as_tiktok_said(params[:error].to_s) if params[:error].present?
+      # Before the exchange: a code is spent by it, and the grant could not be kept.
+      return refuse(ENCRYPTION_NOT_SET, ENCRYPTION_FIX, status: :service_unavailable) unless TiktokConnection.encryption_ready?
 
       json = Tiktok::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
-      @refresh_token = json["refresh_token"]
-      @open_id       = json["open_id"]
-      @scope         = json["scope"].to_s
-      granted        = @scope.split(",").map(&:strip)
-      @can_draft     = granted.include?("video.upload")
-      @direct_post   = granted.include?(Tiktok::OAuthClient::DIRECT_POST_SCOPE)
+      @connection  = TiktokConnection.store!(json, by: current_user.slug)
+      @can_draft   = @connection.scopes.include?("video.upload")
+      @direct_post = @connection.scopes.include?(Tiktok::OAuthClient::DIRECT_POST_SCOPE)
+    rescue ActiveRecord::RecordInvalid => e
+      # A validation message names the field that was missing, never its value.
+      refuse("TikTok answered, but the connection was not saved.", "Start again: a code works once.",
+             detail: e.record.errors.full_messages.to_sentence, status: :unprocessable_entity)
+    rescue ActiveRecord::RecordNotUnique
+      refuse("TikTok answered, but the connection was not saved.", "Another sign-in for this account was being saved. Start again.",
+             status: :unprocessable_entity)
     rescue Tiktok::OAuthClient::NotConfigured
       refuse(KEYS_NOT_SET + ".", "File the client key and secret, then start again.")
     rescue Tiktok::OAuthClient::Error => e
       refuse("TikTok refused to exchange the sign-in code.", "Start again: a code works once and expires in minutes.", detail: e.message)
+    end
+
+    # Deletes every stored connection (the connected page's button, confirmed
+    # there), then says what the server falls back to: with the env pair still
+    # set, drafting carries on from it, and that is said as a warning.
+    def disconnect
+      deleted = TiktokConnection.delete_all
+      said = deleted.zero? ? NOTHING_STORED : DISCONNECTED
+      if Tiktok::OAuthClient.env_pair_present?
+        redirect_to admin_dashboard_path, alert: "#{said} #{ENV_PAIR_STILL_SET}", status: :see_other
+      else
+        redirect_to admin_dashboard_path, notice: "#{said} #{ENV_PAIR_NOT_SET}", status: :see_other
+      end
     end
 
     private
@@ -73,14 +110,14 @@ module Admin
 
     # A refusal page: one plain sentence, the next step, and TikTok's own
     # words when there are any. ERB escapes every one of them.
-    def refuse(sentence, fix, code: nil, detail: nil)
+    def refuse(sentence, fix, code: nil, detail: nil, status: :bad_request)
       @sentence = sentence
       @fix = fix
       @code = code
       @detail = detail
       @asked = asked_scopes
       @callback_url = callback_url
-      render :refused, status: :bad_request
+      render :refused, status:
     end
 
     def refuse_as_tiktok_said(code)

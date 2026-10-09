@@ -17,8 +17,7 @@ module Api
     # The request log names what a fact is about and never what it says: see
     # #mask_logged_parameters.
     class FactsController < BaseController
-      ENCRYPTION_ENV = %w[ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
-                          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT].freeze
+      ENCRYPTION_ENV = Fact::ENCRYPTION_ENV
       # The parameters the request log may show, each only while it reads as a name.
       LOGGED_PARAMETERS = %w[subject_type subject_slug key sensitivity source_kind history].freeze
       ROUTE_PARAMETERS = %w[controller action format slug].freeze

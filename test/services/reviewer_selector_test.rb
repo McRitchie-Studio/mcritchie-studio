@@ -79,6 +79,43 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "xan", light_slug(result), "the docs shape routes the light to Xan"
   end
 
+  # --- who may merge: the decision says so beside the pair ---
+
+  test "a seated documentation seat is named as a merger of a docs-shape diff only" do
+    rule = ReviewerSelector.explain(task_for(shape: "docs"))["merge_rule"]
+
+    assert_match(/\Axan, the documentation seat, may merge this PR only when its diff measures docs/, rule)
+    assert_includes rule, "bin/merge-permit <task> --agent xan --head <sha>"
+    assert_match(/carl merges any other diff\z/, rule)
+  end
+
+  test "an unseated documentation seat is not offered the merge" do
+    rule = ReviewerSelector.explain(task_for(shape: "backend"))["merge_rule"]
+
+    assert_equal "carl merges on merge-ready; the documentation seat (xan) is not seated on this PR", rule
+  end
+
+  test "a documentation seat that authored the PR is not offered the merge" do
+    decision = ReviewerSelector.new(task_for(shape: "docs"), builder: "xan").decision
+
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "xan"
+    assert_match(/the documentation seat \(xan\) is not seated/, decision["merge_rule"])
+  end
+
+  test "when carl yields to a documentation-seat primary, no named soul inherits the other diffs" do
+    decision = ReviewerSelector.new(task_for(shape: "docs"), builder: "carl").decision
+
+    assert_equal "xan", decision["reviewers"].first["slug"]
+    assert_match(/a primary outside the author set merges any other diff\z/, decision["merge_rule"])
+  end
+
+  test "the documentation seat is the merge primitive's shape-limited seat" do
+    require Rails.root.join("bin/lib/merge_permission").to_s
+
+    assert_equal [ReviewerSelector::DOCS_SEAT], MergePermission::SHAPE_LIMITED.keys
+    assert_equal "docs", MergePermission::SHAPE_LIMITED.fetch(ReviewerSelector::DOCS_SEAT)
+  end
+
   test "a risk tag pulls its domain specialist into the light seat even on a backend shape" do
     # A backend shape carrying a `solana` risk tag: Carl still owns the deep read,
     # and the solana risk pulls the Web3 specialist into the light seat.

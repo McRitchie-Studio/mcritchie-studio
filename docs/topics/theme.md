@@ -11,6 +11,7 @@
 - **Success accent**: `#4BAF50` Green (default) — flash notices, success toasts, active status dots
 - **Font**: Montserrat (weights 400-900)
 - **Logo**: SVG icon (`app/assets/images/logo-icon.svg`) + "McRitchie **Studio**" (Studio in violet)
+- **Navbar Logo generator**: `Logos::NavbarLogo` draws a brand's logo from an icon and a name as pure vector. See [`logos.md`](logos.md).
 
 ## Navbar
 

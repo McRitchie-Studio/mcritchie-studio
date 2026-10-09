@@ -6,11 +6,14 @@ slots in later as a second source behind the same reader. Section 1 is what
 exists; sections 2 to 8 are the design; section 9 lists the build pieces and
 section 10 the decisions Alex makes.
 
-**On `accepted`, not live.** Three things this page relies on are merged to
-`accepted` and are not in production: private facts (the `Fact` model,
-`/api/v1/facts`, `bin/fact`, the person-page panel), the dream bank in two
+**Nothing here is `accepted`-only.** As of 2026-10-08 nothing this page relies
+on is merged to `accepted` and missing from `main`: private facts (the `Fact`
+model, `/api/v1/facts`, `bin/fact`, the person-page panel), the dream bank in two
 sequences with relevance loading and the ship-time proposer, and the review-claim
-and one-time-code logins. Each is marked **(accepted)** where the page leans on it.
+and one-time-code logins are all on `main`. The inline **(accepted)** marks
+further down predate that. For private facts, production holds its encryption
+keys (`Fact.encryption_ready?` is true) and no fact is stored yet (`Fact.count`
+is 0), as of 2026-10-08; the feature has not been exercised in production.
 
 The idea in one paragraph: knowledge sits in five tiers, and it flows downward
 only. An original lives in Drive. A fact or a page is derived from it and points
@@ -267,8 +270,8 @@ shared drive or manage its members.
 5. For a Workspace with no delegation yet, a super-admin adds the key's client id
    and the four scopes in the Admin console under Security, API controls,
    Domain-wide delegation ([`workspace-provision`](../agents/steffon/sops/workspace-provision.md)).
-6. For facts to go live: approve Steffon setting the three
-   `ACTIVE_RECORD_ENCRYPTION_*` values on production and QA
+6. Done 2026-10-08, on Alex's word: the three `ACTIVE_RECORD_ENCRYPTION_*`
+   values are set on production and QA, one set per app
    ([`credentials.md`](../modules/credentials.md)).
 
 Steffon provisions the knowledge bucket with his `bucket-provision` SOP before

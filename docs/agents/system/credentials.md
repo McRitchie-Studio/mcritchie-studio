@@ -68,8 +68,7 @@ note under the table):
 > on SAVE (`assign_parked_identity`), and a release saves nothing — so a demotion waits for
 > its owner to sign in, which for a shared house account may be never. Measured: mack@ stayed
 > an admin in production for twenty-one days after the roster made him a viewer. A role or
-> name change to a deployed seat rides a data migration (see
-> `db/migrate/20260904190000_rename_turf_house_identity.rb`); the seed carries it for local,
+> name change to a deployed seat rides a data migration; the seed carries it for local,
 > test, and QA.
 
 ## Solana Wallets

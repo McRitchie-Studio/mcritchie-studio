@@ -342,7 +342,9 @@ so and wait one more round. A blocker found after the merge costs a whole new ta
   stops there.** Carl does NOT run `bin/release merge` and never touches
   `release`/`main`. Avi's **`qa-release`** (`bin/release prepare`) promotes the
   **ONE `accepted → release` batch PR per repo** and flips members `assembled` on
-  QA-green. **Bias to action: a clean merge-ready verdict = go.**
+  QA-green. **Bias to action: a clean merge-ready verdict = go.** When Xan is
+  the primary of a docs-shape PR she merges it the same way, on
+  `bin/merge-permit`'s permit; the documentation seat merges no other shape.
   For a registered **gem**, the merge is followed by a read-only
   **upstream-changelog audit** of that gem's `accepted` (`UpstreamMisfile.audit`).
   It prints a finding and never fails the review.

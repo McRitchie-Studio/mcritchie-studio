@@ -17,7 +17,7 @@ class AltVideoClip < ApplicationRecord
   belongs_to :alt_video, foreign_key: :alt_video_slug, primary_key: :slug, inverse_of: :clips
   has_many :versions, -> { order(:number) }, class_name: "AltVideoClipVersion", inverse_of: :clip,
            dependent: :destroy
-  # Every attempt to put this clip in the operator's TikTok drafts, kept.
+  # Every attempt to send this clip to the operator's TikTok inbox, kept.
   has_many :tiktok_drafts, -> { order(:created_at, :id) }, foreign_key: :clip_slug, primary_key: :slug,
            inverse_of: :clip, dependent: :restrict_with_exception
 

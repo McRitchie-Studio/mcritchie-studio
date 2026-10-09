@@ -85,6 +85,7 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
   end
 
   test "a traded look is counted and shown in defined rather than where its work reached" do
+    Team.create!(name: "Cincinnati Bengals", sport: "football", league: "nfl") # a look may only name a team on file
     traded = look!("Old jersey", colorway: "bengals white", team_slug: "cincinnati-bengals")
     candidates!(traded, 9, chosen: 4)
     sheet!(traded)
