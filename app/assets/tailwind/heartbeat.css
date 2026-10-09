@@ -201,7 +201,6 @@
   #xan-heartbeat .hb-btn { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:7px 12px; cursor:pointer; font-size:12.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; line-height:1; }
   #xan-heartbeat .hb-btn:hover { border-color:var(--hb-accent); }
   #xan-heartbeat .hb-btn.primary { background:var(--hb-accent); color:#06131f; border-color:var(--hb-accent); font-weight:600; }
-  #xan-heartbeat .hb-insightbtn { color:var(--hb-txt); }
 
   /* All Spans pager — the newer/older page controls beneath the cross-session table. */
   #xan-heartbeat .hb-pager { flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 0 2px; }
