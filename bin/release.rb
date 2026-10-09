@@ -93,7 +93,7 @@
 #     revert its merge commit on `release` (printed guidance) and re-run
 #     `bin/release prepare`.
 #
-#   bin/release ship [--by NAME] [--prod] [--dry-run]
+#   bin/release ship [--by NAME] [--mode ask|timed|auto|cleared] [--clearance "<Alex's words>"] [--cleared-by NAME] [--prod] [--dry-run]
 #     Steffon's production-deploy: promotes the QA-green (assembled) RC to production:
 #     publish each gem's FINAL version (contents compared with the candidate QA ran,
 #     then the served checksum confirmed), re-lock each consumer to it in a commit
@@ -1441,7 +1441,7 @@ end
 # Confirmed stamps and the /deployments Approve button see one shape. The reader
 # is one prod-board read per poll, BEST-EFFORT on the way (a blip retries) and
 # FAIL-CLOSED at the lapse (an unreadable release at the window end refuses).
-def ship_authority!(rel_slug, by, mode)
+def ship_authority!(rel_slug, by, mode, clearance: nil, cleared_by: nil)
   reader = lambda do |blockers:|
     conductor(
       "r = Release.find_by!(slug: #{rel_slug.inspect}); s = r.ship_authorization_state; " \
@@ -1466,7 +1466,8 @@ def ship_authority!(rel_slug, by, mode)
   end
   result = ShipAuthority.take!(
     mode: mode, release_slug: rel_slug, minutes: Devops::Windows.minutes("production"), dry: DRY,
-    recorder: recorder, reader: reader, confirmer: ->(prompt) { confirm(prompt) }, say: ->(line) { say(line) }
+    recorder: recorder, reader: reader, confirmer: ->(prompt) { confirm(prompt) }, say: ->(line) { say(line) },
+    clearance: clearance, cleared_by: cleared_by
   )
   say("  ship authority: #{result} (--mode #{mode})")
 rescue ShipAuthority::Refused => e
@@ -8619,6 +8620,16 @@ def ship
   rescue ArgumentError => e
     abort!(e.message)
   end
+  # `cleared`: Alex's clearance in chat is the grant. The words are required and
+  # travel onto the release with the completion, so a bare `--mode cleared` aborts
+  # here, before anything moves, rather than reading as a silent `auto`.
+  clearance = opt_value("--clearance").to_s.strip
+  cleared_by = opt_value("--cleared-by").to_s.strip
+  cleared_by = "alex" if cleared_by.empty?
+  if ship_mode == "cleared" && clearance.empty?
+    abort!("--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
+           "and the words are recorded on the release")
+  end
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
   steffon_span = false # set once the Steffon deploy-lane activity opens (gates its close)
   g4_gate = nil    # :open once the G4 Ship gate opens; :closed once a verdict lands
@@ -8777,11 +8788,12 @@ def ship
   end
 
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
-  #     BEFORE any deploy. `--mode ask|timed|auto` decides HOW (ship_authority!):
+  #     BEFORE any deploy. `--mode ask|timed|auto|cleared` decides HOW (ship_authority!):
   #     ask is the confirm prompt (honours --yes + --dry-run as before), timed posts
-  #     the request and waits on the operator window, auto proceeds on green.
+  #     the request and waits on the operator window, auto proceeds on green,
+  #     cleared records Alex's chat clearance and proceeds.
   step("ship authority: Steffon's ship gate passed on the frozen SHA — taking production authority (--mode #{ship_mode})")
-  ship_authority!(rel_slug, by, ship_mode)
+  ship_authority!(rel_slug, by, ship_mode, clearance: clearance, cleared_by: cleared_by)
 
   # Deploy-lane narration: the ship is authorized — Steffon is shipping to prod. Open a
   # role activity (best-effort) so the heartbeat attributes the deploy to him, matching

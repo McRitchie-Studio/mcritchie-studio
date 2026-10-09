@@ -229,7 +229,7 @@ is no window column, and changing a length moves every countdown at once.
 |---|---|---|---|---|
 | UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
 | Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
-| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why. `bin/release ship --mode cleared --clearance "<Alex's words>"` records his chat clearance instead: no request, no window, no button, and the card names it as cleared in chat and unsigned |
 
 The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
 Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,

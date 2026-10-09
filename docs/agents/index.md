@@ -90,7 +90,7 @@ Where each command may run, the author set, and the long form:
 2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. Detail: `docs/agents/modules/building-sop.md`.
 3. **Desks, not primaries.** Edit only in your task's worktree; primary checkouts are for reading and deploys. Detail: `docs/agents/modules/worktrees.md`.
 4. **GitHub auth is self-service.** On a 401, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`; never ask Alex for `gh auth login`. Detail: `docs/agents/modules/token-session.md`.
-5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/submit` stops at `submitted`.
+5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/submit` stops at `submitted`. His clearance in chat is the production grant: ship with `bin/release ship --mode cleared --clearance "<his words>"`, never by waiting on the Approve button; `timed` and its button are for a ship nobody cleared.
 6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.

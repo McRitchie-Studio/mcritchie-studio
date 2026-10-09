@@ -74,6 +74,7 @@ class DevopsWindowsTest < Minitest::Test
 
   def test_validate_mode_normalises_case_and_refuses_the_rest
     assert_equal "auto", Devops::Windows.validate_mode!("AUTO")
+    assert_equal "cleared", Devops::Windows.validate_mode!("Cleared")
     assert_raises(ArgumentError) { Devops::Windows.validate_mode!("yes") }
     assert_raises(ArgumentError) { Devops::Windows.validate_mode!("") }
   end

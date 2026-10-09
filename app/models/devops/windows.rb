@@ -26,8 +26,9 @@ module Devops
     DEFAULT_MINUTES = { "approval" => 10, "escalation" => 20, "production" => 30, "admin_login" => 10 }.freeze
 
     # The ship modes `bin/release ship --mode` accepts; `production_ship.mode`
-    # in the YAML picks the default for a launch that names none.
-    MODES = %w[ask timed auto].freeze
+    # in the YAML picks the default for a launch that names none. `cleared` is
+    # Alex's clearance in chat, recorded on the release with his words.
+    MODES = %w[ask timed auto cleared].freeze
     DEFAULT_MODE = "timed"
 
     # A dependency block whose summary leads with this is the OPERATOR's blocker

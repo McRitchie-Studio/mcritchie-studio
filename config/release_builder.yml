@@ -10,7 +10,10 @@ production_ship:
   #           Approve button on /deployments), and on lapse proceeds when G3 is
   #           green and no member carries an open escalation.
   #   auto  — ships on green with no prompt (`--yes` semantics).
+  #   cleared — Alex cleared the release in chat: `--clearance "<his words>"` is
+  #           required and recorded on the release; no window, no button.
   # `bin/release ship --yes` with no --mode is `auto`; an explicit --mode wins.
+  # `timed` stays the default so a ship nobody cleared (a heartbeat, cron) asks.
   mode: timed
 
 # The operator windows (devops-v3-design.md section 6). Read by

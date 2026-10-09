@@ -128,7 +128,15 @@ timeline"); the stamp is first-write-wins:
 api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "steffon"}}'
 ```
 
-Then ship, naming the production-authority mode:
+Then ship, naming the production-authority mode. When Alex cleared this release in
+the session (his words in the chat, or a launch prompt that grants the lane), his
+clearance is the grant:
+
+```bash
+bin/release ship --mode cleared --clearance "<Alex's words>" --yes
+```
+
+When nobody cleared it (a heartbeat, a scheduled run), ask through the window:
 
 ```bash
 bin/release ship --mode timed --yes
@@ -139,12 +147,14 @@ Ship from the primary checkout. **`--mode` takes production authority**
 
 | Mode | What happens at the authority step |
 |---|---|
+| `cleared` | records Alex's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. No request, no window, no button. A blank clearance refuses before anything moves. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
 | `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
 | `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
 | `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. |
 
 `--yes` answers the OTHER local confirms and skips nothing else. **The authority step is
-the only human gate.** A timed ship that refused at
+the only human gate; in `cleared` mode that gate is Alex's word in the chat, recorded on
+the release.** A timed ship that refused at
 the lapse is re-run the same way once the blocker is cleared, or re-run and approved
 while its NEW window is open. The re-run posts a fresh window (its own request event,
 keyed by its end), and a grant counts only for the latest request — an Approve clicked

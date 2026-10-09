@@ -15,6 +15,11 @@
 #          release and no member carries an open escalation; otherwise it refuses
 #          and names why. The default, from config/release_builder.yml.
 #   auto   proceeds on green with no prompt — `--yes` semantics.
+#   cleared  Alex cleared the release in chat. `--clearance "<his words>"` is
+#          required and is recorded on the completion with `granted_via chat`
+#          and `cleared_by`; no request, no window, no button. The grant is an
+#          audit trail the deployer session asserts, not a signature: the
+#          /deployments card names it as unsigned, never in the success tone.
 #
 # Every mode records the SAME two events (`ship_authorized` started → completed),
 # so the /deployments tracker's Confirming/Confirmed stamps and the Approve
@@ -77,7 +82,8 @@ module ShipAuthority
   #   confirmer.call(prompt)              → bool (the ask prompt; honours --yes upstream)
   #   say.call(line)                      progress lines
   def take!(mode:, release_slug:, minutes:, recorder:, reader:, confirmer:, say:,
-            clock: -> { Time.now }, sleeper: ->(seconds) { sleep(seconds) }, dry: false, interval: POLL_INTERVAL_S)
+            clock: -> { Time.now }, sleeper: ->(seconds) { sleep(seconds) }, dry: false, interval: POLL_INTERVAL_S,
+            clearance: nil, cleared_by: nil)
     case mode.to_s
     when "ask"
       recorder.call("started", { "mode" => "ask" })
@@ -89,12 +95,32 @@ module ShipAuthority
       recorder.call("started", { "mode" => "auto" })
       recorder.call("completed", { "mode" => "auto", "granted_via" => "auto" })
       :auto
+    when "cleared"
+      cleared!(clearance: clearance, cleared_by: cleared_by, recorder: recorder, say: say)
     when "timed"
       timed!(release_slug: release_slug, minutes: minutes, recorder: recorder, reader: reader, say: say,
              clock: clock, sleeper: sleeper, dry: dry, interval: interval)
     else
-      raise Refused, "unknown ship mode #{mode.inspect} (ask|timed|auto)"
+      raise Refused, "unknown ship mode #{mode.inspect} (ask|timed|auto|cleared)"
     end
+  end
+
+  # The chat clearance. Refuses BEFORE recording anything when the words are
+  # missing: a bare `--mode cleared` must never read as a silent `auto`. Carries
+  # no window, so its events keep the default idempotency key like ask and auto.
+  def cleared!(clearance:, cleared_by:, recorder:, say:)
+    words = clearance.to_s.strip
+    if words.empty?
+      raise Refused, "--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
+                     "and the words are recorded on the release. Nothing recorded, nothing deployed."
+    end
+
+    by = cleared_by.to_s.strip
+    by = "alex" if by.empty?
+    recorder.call("started", { "mode" => "cleared" })
+    recorder.call("completed", { "mode" => "cleared", "granted_via" => "chat", "cleared_by" => by, "clearance" => words })
+    say.call("  ✓ production authority: cleared in chat by #{by} — #{words.inspect}")
+    :cleared
   end
 
   def timed!(release_slug:, minutes:, recorder:, reader:, say:, clock:, sleeper:, dry:, interval:)

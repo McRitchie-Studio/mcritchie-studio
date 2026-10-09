@@ -519,6 +519,23 @@ class Release::LaneLeaseTest < ActiveSupport::TestCase
     assert_equal :warning, sentences.first.tone
   end
 
+  test "[unit] a chat clearance names who cleared it, quotes the words, and stays unsigned" do
+    request!(mode: "cleared")
+    answer!(source: "conductor", actor: "steffon",
+            metadata: { "mode" => "cleared", "granted_via" => "chat", "cleared_by" => "alex", "clearance" => "ship it" })
+
+    assert_equal "Cleared in chat by alex, asserted by the conductor CLI (run as steffon) at Oct 8, 01:32 UTC; unsigned. \"ship it\".",
+                 lines.first
+    assert_equal :warning, sentences.first.tone, "a chat clearance never reads in the success tone a signed tap gets"
+
+    state = @rel.ship_authorization_state
+    assert state["granted"]
+    assert_equal "chat", state["granted_via"]
+    assert_equal "alex", state["cleared_by"]
+    assert_equal "ship it", state["clearance"]
+    assert_nil state["window_ends_at"], "a cleared grant posts no window"
+  end
+
   test "[unit] a row through the events API names its recorder as a recorder" do
     request!
     answer!(at: NOW + 3.minutes, source: "api", actor: users(:alex).email, metadata: { "granted_via" => "web" })
