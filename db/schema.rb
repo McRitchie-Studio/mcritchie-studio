@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1218,8 +1218,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.string "head_branch"
     t.string "head_sha"
     t.string "html_url"
-    t.string "pending_environment"
-    t.datetime "pending_since"
     t.string "repo", null: false
     t.integer "run_attempt"
     t.bigint "run_id", null: false
@@ -1228,7 +1226,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.datetime "updated_at", null: false
     t.string "workflow_name"
     t.index ["head_sha"], name: "index_github_workflow_runs_on_head_sha"
-    t.index ["pending_environment"], name: "index_github_workflow_runs_on_pending_environment", where: "(pending_environment IS NOT NULL)"
     t.index ["run_id"], name: "index_github_workflow_runs_on_run_id", unique: true
   end
 
@@ -1560,7 +1557,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.datetime "qa_deploy_started_at"
     t.datetime "qa_deployed_at"
     t.string "qa_url"
-    t.datetime "release_notes_sent_at"
     t.datetime "shipped_at"
     t.string "slug", null: false
     t.jsonb "smoke_seal", default: {}, null: false
@@ -1660,7 +1656,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
   create_table "skill_assignments", force: :cascade do |t|
     t.string "agent_slug", null: false
     t.datetime "created_at", null: false
-    t.integer "proficiency", default: 100
     t.string "skill_slug", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_slug", "skill_slug"], name: "index_skill_assignments_on_agent_slug_and_skill_slug", unique: true
@@ -2125,8 +2120,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.text "description"
     t.string "dev_size"
     t.string "epic_slug"
-    t.text "error_message"
-    t.datetime "failed_at"
     t.datetime "g1_failed_at"
     t.datetime "g1_testing_finished_at"
     t.datetime "g1_testing_started_at"
@@ -2140,14 +2133,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.integer "position"
     t.string "pr_url"
     t.integer "priority", default: 0
-    t.datetime "queued_at"
     t.string "release_slug"
-    t.jsonb "required_skills", default: []
     t.boolean "requires_migration", default: false, null: false
     t.jsonb "result", default: {}
     t.datetime "reviewed_at"
     t.string "session_id"
-    t.datetime "sizes_revealed_at"
     t.string "slug", null: false
     t.string "stage", default: "designed", null: false
     t.datetime "started_at"
@@ -2207,9 +2197,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_190000) do
     t.string "home_arena_slug"
     t.string "league"
     t.string "location"
-    t.string "logo_path"
-    t.string "logo_source"
-    t.string "logo_url"
     t.string "mascot"
     t.string "name", null: false
     t.jsonb "rivals", default: []

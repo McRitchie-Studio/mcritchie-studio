@@ -3,7 +3,6 @@
 # idempotent, monotonic upsert). This model stays thin: it is the read surface
 # the board queries for CI status, plus the canonical status ordering.
 class GithubWorkflowRun < ApplicationRecord
-  self.ignored_columns += DeadColumns.for(table_name)
   # GitHub's workflow_run lifecycle, in the order it PROGRESSES. The ingest job
   # uses these ranks to advance a run monotonically and never regress it (a late
   # `in_progress` re-delivery must not clobber a `completed` row).

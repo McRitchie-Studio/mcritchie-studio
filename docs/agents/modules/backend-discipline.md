@@ -308,7 +308,11 @@ baseline file. Code: `lib/db_baseline.rb`, `lib/tasks/db_baseline.rake`.
   has yet to ship). Any migration newer than the schema the baseline was written from.
 - **Views.** The SQL lives in `db/views/<name>.sql`, one baseline migration each. A view
   never dumps to schema.rb, so a database loaded from the schema (test, a fresh desk)
-  has none.
+  has none. A later migration that rebuilds a view carries the new SQL and
+  `db/views/<name>.sql` matches the newest migration that creates the view.
+- **Dropped columns.** A later migration drops a baseline column with
+  `remove_column "table", "column"` in its `up`. The mark and the check read those
+  lines (`DbBaseline.removed_columns`), so a database past the drop is not short.
 - **An existing database is never re-migrated.** `db:baseline:mark` runs ahead of
   `db:migrate` and `db:prepare`, after `db:test:prepare`, and when the test suite boots
   (`test/test_helper.rb`). `db:prepare` marks every database it migrates: a bare
