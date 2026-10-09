@@ -15,7 +15,8 @@ module Api
   #
   #   require_admin_session_only  an act that must name an admin and that no
   #                               installed hook or sibling app performs (a TikTok
-  #                               draft on the operator's phone): an admin session,
+  #                               draft on the operator's phone, a ship_authorized
+  #                               release event): an admin session,
   #                               and nothing else. The shared token sits in every
   #                               agent shell, so passing it would gate nothing.
   #                               A controller may say how to get the session in

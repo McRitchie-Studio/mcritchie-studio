@@ -242,6 +242,12 @@ POST /api/v1/releases/:slug/events/:step/complete
 POST /api/v1/releases/:slug/events/:step/fail
 ```
 
+The `ship_authorized` step is production authority, so it takes an admin session
+and nothing else: the shared token and a studio session answer 403 with the
+reason. An admin soul asks for the session with `bin/agent-activity heartbeat
+steffon`, and the operator grants it on the tasks page. The Approve button on
+/deployments is the other door.
+
 Canonical release steps are:
 
 ```text

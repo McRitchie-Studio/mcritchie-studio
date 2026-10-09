@@ -179,7 +179,7 @@ how it was recorded and names no approver:
 | `bin/release ship --mode ask` (with or without `--yes`) | `Recorded by the conductor CLI in ask mode (run as <actor>) at <time>; no web approval.` |
 | `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
 | A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
-| A `ship_authorized` completion posted to the events API | `Recorded through the events API by <actor> at <time>; no web approval.` |
+| A `ship_authorized` completion posted to the events API (an admin session only; the shared token answers 403) | `Recorded through the events API by <actor> at <time>; no web approval.` |
 | A row marked as from the web that carries no verified `owner_grant` (one recorded before the marker, one a caller labelled, or one signed under a rotated secret) | `Authorized at <time> (<mode> mode); approver not recorded.` |
 
 The line describes the record; it does not change what grants authority. A row
