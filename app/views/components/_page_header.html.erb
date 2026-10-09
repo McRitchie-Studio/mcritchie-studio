@@ -1,0 +1,30 @@
+<%# The standard page header: the section sub-nav, then the page's one h1
+    (NavigationHelper#page_title), an optional eyebrow above it and an optional
+    description below. A block renders beside the title, for the page's own
+    controls. Render it as a layout to pass one:
+
+      render layout: "components/page_header", locals: { title: "Stages" } do ... end
+
+    Locals:
+      title        the page title
+      eyebrow      a short kicker above the title (optional)
+      description  the lead paragraph, text or captured markup (optional)
+      sub_nav      { nav:, current: } for components/_sub_nav (optional)
+      class        classes for the header element (optional) %>
+<header class="<%= local_assigns[:class] %>" data-test="page-header">
+  <% if local_assigns[:sub_nav] %>
+    <%= render "components/sub_nav", **local_assigns[:sub_nav] %>
+  <% end %>
+  <div class="flex items-center gap-x-4 gap-y-2 flex-wrap">
+    <div class="min-w-0">
+      <% if local_assigns[:eyebrow].present? %>
+        <p class="text-sm font-semibold text-primary uppercase tracking-wider"><%= eyebrow %></p>
+      <% end %>
+      <%= page_title title %>
+    </div>
+    <%= yield %>
+  </div>
+  <% if local_assigns[:description].present? %>
+    <p class="text-muted text-sm max-w-3xl mt-2"><%= description %></p>
+  <% end %>
+</header>

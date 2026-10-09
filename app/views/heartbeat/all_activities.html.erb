@@ -38,7 +38,7 @@
                 class: "hb-sel", onchange: "this.form.requestSubmit()" %>
         <% end %>
       <% end %>
-      <%= render "heartbeat/nav", current: :all_activities, insights_count: ActionGrade.banked.count %>
+      <%= render "components/sub_nav", nav: :heartbeat, current: :heartbeat_all_activities, counts: { insights: ActionGrade.banked.count } %>
       <span class="hb-legend">
         <span><b>activity:</b> category &middot; reason &rarr; result</span>
         <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>
