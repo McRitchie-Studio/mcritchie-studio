@@ -378,6 +378,115 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
     end
   end
 
+  # FOUR DEAD ADDRESSES ARE ONE WAIT, NOT FOUR. Nothing goes out on the
+  # download while a connection opens, and Heroku cuts a response that is
+  # silent for 55 seconds. Here every address swallows the whole timeout it was
+  # handed (the clock is the test's), so what each was handed is what the
+  # entry could have waited.
+  FOUR = [PinnedFetchWorld::PUBLIC, "93.184.216.35", "93.184.216.36", "93.184.216.37"].freeze
+
+  # Runs one sheet fetch against `pick` (host, address, the timeout that
+  # connection was given) on a clock `pick` moves with `wait`. Answers the
+  # bytes or the FetchFailed, with every connection made and the seconds spent.
+  def timed_fetch(fetcher, pick)
+    now = 100.0
+    conns = nil
+    wait = ->(seconds) { now += seconds }
+    result = fetcher.stub(:clock, -> { now }) do
+      with_http(->(host, address) { pick.call(host, address, conns.last.open_timeout, wait) }) do |connections|
+        conns = connections
+        sheet_bytes(fetcher)
+      rescue FetchFailed => e
+        e
+      end
+    end
+    [result, conns, now - 100.0]
+  end
+
+  test "[unit] zip fetcher stops at one deadline across vetted addresses" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    with_resolver("assets.mcritchie.studio" => FOUR) do
+      # Every address hangs until its timeout: the first is given the whole
+      # five seconds, and no other is tried.
+      hangs = ->(_host, _address, given, wait) { wait.call(given); raise Net::OpenTimeout, "execution expired" }
+      result, conns, spent = timed_fetch(fetcher, hangs)
+      assert_kind_of FetchFailed, result
+      assert_equal "the host could not be read (OpenTimeout)", result.message
+      assert_equal [FOUR.first], conns.map(&:address), "the deadline is spent: no further address is dialled"
+      assert_equal [5.0], conns.map(&:open_timeout)
+      assert_in_delta 5.0, spent, 0.001
+
+      # Every address refuses after two seconds: each next one is given only
+      # what is left, and the walk stops when nothing is.
+      slow = lambda do |_host, _address, given, wait|
+        wait.call([2.0, given].min)
+        raise(given < 2.0 ? Net::OpenTimeout : Errno::ECONNREFUSED)
+      end
+      result, conns, spent = timed_fetch(fetcher, slow)
+      assert_kind_of FetchFailed, result
+      assert_equal FOUR.first(3), conns.map(&:address), "IPv4 in vetted order, and the fourth is never reached"
+      assert_equal [5.0, 3.0, 1.0], conns.map(&:open_timeout)
+      assert_in_delta 5.0, spent, 0.001, "five seconds for the entry, not five for each address"
+    end
+  end
+
+  test "[unit] the one connect deadline still reaches an address that answers inside it, and a redirect draws on the same five seconds" do
+    fetcher = MusicVideos::AssetZip::Fetcher.new
+    with_resolver("assets.mcritchie.studio" => FOUR, "cdn.example.com" => ["151.101.1.69"]) do
+      # THE CONTROL: the first address refuses after four seconds, the second answers.
+      late = lambda do |_host, address, _given, wait|
+        next ok(%w[png- bytes]) unless address == FOUR.first
+
+        wait.call(4.0)
+        raise Errno::ECONNREFUSED
+      end
+      result, conns, = timed_fetch(fetcher, late)
+      assert_equal "png-bytes", result
+      assert_equal FOUR.first(2), conns.map(&:address)
+      assert_equal [5.0, 1.0], conns.map(&:open_timeout)
+
+      # A redirect is a new host and a new connection, on what the entry has left.
+      hop = lambda do |host, _address, given, wait|
+        if host == "assets.mcritchie.studio"
+          wait.call(3.0)
+          next redirect("https://cdn.example.com/s.png")
+        end
+        wait.call(given)
+        raise Net::OpenTimeout, "execution expired"
+      end
+      result, conns, spent = timed_fetch(fetcher, hop)
+      assert_kind_of FetchFailed, result
+      assert_equal [FOUR.first, "151.101.1.69"], conns.map(&:address)
+      assert_equal [5.0, 2.0], conns.map(&:open_timeout)
+      assert_in_delta 5.0, spent, 0.001
+    end
+  end
+
+  # The same, on the wall clock and real sockets: four addresses that accept
+  # the TCP connection and then say nothing, so the TLS handshake hangs. The
+  # deadline is cut to half a second here; the constant is five.
+  test "four addresses that accept and never answer hold the entry for one deadline, on real sockets" do
+    server = TCPServer.new("127.0.0.1", 0)
+    held = []
+    accepting = Thread.new { loop { held << server.accept } }
+    fetcher = MusicVideos::AssetZip::Fetcher.new(open_timeout: 0.5)
+    with_resolver("assets.mcritchie.studio" => FOUR) do
+      with_dials(to: server.addr[1]) do |dials|
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        error = assert_raises(FetchFailed) { fetcher.each_chunk(sheet) { flunk } }
+        waited = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+        assert_equal "the host could not be read (OpenTimeout)", error.message
+        assert_equal [FOUR.first], dials, "one deadline: the other three are never dialled"
+        assert_operator waited, :>=, 0.45, "and it did wait for the one it tried"
+      end
+    end
+  ensure
+    accepting&.kill
+    held&.each(&:close)
+    server&.close
+  end
+
   test "the connection is closed when the sheet is read, and when the reader goes away mid-body" do
     fetcher = MusicVideos::AssetZip::Fetcher.new
     with_resolver("assets.mcritchie.studio" => [PUBLIC]) do
@@ -434,6 +543,7 @@ class MusicVideosAssetZipWriterTest < ActiveSupport::TestCase
   # Yields every connection made.
   class PinnedHttp
     attr_accessor :open_timeout, :read_timeout
+    attr_reader :address
 
     def initialize(pick, host, address)
       @pick = pick

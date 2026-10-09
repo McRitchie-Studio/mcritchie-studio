@@ -670,19 +670,15 @@ Two further gaps to know before trusting the chain end to end:
 ### URL safety and DNS
 
 `Appearances::FetchableUrl` is the one opinion about which URLs are handed to a
-fetcher, and it delegates to the engine's guard. What the guard checks depends on
-the studio-engine version the hub locks:
+fetcher, and it delegates to the engine's guard (studio-engine 0.95 onward, the
+Gemfile's floor). The guard reads the URL's text, then looks the host name up
+and refuses a name with any non-public address. A lookup is uncached, takes up
+to about six seconds for a name that never answers, and a name that cannot be
+looked up raises `Studio::ImageCache::UnresolvedSourceHost`.
 
-- **The engine without name resolution** reads the URL's text only.
-- **The engine with it** (studio-engine PR 436 onward) also looks the host name up
-  and refuses a name with any non-public address. A lookup is uncached, takes up
-  to about six seconds for a name that never answers, and a name that cannot be
-  looked up raises `Studio::ImageCache::UnresolvedSourceHost`.
-
-The hub runs on both, so `FetchableUrl` answers one of three verdicts: `OK`,
-`REFUSED` (not a public address) or `UNRESOLVED` (the host could not be looked
-up). On the first engine `UNRESOLVED` never occurs. Three rules keep lookups off
-hot paths:
+`FetchableUrl` answers one of three verdicts: `OK`, `REFUSED` (not a public
+address) or `UNRESOLVED` (the host could not be looked up). Three rules keep
+lookups off hot paths:
 
 1. **One lookup per host per request or job.** Verdicts are remembered per host
    in `FetchableUrl::Memo`, a `CurrentAttributes` that Rails clears when the
