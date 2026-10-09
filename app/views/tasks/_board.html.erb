@@ -62,7 +62,8 @@
     subtree so it actually runs. Drag/move/reorder/live/toast-host/counts are the
     primitive's; this owns filters + archive/delete, delegating the shared bits
     (toast host, count refresh, exit animation) back to the inner studioBoard via
-    Alpine.$data so there is ONE toast host and one animation path. %>
+    window.HubEngineBoard (board/engine_board) so there is ONE toast host and one
+    animation path. %>
 <script>
 function taskBoardChrome() {
   return {
@@ -76,8 +77,10 @@ function taskBoardChrome() {
       // $nextTick, not synchronous: x-init runs mid directive-walk, so the filter
       // chips' @click aren't bound yet here. The flag then means "interactive".
       this.$nextTick(() => {
-        this.keepTrueCounts();
-        this.$el.dataset.alpineReady = 'true';
+        const ready = () => { this.keepTrueCounts(); this.$el.dataset.alpineReady = 'true'; };
+        const reach = window.HubEngineBoard;
+        if (!reach) { ready(); return; }
+        reach.ready(this.$el.querySelector('[data-test="studio-board"]')).then(ready);
       });
     },
 
@@ -132,7 +135,7 @@ function taskBoardChrome() {
     // --- reach into the inner studio/board primitive (single source of truth) --
     boardData() {
       const section = this.$el.querySelector('[data-test="studio-board"]');
-      return (section && window.Alpine && window.Alpine.$data) ? window.Alpine.$data(section) : null;
+      return (section && window.HubEngineBoard) ? window.HubEngineBoard.scope(section) : null;
     },
     boardToast(msg, type) {
       const d = this.boardData();

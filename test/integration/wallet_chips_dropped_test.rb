@@ -43,10 +43,9 @@ class WalletChipsDroppedTest < ActionDispatch::IntegrationTest
     refute_includes response.body, "No email or wallet", "the empty-cell copy still offers a wallet"
   end
 
-  # The navbar's left slot is deliberately an EMPTY span holding the level
-  # indicator's right edge (app/views/components/_user_nav.html.erb). Assert the
-  # bar still renders, so deleting the span shows up here rather than as a
-  # silently reflowed navbar nobody looks at.
+  # The navbar's bar under the name is studio-engine's (components/_user_nav),
+  # and its left slot prints a wallet address only for a user who has one.
+  # Assert the bar renders, so the refusal below has something to read.
   test "[component] the navbar renders its level bar with no address in it" do
     get root_path
     assert_response :success

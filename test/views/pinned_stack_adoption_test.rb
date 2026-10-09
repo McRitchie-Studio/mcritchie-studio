@@ -48,12 +48,14 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
 
   test "the navbar is scroll-linked rather than eased on a clock" do
     layout = LAYOUT.read
+    navbar = Pathname(Gem.loaded_specs["studio-engine"].full_gem_path).join("app/views/layouts/_navbar.html.erb").read
 
-    assert_includes layout, 'x-data="navCollapse()"',
+    assert_includes layout, "hub_navbar(", "the header must be the engine's navbar"
+    assert_includes navbar, 'data-studio-controller="nav-collapse"',
                     "the header must own the engine's scroll-linked collapse"
-    assert_includes layout, 'data-pin="nav"',
+    assert_includes navbar, 'data-pin="nav"',
                     "the header must publish its edge, or nothing below can position off it"
-    assert_includes layout, "nav-shell", "the header is the --nav-p scope"
+    assert_includes navbar, "nav-shell", "the header is the --nav-p scope"
 
     # THE THING THAT CAUSED THE FLICKER. A threshold feeding a timed transition
     # keeps the header moving after the gesture ends, and anything reading its

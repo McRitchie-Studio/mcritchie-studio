@@ -28,16 +28,16 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
     get links_path
     assert_response :success
 
-    assert_includes response.body, "bg-page/95"
-    assert_includes response.body, "supports-[backdrop-filter]:backdrop-blur"
-    # THE INVERT PAIR is the theme concern here — the mark is dark-on-light and
-    # has to un-invert in dark mode. The timed transition that used to sit
-    # between the two halves went with the navbar's collapse: sizing is
-    # scroll-linked now, so there is nothing left for a clock to ease (task
-    # stop-headers-chasing-navbar). Asserted as the pair rather than as one
-    # string so a future class reorder does not read as a theme regression.
-    assert_includes response.body, "invert", "the mark inverts for the light theme"
-    assert_includes response.body, "dark:invert-0", "and un-inverts in dark mode"
+    # The header is the engine's navbar; its surface and the mark's theme pair
+    # are this app's CSS on it (the .nav-shell block in application.css).
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_match(/\.nav-shell\[data-pin="nav"\]\s*\{[^}]*@apply bg-page\/95 supports-\[backdrop-filter\]:backdrop-blur/m, css,
+                 "the pinned header is the page colour at 95%, blurred where supported")
+    # THE INVERT PAIR is the theme concern here: the mark is drawn in white, so
+    # it inverts for the light theme and un-inverts in dark mode.
+    assert_match(/^\s*\.nav-shell \.nav-logo\s*\{[^}]*filter:\s*invert\(1\)/m, css, "the mark inverts for the light theme")
+    assert_match(/^\s*\.dark \.nav-shell \.nav-logo\s*\{[^}]*filter:\s*none/m, css, "and un-inverts in dark mode")
+    assert_select "header.nav-shell img.nav-logo", 1
     assert_includes response.body, "hover:bg-surface-alt"
     assert_includes response.body, "focus-visible:ring-primary/40"
     assert_includes response.body, "inline-flex h-9 w-9 items-center justify-center"

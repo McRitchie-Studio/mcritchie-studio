@@ -27,6 +27,8 @@ require "test_helper"
 # has exactly one pinned header.
 class BarStackAdoptionTest < ActionDispatch::IntegrationTest
   LAYOUT = Rails.root.join("app/views/layouts/application.html.erb")
+  # The header itself: studio-engine's navbar, which the layout renders.
+  NAVBAR = Pathname(Gem.loaded_specs["studio-engine"].full_gem_path).join("app/views/layouts/_navbar.html.erb")
 
   # The release that deleted the measured custom property (studio-engine
   # CHANGELOG 0.39.0, "Removed: `--studio-bars-h` is gone").
@@ -44,8 +46,9 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
   test "the stack is rendered before the header, not inside it" do
     layout = LAYOUT.read
 
-    assert_operator layout.index(%(render "studio/banners/stack")), :<, layout.index("<header"),
+    assert_operator layout.index(%(render "studio/banners/stack")), :<, layout.index("hub_navbar("),
                     "the stack must precede the header — nesting it is what this replaced"
+    assert_no_match(/render\s*\(?\s*"studio\/banners/, NAVBAR.read, "the engine's navbar must not render a bar inside the header")
   end
 
   # Replaces "the header offsets by the published height". Both halves matter:
@@ -55,11 +58,11 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
   # reading the offset from ANY runtime-published value is the defect class, so a
   # rename would otherwise walk straight back in.
   test "the header pins statically rather than offsetting by a published height" do
-    layout = LAYOUT.read
+    navbar = NAVBAR.read
 
-    assert_includes layout, "sticky top-0",
+    assert_includes navbar, "sticky top-0",
                     "the header pins at a static top-0 now that the bars hold their own space"
-    assert_no_match(/top:\s*var\(/, layout,
+    assert_no_match(/top:\s*var\(/, LAYOUT.read + navbar,
                     "a var()-derived top is the jump: the header paints at one value " \
                     "and moves when the real one lands")
   end
