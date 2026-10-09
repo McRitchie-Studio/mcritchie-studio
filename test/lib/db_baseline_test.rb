@@ -211,6 +211,8 @@ class DbBaselineTest < ActiveSupport::TestCase
     mark = helper.index('DbBaseline.mark_environment!("test"')
     assert mark, "test/test_helper.rb no longer marks the test database"
     assert_operator mark, :<, helper.index('require "rails/test_help"')
+    assert helper.match?(/mark_environment!\("test".*\n\s*rescue DbBaseline::Error\n/),
+           "a test database short of baseline columns must reach rails/test_help, which rebuilds it"
   end
 
   # --- the marker, against a scratch Postgres schema inside the test transaction ---
