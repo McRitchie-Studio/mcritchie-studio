@@ -72,3 +72,13 @@ sign-in, the NFL pages, and `/tasks/:slug/local_review`. A signed-in non-admin
 reaches only their own profile. The API (bearer), `/webhooks/*` (signed) and
 `/up` sit outside the wall. `test/integration/admin_wall_test.rb` walks the
 route table, so a new route is walled until it is listed.
+
+The public list has two sources. Pages come from the navigation registry,
+`config/navigation.yml`: each page declares `audience: public` or `admin`, and
+the same entries build the link sidebar, `/links`, `/admin/links` and the section
+sub-navs (`components/_sub_nav`), so a link and the page behind it cannot
+disagree. Public actions that are not site pages (form posts, probes, tracking
+pixels, the auth, unsubscribe and local-development doors) stay an explicit list,
+`AdminWall::PUBLIC_ACTIONS`. `test/integration/admin_wall_public_set_test.rb`
+pins the whole public set, so opening a page means editing the registry and that
+list together.
