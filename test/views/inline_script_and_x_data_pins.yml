@@ -1,0 +1,255 @@
+# Pinned by test/views/inline_script_and_x_data_ratchet_test.rb, which says what
+# counts. A number here only goes down; an entry at zero is removed.
+---
+app/views/admin/model_pricing/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/agent_login_requests/_pending.html.erb:
+  x_data: 0
+  script: 1
+app/views/agents/_activities_live_fx.html.erb:
+  x_data: 0
+  script: 1
+app/views/agents/_activities_scripts.html.erb:
+  x_data: 0
+  script: 1
+app/views/agents/_activity_row.html.erb:
+  x_data: 2
+  script: 0
+app/views/agents/_activity_turn_row.html.erb:
+  x_data: 1
+  script: 0
+app/views/agents/_heartbeat_section.html.erb:
+  x_data: 2
+  script: 0
+app/views/agents/activities.html.erb:
+  x_data: 1
+  script: 0
+app/views/alt_videos/_clip.html.erb:
+  x_data: 4
+  script: 0
+app/views/alt_videos/_clip_compare.html.erb:
+  x_data: 1
+  script: 0
+app/views/alt_videos/_clip_tiktok.html.erb:
+  x_data: 2
+  script: 0
+app/views/alt_videos/_full_video.html.erb:
+  x_data: 1
+  script: 0
+app/views/alt_videos/_watch.html.erb:
+  x_data: 2
+  script: 0
+app/views/alt_videos/show.html.erb:
+  x_data: 1
+  script: 1
+app/views/appearances/_sheet_build_status.html.erb:
+  x_data: 1
+  script: 0
+app/views/broadcasts/edit.html.erb:
+  x_data: 0
+  script: 1
+app/views/build/new.html.erb:
+  x_data: 3
+  script: 1
+app/views/build/show.html.erb:
+  x_data: 2
+  script: 1
+app/views/builders/history.html.erb:
+  x_data: 1
+  script: 0
+app/views/builders/index.html.erb:
+  x_data: 1
+  script: 0
+app/views/chat/_chat_widget.html.erb:
+  x_data: 1
+  script: 0
+app/views/components/_copy_text_script.html.erb:
+  x_data: 0
+  script: 1
+app/views/components/_elapsed_label_script.html.erb:
+  x_data: 0
+  script: 1
+app/views/components/_overflow_fade.html.erb:
+  x_data: 1
+  script: 0
+app/views/components/_stage_agent_avatars.html.erb:
+  x_data: 1
+  script: 0
+app/views/contact_submissions/new.html.erb:
+  x_data: 1
+  script: 0
+app/views/contacts/index.html.erb:
+  x_data: 1
+  script: 1
+app/views/contents/_form.html.erb:
+  x_data: 1
+  script: 0
+app/views/contents/_tiktok_assembly_card.html.erb:
+  x_data: 0
+  script: 1
+app/views/contents/_video_post_x_card.html.erb:
+  x_data: 1
+  script: 0
+app/views/contents/index.html.erb:
+  x_data: 1
+  script: 1
+app/views/email_image_generators/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/email_images/_build_status.html.erb:
+  x_data: 1
+  script: 0
+app/views/epics/show.html.erb:
+  x_data: 1
+  script: 1
+app/views/games/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/_activity_grade_editor.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/_activity_table.html.erb:
+  x_data: 3
+  script: 0
+app/views/heartbeat/_drawer.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/_grade_editor.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/_key_method_chip.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/_scripts.html.erb:
+  x_data: 0
+  script: 1
+app/views/heartbeat/all_activities.html.erb:
+  x_data: 1
+  script: 0
+app/views/heartbeat/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/launcher/index.html.erb:
+  x_data: 1
+  script: 0
+app/views/layouts/application.html.erb:
+  x_data: 1
+  script: 3
+app/views/lineup_graphics/defense.html.erb:
+  x_data: 0
+  script: 1
+app/views/lineup_graphics/offense.html.erb:
+  x_data: 0
+  script: 1
+app/views/lineup_graphics/show.html.erb:
+  x_data: 0
+  script: 1
+app/views/logos/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/modals/_auth.html.erb:
+  x_data: 1
+  script: 0
+app/views/modals/_check_inbox.html.erb:
+  x_data: 1
+  script: 0
+app/views/music_videos/_clip.html.erb:
+  x_data: 1
+  script: 0
+app/views/music_videos/_look.html.erb:
+  x_data: 1
+  script: 0
+app/views/music_videos/_naming.html.erb:
+  x_data: 1
+  script: 0
+app/views/music_videos/_performer.html.erb:
+  x_data: 2
+  script: 0
+app/views/music_videos/_player_scripts.html.erb:
+  x_data: 0
+  script: 2
+app/views/music_videos/_swap_card.html.erb:
+  x_data: 1
+  script: 0
+app/views/music_videos/show.html.erb:
+  x_data: 0
+  script: 1
+app/views/news/edit.html.erb:
+  x_data: 1
+  script: 1
+app/views/news/index.html.erb:
+  x_data: 1
+  script: 1
+app/views/nfl/rosters.html.erb:
+  x_data: 0
+  script: 1
+app/views/packages/index.html.erb:
+  x_data: 1
+  script: 0
+app/views/people/index.html.erb:
+  x_data: 1
+  script: 0
+app/views/people/merge.html.erb:
+  x_data: 1
+  script: 0
+app/views/photo_scouting/show.html.erb:
+  x_data: 1
+  script: 1
+app/views/pokemon/_dex_cell.html.erb:
+  x_data: 1
+  script: 0
+app/views/rankings/player_impact.html.erb:
+  x_data: 1
+  script: 0
+app/views/releases/_deployment_range_script.html.erb:
+  x_data: 0
+  script: 1
+app/views/shared/_auth_card.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/_agents_summary_card.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/_board.html.erb:
+  x_data: 1
+  script: 1
+app/views/tasks/_consolidated_timeline.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/_deploy_board.html.erb:
+  x_data: 1
+  script: 1
+app/views/tasks/_deploy_summary_row.html.erb:
+  x_data: 1
+  script: 1
+app/views/tasks/_deployments_live_fx.html.erb:
+  x_data: 0
+  script: 1
+app/views/tasks/_dev_board_tools.html.erb:
+  x_data: 1
+  script: 1
+app/views/tasks/_dev_deploy_tools.html.erb:
+  x_data: 1
+  script: 1
+app/views/tasks/_kickoff_chip.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/_release_ticker.html.erb:
+  x_data: 0
+  script: 1
+app/views/tasks/_task_card.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/_workflow_copy_chip.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/show.html.erb:
+  x_data: 1
+  script: 0
+app/views/tasks/sop.html.erb:
+  x_data: 1
+  script: 0
+app/views/teams/index.html.erb:
+  x_data: 1
+  script: 0
