@@ -38,10 +38,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "method: 'PATCH'"
     assert_includes response.body, "method: 'DELETE'"
     # Distinct exit animations: the app passes a distinct kind to the studio/board
-    # primitive's animateCardExit, which branches archive vs delete.
+    # primitive's animateCardExit, which branches archive vs delete. The
+    # primitive's script is the engine's studio/board module when the bundled
+    # engine ships one, and inline on this page otherwise.
     assert_includes response.body, "this.boardExit(card, 'archive')"
     assert_includes response.body, "this.boardExit(card, 'delete')"
-    assert_includes response.body, 'kind === "archive"'
+    board_module = Studio::Engine.root.join("app/javascript/studio/board.js")
+    board_factory = board_module.exist? ? board_module.read : response.body
+    assert_includes board_factory, 'kind === "archive"'
     assert_not_includes response.body, "/tasks/' + slug + '/archive.json"
   end
 
