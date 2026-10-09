@@ -146,7 +146,6 @@ test/controllers/video_performer_recast_looks_controller_test.rb: 2.58
 test/controllers/video_performer_recasts_controller_test.rb: 3.56
 test/controllers/webhooks/resend_events_controller_test.rb: 0.37
 test/controllers/webhooks/resend_inbound_controller_test.rb: 0.08
-test/db/add_vocations_to_people_test.rb: 0.05
 test/db/remap_package_tiers_test.rb: 0.14
 test/db/timeline_views_test.rb: 0.1
 test/docs/citation_resolution_guard_test.rb: 17.98
@@ -757,7 +756,6 @@ test/models/release_conductor_claim_test.rb: 0.95
 test/models/release_event_test.rb: 0.48
 test/models/release_ship_authorization_test.rb: 4.85
 test/models/release_test.rb: 18.95
-test/models/rename_alex_soul_to_xan_migration_test.rb: 3.98
 test/models/renamed_name_parts_test.rb: 0.62
 test/models/retired_email_move_test.rb: 0.6
 test/models/review/duration_roll_test.rb: 9.77
