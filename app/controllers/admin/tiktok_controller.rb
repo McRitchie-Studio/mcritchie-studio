@@ -76,6 +76,11 @@ module Admin
                 elsif @env_pair then :env
                 else :none
                 end
+      # Can this server draft at all? The clip card's own predicate
+      # (Tiktok::DraftClip.available?), so this page and the card cannot
+      # disagree: a connected account with the app's two keys missing is not
+      # "Connected", it is drafting switched off.
+      @drafting = Tiktok::DraftClip.available?
       @can_draft = @source == :stored && @connection.scopes.include?("video.upload")
       @direct_post = @source == :stored && @connection.scopes.include?(Tiktok::OAuthClient::DIRECT_POST_SCOPE)
     end
@@ -120,18 +125,16 @@ module Admin
     # Deletes every stored connection (the standing page's button, confirmed
     # there), records who did it, then says on that page what the server falls
     # back to: with the env pair still set, drafting carries on from it, and
-    # that is said as a warning.
+    # that is said in the same notice. The delete succeeded either way, so it
+    # is a notice: the engine's toast has two types, and an alert is titled
+    # "Error".
     def disconnect
       deleted = TiktokConnection.delete_all
       env_pair = Tiktok::OAuthClient.env_pair_present?
       Rails.logger.info("[tiktok] disconnect by=#{current_user.slug} at=#{Time.current.utc.iso8601} " \
                         "deleted=#{deleted} env_pair=#{env_pair ? 'set' : 'unset'}")
       said = deleted.zero? ? NOTHING_STORED : DISCONNECTED
-      if env_pair
-        redirect_to admin_tiktok_path, alert: "#{said} #{ENV_PAIR_STILL_SET}", status: :see_other
-      else
-        redirect_to admin_tiktok_path, notice: "#{said} #{ENV_PAIR_NOT_SET}", status: :see_other
-      end
+      redirect_to admin_tiktok_path, notice: "#{said} #{env_pair ? ENV_PAIR_STILL_SET : ENV_PAIR_NOT_SET}", status: :see_other
     end
 
     private

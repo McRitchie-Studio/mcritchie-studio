@@ -6,8 +6,12 @@
      none: ["Not connected", "bg-warning/10 text-warning-ink border-warning/40"]
    }.fetch(@source) %>
 <% can_sign_in = @encryption_ready && (@app_keys || @stand_in) %>
+<%# An account is there to draft from, but the server cannot draft: the clip card's predicate says no, and the only thing missing is the app's two keys. %>
+<% keys_missing = %i[stored env].include?(@source) && !@drafting %>
+<% status = ["Drafting is off: the TikTok app keys are not set", "bg-warning/10 text-warning-ink border-warning/40"] if keys_missing %>
+<% encryption_names = TiktokConnection::ENCRYPTION_ENV.join(", ") %>
 <% set = ->(on) { on ? "set" : "not set" } %>
-<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="tiktok-connection" data-source="<%= @source %>">
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="tiktok-connection" data-source="<%= @source %>" data-drafting="<%= @drafting %>">
   <div>
     <h1 class="text-3xl font-bold text-heading">TikTok connection</h1>
     <p class="text-secondary mt-2">
@@ -18,6 +22,12 @@
   <div class="card p-4 space-y-2" data-test="tiktok-status">
     <span class="badge text-xs <%= status.last %>" data-test="tiktok-status-badge"><%= status.first %></span>
     <p class="text-body text-sm" data-test="tiktok-status-detail">
+      <% if keys_missing %>
+        <% if @source == :stored %>An account is connected<% else %>The pair in the server's config names an account<% end %>,
+        but this server cannot draft to it until
+        <span class="font-mono text-xs">TIKTOK_CLIENT_KEY</span> and <span class="font-mono text-xs">TIKTOK_CLIENT_SECRET</span>
+        are set on it. Every clip's Draft to TikTok is off until then.
+      <% else %>
       <% case @source %>
       <% when :stored %>
         <% if !@can_draft %>
@@ -32,13 +42,20 @@
         <% end %>
       <% when :unreadable %>
         A connection is stored, but it was encrypted with keys this server no longer has. It counts as not connected,
-        and the server's config does not stand in for it. Sign in again to replace it.
+        and the server's config does not stand in for it.
+        <% if @encryption_ready %>
+          Sign in again to replace it.
+        <% else %>
+          Set this server's encryption keys first
+          (<span class="font-mono text-xs"><%= encryption_names %></span>), then sign in again to replace it.
+        <% end %>
       <% when :env %>
         No connection is stored here. Drafting uses the pair in the server's config
         (<span class="font-mono text-xs">TIKTOK_REFRESH_TOKEN</span>, <span class="font-mono text-xs">TIKTOK_OPEN_ID</span>).
         Sign in to store a connection instead; the stored one is then used first.
       <% else %>
         Nothing connects this server to TikTok. Sign in as the account the drafts should land in.
+      <% end %>
       <% end %>
     </p>
   </div>
@@ -109,7 +126,7 @@
           <span class="font-semibold text-heading">Ready.</span> This server can store a connection.
         <% else %>
           <span class="font-semibold text-warning-ink">Not ready.</span> This server cannot store a connection until its encryption keys are set:
-          <span class="font-mono text-xs"><%= TiktokConnection::ENCRYPTION_ENV.join(", ") %></span>.
+          <span class="font-mono text-xs"><%= encryption_names %></span>.
         <% end %>
       </dd>
     </div>
@@ -142,7 +159,13 @@
     <p class="text-sm text-body min-w-0">
       <span class="font-semibold text-heading">Disconnect.</span>
       <% if @connection %>
-        Deletes the stored connection from this server. Signing in again connects it back.
+        Deletes the stored connection from this server.
+        <% if @encryption_ready %>
+          Signing in again connects it back.
+        <% else %>
+          Connecting it back needs this server's encryption keys set first
+          (<span class="font-mono text-xs"><%= encryption_names %></span>), then a sign-in.
+        <% end %>
         <% if @env_pair %>Drafting then carries on from the pair in the server's config.<% end %>
       <% elsif @env_pair %>
         Nothing is stored here to delete. To turn drafting off, remove

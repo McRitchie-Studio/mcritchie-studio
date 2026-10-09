@@ -212,6 +212,84 @@ class Admin::TiktokConnectionPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='tiktok-sign-in-card']", text: /Off until\s+TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET are set/
   end
 
+  # THE PAGE AND THE CLIP CARD ANSWER FROM ONE PREDICATE. An account with the
+  # app's two keys missing cannot draft (the clip card says not connected), so
+  # the page must not open on a green "Connected".
+  test "[integration] a stored connection without the app keys reads drafting off, as the clip card does" do
+    connect
+    log_in_as users(:alex)
+
+    get admin_tiktok_path
+    assert_select "[data-test='tiktok-connection'][data-drafting='true']" # the control: keys set
+    assert_select "[data-test='tiktok-status-badge']", text: "Connected"
+
+    ENV.delete("TIKTOK_CLIENT_SECRET")
+    get admin_tiktok_path
+
+    assert_not Tiktok::DraftClip.available?, "the clip card's verdict"
+    assert_select "[data-test='tiktok-connection'][data-source='stored'][data-drafting='false']"
+    assert_select "[data-test='tiktok-status-badge']", text: "Drafting is off: the TikTok app keys are not set"
+    assert_select "[data-test='tiktok-status-detail']", text: /cannot draft to it until\s+TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET\s+are set/
+    assert_select "[data-test='tiktok-status']", text: /Connected|can upload to the TikTok inbox/, count: 0
+    assert_select "[data-tiktok-field='account']", text: OPEN_ID
+    assert_no_secret_in response.body
+  end
+
+  test "[integration] the env pair without the app keys reads drafting off too" do
+    ENV["TIKTOK_REFRESH_TOKEN"] = ENV_REFRESH
+    ENV["TIKTOK_OPEN_ID"] = ENV_OPEN_ID
+    ENV.delete("TIKTOK_CLIENT_KEY")
+    log_in_as users(:alex)
+
+    get admin_tiktok_path
+
+    assert_not Tiktok::DraftClip.available?
+    assert_select "[data-test='tiktok-connection'][data-source='env'][data-drafting='false']"
+    assert_select "[data-test='tiktok-status-badge']", text: "Drafting is off: the TikTok app keys are not set"
+    assert_select "[data-test='tiktok-status']", text: /Connected/, count: 0
+    assert_no_secret_in response.body
+  end
+
+  test "[integration] with a stand-in for TikTok the keys are not needed, and the page says connected" do
+    connect
+    ENV.delete("TIKTOK_CLIENT_KEY")
+    log_in_as users(:alex)
+    uploader = Tiktok::DraftClip.uploader
+    Tiktok::DraftClip.uploader = TiktokDraftStandIn::Uploader.new
+    Tiktok::OAuthClient.sign_in_stand_in = TiktokDraftStandIn::SignIn.new
+
+    get admin_tiktok_path
+
+    assert Tiktok::DraftClip.available?
+    assert_select "[data-test='tiktok-connection'][data-drafting='true']"
+    assert_select "[data-test='tiktok-status-badge']", text: "Connected"
+  ensure
+    Tiktok::DraftClip.uploader = uploader
+    Tiktok::OAuthClient.sign_in_stand_in = nil
+  end
+
+  # A stored row and no encryption keys: Sign in is off, so nothing on the page
+  # may tell the admin to sign in again as if that were possible.
+  test "[integration] a stored connection with no encryption keys says to set the keys first, wherever it spoke of signing in" do
+    connect
+    log_in_as users(:alex)
+    names = /ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY, ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY, ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT/
+
+    # The row was stored under keys this server no longer holds, and it holds
+    # none now (this environment caches its key provider, so both are staged).
+    with_other_encryption_key { without_encryption_keys { get admin_tiktok_path } }
+
+    assert_response :success
+    assert_select "[data-test='tiktok-connection'][data-source='unreadable']"
+    assert_select "[data-tiktok-field='encryption'][data-ready='false']"
+    assert_select "a[data-test='tiktok-sign-in']", count: 0
+    assert_select "[data-test='tiktok-status-detail']", text: /Set this server's encryption keys first\s+\(#{names.source}\), then sign in again to replace it/
+    assert_select "[data-test='tiktok-status-detail']", text: /\. Sign in again to replace it/, count: 0
+    assert_select "[data-test='tiktok-disconnect-card']", text: /Connecting it back needs this server's encryption keys set first\s+\(#{names.source}\), then a sign-in/
+    assert_select "[data-test='tiktok-disconnect-card']", text: /Signing in again connects it back/, count: 0
+    assert_select "form[data-test='tiktok-disconnect']"
+  end
+
   test "[integration] a refresh token past its expiry is said to be expired" do
     connect
     log_in_as users(:alex)
