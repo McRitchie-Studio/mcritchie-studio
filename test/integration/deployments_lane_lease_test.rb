@@ -119,9 +119,10 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
 
   # --- who approved: the web Approve alone names a person ---------------------------
 
+  # The events API takes ship_authorized from an admin session alone.
   API_HEADERS = lambda do
-    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
-    { "Authorization" => "Bearer #{token}" }
+    session = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
+    { "Authorization" => "Bearer #{session.token}" }
   end
 
   def timed_request!(release)
@@ -137,7 +138,7 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
       .map { |node| [node["title"], node["data-tone"]] }
   end
 
-  # The shared-token call that states the owner approved on the web.
+  # The events-API call that states the owner approved on the web.
   def forge_web_grant!(release, metadata: {})
     post "/api/v1/releases/#{release.slug}/events/ship_authorized/complete",
          params: { event: { actor: users(:alex).email, source: "web",
@@ -178,15 +179,15 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     assert_empty release.release_events.for_step("ship_authorized").completed
   end
 
-  test "[integration] a shared-token row claiming the owner's web approval names no approver on the card" do
+  test "[integration] an events-API row claiming the owner's web approval names no approver on the card" do
     release = Release.open!
     member!(release, "first")
     timed_request!(release)
 
     event = forge_web_grant!(release)
 
-    assert release.reload.ship_authorization_granted?, "the events API accepts the row exactly as it did"
-    assert_equal users(:alex).email, event.actor
+    assert release.reload.ship_authorization_granted?, "an admin session's row grants"
+    assert_equal "steffon", event.actor, "the actor is the session's soul, never the param"
     assert_equal "web", event.source
     row = grant_row
     assert_match(/\AAuthorized at .+ UTC \(timed mode\); approver not recorded\.\z/, row[0][0])
