@@ -1,0 +1,13 @@
+<%# THE CONTEXT DROPDOWN (shared by the index and a brand page): a GET form
+    whose select picks the tone every logo on the page is shown in. It submits
+    on change; the Apply button does the same with JavaScript off and for
+    anyone who would rather choose first and then go. It carries the guides
+    flag, so the two params survive each other. Local: url. %>
+<%= form_with url: url, method: :get, class: "flex flex-wrap items-center gap-2", data: { test: "context-form" } do %>
+  <% if @guides %><%= hidden_field_tag :guides, 1, id: nil %><% end %>
+  <label for="logo-context" class="text-3xs font-semibold uppercase tracking-wide text-muted">Context</label>
+  <%= select_tag :context, options_for_select(Logos::Variant::CONTEXTS.map { |tone, label| [label, tone] }, @context),
+                 id: "logo-context", class: "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading",
+                 onchange: "this.form.requestSubmit()" %>
+  <%= submit_tag "Apply", name: nil, class: "btn btn-sm btn-neutral", data: { test: "context-submit", disable_with: false } %>
+<% end %>
