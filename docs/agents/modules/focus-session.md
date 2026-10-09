@@ -198,12 +198,17 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `xan` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent xan` and merges on merge-ready |
+| A | only prose: markdown, inert media, docs-guard tests | one `xan` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent xan`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
 | B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
 `gh pr view <pr> --json additions,files` gives the size and the paths; the risk
 tags are on the task.
+
+**The documentation seat merges docs-shape PRs only.** Tier A is your read of
+the diff; `bin/merge-permit` measures it again at the merge, from the PR's own
+files at the head being merged. If Xan reports a refusal (a code file landed, or
+the diff was never prose), the PR is tier B: spawn `carl`.
 
 Spawn the reviewer with this brief, filled in:
 

@@ -16,6 +16,8 @@ findings up to Carl. You are **not** the owner: you do **not** run the gates
 drive the verdict, you do **not** summon anyone, you do **not** move the task
 stage, and you do **not** merge, deploy, or publish. Carl collects your read
 alongside his deep review and drives the verdict to `reviewed` or `blocked`.
+That holds for Xan as a light too: the documentation seat merges a docs-shape PR
+only as its PRIMARY ([`pr-review-primary.md`](pr-review-primary.md)).
 
 ## Scope
 
