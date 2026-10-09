@@ -1,0 +1,197 @@
+# THE NAVIGATION REGISTRY — every page the hub links from a nav, and every page a
+# visitor may open. Loaded by app/models/navigation.rb. Three readers:
+#
+#   · the link sidebar, /links and /admin/links   LinkTreeHelper
+#   · the section sub-navs                        components/_sub_nav
+#   · the admin wall's public PAGE list           AdminWall::PUBLIC_PAGES
+#
+# pages     One entry per page, keyed by its ROUTE NAME (tasks -> tasks_path).
+#             page      controller#action the route serves. The wall reads this,
+#                       so it is spelled out; test/models/navigation_test.rb holds
+#                       it equal to the route table.
+#             audience  public (any visitor) or admin. Nothing else loads. A page
+#                       that is not listed here is admin-only: the wall is
+#                       default-deny, and this file can only open what it names.
+#             args      positional arguments for the route helper.
+#             label, emoji, hover_emoji, desc   how a nav shows the page.
+#
+# sidebar   The link sidebar's sections, in order. group: admin sections lead for
+#           an admin and fill /admin/links; group: general sections fill /links.
+#           An entry shows when its page is public or the viewer is an admin, and
+#           a section with no visible entry is dropped.
+#
+# sub_navs  One per section of the app. style picks the look (links, buttons or
+#           chips); label is the nav landmark's name. Item keys:
+#             page               the page it links
+#             label              overrides the page's label
+#             icon               true to lead with the page's emoji
+#             back               true to lead with a back arrow
+#             only / except      page keys the item shows on / hides on
+#             hide_when_current  drop the item on its own page
+#             narrow_only_on     page keys where it shows below 1400px only
+#             badges             count badges, by stage
+#             count              { key:, id: } a tally the caller supplies
+#             test_id            the data-test hook
+#
+# MAKING A PAGE PUBLIC is an edit of `audience` here plus the expected list in
+# test/integration/admin_wall_public_set_test.rb, which fails until both agree.
+# A public action that is not a page (a form post, a probe, a tracking pixel, an
+# auth door) belongs in AdminWall::PUBLIC_ACTIONS instead.
+---
+pages:
+  # ── Marketing, legal and the customer funnel ─────────────────────────────
+  root:           { page: "landing#index",           audience: public, label: Home }
+  terms:          { page: "landing#terms",           audience: public, label: Terms of Service }
+  privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
+  about:          { page: "landing#about",           audience: public, label: About }
+  packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Pro, Growth and Enterprise tiers" }
+  packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
+  build:          { page: "build#new",               audience: public, label: App Builder, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it }
+  build_request:  { page: "build#show",              audience: public, label: Your app request }
+  contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
+  links:          { page: "links#index",             audience: public, label: Links }
+  schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
+
+  # ── NFL ──────────────────────────────────────────────────────────────────
+  nfl_hub:                     { page: "nfl#index",               audience: public, label: NFL Hub, emoji: "🏈", hover_emoji: "📈", desc: Rankings + grades }
+  nfl_rosters:                 { page: "nfl#rosters",             audience: public, label: NFL Rosters }
+  games_season:                { page: "games#season",            audience: public, label: 2026 Season, args: [2026], emoji: "📅", hover_emoji: "🏟️", desc: Schedule + results }
+  games_week:                  { page: "games#week",              audience: public, label: Week slate }
+  game_show:                   { page: "games#show",              audience: public, label: Game }
+  nfl_quarterback_rankings:    { page: "rankings#quarterback",    audience: public, label: Quarterback Rankings }
+  nfl_offensive_line_rankings: { page: "rankings#offensive_line", audience: public, label: Offensive Line Rankings }
+  nfl_receiving_rankings:      { page: "rankings#receiving",      audience: public, label: Receiving Rankings }
+  nfl_rushing_rankings:        { page: "rankings#rushing",        audience: public, label: Rushing Rankings }
+  nfl_defense_rankings:        { page: "rankings#defense",        audience: public, label: Defense Rankings }
+  nfl_pass_rush_rankings:      { page: "rankings#pass_rush",      audience: public, label: Pass Rush Rankings }
+  nfl_coverage_rankings:       { page: "rankings#coverage",       audience: public, label: Coverage Rankings }
+  nfl_prospects:               { page: "rankings#prospects",      audience: public, label: Draft Prospects }
+  nfl_coaches:                 { page: "rankings#coaches",        audience: public, label: NFL Coaches }
+  nfl_pass_first_rankings:     { page: "rankings#pass_first",     audience: public, label: Pass-First Rankings }
+  nfl_team_rankings:           { page: "rankings#team_unit",      audience: public, label: Team rankings }
+  nfl_player_impact:           { page: "rankings#player_impact",  audience: public, label: Player impact }
+  nfl_team_grades:             { page: "team_grades#show",        audience: public, label: Team grades }
+  nfl_contracts:               { page: "contracts#index",         audience: public, label: NFL Contracts }
+  team_depth_chart:            { page: "depth_charts#show",       audience: public, label: Depth chart }
+  team_lineup_graphic:         { page: "lineup_graphics#show",    audience: public, label: Lineup graphic }
+
+  # ── Studio ───────────────────────────────────────────────────────────────
+  # Two dashboards, two names: /dashboard is the studio overview, /admin/dashboard
+  # is the site's users and request logs.
+  dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity }
+  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: Meet the McRitchie agents }
+  builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace }
+  tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board }
+  news_index:     { page: "news#index",           audience: admin, label: News, emoji: "📰", hover_emoji: "🔎", desc: News pipeline }
+  contents:       { page: "contents#index",       audience: admin, label: Content, emoji: "🎬", hover_emoji: "✨", desc: Content pipeline }
+  model_pipeline: { page: "model_pipeline#index", audience: admin, label: Models, emoji: "🪪", hover_emoji: "🎭", desc: Character model pipeline }
+
+  # ── Directory ────────────────────────────────────────────────────────────
+  teams:  { page: "teams#index",  audience: admin, label: Teams, emoji: "🛡️", hover_emoji: "📋", desc: All teams }
+  people: { page: "people#index", audience: admin, label: People, emoji: "👤", hover_emoji: "🪪", desc: Players + staff }
+  docs:   { page: "docs#index",   audience: admin, label: Docs, emoji: "📚", hover_emoji: "🔎", desc: Documentation }
+
+  # ── Site administration ──────────────────────────────────────────────────
+  admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs }
+  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board }
+  admin_theme:        { page: "theme_settings#edit",          audience: admin, label: Theme, emoji: "🎨", hover_emoji: "🌓", desc: Palette + dark mode }
+  admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks }
+  admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser }
+  logos:              { page: "logos#index",                  audience: admin, label: Logos, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
+  admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners }
+  admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" }
+  asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree }
+
+  # ── Clients ──────────────────────────────────────────────────────────────
+  build_requests: { page: "build#index",             audience: admin, label: App requests, emoji: "🧱", hover_emoji: "📥", desc: Every app requested through /build }
+  stack:          { page: "stack#index",             audience: admin, label: Stack, emoji: "🥞", hover_emoji: "🧭", desc: Each client's tier and software }
+  credentials:    { page: "credential_vaults#index", audience: admin, label: Credentials, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" }
+
+  # ── Email ────────────────────────────────────────────────────────────────
+  broadcasts:          { page: "broadcasts#index",         audience: admin, label: Broadcasts, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email" }
+  contacts:            { page: "contacts#index",           audience: admin, label: Contacts, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live" }
+  broadcast_analytics: { page: "broadcast_analytics#show", audience: admin, label: Email analytics, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health" }
+
+  # ── Ops ──────────────────────────────────────────────────────────────────
+  error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors }
+  admin_tiktok_connect: { page: "admin/tiktok#connect", audience: admin, label: TikTok connect, emoji: "🎵", hover_emoji: "🔐", desc: OAuth handshake }
+  activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed }
+
+  # ── Data ─────────────────────────────────────────────────────────────────
+  admin_ai_builder_multiple: { page: "admin/ai_builder_multiple#index", audience: admin, label: AI Builder Multiple, emoji: "📈", hover_emoji: "🤖", desc: GitHub public commit pace backtest }
+  workflow_news_index:       { page: "news#workflow",                   audience: admin, label: News workflow, emoji: "🛠️", hover_emoji: "🧭", desc: Intake → conclude board }
+  merge_people:              { page: "people#merge",                    audience: admin, label: Merge people, emoji: "🔀", hover_emoji: "✅", desc: Resolve duplicate people }
+  duplicates_people:         { page: "people#duplicates",               audience: admin, label: Duplicates, emoji: "👥", hover_emoji: "🧹", desc: Duplicate candidates }
+
+  # ── Video ────────────────────────────────────────────────────────────────
+  alt_videos: { page: "alt_videos#index", audience: admin, label: Alt videos, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress" }
+
+  # ── The board family and the heartbeat (reached from the sub-navs) ───────
+  stages:                   { page: "tasks#stages",             audience: admin, label: Stages }
+  epics:                    { page: "epics#index",              audience: admin, label: Epics }
+  triage:                   { page: "triage#index",             audience: admin, label: Triage }
+  intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence }
+  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex }
+  recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks }
+  xan_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
+  heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃" }
+  xan_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
+  xan_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
+
+sidebar:
+  - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_theme, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
+  # The client side of the business: what the funnel brought in, what each client
+  # runs on, and the credentials behind it.
+  - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
+  # The mailing list and what is sent to it.
+  - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
+  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok_connect, activities_agents] }
+  - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
+  # The recast pipeline: every generated version of every source video.
+  - { title: Video,   group: admin, pages: [alt_videos] }
+  # Studio and Directory hold admin pages only, so a visitor never sees them.
+  - { title: Studio,    group: general, pages: [dashboard, agents, builders, tasks, news_index, contents, model_pipeline] }
+  - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
+  - { title: Directory, group: general, pages: [teams, people, docs] }
+  # Public on purpose: the App Builder is the funnel's front door and the packages
+  # page is where customers compare the tiers.
+  - { title: Services,  group: general, pages: [build, packages] }
+
+sub_navs:
+  # The small link row above a board page's title.
+  board_sections:
+    style: links
+    label: Board sections
+    items:
+      - { page: admin_dashboard, back: true }
+      # The Deploy board carries Stages in its header menu instead.
+      - { page: stages, except: [deployments] }
+      - { page: epics, test_id: board-link-epics }
+      - { page: intelligence }
+      - { page: activities_agents, icon: true }
+      - { page: pokedex }
+      # The learning-loop surfaces and the recency list belong to the Deploy lane.
+      - { page: xan_pipeline, only: [deployments] }
+      - { page: xan_insights, label: Insights, only: [deployments] }
+      - { page: recent_tasks, label: Recent, only: [deployments] }
+
+  # The board switcher beside the title. The title already says where you are,
+  # so the button for the current board is dropped. At full width the Deploy
+  # board shows the whole Build lane, so its Tasks button shows below 1400px only.
+  board_views:
+    style: buttons
+    label: Board views
+    items:
+      - { page: tasks, hide_when_current: true, badges: [building], narrow_only_on: [deployments] }
+      - { page: triage, hide_when_current: true }
+      - { page: deployments, hide_when_current: true, badges: [reviewed, assembled] }
+
+  # The chip cluster in a heartbeat page's toolbar.
+  heartbeat:
+    style: chips
+    label: Heartbeat
+    items:
+      - { page: deployments, back: true, test_id: hb-nav-deployments }
+      - { page: xan_insights, icon: true, count: { key: insights, id: hb-insight-count } }
+      - { page: heartbeat_all_activities, icon: true, test_id: hb-nav-all-spans }
+      - { page: xan_heartbeat, back: true, only: [heartbeat_all_activities], test_id: hb-nav-session }

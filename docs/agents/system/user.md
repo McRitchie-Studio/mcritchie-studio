@@ -2,7 +2,9 @@
 
 The pages an operator opens on the hub, and what each one needs. Every page
 needs an admin unless `AdminWall::PUBLIC` lists it
-(`app/controllers/concerns/admin_wall.rb`). Routes are in `config/routes.rb`;
+(`app/controllers/concerns/admin_wall.rb`); its pages come from the navigation
+registry, `config/navigation.yml`, which also builds the link sidebar and the
+section sub-navs. Routes are in `config/routes.rb`;
 the ones `studio-engine` draws (sign-in, error logs, local review, local inbox)
 come from `Studio.routes`.
 

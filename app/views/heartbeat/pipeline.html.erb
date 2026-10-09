@@ -85,9 +85,9 @@
         Confirm an insight to promote it toward the docs.
       </p>
     </div>
-    <nav class="pl-nav">
-      <%= render "heartbeat/nav", current: :pipeline, insights_count: @insights.size %>
-    </nav>
+    <div class="pl-nav">
+      <%= render "components/sub_nav", nav: :heartbeat, current: :xan_pipeline, counts: { insights: @insights.size } %>
+    </div>
   </header>
 
   <% if notice.present? %><div class="pl-flash" data-test="pl-flash"><%= notice %></div><% end %>
