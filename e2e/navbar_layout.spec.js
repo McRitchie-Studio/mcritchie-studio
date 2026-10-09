@@ -25,8 +25,8 @@ async function navbarMetrics(page) {
     };
 
     const selectors = [
-      ["username", "[data-username-display]"],
-      ["profile", "[data-profile-image-toggle]"],
+      ["username", "[data-nav-name]"],
+      ["profile", "[data-nav-account]"],
       ["sidebar", "[data-link-sidebar-trigger]"],
       ["logout", 'a[href="/logout"]'],
     ];
@@ -88,7 +88,7 @@ test("logged-in navbar controls stay contained at constrained desktop widths", a
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.goto("/dashboard");
-    await expect(page.locator("[data-username-display]").first()).toBeVisible();
+    await expect(page.locator("[data-nav-name]").first()).toBeVisible();
     await expectNavbarContained(page);
   }
 });

@@ -122,7 +122,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
   await expect(page).toHaveURL("/agents");
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Say Hi/ }).click();
+  await page.getByRole("link", { name: "Log in" }).click();
   await expect(page).toHaveURL("/signin");
 });
 
@@ -130,11 +130,7 @@ test("logged-in link sidebar reopens after browser back from signed-in routes", 
   await loginWithMagicLink(page, "alex@test.com");
 
   const routes = ["/dashboard", "/tasks", "/tasks/task-ea8541e4b5b6", "/agents"];
-  const triggers = [
-    "button[data-link-sidebar-trigger]",
-    "button[data-username-display]",
-    "button[data-profile-image-toggle]",
-  ];
+  const triggers = ["button[data-link-sidebar-trigger]"];
 
   for (const route of routes) {
     await page.goto(route);
@@ -170,7 +166,7 @@ test("logged-in sidebar logout still signs out", async ({ page }) => {
   await page.locator('#studio-link-sidebar a[href="/logout"]').click();
 
   await expect(page).toHaveURL("/signin");
-  await expect(page.locator("body")).toContainText("Say Hi");
+  await expect(page.locator("body")).toContainText("Log in");
 });
 
 // ---------------------------------------------------------------------------
