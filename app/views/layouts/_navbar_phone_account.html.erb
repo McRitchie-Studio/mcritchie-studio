@@ -1,0 +1,14 @@
+<%# A signed-in phone's account controls, below 768px only. They ride the
+    engine navbar's icon slot, which sits above Log out and beside the avatar.
+
+    The cog and theme toggle are the collapsed bar's: the engine's phone row
+    carries them at rest and is gone once the bar collapses (the .nav-phone-*
+    rules in application.css).
+
+    The name is for sighted readers. The engine's account link already names
+    the account for assistive tech, so this copy is hidden from it. %>
+<span class="nav-phone-tools flex md:hidden">
+  <%= render "components/link_sidebar_trigger" %>
+  <%= render "components/theme_toggle_morph" %>
+</span>
+<span class="nav-phone-name block md:hidden" data-nav-phone-name aria-hidden="true"><%= Studio.navbar_user_name_for(current_user, self) %></span>

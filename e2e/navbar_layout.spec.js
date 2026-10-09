@@ -25,8 +25,8 @@ async function navbarMetrics(page) {
     };
 
     const selectors = [
-      ["username", "[data-username-display]"],
-      ["profile", "[data-profile-image-toggle]"],
+      ["username", "[data-nav-name]"],
+      ["profile", "[data-nav-account]"],
       ["sidebar", "[data-link-sidebar-trigger]"],
       ["logout", 'a[href="/logout"]'],
     ];
@@ -88,7 +88,57 @@ test("logged-in navbar controls stay contained at constrained desktop widths", a
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.goto("/dashboard");
-    await expect(page.locator("[data-username-display]").first()).toBeVisible();
+    await expect(page.locator("[data-nav-name]").first()).toBeVisible();
     await expectNavbarContained(page);
   }
+});
+
+// A phone, signed in: the bar names the account, and it collapses to one row.
+const PHONE = { width: 390, height: 844 };
+const PHONE_ROW = "header.nav-shell > .nav-row ~ div";
+
+test("a signed-in phone header shows the user's name", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto("/dashboard");
+
+  const name = page.locator("header [data-nav-phone-name]");
+  await expect(name).toBeVisible();
+  await expect(name).toHaveText(/\S/);
+  const box = await name.boundingBox();
+  // Wider than a letter: a 1px screen-reader box is no name on screen.
+  expect(box.width).toBeGreaterThan(16);
+  expect(box.height).toBeGreaterThan(8);
+  expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
+  await expectNavbarContained(page);
+
+  // The name costs the bar no room: without it the header is the same height,
+  // so the brand wraps no sooner. (The height itself depends on the font.)
+  const header = page.locator("header.nav-shell");
+  const withName = (await header.boundingBox()).height;
+  await name.evaluate((element) => { element.style.display = "none"; });
+  expect((await header.boundingBox()).height).toBe(withName);
+  await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
+  await expect(page.locator(".nav-phone-tools")).toBeHidden();
+});
+
+test("a signed-in phone header is 69px tall once scrolled", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto("/tasks");
+  await page.evaluate(() => window.scrollTo(0, 600));
+
+  const header = page.locator("header.nav-shell");
+  await expect(header).toHaveClass(/is-scrolled/);
+  await expect.poll(async () => (await header.boundingBox()).height).toBe(69);
+
+  // The row is gone; its cog and theme toggle are in the bar, with the name.
+  await expect(page.locator(PHONE_ROW)).toBeHidden();
+  await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toBeVisible();
+  await expect(page.locator(".nav-phone-tools button[title='Toggle theme']")).toBeVisible();
+  const name = page.locator("header [data-nav-phone-name]");
+  await expect(name).toBeVisible();
+  const avatar = await page.locator("header [data-nav-account]").boundingBox();
+  expect(avatar.x + avatar.width).toBeLessThanOrEqual(PHONE.width);
+
+  await page.locator(".nav-phone-tools [data-link-sidebar-trigger]").click();
+  await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");
 });

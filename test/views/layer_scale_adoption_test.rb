@@ -76,8 +76,9 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   test "the blocking layers read tiers, not numbers" do
     assert_includes markup_of(resolved_host), "z-[var(--z-modal)]",
                     "the modal host is this app's blocker and must sit on the shared tier"
-    assert_includes markup_of(LAYOUT), "z-[var(--z-nav)]",
-                    "the pinned header must sit on the shared tier"
+    assert_match(/\.nav-shell\[data-pin="nav"\]\s*\{\s*z-index:\s*var\(--z-nav\)/,
+                 markup_of(Rails.root.join("app/assets/tailwind/application.css")),
+                 "the pinned header must sit on the shared tier")
     assert_includes markup_of(Rails.root.join("app/views/builders/_archive_modal.html.erb")),
                     "z-[var(--z-modal)]",
                     "the builders archive dialog is a modal and belongs on the modal tier"
@@ -150,7 +151,7 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   test "the stack is not nested inside the pinned header" do
     layout = markup_of(LAYOUT)
     stack  = layout.index(%(render "studio/banners/stack"))
-    header = layout.index("<header")
+    header = layout.index("hub_navbar(")
 
     refute_nil stack, "the layout must render the engine bar stack"
     assert_operator stack, :<, header,

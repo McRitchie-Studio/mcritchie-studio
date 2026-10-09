@@ -42,22 +42,18 @@ vault too.
 
 ## The cast
 
-Four wallets are filed in 1Password `studio-agents`; three of them PLAY:
+Three wallets are filed in 1Password `studio-agents`, and all three PLAY:
 
 | Slug | 1Password item | Plays as |
 |---|---|---|
 | `mason` | `agent.mason.solana` | mason-3 |
 | `mack` | `agent.mack.solana` | mack-4 |
 | `turf` | `phantom.turf` | regal-parsley-167 |
-| `turf-admin` | `solana.turf.admin` | — drives the admin HTTP surface; cannot play (see below) |
 
-> **`turf-admin` was repointed on 2026-09-15** — from `agent.turf.solana`, which
-> it reached by a pinned item id. The item was recreated under the unique title
-> `solana.turf.admin` and the old id died with it, so every `turf-admin` read
-> failed outright until the pin was replaced by the title. Same wallet
-> (`BLSBw8fX…`) throughout; the item moved, the identity did not. Field labels
-> on it are HYPHENATED (`private-key`, `wallet-address`), unlike the `agent.*`
-> items beside it.
+> **There is no admin actor.** No agent-readable wallet signs in as an admin
+> account, so `KeyStore::ITEMS` files none: the house account holds no wallet,
+> and `solana.turf.admin` is rotated out and archived. The one step that needed
+> an admin session, `--cosign agent`, is refused before it touches anything.
 
 Two exclusions, and neither is a preference:
 
@@ -69,8 +65,7 @@ Two exclusions, and neither is a preference:
   which this service account cannot read. The server still signs as Xan from
   `SOLANA_ADMIN_KEY` on the dyno; the rehearsal simply cannot.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
-  and it has no `UserAccount`, so the program refuses to register it. It stays
-  on as the admin HTTP actor, where no `UserAccount` is needed.
+  and it has no `UserAccount`, so the program refuses to register it.
 
 ## The steps
 
@@ -169,8 +164,7 @@ At `--pace 4` a 129-play week takes about nine minutes.
 ### Step 4 — conclude and pay
 
 ```bash
-bin/qa-contest-rehearsal conclude --cosign link     # you sign in Phantom
-bin/qa-contest-rehearsal conclude --cosign agent    # unattended, Mason's key
+bin/qa-contest-rehearsal conclude                   # --cosign link, the default: he signs in Phantom
 ```
 
 Grades the contest, ranks the entries, and builds the 2-of-3 settle transaction.
@@ -191,15 +185,14 @@ That subtraction is the proof the payout landed — not the transaction signatur
 which only proves something was broadcast.
 
 → **Hand back now.** Which halt this is depends on the flag you ran, and step 4
-has three exits, not two:
+has two exits:
 
 | Exit | Who acts next |
 |---|---|
 | `--cosign link` | **He does.** He signs in Phantom; you cannot do this half |
-| `--cosign agent` | Nobody — Mason's key already signed it, unattended |
 | nobody was owed | Nobody — the contest graded with no winner to pay |
 
-All three stop. On the two unattended exits he is confirming the arithmetic
+Both stop. When nobody was owed he is confirming the arithmetic
 rather than performing the signature, and on `--cosign link` **nothing can
 proceed until he signs**: the settle is 2-of-3 with only the server's half
 signed, so continuing past it closes a contest that never paid.

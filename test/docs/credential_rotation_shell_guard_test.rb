@@ -123,9 +123,14 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     agent.mason.solana
     agent.turf.solana
     solana.turf.admin
+    solana.turf.governance
     solana.turf.system
     solana.turf.system.devnet
   ].freeze
+  # solana.turf.governance (2026-10-09, rotate-mainnet-admin-key) is the AGENT's
+  # governance seat 4bKN…, which replaced the exposed solana.turf.admin on both
+  # Squads; it is not Mr. McRitchie's 7ZDJ…, so the "no filed item" row holds.
+  # solana.turf.admin stays filed: it is archived, not deleted.
 
   # Every angle-bracket placeholder the harness knows how to make safe. Substituted
   # before execution, and anything left over REFUSES the run: `--vault <vault>` is
