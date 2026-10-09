@@ -155,7 +155,8 @@ class Release
     # the record proves. A lapse flag always reads as a lapse. A person is named as
     # approver only off an owner_grant marker whose signature verifies for this row
     # (the web Approve alone writes one): `actor`, `source`, `granted_via` and an
-    # unsigned marker are a caller's to set, so they never name an approver. Every other row names its recorder as a recorder, in a tone that is
+    # unsigned marker are a caller's to set, so they never name an approver. Every
+    # other row names its recorder as a recorder, in a tone that is
     # never the success tone.
     def answer_sentence(answer, mode)
       at = Stamp.new(answer.occurred_at, "at")
