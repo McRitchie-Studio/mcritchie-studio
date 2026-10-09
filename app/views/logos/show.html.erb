@@ -24,8 +24,8 @@
       <% end %>
     </p>
     <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
-    <% if @note %>
-      <p class="text-2xs text-muted" data-test="brand-note"><%= @note %></p>
+    <% if @logo.note.present? %>
+      <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
   </div>
 

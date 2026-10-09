@@ -37,8 +37,9 @@
             </td>
             <td class="block sm:table-cell pb-3 sm:py-3 sm:pr-4 align-top" data-test="logo-typeface">
               <span class="sm:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
-              <span class="font-semibold text-heading">Montserrat</span>
-              <span class="text-2xs text-muted whitespace-nowrap">weights <%= logo_brand_weights(logo.brand).join(" and ") %></span>
+              <% typeface, detail = logo_brand_typeface(logo.brand) %>
+              <span class="font-semibold text-heading"><%= typeface %></span>
+              <span class="text-2xs text-muted whitespace-nowrap"><%= detail %></span>
             </td>
             <td class="block sm:table-cell pb-3 sm:py-3 align-top" data-test="logo-colours">
               <% logo_brand_colours(logo.brand).each do |tone, hexes| %>

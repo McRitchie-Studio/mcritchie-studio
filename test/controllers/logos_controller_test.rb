@@ -53,6 +53,32 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='read-only-note']", /Choosing one for a brand comes later/
   end
 
+  test "the index lists Turf Monster and Commercial Welding beside the first two, each with a true typeface" do
+    log_in_as(@admin)
+    get logos_path
+    assert_response :success
+
+    assert_equal %w[studio industries turf welding], css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
+    typeface = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-typeface']").text.squish }
+    assert_equal "Typeface Montserrat weight 800", typeface.("turf")
+    assert_equal "Typeface Traced from its own lettering (typeface not identified)", typeface.("welding")
+    assert_no_match(/Montserrat/, typeface.("welding"))
+
+    { "turf" => "Turf Monster", "welding" => "Commercial Welding" }.each do |brand, name|
+      assert_select "[data-test='logo-brand-row'][data-brand='#{brand}']" do
+        assert_select "a[href=?]", logo_brand_path(brand), text: name
+        %w[light dark].each do |tone|
+          assert_select "[data-test='logo-plate'][data-tone='#{tone}'] img[alt=?][src=?]",
+                        "#{name} navbar logo, rule of 4, second word leads, #{tone}",
+                        navbar_logo_path(brand, rule: 4, text: "second", tone:, guides: 0)
+        end
+      end
+    end
+    swatches = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-swatch']").map { |swatch| swatch.text.strip } }
+    assert_equal %w[#1A1535 #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF #4BAF50 #1A550D #5C972A #F0EBCF], swatches.("turf")
+    assert_equal %w[#2D5E8E #D7602E #FFFFFF #F08A5A], swatches.("welding")
+  end
+
   test "the admin tools list links to the page" do
     log_in_as(@admin)
     get logos_path
@@ -89,12 +115,53 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='brand-note']", /drawn flat.*without the marketing kit's steel gradient and tick marks/
   end
 
-  test "the flat-icon note is Industries' alone" do
+  test "a brand with no note in its style shows none" do
     log_in_as(@admin)
     get logo_brand_path("studio")
     assert_response :success
     assert_select "h1", "McRitchie Studio"
     assert_select "[data-test='brand-note']", 0
+  end
+
+  test "each added brand's page says how its art was derived and shows all twelve logos by name" do
+    log_in_as(@admin)
+    notes = {
+      "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours."],
+      "welding" => ["Commercial Welding", "The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the " \
+                                          "service mark. On dark backgrounds the helmet is the single-colour version."]
+    }
+    notes.each do |brand, (name, note)|
+      get logo_brand_path(brand)
+      assert_response :success
+      assert_select "h1", name
+      assert_equal [note], css_select("[data-test='brand-note']").map { |p| p.text.strip }
+      assert_select "[data-test='logo-plate'][data-tone='light'][style*='#FFFFFF']", 6
+      assert_select "[data-test='logo-plate'][data-tone='dark'][style*='#12141A']", 6
+      alts = css_select("[data-test='logo-image']").map { |img| img["alt"] }
+      assert_equal 12, alts.uniq.size
+      assert alts.all? { |alt| alt.start_with?("#{name} navbar logo, rule of ") }, alts.inspect
+
+      get logo_brand_path(brand, guides: 1)
+      assert_response :success
+      assert_select "img[data-test='logo-image'][alt$='construction guides']", 12
+    end
+  end
+
+  test "Commercial Welding is served in its own lettering, with the single-colour helmet on dark" do
+    log_in_as(@admin)
+    lettering = Logos::NavbarLogo.letterings.fetch("welding").fetch("words").values.flatten.map { |letter| letter["d"] }
+    icons = Logos::NavbarLogo.icons
+    { "light" => "welding", "dark" => "welding_mono" }.each do |tone, icon|
+      get navbar_logo_path("welding", rule: 4, text: "second", tone:)
+      assert_response :success
+      assert_equal "image/svg+xml", response.media_type
+      paths = Nokogiri::XML(response.body).remove_namespaces!.css("path")
+      icon_paths, letters = paths.partition { |path| path["transform"].nil? }
+      assert_equal lettering, letters.map { |path| path["d"] }, tone
+      assert_equal ["evenodd"], letters.map { |path| path["fill-rule"] }.uniq
+      assert_equal icons.fetch(icon).fetch("layers").map { |layer| layer["d"] }, icon_paths.map { |path| path["d"] }, tone
+    end
+    assert_match(/filename="welding-navbar-rule4-second-dark\.svg"/, response.headers["Content-Disposition"])
   end
 
   test "the guides toggle swaps every logo for its guide drawing and back" do
