@@ -55,6 +55,55 @@ class ReleaseCliStatusTest < ReleaseCliHarness
     assert_includes out, "DONE-NO-ABORT", "plain status is informational — it reports but never aborts"
   end
 
+  # --- the release lane: who assembles, who ships, what the grant covers -------
+  LANE = [
+    "Mawile (steffon, session …9b57) is assembling rel-cli since Oct 8, 01:30 UTC.",
+    "Nobody is shipping rel-cli.",
+    "Approved by Alex McRitchie at Oct 8, 01:35 UTC, timed mode.",
+    "Covers every task on this release when it ships: 6 at approval, 16 now."
+  ].freeze
+
+  def test_status_prints_the_lane_sentences_the_board_serves_under_the_current_release
+    out = run_cli(["status"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }], lane: LANE),
+                  call: "status")
+
+    release_at = out.index("current release: rel-cli (assembling)")
+    refute_nil release_at
+    LANE.each do |line|
+      at = out.index("    #{line}")
+      refute_nil at, "status prints the board's sentence verbatim: #{line}"
+      assert_operator at, :>, release_at, "the lane sits under the release it describes"
+    end
+  end
+
+  def test_status_control_a_board_that_serves_no_lane_prints_none
+    out = run_cli(["status"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }]),
+                  call: "status")
+
+    assert_includes out, "current release: rel-cli (assembling)"
+    refute_includes out, "is assembling"
+    refute_includes out, "Covers every task"
+  end
+
+  def test_status_asks_the_board_for_the_lane_in_the_same_single_read
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        puts("READ-ONLY=\#{read_only}")
+        puts("SNIPPET=\#{ruby}")
+        { "pending" => [], "accepted" => [], "release" => nil }
+      end
+      def ladder_ahead_states = { "release" => [], "accepted" => [], "unreadable" => [] }
+    RUBY
+    out = run_cli(["status"], setup: setup, call: "status")
+
+    assert_equal 1, out.scan("SNIPPET=").size, "one board read, so the prod connection budget is unchanged"
+    assert_includes out, "READ-ONLY=true"
+    assert_includes out, "Release::LaneLease.status_lines(r)"
+    assert_includes out, "lane: lane"
+  end
+
   def test_status_withholds_the_production_claim_when_a_repo_has_no_checkout
     out = run_cli(["status"], setup: uncloned_repo_stub, call: "status")
 

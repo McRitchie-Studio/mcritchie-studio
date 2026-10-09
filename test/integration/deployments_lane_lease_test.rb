@@ -141,6 +141,56 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     assert_select "#current-release", text: /Onix \(session …77aa\) is assembling the next release since/
   end
 
+  # --- a second session stands down with the holder named -----------------------------
+
+  # The claim CLI's board seam, pointed at this app: its HTTP calls run through the
+  # integration session, so the real endpoint answers the real CLI.
+  class BoardThroughTest
+    Resp = Struct.new(:code, :body)
+
+    def initialize(test, projects_dir)
+      @test = test
+      @projects_dir = projects_dir
+    end
+
+    attr_reader :projects_dir
+
+    def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
+    def env = { "CLAUDE_PROJECTS_DIR" => @projects_dir }
+    def invalidate_token!(*) = nil
+    def present?(value) = value.to_s.strip.present?
+
+    def http_json(method, path, body = nil, bearer: nil, **)
+      @test.public_send(method, path, params: body, headers: { "Authorization" => "Bearer #{bearer}" }, as: :json)
+      Resp.new(@test.response.status, @test.response.body)
+    end
+  end
+
+  test "[integration] a second session's prepare claim stands down and prints the sentence the card shows" do
+    require Rails.root.join("bin/lib/release_claim_cli").to_s
+    release = Release.open!
+    SessionMascot.create!(session_id: "sess-first-holder-9b57", mascot_slug: "mawile")
+    ReleaseConductorClaim.acquire(release_slug: release.slug, role: "assembler", session: "sess-first-holder-9b57",
+                                  nonce: "nonce-first", soul: "steffon")
+
+    out = StringIO.new
+    code = Dir.mktmpdir do |projects|
+      cli = ReleaseClaimCli.new(env: { "RELEASE_CONDUCTOR_CLAIM_SESSION" => "sess-second-41cd", "TASK_CLAIM_NONCE" => "nonce-second" },
+                                out: out, err: StringIO.new)
+      cli.instance_variable_set(:@api, BoardThroughTest.new(self, projects))
+      cli.run(["acquire", release.slug, "--role", "assembler"])
+    end
+    printed = out.string.lines.map(&:strip)
+
+    assert_equal ReleaseClaimCli::STOOD_DOWN, code, "the second session does not get the claim"
+    assert_equal "sess-first-holder-9b57", ReleaseConductorClaim.find_by(release_slug: release.slug, role: "assembler").claimed_session
+    get deployments_path
+    card = card_sentences("#current-release", lane: "assembler").sole
+    assert_match(/\AMawile \(steffon, session …9b57\) is assembling #{release.slug} since/, card)
+    assert_includes printed, card, "the stand-down prints the card's sentence verbatim:\n#{out.string}"
+    refute_includes out.string, "sess-first-holder"
+  end
+
   # --- the live push ----------------------------------------------------------------
 
   def pushed_card(&block)
