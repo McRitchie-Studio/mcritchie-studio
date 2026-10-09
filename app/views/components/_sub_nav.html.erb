@@ -17,13 +17,16 @@
 <% if entries.any? %>
   <% case sub_nav.style %>
   <% when "links" %>
+    <%# The current link reads in the heading colour with a primary underline:
+        primary text alone is too faint on the light page at this size. %>
+    <% current_link = "text-heading font-medium underline decoration-primary decoration-2 underline-offset-4" %>
     <nav class="flex flex-wrap items-center gap-3 gap-y-1 text-xs mb-1.5" aria-label="<%= sub_nav.label %>" data-sub-nav="<%= sub_nav.key %>">
       <% entries.each do |entry| %>
         <% item = entry[:item] %>
         <%= link_to entry[:href],
               data: { test: item.test_id },
               "aria-current": (entry[:current] ? "page" : nil),
-              class: class_names("transition", entry[:current] ? "text-primary font-medium" : "text-muted hover:text-heading") do %><%= "← " if item.back %><%= "#{item.page.emoji} " if item.icon %><%= item.text %><% end %>
+              class: class_names("transition", entry[:current] ? current_link : "text-muted hover:text-heading") do %><%= "← " if item.back %><%= "#{item.page.emoji} " if item.icon %><%= item.text %><% end %>
       <% end %>
     </nav>
   <% when "buttons" %>

@@ -22,12 +22,13 @@ class SubNavTest < ActionView::TestCase
     assert_select "nav a[aria-current]", 0, "the Tasks board has no entry in its own link row"
   end
 
-  test "[component] the current page's link carries aria-current and the active colour" do
+  test "[component] the current page's link carries aria-current and the heading colour" do
     render_nav :board_sections, current: :epics
 
     current = css_select("nav a[aria-current=page]")
     assert_equal [ epics_path ], current.map { |link| link["href"] }
-    assert_includes current.first["class"].split, "text-primary"
+    assert_includes current.first["class"].split, "text-heading"
+    assert_includes current.first["class"].split, "underline"
     assert_equal "board-link-epics", current.first["data-test"]
     assert_select "nav a.text-muted", 5
   end
