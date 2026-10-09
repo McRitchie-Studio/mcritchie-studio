@@ -1,6 +1,9 @@
 # Pinned by test/views/inline_script_and_x_data_ratchet_test.rb, which says what
 # counts. A number here only goes down; an entry at zero is removed.
 ---
+app/components/task_card_component.html.erb:
+  x_data: 1
+  script: 0
 app/views/admin/model_pricing/show.html.erb:
   x_data: 1
   script: 0
@@ -238,9 +241,6 @@ app/views/tasks/_kickoff_chip.html.erb:
 app/views/tasks/_release_ticker.html.erb:
   x_data: 0
   script: 1
-app/views/tasks/_task_card.html.erb:
-  x_data: 1
-  script: 0
 app/views/tasks/_workflow_copy_chip.html.erb:
   x_data: 1
   script: 0
