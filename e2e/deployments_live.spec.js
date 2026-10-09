@@ -179,7 +179,7 @@ test("Last Release stacks member pills while Current Release keeps readable wrap
 
   const html = page.locator("html");
   await expect(html).toHaveClass(/dark/);
-  await page.click('button[title="Toggle theme"]');
+  await page.click('button[title="Toggle theme"]:visible');
   await expect(html).not.toHaveClass(/dark/);
   // The toggle is an outside click, which dismisses the sidebar — reopen it to read the
   // Last Release card in the light theme.

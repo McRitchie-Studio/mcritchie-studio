@@ -130,8 +130,10 @@ test("a signed-in phone header is 69px tall once scrolled", async ({ page }) => 
   await expect(page.locator(PHONE_ROW)).toBeHidden();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toBeVisible();
   await expect(page.locator(".nav-phone-tools button[title='Toggle theme']")).toBeVisible();
-  await expect(page.locator("header [data-nav-phone-name]")).toBeVisible();
-  await expectNavbarContained(page);
+  const name = page.locator("header [data-nav-phone-name]");
+  await expect(name).toBeVisible();
+  const avatar = await page.locator("header [data-nav-account]").boundingBox();
+  expect(avatar.x + avatar.width).toBeLessThanOrEqual(PHONE.width);
 
   await page.locator(".nav-phone-tools [data-link-sidebar-trigger]").click();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");

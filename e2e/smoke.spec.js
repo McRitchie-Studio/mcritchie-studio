@@ -130,13 +130,13 @@ test("logged-in link sidebar reopens after browser back from signed-in routes", 
   await loginWithMagicLink(page, "alex@test.com");
 
   const routes = ["/dashboard", "/tasks", "/tasks/task-ea8541e4b5b6", "/agents"];
-  const triggers = ["button[data-link-sidebar-trigger]"];
+  const triggers = ["button[data-link-sidebar-trigger]:visible"];
 
   for (const route of routes) {
     await page.goto(route);
     await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
 
-    await page.locator("button[data-link-sidebar-trigger]").first().click();
+    await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
     await expect(page.locator("#studio-link-sidebar")).toBeVisible();
 
     const destination = route === "/agents" ? "/tasks" : "/agents";
@@ -161,7 +161,7 @@ test("logged-in sidebar logout still signs out", async ({ page }) => {
   await page.goto("/dashboard");
   await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
 
-  await page.locator("button[data-link-sidebar-trigger]").first().click();
+  await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
   await expect(page.locator("#studio-link-sidebar")).toBeVisible();
   await page.locator('#studio-link-sidebar a[href="/logout"]').click();
 
@@ -184,7 +184,7 @@ test("theme toggle switches dark/light and updates localStorage", async ({ page 
   await expect(html).toHaveClass(/dark/);
 
   // Click theme toggle button
-  await page.click('button[title="Toggle theme"]');
+  await page.click('button[title="Toggle theme"]:visible');
 
   // Should switch to light (dark class removed)
   await expect(html).not.toHaveClass(/dark/);
@@ -199,7 +199,7 @@ test("theme persists on reload", async ({ page }) => {
   await page.waitForFunction(() => window.Alpine, null, { timeout: 10_000 });
 
   // Toggle to light
-  await page.click('button[title="Toggle theme"]');
+  await page.click('button[title="Toggle theme"]:visible');
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
   // Reload
