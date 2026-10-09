@@ -53,7 +53,10 @@ module Api
         # model owns the rule AND the wording, so a caller blocked by a REVISED
         # verdict is told which report is standing rather than the misleading
         # "no verdict found" — the two refusals need different fixes.
-        refusal = ReviewPendingAction.arm_refusal_reason(task)
+        # The seat check reads the session's soul as well as the named agent, so a
+        # documentation-seat session cannot arm under another soul's name.
+        refusal = ReviewPendingAction.arm_refusal_reason(task) ||
+                  ReviewPendingAction.seat_refusal_reason(current_agent_session&.soul, arm_params[:agent])
         return render_error(refusal, status: :unprocessable_entity) if refusal
 
         action = nil

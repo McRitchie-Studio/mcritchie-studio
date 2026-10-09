@@ -135,6 +135,9 @@ OptionParser.new do |opts|
   opts.on("--question TEXT", "Scout report question (repeatable)") { |value| OPTIONS[:scout_questions] << value }
   opts.on("--check TEXT", "Scout report check/proof (repeatable)") { |value| OPTIONS[:scout_checks] << value }
   opts.on("--scout-agent SLUG", "Agent slug to attach to a recorded scout report") { |value| OPTIONS[:scout_agent] = value }
+  opts.on("--head SHA", "The PR head a recorded scout report judged (binds the verdict to that tree)") do |value|
+    OPTIONS[:scout_head] = value
+  end
   opts.on("--dry-run", "Print write payloads instead of sending them") { OPTIONS[:dry_run] = true }
   opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
   opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
@@ -201,6 +204,10 @@ def scout_report_payload
   checks = compact_values(OPTIONS[:scout_checks])
   reporter = OPTIONS[:scout_agent].to_s.strip
   reporter = "avi-scout" if reporter.empty?
+  # The head the verdict judged. bin/merge-permit refuses the documentation seat
+  # a merge-ready verdict that names no head, or names another one.
+  head = OPTIONS[:scout_head].to_s.strip.downcase
+  abort "--head must be the PR's full 40-character head sha" unless head.empty? || head.match?(/\A\h{40}\z/)
 
   {
     task_slug: task_slug,
@@ -215,7 +222,7 @@ def scout_report_payload
       findings: findings,
       questions: questions,
       checks: checks
-    }
+    }.merge(head.empty? ? {} : { head: head })
   }
 end
 

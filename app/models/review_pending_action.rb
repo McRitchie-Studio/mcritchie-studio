@@ -133,9 +133,27 @@ class ReviewPendingAction < ApplicationRecord
   # than stacking a second merge order beside it.
   class Unauthorised < StandardError; end
 
+  # Seats that merge only one diff shape (bin/lib/merge_permission.rb, pinned by
+  # test/models/review_pending_action_test.rb). An armed merge fires with nobody
+  # present and measures no diff, so such a seat cannot arm one: it merges in
+  # person, where bin/merge-permit measures the diff at the head being merged.
+  SHAPE_LIMITED_SEATS = %w[xan].freeze
+
+  # Why none of these souls may arm a merge, or nil when they all may. Asked of
+  # the soul NAMED on the arm (the session's, the caller's), never of whoever
+  # happened to record the standing verdict.
+  def self.seat_refusal_reason(*souls)
+    seat = souls.flatten.map { |soul| Task.canonical_soul(soul) }.find { |soul| SHAPE_LIMITED_SEATS.include?(soul) }
+    return nil unless seat
+
+    "#{seat} holds the documentation seat, which merges docs-shape PRs only and in person: an armed merge " \
+      "measures no diff. Run bin/merge-permit <task> --agent #{seat} --head <validated-sha> and merge on its " \
+      "permit; Carl, the standing primary, may arm any merge-ready PR"
+  end
+
   def self.arm!(task:, repo:, pr_number:, head_sha:, pr_url: nil, base_branch: "accepted",
                 merge_method: "merge", authorized_by: nil, now: Time.current, ttl: DEFAULT_TTL)
-    refusal = arm_refusal_reason(task)
+    refusal = arm_refusal_reason(task) || seat_refusal_reason(authorized_by)
     raise Unauthorised, refusal if refusal
 
     # The destination is the action type's, not the caller's. Refused here (rather

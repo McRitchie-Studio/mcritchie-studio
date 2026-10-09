@@ -224,6 +224,42 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
     assert_equal "merge-ready", body["verdict"]
   end
 
+  # The documentation seat merges docs-shape PRs only, measured at the merge, and
+  # an armed merge measures nothing. A clean 422 that names the rule and who can arm.
+  test "the API refuses to arm for the documentation seat" do
+    record_verdict
+
+    %w[xan alex].each do |seat|
+      post "/api/v1/tasks/#{SLUG}/review_pending_action",
+           params: { head_sha: PINNED, agent: seat }, headers: auth_headers
+
+      assert_response :unprocessable_entity
+      error = JSON.parse(response.body)["error"]
+      assert_match(/documentation seat, which merges docs-shape PRs only and in person/, error)
+      assert_match(/Carl, the standing primary, may arm/, error)
+    end
+    assert_equal 0, ReviewPendingAction.count
+  end
+
+  # A documentation-seat SESSION cannot arm by naming another soul.
+  test "the API refuses a documentation-seat session that names another soul" do
+    record_verdict
+    session = review_login("xan")
+
+    post "/api/v1/tasks/#{SLUG}/review_pending_action",
+         params: { head_sha: PINNED, agent: "carl" }, headers: { "Authorization" => "Bearer #{session.token}" }
+
+    assert_response :unprocessable_entity
+    assert_match(/xan holds the documentation seat/, JSON.parse(response.body)["error"])
+    assert_equal 0, ReviewPendingAction.count
+
+    # CONTROL: the same request from a session that is not the seat arms.
+    carl = review_login("carl")
+    post "/api/v1/tasks/#{SLUG}/review_pending_action",
+         params: { head_sha: PINNED, agent: "carl" }, headers: { "Authorization" => "Bearer #{carl.token}" }
+    assert_response :created
+  end
+
   test "disarming withdraws the standing order" do
     action = arm!
     delete "/api/v1/tasks/#{SLUG}/review_pending_action",
@@ -234,6 +270,13 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  # The login a live review claim carries, taken the way a reviewer takes it.
+  def review_login(soul)
+    TaskReviewClaim.where(task_slug: SLUG).delete_all # one reviewer at a time holds the claim
+    TaskReviewClaim.acquire(task_slug: SLUG, session: "rev-#{soul}", nonce: "nonce-#{soul}", reviewer: soul,
+                            mint_session: true).agent_session
+  end
 
   # A merging GitHub, injected at the client seam the executor resolves lazily.
   def stub_github(sha:, &block)
