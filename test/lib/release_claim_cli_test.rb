@@ -168,6 +168,48 @@ class ReleaseClaimCliTest < Minitest::Test
     end
   end
 
+  # The board serves the holder's lane sentence (Release::LaneLease), the text the
+  # Next Release card shows; the stand-down prints it verbatim.
+  SENTENCE = "Mawile (steffon, session …9b57) is assembling #{SLUG} since Oct 8, 01:30 UTC."
+
+  def test_a_second_sessions_stand_down_prints_the_holders_sentence_from_the_board
+    Dir.mktmpdir do |proj|
+      code = cli(projects_dir: proj,
+                 data: { "acquired" => false, "disposition" => "held_by_other",
+                         "holder" => { "label" => "mawile", "session" => "sess-first-holder-9b57", "heartbeat_age" => 3,
+                                       "acquired_at" => "2026-10-08T01:30:00Z", "sentence" => SENTENCE } })
+             .run(["acquire", SLUG, "--role", "assembler"])
+
+      assert_equal ReleaseClaimCli::STOOD_DOWN, code
+      lines = @out.string.lines.map(&:chomp)
+      assert_equal "release-claim: 🛑 #{SLUG} assembler already held — STAND DOWN.", lines[0]
+      assert_equal "  #{SENTENCE}", lines[1], "the holder line is the card's sentence, verbatim"
+      assert_equal "  Last heartbeat ~3s ago.", lines[2]
+      refute_includes @out.string, "sess-first-holder", "only the session's tail is shown"
+    end
+  end
+
+  def test_control_a_board_that_serves_no_sentence_still_names_the_holder
+    Dir.mktmpdir do |proj|
+      cli(projects_dir: proj,
+          data: { "acquired" => false, "disposition" => "held_by_other",
+                  "holder" => { "label" => "Snorlax", "session" => "sess-A-9b57", "heartbeat_age" => 3 } })
+        .run(["acquire", SLUG, "--role", "assembler"])
+
+      assert_includes @out.string, "  Snorlax · session …9b57, last heartbeat ~3s ago"
+      refute_includes @out.string, SENTENCE
+    end
+  end
+
+  def test_status_prints_the_holders_sentence
+    Dir.mktmpdir do |proj|
+      cli(projects_dir: proj, data: { "holder" => { "live" => true, "sentence" => SENTENCE } })
+        .run(["status", SLUG, "--role", "assembler"])
+
+      assert_equal "release-claim: #{SLUG} assembler is held — #{SENTENCE}\n", @out.string
+    end
+  end
+
   def test_acquire_without_a_session_id_fails_open_not_wedged
     Dir.mktmpdir do |proj|
       code = cli(env: { "RELEASE_CONDUCTOR_CLAIM_SESSION" => "" }, projects_dir: proj)

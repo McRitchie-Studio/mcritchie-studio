@@ -477,7 +477,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[component] the Activities link rides every board surface" do
-    # _board_top_links is shared, so the shortcut shows on tasks + stages too.
+    # The board_sections sub-nav is shared, so the shortcut shows on tasks + stages too.
     [tasks_path, stages_path].each do |path|
       get path
       assert_response :success
@@ -1396,7 +1396,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get stages_path
 
     assert_response :success
-    assert_select "h2", "Stages"
+    assert_select "h1", "Stages"
     assert_select "h3", text: /Workflow 1 . Build/
     assert_select "h3", text: /Workflow 2 . Deploy/
     # a stage from each lane, and the responsible/next scaffolding

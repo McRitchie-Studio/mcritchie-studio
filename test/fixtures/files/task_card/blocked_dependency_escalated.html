@@ -1,0 +1,47 @@
+<div id="card-snapshot-blocked-escalated-card" data-slug="snapshot-blocked-escalated-card" data-stage="building" data-agent="" data-apps="" data-href="/tasks/snapshot-blocked-escalated-card" data-stage-glow="blocked" data-glow="" x-data="{ hovered: false, mx: 0, my: 0 }" x-show="matchesFilter('') && appVisible('')" @mouseenter="hovered = true" @mouseleave="hovered = false" @click.capture="if ($event.target.closest('a, button')) { hovered = false; document.activeElement && document.activeElement.blur && document.activeElement.blur() }" @mousedown="mx = $event.clientX; my = $event.clientY" @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href" style="--task-card-glow-color: #ef4444; --task-card-glow-color-a: #ef4444; --task-card-glow-color-b: #ef4444; --task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent); --task-card-glow-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), 0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), 0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent); border-color: var(--task-card-glow-border-color); box-shadow: var(--task-card-glow-shadow); --task-pulse-delay: -870ms; --task-pulse-duration: 1770ms;" class="kanban-card relative bg-danger/10 border-danger/40 hover:border-danger/40 hover:bg-danger/20 task-card-stage-glow task-card-stage-glow-blocked rounded-lg border p-3 cursor-pointer transition group">
+<a href="/tasks/snapshot-blocked-escalated-card" class="block mb-1.5 hover:text-primary transition" data-test="task-card-title" title="Snapshot blocked escalated card">
+<div class="relative overflow-hidden min-w-0" data-overflow-fade x-data="{ overflowPx: 0, overflows: false, speed: 60, _ro: null, _dead: false, fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)', fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)', init() { this.$nextTick(() => { if (this._dead) return this.measure() if (!window.ResizeObserver) return this._ro = new ResizeObserver(() => this.measure()) this._ro.observe(this.$el) this._ro.observe(this.$refs.fadeInner) }) }, destroy() { this._dead = true if (this._ro) { this._ro.disconnect(); this._ro = null } }, measure() { this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth) this.overflows = this.overflowPx > 1 } }" :style="!overflows ? '' : ((hovered) ? fadeLeft : fadeRight)">
+<span x-ref="fadeInner" class="inline-block whitespace-nowrap will-change-transform transition-transform ease-linear text-heading font-semibold text-sm" :style="'transition-duration: ' + Math.round(overflowPx / speed * 1000) + 'ms; transform: translateX(' + ((overflows && (hovered)) ? -overflowPx : 0) + 'px)'"> Snapshot blocked escalated card </span>
+</div>
+</a>
+<div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
+<code class="block text-3xs font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1" style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">snapshot-blocked-escalated-card</code>
+<span data-test="task-window-chip" data-window-kind="escalation" data-window-ends-at="1790878800" data-window-state="open" title="Escalation window: 20 min from 2026-10-01T18:00:00Z — 20:00 left; on lapse: lapsed, recommendation stands" aria-label="Escalation window: 20 min from 2026-10-01T18:00:00Z — 20:00 left; on lapse: lapsed, recommendation stands" class="inline-flex items-center gap-1 shrink-0 max-w-[11rem] px-1.5 py-0.5 rounded text-3xs font-semibold leading-none tabular-nums border bg-danger/10 text-danger-ink border border-danger/40 data-[window-state=lapsed]:opacity-70 data-[window-urgent=true]:motion-safe:animate-pulse">
+<span aria-hidden="true" class="text-[9px] leading-none">⚖️</span>
+<span class="truncate" data-test="task-window-clock" data-release-ticker data-mode="window" data-ends-at="1790878800" data-lapsed-label="lapsed, recommendation stands">20:00</span>
+</span>
+</div>
+<div class="flex flex-col gap-1 mb-1">
+<a class="w-full rounded border px-2 py-1 flex items-center justify-center gap-1.5 text-3xs font-bold leading-tight bg-danger text-white border-danger shadow-sm hover:brightness-110 transition cursor-pointer" @click.stop="true" title="Escalated: which default wins" data-test="blocker-summary" href="/tasks/snapshot-blocked-escalated-card">
+<span>Escalated: which default wins</span>
+</a>
+</div>
+<div id="ci-progress-snapshot-blocked-escalated-card" data-test="ci-progress-snapshot-blocked-escalated-card-slot">
+</div>
+<div class="flex items-center justify-between gap-2 mt-1 text-3xs text-muted whitespace-nowrap overflow-hidden" data-test="task-card-updated-row">
+<span class="flex items-center gap-1 whitespace-nowrap" data-test="task-card-created" title="Created Oct 1, 2026 6:00pm">
+<span aria-hidden="true">🌱</span>
+<span>Oct 1 6:00p</span>
+</span>
+<span class="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+<span class="flex items-center gap-1" data-test="task-card-updated" title="Updated Oct 1, 2026 6:00pm">
+<span aria-hidden="true">✏️</span>
+<span>6:00p</span>
+</span>
+</span>
+</div>
+<div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
+<button type="button" @click.stop="archiveTask('snapshot-blocked-escalated-card')" data-test="task-card-archive" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-warning-ink hover:bg-warning/10 transition" title="Archive">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+</svg>
+<span>Archive</span>
+</button>
+<button type="button" @click.stop="deleteTask('snapshot-blocked-escalated-card')" data-test="task-card-delete" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-danger-ink hover:bg-danger/10 transition border-l border-subtle" title="Delete">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+</svg>
+<span>Delete</span>
+</button>
+</div>
+</div>

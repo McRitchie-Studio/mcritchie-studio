@@ -48,7 +48,7 @@
         <span class="hb-lab">Session</span>
         <span class="hb-meta hb-mono"><%= @session_id %></span>
       <% end %>
-      <%= render "heartbeat/nav", current: :session, insights_count: @counts[:insights] %>
+      <%= render "components/sub_nav", nav: :heartbeat, current: :xan_heartbeat, counts: { insights: @counts[:insights] } %>
       <span class="hb-legend">
         <span><b>activity:</b> category &middot; reason &rarr; result</span>
         <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>

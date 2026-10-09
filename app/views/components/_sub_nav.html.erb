@@ -1,0 +1,65 @@
+<%# The one section sub-nav. Its links, their order and who sees them come from
+    the navigation registry (config/navigation.yml, sub_navs); this partial only
+    draws them, in the style the registry names:
+
+      links    the small text row above a board page's title
+      buttons  the board switcher beside the title, with stage count badges
+      chips    the heartbeat toolbar's hb-btn cluster (styled by heartbeat.css)
+
+    The current page's link carries aria-current="page". Locals:
+      nav      the sub-nav's registry key
+      current  the registry key of the page being shown
+      counts   name => number, for count badges and tallies. Stage badges fall
+               back to the board's own load (@tasks_by_stage) when it is absent. %>
+<% sub_nav = Navigation.sub_nav(nav) %>
+<% entries = sub_nav_entries(nav, current: current) %>
+<% counts = (local_assigns[:counts] || (@tasks_by_stage || {}).transform_values(&:size)).with_indifferent_access %>
+<% if entries.any? %>
+  <% case sub_nav.style %>
+  <% when "links" %>
+    <%# The current link reads in the heading colour with a primary underline:
+        primary text alone is too faint on the light page at this size. %>
+    <% current_link = "text-heading font-medium underline decoration-primary decoration-2 underline-offset-4" %>
+    <nav class="flex flex-wrap items-center gap-3 gap-y-1 text-xs mb-1.5" aria-label="<%= sub_nav.label %>" data-sub-nav="<%= sub_nav.key %>">
+      <% entries.each do |entry| %>
+        <% item = entry[:item] %>
+        <%= link_to entry[:href],
+              data: { test: item.test_id },
+              "aria-current": (entry[:current] ? "page" : nil),
+              class: class_names("transition", entry[:current] ? current_link : "text-muted hover:text-heading") do %><%= "← " if item.back %><%= "#{item.page.emoji} " if item.icon %><%= item.text %><% end %>
+      <% end %>
+    </nav>
+  <% when "buttons" %>
+    <% button = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading" %>
+    <% badge = "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-3xs font-bold leading-none" %>
+    <nav class="flex flex-wrap items-center gap-1.5" aria-label="<%= sub_nav.label %>" data-sub-nav="<%= sub_nav.key %>">
+      <% entries.each do |entry| %>
+        <% item = entry[:item] %>
+        <%= link_to entry[:href],
+              data: { test: item.test_id },
+              "aria-current": (entry[:current] ? "page" : nil),
+              class: class_names(button, "min-[1400px]:hidden" => entry[:narrow_only]) do %>
+          <span><%= item.text %></span>
+          <% item.badges.each do |stage| %>
+            <% count = counts[stage].to_i %>
+            <span class="<%= badge %> <%= count > 0 ? task_stage_count_classes(stage) : "bg-surface-alt text-muted" %>"
+                  title="<%= count %> <%= stage %>"><%= count %></span>
+          <% end %>
+        <% end %>
+      <% end %>
+    </nav>
+  <% when "chips" %>
+    <%# `contents` keeps the chips direct flex children of the toolbar they sit in. %>
+    <nav class="contents" aria-label="<%= sub_nav.label %>" data-sub-nav="<%= sub_nav.key %>">
+      <% entries.each do |entry| %>
+        <% item = entry[:item] %>
+        <%= link_to entry[:href],
+              data: { turbo: false, test: item.test_id },
+              "aria-current": (entry[:current] ? "page" : nil),
+              class: class_names("hb-btn", "primary" => entry[:current]) do %>
+          <%= "‹ " if item.back %><%= "#{item.page.emoji} " if item.icon %><%= item.text %><% if item.count %> (<span id="<%= item.count[:id] %>"><%= counts[item.count[:key]].to_i %></span>)<% end %>
+        <% end %>
+      <% end %>
+    </nav>
+  <% end %>
+<% end %>

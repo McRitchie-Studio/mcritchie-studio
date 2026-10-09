@@ -188,8 +188,7 @@ module Api
       # the task has outrun (a builder's after the task left building and review,
       # a reviewer's whose claim lapsed) is unrevoked and unexpired and not live.
       def live_agent_session_json(task)
-        AgentSession.unrevoked.unexpired.for_task(task.slug).where(tier: "studio")
-                    .order(issued_at: :desc).find(&:live?)&.summary
+        AgentSession.live_by_task([task])[task.slug]&.summary
       end
 
       def mascot_display_gender(task)

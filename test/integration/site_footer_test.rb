@@ -89,14 +89,30 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
   # Two copies of the footer or booking scripts collide: each stands the other
   # down across a Turbo visit. The local copy guarded itself with unprefixed
   # names; the engine's are __studio*.
+  #
+  # The engine carries its copy one of two ways, and either is the engine's:
+  # an inline script that opens with its guard, once per page, or an ES module
+  # started by the controller its element names (data-studio-controller).
+  ENGINE_FOOTER_SCRIPTS = {
+    "__studioFooterMapsArmed" => "[data-footer-map][data-studio-controller~='footer-map']",
+    "__studioBookingFramesArmed" => "dialog[data-booking-dialog][data-studio-controller~='booking']",
+    "__studioBookingPopupArmed" => "dialog[data-booking-dialog][data-studio-controller~='booking']"
+  }.freeze
+
   test "only the engine's footer and booking scripts are on the page" do
     get root_path
 
     %w[__footerMapsArmed __bookingFramesArmed __bookingPopupArmed].each do |local_guard|
       assert_not_includes response.body, "window.#{local_guard}", local_guard
     end
-    %w[__studioFooterMapsArmed __studioBookingFramesArmed __studioBookingPopupArmed].each do |engine_guard|
-      assert_equal 1, response.body.scan("if (window.#{engine_guard}) return;").size, engine_guard
+    ENGINE_FOOTER_SCRIPTS.each do |engine_guard, controlled_element|
+      inline = response.body.scan("if (window.#{engine_guard}) return;").size
+      as_module = css_select(controlled_element).size
+
+      assert_operator inline, :<=, 1, "#{engine_guard}: the engine's inline script is on the page twice"
+      assert inline == 1 || as_module == 1,
+             "#{engine_guard}: the page carries neither the engine's inline script nor #{controlled_element}"
+      assert_not inline == 1 && as_module == 1, "#{engine_guard}: the page carries the script both ways"
     end
     assert_empty Dir[Rails.root.join("app/views/footers/*")], "the local footer partials must stay deleted"
   end

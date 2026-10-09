@@ -112,7 +112,7 @@
 
 /* A card someone is REVIEWING right now wears the engine's .studio-team-glow —
    two wedges travelling its edge in the reviewer's Pokémon's type colors (both
-   set inline by _task_card) — not the rainbow border the stage glows use. A card
+   set inline by TaskCardComponent) — not the rainbow border the stage glows use. A card
    merely sitting in `submitted` wears nothing at all: the ring means a reviewer
    is on it, and it leaves when they do.
 
@@ -139,8 +139,8 @@
       color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
       var(--task-card-glow-color, #f59e0b)
     );
-  /* Per-card seeded pulse: --task-pulse-delay/duration are set inline in
-     _task_card from a slug hash, so approval cards breathe OUT of phase across
+  /* Per-card seeded pulse: --task-pulse-delay/duration are set inline by
+     TaskCardComponent from a slug hash, so approval cards breathe OUT of phase across
      the board. animation-delay follows the shorthand so it isn't reset to 0. */
   animation: taskApprovalPulse var(--task-pulse-duration, 1.8s) ease-in-out infinite;
   animation-delay: var(--task-pulse-delay, 0s);

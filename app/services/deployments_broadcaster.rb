@@ -4,8 +4,8 @@
 # Streams when a task's stage changes (a transition) or an agent starts a stage's
 # work (an intent), so the board updates live without a reload.
 #
-# It broadcasts the SAME `tasks/_task_card` partial the board loop renders, as a
-# Turbo Stream action chosen by the event:
+# It broadcasts the SAME TaskCardComponent the board loop renders, built from the
+# single-card preloads, as a Turbo Stream action chosen by the event:
 #   intent                               → REPLACE the card in place
 #   cross-column stage move              → REMOVE + PREPEND in one ordered payload
 #   block/unblock (a building attribute) → REPLACE the card in place (same column)
@@ -21,7 +21,6 @@ class DeploymentsBroadcaster
   include Turbo::Streams::ActionHelper
 
   STREAM = "deployments"
-  PARTIAL = "tasks/task_card"
   # The stable-id CI bar slot (components/_ci_progress_slot) — rendered inline by
   # the task card + Next Release card AND re-rendered here for the live morph push.
   CI_SLOT_PARTIAL = "components/ci_progress_slot"
@@ -329,11 +328,11 @@ class DeploymentsBroadcaster
   end
 
   def replace_card
-    Turbo::StreamsChannel.broadcast_replace_to(STREAM, target: card_id, partial: PARTIAL, locals: card_locals)
+    Turbo::StreamsChannel.broadcast_replace_to(STREAM, target: card_id, html: rendered_card)
   end
 
   def prepend_card
-    Turbo::StreamsChannel.broadcast_prepend_to(STREAM, target: dropzone_id, partial: PARTIAL, locals: card_locals)
+    Turbo::StreamsChannel.broadcast_prepend_to(STREAM, target: dropzone_id, html: rendered_card)
   end
 
   def remove_card
@@ -354,8 +353,13 @@ class DeploymentsBroadcaster
     ].join
   end
 
+  # The card as the deploy board draws it, from one task's own reads.
   def rendered_card
-    ApplicationController.render(partial: PARTIAL, formats: [:html], locals: card_locals)
+    ApplicationController.render(card, layout: false)
+  end
+
+  def card
+    TaskCardComponent.new(task: @task, preloads: TaskCardComponent::Preloads.for_task(@task), crew_board: :deploy)
   end
 
   def card_id
@@ -378,42 +382,5 @@ class DeploymentsBroadcaster
 
   def new_card?
     @event.transition? && @event.from_stage.nil?
-  end
-
-  # The same locals the board loop renders the card with — the deploy-board variant.
-  # The task's conversation activities are loaded ONCE (see #activities) and the
-  # three activity-derived locals — latest, count, and the ever_blocked block-tone
-  # flag — are all read from that in-memory set. Passing +ever_blocked+ preloaded
-  # (the board loop's @ever_blocked_slugs equivalent) keeps Task#block_state from
-  # self-querying ever_blocked? on this single-card render.
-  def card_locals
-    {
-      task: @task,
-      agents: Agent.order(:position).to_a,
-      crew_board: :deploy,
-      mascot: Pokemon.find_by(slug: @task.devops_field("mascot").to_s.presence),
-      type_enumerals: type_enumerals,
-      latest_activity: activities.max_by(&:created_at),
-      activity_count: activities.size,
-      ever_blocked: activities.any?(&:blocking_feedback?),
-      unresolved_feedback: @task.unresolved_feedback_activity,
-      # Explicit rather than left to the card's self-query fallback: a live board
-      # update must show the same resubmission state a full render does.
-      resubmission: @task.resubmission,
-      review_in_progress: @task.review_in_progress?
-    }
-  end
-
-  # The task's conversation activities (comment/clarification/qa_feedback/handoff),
-  # loaded once into memory so #card_locals derives latest/count/ever_blocked from
-  # the same set instead of firing a separate query for each.
-  def activities
-    @activities ||= Activity.for_task(@task)
-                            .where(activity_type: Activity::TASK_CONVERSATION_TYPES)
-                            .to_a
-  end
-
-  def type_enumerals
-    @type_enumerals ||= Pokemon.type_enumerals
   end
 end

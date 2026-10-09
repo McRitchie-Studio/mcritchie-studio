@@ -1,0 +1,26 @@
+<%# The release lane on a release card: who is assembling, who is shipping, and what
+    the production grant covers. Rows and sentences come from
+    ApplicationHelper#release_lane_lease_rows (Release::LaneLease), the text
+    `bin/release status` and a second session's stand-down print, so the card and
+    the CLI read alike. Each sentence's title carries the CLI's own text (UTC); the
+    visible clock is the reader's. Renders on the page and on the live push from the
+    same locals, with nothing that depends on the viewer.
+    Locals: release (Release), variant (:current or :last). %>
+<% lane_rows = release_lane_lease_rows(release, variant: variant) %>
+<% if lane_rows.any? %>
+  <dl class="mt-2 grid gap-1 text-xs" data-test="release-lane-lease" aria-label="Release lane">
+    <% lane_rows.each do |row| %>
+      <div class="flex items-start gap-2 min-w-0" data-test="release-lane-row" data-lane="<%= row[:key] %>">
+        <dt class="w-[5.5rem] shrink-0 pt-px text-2xs uppercase tracking-wide text-muted font-semibold"><%= row[:title] %></dt>
+        <dd class="min-w-0 flex-1 space-y-0.5">
+          <% row[:sentences].each do |sentence| %>
+            <p class="flex items-start gap-1.5 min-w-0" data-test="release-lane-sentence" data-tone="<%= sentence.tone %>" title="<%= sentence.to_s %>">
+              <span aria-hidden="true" class="mt-[0.4em] h-1.5 w-1.5 shrink-0 rounded-full <%= status_tone(sentence.tone, :fill) %>"></span>
+              <span class="min-w-0 break-words <%= sentence.tone == :muted ? "text-muted" : "text-body" %>"><%= lane_lease_sentence(sentence) %></span>
+            </p>
+          <% end %>
+        </dd>
+      </div>
+    <% end %>
+  </dl>
+<% end %>

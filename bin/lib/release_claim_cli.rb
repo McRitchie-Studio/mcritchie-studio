@@ -514,14 +514,30 @@ class ReleaseClaimCli
 
   # The stand-down message: name the live conductor so the operator/agent knows WHO is
   # already assembling/deploying this release and can stop cleanly.
+  #
+  # The holder line is the board's own sentence for this claim (`holder.sentence`,
+  # Release::LaneLease): the text the Next Release card shows for the role, so the
+  # session standing down and the operator looking at the board read one account.
   def report_stand_down(slug, role, holder)
     @out.puts("release-claim: 🛑 #{slug} #{role} already held — STAND DOWN.")
     @out.puts("  #{holder_line(holder)}")
+    age = holder["heartbeat_age"]
+    @out.puts("  Last heartbeat ~#{age}s ago.") if board_sentence(holder) && !age.nil?
     @out.puts("  Another session is #{verb(role)}-ing #{slug}. Do not proceed; let it finish " \
               "(its lease lapses ~#{lease_ttl_seconds}s after it stops).")
   end
 
+  # The lane sentence the board serves with a holder, or nil from a board that
+  # serves none (the line below is then composed here, as it was).
+  def board_sentence(holder)
+    sentence = holder["sentence"].to_s.strip
+    sentence.empty? ? nil : sentence
+  end
+
   def holder_line(holder)
+    sentence = board_sentence(holder)
+    return sentence if sentence
+
     label = holder["label"].to_s.strip
     who = label.empty? ? "session #{short(holder['session'])}" : "#{label} · session #{short(holder['session'])}"
     age = holder["heartbeat_age"]

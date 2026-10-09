@@ -20,7 +20,8 @@ class ReleaseConductorClaimTest < ActiveSupport::TestCase
 
   def acquire(release_slug: REL, role: "assembler", now: Time.current, label: nil, **who)
     ReleaseConductorClaim.acquire(
-      release_slug: release_slug, role: role, session: who[:session], nonce: who[:nonce], label: label, now: now
+      release_slug: release_slug, role: role, session: who[:session], nonce: who[:nonce], label: label,
+      soul: who[:soul], now: now
     )
   end
 
@@ -365,5 +366,48 @@ class ReleaseConductorClaimTest < ActiveSupport::TestCase
     assert_equal "assembler", info["role"]
     assert_equal "Snorlax", info["label"]
     assert_equal 5, info["heartbeat_age"]
+  end
+
+  # --- the holder's soul, and the live push --------------------------------------
+
+  test "[unit] the soul is kept by its holder, never inherited, and cleared on release" do
+    acquire(**A, soul: "steffon")
+    row = ReleaseConductorClaim.find_by(release_slug: REL, role: "assembler")
+    assert_equal "steffon", row.holder_soul
+
+    acquire(**A) # a renew-shaped re-acquire names no soul
+    assert_equal "steffon", row.reload.holder_soul, "the same instance keeps its soul"
+
+    t0 = Time.current
+    acquire(**B, now: t0 + ClaimLease::DEFAULT_TTL_SECONDS + 5)
+    assert_nil row.reload.holder_soul, "a new holder that names no soul does not inherit the prior one"
+
+    acquire(release_slug: "rel-soul-release", **A, soul: "xan")
+    ReleaseConductorClaim.release(release_slug: "rel-soul-release", role: "assembler", session: A[:session], nonce: A[:nonce])
+    assert_nil ReleaseConductorClaim.find_by(release_slug: "rel-soul-release").holder_soul
+  end
+
+  def release_card_pushes(&block)
+    capture_turbo_stream_broadcasts("deployments", &block).count { |stream| stream["target"] == "current-release" }
+  end
+
+  test "[unit] a claim taken, handed over or released pushes the Next Release card" do
+    assert_equal 1, release_card_pushes { acquire(**A) }, "taken"
+    assert_equal 1, release_card_pushes {
+      ReleaseConductorClaim.reassign(release_slug: REL, role: "assembler", session: B[:session], nonce: B[:nonce])
+    }, "handed over"
+    assert_equal 1, release_card_pushes {
+      ReleaseConductorClaim.release(release_slug: REL, role: "assembler", session: B[:session], nonce: B[:nonce])
+    }, "released"
+  end
+
+  test "[unit] control: a renew and a same-instance re-acquire push nothing" do
+    acquire(**A)
+    pushes = release_card_pushes do
+      ReleaseConductorClaim.renew(release_slug: REL, role: "assembler", session: A[:session], nonce: A[:nonce])
+      acquire(**A)
+    end
+
+    assert_equal 0, pushes, "the renewer beats every few seconds; the card would redraw byte-identically"
   end
 end
