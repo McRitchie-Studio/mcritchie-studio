@@ -1,5 +1,4 @@
 class Release < ApplicationRecord
-  self.ignored_columns += DeadColumns.for(table_name)
   # Best-effort, advance-only refresh of a member's `merged` cache after a record
   # step wrote it (Task#refresh_merged_rung!). A failed read changes nothing: the
   # record step's own write already stands.
@@ -841,6 +840,8 @@ class Release < ApplicationRecord
       "granted_by" => grant&.actor,
       "granted_at" => grant&.occurred_at&.utc&.iso8601,
       "granted_via" => grant&.metadata.to_h["granted_via"],
+      "cleared_by" => grant&.metadata.to_h["cleared_by"],
+      "clearance" => grant&.metadata.to_h["clearance"],
       "lapsed" => grant.nil? && ship_authorization_lapse.present?
     }
   end

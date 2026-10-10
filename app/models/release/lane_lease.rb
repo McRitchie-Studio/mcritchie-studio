@@ -172,8 +172,17 @@ class Release
       when "web"
         Sentence.new(["Authorized ", at, " (#{mode} mode); approver not recorded."], :muted)
       when "conductor"
-        if answer.metadata.to_h["granted_via"].to_s == "auto"
+        meta = answer.metadata.to_h
+        if meta["granted_via"].to_s == "auto"
           Sentence.new(["Proceeded on green with no approval asked ", at, " (#{mode} mode)."], :warning)
+        elsif meta["granted_via"].to_s == "chat"
+          # The chat clearance: the deployer session asserts the owner's words. It
+          # names who cleared it and quotes them, and stays unsigned in the warning
+          # tone; only a verified web marker ever earns the success tone above.
+          cleared_by = meta["cleared_by"].to_s.strip
+          cleared_by = "the owner" if cleared_by.empty?
+          Sentence.new(["Cleared in chat by #{cleared_by}, asserted by the conductor CLI (run as #{recorder}) ", at,
+                        "; unsigned. #{meta['clearance'].to_s.strip.inspect}."], :warning)
         else
           Sentence.new(["Recorded by the conductor CLI in #{mode} mode (run as #{recorder}) ", at,
                         "; no web approval."], :warning)

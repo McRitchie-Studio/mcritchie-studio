@@ -55,6 +55,8 @@
              data-test="stitch-missing">This clip's file is not reachable.</p>
           <p x-show="!missing && renewing && !failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-body"
              data-test="stitch-link-refreshing">This link expired: getting a fresh one…</p>
+          <p x-show="!missing && !renewing && expired && !failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+             x-text="expired" data-test="stitch-link-expired"></p>
           <p x-show="!missing && failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
              data-test="stitch-load-failed">This clip's file did not load, on a fresh link.</p>
         </div>

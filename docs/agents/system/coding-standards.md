@@ -66,9 +66,12 @@
   names and counts; only an unexpected exception exits non-zero. A constraint is
   never added over a stray value, because Postgres checks a `NOT VALID`
   constraint on every later update of that row.
-- A column nothing reads is listed in `DeadColumns` and ignored by its model for
-  one release before a migration drops it: the servers still running the previous
-  release during a deploy name every column they know in each INSERT.
+- A column nothing reads is ignored by its model (`self.ignored_columns += %w[…]`)
+  for one release before a migration drops it: the servers still running the
+  previous release during a deploy name every column they know in each INSERT. The
+  drop is written `remove_column "table", "column"` in `up`, which is how the
+  migration baseline learns the column is gone (`DbBaseline.removed_columns`), and
+  the release that drops it deletes the `ignored_columns` line.
 
 ## Error Handling
 - `ErrorLog.capture!(exception, target:, parent:)` for structured error logging

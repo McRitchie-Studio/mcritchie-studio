@@ -229,7 +229,7 @@ is no window column, and changing a length moves every countdown at once.
 |---|---|---|---|---|
 | UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
 | Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
-| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why. `bin/release ship --mode cleared --clearance "<Alex's words>"` records his chat clearance instead: no request, no window, no button, and the card names it as cleared in chat and unsigned |
 
 The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
 Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,
@@ -254,9 +254,10 @@ is the latest open end plus the grace, recomputed on every read.
 posts `POST /deployments/<release>/ship_authorization`, which records the one
 `ship_authorized completed` event under the conductor's own idempotency key —
 so a grant and the ship's own completion stamp are one row. `bin/release ship
---mode ask|timed|auto` picks how authority is taken (default `timed`, from
-`production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
-`production-deploy` SOP.
+--mode ask|timed|auto|cleared` picks how authority is taken (default `timed`, from
+`production_ship.mode`); `--yes` alone is `auto`; `cleared` records Alex's chat
+clearance from `--clearance "<his words>"` and opens no window; the recipe lives
+in Steffon's `production-deploy` SOP.
 
 **The release lane on the card.** The Next Release card says who is assembling the
 release, who is shipping it, and what the production grant covers, in the sentences
@@ -453,8 +454,8 @@ the views by re-ordering them to chronology: logical progress order is the produ
 
 - **`task_timeline`** — a **status header** (`slug, title, stage` + the block set
   `blocked_at, blocked_from, blocked_by, block_kind` — when / from where / who /
-  why), then the lifecycle chain: `created_at, updated_at → queued_at,
-  sizes_revealed_at, started_at → g1_testing_started_at, g1_testing_finished_at,
+  why), then the lifecycle chain: `created_at, updated_at →
+  started_at → g1_testing_started_at, g1_testing_finished_at,
   g1_failed_at (frozen: nothing writes them since the local cert retired) → submitted_at, reviewed_at, assembled_at, completed_at,
   archived_at`, then the cache stamps `gates_cached_at, testing_phases_cached_at`.
   The block set is a HEADER, **not** the first link of the chain:
@@ -463,13 +464,12 @@ the views by re-ordering them to chronology: logical progress order is the produ
 - **`release_timeline`** — `slug, state → created_at, updated_at →
   testing_started_at, tested_at → assembling_started_at, assembled_at →
   qa_deploy_started_at, qa_deployed_at → confirming_started_at, confirmed_at →
-  prod_deploy_started_at, shipped_at → abandoned_at, release_notes_sent_at,
+  prod_deploy_started_at, shipped_at → abandoned_at,
   duration_metrics_cached_at`.
 
 **Always NULL today** (kept so the declared lifecycle stays complete — deliberate,
 not oversight): `releases.testing_started_at` (no producer; tracker node 1 greens
-off `assembling`), `tasks.queued_at`, `tasks.sizes_revealed_at`. `tasks.failed_at`
-is deliberately OMITTED (dead column, not part of the flow).
+off `assembling`).
 
 Created by a plain `execute "CREATE VIEW …"` migration — DROP+CREATE, so `up` is
 re-runnable; never `CREATE OR REPLACE` (Postgres cannot reorder an existing view's
@@ -488,13 +488,14 @@ model or suite assertion on their existence in every environment.
    the two `CREATE VIEW` statements directly.
 
 2. **The views PIN every column they select — and the failure is CI-INVISIBLE.** A
-   plain Postgres view hard-depends on each of the 39 columns it SELECTs (22 task +
-   17 release). A future `DROP COLUMN` / `RENAME COLUMN` on any of them will ERROR
+   plain Postgres view hard-depends on each of the 36 columns it SELECTs (20 task +
+   16 release). A future `DROP COLUMN` / `RENAME COLUMN` on any of them will ERROR
    unless the view is dropped first — and because the views do NOT exist in the
    test/CI database (the caveat above), such a migration **passes CI and fails on
    the production deploy**. Rule: if you drop or rename any column these views
    select, `DROP VIEW release_timeline, task_timeline` first and recreate them in
-   the same migration.
+   the same migration (`db/migrate/20261009200000_drop_dead_columns.rb` is the
+   pattern), and put the new SQL in `db/views/`.
 
 ## Task Metadata Contract
 

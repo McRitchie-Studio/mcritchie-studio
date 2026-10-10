@@ -68,18 +68,27 @@
     <div class="empty-state text-muted" data-test="alt-clips-empty">This alt video has no clips: its source had no chunks when it was built.</div>
   <% end %>
 
-  <%# Said only when fresh links could not be had: the session ended, or the server did not answer. %>
-  <div x-data="{ state: '' }" @signed-links.window="state = $event.detail.state" x-show="state === 'signin' || state === 'failed'" x-cloak
-       class="fixed bottom-4 inset-x-4 z-[var(--z-alert)] mx-auto max-w-xl rounded-lg bg-surface p-3 text-sm text-warning-ink border border-warning/40 shadow-lg"
-       role="status" data-test="links-status" :data-state="state">
-    <span x-show="state === 'signin'" data-test="links-status-signin">
-      The file links on this page expired, and so did your session.
-      <%= link_to "Sign in again", login_path, class: "text-primary hover:underline font-semibold" %>, then reload this page.
-    </span>
-    <span x-show="state === 'failed'" x-cloak data-test="links-status-failed">
-      The file links on this page expired and fresh ones could not be fetched.
-      <button type="button" class="text-primary hover:underline font-semibold" @click="window.location.reload()">Reload the page</button>
-    </span>
+  <%# Said only when fresh links could not be had: the session ended, or the server did not answer. It is fixed to the bottom of the window, so while it shows a spacer of its height under the clips keeps the last clip's buttons clear of it. "Could not be fetched" can be closed (the next refresh says so again if it fails again); "session ended" stays until the session is back. Sign in again opens a new tab: this page keeps its place, and when this tab is looked at again signedLinks asks for the links once more, which clears this and reloads the players. %>
+  <div x-data="{ state: '', closed: false, get shown() { return this.state === 'signin' || (this.state === 'failed' && !this.closed) } }"
+       @signed-links.window="state = $event.detail.state; closed = false">
+    <div x-show="shown" x-cloak class="h-36 sm:h-24" aria-hidden="true" data-test="links-status-spacer"></div>
+    <div x-show="shown" x-cloak
+         class="fixed bottom-4 inset-x-4 z-[var(--z-alert)] mx-auto max-w-xl rounded-lg bg-surface p-3 text-sm text-warning-ink border border-warning/40 shadow-lg flex items-start gap-3"
+         role="status" data-test="links-status" :data-state="state">
+      <span x-show="state === 'signin'" class="min-w-0 flex-1" data-test="links-status-signin">
+        The file links on this page expired, and so did your session.
+        <%= link_to "Sign in again", login_path, target: "_blank", rel: "noopener", class: "text-primary hover:underline font-semibold", data: { test: "links-status-signin-link" } %>
+        in a new tab, then come back to this one.
+      </span>
+      <span x-show="state === 'failed'" x-cloak class="min-w-0 flex-1" data-test="links-status-failed">
+        The file links on this page expired and fresh ones could not be fetched.
+        <button type="button" class="text-primary hover:underline font-semibold" @click="window.location.reload()">Reload the page</button>
+      </span>
+      <button type="button" x-show="state === 'failed'" x-cloak @click="closed = true" aria-label="Close this message"
+              class="shrink-0 -m-1 p-1 rounded text-muted hover:text-heading" data-test="links-status-close">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
   </div>
 </section>
 <script>window.signedLinks.start();</script>

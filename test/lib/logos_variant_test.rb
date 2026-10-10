@@ -2,7 +2,8 @@
 
 # [unit] Logos::Variant (task logo-studio-gallery-page): the gallery's reading
 # of URL params into one Navbar Logo, its refusals, its filename and its
-# accessible label.
+# accessible label. Task logo-gallery-context-dropdown adds the page's context
+# (the one tone every logo is shown in) and the watermark tone.
 
 require "minitest/autorun"
 require_relative "../../lib/logos/navbar_logo"
@@ -34,7 +35,7 @@ class LogosVariantTest < Minitest::Test
     assert_match(/unknown rule ""/, refusal { parse(rule: "") })
     assert_match(/unknown rule \["4"\]/, refusal { parse(rule: ["4"]) })
     assert_match(/unknown text "third": expected one of homogeneous, first, second/, refusal { parse(text: "third") })
-    assert_match(/unknown tone "sepia": expected one of light, dark/, refusal { parse(tone: "sepia") })
+    assert_match(/unknown tone "sepia": expected one of light, dark, watermark/, refusal { parse(tone: "sepia") })
     assert_match(/unknown guides "true": expected 0 or 1/, refusal { parse(guides: "true") })
     assert_match(/unknown download "yes": expected 0 or 1/, refusal { Variant.flag("yes", "download") })
   end
@@ -50,12 +51,30 @@ class LogosVariantTest < Minitest::Test
                  Variant.new(Logos::NavbarLogo.new("studio"), rule: 3, text: :homogeneous, tone: :dark, guides: true).label
   end
 
-  def test_all_lists_the_twelve_logos_in_page_order
-    all = Variant.all(logo, guides: true)
-    assert_equal 12, all.size
-    assert_equal [[3, :homogeneous, :light], [3, :homogeneous, :dark], [3, :first, :light]], all.first(3).map { |v| [v.rule, v.text, v.tone] }
-    assert_equal [4, :second, :dark], all.last.then { |v| [v.rule, v.text, v.tone] }
+  def test_all_lists_a_tones_six_logos_in_page_order
+    all = Variant.all(logo, tone: :dark, guides: true)
+    assert_equal [[3, :homogeneous], [3, :first], [3, :second], [4, :homogeneous], [4, :first], [4, :second]], all.map { |v| [v.rule, v.text] }
+    assert_equal [:dark], all.map(&:tone).uniq
     assert all.all?(&:guides)
-    assert_equal 12, all.map(&:filename).uniq.size
+    assert_equal 6, all.map(&:filename).uniq.size
+    assert_equal [[:light, false]], Variant.all(logo).map { |v| [v.tone, v.guides] }.uniq, "light, without guides, unless asked"
+  end
+
+  def test_a_pages_context_is_a_tone_light_when_absent_and_refused_when_unknown
+    assert_equal %i[light light dark watermark], [nil, "light", "dark", "watermark"].map { |value| Variant.context(value) }
+    assert_equal Logos::NavbarLogo::TONES, Variant::CONTEXTS.keys, "the dropdown offers every tone the library draws"
+    assert_equal %w[Light Dark Watermark], Variant::CONTEXTS.values
+    ["", "Dark", "sepia", "clearspace", ["dark"], { "a" => "dark" }].each do |value|
+      assert_match(/unknown context .*: expected one of light, dark, watermark/, refusal { Variant.context(value) }, value.inspect)
+    end
+  end
+
+  def test_a_watermark_is_named_in_the_params_the_filename_and_the_label
+    variant = parse(rule: "4", text: "second", tone: "watermark")
+    assert_equal logo.svg(rule: 4, text: :second, tone: :watermark), variant.svg
+    assert_equal({ rule: 4, text: :second, tone: :watermark, guides: 0 }, variant.params)
+    assert_equal "industries-navbar-rule4-second-watermark.svg", variant.filename
+    assert_equal "McRitchie Industries navbar logo, rule of 4, second word leads, watermark", variant.label
+    assert_equal "industries-navbar-rule3-homogeneous-watermark-guides.svg", parse(tone: "watermark", guides: "1").filename
   end
 end

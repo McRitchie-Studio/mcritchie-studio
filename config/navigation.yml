@@ -114,7 +114,7 @@ pages:
 
   # ── Ops ──────────────────────────────────────────────────────────────────
   error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors }
-  admin_tiktok_connect: { page: "admin/tiktok#connect", audience: admin, label: TikTok connect, emoji: "🎵", hover_emoji: "🔐", desc: OAuth handshake }
+  admin_tiktok: { page: "admin/tiktok#show", audience: admin, label: TikTok connection, emoji: "🎵", hover_emoji: "🔐", desc: Connected account · sign in · disconnect }
   activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed }
 
   # ── Data ─────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ sidebar:
   - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
-  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok_connect, activities_agents] }
+  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, activities_agents] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }

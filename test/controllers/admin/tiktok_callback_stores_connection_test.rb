@@ -276,7 +276,7 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
       delete admin_tiktok_disconnect_path
     end
 
-    assert_redirected_to admin_dashboard_path
+    assert_redirected_to admin_tiktok_path
     assert_response :see_other # a Turbo form submission must be answered with a redirect
     assert_match(/TikTok disconnected: the stored connection was deleted/, flash[:notice])
     assert_match(/Drafting is off: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are not set/, flash[:notice])
@@ -295,12 +295,17 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
 
     delete admin_tiktok_disconnect_path
 
-    assert_redirected_to admin_dashboard_path
+    assert_redirected_to admin_tiktok_path
     assert_match(/Drafting is still on: TIKTOK_REFRESH_TOKEN and TIKTOK_OPEN_ID are set on this server, and it drafts from them/,
-                 flash[:alert])
-    assert_nil flash[:notice], "a warning, not a plain notice"
+                 flash[:notice])
+    assert_nil flash[:alert], "the delete succeeded: an alert is a toast titled Error"
     follow_redirect!
     assert_includes response.body, "Drafting is still on"
+    # The engine's toast is seeded from the flash by type, and only `alert` is titled "Error".
+    toasts = JSON.parse(css_select("[data-toast-initial-value]").first["data-toast-initial-value"])
+    assert_equal ["notice"], toasts.map { |toast| toast["type"] }
+    assert_match(/TikTok disconnected.*Drafting is still on/, toasts.first["message"])
+    assert_select "[data-test='tiktok-connection'][data-source='env']"
     assert_not_includes response.body, "rft.synthetic-env-NEVER-RENDERED"
     assert Tiktok::OAuthClient.runtime_creds_present?, "and it is true: the env pair now answers"
     assert_not Tiktok::OAuthClient.token_source.stored?
@@ -311,7 +316,7 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
 
     delete admin_tiktok_disconnect_path
 
-    assert_redirected_to admin_dashboard_path
+    assert_redirected_to admin_tiktok_path
     assert_match(/No TikTok connection was stored on this server, so nothing was deleted/, flash[:notice])
   end
 
@@ -323,7 +328,7 @@ class Admin::TiktokCallbackStoresConnectionTest < ActionDispatch::IntegrationTes
       assert_difference -> { TiktokConnection.count }, -1 do
         delete admin_tiktok_disconnect_path
       end
-      assert_redirected_to admin_dashboard_path
+      assert_redirected_to admin_tiktok_path
     end
   end
 

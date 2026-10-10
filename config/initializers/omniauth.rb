@@ -4,6 +4,18 @@
 # and naming it here keeps this file readable on its own.
 require Rails.root.join("lib/middleware/canonical_host")
 
+# A local boot never signs in with a production Google client: the id is harmless
+# on its own, but paired with the production client secret it signs in as
+# production, which is how 42 local env files came to hold tax-studio's. The
+# refusal names the remedy.
+#
+# after_initialize, because app constants autoload only once the initializers
+# have run; the boot still stops, with this error, before the app serves anything.
+Rails.application.config.after_initialize do
+  Devops::GoogleOAuthClients.refuse_production_in_development!(client_id: ENV["GOOGLE_CLIENT_ID"],
+                                                              client_secret: ENV["GOOGLE_CLIENT_SECRET"], env: Rails.env)
+end
+
 Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
     ENV["GOOGLE_CLIENT_ID"],

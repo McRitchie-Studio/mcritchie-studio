@@ -1,13 +1,24 @@
 # frozen_string_literal: true
 
-# The logo gallery's view words and its two fixed plates (LogosController).
+# The logo gallery's view words and its three fixed plates (LogosController).
 module LogosHelper
   # The plates are FIXED surfaces, never theme tokens: a logo's fills are baked
   # per tone, so the light logo needs a light plate in both hub themes and the
-  # dark logo a dark one.
-  LOGO_PLATES = { light: "#FFFFFF", dark: "#12141A" }.freeze
+  # dark logo a dark one. The watermark's plate is a mid-tone gradient standing
+  # in for a photograph, so the logo's transparency shows. A logo file has no
+  # background of its own: the plate is the page's.
+  LOGO_PLATES = {
+    light: "background-color: #FFFFFF",
+    dark: "background-color: #12141A",
+    watermark: "background-image: linear-gradient(135deg, #3F5E8C, #4F9A94)"
+  }.freeze
 
-  def logo_plate_style(tone) = "background-color: #{LOGO_PLATES.fetch(tone.to_sym)}"
+  def logo_plate_style(tone) = LOGO_PLATES.fetch(tone.to_sym)
+
+  # The gallery's page params: the context and guides in force, less the defaults, with `changes` on top.
+  def logo_page_params(**changes)
+    { context: (@context unless @context == :light), guides: (1 if @guides) }.merge(changes).compact
+  end
 
   # One logo as a picture that scales down inside its plate and carries its name.
   def logo_image(variant, max_height:)

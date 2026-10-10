@@ -224,6 +224,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # must never answer with. Behavioural proof:
     # test/lib/dev_secret_key_scan_integration_test.rb (`rewrite --help` writes nothing).
     "dev-secret-key"         => :cli_arg_guard,
+    # Sibling of dev-secret-key (/tasks/dev-google-client-for-local): a dry run by
+    # default, `--write` reads the vault and rewrites every local env file. One guard
+    # call ahead of the vault read. Help exits 3 for the same reason: a dry run's
+    # exit 0 reports a plan, which a probe must never answer with.
+    "dev-google-client"      => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/chrome-profile-order-sop) -------
     # The second entry added by an author rather than a sweep. Its mutations reach
     # OUTSIDE this repo entirely, which is new for this file: `apply` QUITS THE
@@ -584,6 +589,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Every write (rewrite, fix) and every Heroku read (scan) is reached through
     # `case command`, so the guard has to precede that line.
     "dev-secret-key"      => "case command",
+    # The vault read (an `op` process) is the first side effect, and the file
+    # rewrite follows it in the same block, so the guard has to precede that call.
+    "dev-google-client"   => "DevGoogleClient.read_from_vault",
     # Same reasoning once more, and the LAST of the family. Every POST and marker write
     # bin/atomic-event can perform — the activity open/close, the close_all teardown,
     # the grade, the action report, the sticky acting-agent — is reached through

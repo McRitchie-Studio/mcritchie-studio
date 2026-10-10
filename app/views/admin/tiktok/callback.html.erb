@@ -57,6 +57,11 @@
                   form: { class: "shrink-0", data: { test: "tiktok-disconnect", turbo_confirm: "Delete the stored TikTok connection from this server?" } } %>
   </div>
 
+  <p class="text-sm">
+    <%= link_to "TikTok connection", admin_tiktok_path, class: "text-primary hover:underline font-semibold", data: { test: "tiktok-connection-link" } %>
+    <span class="text-secondary">shows this any time, with Sign in again and Disconnect.</span>
+  </p>
+
   <p class="text-secondary text-sm">
     Prove it with <code class="text-primary">bin/tiktok-draft --whoami --production</code>: it prints the
     account this connection posts as.
