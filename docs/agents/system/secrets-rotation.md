@@ -190,11 +190,17 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 
 **Symptoms of rotation needed:** Suspected wallet compromise. Routine quarterly hygiene. Adding/removing a multisig signer.
 
-**Procedure.** Run every step that touches 1Password in the admin lane:
-`source ~/.zprofile.admin`, then run `op` with
-`OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"`. Print public keys
-only. The secret is never an argument, so it never lands in shell history or the
-process list.
+**Procedure.** Run steps 1 to 7 in one shell: `$f`, `$t` and `$NEW_PUBKEY`
+carry from step to step. Open it in the admin lane, so every bare `op` below
+reads the admin vault:
+
+```bash
+source ~/.zprofile.admin
+export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
+```
+
+Print public keys only. The secret is never an argument, so it never lands in
+shell history or the process list.
 
 1. **Mint** into a private temp file. Never `-o -`: it prints the secret.
    `--force` is required because `mktemp` has already created the file, and
