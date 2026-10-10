@@ -23,16 +23,18 @@ test("task timeline shows the mascot evolving at the review and assemble gates",
   expect(await submitted.locator("[data-test='timeline-crew-member'][title^='Totodile']").count())
     .toBeGreaterThanOrEqual(1);
 
-  // The reveal is the FINAL form, and it now belongs to the assemble gate: one
-  // Evolve reel, Croconaw (what the review gate made) → Feraligatr.
+  // One Evolve reel per gate that evolved it: Totodile → Croconaw right after the
+  // review (the step that used to be invisible), Croconaw → Feraligatr after assemble.
   const evolve = page.locator("[data-test='timeline-block'][data-stage='evolve']");
-  await expect(evolve).toHaveCount(1);
-  await expect(evolve.locator("[data-test='timeline-evolution-from']")).toContainText("Croconaw");
-  await expect(evolve.locator("[data-test='timeline-evolution-to']")).toContainText("Feraligatr");
+  await expect(evolve).toHaveCount(2);
+  await expect(evolve.nth(0).locator("[data-test='timeline-evolution-from']")).toContainText("Totodile");
+  await expect(evolve.nth(0).locator("[data-test='timeline-evolution-to']")).toContainText("Croconaw");
+  await expect(evolve.nth(1).locator("[data-test='timeline-evolution-from']")).toContainText("Croconaw");
+  await expect(evolve.nth(1).locator("[data-test='timeline-evolution-to']")).toContainText("Feraligatr");
 
-  // It is spliced after Reviewed → Assembled, not after the review.
+  // Each is spliced right after the gate that made it.
   const order = await page.locator("[data-test='timeline-block']").evaluateAll((els) =>
     els.map((el) => el.dataset.stage)
   );
-  expect(order.slice(-2)).toEqual(["assembled", "evolve"]);
+  expect(order.slice(-4)).toEqual(["reviewed", "evolve", "assembled", "evolve"]);
 });
