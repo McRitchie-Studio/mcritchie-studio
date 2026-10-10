@@ -74,11 +74,11 @@ module CiSuiteWorkflow
       with.to_h.key?(name) ? with.to_h[name] : declared[name]["default"]
     end
 
-    suite_yaml.to_s.gsub(EXPRESSION) do
+    suite_yaml.to_s.gsub(EXPRESSION) do |expression|
       body = Regexp.last_match(1).strip
       whole = body.match(/\A#{INPUT_REF.source}\z/)
       next value_of.call(whole[1]).to_s if whole
-      next Regexp.last_match(0) unless body.match?(INPUT_REF)
+      next expression unless body.match?(INPUT_REF)
 
       "${{ #{body.gsub(INPUT_REF) { literal(value_of.call(Regexp.last_match(1))) }} }}"
     end
