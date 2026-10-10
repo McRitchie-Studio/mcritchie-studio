@@ -3,16 +3,19 @@
 # [unit] Logos::Variant (task logo-studio-gallery-page): the gallery's reading
 # of URL params into one Navbar Logo, its refusals, its filename and its
 # accessible label. Task logo-gallery-context-dropdown adds the page's context
-# (the one tone every logo is shown in) and the watermark tone.
+# (the one tone every logo is shown in) and the watermark tone. Task
+# logo-tabs-icon-and-stacked adds the logo TYPE: icon, navbar or stacked.
 
 require "minitest/autorun"
 require_relative "../../lib/logos/navbar_logo"
+require_relative "../../lib/logos/stacked_logo"
 require_relative "../../lib/logos/variant"
 
 class LogosVariantTest < Minitest::Test
   Variant = Logos::Variant
 
   def logo = @logo ||= Logos::NavbarLogo.new("industries")
+  def stacked = @stacked ||= Logos::StackedLogo.new("industries")
   def parse(**params) = Variant.parse(logo, params)
   def refusal(&) = assert_raises(Logos::NavbarLogo::Error, &).message
 
@@ -51,13 +54,57 @@ class LogosVariantTest < Minitest::Test
                  Variant.new(Logos::NavbarLogo.new("studio"), rule: 3, text: :homogeneous, tone: :dark, guides: true).label
   end
 
-  def test_all_lists_a_tones_six_logos_in_page_order
-    all = Variant.all(logo, tone: :dark, guides: true)
-    assert_equal [[3, :homogeneous], [3, :first], [3, :second], [4, :homogeneous], [4, :first], [4, :second]], all.map { |v| [v.rule, v.text] }
+  def test_all_lists_one_rules_three_text_versions_in_page_order
+    all = Variant.all(logo, rule: 3, tone: :dark, guides: true)
+    assert_equal [[:navbar, 3, :homogeneous], [:navbar, 3, :first], [:navbar, 3, :second]], all.map { |v| [v.type, v.rule, v.text] }
     assert_equal [:dark], all.map(&:tone).uniq
     assert all.all?(&:guides)
-    assert_equal 6, all.map(&:filename).uniq.size
-    assert_equal [[:light, false]], Variant.all(logo).map { |v| [v.tone, v.guides] }.uniq, "light, without guides, unless asked"
+    assert_equal 3, all.map(&:filename).uniq.size
+    assert_equal [[4, :light, false]], Variant.all(logo).map { |v| [v.rule, v.tone, v.guides] }.uniq, "rule of 4, light, without guides, unless asked"
+  end
+
+  def test_all_lists_a_stacked_logos_three_text_versions_and_an_icons_one
+    all = Variant.all(stacked, type: :stacked, tone: :watermark, guides: true, rule: 3)
+    assert_equal [[:stacked, nil, :homogeneous], [:stacked, nil, :first], [:stacked, nil, :second]], all.map { |v| [v.type, v.rule, v.text] }
+    assert_equal [[:watermark, true]], all.map { |v| [v.tone, v.guides] }.uniq
+    assert_equal stacked.svg(text: :first, tone: :watermark, guides: true), all[1].svg
+
+    icon = Variant.all(logo, type: :icon, tone: :dark, guides: true, rule: 3)
+    assert_equal [[:icon, nil, nil, :dark, false]], icon.map { |v| [v.type, v.rule, v.text, v.tone, v.guides] }, "an icon has a tone and nothing else"
+    assert_equal logo.icon_svg(tone: :dark), icon.first.svg
+  end
+
+  def test_each_type_is_named_and_routed_by_its_own_choices
+    icon = Variant.parse(logo, { tone: "dark", rule: "9", text: "third", guides: "yes" }, type: :icon)
+    assert_equal [{ tone: :dark }, "industries-icon-dark.svg", "McRitchie Industries icon, dark"], [icon.params, icon.filename, icon.label]
+    assert_equal "industries-icon-watermark.svg", Variant.new(logo, type: :icon, tone: :watermark).filename
+
+    first = Variant.parse(stacked, { text: "first", rule: "9" }, type: :stacked)
+    assert_equal [{ text: :first, tone: :light, guides: 0 }, "industries-stacked-first-light.svg", "McRitchie Industries stacked logo, first word leads, light"],
+                 [first.params, first.filename, first.label]
+    assert_equal stacked.svg(text: :first), first.svg
+    guides = Variant.parse(stacked, { tone: "dark", guides: "1" }, type: :stacked)
+    assert_equal ["industries-stacked-homogeneous-dark-guides.svg", "McRitchie Industries stacked logo, homogeneous, dark, construction guides"],
+                 [guides.filename, guides.label]
+    assert_match(/unknown text "third"/, refusal { Variant.parse(stacked, { text: "third" }, type: :stacked) })
+    assert_match(/unknown tone "sepia"/, refusal { Variant.parse(logo, { tone: "sepia" }, type: :icon) })
+  end
+
+  def test_a_type_a_context_and_a_rule_are_read_from_a_pages_params
+    assert_equal %i[navbar icon navbar stacked], [nil, "icon", "navbar", "stacked"].map { |value| Variant.type(value) }
+    assert_equal({ icon: "Icon", navbar: "Navbar Logo", stacked: "Stacked Logo" }, Variant::TYPES)
+    assert_equal [4, 3, 4], [nil, "3", "4"].map { |value| Variant.rule(value) }, "a page shows the rule of 4 unless asked"
+    ["", "Icon", "submark", ["icon"]].each { |value| assert_match(/unknown type .*: expected one of icon, navbar, stacked/, refusal { Variant.type(value) }) }
+    ["", "5", "four", ["4"]].each { |value| assert_match(/unknown rule .*: expected one of 3, 4/, refusal { Variant.rule(value) }) }
+  end
+
+  def test_the_logo_that_draws_a_type_and_a_mismatch_is_a_programming_error
+    assert_equal [Logos::NavbarLogo, Logos::NavbarLogo, Logos::StackedLogo], %i[icon navbar stacked].map { |type| Variant.logo("turf", type).class }
+    assert_instance_of Logos::NavbarLogo, Variant.logo("turf")
+    assert_match(/a stacked variant of industries was given a Logos::NavbarLogo/, assert_raises(ArgumentError) { Variant.new(logo, type: :stacked) }.message)
+    assert_raises(ArgumentError) { Variant.new(stacked, type: :navbar) }
+    assert_raises(ArgumentError) { Variant.new(stacked, type: :icon) }
+    assert_match(/unknown type :submark: expected one of icon, navbar, stacked/, refusal { Variant.new(logo, type: :submark) })
   end
 
   def test_a_pages_context_is_a_tone_light_when_absent_and_refused_when_unknown

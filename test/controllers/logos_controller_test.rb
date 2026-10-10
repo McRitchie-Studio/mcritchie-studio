@@ -3,13 +3,16 @@
 require "test_helper"
 
 # [component] /logos through the routes: admin only on every action, the index
-# row per brand, the brand page's rules, texts, plates, guides toggle, download
-# and copy, and the SVG endpoint's headers and refusals. Each logo shows once,
-# in the context ?context= names (task logo-gallery-context-dropdown).
+# row per brand with one logo of each type (icon, Navbar Logo, Stacked Logo),
+# the brand page's rules, texts, plates, guides toggle, download and copy, and
+# the three SVG endpoints' headers and refusals. Each logo shows once, in the
+# context ?context= names.
 class LogosControllerTest < ActionDispatch::IntegrationTest
   LABEL = "McRitchie Industries navbar logo, rule of 4, second word leads, light"
   PLATES = { "light" => "background-color: #FFFFFF", "dark" => "background-color: #12141A",
              "watermark" => "background-image: linear-gradient(135deg, #3F5E8C, #4F9A94)" }.freeze
+  SAMPLES = { "icon" => [{}, "icon"], "navbar" => [{ rule: 4, text: "second" }, "navbar logo, rule of 4, second word leads"],
+              "stacked" => [{ text: "first" }, "stacked logo, first word leads"] }.freeze
 
   setup do
     @admin = users(:alex)
@@ -18,43 +21,79 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   def requests
     { index: -> { get logos_path }, show: -> { get logo_brand_path("industries") },
-      navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") } }
+      icon: -> { get icon_logo_path("industries", tone: "dark") },
+      navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") },
+      stacked: -> { get stacked_logo_path("industries", text: "first") } }
+  end
+
+  # The sample of one type the index shows for a brand: [its SVG route, its accessible name].
+  def sample(brand, name, type, context)
+    params, words = SAMPLES.fetch(type)
+    guides = type == "icon" ? {} : { guides: 0 }
+    [public_send(:"#{type}_logo_path", brand, params.merge(tone: context, **guides)), "#{name} #{words}, #{context}"]
   end
 
   test "every routed action is refused to a visitor and to a signed-in non-admin" do
-    routed = Rails.application.routes.routes.filter_map { |r| r.defaults[:action] if r.defaults[:controller] == "logos" }
-    assert_equal routed.map(&:to_sym).uniq.sort, requests.keys.sort, "every routed action is covered here"
+    routed = Rails.application.routes.routes.select { |r| r.defaults[:controller] == "logos" }.map { |r| (r.defaults[:type] || r.defaults[:action]).to_sym }
+    assert_equal routed.uniq.sort, requests.keys.sort, "every routed action, and every type of the asset route, is covered here"
 
     [nil, @viewer].each do |user|
       log_in_as(user) if user
       requests.each do |action, request|
         request.call
         assert_response :redirect, "#{action} did not turn #{user ? 'a non-admin' : 'a visitor'} away"
-        assert_no_match(/<svg|navbar logo/, response.body.to_s, "#{action} leaked a logo")
+        assert_no_match(/<svg|navbar logo|stacked logo|Industries icon/, response.body.to_s, "#{action} leaked a logo")
       end
     end
   end
 
-  test "the index lists each brand with its rule-of-4 logo once, on the light plate, its typeface and its colours" do
+  test "the index lists each brand with one logo of each type, on the light plate, its typeface and its colours" do
     log_in_as(@admin)
     get logos_path
     assert_response :success
 
+    assert_equal ["Brand", "Icon", "Navbar Logo", "Stacked Logo", "Typeface", "Colours"], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
     assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
+    assert_select "[data-test='logo-table-scroll'].overflow-x-auto [data-test='logo-brands']", 1, "a wide row scrolls inside its own container"
     assert_select "[data-test='logo-brand-row'][data-brand='industries']" do
-      assert_select "a[href=?]", logo_brand_path("industries"), text: "McRitchie Industries"
-      assert_select "[data-test='logo-plate'][data-tone='light'][style*='#FFFFFF'] img[alt=?][src=?]", LABEL,
-                    navbar_logo_path("industries", rule: 4, text: "second", tone: "light", guides: 0)
-      assert_select "[data-test='logo-plate']", 1
-      assert_select "[data-test='logo-image']", 1
+      assert_select "th a[href=?]", logo_brand_path("industries"), text: "McRitchie Industries"
+      assert_equal %w[icon navbar stacked], css_select("[data-brand='industries'] [data-test='logo-sample']").map { |cell| cell["data-type"] }
+      SAMPLES.each_key do |type|
+        src, alt = sample("industries", "McRitchie Industries", type, "light")
+        assert_select "[data-test='logo-sample'][data-type='#{type}']" do
+          assert_select "a[href=?] [data-test='logo-plate'][data-tone='light'][style*='#FFFFFF'] img[alt=?][src=?]",
+                        logo_brand_path("industries", { type: (type unless type == "navbar") }.compact), alt, src
+          assert_select "[data-test='logo-plate']", 1
+          assert_select "[data-test='logo-image']", 1
+          assert_select "p", Logos::Variant::TYPES.fetch(type.to_sym), "the cell names its type where the header row is hidden"
+        end
+      end
+      assert_equal LABEL, sample("industries", "McRitchie Industries", "navbar", "light").last
+      assert_select "[data-test='logo-plate']", 3
       assert_select "[data-test='logo-typeface']", /Montserrat\s+weights 700 and 300/
     end
+    assert_equal({ "icon" => "max-height: 48px", "navbar" => "max-height: 28px", "stacked" => "max-height: 96px" },
+                 css_select("[data-brand='studio'] [data-test='logo-sample']").to_h { |cell| [cell["data-type"], cell.at_css("img")["style"]] })
     swatches = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-swatch']").map { |swatch| swatch.text.strip } }
-    assert_equal %w[#262A30 #41464D #8C939C #F4F5F7 #D3D6DA #FFFFFF], swatches.("industries")
-    assert_equal %w[#1A1535 #FFFFFF #8E82FE], swatches.("studio")
+    assert_equal %w[#262A30 #41464D #8C939C #F4F5F7 #D3D6DA #FFFFFF #FFFFFF], swatches.("industries")
+    assert_equal %w[#1A1535 #FFFFFF #8E82FE #FFFFFF], swatches.("studio")
     assert_select "[data-brand='industries'] [data-test='logo-swatch'] span[style='background-color: #8C939C']", 1
     assert_select "[data-test='logo-brand-row'][data-brand='studio'] [data-test='logo-typeface']", /weights 800 and 300/
     assert_select "[data-test='read-only-note']", /Choosing one for a brand comes later/
+  end
+
+  test "the Colours column lists the watermark's fill and opacity after light and dark" do
+    log_in_as(@admin)
+    get logos_path
+    Logos::NavbarLogo.brands.each do |brand|
+      assert_equal %w[light dark watermark], css_select("[data-brand='#{brand}'] [data-test='logo-colour-row']").map { |row| row["data-tone"] }, brand
+      assert_select "[data-brand='#{brand}'] [data-test='logo-colour-row'][data-tone='watermark']" do
+        assert_select "[data-test='logo-swatch']", { count: 1, text: "#FFFFFF" }
+        assert_select "[data-test='logo-swatch'] span[style='background-color: #FFFFFF']", 1
+        assert_select "[data-test='logo-watermark-opacity']", "at 60% opacity"
+      end
+      assert_select "[data-brand='#{brand}'] [data-test='logo-watermark-opacity']", 1
+    end
   end
 
   test "the index lists Turf Monster and Commercial Welding beside the first two, each with a true typeface" do
@@ -70,15 +109,16 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
     { "turf" => "Turf Monster", "welding" => "Commercial Welding" }.each do |brand, name|
       assert_select "[data-test='logo-brand-row'][data-brand='#{brand}']" do
-        assert_select "a[href=?]", logo_brand_path(brand), text: name
-        assert_select "[data-test='logo-plate'][data-tone='light'] img[alt=?][src=?]",
-                      "#{name} navbar logo, rule of 4, second word leads, light",
-                      navbar_logo_path(brand, rule: 4, text: "second", tone: "light", guides: 0)
+        assert_select "th a[href=?]", logo_brand_path(brand), text: name
+        SAMPLES.each_key do |type|
+          src, alt = sample(brand, name, type, "light")
+          assert_select "[data-test='logo-sample'][data-type='#{type}'] [data-test='logo-plate'][data-tone='light'] img[alt=?][src=?]", alt, src
+        end
       end
     end
     swatches = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-swatch']").map { |swatch| swatch.text.strip } }
-    assert_equal %w[#1A1535 #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF #4BAF50 #1A550D #5C972A #F0EBCF], swatches.("turf")
-    assert_equal %w[#2D5E8E #D7602E #FFFFFF #F08A5A], swatches.("welding")
+    assert_equal %w[#1A1535 #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF], swatches.("turf")
+    assert_equal %w[#2D5E8E #D7602E #FFFFFF #F08A5A #FFFFFF], swatches.("welding")
   end
 
   test "the admin tools list links to the page" do
@@ -170,7 +210,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='logo-example'][data-tone='#{context}'] [data-test='logo-plate'][data-tone='#{context}'][style=?]", plate, 6
       assert_select "img[data-test='logo-image'][src*='tone=#{context}'][alt$=', #{context}']", 6
       assert_select "a[data-test='logo-download'][href*='tone=#{context}'][href*='download=1']", 6
-      expected = Logos::Variant.all(Logos::NavbarLogo.new("industries"), tone: context.to_sym).map(&:svg)
+      expected = [3, 4].flat_map { |rule| Logos::Variant.all(Logos::NavbarLogo.new("industries"), rule:, tone: context.to_sym) }.map(&:svg)
       assert_equal expected, css_select("button[data-test='logo-copy']").map { |button| button["data-clip"] }, "copy gives the logo as shown"
     end
   end
@@ -210,7 +250,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='watermark-text-note']", 0
   end
 
-  test "the index shows one logo per brand in the chosen context, and its links carry the context" do
+  test "the index shows one logo of each type per brand in the chosen context, and its links carry the context" do
     log_in_as(@admin)
     PLATES.each do |context, plate|
       get logos_path(context:)
@@ -219,13 +259,19 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
       assert_select "form[data-test='context-form'][method='get'][action=?]", logos_path, 1
       assert_equal [context], css_select("select#logo-context option[selected]").map { |o| o["value"] }
-      assert_select "[data-test='logo-plate']", Logos::NavbarLogo.brands.size
-      assert_select "[data-test='logo-image']", Logos::NavbarLogo.brands.size
+      assert_select "[data-test='logo-plate']", 3 * Logos::NavbarLogo.brands.size
+      assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size
       Logos::NavbarLogo.brands.each do |brand|
+        name = Logos::Variant.brand_name(Logos::NavbarLogo.new(brand))
         assert_select "[data-test='logo-brand-row'][data-brand='#{brand}']" do
-          assert_select "[data-test='logo-plate'][data-tone='#{context}'][style=?]", plate, 1
-          assert_select "img[data-test='logo-image'][alt$=', #{context}'][src=?]", navbar_logo_path(brand, rule: 4, text: "second", tone: context, guides: 0)
-          assert_select "a[href=?]", logo_brand_path(brand, carried), 2
+          assert_select "[data-test='logo-plate'][data-tone='#{context}'][style=?]", plate, 3
+          assert_select "a[href=?]", logo_brand_path(brand, carried), 2, "the name and the navbar logo open the default tab"
+          SAMPLES.each_key do |type|
+            src, alt = sample(brand, name, type, context)
+            assert_select "a[href=?][aria-label=?] img[data-test='logo-image'][alt=?][src=?]",
+                          logo_brand_path(brand, { type: (type unless type == "navbar") }.compact.merge(carried)),
+                          "#{name}: #{Logos::Variant::TYPES.fetch(type.to_sym).downcase}", alt, src
+          end
         end
       end
       assert_select "[data-test='transparent-note']", 1
@@ -300,9 +346,63 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_match(/\Aattachment; filename="studio-navbar-rule3-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
   end
 
+  test "icon serves the brand's icon alone in the tone asked for, named by brand and tone" do
+    log_in_as(@admin)
+    logo = Logos::NavbarLogo.new("industries")
+    get icon_logo_path("industries", tone: "dark")
+    assert_response :success
+    assert_equal "image/svg+xml", response.media_type
+    assert_equal logo.icon_svg(tone: :dark), response.body
+    assert_match(/\Ainline; filename="industries-icon-dark\.svg"/, response.headers["Content-Disposition"])
+
+    get icon_logo_path("industries", download: 1)
+    assert_equal logo.icon_svg(tone: :light), response.body
+    assert_match(/\Aattachment; filename="industries-icon-light\.svg"/, response.headers["Content-Disposition"])
+
+    # An icon has a tone and nothing else: the other types' choices are not read, so they cannot be wrong.
+    get icon_logo_path("welding", tone: "watermark", rule: 9, text: "third", guides: "yes")
+    assert_response :success
+    assert_equal Logos::NavbarLogo.new("welding").icon_svg(tone: :watermark), response.body
+    assert_match(/filename="welding-icon-watermark\.svg"/, response.headers["Content-Disposition"])
+  end
+
+  test "stacked serves the stacked logo, its guide drawing, and a named file with download=1" do
+    log_in_as(@admin)
+    logo = Logos::StackedLogo.new("industries")
+    get stacked_logo_path("industries", text: "first", tone: "light", guides: 0)
+    assert_response :success
+    assert_equal "image/svg+xml", response.media_type
+    assert_equal logo.svg(text: :first, tone: :light), response.body
+    assert_match(/\Ainline; filename="industries-stacked-first-light\.svg"/, response.headers["Content-Disposition"])
+    assert_no_match(/<text|<line/, response.body)
+
+    get stacked_logo_path("industries", tone: "dark", guides: 1, download: 1, rule: 9)
+    assert_response :success, "a stacked logo has no rule, so the param is not read"
+    assert_equal logo.svg(tone: :dark, guides: true), response.body
+    assert_match(/\Aattachment; filename="industries-stacked-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
+    assert_equal %w[2u 3u 2u 1u], Nokogiri::XML(response.body).remove_namespaces!.css("text").map(&:text)
+
+    get stacked_logo_path("turf", text: "second", tone: "watermark")
+    assert_equal Logos::StackedLogo.new("turf").svg(text: :second, tone: :watermark), response.body
+    assert_match(/filename="turf-stacked-second-watermark\.svg"/, response.headers["Content-Disposition"])
+  end
+
+  test "an asset route's type is its own: a type in the query string cannot change it" do
+    log_in_as(@admin)
+    get "/logos/industries/navbar?type=icon&rule=4&text=second"
+    assert_response :success
+    assert_equal Logos::NavbarLogo.new("industries").svg(rule: 4, text: :second), response.body
+    get "/logos/industries/icon?type=sepia"
+    assert_response :success
+    assert_equal Logos::NavbarLogo.new("industries").icon_svg, response.body
+    get "/logos/industries/sepia"
+    assert_response :not_found
+  end
+
   test "an unknown brand is a 404 on the page and on the endpoint" do
     log_in_as(@admin)
-    [logo_brand_path("acme"), navbar_logo_path("acme"), navbar_logo_path("acme", rule: 9)].each do |path|
+    [logo_brand_path("acme"), navbar_logo_path("acme"), navbar_logo_path("acme", rule: 9), icon_logo_path("acme"),
+     stacked_logo_path("acme", text: "third")].each do |path|
       get path
       assert_response :not_found, path
     end
@@ -318,6 +418,16 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal "text/plain", response.media_type, "a refusal is plain text, so nothing in it can run"
       assert_match message, response.body
       assert_no_match(/navbar_logo\.rb|variant\.rb|backtrace/i, response.body)
+    end
+
+    { icon_logo_path("industries", tone: "sepia") => /unknown tone "sepia"/, icon_logo_path("industries", download: "yes") => /unknown download "yes"/,
+      stacked_logo_path("industries", text: "third") => /unknown text "third"/, stacked_logo_path("industries", guides: "2") => /unknown guides "2"/,
+      stacked_logo_path("industries", tone: %w[dark]) => /unknown tone/ }.each do |path, message|
+      get path
+      assert_response :unprocessable_content, path
+      assert_equal "text/plain", response.media_type
+      assert_match message, response.body
+      assert_no_match(/stacked_logo\.rb|variant\.rb|backtrace/i, response.body)
     end
 
     get logo_brand_path("industries", guides: "maybe")

@@ -1,64 +1,80 @@
-<%# LOGO STUDIO: one row per brand in config/logo_brands.yml, with its rule-of-4
-    Navbar Logo (second word leads) shown once, in the context the dropdown
-    picks (light, dark or watermark), its typeface and its colours. Read-only.
-    Admin only (LogosController). %>
+<%# LOGO STUDIO: one row per brand in config/logo_brands.yml, with one logo of
+    each type (its icon, its rule-of-4 Navbar Logo with the second word
+    leading, its Stacked Logo with the first word leading), each shown once in
+    the context the dropdown picks (light, dark or watermark), then its
+    typeface and its colours. Each logo links to its own tab of the brand page.
+    Below the lg breakpoint a row is a stack of labelled cells; the wrapper
+    scrolls sideways if a table row ever outgrows it, so the page body never
+    does. Read-only. Admin only (LogosController). %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
   <div class="space-y-1">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Logos</h1>
       <%= render "context_form", url: logos_path %>
     </div>
-    <p class="text-sm text-secondary">Each brand's Navbar Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
+    <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
     <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for a brand comes later, with the brand kit record.</p>
     <%= render "context_notes" %>
   </div>
 
   <div class="card p-4 sm:p-5">
-    <table class="w-full block sm:table text-sm" data-test="logo-brands">
-      <thead class="hidden sm:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
-        <tr>
-          <th scope="col" class="pb-2 pr-4 font-semibold">Brand</th>
-          <th scope="col" class="pb-2 pr-4 font-semibold">Navbar logo</th>
-          <th scope="col" class="pb-2 pr-4 font-semibold">Typeface</th>
-          <th scope="col" class="pb-2 font-semibold">Colours</th>
-        </tr>
-      </thead>
-      <tbody class="block sm:table-row-group divide-y divide-subtle">
-        <% @logos.each do |logo| %>
-          <% name = Logos::Variant.brand_name(logo) %>
-          <tr class="block sm:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
-            <th scope="row" class="block sm:table-cell py-3 sm:pr-4 text-left align-top">
-              <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
-              <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
-            </th>
-            <td class="block sm:table-cell pb-3 sm:py-3 sm:pr-4 align-top">
-              <%= link_to logo_brand_path(logo.brand, logo_page_params), class: "flex min-w-0", aria: { label: "#{name}: every logo" } do %>
-                <span class="flex flex-1 items-center rounded-lg border border-subtle px-3 py-2 min-w-0" style="<%= logo_plate_style(@context) %>" data-test="logo-plate" data-tone="<%= @context %>">
-                  <%= logo_image(Logos::Variant.new(logo, rule: 4, text: :second, tone: @context), max_height: 28) %>
-                </span>
-              <% end %>
-            </td>
-            <td class="block sm:table-cell pb-3 sm:py-3 sm:pr-4 align-top" data-test="logo-typeface">
-              <span class="sm:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
-              <% typeface, detail = logo_brand_typeface(logo.brand) %>
-              <span class="font-semibold text-heading"><%= typeface %></span>
-              <span class="text-2xs text-muted whitespace-nowrap"><%= detail %></span>
-            </td>
-            <td class="block sm:table-cell pb-3 sm:py-3 align-top" data-test="logo-colours">
-              <% logo_brand_colours(logo.brand).each do |tone, hexes| %>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5">
-                  <span class="text-3xs uppercase tracking-wide text-muted w-8"><%= tone %></span>
-                  <% hexes.each do |hex| %>
-                    <span class="inline-flex items-center gap-1 text-2xs font-mono text-body" data-test="logo-swatch">
-                      <span class="inline-block w-3.5 h-3.5 rounded border border-subtle" style="background-color: <%= hex %>" aria-hidden="true"></span><%= hex %>
+    <div class="overflow-x-auto" data-test="logo-table-scroll">
+      <table class="w-full block lg:table text-sm" data-test="logo-brands">
+        <thead class="hidden lg:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
+          <tr>
+            <th scope="col" class="pb-2 pr-4 font-semibold">Brand</th>
+            <% Logos::Variant::TYPES.each_value do |type| %>
+              <th scope="col" class="pb-2 pr-4 font-semibold"><%= type %></th>
+            <% end %>
+            <th scope="col" class="pb-2 pr-4 font-semibold">Typeface</th>
+            <th scope="col" class="pb-2 font-semibold">Colours</th>
+          </tr>
+        </thead>
+        <tbody class="block lg:table-row-group divide-y divide-subtle">
+          <% @rows.each do |logo, samples| %>
+            <% name = Logos::Variant.brand_name(logo) %>
+            <tr class="block lg:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
+              <th scope="row" class="block lg:table-cell py-3 lg:pr-4 text-left align-top">
+                <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
+                <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
+              </th>
+              <% samples.each do |type, variant| %>
+                <td class="block lg:table-cell pb-3 lg:py-3 lg:pr-4 align-top" data-test="logo-sample" data-type="<%= type %>">
+                  <p class="lg:hidden pb-1 text-3xs uppercase tracking-wide text-muted"><%= Logos::Variant::TYPES.fetch(type) %></p>
+                  <%= link_to logo_brand_path(logo.brand, logo_page_params(type: (type unless type == :navbar))),
+                              class: "inline-flex max-w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                              aria: { label: "#{name}: #{Logos::Variant::TYPES.fetch(type).downcase}" } do %>
+                    <span class="flex items-center rounded-lg border border-subtle px-3 py-2 min-w-0" style="<%= logo_plate_style(@context) %>" data-test="logo-plate" data-tone="<%= @context %>">
+                      <%= logo_image(variant, max_height: LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(type)) %>
                     </span>
                   <% end %>
-                </div>
+                </td>
               <% end %>
-            </td>
-          </tr>
-        <% end %>
-      </tbody>
-    </table>
+              <td class="block lg:table-cell pb-3 lg:py-3 lg:pr-4 align-top" data-test="logo-typeface">
+                <span class="lg:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
+                <% typeface, detail = logo_brand_typeface(logo.brand) %>
+                <span class="font-semibold text-heading"><%= typeface %></span>
+                <span class="text-2xs text-muted whitespace-nowrap"><%= detail %></span>
+              </td>
+              <td class="block lg:table-cell pb-3 lg:py-3 align-top" data-test="logo-colours">
+                <% logo_brand_colours(logo).each do |tone, hexes| %>
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5" data-test="logo-colour-row" data-tone="<%= tone %>">
+                    <span class="text-3xs uppercase tracking-wide text-muted w-16"><%= tone %></span>
+                    <% hexes.each do |hex| %>
+                      <span class="inline-flex items-center gap-1 text-2xs font-mono text-body" data-test="logo-swatch">
+                        <span class="inline-block w-3.5 h-3.5 rounded border border-subtle" style="background-color: <%= hex %>" aria-hidden="true"></span><%= hex %>
+                      </span>
+                    <% end %>
+                    <% if tone == "watermark" %>
+                      <span class="text-2xs text-muted" data-test="logo-watermark-opacity">at <%= logo_watermark_opacity(logo) %> opacity</span>
+                    <% end %>
+                  </div>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
