@@ -113,7 +113,10 @@ stacked = Logos::StackedLogo.new("studio")
 stacked.svg(text: :first, tone: :dark)   # => "<svg …>"
 stacked.svg(text: :first, guides: true)  # the construction drawing
 stacked.layout(text: :second)            # the geometry alone
-stacked.form                             # => :two_line
+stacked.form                             # => :two_line (the brand's own form, the default)
+stacked.forms                            # => [:two_line, :tagline]
+stacked.svg(form: :tagline)              # icon, name, tagline
+stacked.tagline                          # => "BUILD SMARTER"
 ```
 
 Let **u** be the small word's cap height (40 design units).
@@ -122,6 +125,7 @@ Let **u** be the small word's cap height (40 design units).
 |------|---------------|-------|--------|
 | `two_line` (the default) | icon, 2u, the first word at 3u, 2u, the second word at 1u | the first word's ink, W | 0.6W + 8u |
 | `one_line` (`stacked: one_line` in the style) | icon, 2u, the whole name at 3u | the name's ink, W | 0.6W + 5u |
+| `tagline` (a brand with a `tagline`, beside its own form) | icon, 2u, the whole name at 3u, 2u, the tagline at 1u | the name's ink, W | 0.6W + 8u |
 
 - **Two lines.** The second word is tracked out until its ink is exactly 60% of
   the first word's ink width. The tracking is computed, added between letters
@@ -138,6 +142,17 @@ Let **u** be the small word's cap height (40 design units).
   and 1.056; Turf Monster 1.28.
 - **A lettering brand** (Commercial Welding) stacks in two lines: its traced
   letters carry their own advances, so the small word can be tracked.
+- **With tagline.** The name is set exactly as the one-line form sets it (both
+  words, the word space, the brand's tracking and lettering). The tagline is
+  the small line: Montserrat 500 for every brand (Commercial Welding's own
+  tagline lettering is not traced yet), tracked between its characters, a space
+  being one, until its ink is exactly 60% of the name's; the icon is as tall as
+  the tagline is wide. The three text versions and the tones apply to the name;
+  the tagline takes the tone's `quiet` fill (`text` without one), and the
+  watermark's one fill. Width over height is 3n / (1.8n + 8), n the name's ink
+  width in cap heights: Studio 1.271 homogeneous, Industries 1.327, Commercial
+  Welding 1.284 (`TAGLINE_RATIOS` in `test/lib/logos_stacked_logo_test.rb`).
+  Turf Monster has no tagline, so it has no tagline form.
 
 `Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
 
@@ -145,27 +160,51 @@ Let **u** be the small word's cap height (40 design units).
   letter. The message names the brand and says to set `stacked: one_line`.
   Negative tracking is never drawn.
 - a `stacked` value other than `two_line` or `one_line`;
+- a `tagline` that is not words separated by single spaces, has a character
+  the glyph data lacks at weight 500, or is already wider than 60% of the name
+  (named by brand; never tracked in);
+- a form the brand does not draw: "brand turf: no stacked form :tagline (it
+  has no tagline)";
 - an icon so wide that, at its height, it would overhang the name;
 - a keyword `svg` or `layout` does not take, `rule:` above all: "a stacked
-  logo takes text, tone and guides, not rule: it has no rule".
+  logo takes text, tone, form and guides, not rule: it has no rule".
 
-`guides: true` returns the construction drawing: a line at each boundary, each
-band's size at the right (`2u`, `3u`, `2u`, `1u`; a one-line logo stops after
-`3u`), and the proof that the icon is as tall as the small word is wide: the
-small word again, turned on its side beside the icon, its ink running from the
-icon's bottom edge to its top. A one-line logo has no small word, so it gets a
-bracket beside the icon labelled "60% of the name's width". In a watermark the
-guides sit outside the translucent group. `examples` is not defined on a
+`guides: true` returns the construction drawing, on the method of the 3-2-1
+reel: every measurement is proved with **ghost copies** of the small line (the
+second word; the tagline; in the one-line form the whole name at 1u, a third of
+its size), set untracked in their own weight:
+
+- **The ruler.** Right of the logo, one copy per unit, edge to edge, from the
+  icon's foot to the logo's foot: 2 beside the first gap, 3 beside the big line,
+  2 beside the second gap, 1 beside the small line (the one-line form stops
+  after the 3). The copies are numbered 1-2, 1-2-3, 1-2, 1 between the logo and
+  the ruler, so each band can be counted.
+- **The icon's axis.** A vertical line through the logo's centre, and the small
+  line's letters one under another down it, each where it sits along the line,
+  the first capital's top on the icon's top and the last letter on its foot: the
+  icon is as tall as the small line is wide. A 1 marks the icon's top. A letter
+  is never above 1u, and is drawn small enough not to touch the next.
+- **Lines** only at band boundaries, across the logo and the ruler.
+
+The ghosts are the logo's own text colour (the watermark's fill in a
+watermark), at `GHOST_OPACITY` (0.25 on light, 0.22 on dark and watermark),
+inside one `<g class="guide-ghosts">` drawn over the logo, so the axis letters
+show across the icon. They measure about 1.4:1 to 2.2:1 against their plate,
+and the logo's text at least twice that
+(`test/helpers/logos_helper_test.rb`). The lines (1.0 design units) and the
+numbers (28) are in the guide magenta, inside `<g class="guide-lines">`. Both
+groups sit outside a watermark's translucent group, and the logo inside the
+drawing is the plain logo to the byte. `examples` is not defined on a
 Stacked Logo, and the rake task writes Navbar Logos only.
 
 ## The brands
 
-| Brand | Icon | Name set in | Leads by |
-|-------|------|-------------|----------|
-| `studio` | traced chest, one layer | Montserrat 800 and 300 | weight |
-| `industries` | kit set square, two layers, drawn flat | Montserrat 700 and 300 | weight |
-| `turf` | traced head, three solid layers; its linework alone as a watermark | Montserrat 800, tracking -0.025 em | colour |
-| `welding` | traced helmet: two colours on light, one on dark | its own traced lettering | colour |
+| Brand | Icon | Name set in | Leads by | Tagline |
+|-------|------|-------------|----------|---------|
+| `studio` | traced chest, one layer | Montserrat 800 and 300 | weight | BUILD SMARTER |
+| `industries` | kit set square, two layers, drawn flat | Montserrat 700 and 300 | weight | BUILD BETTER |
+| `turf` | traced head, three solid layers; its linework alone as a watermark | Montserrat 800, tracking -0.025 em | colour | none |
+| `welding` | traced helmet: two colours on light, one on dark | its own traced lettering | colour | BUILDING STRONG CONNECTIONS |
 
 Three things a style may ask for beyond an icon and two Montserrat weights:
 
@@ -190,8 +229,15 @@ A logo is `<svg>`, `<g>` and `<path>` only: no live text, no picture, no font,
 no external reference. Its viewBox is its own box, `0 0 <width> 300`.
 
 `guides: true` returns a separate construction drawing: the row edges, the
-icon's right edge, the name's left ink edge, and the row numbers. That drawing
-does use `<line>` and `<text>`, so it is for looking at, never for shipping.
+icon's right edge, the name's left ink edge, the row numbers, and ghost copies
+of the name one row tall in every row, as the rule-of-thirds reel draws them.
+Rule of 3: a copy above and below the real name make three. Rule of 4: four
+copies, two of them behind the two-row name. The ghosts are the logo's text
+colour, faint, in `<g class="guide-ghosts">` BEHIND the logo; the lines (1.0)
+and numbers (30) are in `<g class="guide-lines">`. That drawing does use
+`<line>` and `<text>`, so it is for looking at, never for shipping. Only logos
+WITHOUT guides are pinned to the byte (SHA-256 tests in
+`test/lib/logos_navbar_logo_test.rb` and `test/lib/logos_stacked_logo_test.rb`).
 
 ## The rake task
 
@@ -215,7 +261,7 @@ linked from the admin sidebar as **Logos**.
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4>-<text>-<tone>[-guides].svg`. |
-| `/logos/:brand/stacked` | One Stacked Logo. Params: `text`, `tone`, `guides`. Named `<brand>-stacked-<text>-<tone>[-guides].svg`. |
+| `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
 
 On the three SVG routes an absent param takes the library's default (so
 `/navbar` alone is the rule of 3), a param the type does not take is not read,
@@ -228,7 +274,7 @@ a `?type=` in the query string cannot change it.
 |-----|-------|------------------|
 | Icon | the icon, once | none |
 | Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3` or `4`; the page shows the rule of 4 unless asked) and **Show guides** |
-| Stacked Logo | the three text versions, and a short paragraph stating the 3-2-1 method and the form the brand uses | **Show guides** |
+| Stacked Logo | the three text versions in one form, and a short paragraph stating the 3-2-1 method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line) and **Show guides** |
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of two
@@ -243,19 +289,19 @@ a `?type=` in the query string cannot change it.
   submits on change. Its **Apply** button is inside a `<noscript>`, so it shows
   only with JavaScript off.
 - **Every control keeps every other control's setting.** `type`, `context`,
-  `rule` and `guides` are all read on every tab, and every link and the form
+  `rule`, `form` and `guides` are all read on every tab, and every link and the form
   are built from `LogosHelper#logo_page_params`, which leaves the defaults
-  (Navbar Logo, light, rule of 4, guides off) out of the URL. So a rule picked
+  (Navbar Logo, light, rule of 4, the brand's own form, guides off) out of the URL. So a rule picked
   on the Navbar tab is still picked after a visit to the Icon tab. The
   **Logos** breadcrumb back to the table keeps the context.
 - **Guide drawings fit first, and scroll only below a readable size.** With
   guides on, a drawing scales to its plate like any logo, up to a height cap
-  (`LogosHelper::LOGO_GUIDE_HEIGHTS`: 132 px for a Navbar Logo, 380 px for a
-  Stacked Logo). It also has a least width of its own,
+  (`LogosHelper::LOGO_GUIDE_HEIGHTS`: 132 px for a Navbar Logo, 540 px for a
+  Stacked Logo, whose ruler makes it wider). It also has a least width of its own,
   `LogosHelper#logo_guide_min_width`, computed from its viewBox: the width at
   which its labels are 9 px tall (`LOGO_GUIDE_LABEL_PX`). Below that width the
   drawing stops shrinking and its plate scrolls sideways inside itself. The
-  widest least width is 874 px (Industries, rule of 4, homogeneous), under the
+  widest least width is 954 px (Commercial Welding, with tagline), under the
   1028 px plate of a 1280 px page, so nothing scrolls there; on a phone every
   drawing does. The page body never scrolls sideways.
 - **A guide plate is a tab stop only while it scrolls.** It is served with
@@ -265,7 +311,8 @@ a `?type=` in the query string cannot change it.
 - Download and Copy SVG give the logo as shown, on every tab: in the watermark
   context, the watermark SVG, named `…-watermark.svg`.
 - Every image's accessible name states its type, its text version (and rule)
-  and its context: "McRitchie Industries stacked logo, first word leads, dark".
+  and its context (and a Stacked Logo's form): "McRitchie Industries stacked
+  logo, with tagline, first word leads, dark".
 - In the watermark context, the Navbar and Stacked tabs of a brand that leads
   by colour say its three text versions look the same. No version is hidden.
 - The index table is a table from the `xl` breakpoint up, and a stack of
@@ -277,7 +324,8 @@ a `?type=` in the query string cannot change it.
   tab answers 422 with the same reason.
 
 - An unknown brand is a 404. Any other param the library or the parser refuses
-  (an unknown `type`, `context`, `rule`, `text`, `tone`, `guides` or `download`)
+  (an unknown `type`, `context`, `rule`, `form`, `text`, `tone`, `guides` or
+  `download`, or a `form` the brand does not draw)
   is a 422 whose body is the reason in plain text.
 - `Logos::Variant` (`lib/logos/variant.rb`) reads the params and gives each logo
   its type, its filename and its accessible name. `Variant.logo(brand, type)`
@@ -300,7 +348,7 @@ a `?type=` in the query string cannot change it.
 
 | File | Holds |
 |------|-------|
-| `config/logo_brands.yml` | Each brand's name, icon, highlight, weights or lettering, tracking, stacked form, note, fills and watermark. Add a brand here. |
+| `config/logo_brands.yml` | Each brand's name, tagline, icon, highlight, weights or lettering, tracking, stacked form, note, fills and watermark. Add a brand here. |
 | `lib/logos/data/brand_icons.json` | Studio's and Industries' icon layers: a path, a role (`primary`, `edge`) and a fill rule each. |
 | `lib/logos/data/brand_icons_turf_welding.json` | The same format for `turf` (roles `outline`, `body`, `light`), `welding` (`primary`, `accent`) and `welding_mono` (`primary`). |
 | `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. The library reads the three icon files as one set. |
