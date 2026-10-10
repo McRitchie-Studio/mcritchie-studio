@@ -1,5 +1,4 @@
 class Team < ApplicationRecord
-  self.ignored_columns += DeadColumns.for(table_name)
   include Sluggable
 
   belongs_to :home_arena, class_name: "Arena", foreign_key: :home_arena_slug, primary_key: :slug, optional: true

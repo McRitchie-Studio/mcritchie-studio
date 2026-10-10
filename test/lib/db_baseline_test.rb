@@ -158,6 +158,16 @@ class DbBaselineTest < ActiveSupport::TestCase
     assert_equal %w[releases tasks], entries.select { |entry| entry.kind == :view }.map(&:base).sort
   end
 
+  test "the committed ledger names the columns it drops after the baseline, and the schema holds none of them" do
+    removed = DbBaseline.removed_columns(Rails.root.join("db/migrate"))
+    schema = DbBaseline::Schema.new(File.read(Rails.root.join("db/schema.rb")))
+    held = schema.tables.to_h { |table| [table.name, DbBaseline.columns_in(table.block.join("\n"))] }
+
+    assert_equal %w[error_message failed_at queued_at required_skills sizes_revealed_at], removed.fetch("tasks")
+    removed.each { |table, columns| assert_empty columns & held.fetch(table), "#{table} still holds a column a migration drops" }
+    assert_includes held.fetch("tasks"), "stage", "control: the schema reader sees a live column"
+  end
+
   test "the committed schema holds every column the baseline creates; a dump short of one is named" do
     schema = File.read(Rails.root.join("db/schema.rb"))
     clean = DbBaseline.compare(schema, root: Rails.root)
@@ -277,6 +287,18 @@ class DbBaselineTest < ActiveSupport::TestCase
       assert_includes error.message, "albums lacks state"
       assert_includes error.message, "bin/rails db:baseline:catch_up"
       assert_empty ledger
+    end
+
+    test "a column a later migration drops is not a shortfall; one its down removes still is" do
+      albums!(%w[title])
+      @connection.pool.schema_migration.create_table
+      write("20260301000000_add_extra.rb", %(def up\n  add_column "albums", "extra", :string\nend\n\ndef down\n  remove_column "albums", "state"\nend))
+      assert_equal ["albums lacks state"], marker.report.short, "control: a remove_column under down excuses nothing"
+
+      write("20260302000000_drop_state.rb", %(def up\n  remove_column "albums", "state", if_exists: true\nend\n\ndef down\n  add_column "albums", "state", :string\nend))
+      assert_equal({ "albums" => %w[state] }, DbBaseline.removed_columns(@dir))
+      assert_empty marker.report.short
+      assert_equal %w[20260101000001 20260101000003], marker.mark!.marked
     end
 
     test "the report is read-only" do

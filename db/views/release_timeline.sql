@@ -6,5 +6,5 @@ SELECT
   qa_deploy_started_at, qa_deployed_at,
   confirming_started_at, confirmed_at,
   prod_deploy_started_at, shipped_at,
-  abandoned_at, release_notes_sent_at, duration_metrics_cached_at
+  abandoned_at, duration_metrics_cached_at
 FROM releases
