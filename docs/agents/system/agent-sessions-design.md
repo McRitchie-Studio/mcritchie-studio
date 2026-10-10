@@ -89,7 +89,7 @@ secret's token otherwise.
 | Admin | The one-time code the board shows on the request, carried in Alex's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
 | Admin, from a hub shell | `bin/rails agent_sessions:grant_admin`: a shell on the hub can already write the database, so the shell is the grant. It runs outside the board: no request, no code, no tap and no window, and the row records `operator_grant`, the value an Approve tap writes | Nothing; the token prints on stdout for `AGENT_ADMIN_SESSION_TOKEN` | None | One to eight whole hours |
 | Harness key | A login request of kind `harness_key` (`bin/harness-key request`), which the operator grants once per machine with the same one-time code or Approve tap, inside the same window. The row on the board reads `Harness key · <machine>` | The machine key (the shared token on a machine with no key; a held key for a rotation), plus the request id and its collect key | The mint doors only | None in effect; `bin/rails agent_sessions:revoke SLUG=<sess-…>` ends it at once |
-| Client, a sibling app's two endpoints | `bin/rails agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=<runtime>` from a hub shell. Stdout is the key and nothing else | Nothing; the key goes into the runtime's config (`STUDIO_RUNTIME_KEY` on Turf Monster) | `AgentSession::CLIENT_ENDPOINTS` for the soul | None in effect; revoked by slug |
+| Client, a sibling app's two endpoints | `bin/rails agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=<runtime>` from a hub shell. Stdout is the key and stderr the notice; a one-off dyno returns both on stdout | Nothing; the key goes into the runtime's config (`STUDIO_RUNTIME_KEY` on Turf Monster) | `AgentSession::CLIENT_ENDPOINTS` for the soul | None in effect; revoked by slug |
 | Client, an outward-facing runtime | Not built. Decided: only from the isolated runtime, with a runtime-bound key stored as a digest and shown once, as Tyrion's bot token is | The runtime key, from the runtime's own env | The runtime's channel (first case: Turf Monster's TikTok DMs) | The key's |
 
 **The admin request has two grants the server verifies** (`AgentLoginRequest`).
@@ -249,9 +249,10 @@ and a ship recovery read it as they do now. None of this section is built.
 | The admin-only TikTok draft create and the hub-shell grant | `tiktok-draft-hardening` | shipped |
 | The admin login request and its two grants | `agent-sessions-admin-grant` | shipped |
 | The facts API, session-only | `facts-primitive-and-endpoints` | shipped |
-| **Stage A of the shared secret's retirement**: the harness key, Turf's runtime key, hooks and the conductor's claim presenting a login, `bin/task` acting as an admin when asked, and the legacy-use census. The shared token is still accepted everywhere it was | `retire-shared-secret-fallback` | built |
-| **Stage B**: the shared token stops writing (the list below) | none filed; it is filed when the census reads zero | waits on the census |
-| The soul on the board card; the tier and the expiry are on no card | `task-card-becomes-component` | built |
+| **Stage A of the shared secret's retirement**: the harness key, Turf's runtime key, hooks and the conductor's claim presenting a login, `bin/task` acting as an admin when asked, and the legacy-use census. The shared token is still accepted everywhere it was | `retire-shared-secret-fallback` | shipped |
+| **Stage B1**: every caller that still presents the shared token outside the mint doors takes a login or a harness-key door (section 9, questions 4 to 6) | none filed | first; the census cannot read zero before it |
+| **Stage B**: the shared token stops writing (the list below) | none filed; it is filed when the census reads zero | waits on Stage B1 and the census |
+| The soul on the board card; the tier and the expiry are on no card | `task-card-becomes-component` | shipped |
 | The checks on `reviewed` to `assembled` and `assembled` to `shipped`; the capability endpoints of section 4 marked not built; break-glass logging (section 7) | none filed | |
 | One leases table for review, release and shift claims (epic piece 5e) | none filed | |
 | The client runtime for an outward-facing channel, Turf Monster's TikTok DMs first (epic piece 3f) | none filed | |
@@ -262,9 +263,13 @@ and a ship recovery read it as they do now. None of this section is built.
    request`, then the Approve tap or `bin/harness-key collect --code <code>`.
    `bin/harness-key status` confirms the board accepts it.
 2. **Swap Turf Monster's credential** (Steffon, the `credential-rotation` SOP).
-   Mint the key on the hub with `bin/rails agent_sessions:grant_runtime_key
-   SOUL=turf-monster LABEL=<runtime>`, taking stdout straight into Turf's config as
-   `STUDIO_RUNTIME_KEY` without reading it, once for production and once for QA.
+   Mint the key on the production hub with `bin/rails
+   agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=turf-production` and
+   set it as `STUDIO_RUNTIME_KEY` on `turf-monster-mainnet` without reading it.
+   Production only: Turf's QA app holds no hub credential and makes no hub call.
+   A one-off dyno returns the task's notice and the key on one stream, so keep
+   the one line that is the key
+   ([`credentials.md`](../modules/credentials.md#turf-monsters-runtime-key)).
    Turf then presents the key and stops exchanging the secret; a refused key fails
    the call and never falls back.
 3. **Read the census on production**: `bin/rails agent_auth:legacy_census
@@ -276,8 +281,10 @@ A machine can rehearse Stage B alone with `AGENT_LEGACY_TOKEN=off` (section 3).
 
 ### Stage B: the exact changes
 
-Stage B ships only after the census reads zero outside the mint doors on
-production for the period Alex chooses. Each line names the code it changes.
+Stage B1 comes first: the callers the census names outside the mint doors are
+converted, each to a login or to a harness-key door. Stage B ships only after
+the census then reads zero outside the mint doors on production for the period
+Alex chooses. Each line names the code it changes.
 
 1. **The shared token answers 401 outside the mint doors.**
    `Api::V1::BaseController#authenticate_legacy_token!` refuses every action that
