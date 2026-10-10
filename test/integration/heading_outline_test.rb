@@ -40,4 +40,12 @@ class HeadingOutlineTest < ActionDispatch::IntegrationTest
     assert_select "h1.nav-title", 0
     assert_select "div.nav-title", 1
   end
+
+  # The engine partial's brand classes; the div form must keep every one.
+  test "the brand drawn as a div keeps the brand's classes" do
+    log_in_as users(:alex)
+
+    get stages_path
+    assert_select "div.nav-title.font-extrabold.text-heading.tracking-tight.min-w-0", { text: BRAND, count: 1 }
+  end
 end

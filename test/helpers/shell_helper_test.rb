@@ -5,8 +5,6 @@ require "test_helper"
 class ShellHelperTest < ActionView::TestCase
   include ShellHelper
 
-  BRAND = '<a href="/"><h1 class="nav-title font-extrabold min-w-0"><span>McRitchie</span><span>Studio</span></h1></a>'.html_safe
-
   test "a page with its own h1 is seen, and one without is not" do
     assert page_heading?('<header><h1 class="text-2xl">Stages</h1></header>')
     assert page_heading?("<h1>Stages</h1>")
@@ -15,16 +13,24 @@ class ShellHelperTest < ActionView::TestCase
     refute page_heading?(nil)
   end
 
-  test "the brand is redrawn as a div and keeps its classes and its words" do
-    redrawn = brand_without_heading(BRAND)
-
-    assert_equal '<a href="/"><div class="nav-title font-extrabold min-w-0"><span>McRitchie</span><span>Studio</span></div></a>', redrawn
-    assert_predicate redrawn, :html_safe?
+  # The engine reads brand_heading with fetch(…, true) and a truthiness test, so
+  # nil would draw a div: the local must be a real boolean.
+  test "the navbar gets brand_heading false on a page with its own h1 and true otherwise" do
+    assert_same false, navbar_locals(page_html: '<h1 class="text-2xl">Stages</h1>')[:brand_heading]
+    assert_same true, navbar_locals(page_html: "<h2>Tasks</h2>")[:brand_heading]
+    assert_same true, navbar_locals(page_html: nil)[:brand_heading]
   end
 
-  test "only the brand's h1 is redrawn" do
-    other = '<h1 class="text-2xl">Stages</h1>'.html_safe
+  private
 
-    assert_equal other, brand_without_heading(other), "control: an h1 that is not the brand is left alone"
+  def logged_in? = false
+
+  # Calls hub_navbar and returns the locals it hands the engine's navbar.
+  def navbar_locals(page_html:)
+    calls = []
+    stub(:render, ->(partial, **locals) { calls << [ partial, locals ] && "" }) { hub_navbar(page_html: page_html) }
+    partial, locals = calls.sole
+    assert_equal "layouts/navbar", partial
+    locals
   end
 end
