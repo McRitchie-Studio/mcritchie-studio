@@ -64,8 +64,8 @@ result step is the lane not working, and that is what exits non-zero. Two predic
 verdicts below it read one definition instead of two spellings that drift.
 
 **Two exit-code rules, disjoint by construction.** Rule 1 fires when `failed > cached`:
-more failures than successes cannot be one bad upload, and it names `AWS_ACCESS_KEY_ID` /
-`AWS_SECRET_ACCESS_KEY`, because that is what a credential failure looks like from here.
+more failures than successes cannot be one bad upload, and it names the `R2_*` variables
+(`StorageBackend.credential_hint`), because that is what a credential failure looks like from here.
 Rule 2 fires when the run found fetchable work and attempted none of it — the task
 refusing its job rather than S3 refusing the upload. `attempted.zero?` forces
 `failed == cached == 0`, so rule 1 is false exactly when rule 2 can fire.
@@ -357,8 +357,8 @@ attached one-off dyno dies with the terminal that started it:
 # 1. the credential the paid lane needs. Present on prod as of 2026-09-27 —
 #    re-measure by NAME, never by printing the value:
 heroku config --app mcritchie-studio | grep -c '^ANTHROPIC_API_KEY:'   # expect 1
-#    AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are needed too: the pass reads each
-#    cached headshot out of S3 with our own credentials.
+#    The R2_* variables are needed too (production cannot boot without them): the
+#    pass reads each cached headshot out of object storage with our own credentials.
 
 # 2. a sample first, attached, because reading the table it prints is the point
 heroku run --app mcritchie-studio DESCRIBE_LIMIT=20 rails athletes:describe_from_headshots

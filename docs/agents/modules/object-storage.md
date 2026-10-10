@@ -13,8 +13,12 @@ is the act that applies them to a new app.
 **McRitchie Studio's Cloudflare account**. Apps inherit that account; none holds
 its own. AWS S3 is **legacy**: the hub, Turf Monster, Industries and
 `moms-app` have served from R2 alone since 2026-10-03 (`commercial-welding` has
-not cut over), and the AWS section at the end of this page is history that
-retires in Wave 7. Why R2:
+not cut over), and the AWS section at the end of this page is history. **The
+AWS side was retired on 2026-10-10** (IAM users and keys deleted, SES
+identities deleted, the S3 desk bucket gone, no `AWS_*` variable left on
+Heroku), and the hub's code followed in task `hub-storage-runs-r2-only`: it has
+no S3 stage, no mirror stage and no SES path left to select (see **The hub
+runs R2 only** below). Why R2:
 Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
@@ -35,6 +39,24 @@ rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
 | Private assets | served through app auth via presigned URLs, which R2 supports on the S3 endpoint |
 | Code discipline | writes fail loudly. Never wrap an upload in a rescue that returns success |
 | Active Storage on R2 | every R2 service in `config/storage.yml` sets `request_checksum_calculation: when_required` and `response_checksum_validation: when_required`. Active Storage sends Content-MD5 and aws-sdk-s3 adds a CRC32, and R2 refuses the pair. A `Studio::S3` probe sends no Content-MD5, so its success proves nothing about Active Storage |
+| Deletes go to trash | an app's R2 Active Storage services name `service: StudioTrashS3` (studio-engine), not `S3`. Purging or replacing an attachment then copies the object to `trash/<utc date>/<epoch ms>/<key>` in the same bucket and only then deletes the original; a failed copy raises and deletes nothing. `Studio::S3.delete` does the same. The bucket's `expire-trash-3d` lifecycle rule removes the trash copy after three days; until then `rake studio:trash:restore[TRASH_KEY]` puts the bytes back. The service refuses to delete from a `*-production` bucket unless the process is real production, so QA and local services must name the dev bucket. The hub adopted it on 2026-10-10 |
+
+## The hub runs R2 only
+
+Since task `hub-storage-runs-r2-only` (2026-10-10) the hub's storage code has
+one backend. `config/initializers/00_storage_backend.rb` holds the rules and
+`test/integration/storage_boot_matrix_test.rb` boots real processes to hold them.
+
+| Setting | Rule |
+|---|---|
+| `ACTIVE_STORAGE_BACKEND`, `STUDIO_S3_BACKEND` | optional. Unset means R2; `r2` is accepted so the live config stays valid. A retired value (`s3`, `mirror_to_r2`, `mirror_to_s3`) or a typo **raises at boot in every environment**, naming the variable |
+| `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | **required in production and QA** (both boot `RAILS_ENV=production`): a missing one raises from the initializer, naming it. That fails Heroku's release phase, where a bad storage config used to pass and then crash-loop web and worker |
+| Test, CI, a keyless local desk | boot without any of them. The services are still R2-shaped, built on a placeholder: the reserved host `r2-not-configured.invalid` (never resolves) and placeholder keys. Nothing can reach AWS or a real bucket, and the first real call fails naming that host. Code that must refuse up front asks `StorageBackend.configured?` |
+| Active Storage services | `amazon` (production, QA) and `amazon_dev` (local) keep their names, because blob rows record them. Both are `StudioTrashS3` on R2. QA's `amazon` resolves the dev bucket through `QA_ENV` |
+| `DeskCapture` | R2 only, with its own keys (`DESK_CAPTURE_R2_ENDPOINT`, `DESK_CAPTURE_R2_ACCESS_KEY_ID`, `DESK_CAPTURE_R2_SECRET_ACCESS_KEY`). `DESK_CAPTURE_BACKEND` is optional and accepts only `r2`; any other value raises at the first read or write. Nothing is checked at boot, because QA and local desks hold no desk keys. The S3 half, `DESK_CAPTURE_REGION` and the SES poll job (`DeskCapturePollJob`) are deleted |
+
+**Removing a storage variable on Heroku now stops the next boot.** Unset an
+`R2_*` variable only together with a deploy that no longer reads it.
 
 ## R2 — gaps against the S3 rules
 
@@ -91,7 +113,7 @@ dates where they changed after the census.
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
 | `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | R2 alone since 2026-10-03 (Active Storage `r2`, v543; `Studio::S3` on R2 since 2026-09-30); `assets.mcritchie.studio` serves production, `assets-dev.mcritchie.studio` the dev bucket; QA (`mcritchie-studio-qa`) and local dev on the dev bucket | enabled 2026-10-03, `mcritchie-studio-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
-| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542); only the manual SES fallback still reads the S3 desk bucket | not enabled |
+| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542), and R2 only since 2026-10-10: the S3 desk bucket and the SES fallback that read it are gone | **pending provisioning**: the nightly workflow carries the row `mcritchie-studio-desk` since 2026-10-10 and fails (opening its alert issue) until `mcritchie-studio-desk-backup`, its token and the two repo secrets exist ([`r2-backup`](../agents/steffon/sops/r2-backup.md) §2a) |
 | `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | R2 alone since 2026-10-03 (Active Storage `r2`, v305; `Studio::S3` on R2 since 2026-09-30); `assets.turfmonster.media` serves production, `assets-dev.turfmonster.media` the dev bucket; QA and local dev on the dev bucket | enabled 2026-10-03, `turf-monster-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | R2 alone since 2026-10-03 (Active Storage `r2`, v54; knowledge docs on R2 since 2026-09-28); QA on the dev bucket | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
@@ -103,12 +125,13 @@ is only true for the day it was taken.
 
 ---
 
-# Legacy — AWS S3 (retires app by app in Wave 2, wholly in Wave 7)
+# Legacy — AWS S3 (retired 2026-10-10)
 
 Everything below is the pre-R2 posture, kept for history: no cut-over app has
 used S3 since 2026-10-03, and the cutover session reports the production buckets
-cleared that night (versioned; noncurrent versions expire after 30 days). Do
-not provision new S3 buckets.
+cleared that night (versioned; noncurrent versions expire after 30 days). The
+IAM users and keys named below were deleted on 2026-10-10, so the commands in
+this section no longer authenticate. Do not provision new S3 buckets.
 
 ## S3 — the rules
 

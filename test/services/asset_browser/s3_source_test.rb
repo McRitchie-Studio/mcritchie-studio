@@ -106,9 +106,10 @@ class AssetBrowserS3SourceColdSignTest < ActiveSupport::TestCase
         print "unavailable"
       end
     RUBY
-    # No credentials anywhere, as on CI: signing must degrade to Unavailable, not raise.
-    env = { "RAILS_ENV" => "test", "AWS_ACCESS_KEY_ID" => "", "AWS_SECRET_ACCESS_KEY" => "",
-            "AWS_EC2_METADATA_DISABLED" => "true", "AWS_PROFILE" => "no-such-profile" }
+    # No R2 connection, as on CI: the process holds placeholder keys, and signing
+    # must degrade to Unavailable rather than raise or sign a URL nobody can fetch.
+    env = { "RAILS_ENV" => "test", "R2_ENDPOINT" => "", "R2_ACCESS_KEY_ID" => "", "R2_SECRET_ACCESS_KEY" => "",
+            "R2_PUBLIC_URL" => "", "AWS_EC2_METADATA_DISABLED" => "true" }
     out, status = Open3.capture2e(env, "bin/rails", "runner", script, chdir: Rails.root.to_s)
 
     assert status.success?, out

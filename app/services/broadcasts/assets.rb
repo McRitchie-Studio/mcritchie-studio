@@ -1,11 +1,11 @@
 module Broadcasts
   # Standard publish/save/delete for broadcast email images, layered on the
   # shared Studio::S3 module (studio-engine). Email clients can't load localhost
-  # or expiring URLs, so images live in S3 under the "email/" prefix and are
-  # referenced by their stable PUBLIC bucket URL.
+  # or expiring URLs, so images live in object storage (Cloudflare R2) under the
+  # "email/" prefix and are referenced by their stable PUBLIC URL.
   #
   #   Broadcasts::Assets.publish_all!   # push public/email/* to S3
-  #   Broadcasts::Assets.base_url       # "https://<bucket>.s3.<region>.amazonaws.com"
+  #   Broadcasts::Assets.base_url       # R2_PUBLIC_URL, e.g. "https://assets.mcritchie.studio"
   #   Broadcasts::Assets.delete("world_cup_header.png")
   module Assets
     PREFIX = "email".freeze

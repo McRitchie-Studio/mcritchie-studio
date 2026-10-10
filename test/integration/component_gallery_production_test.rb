@@ -56,9 +56,12 @@ class ComponentGalleryProductionTest < ActiveSupport::TestCase
         "DATABASE_URL" => database_url,
         "PROBE_RESULT" => out,
         "SECRET_KEY_BASE" => "hub-component-gallery-probe-not-a-real-secret",
-        # Without credentials the AWS SDK probes the EC2 metadata endpoint at
-        # boot and waits for it to time out.
-        "AWS_ACCESS_KEY_ID" => "probe", "AWS_SECRET_ACCESS_KEY" => "probe", "AWS_REGION" => "us-east-2",
+        # A production boot refuses to start without its R2 connection
+        # (config/initializers/00_storage_backend.rb). Placeholders: nothing
+        # here reads or writes object storage.
+        "R2_ENDPOINT" => "https://probe.r2.cloudflarestorage.com",
+        "R2_ACCESS_KEY_ID" => "probe", "R2_SECRET_ACCESS_KEY" => "probe",
+        "R2_PUBLIC_URL" => "https://assets.probe.example",
         "RAILS_LOG_LEVEL" => "fatal"
       }
       output = IO.popen(env, [RbConfig.ruby, File.join(ROOT, "bin/rails"), "runner", PROBE],

@@ -1,7 +1,9 @@
 # Nightly R2 backup — the automation half of Steffon's r2-backup SOP
 # (docs/agents/agents/steffon/sops/r2-backup.md). R2 has no object versioning;
 # each run mirrors <app>-production into <app>-backup/current/ and archives what
-# changed. Logic and guards live in bin/r2-backup (bin/lib/r2_backup.rb).
+# changed. A row may also name a single-bucket store from R2Backup::SOURCE_BUCKETS
+# (mcritchie-studio-desk, DeskCapture's captured mail): its source is the bucket
+# itself and its backup is <name>-backup. Logic and guards live in bin/r2-backup (bin/lib/r2_backup.rb).
 #
 # SILENCE IS NOT SUCCESS. A failed run opens (or comments on) a GitHub issue
 # titled "R2 backup failing: <app>", and the next good run closes it. GitHub's own
@@ -43,6 +45,10 @@ jobs:
             secret: MCRITCHIE_INDUSTRIES
           - app: mcritchie-studio
             secret: MCRITCHIE_STUDIO
+          # DeskCapture's private mail bucket (one bucket, no pair): mirrors
+          # mcritchie-studio-desk into mcritchie-studio-desk-backup.
+          - app: mcritchie-studio-desk
+            secret: MCRITCHIE_STUDIO_DESK
           - app: turf-monster
             secret: TURF_MONSTER
     steps:

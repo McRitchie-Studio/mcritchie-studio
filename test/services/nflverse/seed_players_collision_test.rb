@@ -280,22 +280,24 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
   # --- the trap that got past every gate ---------------------------------
   #
   # `post_deploy_cmd` ran this importer WITHOUT `upload_headshots:`, taking the
-  # constructor default of true — which raises when AWS_ACCESS_KEY_ID is blank.
-  # mcritchie-studio-qa carries no AWS keys, `bin/release` runs post_deploy_cmd
+  # constructor default of true — which raises when storage credentials are
+  # missing (AWS keys then; the R2_* variables since the AWS exit of 2026-10-10).
+  # mcritchie-studio-qa carried no AWS keys, `bin/release` runs post_deploy_cmd
   # against QA with --exit-code, and a non-zero exit aborts the WHOLE batch QA
   # release. No test covered the true path (every other test passes false), and
   # dor-check's post-deploy gate only rejects a bare db:seed.
 
-  test "the headshot-caching default REFUSES without AWS credentials" do
-    original = ENV["AWS_ACCESS_KEY_ID"]
-    ENV["AWS_ACCESS_KEY_ID"] = nil
+  test "the headshot-caching default REFUSES without R2 credentials" do
+    original = ENV["R2_ACCESS_KEY_ID"]
+    ENV["R2_ACCESS_KEY_ID"] = nil
 
     error = assert_raises RuntimeError do
       Nflverse::SeedPlayers.new(csv_body: csv, status_filter: "ACT")
     end
-    assert_match(/AWS_ACCESS_KEY_ID/, error.message)
+    assert_match(/R2_ACCESS_KEY_ID/, error.message)
+    refute_match(/AWS_/, error.message)
   ensure
-    ENV["AWS_ACCESS_KEY_ID"] = original
+    ENV["R2_ACCESS_KEY_ID"] = original
   end
 
   test "opting out of headshot caching runs with no AWS credentials at all" do

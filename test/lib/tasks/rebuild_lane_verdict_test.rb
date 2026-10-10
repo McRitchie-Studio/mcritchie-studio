@@ -199,7 +199,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     end
 
     assert_match(/failed 2 of 2 attempted uploads/, err)
-    assert_match(/AWS_ACCESS_KEY_ID/, err, "name the credential an operator goes and checks")
+    assert_match(/R2_ACCESS_KEY_ID/, err, "name the credential an operator goes and checks")
   end
 
   # THE GREEN TWIN, AND THE REASON THE RULE IS A MAJORITY RULE. A single dead
@@ -445,7 +445,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_match(/failed 2 of 2 attempted uploads/, err,
                  "the athlete with no source was never attempted, so it is not in this " \
                  "denominator — a data gap must not dilute a credential failure")
-    assert_match(/AWS_ACCESS_KEY_ID/, err)
+    assert_match(/R2_ACCESS_KEY_ID/, err)
   end
 
   # --- nfl:upload_headshots: a dead SOURCE is not a broken UPLOADER ---------
@@ -519,7 +519,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                  "— a data gap must not dilute a credential failure")
     assert_match(/1 more had a dead source and are NOT counted here/, err,
                  "say where the third attempt went, or the arithmetic looks like a bug")
-    assert_match(/AWS_ACCESS_KEY_ID/, err)
+    assert_match(/R2_ACCESS_KEY_ID/, err)
   end
 
   # A 5xx IS STILL OURS TO REPORT. Excusing every OpenURI::HTTPError would make the
@@ -778,7 +778,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     end
 
     assert_match(/failed 2 of 2 attempted re-keys/, err)
-    assert_match(/AWS_ACCESS_KEY_ID/, err, "name the credential an operator goes and checks")
+    assert_match(/R2_ACCESS_KEY_ID/, err, "name the credential an operator goes and checks")
     assert_match(/NO AVATAR WAS LOST/, err,
                  "the ordering guarantees it, so the abort must say it — otherwise the operator's " \
                  "first instinct is to go looking for missing images")

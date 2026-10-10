@@ -158,6 +158,55 @@ class R2BackupTest < Minitest::Test
     FakeR2.new("moms-app-production" => production, "moms-app-backup" => {})
   end
 
+  # --- a single-bucket source: DeskCapture's mail bucket ---------------------------
+
+  def test_source_bucket_is_production_for_an_app_and_the_bucket_itself_for_the_desk
+    assert_equal "moms-app-production", R2Backup.source_bucket("moms-app")
+    assert_equal "mcritchie-studio-production", R2Backup.source_bucket("mcritchie-studio")
+    assert_equal "mcritchie-studio-desk", R2Backup.source_bucket("mcritchie-studio-desk")
+  end
+
+  def desk_runner(fake, at: NOW)
+    R2Backup::Runner.new(app: "mcritchie-studio-desk", shell: fake, log: StringIO.new, clock: -> { at })
+  end
+
+  def test_the_desk_backup_mirrors_the_desk_bucket_into_its_own_backup_bucket
+    mail = { "resend/abc.eml" => "raw", "parsed/abc/0-deal.pdf" => "pdf", "gmail/1.eml" => "raw" }
+    fake = FakeR2.new("mcritchie-studio-desk" => mail.dup, "mcritchie-studio-desk-backup" => {})
+
+    receipt = desk_runner(fake).run
+
+    assert receipt["ok"], receipt["reason"]
+    assert_equal "mcritchie-studio-desk", receipt["app"]
+    assert_equal 3, receipt.dig("production", "count")
+    assert_equal mail, fake.objects("r2:mcritchie-studio-desk-backup/current")
+    sync = fake.calls.find { |argv| argv[1] == "sync" }
+    assert_equal ["r2:mcritchie-studio-desk", "r2:mcritchie-studio-desk-backup/current"], sync[2, 2]
+    refute(fake.calls.flatten.any? { |arg| arg.include?("mcritchie-studio-desk-production") },
+           "the desk backup asked for a -production bucket that does not exist")
+    refute(fake.calls.flatten.any? { |arg| arg.match?(%r{\Ar2:mcritchie-studio-(production|backup)(/|\z)}) },
+           "the desk backup touched the app's own asset buckets")
+  end
+
+  def test_the_desk_backup_archives_a_deleted_mail_and_refuses_a_wipe
+    mail = (1..30).to_h { |i| ["resend/#{i}.eml", "raw"] }
+    fake = FakeR2.new("mcritchie-studio-desk" => mail.dup, "mcritchie-studio-desk-backup" => {})
+    desk_runner(fake).run
+
+    fake.buckets["mcritchie-studio-desk"].delete("resend/1.eml")
+    later = NOW + 86_400
+    receipt = desk_runner(fake, at: later).run
+    assert receipt["ok"], receipt["reason"]
+    assert_equal({ "resend/1.eml" => "raw" },
+                 fake.objects("r2:mcritchie-studio-desk-backup/archive/#{R2Backup.stamp(later)}"))
+
+    fake.buckets["mcritchie-studio-desk"] = {}
+    refused = desk_runner(fake, at: later + 86_400).run
+    refute refused["ok"]
+    assert_match(/refusing to mirror a possible wipe/, refused["reason"])
+    assert_equal 29, fake.objects("r2:mcritchie-studio-desk-backup/current").size
+  end
+
   def test_first_run_mirrors_and_writes_an_ok_receipt
     fake = fresh_fake("a.txt" => "1", "b.txt" => "1")
     receipt = runner(fake).run

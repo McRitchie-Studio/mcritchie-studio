@@ -11,14 +11,17 @@ local:
 # is the one signal separating them from production (Studio.qa_environment?, the
 # same read Studio::S3 keys on). Unset or unrecognised resolves PRODUCTION.
 #
-# THE MOVE TO CLOUDFLARE R2. Blob rows record the service NAME, so both names are
-# kept at every stage and ACTIVE_STORAGE_BACKEND decides what they resolve to
-# (config/initializers/00_storage_backend.rb):
-#   s3            S3, exactly as before (the default; renders only these services)
-#   mirror_to_r2  <name>_s3 primary, every write mirrored to <name>_r2
-#   mirror_to_s3  <name>_r2 primary, every write mirrored back to <name>_s3
-#   r2            R2 alone
-# Same bucket names on both stores. The services are built in that initializer.
+# BOTH ARE CLOUDFLARE R2, and nothing else: AWS was retired on 2026-10-10. The
+# names survive because blob rows record the service NAME. The services are built
+# in config/initializers/00_storage_backend.rb, which also decides what a missing
+# R2_* variable does (raise in production and QA; a placeholder that reaches
+# nothing in test, CI and a keyless desk).
+#
+# `service: StudioTrashS3` is studio-engine's S3 service with a grace period:
+# purging or replacing an attachment MOVES the object under trash/ (copy, then
+# delete) and the bucket's `expire-trash-3d` lifecycle rule removes it three days
+# later. It refuses to delete from a "*-production" bucket unless the process is
+# real production, which is why QA must resolve the dev bucket here.
 <% buckets = {
      "amazon" => Studio.qa_environment? ? "mcritchie-studio-dev" : "mcritchie-studio-production",
      "amazon_dev" => "mcritchie-studio-dev"

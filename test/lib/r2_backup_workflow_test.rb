@@ -53,6 +53,26 @@ class R2BackupWorkflowTest < Minitest::Test
   end
 
   def test_the_apps_backed_up_nightly
-    assert_equal %w[mcritchie-industries mcritchie-studio moms-app turf-monster], matrix.map { |row| row["app"] }.sort
+    assert_equal %w[mcritchie-industries mcritchie-studio mcritchie-studio-desk moms-app turf-monster],
+                 matrix.map { |row| row["app"] }.sort
+  end
+
+  # DeskCapture's mail bucket is one bucket, not a pair, so its row is only
+  # correct while the runner knows its source is not "<app>-production".
+  def test_the_desk_row_reads_its_own_secrets_and_mirrors_the_desk_bucket
+    require_relative "../../bin/lib/r2_backup"
+    row = matrix.find { |r| r["app"] == "mcritchie-studio-desk" }
+    refute_nil row
+    assert_equal "MCRITCHIE_STUDIO_DESK", row["secret"]
+    assert_equal "mcritchie-studio-desk", R2Backup.source_bucket(row["app"])
+  end
+
+  # Every other row is a paired app: a SOURCE_BUCKETS entry for one would point
+  # its backup away from <app>-production.
+  def test_every_other_row_mirrors_its_production_bucket
+    require_relative "../../bin/lib/r2_backup"
+    (matrix.map { |r| r["app"] } - ["mcritchie-studio-desk"]).each do |app|
+      assert_equal "#{app}-production", R2Backup.source_bucket(app)
+    end
   end
 end

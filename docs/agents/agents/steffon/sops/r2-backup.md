@@ -33,6 +33,13 @@ fresh receipt means the undo is current. Run by hand (§3) only before a bulk
 operation or to recover from a failure. The automation landed in task
 `automate-nightly-r2-backup`.
 
+**What the nightly matrix covers.** Four app pairs (`moms-app`,
+`mcritchie-industries`, `mcritchie-studio`, `turf-monster`), each mirroring
+`<app>-production`, and one **single-bucket store**: `mcritchie-studio-desk`,
+`DeskCapture`'s captured inbound mail, which has no dev/production pair. A
+single-bucket store is enabled by §2a instead of §2; every other act is the
+same, with the store's name in place of `<app>`.
+
 ## What this act is NOT
 
 - **It never writes production except in Restore**, and Restore uses the admin
@@ -188,9 +195,58 @@ zsh "$HOME/.mcr-r2/isolation.sh" "$APP"   # must end "<app>: 0 failure(s)"
 Then run §3 once and the §5 drill. Enable is not done until a restore has
 brought an object back.
 
+## 2a. Enable a single-bucket store (`mcritchie-studio-desk`)
+
+Some stores are one private bucket with no `-production` half. `bin/r2-backup`
+knows them by name: `R2Backup::SOURCE_BUCKETS` in `bin/lib/r2_backup.rb` maps
+the backup's name to the bucket it mirrors. Today it holds one entry.
+
+| Backup name (`<app>` everywhere below) | Source bucket | Backup bucket | 1Password item | Repo secrets |
+|---|---|---|---|---|
+| `mcritchie-studio-desk` | `mcritchie-studio-desk` | `mcritchie-studio-desk-backup` | `r2.mcritchie-studio-desk` | `R2_BACKUP_MCRITCHIE_STUDIO_DESK_ACCESS_KEY_ID`, `R2_BACKUP_MCRITCHIE_STUDIO_DESK_SECRET_ACCESS_KEY` |
+
+What differs from §2:
+
+- **Bucket** `mcritchie-studio-desk-backup`, location hint `enam`, private.
+- **Token** `r2-mcritchie-studio-desk-backup`: *Bucket Item Read* on
+  `mcritchie-studio-desk` (the source itself, not a `-production` bucket) plus
+  *Bucket Item Write* on `mcritchie-studio-desk-backup`.
+- **Record** `access-key-id-backup` and `secret-access-key-backup` added to the
+  existing item `r2.mcritchie-studio-desk`. That item already carries
+  `endpoint`, which `bin/r2-backup --op` reads.
+- **Enable script.** §2's `enable.py` grants the read on `{APP}-production`.
+  For this store, change that one resource to the source bucket before running
+  it: `res(f"{APP}-production")` becomes `res(APP)`, with
+  `APP=mcritchie-studio-desk`.
+- **Lifecycle rules** on `mcritchie-studio-desk-backup`: the same two as §2
+  (`expire-archive-30d`, `expire-receipts-180d`).
+- **Isolation probes.** The store has one app key, not a prod and dev pair, so
+  §2's script does not fit as written. Prove the same three facts by hand, each
+  refused with `AccessDenied`: the backup key cannot write
+  `mcritchie-studio-desk`, the backup key cannot delete from it, and the desk's
+  own key (`access-key-id` / `secret-access-key` in the same item) cannot list
+  `mcritchie-studio-desk-backup`.
+- **Run, Collect, Restore** are §3 to §5 with `APP=mcritchie-studio-desk`. The
+  source in every command is `mcritchie-studio-desk`, wherever §5 writes
+  `$APP-production`.
+- **The drill** seeds with the desk's own key. Use a `_backup-drill/` prefix:
+  `DeskCapture` reads only the keys its rows name, so drill objects are
+  invisible to the app. The mail itself is never part of a drill.
+
+The hub app never deletes from the desk bucket, so a drop there is not ordinary
+churn. If a run refuses on the drop guard, find out what removed the mail
+before reaching for `--accept-drop`.
+
+**Until this section has been run, the nightly row fails** on a missing
+credential and opens the issue `R2 backup failing: mcritchie-studio-desk`. The
+row was added on 2026-10-10 (task `hub-storage-runs-r2-only`) ahead of the
+bucket, token and secrets, which are an operator act.
+
 ## 3. Run — mirror plus archive, with a receipt
 
-`bin/r2-backup run <app>` makes `<app>-backup/current/` equal production.
+`bin/r2-backup run <app>` makes `<app>-backup/current/` equal production (for a
+single-bucket store from §2a, equal that bucket; the receipt still calls its
+count `production`).
 Every object the sync would overwrite or delete is first moved into
 `archive/<stamp>/` by rclone's `--backup-dir`, so the archive holds exactly what
 changed, keyed by run. Each run writes `_receipts/<stamp>.json`. Logic and
@@ -297,7 +353,10 @@ held few other objects; if the next run refuses, confirm and use
   `R2_BACKUP_<APP>_ACCESS_KEY_ID` and `R2_BACKUP_<APP>_SECRET_ACCESS_KEY`
   (upper-cased, dashes to underscores; the deployer identity can write them,
   the agent App cannot), and add the app to the matrix in
-  `.github/workflows/r2-backup.yml`. Pipe each value through `printf %s
+  `.github/workflows/r2-backup.yml`. A single-bucket store also needs its entry
+  in `R2Backup::SOURCE_BUCKETS` (§2a), or the run looks for a `-production`
+  bucket that does not exist; `test/lib/r2_backup_workflow_test.rb` holds the
+  matrix and that map together. Pipe each value through `printf %s
   "$(op read …)"`: `op read` ends in a newline, and a newline in a key breaks
   it. `R2_ENDPOINT` is one secret for the whole account.
 - Mark the app's backup as enabled in the R2 census in

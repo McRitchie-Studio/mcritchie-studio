@@ -333,14 +333,11 @@ namespace :pokemon do
   # GET PokéAPI JSON, retrying a 429, a 5xx or a dropped connection with
   # exponential backoff (honouring Retry-After) — the API is shared and
   # rate-limited. Any other non-2xx, or FETCH_ATTEMPTS failures, raises.
-  # Where the mirrored images are served from, built from the storage adapter:
-  # its public base once one is set (R2), else the PATH-STYLE AWS URL of the
-  # upload bucket. Path-style on purpose: the virtual-hosted host
-  # `mcritchie-studio-production.s3…` trips Chrome's lookalike-domain warning.
+  # Where the mirrored images are served from: the storage adapter's public
+  # base (R2_PUBLIC_URL). Studio::S3.url raises when there is none, so a URL
+  # nobody can load is never written into the seed JSON.
   def pokemon_image_base
-    return Studio::S3.url(key: "pokemon") if Studio.s3_public_url.present? || Studio::S3.endpoint
-
-    "https://s3.#{Studio::S3.region}.amazonaws.com/#{pokemon_bucket}/pokemon"
+    Studio::S3.url(key: "pokemon")
   end
 
   # The committed JSON serves every environment, so images live in the

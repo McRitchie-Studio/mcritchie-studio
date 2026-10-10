@@ -14,8 +14,8 @@ require "open-uri"
 # MIN_SEASON=0 to ingest everything, or status="" to skip the status filter.
 #
 # Headshot caching is enabled by default and REQUIRES storage credentials —
-# the constructor raises when Studio::S3 has none (.storage_credentials?: the R2
-# keys under STUDIO_S3_BACKEND=r2, else AWS_ACCESS_KEY_ID). Each Athlete with an
+# the constructor raises when this process holds no R2 connection
+# (.storage_credentials?, which is StorageBackend.configured?). Each Athlete with an
 # espn_id gets its 100w/400w variants cached via Studio::ImageCache.
 # Idempotent — variants already cached are skipped. To opt out (CI, tests),
 # pass upload_headshots: false or set SKIP_HEADSHOTS=1 on the rake task.
@@ -86,12 +86,12 @@ class Nflverse::SeedPlayers
 
   attr_reader :stats, :refusals
 
-  # Whether Studio::S3, which caches the headshots, can sign a write: the R2 keys
-  # config/initializers/studio.rb sets under STUDIO_S3_BACKEND=r2 (production,
-  # QA and local dev since 2026-09-30), or on AWS the SDK's default chain, which
-  # is AWS_ACCESS_KEY_ID. Same guard as turf-monster's copy of this seeder.
+  # Whether Studio::S3, which caches the headshots, has a real R2 connection:
+  # every R2_* variable set (production, QA, and a local desk with
+  # .env.development). Asked of the environment, not of Studio.s3_access_key_id:
+  # on CI and a keyless desk that holds a placeholder, which is not a credential.
   def self.storage_credentials?(env = ENV)
-    Studio.s3_access_key_id.present? || env["AWS_ACCESS_KEY_ID"].present?
+    StorageBackend.configured?(env)
   end
 
   def initialize(verbose: false, upload_headshots: true,
@@ -100,7 +100,7 @@ class Nflverse::SeedPlayers
     @verbose = verbose
     @upload_headshots = upload_headshots
     if @upload_headshots && !self.class.storage_credentials?
-      raise "No storage credentials — headshot caching needs R2 keys (STUDIO_S3_BACKEND=r2) or AWS_ACCESS_KEY_ID. " \
+      raise "No storage credentials — headshot caching needs #{StorageBackend.credential_hint}. " \
             "Pass upload_headshots: false (or SKIP_HEADSHOTS=1) to opt out."
     end
     @min_season = min_season.to_i
