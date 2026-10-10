@@ -29,8 +29,7 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
   # like the test is obsolete rather than like the wrong question.
   def host_source = ResolvedView.source("host", "studio/modals")
 
-  # The store's JavaScript: studio/modal_host.js on an engine that ships the
-  # store as a module, the same resolved partial on one that keeps it inline.
+  # The store's JavaScript: the engine's studio/modal_host module.
   def host_script = ResolvedView.modal_host_script
 
   # THE BACKDROP ELEMENT, parsed out of the RENDERED page.

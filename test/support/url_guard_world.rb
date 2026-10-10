@@ -17,9 +17,6 @@
 # named `unresolved` with the engine's own error. `lookups` therefore holds one
 # entry per lookup the engine would make. A call with `resolver: nil` is the
 # engine's "judge the text only" and records nothing. No real DNS, no real HTTP.
-#
-# Until the Gemfile's floor reached 0.95 this also stood in for an engine that
-# resolved nothing (`engine: :current`); the hub no longer runs on one.
 module UrlGuardWorld
   def with_url_guard(unresolved: [], slow: {}, &block)
     lookups = []

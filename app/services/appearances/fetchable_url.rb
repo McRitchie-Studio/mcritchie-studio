@@ -32,11 +32,6 @@ module Appearances
   # request, a budget per web request, and "could not look it up" kept apart
   # from "not a public address".
   #
-  # Until the floor moved to 0.95 this module also ran on engines that read
-  # the text only: it named UnresolvedSourceHost by string and fell back to a
-  # keywordless call when `resolver: nil` was refused. Both are gone; the
-  # engine is asked directly.
-  #
   # ITS LIMIT: the answer is true when it is given. A name can
   # point somewhere else a moment later (DNS rebinding), and closing that needs
   # the vetted address handed to the HTTP client. Most of these bytes are
