@@ -7,7 +7,7 @@ by task slug; section 9 holds the questions Alex has not answered.
 How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
 The page reads the code on `accepted`. The shared secret retires in two stages
-(section 8). Stage A is built: a session is the normal path, the shared token is
+(section 8). Stage A is shipped: a session is the normal path, the shared token is
 still accepted, and each use of it is counted. Stage B, which refuses it, waits
 for that count to read zero in production.
 
