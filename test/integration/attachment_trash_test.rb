@@ -94,7 +94,11 @@ class AttachmentTrashTest < ActiveSupport::TestCase
     user.avatar.attach(first)
     reset_requests
 
-    perform_enqueued_jobs { user.avatar.attach(upload("second.png", content_type: "image/png")) }
+    # Only the purge: an AnalyzeJob would download the new blob from the
+    # stubbed client, whose empty body fails Active Storage's integrity check.
+    perform_enqueued_jobs(only: ActiveStorage::PurgeJob) do
+      user.avatar.attach(upload("second.png", content_type: "image/png"))
+    end
 
     copies = requests(:copy_object)
     assert_equal [ "mcritchie-studio-dev/#{first.key}" ], copies.map { |c| c[:copy_source] }
