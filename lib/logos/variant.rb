@@ -2,9 +2,10 @@
 
 module Logos
   # One logo as the gallery (LogosController) names it: a brand, a TYPE (the icon
-  # alone, the Navbar Logo or the Stacked Logo) and the rule, text, tone and
+  # alone, the Navbar Logo or the Stacked Logo) and the rule, form, text, tone and
   # guides picked by URL params. A type takes only its own choices: an icon has
-  # a tone and nothing else, and only a Navbar Logo has a rule. A page's CONTEXT
+  # a tone and nothing else, only a Navbar Logo has a rule, and only a Stacked
+  # Logo has a form (two lines, one line or with tagline). A page's CONTEXT
   # is the one tone every logo on it is shown in. It turns request strings
   # into the library's arguments, refuses anything it does not know with
   # Logos::NavbarLogo::Error, and gives the logo its words: an accessible
@@ -13,7 +14,9 @@ module Logos
   # (the app autoloads all three).
   class Variant
     TYPES = { icon: "Icon", navbar: "Navbar Logo", stacked: "Stacked Logo" }.freeze
-    CHOICES = { icon: %i[tone], navbar: %i[rule text tone guides], stacked: %i[text tone guides] }.freeze
+    CHOICES = { icon: %i[tone], navbar: %i[rule text tone guides], stacked: %i[form text tone guides] }.freeze
+    # The Stacked Logo's forms, as the Form control names them; a brand offers only its own (StackedLogo#forms).
+    FORMS = { two_line: "Two lines", one_line: "One line", tagline: "With tagline" }.freeze
     RULES = { 3 => "Rule of 3", 4 => "Rule of 4" }.freeze
     RULE_SENTENCES = {
       3 => "The icon is three rows tall. The capitals are one row, a third of the icon, and the name sits in the middle row.",
@@ -26,23 +29,32 @@ module Logos
     FORM_SENTENCES = {
       two_line: "This brand uses the two-line form.",
       one_line: "This brand uses the one-line form, because its second word is too wide to sit under its first: the whole name is on " \
-                "one line, 3 units tall, 2 units under an icon 60% as tall as the name is wide."
+                "one line, 3 units tall, 2 units under an icon 60% as tall as the name is wide.",
+      tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in " \
+               "Montserrat and spaced out to 60% of the name's width. The tagline is the small line, so the icon is as tall as it is wide."
     }.freeze
     TEXTS = { homogeneous: "Homogeneous", first: "First word leads", second: "Second word leads" }.freeze
     TONES = NavbarLogo::TONES
     CONTEXTS = { light: "Light", dark: "Dark", watermark: "Watermark" }.freeze
     FLAGS = { nil => false, "0" => false, "1" => true }.freeze
 
-    attr_reader :logo, :type, :rule, :text, :tone, :guides
+    attr_reader :logo, :type, :rule, :form, :text, :tone, :guides
 
     # The library object that draws a brand's logos of one type.
     def self.logo(brand, type = :navbar) = (type == :stacked ? StackedLogo : NavbarLogo).new(brand)
 
     # A brand page's logos of one type in one tone: the icon, or the three text versions (a Navbar Logo's on `rule`).
-    def self.all(logo, type: :navbar, rule: 4, tone: :light, guides: false)
+    def self.all(logo, type: :navbar, rule: 4, form: nil, tone: :light, guides: false)
       return [new(logo, type:, tone:)] if type == :icon
 
-      TEXTS.keys.map { |text| new(logo, type:, rule:, text:, tone:, guides:) }
+      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, text:, tone:, guides:) }
+    end
+
+    # A ?form= as a stacked form. Given the Stacked Logo, only a form it draws is taken, and absent is its own form;
+    # without one (a page on another tab carries the param) any form name is taken, and absent is nil.
+    def self.form(value, logo = nil)
+      known = logo ? logo.forms : FORMS.keys
+      pick(value, known.to_h { |form| [form.to_s, form] }, logo&.form, "form")
     end
 
     # A page's ?context= as a tone, ?type= as a logo type and ?rule= as a rule: absent is light, the Navbar Logo and
@@ -62,6 +74,7 @@ module Logos
     def self.parse(logo, params, type: :navbar)
       read = {
         rule: -> { pick(params[:rule], rules_by_name, 3, "rule") },
+        form: -> { form(params[:form], logo) },
         text: -> { pick(params[:text], TEXTS.keys.to_h { |text| [text.to_s, text] }, :homogeneous, "text") },
         tone: -> { pick(params[:tone], tones_by_name, :light, "tone") },
         guides: -> { flag(params[:guides], "guides") }
@@ -77,7 +90,7 @@ module Logos
     private_class_method :pick, :tones_by_name, :rules_by_name
 
     # A choice the type does not take is dropped, so two variants that draw the same thing are named the same.
-    def initialize(logo, type: :navbar, rule: 3, text: :homogeneous, tone: :light, guides: false)
+    def initialize(logo, type: :navbar, rule: 3, form: nil, text: :homogeneous, tone: :light, guides: false)
       choices = CHOICES.fetch(type) { raise NavbarLogo::Error, "unknown type #{type.inspect}: expected one of #{TYPES.keys.join(', ')}" }
       raise ArgumentError, "a #{type} variant of #{logo.brand} was given a #{logo.class}" unless logo.is_a?(StackedLogo) == (type == :stacked)
 
@@ -85,6 +98,7 @@ module Logos
       @type = type
       @tone = tone
       @rule = rule if choices.include?(:rule)
+      @form = form || logo.form if choices.include?(:form)
       @text = text if choices.include?(:text)
       @guides = guides && choices.include?(:guides)
     end
@@ -93,7 +107,7 @@ module Logos
       @svg ||= case type
                when :icon then logo.icon_svg(tone:)
                when :navbar then logo.svg(rule:, text:, tone:, guides:)
-               else logo.svg(text:, tone:, guides:)
+               else logo.svg(form:, text:, tone:, guides:)
                end
     end
 
@@ -102,8 +116,8 @@ module Logos
     def guide_font = logo.class::GUIDE_FONT
 
     # The type's own choices, as its SVG route's params.
-    def params = { rule:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type))
-    def filename = [logo.brand, type, ("rule#{rule}" if rule), text, tone, ("guides" if guides)].compact.join("-") + ".svg"
+    def params = { rule:, form:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type))
+    def filename = [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("guides" if guides)].compact.join("-") + ".svg"
 
     # "McRITCHIE INDUSTRIES" as a reader says it: "McRitchie Industries".
     def self.brand_name(logo)
@@ -111,9 +125,10 @@ module Logos
     end
 
     # The accessible name: "McRitchie Industries navbar logo, rule of 4, second word leads, light",
-    # "McRitchie Industries stacked logo, first word leads, dark" or "McRitchie Industries icon, watermark".
+    # "McRitchie Industries stacked logo, with tagline, first word leads, dark" or "McRitchie Industries icon, watermark".
     def label
-      ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), (TEXTS.fetch(text).downcase if text),
+      ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), (FORMS.fetch(form).downcase if form),
+       (TEXTS.fetch(text).downcase if text),
        tone.to_s, ("construction guides" if guides)].compact.join(", ")
     end
   end

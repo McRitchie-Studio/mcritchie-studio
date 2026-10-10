@@ -18,11 +18,12 @@ module LogosHelper
 
   def logo_plate_style(tone) = LOGO_PLATES.fetch(tone.to_sym)
 
-  # The gallery's page params: the type, context, rule and guides in force, less the defaults (the Navbar Logo,
-  # light, the rule of 4, guides off), with `changes` on top. A change to nil goes back to the default.
+  # The gallery's page params: the type, context, rule, form and guides in force, less the defaults (the Navbar Logo,
+  # light, the rule of 4, the brand's own stacked form, guides off), with `changes` on top. A change to nil goes back
+  # to the default.
   def logo_page_params(**changes)
     { type: (@type unless @type == :navbar), context: (@context unless @context == :light), rule: (@rule unless @rule == 4),
-      guides: (1 if @guides) }.merge(changes).compact
+      form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }.merge(changes).compact
   end
 
   # How tall each type's sample is in the index table, in px: one size per type, so a column reads as a column.
@@ -42,12 +43,12 @@ module LogosHelper
 
   def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
 
-  # A brand page's one-line account of the type being shown.
-  def logo_type_sentence(logo, type, rule)
+  # A brand page's one-line account of the type being shown (a Stacked Logo's in the form shown).
+  def logo_type_sentence(logo, type, rule, form = nil)
     case type
     when :icon then "The icon alone, as this brand's logos draw it."
     when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
-    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(logo.form)}"
+    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
     end
   end
 

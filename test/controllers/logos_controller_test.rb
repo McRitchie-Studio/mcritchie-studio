@@ -12,7 +12,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   PLATES = { "light" => "background-color: #FFFFFF", "dark" => "background-color: #12141A",
              "watermark" => "background-image: linear-gradient(135deg, #263B5C, #2C625E)" }.freeze
   SAMPLES = { "icon" => [{}, "icon"], "navbar" => [{ rule: 4, text: "second" }, "navbar logo, rule of 4, second word leads"],
-              "stacked" => [{ text: "first" }, "stacked logo, first word leads"] }.freeze
+              "stacked" => [{ text: "first" }, "stacked logo, %<form>s, first word leads"] }.freeze
+  # The index's stacked sample is each brand's own form.
+  OWN_FORMS = { "studio" => "two_line", "industries" => "two_line", "turf" => "one_line", "welding" => "two_line" }.freeze
 
   setup do
     @admin = users(:alex)
@@ -30,6 +32,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   def sample(brand, name, type, context)
     params, words = SAMPLES.fetch(type)
     guides = type == "icon" ? {} : { guides: 0 }
+    if type == "stacked"
+      params = params.merge(form: OWN_FORMS.fetch(brand))
+      words = format(words, form: Logos::Variant::FORMS.fetch(OWN_FORMS.fetch(brand).to_sym).downcase)
+    end
     [public_send(:"#{type}_logo_path", brand, params.merge(tone: context, **guides)), "#{name} #{words}, #{context}"]
   end
 
@@ -514,18 +520,18 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "image/svg+xml", response.media_type
     assert_equal logo.svg(text: :first, tone: :light), response.body
-    assert_match(/\Ainline; filename="industries-stacked-first-light\.svg"/, response.headers["Content-Disposition"])
+    assert_match(/\Ainline; filename="industries-stacked-two-line-first-light\.svg"/, response.headers["Content-Disposition"])
     assert_no_match(/<text|<line/, response.body)
 
     get stacked_logo_path("industries", tone: "dark", guides: 1, download: 1, rule: 9)
     assert_response :success, "a stacked logo has no rule, so the param is not read"
     assert_equal logo.svg(tone: :dark, guides: true), response.body
-    assert_match(/\Aattachment; filename="industries-stacked-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
+    assert_match(/\Aattachment; filename="industries-stacked-two-line-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
     assert_equal %w[2u 3u 2u 1u], Nokogiri::XML(response.body).remove_namespaces!.css("text").map(&:text)
 
     get stacked_logo_path("turf", text: "second", tone: "watermark")
     assert_equal Logos::StackedLogo.new("turf").svg(text: :second, tone: :watermark), response.body
-    assert_match(/filename="turf-stacked-second-watermark\.svg"/, response.headers["Content-Disposition"])
+    assert_match(/filename="turf-stacked-one-line-second-watermark\.svg"/, response.headers["Content-Disposition"])
   end
 
   test "an asset route's type is its own: a type in the query string cannot change it" do
@@ -592,5 +598,85 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal "text/plain", response.media_type
       assert_match(/unknown context .*: expected one of light, dark, watermark/, response.body)
     end
+  end
+
+  # Task stacked-tagline-and-ghost-grid: the Stacked tab's Form control.
+  test "the Stacked tab offers each brand's own form and With tagline where the brand has a tagline" do
+    log_in_as(@admin)
+    { "studio" => [%w[two_line tagline], ["Two lines", "With tagline"]], "industries" => [%w[two_line tagline], ["Two lines", "With tagline"]],
+      "welding" => [%w[two_line tagline], ["Two lines", "With tagline"]], "turf" => [%w[one_line], ["One line"]] }.each do |brand, (forms, words)|
+      get logo_brand_path(brand, type: "stacked")
+      assert_response :success
+      assert_select "[data-test='form-control'][role='group'][aria-label='Form']", 1
+      options = css_select("a[data-test='form-option']")
+      assert_equal forms, options.map { |option| option["data-form"] }, brand
+      assert_equal words, options.map { |option| option.text.strip }, brand
+      assert_equal [forms.first], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }, "#{brand}: its own form"
+      assert_equal logo_brand_path(brand, type: "stacked"), options.first["href"], "#{brand}: its own form is the default, left out"
+      if brand == "turf"
+        assert_select "[data-test='no-tagline']", { count: 1, text: "Turf Monster has no tagline, so there is no tagline form." }
+      else
+        assert_equal logo_brand_path(brand, type: "stacked", form: "tagline"), options.last["href"]
+        assert_select "[data-test='no-tagline']", 0
+      end
+    end
+    %w[icon navbar].each do |type|
+      get logo_brand_path("studio", type:, form: "tagline")
+      assert_response :success
+      assert_select "[data-test='form-control'], [data-test='no-tagline']", 0, "only the Stacked Logo has a form"
+    end
+  end
+
+  test "the tagline form is drawn, named in each download and alt text, and stated in plain words" do
+    log_in_as(@admin)
+    get logo_brand_path("welding", type: "stacked", form: "tagline", guides: 1)
+    assert_response :success
+    assert_examples variants("welding", :stacked, form: :tagline, guides: true)
+    assert_equal ["tagline"], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
+    assert_equal %w[welding-stacked-tagline-homogeneous-light-guides.svg welding-stacked-tagline-first-light-guides.svg welding-stacked-tagline-second-light-guides.svg],
+                 variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
+    assert_select "img[data-test='logo-image'][alt^='Commercial Welding stacked logo, with tagline, ']", 3
+    assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
+
+    get stacked_logo_path("welding", form: "tagline", text: "first", tone: "light", download: 1)
+    assert_response :success
+    assert_equal Logos::StackedLogo.new("welding").svg(form: :tagline, text: :first), response.body
+    assert_match(/\Aattachment; filename="welding-stacked-tagline-first-light\.svg"/, response.headers["Content-Disposition"])
+  end
+
+  test "the form is kept across every other control, and every other control's setting across the form" do
+    log_in_as(@admin)
+    get logo_brand_path("studio", type: "stacked", form: "tagline", context: "dark", guides: 1)
+    assert_response :success
+    kept = { context: "dark", form: "tagline", guides: 1 }
+    assert_equal [logo_brand_path("studio", kept.merge(type: "icon")), logo_brand_path("studio", kept), logo_brand_path("studio", kept.merge(type: "stacked"))],
+                 css_select("a[data-test='logo-tab']").map { |tab| tab["href"] }
+    assert_equal [%w[type stacked], %w[form tagline], %w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("studio", type: "stacked", context: "dark", form: "tagline"), text: "Hide guides"
+    assert_equal [logo_brand_path("studio", type: "stacked", context: "dark", guides: 1), logo_brand_path("studio", type: "stacked", context: "dark", form: "tagline", guides: 1)],
+                 css_select("a[data-test='form-option']").map { |option| option["href"] }
+
+    get logo_brand_path("studio", form: "tagline", rule: 3)
+    assert_equal [logo_brand_path("studio", form: "tagline", rule: 3), logo_brand_path("studio", form: "tagline")],
+                 css_select("a[data-test='rule-option']").map { |option| option["href"] }, "the Navbar tab carries the form to the Stacked tab"
+    assert_equal logo_brand_path("studio", type: "stacked", rule: 3, form: "tagline"), css_select("a[data-test='logo-tab'][data-type='stacked']").first["href"]
+  end
+
+  test "an unknown form, or a form the brand does not draw, is a 422 in plain text" do
+    log_in_as(@admin)
+    { logo_brand_path("studio", type: "stacked", form: "three_line") => /unknown form "three_line": expected one of two_line, tagline/,
+      logo_brand_path("turf", type: "stacked", form: "tagline") => /unknown form "tagline": expected one of one_line/,
+      logo_brand_path("studio", type: "stacked", form: "one_line") => /unknown form "one_line"/,
+      logo_brand_path("studio", form: "sideways") => /unknown form "sideways": expected one of two_line, one_line, tagline/,
+      stacked_logo_path("studio", form: "") => /unknown form ""/,
+      stacked_logo_path("turf", form: "tagline") => /unknown form "tagline"/,
+      stacked_logo_path("industries", form: %w[tagline]) => /unknown form/ }.each do |path, message|
+      get path
+      assert_response :unprocessable_content, path
+      assert_equal "text/plain", response.media_type
+      assert_match message, response.body
+    end
+    get navbar_logo_path("studio", form: "sideways")
+    assert_response :success, "a Navbar Logo has no form, so the param is not read"
   end
 end
