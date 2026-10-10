@@ -91,6 +91,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_select "[data-test='logo-swatch']", { count: 1, text: "#FFFFFF" }
         assert_select "[data-test='logo-swatch'] span[style='background-color: #FFFFFF']", 1
         assert_select "[data-test='logo-watermark-opacity']", "at 60% opacity"
+        assert_select "span.w-20.shrink-0[data-test='logo-colour-tone']", "watermark", "the label's box is wide enough for the longest tone"
       end
       assert_select "[data-brand='#{brand}'] [data-test='logo-watermark-opacity']", 1
     end

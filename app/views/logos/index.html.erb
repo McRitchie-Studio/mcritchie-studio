@@ -62,7 +62,7 @@
               <td class="block xl:table-cell pb-3 xl:py-3 align-top xl:min-w-[15.5rem]" data-test="logo-colours">
                 <% logo_brand_colours(logo).each do |tone, hexes| %>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5" data-test="logo-colour-row" data-tone="<%= tone %>">
-                    <span class="text-3xs uppercase tracking-wide text-muted w-16"><%= tone %></span>
+                    <span class="text-3xs uppercase tracking-wide text-muted w-20 shrink-0" data-test="logo-colour-tone"><%= tone %></span>
                     <% hexes.each do |hex| %>
                       <span class="inline-flex items-center gap-1 text-2xs font-mono text-body" data-test="logo-swatch">
                         <span class="inline-block w-3.5 h-3.5 rounded border border-subtle" style="background-color: <%= hex %>" aria-hidden="true"></span><%= hex %>
