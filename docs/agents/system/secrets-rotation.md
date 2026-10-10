@@ -217,7 +217,7 @@ process list.
 
    ```bash
    t="$(mktemp -t new-admin-item)"                  # 0600 under the umask above
-   op item template get "API Credential" > "$t"     # holds no secret
+   op item template get "Secure Note" > "$t"        # holds no secret
    ruby -rjson -e '
      a = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
      b = JSON.parse(File.read(ARGV[0])).pack("C*")
@@ -226,15 +226,20 @@ process list.
      while n > 0; n, r = n.divmod(58); s.prepend(a[r]); end
      s = "1" * b.bytes.take_while(&:zero?).size + s
      item = JSON.parse(File.read(ARGV[1]))
-     (item["fields"] ||= []) << { "id" => "private key", "label" => "private key",
-                                  "type" => "CONCEALED", "value" => s }
+     (item["fields"] ||= []).push(
+       { "id" => "private_key", "label" => "private key", "type" => "CONCEALED", "value" => s },
+       { "id" => "wallet_address", "label" => "wallet address", "type" => "STRING", "value" => ARGV[2] })
      File.write(ARGV[1], JSON.generate(item))
-   ' "$f" "$t"
+   ' "$f" "$t" "$NEW_PUBKEY"
    op item create --vault studio-agents-admin --title "<new item title>" \
-     --template "$t" "wallet-address[text]=$NEW_PUBKEY" > /dev/null
+     --template "$t" > /dev/null
    rm -P "$t"
    ```
 
+   It makes the item shape that `solana.turf.server` and
+   `solana.turf.governance`, both filed from a template file, carry: a Secure
+   Note with fields `private_key` (label `private key`) and `wallet_address`
+   (label `wallet address`).
    `> /dev/null` because `op item create` prints the item it made. **Mind the
    field label**: the `solana.turf.*` items in `studio-agents` spell it
    `private-key`; the items in `studio-agents-admin` spell it `private key`,
