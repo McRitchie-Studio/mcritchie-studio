@@ -9,9 +9,9 @@
     others' settings. Read-only. Admin only (LogosController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
-<%# A control's look, chosen or not. The focus ring is a fixed colour per hub theme (indigo on light, white on dark):
-    the engine's own .btn ring is the primary at 70 percent, which measures about 2:1 on the light theme's white card. %>
-<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary' : 'btn-neutral'} focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" } %>
+<%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
+    border and the primary has none: without it the chosen control is 2 px smaller and the row shifts on a change. %>
+<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" } %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
     <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>

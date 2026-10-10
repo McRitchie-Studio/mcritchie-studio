@@ -174,6 +174,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                      css_select("a[data-test='logo-tab']").map { |tab| [tab["data-type"], tab.text.strip, tab["href"]] }
         assert_equal [current], css_select("a[data-test='logo-tab'][aria-current='page']").map { |tab| tab["data-type"] }
         assert_select "a[data-test='logo-tab'].btn", 3, "a .btn carries the focus ring"
+        assert_select "a[data-test='logo-tab'][aria-current='page'].btn-primary.border.border-transparent", 1, "the chosen tab is the same box as the others"
+        assert_select "a[data-test='logo-tab'].btn-neutral:not(.border-transparent)", 2
       end
       assert_select "[data-test='logo-type'][data-type='#{current}']", 1
     end
@@ -188,6 +190,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal [["3", "Rule of 3", logo_brand_path("studio", rule: 3)], ["4", "Rule of 4", logo_brand_path("studio")]],
                    css_select("a[data-test='rule-option']").map { |option| [option["data-rule"], option.text.strip, option["href"]] }
       assert_equal [rule.to_s], css_select("a[data-test='rule-option'][aria-current='true']").map { |option| option["data-rule"] }
+      assert_select "a[data-test='rule-option'][aria-current='true'].btn-primary.border.border-transparent", 1
       assert_examples variants("studio", :navbar, rule:)
       assert_select "img[data-test='logo-image'][alt*='rule of #{rule}']", 3
       assert_select "[data-test='type-sentence']", { count: 1, text: Logos::Variant::RULE_SENTENCES.fetch(rule) }
