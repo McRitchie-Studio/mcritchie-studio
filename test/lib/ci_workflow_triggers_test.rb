@@ -1812,6 +1812,37 @@ class CiWorkflowTriggersTest < Minitest::Test
                  "after the first `if: always()` — the job still goes red, but one run tells you " \
                  "everything that is wrong instead of one thing at a time."
   end
+
+  # The guards that judge the workflow files run in the static lane, which has no lane
+  # input. In the rails lane alone, one edit setting `rails-shards: false` skips the
+  # lane and the guard that would catch it, and CiStatus folds skipped as pass.
+  WORKFLOW_GUARDS = %w[
+    test/lib/ci_workflow_triggers_test.rb
+    test/lib/ci_service_images_test.rb
+    test/lib/reusable_prod_deploy_test.rb
+  ].freeze
+  # The one condition the guard step may carry: always(), and the checked-out tree
+  # holds the suite file. A caller in another repo has no such file and skips the step.
+  WORKFLOW_GUARD_IF = "${{ always() && hashFiles('.github/workflows/reusable-ci.yml') != '' }}"
+
+  def test_integration_the_static_lane_runs_the_workflow_guards
+    job = jobs_of(suite_as_run)["static"]
+    refute_nil job, "no `static` job in reusable-ci.yml"
+    assert_nil job["if"], "the static lane must stay unconditional; it carries the workflow guards"
+
+    steps = Array(job["steps"]).grep(Hash).select do |step|
+      WORKFLOW_GUARDS.any? { |path| step["run"].to_s.include?(path) }
+    end
+    assert_equal 1, steps.length, "expected one static step running the workflow guards, found #{steps.length}"
+
+    step = steps.first
+    missing = WORKFLOW_GUARDS.reject { |path| step["run"].to_s.split.include?(path) }
+    assert_empty missing, "the static lane's guard step no longer runs #{missing.inspect}"
+    assert_equal WORKFLOW_GUARD_IF, step["if"].to_s.strip,
+                 "the guard step may skip only where the tree holds no reusable-ci.yml"
+    assert_nil step["continue-on-error"], "a guard step that cannot fail guards nothing"
+    WORKFLOW_GUARDS.each { |path| assert File.exist?(File.expand_path("../../#{path}", __dir__)), "#{path} is missing" }
+  end
   # ====================================================================================
 
   def test_integration_no_lane_reports_green_over_failing_tests
