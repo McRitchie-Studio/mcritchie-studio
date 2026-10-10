@@ -249,5 +249,5 @@ gem "lookbook", "~> 2.3"
 # major — that needs a bound tighter than the gemspec's.
 #
 # Lift either one deliberately, in its own task, with the suite behind it.
-gem "redis", "~> 5.4"
+gem "redis", "~> 6.0"
 gem "resend", "~> 1.6"
