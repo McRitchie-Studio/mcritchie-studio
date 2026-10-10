@@ -51,6 +51,10 @@ inputs and no secrets, and every input's default is the hub's own suite.
   `uses:` and nothing else, the input set and every default are listed in
   `SUITE_INPUTS`, and each job's condition is listed in `RAW_JOB_CONDITIONS`. A new
   input, a changed default or a new job is an edit to that test.
+- The workflow guards (`ci_workflow_triggers_test.rb`, `ci_service_images_test.rb`,
+  `reusable_prod_deploy_test.rb`) also run as a step of the `static` lane, which no
+  input switches off, so an edit that turns the rails lane off still meets them. The
+  step runs only where the tree holds `reusable-ci.yml`, so an app's call skips it.
 - To change a lane, edit `reusable-ci.yml`. A pull request runs the called file as its
   own commit has it.
 
@@ -80,7 +84,8 @@ The lanes check out the app's tree, so each script a lane runs is the app's own.
   called ref).
 - A lane that needs a secret, a second service or its own receipts stays a job in
   the app's own `ci.yml`, beside the call.
-- Flip an app only once the hub release carrying these readers is in production.
+- turf-monster keeps its own lanes: its main suites need secrets the call does not
+  carry.
 
 `.github/workflows/reusable-prod-deploy.yml` is the deploy counterpart: a called
 workflow that pushes one SHA to a Heroku app and holds on `/up`. Nothing calls it:
