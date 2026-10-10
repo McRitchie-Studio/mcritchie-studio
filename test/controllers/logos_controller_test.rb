@@ -410,10 +410,12 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 3
     assert_select "a[data-test='logo-download'][href*='guides=1']", 3
     assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
-    assert_select "[data-test='guides-sentence']", /the numbered rows, the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. On a narrow screen a drawing keeps its size: scroll it sideways\./
+    assert_select "[data-test='guides-sentence']", /the numbered rows, the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
 
     # A guide drawing fits its plate (max-width) down to a least width of its own, where its plate starts to scroll.
     assert_select "[data-test='logo-plate'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
+    # A tab stop as served (so it works with JavaScript off); the script drops the tabindex wherever the drawing fits.
+    assert_select "[data-test='logo-plate'][tabindex='0'][x-init*='scrollWidth > $el.clientWidth'][x-init*='removeAttribute'][x-init*='ResizeObserver']", 3
     styles = css_select("[data-test='logo-plate'] img.max-w-full").map { |img| img["style"] }
     assert_equal 3, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }

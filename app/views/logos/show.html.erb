@@ -58,7 +58,7 @@
         <% else %>
           The guide drawings: a line at each boundary, each band's size in units, and the small word turned on its side beside the icon, to show the icon is as tall as the word is wide.
         <% end %>
-        They are for looking at, never for shipping. On a narrow screen a drawing keeps its size: scroll it sideways.
+        They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways.
       </p>
     <% end %>
     <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
@@ -77,10 +77,13 @@
           <% end %>
           <% if variant.guides %>
             <%# A guide drawing fits its plate until its labels would be too small to read; from there it keeps its width
-                and the plate scrolls sideways inside itself. %>
+                and the plate scrolls sideways inside itself. The plate is a tab stop only while it scrolls: the script
+                takes the tabindex away when the drawing fits and puts it back when it does not (on load, and whenever
+                the plate changes size). With JavaScript off it stays a tab stop, which costs one extra Tab. %>
             <div class="overflow-x-auto rounded-lg border border-subtle p-4 sm:p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                  style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>"
-                 tabindex="0" role="group" aria-label="Guide drawing: <%= variant.label %>">
+                 tabindex="0" role="group" aria-label="Guide drawing: <%= variant.label %>"
+                 x-data x-init="const fit = () => $el.scrollWidth > $el.clientWidth ? $el.setAttribute('tabindex', '0') : $el.removeAttribute('tabindex'); new ResizeObserver(fit).observe($el); $el.querySelector('img').addEventListener('load', fit); fit()">
               <%= logo_image(variant, height: logo_height(variant)) %>
             </div>
           <% else %>
