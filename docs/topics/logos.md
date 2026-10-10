@@ -259,9 +259,9 @@ a `?type=` in the query string cannot change it.
   1028 px plate of a 1280 px page, so nothing scrolls there; on a phone every
   drawing does. The page body never scrolls sideways.
 - **A guide plate is a tab stop only while it scrolls.** It is served with
-  `tabindex="0"`; a few inline lines remove the attribute when the drawing
-  fits and restore it when it does not. With JavaScript off it stays a tab
-  stop.
+  `tabindex="0"` and `data-scroll-tab-stop`; `app/javascript/scroll_tab_stop.js`
+  removes the attribute when the drawing fits and restores it when it does
+  not. With JavaScript off it stays a tab stop.
 - Download and Copy SVG give the logo as shown, on every tab: in the watermark
   context, the watermark SVG, named `…-watermark.svg`.
 - Every image's accessible name states its type, its text version (and rule)

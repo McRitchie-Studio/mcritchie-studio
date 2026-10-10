@@ -454,8 +454,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
     # A guide drawing fits its plate (max-width) down to a least width of its own, where its plate starts to scroll.
     assert_select "[data-test='logo-plate'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
-    # A tab stop as served (so it works with JavaScript off); the script drops the tabindex wherever the drawing fits.
-    assert_select "[data-test='logo-plate'][tabindex='0'][x-init*='scrollWidth > $el.clientWidth'][x-init*='removeAttribute'][x-init*='ResizeObserver']", 3
+    # A tab stop as served (so it works with JavaScript off); scroll_tab_stop.js drops the tabindex wherever the drawing fits.
+    assert_select "[data-test='logo-plate'][tabindex='0'][data-scroll-tab-stop]", 3
+    assert_select "[data-test='logo-plate'][x-data], [data-test='logo-plate'][x-init]", 0
     styles = css_select("[data-test='logo-plate'] img.max-w-full").map { |img| img["style"] }
     assert_equal 3, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
