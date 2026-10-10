@@ -69,7 +69,10 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
     # Charizard assembles.
     assert_selector "[data-test='timeline-crew-member'][title^='Charmander']", minimum: 3
     # The deploy cards carry their human owners, so the two evolved forms live in
-    # the Evolve reel: Charmeleon (what the review gate made) → Charizard.
+    # the Evolve reels: Charmander → Charmeleon (the review gate), then
+    # Charmeleon → Charizard (the assemble gate).
+    assert_selector "[data-test='timeline-block'][data-stage='evolve']", count: 2
+    assert_selector "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-evolution-from']", text: /Charmander/
     assert_selector "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-evolution-from']", text: /Charmeleon/
     assert_selector "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-evolution-to']", text: /Charizard/
     assert_no_selector "[data-test='timeline-crew-member'][title^='Charizard']"

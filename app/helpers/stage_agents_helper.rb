@@ -316,7 +316,7 @@ module StageAgentsHelper
       end
     end
 
-    apply_final_evolution!(by_lane, final_evolution(task, events: events))
+    apply_gate_evolutions!(by_lane, gate_evolutions(task, events: events))
 
     lanes = %i[build review assembled]
     # The deploy/ship lane is reserved on the assembled column too — not just once
@@ -328,18 +328,19 @@ module StageAgentsHelper
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
 
-  # Board mirror of the timeline's Evolve card: when a gate produces a final form,
-  # stack that evolved form onto the FIRST (build) crew — the mascot's whole
-  # lineage lives together on the card it was born on. The deploy clusters
+  # Board mirror of the timeline's Evolve cards: each form a gate produces stacks
+  # onto the FIRST (build) crew in gate order — the mascot's whole lineage lives
+  # together on the card it was born on, so a three-stage line shows its middle
+  # form from review on and its final form from assemble on. The deploy clusters
   # already carry no mascot (it never rides them), so there is nothing to strip. A
-  # no-op unless a final evolution fired. Mutates the by-lane cluster map in place.
-  def apply_final_evolution!(by_lane, evo)
-    return unless evo
-
+  # no-op when no gate evolved. Mutates the by-lane cluster map in place.
+  def apply_gate_evolutions!(by_lane, evolutions)
     build = by_lane[:build]
     return unless build
 
-    build.stacked += [StageAgent.new(stage: "assembled", agent: evo.to_face)]
+    evolutions.each do |evo|
+      build.stacked += [StageAgent.new(stage: evo.event.to_stage, agent: evo.to_face)]
+    end
   end
 
   # /tasks build board: the three build steps split out, each wearing the task's
@@ -492,26 +493,21 @@ module StageAgentsHelper
     end
   end
 
-  # A task's final evolution — the NEW final form its Pokémon reaches at a
-  # Task::MASCOT_EVOLUTION_GATES gate. Present only when a form actually appeared
-  # there and that form cannot evolve further. History-stable and presentation-only:
-  # it reads the mascot SNAPSHOTS baked on TaskEvents — the gate transition's form
-  # vs the form that entered it — never the live task or a schema field. This is
-  # the single source both surfaces consume: the timeline lifts the reveal into its
-  # own "Evolve" card, and the board card stacks the final form onto the FIRST build
-  # crew.
+  # A task's gate evolutions — every NEW form its Pokémon reached at a
+  # Task::MASCOT_EVOLUTION_GATES gate, oldest first. A gate that evolved nothing
+  # contributes none. History-stable and presentation-only: it reads the mascot
+  # SNAPSHOTS baked on TaskEvents — the gate transition's form vs the form that
+  # entered it — never the live task or a schema field. This is the single source
+  # both surfaces consume: the timeline lifts each step into its own "Evolve" card,
+  # and the board card stacks each evolved form onto the FIRST build crew.
   #
-  # It scans BOTH gates rather than naming one, because which gate lands the final
-  # form depends on how deep the line is: a two-form line (Pikachu → Raichu) is
-  # finished at REVIEW, a three-stage line only at ASSEMBLE. Hard-pointing it at
-  # review alone once made the reveal vanish from every surface — a three-stage line
-  # reaches only its MIDDLE form there, which is not final, so this returned nil and
-  # no reel was ever built. Hard-pointing it at assemble alone (what it did until
-  # 2026-09-20, when the review gate stopped skipping short lines) silently dropped
-  # the reel for every two-form mascot instead. Newest gate first, so a later gate
-  # that evolved nothing cannot hide an earlier one that did.
+  # Every step counts, not just the final form. A two-form line (Pikachu → Raichu)
+  # makes one reel at REVIEW; a three-stage line makes two — the middle form at
+  # REVIEW and the final form at ASSEMBLE. Surfacing only final forms (until
+  # 2026-10-10) left a three-stage line's review step invisible on every surface,
+  # which read as the middle evolution never happening.
   EvolutionReel = Struct.new(:from, :to, :trigger, keyword_init: true)
-  FinalEvolution = Struct.new(:event, :from, :to, keyword_init: true) do
+  GateEvolution = Struct.new(:event, :from, :to, keyword_init: true) do
     def from_face = snapshot_face(from)
     def to_face   = snapshot_face(to)
 
@@ -524,34 +520,23 @@ module StageAgentsHelper
     end
   end
 
-  # Every Pokémon, indexed by slug, once per request. The 151 are tiny, so one
-  # load beats a find_by per card — which is what final_evolution was doing.
-  # Memoised on the view context, so its lifetime is exactly this render.
-  def pokemon_index
-    @pokemon_index ||= Pokemon.all.index_by(&:slug)
-  end
-
-  def final_evolution(task, events: nil)
-    return nil unless Pokemon.table_exists?
+  def gate_evolutions(task, events: nil)
+    return [] unless Pokemon.table_exists?
 
     transitions = Array(events || task.task_events)
                   .select { |e| e.transition? && e.to_stage }
                   .sort_by { |e| [e.occurred_at, e.id.to_i] }
-    gate_indices = transitions.each_index.select do |i|
-      i.positive? && Task::MASCOT_EVOLUTION_GATES.key?(transitions[i].to_stage)
-    end
+    transitions.each_index.filter_map do |idx|
+      next unless idx.positive? && Task::MASCOT_EVOLUTION_GATES.key?(transitions[idx].to_stage)
 
-    gate_indices.reverse_each do |idx|
-      evolution = gate_final_evolution(transitions, idx)
-      return evolution if evolution
+      gate_evolution(transitions, idx)
     end
-    nil
   end
 
-  # The final form produced by ONE gate transition, or nil when that gate evolved
-  # nothing or landed on a form that can still evolve. `transitions` is the task's
-  # ordered transition list and `idx` the gate's position in it.
-  def gate_final_evolution(transitions, idx)
+  # The form produced by ONE gate transition, or nil when that gate evolved
+  # nothing. `transitions` is the task's ordered transition list and `idx` the
+  # gate's position in it.
+  def gate_evolution(transitions, idx)
     evt = transitions[idx]
     # The form that ENTERED this gate: the snapshot on the event that landed the
     # task in the stage the gate came from (normally →submitted for review and
@@ -564,12 +549,7 @@ module StageAgentsHelper
     return nil if from_snap["slug"].blank? || to_snap["slug"].blank?
     return nil if from_snap["slug"] == to_snap["slug"]
 
-    # Through the per-request index, not a per-card find_by: this runs once per
-    # board CARD, and the 151 Pokémon are one small query for the whole page.
-    final = pokemon_index[to_snap["slug"]]
-    return nil if final.nil? || Array(final.evolution).present?
-
-    FinalEvolution.new(event: evt, from: from_snap, to: to_snap)
+    GateEvolution.new(event: evt, from: from_snap, to: to_snap)
   end
 
   # The CONSOLIDATED timeline for /tasks/:id — one ordered list that replaces the
@@ -586,8 +566,8 @@ module StageAgentsHelper
                              keyword_init: true) do
     def in_progress? = in_progress
     def usage? = model.present? || tokens.present? || cost.present?
-    # An "Evolve" card — a synthetic reel spliced in after the reviewed block for a
-    # final evolution; it carries an EvolutionReel instead of a real transition.
+    # An "Evolve" card — a synthetic reel spliced in after the gate block that
+    # evolved the mascot; it carries an EvolutionReel instead of a real transition.
     def evolution? = evolution.present?
   end
 
@@ -621,7 +601,7 @@ module StageAgentsHelper
         agents: blocker ? [blocker] : [], model: nil, tokens: nil, cost: nil, source: nil,
         live_since: task.blocked_at, in_progress: true, backfilled: false
       )
-      insert_evolution_card!(blocks, final_evolution(task, events: events))
+      insert_evolution_cards!(blocks, gate_evolutions(task, events: events))
       return blocks
     end
 
@@ -646,22 +626,24 @@ module StageAgentsHelper
       )
     end
 
-    insert_evolution_card!(blocks, final_evolution(task, events: events))
+    insert_evolution_cards!(blocks, gate_evolutions(task, events: events))
 
     blocks
   end
 
-  # Lift a gate's final evolution into its own "Evolve" reel right after the card
-  # for the gate that made it — the single timeline home of the evolved form. That
-  # is the Reviewed → Assembled card for a three-stage line and the Submitted →
-  # Reviewed card for a two-form one, which is why this anchors on the event id
+  # Lift each gate evolution into its own "Evolve" reel right after the card for
+  # the gate that made it — the single timeline home of each evolved form. A
+  # three-stage line gets one after Submitted → Reviewed (the middle form) and one
+  # after Reviewed → Assembled (the final form); this anchors on the event id
   # rather than a stage name. The cards around it carry their own real actors (the
   # mascot never rides the reviewed/deploy cards), so there is nothing to strip. A
-  # no-op unless a final evolution fired. Mutates `blocks` in place.
-  def insert_evolution_card!(blocks, evo)
-    return unless evo
+  # no-op when no gate evolved. Mutates `blocks` in place.
+  def insert_evolution_cards!(blocks, evolutions)
+    evolutions.each { |evo| insert_evolution_card!(blocks, evo) }
+  end
 
-    idx = blocks.index { |b| b.event&.id == evo.event.id }
+  def insert_evolution_card!(blocks, evo)
+    idx = blocks.index { |b| !b.evolution? && b.event&.id == evo.event.id }
     return unless idx
 
     gate_block = blocks[idx]

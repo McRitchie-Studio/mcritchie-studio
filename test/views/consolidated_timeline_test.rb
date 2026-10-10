@@ -163,10 +163,10 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-sizing']", false
   end
 
-  # A final evolution (Charmeleon → Charizard at the ASSEMBLE gate) renders its own
-  # "Evolve" reel right after Reviewed → Assembled, and the deploy cards around it
-  # are left to their stage owners alone.
-  test "renders an Evolve reel card after Reviewed to Assembled and leaves Steffon alone" do
+  # A three-stage line renders one "Evolve" reel per gate: Charmander → Charmeleon
+  # right after Submitted → Reviewed, Charmeleon → Charizard right after Reviewed →
+  # Assembled. The deploy cards around them are left to their stage owners alone.
+  test "renders an Evolve reel card after each gate and leaves Steffon alone" do
     Agent.create!(name: "Steffon", slug: "steffon")
     [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
       Pokemon.where(slug: slug).first_or_initialize
@@ -187,18 +187,24 @@ class ConsolidatedTimelineTest < ActionView::TestCase
 
     render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: Agent.all.to_a, events: task.task_events.to_a }
 
-    # the reel — its own card, badged "Evolve", showing prior form → evolved form
-    assert_select "[data-test='timeline-block'][data-stage='evolve']", count: 1
+    # one reel per gate that evolved it — each its own card, badged "Evolve",
+    # showing prior form → evolved form: the middle form at review, the final at assemble
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", count: 2
     assert_select "[data-test='timeline-evolution']"
     assert_includes rendered, "Evolve"
-    assert_select "[data-test='timeline-evolution-from']", text: /Charmeleon/
-    assert_select "[data-test='timeline-evolution-to']", text: /Charizard/
+    stages = css_select("[data-test='timeline-block']").map { |node| node["data-stage"] }
+    assert_equal %w[submitted reviewed evolve assembled evolve], stages
+    reels = css_select("[data-test='timeline-block'][data-stage='evolve']")
+    assert_match(/Charmander/, reels.first.at_css("[data-test='timeline-evolution-from']").text)
+    assert_match(/Charmeleon/, reels.first.at_css("[data-test='timeline-evolution-to']").text)
+    assert_match(/Charmeleon/, reels.last.at_css("[data-test='timeline-evolution-from']").text)
+    assert_match(/Charizard/, reels.last.at_css("[data-test='timeline-evolution-to']").text)
     # The trigger is whoever completed the gate that evolved it — the assemble.
-    assert_select "[data-test='timeline-evolution-trigger']", text: /Steffon/
+    assert_match(/Steffon/, reels.last.at_css("[data-test='timeline-evolution-trigger']").text)
 
     # it shares the standard card anatomy: badge on top, then a metric block and a
     # Started → Completed footer (model/tokens/cost blank — duration + stamps only)
-    assert_select "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-metrics']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-metrics']", count: 2
     assert_select "[data-test='timeline-block'][data-stage='evolve']", text: /Started/
     assert_select "[data-test='timeline-block'][data-stage='evolve']", text: /Completed/
 
