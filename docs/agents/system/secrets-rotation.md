@@ -197,10 +197,12 @@ only. The secret is never an argument, so it never lands in shell history or the
 process list.
 
 1. **Mint** into a private temp file. Never `-o -`: it prints the secret.
+   `--force` is required because `mktemp` has already created the file, and
+   without it `solana-keygen` refuses to overwrite it.
 
    ```bash
    umask 077; f="$(mktemp -t new-admin-key)"
-   solana-keygen new --no-bip39-passphrase --silent --outfile "$f"
+   solana-keygen new --no-bip39-passphrase --silent --force --outfile "$f"
    NEW_PUBKEY="$(solana-keygen pubkey "$f")"; echo "$NEW_PUBKEY"   # public key only
    ```
 
