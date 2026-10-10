@@ -22,11 +22,11 @@
       <table class="w-full block xl:table text-sm" data-test="logo-brands">
         <thead class="hidden xl:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
           <tr>
-            <th scope="col" class="pb-2 pr-4 font-semibold">Brand</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold">Brand</th>
             <% Logos::Variant::TYPES.each_value do |type| %>
-              <th scope="col" class="pb-2 pr-4 font-semibold"><%= type %></th>
+              <th scope="col" class="pb-2 pr-3 font-semibold"><%= type %></th>
             <% end %>
-            <th scope="col" class="pb-2 pr-4 font-semibold">Typeface</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold">Typeface</th>
             <th scope="col" class="pb-2 font-semibold">Colours</th>
           </tr>
         </thead>
@@ -34,13 +34,15 @@
           <% @rows.each do |logo, samples| %>
             <% name = Logos::Variant.brand_name(logo) %>
             <tr class="block xl:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
-              <th scope="row" class="block xl:table-cell py-3 xl:pr-4 text-left align-top">
+              <th scope="row" class="block xl:table-cell py-3 xl:pr-3 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
                 <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
               </th>
               <% samples.each do |type, variant| %>
-                <%# In the table a sample keeps its full size (no max-width), or the auto layout would squeeze it to nothing. %>
-                <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-4 align-top xl:[&_img]:max-w-none" data-test="logo-sample" data-type="<%= type %>">
+                <%# In the table a sample keeps its full size (no max-width), or the auto layout would squeeze it to nothing.
+                    The six columns' least widths add up to about 1061 px, inside the 1078 px the card has on a 1280 px page,
+                    so the wrapper does not scroll there; a narrower gutter (pr-3) and the Colours minimum keep it so. %>
+                <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:[&_img]:max-w-none" data-test="logo-sample" data-type="<%= type %>">
                   <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted"><%= Logos::Variant::TYPES.fetch(type) %></p>
                   <%= link_to logo_brand_path(logo.brand, logo_page_params(type: (type unless type == :navbar))),
                               class: "inline-flex max-w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
@@ -51,13 +53,13 @@
                   <% end %>
                 </td>
               <% end %>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-4 align-top" data-test="logo-typeface">
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-typeface">
                 <span class="xl:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
                 <% typeface, detail = logo_brand_typeface(logo.brand) %>
                 <span class="font-semibold text-heading"><%= typeface %></span>
                 <span class="text-2xs text-muted whitespace-nowrap"><%= detail %></span>
               </td>
-              <td class="block xl:table-cell pb-3 xl:py-3 align-top xl:min-w-[17rem]" data-test="logo-colours">
+              <td class="block xl:table-cell pb-3 xl:py-3 align-top xl:min-w-[15.5rem]" data-test="logo-colours">
                 <% logo_brand_colours(logo).each do |tone, hexes| %>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5" data-test="logo-colour-row" data-tone="<%= tone %>">
                     <span class="text-3xs uppercase tracking-wide text-muted w-16"><%= tone %></span>
