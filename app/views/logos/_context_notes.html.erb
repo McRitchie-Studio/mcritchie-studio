@@ -1,0 +1,12 @@
+<%# What the page's context means, in a line or two. Local: logo (optional; a
+    brand page passes its own, so the line about text versions can be true). %>
+<% logo = local_assigns[:logo] %>
+<p class="text-2xs text-muted" data-test="transparent-note">Every logo file has a transparent background. The plate behind a logo belongs to this page, not to the file.</p>
+<% if @context == :watermark %>
+  <p class="text-2xs text-muted" data-test="watermark-note">
+    A watermark is the whole logo in one colour, slightly transparent, for placing over a photograph. The plate here stands in for one.
+    <% if logo && logo.highlight == "colour" %>
+      <span data-test="watermark-text-note">This brand leads with a colour, and a watermark has only one, so its three text versions look the same here.</span>
+    <% end %>
+  </p>
+<% end %>

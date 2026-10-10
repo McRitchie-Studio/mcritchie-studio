@@ -2,7 +2,8 @@
 
 module Logos
   # One Navbar Logo as the gallery (LogosController) names it: a brand plus the
-  # rule, text, tone and guides picked by URL params. It turns request strings
+  # rule, text, tone and guides picked by URL params. A page's CONTEXT is the one
+  # tone every logo on it is shown in. It turns request strings
   # into the library's arguments, refuses anything it does not know with
   # Logos::NavbarLogo::Error, and gives the logo its words: an accessible
   # label and a download filename. Nothing here draws; NavbarLogo does. Outside
@@ -15,14 +16,19 @@ module Logos
     }.freeze
     TEXTS = { homogeneous: "Homogeneous", first: "First word leads", second: "Second word leads" }.freeze
     TONES = NavbarLogo::TONES
+    CONTEXTS = { light: "Light", dark: "Dark", watermark: "Watermark" }.freeze
     FLAGS = { nil => false, "0" => false, "1" => true }.freeze
 
     attr_reader :logo, :rule, :text, :tone, :guides
 
-    # Every logo of a brand in page order: rule, then text, then tone.
-    def self.all(logo, guides: false)
-      RULES.keys.product(TEXTS.keys, TONES).map { |rule, text, tone| new(logo, rule:, text:, tone:, guides:) }
+    # Every logo of a brand in one tone, in page order: rule, then text.
+    def self.all(logo, tone: :light, guides: false)
+      RULES.keys.product(TEXTS.keys).map { |rule, text| new(logo, rule:, text:, tone:, guides:) }
     end
+
+    # A page's ?context= as a tone: absent is light, and one it does not know is refused.
+    def self.context(value) = pick(value, tones_by_name, :light, "context")
+    def self.tones_by_name = TONES.to_h { |tone| [tone.to_s, tone] }
 
     # "1" and "0" (or absent) only: "true", "yes" and "2" are refused, not guessed at.
     def self.flag(value, name)
@@ -34,7 +40,7 @@ module Logos
       new(logo,
           rule: pick(params[:rule], RULES.keys.to_h { |rule| [rule.to_s, rule] }, 3, "rule"),
           text: pick(params[:text], TEXTS.keys.to_h { |text| [text.to_s, text] }, :homogeneous, "text"),
-          tone: pick(params[:tone], TONES.to_h { |tone| [tone.to_s, tone] }, :light, "tone"),
+          tone: pick(params[:tone], tones_by_name, :light, "tone"),
           guides: flag(params[:guides], "guides"))
     end
 
@@ -43,7 +49,7 @@ module Logos
 
       known.fetch(value) { raise NavbarLogo::Error, "unknown #{name} #{value.inspect}: expected one of #{known.keys.join(', ')}" }
     end
-    private_class_method :pick
+    private_class_method :pick, :tones_by_name
 
     def initialize(logo, rule:, text:, tone:, guides: false)
       @logo = logo
