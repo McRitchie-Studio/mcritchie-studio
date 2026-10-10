@@ -4,27 +4,64 @@
 module LogosHelper
   # The plates are FIXED surfaces, never theme tokens: a logo's fills are baked
   # per tone, so the light logo needs a light plate in both hub themes and the
-  # dark logo a dark one. The watermark's plate is a mid-tone gradient standing
-  # in for a photograph, so the logo's transparency shows. A logo file has no
+  # dark logo a dark one. The watermark's plate is a gradient standing in for a
+  # photograph, so the logo's transparency shows; it is dark enough that the
+  # default watermark (white at 0.6) is at least 3:1 against every point of it
+  # (test/helpers/logos_helper_test.rb measures that). A logo file has no
   # background of its own: the plate is the page's.
+  WATERMARK_PLATE = %w[#263B5C #2C625E].freeze
   LOGO_PLATES = {
     light: "background-color: #FFFFFF",
     dark: "background-color: #12141A",
-    watermark: "background-image: linear-gradient(135deg, #3F5E8C, #4F9A94)"
+    watermark: "background-image: linear-gradient(135deg, #{WATERMARK_PLATE.join(', ')})"
   }.freeze
 
   def logo_plate_style(tone) = LOGO_PLATES.fetch(tone.to_sym)
 
-  # The gallery's page params: the context and guides in force, less the defaults, with `changes` on top.
+  # The gallery's page params: the type, context, rule and guides in force, less the defaults (the Navbar Logo,
+  # light, the rule of 4, guides off), with `changes` on top. A change to nil goes back to the default.
   def logo_page_params(**changes)
-    { context: (@context unless @context == :light), guides: (1 if @guides) }.merge(changes).compact
+    { type: (@type unless @type == :navbar), context: (@context unless @context == :light), rule: (@rule unless @rule == 4),
+      guides: (1 if @guides) }.merge(changes).compact
   end
 
-  # One logo as a picture that scales down inside its plate and carries its name.
-  def logo_image(variant, max_height:)
-    image_tag navbar_logo_path(variant.logo.brand, variant.params), alt: variant.label, loading: "lazy",
-              style: "max-height: #{max_height}px", class: "block max-w-full w-auto h-auto",
-              data: { test: "logo-image" }
+  # How tall each type's sample is in the index table, in px: one size per type, so a column reads as a column.
+  LOGO_SAMPLE_HEIGHTS = { icon: 48, navbar: 28, stacked: 96 }.freeze
+  # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
+  LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
+  LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 380 }.freeze
+  # A guide drawing FITS its plate first, like any logo. It only stops shrinking at the width where its labels
+  # would render below this many px, and from there the plate scrolls sideways inside itself. The widest plate on
+  # a 1280 px page is LOGO_PLATE_WIDTH px, and every drawing's minimum is under it, so nothing scrolls there
+  # (test/helpers/logos_helper_test.rb measures every drawing).
+  LOGO_GUIDE_LABEL_PX = 9
+  LOGO_PLATE_WIDTH = 1028
+
+  # The narrowest a guide drawing may be shown, in px: where its labels are LOGO_GUIDE_LABEL_PX tall.
+  def logo_guide_min_width(variant) = (LOGO_GUIDE_LABEL_PX * variant.guide_width / variant.guide_font).ceil
+
+  def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
+
+  # A brand page's one-line account of the type being shown.
+  def logo_type_sentence(logo, type, rule)
+    case type
+    when :icon then "The icon alone, as this brand's logos draw it."
+    when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
+    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(logo.form)}"
+    end
+  end
+
+  # A logo's own SVG route: /logos/:brand/icon, /navbar or /stacked, with the type's own params.
+  def logo_asset_path(variant, **more)
+    public_send(:"#{variant.type}_logo_path", variant.logo.brand, variant.params.merge(more))
+  end
+
+  # One logo as a picture that carries its name. It scales down inside its plate, up to `height` px tall. A guide
+  # drawing also has a least width (above), so its plate scrolls once the plate is narrower than that.
+  def logo_image(variant, height:)
+    least = "; min-width: #{logo_guide_min_width(variant)}px" if variant.guides
+    image_tag logo_asset_path(variant), alt: variant.label, loading: "lazy", data: { test: "logo-image" },
+              style: "max-height: #{height}px#{least}", class: class_names("block max-w-full w-auto h-auto", "mx-auto" => variant.guides)
   end
 
   # What a brand's name is set in, as [typeface, detail]: Montserrat and its
@@ -37,10 +74,14 @@ module LogosHelper
     ["Montserrat", "#{'weight'.pluralize(weights.size)} #{weights.join(' and ')}"]
   end
 
-  # Every fill the brand's logos use, per tone, in the order the style lists them.
-  def logo_brand_colours(brand)
-    Logos::NavbarLogo.styles.fetch(brand).fetch("tones").transform_values do |fills|
+  # Every fill the brand's logos use, per tone, in the order the style lists them. The watermark has one.
+  def logo_brand_colours(logo)
+    baked = Logos::NavbarLogo.styles.fetch(logo.brand).fetch("tones").transform_values do |fills|
       [fills["text"], fills["quiet"], fills["accent"], *fills.fetch("icon").values].compact.uniq
     end
+    baked.merge("watermark" => [logo.watermark.fetch("fill")])
   end
+
+  # "60%": how much of the watermark shows.
+  def logo_watermark_opacity(logo) = number_to_percentage(logo.watermark.fetch("opacity") * 100, precision: 0)
 end
