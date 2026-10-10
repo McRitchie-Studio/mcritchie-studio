@@ -30,6 +30,9 @@ class LogosNavbarLogoTest < Minitest::Test
   # The same digest over every Turf Monster and Commercial Welding example, taken on `accepted` before the
   # watermark tone was added (task logo-gallery-context-dropdown): a third tone may not move light or dark.
   ADDED_BRANDS_DIGEST = "087d05d81ed367d276b82e29637395efed28bec65c7b3d9692b193d8e7878736"
+  # Every watermark logo and guide drawing of all four brands ("<key>\n<svg>" each: brand, then rule, text, guides),
+  # taken on `accepted` before the icon and the stacked logo were added (task logo-tabs-icon-and-stacked).
+  WATERMARK_DIGEST = "a75b407b25b28a92cb0f63d9af92b818c8d78b6492313f2a8581b9103764f3cb"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -228,6 +231,17 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_turf_and_welding_light_and_dark_logos_are_unchanged_to_the_byte
     all = %w[turf welding].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
     assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+  end
+
+  def test_every_watermark_logo_is_unchanged_to_the_byte
+    all = Logo.brands.flat_map do |brand|
+      logo = Logo.new(brand)
+      Logo::RULES.keys.product(Logo::TEXTS, [false, true]).map do |rule, text, guides|
+        "#{brand}-rule#{rule}-#{text}-watermark#{'-guides' if guides}\n#{logo.svg(rule:, text:, tone: :watermark, guides:)}"
+      end
+    end
+    assert_equal 48, all.size
+    assert_equal WATERMARK_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 
   def test_the_added_brands_match_the_prototypes_proportions
