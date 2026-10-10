@@ -236,10 +236,9 @@ process list.
    rm -P "$t"
    ```
 
-   It makes the item shape that `solana.turf.server` and
-   `solana.turf.governance`, both filed from a template file, carry: a Secure
-   Note with fields `private_key` (label `private key`) and `wallet_address`
-   (label `wallet address`).
+   It makes the item shape `solana.turf.governance`, filed the same way,
+   carries: a Secure Note with fields `private_key` (label `private key`) and
+   `wallet_address` (label `wallet address`).
    `> /dev/null` because `op item create` prints the item it made. **Mind the
    field label**: the `solana.turf.*` items in `studio-agents` spell it
    `private-key`; the items in `studio-agents-admin` spell it `private key`,
