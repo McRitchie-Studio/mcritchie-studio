@@ -32,8 +32,11 @@ module Logos
     SPACE_WEIGHT = 300                         # the word space is this weight's " " advance
     GUIDE = "#D4189F"
     GUIDE_PAD = { left: 40, top: 40, right: 80, bottom: 40 }.freeze
-    GUIDE_FONT = 32                            # the guide labels' size, in design units
-    GUIDE_STROKE = 1.5                         # the guide lines' width, in design units
+    GUIDE_FONT = 30                            # the guide labels' size, in design units
+    GUIDE_STROKE = 1.0                         # the guide lines' width, in design units
+    # A guide drawing's ghosts (faint copies of the name that show how it measures) are the logo's own text colour at
+    # this opacity: visible, never mistaken for the logo (test/helpers/logos_helper_test.rb measures them on each plate).
+    GHOST_OPACITY = { light: 0.25, dark: 0.22, watermark: 0.22 }.freeze
     HEX = /\A#(?:\h{3}|\h{6})\z/
     # Icon, glyph and lettering data is written into markup as it stands, so it is checked first.
     PATH = /\A[MLHVCSQTAZmlhvcsqtazeE0-9 ,.+-]*\z/
@@ -137,11 +140,21 @@ module Logos
       raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
     end
 
-    # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it (a subclass has its own pad).
+    # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it: the ghosts BEHIND the logo
+    # (in the rule of 4 they cross the real name), the logo, then the lines and numbers.
     def render(box, height, text, tone, guides)
       body = toned(tone, drawing(box, tone, *fills(tone, text)))
-      guides ? document(body + guide_markup(box), box.width, height, **self.class::GUIDE_PAD) : document(body, box.width, height)
+      return document(body, box.width, height) unless guides
+
+      document(ghost_group(tone, ghost_markup(box, ghost_fill(tone))) + body + line_group(guide_markup(box)), box.width, height, **self.class::GUIDE_PAD)
     end
+
+    # The logo's own text colour; a watermark's one fill.
+    def ghost_fill(tone) = tone == :watermark ? @watermark["fill"] : @style.fetch("tones").fetch(tone.to_s).fetch("text")
+
+    # The ghosts in ONE translucent group (opacity on each path would compound where copies overlap), the lines in another.
+    def ghost_group(tone, markup) = %(<g class="guide-ghosts" opacity="#{format('%g', GHOST_OPACITY.fetch(tone))}">#{markup}</g>)
+    def line_group(markup) = %(<g class="guide-lines">#{markup}</g>)
 
     def icon_key(tone)
       (tone == :watermark ? @watermark["icon_key"] : @style.dig("tones", tone.to_s, "icon_key")) || @style["icon"]
@@ -278,6 +291,18 @@ module Logos
       end.join
       paths = %(<g transform="#{icon['transform']}">#{paths}</g>) if icon["transform"]
       %(<g transform="scale(#{f(height.to_f / icon.fetch('h'), 5)})">#{paths}</g>)
+    end
+
+    # The ruler, as the rule-of-thirds reel draws it: a copy of the name, one row tall, in every row the real name does
+    # not fill. Rule of 3: the copies above and below the name make three. Rule of 4: four copies at half the name's
+    # size, two of them behind it. Each copy starts where the name's ink does.
+    def ghost_markup(box, fill)
+      scale = box.row / box.cap
+      (1..box.count).filter_map do |row|
+        next if scale == 1 && (row * box.row - box.baseline).abs < 1e-6
+
+        box.letters.map { |l| letter_markup(l.merge(x: box.name_left + (l[:x] - box.name_left) * scale), row * box.row, box.row, fill) }.join
+      end.join
     end
 
     # The construction drawing: row edges, the icon's right edge, the name's left ink edge, and row numbers.

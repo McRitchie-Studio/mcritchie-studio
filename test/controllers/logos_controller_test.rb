@@ -456,7 +456,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 3
     assert_select "a[data-test='logo-download'][href*='guides=1']", 3
     assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
-    assert_select "[data-test='guides-sentence']", /the numbered rows, the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
+    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
 
     # A guide drawing fits its plate (max-width) down to a least width of its own, where its plate starts to scroll.
     assert_select "[data-test='logo-plate'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3

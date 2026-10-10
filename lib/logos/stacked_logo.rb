@@ -39,13 +39,9 @@ module Logos
     # between the two, and the small line's letters down the icon's axis. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
     GUIDE_FONT = 28
-    GUIDE_STROKE = 1.0
     NUMBER_X = 50                              # a ruler number's centre, right of the logo
     RULER_X = 90                               # the ruler's left ink edge, right of the logo
     AXIS_FILL = 0.8                            # an axis letter is at most this share of the step between letters
-    # The ghosts are the logo's own text colour at this opacity: visible, and never mistaken for the logo
-    # (test/helpers/logos_helper_test.rb measures their contrast against each plate).
-    GHOST_OPACITY = { light: 0.25, dark: 0.22, watermark: 0.22 }.freeze
 
     # `edges`: every horizontal boundary, top to bottom. `letters` carry their own baseline and cap. `ruler` is the
     # small line as its ghosts copy it: its letters at a cap of 1 with their ink from x = 0, untracked, `ruler_width`
@@ -210,12 +206,9 @@ module Logos
       return super unless guides
 
       body = toned(tone, drawing(box, tone, *fills(tone, text)))
-      ghosts = %(<g class="guide-ghosts" opacity="#{format('%g', GHOST_OPACITY.fetch(tone))}">#{ruler_markup(box, ghost_fill(tone))}#{axis_markup(box, ghost_fill(tone))}</g>)
-      document(body + ghosts + %(<g class="guide-lines">#{guide_markup(box)}</g>), box.width, height, **GUIDE_PAD, right: ruler_right(box) - box.width + GUIDE_PAD[:right])
+      ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + axis_markup(box, ghost_fill(tone)))
+      document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
-
-    # The logo's own text colour; a watermark's one fill.
-    def ghost_fill(tone) = tone == :watermark ? @watermark["fill"] : @style.fetch("tones").fetch(tone.to_s).fetch("text")
 
     def ruler_right(box) = box.width + RULER_X + box.ruler_width * U
 
