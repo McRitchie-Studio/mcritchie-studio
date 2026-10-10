@@ -6,15 +6,6 @@ slots in later as a second source behind the same reader. Section 1 is what
 exists; sections 2 to 8 are the design; section 9 lists the build pieces and
 section 10 the decisions Alex makes.
 
-**Nothing here is `accepted`-only.** As of 2026-10-08 nothing this page relies
-on is merged to `accepted` and missing from `main`: private facts (the `Fact`
-model, `/api/v1/facts`, `bin/fact`, the person-page panel), the dream bank in two
-sequences with relevance loading and the ship-time proposer, and the review-claim
-and one-time-code logins are all on `main`. The inline **(accepted)** marks
-further down predate that. For private facts, production holds its encryption
-keys (`Fact.encryption_ready?` is true) and no fact is stored yet (`Fact.count`
-is 0), as of 2026-10-08; the feature has not been exercised in production.
-
 The idea in one paragraph: knowledge sits in five tiers, and it flows downward
 only. An original lives in Drive. A fact or a page is derived from it and points
 back at it. Nothing private rises into a tier that loads by itself. A Drive
@@ -35,8 +26,8 @@ session's context only when that session asks for it by id.
 | What the index lacks | A SHA-256, a summary, a category, any document text, and anything that calls `mark_indexed!` | `app/models/source_document.rb#mark_indexed!` |
 | Uploaded documents | The engine's `Studio::KnowledgeDoc` holds an upload by `s3_key`, with an access map of `full`, `aware` or `none` per agent. The hub has the table and draws no knowledge routes | `docs/agents/modules/knowledge-capture.md` |
 | A second Gmail lane | An OAuth grant for one mailbox, `gmail.readonly` only, feeding the desk queue. It holds no Drive scope | `app/services/gmail/client.rb#SCOPES` |
-| Private facts **(accepted)** | One encrypted record per subject, key and value, with a required source: a knowledge doc id or a Drive file id. The source is a string; nothing checks it against the index | `app/models/fact.rb#SOURCE_KINDS` |
-| Dreams **(accepted)** | A platform sequence and one per soul, a generated index, and selection by relevance at a claim | `bin/lib/dream_bank.rb#CALL_BUDGET`, `bin/lib/dream_selector.rb#LIMIT` |
+| Private facts | One encrypted record per subject, key and value, with a required source: a knowledge doc id or a Drive file id. The source is a string; nothing checks it against the index | `app/models/fact.rb#SOURCE_KINDS` |
+| Dreams | A platform sequence and one per soul, a generated index, and selection by relevance at a claim | `bin/lib/dream_bank.rb#CALL_BUDGET`, `bin/lib/dream_selector.rb#LIMIT` |
 | Mirrors | None. Nothing copies Drive to disk, and nothing copies model memory to Drive | — |
 
 ## 2. The five tiers
@@ -45,9 +36,9 @@ session's context only when that session asks for it by id.
 |---|---|---|---|---|
 | **1 General** | The repo map and the capability pages | This repo, tracked and public | At boot, every session | Anything private: a counterparty, a figure, a contact detail, a key |
 | **2 Specialized** | Topic knowledge most sessions never need | Code-bound topics: the owning repo's docs. Business-bound topics: `notes/` in Drive | Only when the task names the topic; the map carries a one-line where-to-look index | Repo half: the tier 1 list. Drive half: identity data and credentials |
-| **3 Private facts** **(accepted)** | One thing known about a person, a company or an app | Encrypted `Fact` records on the hub | Never by itself; read by `bin/fact` for a named subject | Identity data (an SSN, a card, an account or routing number, a passport or licence number, a PIN, a password, a person's tax id, a long unformatted number): the key takes a pointer with no value, and the key itself is a name that carries no data. Privileged deal terms never go in an ordinary fact |
+| **3 Private facts** | One thing known about a person, a company or an app | Encrypted `Fact` records on the hub | Never by itself; read by `bin/fact` for a named subject | Identity data (an SSN, a card, an account or routing number, a passport or licence number, a PIN, a password, a person's tax id, a long unformatted number): the key takes a pointer with no value, and the key itself is a name that carries no data. Privileged deal terms never go in an ordinary fact |
 | **4 Originals** | Source documents, and a digest row for each | Bytes: Google Drive. Digest row: `SourceDocument` on the hub. Derived text: one private R2 bucket | Never by itself; read by id | In Drive: credentials, keys, tokens and seed phrases. In git: any original's bytes. In R2: an original |
-| **5 Dreams** **(accepted)** | Worked decisions, each signed off by Alex | This repo, tracked and public | Platform dreams at session start; a soul's by relevance at a claim | Live data and open security detail ([`dream.md`](../modules/dream.md)) |
+| **5 Dreams** | Worked decisions, each signed off by Alex | This repo, tracked and public | Platform dreams at session start; a soul's by relevance at a claim | Live data and open security detail ([`dream.md`](../modules/dream.md)) |
 
 Rules that hold across the tiers:
 
@@ -70,13 +61,13 @@ The trust classes are the session tiers of
 |---|---|---|---|---|
 | 1 and 5 | Reads the files | No repo and no board | Reads | Reads |
 | 2, Drive `notes/` | Refused as tier 4 | Refused as tier 4 | As tier 4, by access map | Reads |
-| 3 **(accepted)** | `401 SESSION_REQUIRED` | `403 SESSION_FORBIDDEN` | Reads and writes ordinary facts. A sensitive fact is left out of a list with no error; writing one answers `403 SESSION_FORBIDDEN` | Reads and writes both |
+| 3 | `401 SESSION_REQUIRED` | `403 SESSION_FORBIDDEN` | Reads and writes ordinary facts. A sensitive fact is left out of a list with no error; writing one answers `403 SESSION_FORBIDDEN` | Reads and writes both |
 | 4 index (proposed) | `401 SESSION_REQUIRED` | `403 SESSION_FORBIDDEN` | Rows whose access map gives its soul `aware` or `full`. A row at `none` is left out of a list, and a read by id answers `404 NOT_FOUND` | Every row |
 | 4 text (proposed) | `401 SESSION_REQUIRED` | `403 SESSION_FORBIDDEN` | `full` only. `aware` answers `403 SESSION_FORBIDDEN` with "summary only" and returns the summary | Every document but an original a pointer fact names; that one answers by decision 5 |
 
 Every refusal is a JSON body with `error` (one sentence giving the reason) and
 `error_code`, as `app/controllers/concerns/api/agent_session_gate.rb#render_session_refusal`
-answers now. Three more tier 3 answers exist **(accepted)**: identity data in
+answers now. Three more tier 3 answers exist: identity data in
 the value, the key, the source or the subject answers `422 IDENTITY_REFUSED`
 and names the pointer form; an app with no
 encryption keys answers `503 ENCRYPTION_NOT_CONFIGURED`
@@ -270,9 +261,8 @@ shared drive or manage its members.
 5. For a Workspace with no delegation yet, a super-admin adds the key's client id
    and the four scopes in the Admin console under Security, API controls,
    Domain-wide delegation ([`workspace-provision`](../agents/steffon/sops/workspace-provision.md)).
-6. Done 2026-10-08, on Alex's word: the three `ACTIVE_RECORD_ENCRYPTION_*`
-   values are set on production and QA, one set per app
-   ([`credentials.md`](../modules/credentials.md)).
+6. Done: the three `ACTIVE_RECORD_ENCRYPTION_*` values are set on production
+   and QA, one set per app ([`credentials.md`](../modules/credentials.md)).
 
 Steffon provisions the knowledge bucket with his `bucket-provision` SOP before
 piece 3; that needs no tap from Alex.

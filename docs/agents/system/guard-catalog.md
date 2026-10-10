@@ -273,6 +273,8 @@ them: `--pr-url-for a,b=<url>` still refuses, because one URL cannot split
 
 ## What Alex decides
 
-Rule on each row under Deviations. A KEEP needs nothing. Builders' evidence
-and the sweep notes live in the epic plan,
-`/Users/alex/projects/.agents/epics/platform-audit-refactors.md`.
+Rule on each row under Deviations. A KEEP needs nothing. The builders' evidence
+is on the six tasks the Mark cells name, in each task's notes and PR:
+`guards-docs-and-citations`, `guards-registries-and-ratchets`,
+`guards-certs-dor-and-ship`, `guards-preflight-and-desks`,
+`guards-review-and-release` and `guards-app-validations-and-api`.

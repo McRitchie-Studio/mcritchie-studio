@@ -167,7 +167,9 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
 
   **Merge condition — merge only a head you have VALIDATED.** The orchestrator
   recorded the PR head **before** spawning Carl; Carl re-reads it before merging.
-  Anchor to that before-spawn head: the scout report records no reviewed SHA.
+  Anchor to that before-spawn head. A scout report records the head it judged
+  when it is filed with `--head <sha>`; one filed without it names no head, and
+  `bin/merge-permit` refuses the documentation seat on it.
   **Equal** → merge it. **Moved** (a mid-review `zap:` push, per
   [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)) →
   **revalidate the new head's CI, and merge only if it is green**, pinned with
