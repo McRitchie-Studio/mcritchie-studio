@@ -36,12 +36,15 @@ module Logos
     FORMS = %w[two_line one_line].freeze       # a style's own form; `tagline` is offered beside it, never named in a style
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
-    # between the two, and the small line's letters down the icon's axis. Distances are in design units.
+    # between the two, and the small line's letters in a column beside the icon. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
     GUIDE_FONT = 28
     NUMBER_X = 50                              # a ruler number's centre, right of the logo
     RULER_X = 90                               # the ruler's left ink edge, right of the logo
     AXIS_FILL = 0.8                            # an axis letter is at most this share of the step between letters
+    AXIS_GAP = 0.5 * U                         # the axis column's right ink edge, left of the icon's box
+    BRACKET_GAP = 12                           # the bracket, left of the axis column
+    TICK = 12                                  # the bracket's ticks at the icon's top and foot
 
     # `edges`: every horizontal boundary, top to bottom. `letters` carry their own baseline and cap. `ruler` is the
     # small line as its ghosts copy it: its letters at a cap of 1 with their ink from x = 0, untracked, `ruler_width`
@@ -200,14 +203,16 @@ module Logos
         box.letters.map { |l| letter_markup(l, l[:baseline], l[:cap], colours[l[:word]]) }.join
     end
 
-    # The guide drawing: the logo, then the ghosts in one translucent group (over the logo, so the letters down the
-    # icon's axis show across it), then the lines and numbers in their own group. The drawing reaches past the ruler.
+    # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
+    # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the axis bracket.
     def render(box, height, text, tone, guides)
       return super unless guides
 
       body = toned(tone, drawing(box, tone, *fills(tone, text)))
       ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + axis_markup(box, ghost_fill(tone)))
-      document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, right: ruler_right(box) - box.width + GUIDE_PAD[:right])
+      left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the column and its bracket
+      document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, left:,
+               right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
 
     def ruler_right(box) = box.width + RULER_X + box.ruler_width * U
@@ -222,32 +227,52 @@ module Logos
       end.join
     end
 
-    # The small line's letters one under another down the icon's centre line, from its top to its foot: the icon is
-    # as tall as the small line is wide. Each letter keeps its place along the line, and is drawn small enough not to
-    # touch the next (never above 1u).
-    def axis_markup(box, fill)
+    # The small line's letters one under another in a column JUST LEFT of the icon's box, from the icon's top to its
+    # foot: the icon is as tall as the small line is wide. The column stands on the plate, never on the icon, so it
+    # reads wherever the icon is filled. Each letter keeps its place along the line, is never above 1u, and is drawn
+    # small enough not to touch the next. Returns the column's letters (x and baseline set), their cap, and its left
+    # ink edge.
+    AxisColumn = Struct.new(:letters, :cap, :left, keyword_init: true)
+
+    def axis_column(box)
       inked = box.ruler.reject { |l| l[:d].empty? }
       centres = inked.map { |l| l[:x] + (l[:l] + l[:r]) / 2 }
       length = centres.last - centres.first
-      return "" unless length.positive?
+      return AxisColumn.new(letters: [], cap: U, left: box.icon_left - AXIS_GAP) unless length.positive?
 
       share = centres.each_cons(2).map { |a, b| b - a }.min / length
       cap = [U, AXIS_FILL * share * box.icon_height / (1 + AXIS_FILL * share)].min
-      inked.zip(centres).map do |letter, centre|
+      width = inked.map { |l| (l[:r] - l[:l]) * cap }.max
+      middle_x = box.icon_left - AXIS_GAP - width / 2
+      letters = inked.zip(centres).map do |letter, centre|
         middle = cap / 2 + (centre - centres.first) * (box.icon_height - cap) / length
-        letter_markup(letter.merge(x: box.width / 2 - (letter[:l] + letter[:r]) / 2 * cap), middle + cap / 2, cap, fill)
-      end.join
+        letter.merge(x: middle_x - (letter[:l] + letter[:r]) / 2 * cap, baseline: middle + cap / 2)
+      end
+      AxisColumn.new(letters:, cap:, left: middle_x - width / 2)
     end
 
-    # A line at each band boundary, across the logo and the ruler; the icon's centre line; each ruler copy's number;
-    # and a 1 at the icon's top.
+    def axis_markup(box, fill)
+      column = axis_column(box)
+      column.letters.map { |letter| letter_markup(letter, letter[:baseline], column.cap, fill) }.join
+    end
+
+    def bracket_x(box) = axis_column(box).left - BRACKET_GAP
+
+    # A bracket beside the axis column, its ticks at the icon's top and foot: the column is as tall as the icon.
+    def bracket_markup(box)
+      x = bracket_x(box)
+      [guide_line(x, 0, x, box.icon_height), guide_line(x, 0, x + TICK, 0), guide_line(x, box.icon_height, x + TICK, box.icon_height)]
+    end
+
+    # A line at each band boundary, across the logo and the ruler; the icon's centre line; the axis column's bracket;
+    # each ruler copy's number; and a 1 at the icon's top.
     def guide_markup(box)
       right = ruler_right(box) + 20
       lines = box.edges.map { |y| guide_line(-20, y, right, y) } + [guide_line(box.width / 2, -20, box.width / 2, box.height + 20)]
       numbers = bands(box).flat_map do |top, _, size|
         (1..size).map { |row| guide_label(box.width + NUMBER_X, top + (row - 0.5) * U + GUIDE_FONT * 0.35, row, %( text-anchor="middle")) }
       end
-      (lines + numbers + [guide_label(box.width / 2 + 10, -10, 1)]).join
+      (lines + bracket_markup(box) + numbers + [guide_label(box.width / 2 + 10, -10, 1)]).join
     end
   end
 end

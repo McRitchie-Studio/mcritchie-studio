@@ -247,32 +247,65 @@ class LogosStackedLogoTest < Minitest::Test
     assert_in_delta "INDUSTRIES".chars.map { |c| glyph(c, 300) }.then { |g| g[0...-1].sum { |x| x["adv"] } + g.last["r"] - g.first["l"] }, two.ruler_width, 1e-9
   end
 
-  def test_the_small_line_runs_down_the_icons_axis_as_tall_as_the_icon
+  def icon_box(brand, tone, box)
+    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+    icon = Navbar.icons.fetch(key)
+    [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
+  end
+
+  # The axis column: the ghosts left of the logo's centre that are not ruler copies, as [path, ruler letter].
+  def axis_letters(xml, box)
+    xml.css("g.guide-ghosts path").reject { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }.zip(box.ruler.reject { |l| l[:d].empty? })
+  end
+
+  # Review of PR 2042 (Carl, activity-17641): the column stood on the icon and vanished over its fill. It now stands
+  # beside the icon, on the plate, and reaches exactly from the icon's top to its foot.
+  def test_the_small_line_stands_in_a_column_beside_the_icon_as_tall_as_the_icon
     guided.each do |brand, form, tone|
       box = stacked(brand).layout(form:, tone:, text: :first)
       xml = doc(stacked(brand).svg(form:, tone:, text: :first, guides: true)).remove_namespaces!
-      axis = xml.css("g.guide-ghosts path").reject { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }
       where = "#{brand} #{form} #{tone}"
-      assert_equal box.ruler.reject { |l| l[:d].empty? }.map { |l| l[:d] }, axis.map { |p| p["d"] }, "#{where}: the small line's letters, in order"
-      baselines = axis.map { |p| p["transform"][/,([-\d.]+)\)/, 1].to_f }
-      cap = axis.first["transform"][/scale\(([\d.]+)\)/, 1].to_f
+      axis = axis_letters(xml, box)
+      assert_equal box.ruler.reject { |l| l[:d].empty? }.map { |l| l[:d] }, axis.map { |p, _| p["d"] }, "#{where}: the small line's letters, in order"
+      cap = axis.first.first["transform"][/scale\(([\d.]+)\)/, 1].to_f
       assert_operator cap, :<=, U, where
+      left, top, right, bottom = icon_box(brand, tone, box)
+      inks = axis.map do |path, letter|
+        x = path["transform"][/translate\(([-\d.]+),/, 1].to_f
+        baseline = path["transform"][/,([-\d.]+)\)/, 1].to_f
+        [x + letter[:l] * cap, baseline - cap, x + letter[:r] * cap, baseline]
+      end
+      inks.each do |x1, y1, x2, y2|
+        outside = x2 <= left || x1 >= right || y2 <= top || y1 >= bottom
+        assert outside, "#{where}: every letter's box lies outside the icon's box (#{[x1, y1, x2, y2].map { |n| n.round(1) }} vs #{[left, top, right, bottom].map { |n| n.round(1) }})"
+      end
+      assert_in_delta left - Stacked::AXIS_GAP, inks.map { |ink| ink[2] }.max, 0.01, "#{where}: half a unit left of the icon"
+      assert_in_delta 0, inks.first[1], 0.01, "#{where}: the column starts at the icon's top"
+      assert_in_delta box.icon_height, inks.last[3], 0.01, "#{where}: and ends on its foot: as tall as the icon"
+      baselines = inks.map(&:last)
       assert_equal baselines.sort, baselines, "#{where}: one under another"
-      assert_in_delta cap, baselines.first, 0.01, "#{where}: the first letter's capitals start at the icon's top"
-      assert_in_delta box.icon_height, baselines.last, 0.01, "#{where}: the last one sits on the icon's foot"
       assert_operator baselines.each_cons(2).map { |a, b| b - a }.min, :>=, cap / Stacked::AXIS_FILL - 0.02, "#{where}: no two letters touch"
-      centres = axis.zip(box.ruler.reject { |l| l[:d].empty? }).map { |p, l| p["transform"][/translate\(([-\d.]+),/, 1].to_f + (l[:l] + l[:r]) / 2 * cap }
-      centres.each { |x| assert_in_delta box.width / 2, x, 0.01, "#{where}: centred on the axis" }
+      middles = inks.map { |x1, _, x2, _| (x1 + x2) / 2 }
+      middles.each { |m| assert_in_delta middles.first, m, 0.01, "#{where}: one column" }
 
       lines = xml.css("g.guide-lines line")
-      horizontal, vertical = lines.partition { |l| l["y1"] == l["y2"] }
-      assert_equal box.edges.map { |y| format("%.2f", y) }, horizontal.map { |l| l["y1"] }, "#{where}: a line at each band boundary only"
-      assert_equal [[format("%.2f", box.width / 2), "-20.00", format("%.2f", box.height + 20)]], vertical.map { |l| [l["x1"], l["y1"], l["y2"]] }, where
-      right = horizontal.map { |l| l["x2"].to_f }.uniq
-      assert_equal 1, right.size
-      assert_operator right.first, :>, ruler_rows(xml, box).values.flatten.map { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f }.max, "#{where}: across the ruler"
-      top = xml.css("g.guide-lines text").last
-      assert_equal ["1", format("%.2f", box.width / 2 + 10), "-10.00"], [top.text, top["x"], top["y"]], "#{where}: a 1 at the icon's top"
+      bands, rest = lines.partition { |l| l["x1"] == "-20.00" }
+      assert_equal box.edges.map { |y| format("%.2f", y) }, bands.map { |l| l["y1"] }, "#{where}: a line at each band boundary"
+      bracket_x = inks.map(&:first).min - Stacked::BRACKET_GAP
+      expected = [[box.width / 2, -20, box.width / 2, box.height + 20], [bracket_x, 0, bracket_x, box.icon_height],
+                  [bracket_x, 0, bracket_x + Stacked::TICK, 0], [bracket_x, box.icon_height, bracket_x + Stacked::TICK, box.icon_height]]
+      assert_equal expected.size, rest.size, where
+      expected.zip(rest).each do |line, drawn|
+        line.zip(%w[x1 y1 x2 y2].map { |k| drawn[k].to_f }).each do |want, got|
+          assert_in_delta want, got, 0.02, "#{where}: the centre line, and a bracket ticked at the icon's top and foot"
+        end
+      end
+      assert_operator bands.first["x2"].to_f, :>, ruler_rows(xml, box).values.flatten.map { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f }.max, "#{where}: across the ruler"
+      label = xml.css("g.guide-lines text").last
+      assert_equal ["1", format("%.2f", box.width / 2 + 10), "-10.00"], [label.text, label["x"], label["y"]], "#{where}: a 1 at the icon's top"
+      _, _, width, = xml.root["viewBox"].split.map(&:to_f)
+      assert_operator xml.root["viewBox"].split.first.to_f, :<=, bracket_x - 20, "#{where}: the bracket is inside the drawing"
+      assert_operator width, :>, box.width, where
     end
   end
 
@@ -280,7 +313,7 @@ class LogosStackedLogoTest < Minitest::Test
     box = stacked("industries").layout(text: :first)
     xml = doc(stacked("industries").svg(text: :first, guides: true))
     right = Stacked::RULER_X + box.ruler_width * U + 40
-    assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"]
+    assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"], "the column fits in the usual pad"
   end
 
   def test_a_second_word_too_wide_to_track_is_refused_by_name_never_drawn_tighter

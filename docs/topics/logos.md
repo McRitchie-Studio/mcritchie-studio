@@ -179,18 +179,22 @@ its size), set untracked in their own weight:
   2 beside the second gap, 1 beside the small line (the one-line form stops
   after the 3). The copies are numbered 1-2, 1-2-3, 1-2, 1 between the logo and
   the ruler, so each band can be counted.
-- **The icon's axis.** A vertical line through the logo's centre, and the small
-  line's letters one under another down it, each where it sits along the line,
-  the first capital's top on the icon's top and the last letter on its foot: the
-  icon is as tall as the small line is wide. A 1 marks the icon's top. A letter
-  is never above 1u, and is drawn small enough not to touch the next.
+- **The icon's height.** The small line's letters one under another in a column
+  half a unit left of the icon's box, each where it sits along the line, the
+  first capital's top on the icon's top and the last letter on its foot, with a
+  magenta bracket beside the column ticked at both ends: the icon is as tall as
+  the small line is wide. The column stands on the plate, never on the icon, so
+  it reads whatever the icon is filled with (review of PR 2042: drawn over the
+  icon it vanished, 1.02-1.32:1). A letter is never above 1u, and is drawn small
+  enough not to touch the next. A vertical line runs through the logo's centre,
+  and a 1 marks the icon's top.
 - **Lines** only at band boundaries, across the logo and the ruler.
 
 The ghosts are the logo's own text colour (the watermark's fill in a
 watermark), at `GHOST_OPACITY` (0.25 on light, 0.22 on dark and watermark),
-inside one `<g class="guide-ghosts">` drawn over the logo, so the axis letters
-show across the icon. They measure about 1.4:1 to 2.2:1 against their plate,
-and the logo's text at least twice that
+inside one `<g class="guide-ghosts">`, every one of them on the plate. They
+measure 1.4:1 to 2.2:1 against every point of their plate (both ends of the
+watermark's gradient), and the logo's text is more than twice that
 (`test/helpers/logos_helper_test.rb`). The lines (1.0 design units) and the
 numbers (28) are in the guide magenta, inside `<g class="guide-lines">`. Both
 groups sit outside a watermark's translucent group, and the logo inside the
