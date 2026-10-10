@@ -312,7 +312,7 @@ Alex chooses. Each line names the code it changes.
    `bin/fact`, `bin/digest-video`, `bin/clip-references`. The census names each
    that still calls, by script.
 6. **Turf Monster drops the secret.** Steffon removes `AGENT_API_SECRET` from
-   Turf's production and QA config, and a Turf PR removes the exchange branch
+   Turf's production config, and a Turf PR removes the exchange branch
    from `Studio::HubCredential` and its two callers.
 7. **The secret leaves the agent shells.** `AGENT_API_SECRET` comes out of the
    repo `.env` files and the default shell; it stays in 1Password for the mint
