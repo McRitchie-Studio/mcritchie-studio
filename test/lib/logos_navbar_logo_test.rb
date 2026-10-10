@@ -244,6 +244,35 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_equal WATERMARK_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 
+  # Task logo-tabs-icon-and-stacked: the icon alone.
+  def test_the_icon_alone_is_the_navbar_logos_icon_in_its_own_box
+    Logo.brands.product(Logo::TONES).each do |brand, tone|
+      logo = Logo.new(brand)
+      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+      icon = Logo.icons.fetch(key)
+      xml = doc(logo.icon_svg(tone:))
+      where = "#{brand} #{tone}"
+
+      assert_equal "0 0 #{format('%.2f', icon['w'])} #{format('%.2f', icon['h'])}", xml.root["viewBox"], where
+      assert_equal %w[g path], xml.root.xpath(".//*").map(&:name).uniq.sort, "#{where}: paths only"
+      in_logo = doc(logo.svg(rule: 4, tone:)).css("path:not([transform])").map { |p| [p["d"], p["fill"], p["fill-rule"]] }
+      assert_equal in_logo, xml.css("path").map { |p| [p["d"], p["fill"], p["fill-rule"]] }, "#{where}: the same layers and fills as in the logo"
+      assert_equal icon.fetch("layers").map { |l| l["d"] }, xml.css("path").map { |p| p["d"] }, where
+      assert_equal (tone == :watermark ? [["g", "0.6"]] : [["g", nil]]), xml.root.element_children.map { |n| [n.name, n["opacity"]] }, where
+      assert_equal (tone == :watermark ? 1 : 0), logo.icon_svg(tone:).scan("opacity").size, where
+      assert_includes xml.root.to_s, %(scale(1.00000)), "#{where}: drawn at the icon data's own size"
+    end
+    assert_equal Logo.new("studio").icon_svg, Logo.new("studio").icon_svg(tone: :light), "light unless asked"
+    assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { industries.icon_svg(tone: :sepia) })
+  end
+
+  def test_the_watermark_settings_are_readable_and_not_the_logos_own_copy
+    assert_equal({ "fill" => "#FFFFFF", "opacity" => 0.6 }, industries.watermark)
+    assert_equal({ "fill" => "#FFFFFF", "opacity" => 0.6, "icon_key" => "turf_mono" }, Logo.new("turf").watermark)
+    industries.watermark["fill"] = "#000000"
+    assert_equal "#FFFFFF", industries.watermark["fill"]
+  end
+
   def test_the_added_brands_match_the_prototypes_proportions
     ADDED_RATIOS.each do |(brand, rule), ratio|
       logo = Logo.new(brand)

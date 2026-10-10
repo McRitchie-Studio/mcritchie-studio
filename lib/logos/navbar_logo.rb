@@ -100,12 +100,23 @@ module Logos
     end
 
     def svg(rule: 3, text: :homogeneous, tone: :light, guides: false)
-      raise Error, "unknown tone #{tone.inspect}: expected one of #{TONES.join(', ')}" unless TONES.include?(tone)
-
+      check_tone(tone)
       box = layout(rule:, text:, tone:)
-      body = tone == :watermark ? watermark_markup(box) : drawing(box, tone, *fills(tone, text))
+      body = toned(tone, drawing(box, tone, *fills(tone, text)))
       guides ? document(body + guide_markup(box), box.width, **GUIDE_PAD) : document(body, box.width)
     end
+
+    # The brand's icon alone, in its own box (`0 0 <w> <h>` of the icon data), with the tone's fills and the
+    # tone's icon: the icon exactly as the Navbar Logo draws it, without the name.
+    def icon_svg(tone: :light)
+      check_tone(tone)
+      icon = @icons.fetch(tone)
+      height = icon.fetch("h")
+      document(toned(tone, icon_markup(icon, fills(tone, :homogeneous).first, height)), icon.fetch("w"), height)
+    end
+
+    # The watermark's checked settings: { "fill" => "#FFFFFF", "opacity" => 0.6 }, and "icon_key" when the style names one.
+    def watermark = @watermark.dup
 
     # Every light and dark example for the brand: 2 rules x 3 texts x 2 tones, each with its guide drawing.
     def examples
@@ -118,6 +129,10 @@ module Logos
     private
 
     def by_weight? = highlight == "weight"
+
+    def check_tone(tone)
+      raise Error, "unknown tone #{tone.inspect}: expected one of #{TONES.join(', ')}" unless TONES.include?(tone)
+    end
 
     def icon_key(tone)
       (tone == :watermark ? @watermark["icon_key"] : @style.dig("tones", tone.to_s, "icon_key")) || @style["icon"]
@@ -138,8 +153,10 @@ module Logos
       mark
     end
 
-    # [each icon layer role's fill, [first word's fill, second word's fill]] for a light or dark logo.
+    # [each icon layer role's fill, [first word's fill, second word's fill]]. A watermark has one fill for everything.
     def fills(tone, text)
+      return [Hash.new(@watermark["fill"]), [@watermark["fill"]] * 2] if tone == :watermark
+
       baked = @style.fetch("tones").fetch(tone.to_s)
       [baked.fetch("icon"), word_colours(text, baked)]
     end
@@ -148,11 +165,11 @@ module Logos
       icon_markup(@icons.fetch(tone), icon_fills) + box.letters.map { |l| letter_markup(l, box, colours[l[:word]]) }.join
     end
 
-    # One fill on every path, inside ONE translucent group: opacity on each path would compound where layers overlap.
-    def watermark_markup(box)
-      fill = @watermark["fill"]
-      %(<g opacity="#{format('%g', @watermark['opacity'])}">#{drawing(box, :watermark, Hash.new(fill), [fill, fill])}</g>)
+    # A watermark sits inside ONE translucent group: opacity on each path would compound where layers overlap.
+    def toned(tone, markup)
+      tone == :watermark ? %(<g opacity="#{format('%g', @watermark['opacity'])}">#{markup}</g>) : markup
     end
+
     def space = @lettering ? @lettering.fetch("space") : glyph(" ", SPACE_WEIGHT)["adv"]
 
     # A brand's own traced lettering (style `lettering:`), or nil when it is set in Montserrat.
@@ -244,13 +261,13 @@ module Logos
       %(<path transform="translate(#{f(letter[:x])},#{f(box.baseline)}) scale(#{f(box.cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{@fill_rule}"/>)
     end
 
-    def icon_markup(icon, fills)
+    def icon_markup(icon, fills, height = H)
       paths = icon.fetch("layers").map do |layer|
         fill = fills[layer["role"]] or raise Error, "brand #{brand}: no fill for icon layer #{layer['role'].inspect}"
         %(<path d="#{layer['d']}" fill="#{hex(fill)}" fill-rule="#{layer['fill_rule']}"/>)
       end.join
       paths = %(<g transform="#{icon['transform']}">#{paths}</g>) if icon["transform"]
-      %(<g transform="scale(#{f(H / icon.fetch('h'), 5)})">#{paths}</g>)
+      %(<g transform="scale(#{f(height.to_f / icon.fetch('h'), 5)})">#{paths}</g>)
     end
 
     # The construction drawing: row edges, the icon's right edge, the name's left ink edge, and row numbers.
@@ -264,9 +281,9 @@ module Logos
       (rows + edges + numbers).join
     end
 
-    def document(body, width, left: 0, top: 0, right: 0, bottom: 0)
+    def document(body, width, height = H, left: 0, top: 0, right: 0, bottom: 0)
       w = f(width + left + right)
-      h = f(H + top + bottom)
+      h = f(height + top + bottom)
       %(<svg xmlns="http://www.w3.org/2000/svg" viewBox="#{-left} #{-top} #{w} #{h}" width="#{w}" height="#{h}">#{body}</svg>\n)
     end
 
