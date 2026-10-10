@@ -102,24 +102,62 @@
 
 require "minitest/autorun"
 require "yaml"
+require_relative "../../bin/lib/ci_suite_workflow"
 
 class CiWorkflowTriggersTest < Minitest::Test
   # TWO FILES, ONE WORKFLOW. ci.yml holds the triggers and one job that calls
-  # reusable-ci.yml, which holds every lane. The trigger guards read CI_YML, the lane
-  # guards read SUITE_YML, and the caller guards (caller_deviations, suite_interface)
-  # pin the seam between them, so a lane guard reading SUITE_YML is reading what a
-  # push runs.
+  # reusable-ci.yml, which holds every lane. The trigger guards read CI_YML. The lane
+  # guards read `suite_as_run`: reusable-ci.yml with every input at its default, which
+  # is what the hub's bare call executes. The caller guards (caller_deviations) and the
+  # interface guards (SUITE_INPUTS, RAW_JOB_CONDITIONS) pin the seam between them, so a
+  # lane guard reading `suite_as_run` is reading what a push runs.
   CI_YML = File.expand_path("../../.github/workflows/ci.yml", __dir__)
   SUITE_YML = File.expand_path("../../.github/workflows/reusable-ci.yml", __dir__)
   WORKFLOW_FILES = [CI_YML, SUITE_YML].freeze
   SUITE_CALL = "./.github/workflows/reusable-ci.yml"
 
+  # THE WHOLE INTERFACE OF THE CALLED SUITE: every input, its type and its default. The
+  # defaults ARE the hub's suite (the hub's call passes no `with:`), so a changed
+  # default changes what the hub runs, and a new input is a new value a lane can read
+  # from outside the file. Either is an edit to this constant, made deliberately.
+  LANE_INPUTS = %w[javascript island-animator playwright rails-shards system].freeze
+  SUITE_INPUTS = LANE_INPUTS.to_h { |name| [name, { "type" => "boolean", "default" => true }] }.merge(
+    "rubygems" => { "type" => "string", "default" => "default" },
+    "await-gem-propagation" => { "type" => "boolean", "default" => true },
+    "postgres-image" => { "type" => "string", "default" => "public.ecr.aws/docker/library/postgres:17" },
+    "gem-audit-command" => { "type" => "string", "default" => "" },
+    "importmap-audit-command" => { "type" => "string", "default" => "bin/importmap-audit-ci" },
+    "system-packages" => { "type" => "string", "default" => "curl libvips postgresql-client imagemagick librsvg2-bin" },
+    "system-setup-command" => { "type" => "string", "default" => "" },
+    "system-command" => { "type" => "string", "default" => "bin/rails db:test:prepare test:system" }
+  ).freeze
+
+  # EVERY JOB'S CONDITION, AS WRITTEN. A lane's only switch is its own lane input, and
+  # an executed-set gate keeps `always()` beside it. A job absent from this map, or one
+  # carrying any other condition, fails here by name.
+  RAW_JOB_CONDITIONS = {
+    "static" => nil,
+    "javascript" => "${{ inputs.javascript }}",
+    "island_animator" => "${{ inputs.island-animator }}",
+    "playwright" => "${{ inputs.playwright }}",
+    "e2e_executed_set" => "${{ always() && inputs.playwright }}",
+    "rails_plan" => "${{ inputs.rails-shards }}",
+    "rails" => "${{ inputs.rails-shards }}",
+    "rails_executed_set" => "${{ always() && inputs.rails-shards }}",
+    "system" => "${{ inputs.system }}"
+  }.freeze
+
+  # reusable-ci.yml as the hub's bare call runs it: each `inputs.<name>` replaced by its
+  # declared default (CiSuiteWorkflow.as_called). `if: ${{ inputs.playwright }}` reads
+  # `if: true` here, and `run: ${{ inputs.system-command }}` reads as the command.
+  def suite_as_run = CiSuiteWorkflow.as_called(File.read(SUITE_YML))
+
   # Every way ci.yml differs from "triggers plus one bare call to the suite". The
   # caller job may carry `uses:` and nothing else: an `if:` skips every lane and the
-  # run still reads green, `with:` and `secrets:` feed a called workflow that takes
-  # neither, and a `strategy:` or `needs:` changes what runs and when. The root may
-  # carry `name`, `on` and `jobs` only, which refuses `concurrency`, `env`,
-  # `permissions` and `run-name` by construction.
+  # run still reads green, `with:` moves the suite off the defaults every lane guard
+  # judges, the suite takes no `secrets:`, and a `strategy:` or `needs:` changes what
+  # runs and when. The root may carry `name`, `on` and `jobs` only, which refuses
+  # `concurrency`, `env`, `permissions` and `run-name` by construction.
   def caller_deviations(yaml_text)
     doc = YAML.safe_load(yaml_text)
     found = (doc.keys - ["name", true, "on", "jobs"]).map { |key| "root key `#{key}`" }
@@ -135,12 +173,39 @@ class CiWorkflowTriggersTest < Minitest::Test
     found
   end
 
-  # What the called workflow accepts from a caller: its `on:` block. It must be a bare
-  # `workflow_call:`, with no inputs and no secrets. An input is the one value a lane
-  # condition could read from outside this file, and with none declared no caller can
-  # switch a lane off.
+  # What the called workflow accepts from a caller: its `on:` block. It must be one
+  # `workflow_call:` carrying `inputs:` and nothing else (no secrets, no outputs, no
+  # second trigger).
   def suite_interface(yaml_text) = triggers(yaml_text)
 
+  # Every way the suite's interface differs from SUITE_INPUTS.
+  def interface_deviations(yaml_text)
+    on = suite_interface(yaml_text)
+    found = (on.keys - ["workflow_call"]).map { |key| "trigger `#{key}`" }
+    call = on["workflow_call"]
+    return found << "`workflow_call:` declares no inputs" unless call.is_a?(Hash)
+
+    found.concat((call.keys - ["inputs"]).map { |key| "`workflow_call.#{key}`" })
+    declared = CiSuiteWorkflow.inputs(yaml_text)
+    found.concat((declared.keys - SUITE_INPUTS.keys).map { |name| "undeclared-in-test input `#{name}`" })
+    found.concat((SUITE_INPUTS.keys - declared.keys).map { |name| "missing input `#{name}`" })
+    SUITE_INPUTS.each do |name, spec|
+      next unless declared.key?(name) && declared[name] != spec
+
+      found << "input `#{name}` is #{declared[name].inspect}, not #{spec.inspect}"
+    end
+    found
+  end
+
+  # Every job whose written condition is not the one RAW_JOB_CONDITIONS pins for it.
+  def job_condition_deviations(yaml_text)
+    jobs_of(yaml_text).filter_map do |name, job|
+      next "job `#{name}` is not enrolled in RAW_JOB_CONDITIONS" unless RAW_JOB_CONDITIONS.key?(name)
+
+      written = job["if"]&.to_s&.strip
+      "job `#{name}` carries `if: #{written}`" unless written == RAW_JOB_CONDITIONS[name]
+    end
+  end
 
   # The e2e lane's contract — the ONE place the sanctioned exclusion's value is written down,
   # shared with test/lib/e2e_quarantine_ratchet_test.rb and bin/e2e-executed-set-check.
