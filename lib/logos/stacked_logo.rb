@@ -17,8 +17,15 @@ module Logos
   #   one_line            (style `stacked: one_line`) the whole name on one line
   #                       at 3u, set as the Navbar Logo sets it; the icon is 60%
   #                       of the name's width tall. Top to bottom: icon, 2u, name.
+  #   tagline             (a brand whose style has a `tagline`) the name as
+  #                       one_line sets it, then 2u, then the tagline at 1u in
+  #                       Montserrat 500, tracked out between its characters (a
+  #                       space is one) to 60% of the name's ink width; the icon
+  #                       is as tall as the tagline is wide. The tagline takes the
+  #                       tone's `quiet` fill (`text` without one).
   #
-  # Everything is centred on the big line, whose ink is the logo's width.
+  # A brand's own form (`form`) is the default; `forms` lists every form it can
+  # draw. Everything is centred on the big line, whose ink is the logo's width.
   # Rules, forms and guides: docs/topics/logos.md. Outside Rails, require
   # navbar_logo first (the app autoloads both).
   class StackedLogo < NavbarLogo
@@ -26,7 +33,8 @@ module Logos
     BIG = 3                                    # the big line's capitals, in u
     GAP = 2                                    # every gap, in u
     SPAN = 0.6                                 # the small line's width, and the icon's height, as a share of the big line's width
-    FORMS = %w[two_line one_line].freeze
+    FORMS = %w[two_line one_line].freeze       # a style's own form; `tagline` is offered beside it, never named in a style
+    ALL_FORMS = %i[two_line one_line tagline].freeze
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     BANDS = %w[2u 3u 2u 1u].freeze             # below the icon, top to bottom (one_line stops after the second)
     GUIDE_PAD = { left: 60, top: 40, right: 90, bottom: 40 }.freeze
@@ -45,7 +53,7 @@ module Logos
 
       @form = form.to_sym
       @tagline = checked_tagline
-      TEXTS.product(TONES) { |text, tone| layout(text:, tone:) }
+      TEXTS.product(TONES, forms) { |text, tone, each| layout(text:, tone:, form: each) }
     end
 
     # :two_line or :one_line
@@ -54,33 +62,38 @@ module Logos
     # The brand's tagline as the logo sets it ("BUILD SMARTER"), or nil when the style names none.
     attr_reader :tagline
 
+    # Every form this brand draws, its own first: [:two_line, :tagline], or [:one_line] for a brand with no tagline.
+    def forms = [form, (:tagline if tagline)].compact
+
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, **unknown)
-      check_keywords(unknown, "text and tone")
+    def layout(text: :homogeneous, tone: :light, form: self.form, **unknown)
+      check_keywords(unknown, "text, tone and form")
       check_text(text)
+      check_form(form)
       first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
       cap = BIG * U
       big, width = place(first, cap, 0, 0)
-      if form == :one_line
+      unless form == :two_line
         rest, width = place(second, cap, width + space * cap, 1)
         big += rest
       end
       icon_height = SPAN * width
       edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
-      if form == :two_line
+      unless form == :one_line
         edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
-        placed += small_line(second, width).map { |letter| letter.merge(baseline: edges.last, cap: U) }
+        small = form == :tagline ? tagline_line(width) : small_line(second, width)
+        placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) }
       end
       Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(tone, icon_height, width)) / 2,
                  edges:, letters: placed)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, **unknown)
-      check_keywords(unknown, "text, tone and guides")
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, **unknown)
+      check_keywords(unknown, "text, tone, form and guides")
       check_tone(tone)
-      box = layout(text:, tone:)
+      box = layout(text:, tone:, form:)
       render(box, box.height, text, tone, guides)
     end
 
@@ -104,17 +117,51 @@ module Logos
       raise Error, "a stacked logo takes #{taken}, not #{unknown.keys.join(', ')}: it has no rule"
     end
 
+    def check_form(form)
+      return if forms.include?(form)
+
+      why = form == :tagline ? "it has no tagline" : "it draws #{forms.join(' and ')}"
+      raise Error, "brand #{brand}: no stacked form #{form.inspect} (#{why})"
+    end
+
     # The small word, centred, with the same computed space added between each pair of letters and none after the last.
     def small_line(word, width)
-      target = SPAN * width
-      natural = place(word, U, 0, 1, 0).last
-      gaps = word.size - 1
-      if natural > target || gaps.zero?
-        why = gaps.zero? ? "it has one letter" : "it is #{(100 * natural / width).round}% already"
-        raise Error, "brand #{brand}: the second word #{@words[1].inspect} cannot be tracked out to #{(SPAN * 100).round}% of the first " \
-                     "word's width (#{why}): set `stacked: one_line` in the brand's style"
+      tracked(word, width, 1) do |why|
+        "the second word #{@words[1].inspect} cannot be tracked out to #{(SPAN * 100).round}% of the first word's width " \
+          "(#{why}): set `stacked: one_line` in the brand's style"
       end
-      place(word, U, (width - target) / 2, 1, (target - natural) / (gaps * U)).first
+    end
+
+    # The tagline, set like the small word: Montserrat at TAGLINE_WEIGHT, every character (a space too) one glyph.
+    # Its paths are font outlines, so they keep the font's fill rule whatever the name is set in.
+    def tagline_line(width)
+      glyphs = tagline.each_char.map { |char| glyph(char, TAGLINE_WEIGHT) }
+      tracked(glyphs, width, 2) do |why|
+        "the tagline #{tagline.inspect} cannot be tracked out to #{(SPAN * 100).round}% of the name's width (#{why}): " \
+          "shorten it, or leave it out of the brand's style"
+      end.map { |letter| letter.merge(fill_rule: "nonzero") }
+    end
+
+    # A run of glyphs at 1u, tracked out between them to SPAN of `width` and centred on it. Never tracked in: the
+    # block words the refusal when the run is already wider, or cannot be tracked at all.
+    def tracked(glyphs, width, index)
+      target = SPAN * width
+      natural = place(glyphs, U, 0, index, 0).last   # its ink width: `place` starts the ink at 0
+      gaps = glyphs.size - 1
+      if natural > target || gaps.zero?
+        raise Error, "brand #{brand}: #{yield(gaps.zero? ? 'it has one letter' : "it is #{(100 * natural / width).round}% already")}"
+      end
+
+      place(glyphs, U, (width - target) / 2, index, (target - natural) / (gaps * U)).first
+    end
+
+    # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet.
+    def fills(tone, text)
+      icon, colours = super
+      return [icon, colours + [@watermark["fill"]]] if tone == :watermark
+
+      baked = @style.fetch("tones").fetch(tone.to_s)
+      [icon, colours + [baked.fetch("quiet", baked.fetch("text"))]]
     end
 
     def icon_width(tone, height, width)

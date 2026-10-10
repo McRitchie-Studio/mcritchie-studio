@@ -267,7 +267,7 @@ module Logos
     def letter_markup(letter, baseline, cap, fill)
       return "" if letter[:d].empty?
 
-      %(<path transform="translate(#{f(letter[:x])},#{f(baseline)}) scale(#{f(cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{@fill_rule}"/>)
+      %(<path transform="translate(#{f(letter[:x])},#{f(baseline)}) scale(#{f(cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{letter.fetch(:fill_rule, @fill_rule)}"/>)
     end
 
     def icon_markup(icon, fills, height = H)

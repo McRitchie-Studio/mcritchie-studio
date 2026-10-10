@@ -27,6 +27,13 @@ class LogosStackedLogoTest < Minitest::Test
   # stacked-tagline-and-ghost-grid): a new form and new guide drawings may not move a shipped logo by a byte.
   STACKED_DIGEST = "6b40237f0a2b759fe9d3d67f5d3af417e982c18c99d54d73859bd7974cdd8a6d"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
+  # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
+  # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
+  TAGLINE_RATIOS = {
+    ["studio", :homogeneous] => 1.2708, ["studio", :first] => 1.2645, ["studio", :second] => 1.2609,
+    ["industries", :homogeneous] => 1.3270, ["industries", :first] => 1.3214, ["industries", :second] => 1.3215,
+    ["welding", :homogeneous] => 1.2838, ["welding", :first] => 1.2838, ["welding", :second] => 1.2838
+  }.freeze
   TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 
   def stacked(brand) = (@stacked ||= {})[brand] ||= Stacked.new(brand)
@@ -241,10 +248,10 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone and guides, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text and tone, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone and guides, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text and tone, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form and guides, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone and form, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form and guides, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone and form, not guides/, refusal { stacked("studio").layout(guides: true) })
 
     wide = JSON.parse(JSON.generate(Navbar.icons)).tap { |icons| icons.fetch("studio")["w"] = 2000 }
     assert_match(/brand studio: the icon is too wide to stack \(2\.22 of the name's width at this height\)/, refusal { Stacked.new("studio", icons: wide) })
@@ -280,5 +287,86 @@ class LogosStackedLogoTest < Minitest::Test
       assert_match(/brand x: (tagline must be words separated by single spaces|no glyph for)/, message, line.inspect)
     end
     assert_nil Stacked.new("x", styles: style("studio", tagline: nil)).tagline
+  end
+
+  def test_the_tagline_forms_ratio_is_measured_and_meets_the_closed_form
+    TAGLINE_RATIOS.each do |(brand, text), ratio|
+      box = stacked(brand).layout(text:, form: :tagline)
+      n = box.width / (3 * U)
+      assert_in_delta ratio, box.width / box.height, 5e-5, "#{brand} #{text}: measured"
+      assert_in_delta 3 * n / (1.8 * n + 8), box.width / box.height, 1e-9, "#{brand} #{text}: the closed form"
+      _, _, width, height = doc(stacked(brand).svg(text:, form: :tagline)).root["viewBox"].split.map(&:to_f)
+      assert_in_delta ratio, width / height, 5e-4, "#{brand} #{text} viewBox"
+    end
+  end
+
+  def test_the_tagline_form_stacks_icon_2u_name_3u_2u_tagline_1u
+    TAGLINE_RATIOS.each_key do |brand, text|
+      box = stacked(brand).layout(text:, form: :tagline)
+      where = "#{brand} #{text}"
+      assert_equal :tagline, box.form, where
+      top = box.icon_height
+      assert_equal [0, top, top + 2 * U, top + 5 * U, top + 7 * U, top + 8 * U], box.edges, where
+      assert_in_delta 0.6 * box.width + 8 * U, box.height, 1e-9, where
+      name, line = box.letters.partition { |letter| letter[:word] < 2 }
+      assert_equal [[top + 5 * U, 3 * U]], name.map { |l| [l[:baseline], l[:cap]] }.uniq, "#{where}: the name, capitals 3u"
+      assert_equal [[top + 8 * U, U, "nonzero"]], line.map { |l| [l[:baseline], l[:cap], l[:fill_rule]] }.uniq, "#{where}: the tagline, capitals 1u"
+      assert_equal TAGLINES.fetch(brand).chars.map { |char| glyph(char, 500)["d"] }, line.map { |l| l[:d] }, "#{where}: Montserrat 500"
+
+      glyphs = TAGLINES.fetch(brand).chars.map { |char| glyph(char, 500) }
+      left, right = ink(line, glyphs)
+      assert_in_delta 0.6 * box.width, right - left, 1e-9, "#{where}: exactly 60% of the name"
+      assert_in_delta box.icon_height, right - left, 1e-9, "#{where}: the icon is as tall as the tagline is wide"
+      assert_in_delta box.width / 2, (left + right) / 2, 1e-9, "#{where}: centred on the name"
+      steps = line.each_cons(2).zip(glyphs).map { |(a, b), g| (b[:x] - a[:x]) / U - g["adv"] }
+      assert_operator steps.min, :>, 0, "#{where}: tracked out, never in"
+      steps.each { |step| assert_in_delta steps.first, step, 1e-9, "#{where}: the same space between every pair, a space included" }
+    end
+  end
+
+  def test_the_tagline_forms_name_is_the_one_line_name
+    TAGLINE_RATIOS.each_key do |brand, text|
+      mine = stacked(brand).layout(text:, form: :tagline).letters.reject { |letter| letter[:word] == 2 }
+      navbar = Navbar.new(brand).layout(rule: 4, text:)
+      scale = 3 * U / navbar.cap
+      assert_equal navbar.letters.map { |l| [l[:d], l[:word]] }, mine.map { |l| [l[:d], l[:word]] }, "#{brand} #{text}"
+      mine.zip(navbar.letters).each do |letter, theirs|
+        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word space and tracking"
+      end
+    end
+  end
+
+  def test_the_tagline_is_quiet_in_light_and_dark_and_the_watermarks_one_fill
+    { "studio" => ["#1A1535", "#FFFFFF"], "industries" => ["#41464D", "#D3D6DA"], "welding" => ["#2D5E8E", "#FFFFFF"] }.each do |brand, (light, dark)|
+      line = ->(tone) { doc(stacked(brand).svg(form: :tagline, tone:, text: :first)).css("path[transform]").to_a.last(TAGLINES.fetch(brand).delete(" ").size) }
+      assert_equal [light], line.(:light).map { |p| p["fill"] }.uniq, brand
+      assert_equal [dark], line.(:dark).map { |p| p["fill"] }.uniq, brand
+      assert_equal ["#FFFFFF"], line.(:watermark).map { |p| p["fill"] }.uniq, brand
+      assert_equal ["nonzero"], line.(:light).map { |p| p["fill-rule"] }.uniq, "#{brand}: font outlines"
+    end
+    names = doc(stacked("welding").svg(form: :tagline)).css("path[transform]").to_a.first(17)
+    assert_equal ["evenodd"], names.map { |p| p["fill-rule"] }.uniq, "welding's own lettering keeps its fill rule"
+    assert_equal 1, stacked("studio").svg(form: :tagline, tone: :watermark).scan("opacity").size, "one translucent group"
+  end
+
+  def test_the_tagline_form_draws_only_paths_in_its_own_box
+    TAGLINE_RATIOS.each_key do |brand, text|
+      box = stacked(brand).layout(text:, form: :tagline)
+      xml = doc(stacked(brand).svg(text:, form: :tagline))
+      assert_equal %w[g path svg], xml.xpath("//*").map(&:name).uniq.sort
+      assert_equal format("0 0 %.2f %.2f", box.width, box.height), xml.root["viewBox"]
+    end
+  end
+
+  def test_a_tagline_too_wide_to_track_or_a_form_the_brand_lacks_is_refused
+    message = refusal { Stacked.new("x", styles: style("studio", tagline: "BUILDING STRONG CONNECTIONS EVERY DAY")) }
+    assert_match(/\Abrand x: the tagline "BUILDING STRONG CONNECTIONS EVERY DAY" cannot be tracked out to 60% of the name's width \(it is \d+% already\)/, message)
+    assert_match(/brand x: the tagline "B" cannot be tracked out .* \(it has one letter\)/, refusal { Stacked.new("x", styles: style("studio", tagline: "B")) })
+    assert_equal "brand turf: no stacked form :tagline (it has no tagline)", refusal { stacked("turf").svg(form: :tagline) }
+    assert_equal "brand studio: no stacked form :one_line (it draws two_line and tagline)", refusal { stacked("studio").layout(form: :one_line) }
+    assert_equal "brand studio: no stacked form \"tagline\" (it draws two_line and tagline)", refusal { stacked("studio").svg(form: "tagline") }
+    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line], "welding" => %i[two_line tagline] },
+                 Navbar.brands.to_h { |brand| [brand, stacked(brand).forms] })
+    assert_equal stacked("studio").svg, stacked("studio").svg(form: :two_line), "a brand's own form is the default"
   end
 end
