@@ -10,7 +10,7 @@ require "test_helper"
 class LogosControllerTest < ActionDispatch::IntegrationTest
   LABEL = "McRitchie Industries navbar logo, rule of 4, second word leads, light"
   PLATES = { "light" => "background-color: #FFFFFF", "dark" => "background-color: #12141A",
-             "watermark" => "background-image: linear-gradient(135deg, #3F5E8C, #4F9A94)" }.freeze
+             "watermark" => "background-image: linear-gradient(135deg, #263B5C, #2C625E)" }.freeze
   SAMPLES = { "icon" => [{}, "icon"], "navbar" => [{ rule: 4, text: "second" }, "navbar logo, rule of 4, second word leads"],
               "stacked" => [{ text: "first" }, "stacked logo, first word leads"] }.freeze
 
@@ -303,7 +303,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_select "select#logo-context[name='context'][onchange*='requestSubmit']", 1
         assert_equal [%w[light Light], %w[dark Dark], %w[watermark Watermark]], css_select("select#logo-context option").map { |o| [o["value"], o.text] }
         assert_equal [context], css_select("select#logo-context option[selected]").map { |o| o["value"] }
-        assert_select "input[type='submit'][value='Apply']", 1, "the form works with JavaScript off"
+        assert_select "noscript input[type='submit'][value='Apply']", 1, "the form works with JavaScript off"
+        assert_select "input[type='submit']", 1, "and with JavaScript on there is no button: the dropdown submits on change"
         assert_select "input[name='guides']", 0
       end
       shown = variants("industries", type.to_sym, tone: context.to_sym)
@@ -340,6 +341,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       carried = context == "light" ? {} : { context: }
 
       assert_select "form[data-test='context-form'][method='get'][action=?]", logos_path, 1
+      assert_select "form[data-test='context-form'] noscript input[type='submit'][value='Apply']", 1
+      assert_select "form[data-test='context-form'] > input[type='submit']", 0
       assert_equal [context], css_select("select#logo-context option[selected]").map { |o| o["value"] }
       assert_select "[data-test='logo-plate']", 3 * Logos::NavbarLogo.brands.size
       assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size
@@ -407,7 +410,16 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 3
     assert_select "a[data-test='logo-download'][href*='guides=1']", 3
     assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
-    assert_select "[data-test='guides-sentence']", /the numbered rows, the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\./
+    assert_select "[data-test='guides-sentence']", /the numbered rows, the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. On a narrow screen a drawing keeps its size: scroll it sideways\./
+
+    # A guide drawing keeps its height and its plate scrolls sideways, so the labels stay readable on a phone.
+    assert_select "[data-test='logo-plate'].overflow-x-auto[tabindex='0'][role='group'][aria-label^='Guide drawing, scrolls sideways']", 3
+    assert_select "[data-test='logo-plate'] img[style='height: 132px; max-width: none']", 3
+    get logo_brand_path("industries", type: "stacked", guides: 1)
+    assert_select "[data-test='logo-plate'].overflow-x-auto[tabindex='0'] img[style='height: 380px; max-width: none']", 3
+    get logo_brand_path("industries", type: "stacked")
+    assert_select "[data-test='logo-plate'].overflow-x-auto, [data-test='logo-plate'][tabindex]", 0
+    assert_select "[data-test='logo-plate'] img[style='max-height: 240px'].max-w-full", 3
   end
 
   test "navbar serves the one logo inline, and as a named file with download=1" do

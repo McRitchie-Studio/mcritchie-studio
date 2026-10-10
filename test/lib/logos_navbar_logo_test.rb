@@ -489,7 +489,7 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_equal Logo.new("studio").svg(tone: :watermark), Logo.new("x", styles: mark.({})).svg(tone: :watermark), "an empty map is the defaults"
     assert_equal Logo.new("studio").svg(tone: :dark), Logo.new("x", styles: mark.({ "fill" => "#102030" })).svg(tone: :dark), "the map touches no other tone"
 
-    [0, 0.0, -0.1, 1.01, 2, "0.5", nil, true, Float::NAN, Float::INFINITY, [0.5]].each do |opacity|
+    [0, 0.0, -0.1, 1.01, 1.0000001, 2, "0.5", nil, true, Float::NAN, Float::INFINITY, [0.5]].each do |opacity|
       message = refusal { Logo.new("x", styles: mark.({ "opacity" => opacity })) }
       assert_match(/watermark opacity must be a number greater than 0 and at most 1, got/, message, opacity.inspect)
     end

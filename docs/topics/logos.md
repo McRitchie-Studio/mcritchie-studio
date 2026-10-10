@@ -1,9 +1,17 @@
 # Logos
 
-> **When to read this:** Drawing a brand's Navbar Logo, adding a brand or a
-> weight to the logo data, building on `Logos::NavbarLogo`, or changing the
-> logo gallery at `/logos`. Colours and the
-> live navbar are in [`theme.md`](theme.md).
+> **When to read this:** Drawing a brand's Navbar Logo, icon or Stacked Logo,
+> adding a brand or a weight to the logo data, building on `Logos::NavbarLogo`
+> or `Logos::StackedLogo`, or changing the logo gallery at `/logos`. Colours
+> and the live navbar are in [`theme.md`](theme.md).
+
+A brand has three logo types, all drawn from the same data:
+
+| Type | Drawn by | What it is |
+|------|----------|------------|
+| Icon | `Logos::NavbarLogo#icon_svg` | the icon alone ([below](#the-icon-alone)) |
+| Navbar Logo | `Logos::NavbarLogo#svg` | the icon, then the name on one line (the main logo) |
+| Stacked Logo | `Logos::StackedLogo#svg` | the icon above the name ([below](#the-stacked-logo)) |
 
 The **Navbar Logo** (the main logo) is drawn from two things: an ICON (vector
 path layers) and a NAME (two words). `Logos::NavbarLogo`
@@ -17,6 +25,8 @@ logo.svg(rule: 4, text: :second, tone: :dark)   # => "<svg …>"
 logo.layout(rule: 3, text: :first)              # the geometry alone
 logo.svg(rule: 4, text: :second, tone: :watermark)   # one colour, slightly transparent
 logo.examples                                   # all 24 light and dark: 12 logos, each with its guide drawing
+logo.icon_svg(tone: :dark)                      # the icon alone
+Logos::StackedLogo.new("industries").svg(text: :first, tone: :light)   # the icon above the name
 ```
 
 A logo has no background. The SVG is transparent wherever it draws nothing, in
@@ -77,6 +87,75 @@ Any other key, or a value outside these, raises `Logos::NavbarLogo::Error`.
 
 The rules guide a new build. They are not a pass/fail gate on an existing kit.
 
+## The icon alone
+
+`logo.icon_svg(tone:)` returns the brand's icon with nothing beside it: the
+same layers, the same fills and the same per-tone icon the Navbar Logo draws.
+
+- Its viewBox is the icon's own box, `0 0 <w> <h>` from the icon data, not the
+  300-unit logo box.
+- `tone:` is `:light` (the default), `:dark` or `:watermark`. A watermark icon is
+  one fill inside one translucent group, like a watermark logo, and draws the
+  style's `watermark.icon_key` when it names one.
+- It is paths only, with a transparent background. There is no guide drawing.
+- `logo.watermark` returns the checked watermark settings (`fill`, `opacity`,
+  and `icon_key` when set), which the gallery lists under Colours.
+
+## The Stacked Logo
+
+`Logos::StackedLogo` (`lib/logos/stacked_logo.rb`) draws the icon above the
+name on the **3-2-1 method**. It subclasses `Logos::NavbarLogo`, so the style,
+the icons, the letters, the checks, the three text versions and the three tones
+are the same; only the layout differs. It has no rule.
+
+```ruby
+stacked = Logos::StackedLogo.new("studio")
+stacked.svg(text: :first, tone: :dark)   # => "<svg …>"
+stacked.svg(text: :first, guides: true)  # the construction drawing
+stacked.layout(text: :second)            # the geometry alone
+stacked.form                             # => :two_line
+```
+
+Let **u** be the small word's cap height (40 design units).
+
+| Form | Top to bottom | Width | Height |
+|------|---------------|-------|--------|
+| `two_line` (the default) | icon, 2u, the first word at 3u, 2u, the second word at 1u | the first word's ink, W | 0.6W + 8u |
+| `one_line` (`stacked: one_line` in the style) | icon, 2u, the whole name at 3u | the name's ink, W | 0.6W + 5u |
+
+- **Two lines.** The second word is tracked out until its ink is exactly 60% of
+  the first word's ink width. The tracking is computed, added between letters
+  only, and never after the last. The brand's own `tracking` is not added to it.
+- **The icon** is as tall as the small word is wide, 0.6W, and scaled to that.
+- **Centring.** The icon and the small word are centred on the big line.
+- **One line.** The name is set exactly as the Navbar Logo sets it, with the
+  brand's tracking and word space, and the icon is 60% of its width tall. Turf
+  Monster uses it: "Monster" is already 68% as wide as "Turf", so it cannot be
+  tracked out under it.
+- **Width over height** is 3n / (1.8n + 8) for two lines and 3n / (1.8n + 5) for
+  one, where n is the big line's ink width in cap heights. Studio measures
+  1.078 with the first word leading and 1.056 with the second; Industries 1.073
+  and 1.056; Turf Monster 1.28.
+- **A lettering brand** (Commercial Welding) stacks in two lines: its traced
+  letters carry their own advances, so the small word can be tracked.
+
+`Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
+
+- a two-line brand whose second word is wider than 60% of its first, or has one
+  letter. The message names the brand and says to set `stacked: one_line`.
+  Negative tracking is never drawn.
+- a `stacked` value other than `two_line` or `one_line`;
+- an icon so wide that, at its height, it would overhang the name.
+
+`guides: true` returns the construction drawing: a line at each boundary, each
+band's size at the right (`2u`, `3u`, `2u`, `1u`; a one-line logo stops after
+`3u`), and the proof that the icon is as tall as the small word is wide: the
+small word again, turned on its side beside the icon, its ink running from the
+icon's bottom edge to its top. A one-line logo has no small word, so it gets a
+bracket beside the icon labelled "60% of the name's width". In a watermark the
+guides sit outside the translucent group. `examples` is not defined on a
+Stacked Logo, and the rake task writes Navbar Logos only.
+
 ## The brands
 
 | Brand | Icon | Name set in | Leads by |
@@ -130,34 +209,72 @@ linked from the admin sidebar as **Logos**.
 
 | Route | Shows |
 |-------|-------|
-| `/logos` | One row per brand in `config/logo_brands.yml`: its rule-of-4 logo with the second word leading, shown once; its typeface (Montserrat and the weights the brand uses, or "Traced from its own lettering"); its fills as swatches. |
-| `/logos/:brand` | The brand's `note`, then every logo, by rule and then by text, each shown once, with **Download** and **Copy SVG**. `?guides=1` swaps every logo for its guide drawing. |
-| `/logos/:brand/navbar` | One logo as `image/svg+xml`. Params: `rule` (`3`, `4`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`); an absent one takes the library's default. `download=1` sends it as an attachment named `<brand>-navbar-rule<3|4>-<text>-<tone>[-guides].svg`. |
+| `/logos` | One row per brand in `config/logo_brands.yml`, with three logo columns, one sample each: **Icon**, **Navbar Logo** (rule of 4, second word leading) and **Stacked Logo** (first word leading). Then its typeface (Montserrat and the weights the brand uses, or "Traced from its own lettering") and its fills as swatches: light, dark, and the watermark's fill with its opacity. Each sample links to its own tab of the brand page. |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. |
+| `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
+| `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4>-<text>-<tone>[-guides].svg`. |
+| `/logos/:brand/stacked` | One Stacked Logo. Params: `text`, `tone`, `guides`. Named `<brand>-stacked-<text>-<tone>[-guides].svg`. |
 
-Both pages show each logo once, in one **context**: `?context=light` (the
-default), `dark` or `watermark`. A **Context** dropdown at the top of the page
-sets it and switches every logo together.
+On the three SVG routes an absent param takes the library's default (so
+`/navbar` alone is the rule of 3), a param the type does not take is not read,
+and `download=1` sends the file as an attachment. The type is the route's own:
+a `?type=` in the query string cannot change it.
 
-- The dropdown is a GET form (`logos/_context_form`). It submits on change, and
-  its **Apply** button does the same with JavaScript off.
-- `context` and `guides` combine, and each survives the other's toggle. The
-  index's links to a brand page carry the context. A default (`light`, guides
-  off) is left out of the links.
-- Download and Copy SVG give the logo as shown: in the watermark context, the
-  watermark SVG, named `…-watermark.svg`.
-- In the watermark context, the page of a brand that leads by colour says its
-  three text versions look the same. No row is hidden.
-- An unknown context is a 422, like any other bad param.
+### The brand page's tabs and controls
+
+| Tab | Shows | Its own controls |
+|-----|-------|------------------|
+| Icon | the icon, once | none |
+| Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3` or `4`; the page shows the rule of 4 unless asked) and **Show guides** |
+| Stacked Logo | the three text versions, and a short paragraph stating the 3-2-1 method and the form the brand uses | **Show guides** |
+
+- The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
+  carries `aria-current="page"`. The Rule control is a `role="group"` of two
+  links; the current one carries `aria-current="true"`. All are `.btn` links
+  with a focus ring fixed per hub theme, because the engine's own ring is too
+  faint on the light theme's white card.
+- The **Context** dropdown is on every tab and on the index.
+  `?context=light` (the default), `dark` or `watermark` sets the one tone every
+  logo on the page is shown in. It is a GET form (`logos/_context_form`) that
+  submits on change. Its **Apply** button is inside a `<noscript>`, so it shows
+  only with JavaScript off.
+- **Every control keeps every other control's setting.** `type`, `context`,
+  `rule` and `guides` are all read on every tab, and every link and the form
+  are built from `LogosHelper#logo_page_params`, which leaves the defaults
+  (Navbar Logo, light, rule of 4, guides off) out of the URL. So a rule picked
+  on the Navbar tab is still picked after a visit to the Icon tab. The
+  **Logos** breadcrumb back to the table keeps the context.
+- **Guide drawings keep their size.** With guides on, a drawing is shown at a
+  fixed height (`LogosHelper::LOGO_GUIDE_HEIGHTS`: 132 px for a Navbar Logo,
+  380 px for a Stacked Logo), which holds its labels at 11 px or more at every
+  page width. Where the drawing is wider than its plate (every drawing on a
+  phone; the Industries rule-of-4 drawing on a desktop too) the plate scrolls
+  sideways inside itself; it is focusable, so the arrow keys scroll it. The
+  page body never scrolls sideways.
+- Download and Copy SVG give the logo as shown, on every tab: in the watermark
+  context, the watermark SVG, named `…-watermark.svg`.
+- Every image's accessible name states its type, its text version (and rule)
+  and its context: "McRitchie Industries stacked logo, first word leads, dark".
+- In the watermark context, the Navbar and Stacked tabs of a brand that leads
+  by colour say its three text versions look the same. No version is hidden.
+- The index table is a table from the `xl` breakpoint up, and a stack of
+  labelled cells below it. Its wrapper scrolls sideways if a row ever outgrows
+  it.
 
 - An unknown brand is a 404. Any other param the library or the parser refuses
+  (an unknown `type`, `context`, `rule`, `text`, `tone`, `guides` or `download`)
   is a 422 whose body is the reason in plain text.
 - `Logos::Variant` (`lib/logos/variant.rb`) reads the params and gives each logo
-  its filename and its accessible name.
+  its type, its filename and its accessible name. `Variant.logo(brand, type)`
+  builds the library object that draws a type.
 - The plates are fixed (`LogosHelper::LOGO_PLATES`), not theme tokens: a logo's
   fills are baked per tone, so its plate must not follow the hub theme. Light is
-  white, dark is near-black, and watermark is a slate-to-teal CSS gradient that
-  stands in for a photograph, so the transparency shows.
-- The logo route has no `.svg` extension. An extension sets the request format,
+  white, dark is near-black, and watermark is a dark slate-to-teal CSS gradient
+  (`#263B5C` to `#2C625E`) that stands in for a photograph, so the transparency
+  shows. The default watermark, white at 0.6, measures at least 3.6:1 against
+  every point of it; `test/helpers/logos_helper_test.rb` holds every brand's
+  watermark to 3:1.
+- The logo routes have no `.svg` extension. An extension sets the request format,
   and the admin wall answers a non-HTML format with a bare 401 or 403.
 - The Industries icon is drawn flat (two solid layers), without the marketing
   kit's steel gradient and tick marks. Turf Monster's head and Commercial
@@ -168,7 +285,7 @@ sets it and switches every logo together.
 
 | File | Holds |
 |------|-------|
-| `config/logo_brands.yml` | Each brand's name, icon, highlight, weights or lettering, tracking, note, fills and watermark. Add a brand here. |
+| `config/logo_brands.yml` | Each brand's name, icon, highlight, weights or lettering, tracking, stacked form, note, fills and watermark. Add a brand here. |
 | `lib/logos/data/brand_icons.json` | Studio's and Industries' icon layers: a path, a role (`primary`, `edge`) and a fill rule each. |
 | `lib/logos/data/brand_icons_turf_welding.json` | The same format for `turf` (roles `outline`, `body`, `light`), `welding` (`primary`, `accent`) and `welding_mono` (`primary`). |
 | `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. The library reads the three icon files as one set. |
