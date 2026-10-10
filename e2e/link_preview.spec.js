@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, studioControllerConnected } = require("./helpers");
 
 // task hub-adopts-link-preview (studio-engine 0.82, docs/LINK_PREVIEW.md).
 // The happy path: an admin reaches /admin/link_preview from the hub's own admin
@@ -16,6 +16,8 @@ test("admin edits the default link preview and a preview fetcher reads it", asyn
 
   await expect(page.locator('a[href="/admin/link_preview"]').first()).toBeAttached();
   await page.goto("/admin/link_preview");
+  // The card's controller is lazy: typing before it connects repaints nothing.
+  await studioControllerConnected(page, "[data-link-preview-page]", "link-preview-card");
 
   const edited = `E2E studio description ${Date.now()}`;
   const description = page.locator('textarea[name="site_identity[description]"]');

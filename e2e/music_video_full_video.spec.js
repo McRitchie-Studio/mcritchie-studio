@@ -30,8 +30,12 @@ test("the operator generates the full video, and a later version or flag marks i
   const panel = page.locator("[data-test='full-video']");
   const generate = panel.locator("[data-test='full-video-generate']");
   const row = (n) => page.locator(`[data-test='alt-clip'][data-ordinal='${n}']`);
-  // Choosing the file (the drop zone's click path) uploads it at once.
+  // Choosing the file (the drop zone's click path) uploads it at once. Alpine
+  // binds the drop zone after the page's markup is there, dropping x-cloak
+  // from the zone's last element as it finishes, and a file chosen before
+  // that is never sent.
   const upload = async (n) => {
+    await expect(row(n).locator("[data-test='clip-drop-error']:not([x-cloak])")).toHaveCount(1);
     const before = await row(n).locator("[data-test='clip-version']").count();
     await row(n).locator("[data-test='clip-file']").setInputFiles(MP4);
     await expect(row(n).locator("[data-test='clip-version']")).toHaveCount(before + 1);

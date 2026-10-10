@@ -416,4 +416,19 @@ async function openDeploySidebar(page, panel) {
 // visitor sees. Every other spec starts as the seeded admin (e2e/global-setup.js).
 const VISITOR = { cookies: [], origins: [] };
 
-module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests, VISITOR };
+// Resolves once the engine's Stimulus application has connected `identifier` on
+// the element `selector` names. A lazy controller (studio/stimulus LAZY) is
+// imported after the page's load event, and an event fired before it connects
+// reaches no listener.
+async function studioControllerConnected(page, selector, identifier) {
+  const { expect } = require("@playwright/test");
+  await expect.poll(() => page.evaluate(async ([sel, name]) => {
+    const { application } = await import("studio/stimulus");
+    const element = document.querySelector(sel);
+    return !!element && !!application.getControllerForElementAndIdentifier(element, name);
+  }, [selector, identifier])).toBe(true);
+}
+
+module.exports = {
+  loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests, studioControllerConnected, VISITOR,
+};
