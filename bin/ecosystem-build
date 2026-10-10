@@ -21,8 +21,8 @@
 #   On a truly fresh machine you'll run this 2 times in total:
 #     1st invocation — installs toolchain, bails at Phase 4 (no OP token).
 #     [run bin/setup-1pass-token to install the OP service token]
-#     2nd invocation — writes .env files, clones siblings, re-runs the env
-#                      restore for newly-cloned siblings, then seeds and boots.
+#     2nd invocation — writes local .env files, clones siblings, re-runs the
+#                      env write for newly-cloned siblings, then seeds and boots.
 #   On every subsequent run, one invocation suffices.
 
 set -uo pipefail   # no -e: phases report their own failures and we keep going where safe
@@ -44,51 +44,143 @@ SIBLING_REPOS=(studio-engine solana-studio turf-vault)
 RAILS_APPS=(mcritchie-studio)
 HEROKU_APPS=(mcritchie-studio)
 RAILS_PORTS=(3000)
-DEPLOY_PROVIDERS=(heroku)  # index-aligned with RAILS_APPS — drives provider-specific behavior
+DEPLOY_PROVIDERS=(heroku)  # index-aligned with RAILS_APPS
 
-# Write a primary's .env from a Heroku app's config, minus the stack-local
-# pointers. SECRET_KEY_BASE is dropped and REGENERATED: Rails development reads
-# the env key, so a restored production key signs cookies and magic links that
-# production accepts. Until 2026-10-06 every primary and desk held the hub's
-# production key this way (bin/lib/dev_secret_key.rb).
+# ─── Local env files: written here, never restored from a deployed app ──────
 #
-# Every PRODUCTION-ONLY key is dropped too, by `bin/dev-secret-key filter`, whose
-# deny list (DevSecretKey::PRODUCTION_ONLY_KEYS) is the one place it lives;
-# SOLANA_ADMIN_KEY is its first entry. The same day found the old restore had
-# put turf-monster-mainnet's SOLANA_ADMIN_KEY (a mainnet vault signer) into the
-# turf primary and every turf desk.
+# NOTHING IN A LOCAL ENV FILE IS READ FROM A DEPLOYED APP. Until 2026-10-10 this
+# script piped the PRODUCTION app's `heroku config` into each primary's .env
+# through a deny list (bin/dev-secret-key filter). A deny list keeps whatever
+# it has not been told about, so every config var added to production after
+# the list was written landed on a developer machine by default; the list had
+# already grown three times in four days (SECRET_KEY_BASE, then
+# SOLANA_ADMIN_KEY, then the rest of DevSecretKey::PRODUCTION_ONLY_KEYS). An
+# allow list of what local development needs has no such default, and it is
+# short enough to write down:
 #
-# FAIL CLOSED: without ruby or the filter, nothing is written, because an
-# unfiltered restore is the leak. The file is created 0600 under umask 077, and
-# a failed pipe leaves no partial .env behind (the caller restores only into a
-# missing or empty one, so the next run retries).
-restore_env_from_heroku() {
-  local heroku_app="$1" env_path="$2"
-  local tool
-  tool="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dev-secret-key"
-  if [ ! -f "$tool" ] || ! command -v ruby >/dev/null 2>&1; then
-    log_fail "$(basename "$(dirname "$env_path")")/.env not restored" \
-             "the production-only key filter needs ruby and bin/dev-secret-key; re-run after Phase 2"
-    return 1
-  fi
+#   .env              LOCAL_EMAIL_CAPTURE=1 and a freshly generated
+#                     SECRET_KEY_BASE. Nothing else.
+#   .env.development  the app's R2 DEV bucket pair, from 1Password `r2.<app>`
+#                     (write_r2_dev_env below).
+#
+# Everything else a local stack may want is NAMED, with its source, by
+# local_env_owed, and left to the operator: this script does not guess a
+# source it cannot read out of the repo.
+write_local_env() {
+  local app="$1" env_path="$2"
   if ! ( umask 077
-         heroku config --app "$heroku_app" --shell 2>/dev/null \
-           | grep -vE "^(export )?(DATABASE_URL|RAILS_SERVE_STATIC_FILES|REDIS_URL|SECRET_KEY_BASE)=" \
-           | ruby "$tool" filter 2>/dev/null \
-           > "$env_path" ); then
+         {
+           echo "# $app/.env: written by bin/ecosystem-build. LOCAL DEVELOPMENT ONLY."
+           echo "# Nothing in this file was read from a deployed app's config."
+           echo "# Object storage lives in .env.development (the R2 dev bucket pair)."
+           echo "LOCAL_EMAIL_CAPTURE=1"
+         } > "$env_path" ); then
     rm -f "$env_path"
-    log_fail "$(basename "$(dirname "$env_path")")/.env not restored" "heroku config read or the filter failed"
+    log_fail "$app/.env not written" "could not create $env_path"
     return 1
   fi
   chmod 600 "$env_path"
   restore_dev_secret_key "$env_path"
+  local_env_owed "$app"
 }
 
-# Give a restored .env a freshly generated development SECRET_KEY_BASE, never the
-# production value `heroku config` carries. Prints nothing secret. Uses the
-# bin/dev-secret-key beside this script. Without ruby (Phase 2 not yet run) the
-# file keeps no key at all, and Rails falls back to its generated
-# tmp/local_secret.txt; it never falls back to the production value.
+# What write_local_env deliberately left out, and where each one comes from.
+# Names and sources only; no value is read or printed here.
+local_env_owed() {
+  local app="$1" vault="${MCR_OP_VAULT_AGENT:-studio-agents}"
+  echo "    $app/.env holds no credential a deployed app uses. Left out on purpose:"
+  echo "      RAILS_MASTER_KEY  decrypts config/credentials.yml.enc. It is the SAME key the deployed"
+  echo "                        app holds, so this script does not copy it. If $app needs it (a seed"
+  echo "                        that reads Rails credentials does), the operator places it in"
+  echo "                        $app/config/master.key. 1Password $vault lists 'agent.rails_master_key',"
+  echo "                        but docs/agents/modules/credential-inventory.md does not say which"
+  echo "                        app's key it holds: confirm before using it."
+  echo "      AGENT_API_SECRET  not needed in .env: bin/task and the board scripts read 1Password"
+  echo "                        '$vault/Agent API Secret' themselves (bin/lib/agent_api.rb)."
+  echo "      GOOGLE_CLIENT_*   optional (the magic link signs in without it). The dev-only client is"
+  echo "                        1Password '$vault/google.studio.local': set GOOGLE_CLIENT_ID to its"
+  echo "                        client-id field, then run bin/dev-google-client --write."
+  echo "      everything else   an API key a feature needs is the row naming its variable in"
+  echo "                        docs/agents/modules/credential-inventory.md; add it when you need it."
+}
+
+# The public base URL of an app's DEV bucket, for the apps whose storage
+# variables this script knows (docs/agents/modules/object-storage.md, the fleet
+# census). Returns 1 for any other app: its variable names are its own
+# (moms-app reads no R2_PUBLIC_URL at all), so write_r2_dev_env names the
+# source and writes nothing rather than guess.
+r2_dev_public_url() {
+  case "$1" in
+    mcritchie-studio) echo "https://assets-dev.mcritchie.studio" ;;
+    turf-monster)     echo "https://assets-dev.turfmonster.media" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Write an app's .env.development from the R2 DEV pair in 1Password `r2.<app>`.
+#
+# THE DEV PAIR ONLY. The item also holds the production pair
+# (access-key-id-prod, secret-access-key-prod) and the backup pair. This reads
+# three fields by name, one `op read` each, so the production key is never in
+# this process at all, let alone in a file. The dev token writes the dev bucket
+# and can only READ production, which is what lets local seed data reference
+# production assets without being able to change them.
+#
+# .env.development and not .env: dotenv loads .env in the test env too, and a
+# test run must keep the storage stage CI runs with (bin/agent-worktree,
+# PRIMARY_ENV_FILES). Values go from `op` into the file and nowhere else.
+#
+# Never fatal: an app with no storage file still boots, and Phase 6c names the
+# keys it reads when a headshot run needs them.
+write_r2_dev_env() {
+  local app="$1" path="$2" vault="${MCR_OP_VAULT_AGENT:-studio-agents}"
+  local public_url endpoint key_id secret
+
+  if ! public_url=$(r2_dev_public_url "$app"); then
+    # Say nothing for an app that reads no R2 key: bucket pairs are opt-in, and
+    # naming an `r2.<app>` item that was never filed sends an operator looking
+    # for it.
+    grep -qs "R2_ACCESS_KEY_ID" "$(dirname "$path")/config/storage.yml" \
+                                "$(dirname "$path")"/config/initializers/*.rb || return 0
+    log_act "$app/.env.development not written — this script does not know $app's storage variables"
+    echo "    The R2 dev pair is 1Password '$vault/r2.$app' (fields access-key-id-dev,"
+    echo "    secret-access-key-dev, endpoint). Put it in $app/.env.development under the names"
+    echo "    $app/config/storage.yml reads. Never the -prod fields."
+    return 0
+  fi
+
+  endpoint=$(op_metered op read "op://$vault/r2.$app/endpoint" 2>/dev/null) || endpoint=""
+  key_id=$(op_metered op read "op://$vault/r2.$app/access-key-id-dev" 2>/dev/null) || key_id=""
+  secret=$(op_metered op read "op://$vault/r2.$app/secret-access-key-dev" 2>/dev/null) || secret=""
+  if [ -z "$endpoint" ] || [ -z "$key_id" ] || [ -z "$secret" ]; then
+    log_fail "$app/.env.development not written" \
+             "1Password '$vault/r2.$app' must carry endpoint, access-key-id-dev and secret-access-key-dev"
+    return 0
+  fi
+
+  if ! ( umask 077
+         {
+           echo "# $app/.env.development: written by bin/ecosystem-build from 1Password r2.$app."
+           echo "# The R2 DEV bucket pair: writes $app-dev, reads $app-production, never writes it."
+           echo "ACTIVE_STORAGE_BACKEND=r2"
+           echo "STUDIO_S3_BACKEND=r2"
+           printf 'R2_ENDPOINT=%s\n' "$endpoint"
+           printf 'R2_ACCESS_KEY_ID=%s\n' "$key_id"
+           printf 'R2_SECRET_ACCESS_KEY=%s\n' "$secret"
+           printf 'R2_PUBLIC_URL=%s\n' "$public_url"
+         } > "$path" ); then
+    rm -f "$path"
+    log_fail "$app/.env.development not written" "could not create $path"
+    return 0
+  fi
+  chmod 600 "$path"
+  log_ok "$app/.env.development" "R2 dev bucket pair from r2.$app (the production pair is never read)"
+}
+
+# Give a new .env a freshly generated development SECRET_KEY_BASE. Prints
+# nothing secret. Uses the bin/dev-secret-key beside this script. Without ruby
+# (Phase 2 not yet run) the file keeps no key at all, and Rails falls back to
+# its generated tmp/local_secret.txt.
 restore_dev_secret_key() {
   local env_path="$1"
   local tool
@@ -459,10 +551,9 @@ phase_secrets() {
     return 1
   fi
 
-  # .env files for each Rails app
+  # Local env files for each Rails app (write_local_env, write_r2_dev_env)
   for i in "${!RAILS_APPS[@]}"; do
     local app="${RAILS_APPS[$i]}"
-    local heroku_app="${HEROKU_APPS[$i]}"
     local env_path="$PROJECTS_DIR/$app/.env"
 
     if [ ! -d "$PROJECTS_DIR/$app" ]; then
@@ -470,17 +561,15 @@ phase_secrets() {
       continue
     fi
 
+    # Written only into a missing or empty file: an existing .env is the
+    # operator's, and this script never edits one.
     if [ ! -f "$env_path" ] || [ ! -s "$env_path" ]; then
-      local provider="${DEPLOY_PROVIDERS[$i]:-heroku}"
-      if [ "$provider" = "heroku" ]; then
-        log_act "restoring $app/.env from $heroku_app config (heroku)"
-        restore_env_from_heroku "$heroku_app" "$env_path"
-      else
-        log_act "$app uses deploy_provider=$provider — skipping auto-.env restore"
-        echo "# Hand-populate .env for $app (deploy_provider: $provider)" > "$env_path"
-        echo "# See mcritchie-studio/config/satellites.yml + provider-specific docs." >> "$env_path"
-        chmod 600 "$env_path"
-      fi
+      log_act "writing $app/.env (local development values only; no deployed app's config is read)"
+      write_local_env "$app" "$env_path" || continue
+    fi
+    local storage_env_path="$PROJECTS_DIR/$app/.env.development"
+    if [ ! -f "$storage_env_path" ] || [ ! -s "$storage_env_path" ]; then
+      write_r2_dev_env "$app" "$storage_env_path"
     fi
     local count
     count=$(grep -cE "^[A-Z_]+=" "$env_path" || echo 0)
@@ -582,7 +671,7 @@ phase_bundles_dbs() {
         # SKIP_NETWORK_SEEDS=1 in this line, a firewalled rebuild's printed advice is
         # to run the command that just failed, for a reason it does not mention.
         if ! bundle exec rails db:create db:migrate db:seed >/dev/null 2>&1; then
-          log_fail "$app DB setup failed" "check .env has RAILS_MASTER_KEY + try: cd $path && bin/rails db:seed — behind a firewall the network seed (32_headshot_links.rb) aborts, so: SKIP_NETWORK_SEEDS=1 bin/rails db:seed"
+          log_fail "$app DB setup failed" "if a seed reads Rails credentials, $app needs its master key (Phase 4 says where it comes from) + try: cd $path && bin/rails db:seed — behind a firewall the network seed (32_headshot_links.rb) aborts, so: SKIP_NETWORK_SEEDS=1 bin/rails db:seed"
           exit 1
         fi
         log_ok "$app DB" "seeded"
@@ -670,8 +759,16 @@ phase_nfl_data() {
 }
 
 # ─── Phase 6c: NFL headshots (opt-in: WITH_NFL_HEADSHOTS=1) ─────────────────
-# Heavy: nflverse master CSV (~24k rows) + S3 headshot caching (~1100 athletes).
-# ~10-15 min, requires storage creds (R2 keys in .env.development, else AWS in .env). Skipped by default to keep builds fast.
+# Heavy: nflverse master CSV (~24k rows) + headshot caching (~1100 athletes).
+# ~10-15 min, requires the R2 dev pair in .env.development (Phase 4 writes it).
+# Skipped by default to keep builds fast.
+#
+# IT WRITES COPIES INTO THE DEV BUCKET. Each headshot is fetched from ESPN and
+# uploaded again under the key production already holds, because an ImageCache
+# row stores a key and ImageCache#url (studio-engine) joins it to the running
+# process's one public base. Referencing production's copies instead needs a
+# row that can say which store it points at, which is engine work, not a flag
+# here. The dev token cannot write production, so nothing here can touch it.
 # Without this, /nfl-rosters shows position-labeled placeholder circles instead
 # of player photos.
 phase_nfl_headshots() {
@@ -684,7 +781,7 @@ phase_nfl_headshots() {
   (
     cd "$mcr_path" || exit 1
 
-    log_act "nfl:players_seed (~5-10 min — nflverse master CSV + S3 headshot cache)"
+    log_act "nfl:players_seed (~5-10 min — nflverse master CSV + headshot cache)"
     # THE EXIT CODE IS NOT THE VERDICT FOR THIS SERVICE, and has not been since
     # Nflverse::SeedPlayers started rescuing a feed outage and RETURNING rather
     # than raising (#1489). That rescue is deliberate — this importer is a
@@ -728,13 +825,13 @@ phase_nfl_headshots() {
       refused="$(bundle exec rails runner 'r = ImportRun.last_success_for("nflverse_players"); n = r ? r.stats.fetch("namesake_collisions_skipped", 0).to_i : 0; print(n.positive? ? ", #{n} namesake(s) REFUSED — see above" : "")' 2>/dev/null | tail -1)"
       log_ok "nfl:players_seed" "${seeded} athletes with espn_id${refused}"
     else
-      log_fail "nfl:players_seed recorded no successful ImportRun FOR THIS RUN (it crashed, or the feed was down — read the FEED UNAVAILABLE line above; otherwise check the storage keys the seeder names: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY under STUDIO_S3_BACKEND=r2, else AWS_ACCESS_KEY_ID). An earlier success today no longer counts."
+      log_fail "nfl:players_seed recorded no successful ImportRun FOR THIS RUN (it crashed, or the feed was down — read the FEED UNAVAILABLE line above; otherwise check the storage keys the seeder names: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY under STUDIO_S3_BACKEND=r2, in .env.development). An earlier success today no longer counts."
     fi
 
     log_act "nfl:upload_headshots (catches any newly-discovered espn_ids)"
     # THE CACHED-VARIANT COUNT IS A LEVEL TOO. The task rescues per athlete so
     # one dead headshot URL cannot cost the other thousand theirs, then ended on
-    # `puts` — so an AWS credential failure, which fails EVERY athlete, exited 0
+    # `puts` — so a storage credential failure, which fails EVERY athlete, exited 0
     # and this line printed the variants cached on some earlier day. Measured
     # with Studio::ImageCache.cache! raising the real
     # Aws::Errors::MissingCredentialsError: failed 3, cached 0, exit 0. This is
@@ -742,15 +839,15 @@ phase_nfl_headshots() {
     # and that no phase could report. stderr kept, for the same reason as above.
     # THIS LINE MUST NOT NAME A CAUSE, and it used to name the wrong one. The task
     # has TWO aborts and they blame opposite parties: one is a wholesale upload
-    # failure and does name AWS credentials, the other says explicitly that it is
+    # failure and does name storage credentials, the other says explicitly that it is
     # NOT S3. An exit code carries one bit and cannot say which fired, so this
-    # phase asserted "usually AWS creds" over both — and an operator who trusts it
+    # phase asserted "usually credentials" over both — and an operator who trusts it
     # goes and rotates a working credential. The task's own stderr survives
     # (>/dev/null takes stdout only), it names the verdict AND the first few
     # per-athlete causes, so the honest line points AT that rather than guessing.
     bundle exec rails nfl:upload_headshots >/dev/null \
       && log_ok "nfl:upload_headshots" "$(bundle exec rails runner 'puts ImageCache.where(owner_type: "Athlete", purpose: "headshot").count' 2>/dev/null | tail -1) cached variants" \
-      || log_fail "nfl:upload_headshots exited non-zero — READ ITS OWN stderr above, which names the verdict that fired and the first causes per athlete. It has two aborts: a wholesale upload failure names the storage keys the active backend reads (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY under STUDIO_S3_BACKEND=r2, else AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), and a run that declined fetchable work says it is NOT S3. A dead ESPN source (404/410) is not one of them and never reddens this phase."
+      || log_fail "nfl:upload_headshots exited non-zero — READ ITS OWN stderr above, which names the verdict that fired and the first causes per athlete. It has two aborts: a wholesale upload failure names the storage keys the active backend reads (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY under STUDIO_S3_BACKEND=r2, in .env.development), and a run that declined fetchable work says it is NOT S3. A dead ESPN source (404/410) is not one of them and never reddens this phase."
   )
 }
 
@@ -850,14 +947,15 @@ phase_servers() {
   done
 }
 
-# ─── Phase 9: Env snapshot (Heroku-independent fallback) ────────────────────
-# Captures each Rails app's .env into mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json
-# so the dev environment can be reconstructed even if Heroku is unavailable.
+# ─── Phase 9: Env snapshot (the operator's own additions) ───────────────────
+# Captures each Rails app's .env into mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json.
+# Phase 4 writes only two lines into a new .env; everything past that the
+# operator added by hand, and this snapshot is what keeps it from being lost.
 # Stored raw (entire .env content as a string) for faithful round-trip — comments
-# and ordering are preserved. tmp/ is gitignored. chmod 600 because it contains
-# RAILS_MASTER_KEY and other secrets.
+# and ordering are preserved. tmp/ is gitignored. chmod 600 because what the
+# operator added may be a secret.
 phase_env_snapshot() {
-  log_phase "Phase 9: Env snapshot (Heroku-independent fallback)"
+  log_phase "Phase 9: Env snapshot (the operator's own additions)"
 
   local snapshot_dir="$PROJECTS_DIR/mcritchie-studio/tmp"
   local snapshot_date

@@ -426,6 +426,6 @@ class DeploymentsLaneLeaseTest < ActionDispatch::IntegrationTest
     ReleaseConductorClaim.acquire(release_slug: release.slug, role: "deployer", session: "sess-deployer-41cd", nonce: "n")
     claimed = helper.release_card_signature(release.reload)
     refute_equal before, claimed
-    refute_includes claimed, "41cd", "the signature is a digest; it carries no holder detail"
+    refute_includes claimed, "sess-deployer", "the signature is a digest; it carries no holder detail (hex cannot hold `s` or `-`, so this cannot fail by chance as a 4-hex-char needle did)"
   end
 end

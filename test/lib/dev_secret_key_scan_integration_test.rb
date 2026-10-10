@@ -2,8 +2,8 @@
 
 # [integration] The digest scan, EXECUTED: bin/dev-secret-key run as a process over a
 # projects tree laid out the way the machine is (primaries plus .worktrees desks),
-# and bin/ecosystem-build's .env restore run against a stubbed `heroku` that answers
-# with a production config.
+# and bin/ecosystem-build's local .env writer run beside a stubbed `heroku` that
+# answers with a production config, which the writer must never read.
 #
 # What the scan must do, and what each test pins:
 #   * flag every local env file whose key matches a production digest, and only those
@@ -168,10 +168,13 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
   end
 
   # The fresh-machine root cause: ecosystem-build restored a primary's .env straight
-  # from the production app's config. Drive restore_env_from_heroku with a heroku stub
-  # that answers the way `heroku config --shell` does.
-  def test_ecosystem_build_restore_drops_the_production_key_and_writes_a_dev_one
-    Dir.mktmpdir("ecosystem-restore") do |tmp|
+  # from the production app's config, through a deny list. Since 2026-10-10 it reads
+  # no deployed app's config at all (write_local_env; the allow-list contract is
+  # pinned in test/lib/ecosystem_build_local_env_test.rb). The heroku stub here still
+  # answers the way `heroku config --shell` does, so a restore that came back would
+  # put PROD in the file.
+  def test_ecosystem_build_local_env_holds_a_dev_key_and_nothing_from_production
+    Dir.mktmpdir("ecosystem-local-env") do |tmp|
       stub = File.join(tmp, "bin")
       FileUtils.mkdir_p(stub)
       File.write(File.join(stub, "heroku"), <<~SH)
@@ -185,22 +188,23 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
       script = <<~BASH
         source "#{ECOSYSTEM_BUILD}"
         PATH="#{stub}:#{File.dirname(RbConfig.ruby)}:/usr/bin:/bin"
-        restore_env_from_heroku some-prod-app "#{env_path}"
+        write_local_env some-prod-app "#{env_path}"
         echo "EXIT=$?"
       BASH
       out, = Open3.capture2e({ "HOME" => tmp, "PROJECTS_DIR" => tmp }, "bash", "-c", script)
 
       assert_includes out, "EXIT=0", out
-      refute_includes out, PROD, "the restore prints no value"
+      refute_includes out, PROD, "the writer prints no value"
       body = File.read(env_path)
       refute_includes body, PROD, "the production key never lands in a local .env"
-      refute_includes body, "DATABASE_URL", "stack-local pointers are still dropped"
-      assert_includes body, "AWS_REGION=us-east-2"
-      assert_includes body, "STRIPE_MODE=live"
-      assert_match(/^SECRET_KEY_BASE=\h{128}$/, body, "a generated development key replaces it")
+      %w[DATABASE_URL AWS_REGION STRIPE_MODE].each do |key|
+        refute_includes body, key, "#{key}: nothing from the deployed app's config is written"
+      end
+      assert_match(/^SECRET_KEY_BASE=\h{128}$/, body, "a generated development key")
       assert_equal 0o600, File.stat(env_path).mode & 0o777
     end
   end
+
   # --- production-only keys (local-envs-drop-mainnet-keys) -------------------------
   #
   # The 2026-10-06 shape: the turf primary and its desks held turf-monster-mainnet's
@@ -299,10 +303,11 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
     end
   end
 
-  # The fresh-machine leak itself: restore_env_from_heroku against a stub that
-  # answers `heroku config --shell` with every production-only key.
-  def test_ecosystem_build_restore_drops_every_production_only_key
-    Dir.mktmpdir("ecosystem-restore-only") do |tmp|
+  # The fresh-machine leak itself: a stub that answers `heroku config --shell` with
+  # every production-only key, plus the two the old restore kept "by design". None of
+  # them reaches the file now, because the config is never read.
+  def test_ecosystem_build_local_env_holds_no_production_only_key
+    Dir.mktmpdir("ecosystem-local-env-only") do |tmp|
       stub = File.join(tmp, "bin")
       FileUtils.mkdir_p(stub)
       File.write(File.join(stub, "heroku"), <<~SH)
@@ -319,30 +324,32 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
       script = <<~BASH
         source "#{ECOSYSTEM_BUILD}"
         PATH="#{stub}:#{File.dirname(RbConfig.ruby)}:/usr/bin:/bin"
-        restore_env_from_heroku turf-monster-mainnet "#{env_path}"
+        write_local_env turf-monster "#{env_path}"
         echo "EXIT=$?"
       BASH
       out, = Open3.capture2e({ "HOME" => tmp, "PROJECTS_DIR" => tmp }, "bash", "-c", script)
 
       assert_includes out, "EXIT=0", out
-      [ADMIN, AWS].each { |v| refute_includes out, v, "the restore prints no value" }
+      [ADMIN, AWS, MASTER].each { |v| refute_includes out, v, "the writer prints no value" }
       body = File.read(env_path)
       DevSecretKeyScanIntegrationTest.deny_list.each do |key|
-        refute_match(/^#{key}=/, body, "#{key} never lands in a restored .env")
+        refute_match(/^#{key}=/, body, "#{key} never lands in a local .env")
       end
-      assert_includes body, "RAILS_MASTER_KEY=#{MASTER}", "by design: the master key is restored"
-      assert_includes body, "AGENT_API_SECRET=agent_x", "by design: the agent secret is restored"
-      assert_includes body, "SOLANA_NETWORK=devnet"
+      refute_includes body, MASTER, "the master key is the deployed app's too: named for the operator, not copied"
+      refute_match(/^(RAILS_MASTER_KEY|AGENT_API_SECRET|SOLANA_NETWORK)=/, body)
+      assert_match(/RAILS_MASTER_KEY/, out, "the operator is told it was left out and where it comes from")
       assert_equal 0o600, File.stat(env_path).mode & 0o777
     end
   end
 
-  # FAIL CLOSED: no ruby means no filter, and an unfiltered restore is the leak.
-  def test_ecosystem_build_restore_without_the_filter_writes_nothing
-    Dir.mktmpdir("ecosystem-restore-noruby") do |tmp|
+  # Without ruby (Phase 2 not yet run) there is no key generator. The file is still
+  # safe to write, because nothing in it comes from production: it simply carries no
+  # SECRET_KEY_BASE, and Rails falls back to its own tmp/local_secret.txt.
+  def test_ecosystem_build_local_env_without_ruby_carries_no_key_at_all
+    Dir.mktmpdir("ecosystem-local-env-noruby") do |tmp|
       stub = File.join(tmp, "bin")
       FileUtils.mkdir_p(stub)
-      File.write(File.join(stub, "heroku"), "#!/bin/sh\nprintf '%s\\n' 'SOLANA_ADMIN_KEY=#{ADMIN}'\n")
+      File.write(File.join(stub, "heroku"), "#!/bin/sh\nprintf '%s\\n' 'SOLANA_ADMIN_KEY=#{ADMIN}' 'SECRET_KEY_BASE=#{PROD}'\n")
       File.chmod(0o755, File.join(stub, "heroku"))
       # PATH is ONLY this stub dir: the tools the function calls, and no ruby. macOS
       # ships /usr/bin/ruby, so leaving /usr/bin on PATH could never stage the case.
@@ -357,16 +364,16 @@ class DevSecretKeyScanIntegrationTest < Minitest::Test
         source "#{ECOSYSTEM_BUILD}"
         PATH="#{stub}"
         command -v ruby >/dev/null 2>&1 && echo "RUBY_VISIBLE"
-        restore_env_from_heroku turf-monster-mainnet "#{env_path}"
+        write_local_env turf-monster "#{env_path}"
         echo "EXIT=$?"
       BASH
       out, = Open3.capture2e({ "HOME" => tmp, "PROJECTS_DIR" => tmp }, "bash", "-c", script)
 
       refute_includes out, "RUBY_VISIBLE", "the staged PATH must hide ruby"
-      assert_includes out, "EXIT=1", out
-      assert_includes out, "not restored", "the operator is told why"
-      refute File.exist?(env_path), "no .env is written without the filter"
-      refute_includes out, ADMIN
+      assert_includes out, "EXIT=0", out
+      body = File.read(env_path)
+      refute_match(/^SECRET_KEY_BASE=/, body, "no generator, so no key: never a fetched one")
+      [ADMIN, PROD].each { |v| refute_includes out + body, v }
     end
   end
 

@@ -1,4 +1,9 @@
 require "test_helper"
+# Active Storage requires a service file only when it builds that service, and nothing
+# autoloads the engine's lib/ (Zeitwerk never sees it). The first test names the class
+# before any service is built, so load it here or it is a NameError when this file
+# runs first in its process.
+require "active_storage/service/studio_trash_s3_service"
 
 # [integration] Purging or replacing an attachment TRASHES the object rather
 # than hard-deleting it. R2 has no object versioning, so the hub's durable Active

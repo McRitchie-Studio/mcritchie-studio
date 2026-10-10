@@ -84,7 +84,7 @@ git clone https://github.com/McRitchie-Studio/mcritchie-studio.git ~/projects/mc
 cd ~/projects/mcritchie-studio
 bin/ecosystem-build       # phases 1-3: installs the toolchain, stops at phase 4 for the 1Password token
 bin/setup-1pass-token     # paste the token to the clipboard first
-bin/ecosystem-build       # phase 4 on: pulls .env from Heroku, clones siblings, boots servers
+bin/ecosystem-build       # phase 4 on: writes local env files (R2 dev pair from 1Password), clones siblings, boots servers
 ```
 
 Full protocol: [`docs/agents/system/house-burn-down.md`](agents/system/house-burn-down.md).

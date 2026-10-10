@@ -45,9 +45,11 @@ module DevSecretKey
   SCAN_GLOBS = [".env*", "*/.env*", "*/.worktrees/*/.env*"].freeze
 
   # THE DENY LIST: keys only a deployed app may hold. This constant is the ONE
-  # place it lives. bin/ecosystem-build's restore drops every one of them
-  # (`bin/dev-secret-key filter`), and `scan` flags a local file that holds a
-  # production value for any of them.
+  # place it lives. Desk provisioning strips every one of them from the .env it
+  # copies (strip_production_only), and `scan` flags a local file that holds a
+  # production value for any of them. bin/ecosystem-build used to filter a
+  # production restore through it (`bin/dev-secret-key filter`); since 2026-10-10
+  # it restores nothing, because a deny list keeps every key not yet listed.
   #
   # Found 2026-10-06: the old restore had copied all of these out of production
   # `heroku config` into the hub and turf primaries, and bin/agent-worktree then
@@ -57,7 +59,8 @@ module DevSecretKey
   #                         (turf-monster-mainnet). FIRST ON PURPOSE: it signs
   #                         money. turf-monster-qa carries the same key.
   #   CDP_API_KEY_*         the production Coinbase CDP key; only the ramp flows use it
-  #   AWS_*                 the production IAM key; local storage runs on R2 (QA keys)
+  #   AWS_*                 the production IAM key, retired 2026-10-10; still stripped
+  #                         by name from an old file. Local storage is the R2 dev pair
   #   RESEND_API_KEY        production mail; local stacks capture mail instead
   #                         (LOCAL_EMAIL_CAPTURE=1, /_studio/local_emails)
   #   GITHUB_TOKEN          the hub's static fallback PAT; answered 401 on 2026-10-06

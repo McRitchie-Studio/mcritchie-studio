@@ -29,8 +29,26 @@ class PokemonSeedAssetUrlsTest < Minitest::Test
     assert e2e.include?("https://assets.mcritchie.studio/pokemon/"), "e2e/seed.rb should build sprites on the assets domain"
   end
 
-  def test_bucket_urls_are_on_the_assets_domain
-    assets = urls.grep(%r{\Ahttps://assets\.mcritchie\.studio/pokemon/})
-    refute_empty assets, "the seed file should serve its sprites from assets.mcritchie.studio"
+  # EVERY URL, not "at least one". Seed assets live in the production bucket and
+  # every environment's seed data references them there; a slice re-fetched on a
+  # machine whose storage is the dev bucket must not be able to commit dev URLs
+  # beside the production ones and still pass.
+  def test_every_seed_url_is_on_the_production_assets_domain
+    refute_empty urls
+    elsewhere = urls.grep_v(%r{\Ahttps://assets\.mcritchie\.studio/pokemon/})
+    assert_empty elsewhere, "#{elsewhere.size} seed URL(s) are not on the production asset host, e.g. #{elsewhere.first}"
+  end
+
+  # The same rule for every seed file: nothing a seed commits may point at a
+  # non-production bucket's public host. assets-dev.<domain> is where a local
+  # or QA process serves its OWN uploads from, and a seed that names it is
+  # naming objects production does not have.
+  def test_no_seed_file_names_a_dev_bucket_host
+    root = File.expand_path("../..", __dir__)
+    files = Dir.glob(File.join(root, "db/seeds/**/*")).select { |f| File.file?(f) }
+    files += [File.join(root, "db/seeds.rb"), File.join(root, "e2e/seed.rb")]
+    assert_operator files.size, :>, 40, "the glob has to find the seed files to mean anything"
+    hits = files.select { |f| File.read(f, encoding: "BINARY").match?(/assets-dev\.|-dev\.r2\.dev/) }
+    assert_empty hits.map { |f| f.delete_prefix("#{root}/") }
   end
 end

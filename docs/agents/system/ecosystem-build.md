@@ -47,8 +47,8 @@ servers.
 
 `PROJECTS_DIR` overrides the default `~/projects` root
 (`PROJECTS_DIR=~/code bin/ecosystem-build`). Opt-in NFL headshots:
-`WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` (adds the nflverse CSV + S3 headshot
-cache; needs AWS creds in `.env`).
+`WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` (adds the nflverse CSV + headshot
+cache; needs the R2 dev pair Phase 4 writes into `.env.development`).
 
 ## Cold-boot invocation count
 
@@ -59,9 +59,9 @@ On a truly fresh machine you run it **twice**:
    set yet.
 2. Run `bin/setup-1pass-token` (copy your `ops_...` token to the clipboard
    first — see [house-burn-down.md](house-burn-down.md) §5a).
-3. **Second pass** picks up at Phase 4 with the token present: writes `.env`
-   files, clones the sibling repos, replays the env restore for the freshly
-   cloned satellites, then seeds the DBs and boots the servers.
+3. **Second pass** picks up at Phase 4 with the token present: writes the
+   local env files, clones the sibling repos, replays the env write for the
+   freshly cloned satellites, then seeds the DBs and boots the servers.
 
 Every later run is a single pass. The token boundary at Phase 4 is the **only**
 step that cannot be automated — by design, since the token has to come from your
@@ -74,16 +74,52 @@ clipboard.
 | 1. System tools | Homebrew packages (`ruby@3.3`, `postgresql@14`, `redis`, `mise`, `gh`, `heroku`, `jq`, etc.), starts Postgres + Redis services, verifies the Ruby socket extension |
 | 2. Languages | Node 22 + yarn (mise), Rust 1.89.0 (rustup), Solana CLI (Anza), Anchor 0.32.1 (cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` **and that the agent vault is visible to it** (see [The Phase 4 vault guard](#the-phase-4-vault-guard)); pulls Heroku key from 1Password; restores each active Rails app's `.env`. **Bails here on the first pass if the OP token is missing.** |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` **and that the agent vault is visible to it** (see [The Phase 4 vault guard](#the-phase-4-vault-guard)); pulls Heroku key from 1Password; writes each active Rails app's local env files (see [What Phase 4 writes](#what-phase-4-writes)). **Bails here on the first pass if the OP token is missing.** |
 | 5. Sibling repos | `gh repo clone` for `studio-engine`, `solana-studio`, `turf-vault`, and any satellites (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). It mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, configures Codex marker hooks, and keeps `bin/install-agent-docs` as the lower-level copy/drift implementation. |
-| 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their `.env` before DB setup |
+| 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their local env files before DB setup |
 | 6. Bundles + DBs | `bundle install` (only when `bundle check` fails) + `db:migrate` (existing DB) or `db:create db:migrate db:seed` (first run) for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data | Always runs: live schedule + ESPN depth-chart scrape + current-week roster snapshot + preseason rankings (~3-5 min, network only). Every task here can now report its own failure — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
-| 6c. NFL headshots | Opt-in via `WITH_NFL_HEADSHOTS=1`: nflverse master CSV + S3 headshot cache (~10-15 min, needs AWS creds). A credential failure is reported, not logged green — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
+| 6c. NFL headshots | Opt-in via `WITH_NFL_HEADSHOTS=1`: nflverse master CSV + headshot cache (~10-15 min, needs the R2 dev pair in `.env.development`). It uploads copies into the dev bucket: see [`object-storage.md`](../modules/object-storage.md#seed-assets). A credential failure is reported, not logged green — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` + `npx playwright install chromium` for the Rails apps |
 | 8. Servers | **Always** kills + restarts each active Rails app on its registered port, then curls each to verify HTTP 2xx/3xx |
-| 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` (raw `.env` contents, gitignored, chmod 600) as a Heroku-independent secret-recovery fallback |
+| 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` (raw `.env` contents, gitignored, chmod 600): Phase 4 writes two lines into a new `.env`, so the snapshot is what keeps the operator's own additions |
+
+## What Phase 4 writes
+
+**Nothing in a local env file is read from a deployed app.** Until 2026-10-10
+Phase 4 piped the production app's `heroku config` into each primary's `.env`
+through a deny list (`bin/dev-secret-key filter`). A deny list keeps whatever
+it has not been told about, so each config var added to production afterwards
+reached a developer machine by default. Phase 4 now writes an allow list, and
+only into a file that is missing or empty (an existing file is the operator's
+and is never edited):
+
+| File | Holds | Source |
+|---|---|---|
+| `<app>/.env` | `LOCAL_EMAIL_CAPTURE=1`, `SECRET_KEY_BASE` | written; the key is generated (`bin/dev-secret-key rewrite`) |
+| `<app>/.env.development` | `ACTIVE_STORAGE_BACKEND=r2`, `STUDIO_S3_BACKEND=r2`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | 1Password `r2.<app>`, fields `endpoint`, `access-key-id-dev`, `secret-access-key-dev`; the public URL is the dev bucket's domain |
+
+The storage file is written for `mcritchie-studio` and `turf-monster`, whose
+variable names and dev domains are recorded
+([`object-storage.md`](../modules/object-storage.md)). For any other app whose
+config reads an R2 key, the script names the `r2.<app>` item and writes nothing,
+because that app's `config/storage.yml` reads its own names; an app with no R2
+storage gets no storage message at all. The three fields are read one at a
+time, so the production pair in the same item never enters the process.
+
+What it leaves out, it names on the terminal with the source:
+
+| Variable | Why it is not written | Where it comes from |
+|---|---|---|
+| `RAILS_MASTER_KEY` | it is the same key the deployed app holds | the operator places it in `<app>/config/master.key` when a seed reads Rails credentials. Turf's default seed does not: its wallet backfill returns early under web3-only onboarding, the default, and needs the key only with `ENABLE_WEB3_ONLY_ONBOARDING=false` ([`house-burn-down.md`](house-burn-down.md), gotcha 10). `agent.rails_master_key` is listed in `studio-agents`, but the inventory does not say which app's key it holds |
+| `AGENT_API_SECRET` | the board scripts read 1Password `Agent API Secret` themselves (`bin/lib/agent_api.rb`) | nothing to do |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | optional: the magic link signs in without them | set the id from `google.studio.local`, then `bin/dev-google-client --write` |
+| any feature's API key | not needed to boot | the row naming the variable in [`credential-inventory.md`](../modules/credential-inventory.md) |
+
+The hub's CI runs the whole suite with no master key. Guarded by `test/lib/ecosystem_build_local_env_test.rb`, which runs the phase
+against a synthetic `op` and a `heroku` that answers every `config` call with a
+sentinel.
 
 ## How 6b and 6c decide they failed
 
@@ -104,7 +140,7 @@ Measured 2026-09-23, each in a desk against the real code:
 | Lane | What a total failure used to look like | What it looks like now |
 |------|----------------------------------------|------------------------|
 | `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr; every per-team failure ESPN RAISED on, and the refusal itself, file an `ErrorLog` row (`espn-services-error-logs`) |
-| `nfl:upload_headshots` | every candidate raised `Aws::Errors::MissingCredentialsError`, `failed: 3 cached: 0`, exit 0 | refuses a run where more uploads failed than succeeded, and names the AWS variables to check |
+| `nfl:upload_headshots` | every candidate raised `Aws::Errors::MissingCredentialsError`, `failed: 3 cached: 0`, exit 0 | refuses a run where more uploads failed than succeeded, and names the storage variables to check (since 2026-10-10 the R2 pair in `.env.development`; until then it named the AWS keys) |
 | `nfl:rankings_compute` | wrote the SAME 448 rows a healthy run writes, every score `0.0`, exit 0 | refuses a ranking where every team scored zero, and names `GRADES_FROM` |
 | `nfl:players_seed` | exit 0 through a rescued feed outage | graded on the exit code AND an `ImportRun` success pinned to THIS run's start |
 
