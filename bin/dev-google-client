@@ -1,0 +1,50 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# bin/dev-google-client: point every local env file at the dev-only Google OAuth
+# client. The client lives in the agent vault (studio-agents/google.studio.local,
+# fields client-id and client-secret); the deployed apps' clients are listed in
+# config/google_oauth_clients.yml, and a development boot refuses them.
+#
+#   bin/dev-google-client              # dry run: which files would change, and how many sit on a production client
+#   bin/dev-google-client --write      # rewrite GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in each of them
+#   bin/dev-google-client --projects DIR   # sweep DIR instead of the projects root
+#
+# Prints paths and counts. NEVER a value: the id and the secret go from the vault
+# into the files and nowhere else.
+require_relative "lib/cli_arg_guard"
+require_relative "lib/dev_google_client"
+require_relative "lib/projects_root"
+
+USAGE = <<~TXT
+  usage: bin/dev-google-client [--write] [--projects DIR]
+
+    (no flag)   dry run: list the local env files that set GOOGLE_CLIENT_ID and say how
+                many point at a deployed app's client; nothing is written
+    --write     read the dev client from the vault and rewrite both keys in every such file
+    --projects  the projects root to sweep (default: PROJECTS_DIR, else the primaries' parent)
+TXT
+
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "dev-google-client",
+  usage: USAGE,
+  bool: %w[--write],
+  value: %w[--projects],
+  allow_positional: false,
+  help_exit: 3,
+  consequence: "NOTHING ran: no vault read, no file written."
+)
+
+projects = ARGS.first("--projects") || ENV["PROJECTS_DIR"] || ProjectsRoot.default_projects_dir
+write = ARGS.bool?("--write")
+files = DevSecretKey.default_files(projects)
+
+begin
+  client = write ? DevGoogleClient.read_from_vault : { id: nil, secret: nil }
+  result = DevGoogleClient.apply(files, id: client[:id], secret: client[:secret], write: write)
+rescue DevGoogleClient::Error => e
+  warn "dev-google-client: #{e.message} (NOTHING written)"
+  exit 2
+end
+
+puts DevGoogleClient.report_lines(result, write: write)

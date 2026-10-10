@@ -67,6 +67,9 @@ module DevSecretKey
   #                         secret_key_base (Solana::Keypair.current_encryptor)
   #   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
   #                         live Stripe on turf-monster-mainnet; local uses test mode
+  #   GOOGLE_CLIENT_SECRET  the production Google OAuth client's secret (the hub and
+  #                         tax-studio share one); local sign-in uses the dev-only
+  #                         client in the vault, written by bin/dev-google-client
   #
   # PRODUCTION means the apps outside QA_HEROKU_APPS. A local file holding a QA
   # app's value for one of these keys is not flagged: local turf deliberately
@@ -87,6 +90,7 @@ module DevSecretKey
     MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS
     STRIPE_SECRET_KEY
     STRIPE_WEBHOOK_SECRET
+    GOOGLE_CLIENT_SECRET
     ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
     ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
     ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT

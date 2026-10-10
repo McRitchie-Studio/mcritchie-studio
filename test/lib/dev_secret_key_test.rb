@@ -197,9 +197,11 @@ class DevSecretKeyTest < Minitest::Test
     assert_equal "SOLANA_ADMIN_KEY", DevSecretKey::PRODUCTION_ONLY_KEYS.first,
                  "the key that signs money heads the list"
     %w[CDP_API_KEY_ID CDP_API_KEY_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-       RESEND_API_KEY GITHUB_TOKEN].each do |key|
+       RESEND_API_KEY GITHUB_TOKEN GOOGLE_CLIENT_SECRET].each do |key|
       assert DevSecretKey.production_only?(key), key
     end
+    # The client ID is an identifier the browser sees; only the secret is denied.
+    refute DevSecretKey.production_only?("GOOGLE_CLIENT_ID")
     # CONTROL: the keys local dev needs by design are NOT denied, so the filter
     # below is not passing by dropping everything.
     %w[RAILS_MASTER_KEY AGENT_API_SECRET SECRET_KEY_BASE SOLANA_RPC_URL].each do |key|
