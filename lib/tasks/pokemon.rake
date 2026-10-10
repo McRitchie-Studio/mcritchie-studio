@@ -45,7 +45,10 @@ namespace :pokemon do
   DATA_FILE = Rails.root.join("db/seeds/data/pokemon.json")
   # Deterministic-by-dex sources on the PokéAPI sprite CDN.
   SPRITE_CDN = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon".freeze
-  # Final home: the bucket's pokemon/ prefix. URLs come from pokemon_image_base.
+  # Final home: the PRODUCTION bucket's pokemon/ prefix, served from the hub's
+  # production asset domain. The committed JSON seeds every environment, so its
+  # URLs name this host whichever process writes them (see pokemon_image_base).
+  POKEMON_ASSET_BASE = "https://assets.mcritchie.studio/pokemon".freeze
 
   # Every JSON field that names an S3 image key.
   IMAGE_URL_FIELDS = %w[
@@ -195,7 +198,7 @@ namespace :pokemon do
   desc "Mirror the avatars (official-artwork + pixel sprite, normal + shiny, + female sprites) into S3, additively (RANGE=252-493 narrows)"
   task upload_images: :environment do
     require "aws-sdk-s3"
-    bucket = pokemon_bucket
+    bucket = pokemon_upload_bucket!
     s3 = Studio::S3.client
     # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
     # come from the committed JSON; the source images are still dex-keyed on the CDN.
@@ -230,7 +233,7 @@ namespace :pokemon do
   desc "Crop each avatar to its non-transparent bbox (+margin); upload to <dex>-<slug>-cropped.png (additive)"
   task crop_and_upload: :environment do
     require "aws-sdk-s3"
-    bucket = pokemon_bucket
+    bucket = pokemon_upload_bucket!
     margin = ENV.fetch("CROP_MARGIN", "5%") # border added after the trim (≈ uniform 5%)
     limit  = ENV["LIMIT"].to_i              # 0 = all; >0 crops only the first N
     cache  = Rails.root.join("tmp/pokemon_crops")
@@ -330,14 +333,16 @@ namespace :pokemon do
     res.is_a?(Net::HTTPSuccess)
   end
 
-  # GET PokéAPI JSON, retrying a 429, a 5xx or a dropped connection with
-  # exponential backoff (honouring Retry-After) — the API is shared and
-  # rate-limited. Any other non-2xx, or FETCH_ATTEMPTS failures, raises.
-  # Where the mirrored images are served from: the storage adapter's public
-  # base (R2_PUBLIC_URL). Studio::S3.url raises when there is none, so a URL
-  # nobody can load is never written into the seed JSON.
+  # Where the committed JSON says each image lives: the production asset host,
+  # ALWAYS. It used to be built from the running process's storage adapter
+  # (Studio::S3.url), which is right for an object this process just wrote and
+  # wrong for a seed file: a local `pokemon:fetch` runs with R2_PUBLIC_URL set
+  # to the DEV bucket's domain, so it would write the fetched rows as
+  # assets-dev.mcritchie.studio URLs into a file production seeds from. Seed
+  # assets live in the production bucket and every environment's seed data
+  # references them there.
   def pokemon_image_base
-    Studio::S3.url(key: "pokemon")
+    POKEMON_ASSET_BASE
   end
 
   # The committed JSON serves every environment, so images live in the
@@ -346,6 +351,29 @@ namespace :pokemon do
     ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
   end
 
+  # The bucket an UPLOAD task may write, or an abort. A non-production process
+  # (a laptop, a desk, QA, CI) never writes a "*-production" bucket, whoever
+  # handed it the name or the key: the same rule Studio::S3 enforces on deletes
+  # (guard_production_bucket!), applied here to writes because these tasks pass
+  # their own bucket name to the client and so skip the adapter's routing.
+  #
+  # The dev token cannot write production either, but R2's refusal arrives per
+  # key inside a rescue that files it under "missing upstream", which blames the
+  # sprite CDN for a routing mistake. Refusing first says what happened.
+  def pokemon_upload_bucket!
+    bucket = pokemon_bucket
+    return bucket unless bucket.end_with?("-production")
+    return bucket if Studio::S3.production_environment?
+
+    abort "pokemon: refusing to upload to #{bucket}. This process resolves to a non-production " \
+          "environment (#{Studio::S3.deletion_environment}), and only production writes the production " \
+          "bucket. NOTHING was uploaded. POKEMON_S3_BUCKET=mcritchie-studio-dev rehearses the upload " \
+          "against the dev bucket; the committed JSON keeps naming #{POKEMON_ASSET_BASE} either way."
+  end
+
+  # GET PokéAPI JSON, retrying a 429, a 5xx or a dropped connection with
+  # exponential backoff (honouring Retry-After) — the API is shared and
+  # rate-limited. Any other non-2xx, or FETCH_ATTEMPTS failures, raises.
   def get_json(url)
     (1..FETCH_ATTEMPTS).each do |attempt|
       begin

@@ -1,12 +1,17 @@
-# Email Delivery - SES Primary, Resend Rollback
+# Email Delivery - Resend
+
+> **SES is retired (2026-10-10).** Every SES identity and the SES IAM user were
+> deleted, and studio-engine's `engine-drops-ses-transport` removed
+> `Studio.ses_transport_ready?`, the `ses:*` Rake tasks and the SES configure
+> path; `MAIL_TRANSPORT=ses` now only logs a warning. Mail goes through Resend
+> only. Nothing below is a reason to set up SES again.
 
 McRitchie Studio sends transactional email through ActionMailer. Magic-link
 sign-in is currently the critical path. Delivery goes through
 `Studio::Email.deliver`, which records a durable `Studio::EmailDelivery` row
 before enqueueing the actual send.
 
-Cross-app sender inventory, SES cutover rules, local inbox proof, and rollback
-policy live in [`docs/agents/modules/email-operations.md`](agents/modules/email-operations.md).
+Cross-app sender inventory, local inbox proof, and transport policy live in [`docs/agents/modules/email-operations.md`](agents/modules/email-operations.md).
 Keep this file focused on McRitchie-specific wiring.
 
 ## Transport Contract
@@ -15,23 +20,20 @@ The active transport is chosen by `MAIL_TRANSPORT`:
 
 | `MAIL_TRANSPORT` | Active transport | Notes |
 |---|---|---|
-| `ses` with SES creds | AWS SES SMTP | Target state. Requires `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`. |
-| `ses` without SES creds | Resend fallback | Logs a warning; avoids silently breaking login during setup. |
-| unset / `resend` | Resend | Rollback path while the Resend account remains available. |
+| unset / `resend` | Resend | The only transport. |
+| `ses` | Resend | Retired value: the engine logs a warning and sends through Resend. Unset it. |
 
 Code:
 
 - `config/initializers/studio_mail_transport.rb` calls `Studio::MailTransport.configure!`.
 - `studio-engine` owns `Studio::MailTransport`, `Studio::Email.deliver`, the
-  `Studio::EmailDelivery` outbox, the Resend dependency, and the shared `ses:*`
-  Rake tasks.
+  `Studio::EmailDelivery` outbox and the Resend dependency.
 
 ## Local Email Delivery
 
 Primary local stacks send real email through the configured provider by default.
 Keep `LOCAL_EMAIL_CAPTURE=0` in the primary `.env` when testing sign-in or
-transactional flows locally. While SES production access is pending, that means
-Resend sends from `McRitchie Studio <team@mcritchie.studio>`.
+transactional flows locally. Resend sends from `McRitchie Studio <team@mcritchie.studio>`.
 
 In non-production, `studio-engine` also exposes a local inbox:
 
@@ -73,39 +75,28 @@ above.
 
 Credential inventory entry:
 
-- `agent.aws.mcritchie-ses` in the `studio-agents` vault: shared SES-scoped AWS credentials, region `us-east-2`.
+- The row naming `RESEND_API_KEY` in [`credential-inventory.md`](agents/modules/credential-inventory.md). (`agent.aws.mcritchie-ses` is retired: its IAM user was deleted on 2026-10-10.)
 
 Environment variables:
 
-- `MAIL_TRANSPORT=ses`
-- `SES_REGION=us-east-2`
-- `SES_SMTP_USERNAME`
-- `SES_SMTP_PASSWORD`
-- `SES_AWS_ACCESS_KEY_ID` and `SES_AWS_SECRET_ACCESS_KEY` for `ses:*` checks
+- `RESEND_API_KEY`
 - `MAILER_FROM`
 - `MARKETING_MAILER_FROM`
 - `BROADCAST_HOST` only if broadcast unsubscribe/tracking links should use a
   host different from `MAILER_HOST`
 - `RESEND_MAILER_FROM`
-- `RESEND_API_KEY` only for rollback.
 
-SES uses `MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`.
 Newsletter/product-update mail can use
 `MARKETING_MAILER_FROM="Alex McRitchie <alex@mcritchie.studio>"`. Resend
-fallback uses `RESEND_MAILER_FROM="McRitchie Studio
-<team@mcritchie.studio>"`, which is also the shared fallback sender for future
-apps before their SES setup is complete. This fallback is valid only while
-`mcritchie.studio` is verified in the Resend account backing `RESEND_API_KEY`.
+sends as `RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`, which
+works only while `mcritchie.studio` is verified in the Resend account backing
+`RESEND_API_KEY`.
 Broadcast unsubscribe, open-pixel, and click-tracking links use Action Mailer's
 default URL options, so QA inherits `MAILER_HOST=qa.mcritchie.studio` and
 worktrees inherit `APP_PORT`. Set `BROADCAST_HOST` only for an intentional
 campaign-specific host override.
 An app-level success response does not prove delivery; the provider smoke must
 also show the durable email job completing without a Resend error.
-
-Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
-`AWS_SECRET_ACCESS_KEY` for SES proof. Use the `SES_AWS_*` variables from
-`agent.aws.mcritchie-ses` for account/domain checks.
 
 ## Verifying a List Before a Broadcast
 
@@ -336,47 +327,23 @@ bin/rails "broadcasts:queue_status[<slug>]"
 
 Last checked: 2026-06-15.
 
-- SES account in `us-east-2`: sending enabled, enforcement healthy, still in
-  sandbox (`ProductionAccessEnabled=false`).
-- `mcritchie.studio`: verified for sending, DKIM `SUCCESS`.
-- Resend fallback domain: `mcritchie.studio` verified in the active Resend
-  account.
-- Persistent production transport: keep Resend active until SES production
-  access is approved and SMTP runtime credentials are staged.
+- SES: retired 2026-10-10 (identities and IAM user deleted).
+- Resend domain: `mcritchie.studio` verified in the active Resend account.
+- Persistent production transport: Resend.
 - Production app adoption: `studio-engine 0.6.0` is adopted. McRitchie Studio
   records durable `Studio::EmailDelivery` rows and uses Solid Queue for
   production job durability.
 
-## Cutover Checklist
-
-Use the shared checklist in
-[`docs/agents/modules/email-operations.md`](agents/modules/email-operations.md)
-first, then apply the McRitchie-specific values below.
-
-1. Confirm SES is out of sandbox in `us-east-2`.
-2. Verify `mcritchie.studio` in SES.
-3. Publish the SES DKIM CNAMEs, SPF, and DMARC records.
-4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, `MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`, and `RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`.
-5. Set `MAIL_TRANSPORT=ses`.
-6. Smoke test the provider with `bin/rails "email:smoke[alex@mcritchie.studio]"`.
-7. Smoke test a full magic-link sign-in to `alex@mcritchie.studio`.
-8. Confirm Gmail shows DKIM/SPF/DMARC pass and the message does not land in spam.
-
-Useful checks:
+## Smoke Test
 
 ```bash
-bin/rails ses:check
-bin/rails "ses:verify_domain[mcritchie.studio]"
 bin/rails "email:smoke[alex@mcritchie.studio]"
 ```
 
-## Rollback
-
-Unset `MAIL_TRANSPORT` or set `MAIL_TRANSPORT=resend`. Resend resumes if
-`RESEND_API_KEY` is present.
-
-Do not remove the Resend rollback path until SES has been stable long enough
-that the fallback is no longer useful.
+Then smoke a full magic-link sign-in to `alex@mcritchie.studio` and confirm
+Gmail shows DKIM/SPF/DMARC pass. The SES cutover checklist and the Resend
+rollback section were removed on 2026-10-10 with SES; Resend is not a rollback
+path any more but the transport.
 
 ## Engine Ownership
 

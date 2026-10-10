@@ -11,14 +11,15 @@ is the act that applies them to a new app.
 
 **Where storage lives now.** Every app's object storage is an R2 bucket pair in
 **McRitchie Studio's Cloudflare account**. Apps inherit that account; none holds
-its own. AWS S3 is **legacy**: the hub, Turf Monster, Industries and
+its own. AWS S3 is **retired**: the hub, Turf Monster, Industries and
 `moms-app` have served from R2 alone since 2026-10-03 (`commercial-welding` has
 not cut over), and the AWS section at the end of this page is history. **The
-AWS side was retired on 2026-10-10** (IAM users and keys deleted, SES
-identities deleted, the S3 desk bucket gone, no `AWS_*` variable left on
-Heroku), and the hub's code followed in task `hub-storage-runs-r2-only`: it has
-no S3 stage, no mirror stage and no SES path left to select (see **The hub
-runs R2 only** below). Why R2:
+AWS side was retired on 2026-10-10**: the app IAM users (`mcritchie-s3`,
+`mcritchie-ses`, `mcr-mcritchie-industries-prod` and `-dev`) and their keys
+deleted, every SES identity deleted, the S3 desk bucket gone, no `AWS_*`
+variable left on Heroku. The hub's code followed in task
+`hub-storage-runs-r2-only`: it has no S3 stage, no mirror stage and no SES path
+left to select (see **The hub runs R2 only** below). Why R2:
 Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
@@ -33,7 +34,8 @@ rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
 | Location | location hint `enam` (eastern North America, nearest Heroku's US region). R2's region string is `auto` |
 | Endpoint | `https://<account-id>.r2.cloudflarestorage.com`, stored as the `endpoint` field of each `r2.<app>` item |
 | Write routing | prod app → production bucket; **QA and local → dev bucket** |
-| Read routing | QA/local may read prod, enforced by the dev token's grant, never by app discipline |
+| Read routing | QA/local may read prod, enforced by the dev token's grant, never by app discipline. Measured 2026-10-10 through the Cloudflare API: the QA/dev tokens for the hub, Turf and Industries each hold Bucket Item Read on `<app>-production` and Bucket Item Write on `<app>-dev` only |
+| Seed assets | live in the **production** bucket. Non-production seed data references them at the production asset host; only a new non-production upload goes to the dev bucket. See [Seed assets](#seed-assets) |
 | App credentials | two bucket-scoped Cloudflare tokens per app: `r2-<app>-prod` (Bucket Item Write on production) and `r2-<app>-dev` (Bucket Item Write on dev + **Bucket Item Read** on production). Their S3 keys: access key id = token id, secret = SHA-256 of the token value |
 | Public access | private by default; R2 has no public-access block because nothing is public until a custom domain or `r2.dev` URL is attached. Public serving is a per-bucket decision in the app's cutover task |
 | Private assets | served through app auth via presigned URLs, which R2 supports on the S3 endpoint |
@@ -57,6 +59,39 @@ one backend. `config/initializers/00_storage_backend.rb` holds the rules and
 
 **Removing a storage variable on Heroku now stops the next boot.** Unset an
 `R2_*` variable only together with a deploy that no longer reads it.
+
+## Seed assets
+
+An image a seed file names (a Pokémon sprite) is uploaded
+once, to the production bucket, and every environment's seed data references it
+at the production asset host (`https://assets.mcritchie.studio/...`). A QA app
+or a laptop does not upload its own copy into the dev bucket. The dev bucket
+holds only what a non-production process newly made: a test upload, or a demo
+file a local seed renders (`db/seeds/data/tiled_video_files.rb`).
+
+What holds it in the hub:
+
+- **The committed URLs.** `db/seeds/data/pokemon.json` and `e2e/seed.rb` carry
+  absolute production URLs. `lib/tasks/pokemon.rake` writes them from a constant
+  (`POKEMON_ASSET_BASE`), not from the running process's storage adapter, whose
+  public base on a laptop is the dev bucket's domain.
+  `test/lib/pokemon_seed_asset_urls_test.rb` requires every URL in the file to
+  be on the production host and no seed file to name a dev bucket's host.
+- **No non-production write to production.** The dev token cannot write the
+  production bucket, `Studio::S3` refuses a delete from a `*-production` bucket
+  off production, and the Pokémon upload tasks, which pass their own bucket
+  name, refuse the production bucket off production before any upload
+  (`pokemon_upload_bucket!`).
+
+**Not yet conforming: cached headshots.** `nfl:players_seed`,
+`nfl:upload_headshots` and `nfl:upload_coach_headshots` fetch each headshot from
+ESPN and upload its variants to the bucket of the process that runs them, so a
+laptop or QA run puts copies in the dev bucket under the keys production
+already holds. An `ImageCache` row stores a key, and `ImageCache#url`
+(studio-engine) joins it to the process's one public base, so a row cannot say
+"this object is production's". Referencing production's copies needs that in
+the engine first; until then `WITH_NFL_HEADSHOTS=1` on a rebuild is the path
+that makes the copies, and it is opt-in.
 
 ## R2 — gaps against the S3 rules
 
@@ -113,7 +148,7 @@ dates where they changed after the census.
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
 | `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | R2 alone since 2026-10-03 (Active Storage `r2`, v543; `Studio::S3` on R2 since 2026-09-30); `assets.mcritchie.studio` serves production, `assets-dev.mcritchie.studio` the dev bucket; QA (`mcritchie-studio-qa`) and local dev on the dev bucket | enabled 2026-10-03, `mcritchie-studio-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
-| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542), and R2 only since 2026-10-10: the S3 desk bucket and the SES fallback that read it are gone | **pending provisioning**: the nightly workflow carries the row `mcritchie-studio-desk` since 2026-10-10 and fails (opening its alert issue) until `mcritchie-studio-desk-backup`, its token and the two repo secrets exist ([`r2-backup`](../agents/steffon/sops/r2-backup.md) §2a) |
+| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542), and R2 only since 2026-10-10: the S3 desk bucket and the SES fallback that read it are gone | enabled 2026-10-10, `mcritchie-studio-desk-backup` (token `r2-mcritchie-studio-desk-backup`, fields in `r2.mcritchie-studio-desk`, repo secrets `R2_BACKUP_MCRITCHIE_STUDIO_DESK_*`); isolation probes passed; the first run mirrored 104 of 104 objects; nightly via `.github/workflows/r2-backup.yml` |
 | `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | R2 alone since 2026-10-03 (Active Storage `r2`, v305; `Studio::S3` on R2 since 2026-09-30); `assets.turfmonster.media` serves production, `assets-dev.turfmonster.media` the dev bucket; QA and local dev on the dev bucket | enabled 2026-10-03, `turf-monster-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | R2 alone since 2026-10-03 (Active Storage `r2`, v54; knowledge docs on R2 since 2026-09-28); QA on the dev bucket | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
@@ -127,7 +162,10 @@ is only true for the day it was taken.
 
 # Legacy — AWS S3 (retired 2026-10-10)
 
-Everything below is the pre-R2 posture, kept for history: no cut-over app has
+Everything below is the pre-R2 posture, kept for history. The identities it
+names (`mcritchie-s3`, the `/mcr/` users) no longer exist; the admin item `AWS`
+in `studio-agents-admin` is the one AWS credential kept, as a read-only
+foothold. Nothing below is a procedure to run: no cut-over app has
 used S3 since 2026-10-03, and the cutover session reports the production buckets
 cleared that night (versioned; noncurrent versions expire after 30 days). The
 IAM users and keys named below were deleted on 2026-10-10, so the commands in

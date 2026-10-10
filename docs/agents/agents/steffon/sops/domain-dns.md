@@ -31,8 +31,9 @@ Input: the domain, the Google verification TXT from
 Squarespace adds default records to a new domain (parking and site records).
 Remove any **other MX** records; keep the rest unless they conflict.
 
-If the domain will also send app mail through Amazon SES (Pro), the SPF value
-gains `include:amazonses.com` — SPF must stay ONE TXT record.
+App mail goes through Resend (SES was retired on 2026-10-10); Resend's own
+records come from its domain page, not from this table. SPF must stay ONE TXT
+record.
 
 ## 2. Generate the DKIM key — Alex
 

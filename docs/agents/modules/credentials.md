@@ -44,9 +44,11 @@ that production accepts. Until that day every primary and desk held the hub's,
 because `bin/ecosystem-build` restored each primary's `.env` from the production
 app's config and `bin/agent-worktree new` copied it into every desk.
 
-Both writers now generate instead (`bin/lib/dev_secret_key.rb`): the restore drops
-the production key and writes a fresh one, and a desk cut gives its copy of `.env`
-its own key. Check and repair with:
+Both writers now generate instead (`bin/lib/dev_secret_key.rb`): since 2026-10-10
+`bin/ecosystem-build` reads no deployed app's config at all and writes a new `.env`
+holding a fresh key
+([`../system/ecosystem-build.md`](../system/ecosystem-build.md#what-phase-4-writes)),
+and a desk cut gives its copy of `.env` its own key. Check and repair with:
 
 ```bash
 bin/dev-secret-key scan    # every primary and desk vs each production app's digest; exit 1 = a match
@@ -70,9 +72,10 @@ tokens are minted by production from `AGENT_API_SECRET`.
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three
 `ACTIVE_RECORD_ENCRYPTION_*` names. The 2026-10-06 sweep found the
 old restore had copied each of them out of production `heroku config` into the
-primaries and every desk. `bin/ecosystem-build` now pipes its restore
-through `bin/dev-secret-key filter` and writes nothing when it cannot run the
-filter, `bin/agent-worktree` drops them from the `.env` it copies into a new desk,
+primaries and every desk. `bin/ecosystem-build` first piped its restore
+through `bin/dev-secret-key filter`, and since 2026-10-10 does not restore at
+all: a deny list keeps every key nobody has listed yet, so the rebuild writes an
+allow list instead. `bin/agent-worktree` drops them from the `.env` it copies into a new desk,
 and `scan` reports a production value for any listed key (exit 1); `fix` removes
 it. "Production" excludes the QA apps (`DevSecretKey::QA_HEROKU_APPS`): local turf
 shares QA's managed-wallet key on purpose, so a QA value is reported `dev` and
@@ -82,14 +85,17 @@ left alone.
 |---|---|
 | `SOLANA_ADMIN_KEY` | mainnet `VaultState` signer (`8K81…`) and fee payer; turf QA holds the same key |
 | `CDP_API_KEY_*` | the production Coinbase key; only the ramp flows call it |
-| `AWS_*` | the production IAM key; local storage runs on R2 with QA keys (`.env.development`) |
+| `AWS_*` | retired 2026-10-10 with the IAM users behind it; still stripped by name from an old file. Local storage is the R2 dev pair (`.env.development`) |
 | `RESEND_API_KEY` | production mail; local stacks capture mail (`LOCAL_EMAIL_CAPTURE=1`) |
 | `GITHUB_TOKEN` | the hub's static fallback PAT; it answered 401 on 2026-10-06 |
 | `MANAGED_WALLET_ENCRYPTION_KEY(_PREVIOUS)` | mainnet's opens every custodial mainnet wallet; development falls back to `secret_key_base` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | live Stripe on `turf-monster-mainnet`; local runs test mode |
 | `ACTIVE_RECORD_ENCRYPTION_*` | production's open every stored fact value and the stored TikTok connection; development uses the fixed keys in `config/environments/development.rb` |
 
-Kept by design: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`.
+Not on the list: `RAILS_MASTER_KEY` and `AGENT_API_SECRET`. A desk inherits them
+from a primary that holds them, and `scan` does not flag them. The rebuild does
+not write either: it names where each comes from and leaves the choice to the
+operator.
 
 ⚠ **`fix` removing `SOLANA_ADMIN_KEY` stops turf's local devnet admin signing**:
 the devnet `VaultState` seats only `8K81…`, Alex and Mason, so local dev has no

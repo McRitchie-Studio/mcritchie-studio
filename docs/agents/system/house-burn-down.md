@@ -45,8 +45,9 @@ bin/ecosystem-build
 # 3. Copy your 1Password service account token (ops_...) to clipboard, then:
 bin/setup-1pass-token
 
-# 4. Second pass — picks up at Phase 4 with the token now set, restores .env
-#    from Heroku + 1Password, clones sibling repos, bundles + DBs + Anchor,
+# 4. Second pass — picks up at Phase 4 with the token now set, writes local env
+#    files (a generated dev key, plus the R2 dev pair from 1Password; nothing read
+#    from Heroku config), clones sibling repos, bundles + DBs + Anchor,
 #    installs the root AGENTS.md + shared user-global agent skills, bounces active Rails servers.
 bin/ecosystem-build
 ```
@@ -59,7 +60,7 @@ That's it. The only thing you actually do is copy the token and run the commands
 
 **Default NFL data:** every build pulls the live schedule, runs the ESPN depth-chart scrape, and snapshots current-week rosters (~3-5 min). Game show pages and the season grid work out of the box.
 
-**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + S3 headshot uploads. Requires storage creds: the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, else AWS creds in `.env` (see `.env.example`).
+**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + headshot uploads. Requires the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, which Phase 4 writes from 1Password `r2.<app>`. The uploads land in the dev bucket; see [`object-storage.md`](../modules/object-storage.md#seed-assets).
 
 The manual phase-by-phase steps below are kept as a fallback for debugging when the script can't complete a phase.
 
@@ -331,13 +332,20 @@ replaying the old `sed` against a profile holding both lines in both orders.)
 
 The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem). Restore each:
 
+> **This manual path copies a deployed app's values onto the Mac.** `bin/ecosystem-build`
+> stopped doing that on 2026-10-10: it writes a generated `SECRET_KEY_BASE`,
+> `LOCAL_EMAIL_CAPTURE=1` and the R2 dev bucket pair, and names the rest
+> ([`ecosystem-build.md`](ecosystem-build.md#what-phase-4-writes)). Every
+> `heroku config:get` below is a choice to hold that production value locally; take only
+> the ones the work in hand needs.
+
 **`/Users/alex/projects/mcritchie-studio/.env`** — see `docs/agents/modules/credentials.md` for the operating rules and `docs/agents/modules/credential-inventory.md` for item names. Minimum to boot:
 
 ```bash
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 # SECRET_KEY_BASE is NEVER copied off prod: `bin/dev-secret-key rewrite .env` writes a
 # fresh development key (docs/agents/modules/credentials.md, "Local env files hold
-# development keys"). bin/ecosystem-build's restore already does this.
+# development keys"). bin/ecosystem-build already does this.
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
 # ANTHROPIC_API_KEY is NOT FILED in any vault, but IT IS ON PROD. Ask by NAME, never by
@@ -385,26 +393,19 @@ TIKTOK_CLIENT_SECRET=...              #   "client-secret": the sandbox app's pai
 #   "active-record-encryption.studio.applications" (production), "active-record-encryption.studio-qa.applications" (QA).
 # Stored fact values do not recover without their app's set; the TikTok connection recovers by signing in again.
 # A restored app gets its filed set back from its own item, never a new one (credentials.md, "Fact encryption keys").
-AWS_ACCESS_KEY_ID=...                 # S3 ImageCache bucket
-AWS_SECRET_ACCESS_KEY=...
-SES_AWS_ACCESS_KEY_ID=...             # 1Password: agent.aws.mcritchie-ses, SES API checks only
-SES_AWS_SECRET_ACCESS_KEY=...
-SES_REGION=us-east-2
+# Object storage is NOT in .env: the R2 dev pair goes in .env.development (bin/ecosystem-build
+# writes it from 1Password r2.mcritchie-studio). AWS and SES were retired on 2026-10-10.
 ```
 
-**`/Users/alex/projects/turf-monster/.env`** — see `turf-monster/docs/SOLANA.md` for full list. **`RAILS_MASTER_KEY` is not optional** — `db:seed` calls `User#generate_managed_wallet!` which reads `Rails.application.credentials.secret_key_base` to encrypt the wallet. Without the key, seed crashes mid-run with `undefined method '[]' for nil:NilClass`.
+**`/Users/alex/projects/turf-monster/.env`** — see `turf-monster/docs/SOLANA.md` for full list. **`RAILS_MASTER_KEY` is not needed for the default `db:seed`.** `db/seeds/users.rb` backfills wallets with `User#generate_managed_wallet!`, whose default reason is `:signup`, and under `AppFlags.web3_only_onboarding?` (default true, `ENABLE_WEB3_ONLY_ONBOARDING`) that call returns before it encrypts anything (read in turf-monster `99d0ba67`, 2026-10-10). Only with web3-only onboarding switched off does the seed reach `Rails.application.credentials.secret_key_base` and need the master key. Its value is production's, so it goes in `config/master.key` only when you need it; never copy it by default.
 
 ```bash
-RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
 SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault studio-agents --fields "private-key")  # agent token is enough; label is HYPHENATED
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-SES_AWS_ACCESS_KEY_ID=...             # 1Password: agent.aws.mcritchie-ses, SES API checks only
-SES_AWS_SECRET_ACCESS_KEY=...
-SES_REGION=us-east-2
+# Object storage: the R2 dev pair in .env.development (from 1Password r2.turf-monster,
+# dev fields only). AWS and SES were retired on 2026-10-10.
 ```
 
 **Shared `/Users/alex/projects/.env`** — keep this minimal, only put truly cross-app vars here. Prefer app-local `.env` files plus the credential inventory for most secrets.
@@ -435,7 +436,7 @@ Visit http://localhost:3000 and sign in with a magic link to `alex@mcritchie.stu
 
 Seeds load 9 agents (Xan, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall. **It is no longer safe to let it fail.** Both tasks it invokes now abort when they linked no coach (`coach-link-lane-false-green`, 2026-09-28), so a firewalled `db:seed` exits non-zero and `bin/ecosystem-build` `exit 1`s the rebuild. `SKIP_NETWORK_SEEDS=1` is the opt-out and is real code as of that change; until then it appeared in this sentence and nowhere else in the repository. A skipped run leaves every `Coach.espn_headshot_url` empty, so `nfl:upload_coach_headshots` caches nothing and every coach avatar falls back — the skip says so on stderr.
 
-For full NFL data (UDFAs, depth charts, ESPN headshots cached to S3), use the NFL rebuild workflow once it has been promoted into neutral agent docs. The underlying steps are `db:reset` -> `db:seed` -> `nfl:players_seed` -> `espn:scrape_depth_charts`. Requires AWS creds in `.env`.
+For full NFL data (UDFAs, depth charts, ESPN headshots cached to the bucket), use the NFL rebuild workflow once it has been promoted into neutral agent docs. The underlying steps are `db:reset` -> `db:seed` -> `nfl:players_seed` -> `espn:scrape_depth_charts`. Requires AWS creds in `.env`.
 
 For the lineup capture (Starter Post X workflow) and Playwright e2e tests:
 ```bash
@@ -541,7 +542,7 @@ These are the surprises from the last burn-down. Pre-baked into the steps above;
 
 9. **TikTok posts through a sandbox app** (since 2026-10-08; the production developer app, submitted 2026-05-04, was refused). It drafts only to the accounts listed as its target users, and the sign-in asks for drafts only, so don't expect API-direct posts to publish. Recovery of the TikTok connection is to sign in again at `/admin/tiktok/connect`; the hub stores it.
 
-10. **`RAILS_MASTER_KEY` is a hard prerequisite for `turf-monster db:seed`** — not just for booting. `db/seeds/users.rb` calls `User#generate_managed_wallet!`, which encrypts the wallet's private key via `Rails.application.credentials.secret_key_base[0, 32]`. Without the master key, that returns nil and the seed dies. Restore the key **before** running `db:create db:migrate db:seed`.
+10. **`turf-monster db:seed` needs `RAILS_MASTER_KEY` only with web3-only onboarding switched off.** `db/seeds/users.rb` backfills wallets with `User#generate_managed_wallet!`, which encrypts a private key via `Rails.application.credentials.secret_key_base[0, 32]`. Its default reason is `:signup`, and while `AppFlags.web3_only_onboarding?` holds (the default; `ENABLE_WEB3_ONLY_ONBOARDING=false` turns it off) it returns before minting, so the default seed runs without the key (read in turf-monster `99d0ba67`, 2026-10-10). Set `ENABLE_WEB3_ONLY_ONBOARDING=false` and the seed mints custodial wallets: then the master key goes in `config/master.key` first, or the seed dies with `undefined method '[]' for nil:NilClass`.
 
 11. **Don't tail-pipe `bin/rails db:seed`** — `bin/rails db:seed | tail -30` returns `tail`'s exit code (0), masking seed failures. Use `set -o pipefail` or run the seed without piping when verifying it ran clean.
 
@@ -562,16 +563,16 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 1. System tools | Homebrew packages (ruby@3.3, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
 | 2. Languages | Node 22 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `heroku.studio.agents` from 1Password into `HEROKU_API_KEY` (`legacy-personal-api-key` field until the app-transfer cutover, then `credential`); restores `.env` for active Rails apps from provider config, minus `SECRET_KEY_BASE`, which it regenerates as a development key |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `heroku.studio.agents` from 1Password into `HEROKU_API_KEY` (`legacy-personal-api-key` field until the app-transfer cutover, then `credential`); writes each active Rails app's local env files without reading any deployed app's config: `.env` (a generated `SECRET_KEY_BASE`, `LOCAL_EMAIL_CAPTURE=1`) and `.env.development` (the R2 dev bucket pair from 1Password `r2.<app>`) |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md), mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, and configures Codex marker hooks. The lower-level `bin/install-agent-docs` remains the implementation, and `bin/agent-runtime doctor` verifies drift plus marker/runtime state. |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
-| 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no AWS creds needed. |
-| 6c. NFL headshots (opt-in) | Only runs when `WITH_NFL_HEADSHOTS=1`. Chains `nfl:players_seed` (nflverse master CSV ~24k rows + S3 headshot cache ~1100 athletes) + `nfl:upload_headshots`. ~10-15 min, requires AWS creds in `.env`. Without this, `/nfl-rosters` shows position-labeled placeholder circles instead of player photos. |
+| 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no storage credentials needed. |
+| 6c. NFL headshots (opt-in) | Only runs when `WITH_NFL_HEADSHOTS=1`. Chains `nfl:players_seed` (nflverse master CSV ~24k rows + headshot cache ~1100 athletes) + `nfl:upload_headshots`. ~10-15 min, requires the R2 dev pair in `.env.development`. Without this, `/nfl-rosters` shows position-labeled placeholder circles instead of player photos. |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for active Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
 | 8. Servers | Always kills + restarts active Rails apps on their registered ports, curls each to verify HTTP 2xx/3xx |
-| 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully). Heroku-independent fallback for secret recovery. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
+| 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully): what the operator added past the two lines Phase 4 writes. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
 
 If any phase fails, the script prints what to do and exits. Re-running picks up where it left off.
 

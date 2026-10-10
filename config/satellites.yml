@@ -30,12 +30,11 @@
 #   role             — SSO default role assigned via Studio.configure_sso_user
 #   description      — One-line summary
 #   deploy_provider  — heroku | fly | render | other
-#                      Drives bin/ecosystem-build's .env auto-restore behavior:
-#                      * heroku → `heroku config --shell --app <heroku_app>` populates .env
-#                      * anything else → bin/ecosystem-build writes a placeholder .env;
-#                                        operator hand-populates (or extends the script with
-#                                        a Fly/Render provider-specific block)
-#                      See ecosystem-audit-2026-05-17.md Tier 3 #25.
+#                      Read into DEPLOY_PROVIDERS by bin/ecosystem-build, which no
+#                      longer acts on it: since 2026-10-10 Phase 4 writes the same
+#                      local .env for every provider and reads no deployed app's
+#                      config (docs/agents/system/ecosystem-build.md, "What Phase 4
+#                      writes"). See ecosystem-audit-2026-05-17.md Tier 3 #25.
 #   status           — active | planned | reserved
 #                      `active` means in the navbar and built by
 #                      bin/ecosystem-build; nothing else. It does not say whether

@@ -75,11 +75,17 @@ records = [
   { vault: "studio-agents", title: "agent.managed_wallet", service: "turf-monster", entity: "turf-monster",
     scope_summary: "Managed wallet encryption key for Turf Monster's managed-wallet flows." },
   { vault: "studio-agents", title: "agent.helius", service: "helius", scope_summary: "Devnet and mainnet Helius RPC URLs for the Solana apps." },
-  { vault: "studio-agents", title: "agent.aws.mcritchie-ses", service: "aws", category: "API Credential",
-    url: "https://console.aws.amazon.com/ses", used_by: "App email delivery",
-    scope_summary: "SES-scoped AWS API credentials, us-east-2." },
-  { vault: "studio-agents", title: "agent.aws", service: "aws", category: "API Credential",
-    url: "https://console.aws.amazon.com", scope_summary: "General AWS API credentials: S3 read and write, us-east-2." },
+  # AWS was retired on 2026-10-10: object storage moved to Cloudflare R2 and mail
+  # to Resend, then the IAM users behind these items and every SES identity were
+  # deleted. The 1Password items are tagged `retired` and their keys are dead.
+  # used_by and scope_summary are cleared explicitly: these rows were seeded live,
+  # and the upsert keeps any column a row leaves out.
+  { vault: "studio-agents", title: "agent.aws.mcritchie-ses", service: "aws", status: "retired",
+    used_by: nil, scope_summary: nil,
+    notes: "Retired 2026-10-10: IAM user mcritchie-ses and every SES identity deleted. App mail runs on Resend." },
+  { vault: "studio-agents", title: "agent.aws", service: "aws", status: "retired",
+    used_by: nil, scope_summary: nil,
+    notes: "Retired 2026-10-10: IAM user mcritchie-s3 deleted. Object storage is the r2.<app> items (Cloudflare R2)." },
   { vault: "studio-agents", title: "Coinbase Developer Platform", service: "coinbase", entity: "turf-monster", category: "API Credential",
     url: "https://portal.cdp.coinbase.com", used_by: "Turf Monster CDP ramp", scope_summary: "CDP API key." },
   { vault: "studio-agents", title: "higgsfield.studio.agents", service: "higgsfield", category: "API Credential",
@@ -134,16 +140,19 @@ records = [
            "since 2026-09-26; the 1Password item is deleted once that change merges." },
   { vault: "studio-agents-admin", title: "agent.xan.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "The Xan signer; the rotated replacement for agent.solana." },
+  # The one AWS credential still live, kept on purpose after the 2026-10-10 retirement.
   { vault: "studio-agents-admin", title: "AWS", service: "aws", category: "API Credential", url: "https://console.aws.amazon.com",
-    scope_summary: "IAM user studio-agents-admin, created 2026-09-01, us-east-2." },
+    used_by: "Mr. McRitchie's read-only foothold in the AWS account",
+    scope_summary: "IAM user agents-admin, ViewOnlyAccess. Kept after the fleet left AWS on 2026-10-10." },
 
   # --- studio-applications: runtime and CI ---
   { vault: "studio-applications", title: "heroku.studio.applications", service: "heroku", category: "API Credential",
     url: "https://dashboard.heroku.com", used_by: "CI deploy workflows",
     scope_summary: "identity, read-protected, write-protected (same matrix as the agents lane)." },
-  { vault: "studio-applications", title: "mcritchie-industries.aws", service: "aws", entity: "industries", category: "API Credential",
-    url: "https://console.aws.amazon.com", used_by: "mcritchie-industries Heroku app",
-    scope_summary: "S3 knowledge-layer buckets; IAM under /mcr/." },
+  { vault: "studio-applications", title: "mcritchie-industries.aws", service: "aws", entity: "industries", status: "retired",
+    used_by: nil, scope_summary: nil,
+    notes: "Retired 2026-10-10: IAM users mcr-mcritchie-industries-prod and -dev deleted. " \
+           "Industries storage is r2.mcritchie-industries." },
 
   # --- industries-agents ---
   # ONE key for every client workspace: Workspace::Credentials impersonates the
