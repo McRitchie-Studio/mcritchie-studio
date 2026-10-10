@@ -799,6 +799,48 @@ class Release::ReposTest < ActiveSupport::TestCase
     skip "no git_push_heroku satellite checkout present (hub CI runner) — shape guards above still bind" if checked.empty?
   end
 
+  # --- the reusable production deploy is shipped unused ---
+  #
+  # .github/workflows/reusable-prod-deploy.yml has no caller, and no app deploys through
+  # it. Every app's production deploy strategy is pinned here, so an app moving onto
+  # that workflow (or any strategy change) is an edit to this map in the PR that makes
+  # it. nil: the app declares no deploy target.
+  PROD_DEPLOY_STRATEGIES = {
+    "mcritchie-studio" => "github_actions",
+    "turf-monster" => "repo_script",
+    "turf-vault" => nil,
+    "rolio" => "git_push_heroku",
+    "mcritchie-industries" => "git_push_heroku",
+    "cyvasse" => "git_push_heroku",
+    "dads-app" => "git_push_heroku",
+    "prisoners-dilemma" => "git_push_heroku",
+    "weekly-lock" => "git_push_heroku",
+    "rantly" => "git_push_heroku",
+    "portfolio" => "git_push_heroku",
+    "10and5" => "git_push_heroku",
+    "search-position" => "git_push_heroku",
+    "tax-studio" => "repo_script",
+    "chain-ops" => nil,
+    "moms-app" => "git_push_heroku"
+  }.freeze
+
+  test "every app keeps its production deploy strategy" do
+    declared = Release::Repos.config.fetch("apps").transform_values do |meta|
+      meta.is_a?(Hash) ? meta.dig("prod_deploy", "strategy") : nil
+    end
+
+    assert_equal PROD_DEPLOY_STRATEGIES, declared,
+                 "an app's production deploy strategy changed, or an app joined or left the registry. " \
+                 "Edit PROD_DEPLOY_STRATEGIES in the same PR, deliberately."
+  end
+
+  test "no registry row dispatches the reusable production deploy" do
+    workflows = Release::Repos.config.fetch("apps").values.grep(Hash).filter_map { |meta| meta.dig("prod_deploy", "workflow") }
+
+    assert_equal ["prod-deploy.yml"], workflows, "the hub's own prod-deploy.yml is the only dispatched deploy workflow"
+    refute_includes Release::Repos.config.to_s, "reusable-prod-deploy"
+  end
+
   # --- the drift guard reads BOTH ci.yml shapes (binds on the hub CI runner too) ---
 
   INLINE_CI = <<~YAML

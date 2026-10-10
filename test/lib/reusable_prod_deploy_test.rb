@@ -3,10 +3,10 @@
 # Guard test for .github/workflows/reusable-prod-deploy.yml: the hub-hosted production
 # deploy an app can call, and the fact that nothing calls it.
 #
-# The file ships ahead of its first caller. Two things keep that honest: its interface
-# is pinned (an app's dispatching workflow is written against it), and the registry's
-# deploy strategies are pinned repo by repo, so an app moving onto this workflow is an
-# edit to STRATEGIES here, made in the PR that moves it.
+# The file ships ahead of its first caller. Its interface is pinned here (an app's
+# dispatching workflow is written against it), and so is the absence of a caller. The
+# registry half lives in test/models/release/repos_test.rb: no row names this file,
+# and every app's deploy strategy is pinned repo by repo.
 #
 # Run directly:
 #   ruby -Itest test/lib/reusable_prod_deploy_test.rb
@@ -18,32 +18,10 @@ class ReusableProdDeployTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   WORKFLOWS = File.join(ROOT, ".github/workflows")
   DEPLOY = File.join(WORKFLOWS, "reusable-prod-deploy.yml")
-  REGISTRY = File.join(ROOT, "config/release_repos.yml")
   FILE_NAME = "reusable-prod-deploy.yml"
-
-  # Every app's production deploy strategy. nil: the app declares no deploy target.
-  STRATEGIES = {
-    "mcritchie-studio" => "github_actions",
-    "turf-monster" => "repo_script",
-    "turf-vault" => nil,
-    "rolio" => "git_push_heroku",
-    "mcritchie-industries" => "git_push_heroku",
-    "cyvasse" => "git_push_heroku",
-    "dads-app" => "git_push_heroku",
-    "prisoners-dilemma" => "git_push_heroku",
-    "weekly-lock" => "git_push_heroku",
-    "rantly" => "git_push_heroku",
-    "portfolio" => "git_push_heroku",
-    "10and5" => "git_push_heroku",
-    "search-position" => "git_push_heroku",
-    "tax-studio" => "repo_script",
-    "chain-ops" => nil,
-    "moms-app" => "git_push_heroku"
-  }.freeze
 
   def doc = YAML.safe_load_file(DEPLOY)
   def on = doc[true] || doc["on"]
-  def apps = YAML.safe_load_file(REGISTRY, aliases: true).fetch("apps")
 
   # Every `uses:` value in a workflow text, jobs and steps alike.
   def uses_in(text)
@@ -107,18 +85,5 @@ class ReusableProdDeployTest < Minitest::Test
 
     assert_equal ["prod-deploy.yml"], callers_of("prod-deploy.yml" => calling)
     assert_empty callers_of("ci.yml" => "jobs:\n  ci:\n    uses: ./.github/workflows/reusable-ci.yml\n")
-  end
-
-  def test_no_registry_row_names_it
-    refute_includes File.read(REGISTRY), FILE_NAME
-    assert_equal "prod-deploy.yml", apps.dig("mcritchie-studio", "prod_deploy", "workflow")
-  end
-
-  def test_every_app_keeps_its_deploy_strategy
-    declared = apps.transform_values { |meta| meta.is_a?(Hash) ? meta.dig("prod_deploy", "strategy") : nil }
-
-    assert_equal STRATEGIES, declared,
-                 "an app's production deploy strategy changed, or an app joined or left the registry. " \
-                 "Moving an app onto #{FILE_NAME} is deliberate: edit STRATEGIES in the same PR."
   end
 end

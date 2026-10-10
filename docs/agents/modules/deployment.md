@@ -32,8 +32,8 @@ Production Deploy.
 The same deploy exists as a called workflow, `.github/workflows/reusable-prod-deploy.yml`
 (inputs `sha`, `heroku-app`, `smoke-url`; secret `HEROKU_API_KEY`), for an app that
 moves its production deploy into Actions. No workflow calls it and no registry row
-names it; `test/lib/reusable_prod_deploy_test.rb` pins both, and the file's header
-lists what the calling `prod-deploy.yml` must carry.
+names it (`test/lib/reusable_prod_deploy_test.rb`, `test/models/release/repos_test.rb`);
+the file's header lists what the calling `prod-deploy.yml` must carry.
 
 ### Dynos: Web and Worker Change Tier Together
 

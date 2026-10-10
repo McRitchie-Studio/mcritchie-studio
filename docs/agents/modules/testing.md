@@ -83,9 +83,9 @@ The lanes check out the app's tree, so each script a lane runs is the app's own.
 - Flip an app only once the hub release carrying these readers is in production.
 
 `.github/workflows/reusable-prod-deploy.yml` is the deploy counterpart: a called
-workflow that pushes one SHA to a Heroku app and holds on `/up`. Nothing calls it,
-and `test/lib/reusable_prod_deploy_test.rb` pins both its interface and every app's
-registry strategy.
+workflow that pushes one SHA to a Heroku app and holds on `/up`. Nothing calls it:
+`test/lib/reusable_prod_deploy_test.rb` pins its interface and the absence of a
+caller, and `test/models/release/repos_test.rb` pins every app's deploy strategy.
 
 **A receipt names the COMMIT its shard ran, and the Rails executed-set gate will not
 audit across two of them.** The gate re-derives the expected file set from a tree it
