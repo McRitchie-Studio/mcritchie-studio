@@ -28,25 +28,22 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     assert_select "#dropzone-blocked", count: 0
   end
 
-  # The board factory's JavaScript wherever the bundled engine keeps it: the
-  # studio/board module when the engine ships one, the scripts inline on the
-  # page otherwise.
-  def board_factory_script(page_scripts)
-    path = Studio::Engine.root.join("app/javascript/studio/board.js")
-    path.exist? ? path.read : page_scripts
+  # The board factory's JavaScript: the engine's studio/board module.
+  def board_factory_script
+    Studio::Engine.root.join("app/javascript/studio/board.js").read
   end
 
   test "the drag handler reads stage from the dropzones and guards same-zone reorders" do
     get tasks_path
     assert_response :success
     page_scripts = css_select("script").map(&:text).join("\n")
-    js = board_factory_script(page_scripts)
+    js = board_factory_script
 
     # The board is rebased onto the studio/board primitive; its studioBoard factory
     # sources the from/to from the DROPZONES (the drop event's from / to), never
     # the card's data-stage.
-    assert_match(/fromZone = (evt|event)\.from\b/, js)
-    assert_match(/toZone = (evt|event)\.to\b/, js)
+    assert_match(/fromZone = event\.from\b/, js)
+    assert_match(/toZone = event\.to\b/, js)
     # A same-zone drop is a pure reorder — `moved` is false, so no stage PATCH fires;
     # only a cross-column drop moves the card. An in-place reorder cannot change stage.
     assert_match(/fromZone !== toZone/, js)

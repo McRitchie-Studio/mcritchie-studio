@@ -46,21 +46,14 @@ module ResolvedView
     Pathname(resolve(name, prefix)).read
   end
 
-  # The engine module that carries the modal store, or nil on an engine that
-  # keeps the store inline in the host partial.
-  def modal_host_module
-    path = Studio::Engine.root.join("app/javascript/studio/modal_host.js")
-    path.read if path.exist?
-  end
-
-  # The modal store's JavaScript wherever the bundled engine keeps it:
-  # studio/modal_host.js when it ships one, the resolved host partial otherwise.
+  # The modal store's JavaScript: the engine's studio/modal_host module.
   def modal_host_script
-    modal_host_module || source("host", "studio/modals")
+    Studio::Engine.root.join("app/javascript/studio/modal_host.js").read
   end
 
-  # A store function's DEFINITION in either engine dialect: `name: function (`
-  # in an object literal, or `store.name = function (`. Prose writes neither.
+  # A store function's DEFINITION in either form the module writes: `name:
+  # function (` in an object literal, or `store.name = function (`. Prose
+  # writes neither.
   def store_function(name)
     n = Regexp.escape(name)
     /\b(?:#{n}:\s*function\s*\(|store\.#{n}\s*=\s*function\s*\()/
