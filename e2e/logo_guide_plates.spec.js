@@ -15,37 +15,41 @@ async function settle(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-for (const brand of ["industries", "studio"]) {
-  test(`${brand}: guide plates fit at 1280 and are not tab stops`, async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await loginWithMagicLink(page, "alex@test.com");
-    await page.goto(`/logos/${brand}?guides=1`);
-    await settle(page);
+// Written as literal tests, not a loop: bin/e2e-executed-set-check counts `test(` calls in the source.
+async function fitsAtDesktop(page, brand) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto(`/logos/${brand}?guides=1`);
+  await settle(page);
 
-    const count = await plates(page).count();
-    expect(count).toBeGreaterThan(0);
-    for (let i = 0; i < count; i++) {
-      const plate = plates(page).nth(i);
-      const fits = await plate.evaluate((el) => el.scrollWidth <= el.clientWidth);
-      expect(fits, `plate ${i} fits its drawing at 1280`).toBe(true);
-      await expect(plate).not.toHaveAttribute("tabindex", /.*/);
-    }
-    const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-    expect(bodyFits).toBe(true);
-  });
-
-  test(`${brand}: guide plates scroll at 375 and are tab stops; the body does not scroll`, async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
-    await loginWithMagicLink(page, "alex@test.com");
-    await page.goto(`/logos/${brand}?guides=1`);
-    await settle(page);
-
-    const plate = plates(page).first();
-    const scrolls = await plate.evaluate((el) => el.scrollWidth > el.clientWidth);
-    expect(scrolls).toBe(true);
-    await expect(plate).toHaveAttribute("tabindex", "0");
-
-    const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-    expect(bodyFits, "the page body does not scroll sideways at 375").toBe(true);
-  });
+  const count = await plates(page).count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i++) {
+    const plate = plates(page).nth(i);
+    const fits = await plate.evaluate((el) => el.scrollWidth <= el.clientWidth);
+    expect(fits, `plate ${i} fits its drawing at 1280`).toBe(true);
+    await expect(plate).not.toHaveAttribute("tabindex", /.*/);
+  }
+  const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  expect(bodyFits).toBe(true);
 }
+
+async function scrollsOnPhone(page, brand) {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto(`/logos/${brand}?guides=1`);
+  await settle(page);
+
+  const plate = plates(page).first();
+  const scrolls = await plate.evaluate((el) => el.scrollWidth > el.clientWidth);
+  expect(scrolls).toBe(true);
+  await expect(plate).toHaveAttribute("tabindex", "0");
+
+  const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  expect(bodyFits, "the page body does not scroll sideways at 375").toBe(true);
+}
+
+test("industries: guide plates fit at 1280 and are not tab stops", async ({ page }) => fitsAtDesktop(page, "industries"));
+test("industries: guide plates scroll at 375 and are tab stops; the body does not scroll", async ({ page }) => scrollsOnPhone(page, "industries"));
+test("studio: guide plates fit at 1280 and are not tab stops", async ({ page }) => fitsAtDesktop(page, "studio"));
+test("studio: guide plates scroll at 375 and are tab stops; the body does not scroll", async ({ page }) => scrollsOnPhone(page, "studio"));
