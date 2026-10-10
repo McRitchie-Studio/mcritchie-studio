@@ -1,22 +1,21 @@
 # frozen_string_literal: true
 
 require "test_helper"
-Dir[Rails.root.join("db/migrate/*_create_{task,release}_timeline_view.rb")].each { |path| require path }
 
 # The task_timeline / release_timeline views are raw `CREATE VIEW` SQL
-# (db/views/*.sql, one baseline migration each), which does NOT dump to the :ruby
-# schema, so a fresh db:schema:load (this test DB) never has them. Rather than back
-# a test on their pre-existence, this runs each migration's own up/down and asserts
-# the view SHAPE — every lifecycle timestamp, in logical progress order — so a
-# dropped, renamed, or mis-ordered column in the SQL fails loudly here instead of
-# in a reviewer's head. Lives in test/db (not test/models) because there is no model.
+# (db/views/*.sql, carried by the newest migration that creates each view), which
+# does NOT dump to the :ruby schema, so a fresh db:schema:load (this test DB) never
+# has them. Rather than back a test on their pre-existence, this creates each view
+# from db/views and asserts the view SHAPE — every lifecycle timestamp, in logical
+# progress order — so a dropped, renamed, or mis-ordered column in the SQL fails
+# loudly here instead of in a reviewer's head. Lives in test/db (not test/models)
+# because there is no model.
 class TimelineViewsTest < ActiveSupport::TestCase
   # The exact projection order the operator reads left-to-right (must match the
   # SELECT lists in db/views verbatim).
   TASK_TIMELINE_COLUMNS = %w[
     slug title stage blocked_at blocked_from blocked_by block_kind
-    created_at updated_at
-    queued_at sizes_revealed_at started_at
+    created_at updated_at started_at
     g1_testing_started_at g1_testing_finished_at g1_failed_at
     submitted_at reviewed_at assembled_at completed_at archived_at
     gates_cached_at testing_phases_cached_at
@@ -29,23 +28,26 @@ class TimelineViewsTest < ActiveSupport::TestCase
     qa_deploy_started_at qa_deployed_at
     confirming_started_at confirmed_at
     prod_deploy_started_at shipped_at
-    abandoned_at release_notes_sent_at duration_metrics_cached_at
+    abandoned_at duration_metrics_cached_at
   ].freeze
 
+  VIEWS = %w[task_timeline release_timeline].freeze
+
+  def view_sql(name) = File.read(Rails.root.join("db/views/#{name}.sql"))
+
   setup do
-    @migrations = [CreateTaskTimelineView, CreateReleaseTimelineView].map { |view| view.new.tap { |m| m.verbose = false } }
-    @migrations.each(&:up)
+    VIEWS.each { |name| ActiveRecord::Base.connection.execute(view_sql(name)) }
   end
 
   teardown do
-    @migrations.each(&:down)
+    VIEWS.each { |name| ActiveRecord::Base.connection.execute("DROP VIEW IF EXISTS #{name}") }
   end
 
-  test "[integration] each view's migration carries the SQL in db/views" do
-    %w[task_timeline release_timeline].each do |name|
-      sql = File.read(Rails.root.join("db/views/#{name}.sql")).squish
-      migration = File.read(Dir[Rails.root.join("db/migrate/*_create_#{name}_view.rb")].sole).squish
-      assert_includes migration, sql, "#{name}: run bin/db-baseline after editing db/views/#{name}.sql"
+  test "[integration] the newest migration that creates each view carries the SQL in db/views" do
+    VIEWS.each do |name|
+      creators = Dir[Rails.root.join("db/migrate/*.rb")].sort.select { |path| File.read(path).include?("CREATE VIEW #{name} AS") }
+      up = File.read(creators.last).split(/^\s*def down\b/).first.squish
+      assert_includes up, view_sql(name).squish, "#{name}: db/views/#{name}.sql and #{File.basename(creators.last)} differ"
     end
   end
 

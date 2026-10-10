@@ -2,7 +2,7 @@
 // back to a page that says the connection is saved, names the account, the
 // scope and the day the refresh token expires, and shows no token. Nothing on
 // it is to be copied anywhere. Its Disconnect button asks first, then deletes
-// the stored connection.
+// the stored connection and lands on the standing page, /admin/tiktok.
 //
 // WHAT THIS DOES NOT PROVE. Nothing here reaches TikTok: the lane's stand-in
 // (config/initializers/tiktok_draft_stand_in.rb, SignIn) answers for TikTok's
@@ -51,7 +51,9 @@ test("an admin connects TikTok and the page shows a saved connection and no toke
   let asked = "";
   page.once("dialog", (dialog) => { asked = dialog.message(); dialog.accept(); });
   await connected.getByRole("button", { name: "Disconnect TikTok" }).click();
-  await expect(page).toHaveURL(/\/admin\/dashboard$/);
+  // It lands on the standing connection page, which now says not connected.
+  await expect(page).toHaveURL(/\/admin\/tiktok$/);
+  await expect(page.locator("[data-test='tiktok-connection']")).toHaveAttribute("data-source", "none");
   expect(asked).toContain("Delete the stored TikTok connection");
   await expect(page.getByText("TikTok disconnected: the stored connection was deleted from this server.", { exact: false })).toBeVisible();
   await expect(page.getByText(/Drafting is (off|still on):/)).toBeVisible();

@@ -116,16 +116,6 @@ class Appearances::FetchableUrlTest < ActiveSupport::TestCase
     end
   end
 
-  test "on the engine locked today there is no unresolved class, and every answer is ok or refused" do
-    with_url_guard(unresolved: %w[dead.example.com], engine: :current) do
-      assert_not Studio::ImageCache.const_defined?(:UnresolvedSourceHost, false), "the control: today's engine has no such class"
-      assert_equal Fetchable::OK, Fetchable.verdict("https://dead.example.com/a.png"), "today's guard resolves nothing"
-      assert_equal Fetchable::REFUSED, Fetchable.verdict("https://localhost/a.png")
-      assert_equal Fetchable::REFUSED, Fetchable.https_verdict("http://cdn.example.com/a.png")
-      assert Fetchable.https?("https://cdn.example.com/a.png")
-    end
-  end
-
   # FIVE DEAD NAMES AT SIX SECONDS EACH IS A HEROKU TIMEOUT. A request gives
   # lookups a budget; once it is spent, a name not yet asked about is answered
   # "could not check" without asking.
@@ -143,9 +133,8 @@ class Appearances::FetchableUrlTest < ActiveSupport::TestCase
     end
   end
 
-  # NO STAND-IN: the guard here is whichever engine the hub locks. Past the
-  # budget the URL's text is still judged, through the next engine's
-  # `resolver: nil` or, on one that takes no such keyword, the plain call.
+  # NO STAND-IN: the guard here is the engine the hub locks. Past the budget
+  # the URL's text is still judged, through the engine's `resolver: nil`.
   test "past the budget the locked engine still refuses on the text, and a name reads as could not check" do
     Fetchable.limit_lookups(0)
 

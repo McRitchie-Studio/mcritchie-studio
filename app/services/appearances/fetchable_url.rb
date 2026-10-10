@@ -19,28 +19,25 @@ module Appearances
   # with it, and the day the engine tightens its ranges the copy would silently
   # keep letting the old ones through.
   #
-  # WHAT THE GUARD CHECKS DEPENDS ON THE ENGINE THE HUB LOCKS, and this module
-  # runs on both:
-  #
-  #   The engine locked when this was written (0.94.0) reads the URL's TEXT and
-  #   resolves nothing: http or https, a few internal host names, and dotted
-  #   IPv4 or bracketed IPv6 literals in the loopback, private and link-local
-  #   ranges. A public name that points at a private address passes, and so
-  #   does a loopback written `127.1` or as an integer.
-  #
-  #   The next engine (studio-engine PR 436) also decodes every spelling of an
-  #   address and LOOKS THE NAME UP: every A and AAAA record, refused if any
-  #   one is non-public. A name that cannot be looked up raises
-  #   Studio::ImageCache::UnresolvedSourceHost. The lookup is uncached, two
-  #   seconds an attempt and up to six for a name that never answers. It does
-  #   none of this under a Rails test environment.
+  # WHAT THE GUARD CHECKS (studio-engine 0.95 onward, the Gemfile's floor). It
+  # reads the URL's text (http or https, no internal host name), decodes every
+  # spelling of an address, and LOOKS THE NAME UP: every A and AAAA record,
+  # refused if any one is non-public. A name that cannot be looked up raises
+  # Studio::ImageCache::UnresolvedSourceHost. The lookup is uncached, two
+  # seconds an attempt and up to six for a name that never answers. Under a
+  # Rails test environment it resolves nothing unless a test sets a resolver.
   #
   # So a judgement here may be a DNS lookup, and everything below the first two
   # methods exists to keep that off the hot paths: one lookup per host per
   # request, a budget per web request, and "could not look it up" kept apart
   # from "not a public address".
   #
-  # ITS LIMIT ON EITHER ENGINE: the answer is true when it is given. A name can
+  # Until the floor moved to 0.95 this module also ran on engines that read
+  # the text only: it named UnresolvedSourceHost by string and fell back to a
+  # keywordless call when `resolver: nil` was refused. Both are gone; the
+  # engine is asked directly.
+  #
+  # ITS LIMIT: the answer is true when it is given. A name can
   # point somewhere else a moment later (DNS rebinding), and closing that needs
   # the vetted address handed to the HTTP client. Most of these bytes are
   # fetched by Higgsfield, not by us, so that hardening is theirs to have. The
@@ -53,9 +50,6 @@ module Appearances
     OK = :ok                 # hand it to a fetcher
     REFUSED = :refused       # not a public http(s) address, on its text or where it points
     UNRESOLVED = :unresolved # the name could not be looked up; nothing is known about it
-
-    # Named, never referenced: the class exists only on the next engine.
-    UNRESOLVED_ERROR = "Studio::ImageCache::UnresolvedSourceHost".freeze
 
     # Seconds a remembered verdict may be reused where no request or job ends to
     # clear it: a console, a rake task, one long job, a streaming download.
@@ -83,7 +77,7 @@ module Appearances
 
     # OK, REFUSED or UNRESOLVED. Never raises.
     #
-    # REMEMBERED PER HOST, because on both engines the guard's answer for an
+    # REMEMBERED PER HOST, because the guard's answer for an
     # http or https URL depends on the host and nothing else (not the path, the
     # port or the query). Any other scheme is refused on its text before a
     # lookup, so it goes straight to the guard and is never remembered: an ok
@@ -114,11 +108,8 @@ module Appearances
     # so on top of `ok?` it must be https: plain http is refused, as is anything
     # with no scheme (a relative path, `//host/x`). Never raises.
     #
-    # ITS LIMITS ARE `verdict`'s, and so they are the locked engine's (see the
-    # head of this module). On the engine that resolves nothing, a public name
-    # pointing at a private address passes and `127.1` is not recognised; on the
-    # next one both are refused. On neither is a redirect the address later
-    # serves followed or checked here.
+    # ITS LIMITS ARE `verdict`'s (see the head of this module): a redirect the
+    # address later serves is neither followed nor checked here.
     def self.https?(url) = https_verdict(url) == OK
 
     # OK, REFUSED or UNRESOLVED for the stricter question. The scheme is read
@@ -186,35 +177,18 @@ module Appearances
     end
     private_class_method :over_budget
 
-    # `text_only` asks the next engine to skip the lookup (`resolver: nil`). The
-    # engine locked today takes no such keyword and never looks anything up, so
-    # its ArgumentError falls back to the plain call. InvalidSourceURL is itself
-    # an ArgumentError, hence the order of the rescues.
+    # `text_only` skips the lookup (the engine's `resolver: nil`): the URL's
+    # text is judged and nothing is asked of DNS. UnresolvedSourceHost is an
+    # InvalidSourceURL, hence the order of the rescues.
     def self.judge(url, text_only: false)
-      begin
-        text_only ? Studio::ImageCache.validate_source_url!(url, resolver: nil) : Studio::ImageCache.validate_source_url!(url)
-      rescue Studio::ImageCache::InvalidSourceURL
-        raise
-      rescue ArgumentError
-        raise unless text_only
-
-        Studio::ImageCache.validate_source_url!(url)
-      end
+      text_only ? Studio::ImageCache.validate_source_url!(url, resolver: nil) : Studio::ImageCache.validate_source_url!(url)
       OK
-    rescue Studio::ImageCache::InvalidSourceURL => e
-      unresolved_error?(e) ? UNRESOLVED : REFUSED
-    rescue URI::InvalidURIError
+    rescue Studio::ImageCache::UnresolvedSourceHost
+      UNRESOLVED
+    rescue Studio::ImageCache::InvalidSourceURL, URI::InvalidURIError
       REFUSED
     end
     private_class_method :judge
-
-    # The next engine's class, looked up by name each time: on the engine
-    # locked today it does not exist, and every refusal is REFUSED.
-    def self.unresolved_error?(error)
-      unresolved = UNRESOLVED_ERROR.safe_constantize
-      !unresolved.nil? && error.is_a?(unresolved)
-    end
-    private_class_method :unresolved_error?
 
     def self.note_left_out(url, look:, what:)
       host = URI.parse(url.to_s).host.to_s.downcase

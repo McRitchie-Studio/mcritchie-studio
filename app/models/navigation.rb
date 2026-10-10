@@ -46,17 +46,31 @@ class Navigation
     delegate :pages, :page, :sidebar, :sub_nav, :sub_navs, :public_actions, :placed_keys, to: :registry
 
     def registry
-      @registry ||= new(YAML.safe_load_file(PATH))
+      @registry ||= new(load_file)
+    end
+
+    # The file, or Invalid. A missing file must not read as an empty registry:
+    # the wall derives its public list from here, so "nothing" means every
+    # public page walled.
+    def load_file(path = PATH)
+      raise Invalid, "navigation registry missing: #{path}" unless File.file?(path)
+
+      YAML.safe_load_file(path)
     end
   end
 
   attr_reader :pages, :sub_navs
 
+  # An empty registry does not load, and neither does one that opens no public
+  # page: both would make the admin wall refuse every visitor, and a boot that
+  # fails names the cause where a walled landing page would not.
   def initialize(data)
-    data = data.to_h
+    raise Invalid, "navigation registry is empty: config/navigation.yml must declare its pages" unless data.is_a?(Hash) && data["pages"].is_a?(Hash) && data["pages"].any?
+
     @pages = build_pages(data["pages"])
     @sections = build_sections(data["sidebar"])
     @sub_navs = build_sub_navs(data["sub_navs"])
+    raise Invalid, "navigation registry opens no public page: the wall would refuse every visitor" if public_actions.empty?
   end
 
   def page(key)

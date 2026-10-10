@@ -281,7 +281,7 @@ the next candidate.
 | `state` | `assembling` → `assembled` → `shipped` (+ `abandoned`). `assembled` = the QA candidate is built (members merged into `release`) **and** its suite checks out. |
 | `branch` | The persistent integration branch `release` (same name in every repo); feature PRs merge into it, QA deploys from it, and `ship` fast-forwards it into `main`. |
 | `confirmed_at` / `confirmed_by` | The ship authorization at `assembled → shipped` — operator approval for the QA workflow, or the autonomous production kickoff. |
-| `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
+| `qa_url` / `production_url` / `deployed_sha` | Deploy record. |
 | stage timestamps | The fine-grained **stage timeline** under `state` — see below. |
 | has_many `tasks` | via `tasks.release_slug`. |
 

@@ -34,6 +34,8 @@
              data-test="clip-link-refreshing">This link expired: getting a fresh one…</p>
           <p x-show="failed.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
              data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
+          <p x-show="expired.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+             x-text="expired.original" data-test="clip-link-expired"></p>
         </div>
       <% elsif chunk %>
         <p class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"

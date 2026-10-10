@@ -1,14 +1,24 @@
 module Admin
-  # The one-time sign-in that connects a TikTok account to the hub. /connect
-  # sends the admin to TikTok; /callback exchanges the code and stores the
-  # connection itself (TiktokConnection: the open id, the granted scope, and
-  # the refresh token encrypted). No token is rendered, flashed or logged, and
-  # nobody copies one by hand.
+  # The hub's TikTok connection. /admin/tiktok (show) is the standing page: is
+  # an account connected, as whom, with what scope, since when and by whom,
+  # until when; can the stored row still be read; are the fallback env pair,
+  # the app's keys and the encryption keys set (their NAMES, never a value);
+  # and the two actions, Sign in and Disconnect.
   #
-  # /disconnect deletes the stored connection.
+  # /connect sends the admin to TikTok; /callback exchanges the code and stores
+  # the connection itself (TiktokConnection: the open id, the granted scope,
+  # and the refresh token encrypted). No token, and no part of one, is
+  # rendered, flashed or logged by any action here, and nobody copies one by
+  # hand.
   #
-  # Neither action writes an ErrorLog row for an answer it expects: keys not
-  # set, a bad TIKTOK_SCOPES, or a refusal from TikTok. Each gets plain words.
+  # /disconnect deletes the stored connection and comes back to the standing
+  # page. WHO DISCONNECTED, AND WHEN, is one structured log line
+  # ("[tiktok] disconnect by=<admin slug> at=<UTC> deleted=<rows> ..."): this
+  # app has no table that audits admin acts (TaskEvent and ReleaseEvent audit
+  # the board), and the row that could have carried it is the one deleted.
+  #
+  # No action writes an ErrorLog row for an answer it expects: keys not set, a
+  # bad TIKTOK_SCOPES, or a refusal from TikTok. Each gets plain words.
   class TiktokController < ApplicationController
     before_action :require_admin
     # The callback's URL carries a single-use auth code: no cache keeps the page.
@@ -52,6 +62,29 @@ module Admin
       ]
     }.freeze
 
+    def show
+      @connection = TiktokConnection.current
+      @readable = @connection&.readable? || false
+      @env_pair = Tiktok::OAuthClient.env_pair_present?
+      @app_keys = Tiktok::OAuthClient.app_creds_present?
+      @encryption_ready = TiktokConnection.encryption_ready?
+      @stand_in = !Tiktok::OAuthClient.sign_in_stand_in.nil?
+      # Where drafting gets its token from, as Tiktok::OAuthClient.token_source
+      # decides it: a stored row that cannot be read is no source, and the env
+      # pair does not stand in for it.
+      @source = if @connection then @readable ? :stored : :unreadable
+                elsif @env_pair then :env
+                else :none
+                end
+      # Can this server draft at all? The clip card's own predicate
+      # (Tiktok::DraftClip.available?), so this page and the card cannot
+      # disagree: a connected account with the app's two keys missing is not
+      # "Connected", it is drafting switched off.
+      @drafting = Tiktok::DraftClip.available?
+      @can_draft = @source == :stored && @connection.scopes.include?("video.upload")
+      @direct_post = @source == :stored && @connection.scopes.include?(Tiktok::OAuthClient::DIRECT_POST_SCOPE)
+    end
+
     def connect
       return redirect_to(admin_dashboard_path, alert: "#{ENCRYPTION_NOT_SET} #{ENCRYPTION_FIX}") unless TiktokConnection.encryption_ready?
 
@@ -89,17 +122,19 @@ module Admin
       refuse("TikTok refused to exchange the sign-in code.", "Start again: a code works once and expires in minutes.", detail: e.message)
     end
 
-    # Deletes every stored connection (the connected page's button, confirmed
-    # there), then says what the server falls back to: with the env pair still
-    # set, drafting carries on from it, and that is said as a warning.
+    # Deletes every stored connection (the standing page's button, confirmed
+    # there), records who did it, then says on that page what the server falls
+    # back to: with the env pair still set, drafting carries on from it, and
+    # that is said in the same notice. The delete succeeded either way, so it
+    # is a notice: the engine's toast has two types, and an alert is titled
+    # "Error".
     def disconnect
       deleted = TiktokConnection.delete_all
+      env_pair = Tiktok::OAuthClient.env_pair_present?
+      Rails.logger.info("[tiktok] disconnect by=#{current_user.slug} at=#{Time.current.utc.iso8601} " \
+                        "deleted=#{deleted} env_pair=#{env_pair ? 'set' : 'unset'}")
       said = deleted.zero? ? NOTHING_STORED : DISCONNECTED
-      if Tiktok::OAuthClient.env_pair_present?
-        redirect_to admin_dashboard_path, alert: "#{said} #{ENV_PAIR_STILL_SET}", status: :see_other
-      else
-        redirect_to admin_dashboard_path, notice: "#{said} #{ENV_PAIR_NOT_SET}", status: :see_other
-      end
+      redirect_to admin_tiktok_path, notice: "#{said} #{env_pair ? ENV_PAIR_STILL_SET : ENV_PAIR_NOT_SET}", status: :see_other
     end
 
     private

@@ -1,5 +1,4 @@
 class Task < ApplicationRecord
-  self.ignored_columns += DeadColumns.for(table_name)
   SIZES = %w[small medium large xl].freeze
 
   # actual_size is the measured leg of the size trio (po_size estimate, dev_size

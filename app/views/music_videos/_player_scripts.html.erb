@@ -11,7 +11,16 @@
   // on coming back to a tab whose links have lapsed, and when a player fails
   // on a link that is old (recover). One request at a time. A player that
   // fails on a link that is still fresh is not asked about again: that file is
-  // missing, and the player says so.
+  // missing, and the player says so. When the refresh itself was refused or
+  // went unanswered there is no fresh link, and the player says that instead
+  // (refusal).
+  //
+  // It ends with its page. Turbo swaps the body and keeps this window, timer
+  // and all, so the timer is stopped as Turbo is about to render another page
+  // (turbo:before-render), and woke() stops for good when the element that
+  // named the links endpoint is no longer in the document. The listeners are
+  // bound once and stay: with no url they do nothing, and turbo:load is what
+  // starts the next page that carries links.
   //
   // start() reads the section's data-links-* and is a no-op without them (the
   // cast page renders these scripts too, and its links are not refreshed).
@@ -34,6 +43,8 @@
         window.__signedLinksBound = true;
         // A page Turbo shows again from its cache runs no inline script: start from its markup.
         document.addEventListener("turbo:load", () => { if (!window.signedLinks.url) window.signedLinks.start(); });
+        // Another page is about to be shown in this window: this page's timer does not go with it.
+        document.addEventListener("turbo:before-render", () => window.signedLinks.stop());
         document.addEventListener("visibilitychange", () => window.signedLinks.woke());
         window.addEventListener("pageshow", () => window.signedLinks.woke());
         // Images and the plain players report here; the Alpine players call recover() themselves.
@@ -56,8 +67,19 @@
     // The timer fired, or the tab came back: refresh if the links have lapsed.
     // A hidden tab waits until it is looked at again.
     woke() {
-      if (!this.url || document.hidden || this.fresh()) return;
+      if (!this.url) return;
+      // The page these links belong to is gone: nothing here is left to refresh.
+      if (!document.querySelector("[data-links-url]")) { this.stop(); return; }
+      if (document.hidden || this.fresh()) return;
       this.refresh();
+    },
+    // Why a player has no fresh link to load, in its own words: the last
+    // refresh was refused (the session ended) or went unanswered. "" when the
+    // last refresh worked, so a failure then is the file's.
+    refusal() {
+      if (this.state === "signin") return "This link expired, and your session ended: sign in again.";
+      if (this.state === "failed") return "This link expired, and a fresh one could not be fetched.";
+      return "";
     },
     say(state) {
       this.state = state;
@@ -208,20 +230,23 @@
   // A player that fails (lost) is first given a fresh link when its own has
   // lapsed: it says so (renewing), reloads at the same place, and goes on with
   // the play that was asked for. Only a failure on a fresh link is the file's
-  // (failed). "This browser would not start both players" (blocked) is said
+  // (failed); when no fresh link could be had, the player says the link
+  // expired and why (expired, in signedLinks.refusal's words). "This browser would not start both players" (blocked) is said
   // only when the browser refused to play, never for a file that did not load.
   window.clipPair = function () {
     const NUDGE = 0.04, JUMP = 0.1, SEEK_LEAD = 0.05;
     return {
       linked: false, started: false, playing: false, blocked: false, again: false,
       t: 0, duration: 0, frame: null, failed: { original: false, version: false }, renewing: { original: false, version: false },
+      expired: { original: "", version: "" },
       get pair() { return [this.$refs.original, this.$refs.version].filter(Boolean); },
       get state() { return this.playing ? "playing" : (this.linked ? "paused" : "idle"); },
       get label() { return this.playing ? "Pause both" : (this.linked ? "Resume both" : "Play both"); },
       init() {
         this.pair.forEach((video) => {
           const firstFrame = () => {
-            this.failed[video === this.$refs.original ? "original" : "version"] = false;
+            const which = video === this.$refs.original ? "original" : "version";
+            this.failed[which] = false; this.expired[which] = "";
             if (video.paused && video.currentTime === 0) video.currentTime = 0.001;
             this.measure();
           };
@@ -240,10 +265,11 @@
         if (!links || !links.stale(video)) { this.failed[which] = true; this.again = false; return; }
         // A play was under way: stop both now, and start them again on the fresh link.
         if (this.playing || (!this.$refs.version && this.started && !video.paused)) { this.again = true; this.pause(); }
-        this.renewing[which] = true;
+        this.renewing[which] = true; this.expired[which] = "";
         links.recover(video).then((ok) => {
           this.renewing[which] = false;
-          if (!ok) { this.failed[which] = true; this.again = false; return; }
+          // No fresh link was had: say that, not that the file failed on one.
+          if (!ok) { this.expired[which] = links.refusal(); this.failed[which] = !this.expired[which]; this.again = false; return; }
           if (this.again && !this.renewing.original && !this.renewing.version) { this.again = false; this.replay(); }
         });
       },
@@ -372,7 +398,7 @@
   window.stitchPreview = function () {
     return {
       segments: [], durationMs: 0, t: 0, index: 0, active: 0, playing: false, audioOk: true,
-      frame: null, wallBase: 0, wallAt: 0, failed: [false, false], renewing: false, onLinks: null,
+      frame: null, wallBase: 0, wallAt: 0, failed: [false, false], renewing: false, expired: "", onLinks: null,
       init() {
         const data = JSON.parse(this.$root.dataset.timeline);
         this.segments = data.segments; this.durationMs = data.duration_ms;
@@ -380,7 +406,12 @@
         // The modal is built from the page as it was rendered: bring it onto the newest links.
         if (window.signedLinks) window.signedLinks.apply(this.$root);
         this.relink();
-        this.onLinks = (event) => { if (event.detail.state === "fresh") this.relink(); };
+        this.onLinks = (event) => {
+          if (event.detail.state !== "fresh") return;
+          this.relink();
+          // Fresh links after a refresh that had been refused: cue the clips again on them.
+          if (this.expired) { this.expired = ""; [this.$refs.a, this.$refs.b].forEach((v) => { v.dataset.ordinal = ""; }); this.show(this.index); }
+        };
         window.addEventListener("signed-links", this.onLinks);
         if (this.segments.length) this.show(0);
       },
@@ -419,6 +450,7 @@
       // A video whose file would not load. On a lapsed link: fetch a fresh one
       // and cue the clip again. On a fresh link it is the file (a missing
       // object, a format the browser cannot play), and the player says so.
+      // When no fresh link could be had it says the link expired, and why.
       loadFailed(which) {
         const video = [this.$refs.a, this.$refs.b][which], links = window.signedLinks;
         if (!video.getAttribute("src")) return;
@@ -427,7 +459,7 @@
         const ready = links.fresh() ? Promise.resolve(true) : links.refresh();
         ready.then((ok) => {
           this.renewing = false;
-          if (!ok) { this.failed[which] = true; return; }
+          if (!ok) { this.expired = links.refusal(); if (!this.expired) this.failed[which] = true; return; }
           this.relink();
           video.dataset.ordinal = "";
           this.show(this.index);

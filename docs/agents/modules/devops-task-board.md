@@ -453,8 +453,8 @@ the views by re-ordering them to chronology: logical progress order is the produ
 
 - **`task_timeline`** — a **status header** (`slug, title, stage` + the block set
   `blocked_at, blocked_from, blocked_by, block_kind` — when / from where / who /
-  why), then the lifecycle chain: `created_at, updated_at → queued_at,
-  sizes_revealed_at, started_at → g1_testing_started_at, g1_testing_finished_at,
+  why), then the lifecycle chain: `created_at, updated_at →
+  started_at → g1_testing_started_at, g1_testing_finished_at,
   g1_failed_at (frozen: nothing writes them since the local cert retired) → submitted_at, reviewed_at, assembled_at, completed_at,
   archived_at`, then the cache stamps `gates_cached_at, testing_phases_cached_at`.
   The block set is a HEADER, **not** the first link of the chain:
@@ -463,13 +463,12 @@ the views by re-ordering them to chronology: logical progress order is the produ
 - **`release_timeline`** — `slug, state → created_at, updated_at →
   testing_started_at, tested_at → assembling_started_at, assembled_at →
   qa_deploy_started_at, qa_deployed_at → confirming_started_at, confirmed_at →
-  prod_deploy_started_at, shipped_at → abandoned_at, release_notes_sent_at,
+  prod_deploy_started_at, shipped_at → abandoned_at,
   duration_metrics_cached_at`.
 
 **Always NULL today** (kept so the declared lifecycle stays complete — deliberate,
 not oversight): `releases.testing_started_at` (no producer; tracker node 1 greens
-off `assembling`), `tasks.queued_at`, `tasks.sizes_revealed_at`. `tasks.failed_at`
-is deliberately OMITTED (dead column, not part of the flow).
+off `assembling`).
 
 Created by a plain `execute "CREATE VIEW …"` migration — DROP+CREATE, so `up` is
 re-runnable; never `CREATE OR REPLACE` (Postgres cannot reorder an existing view's
@@ -488,13 +487,14 @@ model or suite assertion on their existence in every environment.
    the two `CREATE VIEW` statements directly.
 
 2. **The views PIN every column they select — and the failure is CI-INVISIBLE.** A
-   plain Postgres view hard-depends on each of the 39 columns it SELECTs (22 task +
-   17 release). A future `DROP COLUMN` / `RENAME COLUMN` on any of them will ERROR
+   plain Postgres view hard-depends on each of the 36 columns it SELECTs (20 task +
+   16 release). A future `DROP COLUMN` / `RENAME COLUMN` on any of them will ERROR
    unless the view is dropped first — and because the views do NOT exist in the
    test/CI database (the caveat above), such a migration **passes CI and fails on
    the production deploy**. Rule: if you drop or rename any column these views
    select, `DROP VIEW release_timeline, task_timeline` first and recreate them in
-   the same migration.
+   the same migration (`db/migrate/20261009200000_drop_dead_columns.rb` is the
+   pattern), and put the new SQL in `db/views/`.
 
 ## Task Metadata Contract
 

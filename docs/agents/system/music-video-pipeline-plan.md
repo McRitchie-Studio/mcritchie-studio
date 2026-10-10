@@ -84,6 +84,16 @@ secondary and feed a general artist profile.
 One look (`Appearance`) per performer per music video, built with the existing
 character-sheet pipeline.
 
+**Iced twins and jewelry.** Every look gets an iced-out twin, a look of its own
+("Cowboys white · iced") whose sheet adds shades, a chain, a watch, a bracelet, a
+grill and rings. The rings are the person's own when their jewelry is on file
+(`person_jewelries`, kept on the person page), else generic. Making a twin is a
+free row; each sheet is a paid build, chosen when the look is made. The
+operator's steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#stage-2-cast) (the cast
+card's Generate a look), and the build is in `docs/topics/content-pipeline.md`,
+"The iced-out twin and a person's jewelry".
+
 ### 5. Clips
 
 Several 25-second candidates per video. Each one:
@@ -149,10 +159,25 @@ own keys signed again (it reads no key from the request), and `signedLinks`
 coming back to the tab, and when a player fails on a lapsed link, keeping each
 player's place. A player says "This link expired: getting a fresh one…" while
 it waits, and reports a missing file only when it fails on a fresh link
-(`clip-page-links-refresh`). The cast page's own previews are not refreshed.
+(`clip-page-links-refresh`, shipped to `accepted` on 2026-10-08). The refresh
+ends with its page: a Turbo visit away stops it. When fresh links cannot be had,
+the page says whether the session ended or the server did not answer, and the
+player says its link expired (`recast-wrap-loose-ends`). The source video page
+(the cast page) is still on fifteen-minute links: its previews are not
+refreshed, and a reload is what renews them.
 `/alt_videos` lists every alt video with
 its progress. Built by `generated-takes-and-stitch-preview` (piece 3) and
 reshaped by `alt-videos-and-clip-builder` (piece 13). The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).
+
+**The asset zip.** The clip card's hand-off also downloads as one zip, a clip's
+or the whole alt video's: each clip's source chunk, prompt, lettered frames and
+numbered character sheets, with a README that lists anything left out. It
+streams from R2 and never fails for a missing file. A sheet image is fetched
+only from an https public host, at the address the host was vetted against, and
+one entry spends at most five seconds opening connections. Built by piece 17
+(`MusicVideos::AssetZip`, `AltVideoDownloadsController`). The steps and the
+zip's layout are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).
 
 **Lettered references.** The clip prompt (`MusicVideos::ClipPrompts`, wording
@@ -185,6 +210,19 @@ with a player and a download, and marks it stale once a clip has a different
 primary version or a regenerate flag. Every stitch is kept. Built by `stitch-takes-into-full-video`, piece 4 of the recast pipeline.
 The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#the-final-stitch).
+
+### 6. TikTok draft
+
+A clip's primary version goes to the operator's TikTok inbox, from **Draft to
+TikTok** on the clip card or from chat with the clip's slug
+(`bin/tiktok-draft`). Code writes the caption from the lead swapped athlete's
+team and its record; TikTok does not receive it, so the operator pastes it in
+the app, turns on the AI-generated label and posts from his phone. Nothing
+here publishes. It needs the hub's teams loaded and a look that names one of
+them, and a TikTok account connected at `/admin/tiktok`. Built by piece 19
+(`Tiktok::DraftClip`, `tiktok_drafts`). The whole procedure, the setup and the
+sandbox's limits are in Turf Monster's
+[`tiktok-draft`](../agents/turf_monster/sops/tiktok-draft.md).
 
 ## Where it runs
 

@@ -1,4 +1,4 @@
-<%# A clip with a primary version: the source chunk and the primary side by side (stacked on a phone), each on its first frame, and Play both under them. Play both runs the two from the start together with the original muted, so the only sound is the version's; clipPair() keeps them together (pause, seek and drift) and drives the one scrub. Making another version primary re-renders the card, so the right-hand player follows. A player whose signed link has lapsed asks the page for a fresh one (signedLinks, music_videos/_player_scripts) and says so while it waits; only a player that fails on a fresh link says its file did not load. %>
+<%# A clip with a primary version: the source chunk and the primary side by side (stacked on a phone), each on its first frame, and Play both under them. Play both runs the two from the start together with the original muted, so the only sound is the version's; clipPair() keeps them together (pause, seek and drift) and drives the one scrub. Making another version primary re-renders the card, so the right-hand player follows. A player whose signed link has lapsed asks the page for a fresh one (signedLinks, music_videos/_player_scripts) and says so while it waits; only a player that fails on a fresh link says its file did not load, and one that could not be given a fresh link (the session ended, or the server did not answer) says the link expired and why. %>
 <div class="p-4 pb-0 min-w-0" x-data="clipPair()" data-test="clip-compare" data-primary="<%= primary.number %>"
      :data-state="state">
   <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -12,6 +12,8 @@
            data-test="clip-link-refreshing">This link expired: getting a fresh one…</p>
         <p x-show="failed.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
            data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
+        <p x-show="expired.original" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+           x-text="expired.original" data-test="clip-link-expired"></p>
       </div>
     </figure>
     <figure class="min-w-0" data-test="clip-compare-version" data-number="<%= primary.number %>" data-key="<%= primary.object_key %>">
@@ -24,6 +26,8 @@
            data-test="clip-version-link-refreshing">This link expired: getting a fresh one…</p>
         <p x-show="failed.version" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
            data-test="clip-version-load-failed"><%= primary.name %> did not load: <%= primary.object_key.split("/").last %></p>
+        <p x-show="expired.version" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+           x-text="expired.version" data-test="clip-version-link-expired"></p>
       </div>
     </figure>
   </div>

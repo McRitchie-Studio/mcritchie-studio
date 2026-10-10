@@ -92,16 +92,4 @@ class LookPageGuardLookupsTest < ActionDispatch::IntegrationTest
       end
     end
   end
-
-  test "on the engine locked today the page renders and nothing is left out" do
-    reference("https://cdn.example.com/a.jpg")
-    reference("https://dead.example.com/b.jpg")
-    log_in_as users(:alex)
-
-    with_url_guard(unresolved: %w[dead.example.com], engine: :current) do
-      show!
-      assert_response :success
-      assert_nil flash[:alert]
-    end
-  end
 end

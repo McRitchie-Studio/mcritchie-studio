@@ -47,6 +47,15 @@ module DbBaseline
     text.scan(/^\s+t\.(\w+) "(\w+)"/).reject { |type, _| %w[index check_constraint].include?(type) }.map(&:last)
   end
 
+  # table => the columns later migrations drop: every `remove_column "table", "column"`
+  # above a migration's `down`. A database past such a drop is not short of the column.
+  def removed_columns(migrate_dir)
+    later = Dir[File.join(migrate_dir.to_s, "*.rb")].reject { |path| baseline_file?(File.basename(path)) }
+    later.each_with_object(Hash.new { |hash, table| hash[table] = [] }) do |path, removed|
+      File.read(path).split(/^\s*def down\b/).first.scan(/^\s*remove_column "(\w+)", "(\w+)"/) { |table, column| removed[table] << column }
+    end
+  end
+
   # Compares a schema dump taken from another database with the committed baseline,
   # without a connection. short: tables that lack baseline columns. absent: baseline
   # tables the dump does not hold. behind: the dump predates the retired ledger's head.
@@ -55,10 +64,11 @@ module DbBaseline
   def compare(schema_text, root:)
     schema = Schema.new(schema_text)
     held = schema.tables.to_h { |table| [table.name, columns_in(table.block.join("\n"))] }
-    tables = Marker.new(connection: nil, migrate_dir: File.join(root.to_s, "db/migrate")).entries.select { |entry| entry.kind == :table }
+    marker = Marker.new(connection: nil, migrate_dir: File.join(root.to_s, "db/migrate"))
+    tables = marker.entries.select { |entry| entry.kind == :table }
     present, absent = tables.partition { |entry| held.key?(entry.name) }
     short = present.filter_map do |entry|
-      missing = entry.columns - held.fetch(entry.name)
+      missing = marker.required(entry) - held.fetch(entry.name)
       "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
     end
     record = File.join(root.to_s, RECORD)
@@ -343,6 +353,11 @@ module DbBaseline
       Dir[File.join(@migrate_dir, "#{PREFIX}*.rb")].sort.map { |path| Entry.new(path) }
     end
 
+    # The baseline columns a table must still hold: all but those a later migration drops.
+    def required(entry)
+      entry.columns - (@removed ||= DbBaseline.removed_columns(@migrate_dir)).fetch(entry.name, [])
+    end
+
     # Reads only. `short` covers every baseline table the database holds.
     def report
       applied = @connection.table_exists?("schema_migrations") ? @connection.select_values("SELECT version FROM schema_migrations") : []
@@ -375,7 +390,7 @@ module DbBaseline
     def shortfall(entry)
       return unless entry.kind == :table && @connection.table_exists?(entry.name)
 
-      missing = entry.columns - @connection.columns(entry.name).map(&:name)
+      missing = required(entry) - @connection.columns(entry.name).map(&:name)
       "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
     end
 

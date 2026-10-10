@@ -258,7 +258,16 @@ Alex's to authorize; the sign-in (step 4) is his to do, in his browser.
 The hub connects through a **sandbox** TikTok app. The production Turf Monster
 app was refused ("not approved for personal or company internal use"), and a
 sandbox app needs no review. It drafts only to the accounts listed as its
-target users.
+target users. What that means, and what leaving the sandbox would take, is in
+[Sandbox and production](#sandbox-and-production).
+
+**The standing page is `https://mcritchie.studio/admin/tiktok`** (Admin links,
+Ops, "TikTok connection"). It says whether an account is connected and from
+where, the account, the scope TikTok granted, who connected it and when, the
+day the refresh token expires, whether the stored connection can still be
+read, and whether the fallback env pair, the app's keys and the encryption keys
+are set, by name. It carries **Sign in** (or **Sign in again**) and
+**Disconnect TikTok**. It shows no token and no env value.
 
 1. **The sandbox app**, at developers.tiktok.com:
    - Products: **Login Kit** and **Content Posting API**. Direct Post stays off.
@@ -291,11 +300,13 @@ target users.
    word; never invent keys in a session, and never copy production's keys to
    QA or the reverse. On an app without them, step 4 refuses before it asks
    TikTok for anything.
-4. **Sign in.** `https://mcritchie.studio/admin/tiktok/connect`, as an admin,
-   signed in to TikTok as the target user; the hub stores the connection. The
-   page that comes back says it is connected and saved, and names the account,
-   the scope TikTok granted and the day the refresh token expires. It shows no
-   token: there is nothing to copy and nothing to file.
+4. **Sign in.** Press **Sign in with TikTok** on
+   `https://mcritchie.studio/admin/tiktok`, as an admin, signed in to TikTok as
+   the target user; the hub stores the connection. The page that comes back
+   says it is connected and saved, and names the account, the scope TikTok
+   granted and the day the refresh token expires; the standing page says the
+   same from then on. Neither shows a token: there is nothing to copy and
+   nothing to file.
 5. **Probe.** Step 0 above. It is the first call that proves any of this.
 6. **Retire the hand-filed pair, once, after the first stored sign-in probes
    clean.** Remove `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` from the
@@ -305,9 +316,12 @@ target users.
    server drafts from it whenever no connection is stored. Then run the probe
    again.
 
-**To disconnect**, press **Disconnect TikTok** on the connected page (it asks
-first). It deletes the stored connection and says whether the env pair is still
-set; if it is, drafting carries on from the pair until step 6 is done.
+**To disconnect**, open `https://mcritchie.studio/admin/tiktok` and press
+**Disconnect TikTok** (it asks first). It deletes the stored connection, comes
+back to that page, and says whether the env pair is still set; if it is,
+drafting carries on from the pair until step 6 is done. The server's log keeps
+one line naming the admin and the time (`[tiktok] disconnect by=<slug>
+at=<UTC> ...`); no table records it.
 
 Sign in again, the same way, when the probe reports a refused token or the
 expiry day nears: the same account's connection is updated in place.
@@ -333,6 +347,37 @@ again replaces the row.
 **The sign-in asks for drafts only.** `user.info.basic` and `video.upload` are
 all this SOP needs. Direct post (`video.publish`) is not part of it; why, and
 how it is opted into, is in the Background.
+
+## Sandbox and production
+
+What is known about the TikTok app the hub connects through. Each claim says
+whether it was measured. Check an unmeasured one against TikTok's published
+requirements before acting on it.
+
+**Measured, 2026-10-08:**
+
+- TikTok's reviewer refused the first production app with "App will not be
+  approved for personal or company internal use".
+- The live app is a **sandbox** app, "McRitchie Studio", in the
+  `alex@turfmonster.media` developer account. Its target user is
+  `turfmonstershow`.
+- A sandbox draft reached that account's inbox, and the app's editor offered
+  "Everyone can view this post".
+
+**Not measured** (the orchestrator's working knowledge on 2026-10-09, read
+from no TikTok page in that session):
+
+- A sandbox app drafts only to target users added by hand, about ten at most.
+- A production app needs TikTok's review.
+- Direct Post has its own audit and its own required screens.
+- Review commonly takes one to two weeks.
+
+**The decision as it stands.** Stay in the sandbox while Turf Monster is the
+only account. Graduating to a production app needs a customer-facing product:
+a connection per customer, a public page for the service, a privacy policy and
+terms that name TikTok data, a demo video recorded against the live site, and
+the narrowest scopes (`user.info.basic` and `video.upload`). No date is set
+and nothing is committed.
 
 ## Background — not needed to execute
 

@@ -206,6 +206,23 @@ class TiktokConnectionTest < ActiveSupport::TestCase
     end
   end
 
+  # The delete of the unreadable row and the save that replaces it are one
+  # transaction: a save that fails must not leave the account with no row.
+  test "[unit] a failed replacement of an unreadable row leaves that row in place" do
+    old = TiktokConnection.store!(grant, by: "alex", now: NOW)
+
+    with_other_encryption_key do
+      assert_no_difference -> { TiktokConnection.count } do
+        assert_raises(ActiveRecord::RecordInvalid) do
+          TiktokConnection.store!(grant(refresh_token: ""), by: "alex", now: NOW + 1.day)
+        end
+      end
+      assert TiktokConnection.exists?(old.id), "the row the sign-in set out to replace is still there"
+    end
+
+    assert_equal TOKEN, TiktokConnection.find(old.id).refresh_token, "and still reads under its own key"
+  end
+
   test "[unit] encryption_ready? is Fact's predicate, and the three names are Fact's" do
     assert TiktokConnection.encryption_ready?
     Fact.stub(:encryption_ready?, false) { assert_not TiktokConnection.encryption_ready? }
