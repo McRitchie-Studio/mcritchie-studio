@@ -4,10 +4,12 @@
 # and Logos::StackedLogo. Three logo TYPES per brand: the icon alone, the
 # Navbar Logo and the Stacked Logo (Logos::Variant::TYPES; task
 # logo-tabs-icon-and-stacked). The index lists each brand in
-# config/logo_brands.yml with one of each; a brand page shows one type's logos,
-# with their guide drawings behind one toggle and the brand's `note` on where
-# its art came from; /icon, /navbar and /stacked serve one logo as SVG, inline
-# or as a download.
+# config/logo_brands.yml with one of each; a brand page is TABBED by type
+# (?type=, the Navbar Logo unless asked) and shows that type's logos: the icon,
+# or the three text versions, a Navbar Logo's on the rule ?rule= picks (4
+# unless asked), with their guide drawings behind one toggle and the brand's
+# `note` on where its art came from; /icon, /navbar and /stacked serve one logo
+# as SVG, inline or as a download.
 #
 # Both pages show each logo ONCE, in the context ?context= names (light, dark
 # or watermark), so one dropdown switches every logo together.
@@ -34,15 +36,17 @@ class LogosController < ApplicationController
     end
   end
 
+  # Every setting is read on every tab, so a tab that does not use one (the icon has no rule and no guides) still
+  # carries it to the next.
   def show
+    @rule = Logos::Variant.rule(params[:rule])
     @guides = Logos::Variant.flag(params[:guides], "guides")
-    @variants = Logos::Variant::RULES.keys.flat_map { |rule| Logos::Variant.all(@logo, rule:, tone: @context, guides: @guides) }
+    @variants = Logos::Variant.all(@logo, type: @type, rule: @rule, tone: @context, guides: @guides)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
   def asset
-    type = Logos::Variant.type(params[:type])
-    variant = Logos::Variant.parse(Logos::Variant.logo(@logo.brand, type), params, type:)
+    variant = Logos::Variant.parse(@logo, params, type: @type)
     download = Logos::Variant.flag(params[:download], "download")
     send_data variant.svg, type: "image/svg+xml", filename: variant.filename, disposition: download ? "attachment" : "inline"
   end
@@ -53,11 +57,12 @@ class LogosController < ApplicationController
     @context = Logos::Variant.context(params[:context])
   end
 
-  # An unknown brand is a 404; every other refusal is a 422 (above).
+  # An unknown brand is a 404; every other refusal is a 422 (above). The logo is the one that draws the type asked for.
   def set_logo
     brand = params[:brand].to_s
     raise ActiveRecord::RecordNotFound, "No logo brand #{brand.inspect}" unless Logos::NavbarLogo.brands.include?(brand)
 
-    @logo = Logos::NavbarLogo.new(brand)
+    @type = Logos::Variant.type(params[:type])
+    @logo = Logos::Variant.logo(brand, @type)
   end
 end

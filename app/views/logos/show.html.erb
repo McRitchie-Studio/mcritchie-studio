@@ -1,68 +1,93 @@
-<%# ONE BRAND'S NAVBAR LOGOS: by rule (3, then 4), then by text, each shown once
-    in the context the dropdown picks (light, dark or watermark), with a
-    download and a copy of the logo as shown. ?guides=1 swaps every logo for its
-    guide drawing. Read-only. Admin only (LogosController). %>
+<%# ONE BRAND'S LOGOS, TABBED BY TYPE: Icon, Navbar Logo (the default) or
+    Stacked Logo. Each tab shows that type's logos once, in the context the
+    dropdown picks (light, dark or watermark), with a download and a copy of
+    the logo as shown: the icon, or the three text versions. The Navbar Logo tab
+    has a Rule control (3 or 4) and shows one rule at a time; it and the Stacked
+    Logo tab can swap every logo for its guide drawing. Every control is a
+    plain link or a GET form built from logo_page_params, so each keeps the
+    others' settings. Read-only. Admin only (LogosController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
+<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary' : 'btn-neutral'}" } %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
-  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
-    <%= link_to "Logos", logos_path, class: "hover:text-primary" %>
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
+    <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
     <span aria-hidden="true">/</span>
     <span class="text-heading font-bold font-mono break-all"><%= @logo.brand %></span>
   </nav>
 
-  <div class="card p-4 sm:p-5 space-y-2">
+  <div class="card p-4 sm:p-5 space-y-3">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "context_form", url: logo_brand_path(@logo.brand) %>
-      <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
-                  class: "btn btn-sm #{@guides ? 'btn-primary' : 'btn-neutral'}", data: { test: "guides-toggle" } %>
     </div>
-    <p class="text-sm text-secondary">
-      <% if @guides %>
-        The guide drawings: the numbered rows, the icon's right edge and where the name starts. They are for looking at, never for shipping.
-      <% else %>
-        Every Navbar Logo for this brand, drawn from its icon and its name. Show guides to see how each was built.
+
+    <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
+      <% Logos::Variant::TYPES.each do |type, label| %>
+        <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(type: (type unless type == :navbar))),
+                    class: chosen.(type == @type), aria: { current: ("page" if type == @type) }, data: { test: "logo-tab", type: type } %>
       <% end %>
-    </p>
+    </nav>
+
+    <% unless @type == :icon %>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-test="logo-controls">
+        <% if @type == :navbar %>
+          <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Rule" data-test="rule-control">
+            <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Rule</span>
+            <% Logos::Variant::RULES.each do |rule, label| %>
+              <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(rule: (rule unless rule == 4))),
+                          class: chosen.(rule == @rule), aria: { current: ("true" if rule == @rule) }, data: { test: "rule-option", rule: rule } %>
+            <% end %>
+          </div>
+        <% end %>
+        <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
+                    class: chosen.(@guides), data: { test: "guides-toggle" } %>
+      </div>
+    <% end %>
+
+    <p class="text-sm text-secondary" data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule) %></p>
+    <% if @guides && @type != :icon %>
+      <p class="text-sm text-secondary" data-test="guides-sentence">
+        <% if @type == :navbar %>
+          The guide drawings: the numbered rows, the icon's right edge and where the name starts.
+        <% elsif @logo.form == :one_line %>
+          The guide drawings: a line at each boundary, each band's size in units, and a bracket for the icon's height.
+        <% else %>
+          The guide drawings: a line at each boundary, each band's size in units, and the small word turned on its side beside the icon, to show the icon is as tall as the word is wide.
+        <% end %>
+        They are for looking at, never for shipping.
+      </p>
+    <% end %>
     <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
-    <%= render "context_notes", logo: @logo %>
+    <%= render "context_notes", logo: (@logo unless @type == :icon) %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
   </div>
 
-  <% @variants.group_by(&:rule).each do |rule, by_rule| %>
-    <section class="card p-4 sm:p-5 space-y-4" data-test="logo-rule" data-rule="<%= rule %>">
-      <div>
-        <h2 class="text-base font-bold text-heading"><%= Logos::Variant::RULES.fetch(rule) %></h2>
-        <p class="text-sm text-secondary" data-test="rule-sentence"><%= Logos::Variant::RULE_SENTENCES.fetch(rule) %></p>
-      </div>
-      <% by_rule.group_by(&:text).each do |text, by_text| %>
-        <div class="space-y-2" data-test="logo-text" data-text="<%= text %>">
-          <h3 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(text) %></h3>
-          <div class="grid gap-3">
-            <% by_text.each do |variant| %>
-              <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tone="<%= variant.tone %>">
-                <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>">
-                  <%= logo_image(variant, max_height: @guides ? 130 : 60) %>
-                </div>
-                <div class="flex flex-wrap items-center justify-end gap-2"
-                     x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
-                  <%= link_to "Download", navbar_logo_path(@logo.brand, variant.params.merge(download: 1)),
-                              class: "btn btn-sm btn-neutral", data: { test: "logo-download", turbo: false },
-                              aria: { label: "Download: #{variant.label}" } %>
-                  <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
-                  <button type="button" class="btn btn-sm btn-neutral" data-test="logo-copy" data-clip="<%= variant.svg %>"
-                          aria-label="Copy SVG: <%= variant.label %>" x-text="words[state]"
-                          @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
-                  <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
-                </div>
-              </div>
-            <% end %>
+  <section class="card p-4 sm:p-5" data-test="logo-type" data-type="<%= @type %>" aria-label="<%= Logos::Variant::TYPES.fetch(@type) %>">
+    <div class="grid gap-4 <%= 'md:grid-cols-3' if @type == :stacked && !@guides %>">
+      <% @variants.each do |variant| %>
+        <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tone="<%= variant.tone %>" data-text="<%= variant.text %>">
+          <% if variant.text %>
+            <h2 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(variant.text) %></h2>
+          <% end %>
+          <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>">
+            <%= logo_image(variant, max_height: logo_height(variant)) %>
+          </div>
+          <div class="flex flex-wrap items-center justify-end gap-2"
+               x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
+            <%= link_to "Download", logo_asset_path(variant, download: 1),
+                        class: "btn btn-sm btn-neutral", data: { test: "logo-download", turbo: false },
+                        aria: { label: "Download: #{variant.label}" } %>
+            <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
+            <button type="button" class="btn btn-sm btn-neutral" data-test="logo-copy" data-clip="<%= variant.svg %>"
+                    aria-label="Copy SVG: <%= variant.label %>" x-text="words[state]"
+                    @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
+            <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
           </div>
         </div>
       <% end %>
-    </section>
-  <% end %>
+    </div>
+  </section>
 </div>

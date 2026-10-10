@@ -19,6 +19,15 @@ module Logos
       3 => "The icon is three rows tall. The capitals are one row, a third of the icon, and the name sits in the middle row.",
       4 => "The icon is four rows tall. The capitals are two rows, half the icon, and the name fills the middle two rows."
     }.freeze
+    # The Stacked Logo's 3-2-1 method in plain words, then which form the brand uses.
+    METHOD_SENTENCE = "The 3-2-1 method: take the small word's capitals as one unit. The big word's capitals are 3 units tall, " \
+                      "every gap is 2 units, and the small word, 1 unit tall, is spaced out to 60% of the big word's width. " \
+                      "The icon is as tall as the small word is wide."
+    FORM_SENTENCES = {
+      two_line: "This brand uses the two-line form.",
+      one_line: "This brand uses the one-line form, because its second word is too wide to sit under its first: the whole name is on " \
+                "one line, 3 units tall, 2 units under an icon 60% as tall as the name is wide."
+    }.freeze
     TEXTS = { homogeneous: "Homogeneous", first: "First word leads", second: "Second word leads" }.freeze
     TONES = NavbarLogo::TONES
     CONTEXTS = { light: "Light", dark: "Dark", watermark: "Watermark" }.freeze
