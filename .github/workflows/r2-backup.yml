@@ -46,7 +46,7 @@ jobs:
           - app: turf-monster
             secret: TURF_MONSTER
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A pinned upstream release, checksum-verified, NOT apt: Ubuntu's rclone is
       # 1.60.1, which exits 1 on uploads to R2 (a 501 NotImplemented on a request
