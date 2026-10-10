@@ -110,10 +110,12 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
     refute @rel.reload.ship_authorization_granted?
   end
 
-  # Drives the real ShipAuthority timed loop against this release: the recorder
+  # Drives the real ShipAuthority seam against this release: the recorder
   # writes through the model under the key bin/release uses, the reader is the
   # one bin/release polls (ship_authorization_state + the lapse blockers).
-  def timed_ship!(start:, minutes: 1)
+  def timed_ship!(start:, minutes: 1) = ship!(mode: "timed", start: start, minutes: minutes)
+
+  def ship!(mode:, start:, minutes: 1, **options)
     now = start
     recorder = lambda do |status, metadata|
       @rel.record_event!(step: "ship_authorized", status: status, source: "conductor", actor: "steffon", occurred_at: now,
@@ -126,9 +128,41 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
       state.slice("granted", "granted_by", "granted_via")
            .merge("blockers" => blockers && !state["granted"] ? @rel.ship_window_lapse_blockers : [])
     end
-    ShipAuthority.take!(mode: "timed", release_slug: @rel.slug, minutes: minutes, recorder: recorder, reader: reader,
+    ShipAuthority.take!(mode: mode, release_slug: @rel.slug, minutes: minutes, recorder: recorder, reader: reader,
                         confirmer: ->(_) { true }, say: ->(_) { }, clock: -> { now },
-                        sleeper: ->(seconds) { now += seconds }, interval: 60)
+                        sleeper: ->(seconds) { now += seconds }, interval: 60, **options)
+  end
+
+  test "[integration] a cleared run after an auto run leaves the chat clearance as the grant" do
+    assert_equal :auto, ship!(mode: "auto", start: 2.hours.ago)
+    assert_equal :cleared, ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it", cleared_by: "alex")
+
+    grant = @rel.reload.ship_authorization_grant
+    assert_equal "chat", grant.metadata["granted_via"]
+    assert_equal "ship it", grant.metadata["clearance"]
+    assert_equal "alex", grant.metadata["cleared_by"]
+    state = @rel.ship_authorization_state
+    assert_equal "cleared", state["mode"]
+    assert_equal "ship it", state["clearance"]
+    assert_equal 2, @rel.release_events.for_step("ship_authorized").completed.count, "each run keeps its own grant row"
+  end
+
+  test "[integration] a cleared run closes the window an earlier timed request left open" do
+    ship!(mode: "auto", start: 3.hours.ago)
+    assert_equal :dry, ship!(mode: "timed", start: 10.minutes.ago, minutes: 30, dry: true)
+    assert @rel.reload.ship_authorization_window, "control: the timed request holds a window open"
+
+    ship!(mode: "cleared", start: 5.minutes.ago, clearance: "go ahead")
+
+    assert_nil @rel.reload.ship_authorization_window, "no window and no Approve button while the cleared ship deploys"
+    assert_equal "go ahead", @rel.ship_authorization_state["clearance"]
+  end
+
+  test "[integration] a second cleared run records its own words" do
+    ship!(mode: "cleared", start: 2.hours.ago, clearance: "ship the morning release")
+    ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it again", cleared_by: "alex")
+
+    assert_equal "ship it again", @rel.reload.ship_authorization_state["clearance"]
   end
 
   test "[integration] a timed re-run after a lapse re-reads the escalations instead of the old lapse" do
