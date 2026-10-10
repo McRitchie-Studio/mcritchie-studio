@@ -37,11 +37,10 @@ module Appearances
   # apart.
   #
   # OUR OWN FETCHER IS NOT REFUSED, and that is the measurement the whole fix rests
-  # on rather than an assumption. LiveCache.fetch then used `URI.open`, which sends
-  # Net::HTTP's default `User-Agent: Ruby`; measured against the failing URL on
-  # 2026-09-26 it answered 200 with 222,045 bytes. A UA Wikimedia accepts is all its
-  # policy asks for. The fetch is now the engine's pinned one (see LiveCache below),
-  # which is Net::HTTP too and sends the same header; a test pins it.
+  # on rather than an assumption. Net::HTTP's default `User-Agent: Ruby` draws a
+  # 200 with 222,045 bytes from the failing URL. A UA Wikimedia accepts is all its
+  # policy asks for. The fetch is the engine's pinned one (see LiveCache below),
+  # which is Net::HTTP and sends that header; a test pins it.
   #
   # ── WHAT IS MIRRORED, AND WHAT IS DELIBERATELY NOT ──────────────────────────────
   #
