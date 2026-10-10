@@ -145,7 +145,9 @@ Let **u** be the small word's cap height (40 design units).
   letter. The message names the brand and says to set `stacked: one_line`.
   Negative tracking is never drawn.
 - a `stacked` value other than `two_line` or `one_line`;
-- an icon so wide that, at its height, it would overhang the name.
+- an icon so wide that, at its height, it would overhang the name;
+- a keyword `svg` or `layout` does not take, `rule:` above all: "a stacked
+  logo takes text, tone and guides, not rule: it has no rule".
 
 `guides: true` returns the construction drawing: a line at each boundary, each
 band's size at the right (`2u`, `3u`, `2u`, `1u`; a one-line logo stops after
@@ -230,9 +232,11 @@ a `?type=` in the query string cannot change it.
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of two
-  links; the current one carries `aria-current="true"`. All are `.btn` links
-  with a focus ring fixed per hub theme, because the engine's own ring is too
-  faint on the light theme's white card.
+  links; the current one carries `aria-current="true"`. All are `.btn` links.
+  They, and Download and Copy SVG, have a focus ring fixed per hub theme,
+  because the engine's own ring (`--color-cta` at 70%) is too faint on the
+  light theme's white card. A chosen control carries a transparent border, so
+  it is the same size as the others.
 - The **Context** dropdown is on every tab and on the index.
   `?context=light` (the default), `dark` or `watermark` sets the one tone every
   logo on the page is shown in. It is a GET form (`logos/_context_form`) that
@@ -244,13 +248,20 @@ a `?type=` in the query string cannot change it.
   (Navbar Logo, light, rule of 4, guides off) out of the URL. So a rule picked
   on the Navbar tab is still picked after a visit to the Icon tab. The
   **Logos** breadcrumb back to the table keeps the context.
-- **Guide drawings keep their size.** With guides on, a drawing is shown at a
-  fixed height (`LogosHelper::LOGO_GUIDE_HEIGHTS`: 132 px for a Navbar Logo,
-  380 px for a Stacked Logo), which holds its labels at 11 px or more at every
-  page width. Where the drawing is wider than its plate (every drawing on a
-  phone; the Industries rule-of-4 drawing on a desktop too) the plate scrolls
-  sideways inside itself; it is focusable, so the arrow keys scroll it. The
-  page body never scrolls sideways.
+- **Guide drawings fit first, and scroll only below a readable size.** With
+  guides on, a drawing scales to its plate like any logo, up to a height cap
+  (`LogosHelper::LOGO_GUIDE_HEIGHTS`: 132 px for a Navbar Logo, 380 px for a
+  Stacked Logo). It also has a least width of its own,
+  `LogosHelper#logo_guide_min_width`, computed from its viewBox: the width at
+  which its labels are 9 px tall (`LOGO_GUIDE_LABEL_PX`). Below that width the
+  drawing stops shrinking and its plate scrolls sideways inside itself. The
+  widest least width is 874 px (Industries, rule of 4, homogeneous), under the
+  1028 px plate of a 1280 px page, so nothing scrolls there; on a phone every
+  drawing does. The page body never scrolls sideways.
+- **A guide plate is a tab stop only while it scrolls.** It is served with
+  `tabindex="0"`; a few inline lines remove the attribute when the drawing
+  fits and restore it when it does not. With JavaScript off it stays a tab
+  stop.
 - Download and Copy SVG give the logo as shown, on every tab: in the watermark
   context, the watermark SVG, named `…-watermark.svg`.
 - Every image's accessible name states its type, its text version (and rule)
@@ -258,8 +269,12 @@ a `?type=` in the query string cannot change it.
 - In the watermark context, the Navbar and Stacked tabs of a brand that leads
   by colour say its three text versions look the same. No version is hidden.
 - The index table is a table from the `xl` breakpoint up, and a stack of
-  labelled cells below it. Its wrapper scrolls sideways if a row ever outgrows
-  it.
+  labelled cells below it. Its columns' least widths add up to about 1061 px,
+  inside the 1078 px its card has on a 1280 px page; its wrapper scrolls
+  sideways if a row ever outgrows it.
+- A brand whose name cannot be stacked keeps its row on the index: its Stacked
+  Logo cell reads "Not drawn." and the library's reason. Its own Stacked Logo
+  tab answers 422 with the same reason.
 
 - An unknown brand is a 404. Any other param the library or the parser refuses
   (an unknown `type`, `context`, `rule`, `text`, `tone`, `guides` or `download`)
