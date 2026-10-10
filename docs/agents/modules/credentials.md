@@ -171,16 +171,28 @@ token and says so.
 ### Turf Monster's runtime key
 
 Turf Monster's two hub calls (`GET /api/v1/athletes`, `POST /api/v1/game_recaps`)
-take a client runtime key that reaches those two endpoints and nothing else. A
-hub shell mints it, and stdout is the key and nothing else:
+take a client runtime key that reaches those two endpoints and nothing else. The
+production hub mints it:
 
 ```bash
 bin/rails agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=turf-production
 ```
 
-Steffon takes that output straight into Turf's config as `STUDIO_RUNTIME_KEY`
+**Production only.** The key is a row on the hub that minted it, and
+`turf-monster-mainnet` is the Turf app that calls the hub. `turf-monster-qa`
+holds neither `STUDIO_RUNTIME_KEY` nor `AGENT_API_SECRET`, so it makes no hub
+call (`Studio::HubCredential.configured?` in turf-monster) and takes no key.
+
+In a local shell the task prints the key on stdout and its one-line notice on
+stderr. Through `heroku run` a one-off dyno returns both streams on stdout, so
+the capture holds the notice and the key. The key is the one line with no space
+in it, and the notice states its length. Keep that line, check that exactly one
+line was kept, and set it as `STUDIO_RUNTIME_KEY` on `turf-monster-mainnet`
 under the [`credential-rotation`](../agents/steffon/sops/credential-rotation.md)
-SOP, never reading it. Turf presents the key when the variable is set and
+SOP, never reading it. Each run mints a new key: revoke one that was not kept
+with `bin/rails agent_sessions:revoke SLUG=<sess-…>`.
+
+Turf presents the key when the variable is set and
 exchanges `AGENT_API_SECRET` while it is not. A refused key fails the call and
 does not fall back, so a wrong key shows as a failed sync or a
 `recap_push_failed` anomaly.

@@ -101,8 +101,14 @@ note it as a finding — do not guess.
    ```bash
    bin/devops-cycle --record-scout-report <task-slug> --scout-agent <your-soul> \
      --outcome <merge-ready|wait-for-ci|request-changes|conductor-review> \
-     --summary "..." --finding "..." --check "..." --dry-run
+     --head <reviewed-head> --summary "..." --finding "..." --check "..." --dry-run
    ```
+
+   `--head` is the full 40-character sha of the PR head you read
+   (`gh pr view <pr> --json headRefOid --jq .headRefOid`). `bin/merge-permit`
+   reads the card's LATEST scout report, whoever filed it. A `merge-ready` from
+   you that names no head, filed after the primary's, refuses the documentation
+   seat's merge.
 
    - **merge-ready** — no blockers from your read.
    - **request-changes** — you found a **reachable regression** (correctness /

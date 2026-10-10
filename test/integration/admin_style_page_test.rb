@@ -70,70 +70,22 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
   # flagged even with :web3 / :age_gate off), and the walked on-chain entry flow
   # specimen is openable.
   #
-  # THIS SECTION IS NOW SELECTED BY ITS **ID**, not by its heading text.
-  #
-  # studio-engine >= 0.62.x publishes a stable id on every modal-guide subsection
-  # (/tasks/anchor-style-guide-sections): modals-auth, modals-profile,
-  # modals-profile-leveling, modals-web3, modals-contest-entry,
-  # modals-system-status, modals-templates, modals-rewards. They are deliberately
-  # NOT slugs of the headings — they name the SUBJECT and do not move when the
-  # copy does, which is the whole point.
-  #
-  # THE HEADING FALLBACK BELOW IS KEPT ON PURPOSE, and here is when to delete it.
-  # This suite runs in TWO worlds: this repo's CI resolves the PUBLISHED gem,
-  # while consumer-ci pairs an engine PR with the consumer branch matching that
-  # PR's BASE and runs this suite against the engine BRANCH. An id-only assertion
-  # is red in any world resolving an engine older than 0.62.x — the same DEADLOCK
-  # shape the heading pinning had, one level over. So: prefer the id, accept the
-  # heading when the id is absent, and drop the fallback once no supported engine
-  # predates the ids.
-  #
-  # The original reason the heading was not pinned to one string follows, because
-  # it explains why the fallback accepts TWO spellings rather than one. It was
-  # renamed twice — "Web3" -> "Web3 Contest" in engine 0.27.0, and back to "Web3"
-  # on 2026-08-25. Pinning either spelling made this test a DEADLOCK:
-  #
-  #   · consumer-ci pairs an engine PR with the consumer branch matching the PR's
-  #     BASE (.github/workflows/consumer-ci.yml, "THE RULE IS THE RUNG"), so an
-  #     engine PR based on `accepted` runs THIS suite against the engine BRANCH.
-  #   · this repo's own CI runs against the RESOLVED GEM, which is whatever is
-  #     published.
-  #
-  # So a single expected spelling is red on one side or the other for the whole
-  # window between an engine rename and its release — and the engine cannot
-  # release until this lane is green. Accepting both spellings is green in both
-  # worlds and lets each side move independently.
-  #
-  # The SPECIMEN assertions below are the durable half and keep their teeth: they
-  # assert what the section CONTAINS, which has not moved across either rename.
-  WALLET_SECTION_HEADINGS = ["Web3", "Web3 Contest"].freeze
-
+  # THE SECTION IS SELECTED BY ITS ID, not by its heading text. The engine
+  # publishes a stable id on every modal-guide subsection (modals-auth,
+  # modals-profile, modals-profile-leveling, modals-web3, modals-contest-entry,
+  # modals-system-status, modals-templates, modals-rewards). The ids name the
+  # SUBJECT and do not move when the copy does.
   test "admin/style renders the wallet and Contest-entry sections" do
     log_in_as users(:alex)
 
     get admin_style_path
     assert_response :success
 
-    # PREFER THE ID. It survives a heading rename untouched, which is the defect
-    # this replaces — the wallet section's copy has changed twice and reddened
-    # this lane both times.
-    by_id = css_select("section#modals-web3")
-
-    if by_id.any?
-      assert_equal 1, by_id.length,
-        "modals-web3 must be unique; a duplicated id makes this selector return whichever " \
-        "came first, which looks like it worked"
-      refute_empty by_id.first.text.strip,
-        "the modals-web3 section rendered empty — the id is on the wrong element, or the " \
-        "subsection did not render"
-    else
-      # FALLBACK for an engine older than 0.62.x. See the note above for when
-      # this branch can be deleted.
-      headings = css_select("h3").map { |n| n.text.strip }
-      assert_includes WALLET_SECTION_HEADINGS, (headings & WALLET_SECTION_HEADINGS).first,
-        "no section#modals-web3 (engine < 0.62.x?) AND no known wallet heading (one of " \
-        "#{WALLET_SECTION_HEADINGS.inspect}); found: #{headings.inspect}"
-    end
+    wallet = css_select("section#modals-web3")
+    assert_equal 1, wallet.length, "the wallet section is selected by one unique id"
+    refute_empty wallet.first.text.strip,
+      "the modals-web3 section rendered empty: the id is on the wrong element, or the " \
+      "subsection did not render"
 
     # This one has NOT been renamed since 0.27.0, so it stays pinned.
     assert_select "h3", { text: "Contest entry & eligibility" },
@@ -146,22 +98,9 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
       "the pre-0.27.0 Eligibility & entry heading must not resurface"
 
     # A specimen from the wallet section is present and openable.
-    #
-    # THIS USED TO PIN `dsModals.open('onchain-tx'` TOO, AND THAT WAS A DEADLOCK
-    # of exactly the shape the heading note above describes, one level over.
-    # studio-engine retired style/modals/_onchain_tx on 2026-09-09: it was a
-    # MIRROR of turf-monster's card, and turf now cards its real partial on its
-    # own host section, so the engine keeps no second copy to drift. Pinning a
-    # specimen the producer is deleting makes THIS suite the thing that blocks
-    # the producer's release — consumer-ci runs it against the engine BRANCH,
-    # while this repo's own CI runs it against the RESOLVED GEM, so no single
-    # spelling of an onchain-tx assertion is green on both sides during the
-    # window between the engine change and its release.
-    #
-    # `entry-confirmed` is the durable replacement and needs no fallback: it is
-    # ENGINE-OWNED (studio/modals/blocks/_entry_confirmed), it lives in the SAME
-    # modals-web3 section, and it is present in every engine this repo supports.
-    # Pin engine-owned specimens here, never a mirror of a consumer's card.
+    # `entry-confirmed` is ENGINE-OWNED (studio/modals/blocks/_entry_confirmed)
+    # and lives in the modals-web3 section. Pin engine-owned specimens here,
+    # never a mirror of a consumer's card.
     assert_includes @response.body, "$store.dsModals.open('entry-confirmed'",
       "expected the Contest-entry confirmation flow specimen"
   end

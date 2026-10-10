@@ -48,13 +48,17 @@ this machine, so it survives your session and costs nothing to rewrite:
 /Users/alex/projects/.agents/epics/<epic-slug>.md
 ```
 
-Template, all five sections required:
+Template, all eight sections required:
 
 ```markdown
 # <Epic title>            epic: <epic-slug>   opened: <date>   owner session: <mascot>
 
 ## Goal
 One paragraph: what is true when this epic is done.
+
+## State now
+One block, replaced at every update and never appended to: the release in
+flight, each open task with its stage and PR, and the live claims and desks.
 
 ## Pieces
 | # | Piece | Depends on | State | Task |
@@ -69,6 +73,16 @@ One paragraph: what is true when this epic is done.
 
 ## Open questions for Alex
 - <anything that changes the plan and needs his call>
+
+## Waiting on Alex
+| Item | Question, as he would read it | Default if he says nothing |
+|------|-------------------------------|----------------------------|
+| <a decision or tap a filed task waits on> | <one line> | <the default> |
+
+## Operator steps
+| Step owed | Exact command or tap | Who runs it |
+|-----------|----------------------|-------------|
+| <step> | <command> | <Alex or a lane> |
 ```
 
 Rules for the plan:
@@ -79,6 +93,9 @@ Rules for the plan:
 - **Dependencies are the schedule.** Anything with no unmet dependency is
   startable now, whatever wave you first imagined it in. Half of wave two
   usually starts with wave one.
+- **State is replaced, never logged.** `State now`, `Waiting on Alex` and
+  `Operator steps` say what is true at the last update. An answered question or
+  a finished step leaves its table; what it settled goes under `Decisions`.
 - **Re-plan freely.** When a builder learns the API works differently, rewrite
   the pieces, log the decision, and carry on. A filed task that is now wrong is
   archived with one note: `bin/task note <slug> --comment "archived: plan
@@ -261,9 +278,10 @@ with a trigger you can reproduce is right; fix it.
 
 ## Step 6 — Backfill, re-plan, or stop
 
-As each task reaches `reviewed`, update the plan, recompute **Next startable**,
-read the machine, and launch the next builder. When a builder's finding changes
-the plan, rewrite the pieces and log the decision before filing anything new.
+As each task reaches `reviewed`, update the plan in place: replace **State
+now**, recompute **Next startable**, clear the answered rows of **Waiting on
+Alex** and **Operator steps**, read the machine, and launch the next builder.
+When a builder's finding changes the plan, rewrite the pieces and log the decision before filing anything new.
 Stopping is fine: the plan is the state, and a fresh session resumes from it.
 
 Spend the most expensive model on audit, design and question rounds; builders and

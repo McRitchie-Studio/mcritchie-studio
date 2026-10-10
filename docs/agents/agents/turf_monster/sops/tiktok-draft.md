@@ -282,9 +282,8 @@ are set, by name. It carries **Sign in** (or **Sign in again**) and
    token encrypted, so the production app must hold
    `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`,
    `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` and
-   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. This is met as of
-   2026-10-08: production and QA each hold all three, a different set per app,
-   filed as `active-record-encryption.studio.applications` and
+   `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`. Production and QA each
+   hold all three, a different set per app, filed as `active-record-encryption.studio.applications` and
    `active-record-encryption.studio-qa.applications` (vault
    `studio-applications`). So this step is a check: confirm the three names
    are present on the app, by name and never by printing a value. For each
@@ -311,8 +310,7 @@ are set, by name. It carries **Sign in** (or **Sign in again**) and
 6. **Retire the hand-filed pair, once, after the first stored sign-in probes
    clean.** Remove `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` from the
    production app's config and blank the `refresh-token` and `open-id` fields
-   on `tiktok.studio.agents` (all four of its fields are filled as of
-   2026-10-08). Left in place, the pair is a second live credential, and the
+   on `tiktok.studio.agents`. Left in place, the pair is a second live credential, and the
    server drafts from it whenever no connection is stored. Then run the probe
    again.
 
