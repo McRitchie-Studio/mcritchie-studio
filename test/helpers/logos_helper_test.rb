@@ -37,21 +37,23 @@ class LogosHelperTest < ActionView::TestCase
     assert_in_delta 2.14, worst_contrast(%w[#3F5E8C #4F9A94], Logos::NavbarLogo::WATERMARK), 0.01, "the plate this replaced measured about 2.1:1"
   end
 
-  # Every guide drawing the gallery can show: 4 brands x (2 rules x 3 texts of the Navbar Logo + 3 texts of the Stacked Logo).
+  # Every guide drawing the gallery can show: 4 brands x (2 rules x 3 texts of the Navbar Logo + 3 texts of each form of
+  # the Stacked Logo: two for the three brands with a tagline, one for Turf Monster).
   def guide_drawings
     Logos::NavbarLogo.brands.flat_map do |brand|
       navbar = Logos::Variant::RULES.keys.flat_map { |rule| Logos::Variant.all(Logos::Variant.logo(brand), rule:, guides: true) }
-      navbar + Logos::Variant.all(Logos::Variant.logo(brand, :stacked), type: :stacked, guides: true)
+      stacked = Logos::Variant.logo(brand, :stacked)
+      navbar + stacked.forms.flat_map { |form| Logos::Variant.all(stacked, type: :stacked, form:, guides: true) }
     end
   end
 
   def view_box(variant) = Nokogiri::XML(variant.svg).root["viewBox"].split.map(&:to_f)
 
   test "no guide drawing needs more than the 1028 px plate of a 1280 px page, so nothing scrolls there" do
-    assert_equal 36, guide_drawings.size
+    assert_equal 45, guide_drawings.size
     guide_drawings.each { |variant| assert_operator logo_guide_min_width(variant), :<=, LogosHelper::LOGO_PLATE_WIDTH, variant.label }
     widest = guide_drawings.max_by { |variant| logo_guide_min_width(variant) }
-    assert_equal ["McRitchie Industries navbar logo, rule of 4, homogeneous, light, construction guides", 874], [widest.label, logo_guide_min_width(widest)]
+    assert_equal ["Commercial Welding stacked logo, with tagline, homogeneous, light, construction guides", 954], [widest.label, logo_guide_min_width(widest)]
   end
 
   test "at its least width every guide drawing's labels are at least 9 px, read from the drawing itself" do
@@ -83,5 +85,22 @@ class LogosHelperTest < ActionView::TestCase
     assert_equal ["max-height: 132px; min-width: #{logo_guide_min_width(guide)}px", "block max-w-full w-auto h-auto mx-auto", guide.label],
                  [held["style"], held["class"], held["alt"]]
     assert_equal({ icon: 160, navbar: 60, stacked: 240 }, %i[icon navbar stacked].to_h { |type| [type, logo_height(Logos::Variant.new(Logos::Variant.logo("studio", type), type:))] })
+  end
+
+  # Task stacked-tagline-and-ghost-grid: a ghost is the logo's own text colour, faint. Measured against each plate,
+  # it reads at about 1.4:1 to 2.2:1, while the logo's text is more than twice that.
+  test "every ghost is visible on its plate and far fainter than the logo's own text" do
+    plates = { light: "#FFFFFF", dark: "#12141A", watermark: LogosHelper::WATERMARK_PLATE.first }
+    Logos::NavbarLogo.brands.product(Logos::NavbarLogo::TONES).each do |brand, tone|
+      logo = Logos::StackedLogo.new(brand)
+      fill = tone == :watermark ? logo.watermark.fetch("fill") : Logos::NavbarLogo.styles.fetch(brand).fetch("tones").fetch(tone.to_s).fetch("text")
+      text_opacity = tone == :watermark ? logo.watermark.fetch("opacity") : 1
+      behind = channels(plates.fetch(tone))
+      seen = ->(opacity) { channels(fill).zip(behind).map { |f, b| opacity * f + (1 - opacity) * b } }
+      ghost = contrast(seen.(Logos::StackedLogo::GHOST_OPACITY.fetch(tone)), behind)
+      assert_operator ghost, :>=, 1.4, "#{brand} #{tone}: visible"
+      assert_operator ghost, :<=, 2.2, "#{brand} #{tone}: faint"
+      assert_operator contrast(seen.(text_opacity), behind), :>=, 2.2 * ghost, "#{brand} #{tone}: the logo is far the stronger"
+    end
   end
 end

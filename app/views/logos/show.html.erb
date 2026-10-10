@@ -69,10 +69,9 @@
       <p class="text-sm text-secondary" data-test="guides-sentence">
         <% if @type == :navbar %>
           The guide drawings: the numbered rows, the icon's right edge and where the name starts.
-        <% elsif @logo.form == :one_line %>
-          The guide drawings: a line at each boundary, each band's size in units, and a bracket for the icon's height.
         <% else %>
-          The guide drawings: a line at each boundary, each band's size in units, and the small word turned on its side beside the icon, to show the icon is as tall as the word is wide.
+          <% small = { two_line: "the small word", one_line: "the name at a third of its size", tagline: "the tagline" }.fetch(@form) %>
+          The guide drawings prove each measurement with faint copies of <%= small %>: one copy per unit, stacked beside the logo and numbered, so each band can be counted, and its letters down the icon's centre line, from its top to its foot. A line marks each boundary.
         <% end %>
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways.
       </p>

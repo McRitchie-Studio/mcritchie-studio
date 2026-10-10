@@ -260,8 +260,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_examples variants(brand, :stacked, guides: true)
       assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 3
-      assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?(">2u</text>") }
-      assert_select "[data-test='guides-sentence']", brand == "turf" ? /a bracket for the icon's height/ : /the small word turned on its side beside the icon/
+      assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?(%(<g class="guide-ghosts")) }
+      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size: one copy per unit/ : /faint copies of the small word: one copy per unit/
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
     end
   end
@@ -467,7 +467,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
     get logo_brand_path("industries", type: "stacked", guides: 1)
-    assert_equal ["max-height: 380px; min-width: 335px", "max-height: 380px; min-width: 335px", "max-height: 380px; min-width: 323px"],
+    assert_equal ["max-height: 540px; min-width: 480px", "max-height: 540px; min-width: 476px", "max-height: 540px; min-width: 467px"],
                  css_select("[data-test='logo-plate'].overflow-x-auto img.max-w-full").map { |img| img["style"] }
     get logo_brand_path("industries", type: "stacked")
     assert_select "[data-test='logo-plate'].overflow-x-auto, [data-test='logo-plate'][tabindex]", 0
@@ -527,7 +527,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success, "a stacked logo has no rule, so the param is not read"
     assert_equal logo.svg(tone: :dark, guides: true), response.body
     assert_match(/\Aattachment; filename="industries-stacked-two-line-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
-    assert_equal %w[2u 3u 2u 1u], Nokogiri::XML(response.body).remove_namespaces!.css("text").map(&:text)
+    assert_equal %w[1 2 1 2 3 1 2 1 1], Nokogiri::XML(response.body).remove_namespaces!.css("text").map(&:text), "the ruler's numbers and the icon's 1"
 
     get stacked_logo_path("turf", text: "second", tone: "watermark")
     assert_equal Logos::StackedLogo.new("turf").svg(text: :second, tone: :watermark), response.body
@@ -637,6 +637,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding stacked logo, with tagline, ']", 3
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
+    assert_select "[data-test='guides-sentence']", /faint copies of the tagline: one copy per unit/
 
     get stacked_logo_path("welding", form: "tagline", text: "first", tone: "light", download: 1)
     assert_response :success

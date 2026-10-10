@@ -33,6 +33,7 @@ module Logos
     GUIDE = "#D4189F"
     GUIDE_PAD = { left: 40, top: 40, right: 80, bottom: 40 }.freeze
     GUIDE_FONT = 32                            # the guide labels' size, in design units
+    GUIDE_STROKE = 1.5                         # the guide lines' width, in design units
     HEX = /\A#(?:\h{3}|\h{6})\z/
     # Icon, glyph and lettering data is written into markup as it stands, so it is checked first.
     PATH = /\A[MLHVCSQTAZmlhvcsqtazeE0-9 ,.+-]*\z/
@@ -288,7 +289,7 @@ module Logos
     end
 
     def guide_line(x1, y1, x2, y2)
-      %(<line x1="#{f(x1)}" y1="#{f(y1)}" x2="#{f(x2)}" y2="#{f(y2)}" stroke="#{GUIDE}" stroke-width="1.5"/>)
+      %(<line x1="#{f(x1)}" y1="#{f(y1)}" x2="#{f(x2)}" y2="#{f(y2)}" stroke="#{GUIDE}" stroke-width="#{self.class::GUIDE_STROKE}"/>)
     end
 
     # `words` is the library's own (a row number, a band's size): never a name or a style value. `attributes` likewise.
