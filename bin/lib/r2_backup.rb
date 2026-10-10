@@ -6,7 +6,8 @@ require "time"
 
 # R2Backup — the nightly undo for Cloudflare R2, which has no object versioning.
 #
-# One run mirrors <app>-production into <app>-backup/current/ with `rclone sync`,
+# One run mirrors the source bucket (<app>-production, or the single bucket a
+# SOURCE_BUCKETS entry names) into <app>-backup/current/ with `rclone sync`,
 # and `--backup-dir` first moves every object the sync would overwrite or delete
 # into archive/<stamp>/. The run writes a receipt to _receipts/<stamp>.json. The
 # procedure, the drill and the manual acts are the r2-backup SOP
@@ -39,7 +40,22 @@ module R2Backup
   FRESH_HOURS = 48
   DEFAULT_DAYS = 30
 
+  # Backups whose source is NOT "<name>-production": a store that is one private
+  # bucket with no dev/production pair. The key is the name the backup goes by
+  # (the workflow matrix row, the 1Password item r2.<name>, the secret stem, and
+  # "<name>-backup"); the value is the bucket it mirrors.
+  #
+  #   mcritchie-studio-desk  DeskCapture's captured inbound mail (raw .eml and
+  #                          extracted attachments). The hub app writes it and
+  #                          never deletes from it.
+  SOURCE_BUCKETS = {
+    "mcritchie-studio-desk" => "mcritchie-studio-desk"
+  }.freeze
+
   module_function
+
+  # The bucket a backup named `app` mirrors.
+  def source_bucket(app) = SOURCE_BUCKETS.fetch(app.to_s) { "#{app}-production" }
 
   def stamp(time = Time.now.utc) = time.utc.strftime(STAMP_FORMAT)
 
@@ -130,7 +146,9 @@ module R2Backup
       @clock = clock
     end
 
-    def production = "#{REMOTE}:#{app}-production"
+    # The source bucket. Named `production` because that is what it is for every
+    # paired app, and the receipt's "production" count is read by past receipts.
+    def production = "#{REMOTE}:#{R2Backup.source_bucket(app)}"
     def backup = "#{REMOTE}:#{app}-backup"
 
     # One run. Returns the receipt hash; the caller exits non-zero unless ok.

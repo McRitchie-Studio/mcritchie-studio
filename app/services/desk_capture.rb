@@ -1,16 +1,22 @@
 # frozen_string_literal: true
 
-# The team@mcritchie.studio capture pipe's S3 side. Deliberately NOT
+# The team@mcritchie.studio capture pipe's object-storage side. Deliberately NOT
 # Studio::S3: that facade owns the app's public asset bucket pair
-# (mcritchie-studio-{dev,production}, world-readable by policy), and raw
+# (mcritchie-studio-{dev,production}, served from a public domain), and raw
 # forwarded mail with deal attachments must never land there. The desk bucket
-# is its own PRIVATE bucket in us-east-1 (SES inbound's region), reachable with
-# the app's existing AWS credentials.
+# is its own PRIVATE Cloudflare R2 bucket, `mcritchie-studio-desk` (one bucket,
+# no dev/production pair), with its own bucket-scoped keys
+# (DESK_CAPTURE_R2_ENDPOINT, DESK_CAPTURE_R2_ACCESS_KEY_ID,
+# DESK_CAPTURE_R2_SECRET_ACCESS_KEY; 1Password r2.mcritchie-studio-desk).
 #
-# DESK_CAPTURE_BACKEND=r2 moves it to its own private R2 bucket (same name),
-# with its own bucket-scoped keys; never the app's AWS_* keys.
+# R2 is the only backend. The AWS half (an S3 bucket filled by SES inbound, read
+# by a poll job) was deleted on 2026-10-10 with the AWS account's keys. Mail
+# arrives by the Resend webhook (DeskCaptureResendIngestJob) and the Gmail read
+# (Gmail::MailboxIngest). DESK_CAPTURE_BACKEND is optional and accepts only `r2`.
+#
+# Nothing here is checked at boot: QA and local desks hold no desk keys and never
+# ingest. A missing key raises at the first read or write, naming the variable.
 module DeskCapture
-  INCOMING_PREFIX = "incoming/"
   PARSED_PREFIX   = "parsed/"
   GMAIL_PREFIX    = "gmail/"
 
@@ -34,22 +40,14 @@ module DeskCapture
       ENV.fetch("DESK_CAPTURE_BUCKET", "mcritchie-studio-desk")
     end
 
-    def r2?
-      ENV["DESK_CAPTURE_BACKEND"].to_s.casecmp?("r2")
-    end
+    # Raises on any DESK_CAPTURE_BACKEND but `r2` (or unset): the S3 backend is
+    # gone, so an old value must fail loudly rather than read as a selection.
+    def backend!
+      value = ENV["DESK_CAPTURE_BACKEND"].to_s.strip
+      return "r2" if value.empty? || value.casecmp?("r2")
 
-    def region
-      return "auto" if r2?
-
-      ENV.fetch("DESK_CAPTURE_REGION", "us-east-1")
-    end
-
-    # Whether this environment can touch the capture bucket at all. Local desks
-    # without AWS credentials skip polling rather than erroring every 5 minutes;
-    # production misconfiguration still fails loudly inside the job. Choosing
-    # R2 is itself the configuration: a missing R2 key raises in `client`.
-    def configured?
-      r2? || ENV["AWS_ACCESS_KEY_ID"].present?
+      raise ArgumentError, "DESK_CAPTURE_BACKEND=#{value.inspect} is not supported: DeskCapture runs on " \
+                           "Cloudflare R2 only (the S3 backend was retired 2026-10-10). Unset it or set r2."
     end
 
     def client
@@ -60,9 +58,8 @@ module DeskCapture
     end
 
     def client_options
-      return { region: region } unless r2?
-
-      { region: region,
+      backend!
+      { region: "auto",
         endpoint: ENV.fetch("DESK_CAPTURE_R2_ENDPOINT"),
         access_key_id: ENV.fetch("DESK_CAPTURE_R2_ACCESS_KEY_ID"),
         secret_access_key: ENV.fetch("DESK_CAPTURE_R2_SECRET_ACCESS_KEY") }
@@ -74,12 +71,6 @@ module DeskCapture
 
     def trusted_source?(source)
       TRUSTED_SOURCES.include?(source.to_s)
-    end
-
-    def list_incoming_keys(max: 200)
-      client.list_objects_v2(bucket: bucket, prefix: INCOMING_PREFIX, max_keys: max)
-            .contents.map(&:key)
-            .reject { |k| k.end_with?("/") || k.end_with?("AMAZON_SES_SETUP_NOTIFICATION") }
     end
 
     def read(key)
@@ -94,9 +85,8 @@ module DeskCapture
     end
 
     # Shared ingestion core — raw MIME + a durable key in, one DeskCaptureItem
-    # out. The Resend webhook leg (primary) runs through here; the SES poll
-    # fallback predates it and still carries its own inline copy of this
-    # logic. Idempotent on s3_key.
+    # out. Both transports (the Resend webhook and the Gmail read) run through
+    # here. Idempotent on s3_key.
     #
     # `source` is the TRANSPORT, chosen by the calling code and never read off
     # the message. Everything about trust hangs on that: see TRUSTED_SOURCES.

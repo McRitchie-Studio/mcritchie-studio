@@ -20,7 +20,33 @@ the recipe's step 3, step 3 its steps 4–5, step 4 its step 7 (flip
 `Studio::S3`), step 6 its step 8, and the **step 7 owed here is the recipe's
 steps 9–11** (drop S3, backup, record). Step 5 is each app's URL pass.
 
-## Where each app stands
+## Final state — AWS retired, 2026-10-10
+
+Everything below this section is the record of the move as it ran. It ended
+here:
+
+- Every production and QA app runs `ACTIVE_STORAGE_BACKEND=r2` and
+  `STUDIO_S3_BACKEND=r2`, and the hub runs `DESK_CAPTURE_BACKEND=r2`.
+- On 2026-10-10 the AWS side was retired: IAM users and keys deleted, SES
+  identities deleted, the S3 bucket `mcritchie-studio-desk` gone, and no
+  `AWS_*` variable left on Heroku.
+- The hub's code followed in task `hub-storage-runs-r2-only`: the `s3`,
+  `mirror_to_r2` and `mirror_to_s3` stages are removed, so **the rollbacks
+  described below no longer exist for the hub**. Setting either switch to a
+  retired value now raises at boot. The rules are in
+  [`../modules/object-storage.md`](../modules/object-storage.md) (**The hub
+  runs R2 only**).
+- The release-phase gap this page measured (a bad `ACTIVE_STORAGE_BACKEND`
+  passing the release and then crash-looping) is closed on the hub: the storage
+  initializer validates both switches and every `R2_*` variable itself, so a
+  bad value fails the release phase.
+- The undo for a delete is now the trash (three days, `StudioTrashS3`) and the
+  nightly backup (30 days), not an S3 mirror.
+
+The **Step 7** and **Still owed** sections are kept as written; the QA passes
+and the DeskCapture move they list are done.
+
+## Where each app stood, 2026-09-30
 
 | App | Heroku | Stage | Since | Release |
 |---|---|---|---|---|

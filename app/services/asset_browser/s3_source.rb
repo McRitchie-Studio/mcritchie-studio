@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-# AssetBrowser's live source: Studio::S3's own client and bucket, so the page
-# reads whichever store STUDIO_S3_BACKEND selects. Keys go in and come out
+# AssetBrowser's live source: Studio::S3's own client and bucket (Cloudflare R2). Keys go in and come out
 # LOGICAL, through Studio::S3's key namespace.
 module AssetBrowser
   class S3Source
@@ -47,8 +46,14 @@ module AssetBrowser
 
     private
 
+    # A process with no R2 connection (CI, a keyless desk) holds placeholder
+    # keys, which would sign a URL nobody can fetch. That reads as Unavailable.
     def client
-      @client ||= storage { Studio::S3.client }
+      @client ||= storage do
+        raise Studio::S3::NotConfigured, "no R2 connection" unless StorageBackend.configured?
+
+        Studio::S3.client
+      end
     end
 
     def bucket

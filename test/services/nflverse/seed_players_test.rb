@@ -11,16 +11,21 @@ class Nflverse::SeedPlayersTest < ActiveSupport::TestCase
     draft_year draft_round draft_pick draft_team
   ].freeze
 
-  # Headshots cache through Studio::S3, which on R2 signs with its own keys and
-  # on AWS with the default chain. Local dev runs on R2 dev keys since
-  # 2026-09-30, so the seeder must accept them and still refuse neither-present.
-  test "headshot caching needs storage credentials: R2 keys or an AWS key, not neither" do
+  # Headshots cache through Studio::S3, which is Cloudflare R2 and nothing else.
+  # The seeder accepts the full R2 connection and refuses anything short of it:
+  # an AWS key is no credential (AWS was retired 2026-10-10), and neither is the
+  # placeholder key a keyless boot configures Studio::S3 with.
+  test "headshot caching needs the full R2 connection, and an AWS key is not one" do
+    r2 = { "R2_ENDPOINT" => "https://acct.r2.cloudflarestorage.com", "R2_ACCESS_KEY_ID" => "id",
+           "R2_SECRET_ACCESS_KEY" => "secret", "R2_PUBLIC_URL" => "https://assets.example.com" }
     original = Studio.s3_access_key_id
-    Studio.s3_access_key_id = nil
+    Studio.s3_access_key_id = "r2-not-configured"
+
+    assert Nflverse::SeedPlayers.storage_credentials?(r2)
     refute Nflverse::SeedPlayers.storage_credentials?({})
-    assert Nflverse::SeedPlayers.storage_credentials?({ "AWS_ACCESS_KEY_ID" => "AKIA" })
-    Studio.s3_access_key_id = "r2-sentinel-id"
-    assert Nflverse::SeedPlayers.storage_credentials?({})
+    refute Nflverse::SeedPlayers.storage_credentials?({ "AWS_ACCESS_KEY_ID" => "AKIA", "AWS_SECRET_ACCESS_KEY" => "x" })
+    r2.each_key { |name| refute Nflverse::SeedPlayers.storage_credentials?(r2.except(name)), "#{name} missing" }
+    refute Nflverse::SeedPlayers.storage_credentials?(r2.merge("R2_ENDPOINT" => " "))
   ensure
     Studio.s3_access_key_id = original
   end

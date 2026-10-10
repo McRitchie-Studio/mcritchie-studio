@@ -1,6 +1,6 @@
 # One arrival at team@mcritchie.studio — the knowledge-capture front door.
-# The Resend inbound webhook's ingest job creates these (the SES poller remains
-# only as a fallback); the capture sweep (an agent running the knowledge-capture
+# The Resend inbound webhook's ingest job and the Gmail read create these; the
+# capture sweep (an agent running the knowledge-capture
 # SOP) files them onward into an entity's knowledge layer and stamps the outcome.
 class DeskCaptureItem < ApplicationRecord
   STATUSES = %w[received quarantined filed ignored].freeze
@@ -8,7 +8,9 @@ class DeskCaptureItem < ApplicationRecord
   # Which door the item came through. Not cosmetic — it decides whether the
   # sender allowlist below applies (see DeskCapture::TRUSTED_SOURCES).
   #   resend — the team@ inbound webhook (primary)
-  #   ses    — the legacy bucket poller (fallback)
+  #   ses    — HISTORY ONLY: the S3 bucket poller, deleted 2026-10-10 with the
+  #            AWS exit. Kept in the list so the rows it created stay valid;
+  #            nothing writes it.
   #   gmail  — the alex@ mailbox read (Gmail::MailboxIngest)
   SOURCES = %w[resend ses gmail].freeze
 

@@ -102,8 +102,8 @@ heroku run -x -a mcritchie-studio 'bin/rails runner "Nflverse::SeedPlayers.new(s
 ```
 
 `upload_headshots: false` is not optional here. The default is `true`, and that
-path RAISES when `AWS_ACCESS_KEY_ID` is unset — which is the state on QA. It
-also turns a data refresh into thousands of image fetches and S3 writes, which
+path RAISES when the `R2_*` storage variables are missing. It
+also turns a data refresh into thousands of image fetches and storage writes, which
 is a separate job, not part of a roster sync.
 
 **DO NOT JUDGE THIS STEP BY ITS EXIT CODE.** McRitchie Studio PR **#1489**

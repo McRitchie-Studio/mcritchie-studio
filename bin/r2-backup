@@ -22,6 +22,10 @@ USAGE = <<~TXT
   gc    delete archive/<stamp>/ folders older than --days (default 30). Dry run
         unless --apply. Refuses unless the newest receipt is under 48h old and ok.
 
+  <app> is an app slug, or a single-bucket store listed in R2Backup::SOURCE_BUCKETS
+  (mcritchie-studio-desk, DeskCapture's mail: the source is that bucket itself and
+  the backup is mcritchie-studio-desk-backup).
+
   Credentials, from the environment: R2_ENDPOINT, R2_BACKUP_ACCESS_KEY_ID,
   R2_BACKUP_SECRET_ACCESS_KEY (the app's backup token). With --op they are read
   from 1Password item r2.<app> in the agent vault instead. Needs rclone on PATH.
