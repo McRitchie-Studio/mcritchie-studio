@@ -77,12 +77,12 @@ flight, each open task with its stage and PR, and the live claims and desks.
 ## Waiting on Alex
 | Item | Question, as he would read it | Default if he says nothing |
 |------|-------------------------------|----------------------------|
-| <item> | <one line> | <the default> |
+| <a decision or tap a filed task waits on> | <one line> | <the default> |
 
 ## Operator steps
-| Step | Exact command or tap | Who runs it | State |
-|------|----------------------|-------------|-------|
-| <step> | <command> | <Alex or a lane> | owed · done |
+| Step owed | Exact command or tap | Who runs it |
+|-----------|----------------------|-------------|
+| <step> | <command> | <Alex or a lane> |
 ```
 
 Rules for the plan:
@@ -280,8 +280,8 @@ with a trigger you can reproduce is right; fix it.
 
 As each task reaches `reviewed`, update the plan in place: replace **State
 now**, recompute **Next startable**, clear the answered rows of **Waiting on
-Alex** and **Operator steps**, read the machine, and launch the next builder. When a builder's finding changes
-the plan, rewrite the pieces and log the decision before filing anything new.
+Alex** and **Operator steps**, read the machine, and launch the next builder.
+When a builder's finding changes the plan, rewrite the pieces and log the decision before filing anything new.
 Stopping is fine: the plan is the state, and a fresh session resumes from it.
 
 Spend the most expensive model on audit, design and question rounds; builders and
