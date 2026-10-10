@@ -27,6 +27,7 @@ module Logos
     GAP = 2                                    # every gap, in u
     SPAN = 0.6                                 # the small line's width, and the icon's height, as a share of the big line's width
     FORMS = %w[two_line one_line].freeze
+    TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     BANDS = %w[2u 3u 2u 1u].freeze             # below the icon, top to bottom (one_line stops after the second)
     GUIDE_PAD = { left: 60, top: 40, right: 90, bottom: 40 }.freeze
     GUIDE_FONT = 30
@@ -43,11 +44,15 @@ module Logos
       raise Error, "brand #{brand}: stacked must be one of #{FORMS.join(', ')}, got #{form.inspect}" unless FORMS.include?(form)
 
       @form = form.to_sym
+      @tagline = checked_tagline
       TEXTS.product(TONES) { |text, tone| layout(text:, tone:) }
     end
 
     # :two_line or :one_line
     attr_reader :form
+
+    # The brand's tagline as the logo sets it ("BUILD SMARTER"), or nil when the style names none.
+    attr_reader :tagline
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
@@ -80,6 +85,18 @@ module Logos
     end
 
     private
+
+    # The style's optional `tagline`: words of characters the glyph data has at TAGLINE_WEIGHT, or nothing at all.
+    def checked_tagline
+      line = @style["tagline"]
+      return if line.nil?
+      unless line.is_a?(String) && line.match?(/\A\S+(?: \S+)*\z/)
+        raise Error, "brand #{brand}: tagline must be words separated by single spaces, got #{line.inspect[0, 80]}"
+      end
+
+      line.each_char { |char| check_path(glyph(char, TAGLINE_WEIGHT)["d"], "nonzero", "the tagline") }
+      line
+    end
 
     def check_keywords(unknown, taken)
       return if unknown.empty?

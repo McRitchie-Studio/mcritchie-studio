@@ -24,15 +24,15 @@ class LogosNavbarLogoTest < Minitest::Test
   }.freeze
   # Measured from the prototype too (homogeneous text), for the two brands added after it was approved.
   ADDED_RATIOS = { ["turf", 3] => 4.24, ["turf", 4] => 5.87, ["welding", 3] => 5.98, ["welding", 4] => 8.52 }.freeze
-  # SHA-256 over every Studio and Industries example ("<key>\n<svg>" each, in `examples` order), taken on
-  # `accepted` before the two brands were added: neither brand's logos may change by a byte.
-  ORIGINAL_BRANDS_DIGEST = "b3dd0ef4b8a4a56f2ad55ebfa4b12f60ed4542cf1e18fdcb4723637e5a124dc0"
-  # The same digest over every Turf Monster and Commercial Welding example, taken on `accepted` before the
-  # watermark tone was added (task logo-gallery-context-dropdown): a third tone may not move light or dark.
-  ADDED_BRANDS_DIGEST = "087d05d81ed367d276b82e29637395efed28bec65c7b3d9692b193d8e7878736"
-  # Every watermark logo and guide drawing of all four brands ("<key>\n<svg>" each: brand, then rule, text, guides),
-  # taken on `accepted` before the icon and the stacked logo were added (task logo-tabs-icon-and-stacked).
-  WATERMARK_DIGEST = "a75b407b25b28a92cb0f63d9af92b818c8d78b6492313f2a8581b9103764f3cb"
+  # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
+  # brand's logos may change by a byte. Re-taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid),
+  # where the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task
+  # add-turf-and-welding-logos) still passed; guide drawings are construction drawings and are free to change.
+  ORIGINAL_BRANDS_DIGEST = "3926684129a86ab64613d06c7e828fb60031f274402bf7091d8d40d812301f24"
+  # The same digest over every Turf Monster and Commercial Welding example without guides.
+  ADDED_BRANDS_DIGEST = "315197c04927adfccd746b54c86fba1f719384a416c78b3f66a06da2e6739b25"
+  # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
+  WATERMARK_DIGEST = "6d1da5ed149c514b58c6d8b8ee5682ea06764f6264706a2e4af742e1ca1abbb3"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -223,24 +223,25 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/no fill for icon layer "primary"/, refusal { Logo.new("x", styles: no_role).svg })
   end
 
+  def unguided(brands) = brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
-    all = %w[studio industries].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
-    assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+    assert_equal 24, unguided(%w[studio industries]).size
+    assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[studio industries]).join)
   end
 
   def test_turf_and_welding_light_and_dark_logos_are_unchanged_to_the_byte
-    all = %w[turf welding].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
-    assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+    assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[turf welding]).join)
   end
 
   def test_every_watermark_logo_is_unchanged_to_the_byte
     all = Logo.brands.flat_map do |brand|
       logo = Logo.new(brand)
-      Logo::RULES.keys.product(Logo::TEXTS, [false, true]).map do |rule, text, guides|
-        "#{brand}-rule#{rule}-#{text}-watermark#{'-guides' if guides}\n#{logo.svg(rule:, text:, tone: :watermark, guides:)}"
+      Logo::RULES.keys.product(Logo::TEXTS).map do |rule, text|
+        "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
       end
     end
-    assert_equal 48, all.size
+    assert_equal 24, all.size
     assert_equal WATERMARK_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 

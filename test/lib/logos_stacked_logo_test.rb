@@ -5,6 +5,7 @@
 # text versions and tones it shares with the Navbar Logo, the guide drawing,
 # the vector-only output, and the refusals.
 
+require "digest"
 require "minitest/autorun"
 require "nokogiri"
 require_relative "../../lib/logos/navbar_logo"
@@ -20,6 +21,13 @@ class LogosStackedLogoTest < Minitest::Test
     ["studio", :first] => 1.078, ["studio", :homogeneous] => 1.078, ["studio", :second] => 1.056,
     ["industries", :first] => 1.073, ["industries", :homogeneous] => 1.073, ["industries", :second] => 1.056
   }.freeze
+
+  # SHA-256 over every stacked logo WITHOUT guides (4 brands x 3 texts x 3 tones, "<key>\n<svg>" each) and every icon
+  # (4 brands x 3 tones), taken on `accepted` at 4368b9183 before the tagline form and the ghost grids (task
+  # stacked-tagline-and-ghost-grid): a new form and new guide drawings may not move a shipped logo by a byte.
+  STACKED_DIGEST = "6b40237f0a2b759fe9d3d67f5d3af417e982c18c99d54d73859bd7974cdd8a6d"
+  ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
+  TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 
   def stacked(brand) = (@stacked ||= {})[brand] ||= Stacked.new(brand)
   def doc(svg) = Nokogiri::XML(svg) { |config| config.strict }
@@ -247,5 +255,30 @@ class LogosStackedLogoTest < Minitest::Test
   def test_every_shipped_brand_stacks_in_the_form_its_style_names
     assert_equal({ "studio" => :two_line, "industries" => :two_line, "turf" => :one_line, "welding" => :two_line },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).form] })
+  end
+
+  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
+    all = Navbar.brands.flat_map do |brand|
+      Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-#{text}-#{tone}\n#{stacked(brand).svg(text:, tone:)}" }
+    end
+    assert_equal 36, all.size
+    assert_equal STACKED_DIGEST, Digest::SHA256.hexdigest(all.join)
+    icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
+    assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
+  end
+
+  # Task stacked-tagline-and-ghost-grid: the tagline is data, in capitals with no full stop.
+  def test_each_brand_has_its_tagline_or_none
+    assert_equal TAGLINES, Navbar.brands.to_h { |brand| [brand, stacked(brand).tagline] }
+    TAGLINES.compact.each_value { |line| assert_equal line.upcase, line and refute line.end_with?(".") }
+  end
+
+  def test_a_tagline_with_a_character_the_glyph_data_lacks_or_a_bad_shape_is_refused
+    assert_equal "brand x: no glyph for \"Ü\" at weight 500 in the glyph data", refusal { Stacked.new("x", styles: style("studio", tagline: "BÜILD")) }
+    ["", " BUILD", "BUILD ", "BUILD  BETTER", "BUILD\nBETTER", 7, ["BUILD"]].each do |line|
+      message = refusal { Stacked.new("x", styles: style("studio", tagline: line)) }
+      assert_match(/brand x: (tagline must be words separated by single spaces|no glyph for)/, message, line.inspect)
+    end
+    assert_nil Stacked.new("x", styles: style("studio", tagline: nil)).tagline
   end
 end
