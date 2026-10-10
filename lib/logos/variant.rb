@@ -90,12 +90,16 @@ module Logos
     end
 
     def svg
-      case type
-      when :icon then logo.icon_svg(tone:)
-      when :navbar then logo.svg(rule:, text:, tone:, guides:)
-      else logo.svg(text:, tone:, guides:)
-      end
+      @svg ||= case type
+               when :icon then logo.icon_svg(tone:)
+               when :navbar then logo.svg(rule:, text:, tone:, guides:)
+               else logo.svg(text:, tone:, guides:)
+               end
     end
+
+    # A guide drawing's own measures, in its design units: how wide the drawing is and how tall its labels are.
+    def guide_width = svg[/viewBox="\S+ \S+ (\S+) /, 1].to_f
+    def guide_font = logo.class::GUIDE_FONT
 
     # The type's own choices, as its SVG route's params.
     def params = { rule:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type))

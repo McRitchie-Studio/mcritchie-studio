@@ -27,12 +27,18 @@ module LogosHelper
 
   # How tall each type's sample is in the index table, in px: one size per type, so a column reads as a column.
   LOGO_SAMPLE_HEIGHTS = { icon: 48, navbar: 28, stacked: 96 }.freeze
-  # The most a logo may be tall on its brand page, in px.
+  # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
   LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
-  # A guide drawing is shown at exactly this height, at every page width, so its labels keep a readable size (at
-  # least 11 px; test/helpers/logos_helper_test.rb measures every drawing). On a narrow page the plate scrolls
-  # sideways inside itself rather than shrinking the drawing.
   LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 380 }.freeze
+  # A guide drawing FITS its plate first, like any logo. It only stops shrinking at the width where its labels
+  # would render below this many px, and from there the plate scrolls sideways inside itself. The widest plate on
+  # a 1280 px page is LOGO_PLATE_WIDTH px, and every drawing's minimum is under it, so nothing scrolls there
+  # (test/helpers/logos_helper_test.rb measures every drawing).
+  LOGO_GUIDE_LABEL_PX = 9
+  LOGO_PLATE_WIDTH = 1028
+
+  # The narrowest a guide drawing may be shown, in px: where its labels are LOGO_GUIDE_LABEL_PX tall.
+  def logo_guide_min_width(variant) = (LOGO_GUIDE_LABEL_PX * variant.guide_width / variant.guide_font).ceil
 
   def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
 
@@ -50,12 +56,12 @@ module LogosHelper
     public_send(:"#{variant.type}_logo_path", variant.logo.brand, variant.params.merge(more))
   end
 
-  # One logo as a picture that carries its name. It scales down inside its plate, up to `height` px tall; `fixed`
-  # (a guide drawing) holds it at exactly `height` and lets the plate scroll.
-  def logo_image(variant, height:, fixed: false)
+  # One logo as a picture that carries its name. It scales down inside its plate, up to `height` px tall. A guide
+  # drawing also has a least width (above), so its plate scrolls once the plate is narrower than that.
+  def logo_image(variant, height:)
+    least = "; min-width: #{logo_guide_min_width(variant)}px" if variant.guides
     image_tag logo_asset_path(variant), alt: variant.label, loading: "lazy", data: { test: "logo-image" },
-              style: fixed ? "height: #{height}px; max-width: none" : "max-height: #{height}px",
-              class: fixed ? "block mx-auto w-auto" : "block max-w-full w-auto h-auto"
+              style: "max-height: #{height}px#{least}", class: class_names("block max-w-full w-auto h-auto", "mx-auto" => variant.guides)
   end
 
   # What a brand's name is set in, as [typeface, detail]: Montserrat and its

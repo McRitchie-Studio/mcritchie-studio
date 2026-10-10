@@ -37,24 +37,51 @@ class LogosHelperTest < ActionView::TestCase
     assert_in_delta 2.14, worst_contrast(%w[#3F5E8C #4F9A94], Logos::NavbarLogo::WATERMARK), 0.01, "the plate this replaced measured about 2.1:1"
   end
 
-  test "every guide drawing's labels are at least 11 px tall at the height the page shows it" do
-    Logos::NavbarLogo.brands.product(%i[navbar stacked], Logos::Variant::RULES.keys, Logos::Variant::TEXTS.keys) do |brand, type, rule, text|
-      variant = Logos::Variant.new(Logos::Variant.logo(brand, type), type:, rule:, text:, guides: true)
-      svg = Nokogiri::XML(variant.svg).remove_namespaces!
-      drawn = svg.root["viewBox"].split.last.to_f
-      sizes = svg.css("text").map { |label| label["font-size"].to_f }
-      assert_operator sizes.size, :>=, 2, variant.label
-      assert_operator sizes.min * logo_height(variant) / drawn, :>=, 11.0, variant.label
+  # Every guide drawing the gallery can show: 4 brands x (2 rules x 3 texts of the Navbar Logo + 3 texts of the Stacked Logo).
+  def guide_drawings
+    Logos::NavbarLogo.brands.flat_map do |brand|
+      navbar = Logos::Variant::RULES.keys.flat_map { |rule| Logos::Variant.all(Logos::Variant.logo(brand), rule:, guides: true) }
+      navbar + Logos::Variant.all(Logos::Variant.logo(brand, :stacked), type: :stacked, guides: true)
     end
   end
 
-  test "a logo scales down inside its plate, and a guide drawing keeps its height" do
+  def view_box(variant) = Nokogiri::XML(variant.svg).root["viewBox"].split.map(&:to_f)
+
+  test "no guide drawing needs more than the 1028 px plate of a 1280 px page, so nothing scrolls there" do
+    assert_equal 36, guide_drawings.size
+    guide_drawings.each { |variant| assert_operator logo_guide_min_width(variant), :<=, LogosHelper::LOGO_PLATE_WIDTH, variant.label }
+    widest = guide_drawings.max_by { |variant| logo_guide_min_width(variant) }
+    assert_equal ["McRitchie Industries navbar logo, rule of 4, homogeneous, light, construction guides", 874], [widest.label, logo_guide_min_width(widest)]
+  end
+
+  test "at its least width every guide drawing's labels are at least 9 px, read from the drawing itself" do
+    guide_drawings.each do |variant|
+      svg = Nokogiri::XML(variant.svg).remove_namespaces!
+      sizes = svg.css("text").map { |label| label["font-size"].to_f }
+      assert_operator sizes.size, :>=, 2, variant.label
+      assert_equal [variant.guide_font.to_f], sizes.uniq, variant.label
+      assert_in_delta view_box(variant)[2], variant.guide_width, 0.001, variant.label
+      scale = logo_guide_min_width(variant) / view_box(variant)[2]
+      assert_operator sizes.min * scale, :>=, 9.0, variant.label
+      assert_operator sizes.min * (logo_guide_min_width(variant) - 1) / view_box(variant)[2], :<, 9.0, "#{variant.label}: and no wider than it needs to be"
+    end
+  end
+
+  test "a guide drawing's least width never asks for more height than its cap, so the picture is never stretched" do
+    guide_drawings.each do |variant|
+      _, _, width, height = view_box(variant)
+      assert_operator logo_guide_min_width(variant) * height / width, :<=, logo_height(variant), variant.label
+    end
+  end
+
+  test "a logo scales down inside its plate, and a guide drawing stops at its least width" do
     logo = Logos::NavbarLogo.new("studio")
     plain = Nokogiri::HTML.fragment(logo_image(Logos::Variant.new(logo, rule: 4), height: 60)).at_css("img")
     assert_equal ["max-height: 60px", "block max-w-full w-auto h-auto"], [plain["style"], plain["class"]]
     guide = Logos::Variant.new(logo, rule: 4, guides: true)
-    fixed = Nokogiri::HTML.fragment(logo_image(guide, height: logo_height(guide), fixed: true)).at_css("img")
-    assert_equal ["height: 132px; max-width: none", "block mx-auto w-auto", guide.label], [fixed["style"], fixed["class"], fixed["alt"]]
+    held = Nokogiri::HTML.fragment(logo_image(guide, height: logo_height(guide))).at_css("img")
+    assert_equal ["max-height: 132px; min-width: #{logo_guide_min_width(guide)}px", "block max-w-full w-auto h-auto mx-auto", guide.label],
+                 [held["style"], held["class"], held["alt"]]
     assert_equal({ icon: 160, navbar: 60, stacked: 240 }, %i[icon navbar stacked].to_h { |type| [type, logo_height(Logos::Variant.new(Logos::Variant.logo("studio", type), type:))] })
   end
 end
