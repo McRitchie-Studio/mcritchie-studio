@@ -4,15 +4,80 @@ name: Reusable CI
 # called workflow starts no run of its own, so the run, its name (`CI`) and its verdict
 # by commit stay the caller's.
 #
-# NO INPUTS AND NO SECRETS, deliberately. A lane conditioned on an input is a lane a
-# caller can switch off while its check still reads green, and
-# test/lib/ci_workflow_triggers_test.rb refuses every lane condition but `always()`.
-# The suite uses no secret, so a caller passes none.
+# INPUTS, AND EVERY DEFAULT IS THE HUB'S OWN SUITE. The hub's ci.yml calls this file
+# with no `with:`, so it runs every lane below exactly as written in the defaults. An
+# app in another repo calls it with the inputs its own tree needs, and the jobs check
+# out the CALLER's repo: every script a lane runs (`.github/scripts/apt-retry`,
+# `bin/brakeman`, `bin/rubocop`, `bin/test-js`) is the caller's.
+#
+# A lane input switches a whole lane off for an app that has no such lane; its jobs
+# then report `skipped`. test/lib/ci_workflow_triggers_test.rb pins this input set and
+# every default, and judges each lane as the bare call runs it, so a new input or a
+# changed default is an edit to that test.
+#
+# NO SECRETS. A lane that needs a caller's secret stays in the caller's own ci.yml.
 #
 # The check-runs GitHub reports are `<caller job> / <job below>`: `ci / static`,
 # `ci / rails (1)`.
 on:
   workflow_call:
+    inputs:
+      # ---- lanes ----
+      javascript:
+        description: Run the `javascript` lane (bin/test-js).
+        type: boolean
+        default: true
+      island-animator:
+        description: Run the `island_animator` lane (hub tooling).
+        type: boolean
+        default: true
+      playwright:
+        description: Run the `playwright` shards and their `e2e_executed_set` gate.
+        type: boolean
+        default: true
+      rails-shards:
+        description: Run the sharded Rails lane (`rails_plan`, `rails`, `rails_executed_set`); needs bin/ci-shard.
+        type: boolean
+        default: true
+      system:
+        description: Run the `system` lane.
+        type: boolean
+        default: true
+      # ---- setup ----
+      rubygems:
+        description: RubyGems version for ruby/setup-ruby (`default` keeps the one Ruby ships).
+        type: string
+        default: default
+      await-gem-propagation:
+        description: Run .github/scripts/await-gem-propagation.sh before bundling.
+        type: boolean
+        default: true
+      postgres-image:
+        description: The Postgres service image, on the ECR Public mirror, pinned to production's major.
+        type: string
+        default: public.ecr.aws/docker/library/postgres:17
+      # ---- the static lane ----
+      gem-audit-command:
+        description: An extra gem advisory scan for the static lane (bin/bundler-audit); empty runs none.
+        type: string
+        default: ""
+      importmap-audit-command:
+        description: The JavaScript dependency scan the static lane runs.
+        type: string
+        default: bin/importmap-audit-ci
+      # ---- the system lane ----
+      system-packages:
+        description: The apt packages the system lane installs.
+        type: string
+        default: curl libvips postgresql-client imagemagick librsvg2-bin
+      system-setup-command:
+        description: A command the system lane runs before its suite (an asset build); empty runs none.
+        type: string
+        default: ""
+      system-command:
+        description: The system lane's suite command. An app whose whole suite is one command runs it here.
+        type: string
+        default: bin/rails db:test:prepare test:system
 
 # The lanes read the tree and nothing else. A called workflow can narrow the caller's
 # token, never widen it.
@@ -57,16 +122,24 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Await RubyGems propagation for locked gems
+        if: ${{ inputs.await-gem-propagation }}
         run: .github/scripts/await-gem-propagation.sh
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: true
 
       - name: Scan for common Rails security vulnerabilities using static analysis
         run: bin/brakeman --no-pager
+
+      # Off by default: the hub runs no gem advisory scan here. `always()` keeps it
+      # reporting beside the other scanners when a caller names one.
+      - name: Scan for known security vulnerabilities in gems used
+        if: ${{ always() && inputs.gem-audit-command != '' }}
+        run: ${{ inputs.gem-audit-command }}
 
       # Wrapped, NOT bare: `bin/importmap audit` exits non-zero both for a real
       # advisory and for an unreachable npm registry, and this lane feeds the
@@ -74,7 +147,7 @@ jobs:
       # exactly like a vulnerability. See bin/lib/importmap_audit.rb.
       - name: Scan for security vulnerabilities in JavaScript dependencies
         if: always()
-        run: bin/importmap-audit-ci
+        run: ${{ inputs.importmap-audit-command }}
 
       - name: Lint code for consistent style
         if: always()
@@ -83,6 +156,7 @@ jobs:
   # The JavaScript unit tests (test/javascript, for app/javascript/board), on
   # node:test with no npm install: bin/test-js is the whole lane.
   javascript:
+    if: ${{ inputs.javascript }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -98,6 +172,7 @@ jobs:
         run: bin/test-js
 
   island_animator:
+    if: ${{ inputs.island-animator }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -134,13 +209,10 @@ jobs:
       - name: Check media dependencies
         run: bin/island-background doctor
 
-  # THE `e2e` TIER'S LANE. Until 2026-07-13 this job did not exist, and `e2e` — demanded
-  # by config/feature_shapes.yml of the `ui+db` and `onchain-vertical` shapes — was run
-  # by NOTHING: not this workflow, not bin/fast-check, not bin/full-suite-check, not the
-  # G3/G4 release gates. The tier was satisfied entirely by a builder typing "[e2e] ..."
-  # into devops.checks_run, which bin/dor-check credited on sight. A gate that demands
-  # evidence it never collects and takes a self-declaration instead is the exact disease
-  # of the 2026-07-12 wave.
+  # THE `e2e` TIER'S LANE. config/feature_shapes.yml demands `e2e` of the `ui+db` and
+  # `onchain-vertical` shapes, and this job is the runner that collects it: without a
+  # runner the tier is satisfied by a builder typing "[e2e] ..." into devops.checks_run,
+  # a self-declaration standing in for evidence.
   #
   # WHAT THE UNRUN SUITE HAD BECOME, measured the day it was switched on: 18 of 69 specs
   # RED on an untouched `release` checkout. Nobody had run it in long enough for a
@@ -170,6 +242,7 @@ jobs:
   # server booted by Playwright's webServer), so nothing is shared across shards and the
   # serial in-shard model is preserved.
   playwright:
+    if: ${{ inputs.playwright }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -184,9 +257,11 @@ jobs:
         # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
         # afternoon and every lane with a database dies at setup
         # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. Major pinned to production's (17);
-        # test/lib/ci_service_images_test.rb holds the three services to one name.
-        image: public.ecr.aws/docker/library/postgres:17
+        # anonymous limit and no credential. The name is the `postgres-image`
+        # input, whose default pins production's major (17);
+        # test/lib/ci_service_images_test.rb holds the default and every service
+        # block to it.
+        image: ${{ inputs.postgres-image }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -217,12 +292,14 @@ jobs:
         run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client imagemagick
 
       - name: Await RubyGems propagation for locked gems
+        if: ${{ inputs.await-gem-propagation }}
         run: .github/scripts/await-gem-propagation.sh
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: true
 
       - name: Set up Node
@@ -335,17 +412,17 @@ jobs:
   # blind spot every escape hatch in this PR's review history lived in. This job reads the
   # shards' own JSON receipts and asserts the set they executed against config/e2e_lane.yml.
   #
-  # `if: always()` is LOAD-BEARING and is the ONLY condition this job may ever carry. Without
-  # it, a red `playwright` job SKIPS this one — and a skipped required check does not report
-  # failure, so the one gate that would have said "the lane ran fewer specs than it claims"
-  # would go quiet
-  # in precisely the runs where it matters. `always()` cannot exclude the lane; every other
-  # condition can, and test/lib/ci_workflow_triggers_test.rb refuses every other condition.
+  # `always()` is LOAD-BEARING. Without it, a red `playwright` job SKIPS this one — and a
+  # skipped required check does not report failure, so the one gate that would have said
+  # "the lane ran fewer specs than it claims" would go quiet in precisely the runs where
+  # it matters. `always()` cannot exclude the lane. The `playwright` input beside it is
+  # the lane's own switch, true on a bare call; test/lib/ci_workflow_triggers_test.rb
+  # refuses every other condition.
   e2e_executed_set:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: playwright
-    if: always()
+    if: ${{ always() && inputs.playwright }}
 
     steps:
       - name: Checkout code
@@ -355,6 +432,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: false
 
       - name: Download every shard's receipt
@@ -371,17 +449,16 @@ jobs:
 
   # ================= THE RAILS LANE =================
   #
-  # THE SHARDED RAILS SUITE. Until 2026-08-20 this was ONE job — `bin/rails
-  # db:test:prepare test test:system` — and it was the whole reason a hub PR waited ten
-  # minutes. Measured on run 32329490149, a GREEN run: the job took 534s, of which 411s
-  # was `bin/rails test` (6,828 tests, 4 workers on a 4-core runner), 13s was
-  # `test:system`, and 91s was setup. Every other job in this workflow was finished
-  # inside 3.2 minutes and then sat idle for another 5.7.
+  # THE SHARDED RAILS SUITE. As ONE job (`bin/rails db:test:prepare test test:system`)
+  # the suite is the whole reason a hub PR waits ten minutes. Measured on run
+  # 32329490149, a GREEN run: the job took 534s, of which 411s was `bin/rails test`
+  # (6,828 tests, 4 workers on a 4-core runner), 13s was `test:system`, and 91s was
+  # setup. Every other job in this workflow finished inside 3.2 minutes.
   #
   # WHAT LICENSES SPENDING FOUR RUNNERS ON IT. This repository is PUBLIC, so GitHub bills
-  # nothing for its Actions minutes. The old shape was optimising a resource that is
-  # free (runner-minutes) at the cost of the one that is not (the wall-clock a builder,
-  # a review sweep, and the G3 gate each wait on, three times per task). Sharding trades
+  # nothing for its Actions minutes. One job optimises a resource that is free
+  # (runner-minutes) at the cost of the one that is not (the wall-clock a builder, a
+  # review sweep, and the G3 gate each wait on, three times per task). Sharding trades
   # the free one for the scarce one.
   #
   # WHY FOUR AND NOT MORE lives in config/rails_lane.yml next to the number, so there is
@@ -398,6 +475,7 @@ jobs:
   # like four green shards over the whole suite, which is why `rails_executed_set` below
   # is a separate, unconditional job rather than a claim in this comment.
   rails_plan:
+    if: ${{ inputs.rails-shards }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -417,6 +495,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: false
 
       - name: Read the shard matrix from config/rails_lane.yml
@@ -429,6 +508,7 @@ jobs:
 
   rails:
     needs: rails_plan
+    if: ${{ inputs.rails-shards }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -443,9 +523,11 @@ jobs:
         # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
         # afternoon and every lane with a database dies at setup
         # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. Major pinned to production's (17);
-        # test/lib/ci_service_images_test.rb holds the three services to one name.
-        image: public.ecr.aws/docker/library/postgres:17
+        # anonymous limit and no credential. The name is the `postgres-image`
+        # input, whose default pins production's major (17);
+        # test/lib/ci_service_images_test.rb holds the default and every service
+        # block to it.
+        image: ${{ inputs.postgres-image }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -505,12 +587,14 @@ jobs:
         run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin ffmpeg
 
       - name: Await RubyGems propagation for locked gems
+        if: ${{ inputs.await-gem-propagation }}
         run: .github/scripts/await-gem-propagation.sh
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: true
 
       # ONE COMMAND, and it is the whole lane for this shard: bin/ci-shard prepares the
@@ -546,11 +630,11 @@ jobs:
   # own receipts and asserts the executed set against the COMMITTED TREE (it re-globs the
   # repo; it does not ask the planner what it meant to run).
   #
-  # `if: always()` is LOAD-BEARING and is the ONLY condition this job may ever carry.
-  # Without it, a red `rails` shard SKIPS this job — and a skipped required check does
-  # not report failure, so the one gate that would say "the lane ran fewer files than it
-  # claims" would go quiet in precisely the runs where it matters. `always()` cannot
-  # exclude the lane; every other condition can, and test/lib/ci_workflow_triggers_test.rb
+  # `always()` is LOAD-BEARING. Without it, a red `rails` shard SKIPS this job — and a
+  # skipped required check does not report failure, so the one gate that would say "the
+  # lane ran fewer files than it claims" would go quiet in precisely the runs where it
+  # matters. `always()` cannot exclude the lane. The `rails-shards` input beside it is
+  # the lane's own switch, true on a bare call; test/lib/ci_workflow_triggers_test.rb
   # refuses every other condition.
   #
   # `bundler-cache: false` because the gate is stdlib-only (json + yaml). It audits the
@@ -559,7 +643,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: rails
-    if: always()
+    if: ${{ always() && inputs.rails-shards }}
 
     steps:
       - name: Checkout code
@@ -571,6 +655,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: false
 
       - name: Download every shard's receipt
@@ -593,6 +678,7 @@ jobs:
   # bin/rails-executed-set-check therefore does not expect those files in the receipts —
   # the two halves of that split are pinned together by test/lib/rails_lane_contract_test.rb.
   system:
+    if: ${{ inputs.system }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -602,9 +688,11 @@ jobs:
         # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
         # afternoon and every lane with a database dies at setup
         # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. Major pinned to production's (17);
-        # test/lib/ci_service_images_test.rb holds the three services to one name.
-        image: public.ecr.aws/docker/library/postgres:17
+        # anonymous limit and no credential. The name is the `postgres-image`
+        # input, whose default pins production's major (17);
+        # test/lib/ci_service_images_test.rb holds the default and every service
+        # block to it.
+        image: ${{ inputs.postgres-image }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -654,7 +742,7 @@ jobs:
         # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
         # ImageMagick 6 reads SVG only through rsvg-convert.
         timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin
+        run: .github/scripts/apt-retry ${{ inputs.system-packages }}
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -689,19 +777,28 @@ jobs:
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
       - name: Await RubyGems propagation for locked gems
+        if: ${{ inputs.await-gem-propagation }}
         run: .github/scripts/await-gem-propagation.sh
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
           bundler-cache: true
+
+      - name: Prepare the system lane
+        if: ${{ inputs.system-setup-command != '' }}
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+        run: ${{ inputs.system-setup-command }}
 
       - name: Run system tests
         env:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432
-        run: bin/rails db:test:prepare test:system
+        run: ${{ inputs.system-command }}
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4
