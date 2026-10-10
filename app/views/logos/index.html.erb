@@ -44,12 +44,17 @@
                     so the wrapper does not scroll there; a narrower gutter (pr-3) and the Colours minimum keep it so. %>
                 <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:[&_img]:max-w-none" data-test="logo-sample" data-type="<%= type %>">
                   <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted"><%= Logos::Variant::TYPES.fetch(type) %></p>
-                  <%= link_to logo_brand_path(logo.brand, logo_page_params(type: (type unless type == :navbar))),
-                              class: "inline-flex max-w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-                              aria: { label: "#{name}: #{Logos::Variant::TYPES.fetch(type).downcase}" } do %>
-                    <span class="flex items-center rounded-lg border border-subtle px-3 py-2 min-w-0" style="<%= logo_plate_style(@context) %>" data-test="logo-plate" data-tone="<%= @context %>">
-                      <%= logo_image(variant, height: LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(type)) %>
-                    </span>
+                  <% if variant.is_a?(Logos::NavbarLogo::Error) %>
+                    <%# The library refused to draw this type for this brand: the reason, in its own words, not a picture. %>
+                    <p class="max-w-[14rem] text-2xs text-muted" data-test="logo-sample-refused">Not drawn. <%= variant.message %></p>
+                  <% else %>
+                    <%= link_to logo_brand_path(logo.brand, logo_page_params(type: (type unless type == :navbar))),
+                                class: "inline-flex max-w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                                aria: { label: "#{name}: #{Logos::Variant::TYPES.fetch(type).downcase}" } do %>
+                      <span class="flex items-center rounded-lg border border-subtle px-3 py-2 min-w-0" style="<%= logo_plate_style(@context) %>" data-test="logo-plate" data-tone="<%= @context %>">
+                        <%= logo_image(variant, height: LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(type)) %>
+                      </span>
+                    <% end %>
                   <% end %>
                 </td>
               <% end %>

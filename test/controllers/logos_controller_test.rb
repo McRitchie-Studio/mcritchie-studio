@@ -82,6 +82,39 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='read-only-note']", /Choosing one for a brand comes later/
   end
 
+  test "a brand that cannot be stacked keeps its row: the Stacked cell says why, and the rest of the table is drawn" do
+    log_in_as(@admin)
+    shipped = Logos::Variant.method(:logo)
+    reason = "brand turf: the second word \"Monster\" cannot be tracked out to 60% of the first word's width (it is 68% already): " \
+             "set `stacked: one_line` in the brand's style"
+    Logos::Variant.define_singleton_method(:logo) do |brand, type = :navbar|
+      raise Logos::NavbarLogo::Error, reason if brand == "turf" && type == :stacked
+
+      shipped.call(brand, type)
+    end
+    begin
+      get logos_path(context: "dark")
+    ensure
+      Logos::Variant.define_singleton_method(:logo, shipped)
+    end
+    assert_response :success
+
+    assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
+    assert_select "[data-brand='turf'] [data-test='logo-sample'][data-type='stacked']" do
+      assert_select "[data-test='logo-sample-refused']", "Not drawn. #{reason}"
+      assert_select "img, a, [data-test='logo-plate']", 0
+      assert_select "p", "Stacked Logo"
+    end
+    assert_select "[data-brand='turf'] [data-test='logo-image']", 2, "its icon and its navbar logo are still shown"
+    assert_select "[data-test='logo-sample-refused']", 1
+    assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size - 1
+    assert_select "[data-brand='turf'] [data-test='logo-colours'] [data-test='logo-swatch']", 11
+
+    get logos_path
+    assert_select "[data-test='logo-sample-refused']", 0, "and the shipped brands all stack"
+    assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size
+  end
+
   test "the Colours column lists the watermark's fill and opacity after light and dark" do
     log_in_as(@admin)
     get logos_path

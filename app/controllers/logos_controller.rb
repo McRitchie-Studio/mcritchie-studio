@@ -26,13 +26,14 @@ class LogosController < ApplicationController
     render plain: error.message, status: :unprocessable_content
   end
 
-  # Per brand, one logo of each type: the samples the table shows.
+  # Per brand, one logo of each type: the samples the table shows. A brand whose name cannot be stacked (its style
+  # needs `stacked: one_line`) keeps its row: its Stacked cell holds the refusal, and the cell says why.
   def index
     @rows = Logos::NavbarLogo.brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       [logo, { icon: Logos::Variant.new(logo, type: :icon, tone: @context),
                navbar: Logos::Variant.new(logo, rule: 4, text: :second, tone: @context),
-               stacked: Logos::Variant.new(Logos::Variant.logo(brand, :stacked), type: :stacked, text: :first, tone: @context) }]
+               stacked: stacked_sample(brand) }]
     end
   end
 
@@ -52,6 +53,12 @@ class LogosController < ApplicationController
   end
 
   private
+
+  def stacked_sample(brand)
+    Logos::Variant.new(Logos::Variant.logo(brand, :stacked), type: :stacked, text: :first, tone: @context)
+  rescue Logos::NavbarLogo::Error => e
+    e
+  end
 
   def set_context
     @context = Logos::Variant.context(params[:context])

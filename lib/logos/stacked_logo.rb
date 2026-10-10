@@ -50,7 +50,9 @@ module Logos
     attr_reader :form
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
-    def layout(text: :homogeneous, tone: :light)
+    # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
+    def layout(text: :homogeneous, tone: :light, **unknown)
+      check_keywords(unknown, "text and tone")
       check_text(text)
       first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
       cap = BIG * U
@@ -70,13 +72,20 @@ module Logos
                  edges:, letters: placed)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false)
+    def svg(text: :homogeneous, tone: :light, guides: false, **unknown)
+      check_keywords(unknown, "text, tone and guides")
       check_tone(tone)
       box = layout(text:, tone:)
       render(box, box.height, text, tone, guides)
     end
 
     private
+
+    def check_keywords(unknown, taken)
+      return if unknown.empty?
+
+      raise Error, "a stacked logo takes #{taken}, not #{unknown.keys.join(', ')}: it has no rule"
+    end
 
     # The small word, centred, with the same computed space added between each pair of letters and none after the last.
     def small_line(word, width)
