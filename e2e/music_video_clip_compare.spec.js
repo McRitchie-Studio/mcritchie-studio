@@ -103,8 +103,11 @@ test("Play both runs the primary beside the original, sound from the version onl
   const times = () => compare.locator("video").evaluateAll((vs) => vs.map((v) => Math.round(v.currentTime * 1000) / 1000));
   // Play both seeks each player itself, and for 400 ms after that the pair
   // takes a seeking event as its own. An operator's seek counts once it has passed.
-  const ownSeekSettled = () => compare.locator("video").evaluateAll((vs) => vs.every((v) => performance.now() > (v.__quietUntil || 0)));
-  await expect.poll(ownSeekSettled).toBe(true);
+  // __quietUntil is the pair's own field (seekTo, _player_scripts): a player
+  // without it fails this wait, so a rename is red here and not a flake again.
+  const ownSeekSettled = () => compare.locator("video").evaluateAll((vs) =>
+    vs.length === 2 && vs.every((v) => Number.isFinite(v.__quietUntil) && performance.now() > v.__quietUntil));
+  await expect.poll(ownSeekSettled, { message: "both players carry __quietUntil and their own-seek window has passed" }).toBe(true);
   await compare.evaluate((root) => {
     const original = root.querySelector("[data-test='clip-player']");
     original.currentTime = 3;
