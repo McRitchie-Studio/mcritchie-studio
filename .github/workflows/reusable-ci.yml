@@ -153,6 +153,17 @@ jobs:
         if: always()
         run: bin/rubocop -f github
 
+      # The workflow guards run here because no input can switch this lane off: an
+      # edit that turns a lane off (a default flip, or a `with:` on the hub's call)
+      # still meets them. They also run in the rails lane. The condition reads the
+      # checked-out tree: only the repo that holds this file runs its guards, so a
+      # caller in another repo skips the step, and the hub cannot skip it without
+      # deleting the file its own ci.yml calls. test/lib/ci_workflow_triggers_test.rb
+      # pins this step.
+      - name: Run the CI workflow guards
+        if: ${{ always() && hashFiles('.github/workflows/reusable-ci.yml') != '' }}
+        run: bundle exec ruby -Itest -e 'require File.expand_path(ARGV.shift) until ARGV.empty?' test/lib/ci_workflow_triggers_test.rb test/lib/ci_service_images_test.rb test/lib/reusable_prod_deploy_test.rb
+
   # The JavaScript unit tests (test/javascript, for app/javascript/board), on
   # node:test with no npm install: bin/test-js is the whole lane.
   javascript:
