@@ -1,0 +1,81 @@
+name: Reusable Production Deploy
+
+# A production deploy as a called workflow: push one frozen SHA to a Heroku app's git
+# remote, then hold on its /up. NOTHING CALLS IT: no workflow here or in any app uses
+# it, and no strategy in config/release_repos.yml names it
+# (test/lib/reusable_prod_deploy_test.rb). The hub's own prod-deploy.yml is a separate
+# file.
+#
+# HOW AN APP ADOPTS IT. The app ships its own `prod-deploy.yml` that keeps what
+# bin/release's dispatch reads, and calls this file for the work:
+#   - `name: Production Deploy` (the board finds the run by that name);
+#   - `run-name: Production Deploy ${{ inputs.sha }} [${{ inputs.correlation_id }}]`
+#     (bin/release selects its own run by the bracketed id);
+#   - `on: workflow_dispatch` with inputs `sha` (required), `correlation_id` and
+#     `release_pr` (optional);
+#   - `concurrency: { group: prod-deploy, cancel-in-progress: false }`;
+#   - one job: `uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-prod-deploy.yml@main`,
+#     `with:` the three inputs below, and `secrets: { HEROKU_API_KEY: ... }`.
+# The app's registry row then moves to `strategy: github_actions`.
+#
+# The job runs in the CALLER's repo under its `production` environment, which scopes
+# the Heroku key and keeps the deployment history there.
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: The frozen SHA to deploy (the QA-green release tip).
+        type: string
+        required: true
+      heroku-app:
+        description: The Heroku app whose git remote receives the SHA.
+        type: string
+        required: true
+      smoke-url:
+        description: The production host; the deploy holds on `<smoke-url>/up`, so it never ends in /up.
+        type: string
+        required: true
+    secrets:
+      HEROKU_API_KEY:
+        description: A Heroku API key that may push to the app.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Checkout the frozen SHA (full history)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      # Values reach the shell through env, never by interpolation into the script.
+      - name: Deploy the frozen SHA to Heroku production
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          HEROKU_APP: ${{ inputs.heroku-app }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          git push --force \
+            "https://heroku:${HEROKU_API_KEY}@git.heroku.com/${HEROKU_APP}.git" \
+            "${DEPLOY_SHA}:refs/heads/main"
+
+      # HARD-GATED: a production boot that never returns 200 fails the deploy.
+      - name: Smoke production /up (hard gate)
+        env:
+          SMOKE_URL: ${{ inputs.smoke-url }}
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${SMOKE_URL%/}/up" || true)
+            echo "attempt $i: /up -> $code"
+            [ "$code" = "200" ] && { echo "production live"; exit 0; }
+            sleep 5
+          done
+          echo "::error::production /up never returned 200 — failing the deploy"
+          exit 1
