@@ -254,9 +254,10 @@ is the latest open end plus the grace, recomputed on every read.
 posts `POST /deployments/<release>/ship_authorization`, which records the one
 `ship_authorized completed` event under the conductor's own idempotency key —
 so a grant and the ship's own completion stamp are one row. `bin/release ship
---mode ask|timed|auto` picks how authority is taken (default `timed`, from
-`production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
-`production-deploy` SOP.
+--mode ask|timed|auto|cleared` picks how authority is taken (default `timed`, from
+`production_ship.mode`); `--yes` alone is `auto`; `cleared` records Alex's chat
+clearance from `--clearance "<his words>"` and opens no window; the recipe lives
+in Steffon's `production-deploy` SOP.
 
 **The release lane on the card.** The Next Release card says who is assembling the
 release, who is shipping it, and what the production grant covers, in the sentences

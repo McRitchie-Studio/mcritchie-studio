@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] ShipAuthority — how `bin/release ship --mode ask|timed|auto` takes
+# [unit] ShipAuthority — how `bin/release ship --mode ask|timed|auto|cleared` takes
 # production authority (bin/lib/ship_authority.rb): the mode precedence, the two
 # events every mode records, and each firing condition of the timed window —
 # grant, lapse-and-proceed, lapse-and-refuse, unreadable-at-lapse, dry-run —
@@ -93,7 +93,8 @@ class ShipAuthorityTest < Minitest::Test
     assert_equal %w[started completed], h.events.map(&:first)
     done = h.events.last.last
     assert_equal({ "mode" => "cleared", "granted_via" => "chat", "cleared_by" => "alex",
-                   "clearance" => "ship it, this message is my clearance" }, done)
+                   "clearance" => "ship it, this message is my clearance", "cleared_at" => "2026-09-24T20:00:00.000Z" }, done)
+    assert_equal({ "mode" => "cleared", "cleared_at" => "2026-09-24T20:00:00.000Z" }, h.events.first.last)
     assert_empty h.reads, "cleared never polls the board for a grant"
     assert h.said.any? { |line| line.include?("cleared in chat by alex") }
   end
@@ -112,9 +113,25 @@ class ShipAuthorityTest < Minitest::Test
     assert_raises(ShipAuthority::Refused) { Harness.new.take!(mode: "cleared") }
   end
 
-  def test_cleared_carries_no_window_and_keeps_the_default_key
-    assert_nil ShipAuthority.idempotency_key("rel-demo", "completed",
-                                             { "mode" => "cleared", "granted_via" => "chat", "clearance" => "go" })
+  def test_cleared_carries_no_window_and_keys_each_run_on_its_cleared_at
+    keys = [NOW, NOW + 60].map do |now|
+      h = Harness.new(now: now)
+      h.take!(mode: "cleared", clearance: "go")
+      assert h.events.none? { |_status, metadata| metadata.key?("window_ends_at") }
+      h.events.map { |status, metadata| ShipAuthority.idempotency_key("rel-demo", status, metadata) }
+    end
+
+    assert_equal ["rel-demo:ship_authorized:started:cleared:2026-09-24T20:00:00.000Z",
+                  "rel-demo:ship_authorized:completed:cleared:2026-09-24T20:00:00.000Z"], keys.first
+    assert_equal 4, keys.flatten.uniq.size, "a later cleared run shares no key with the earlier one"
+  end
+
+  def test_ask_and_auto_keep_the_default_key
+    %w[ask auto].each do |mode|
+      h = Harness.new
+      h.take!(mode: mode)
+      h.events.each { |status, metadata| assert_nil ShipAuthority.idempotency_key("rel-demo", status, metadata) }
+    end
   end
 
   # --- timed -------------------------------------------------------------------

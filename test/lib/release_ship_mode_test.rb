@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] `bin/release ship --mode ask|timed|auto` at the ship-authority seam
+# [unit] `bin/release ship --mode ask|timed|auto|cleared` at the ship-authority seam
 # (bin/lib/ship_authority.rb), driven through the REAL `ship` in a dry-run
 # subprocess: the config default is timed and previews the window, `--yes` alone
 # is auto, an explicit mode wins, an unknown mode aborts before the release is
@@ -134,11 +134,42 @@ class ReleaseShipModeTest < Minitest::Test
     out = run_release(["--dry-run", "--mode", "cleared", "--clearance", "ship it, this message is my clearance"],
                       setup: SHIP_STUB + RECORD_EVENT_STUB, call: "ship")
     assert_includes out, "taking production authority (--mode cleared)"
-    assert_includes out, "EVENT rel-ship ship_authorized:started key=nil mode=cleared"
-    assert_includes out, "EVENT rel-ship ship_authorized:completed key=nil mode=cleared"
+    stamp = out[/ship_authorized:started key="rel-ship:ship_authorized:started:cleared:(20[^"]+)" mode=cleared/, 1]
+    assert stamp, "the request is keyed by the run's cleared_at: #{out}"
+    assert_includes out, %(EVENT rel-ship ship_authorized:completed key="rel-ship:ship_authorized:completed:cleared:#{stamp}" mode=cleared)
     assert_includes out, "cleared in chat by alex"
     assert_includes out, "ship authority: cleared (--mode cleared)"
     refute_includes out, "production window", "a cleared ship posts no window and waits on no button"
+  end
+
+  # The real record_release_event, down to the snippet it hands the conductor: a
+  # cleared write carries its own key, an auto write the default one.
+  CONDUCTOR_ECHO = <<~RUBY
+    alias ship_stub_conductor conductor
+    def conductor(ruby, read_only: false)
+      puts("WRITE " + ruby) if ruby.include?("record_event!")
+      ship_stub_conductor(ruby, read_only: read_only)
+    end
+  RUBY
+
+  def test_ship_cleared_writes_its_own_key_where_auto_writes_the_default
+    out = run_release(["--dry-run", "--mode", "cleared", "--clearance", "go"], setup: SHIP_STUB + CONDUCTOR_ECHO, call: "ship")
+    assert_match(/WRITE .*status: "completed", .*idempotency_key: "rel-ship:ship_authorized:completed:cleared:20[^"]+"/, out)
+    assert_match(/WRITE .*status: "completed", .*"clearance" ?=> ?"go"/, out)
+
+    out = run_release(["--dry-run", "--yes"], setup: SHIP_STUB + CONDUCTOR_ECHO, call: "ship")
+    assert_match(/WRITE .*status: "started", .*idempotency_key: "rel-ship:ship_authorized:started"[,)]/, out)
+    assert_match(/WRITE .*status: "completed", .*idempotency_key: "rel-ship:ship_authorized:completed"[,)]/, out)
+  end
+
+  def test_ship_refuses_a_clearance_in_any_other_mode_before_anything_moves
+    [["--yes"], ["--mode", "timed"], ["--mode", "ask"], []].each do |mode_args|
+      out = run_release(["--dry-run", *mode_args, "--clearance", "ship it"], setup: SHIP_STUB + RECORD_EVENT_STUB,
+                        call: %{begin; ship; rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+      assert_includes out, "ABORTED: ✗ --clearance is recorded only by --mode cleared", mode_args.inspect
+      refute_includes out, "EVENT rel-ship", "nothing is recorded before the refusal"
+      refute_includes out, "shipping rel-ship"
+    end
   end
 
   def test_ship_refuses_cleared_with_no_clearance_before_anything_moves

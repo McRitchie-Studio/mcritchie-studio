@@ -207,7 +207,8 @@ class Release
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
             "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
-            "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
+            "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex's words>\"] " \
+            "[--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
 
     # The line bin/release prints after a ship (or finalize) posts release notes,

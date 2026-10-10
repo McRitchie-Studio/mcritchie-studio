@@ -3,23 +3,23 @@
 # bin/lib/ship_authority.rb — HOW `bin/release ship` takes production authority.
 #
 # THE PRODUCTION WINDOW (docs/agents/system/devops-v3-design.md section 6,
-# decision 2). Three modes, one seam in bin/release.rb:
+# decision 2). Four modes, one seam in bin/release.rb:
 #
 #   ask    the interactive confirm prompt — holds until a human answers (today's
 #          behaviour, kept verbatim).
 #   timed  posts the ship_authorization REQUEST on the release (a
 #          `ship_authorized started` event carrying the window end), then waits
 #          up to `operator_windows.production_minutes` for an operator GRANT —
-#          the Approve button on /deployments, or a scripted grant through the
-#          events API. On lapse it proceeds ONLY when G3 Candidate is green on the
+#          the Approve button on /deployments, or a grant through the events API
+#          under an admin session. On lapse it proceeds ONLY when G3 Candidate is green on the
 #          release and no member carries an open escalation; otherwise it refuses
 #          and names why. The default, from config/release_builder.yml.
 #   auto   proceeds on green with no prompt — `--yes` semantics.
 #   cleared  Alex cleared the release in chat. `--clearance "<his words>"` is
 #          required and is recorded on the completion with `granted_via chat`
-#          and `cleared_by`; no request, no window, no button. The grant is an
-#          audit trail the deployer session asserts, not a signature: the
-#          /deployments card names it as unsigned, never in the success tone.
+#          and `cleared_by`; no window, no button. The grant is an audit trail
+#          the deployer session asserts, not a signature: the /deployments card
+#          names it as unsigned, never in the success tone.
 #
 # Every mode records the SAME two events (`ship_authorized` started → completed),
 # so the /deployments tracker's Confirming/Confirmed stamps and the Approve
@@ -32,6 +32,9 @@
 # never be answered by the previous run's row. A LAPSE is keyed apart from a
 # grant and flagged `lapsed`, so Release#ship_authorization_granted? never reads
 # a lapse — least of all an earlier run's — as the operator's grant.
+#
+# A cleared run's two rows key on its `cleared_at` stamp, so each cleared run
+# posts its own request and grant whatever rows the release already carries.
 #
 # Rails-free, with every side effect injected (recorder / reader / confirmer /
 # say / clock / sleeper), so each firing condition is unit-tested without a
@@ -53,11 +56,14 @@ module ShipAuthority
   module_function
 
   # The conductor's idempotency key for a timed run's event, scoped to the window
-  # it belongs to; nil (the caller's default key) for an ask/auto event, which
-  # carries no window. Release#grant_ship_authorization! derives the SAME grant
-  # key from the latest request, so the web Approve and ship's own completion
-  # stay one row per run.
+  # it belongs to, or for a cleared run's event, scoped to its `cleared_at`; nil
+  # (the caller's default key) for an ask/auto event, which carries neither.
+  # Release#grant_ship_authorization! derives the SAME grant key from the latest
+  # timed request, so the web Approve and ship's own completion stay one row per run.
   def idempotency_key(release_slug, status, metadata)
+    cleared_at = metadata.to_h["cleared_at"].to_s
+    return "#{release_slug}:#{STEP}:#{status}:cleared:#{cleared_at}" unless cleared_at.empty?
+
     ends_at = metadata.to_h["window_ends_at"].to_s
     return nil if ends_at.empty?
 
@@ -75,7 +81,7 @@ module ShipAuthority
     Devops::Windows.validate_mode!(value, source: "production_ship.mode")
   end
 
-  # Take authority in `mode`. Returns :confirmed / :auto / :granted /
+  # Take authority in `mode`. Returns :confirmed / :auto / :cleared / :granted /
   # :lapsed_proceed / :dry, or raises Refused with the operator-facing reason.
   #   recorder.call(status, metadata)     records `ship_authorized <status>`
   #   reader.call(blockers: bool)         → {"granted"=>, "granted_by"=>, "granted_via"=>, "blockers"=>[]} or nil
@@ -96,7 +102,7 @@ module ShipAuthority
       recorder.call("completed", { "mode" => "auto", "granted_via" => "auto" })
       :auto
     when "cleared"
-      cleared!(clearance: clearance, cleared_by: cleared_by, recorder: recorder, say: say)
+      cleared!(clearance: clearance, cleared_by: cleared_by, recorder: recorder, say: say, clock: clock)
     when "timed"
       timed!(release_slug: release_slug, minutes: minutes, recorder: recorder, reader: reader, say: say,
              clock: clock, sleeper: sleeper, dry: dry, interval: interval)
@@ -106,9 +112,9 @@ module ShipAuthority
   end
 
   # The chat clearance. Refuses BEFORE recording anything when the words are
-  # missing: a bare `--mode cleared` must never read as a silent `auto`. Carries
-  # no window, so its events keep the default idempotency key like ask and auto.
-  def cleared!(clearance:, cleared_by:, recorder:, say:)
+  # missing: a bare `--mode cleared` must never read as a silent `auto`. Both
+  # events carry the run's `cleared_at`, which keys them (idempotency_key above).
+  def cleared!(clearance:, cleared_by:, recorder:, say:, clock:)
     words = clearance.to_s.strip
     if words.empty?
       raise Refused, "--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
@@ -117,8 +123,10 @@ module ShipAuthority
 
     by = cleared_by.to_s.strip
     by = "alex" if by.empty?
-    recorder.call("started", { "mode" => "cleared" })
-    recorder.call("completed", { "mode" => "cleared", "granted_via" => "chat", "cleared_by" => by, "clearance" => words })
+    cleared_at = clock.call.utc.iso8601(3)
+    recorder.call("started", { "mode" => "cleared", "cleared_at" => cleared_at })
+    recorder.call("completed", { "mode" => "cleared", "granted_via" => "chat", "cleared_by" => by, "clearance" => words,
+                                 "cleared_at" => cleared_at })
     say.call("  ✓ production authority: cleared in chat by #{by} — #{words.inspect}")
     :cleared
   end

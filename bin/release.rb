@@ -185,7 +185,7 @@ require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/promote_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
-# Production authority (`ship --mode ask|timed|auto`) and the operator windows
+# Production authority (`ship --mode ask|timed|auto|cleared`) and the operator windows
 # it reads its default and its length from — both Rails-free, like Cli.
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
@@ -1457,7 +1457,8 @@ def ship_authority!(rel_slug, by, mode, clearance: nil, cleared_by: nil)
   # (ShipAuthority.idempotency_key), so a re-run posts a FRESH request, and neither
   # the old grant nor the old lapse can answer it. The grant key matches the one
   # Release#grant_ship_authorization! derives, so the web Approve and ship's own
-  # completion stay one row. ask/auto carry no window and keep the default key.
+  # completion stay one row. A cleared run keys both rows on its own `cleared_at`.
+  # ask/auto carry neither and keep the default key.
   recorder = lambda do |status, metadata|
     attrs = { actor: by, metadata: metadata }
     key = ShipAuthority.idempotency_key(rel_slug, status, metadata)
@@ -8629,6 +8630,11 @@ def ship
   if ship_mode == "cleared" && clearance.empty?
     abort!("--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
            "and the words are recorded on the release")
+  end
+  # The words are recorded only in cleared mode; any other mode would drop them.
+  if ship_mode != "cleared" && !clearance.empty?
+    abort!("--clearance is recorded only by --mode cleared; this ship resolved to --mode #{ship_mode}. " \
+           "Add --mode cleared, or drop --clearance")
   end
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
   steffon_span = false # set once the Steffon deploy-lane activity opens (gates its close)

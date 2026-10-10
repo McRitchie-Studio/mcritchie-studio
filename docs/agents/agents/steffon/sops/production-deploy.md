@@ -147,7 +147,7 @@ Ship from the primary checkout. **`--mode` takes production authority**
 
 | Mode | What happens at the authority step |
 |---|---|
-| `cleared` | records Alex's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. No request, no window, no button. A blank clearance refuses before anything moves. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
+| `cleared` | records Alex's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. No window, no button, and each run records its own grant, so a re-run stores the words it was given. A blank clearance refuses before anything moves, and so does `--clearance` with any other mode. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
 | `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
 | `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
 | `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. |
@@ -188,6 +188,7 @@ how it was recorded and names no approver:
 | The Approve button | `Approved by <name> at <time>, <mode> mode.` |
 | `bin/release ship --mode ask` (with or without `--yes`) | `Recorded by the conductor CLI in ask mode (run as <actor>) at <time>; no web approval.` |
 | `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
+| `bin/release ship --mode cleared --clearance "<Alex's words>"` | `Cleared in chat by <cleared_by>, asserted by the conductor CLI (run as <actor>) at <time>; unsigned. "<the words>".` |
 | A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
 | A `ship_authorized` completion posted to the events API (an admin session only; the shared token answers 403) | `Recorded through the events API by <actor> at <time>; no web approval.` |
 | A row marked as from the web that carries no verified `owner_grant` (one recorded before the marker, one a caller labelled, or one signed under a rotated secret) | `Authorized at <time> (<mode> mode); approver not recorded.` |
