@@ -101,6 +101,10 @@ test("Play both runs the primary beside the original, sound from the version onl
   // itself (the drift fix on the muted original) must NOT move the version:
   // that would drag the only sound along (a bug found measuring real Chrome).
   const times = () => compare.locator("video").evaluateAll((vs) => vs.map((v) => Math.round(v.currentTime * 1000) / 1000));
+  // Play both seeks each player itself, and for 400 ms after that the pair
+  // takes a seeking event as its own. An operator's seek counts once it has passed.
+  const ownSeekSettled = () => compare.locator("video").evaluateAll((vs) => vs.every((v) => performance.now() > (v.__quietUntil || 0)));
+  await expect.poll(ownSeekSettled).toBe(true);
   await compare.evaluate((root) => {
     const original = root.querySelector("[data-test='clip-player']");
     original.currentTime = 3;
