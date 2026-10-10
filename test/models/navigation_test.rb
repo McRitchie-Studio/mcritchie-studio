@@ -42,6 +42,25 @@ class NavigationTest < ActiveSupport::TestCase
     assert paths.values.all? { |path| path.start_with?("/") }
   end
 
+  test "[unit] an empty or missing registry does not load" do
+    [ nil, false, "", [], {}, { "pages" => nil }, { "pages" => {} }, { "sidebar" => [] } ].each do |data|
+      error = assert_raises(Navigation::Invalid, "#{data.inspect} must be refused") { Navigation.new(data) }
+      assert_match "empty", error.message
+    end
+
+    error = assert_raises(Navigation::Invalid) { Navigation.load_file(Rails.root.join("config/no-such-navigation.yml")) }
+    assert_match "missing", error.message
+    assert_kind_of Hash, Navigation.load_file, "control: the shipped file loads"
+  end
+
+  test "[unit] a registry that opens no public page does not load" do
+    admin_only = minimal(pages: { "tasks" => { "page" => "tasks#index", "audience" => "admin", "label" => "Tasks" } })
+    error = assert_raises(Navigation::Invalid) { Navigation.new(admin_only) }
+    assert_match "no public page", error.message
+
+    assert_includes Navigation.public_actions.fetch("landing"), "index", "control: the shipped registry opens the landing page"
+  end
+
   test "[unit] an audience other than public or admin does not load" do
     [ nil, "", "Public", "everyone", "signed_in", true ].each do |audience|
       data = minimal(pages: { "tasks" => { "page" => "tasks#index", "audience" => audience, "label" => "Tasks" } })
