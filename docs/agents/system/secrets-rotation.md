@@ -190,19 +190,118 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 
 **Symptoms of rotation needed:** Suspected wallet compromise. Routine quarterly hygiene. Adding/removing a multisig signer.
 
-**Procedure:**
-1. Generate a new keypair: `solana-keygen new --no-bip39-passphrase --silent --outfile /tmp/new-admin.json`.
-2. Convert the keypair file to the base58 form the env var and 1Password both hold: `bin/rails runner "require 'json'; puts Solana::Keypair.encode_base58(JSON.parse(File.read('/tmp/new-admin.json')).pack('C*'))"` — 88 characters. **There is no `secret_key_base58` method**; this step named one until 2026-09-15 and an operator following it mid-rotation got `NoMethodError`. `to_base58` is the PUBLIC key, and `encode_base58` needs a packed binary String, not the parsed array — verified round-tripping through `from_base58` on 2026-09-15.
-3. Get the public address: `solana-keygen pubkey /tmp/new-admin.json`.
-4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. **Confirm the signer set for the cluster you are rotating** — this procedure ends on `turf-monster-mainnet` (step 6), so assume mainnet unless you have checked. `turf-vault/docs/CURRENT_DEPLOYMENT.md` records the program ID, upgrade authority, threshold and signer set for each cluster under its own heading — read `## Mainnet`, not `## Devnet`. (`turf-vault/scripts/squad.json`'s `members` is what `scripts/initialize-mainnet.js` builds its `initialize` signer array from; it is a script input and the historical record, not the deployment record.) Verify live truth on-chain before signing: `solana program show <PROGRAM_ID> --url <mainnet-beta|devnet>` for the upgrade authority, then read `VaultState` (`seeds = [b"vault"]` against that program ID) for the signers and threshold. `turf-vault/docs/KEY_ROTATION.md` is a SUPERSEDED plan — read it for background, never as the procedure.
-5. Update 1Password `agent.xan.solana` (vault `studio-agents-admin`, admin token) -> field `private key` -> paste the new base58 secret. Save. **Mind which item you are in**: the `solana.turf.*` items in `studio-agents` spell the field `private-key`; `agent.xan.solana` and `solana.turf.governance` spell it `private key`, with a space.
-6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
-7. No local step: `bin/ecosystem-build` writes no `SOLANA_ADMIN_KEY` into a local `.env` (it stopped on 2026-10-06).
-8. Delete `/tmp/new-admin.json` (it contains the unencrypted secret). "Securely" is not available here: macOS has no `shred`, and `man rm` says `-P` "has no effect". On APFS the guarantee is *unlinked*, not *erased* — so keep the window short and treat the plaintext as exposed if the disk is ever suspect.
+**Procedure.** Run steps 1 to 7 in one shell: `$f`, `$t` and `$NEW_PUBKEY`
+carry from step to step. Open it in the admin lane, so every bare `op` below
+reads the admin vault:
+
+```bash
+source ~/.zprofile.admin
+export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
+```
+
+Print public keys only. The secret is never an argument, so it never lands in
+shell history or the process list.
+
+1. **Mint** into a private temp file. Never `-o -`: it prints the secret.
+   `--force` is required because `mktemp` has already created the file, and
+   without it `solana-keygen` refuses to overwrite it.
+
+   ```bash
+   umask 077; f="$(mktemp -t new-admin-key)"
+   solana-keygen new --no-bip39-passphrase --silent --force --outfile "$f"
+   NEW_PUBKEY="$(solana-keygen pubkey "$f")"; echo "$NEW_PUBKEY"   # public key only
+   ```
+
+2. **File it as a NEW item, from a template FILE.** Do not overwrite the
+   current item: the old secret can still own SOL, a nonce account, a mint
+   authority or a Squads seat, and overwriting it strands them (step 8). Ruby
+   converts the keypair to the 88-character base58 secret the env var holds and
+   writes it into a `0600` template file, and `op item create --template` reads
+   that file. Do not pipe a template into `op item create -`: a piped template
+   can be ignored, and `op` then makes an empty "Untitled SecureNote". Never
+   fall back to a `field[concealed]=…` argument.
+
+   ```bash
+   t="$(mktemp -t new-admin-item)"                  # 0600 under the umask above
+   op item template get "Secure Note" > "$t"        # holds no secret
+   ruby -rjson -e '
+     a = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+     b = JSON.parse(File.read(ARGV[0])).pack("C*")
+     abort "refusing: the keypair file is not 64 bytes" unless b.bytesize == 64
+     n = b.unpack1("H*").to_i(16); s = +""
+     while n > 0; n, r = n.divmod(58); s.prepend(a[r]); end
+     s = "1" * b.bytes.take_while(&:zero?).size + s
+     item = JSON.parse(File.read(ARGV[1]))
+     (item["fields"] ||= []).push(
+       { "id" => "private_key", "label" => "private key", "type" => "CONCEALED", "value" => s },
+       { "id" => "wallet_address", "label" => "wallet address", "type" => "STRING", "value" => ARGV[2] })
+     File.write(ARGV[1], JSON.generate(item))
+   ' "$f" "$t" "$NEW_PUBKEY"
+   op item create --vault studio-agents-admin --title "<new item title>" \
+     --template "$t" > /dev/null
+   rm -P "$t"
+   ```
+
+   It makes the item shape `solana.turf.governance`, filed the same way,
+   carries: a Secure Note with fields `private_key` (label `private key`) and
+   `wallet_address` (label `wallet address`).
+   `> /dev/null` because `op item create` prints the item it made. **Mind the
+   field label**: the `solana.turf.*` items in `studio-agents` spell it
+   `private-key`; the items in `studio-agents-admin` spell it `private key`,
+   with a space.
+
+3. **Prove the filed secret derives the public key.** Run it from a
+   turf-monster checkout; it prints a public key and nothing else.
+
+   ```bash
+   op item get "<new item title>" --vault studio-agents-admin --fields "label=private key" --reveal \
+     | ruby -r ./lib/solana/signer_isolation -e 'puts Solana::SignerIsolation.derive_pubkey($stdin.read)'
+   echo "$NEW_PUBKEY"                               # the two must match
+   ```
+
+4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. **Confirm the signer set for the cluster you are rotating** — this procedure ends on `turf-monster-mainnet` (step 5), so assume mainnet unless you have checked. `turf-vault/docs/CURRENT_DEPLOYMENT.md` records the program ID, upgrade authority, threshold and signer set for each cluster under its own heading — read `## Mainnet`, not `## Devnet`. (`turf-vault/scripts/squad.json`'s `members` is what `scripts/initialize-mainnet.js` builds its `initialize` signer array from; it is a script input and the historical record, not the deployment record.) Verify live truth on-chain before signing: `solana program show <PROGRAM_ID> --url <mainnet-beta|devnet>` for the upgrade authority, then read `VaultState` (`seeds = [b"vault"]` against that program ID) for the signers and threshold. `turf-vault/docs/KEY_ROTATION.md` is a SUPERSEDED plan — read it for background, never as the procedure.
+5. **Point the app at the new key**, only after step 4 has landed on chain.
+   Note the current release first; it is what a rollback returns to:
+   `heroku releases -n 1 --app turf-monster-mainnet`. `heroku config:set` takes
+   its values on the command line, so it cannot carry the secret. Use the
+   Platform API, which creates a release just as `config:set` does. Set
+   `SOLANA_MULTISIG_SIGNERS` in the same request, to the new signer set in slot
+   order (public keys). The app's model of the signer set comes from it; left
+   alone, the treasury pages go on offering the evicted key as a co-signer.
+
+   ```bash
+   SIGNERS="<slot 1>,<slot 2>,<slot 3>"             # public keys only
+   umask 077; h="$(mktemp)"
+   heroku auth:token | sed 's/^/Authorization: Bearer /' > "$h"
+   op item get "<new item title>" --vault studio-agents-admin --fields "label=private key" --reveal \
+     | SIGNERS="$SIGNERS" ruby -rjson -e 'print JSON.generate(
+         "SOLANA_ADMIN_KEY" => $stdin.read.strip,
+         "SOLANA_MULTISIG_SIGNERS" => ENV.fetch("SIGNERS"))' \
+     | curl -sS -o /dev/null -w '%{http_code}\n' -X PATCH \
+         https://api.heroku.com/apps/turf-monster-mainnet/config-vars \
+         -H "Accept: application/vnd.heroku+json; version=3" \
+         -H "Content-Type: application/json" \
+         -H @"$h" --data-binary @-
+   rm -P "$h"
+   ```
+
+   The API answers with every config var, secrets included, so the body is
+   discarded and only the HTTP status prints; `200` is success. QA's form of
+   the same pipe is step 8 of turf-monster's `docs/qa-signing-key-rotation.md`.
+6. No local step: `bin/ecosystem-build` writes no `SOLANA_ADMIN_KEY` into a local `.env`.
+7. Delete the keypair file, `rm -P "$f"`: it holds the unencrypted secret. "Securely" is not available here: macOS has no `shred`, and `man rm` says `-P` "has no effect". On APFS the guarantee is *unlinked*, not *erased* — so keep the window short and treat the plaintext as exposed if the disk is ever suspect.
+8. **Retire the old item last.** Read what the old public key still owns: SOL,
+   a nonce account, a mint authority, token accounts, a Squads seat. Move each,
+   then archive the item (`op item delete <id> --vault <its vault> --archive`),
+   as step 6 of **Solana governance key** below does.
 9. **`update_signers` is not the only registration — and since 2026-09-15 this key is on the other one on DEVNET only.** Xan (`8K81…`) WAS a member of both Squads V4 multisigs holding the turf-vault program upgrade authority. Two config ceremonies on 2026-09-15 — devnet 09:41:25 MDT, mainnet 09:46:51-55 MDT, five minutes apart and not one transaction — removed it from **both**; that afternoon devnet Squads transaction #18 **added it back** (14:02:10 MDT), so it is **a seated devnet member and absent on mainnet** (read from each Squad's config transactions at `finalized` 2026-09-16). Re-measured at `finalized` 2026-10-09, after the governance rotation, each cluster reads **threshold 3 of FIVE**, all mask 7, and the two clusters do not carry the same five — mainnet `7auwTL…`/`3Qj4v9…`/`7ZDJ…`/`9gACbz…`/`4bKNSqkr…`, devnet `2eGs8G3w…`/`3Qj4v9…`/`7ZDJ…`/`8K81…`/`4bKNSqkr…`. `turf-vault/scripts/squad.json` still lists the old three and is provenance only. So rotating `SOLANA_ADMIN_KEY` no longer requires a paired Squads rotation on mainnet, and still does on devnet. **Check before assuming either way**: read the live multisig rather than this sentence, because `update_signers` and a Squads config transaction are different authorities and one moving has never implied the other. If the key you are rotating IS seated, the Squads half is a config transaction at https://app.squads.so doing `removeMember(old)` + `addMember(new)` approved by the CLEAN members; the `credential-rotation` SOP's worked example carries the full order and the proofs.
 10. There is no second `update_signers`. On the DEPLOYED v0.25.0 `signers` is `[Pubkey; 3]` and the instruction does `vault.signers = new_signers` — a whole-set replace across three fixed slots — so step 4 already evicted the old pubkey in the same transaction. (turf-vault's `accepted` keeps that array at three and appends `signers_ext: [Pubkey; 2]` at offset 1443, read through `all_signers()`; slots 4-5 are never in `VaultState.signers`. That build is not deployed, so this step is still a three-slot replace today.) The only way to hold old and new at once is to evict a third signer for the duration; see the `credential-rotation` SOP's worked example before choosing that.
 
-**Verify:** `bin/rails runner 'puts Solana::Keypair.from_base58(ENV["SOLANA_ADMIN_KEY"]).address'` matches the new pubkey. A test contest settlement completes successfully (admin signs as `admin`, human cosigns).
+**Verify:** from a turf-monster checkout, the app's key derives the new public
+key, and the line prints a public key only:
+`heroku config:get SOLANA_ADMIN_KEY --app turf-monster-mainnet | ruby -r ./lib/solana/signer_isolation -e 'puts Solana::SignerIsolation.derive_pubkey($stdin.read)'`.
+`heroku config:get SOLANA_MULTISIG_SIGNERS --app turf-monster-mainnet` equals the
+new signer set. A test contest settlement completes successfully (admin signs as `admin`, human cosigns).
 
 ---
 
