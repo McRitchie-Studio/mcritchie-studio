@@ -118,7 +118,8 @@ and names each row by username, when a row it would adopt:
   address or wallet.
 
 An operator resolves each row by hand on QA, then runs `seed` again.
-`bin/rails users:parked_role_audit` lists the unproven holders.
+`heroku run --app turf-monster-qa -- bin/rails users:parked_role_audit` lists
+the unproven holders on QA.
 
 **Look at the roster line.** It should name every parked username.
 
