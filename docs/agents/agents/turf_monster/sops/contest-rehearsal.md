@@ -3,8 +3,9 @@
 
 ## Status: Active
 
-This is Turf Monster's `contest-rehearsal` SOP. It runs one whole contest
-lifecycle on QA — create, enter, play, settle, close — against **devnet**, with
+This is Turf Monster's `contest-rehearsal` SOP. It seeds the parked roster once
+per QA database, then runs one whole contest lifecycle on QA — create, enter,
+play, settle, close — against **devnet**, with
 real wallets, real ESPN scores and a real on-chain payout, so the mechanics can
 be watched end to end before the same path runs on mainnet with real money.
 
@@ -26,8 +27,9 @@ a test.
 
 ## Entry — WHICH environment, stated by the guard
 
-Run from the rehearsal worktree (the driver is a local command that drives the
-deployed QA app over HTTP):
+Run from a turf-monster checkout. The driver is a local command that drives the
+deployed QA app: it runs scripts on the QA dyno through `heroku run`, and the
+players enter over HTTP.
 
 ```bash
 cd /Users/alex/projects/turf-monster
@@ -37,8 +39,13 @@ bin/qa-contest-rehearsal <step>
 **You do not choose the environment; the guard does.** `NetworkGuard` runs
 before any key is loaded and refuses anything but `turf-monster-qa` running the
 devnet program, checking BOTH the network and the program id. That is not
-ceremony: the co-signing key is Mason's, and Mason is a signer on the MAINNET
-vault too.
+ceremony: the cast's keys are real wallets, and Mason's is a signer on the
+MAINNET vault too. Mason only plays. The settle's co-signer is Alex's wallet
+(`7ZDJ…`, `SOLANA_MULTISIG_COSIGNER`), signing in Phantom under `--cosign link`.
+
+What each step needs to be true on QA, the message each one stops with, and the
+operator's co-signing clicks are in `turf-monster/docs/qa-contest-rehearsal.md`.
+This SOP is the order and the hand-backs; that page is the detail.
 
 ## The cast
 
@@ -69,7 +76,7 @@ Two exclusions, and neither is a preference:
 
 ## The steps
 
-Each step prints the URLs it just made relevant. **Open them** — the driver runs
+Each step from `create` on prints the URLs it just made relevant. **Open them** — the driver runs
 in a terminal but the thing being rehearsed is a web app.
 
 ### ⛔ ONE STEP PER TURN — this is the whole point of the split
@@ -91,15 +98,51 @@ Step 4 with `--cosign link` is the one that cannot be waved through. The settle
 is 2-of-3 and the server has signed only its own half, so **a run that continues
 past it closes a contest that never paid.**
 
+### Step 0 — seed the parked roster (once per QA database)
+
+```bash
+bin/qa-contest-rehearsal seed
+```
+
+Runs the app's own roster seed (`db/seeds/users.rb`) on QA in its proven-only
+form. It writes the parked roster rows and their wallets, and demotes retired
+seats; it writes no other row. Step 1 needs the creator row it writes. A re-run
+changes nothing, so a database that has been seeded skips this step.
+
+It adopts an existing row only when it can prove it. It stops before any write,
+and names each row by username, when a row it would adopt:
+
+- holds a parked roster address unverified beside another credential (a wallet,
+  a Google link or an API key), or
+- matches a roster identity by username alone, with no row on that identity's
+  address or wallet.
+
+An operator resolves each row by hand on QA, then runs `seed` again.
+`bin/rails users:parked_role_audit` lists the unproven holders.
+
+**Look at the roster line.** It should name every parked username.
+
+→ **Hand back now.** Wait for his go-ahead before step 1.
+
 ### Step 1 — create the contest
 
 ```bash
 bin/qa-contest-rehearsal create
 ```
 
-Creates a standard-tier contest, funded on-chain from the admin wallet ($500
-pool, five paid ranks), and time-shifts the fixture forward so the board is
-pickable. Prints the slug.
+Reads what it needs before it writes anything, and stops if the creator row is
+missing (run step 0), the slate is missing, or the devnet `VaultState` cannot be
+read. It also stops when the server key (`SOLANA_ADMIN_KEY` on the dyno) is not
+a signer in the devnet `VaultState`. It prints the key the server signs as and
+the co-signer the settle will name, and warns, without stopping, when the server
+key is missing from the app's `SOLANA_MULTISIG_SIGNERS`.
+
+Then it creates a standard-tier contest ($500 pool, five paid ranks), funded
+on-chain from the server key's devnet USDC. When that key holds less than the
+pool it mints more, which works only while the server key is the devnet test
+mint's authority. Otherwise it stops before any contest is created: fund the
+key's USDC account, or move the mint authority to it. It also time-shifts the
+fixture forward so the board is pickable, and prints the slug.
 
 ```text
 Contest:      https://qa.turfmonster.media/contests/<slug>
@@ -168,16 +211,19 @@ bin/qa-contest-rehearsal conclude                   # --cosign link, the default
 ```
 
 Grades the contest, ranks the entries, and builds the 2-of-3 settle transaction.
-The server has already signed as Xan; the second signature is yours.
+The server has already signed with its own key; the second signature is Alex's,
+from the co-signer wallet the step prints (`7ZDJ…`).
 
 ```text
 Magic Link:   https://qa.turfmonster.media/l/<token>   → /admin/pending_transactions
 Contest:      https://qa.turfmonster.media/contests/<slug>
 ```
 
-**On the Treasury page: Rebuild first, then Co-sign.** The transaction carries a
-blockhash that expires in about 90 seconds, so the one built a minute ago will
-not send. Rebuild is the step people skip.
+**On the Treasury page, press Co-sign** with that wallet active in Phantom. The
+page builds a fresh transaction at the click; there is no Rebuild button and no
+blockhash clock to race. Phantom asks for one approval. It worked when the row
+reads **Confirmed**. A row that reads **Broadcast · unreconciled** takes
+**Reconcile**, not a second Co-sign.
 
 **Check the arithmetic afterwards.** The prize pool should fall by exactly the
 sum paid, and each winner's balance should rise by exactly their rank's payout.
@@ -205,6 +251,11 @@ bin/qa-contest-rehearsal close
 
 Reclaims the contest's rent. A run that ends here is asset-positive.
 
+Closing sweeps the prize pool, so `close` refuses a contest that has neither
+settled on chain nor been cancelled. The refusal names the Treasury buttons:
+Co-sign on a Pending row, or Reconcile on a row that reads Broadcast ·
+unreconciled. Run `close` again once the row reads Confirmed.
+
 ```text
 Contest:      https://qa.turfmonster.media/contests/<slug>
 ```
@@ -229,6 +280,7 @@ Stated so nobody reads a green rehearsal as more than it is:
 
 ## Background — not needed to execute
 
-Design and mechanics of the driver live with the code in
-`turf-monster/lib/turf_monster/qa_rehearsal/`. The scoring pipeline it borrows
+What each step needs on QA, and the operator's part of the settlement, are in
+`turf-monster/docs/qa-contest-rehearsal.md`. Design and mechanics of the driver
+live with the code in `turf-monster/lib/turf_monster/qa_rehearsal/`. The scoring pipeline it borrows
 is [`live-score-watch`](live-score-watch.md).
