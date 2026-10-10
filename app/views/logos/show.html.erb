@@ -11,7 +11,8 @@
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
     border and the primary has none: without it the chosen control is 2 px smaller and the row shifts on a change. %>
-<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" } %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
     <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
@@ -94,10 +95,10 @@
           <div class="flex flex-wrap items-center justify-end gap-2"
                x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
             <%= link_to "Download", logo_asset_path(variant, download: 1),
-                        class: "btn btn-sm btn-neutral", data: { test: "logo-download", turbo: false },
+                        class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
                         aria: { label: "Download: #{variant.label}" } %>
             <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
-            <button type="button" class="btn btn-sm btn-neutral" data-test="logo-copy" data-clip="<%= variant.svg %>"
+            <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-clip="<%= variant.svg %>"
                     aria-label="Copy SVG: <%= variant.label %>" x-text="words[state]"
                     @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
             <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>

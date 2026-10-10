@@ -159,6 +159,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='transparent-note']", /Every logo file has a transparent background/
     assert_select "[data-test='watermark-note']", 0
     assert_includes response.body, "window.copyText"
+    # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
+    ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
+    assert_equal %w[logo-tab logo-tab logo-tab rule-option rule-option guides-toggle] + %w[logo-download logo-copy] * 3, ringed.map { |control| control["data-test"] }
     assert_select "[data-test='read-only-note']", /Choosing one for the brand comes later/
     assert_select "[data-test='brand-note']", /drawn flat.*without the marketing kit's steel gradient and tick marks/
   end
