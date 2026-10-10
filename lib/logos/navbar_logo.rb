@@ -32,6 +32,7 @@ module Logos
     SPACE_WEIGHT = 300                         # the word space is this weight's " " advance
     GUIDE = "#D4189F"
     GUIDE_PAD = { left: 40, top: 40, right: 80, bottom: 40 }.freeze
+    GUIDE_FONT = 32                            # the guide labels' size, in design units
     HEX = /\A#(?:\h{3}|\h{6})\z/
     # Icon, glyph and lettering data is written into markup as it stands, so it is checked first.
     PATH = /\A[MLHVCSQTAZmlhvcsqtazeE0-9 ,.+-]*\z/
@@ -85,8 +86,7 @@ module Logos
     # `tone:` matters only to a brand whose tones name different icons.
     def layout(rule: 3, text: :homogeneous, tone: :light)
       cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected #{RULES.keys.join(' or ')}"
-      raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
-
+      check_text(text)
       row = H / rule
       cap = cap_rows * row
       first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
@@ -101,9 +101,7 @@ module Logos
 
     def svg(rule: 3, text: :homogeneous, tone: :light, guides: false)
       check_tone(tone)
-      box = layout(rule:, text:, tone:)
-      body = toned(tone, drawing(box, tone, *fills(tone, text)))
-      guides ? document(body + guide_markup(box), box.width, **GUIDE_PAD) : document(body, box.width)
+      render(layout(rule:, text:, tone:), H, text, tone, guides)
     end
 
     # The brand's icon alone, in its own box (`0 0 <w> <h>` of the icon data), with the tone's fills and the
@@ -134,6 +132,16 @@ module Logos
       raise Error, "unknown tone #{tone.inspect}: expected one of #{TONES.join(', ')}" unless TONES.include?(tone)
     end
 
+    def check_text(text)
+      raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
+    end
+
+    # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it (a subclass has its own pad).
+    def render(box, height, text, tone, guides)
+      body = toned(tone, drawing(box, tone, *fills(tone, text)))
+      guides ? document(body + guide_markup(box), box.width, height, **self.class::GUIDE_PAD) : document(body, box.width, height)
+    end
+
     def icon_key(tone)
       (tone == :watermark ? @watermark["icon_key"] : @style.dig("tones", tone.to_s, "icon_key")) || @style["icon"]
     end
@@ -162,7 +170,7 @@ module Logos
     end
 
     def drawing(box, tone, icon_fills, colours)
-      icon_markup(@icons.fetch(tone), icon_fills) + box.letters.map { |l| letter_markup(l, box, colours[l[:word]]) }.join
+      icon_markup(@icons.fetch(tone), icon_fills) + box.letters.map { |l| letter_markup(l, box.baseline, box.cap, colours[l[:word]]) }.join
     end
 
     # A watermark sits inside ONE translucent group: opacity on each path would compound where layers overlap.
@@ -243,22 +251,23 @@ module Logos
     end
 
     # Sets a word with its first letter's INK starting at x_ink. Returns the placed letters and the right ink edge.
-    def place(word, cap, x_ink, index)
+    # `tracking` (in cap heights) is the brand's own unless the caller computes one.
+    def place(word, cap, x_ink, index, tracking = @tracking)
       x = x_ink - word[0]["l"] * cap
       right = x_ink
       placed = word.map do |g|
         letter = { x:, d: g["d"], word: index }
         right = x + g["r"] * cap
-        x += (g["adv"] + @tracking) * cap   # after `right`: the ink edge takes no trailing tracking step
+        x += (g["adv"] + tracking) * cap   # after `right`: the ink edge takes no trailing tracking step
         letter
       end
       [placed, right]
     end
 
-    def letter_markup(letter, box, fill)
+    def letter_markup(letter, baseline, cap, fill)
       return "" if letter[:d].empty?
 
-      %(<path transform="translate(#{f(letter[:x])},#{f(box.baseline)}) scale(#{f(box.cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{@fill_rule}"/>)
+      %(<path transform="translate(#{f(letter[:x])},#{f(baseline)}) scale(#{f(cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{@fill_rule}"/>)
     end
 
     def icon_markup(icon, fills, height = H)
@@ -272,13 +281,19 @@ module Logos
 
     # The construction drawing: row edges, the icon's right edge, the name's left ink edge, and row numbers.
     def guide_markup(box)
-      line = ->(x1, y1, x2, y2) { %(<line x1="#{f(x1)}" y1="#{f(y1)}" x2="#{f(x2)}" y2="#{f(y2)}" stroke="#{GUIDE}" stroke-width="1.5"/>) }
-      rows = (0..box.count).map { |i| line.(-20, i * box.row, box.width + 20, i * box.row) }
-      edges = [box.icon_width, box.name_left].map { |x| line.(x, -20, x, H + 20) }
-      numbers = (0...box.count).map do |i|
-        %(<text x="#{f(box.width + 30)}" y="#{f((i + 0.5) * box.row + 12)}" font-family="Helvetica,Arial,sans-serif" font-size="32" font-weight="700" fill="#{GUIDE}">#{i + 1}</text>)
-      end
+      rows = (0..box.count).map { |i| guide_line(-20, i * box.row, box.width + 20, i * box.row) }
+      edges = [box.icon_width, box.name_left].map { |x| guide_line(x, -20, x, H + 20) }
+      numbers = (0...box.count).map { |i| guide_label(box.width + 30, (i + 0.5) * box.row + 12, i + 1) }
       (rows + edges + numbers).join
+    end
+
+    def guide_line(x1, y1, x2, y2)
+      %(<line x1="#{f(x1)}" y1="#{f(y1)}" x2="#{f(x2)}" y2="#{f(y2)}" stroke="#{GUIDE}" stroke-width="1.5"/>)
+    end
+
+    # `words` is the library's own (a row number, a band's size): never a name or a style value. `attributes` likewise.
+    def guide_label(x, y, words, attributes = "")
+      %(<text x="#{f(x)}" y="#{f(y)}"#{attributes} font-family="Helvetica,Arial,sans-serif" font-size="#{self.class::GUIDE_FONT}" font-weight="700" fill="#{GUIDE}">#{words}</text>)
     end
 
     def document(body, width, height = H, left: 0, top: 0, right: 0, bottom: 0)

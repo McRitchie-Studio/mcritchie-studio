@@ -1,5 +1,6 @@
 # Logo brand styles: the data Logos::NavbarLogo (lib/logos/navbar_logo.rb)
-# draws a brand's Navbar Logo from. Rules and rake task: docs/topics/logos.md.
+# draws a brand's Navbar Logo and icon from, and Logos::StackedLogo its Stacked
+# Logo. Rules and rake task: docs/topics/logos.md.
 #
 # name       two words; the logo sets them on one line beside the icon
 # icon       a key in the icon data (lib/logos/data/brand_icons*.json)
@@ -12,6 +13,10 @@
 #              colour  both words are `heavy`; the leading word takes `accent`
 # heavy      Montserrat weight for homogeneous text and the leading word
 # light      the quiet word's weight (highlight: weight only)
+# stacked    optional: the Stacked Logo's form (Logos::StackedLogo). `two_line`
+#            (default) sets the first word big and the second small beneath it;
+#            `one_line` sets the whole name on one line, for a brand whose
+#            second word is too wide to sit under its first
 # tracking   optional: extra space after every letter, in em (negative tightens)
 # note       optional: one line the brand's page shows about where its art came from
 # tones      fills for a light and a dark background. `text` is the name's
@@ -64,6 +69,7 @@ turf:
   highlight: colour
   heavy: 800
   tracking: -0.025
+  stacked: one_line
   note: The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours.
   tones:
     light:
