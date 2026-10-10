@@ -229,7 +229,7 @@ is no window column, and changing a length moves every countdown at once.
 |---|---|---|---|---|
 | UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
 | Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
-| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why. `bin/release ship --mode cleared --clearance "<Alex's words>"` records his chat clearance instead: no request, no window, no button, and the card names it as cleared in chat and unsigned |
 
 The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
 Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,
@@ -254,9 +254,10 @@ is the latest open end plus the grace, recomputed on every read.
 posts `POST /deployments/<release>/ship_authorization`, which records the one
 `ship_authorized completed` event under the conductor's own idempotency key —
 so a grant and the ship's own completion stamp are one row. `bin/release ship
---mode ask|timed|auto` picks how authority is taken (default `timed`, from
-`production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
-`production-deploy` SOP.
+--mode ask|timed|auto|cleared` picks how authority is taken (default `timed`, from
+`production_ship.mode`); `--yes` alone is `auto`; `cleared` records Alex's chat
+clearance from `--clearance "<his words>"` and opens no window; the recipe lives
+in Steffon's `production-deploy` SOP.
 
 **The release lane on the card.** The Next Release card says who is assembling the
 release, who is shipping it, and what the production grant covers, in the sentences

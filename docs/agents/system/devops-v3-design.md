@@ -225,7 +225,7 @@ escalations reached Alex; the next move landed 48 minutes later at the median.
 |---|---|---|---|
 | UI approval | 10 min | Card pulses with the magic link; the builder keeps going | Review proceeds, as today; the card keeps asking; a later answer is recorded |
 | Escalation | 20 min | A contested block goes to Avi first (`arbitrate-block`); only a policy question he cannot settle reaches Alex, with both positions in one note | The ruling Avi recommended stands, labeled as an auto-decision; the task carries the open question |
-| Production authority | 30 min | The release is QA-green; the session asks once with the slug and members | Per-launch mode: `ask` holds; `timed` ships when the window lapses with G3 green and no open escalation; `auto` ships on green. Default `timed`. The default and the length live in `config/release_builder.yml` |
+| Production authority | 30 min | The release is QA-green; the session asks once with the slug and members | Per-launch mode: `ask` holds; `timed` ships when the window lapses with G3 green and no open escalation; `auto` ships on green; `cleared` records Alex's chat clearance (his words, required) and ships with no window. Default `timed`. The default and the length live in `config/release_builder.yml` |
 
 Mechanically: one `window_expires_at` field per gate, set when the request is
 posted, one command the session runs to wait on it, and a countdown on the card.
@@ -440,7 +440,8 @@ outside any checkout. 4c starts after the v3 batch reaches `main`.
 
 1. **Xan** is the agent's name; Alex is the human.
 2. **Production window:** per-launch mode, `timed` by default; changeable in
-   `config/release_builder.yml`.
+   `config/release_builder.yml`. Alex's clearance in chat is its own mode,
+   `cleared`, which records his words on the release and asks no window.
 3. **The Pokémon builds everything;** specialists review; the builder may contest
    a block; Avi arbitrates.
 4. **Review tiers** as in §4.

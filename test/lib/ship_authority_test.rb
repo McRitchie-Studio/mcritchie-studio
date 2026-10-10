@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] ShipAuthority — how `bin/release ship --mode ask|timed|auto` takes
+# [unit] ShipAuthority — how `bin/release ship --mode ask|timed|auto|cleared` takes
 # production authority (bin/lib/ship_authority.rb): the mode precedence, the two
 # events every mode records, and each firing condition of the timed window —
 # grant, lapse-and-proceed, lapse-and-refuse, unreadable-at-lapse, dry-run —
@@ -35,9 +35,10 @@ class ShipAuthorityTest < Minitest::Test
     def clock = -> { @now }
     def sleeper = ->(seconds) { @sleeps << seconds; @now += seconds }
 
-    def take!(mode:, dry: false, minutes: 30, interval: 45)
+    def take!(mode:, dry: false, minutes: 30, interval: 45, clearance: nil, cleared_by: nil)
       ShipAuthority.take!(mode: mode, release_slug: "rel-demo", minutes: minutes, recorder: recorder, reader: reader,
-                          confirmer: confirmer, say: say, clock: clock, sleeper: sleeper, dry: dry, interval: interval)
+                          confirmer: confirmer, say: say, clock: clock, sleeper: sleeper, dry: dry, interval: interval,
+                          clearance: clearance, cleared_by: cleared_by)
     end
   end
 
@@ -46,6 +47,7 @@ class ShipAuthorityTest < Minitest::Test
   def test_explicit_mode_wins_over_yes_and_config
     assert_equal "ask", ShipAuthority.resolve_mode(explicit: "ask", assume_yes: true, config_mode: "timed")
     assert_equal "timed", ShipAuthority.resolve_mode(explicit: "TIMED", assume_yes: true, config_mode: "auto")
+    assert_equal "cleared", ShipAuthority.resolve_mode(explicit: "cleared", assume_yes: true, config_mode: "timed")
   end
 
   def test_yes_alone_is_auto_and_the_config_default_is_read_only_when_it_decides
@@ -81,6 +83,55 @@ class ShipAuthorityTest < Minitest::Test
     assert_equal :auto, h.take!(mode: "auto")
     assert_equal %w[started completed], h.events.map(&:first)
     assert_equal "auto", h.events.last.last["granted_via"]
+  end
+
+  # --- cleared -------------------------------------------------------------------
+
+  def test_cleared_records_the_chat_grant_with_the_clearance_and_asks_nobody
+    h = Harness.new(confirm: false)
+    assert_equal :cleared, h.take!(mode: "cleared", clearance: "  ship it, this message is my clearance ", cleared_by: "alex")
+    assert_equal %w[started completed], h.events.map(&:first)
+    done = h.events.last.last
+    assert_equal({ "mode" => "cleared", "granted_via" => "chat", "cleared_by" => "alex",
+                   "clearance" => "ship it, this message is my clearance", "cleared_at" => "2026-09-24T20:00:00.000Z" }, done)
+    assert_equal({ "mode" => "cleared", "cleared_at" => "2026-09-24T20:00:00.000Z" }, h.events.first.last)
+    assert_empty h.reads, "cleared never polls the board for a grant"
+    assert h.said.any? { |line| line.include?("cleared in chat by alex") }
+  end
+
+  def test_cleared_defaults_the_clearer_to_alex
+    h = Harness.new
+    h.take!(mode: "cleared", clearance: "go")
+    assert_equal "alex", h.events.last.last["cleared_by"]
+  end
+
+  def test_cleared_with_blank_clearance_refuses_before_recording
+    h = Harness.new
+    error = assert_raises(ShipAuthority::Refused) { h.take!(mode: "cleared", clearance: "   ") }
+    assert_includes error.message, "--clearance"
+    assert_empty h.events, "a refused clearance records nothing"
+    assert_raises(ShipAuthority::Refused) { Harness.new.take!(mode: "cleared") }
+  end
+
+  def test_cleared_carries_no_window_and_keys_each_run_on_its_cleared_at
+    keys = [NOW, NOW + 60].map do |now|
+      h = Harness.new(now: now)
+      h.take!(mode: "cleared", clearance: "go")
+      assert h.events.none? { |_status, metadata| metadata.key?("window_ends_at") }
+      h.events.map { |status, metadata| ShipAuthority.idempotency_key("rel-demo", status, metadata) }
+    end
+
+    assert_equal ["rel-demo:ship_authorized:started:cleared:2026-09-24T20:00:00.000Z",
+                  "rel-demo:ship_authorized:completed:cleared:2026-09-24T20:00:00.000Z"], keys.first
+    assert_equal 4, keys.flatten.uniq.size, "a later cleared run shares no key with the earlier one"
+  end
+
+  def test_ask_and_auto_keep_the_default_key
+    %w[ask auto].each do |mode|
+      h = Harness.new
+      h.take!(mode: mode)
+      h.events.each { |status, metadata| assert_nil ShipAuthority.idempotency_key("rel-demo", status, metadata) }
+    end
   end
 
   # --- timed -------------------------------------------------------------------
