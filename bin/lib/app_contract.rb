@@ -8,6 +8,7 @@ require "uri"
 # bin/release prepare refuses (Carl, review of contract-checks-ci-triggers). It does
 # no I/O and bin/release.rb already loads it standalone.
 require_relative "../../app/models/release/accepted_certification"
+require_relative "ci_suite_workflow"
 
 # AppContract — checks, live and read-only, that an app already meets the
 # standalone deploy contract (config/app_profiles.yml → contract) before
@@ -58,13 +59,27 @@ module AppContract
 
   module_function
 
-  # The `test` job's single `bin/rails ...` step in .github/workflows/ci.yml, or
-  # nil. That command, verbatim, is the registry's test_cmd.
-  def ci_test_cmd(ci_yaml)
+  # The suite command of .github/workflows/ci.yml, or nil. That command, verbatim,
+  # is the registry's test_cmd. Two shapes carry one: a `test` job with a single
+  # `bin/rails ...` step, or a job that calls the hub's reusable-ci.yml, whose
+  # suite command is its `system-command` input (`suite_yaml` supplies the default).
+  def ci_test_cmd(ci_yaml, suite_yaml: nil)
     jobs = (YAML.safe_load(ci_yaml.to_s, aliases: true) || {})["jobs"] || {}
     runs = Array(jobs.dig("test", "steps")).filter_map { |s| s.is_a?(Hash) ? s["run"].to_s.strip : nil }
+    runs = [CiSuiteWorkflow.caller_suite_command(ci_yaml, suite_yaml: suite_yaml).to_s] if runs.empty?
     rails = runs.select { |r| r.start_with?("bin/rails") && !r.include?("\n") }
     rails.length == 1 ? rails.first : nil
+  rescue Psych::Exception
+    nil
+  end
+
+  # The hub's reusable-ci.yml as production has it, read from the hub checkout beside
+  # `root`. Only a caller that passes no `system-command` needs it; nil otherwise.
+  def suite_text(ci_yaml, root, probe)
+    return nil unless CiSuiteWorkflow.caller_job(ci_yaml)
+
+    hub = File.join(File.dirname(root), CiSuiteWorkflow::HUB_NWO.split("/").last)
+    probe.read_at(hub, "origin/main", CiSuiteWorkflow::SUITE_PATH)
   rescue Psych::Exception
     nil
   end
@@ -137,15 +152,16 @@ module AppContract
     # decision is Release::AcceptedCertification's, over EVERY workflow file, so
     # the name match, branches-ignore and path filters all agree with the sweep.
     workflows = workflow_files(root, probe)
-    test_cmd = ci_test_cmd(workflows[".github/workflows/ci.yml"])
+    ci_yaml = workflows[".github/workflows/ci.yml"]
+    test_cmd = ci_test_cmd(ci_yaml, suite_yaml: suite_text(ci_yaml, root, probe))
     blind = %w[accepted release].reject do |rung|
       Release::AcceptedCertification.certified?(workflows, Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW, rung)
     end
     checks << Check.new(name: "ci on release rungs", ok: blind.empty?,
                         detail: blind.empty? ? "workflow \"CI\" builds pushes to accepted and release" : "no workflow named \"CI\" builds pushes to #{blind.join(', ')}",
                         remedy: "name the suite workflow `CI`, give it `push: branches: [ main, release, accepted ]` with no path filter or branches-ignore, and merge it to accepted")
-    checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test",
-                        remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step")
+    checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test, and no reusable-ci.yml call with a bin/rails system-command",
+                        remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step, or call the hub's reusable-ci.yml with a `system-command`")
 
     ignore = probe.read_at(root, REF, ".gitignore").to_s
     checks << Check.new(name: ".worktrees ignored", ok: ignore.match?(%r{^/?\.worktrees/?$}),

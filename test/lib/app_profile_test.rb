@@ -281,6 +281,54 @@ class AppProfileTest < Minitest::Test
     assert_equal "bin/rails test", AppContract.ci_test_cmd({ "jobs" => { "test" => { "steps" => [{ "run" => "bin/rails test" }] } } }.to_yaml)
   end
 
+  # ---- the caller shape: ci.yml calls the hub's reusable-ci.yml ----
+
+  HUB_CALL = "McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main"
+  SUITE = { "on" => { "workflow_call" => { "inputs" => {
+    "system" => { "type" => "boolean", "default" => true },
+    "system-command" => { "type" => "string", "default" => "bin/rails db:test:prepare test:system" }
+  } } }, "jobs" => {} }.to_yaml
+
+  def caller_ci(with = nil)
+    job = { "uses" => HUB_CALL }
+    job["with"] = with if with
+    { "name" => "CI", "on" => { "pull_request" => nil, "push" => { "branches" => %w[main release accepted] } },
+      "jobs" => { "ci" => job } }.to_yaml
+  end
+
+  def test_ci_test_cmd_reads_a_callers_system_command
+    assert_equal "bin/rails db:test:prepare test test:system",
+                 AppContract.ci_test_cmd(caller_ci("system-command" => "bin/rails db:test:prepare test test:system"))
+  end
+
+  def test_ci_test_cmd_falls_back_to_the_suites_default_for_a_bare_caller
+    assert_nil AppContract.ci_test_cmd(caller_ci), "no suite text: the default is unknown"
+    assert_equal "bin/rails db:test:prepare test:system", AppContract.ci_test_cmd(caller_ci, suite_yaml: SUITE)
+  end
+
+  def test_ci_test_cmd_is_nil_for_a_caller_with_the_lane_off_or_a_foreign_command
+    assert_nil AppContract.ci_test_cmd(caller_ci("system" => false, "system-command" => "bin/rails test"), suite_yaml: SUITE)
+    assert_nil AppContract.ci_test_cmd(caller_ci("system-command" => "npm test"), suite_yaml: SUITE)
+    other = caller_ci("system-command" => "bin/rails test").sub("reusable-ci.yml", "other.yml")
+    assert_nil AppContract.ci_test_cmd(other, suite_yaml: SUITE), "a call to another workflow carries no suite command"
+  end
+
+  def test_a_caller_app_passes_the_contract_and_reads_the_hubs_suite_at_main
+    probe = healthy_probe(files: { "ci.yml" => caller_ci, "reusable-ci.yml" => SUITE })
+    checks, test_cmd = contract(probe)
+
+    assert(checks.all?(&:ok), checks.reject(&:ok).map(&:name).inspect)
+    assert_equal "bin/rails db:test:prepare test:system", test_cmd
+    assert_includes probe.paths_read.zip(probe.refs_read), [".github/workflows/reusable-ci.yml", "origin/main"]
+  end
+
+  def test_an_inline_app_never_reads_the_hubs_suite
+    probe = healthy_probe
+    contract(probe)
+
+    refute_includes probe.paths_read, ".github/workflows/reusable-ci.yml"
+  end
+
   def test_engine_version_reads_the_lock
     assert_equal "0.32.1", AppContract.engine_version("GEM\n  specs:\n    studio-engine (0.32.1)\n      rails\n")
     assert_nil AppContract.engine_version("GEM\n  specs:\n    rails (8.1.0)\n")

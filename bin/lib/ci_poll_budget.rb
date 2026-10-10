@@ -41,8 +41,10 @@ module CiPollBudget
   #
   # A job that CALLS a workflow (`uses: ./.github/workflows/x.yml`) cannot declare a
   # timeout: it runs for as long as the called file's own chain. `called` maps a
-  # workflow path to its text so that chain is read; a call whose file is not in the
-  # map (another repo, or an unread set) counts as GitHub's default.
+  # workflow path to its text so that chain is read. A call into ANOTHER repo
+  # (`uses: owner/repo/.github/workflows/x.yml@ref`) is keyed by that whole `uses:`
+  # string, since the same path in the caller's tree is a different file. A call whose
+  # text is not in the map counts as GitHub's default.
   def critical_path_minutes(yaml_text, called: {}, calling: [])
     doc = YAML.safe_load(yaml_text.to_s, aliases: true)
     jobs = doc.is_a?(Hash) ? doc["jobs"] : nil
@@ -63,9 +65,24 @@ module CiPollBudget
   end
 
   LOCAL_CALL = %r{\A\./(\.github/workflows/[^/@]+\.ya?ml)\z}
+  REMOTE_CALL = %r{\A([^/\s]+/[^/\s]+/\.github/workflows/[^/@\s]+\.ya?ml@\S+)\z}
+
+  # Every `uses:` in these workflows that calls a workflow in another repo, as written.
+  # The caller of budget_s reads each one's text and adds it to the map under this key.
+  def remote_calls(workflows)
+    texts = workflows.is_a?(Hash) ? workflows.values : Array(workflows)
+    texts.flat_map do |text|
+      doc = YAML.safe_load(text.to_s, aliases: true)
+      jobs = doc.is_a?(Hash) && doc["jobs"].is_a?(Hash) ? doc["jobs"].values : []
+      jobs.grep(Hash).filter_map { |job| job["uses"].to_s.strip[REMOTE_CALL, 1] }
+    rescue StandardError
+      []
+    end.uniq
+  end
 
   def job_minutes(job, called: {}, calling: [])
-    path = job["uses"].to_s[LOCAL_CALL, 1]
+    uses = job["uses"].to_s.strip
+    path = uses[LOCAL_CALL, 1] || uses[REMOTE_CALL, 1]
     if path
       # `calling` stops a workflow that calls itself, which GitHub refuses anyway.
       text = calling.include?(path) ? nil : called.to_h[path]

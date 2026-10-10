@@ -1,5 +1,6 @@
 require "test_helper"
 require Rails.root.join("bin/lib/app_profile").to_s
+require Rails.root.join("bin/lib/ci_suite_workflow").to_s
 require "shellwords"
 require "open3"
 
@@ -798,6 +799,61 @@ class Release::ReposTest < ActiveSupport::TestCase
     skip "no git_push_heroku satellite checkout present (hub CI runner) — shape guards above still bind" if checked.empty?
   end
 
+  # --- the drift guard reads BOTH ci.yml shapes (binds on the hub CI runner too) ---
+
+  INLINE_CI = <<~YAML
+    name: CI
+    on: { pull_request: null, push: { branches: [main, release, accepted] } }
+    jobs:
+      test:
+        runs-on: ubuntu-latest
+        steps:
+          - run: bin/rails tailwindcss:build
+          - run: bin/rails db:test:prepare test test:system
+      system-test:
+        runs-on: ubuntu-latest
+        steps:
+          - run: bin/rails test:system
+  YAML
+
+  CALLER_CI = <<~YAML
+    name: CI
+    on: { pull_request: null, push: { branches: [main, release, accepted] } }
+    jobs:
+      ci:
+        uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main
+        with:
+          rails-shards: false
+          system-setup-command: bin/rails tailwindcss:build
+          system-command: bin/rails db:test:prepare test test:system
+  YAML
+
+  test "the drift guard reads an inline ci.yml's test job by anchor" do
+    assert_equal "bin/rails db:test:prepare test test:system", ci_job_command(INLINE_CI, anchor: "db:test:prepare")
+    assert_equal "bin/rails tailwindcss:build", ci_job_command(INLINE_CI), "the default anchor finds the first bin/rails step"
+    assert_equal "bin/rails test:system", ci_job_command(INLINE_CI, anchor: "bin/rails test:system", job: "system-test")
+  end
+
+  test "the drift guard reads a caller ci.yml's suite command" do
+    assert_equal "bin/rails db:test:prepare test test:system", ci_job_command(CALLER_CI, anchor: "db:test:prepare")
+    assert_equal "bin/rails db:test:prepare test test:system", ci_job_command(CALLER_CI)
+  end
+
+  test "a bare caller runs the suite's default command" do
+    bare = CALLER_CI.sub(/    with:.*\z/m, "")
+
+    assert_equal "bin/rails db:test:prepare test:system", ci_job_command(bare, anchor: "db:test:prepare")
+  end
+
+  test "the drift guard stays blind, loudly, where a caller carries no such command" do
+    assert_nil ci_job_command(CALLER_CI, anchor: "bin/rails test:system", job: "system-test"),
+               "a companion job is not the caller's suite lane"
+    assert_nil ci_job_command(CALLER_CI.sub("system-command: bin/rails db:test:prepare test test:system", "system: false")),
+               "the lane switched off runs no suite"
+    assert_nil ci_job_command(CALLER_CI.sub("reusable-ci.yml", "other.yml")), "a call to another workflow is unread"
+    assert_nil ci_job_command(CALLER_CI, anchor: "bin/ci-shard"), "the anchor still has to match"
+  end
+
   test "turf-monster has no system tests, so its integration subset is the right gate" do
     # Verified, not assumed: turf-monster's test/system holds only a .keep, so
     # there is no system tier to cover and bin/deploy's full suite is sufficient.
@@ -929,12 +985,29 @@ class Release::ReposTest < ActiveSupport::TestCase
                                err: File::NULL)
       return nil unless ok.success?
 
+      run = ci_job_command(raw, anchor: anchor, job: job)
+      assert run.present?, "#{repo}'s ci.yml `#{job}` job no longer has a #{anchor} step, and no " \
+                           "reusable-ci.yml call carries one — the guard is blind"
+      run
+    end
+
+    # PURE. The command a ci.yml runs for `job`, in either shape. INLINE: the `job`'s
+    # own step containing `anchor`. CALLER (a job that calls the hub's reusable-ci.yml):
+    # the suite command the call runs, its `system-command` input or the suite's
+    # default, when it contains `anchor`. The caller shape has one suite lane, so it
+    # answers for the `test` job only; a companion job stays inline or is unread.
+    def ci_job_command(raw, anchor: "bin/rails", job: "test", suite_yaml: hub_suite_yaml)
       ci    = YAML.safe_load(raw, aliases: true)
       steps = ci.dig("jobs", job, "steps") || []
       run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?(anchor) }
-      assert run.present?, "#{repo}'s ci.yml `#{job}` job no longer has a #{anchor} step — the guard is blind"
-      run.strip
+      return run.strip if run
+      return nil unless job == "test"
+
+      called = CiSuiteWorkflow.caller_suite_command(raw, suite_yaml: suite_yaml)
+      called if called&.include?(anchor)
     end
+
+    def hub_suite_yaml = Rails.root.join(CiSuiteWorkflow::SUITE_PATH).read
 
   test "qa_test_cmd stays flag-style so the argv parse is unambiguous" do
     # Shellwords and String#split agree on these values (no quotes) — pins the
@@ -998,10 +1071,9 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   private
     # The `run:` bodies of one job in the hub's suite, stripped. The jobs live in
-    # reusable-ci.yml, which the hub's ci.yml calls.
+    # reusable-ci.yml, which the hub's ci.yml calls with no `with:`, so each body is
+    # read with the inputs at their defaults.
     def ci_runs(job)
-      ci = YAML.safe_load(Rails.root.join(".github/workflows/reusable-ci.yml").read, aliases: true)
-      steps = ci.dig("jobs", job, "steps") || []
-      steps.filter_map { |step| step["run"]&.strip }
+      CiSuiteWorkflow.runs(CiSuiteWorkflow.as_called(Rails.root.join(CiSuiteWorkflow::SUITE_PATH).read), job)
     end
 end

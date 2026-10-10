@@ -6,7 +6,8 @@ require "yaml"
 #
 #   INLINE  every lane is a job in the repo's own ci.yml (`jobs.test.steps[].run`).
 #   CALLER  a job in ci.yml is `uses: …/reusable-ci.yml`, and the lanes are the hub's
-#           .github/workflows/reusable-ci.yml, run with that job's `with:` inputs.
+#           .github/workflows/reusable-ci.yml, run with that job's `with:` inputs. Its
+#           check-runs are named `<caller job> / <lane>`.
 #
 # Pure: text in, values out. Callers do the reading.
 #
@@ -90,20 +91,21 @@ module CiSuiteWorkflow
     Array(steps).grep(Hash).filter_map { |step| step["run"]&.to_s&.strip }.reject(&:empty?)
   end
 
-  # The `run:` bodies of the lane that carries a repo's suite command, in either shape:
-  # the inline `job`'s steps, or (for a caller) the `system` lane as its `with:` runs it.
-  # Empty when the workflow has neither, or when a caller's suite text is not at hand.
-  def suite_runs(ci_yaml, suite_yaml: nil, job: "test")
-    inline = runs(ci_yaml, job)
-    return inline if inline.any?
-
+  # The suite command of a CALLER workflow: the caller's `system-command`, or the
+  # suite's declared default when the caller passes none. nil when `ci_yaml` is not a
+  # caller, when it switches the `system` lane off, or when the default is needed and
+  # `suite_yaml` is not at hand.
+  def caller_suite_command(ci_yaml, suite_yaml: nil)
     _name, caller = caller_job(ci_yaml)
-    return [] if caller.nil? || suite_yaml.to_s.empty?
-    return [] if (caller["with"] || {})["system"] == false
+    return nil if caller.nil?
 
-    runs(as_called(suite_yaml, with: caller["with"] || {}), "system")
-  rescue UndeclaredInput, Psych::Exception
-    []
+    with = caller["with"].is_a?(Hash) ? caller["with"] : {}
+    return nil if with["system"] == false
+
+    command = with.key?(SUITE_COMMAND_INPUT) ? with[SUITE_COMMAND_INPUT] : inputs(suite_yaml).dig(SUITE_COMMAND_INPUT, "default")
+    command.to_s.strip.empty? ? nil : command.to_s.strip
+  rescue Psych::Exception
+    nil
   end
 
   def jobs(yaml_text)

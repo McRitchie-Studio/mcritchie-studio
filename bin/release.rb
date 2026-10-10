@@ -3286,9 +3286,30 @@ def ci_poll_budget_for(repo, sha)
     text, read = git_capture("-C", path, "show", "#{sha}:#{file}")
     [file, text] if read
   end.to_h
+  CiPollBudget.remote_calls(texts).each do |uses|
+    text = called_workflow_text(uses)
+    texts[uses] = text if text
+  end
   CiPollBudget.budget_s(texts, floor: ci_poll_timeout, ceiling: ci_poll_ceiling)
 rescue StandardError
   ci_poll_timeout
+end
+
+# The text of a workflow another repo's job calls (`owner/repo/<path>@<ref>`), read from
+# that repo's local clone: `origin/<ref>` for a branch, else the ref itself (a tag or a
+# SHA). nil when the repo has no clone here or the ref does not resolve, and the call
+# then counts as GitHub's default.
+def called_workflow_text(uses)
+  target, ref = uses.to_s.split("@", 2)
+  _owner, slug, file = target.to_s.split("/", 3)
+  clone = repo_path(slug)
+  return nil if ref.to_s.empty? || file.to_s.empty? || !Dir.exist?(clone)
+
+  ["origin/#{ref}", ref].each do |rev|
+    text, read = Open3.capture2("git", "-C", clone, "show", "#{rev}:#{file}", err: File::NULL)
+    return text if read.success?
+  end
+  nil
 end
 
 def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
