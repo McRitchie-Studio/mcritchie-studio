@@ -29,6 +29,12 @@ db:migrate`), not in a follow-up `heroku run`. Verified 2026-09-16: releases v44
 (`c1ba9fa2`) and v446 (`ddd15ce7`) both came from `workflow_dispatch` runs of
 Production Deploy.
 
+The same deploy exists as a called workflow, `.github/workflows/reusable-prod-deploy.yml`
+(inputs `sha`, `heroku-app`, `smoke-url`; secret `HEROKU_API_KEY`), for an app that
+moves its production deploy into Actions. No workflow calls it and no registry row
+names it (`test/lib/reusable_prod_deploy_test.rb`, `test/models/release/repos_test.rb`);
+the file's header lists what the calling `prod-deploy.yml` must carry.
+
 ### Dynos: Web and Worker Change Tier Together
 
 Production runs **one Standard-2X web dyno** (`puma`) and **one Standard-2X

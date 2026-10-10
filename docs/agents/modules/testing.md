@@ -37,18 +37,55 @@ checks to `checks_run` as each stage completes.
 The hub's CI is two files. `.github/workflows/ci.yml` holds the workflow name (`CI`),
 the triggers and one job, `ci`, that calls `.github/workflows/reusable-ci.yml`. That
 file holds every lane (`static`, `javascript`, `island_animator`, `playwright`,
-`e2e_executed_set`, `rails_plan`, `rails`, `rails_executed_set`, `system`) and takes
-no inputs and no secrets.
+`e2e_executed_set`, `rails_plan`, `rails`, `rails_executed_set`, `system`). It takes
+inputs and no secrets, and every input's default is the hub's own suite.
 
 - The run is still one run named `CI` per commit, so every reader of the verdict by
   workflow name or by commit reads it unchanged.
 - GitHub reports each lane's check as `ci / <job>`: `ci / static`, `ci / rails (1)`.
   `bin/ci-scope-capture` keys a scope on the part after the slash.
-- A lane guard reads `reusable-ci.yml`; a trigger guard reads `ci.yml`.
-  `test/lib/ci_workflow_triggers_test.rb` pins the call between them: the caller job
-  carries `uses:` and nothing else.
+- The hub's call passes no `with:`, so it runs the defaults. A lane guard reads
+  `reusable-ci.yml` as that bare call runs it (`CiSuiteWorkflow.as_called`,
+  `bin/lib/ci_suite_workflow.rb`); a trigger guard reads `ci.yml`.
+  `test/lib/ci_workflow_triggers_test.rb` pins the seam: the caller job carries
+  `uses:` and nothing else, the input set and every default are listed in
+  `SUITE_INPUTS`, and each job's condition is listed in `RAW_JOB_CONDITIONS`. A new
+  input, a changed default or a new job is an edit to that test.
 - To change a lane, edit `reusable-ci.yml`. A pull request runs the called file as its
   own commit has it.
+
+### An app that calls the hub's suite
+
+An app's `ci.yml` may call the same file by name
+(`uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main`).
+The lanes check out the app's tree, so each script a lane runs is the app's own.
+
+| Input | Default (the hub) | What an app sets it for |
+|-------|-------------------|-------------------------|
+| `javascript`, `island-animator`, `playwright`, `rails-shards`, `system` | `true` | `false` switches off a lane the app does not have; its jobs report `skipped` |
+| `rubygems` | `default` | A pinned RubyGems for `ruby/setup-ruby` |
+| `await-gem-propagation` | `true` | `false` when the app ships no `.github/scripts/await-gem-propagation.sh` |
+| `postgres-image` | `public.ecr.aws/docker/library/postgres:17` | The app's production major, on the same mirror |
+| `gem-audit-command` | empty | `bin/bundler-audit`, as one more static check |
+| `importmap-audit-command` | `bin/importmap-audit-ci` | `bin/importmap audit` |
+| `system-packages` | the hub's apt list | The app's apt list |
+| `system-setup-command` | empty | An asset build before the suite (`bin/rails tailwindcss:build`) |
+| `system-command` | `bin/rails db:test:prepare test:system` | The app's whole suite when it is one command |
+
+- The app's checks are named `ci / <lane>`, and its suite command is the
+  `system-command` it passes. The hub reads that shape wherever it reads an inline
+  `test` job: the registry drift guard (`test/models/release/repos_test.rb`),
+  `bin/register-app`'s contract (`AppContract.ci_test_cmd`) and the gate's wait
+  budget (`CiPollBudget`, which sizes a cross-repo call from the hub clone at the
+  called ref).
+- A lane that needs a secret, a second service or its own receipts stays a job in
+  the app's own `ci.yml`, beside the call.
+- Flip an app only once the hub release carrying these readers is in production.
+
+`.github/workflows/reusable-prod-deploy.yml` is the deploy counterpart: a called
+workflow that pushes one SHA to a Heroku app and holds on `/up`. Nothing calls it:
+`test/lib/reusable_prod_deploy_test.rb` pins its interface and the absence of a
+caller, and `test/models/release/repos_test.rb` pins every app's deploy strategy.
 
 **A receipt names the COMMIT its shard ran, and the Rails executed-set gate will not
 audit across two of them.** The gate re-derives the expected file set from a tree it

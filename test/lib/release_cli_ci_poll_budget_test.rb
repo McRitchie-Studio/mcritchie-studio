@@ -118,6 +118,20 @@ class CiPollBudgetTest < Minitest::Test
     assert_equal 360, CiPollBudget.critical_path_minutes(remote, called: { ".github/workflows/reusable-ci.yml" => CALLED })
   end
 
+  REMOTE = "McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main"
+
+  def test_a_call_into_another_repo_is_sized_by_the_text_keyed_on_its_uses
+    remote = CALLER.sub("./.github/workflows/reusable-ci.yml", REMOTE)
+
+    assert_equal [REMOTE], CiPollBudget.remote_calls(".github/workflows/ci.yml" => remote)
+    assert_empty CiPollBudget.remote_calls(".github/workflows/ci.yml" => CALLER), "a local call is not a remote one"
+    assert_equal 95, CiPollBudget.critical_path_minutes(remote, called: { REMOTE => CALLED })
+    assert_equal (95 * 60) + CiPollBudget::HEADROOM_S,
+                 CiPollBudget.budget_s({ ".github/workflows/ci.yml" => remote, REMOTE => CALLED }, floor: 0, ceiling: 99_999)
+    assert_equal 360, CiPollBudget.critical_path_minutes(remote, called: { REMOTE.sub("@main", "@v2") => CALLED }),
+                 "another ref is another file"
+  end
+
   def test_a_workflow_that_calls_itself_does_not_hang
     looped = { ".github/workflows/ci.yml" => CALLER.sub("reusable-ci.yml", "ci.yml") }
 
@@ -208,6 +222,31 @@ class ReleaseCliCiPollBudgetTest < ReleaseCliHarness
 
       assert_includes out, "NOTHING WAS PUBLISHED"
       assert_includes out, "READS=1"
+    end
+  end
+
+  # A CALLER IN ANOTHER REPO: the app's ci.yml calls the hub's suite by name, and the
+  # budget is the called chain read from the hub's clone at the called ref, not the
+  # ceiling. The harness answers every repo_path with the fixture repo, so the fixture
+  # carries the called file under the tag the call names.
+  def test_a_cross_repo_caller_is_sized_by_the_called_suite_at_its_ref
+    Dir.mktmpdir do |dir|
+      caller = "on:\n  push:\njobs:\n  ci:\n    uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@suite-v1\n"
+      repo, sha = workflow_repo(dir, "ci.yml" => caller, "reusable-ci.yml" => CONSUMER_CI_SHAPE.sub("on: [push]", "on:\n  workflow_call:"))
+      run_git(repo, "tag", "suite-v1")
+      out = gem_gate(repo, sha, [{ state: :green, count: 9 }])
+
+      assert_includes out, "BUDGET=#{(95 * 60) + CiPollBudget::HEADROOM_S}"
+    end
+  end
+
+  def test_a_cross_repo_caller_whose_ref_does_not_resolve_waits_out_the_ceiling
+    Dir.mktmpdir do |dir|
+      caller = "on:\n  push:\njobs:\n  ci:\n    uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@nowhere\n"
+      repo, sha = workflow_repo(dir, "ci.yml" => caller)
+      out = gem_gate(repo, sha, [{ state: :green, count: 9 }])
+
+      assert_includes out, "BUDGET=7200", "an unread call counts as GitHub's default, capped at the ceiling"
     end
   end
 

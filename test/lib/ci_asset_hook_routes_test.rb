@@ -1,6 +1,7 @@
 require "test_helper"
 require "shellwords"
 require "yaml"
+require Rails.root.join("bin/lib/ci_suite_workflow").to_s
 
 # WHO BUILDS THE CSS ON A VIRGIN CI RUNNER — asserted against ci.yml, not described.
 #
@@ -151,7 +152,7 @@ class CiAssetHookRoutesTest < ActiveSupport::TestCase
     end
 
     def run_steps
-      jobs = YAML.safe_load_file(CI_YML, aliases: true).fetch("jobs", {})
+      jobs = YAML.safe_load(CiSuiteWorkflow.as_called(CI_YML.read), aliases: true).fetch("jobs", {})
       jobs.values.grep(Hash).flat_map { |job| Array(job["steps"]).grep(Hash).map { |s| s["run"] } }.compact
     end
 
