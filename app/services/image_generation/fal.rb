@@ -118,7 +118,16 @@ module ImageGeneration
     # captured HERE and carried into the Result the polls build. Reading it off
     # the last call instead would record whatever the final GET reported, which
     # is nothing.
-    def generate_and_wait(prompt:, reference_urls:, seed: nil, image_size: nil, num_images: 1)
+    #
+    # `supporting_reference_urls:` (a uniform photo, a body archetype; see
+    # ImageGeneration::OpenAI) has no request shape on fal, so a non-empty list refuses
+    # BEFORE the submit spends anything rather than being dropped silently.
+    def generate_and_wait(prompt:, reference_urls:, seed: nil, image_size: nil, num_images: 1,
+                          supporting_reference_urls: [])
+      if Array(supporting_reference_urls).compact_blank.any?
+        raise GenerationError, "#{row.label} takes no supporting (uniform or body) references"
+      end
+
       ticket = submit(prompt: prompt, reference_urls: reference_urls,
                       seed: seed, image_size: image_size, num_images: num_images)
       units = billable_units

@@ -104,11 +104,23 @@ module ImageGeneration
     # on the artifact that had no effect on the output — a determinism claim that
     # is not true. It is accepted so the shared use case can call every adapter
     # the same way; it lands in the Result as nil, which reads as "not reported".
-    def generate_and_wait(prompt:, reference_urls:, seed: nil, image_size: nil, num_images: 1)
+    #
+    # `supporting_reference_urls:` ARE REFERENCES THAT ARE NOT FACES — a uniform photo, a
+    # body-build archetype (Appearances::SheetReferences). The row's `reference_arity` is a
+    # belief about how many FACES make the best likeness, so it governs `reference_urls`
+    # only; supporting references are sent in full, AFTER the faces, in the order given,
+    # because the prompt names each image by its position.
+    #
+    # `text_only: true` lets a caller with nothing to show the model generate from the
+    # prompt alone (BodyArchetypes::Generate: a faceless body in plain practice gear).
+    # Off by default, so a sheet that lost its face still refuses before spending.
+    def generate_and_wait(prompt:, reference_urls:, seed: nil, image_size: nil, num_images: 1,
+                          supporting_reference_urls: [], text_only: false)
       urls = Array(reference_urls).compact_blank
-      raise GenerationError, "#{row.label} needs a reference image" if urls.empty?
+      raise GenerationError, "#{row.label} needs a reference image" if urls.empty? && !text_only
 
-      payload = perform(body: request_body(prompt: prompt, reference_urls: offered(urls), size: tool_size(image_size)))
+      sent = offered(urls) + Array(supporting_reference_urls).compact_blank
+      payload = perform(body: request_body(prompt: prompt, reference_urls: sent, size: tool_size(image_size)))
       images = extract_images(payload)
       raise GenerationError, "#{row.label} returned no image" if images.empty?
 

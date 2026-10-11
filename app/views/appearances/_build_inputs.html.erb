@@ -1,0 +1,54 @@
+<%# THE SHEET'S NON-FACE INPUTS (task player-sheet-uniform-and-build): the body
+    archetype the sheet is drawn to, and the uniform photos its badges are copied
+    from. Neither is ever a face; the prompt names each image's role. Only a player
+    sheet reads them, so a character's or a music-video look does not render this. %>
+<div data-test="sheet-build-inputs" class="card p-4 sm:p-5 space-y-4">
+  <header class="space-y-1">
+    <p class="label-upper text-primary">1b &middot; Uniform and build</p>
+    <h2 class="text-lg font-bold text-heading">What the sheet copies besides the face</h2>
+    <p class="text-xs text-muted">
+      Sent with the headshot as labelled references: the body archetype for build and proportions only, the
+      uniform photos for badges, trim, pants and socks only.
+    </p>
+  </header>
+
+  <div data-test="archetype-picker" class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
+    <div class="flex items-baseline justify-between gap-2 flex-wrap">
+      <p class="label-upper">Body archetype</p>
+      <% if admin? %><%= link_to "All archetypes", body_archetypes_path, class: "text-2xs text-primary" %><% end %>
+    </div>
+    <div class="flex gap-3 items-start">
+      <div class="w-20 h-14 shrink-0 rounded border border-subtle bg-surface overflow-hidden flex items-center justify-center">
+        <% if @body_archetype&.image? %>
+          <%= image_tag @body_archetype.image_url, alt: "#{@body_archetype.name} body build", class: "w-full h-full object-contain" %>
+        <% else %>
+          <span class="text-3xs text-muted text-center px-1">no image</span>
+        <% end %>
+      </div>
+      <div class="min-w-0 space-y-0.5">
+        <p class="text-xs text-heading font-bold" data-test="archetype-current" data-slug="<%= @body_archetype&.slug %>">
+          <%= @body_archetype ? @body_archetype.name : "None" %>
+          <span class="text-3xs text-muted font-normal">
+            <%= @appearance.body_archetype_chosen? ? "chosen for this look" : "default for #{@appearance.athlete_position.presence || 'an unknown position'}" %>
+          </span>
+        </p>
+        <% if @body_archetype %>
+          <p class="text-2xs text-muted break-words"><%= @body_archetype.description %></p>
+          <% unless @body_archetype.image? %>
+            <p class="text-3xs text-warning-ink">No image yet: the sheet reads the description only until one is generated.</p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+    <% if admin? && @body_archetypes.any? %>
+      <%= form_with url: archetype_person_appearance_path(@person.slug, @appearance.slug), method: :patch,
+                    class: "flex gap-2 items-center flex-wrap", data: { test: "archetype-form" } do |f| %>
+        <%= f.select :body_archetype_slug,
+              options_for_select([["Default for his position", ""]] + @body_archetypes.map { |a| [a.name, a.slug] },
+                                 @appearance.body_archetype_slug.to_s),
+              {}, class: "input-field text-xs flex-1 min-w-0" %>
+        <%= f.submit "Use", class: "btn btn-sm btn-outline shrink-0" %>
+      <% end %>
+    <% end %>
+  </div>
+</div>

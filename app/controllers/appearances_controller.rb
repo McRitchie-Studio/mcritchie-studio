@@ -109,6 +109,21 @@ class AppearancesController < ApplicationController
     redirect_to appearance_path, alert: "Could not reach Higgsfield: #{e.message}"
   end
 
+  # POINT THIS LOOK AT A BODY ARCHETYPE, or back at its position default (blank).
+  # Free: a pointer, read by the next sheet build.
+  def archetype
+    slug = params[:body_archetype_slug].presence
+    if slug && !BodyArchetype.exists?(slug: slug)
+      return redirect_to appearance_path, alert: "No body archetype #{slug.inspect}. Nothing changed."
+    end
+
+    @appearance.update!(body_archetype_slug: slug)
+    chosen = @appearance.body_archetype
+    redirect_to appearance_path,
+                notice: "This look's sheet will be drawn to #{chosen ? chosen.name : 'no archetype'}" \
+                        "#{slug ? '' : ' (the default for his position)'}."
+  end
+
   private
 
   def keep_jersey_number
@@ -230,7 +245,14 @@ class AppearancesController < ApplicationController
     @face_ranked = @search_rows.any?(&:face_scored?)
     @face_ranking_available = Appearances::FaceVisibility.available?
     set_generator
+    set_build_inputs
     note_unchecked_photos
+  end
+
+  # THE SHEET'S NON-FACE INPUTS: the body archetype it is drawn to.
+  def set_build_inputs
+    @body_archetypes = BodyArchetype.ordered.to_a
+    @body_archetype = @appearance.body_archetype
   end
 
   # PHOTOGRAPHS THIS PAGE LEFT OUT BECAUSE THEIR HOST COULD NOT BE LOOKED UP.

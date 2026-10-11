@@ -64,6 +64,14 @@ class Appearance < ApplicationRecord
            foreign_key: :appearance_slug, primary_key: :slug,
            inverse_of: :appearance, dependent: :destroy
 
+  # THE BODY-BUILD REFERENCE THE SHEET IS DRAWN TO (task player-sheet-uniform-and-build).
+  # ON THE LOOK, NOT THE PERSON, because everything a sheet build reads lives on the
+  # look (number, colorway, team, photographs) and the operator changes it on the look
+  # page. NIL MEANS "THE DEFAULT FOR HIS POSITION", resolved at read time by
+  # #body_archetype, so a position default never needs a backfill.
+  belongs_to :chosen_body_archetype, class_name: "BodyArchetype", foreign_key: :body_archetype_slug,
+             primary_key: :slug, optional: true, inverse_of: :appearances
+
   validates :slug, presence: true, uniqueness: true
   validates :descriptor, presence: true
   validate :exactly_one_owner
@@ -223,6 +231,22 @@ class Appearance < ApplicationRecord
 
   # "#4", or nil without a number.
   def jersey_label = jersey_number.nil? ? nil : "##{jersey_number}"
+
+  # THE ARCHETYPE THIS LOOK'S SHEET USES: the operator's choice, else the default
+  # for the athlete's position (QB -> nfl-qb-skill), else the fallback row. An iced
+  # twin reads its base look: same man, same body. Nil for a character's or a
+  # music-video look, which never build a player sheet.
+  def body_archetype
+    return base_appearance.body_archetype if iced? && base_appearance && body_archetype_slug.blank?
+    return nil if character_owned? || music_video_look?
+
+    chosen_body_archetype || BodyArchetype.default_for(athlete_position)
+  end
+
+  # Whether #body_archetype is the operator's pick or the position default.
+  def body_archetype_chosen? = chosen_body_archetype.present?
+
+  def athlete_position = person_slug.present? ? Athlete.where(person_slug:).pick(:position) : nil
 
   # A typed jersey number as the column takes it: "04" -> 4, blank -> nil.
   # Anything else is kept as typed, so the validation names it.

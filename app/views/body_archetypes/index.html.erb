@@ -1,0 +1,70 @@
+<%# THE BODY ARCHETYPES: the reusable body-build references a player sheet is drawn
+    to. Admin only (BodyArchetypesController). Each card shows the image (or says
+    there is none yet), what the archetype describes, the positions that default
+    to it, and the one button that buys an image. %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <div class="min-w-0 space-y-1">
+    <h1 class="text-xl sm:text-2xl font-bold text-heading">Body archetypes</h1>
+    <p class="text-sm text-secondary">
+      Reusable body builds for the player sheet. A look sends its archetype's image as a reference for build and
+      proportions only: never the face, never the uniform.
+    </p>
+    <p class="text-2xs text-muted">
+      Each generation is one paid image<% if @generator_row %> from <%= @generator_row.label %><% end %>.
+      Nothing generates on its own.
+    </p>
+  </div>
+
+  <% if @archetypes.empty? %>
+    <div class="card p-6 text-sm text-muted" data-test="archetypes-empty">
+      No archetypes on file. The migration that creates the table inserts the three starting rows.
+    </div>
+  <% else %>
+    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" data-test="archetypes">
+      <% @archetypes.each do |archetype| %>
+        <div class="card p-4 space-y-3 min-w-0" data-test="archetype" data-slug="<%= archetype.slug %>">
+          <div class="aspect-[3/2] rounded-lg border border-subtle bg-surface-alt overflow-hidden flex items-center justify-center">
+            <% if archetype.image? %>
+              <%= link_to archetype.image_url, target: "_blank", rel: "noopener", class: "block w-full h-full" do %>
+                <%= image_tag archetype.image_url, alt: "#{archetype.name} body build", class: "w-full h-full object-contain" %>
+              <% end %>
+            <% else %>
+              <p class="text-2xs text-muted px-4 text-center" data-test="archetype-no-image">
+                No image yet. Until one is generated the sheet reads this archetype's description only.
+              </p>
+            <% end %>
+          </div>
+
+          <div class="space-y-1 min-w-0">
+            <div class="flex items-baseline justify-between gap-2 flex-wrap">
+              <h2 class="text-base font-bold text-heading"><%= archetype.name %></h2>
+              <span class="badge text-3xs bg-surface-alt text-muted border-subtle font-mono"><%= archetype.slug %></span>
+            </div>
+            <p class="text-xs text-secondary break-words"><%= archetype.description %></p>
+            <p class="text-2xs text-muted">
+              Default for: <span class="font-mono"><%= archetype.position_hint_list.presence || "no position" %></span>
+            </p>
+            <p class="text-2xs text-muted">
+              Chosen on <%= pluralize(@look_counts.fetch(archetype.slug, 0), "look") %> by hand.
+              <% if archetype.generated_at %>Image made <%= time_ago_in_words(archetype.generated_at) %> ago.<% end %>
+            </p>
+          </div>
+
+          <% if archetype.building? %>
+            <p class="text-2xs text-primary" data-test="archetype-building">Generating&hellip; reload in a minute or two.</p>
+          <% else %>
+            <% if archetype.failed? && archetype.generation_error.present? %>
+              <p class="text-2xs text-danger-ink break-words" data-test="archetype-failed">
+                The last generation failed: <%= archetype.generation_error %>
+              </p>
+            <% end %>
+            <%= button_to (archetype.image? ? "Regenerate image (1 paid image)" : "Generate image (1 paid image)"),
+                  generate_body_archetype_path(archetype.slug), method: :post,
+                  class: "btn btn-sm #{archetype.image? ? 'btn-outline' : 'btn-primary'} w-full",
+                  form: { data: { test: "archetype-generate", turbo_confirm: "Buy one generated image for #{archetype.name}?" } } %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
