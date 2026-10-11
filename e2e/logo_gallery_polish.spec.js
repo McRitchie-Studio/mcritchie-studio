@@ -96,3 +96,33 @@ test("at 1280 the Kit card's two button rows line up", async ({ page }) => {
   const [navbar, stacked] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox()];
   expect(Math.abs(navbar.y - stacked.y)).toBeLessThan(1);
 });
+
+test("Copy SVG fetches the logo from its own URL on click, puts it on the clipboard and says Copied", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, "/logos/turf");
+  const copy = page.locator("[data-test='logo-copy']:visible").first();
+  const url = await copy.getAttribute("data-copy-svg");
+  expect(url).toMatch(/^\/logos\/turf\/navbar\?/);
+  expect(url).not.toContain("download");
+  expect(await copy.getAttribute("data-clip")).toBeNull();
+
+  const fetched = page.waitForResponse((response) => response.url().endsWith(url) && response.request().resourceType() === "fetch");
+  await copy.click();
+  // The fetch may be answered from the picture's cache (a 304 carries no body or type), so the SVG is read afresh.
+  await fetched;
+  await expect(copy).toHaveText("Copied");
+  const svg = await (await page.request.get(url)).text();
+  expect(svg.startsWith("<svg")).toBe(true);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(svg);
+  await expect(copy).toHaveText("Copy SVG", { timeout: 4000 });
+});
+
+test("Copy SVG says Copy failed when the logo cannot be fetched", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, "/logos/studio");
+  await page.route(/\/logos\/studio\/navbar\?/, (route) => (route.request().resourceType() === "fetch" ? route.fulfill({ status: 500, body: "no" }) : route.continue()));
+  const copy = page.locator("[data-test='logo-copy']:visible").first();
+  await copy.click();
+  await expect(copy).toHaveText("Copy failed");
+  await expect(page.locator("[data-copy-svg-status]").filter({ hasText: "Copy failed" })).toHaveCount(1);
+});

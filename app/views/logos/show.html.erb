@@ -121,13 +121,11 @@
               <%= link_to "Download", logo_asset_path(shown, download: 1),
                           class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
                           aria: { label: "Download: #{shown.label}" } %>
-              <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
-              <span class="contents" x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
-                <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-clip="<%= shown.svg %>"
-                        aria-label="Copy SVG: <%= shown.label %>" x-text="words[state]"
-                        @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
-                <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
-              </span>
+              <%# Copy SVG fetches the logo from its own URL on click (app/javascript/logo_gallery.js), so the page carries
+                  no SVG of its own; it says Copied or Copy failed. %>
+              <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-copy-svg="<%= logo_asset_path(shown) %>"
+                      aria-label="Copy SVG: <%= shown.label %>"><span data-copy-svg-label>Copy SVG</span></button>
+              <span class="sr-only" role="status" data-copy-svg-status></span>
             <% end %>
           </div>
         </div>

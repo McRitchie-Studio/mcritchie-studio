@@ -18,6 +18,15 @@
 //    components/_copy_text_script), and says Copied or Copy failed for a moment.
 //
 //      <button data-copy-hex="#1A1535"> … <span data-copy-hex-label> … <span data-copy-hex-status>
+//
+// 4. A COPY SVG BUTTON fetches its logo from the logo's own URL (the Download link's, without
+//    download=1) on click and puts the SVG on the clipboard, then says Copied or Copy failed
+//    for a moment (task logo-gallery-polish-pass: the page used to carry every SVG inline,
+//    about 1.5 MB on /logos/turf). Safari only lets the clipboard be written inside the click
+//    itself, so the write starts there with a promise of the text (ClipboardItem); a browser
+//    without that falls back to fetching first and then writing the text.
+//
+//      <button data-copy-svg="/logos/turf/navbar?rule=4&…"> … <span data-copy-svg-label> … <span data-copy-svg-status>
 
 // What the control should show: the watermark on a watermark page, else the theme.
 export function contextShown(watermarkPage, dark) {
@@ -107,18 +116,81 @@ function wireSwatch(button) {
   });
 }
 
+// The SVG at `url`, as text: refused unless the answer is a 2xx SVG (a fetch resolves on a 404, and a signed-out
+// request is answered with a page, not a logo).
+export function fetchSvg(url, fetchFn) {
+  return fetchFn(url, { credentials: "same-origin" }).then((response) => {
+    const type = (response.headers && response.headers.get("content-type")) || "";
+    if (!response.ok || !type.includes("image/svg+xml")) throw new Error(`no SVG at ${url} (${response.status} ${type})`);
+    return response.text();
+  });
+}
+
+// Puts the SVG at `url` on the clipboard and resolves true, or rejects. Call it inside the click: the first write
+// starts at once, with a promise of the text, which is what Safari needs; where that is missing or refused, the
+// text is fetched and written afterwards (writeText, else the page's copyText).
+export function copySvg(url, { clipboard, fetchFn, ClipboardItemCtor, copyText }) {
+  const later = () => fetchSvg(url, fetchFn).then((text) => {
+    if (clipboard && typeof clipboard.writeText === "function") return clipboard.writeText(text).then(() => true);
+    return Promise.resolve(copyText ? copyText(text) : false).then((ok) => {
+      if (ok === false) throw new Error("the clipboard refused the SVG");
+      return true;
+    });
+  });
+  if (clipboard && typeof clipboard.write === "function" && typeof ClipboardItemCtor === "function") {
+    let item;
+    try {
+      const blob = fetchSvg(url, fetchFn).then((text) => new Blob([text], { type: "text/plain" }));
+      blob.catch(() => {}); // the write below reports it
+      item = new ClipboardItemCtor({ "text/plain": blob });
+    } catch (_) {
+      return later();
+    }
+    return clipboard.write([item]).then(() => true, later);
+  }
+  return later();
+}
+
+function wireCopySvg(button) {
+  if (button.dataset.copySvgWired) return;
+  button.dataset.copySvgWired = "1";
+  const label = button.querySelector("[data-copy-svg-label]");
+  const status = button.parentElement.querySelector("[data-copy-svg-status]");
+  let timer;
+  button.addEventListener("click", () => {
+    copySvg(button.dataset.copySvg, {
+      clipboard: navigator.clipboard,
+      fetchFn: window.fetch.bind(window),
+      ClipboardItemCtor: window.ClipboardItem,
+      copyText: window.copyText,
+    })
+      .then(() => "Copied", () => "Copy failed")
+      .then((word) => {
+        if (label) label.textContent = word;
+        if (status) status.textContent = word;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (label) label.textContent = "Copy SVG";
+          if (status) status.textContent = "";
+        }, 1600);
+      });
+  });
+}
+
 export function installLogoGallery(root = document) {
   root.querySelectorAll("[data-logo-theme]").forEach((el) => setTheme(el.dataset.logoTheme === "dark", env()));
   root.querySelectorAll("select[data-logo-context]").forEach(wireContext);
   root.querySelectorAll("button[data-copy-hex]").forEach(wireSwatch);
+  root.querySelectorAll("button[data-copy-svg]").forEach(wireCopySvg);
 }
 
 // Turbo keeps a copy of the page to show on Back. The copy carries the wired markers (and a select disabled on the
 // way out of a watermark page) but none of the listeners, so clear them first: the restored page is wired afresh.
 export function clearForCache(root = document) {
-  root.querySelectorAll("[data-logo-context-wired], [data-copy-hex-wired]").forEach((el) => {
+  root.querySelectorAll("[data-logo-context-wired], [data-copy-hex-wired], [data-copy-svg-wired]").forEach((el) => {
     delete el.dataset.logoContextWired;
     delete el.dataset.copyHexWired;
+    delete el.dataset.copySvgWired;
     if (el.matches("select")) el.disabled = false;
   });
 }

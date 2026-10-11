@@ -275,7 +275,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal variants.map { |v| public_send(:"#{v.type}_logo_path", v.logo.brand, v.params.merge(download: 1)) },
                  css_select("a[data-test='logo-download']").map { |link| link["href"] }
     assert_equal variants.map { |v| "Download: #{v.label}" }, css_select("a[data-test='logo-download']").map { |link| link["aria-label"] }
-    assert_equal variants.map(&:svg), css_select("button[data-test='logo-copy']").map { |button| button["data-clip"] }, "copy gives the logo as shown"
+    # Copy fetches the logo as shown from its own URL (task logo-gallery-polish-pass): the image's, not the download's.
+    assert_equal variants.map { |v| public_send(:"#{v.type}_logo_path", v.logo.brand, v.params) }, css_select("button[data-test='logo-copy']").map { |button| button["data-copy-svg"] },
+                 "copy gives the logo as shown"
     assert_equal variants.map { |v| "Copy SVG: #{v.label}" }, css_select("button[data-test='logo-copy']").map { |button| button["aria-label"] }
   end
 
@@ -373,7 +375,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_examples themed(brand, :stacked, guides: true), examples: 3
       assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 6
-      assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?(%(<g class="guide-ghosts")) }
+      assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
       assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size, spaced exactly as the logo spaces it: one copy per unit.*and the name at 60% of its size turned on end beside the icon, bracketed, reading up from its foot to its top/ : /faint copies of the small word, spaced exactly as the logo spaces it: one copy per unit.*and one copy turned on end beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long/
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
     end
@@ -587,7 +589,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_examples themed("industries", :navbar, rule: 3, guides: true), examples: 3
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 6
     assert_select "a[data-test='logo-download'][href*='guides=1']", 6
-    assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
+    assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
     assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways\./
 
     # A guide drawing fits its frame (max-width) down to a least width of its own, where its frame starts to scroll.

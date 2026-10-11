@@ -173,7 +173,11 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     logo = Logos::NavbarLogo.new("industries")
     edits = { ending: { weight: 300, colour: "#C8661F" } }
     expected = Logos::Variant::TEXTS.keys.product(Logos::NavbarLogo::BAKED).map { |text, tone| logo.svg(rule: 4, text:, tone:, edits:) }
-    assert_equal expected.sort, copies.map { |b| b["data-clip"] }.sort
+    fetched = copies.map do |button|
+      get button["data-copy-svg"]
+      response.body
+    end
+    assert_equal expected.sort, fetched.sort, "each copy fetches the edited logo"
     copies.each { |b| assert_match(/, edited\z/, b["aria-label"]) }
 
     downloads.each do |link|
