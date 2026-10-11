@@ -60,7 +60,7 @@ That's it. The only thing you actually do is copy the token and run the commands
 
 **Default NFL data:** every build pulls the live schedule, runs the ESPN depth-chart scrape, and snapshots current-week rosters (~3-5 min). Game show pages and the season grid work out of the box.
 
-**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + headshot uploads. Requires the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, which Phase 4 writes from 1Password `r2.<app>`. The uploads land in the dev bucket; see [`object-storage.md`](../modules/object-storage.md#seed-assets).
+**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + headshot uploads. Requires the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, which Phase 4 writes from 1Password `r2.<app>`. Each headshot production already holds is referenced at production's asset host; only the ones it lacks are uploaded to the dev bucket. See [`object-storage.md`](../modules/object-storage.md#seed-assets).
 
 The manual phase-by-phase steps below are kept as a fallback for debugging when the script can't complete a phase.
 

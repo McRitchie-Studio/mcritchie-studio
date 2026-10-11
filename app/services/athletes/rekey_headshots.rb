@@ -15,8 +15,10 @@
 # itself, which is why the repair reads the STORED key against the COMPUTED
 # prefix rather than asking whether anything is missing.
 #
-# WHAT IS NOT BROKEN, so this does not try to fix it: serving. ImageCache#url is
-# `Studio::S3.url(key: s3_key)` and Athlete#headshot_url reads the stored row, so
+# WHAT IS NOT BROKEN, so this does not try to fix it: serving. ImageCache#url
+# joins the STORED key to its bucket's public base (the own bucket, or
+# production's for a stored_in "production" reference; see .movable?) and
+# Athlete#headshot_url reads the stored row, so
 # nothing rebuilds a key from the prefix and every misfiled avatar renders today.
 # This is a taxonomy defect, not an outage — so the ordering below is chosen so
 # that no athlete is EVER without a servable row, not so the repair finishes fast.
@@ -99,12 +101,31 @@ class Athletes::RekeyHeadshots
     File.dirname(row.s3_key.to_s) != prefix
   end
 
+  # WHETHER THIS PROCESS MAY MOVE THE ROW'S OBJECT. A stored_in "production" row
+  # made by a non-production seeder (Studio::ImageCache.reference_or_cache!) names
+  # an object in PRODUCTION's bucket, which this process can read but never write.
+  # Re-keying it here would read a dev-bucket object that does not exist, and a
+  # repointed reference would name a key production does not hold: a broken
+  # avatar. So off production it is left exactly as it is. In production a
+  # reference is an ordinary own object (the engine's own rule, ImageCache#url and
+  # #delete_object!), so this changes nothing there.
+  def self.movable?(row)
+    !(row.production_reference? && !Studio::S3.production_environment?)
+  end
+
   private
 
   def rekey(athlete)
     prefix = athlete.headshot_key_prefix
     rows = athlete.image_caches.select { |row| row.purpose == PURPOSE }
     stale = rows.select { |row| self.class.misfiled?(row, prefix) }
+    references = stale.reject { |row| self.class.movable?(row) }
+    if references.any?
+      # COUNTED, NEVER MOVED: see .movable?. Counted per row so a run reports how
+      # much it declined, and not as `failed`, because nothing went wrong.
+      @stats[:references_skipped] += references.size
+      stale -= references
+    end
 
     if stale.empty?
       @stats[:already_filed] += 1

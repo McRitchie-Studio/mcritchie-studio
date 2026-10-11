@@ -65,7 +65,7 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
                  "this test is only meaningful while the two disagree"
 
     asked = nil
-    describe(athlete, GOOD_ANSWER, downloader: ->(key:) { asked = key; "PNGBYTES" })
+    describe(athlete, GOOD_ANSWER, downloader: ->(row:) { asked = row.s3_key; "PNGBYTES" })
 
     assert_equal "headshots/nfl/free-agents/mis-filed/400.png", asked
     refute_includes asked.to_s, "seattle-seahawks",
@@ -385,7 +385,7 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
            "the suite-wide trap must be armed or this test proves nothing"
 
     describer = DFH.new(api_key: "test-key-not-a-real-credential",
-                        downloader: ->(key:) { "PNGBYTES" })
+                        downloader: ->(row:) { "PNGBYTES" })
 
     error = assert_raises(Athletes::VisionTransport::LiveCallAttempted) do
       describer.call(athlete_with_headshot)
@@ -402,13 +402,39 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
     asked = nil
     athlete = athlete_with_headshot
 
-    Studio::S3.stub(:download, ->(key:) { asked = key; "PNGBYTES" }) do
-      DFH.new(api_key: "test-key-not-a-real-credential",
-              transport: ->(**) { GOOD_ANSWER }).call(athlete)
+    Studio::S3.stub(:production_download, ->(**) { flunk "an own row must not read production's bucket" }) do
+      Studio::S3.stub(:download, ->(key:, max_bytes: nil) { asked = key; "PNGBYTES" }) do
+        DFH.new(api_key: "test-key-not-a-real-credential",
+                transport: ->(**) { GOOD_ANSWER }).call(athlete)
+      end
     end
 
     assert_equal athlete.image_caches.first.s3_key, asked,
                  "the default downloader must read the ImageCache row's recorded key through Studio::S3"
+  end
+
+  # [integration] A PRODUCTION REFERENCE IS READ FROM PRODUCTION'S BUCKET. A
+  # non-production seeder records stored_in "production" instead of uploading a
+  # copy, so the dev bucket has nothing under that key. The describer reads
+  # through ImageCache#download, which routes a reference to the read-only
+  # Studio::S3.production_download; reading the own bucket would find no object
+  # and the athlete would silently stay undescribed.
+  test "a production-reference headshot is read through the row's download, from production" do
+    asked = nil
+    athlete = athlete_with_headshot
+    athlete.image_caches.first.update!(stored_in: ImageCache::PRODUCTION)
+    sent = nil
+
+    Studio::S3.stub(:download, ->(**) { flunk "a reference row has no object in the own bucket" }) do
+      Studio::S3.stub(:production_download, ->(key:, max_bytes: nil) { asked = key; "PRODBYTES" }) do
+        DFH.new(api_key: "test-key-not-a-real-credential",
+                transport: ->(body:, api_key:) { sent = body; GOOD_ANSWER }).call(athlete.reload)
+      end
+    end
+
+    assert_equal athlete.image_caches.first.s3_key, asked
+    assert_includes sent.to_json, Base64.strict_encode64("PRODBYTES"),
+                    "the bytes production answered are the bytes the vision call carries"
   end
 
   private
@@ -423,7 +449,7 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
 
     DFH.new(api_key: "test-key-not-a-real-credential",
             transport: captured_transport,
-            downloader: downloader || ->(key:) { "PNGBYTES" }).call(athlete)
+            downloader: downloader || ->(row:) { "PNGBYTES" }).call(athlete)
   end
 
   def bare_athlete(**attrs)

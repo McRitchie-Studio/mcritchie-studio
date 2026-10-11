@@ -53,6 +53,69 @@ class Athletes::RekeyHeadshotsTest < ActiveSupport::TestCase
                  "a re-filed object keeps the content type the row records"
   end
 
+  # --- production references (studio-engine 0.103.0) -----------------------
+
+  # OFF PRODUCTION A REFERENCE IS NOT OURS TO MOVE. A stored_in "production" row
+  # names production's object; this process's bucket has nothing under its key,
+  # and production's bucket is read-only to it. Copying would read a dev object
+  # that does not exist, and a repointed row would name a key production lacks.
+  # So the row is counted and left exactly as it is, with no S3 call at all.
+  test "off production a misfiled production reference is skipped, untouched" do
+    athlete = misfiled_athlete(team_slug: "seattle-seahawks")
+    athlete.image_caches.each { |row| row.update!(stored_in: ImageCache::PRODUCTION) }
+    before = athlete.image_caches.map(&:s3_key).sort
+    bucket = FakeBucket.new
+
+    stats = nil
+    Studio::S3.stub(:production_environment?, false) do
+      bucket.install { capture_io { stats = Athletes::RekeyHeadshots.new.call } }
+    end
+
+    assert_equal 3, stats[:references_skipped]
+    assert_equal 0, stats[:rekeyed]
+    assert_equal 0, stats[:failed], "a declined reference is not a failure"
+    assert_equal 1, stats[:already_filed], "with its references set aside the athlete has nothing to move"
+    assert_equal before, athlete.image_caches.reload.map(&:s3_key).sort
+    assert_empty bucket.log, "no read, copy or delete is sent for a reference"
+  end
+
+  # Own rows beside a reference still move; only the reference is held back.
+  test "off production an athlete's own rows move while its reference stays" do
+    athlete = misfiled_athlete(team_slug: "seattle-seahawks")
+    reference = athlete.image_caches.find { |c| c.variant == "original" }
+    reference.update!(stored_in: ImageCache::PRODUCTION)
+    own = athlete.image_caches.reject { |c| c.id == reference.id }
+    bucket = FakeBucket.new(own.map { |row| [row.s3_key, "b"] }.to_h)
+
+    stats = nil
+    Studio::S3.stub(:production_environment?, false) do
+      bucket.install { capture_io { stats = Athletes::RekeyHeadshots.new.call } }
+    end
+
+    assert_equal 1, stats[:references_skipped]
+    assert_equal 1, stats[:rekeyed]
+    assert_equal 2, stats[:objects_copied]
+    assert_equal "headshots/nfl/free-agents/#{athlete.person_slug}/original.png", reference.reload.s3_key
+    refute bucket.log.any? { |entry| entry[1] == reference.s3_key }, "the reference's key is never touched"
+  end
+
+  # IN PRODUCTION NOTHING CHANGES: a reference row there is an ordinary own object
+  # (the engine's rule for #url and #delete_object!), so it is moved like any other.
+  test "in production a reference row is re-keyed like any other row" do
+    athlete = misfiled_athlete(team_slug: "seattle-seahawks")
+    athlete.image_caches.each { |row| row.update!(stored_in: ImageCache::PRODUCTION) }
+    bucket = FakeBucket.new(athlete.image_caches.map { |row| [row.s3_key, "b"] }.to_h)
+
+    stats = nil
+    Studio::S3.stub(:production_environment?, true) do
+      bucket.install { capture_io { stats = Athletes::RekeyHeadshots.new.call } }
+    end
+
+    assert_equal 0, stats[:references_skipped]
+    assert_equal 1, stats[:rekeyed]
+    assert_equal 3, stats[:objects_copied]
+  end
+
   # --- the ordering, which is the whole design -----------------------------
 
   # WRITE FIRST. At the moment the new object is uploaded the row must still point

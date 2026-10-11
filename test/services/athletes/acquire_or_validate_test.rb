@@ -594,7 +594,7 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
       end
     end
 
-    report = Studio::ImageCache.stub(:cache!, faked) do
+    report = Studio::ImageCache.stub(:reference_or_cache!, faked) do
       Athletes::AcquireOrValidate.new(provider: source).call(source_id: "9001")
     end
 
@@ -614,7 +614,7 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
     source = FakeSource.new(by_id: { "9001" => profile })
     exploding = ->(**) { raise Studio::S3::NotConfigured, "no bucket here" }
 
-    report = Studio::ImageCache.stub(:cache!, exploding) do
+    report = Studio::ImageCache.stub(:reference_or_cache!, exploding) do
       Athletes::AcquireOrValidate.new(provider: source).call(source_id: "9001")
     end
 
@@ -636,7 +636,7 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
     end
     source = FakeSource.new(by_id: { "9001" => profile })
 
-    report = Studio::ImageCache.stub(:cache!, ->(**) { flunk "must not re-cache" }) do
+    report = Studio::ImageCache.stub(:reference_or_cache!, ->(**) { flunk "must not re-cache" }) do
       Athletes::AcquireOrValidate.new(provider: source).call(source_id: "9001")
     end
 
