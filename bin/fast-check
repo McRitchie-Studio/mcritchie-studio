@@ -48,6 +48,10 @@
 #   mapped-tests    : bin/rails test <mapped files>   (skipped when none map)
 #   spine           : bin/rails test <spine entries>
 #   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
+#   <ci guard>      : a whole-tree guard CI runs that no mapping selects, one lane
+#                     each, only when the diff touches what it reads
+#                     (bin/lib/ci_guard_lanes.rb): template-ratchets (views,
+#                     components, helpers) and e2e-census (e2e/, Playwright config)
 # A REGISTRY-GATED repo (a gem, or an `apps` row declaring `release_check:` in
 # config/release_repos.yml — turf-vault) runs that declared command as its whole
 # lane instead: there is no diff-mapped subset of a gem's suite.
@@ -90,6 +94,7 @@ require_relative "lib/task_tree"
 require_relative "lib/desk_guard"
 require_relative "lib/release_registry"
 require_relative "lib/lane_runner"
+require_relative "lib/ci_guard_lanes"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) anchors here. The
 # CODE we run roots at the agent's worktree.
@@ -131,6 +136,9 @@ spine = FastCert.spine(root, SPINE_CONFIG)
 declared_spine = FastCert.declared_spine(SPINE_CONFIG)
 mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
 lintable = FastCert.lintable_files(root, changed)
+# THE CI-ONLY GUARDS the mapping never picks (bin/lib/ci_guard_lanes.rb): whole-tree
+# checks CI runs, chosen here by what the diff touches.
+guards = CiGuardLanes.select(changed, root: root)
 
 # THE CAP'S FALLBACK, spine-deduped for the same reason the mapped set is. Both sides
 # of the dedupe are kept so the narration can tell "no changed file HAS a twin" (a
@@ -197,6 +205,7 @@ if options[:list]
   end
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
+  guards.each { |g| puts "guard   #{g.label}: #{(g.scripts + g.tests).join(' ')}" }
   exit 0
 end
 
@@ -402,12 +411,18 @@ else
     else
       run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root)
     end
+
+  # One lane per CI-only guard the diff touches, run as CI runs it: whole tree.
+  guard_results = guards.to_h do |guard|
+    [guard.label, run_lane(guard.label, CiGuardLanes.command(guard, test_cmd: test_cmd), root)]
+  end
 end
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
 
 lanes = { (registry_gate ? "registry-gate" : "mapped-tests") => mapped_res, "spine" => spine_res }
 lanes["rubocop-changed"] = rubocop_res if rubocop_res
+lanes.merge!(guard_results || {})
 unless lanes.each_value.all?(&:ok)
   # THREE VERDICTS, NOT ONE. A hung lane and an unlaunchable command are not red
   # lanes: no test ran, so "lane(s) RED" would send the reader to hunt a regression
@@ -447,8 +462,9 @@ summary =
       else
         "#{mapped_only.size} mapped"
       end
+    guard_detail = guards.empty? ? "" : ", CI guard(s) #{guards.map(&:label).join(', ')}"
     "pre-flight green: #{mapped_detail} + #{spine.size} spine test path(s), rubocop on " \
-      "#{lintable.size} changed file(s) (#{format('%.1fs', total)}; the full suite runs on CI)"
+      "#{lintable.size} changed file(s)#{guard_detail} (#{format('%.1fs', total)}; the full suite runs on CI)"
   end
 warn "fast-check: #{summary}. Nothing is recorded on the task — the PR's settled green CI is the verdict."
 exit 0

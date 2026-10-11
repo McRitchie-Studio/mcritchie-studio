@@ -30,9 +30,11 @@ class TaskCardComponent < ViewComponent::Base
   #   ci_progress         a Ci::CheckProgress, or nil
   #   resubmission        a Task::Resubmission
   #   agent_session       the live studio AgentSession on the task, or nil
+  #   silent_claim        a Task::SilentClaim::Result when its holder has gone
+  #                       quiet for 30 minutes, or nil
   Preloads = Data.define(:agents, :mascot, :type_enumerals, :latest_activity, :activity_count,
                          :unresolved_feedback, :ever_blocked, :review_in_progress, :ci_progress,
-                         :resubmission, :agent_session) do
+                         :resubmission, :agent_session, :silent_claim) do
     # The single-card read: one task's inputs, each looked up for that task.
     def self.for_task(task, agents: Agent.order(:position).to_a)
       activities = Activity.for_task(task).where(activity_type: Activity::TASK_CONVERSATION_TYPES).to_a
@@ -47,7 +49,8 @@ class TaskCardComponent < ViewComponent::Base
         review_in_progress: task.review_in_progress?,
         ci_progress: Ci::ProgressReader.new.for_task(task),
         resubmission: task.resubmission,
-        agent_session: AgentSession.live_by_task([task])[task.slug]
+        agent_session: AgentSession.live_by_task([task])[task.slug],
+        silent_claim: Task::SilentClaim.for_task(task)
       )
     end
   end
@@ -57,7 +60,8 @@ class TaskCardComponent < ViewComponent::Base
     attr_reader :agents, :pokemon_by_slug, :type_enumerals
 
     def initialize(agents:, pokemon_by_slug:, type_enumerals:, latest_activities:, activity_counts:,
-                   unresolved_feedback:, ever_blocked_slugs:, resubmissions:, ci_progress_by_slug:, agent_sessions:)
+                   unresolved_feedback:, ever_blocked_slugs:, resubmissions:, ci_progress_by_slug:, agent_sessions:,
+                   silent_claims:)
       @agents = agents
       @pokemon_by_slug = pokemon_by_slug
       @type_enumerals = type_enumerals
@@ -68,6 +72,7 @@ class TaskCardComponent < ViewComponent::Base
       @resubmissions = resubmissions
       @ci_progress_by_slug = ci_progress_by_slug
       @agent_sessions = agent_sessions
+      @silent_claims = silent_claims
     end
 
     # `task` carries its preloaded task_events, which the review read filters in memory.
@@ -84,7 +89,8 @@ class TaskCardComponent < ViewComponent::Base
         review_in_progress: task.review_in_progress?(events: task.task_events.to_a),
         ci_progress: @ci_progress_by_slug[slug],
         resubmission: @resubmissions.fetch(slug),
-        agent_session: @agent_sessions[slug]
+        agent_session: @agent_sessions[slug],
+        silent_claim: @silent_claims[slug]
       )
     end
 
@@ -136,7 +142,8 @@ class TaskCardComponent < ViewComponent::Base
   attr_reader :task, :preloads, :crew_board
 
   delegate :agents, :mascot, :type_enumerals, :latest_activity, :activity_count, :unresolved_feedback,
-           :ever_blocked, :review_in_progress, :ci_progress, :resubmission, :agent_session, to: :preloads
+           :ever_blocked, :review_in_progress, :ci_progress, :resubmission, :agent_session, :silent_claim,
+           to: :preloads
   delegate :app_emoji_badge, :ci_meter_label, :ci_meter_stage?, :claim_progress_summary, :claim_progress_title,
            :compact_created_stamp, :compact_updated_stamp, :local_review_task_path, :right_fade_style,
            :status_tone, :task_activity_box_classes, :task_path, to: :helpers

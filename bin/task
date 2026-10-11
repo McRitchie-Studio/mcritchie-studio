@@ -1692,6 +1692,18 @@ def map_pairs(value)
        .map { |repo, url| "#{repo}=#{url}" }
 end
 
+# THE SILENT-CLAIM FLAG (Task::SilentClaim, served as `silent_claim`): a review or
+# build claim whose holder has written no activity or task event on the task for 30
+# minutes. Printed only when the board raised it; nothing is reclaimed.
+def print_silent_claim(silent)
+  return unless silent.is_a?(Hash)
+
+  holder = silent["holder"].to_s.strip.empty? ? "" : " held by #{silent["holder"]}"
+  minutes = silent["seconds"].to_i / 60
+  puts "  #{silent["label"] || "silent 30m+"}: #{silent["kind"]} claim#{holder}, nothing written on the task for " \
+       "#{minutes}m (last write #{silent["last_write_at"] || "unknown"})"
+end
+
 def print_task(task)
   dv = task.dig("metadata", "devops") || {}
   puts "#{task["slug"]}  [#{task["stage"]}]  #{task["title"]}"
@@ -1717,6 +1729,7 @@ def print_task(task)
   pairs = map_pairs(dv["pr_urls"])
   puts "  pr_urls: #{pairs.join("  ")}" if pairs.any?
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
+  print_silent_claim(task["silent_claim"])
   print_approval_request_notice(task)
 end
 

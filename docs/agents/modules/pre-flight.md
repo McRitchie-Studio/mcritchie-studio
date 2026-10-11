@@ -55,6 +55,21 @@ Lanes, in order:
   anchored in the hub, so a satellite checkout resolves none of it.
 - `rubocop-changed` — `bin/rubocop <changed lintable files>`, never the whole
   repo.
+- **The CI-only guards**, one lane each, only when the diff touches what the
+  guard reads (`bin/lib/ci_guard_lanes.rb`). They read the whole tree, so no
+  mapping ever selected them, and each cost a full CI cycle on 2026-10-10/11:
+  - `template-ratchets` (a change under `app/views`, `app/components` or
+    `app/helpers`): the inline `<script>`/`x-data` ratchet and the fixed
+    Tailwind status-colour rule, the two `test/views` guards CI runs.
+  - `e2e-census` (a change under `e2e/`, or to `playwright.config.js` or
+    `config/e2e_lane.yml`): `bin/e2e-census-check` asks Playwright to list the
+    lane (`playwright test --list`, about a second) and compares that with the
+    source census CI's executed-set gate counts by. A `test(` written in a loop
+    is one declaration to the census and many specs to Playwright, so the gate
+    goes red; here it fails first, with the gate's own message. Then the static
+    guard `test/lib/e2e_quarantine_ratchet_test.rb`. Playwright is found in the
+    checkout or above it (a desk resolves the hub's `node_modules`); with none,
+    the lane says `NOT CHECKED` and CI is the only check.
 
 Exit 0 means every lane that ran is green, including a run where **no test
 lane ran at all** (a diff that maps to nothing on a checkout with no spine),

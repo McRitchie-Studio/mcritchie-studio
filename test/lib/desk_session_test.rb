@@ -129,6 +129,66 @@ class DeskSessionTest < ActiveSupport::TestCase
 
   private
 
+  # bin/submit logs the desk out at `submitted` (DeskSession.logout).
+  Answer = Struct.new(:code)
+
+  test "logout revokes the desk's login with its own token and forgets the file" do
+    with_root do |root, now|
+      presented = []
+      outcome, message = DeskSession.logout(root, "t-1", revoke: ->(token) { presented << token; Answer.new("200") })
+
+      assert_equal :revoked, outcome
+      assert_equal ["tok"], presented, "the revoke presents the desk's own token"
+      refute File.exist?(DeskSession.path(root)), "the login is forgotten"
+      assert_nil DeskSession.token_for("t-1", root: root, harness_session_id: OWNER, now: now)
+      refute_includes message, "tok", "the token is never printed"
+    end
+  end
+
+  test "logout reads a 401 as already revoked, and any other answer as a warning, forgetting the file either way" do
+    { "401" => :already, "500" => :failed }.each do |code, expected|
+      with_root do |root, _now|
+        outcome, = DeskSession.logout(root, "t-1", revoke: ->(_token) { Answer.new(code) })
+
+        assert_equal expected, outcome, "HTTP #{code}"
+        refute File.exist?(DeskSession.path(root)), "HTTP #{code} still forgets the login"
+      end
+    end
+  end
+
+  test "logout never raises when the board cannot be reached" do
+    with_root do |root, _now|
+      outcome, message = DeskSession.logout(root, "t-1", revoke: ->(_token) { raise Errno::ECONNREFUSED })
+
+      assert_equal :failed, outcome
+      assert_includes message, "ECONNREFUSED"
+      refute File.exist?(DeskSession.path(root))
+    end
+  end
+
+  test "logout leaves another task's login alone and calls nothing" do
+    with_root do |root, _now|
+      called = false
+      outcome, = DeskSession.logout(root, "t-2", revoke: ->(_token) { called = true })
+
+      assert_equal :none, outcome
+      refute called
+      assert File.exist?(DeskSession.path(root)), "control: the desk's login to t-1 stands"
+    end
+  end
+
+  test "logout of a dropped login forgets it without a board call" do
+    with_root do |root, _now|
+      DeskSession.drop(root)
+      called = false
+      outcome, = DeskSession.logout(root, "t-1", revoke: ->(_token) { called = true })
+
+      assert_equal :already, outcome
+      refute called
+      refute File.exist?(DeskSession.path(root))
+    end
+  end
+
   def with_root(harness_session_id: OWNER)
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p(File.join(root, ".git"))

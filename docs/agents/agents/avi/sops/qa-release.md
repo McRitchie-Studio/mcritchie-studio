@@ -403,12 +403,41 @@ bin/task show <task> --json | jq '{stage, merged, release_slug}'
 ⚠️ **The board state does NOT say why.** The latest **G3 Candidate** attempt closed
 `failed` is an **ABORT**; still open is an **INTERRUPTION** (or a peer's live sweep).
 
+## The devnet gauntlet — a Turf release only
+
+When the candidate carries **turf-monster or turf-vault** work, QA-green is not the
+end of this act: run Turf Monster's
+[`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA (devnet) to a
+green close — create, enter, play, settle with the on-chain payout co-signed and the
+arithmetic checked, close — and record it on the release. Alex, 2026-10-11: "it just
+feels right to run a devnet gauntlet on the package before giving production the green
+light." The rehearsal stops for him at every step and needs his Phantom co-sign at
+step 4, so this is his time: ask for it at the handoff, do not wait silently.
+
+Record the green close (your own usage on the event, as every agent completion carries):
+
+```bash
+# api() helper + TOKEN per task-board-api.md "Worked example"
+api POST /api/v1/releases/current/events/devnet_gauntlet/complete \
+  '{"event": {"actor": "turf_monster", "source": "agent", "model": "<model>", "tokens_in": <n>,
+    "tokens_out": <n>, "cost": <usd>, "metadata": {"contest": "<rehearsal contest slug>"}}}'
+```
+
+A red rehearsal is recorded with `.../devnet_gauntlet/fail` and the candidate does
+not ship: eject the Turf task (`bin/release eject <task> --feedback "<what the
+rehearsal showed>"`) or fix it forward. `bin/release ship` refuses a Turf release with
+no completed `devnet_gauntlet` event (`Release::DevnetGauntlet`). A release with no
+Turf work skips this section.
+
 ## Exit Seam
 
 Candidate and members `assembled` (`merged: release`), latest **G3 Candidate** closed
-`success`; /deployments shows **three greens with Confirming deliberately DARK** — do NOT
-stamp `confirming` (Steffon does, in `production-deploy`). Report: release slug, QA URL,
-members, any ejected task with evidence, and "deployed to QA". No-op: "nothing to prepare."
+`success`, and, for a release carrying turf-monster or turf-vault work, a completed
+`devnet_gauntlet` event on the release (above); /deployments shows **three greens with
+Confirming deliberately DARK** — do NOT stamp `confirming` (Steffon does, in
+`production-deploy`). Report: release slug, QA URL, members, any ejected task with
+evidence, the devnet gauntlet's contest slug (or "no Turf work"), and "deployed to QA".
+No-op: "nothing to prepare."
 
 ## Related
 

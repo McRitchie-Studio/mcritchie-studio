@@ -105,6 +105,7 @@ require_relative "lib/desk_claim"
 require_relative "lib/projects_root"
 require_relative "lib/task_board"
 require_relative "lib/ship_wait"
+require_relative "lib/desk_session"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -226,6 +227,26 @@ rescue StandardError => e
 end
 
 hand_down_board_token!
+
+# --- the desk's board login ends at the seam ----------------------------------
+# `bin/task begin` logged the desk in to this task (DeskSession). Past `submitted`
+# the build claim is over, and a login left in the desk is presented by any later
+# `bin/task` write from the same harness session: a reviewer subagent's move to
+# `reviewed` was refused with it. So log out (revoke on the board, forget the file).
+# NEVER FATAL: the task is already on `submitted`, so a failure here only warns.
+def desk_logout!(root, slug)
+  desk = DeskSession.root_for(root)
+  return unless desk
+
+  outcome, message = DeskSession.logout(desk, slug, revoke: lambda { |token|
+    TaskBoard.request(:delete, DeskSession::LOGOUT_PATH, base_url: BASE_URL, token: token, read_timeout: 15)
+  })
+  return if outcome == :none
+
+  say "logout — #{message}#{outcome == :failed ? " (warning only: the task is submitted)" : ""}"
+rescue StandardError => e
+  say "logout — warning: could not log the desk out (#{e.class}: #{e.message}); the task is submitted"
+end
 
 # --- the task record ---------------------------------------------------------
 
@@ -832,6 +853,7 @@ else
 end
 
 say "shipped to the submitted seam — review picks it up from here."
+desk_logout!(root, slug)
 # Close the cycle's activity trail with the real handoff outcome (twin of begin's
 # orient open) — names the submitted stage and the PR so the trail reads end-to-end.
 narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{pr_url}")

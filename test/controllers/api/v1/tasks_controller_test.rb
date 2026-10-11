@@ -1387,6 +1387,26 @@ module Api
       # trap: wiring the N+1 against it passes every test and fixes nothing. These pin
       # the point of the field, which is ONE read.
 
+      # A live review lease its renewer keeps alive reads as a review in progress;
+      # `silent_claim` says nobody has written on the task for 30 minutes.
+      test "show serves silent_claim for a quiet review claim and nil for a busy one" do
+        task = Task.create!(title: "Show Silent Claim Probe", stage: "submitted")
+        TaskReviewClaim.acquire(task_slug: task.slug, session: "sess-SC", nonce: "inst-SC", reviewer: "carl",
+                                now: 2.hours.ago)
+        TaskReviewClaim.find_by!(task_slug: task.slug).update!(claim_expires_at: 10.minutes.from_now)
+        TaskEvent.where(task_slug: task.slug).update_all(occurred_at: 2.hours.ago)
+
+        get api_v1_task_path(task.slug), headers: @headers
+        assert_response :success
+        silent = JSON.parse(response.body).dig("data", "silent_claim")
+        assert_equal %w[review carl silent\ 30m+], silent.values_at("kind", "holder", "label")
+        assert_operator silent["seconds"], :>=, 7000
+
+        Activity.create!(task_slug: task.slug, activity_type: "comment", description: "reading the diff")
+        get api_v1_task_path(task.slug), headers: @headers
+        assert_nil JSON.parse(response.body).dig("data", "silent_claim"), "a fresh note clears it"
+      end
+
       test "index full=1 serves the review holder beside the boolean" do
         held = Task.create!(title: "Index Holder Live Claim", stage: "submitted")
         free = Task.create!(title: "Index Holder No Claim", stage: "submitted")

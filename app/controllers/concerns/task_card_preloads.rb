@@ -23,7 +23,8 @@ module TaskCardPreloads
       ever_blocked_slugs: @ever_blocked_slugs,
       resubmissions: @resubmissions,
       ci_progress_by_slug: @ci_progress_by_slug,
-      agent_sessions: AgentSession.live_by_task(tasks)
+      agent_sessions: AgentSession.live_by_task(tasks),
+      silent_claims: Task::SilentClaim.by_slug(tasks)
     )
   end
 

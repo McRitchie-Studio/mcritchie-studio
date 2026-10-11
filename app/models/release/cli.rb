@@ -146,13 +146,15 @@ class Release
       },
       "ship" => {
         synopsis: "bin/release ship [--finalize-only [<release>]] [--by NAME] [--slug REL] [--mode ask|timed|auto|cleared] " \
-                  "[--clearance \"<Alex's words>\" [--cleared-by NAME]] [--reason \"…\" (with the global --skip-test-gate)]",
+                  "[--clearance \"<Alex's words>\" [--cleared-by NAME]] [--reason \"…\" (with the global --skip-test-gate)] " \
+                  "[--skip-devnet-gauntlet \"<Alex's words>\"]",
         consequence: "NOTHING was pushed to `main`, deployed to production, or published to RubyGems",
         # --mode: HOW production authority is taken (bin/lib/ship_authority.rb) —
         # ask (the confirm prompt), timed (post the request, wait on the operator
         # window; the config default), auto (`--yes` semantics), cleared (Alex's
         # clearance in chat: --clearance carries his words onto the release).
-        bool: ["--finalize-only"], value: ["--by", "--slug", "--reason", "--mode", "--clearance", "--cleared-by"],
+        bool: ["--finalize-only"], value: ["--by", "--slug", "--reason", "--mode", "--clearance", "--cleared-by",
+                                           "--skip-devnet-gauntlet"],
         allow_positional: true
       },
       "finalize" => {

@@ -268,6 +268,15 @@ so it is the one worth leaving open.
 
 → **Hand back.** The rehearsal is done; report what he should see.
 
+### As the release's devnet gauntlet
+
+When the rehearsal runs for a release candidate (a release carrying turf-monster or
+turf-vault work, [`qa-release`](../../avi/sops/qa-release.md), "The devnet gauntlet"),
+its green close is recorded on the release as a completed `devnet_gauntlet` event,
+naming the contest slug. Production waits for that record:
+[`production-deploy`](../../steffon/sops/production-deploy.md) and `bin/release ship`
+refuse a Turf release without it.
+
 ## What this does NOT cover
 
 Stated so nobody reads a green rehearsal as more than it is:

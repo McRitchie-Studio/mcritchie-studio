@@ -27,10 +27,10 @@ class TaskCliBoardAnswersTest < Minitest::Test
 
   # Returns [requests, out, err, status]. Every task read and write answers
   # `{ data: record }`, with `warnings` beside it when given.
-  def run_task(args, devops: { "kind" => "feature" }, warnings: nil)
+  def run_task(args, devops: { "kind" => "feature" }, warnings: nil, top: {})
     @sandbox ||= Dir.mktmpdir("task-answers-sandbox")
     body = { "data" => { "slug" => "demo-task", "stage" => "building", "title" => "Demo Task",
-                         "metadata" => { "devops" => devops } } }
+                         "metadata" => { "devops" => devops } }.merge(top) }
     body["warnings"] = warnings if warnings
     server = TCPServer.new("127.0.0.1", 0)
     requests = []
@@ -67,6 +67,20 @@ class TaskCliBoardAnswersTest < Minitest::Test
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
     # server closed
+  end
+
+  # The board's silent-claim flag (Task::SilentClaim) is printed by `show`.
+  def test_show_prints_the_silent_claim_flag_the_board_raised
+    silent = { "kind" => "review", "holder" => "carl", "last_write_at" => "2026-10-11T08:00:00Z",
+               "seconds" => 2700, "label" => "silent 30m+" }
+    _requests, out, err, status = run_task(%w[show demo-task], top: { "stage" => "submitted", "silent_claim" => silent })
+
+    assert status.success?, err
+    assert_includes out, "silent 30m+: review claim held by carl, nothing written on the task for 45m " \
+                         "(last write 2026-10-11T08:00:00Z)"
+
+    _requests, out, = run_task(%w[show demo-task], top: { "silent_claim" => nil })
+    refute_includes out, "silent 30m+", "control: no flag, no line"
   end
 
   def test_a_write_prints_each_warning_the_board_answers_and_succeeds

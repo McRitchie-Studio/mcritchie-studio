@@ -258,6 +258,11 @@ module Api
           # intent and reads TRUE for a claim-less hand-run review — so neither field
           # can stand in for the other.
           "review_claim_live" => task.review_claim_live?,
+          # A CLAIM WHOSE HOLDER HAS GONE QUIET (Task::SilentClaim): a live review
+          # claim, or a build claim, with no activity or task event on the task for
+          # 30 minutes. nil when there is no claim or it is not silent. A lease kept
+          # alive by its renewer reads as a live review; this says nobody is writing.
+          "silent_claim" => Task::SilentClaim.for_task(task)&.as_json,
           # The progress fact, beside the liveness fact. The claim gate in bin/task
           # reads these to tell a second agent what the holder has actually DONE
           # ("last progress 28m ago · cert failed"), not merely that its terminal

@@ -1,0 +1,77 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/e2e-census-check — PREDICT THE E2E GATE BEFORE CI DOES.
+#
+# CI's e2e gate (bin/e2e-executed-set-check) compares the specs the Playwright shards
+# EXECUTED with the census of e2e/, which counts bare `test(` declarations in the
+# source (bin/lib/e2e_spec_census.rb). A `test(` written inside a loop is one
+# declaration to the census and N specs to Playwright, so the gate went red on a PR
+# whose suite was green, a full CI cycle later (2026-10-10).
+#
+# This asks Playwright to LIST the lane (`playwright test --list`, about a second: no
+# server, no browser) and compares that with the same source census. A disagreement
+# is the gate's red, printed with the gate's own diagnosis. bin/fast-check runs it
+# whenever the diff touches e2e/ (bin/lib/ci_guard_lanes.rb).
+#
+#   Usage:  bin/e2e-census-check [--root DIR] [--contract config/e2e_lane.yml]
+#
+# Exit 0 = Playwright lists exactly what the census counts, or Playwright is not
+# installed here (said so; CI is then the only check). Exit 1 = they disagree.
+
+require "yaml"
+require_relative "lib/e2e_spec_census"
+require_relative "lib/e2e_executed_set"
+
+root = File.expand_path("..", __dir__)
+contract_path = nil
+args = ARGV.dup
+until args.empty?
+  case (arg = args.shift)
+  when "--root" then root = File.expand_path(args.shift.to_s)
+  when "--contract" then contract_path = args.shift
+  when "-h", "--help"
+    puts "usage: bin/e2e-census-check [--root DIR] [--contract config/e2e_lane.yml]"
+    exit 0
+  else abort "bin/e2e-census-check: unknown argument #{arg.inspect}"
+  end
+end
+contract_path ||= File.join(root, "config", "e2e_lane.yml")
+abort "bin/e2e-census-check: no contract at #{contract_path}" unless File.exist?(contract_path)
+
+tag = YAML.safe_load_file(contract_path).fetch("quarantine_tag")
+census = E2eSpecCensus.count(File.join(root, "e2e"), quarantine_tag: tag)
+bin = ENV["E2E_CENSUS_PLAYWRIGHT_BIN"] || E2eSpecCensus.playwright_bin(root)
+listed, why = E2eSpecCensus.listed(root, quarantine_tag: tag, bin: bin)
+
+unless listed
+  puts "E2E CENSUS: NOT CHECKED — #{why}."
+  puts "  source census: #{census.executed} executed (#{census.total} committed − #{census.quarantined} quarantined). " \
+       "CI's e2e gate is the only check of it on this run."
+  exit 0
+end
+
+failures = []
+if listed.executed != census.executed
+  failures << E2eExecutedSet.count_mismatch(listed.executed, census.executed, verb: "WILL EXECUTE (Playwright --list)") +
+              "\nA `test(` inside a loop or a helper is ONE declaration to the census and many specs to " \
+              "Playwright: write each spec as its own bare `test(\"title\", ...)`."
+end
+if listed.quarantined != census.quarantined
+  failures << "Playwright lists #{listed.quarantined} spec(s) tagged #{tag}; the census counts #{census.quarantined}. " \
+              "Declare every quarantined spec bare, with the tag in its title."
+end
+
+summary = "Playwright lists #{listed.executed} in the lane + #{listed.quarantined} quarantined; " \
+          "census: #{census.executed} executed (#{census.total} committed − #{census.quarantined} quarantined)"
+if failures.empty?
+  puts "E2E CENSUS: GREEN"
+  puts "  #{summary}"
+  exit 0
+end
+
+warn "E2E CENSUS: RED — CI's e2e executed-set gate will fail on this tree"
+warn "  #{summary}"
+warn ""
+failures.each { |failure| warn "  ✗ #{failure}\n\n" }
+exit 1

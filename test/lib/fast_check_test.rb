@@ -747,4 +747,86 @@ class FastCheckTest < Minitest::Test
       assert_empty lines.select { |l| l[0] == "TASK" }, "an explicit root reads nothing from the board"
     end
   end
+
+  # --- [integration] the CI-only guards (bin/lib/ci_guard_lanes.rb) ---------------
+  # Whole-tree guards no mapping selects: each cost a full CI cycle over the
+  # 2026-10-10/11 weekend. A diff that touches what one reads now runs it here.
+
+  RATCHET_TESTS = %w[test/views/inline_script_and_x_data_ratchet_test.rb test/views/status_colour_tokens_test.rb].freeze
+  HUB = File.expand_path("../..", __dir__)
+
+  def write_ratchet_tests(write)
+    RATCHET_TESTS.each { |path| write.call(path, "guard\n") }
+  end
+
+  def test_a_template_change_runs_the_template_ratchets
+    with_repo do |dir, write|
+      write_ratchet_tests(write)
+      write.call("app/views/widgets/show.html.erb", "<div x-data></div>\n")
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "app/views/widgets/show.html.erb" })
+
+      assert_equal 0, code, out
+      assert_includes lane_calls(lines, "TEST"), RATCHET_TESTS, out
+      assert_match(/CI guard\(s\) template-ratchets/, out)
+    end
+  end
+
+  def test_a_ratchet_violation_is_a_red_lane_named_for_the_guard
+    with_repo do |dir, write|
+      write_ratchet_tests(write)
+      out, code, = run_check(dir, fail_token: "inline_script_and_x_data_ratchet_test",
+                                  extra_env: { "FAST_CHECK_CHANGED_FILES" => "app/components/card.html.erb" })
+
+      assert_equal 1, code, out
+      assert_match(/lane\(s\) RED: template-ratchets/, out)
+    end
+  end
+
+  def test_a_model_change_runs_no_guard
+    with_repo do |dir, write|
+      write_ratchet_tests(write)
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "app/models/widget.rb" })
+
+      assert_equal 0, code, out
+      refute_includes lane_calls(lines, "TEST"), RATCHET_TESTS, "control: a model touches no template"
+      refute_match(/template-ratchets/, out)
+    end
+  end
+
+  # The real bin/e2e-census-check, copied into the fixture with its libraries, over
+  # a spec declared in a loop: one `test(` to the source census, three to Playwright.
+  def test_a_spec_written_in_a_loop_fails_the_e2e_census_before_ci_does
+    with_repo do |dir, write|
+      %w[bin/e2e-census-check bin/lib/e2e_spec_census.rb bin/lib/e2e_executed_set.rb].each do |path|
+        write.call(path, File.read(File.join(HUB, path)))
+      end
+      File.chmod(0o755, File.join(dir, "bin/e2e-census-check"))
+      write.call("test/lib/e2e_quarantine_ratchet_test.rb", "static guard\n")
+      write.call("config/e2e_lane.yml", "quarantined: 0\nquarantine_tag: \"@quarantine\"\nshards: 1\n")
+      write.call("e2e/loop.spec.js", "for (const n of [1, 2, 3]) {\n  test(`loop ${n}`, async () => {});\n}\n")
+      playwright = File.join(dir, "playwright-stub")
+      File.write(playwright, "#!/bin/sh\ncase \"$*\" in *--grep-invert*) echo 'Total: 3 tests in 1 file';; " \
+                             "*) echo 'Error: No tests found'; exit 1;; esac\n")
+      File.chmod(0o755, playwright)
+
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "e2e/loop.spec.js",
+                                                     "E2E_CENSUS_PLAYWRIGHT_BIN" => playwright })
+
+      assert_equal 1, code, out
+      assert_match(/E2E CENSUS: RED/, out)
+      assert_match(/WILL EXECUTE \(Playwright --list\) 3 spec\(s\); the committed suite under e2e\/ counts 1/, out)
+      assert_match(/lane\(s\) RED: e2e-census/, out)
+      refute_includes lane_calls(lines, "TEST"), ["test/lib/e2e_quarantine_ratchet_test.rb"],
+                      "the census failed first, so the static guard behind it did not run"
+
+      write.call("e2e/loop.spec.js", "test(\"loop 1\", async () => {});\ntest(\"loop 2\", async () => {});\n" \
+                                     "test(\"loop 3\", async () => {});\n")
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "e2e/loop.spec.js",
+                                                     "E2E_CENSUS_PLAYWRIGHT_BIN" => playwright })
+
+      assert_equal 0, code, "control: the same specs declared bare agree: #{out}"
+      assert_match(/E2E CENSUS: GREEN/, out)
+      assert_includes lane_calls(lines, "TEST"), ["test/lib/e2e_quarantine_ratchet_test.rb"]
+    end
+  end
 end

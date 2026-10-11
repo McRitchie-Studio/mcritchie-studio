@@ -137,6 +137,14 @@ class TaskCardComponentPreview < ViewComponent::Preview
          events: [transition("building", "submitted", 30.minutes.ago), intent("submitted", "reviewed", "avi", 6.minutes.ago)])
   end
 
+  # A live review claim whose reviewer has written nothing for 42 minutes.
+  def silent_review_claim
+    card(stage: "submitted", review_in_progress: true,
+         silent_claim: Task::SilentClaim::Result.new(kind: "review", holder: "carl", last_write_at: 42.minutes.ago,
+                                                     seconds: 42 * 60),
+         events: [transition("building", "submitted", 50.minutes.ago), intent("submitted", "reviewed", "carl", 44.minutes.ago)])
+  end
+
   private
 
   def card(stage:, board: :deploy, title: nil, devops: {}, events: [], mascot: single_type_mascot,
@@ -153,7 +161,7 @@ class TaskCardComponentPreview < ViewComponent::Preview
     preloads = TaskCardComponent::Preloads.new(**{
       agents: roster, mascot: mascot, type_enumerals: TYPES, latest_activity: nil, activity_count: 0,
       unresolved_feedback: nil, ever_blocked: false, review_in_progress: false, ci_progress: nil,
-      resubmission: resubmission, agent_session: nil
+      resubmission: resubmission, agent_session: nil, silent_claim: nil
     }.merge(given.except(*task_attrs.keys)))
     render_with_template(template: "task_card_component_preview/card",
                          locals: { card: TaskCardComponent.new(task: task, preloads: preloads, crew_board: board) })

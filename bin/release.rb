@@ -173,6 +173,7 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
@@ -8709,7 +8710,8 @@ def ship
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
     "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
-    "gem_candidates: (r.metadata['gem_candidates'] || {})}.to_json)",
+    "gem_candidates: (r.metadata['gem_candidates'] || {}), " \
+    "#{Release::DevnetGauntlet::SNAPSHOT_RUBY}}.to_json)",
     read_only: true
   )
   abort!("no active release to ship") if result["slug"].to_s.empty?
@@ -8723,6 +8725,21 @@ def ship
   # shipped by a prior production deploy record step.
   if !DRY && state != "assembled" && !resuming_member_ship
     abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first")
+  end
+
+  # THE DEVNET GAUNTLET (Release::DevnetGauntlet): a release carrying turf-monster or
+  # turf-vault work ships only after a green contest-rehearsal on QA is recorded on
+  # it. Read from the snapshot above, before anything is published or pushed. A
+  # resumed member flip has already deployed, so it is not asked again.
+  unless resuming_member_ship
+    gauntlet, gauntlet_note = Release::DevnetGauntlet.verdict(
+      repos: repos.map { |g| g["repo"] }, snapshot: result, waiver: opt_value("--skip-devnet-gauntlet")
+    )
+    case gauntlet
+    when :refused then DRY ? say("  [dry-run] the ship would refuse: #{gauntlet_note}") : abort!(gauntlet_note)
+    when :recorded then say("  #{gauntlet_note}")
+    when :waived, :unknown then say("  ⚠ #{gauntlet_note}")
+    end
   end
 
   gem_groups = repos.select { |g| g["kind"] == "gem" } # already producer-first

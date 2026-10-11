@@ -84,7 +84,7 @@ secret's token otherwise.
 
 | Tier | Granted by | What the agent presents | Scope | Expires |
 |---|---|---|---|---|
-| Studio, builder | The task claim: `bin/task begin` logs the desk in (`POST /api/v1/agent_sessions`). The task must be `building`, and the soul must be one the claim recorded as its builder; any other soul answers 403 | The machine key | The task | When the task leaves `building` and `submitted`, or after 24 hours |
+| Studio, builder | The task claim: `bin/task begin` logs the desk in (`POST /api/v1/agent_sessions`). The task must be `building`, and the soul must be one the claim recorded as its builder; any other soul answers 403 | The machine key | The task | When `bin/submit` reads the task back on `submitted` (it logs the desk out), when the task leaves `building` and `submitted`, or after 24 hours. `bin/task begin <slug>` on a resume logs in again |
 | Studio, reviewer | The review claim: `bin/task claim-next-review` and `review-claim acquire`. The mint sits inside the claim's lock. The soul must be in the reviewer pool and outside the task's author set | The machine key | The claimed task | When the task leaves `submitted`, when the claim lapses, is released or changes hands, or after 24 hours |
 | Admin | The one-time code the board shows on the request, carried in Alex's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
 | Admin, from a hub shell | `bin/rails agent_sessions:grant_admin`: a shell on the hub can already write the database, so the shell is the grant. It runs outside the board: no request, no code, no tap and no window, and the row records `operator_grant`, the value an Approve tap writes | Nothing; the token prints on stdout for `AGENT_ADMIN_SESSION_TOKEN` | None | One to eight whole hours |
@@ -141,7 +141,9 @@ Where a login is kept: a desk's builder login sits in `agent-session.json` insid
 the desk's git directory, and a reviewer's sits one file per claimed task under
 `agent-review-sessions/` in the git directory of the checkout the claim ran in
 (`bin/lib/desk_session.rb#REVIEW_DIR`). Only the harness session that logged in
-presents either.
+presents either. `bin/submit` revokes the builder login and deletes its file once
+the task is `submitted` (`DeskSession.logout`), so a reviewer subagent of the same
+harness session never presents it.
 
 ## 4. Capability endpoints
 

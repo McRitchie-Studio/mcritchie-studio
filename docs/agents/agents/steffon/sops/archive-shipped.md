@@ -46,7 +46,7 @@ Use the production board by default. Do not add `--local`.
 - At least one shipped task or completed release is ready to archive.
 - The worktree cleanup candidate is merged or main-equivalent.
 - No feature worktree with unmerged or dirty work is reclaimed.
-- No `bin/release` prepare or ship is running (`pgrep -fl "bin/release"`;
+- No `bin/release` prepare or ship is running (`pgrep -fl 'ruby .*bin/release[.]rb'`;
   `bin/release status` does not show the conductor). The act commits onto
   `release` and would race it; while one runs, do the infra halves and the orphan
   sweep directly.
