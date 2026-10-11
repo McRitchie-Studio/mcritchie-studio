@@ -38,6 +38,20 @@ class LogosOriginalsTest < Minitest::Test
     assert_includes fills(tagline), "#D7602E", "the tagline is the kit's orange"
   end
 
+  # v2's Original is v1's with the v2 derivation (Logos::WeldingV2): its own icon, v1's Original colours.
+  def test_welding_v2s_original_carries_the_centring_and_the_lens_move
+    logo = Navbar.new("welding_v2")
+    icon = Navbar.icons.fetch("welding_v2_original")
+    assert_match(/derived from 'welding_original' by Logos::WeldingV2/, icon["source"])
+    %i[light dark].each do |tone|
+      svg = logo.icon_svg(tone:, colouring: :original)
+      assert_equal %w[#2E5E8E #FFFFFF #D5752B], fills(svg), tone
+      assert_includes svg, %(viewBox="0 0 892.30 975.00"), "#{tone}: v2's widened box"
+    end
+    assert_equal Navbar.new("welding").svg(rule: 3, text: :first, colouring: :original).scan(/fill="([^"]+)"/).flatten.uniq,
+                 logo.svg(rule: 3, text: :first, colouring: :original).scan(/fill="([^"]+)"/).flatten.uniq, "v1's Original colours"
+  end
+
   def test_commercial_weldings_alt_is_untouched
     logo = Navbar.new("welding")
     assert_equal logo.svg(rule: 4, tone: :dark), logo.svg(rule: 4, tone: :dark, colouring: :alt)

@@ -196,7 +196,7 @@ welding_v2:
   icon: welding_v2
   lettering: welding
   highlight: colour
-  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. The Original is v1's Original (the kit's square logo) with the same two tweaks; the kit has no lettering for dark pages, so its name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version.
   palette:
     - { name: Welding Blue, hex: "#2D5E8E" }
     - { name: Spark Orange, hex: "#D7602E" }
@@ -215,5 +215,19 @@ welding_v2:
       text: "#FFFFFF"
       accent: "#F08A5A"
       icon: { primary: "#FFFFFF" }
+  # v1's Original with the v2 derivation applied (Logos::WeldingV2: welding_v2_original), in v1's Original colours.
+  original:
+    light:
+      icon_key: welding_v2_original
+      text: "#2D5E8E"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
+    dark:
+      icon_key: welding_v2_original
+      text: "#FFFFFF"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
   watermark:
     icon_key: welding_v2_mono
