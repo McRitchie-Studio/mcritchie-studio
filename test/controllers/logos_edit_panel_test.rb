@@ -93,6 +93,10 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     get logo_brand_path("studio", type: "stacked", form: "tagline", tagline_visible: 0)
     assert_equal [["", false], ["0", true]], css_select("[data-test='edit-visible'] input[type=radio]").map { |r| [r["value"], r.key?("checked")] }
     logo_srcs.each { |src| assert_equal "0", query(src)["tagline_visible"], src }
+    # Task logo-gallery-polish-pass, item 3: the pictures' alt text says the tagline is hidden.
+    alts = css_select("[data-test='logo-example'] img").map { |img| img["alt"] }
+    assert_equal 6, alts.size
+    alts.each { |alt| assert_match(/, tagline hidden, /, alt) && refute_match(/with tagline/, alt) }
   end
 
   test "edits reach every logo on the tab, in both tones, and the drawn SVG carries the picked colour" do

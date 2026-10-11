@@ -191,10 +191,20 @@ module Logos
 
     # The accessible name: "McRitchie Industries navbar logo, rule of 4, second word leads, light",
     # "McRitchie Industries stacked logo, with tagline, first word leads, dark" or "McRitchie Industries icon, watermark".
+    # The tagline form with its tagline hidden draws no tagline, so it says "tagline hidden", not "with tagline".
     def label
-      ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), (FORMS.fetch(form).downcase if form),
+      ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), form_words,
        (TEXTS.fetch(text).downcase if text),
        tone.to_s, ("construction guides" if guides), ("edited" if edited?)].compact.join(", ")
+    end
+
+    private
+
+    def form_words
+      return unless form
+      return "tagline hidden" if form == :tagline && edits.dig(:tagline, :visible) == false
+
+      FORMS.fetch(form).downcase
     end
   end
 end
