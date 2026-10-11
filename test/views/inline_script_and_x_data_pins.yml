@@ -148,9 +148,6 @@ app/views/lineup_graphics/offense.html.erb:
 app/views/lineup_graphics/show.html.erb:
   x_data: 0
   script: 1
-app/views/logos/show.html.erb:
-  x_data: 1
-  script: 0
 app/views/modals/_auth.html.erb:
   x_data: 1
   script: 0

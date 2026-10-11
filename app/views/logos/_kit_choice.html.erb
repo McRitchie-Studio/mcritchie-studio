@@ -14,7 +14,7 @@
    end %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
-<section class="card p-4 sm:p-5 space-y-3" id="kit-choice" data-test="kit-choice" data-type="<%= @type %>" aria-labelledby="kit-choice-title">
+<section class="card p-4 sm:p-5 space-y-3 scroll-mt-28" id="kit-choice" data-test="kit-choice" data-type="<%= @type %>" aria-labelledby="kit-choice-title">
   <h2 id="kit-choice-title" class="text-sm font-bold text-heading">Kit choice</h2>
   <p class="text-sm text-secondary" data-test="kit-choice-saved">
     <% if saved.is_a?(Logos::NavbarLogo::Error) %>

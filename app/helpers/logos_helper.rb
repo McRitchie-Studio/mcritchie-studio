@@ -41,16 +41,23 @@ module LogosHelper
     @logo.refusal(edits, **(@type == :stacked ? { form: @form } : { rule: @rule }))
   end
 
-  # What the icon's colour edit recolours, in one line: the whole icon, or its one main layer of several (Turf
-  # Monster's head has no primary layer, so its outline).
-  def logo_icon_edit_note(logo)
-    roles = logo.icon_roles
+  # What the icon's colour edit recolours in `tone`, in one line, read from the icon that tone draws: the whole icon,
+  # or its one main layer of several (Turf Monster's head has no primary layer, so its outline). Commercial Welding's
+  # dark tone draws a one-layer helmet, so there the edit recolours all of it.
+  def logo_icon_edit_note(logo, tone = :light)
+    roles = logo.icon_roles(tone)
     return "Recolours the whole icon." if roles.size == 1
 
-    role = logo.icon_role
+    role = logo.icon_role(tone)
     others = roles - [role]
     "Recolours the icon's #{role == 'primary' ? 'main' : role} layer only; its #{others.to_sentence} " \
       "#{others.size == 1 ? 'layer keeps its' : 'layers keep their'} brand #{others.size == 1 ? 'colour' : 'colours'}."
+  end
+
+  # The icon note for each tone the page shows ({ light: "…", dark: "…" }), or one note when every tone says the same.
+  def logo_icon_edit_notes(logo, tones)
+    notes = tones.to_h { |tone| [tone, logo_icon_edit_note(logo, tone)] }
+    notes.values.uniq.size == 1 ? notes.values.first : notes
   end
 
   # What a part is called in a sentence.
@@ -92,11 +99,23 @@ module LogosHelper
     "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
   end
 
-  # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet": a kit is saved once its record exists.
-  def logo_kit_status(kit)
-    return "Kit: not saved yet" unless kit&.persisted?
+  # "Kit: saved Oct 11, 2026 by Alex McRitchie" or "Kit: not saved yet", then " · originals: 2" when it holds any. A
+  # kit is saved once it holds a saved Navbar or Stacked choice: a record left with neither (a cleared choice, only
+  # originals or notes) is not saved yet (task logo-gallery-polish-pass, item 4). The saver is named by their user
+  # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
+  # for the title attribute of a status cut short.
+  def logo_kit_status(kit, savers = {}, full: false)
+    saved = kit&.persisted? && BrandKit::TYPES.any? { |type| kit.saved?(type) }
+    status = saved ? ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
+    originals = kit&.persisted? ? kit.originals_attachments.size : 0
+    originals.positive? ? "#{status} · originals: #{originals}" : status
+  end
 
-    ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", ("by #{kit.updated_by}" if kit.updated_by.present?)].compact.join(" ")
+  # "by Alex McRitchie", "by alex" (an email with no named user), with " (alex@…)" when `full`; nil when nobody is named.
+  def logo_kit_saver(kit, savers, full:)
+    email = kit.updated_by.presence or return
+    name = savers[email].presence || email.split("@").first
+    "by #{name}#{" (#{email})" if full}"
   end
 
   # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page

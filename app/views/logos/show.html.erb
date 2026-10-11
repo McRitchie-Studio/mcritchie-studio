@@ -21,7 +21,9 @@
     ring is --color-cta at 70 percent, which measures about 2:1 on the light theme's white card. %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
-<%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
+<%# An explicit context sets the hub theme from the first paint (the layout's html_theme; app/javascript/theme_context.js),
+    and again on a Turbo visit (app/javascript/logo_gallery.js, data-logo-theme). %>
+<% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
     <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
@@ -32,9 +34,9 @@
   <div class="card p-4 sm:p-5 space-y-3">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
-      <%= render "context_form", url: logo_brand_path(@logo.brand) %>
+      <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
     </div>
-    <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record), "#kit", class: "hover:text-primary" %></p>
+    <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
 
     <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
       <% Logos::Variant::TYPES.each do |type, label| %>
@@ -85,7 +87,7 @@
       </p>
     <% end %>
     <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
-    <%= render "context_notes", logo: (@logo unless @type == :icon) %>
+    <%= render "logos/context_notes", logo: (@logo unless @type == :icon) %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
@@ -121,13 +123,11 @@
               <%= link_to "Download", logo_asset_path(shown, download: 1),
                           class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
                           aria: { label: "Download: #{shown.label}" } %>
-              <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
-              <span class="contents" x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
-                <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-clip="<%= shown.svg %>"
-                        aria-label="Copy SVG: <%= shown.label %>" x-text="words[state]"
-                        @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
-                <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
-              </span>
+              <%# Copy SVG fetches the logo from its own URL on click (app/javascript/logo_gallery.js), so the page carries
+                  no SVG of its own; it says Copied or Copy failed. %>
+              <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-copy-svg="<%= logo_asset_path(shown) %>"
+                      aria-label="Copy SVG: <%= shown.label %>"><span data-copy-svg-label>Copy SVG</span></button>
+              <span class="sr-only" role="status" data-copy-svg-status></span>
             <% end %>
           </div>
         </div>
@@ -136,20 +136,20 @@
   </section>
 
   <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits. %>
-  <%= render "edit_panel", kit: @kit unless @type == :icon %>
+  <%= render "logos/edit_panel", kit: @kit unless @type == :icon %>
   <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
-  <%= render "kit_choice", kit_record: @kit_record unless @type == :icon %>
-  <%= render "kit_card", kit_record: @kit_record %>
-  <%= render "kit_originals", kit_record: @kit_record %>
+  <%= render "logos/kit_choice", kit_record: @kit_record unless @type == :icon %>
+  <%= render "logos/kit_card", kit_record: @kit_record %>
+  <%= render "logos/kit_originals", kit_record: @kit_record %>
 
   <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
     <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
       <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
-      <%= render "palette", kit: @kit %>
+      <%= render "logos/palette", kit: @kit %>
     </section>
     <section class="min-w-0 space-y-3" data-test="brand-typefaces" aria-labelledby="brand-typefaces-title">
       <h2 id="brand-typefaces-title" class="text-sm font-bold text-heading">Typefaces</h2>
-      <%= render "typefaces", kit: @kit %>
+      <%= render "logos/typefaces", kit: @kit %>
     </section>
   </div>
 <% end %>

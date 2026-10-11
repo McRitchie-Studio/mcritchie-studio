@@ -17,7 +17,8 @@
 # that matches html.dark, so a page opens in whatever theme the hub is in and a
 # change of theme needs no request. ?context=watermark turns the page dark and
 # shows the watermark logos instead; an explicit ?context=light or dark sets the
-# hub's theme to it (data-logo-theme, app/javascript/logo_gallery.js) and otherwise behaves like no context.
+# hub's theme to it from the first paint (content_for :html_theme in the views, read by the hub layout and
+# app/javascript/theme_context.js; data-logo-theme for a Turbo visit) and otherwise behaves like no context.
 #
 # The Navbar and Stacked tabs have an EDIT panel (task logo-part-editor): a
 # palette colour per part (icon, first word, ending, tagline), a weight per word
@@ -31,6 +32,8 @@
 # (BrandKitsController does the writing).
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
+  include LogoBrandPage
+
   before_action :require_admin
   before_action :set_logo, except: :index
   before_action :set_context, only: %i[index show]
@@ -48,6 +51,7 @@ class LogosController < ApplicationController
   def index
     brands = Logos::NavbarLogo.brands
     @kits = BrandKit.by_brand(brands)
+    @savers = BrandKit.saver_names(@kits.values)
     @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)
@@ -56,22 +60,9 @@ class LogosController < ApplicationController
     end
   end
 
-  # Every setting is read on every tab, so a tab that does not use one (the icon has no rule and no guides) still
-  # carries it to the next.
+  # The page is read from its params (LogoBrandPage#load_brand_page), which BrandKitsController shares to draw it again.
   def show
-    @rule = Logos::Variant.rule(params[:rule])
-    @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
-    @guides = Logos::Variant.flag(params[:guides], "guides")
-    @edits = @logo.checked_edits(Logos::Variant.edits(params))
-    # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
-    # the page, and the logos are drawn as styled, so a change of form never loses the page.
-    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon)
-    drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
-    # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
-    @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides, edits: drawn) }
-                      .transpose.map { |versions| @tones.zip(versions).to_h }
-    @kit = Logos::BrandKit.new(@logo.brand)
-    @kit_record = BrandKit.for(@logo.brand)
+    load_brand_page
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
@@ -89,22 +80,5 @@ class LogosController < ApplicationController
     @tones.to_h { |tone| [tone, kit.variant(type, tone:)] }
   rescue Logos::NavbarLogo::Error => e
     e
-  end
-
-  # @context is nil (follow the hub theme), :light, :dark or :watermark; @theme is the theme the page sets on load
-  # (nil: leave it as it is); @tones the logo versions the page renders.
-  def set_context
-    @context = Logos::Variant.context(params[:context]) if params.key?(:context)
-    @theme = @context == :watermark ? :dark : @context
-    @tones = @context == :watermark ? [:watermark] : Logos::NavbarLogo::BAKED
-  end
-
-  # An unknown brand is a 404; every other refusal is a 422 (above). The logo is the one that draws the type asked for.
-  def set_logo
-    brand = params[:brand].to_s
-    raise ActiveRecord::RecordNotFound, "No logo brand #{brand.inspect}" unless Logos::NavbarLogo.brands.include?(brand)
-
-    @type = Logos::Variant.type(params[:type])
-    @logo = Logos::Variant.logo(brand, @type)
   end
 end

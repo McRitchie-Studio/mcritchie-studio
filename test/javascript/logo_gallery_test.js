@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { contextShown, choice, setTheme } from "../../app/javascript/logo_gallery.js";
+import { contextShown, choice, setTheme, fetchSvg, copySvg } from "../../app/javascript/logo_gallery.js";
 
 function root(dark) {
   const classes = new Set(dark ? ["dark"] : []);
@@ -58,4 +58,49 @@ test("setTheme without a store sets the root's class and stores the theme, as th
   setTheme(true, { root: r, storage: s, store: undefined });
   assert.equal(r.classes.has("dark"), true);
   assert.deepEqual(s.items, { theme: "dark" });
+});
+
+// Copy SVG fetches on click (task logo-gallery-polish-pass, item 10).
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+
+function answer(status = 200, type = "image/svg+xml", body = SVG) {
+  return () => Promise.resolve({ ok: status >= 200 && status < 300, status, headers: { get: () => type }, text: () => Promise.resolve(body) });
+}
+
+class FakeItem {
+  constructor(items) { this.items = items; }
+}
+
+test("fetchSvg answers a 2xx SVG's text, and refuses an error or a page in its place", async () => {
+  assert.equal(await fetchSvg("/logos/turf/navbar", answer()), SVG);
+  await assert.rejects(fetchSvg("/logos/turf/navbar", answer(404)));
+  await assert.rejects(fetchSvg("/logos/turf/navbar", answer(200, "text/html; charset=utf-8", "<html>")), /no SVG/);
+});
+
+test("copySvg writes at once, inside the click, with a promise of the fetched text where ClipboardItem is there", async () => {
+  const calls = [];
+  const clipboard = {
+    write: (items) => { calls.push("write"); return items[0].items["text/plain"].then((blob) => blob.text()).then((text) => { calls.push(text); }); },
+    writeText: () => { calls.push("writeText"); return Promise.resolve(); },
+  };
+  const pending = copySvg("/logos/turf/navbar", { clipboard, fetchFn: answer(), ClipboardItemCtor: FakeItem });
+  assert.deepEqual(calls, ["write"], "the write starts before anything is awaited");
+  assert.equal(await pending, true);
+  assert.deepEqual(calls, ["write", SVG]);
+});
+
+test("copySvg falls back to fetch, then writeText, without ClipboardItem or when the write is refused", async () => {
+  const written = [];
+  const clipboard = { writeText: (text) => { written.push(text); return Promise.resolve(); } };
+  assert.equal(await copySvg("/u", { clipboard, fetchFn: answer() }), true);
+  const refusing = { ...clipboard, write: () => Promise.reject(new Error("NotAllowedError")) };
+  assert.equal(await copySvg("/u", { clipboard: refusing, fetchFn: answer(), ClipboardItemCtor: FakeItem }), true);
+  assert.deepEqual(written, [SVG, SVG]);
+});
+
+test("copySvg rejects when the SVG cannot be fetched, or no clipboard takes it", async () => {
+  const clipboard = { writeText: () => Promise.resolve() };
+  await assert.rejects(copySvg("/u", { clipboard, fetchFn: answer(500) }));
+  await assert.rejects(copySvg("/u", { clipboard: undefined, fetchFn: answer(), copyText: () => false }));
+  assert.equal(await copySvg("/u", { clipboard: undefined, fetchFn: answer(), copyText: () => true }), true);
 });

@@ -4,7 +4,8 @@ require "test_helper"
 
 # [component] Kit originals through the routes (task brand-kit-record): upload one or more files to a brand's kit,
 # list them on the brand page with name, type, size and date, preview pictures inline, serve every file from behind
-# the admin wall (an SVG sandboxed), download and delete, and refuse what is not artwork with a plain 422.
+# the admin wall (an SVG sandboxed), download and delete, and refuse what is not artwork by drawing the brand page
+# again as a 422 with the reason in the card.
 class BrandKitOriginalsTest < ActionDispatch::IntegrationTest
   setup do
     @admin = users(:alex)
@@ -70,6 +71,27 @@ class BrandKitOriginalsTest < ActionDispatch::IntegrationTest
     assert_equal "attachment", response.headers["Content-Disposition"][/\A\w+/], "only pictures are served inline"
   end
 
+  # Task logo-gallery-polish-pass, item 5: Delete sits beside Download, so it asks first, with no script: the first
+  # step is a closed disclosure, and the delete button inside it names the file.
+  test "a delete takes two steps: a closed disclosure naming the file holds the only delete button" do
+    BrandKit.for("studio").add_originals([svg], by: "alex@test.com")
+    log_in_as(@admin)
+    get logo_brand_path("studio", type: "stacked")
+    item = css_select("[data-test='kit-original']").first
+    disclosure = item.at_css("details[data-test='kit-original-delete-disclosure']")
+    assert disclosure, "the delete is behind a disclosure"
+    refute disclosure.key?("open"), "closed until asked"
+    assert_equal "Delete original.svg Cancel deleting original.svg", disclosure.at_css("summary[data-test='kit-original-delete']").text.squish
+    assert_equal "Delete original.svg from the kit?", disclosure.at_css("[data-test='kit-original-delete-ask'] p").text.squish
+    forms = item.css("form").select { |form| form.at_css("input[name=_method][value=delete]") }
+    assert_equal 1, forms.size, "one delete form, and it is inside the disclosure"
+    assert_equal disclosure, forms.first.ancestors("details").first
+    assert_equal "Delete original.svg", forms.first.at_css("[data-test='kit-original-delete-confirm']").text.squish
+    assert_equal brand_kit_original_path("studio", kit.originals.first), forms.first["action"]
+    assert_equal "stacked", forms.first.at_css("input[name=type]")["value"]
+    assert_empty item.css("[onsubmit], [onclick], script")
+  end
+
   test "deleting an original removes it and returns to the card" do
     record = BrandKit.for("studio")
     record.add_originals([svg, png], by: "alex@test.com")
@@ -80,17 +102,44 @@ class BrandKitOriginalsTest < ActionDispatch::IntegrationTest
     assert_equal %w[magic-banner.png], kit.originals.map { |o| o.filename.to_s }
   end
 
-  test "an upload that is not artwork is a plain 422, and nothing is kept" do
+  # Task logo-gallery-polish-pass, item 6: a refusal draws the brand page again, on the tab and in the context the
+  # form carried, with the reason in the Kit originals card and the other cards intact.
+  test "an upload that is not artwork draws the brand page again as a 422, with the reason in the originals card, and nothing is kept" do
+    BrandKit.for("studio").save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: "alex@test.com")
     log_in_as(@admin)
-    post brand_kit_originals_path("studio"), params: { originals: [png, fixture_file_upload("brand_kit/not-a-picture.png", "image/png")] }
+    post brand_kit_originals_path("studio"), params: { originals: [png, fixture_file_upload("brand_kit/not-a-picture.png", "image/png")], type: "stacked", context: "watermark" }
     assert_response :unprocessable_content
-    assert_equal "text/plain", response.media_type
-    assert_equal "not-a-picture.png is not an SVG, PNG, JPEG, PDF or ZIP (read from its contents, not its name)", response.body
-    post brand_kit_originals_path("studio"), params: { originals: [""] }
-    assert_equal "choose at least one file to upload", response.body
-    post brand_kit_originals_path("studio"), params: { originals: ["just a string"] }
-    assert_equal "an original must be an uploaded file", response.body
+    assert_equal "text/html", response.media_type
+    assert_select "[data-test='kit-originals'] [data-test='kit-original-refused'][role=alert]",
+                  "Not uploaded: not-a-picture.png is not an SVG, PNG, JPEG, PDF or ZIP (read from its contents, not its name)"
+    assert_select "[data-test='kit-originals-empty']", "No originals uploaded yet."
+    assert_select "[data-test='logo-type'][data-type='stacked']", 1
+    assert_select "[data-test='logo-example'][data-tones='watermark']", 3
+    assert_select "[data-test='kit-choice'][data-type='stacked']", 1
+    assert_select "[data-test='kit-card'] [data-test='kit-pick'][data-type='navbar'][data-saved='true']", 1
+    assert_select "[data-test='brand-colours']", 1
+    assert_select "form[data-test='kit-original-form'] input[type=hidden][name=type][value=stacked]", 1
+    assert_select "form[data-test='kit-original-form'] input[type=hidden][name=context][value=watermark]", 1
+
+    { [""] => "choose at least one file to upload", ["just a string"] => "an original must be an uploaded file" }.each do |files, reason|
+      post brand_kit_originals_path("studio"), params: { originals: files }
+      assert_response :unprocessable_content
+      assert_select "[data-test='kit-original-refused']", "Not uploaded: #{reason}"
+      assert_select "[data-test='logo-type'][data-type='navbar']", 1
+    end
     assert_equal 0, ActiveStorage::Attachment.where(record_type: "BrandKit").count
+
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-original-refused']", 0, "only the refused upload's page says so"
+  end
+
+  test "a refused upload to a brand with no kit yet creates none" do
+    log_in_as(@admin)
+    assert_no_difference -> { BrandKit.count } do
+      post brand_kit_originals_path("turf"), params: { originals: [fixture_file_upload("brand_kit/not-a-picture.png", "image/png")] }
+    end
+    assert_response :unprocessable_content
+    assert_select "[data-test='kit-status']", "Kit: not saved yet"
   end
 
   test "an original of another brand, or of none, is a 404" do

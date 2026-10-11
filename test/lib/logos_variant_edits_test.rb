@@ -39,7 +39,12 @@ class LogosVariantEditsTest < Minitest::Test
     assert_includes variant.svg, %(fill="#635BB2")
     assert_equal({ form: :tagline, text: :first, tone: :light, guides: 0, first_colour: "635BB2", tagline_visible: 0 }, variant.params)
     assert_equal "studio-stacked-tagline-first-light-custom.svg", variant.filename
-    assert_equal "McRitchie Studio stacked logo, with tagline, first word leads, light, edited", variant.label
+    # Task logo-gallery-polish-pass, item 3: the tagline is hidden, so the name says so.
+    assert_equal "McRitchie Studio stacked logo, tagline hidden, first word leads, light, edited", variant.label
+    shown = Variant.parse(stacked, { form: "tagline", text: "first", first_colour: "635BB2" }, type: :stacked)
+    assert_equal "McRitchie Studio stacked logo, with tagline, first word leads, light, edited", shown.label
+    watermark = Variant.parse(stacked, { form: "tagline", text: "first", tone: "watermark", tagline_visible: "0" }, type: :stacked)
+    assert_equal "McRitchie Studio stacked logo, with tagline, first word leads, watermark", watermark.label, "a watermark draws no edits, so its tagline shows"
 
     navbar_variant = Variant.parse(navbar, { rule: "4", ending_weight: "300" })
     assert_equal "studio-navbar-rule4-homogeneous-light-custom.svg", navbar_variant.filename

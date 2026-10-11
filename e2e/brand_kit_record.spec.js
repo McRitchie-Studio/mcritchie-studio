@@ -29,7 +29,7 @@ test("saving a stacked choice with an edit shows it in the table, marked Saved, 
 
   await page.waitForURL(/\/logos\/industries\?.*form=tagline/);
   await expect(page.getByText("Saved the Stacked Logo kit choice: with tagline, second word leads, ending Forge Orange.")).toBeVisible();
-  await expect(page.locator("[data-test='kit-status']")).toContainText(/Kit: saved \w{3} \d+, \d{4} by alex@test\.com/);
+  await expect(page.locator("[data-test='kit-status']")).toContainText(/Kit: saved \w{3} \d+, \d{4} by Alex Test/);
   await expect(page.locator("[data-test='kit-pick'][data-type='stacked'] [data-test='kit-pick-summary']")).toHaveText("With tagline, second word leads, ending Forge Orange");
 
   await page.goto("/logos");
@@ -78,9 +78,12 @@ test("uploading an SVG and a PNG original shows both as pictures on the brand pa
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(fits).toBe(true);
 
+  // Delete takes two steps (task logo-gallery-polish-pass): the first opens the question, the second deletes.
   await items.nth(0).locator("[data-test='kit-original-delete']").click();
+  await items.nth(0).locator("[data-test='kit-original-delete-confirm']").click();
   await expect(page.getByText("Removed welding-kit.svg.")).toBeVisible();
   await page.locator("[data-test='kit-original'] [data-test='kit-original-delete']").click();
+  await page.locator("[data-test='kit-original'] [data-test='kit-original-delete-confirm']").click();
   await expect(page.locator("[data-test='kit-originals-empty']")).toBeVisible();
 });
 

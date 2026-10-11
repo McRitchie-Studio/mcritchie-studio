@@ -41,13 +41,15 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_difference -> { BrandKit.count }, 1 do
       patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first", first_colour: "635BB2", ending_weight: "300", guides: "1" }
     end
-    assert_redirected_to logo_brand_path("studio", rule: "3", first_colour: "635BB2", ending_weight: "300", guides: "1")
+    assert_redirected_to logo_brand_path("studio", rule: "3", first_colour: "635BB2", ending_weight: "300", guides: "1", anchor: "kit-choice")
     assert_equal "Saved the Navbar Logo kit choice: rule of 3, first word leads, first word Deep Violet; ending 300 Light.", flash[:notice]
     assert_equal({ "rule" => 3, "text" => "first", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
     assert_equal @admin.email, kit.updated_by
 
     follow_redirect!
-    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by #{@admin.email}"
+    # The saver by their user name (task logo-gallery-polish-pass, item 8), their email in the title.
+    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie"
+    assert_select "[data-test='kit-status'] a[title=?]", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie (#{@admin.email})"
     assert_select "[data-test='kit-choice-saved']", /Saved Navbar Logo: rule of 3, first word leads, first word Deep Violet; ending 300 Light/
     assert_equal "first", css_select("select[name=text] option[selected]").first["value"], "the select starts on the saved text"
     assert_select "[data-test='kit-clear']", 1
@@ -56,7 +58,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
   test "saving the Stacked choice, then a second save, keeps one record per brand" do
     log_in_as(@admin)
     patch brand_kit_choice_path("industries"), params: { type: "stacked", form: "tagline", text: "second", tagline_colour: "c8661f" }
-    assert_redirected_to logo_brand_path("industries", type: "stacked", form: "tagline", tagline_colour: "c8661f")
+    assert_redirected_to logo_brand_path("industries", type: "stacked", form: "tagline", tagline_colour: "c8661f", anchor: "kit-choice")
     patch brand_kit_choice_path("industries"), params: { type: "navbar", rule: "6", text: "homogeneous" }
     assert_equal 1, BrandKit.where(brand: "industries").count
     assert_equal({ "form" => "tagline", "text" => "second", "edits" => { "tagline_colour" => "C8661F" } }, kit("industries").stacked_choice)
@@ -67,7 +69,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "tagline", text: "first" }
     delete brand_kit_choice_path("studio"), params: { type: "stacked", form: "tagline" }
-    assert_redirected_to logo_brand_path("studio", type: "stacked", form: "tagline")
+    assert_redirected_to logo_brand_path("studio", type: "stacked", form: "tagline", anchor: "kit-choice")
     assert_equal "Cleared the Stacked Logo kit choice. The brand shows its default again.", flash[:notice]
     assert_nil kit.stacked_choice
     assert BrandKit.exists?(brand: "studio"), "the record stays"
@@ -158,7 +160,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "form" => "tagline", "text" => "second", "tone" => "light", "guides" => "0" }, Rack::Utils.parse_query(URI(stacked["src"]).query))
     assert_equal %w[STACKED·SAVED NAVBAR·SAVED ICON], css_select("[data-brand='studio'] [data-test='logo-badge']").map { |b| b.text.upcase.delete(" ") }
     assert_equal %w[true true false], css_select("[data-brand='studio'] [data-test='logo-sample']").map { |s| s["data-saved"] }
-    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", /\AKit: saved \w{3} \d+, \d{4} by alex@test.com\z/
+    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", /\AKit: saved \w{3} \d+, \d{4} by alex\z/
     assert_select "[data-brand='industries'] [data-test='logo-kit-status']", "Kit: not saved yet"
     assert_equal %w[STACKED NAVBAR ICON], css_select("[data-brand='industries'] [data-test='logo-badge']").map { |b| b.text.upcase }
 
@@ -177,6 +179,120 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     counter = ->(*, payload) { counted << payload[:sql] if payload[:sql].include?("brand_kits") }
     ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { get logos_path }
     assert_equal 1, counted.size, counted.join("\n")
+  end
+
+  # Task logo-gallery-polish-pass, item 4: a record is not a saved kit. Only a saved Navbar or Stacked choice is; the
+  # originals are counted beside it.
+  test "the kit status says not saved yet once no choice is saved, whatever else the record holds, and counts the originals" do
+    log_in_as(@admin)
+    patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first" }
+    delete brand_kit_choice_path("studio"), params: { type: "navbar" }
+    assert BrandKit.exists?(brand: "studio")
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet"
+    assert_select "[data-test='kit-card-status']", "Kit: not saved yet"
+
+    patch brand_kit_path("studio"), params: { notes: "From the 2024 kit." }
+    post brand_kit_originals_path("studio"), params: { originals: [fixture_file_upload("brand_kit/original.svg", "image/svg+xml")] }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet · originals: 1"
+    get logos_path
+    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", "Kit: not saved yet · originals: 1"
+
+    patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "two_line", text: "first" }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie · originals: 1"
+
+    delete brand_kit_original_path("studio", kit.originals.first)
+    delete brand_kit_choice_path("studio"), params: { type: "stacked" }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet"
+  end
+
+  # Task logo-gallery-polish-pass, item 8: a long status must not widen the brand column, so the table shows the
+  # saver's name (or their email's local part) on one cut line, and the title carries it in full.
+  test "the table names each kit's saver, cut to one line, with the whole status in its title" do
+    BrandKit.for("studio").save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: @admin.email)
+    BrandKit.for("industries").save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: "someone.with.a.very.long.address@example.com")
+    log_in_as(@admin)
+    get logos_path
+    studio = css_select("[data-brand='studio'] [data-test='logo-kit-status']").first
+    date = kit.updated_at.strftime("%b %-d, %Y")
+    assert_equal "Kit: saved #{date} by Alex McRitchie", studio.text.strip
+    assert_equal "Kit: saved #{date} by Alex McRitchie (alex@mcritchie.studio)", studio["title"]
+    assert_includes studio["class"].split, "truncate"
+    industries = css_select("[data-brand='industries'] [data-test='logo-kit-status']").first
+    assert_match(/ by someone\.with\.a\.very\.long\.address\z/, industries.text.strip)
+    assert_match(/ by someone\.with\.a\.very\.long\.address \(someone\.with\.a\.very\.long\.address@example\.com\)\z/, industries["title"])
+    refute_match(/@/, css_select("[data-test='logo-kit-status']").map(&:text).join, "no email is printed in the table")
+  end
+
+  test "the table names every saver in one users query" do
+    %w[studio industries turf].each do |brand|
+      BrandKit.for(brand).save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: "#{brand}@example.com")
+    end
+    log_in_as(@admin)
+    get logos_path
+    counted = []
+    counter = ->(*, payload) { counted << payload[:sql] if payload[:sql].match?(/FROM "users" WHERE "users"."email" IN/) }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { get logos_path }
+    assert_equal 1, counted.size, counted.join("\n")
+  end
+
+  # Task logo-gallery-polish-pass, item 12: a kit write that fails is logged against the kit (rescue_and_log, which
+  # re-raises), and the operator still gets the same answer.
+  test "a failed kit write is logged against the saved kit and still refused as before" do
+    log_in_as(@admin)
+    patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first" }
+    assert_difference -> { ErrorLog.count }, 1 do
+      patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first", first_colour: "123456" }
+    end
+    assert_response :unprocessable_content
+    assert_equal "text/plain", response.media_type
+    log = ErrorLog.order(:id).last
+    assert_equal ["BrandKit", kit.id], [log.target_type, log.target_id]
+    assert_includes log.message, "123456"
+  end
+
+  test "a failed write to a brand with no kit yet is logged with no target, and creates no kit" do
+    log_in_as(@admin)
+    assert_no_difference -> { BrandKit.count } do
+      assert_difference -> { ErrorLog.count }, 1 do
+        patch brand_kit_choice_path("turf"), params: { type: "navbar", rule: "3", text: "first", first_colour: "123456" }
+      end
+    end
+    assert_response :unprocessable_content
+    assert_nil ErrorLog.order(:id).last.target_type
+  end
+
+  test "an unexpected failure in a kit write is logged against the kit" do
+    record = BrandKit.for("studio")
+    record.add_originals([fixture_file_upload("brand_kit/original.svg", "image/svg+xml")], by: "alex@test.com")
+    record.define_singleton_method(:remove_original) { |*, **| raise IOError, "storage down" }
+    log_in_as(@admin)
+    BrandKit.stub(:for, record) do
+      assert_difference -> { ErrorLog.where(target_type: "BrandKit", target_id: record.id).count }, 1 do
+        delete brand_kit_original_path("studio", record.originals.first)
+      rescue IOError
+        nil # raised through in tests that show no exception pages; either way it was logged first
+      end
+    end
+    assert_includes ErrorLog.order(:id).last.message, "storage down"
+  end
+
+  test "the table counts every kit's originals without a query per brand" do
+    %w[studio industries turf].each do |brand|
+      BrandKit.for(brand).add_originals([fixture_file_upload("brand_kit/original.svg", "image/svg+xml")], by: "alex@test.com")
+    end
+    log_in_as(@admin)
+    get logos_path
+    counted = []
+    counter = lambda do |*, payload|
+      counted << payload[:sql] if payload[:sql].include?("active_storage_attachments") && Array(payload[:type_casted_binds].then { |binds| binds.respond_to?(:call) ? binds.call : binds }).include?("BrandKit")
+    end
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { get logos_path }
+    assert_equal 1, counted.size, counted.join("\n")
+    assert_equal 3, css_select("[data-test='logo-kit-status']").count { |status| status.text.end_with?("originals: 1") }
   end
 
   test "a saved colour since taken out of the palette is dropped and flagged, and the table, the page and other saves still work" do
