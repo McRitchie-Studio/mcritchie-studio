@@ -239,6 +239,47 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, counted.size, counted.join("\n")
   end
 
+  # Task logo-gallery-polish-pass, item 12: a kit write that fails is logged against the kit (rescue_and_log, which
+  # re-raises), and the operator still gets the same answer.
+  test "a failed kit write is logged against the saved kit and still refused as before" do
+    log_in_as(@admin)
+    patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first" }
+    assert_difference -> { ErrorLog.count }, 1 do
+      patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first", first_colour: "123456" }
+    end
+    assert_response :unprocessable_content
+    assert_equal "text/plain", response.media_type
+    log = ErrorLog.order(:id).last
+    assert_equal ["BrandKit", kit.id], [log.target_type, log.target_id]
+    assert_includes log.message, "123456"
+  end
+
+  test "a failed write to a brand with no kit yet is logged with no target, and creates no kit" do
+    log_in_as(@admin)
+    assert_no_difference -> { BrandKit.count } do
+      assert_difference -> { ErrorLog.count }, 1 do
+        patch brand_kit_choice_path("turf"), params: { type: "navbar", rule: "3", text: "first", first_colour: "123456" }
+      end
+    end
+    assert_response :unprocessable_content
+    assert_nil ErrorLog.order(:id).last.target_type
+  end
+
+  test "an unexpected failure in a kit write is logged against the kit" do
+    record = BrandKit.for("studio")
+    record.add_originals([fixture_file_upload("brand_kit/original.svg", "image/svg+xml")], by: "alex@test.com")
+    record.define_singleton_method(:remove_original) { |*, **| raise IOError, "storage down" }
+    log_in_as(@admin)
+    BrandKit.stub(:for, record) do
+      assert_difference -> { ErrorLog.where(target_type: "BrandKit", target_id: record.id).count }, 1 do
+        delete brand_kit_original_path("studio", record.originals.first)
+      rescue IOError
+        nil # raised through in tests that show no exception pages; either way it was logged first
+      end
+    end
+    assert_includes ErrorLog.order(:id).last.message, "storage down"
+  end
+
   test "the table counts every kit's originals without a query per brand" do
     %w[studio industries turf].each do |brand|
       BrandKit.for(brand).add_originals([fixture_file_upload("brand_kit/original.svg", "image/svg+xml")], by: "alex@test.com")

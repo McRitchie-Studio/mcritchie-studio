@@ -39,24 +39,24 @@ class BrandKitsController < ApplicationController
 
   def save_choice
     type = choice_type
-    variant = @kit.save_choice(type, params, by: who)
+    variant = logged { @kit.save_choice(type, params, by: who) }
     redirect_to back_to_page(anchor: "kit-choice"), notice: "Saved the #{Logos::Variant::TYPES.fetch(type)} kit choice: #{helpers.logo_choice_summary(variant)}."
   end
 
   def clear_choice
     type = choice_type
-    @kit.clear_choice(type, by: who) if @kit.persisted?
+    logged { @kit.clear_choice(type, by: who) } if @kit.persisted?
     redirect_to back_to_page(anchor: "kit-choice"), notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. The brand shows its default again."
   end
 
   def update
-    @kit.update!(notes: params[:notes].to_s.strip.presence, updated_by: who)
+    logged { @kit.update!(notes: params[:notes].to_s.strip.presence, updated_by: who) }
     redirect_to back_to_page(anchor: "kit"), notice: "Saved the kit's notes."
   end
 
   def create_original
     files = Array(params[:originals]).compact_blank
-    @kit.add_originals(files, by: who)
+    logged { @kit.add_originals(files, by: who) }
     names = @kit.originals.last(files.size).map { |original| original.filename.to_s }
     redirect_to back_to_page(anchor: "kit-originals"),
                 notice: "Uploaded #{helpers.pluralize(names.size, 'original')}: #{names.to_sentence}."
@@ -75,11 +75,18 @@ class BrandKitsController < ApplicationController
   end
 
   def destroy_original
-    removed = @kit.remove_original(params[:id], by: who)
+    removed = logged { @kit.remove_original(params[:id], by: who) }
     redirect_to back_to_page(anchor: "kit-originals"), notice: "Removed #{removed.filename}."
   end
 
   private
+
+  # A kit write, with its failure logged against the kit (Studio::ErrorHandling#rescue_and_log, which re-raises: a
+  # refusal still reaches the rescue_from above, or create_original's own rescue). Only a saved kit is named as the
+  # target: logging names it by reference, and a kit not yet saved would be saved by the log itself.
+  def logged(&)
+    rescue_and_log(target: (@kit if @kit.persisted?), &)
+  end
 
   # The brand page again, on the tab and in the context the upload form carried, with `reason` in the Kit originals
   # card and every other card as it was. The kit is read afresh, so nothing of the refused upload is shown.
