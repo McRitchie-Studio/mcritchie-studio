@@ -438,10 +438,12 @@ view will be its own model later).
    the person page or in the Generate form) and the person's surname. A number typed
    in the Generate form outranks the column for that build and is kept on the look.
    A look with no number omits the number clauses; it never prints a placeholder.
-   The surname rides as quoted literal text (`nameplate reading "LITTLE" in block
-   capitals above number 39, clearly legible`): unquoted, a surname that is also an
-   English word read as a description of the plate, and a 2026-10-11 sheet came back
-   reading PLAYER.
+   The surname rides as quoted literal text and is spelled out after it
+   (`nameplate reading "LITTLE" (spelled L-I-T-T-L-E) in block capitals above number
+   39, clearly legible`): unquoted, a surname that is also an English word read as a
+   description of the plate, and a 2026-10-11 sheet came back reading PLAYER. Only
+   letters are hyphen-spelled; punctuation and spaces are named (`S-M-I-T-H, hyphen,
+   N-J-I-G-B-A`), so the name's own hyphen never looks like a separator.
 2. **Uniform photos (optional, up to 3).** Press **Find game photos (1 search)**:
    one image-search query, `"<player> <team> <colourway> game action"`, through the
    same `Appearances::ImageSearch` providers as the face photos. Every result is

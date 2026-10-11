@@ -61,7 +61,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_not_includes prompt, "jersey number ,"
     assert_not_includes prompt, "jersey number "
     assert_not_includes prompt, "above number"
-    assert_includes prompt, %(nameplate reading "ALLEN" in block capitals, clearly legible), "the nameplate stands without a number"
+    assert_includes prompt, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals, clearly legible), "the nameplate stands without a number"
   end
 
   test "a supplied jersey number reaches both the uniform and the nameplate" do
@@ -78,7 +78,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
 
     assert_includes prompt, "game uniform, jersey number 23"
-    assert_includes prompt, %(nameplate reading "ALLEN" in block capitals above number 23, clearly legible)
+    assert_includes prompt, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals above number 23, clearly legible)
   end
 
   test "a passed number outranks the stored one, and jersey 0 is a number" do
@@ -107,7 +107,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
 
     assert line, "column 2 has its own line"
     assert_includes line, "NO helmet, bare head with his hair visible from behind"
-    assert_includes line, %(nameplate reading "ALLEN" in block capitals above number 23)
+    assert_includes line, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals above number 23)
     assert_includes line, "about fifteen degrees"
     assert_not_includes line, "wearing his helmet"
     assert_not_includes line, "edge of the helmet"
@@ -138,12 +138,28 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
   # PLAYER. A surname that is an English word read as a description of the plate.
   # Synthetic surnames only; the read is the back-view line that ships.
 
-  %w[Little Young Will].each do |word|
-    test "a common-word surname (#{word}) is quoted literal text on the back view" do
-      line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: word, number: "39"))
+  # AND SPELLED (the operator, 2026-10-11): the spelling is a second reading of the
+  # same text. Letters hyphen-spelled; punctuation and spaces named, never spelled.
+  # Each row pins the whole clause, number and all, as it ships.
+  {
+    "Little" => %(, nameplate reading "LITTLE" (spelled L-I-T-T-L-E) in block capitals above number 39, clearly legible),
+    "Young" => %(, nameplate reading "YOUNG" (spelled Y-O-U-N-G) in block capitals above number 39, clearly legible),
+    "Will" => %(, nameplate reading "WILL" (spelled W-I-L-L) in block capitals above number 39, clearly legible),
+    "Smith-Njigba" => %(, nameplate reading "SMITH-NJIGBA" (spelled S-M-I-T-H, hyphen, N-J-I-G-B-A) in block ) +
+                      "capitals above number 39, clearly legible",
+    "O'Neil" => %(, nameplate reading "O'NEIL" (spelled O, apostrophe, N-E-I-L) in block capitals above number ) +
+                "39, clearly legible",
+    "St. Brown" => %(, nameplate reading "ST. BROWN" (spelled S-T, period, space, B-R-O-W-N) in block capitals ) +
+                   "above number 39, clearly legible",
+    "Van Noy" => %(, nameplate reading "VAN NOY" (spelled V-A-N, space, N-O-Y) in block capitals above number ) +
+                 "39, clearly legible"
+  }.each do |given, clause|
+    test "the back view quotes and spells #{given.inspect}" do
+      line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: given, number: "39"))
 
-      assert_includes line, %(, nameplate reading "#{word.upcase}" in block capitals above number 39, clearly legible)
-      assert_not_includes line, "nameplate #{word.upcase}", "the bare unquoted form is the defect"
+      assert_includes line, clause
+      assert_not_includes line, "nameplate #{given.upcase}", "the bare unquoted form is the defect"
+      assert_not_includes line, "\\", "no escaping artefacts"
     end
   end
 
@@ -151,22 +167,13 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     @look.update_columns(jersey_number: nil)
     line = back_view_line(Appearances::CharacterSheetPrompt.call(@look.reload, surname: "Little"))
 
-    assert_includes line, %(, nameplate reading "LITTLE" in block capitals, clearly legible,)
-  end
-
-  { "O'Neil" => "O'NEIL", "Smith-Njigba" => "SMITH-NJIGBA", "St. Brown" => "ST. BROWN" }.each do |given, plate|
-    test "a punctuated surname (#{given}) survives intact inside the quotes" do
-      line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: given))
-
-      assert_includes line, %(nameplate reading "#{plate}" in block capitals)
-      assert_not_includes line, "\\", "no escaping artefacts"
-    end
+    assert_includes line, %(, nameplate reading "LITTLE" (spelled L-I-T-T-L-E) in block capitals, clearly legible,)
   end
 
   test "a double quote inside the surname cannot close the literal early" do
     line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: %(Lit"tle)))
 
-    assert_includes line, %(nameplate reading "LITTLE")
+    assert_includes line, %(nameplate reading "LITTLE" (spelled L-I-T-T-L-E))
     assert_equal 2, line.count('"')
   end
 
@@ -176,6 +183,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
 
       assert_not_includes prompt, "nameplate", "surname #{given.inspect} draws no plate"
       assert_not_includes prompt, '""'
+      assert_not_includes prompt, "spelled"
       assert_includes back_view_line(prompt), "visible from behind, #{Appearances::CharacterSheetPrompt::PADS_CLAUSE}"
     end
   end

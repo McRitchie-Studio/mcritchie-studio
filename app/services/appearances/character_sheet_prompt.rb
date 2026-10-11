@@ -206,6 +206,17 @@ module Appearances
         nil
     end
 
+    PUNCTUATION_NAMES = { "-" => "hyphen", "'" => "apostrophe", "’" => "apostrophe", "." => "period",
+                          " " => "space" }.freeze
+
+    # "SMITH-NJIGBA" => "S-M-I-T-H, hyphen, N-J-I-G-B-A". Public so a test (or any
+    # other prompt that draws a name) reads the one spelling rule.
+    def self.spell(text)
+      text.to_s.scan(/[[:alnum:]]+|[^[:alnum:]]/).map { |token|
+        token.match?(/[[:alnum:]]/) ? token.chars.join("-") : PUNCTUATION_NAMES.fetch(token, token)
+      }.join(", ")
+    end
+
     private
 
     def preamble
@@ -337,11 +348,22 @@ module Appearances
     # captain "C" patch in UNIFORM_FROM_PHOTOS; a double quote inside the surname is
     # dropped so it cannot close the literal early. Apostrophes, hyphens and periods
     # (O'NEIL, SMITH-NJIGBA, ST. BROWN) pass through untouched.
+    #
+    # AND SPELLED LETTER BY LETTER after the quotes (the operator, 2026-10-11): a
+    # second, independent reading of the same text, so any surname the model could
+    # misread (a word, a rare spelling) is pinned twice. Only letters and digits are
+    # hyphen-spelled; punctuation and spaces are NAMED between the spelled parts
+    # rather than spelled, because "S-M-I-T-H---N-J..." would make the name's own
+    # hyphen indistinguishable from the spelling's separators. So:
+    #   LITTLE        -> L-I-T-T-L-E
+    #   SMITH-NJIGBA  -> S-M-I-T-H, hyphen, N-J-I-G-B-A
+    #   O'NEIL        -> O, apostrophe, N-E-I-L
+    #   ST. BROWN     -> S-T, period, space, B-R-O-W-N
     def nameplate_clause
       text = nameplate_text
       return "" if text.blank?
 
-      part = %(, nameplate reading "#{text}" in block capitals)
+      part = %(, nameplate reading "#{text}" (spelled #{self.class.spell(text)}) in block capitals)
       part += " above number #{number}" if number.present?
       "#{part}, clearly legible"
     end
