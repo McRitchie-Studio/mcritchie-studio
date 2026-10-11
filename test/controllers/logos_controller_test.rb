@@ -147,7 +147,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Typeface Traced from its own lettering (typeface not identified)", typeface.("welding")
     assert_no_match(/Montserrat/, typeface.("welding"))
 
-    { "turf" => "Turf Monster", "welding" => "Commercial Welding" }.each do |brand, name|
+    { "turf" => "Turf Monster", "welding" => "Commercial Welding v1" }.each do |brand, name|
       assert_select "[data-test='logo-brand-row'][data-brand='#{brand}']" do
         assert_select "th a[href=?]", logo_brand_path(brand), text: name
         SAMPLES.each_key do |type|
@@ -272,7 +272,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       get logo_brand_path("welding", type: "icon", context:, guides: 1, rule: 3)
       assert_response :success
       assert_examples variants("welding", :icon, tone: context.to_sym)
-      assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding icon, #{context}", icon_logo_path("welding", tone: context)
+      assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{context}", icon_logo_path("welding", tone: context)
       assert_select "a[data-test='logo-download'][href=?]", icon_logo_path("welding", tone: context, download: 1)
       assert_select "[data-test='logo-plate'][data-tone='#{context}'][style=?]", plate, 1
       assert_select "[data-test='logo-example'] h2", 0
@@ -324,8 +324,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     notes = {
       "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours."],
-      "welding" => ["Commercial Welding", "The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the " \
-                                          "service mark. On dark backgrounds the helmet is the single-colour version."]
+      "welding" => ["Commercial Welding v1", "The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole " \
+                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version."]
     }
     notes.to_a.product(%w[icon navbar stacked]).each do |(brand, (name, note)), type|
       get logo_brand_path(brand, type:)
@@ -641,7 +641,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["tagline"], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
     assert_equal %w[welding-stacked-tagline-homogeneous-light-guides.svg welding-stacked-tagline-first-light-guides.svg welding-stacked-tagline-second-light-guides.svg],
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
-    assert_select "img[data-test='logo-image'][alt^='Commercial Welding stacked logo, with tagline, ']", 3
+    assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 3
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
     assert_select "[data-test='guides-sentence']", /faint copies of the tagline, spaced exactly as the logo spaces it: one copy per unit/
 

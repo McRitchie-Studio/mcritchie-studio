@@ -26,7 +26,8 @@ class LogosNavbarLogoTest < Minitest::Test
   }.freeze
   # The same for the two brands added after the prototype (homogeneous text). Before the equal gaps: turf 4.24 and
   # 5.87, welding 5.98 and 8.52.
-  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.065, ["welding", 4] => 8.657 }.freeze
+  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.867, ["welding", 4] => 9.859 }.freeze
+  # Commercial Welding v1 was 6.065 and 8.657 as COMMERCIAL WELDING, before it took LLC (task welding-llc-and-v2-helmet).
   # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
   # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
   # the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task add-turf-and-welding-logos)
@@ -35,11 +36,14 @@ class LogosNavbarLogoTest < Minitest::Test
   # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
   ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
-  ADDED_BRANDS_DIGEST = "84708d03dc90a4f0b31db6589342380ef8ad33436aa08ba2a32e2903f590b6fd"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 84708d03…. Turf Monster did not move (logos_brand_pins_test.rb).
+  ADDED_BRANDS_DIGEST = "3251e085eccc13a25870218d3654bb274ff459cc95da8a950feff639d9de314c"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
-  WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 69c5428f….
+  WATERMARK_DIGEST = "817c912e0b1ded68805948d7048f9a799baaa9e8c3c1eb403064f1af24916ef2"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
-  RULE_6_DIGEST = "c16934f5d230e0f1a7eaf56602e7d9553aabbc75bc4ee65e9c85b988d16b7b4a"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was c16934f5….
+  RULE_6_DIGEST = "2581fbeb23a878ca5dda233f2da62bd23c2a671bf024a486b9694218e5ad0e54"
   # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
   # logos_brand_pins_test.rb, so it cannot move these.
   PINNED = %w[studio industries turf welding].freeze
@@ -347,7 +351,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_a_lettering_source_sets_the_name_from_the_brands_own_letters
     traced = Logo.letterings.fetch("welding")
     words = traced.fetch("words").values_at("COMMERCIAL", "WELDING")
-    logo = Logo.new("welding")
+    logo = Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING"))
     box = logo.layout(rule: 3)
     first, second = box.letters.partition { |l| l[:word].zero? }
 
@@ -500,7 +504,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_lettering_and_glyph_paths_are_checked_like_icon_paths
     [HOSTILE, "M0,0 Z\n"].each do |d|
       hostile = letterings_with { |lettering| lettering["words"]["WELDING"][3]["d"] = d }
-      assert_match(/a letter of "WELDING" has a path that is not SVG path data/, refusal { Logo.new("welding", letterings: hostile) }, d.inspect)
+      assert_match(/a letter of "WELDING LLC" has a path that is not SVG path data/, refusal { Logo.new("welding", letterings: hostile) }, d.inspect)
     end
     ["evenodd\n", %(evenodd" onload="x), nil].each do |rule|
       hostile = letterings_with { |lettering| lettering["fill_rule"] = rule }

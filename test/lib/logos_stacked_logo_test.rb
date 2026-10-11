@@ -29,9 +29,10 @@ class LogosStackedLogoTest < Minitest::Test
   # Monster's one-line logos and every tagline-form logo were re-taken deliberately after it.
   # The brands ICON_DIGEST was taken over; a brand added later is pinned on its own in logos_brand_pins_test.rb.
   PINNED = %w[studio industries turf welding].freeze
-  TWO_LINE_DIGEST = "f066b3ee448c37018089636ee6d7c9f5bad5213551a5c88a7322eb2ecd9e3be4"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
+  TWO_LINE_DIGEST = "56b61a906342849119fcc5233c97f04e3d710f6941126411ea0b7ed852ea93cb"
   ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
-  TAGLINE_DIGEST = "cc5f5a64a6534e759b48f85a152d939e594b518de1593b3b9e33328264ca831d"
+  TAGLINE_DIGEST = "4a47fdc768de8b58bad7efe628c1b2f903bf5b694b1d608a1d90e9c634f2d3cf"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
@@ -40,7 +41,7 @@ class LogosStackedLogoTest < Minitest::Test
   TAGLINE_RATIOS = {
     ["studio", :homogeneous] => 1.2736, ["studio", :first] => 1.2674, ["studio", :second] => 1.2638,
     ["industries", :homogeneous] => 1.3290, ["industries", :first] => 1.3235, ["industries", :second] => 1.3236,
-    ["welding", :homogeneous] => 1.2867, ["welding", :first] => 1.2867, ["welding", :second] => 1.2867
+    ["welding", :homogeneous] => 1.3284, ["welding", :first] => 1.3284, ["welding", :second] => 1.3284   # 1.2867 before LLC
   }.freeze
   TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 

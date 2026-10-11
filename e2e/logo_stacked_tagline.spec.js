@@ -22,7 +22,7 @@ async function open(page, width) {
 test("welding tagline guides: every plate fits its drawing at 1280, with no plate scroll", async ({ page }) => {
   await open(page, 1280);
   await expect(page.locator("a[data-test='form-option'][aria-current='true']")).toHaveText("With tagline");
-  await expect(page.locator("img[data-test='logo-image']").first()).toHaveAttribute("alt", /Commercial Welding stacked logo, with tagline, .*construction guides/);
+  await expect(page.locator("img[data-test='logo-image']").first()).toHaveAttribute("alt", /Commercial Welding v1 stacked logo, with tagline, .*construction guides/);
 
   const count = await plates(page).count();
   expect(count).toBe(3);

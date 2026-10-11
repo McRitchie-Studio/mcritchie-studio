@@ -2,7 +2,11 @@
 # draws a brand's Navbar Logo and icon from, and Logos::StackedLogo its Stacked
 # Logo. Rules and rake task: docs/topics/logos.md.
 #
-# name       two words; the logo sets them on one line beside the icon
+# title      optional: the brand's name as the gallery says it, where the name's
+#            words would not tell two versions of a brand apart
+# name       two words, a first word and an ending; the logo sets them on one
+#            line beside the icon. A brand with `lettering` may end in several
+#            traced words ("COMMERCIAL WELDING LLC": the ending is WELDING LLC)
 # icon       a key in the icon data (lib/logos/data/brand_icons*.json)
 # lettering  optional: a key in lib/logos/data/brand_lettering.json. The name is
 #            then set from the brand's own traced letters, not Montserrat: one
@@ -90,12 +94,13 @@ turf:
     icon_key: turf_mono
 
 welding:
-  name: COMMERCIAL WELDING
+  title: Commercial Welding v1
+  name: COMMERCIAL WELDING LLC
   tagline: BUILDING STRONG CONNECTIONS
   icon: welding
   lettering: welding
   highlight: colour
-  note: The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version.
   tones:
     light:
       text: "#2D5E8E"
