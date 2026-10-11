@@ -126,3 +126,32 @@ test("Copy SVG says Copy failed when the logo cannot be fetched", async ({ page,
   await expect(copy).toHaveText("Copy failed");
   await expect(page.locator("[data-copy-svg-status]").filter({ hasText: "Copy failed" })).toHaveCount(1);
 });
+
+// The root's theme at the first animation frame, which is the theme the first paint draws: recorded by a script that
+// runs before any of the page's own.
+async function firstFrameDark(page, path) {
+  await page.addInitScript(() => {
+    requestAnimationFrame(() => { window.__firstFrameDark = document.documentElement.classList.contains("dark"); });
+  });
+  await page.goto(path);
+  await page.waitForFunction(() => window.__firstFrameDark !== undefined);
+  return page.evaluate(() => window.__firstFrameDark);
+}
+
+test("a shared ?context=light link paints light from the first frame, over a stored dark theme", async ({ page }) => {
+  await open(page, "/logos");
+  await page.evaluate(() => localStorage.setItem("theme", "dark"));
+  expect(await firstFrameDark(page, "/logos/studio?context=light")).toBe(false);
+  expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("light");
+  await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
+});
+
+test("a shared ?context=dark or watermark link paints dark from the first frame, over a stored light theme", async ({ page }) => {
+  await open(page, "/logos");
+  await page.evaluate(() => localStorage.setItem("theme", "light"));
+  expect(await firstFrameDark(page, "/logos?context=dark")).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("dark");
+  await page.evaluate(() => localStorage.setItem("theme", "light"));
+  expect(await firstFrameDark(page, "/logos/turf?context=watermark")).toBe(true);
+  await expect(page.locator("[data-test='logo-example'][data-tones='watermark']").first()).toBeVisible();
+});

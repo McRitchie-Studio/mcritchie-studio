@@ -11,7 +11,9 @@
     scrolls sideways if a table row ever outgrows it, so the page body never
     does. Admin only (LogosController). %>
 <%= render "components/copy_text_script" %>
-<%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
+<%# An explicit context sets the hub theme from the first paint (the layout's html_theme; app/javascript/theme_context.js),
+    and again on a Turbo visit (app/javascript/logo_gallery.js, data-logo-theme). %>
+<% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <div class="space-y-1">
     <div class="flex flex-wrap items-center gap-3">

@@ -17,7 +17,8 @@
 # that matches html.dark, so a page opens in whatever theme the hub is in and a
 # change of theme needs no request. ?context=watermark turns the page dark and
 # shows the watermark logos instead; an explicit ?context=light or dark sets the
-# hub's theme to it (data-logo-theme, app/javascript/logo_gallery.js) and otherwise behaves like no context.
+# hub's theme to it from the first paint (content_for :html_theme in the views, read by the hub layout and
+# app/javascript/theme_context.js; data-logo-theme for a Turbo visit) and otherwise behaves like no context.
 #
 # The Navbar and Stacked tabs have an EDIT panel (task logo-part-editor): a
 # palette colour per part (icon, first word, ending, tagline), a weight per word
