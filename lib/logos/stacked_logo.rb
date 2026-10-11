@@ -83,7 +83,7 @@ module Logos
       cap = BIG * U
       big, width = place(first, cap, 0, 0)
       unless form == :two_line
-        rest, width = place(second, cap, width + space * cap, 1)
+        rest, width = place(second, cap, width + GAP_CAPS * cap, 1)   # the Navbar Logo's word gap
         big += rest
       end
       icon_height = SPAN * width

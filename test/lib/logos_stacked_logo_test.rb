@@ -29,10 +29,12 @@ class LogosStackedLogoTest < Minitest::Test
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
+  # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as
+  # the one-line form does). Before: studio 1.2708 / 1.2645 / 1.2609, industries 1.3270 / 1.3214 / 1.3215, welding 1.2838.
   TAGLINE_RATIOS = {
-    ["studio", :homogeneous] => 1.2708, ["studio", :first] => 1.2645, ["studio", :second] => 1.2609,
-    ["industries", :homogeneous] => 1.3270, ["industries", :first] => 1.3214, ["industries", :second] => 1.3215,
-    ["welding", :homogeneous] => 1.2838, ["welding", :first] => 1.2838, ["welding", :second] => 1.2838
+    ["studio", :homogeneous] => 1.2736, ["studio", :first] => 1.2674, ["studio", :second] => 1.2638,
+    ["industries", :homogeneous] => 1.3290, ["industries", :first] => 1.3235, ["industries", :second] => 1.3236,
+    ["welding", :homogeneous] => 1.2867, ["welding", :first] => 1.2867, ["welding", :second] => 1.2867
   }.freeze
   TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 
@@ -125,7 +127,7 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal 11, box.letters.size
     box.letters.zip(navbar.letters).each do |mine, theirs|
       assert_equal [theirs[:d], theirs[:word]], [mine[:d], mine[:word]]
-      assert_in_delta (theirs[:x] - navbar.name_left) * scale, mine[:x], 1e-6, "the brand's tracking and word space, at this size"
+      assert_in_delta (theirs[:x] - navbar.name_left) * scale, mine[:x], 1e-6, "the brand's tracking and word gap, at this size"
     end
     assert_in_delta (navbar.width - navbar.name_left) * scale, box.width, 1e-6
   end
@@ -447,7 +449,7 @@ class LogosStackedLogoTest < Minitest::Test
       scale = 3 * U / navbar.cap
       assert_equal navbar.letters.map { |l| [l[:d], l[:word]] }, mine.map { |l| [l[:d], l[:word]] }, "#{brand} #{text}"
       mine.zip(navbar.letters).each do |letter, theirs|
-        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word space and tracking"
+        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word gap and tracking"
       end
     end
   end

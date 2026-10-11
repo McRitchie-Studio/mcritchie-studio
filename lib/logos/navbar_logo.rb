@@ -17,7 +17,9 @@ module Logos
   #
   # The icon is H units tall. Rule of 3: the capitals are one of three rows.
   # Rule of 4: the capitals fill the middle two of four rows. Either way the
-  # name is centred on the icon. Rules and data: docs/topics/logos.md.
+  # name is centred on the icon. The gap after the icon and the gap between
+  # the words are equal: each is half a cap height. Rules and data:
+  # docs/topics/logos.md.
   class NavbarLogo
     class Error < ArgumentError; end
 
@@ -29,9 +31,9 @@ module Logos
     WATERMARK = { "fill" => "#FFFFFF", "opacity" => 0.6 }.freeze
     WATERMARK_KEYS = %w[fill opacity icon_key].freeze
     HIGHLIGHTS = %w[weight colour].freeze
-    SPACE_WEIGHT = 300                         # the word space is this weight's " " advance
+    GAP_CAPS = 0.5                             # the icon gap and the word gap, ink to ink, in cap heights: equal by rule
     GUIDE = "#D4189F"
-    GUIDE_PAD = { left: 40, top: 40, right: 80, bottom: 40 }.freeze
+    GUIDE_PAD = { left: 40, top: 70, right: 80, bottom: 40 }.freeze   # `top` holds the gap brackets and their labels
     GUIDE_FONT = 30                            # the guide labels' size, in design units
     GUIDE_STROKE = 1.0                         # the guide lines' width, in design units
     # A guide drawing's ghosts (faint copies of the name that show how it measures) are the logo's own text colour at
@@ -47,7 +49,8 @@ module Logos
     ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json].freeze
     ROOT = File.expand_path("../..", __dir__)
 
-    Layout = Struct.new(:count, :row, :cap, :baseline, :icon_width, :gap, :name_left, :letters, :width, keyword_init: true)
+    # `gap` is both the icon gap (icon_width to name_left) and the word gap (word_left - gap to word_left).
+    Layout = Struct.new(:count, :row, :cap, :baseline, :icon_width, :gap, :name_left, :word_left, :letters, :width, keyword_init: true)
 
     class << self
       def styles = @styles ||= YAML.safe_load_file(File.join(ROOT, "config/logo_brands.yml")).freeze
@@ -77,7 +80,6 @@ module Logos
       @fill_rule = @lettering ? @lettering["fill_rule"] : "nonzero"   # font contours overlap: evenodd would punch holes in them
       @tracking = tracking_in_cap_heights
       word_weights(:first).uniq.each { |weight| @words.each { |word| letters(word, weight) } }   # a missing character fails here, not at draw time
-      space
     end
 
     # What the brand's page says about where its art came from (optional).
@@ -96,10 +98,10 @@ module Logos
       first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
       icon = @icons.fetch(tone)
       icon_width = icon.fetch("w") * H / icon.fetch("h")
-      gap = (first[0]["r"] - first[0]["l"]) * cap / 2                    # half the first letter's ink
+      gap = GAP_CAPS * cap
       placed1, right1 = place(first, cap, icon_width + gap, 0)
-      placed2, right2 = place(second, cap, right1 + space * cap, 1)
-      Layout.new(count: rule, row:, cap:, baseline: (H + cap) / 2, icon_width:, gap:, name_left: icon_width + gap,
+      placed2, right2 = place(second, cap, right1 + gap, 1)
+      Layout.new(count: rule, row:, cap:, baseline: (H + cap) / 2, icon_width:, gap:, name_left: icon_width + gap, word_left: right1 + gap,
                  letters: placed1 + placed2, width: right2)
     end
 
@@ -191,8 +193,6 @@ module Logos
     def toned(tone, markup)
       tone == :watermark ? %(<g opacity="#{format('%g', @watermark['opacity'])}">#{markup}</g>) : markup
     end
-
-    def space = @lettering ? @lettering.fetch("space") : glyph(" ", SPACE_WEIGHT)["adv"]
 
     # A brand's own traced lettering (style `lettering:`), or nil when it is set in Montserrat.
     def own_lettering(letterings)
@@ -305,12 +305,23 @@ module Logos
       end.join
     end
 
-    # The construction drawing: row edges, the icon's right edge, the name's left ink edge, and row numbers.
+    # The construction drawing: row edges, the icon's right edge, the name's left ink edge, row numbers, and a bracket
+    # labelled ½ over each of the two equal gaps (after the icon, between the words): each is half a cap height.
     def guide_markup(box)
       rows = (0..box.count).map { |i| guide_line(-20, i * box.row, box.width + 20, i * box.row) }
       edges = [box.icon_width, box.name_left].map { |x| guide_line(x, -20, x, H + 20) }
       numbers = (0...box.count).map { |i| guide_label(box.width + 30, (i + 0.5) * box.row + 12, i + 1) }
-      (rows + edges + numbers).join
+      (rows + edges + numbers + [box.icon_width, box.word_left - box.gap].flat_map { |x| gap_bracket(x, box.gap) }).join
+    end
+
+    GAP_BRACKET_Y = -30                        # the gap brackets' bar, above the drawing's top row edge
+    GAP_TICK = 10                              # their ticks, down toward the gap's two ink edges
+
+    def gap_bracket(left, width)
+      right = left + width
+      [guide_line(left, GAP_BRACKET_Y, right, GAP_BRACKET_Y), guide_line(left, GAP_BRACKET_Y, left, GAP_BRACKET_Y + GAP_TICK),
+       guide_line(right, GAP_BRACKET_Y, right, GAP_BRACKET_Y + GAP_TICK),
+       guide_label(left + width / 2, GAP_BRACKET_Y - 8, "½", %( text-anchor="middle" data-gap="#{format('%g', GAP_CAPS)}"))]
     end
 
     def guide_line(x1, y1, x2, y2)
