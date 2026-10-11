@@ -18,4 +18,10 @@ namespace :logos do
       puts path
     end
   end
+
+  desc "Write Commercial Welding v2's helmet (welding_v2, welding_v2_mono), derived from v1's, to lib/logos/data/brand_icons_welding_v2.json"
+  task welding_v2: :environment do
+    File.write(Logos::WeldingV2::FILE, Logos::WeldingV2.json)
+    puts Logos::WeldingV2::FILE
+  end
 end

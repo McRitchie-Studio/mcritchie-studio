@@ -26,7 +26,8 @@ class LogosNavbarLogoTest < Minitest::Test
   }.freeze
   # The same for the two brands added after the prototype (homogeneous text). Before the equal gaps: turf 4.24 and
   # 5.87, welding 5.98 and 8.52.
-  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.065, ["welding", 4] => 8.657 }.freeze
+  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.867, ["welding", 4] => 9.859 }.freeze
+  # Commercial Welding v1 was 6.065 and 8.657 as COMMERCIAL WELDING, before it took LLC (task welding-llc-and-v2-helmet).
   # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
   # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
   # the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task add-turf-and-welding-logos)
@@ -35,11 +36,17 @@ class LogosNavbarLogoTest < Minitest::Test
   # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
   ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
-  ADDED_BRANDS_DIGEST = "84708d03dc90a4f0b31db6589342380ef8ad33436aa08ba2a32e2903f590b6fd"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 84708d03…. Turf Monster did not move (logos_brand_pins_test.rb).
+  ADDED_BRANDS_DIGEST = "3251e085eccc13a25870218d3654bb274ff459cc95da8a950feff639d9de314c"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
-  WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 69c5428f….
+  WATERMARK_DIGEST = "817c912e0b1ded68805948d7048f9a799baaa9e8c3c1eb403064f1af24916ef2"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
-  RULE_6_DIGEST = "c16934f5d230e0f1a7eaf56602e7d9553aabbc75bc4ee65e9c85b988d16b7b4a"
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was c16934f5….
+  RULE_6_DIGEST = "2581fbeb23a878ca5dda233f2da62bd23c2a671bf024a486b9694218e5ad0e54"
+  # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
+  # logos_brand_pins_test.rb, so it cannot move these.
+  PINNED = %w[studio industries turf welding].freeze
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -287,13 +294,13 @@ class LogosNavbarLogoTest < Minitest::Test
   end
 
   def test_every_rule_of_6_logo_is_unchanged_to_the_byte
-    all = unguided(Logo.brands, [6]) + Logo.brands.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
+    all = unguided(PINNED, [6]) + PINNED.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
     assert_equal 36, all.size
     assert_equal RULE_6_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 
   def test_every_watermark_logo_is_unchanged_to_the_byte
-    all = Logo.brands.flat_map do |brand|
+    all = PINNED.flat_map do |brand|
       logo = Logo.new(brand)
       [3, 4].product(Logo::TEXTS).map do |rule, text|
         "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
@@ -307,7 +314,8 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_the_icon_alone_is_the_navbar_logos_icon_in_its_own_box
     Logo.brands.product(Logo::TONES).each do |brand, tone|
       logo = Logo.new(brand)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Logo.icons.fetch(key)
       xml = doc(logo.icon_svg(tone:))
       where = "#{brand} #{tone}"
@@ -344,7 +352,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_a_lettering_source_sets_the_name_from_the_brands_own_letters
     traced = Logo.letterings.fetch("welding")
     words = traced.fetch("words").values_at("COMMERCIAL", "WELDING")
-    logo = Logo.new("welding")
+    logo = Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING"))
     box = logo.layout(rule: 3)
     first, second = box.letters.partition { |l| l[:word].zero? }
 
@@ -368,10 +376,46 @@ class LogosNavbarLogoTest < Minitest::Test
 
   def test_a_lettering_source_refuses_what_it_cannot_draw
     assert_match(/one weight, so highlight must be colour, not weight/, refusal { Logo.new("x", styles: welding_style(highlight: "weight")) })
-    assert_match(/no word "FORGE" in the welding lettering \(it has COMMERCIAL, WELDING\)/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL FORGE")) })
+    assert_match(/no word "FORGE" in the welding lettering \(it has COMMERCIAL, WELDING, LLC\)/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL FORGE")) })
+    assert_match(/no word "INC" in the welding lettering/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING INC")) })
+    assert_match(/a first word and an ending of one or more words, got 1/, refusal { Logo.new("x", styles: welding_style(name: "WELDING")) })
+    no_space = letterings_with { |lettering| lettering["spaces"].delete("WELDING LLC") }
+    assert_match(/no space between WELDING and LLC/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"), letterings: no_space) })
+    bad_space = letterings_with { |lettering| lettering["spaces"]["WELDING LLC"] = "0.43" }
+    assert_match(/no space between WELDING and LLC/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"), letterings: bad_space) })
     assert_match(/no word "Welding"/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL Welding")) }, "a word is matched as written")
     assert_match(/no lettering "anvil" in the lettering data/, refusal { Logo.new("x", styles: welding_style(lettering: "anvil")) })
     assert_match(/tracking is in em, which a lettering source does not have/, refusal { Logo.new("x", styles: welding_style(tracking: -0.02)) })
+  end
+
+  # Task welding-llc-and-v2-helmet: the name is a first word and an ending; in a brand's own lettering the ending may
+  # be several traced words, set apart by the kit's own space between them (measured from the kit's PNG).
+  def test_a_traced_ending_of_several_words_keeps_the_kits_space_between_them
+    lettering = Logo.letterings.fetch("welding")
+    commercial, welding, llc = lettering.fetch("words").values_at("COMMERCIAL", "WELDING", "LLC")
+    logo = Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"))
+    assert_equal ["COMMERCIAL", "WELDING LLC"], logo.words, "two parts: the first word and the ending"
+    box = logo.layout(rule: 3)
+    first, ending = box.letters.partition { |l| l[:word].zero? }
+    assert_equal commercial.map { |g| g["d"] }, first.map { |l| l[:d] }
+    assert_equal (welding + llc).map { |g| g["d"] }, ending.map { |l| l[:d] }, "the ending is one word to the logo: one colour, one gap rule"
+
+    right1 = first.last[:x] + commercial.last["r"] * box.cap
+    assert_in_delta 0.5 * box.cap, ending.first[:x] - right1, 1e-9, "the word gap after the first word is the rule's half cap height"
+    g_right = ending[welding.size - 1][:x] + welding.last["r"] * box.cap
+    l_left = ending[welding.size][:x] + llc.first["l"] * box.cap
+    assert_in_delta 0.4305, lettering.dig("spaces", "WELDING LLC"), 1e-9, "measured from the kit PNG: 39.61 px at a 92 px cap height"
+    assert_in_delta 0.4305 * box.cap, l_left - g_right, 1e-9, "inside the ending, the kit's own space"
+    assert_in_delta ending.last[:x] + llc.last["r"] * box.cap, box.width, 1e-9
+
+    { first: ["#D7602E"] * 10 + ["#2D5E8E"] * 10, second: ["#2D5E8E"] * 10 + ["#D7602E"] * 10 }.each do |text, fills|
+      assert_equal fills, letters(logo.svg(text:)).map { |p| p["fill"] }, "#{text}: the whole ending leads or follows as one"
+    end
+    assert_equal ["COMMERCIAL", "WELDING"], Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING")).words, "an ending of one traced word"
+  end
+
+  def test_a_name_set_in_a_font_is_still_exactly_two_words
+    assert_match(/exactly two words, got 3/, refusal { Logo.new("x", styles: { "x" => Logo.styles.fetch("studio").merge("name" => "McRITCHIE STUDIO LABS") }) })
   end
 
   def test_tracking_is_added_to_every_advance_but_not_to_the_ink_edge
@@ -420,7 +464,7 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [6, 10, 6 * 95, 17], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [8, 13, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
@@ -461,7 +505,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_lettering_and_glyph_paths_are_checked_like_icon_paths
     [HOSTILE, "M0,0 Z\n"].each do |d|
       hostile = letterings_with { |lettering| lettering["words"]["WELDING"][3]["d"] = d }
-      assert_match(/a letter of "WELDING" has a path that is not SVG path data/, refusal { Logo.new("welding", letterings: hostile) }, d.inspect)
+      assert_match(/a letter of "WELDING LLC" has a path that is not SVG path data/, refusal { Logo.new("welding", letterings: hostile) }, d.inspect)
     end
     ["evenodd\n", %(evenodd" onload="x), nil].each do |rule|
       hostile = letterings_with { |lettering| lettering["fill_rule"] = rule }

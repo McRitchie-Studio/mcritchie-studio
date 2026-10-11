@@ -98,7 +98,8 @@ class LogosBrandKitTypefacesTest < Minitest::Test
   def test_only_the_traced_level_is_traced
     assert_equal [true, false], BrandKit.new("welding").typefaces.map(&:traced?)
     assert_nil BrandKit.new("welding").typefaces.first.family
-    refute BrandKit.all.reject { |kit| kit.brand == "welding" }.flat_map(&:typefaces).any?(&:traced?)
+    assert_equal [true, false], BrandKit.new("welding_v2").typefaces.map(&:traced?), "v2 shares v1's lettering"
+    refute BrandKit.all.reject { |kit| %w[welding welding_v2].include?(kit.brand) }.flat_map(&:typefaces).any?(&:traced?)
   end
 
   def test_no_more_than_three_levels_and_at_least_one
