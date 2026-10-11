@@ -115,4 +115,21 @@ class LogosColouringTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_match(/unknown colouring "sepia"/, response.body)
   end
+
+  # Item 6: Studio's logo is solid colour, so it has no original: its pages show Alt, with Original disabled, and say so.
+  test "Studio shows Alt only, on every tab, and says it has no original" do
+    [{}, { type: "icon" }, { type: "stacked" }, { colouring: "original" }].each do |params|
+      get logo_brand_path("studio", params)
+      assert_response :success, params.inspect
+      assert_select "[data-test='no-original']", { count: 1, text: "McRitchie Studio's logo is solid colour, so it has no separate original." }, params.inspect
+      assert_select "[data-test='colouring-option'][data-colouring='original'][aria-disabled='true']", 1
+      assert_select "a[data-test='colouring-option'][data-colouring='original']", 0
+      assert_select "a[data-test='colouring-option'][data-colouring='alt'][aria-current='true']", 1
+      srcs.each { |src| assert_nil query(src)["colouring"], "#{params.inspect}: Alt: #{src}" }
+    end
+    get logo_brand_path("studio", colouring: "original")
+    assert_equal "original", query(css_select("[data-test='logo-tab']").first["href"])["colouring"], "the ask is carried on to the next brand"
+    get logo_brand_path("welding")
+    assert_select "[data-test='no-original']", 0
+  end
 end
