@@ -31,6 +31,16 @@ module Logos
   # A colour must be one of the brand's palette hexes; a weight one of
   # EDIT_WEIGHTS, and never for a name set in traced lettering. No edits draws
   # exactly what it drew before, byte for byte.
+  #
+  # Every logo has a COLOURING (task logo-original-and-alt): `colouring: :alt`
+  # (the default) is the style's `tones`, one solid colour per part, exactly as
+  # drawn before; `colouring: :original` is the brand's true art, from the
+  # style's `original:` (per tone: its own icon, fills and name colours). A
+  # brand whose logo is solid colour (Studio) has no original. The watermark is
+  # always the single-colour version, so colouring does not apply to it, and
+  # edits apply to Alt only: an original is the brand's own art.
+  #
+  #   logo.svg(rule: 3, tone: :dark, colouring: :original)
   class NavbarLogo
     class Error < ArgumentError; end
 
@@ -42,6 +52,8 @@ module Logos
     WATERMARK = { "fill" => "#FFFFFF", "opacity" => 0.6 }.freeze
     WATERMARK_KEYS = %w[fill opacity icon_key].freeze
     HIGHLIGHTS = %w[weight colour].freeze
+    COLOURINGS = %i[original alt].freeze      # the brand's own art, or one solid colour per part (the style's `tones`)
+    ORIGINAL_KEYS = %w[icon_key text quiet accent icon].freeze   # what an original's tone may set
     # What the operator may edit on each part (task logo-part-editor). The tagline is the Stacked Logo's; the icon's
     # colour recolours one layer (#icon_role). Geometry is never an edit.
     PARTS = { icon: %i[colour], first: %i[colour weight], ending: %i[colour weight], tagline: %i[colour weight visible] }.freeze
@@ -92,13 +104,22 @@ module Logos
       @style = styles[@brand] or raise Error, "unknown brand #{@brand.inspect}: expected one of #{styles.keys.join(', ')}"
       @watermark = checked_watermark
       @icons = TONES.to_h { |tone| [tone, checked_icon(icon_key(tone), icons)] }
+      original_looks.each { |look| check_original_shape(look) }
+      @icons.merge!(original_looks.to_h { |look| [look, checked_icon(icon_key(look), icons)] })
       @words = name_parts
       raise Error, "brand #{@brand}: highlight must be one of #{HIGHLIGHTS.join(', ')}, got #{@style['highlight'].inspect}" unless HIGHLIGHTS.include?(@style["highlight"])
       @lettering = own_lettering(letterings)
       @fill_rule = @lettering ? @lettering["fill_rule"] : "nonzero"   # font contours overlap: evenodd would punch holes in them
       @tracking = tracking_in_cap_heights
       word_weights(:first).uniq.each { |weight| @words.each { |word| letters(word, weight) } }   # a missing character fails here, not at draw time
+      original_looks.each { |look| check_original(look) }
     end
+
+    # True when the style declares the brand's ORIGINAL colouring (its true art); a solid-colour brand has none.
+    def original? = !@style["original"].nil?
+
+    # The colourings this brand draws: [:original, :alt], or [:alt] for a brand with no original.
+    def colourings = original? ? COLOURINGS : %i[alt]
 
     # What the brand's page says about where its art came from (optional).
     def note = @style["note"]
@@ -156,13 +177,13 @@ module Logos
 
     # The geometry alone, in design units (the icon is H tall, x = 0 is its left edge).
     # `tone:` matters only to a brand whose tones name different icons.
-    def layout(rule: 3, text: :homogeneous, tone: :light, edits: NO_EDITS)
+    def layout(rule: 3, text: :homogeneous, tone: :light, edits: NO_EDITS, colouring: :alt)
       cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected one of #{RULES.keys.join(', ')}"
       check_text(text)
       row = H / rule
       cap = cap_rows * row
       first, second = @words.zip(edited_weights(text, checked_edits(edits))).map { |word, weight| letters(word, weight) }
-      icon = @icons.fetch(tone)
+      icon = @icons.fetch(look(tone, colouring))
       icon_width = icon.fetch("w") * H / icon.fetch("h")
       gap = GAP_CAPS * cap
       placed1, right1 = place(first, cap, icon_width + gap, 0)
@@ -171,19 +192,19 @@ module Logos
                  letters: placed1 + placed2, width: right2)
     end
 
-    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false, edits: NO_EDITS)
-      check_tone(tone)
-      edits = edits_in(tone, edits)
-      render(layout(rule:, text:, tone:, edits:), H, text, tone, guides, edits)
+    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false, edits: NO_EDITS, colouring: :alt)
+      look = look(tone, colouring)
+      edits = edits_in(look, edits)
+      render(layout(rule:, text:, tone:, edits:, colouring:), H, text, look, guides, edits)
     end
 
     # The brand's icon alone, in its own box (`0 0 <w> <h>` of the icon data), with the tone's fills and the
     # tone's icon: the icon exactly as the Navbar Logo draws it, without the name.
-    def icon_svg(tone: :light)
-      check_tone(tone)
-      icon = @icons.fetch(tone)
+    def icon_svg(tone: :light, colouring: :alt)
+      look = look(tone, colouring)
+      icon = @icons.fetch(look)
       height = icon.fetch("h")
-      document(toned(tone, icon_markup(icon, fills(tone, :homogeneous).first, height)), icon.fetch("w"), height)
+      document(toned(look, icon_markup(icon, fills(look, :homogeneous).first, height)), icon.fetch("w"), height)
     end
 
     # The guide labels' size, in design units, on a rule's drawing (the stacked logo, which has no rule, takes none).
@@ -208,14 +229,61 @@ module Logos
       raise Error, "unknown tone #{tone.inspect}: expected one of #{TONES.join(', ')}" unless TONES.include?(tone)
     end
 
+    # What one drawing is drawn in: its LOOK, the key of its icon and fills. Alt is the tone itself (:light, :dark,
+    # :watermark), so an Alt drawing reads exactly what it read before colourings; an original is :original_light or
+    # :original_dark. A watermark is one colour, so colouring does not apply to it.
+    def look(tone, colouring)
+      check_tone(tone)
+      raise Error, "unknown colouring #{colouring.inspect}: expected one of #{COLOURINGS.join(', ')}" unless COLOURINGS.include?(colouring)
+      return tone if colouring == :alt || tone == :watermark
+      raise Error, "brand #{brand}: it has no original colouring (its logo is solid colour), so only alt" unless original?
+
+      :"original_#{tone}"
+    end
+
+    def original_looks = original? ? BAKED.map { |tone| :"original_#{tone}" } : []
+    def original_look?(look) = look.to_s.start_with?("original_")
+    def base_tone(look) = look.to_s.delete_prefix("original_").to_sym
+
+    # A look's fills: the style's `tones` entry, or its `original:` entry for an original.
+    def tone_style(look)
+      original_look?(look) ? @style.fetch("original").fetch(base_tone(look).to_s) : @style.fetch("tones").fetch(look.to_s)
+    end
+
+    # An original's tone, checked when the brand is loaded: a map of ORIGINAL_KEYS with a `text` and an `icon` map
+    # (shape first, before its icon is looked up), that fills every layer of its icon (and an `accent` when one word
+    # leads by colour), every fill a #hex.
+    def check_original_shape(look)
+      given = @style["original"]
+      unless given.is_a?(Hash) && given.keys.sort == BAKED.map(&:to_s).sort
+        raise Error, "brand #{brand}: original must be a map of light and dark, got #{given.inspect[0, 80]}"
+      end
+      tone = tone_style(look)
+      unless tone.is_a?(Hash) && (tone.keys - ORIGINAL_KEYS).empty? && tone["icon"].is_a?(Hash) && tone.key?("text")
+        raise Error, "brand #{brand}: original #{base_tone(look)} must be a map of #{ORIGINAL_KEYS.join(', ')} with a text and an icon, got #{tone.inspect[0, 80]}"
+      end
+    end
+
+    def check_original(look)
+      tone = tone_style(look)
+      raise Error, "brand #{brand}: original #{base_tone(look)} needs an accent, because one word leads by colour" if !by_weight? && !tone.key?("accent")
+
+      missing = @icons.fetch(look).fetch("layers").map { |layer| layer["role"] } - tone["icon"].keys
+      raise Error, "brand #{brand}: original #{base_tone(look)} has no fill for icon layer #{missing.first.inspect}" if missing.any?
+
+      TEXTS.each { |text| fills(look, text).flatten.each { |fill| fill.is_a?(Hash) ? fill.each_value { |each| paint(each) } : paint(fill) } }
+    end
+
     def check_text(text)
       raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
     end
 
-    # Checked edits for a drawing in `tone`. A watermark is one colour by definition, so no edit applies to it.
-    def edits_in(tone, given)
+    # Checked edits for a drawing in `look`. A watermark is one colour by definition, and an original is the brand's
+    # own art, so no edit applies to either.
+    def edits_in(look, given)
       edits = checked_edits(given)
-      raise Error, "brand #{brand}: a watermark is one colour, so edits do not apply to it" if tone == :watermark && edits.any?
+      raise Error, "brand #{brand}: a watermark is one colour, so edits do not apply to it" if look == :watermark && edits.any?
+      raise Error, "brand #{brand}: an original is the brand's own art, so edits apply to alt only" if original_look?(look) && edits.any?
 
       edits
     end
@@ -242,22 +310,26 @@ module Logos
 
     # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it: the ghosts BEHIND the logo
     # (in the rule of 4 they cross the real name), the logo, then the lines and numbers.
-    def render(box, height, text, tone, guides, edits = NO_EDITS)
-      body = toned(tone, drawing(box, tone, *fills(tone, text, edits)))
+    # `look` is the drawing's tone, or an original's look (#look).
+    def render(box, height, text, look, guides, edits = NO_EDITS)
+      body = toned(look, drawing(box, look, *fills(look, text, edits)))
       return document(body, box.width, height) unless guides
 
-      document(ghost_group(tone, ghost_markup(box, ghost_fill(tone))) + body + line_group(guide_markup(box)), box.width, height, **self.class::GUIDE_PAD)
+      document(ghost_group(look, ghost_markup(box, ghost_fill(look))) + body + line_group(guide_markup(box)), box.width, height, **self.class::GUIDE_PAD)
     end
 
-    # The logo's own text colour; a watermark's one fill.
-    def ghost_fill(tone) = tone == :watermark ? @watermark["fill"] : @style.fetch("tones").fetch(tone.to_s).fetch("text")
+    # The logo's own Alt text colour in the tone (an original's ghosts too: a ghost is a solid ruler); a watermark's one fill.
+    def ghost_fill(look) = look == :watermark ? @watermark["fill"] : @style.fetch("tones").fetch(base_tone(look).to_s).fetch("text")
 
     # The ghosts in ONE translucent group (opacity on each path would compound where copies overlap), the lines in another.
-    def ghost_group(tone, markup) = %(<g class="guide-ghosts" opacity="#{format('%g', GHOST_OPACITY.fetch(tone))}">#{markup}</g>)
+    def ghost_group(look, markup) = %(<g class="guide-ghosts" opacity="#{format('%g', GHOST_OPACITY.fetch(base_tone(look)))}">#{markup}</g>)
     def line_group(markup) = %(<g class="guide-lines">#{markup}</g>)
 
-    def icon_key(tone)
-      (tone == :watermark ? @watermark["icon_key"] : @style.dig("tones", tone.to_s, "icon_key")) || @style["icon"]
+    def icon_key(look)
+      return @watermark["icon_key"] || @style["icon"] if look == :watermark
+
+      key = original_look?(look) ? @style.dig("original", base_tone(look).to_s, "icon_key") : @style.dig("tones", look.to_s, "icon_key")
+      key || @style["icon"]
     end
 
     # The style's optional `watermark:` map over the defaults, checked: a #hex fill and an opacity in (0, 1].
@@ -277,22 +349,22 @@ module Logos
 
     # [each icon layer role's fill, [first word's fill, second word's fill]]. A watermark has one fill for everything.
     # An edited colour takes the place of the styled one: the icon's on its one role, a word's in every text version.
-    def fills(tone, text, edits = NO_EDITS)
-      return [Hash.new(@watermark["fill"]), [@watermark["fill"]] * 2] if tone == :watermark
+    def fills(look, text, edits = NO_EDITS)
+      return [Hash.new(@watermark["fill"]), [@watermark["fill"]] * 2] if look == :watermark
 
-      baked = @style.fetch("tones").fetch(tone.to_s)
+      baked = tone_style(look)
       icon = baked.fetch("icon")
-      icon = icon.merge(icon_role(tone) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
+      icon = icon.merge(icon_role(look) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
       [icon, word_colours(text, baked).zip(%i[first ending]).map { |colour, part| edits.dig(part, :colour) || colour }]
     end
 
-    def drawing(box, tone, icon_fills, colours)
-      icon_markup(@icons.fetch(tone), icon_fills) + box.letters.map { |l| letter_markup(l, box.baseline, box.cap, colours[l[:word]]) }.join
+    def drawing(box, look, icon_fills, colours)
+      icon_markup(@icons.fetch(look), icon_fills) + box.letters.map { |l| letter_markup(l, box.baseline, box.cap, colours[l[:word]]) }.join
     end
 
     # A watermark sits inside ONE translucent group: opacity on each path would compound where layers overlap.
-    def toned(tone, markup)
-      tone == :watermark ? %(<g opacity="#{format('%g', @watermark['opacity'])}">#{markup}</g>) : markup
+    def toned(look, markup)
+      look == :watermark ? %(<g opacity="#{format('%g', @watermark['opacity'])}">#{markup}</g>) : markup
     end
 
     # A brand's own traced lettering (style `lettering:`), or nil when it is set in Montserrat.
@@ -421,13 +493,13 @@ module Logos
     def letter_markup(letter, baseline, cap, fill)
       return "" if letter[:d].empty?
 
-      %(<path transform="translate(#{f(letter[:x])},#{f(baseline)}) scale(#{f(cap, 4)})" d="#{letter[:d]}" fill="#{hex(fill)}" fill-rule="#{letter.fetch(:fill_rule, @fill_rule)}"/>)
+      %(<path transform="translate(#{f(letter[:x])},#{f(baseline)}) scale(#{f(cap, 4)})" d="#{letter[:d]}" fill="#{paint(fill)}" fill-rule="#{letter.fetch(:fill_rule, @fill_rule)}"/>)
     end
 
     def icon_markup(icon, fills, height = H)
       paths = icon.fetch("layers").map do |layer|
         fill = fills[layer["role"]] or raise Error, "brand #{brand}: no fill for icon layer #{layer['role'].inspect}"
-        %(<path d="#{layer['d']}" fill="#{hex(fill)}" fill-rule="#{layer['fill_rule']}"/>)
+        %(<path d="#{layer['d']}" fill="#{paint(fill)}" fill-rule="#{layer['fill_rule']}"/>)
       end.join
       paths = %(<g transform="#{icon['transform']}">#{paths}</g>) if icon["transform"]
       %(<g transform="scale(#{f(height.to_f / icon.fetch('h'), 5)})">#{paths}</g>)
@@ -481,6 +553,9 @@ module Logos
     end
 
     def hex(colour) = HEX.match?(colour.to_s) ? colour : raise(Error, "brand #{brand}: #{colour.inspect} is not a #hex colour")
+
+    # A fill as markup writes it: a #hex.
+    def paint(fill) = hex(fill)
     def f(number, places = 2) = format("%.#{places}f", number)
   end
 end
