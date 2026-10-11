@@ -10,7 +10,6 @@
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
     others' settings. Read-only. Admin only (LogosController). %>
-<%= render "theme_pin" %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
@@ -19,7 +18,8 @@
     ring is --color-cta at 70 percent, which measures about 2:1 on the light theme's white card. %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+<%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
+<%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
     <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
     <span aria-hidden="true">/</span>
@@ -140,4 +140,4 @@
       <%= render "typefaces", kit: @kit %>
     </section>
   </div>
-</div>
+<% end %>

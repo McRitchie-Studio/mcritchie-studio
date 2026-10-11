@@ -17,7 +17,7 @@
 # that matches html.dark, so a page opens in whatever theme the hub is in and a
 # change of theme needs no request. ?context=watermark turns the page dark and
 # shows the watermark logos instead; an explicit ?context=light or dark sets the
-# hub's theme to it (logos/_theme_pin) and otherwise behaves like no context.
+# hub's theme to it (data-logo-theme, app/javascript/logo_gallery.js) and otherwise behaves like no context.
 #
 # No model and nothing stored: choosing a logo waits for the brand kit record.
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.

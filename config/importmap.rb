@@ -6,6 +6,7 @@ pin "dropping_text"
 pin "alex_chat"
 pin "depth_chart"
 pin "scroll_tab_stop"
+pin "logo_gallery"
 # chart.js is the self-contained jsDelivr/esm.sh "auto" bundle (auto-registers
 # controllers + scales, @kurkle/color inlined). chartkick is the ESM build,
 # pinned to a UNIQUE filename so propshaft serves THIS file and not the chartkick

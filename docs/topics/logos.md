@@ -282,7 +282,7 @@ and checked by `Logos::BrandKit` (`lib/logos/brand_kit.rb`):
   There is no split by light, dark or watermark: those are the logos' fills
   (`tones`, `watermark`), which stay per tone because a dark-text logo still
   needs a light-text version on a dark page. Each colour shows as a swatch with
-  its name and hex; a click copies the hex (`logos/_palette`). Studio has five
+  its name and hex; a click copies the hex (`logos/_palette`, `data-copy-hex`). Studio has five
   (Ink, Violet, Deep Violet, Violet Mist, White), Industries the marketing kit's
   eight, Turf Monster seven and Commercial Welding four.
 - **`typefaces:`** is the brand's typeface hierarchy, most prominent first, at
@@ -302,9 +302,10 @@ when the kit is loaded.
 ### Context is the hub theme
 
 There are **no plates**: every logo on `/logos` and `/logos/:brand` sits on the
-page's own background. The **Context** control (`logos/_context_form`) drives
-the hub's own theme, the switch the moon icon uses (`$store.theme.toggle()`,
-which sets the root's `dark` class and `localStorage` `theme`):
+page's own background. The **Context** control (`logos/_context_form`, its
+behaviour in `app/javascript/logo_gallery.js`) drives the hub's own theme, the
+switch the moon icon uses (`$store.theme.toggle()`, which sets the root's `dark`
+class and `localStorage` `theme`):
 
 - **Light** and **Dark** set the hub theme. Both pages render each logo's light
   and dark versions and CSS on `html.dark` shows the one that matches
@@ -316,7 +317,8 @@ which sets the root's `dark` class and `localStorage` `theme`):
 - **On load with no context param** the page leaves the theme as it is and shows
   that theme's logos; the control reads the theme and follows it if it changes.
   An explicit `?context=light`, `dark` or `watermark` sets the theme before the
-  page paints (`logos/_theme_pin`). Only `watermark` is carried in the page's
+  page is shown (the page's `data-logo-theme`, read by `logo_gallery.js`; a
+  module runs after the first paint, so such a link can flash the old theme). Only `watermark` is carried in the page's
   links; light and dark are the hub's, which every page keeps.
 - Downloads and Copy SVG give the version shown: each logo has a pair per tone,
   and the theme shows the matching pair.

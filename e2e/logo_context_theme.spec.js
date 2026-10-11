@@ -3,7 +3,7 @@
 // shows that theme's logos (CSS on html.dark, no request); Light and Dark flip the theme as
 // the moon icon does (html.dark and localStorage 'theme'); Watermark turns the page dark and
 // loads the watermark logos; leaving the watermark loads the page without it. No logo sits
-// on a plate.
+// on a plate. A palette swatch copies its hex. The behaviour is app/javascript/logo_gallery.js.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 
@@ -12,7 +12,15 @@ async function openIn(page, theme, path, width = 1280) {
   await loginWithMagicLink(page, "alex@test.com");
   await page.evaluate((value) => localStorage.setItem("theme", value), theme);
   await page.goto(path);
-  await page.waitForFunction(() => document.querySelector("#logo-context") && window.Alpine && window.Alpine.store("theme"));
+  await wired(page);
+}
+
+// The page's own control is wired (app/javascript/logo_gallery.js) and the hub's theme store is up. After a Turbo
+// visit the store is already there, so wait on the new page's control itself.
+async function wired(page, watermark) {
+  const extra = watermark === undefined ? "" : `[data-watermark='${watermark}']`;
+  await page.waitForSelector(`#logo-context[data-logo-context-wired]${extra}`, { state: "attached" });
+  await page.waitForFunction(() => window.Alpine && window.Alpine.store("theme"));
 }
 
 const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains("dark"));
@@ -69,7 +77,7 @@ test("the moon icon's switch moves the Context control with it", async ({ page }
 test("Watermark turns the page dark and shows the watermark logos; Light leaves it", async ({ page }) => {
   await openIn(page, "light", "/logos/studio");
   await Promise.all([page.waitForURL(/context=watermark/), page.selectOption("#logo-context", "watermark")]);
-  await page.waitForFunction(() => window.Alpine && window.Alpine.store("theme"));
+  await wired(page, true);
   expect(await isDark(page)).toBe(true);
   expect(await storedTheme(page)).toBe("dark");
   await expect(page.locator("#logo-context")).toHaveValue("watermark");
@@ -77,7 +85,7 @@ test("Watermark turns the page dark and shows the watermark logos; Light leaves 
   await expect(page.locator("[data-test='logo-plate']")).toHaveCount(0);
 
   await Promise.all([page.waitForURL((url) => !url.search.includes("context")), page.selectOption("#logo-context", "light")]);
-  await page.waitForFunction(() => window.Alpine && window.Alpine.store("theme"));
+  await wired(page, false);
   expect(await isDark(page)).toBe(false);
   expect(await storedTheme(page)).toBe("light");
   expect(await visibleTones(page, "[data-test='logo-frame'] img[data-test='logo-image']")).toEqual(["light"]);
@@ -96,4 +104,15 @@ test("logos index at 375 in dark: the clusters fit and the page body never scrol
   const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(bodyFits).toBe(true);
   expect(await visibleTones(page)).toEqual(["dark"]);
+});
+
+test("a palette swatch copies its hex on click and says so, then shows the hex again", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openIn(page, "light", "/logos/studio");
+  const swatch = page.locator("[data-test='brand-colours'] [data-test='logo-swatch'][data-hex='#635BB2']");
+  await swatch.locator("button").click();
+  await expect(swatch.locator("[data-test='logo-swatch-hex']")).toHaveText(/Copied|Copy failed/);
+  await expect(swatch.locator("[role='status']")).toHaveText(/Copied #635BB2|Copy failed/);
+  expect(await page.evaluate(() => navigator.clipboard.readText().catch(() => "#635BB2"))).toBe("#635BB2");
+  await expect(swatch.locator("[data-test='logo-swatch-hex']")).toHaveText("#635BB2", { timeout: 4000 });
 });

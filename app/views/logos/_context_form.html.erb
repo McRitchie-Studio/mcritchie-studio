@@ -1,10 +1,10 @@
 <%# THE CONTEXT CONTROL (shared by the index and a brand page). It drives the
-    HUB'S OWN THEME, the same switch as the moon icon ($store.theme.toggle(),
-    studio-engine studio/alpine_stores): Light and Dark set the theme and the
-    page's logos follow it by CSS alone, with no request; Watermark sets the
-    theme to dark and loads the page with ?context=watermark, which shows the
-    watermark logos. Leaving the watermark (choosing Light or Dark, or turning
-    the theme light with the moon icon) loads the page without it.
+    HUB'S OWN THEME, the same switch as the moon icon: Light and Dark set the
+    theme and the page's logos follow it by CSS alone, with no request;
+    Watermark sets the theme to dark and loads the page with ?context=watermark,
+    which shows the watermark logos. Leaving the watermark (choosing Light or
+    Dark, or turning the theme light with the moon icon) loads the page without
+    it. The behaviour is app/javascript/logo_gallery.js (data-logo-context).
 
     The select shows the theme the page is in: chosen on load from the hub's
     theme, and kept in step when the theme changes elsewhere. With JavaScript
@@ -16,11 +16,6 @@
   <label for="logo-context" class="text-3xs font-semibold uppercase tracking-wide text-muted">Context</label>
   <%= select_tag :context, options_for_select(Logos::Variant::CONTEXTS.map { |tone, label| [label, tone] }, @context),
                  id: "logo-context", class: "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading",
-                 "x-data": "{ watermark: #{watermark} }",
-                 "x-effect": "if (watermark && !$store.theme.isDark) { $el.value = 'light'; $el.disabled = true; $el.form.requestSubmit() } " \
-                             "else if (!watermark) { $el.value = $store.theme.isDark ? 'dark' : 'light' }",
-                 "@change": "if ($el.value === 'watermark') { if (!$store.theme.isDark) $store.theme.toggle(); $el.form.requestSubmit() } " \
-                            "else if (watermark) { $el.disabled = true; if ($el.value === 'light') $store.theme.toggle(); else $el.form.requestSubmit() } " \
-                            "else if ($store.theme.isDark !== ($el.value === 'dark')) $store.theme.toggle()" %>
+                 data: { logo_context: true, watermark: watermark.to_s } %>
   <noscript><%= submit_tag "Apply", name: nil, class: "btn btn-sm btn-neutral", data: { test: "context-submit", disable_with: false } %></noscript>
 <% end %>

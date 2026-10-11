@@ -151,7 +151,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
           assert_select "button[data-test='logo-swatch-copy'][aria-label=?]", "Copy #{name} #{hex}"
         end
         copy = css_select("[data-brand='#{brand}'] [data-test='logo-swatch'][data-hex='#{hex}'] button").first
-        assert_includes copy["@click"], "window.copyText('#{hex}')", "a click copies the hex"
+        assert_equal hex, copy["data-copy-hex"], "a click copies the hex (app/javascript/logo_gallery.js)"
         assert_select "[data-brand='#{brand}'] [data-test='logo-swatch'][data-hex='#{hex}']" do
         end
       end
@@ -304,7 +304,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][alt=?][src=?]", LABEL, navbar_logo_path("industries", rule: 4, text: "second", tone: "light", guides: 0)
     assert_select "[data-test='logo-plate'], [data-test='logo-type'] [style*='background']", 0, "no plate: each logo sits on the page's own background"
     assert_select "[data-test='logo-frame']", 3
-    assert_select "[data-test='logo-theme-pin']", 0, "with no context the page leaves the hub theme as it is"
+    assert_select "[data-logo-theme]", 0, "with no context the page leaves the hub theme as it is"
     assert_select "[data-test='type-sentence']", { count: 1, text: /\AThe icon is four rows tall.*the middle two rows\.\z/ }
     assert_select "[data-test='guides-sentence']", 0
     assert_select "[data-test='transparent-note']", /Every logo file has a transparent background/
@@ -472,14 +472,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_select "input[name='guides']", 0
       end
       select = css_select("select#logo-context").first
-      assert_equal "{ watermark: #{context == 'watermark'} }", select["x-data"], where
-      assert_includes select["@change"], "$store.theme.toggle()", "the same switch as the moon icon"
-      assert_includes select["x-effect"], "$store.theme.isDark", "the control follows the theme"
+      assert_equal ["true", (context == "watermark").to_s], [select["data-logo-context"], select["data-watermark"]], where
 
-      # The pre-paint pin: an explicit context sets the hub theme (watermark sets dark); none leaves it.
+      # An explicit context sets the hub theme on load (watermark sets dark); none leaves it.
       pin = { nil => nil, "light" => "light", "dark" => "dark", "watermark" => "dark" }.fetch(context)
-      assert_equal [pin].compact, css_select("script[data-test='logo-theme-pin']").map { |script| script["data-theme"] }, where
-      assert_includes css_select("script[data-test='logo-theme-pin']").first.text, "localStorage.setItem('theme'" if pin
+      assert_equal [pin].compact, css_select("[data-logo-theme]").map { |page| page["data-logo-theme"] }, where
 
       count = type == "icon" ? 1 : 3
       assert_select "[data-test='logo-plate']", 0

@@ -7,9 +7,9 @@
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
     scrolls sideways if a table row ever outgrows it, so the page body never
     does. Read-only. Admin only (LogosController). %>
-<%= render "theme_pin" %>
 <%= render "components/copy_text_script" %>
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+<%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
+<%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <div class="space-y-1">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Logos</h1>
@@ -57,4 +57,4 @@
       </table>
     </div>
   </div>
-</div>
+<% end %>

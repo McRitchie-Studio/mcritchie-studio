@@ -4,6 +4,7 @@ import "dropping_text"
 import "alex_chat"
 import "depth_chart"
 import "scroll_tab_stop"
+import "logo_gallery"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).
 // Installed here, on every page, so it is there before Alpine initialises a board
