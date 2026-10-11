@@ -250,7 +250,10 @@ Three things a style may ask for beyond an icon and two Montserrat weights:
   gap only before it, the small line of the two-line Stacked Logo), and inside
   it each pair of words is set the lettering's own `spaces["WELDING LLC"]`
   apart: the kit's space, ink to ink, in cap heights (0.4305, 39.61 px at the
-  PNG's 92 px cap height). A pair with no space in the data is refused.
+  PNG's 92 px cap height). Tracked out (the two-line Stacked Logo's small
+  line), that word gap takes the tracking twice on top of the kit's gap, so it
+  stays plainly wider than the letter gaps: WELDING LLC, never WELDINGLLC. A
+  pair with no space in the data is refused.
 - **Tracking** (`tracking: -0.025`), above. Montserrat brands only.
 - **An icon per tone** (`icon_key:` inside a tone). Commercial Welding's dark
   tone draws `welding_mono`, the helmet in one colour (half of it filled, half

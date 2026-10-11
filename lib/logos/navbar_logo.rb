@@ -258,7 +258,8 @@ module Logos
     end
 
     # A part's traced letters: each word's, in order. Where one word ends and the next begins, the last letter's
-    # advance is set so the next word's ink starts the lettering's own space after it (in cap heights, ink to ink).
+    # advance is set so the next word's ink starts the lettering's own space after it (in cap heights, ink to ink),
+    # and the letter is marked `word_end`, so tracking widens that gap twice (`place`).
     def traced(part)
       words = @lettering.fetch("words")
       runs = part.split.map do |word|
@@ -266,7 +267,7 @@ module Logos
       end
       runs.each_cons(2).with_index.map do |(run, following), i|
         space = traced_space(part.split[i, 2])
-        run[0...-1] + [run.last.merge("adv" => run.last["r"] - following.first["l"] + space)]
+        run[0...-1] + [run.last.merge("adv" => run.last["r"] - following.first["l"] + space, "word_end" => true)]
       end.flatten + runs.last
     end
 
@@ -301,18 +302,24 @@ module Logos
     end
 
     # Sets a word with its first letter's INK starting at x_ink. Returns the placed letters and the right ink edge.
-    # `tracking` (in cap heights) is the brand's own unless the caller computes one.
+    # `tracking` (in cap heights) is the brand's own unless the caller computes one. A traced ending's word gap
+    # (after a `word_end` letter) takes it twice: once as every letter gap does, once more as the word space's own
+    # share, so a tracked-out ending still reads as words ("WELDING LLC", never "WELDINGLLC"). Untracked, it is the
+    # lettering's own space.
     def place(word, cap, x_ink, index, tracking = @tracking)
       x = x_ink - word[0]["l"] * cap
       right = x_ink
       placed = word.map do |g|
         letter = { x:, d: g["d"], word: index }
         right = x + g["r"] * cap
-        x += (g["adv"] + tracking) * cap   # after `right`: the ink edge takes no trailing tracking step
+        x += (g["adv"] + tracking * steps(g)) * cap   # after `right`: the ink edge takes no trailing tracking step
         letter
       end
       [placed, right]
     end
+
+    # Tracking steps after a letter: two at a traced ending's word gap, one elsewhere.
+    def steps(glyph) = glyph["word_end"] ? 2 : 1
 
     def letter_markup(letter, baseline, cap, fill)
       return "" if letter[:d].empty?

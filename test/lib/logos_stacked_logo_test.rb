@@ -414,6 +414,29 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
   end
 
+  # Task welding-llc-and-v2-helmet (review fix): tracked out as the two-line small line, Commercial Welding v1's ending
+  # read "WELDINGLLC": its word gap had one tracking step plus the kit's 0.4305 (50 units against 38 between letters).
+  # A word gap inside a traced ending now takes the tracking twice, plus the kit's gap, and the line still spans 60%.
+  def test_a_tracked_traced_ending_keeps_its_word_gap_wider_than_its_letter_gaps
+    box = stacked("welding").layout(form: :two_line)
+    words = Navbar.letterings.fetch("welding").fetch("words")
+    glyphs = words.fetch("WELDING") + words.fetch("LLC")
+    small = box.letters.select { |letter| letter[:cap] == U }
+    assert_equal glyphs.size, small.size
+    inks = small.zip(glyphs).map { |letter, g| [letter[:x] + g["l"] * U, letter[:x] + g["r"] * U] }
+    gaps = inks.each_cons(2).map { |left, right| right[0] - left[1] }
+    joint = words.fetch("WELDING").size - 1
+    natural = glyphs.each_cons(2).map { |g, following| (g["adv"] - g["r"] + following["l"]) * U }
+    tracking = gaps.first - natural.first
+    letter_gaps = gaps.each_index.reject { |i| i == joint }
+    letter_gaps.each { |i| assert_in_delta natural[i] + tracking, gaps[i], 1e-6, "letter gap #{i}: its own space plus one step" }
+    space = Navbar.letterings.fetch("welding").dig("spaces", "WELDING LLC") * U
+    assert_in_delta space + 2 * tracking, gaps[joint], 1e-6, "the word gap: the kit's gap plus two tracking steps"
+    assert_operator gaps[joint], :>=, space + tracking, "never smaller than one step plus the kit's gap"
+    assert_operator gaps[joint], :>, 1.8 * letter_gaps.map { |i| gaps[i] }.max, "it reads as a word gap"
+    assert_in_delta Stacked::SPAN * box.width, inks.last[1] - inks.first[0], 1e-6, "still tracked to 60% of the big line"
+  end
+
   # Task stacked-tagline-and-ghost-grid: the tagline is data, in capitals with no full stop.
   def test_each_brand_has_its_tagline_or_none
     assert_equal TAGLINES, Navbar.brands.to_h { |brand| [brand, stacked(brand).tagline] }
