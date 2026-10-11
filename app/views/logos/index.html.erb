@@ -1,11 +1,13 @@
 <%# LOGO STUDIO: one row per brand in config/logo_brands.yml, with one logo of
     each type (its icon, its rule-of-4 Navbar Logo with the second word
-    leading, its Stacked Logo with the first word leading), each shown once in
-    the context the dropdown picks (light, dark or watermark), then its
+    leading, its Stacked Logo with the first word leading), each shown once on
+    the page's own background in the hub theme's tone (Context sets the theme;
+    Watermark turns it dark and shows the watermark logos), then its
     typeface hierarchy (each level's name in its own face) and its palette (its one list of named colours; a click copies a hex). Each logo links to its own tab of the brand page.
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
     scrolls sideways if a table row ever outgrows it, so the page body never
     does. Read-only. Admin only (LogosController). %>
+<%= render "theme_pin" %>
 <%= render "components/copy_text_script" %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
   <div class="space-y-1">

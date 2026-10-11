@@ -1,28 +1,19 @@
 # frozen_string_literal: true
 
-# The logo gallery's view words and its three fixed plates (LogosController).
+# The logo gallery's view words (LogosController).
+#
+# There are NO PLATES: every logo sits on the page's own background, and the
+# page's Context control drives the hub's own theme (html.dark, localStorage
+# 'theme', the moon icon's switch). Light and Dark show the light or the dark
+# logos to match; Watermark turns the page dark and shows the watermark logos.
+# A logo file has no background of its own either.
 module LogosHelper
-  # The plates are FIXED surfaces, never theme tokens: a logo's fills are baked
-  # per tone, so the light logo needs a light plate in both hub themes and the
-  # dark logo a dark one. The watermark's plate is a gradient standing in for a
-  # photograph, so the logo's transparency shows; it is dark enough that the
-  # default watermark (white at 0.6) is at least 3:1 against every point of it
-  # (test/helpers/logos_helper_test.rb measures that). A logo file has no
-  # background of its own: the plate is the page's.
-  WATERMARK_PLATE = %w[#263B5C #2C625E].freeze
-  LOGO_PLATES = {
-    light: "background-color: #FFFFFF",
-    dark: "background-color: #12141A",
-    watermark: "background-image: linear-gradient(135deg, #{WATERMARK_PLATE.join(', ')})"
-  }.freeze
-
-  def logo_plate_style(tone) = LOGO_PLATES.fetch(tone.to_sym)
-
   # The gallery's page params: the type, context, rule, form and guides in force, less the defaults (the Navbar Logo,
-  # light, the rule of 4, the brand's own stacked form, guides off), with `changes` on top. A change to nil goes back
-  # to the default.
+  # the theme's own logos, the rule of 4, the brand's own stacked form, guides off), with `changes` on top. A change
+  # to nil goes back to the default. Only the watermark is carried as a context: light and dark are the hub's theme,
+  # which every page already keeps.
   def logo_page_params(**changes)
-    { type: (@type unless @type == :navbar), context: (@context unless @context == :light), rule: (@rule unless @rule == 4),
+    { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), rule: (@rule unless @rule == 4),
       form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }.merge(changes).compact
   end
 
@@ -62,8 +53,8 @@ module LogosHelper
     public_send(:"#{variant.type}_logo_path", variant.logo.brand, variant.params.merge(more))
   end
 
-  # One logo as a picture that carries its name. It scales down inside its plate, up to `height` px tall. A guide
-  # drawing also has a least width (above), so its plate scrolls once the plate is narrower than that.
+  # One logo as a picture that carries its name. It scales down inside its frame, up to `height` px tall. A guide
+  # drawing also has a least width (above), so its frame scrolls once the frame is narrower than that.
   def logo_image(variant, height:, loading: "lazy", test: "logo-image")
     least = "; min-width: #{logo_guide_min_width(variant)}px" if variant.guides
     image_tag logo_asset_path(variant), alt: variant.label, loading:, data: { test: },
@@ -93,6 +84,14 @@ module LogosHelper
     safe_join(variants.map do |tone, variant|
       tag.span(logo_image(variant, height:, loading: "eager", test:), class: LOGO_THEME_CLASSES.fetch(tone), data: { test: "logo-themed", tone: })
     end)
+  end
+
+  # The light and dark versions of one thing in the page (a picture, a download, a copy button), each wrapped so that
+  # only the one matching the hub theme shows; a single tone (the watermark) is given unwrapped.
+  def logo_themed(tones, &block)
+    return capture(tones.first, &block) if tones.size == 1
+
+    safe_join(tones.map { |tone| tag.span(capture(tone, &block), class: LOGO_THEME_CLASSES.fetch(tone), data: { test: "logo-themed", tone: }) })
   end
 
   # Which picture of a light/dark pair shows: the light one unless the hub's root carries `dark`.

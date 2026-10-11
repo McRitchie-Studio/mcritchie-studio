@@ -12,8 +12,12 @@
 # `note` on where its art came from; /icon, /navbar and /stacked serve one logo
 # as SVG, inline or as a download.
 #
-# Both pages show each logo ONCE, in the context ?context= names (light, dark
-# or watermark), so one dropdown switches every logo together.
+# The page's CONTEXT is the hub's own theme (task brand-gallery-palette-and-theme):
+# both pages render each logo's light and dark versions and CSS shows the one
+# that matches html.dark, so a page opens in whatever theme the hub is in and a
+# change of theme needs no request. ?context=watermark turns the page dark and
+# shows the watermark logos instead; an explicit ?context=light or dark sets the
+# hub's theme to it (logos/_theme_pin) and otherwise behaves like no context.
 #
 # No model and nothing stored: choosing a logo waits for the brand kit record.
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
@@ -45,7 +49,9 @@ class LogosController < ApplicationController
     @rule = Logos::Variant.rule(params[:rule])
     @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
     @guides = Logos::Variant.flag(params[:guides], "guides")
-    @variants = Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone: @context, guides: @guides)
+    # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
+    @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides) }
+                      .transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
   end
 
@@ -65,9 +71,12 @@ class LogosController < ApplicationController
     e
   end
 
+  # @context is nil (follow the hub theme), :light, :dark or :watermark; @theme is the theme the page sets on load
+  # (nil: leave it as it is); @tones the logo versions the page renders.
   def set_context
-    @context = Logos::Variant.context(params[:context])
-    @tones = [@context]
+    @context = Logos::Variant.context(params[:context]) if params.key?(:context)
+    @theme = @context == :watermark ? :dark : @context
+    @tones = @context == :watermark ? [:watermark] : Logos::NavbarLogo::BAKED
   end
 
   # An unknown brand is a 404; every other refusal is a 422 (above). The logo is the one that draws the type asked for.
