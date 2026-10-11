@@ -1,0 +1,22 @@
+<%# One uniform photo tile: the picture, where it came from, and the one button
+    that chooses or drops it. A full set offers no Use button: a fourth would be
+    refused anyway. %>
+<% full = @uniform_chosen.length >= AppearanceUniformPhoto::CHOSEN_LIMIT %>
+<div class="rounded border border-subtle bg-surface overflow-hidden flex flex-col min-w-0"
+     data-test="uniform-photo" data-slug="<%= photo.slug %>" data-chosen="<%= chosen %>">
+  <%= link_to (photo.page_url.presence || photo.image_url), target: "_blank", rel: "noopener noreferrer",
+              class: "block aspect-[4/3] bg-surface-alt" do %>
+    <%= image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
+                  referrerpolicy: "no-referrer", class: "w-full h-full object-cover" %>
+  <% end %>
+  <div class="p-1.5 space-y-1 min-w-0">
+    <p class="text-3xs text-muted truncate" title="<%= photo.title %>"><%= photo.title.presence || photo.provider.presence || "Search result" %></p>
+    <% if admin? && (chosen || !full) %>
+      <%= button_to (chosen ? "Remove" : "Use"),
+            pick_uniform_person_appearance_path(@person.slug, @appearance.slug), method: :post,
+            params: { photo_slug: photo.slug, chosen: !chosen },
+            class: "btn btn-sm #{chosen ? 'btn-outline' : 'btn-primary'} w-full",
+            form: { data: { test: chosen ? "uniform-drop" : "uniform-use" } } %>
+    <% end %>
+  </div>
+</div>

@@ -64,6 +64,12 @@ class Appearance < ApplicationRecord
            foreign_key: :appearance_slug, primary_key: :slug,
            inverse_of: :appearance, dependent: :destroy
 
+  # GAME-ACTION PHOTOS OF THIS LOOK'S UNIFORM, chosen and passed over both
+  # (AppearanceUniformPhoto). Destroyed with the look: a candidate means nothing
+  # without the uniform it was found for.
+  has_many :uniform_photos, class_name: "AppearanceUniformPhoto", foreign_key: :appearance_slug,
+           primary_key: :slug, inverse_of: :appearance, dependent: :destroy
+
   # THE BODY-BUILD REFERENCE THE SHEET IS DRAWN TO (task player-sheet-uniform-and-build).
   # ON THE LOOK, NOT THE PERSON, because everything a sheet build reads lives on the
   # look (number, colorway, team, photographs) and the operator changes it on the look
@@ -242,6 +248,10 @@ class Appearance < ApplicationRecord
 
     chosen_body_archetype || BodyArchetype.default_for(athlete_position)
   end
+
+  # THE LOOK WHOSE UNIFORM PHOTOS THE SHEET READS: an iced twin wears its base's
+  # uniform, so it reads (and the page files) its base's photos.
+  def uniform_source = (iced? && base_appearance) || self
 
   # Whether #body_archetype is the operator's pick or the position default.
   def body_archetype_chosen? = chosen_body_archetype.present?

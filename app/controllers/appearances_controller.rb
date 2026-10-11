@@ -124,6 +124,31 @@ class AppearancesController < ApplicationController
                         "#{slug ? '' : ' (the default for his position)'}."
   end
 
+  # BUY ONE IMAGE-SEARCH QUERY for game-action photos of this look's uniform and file
+  # every result as a candidate (Appearances::GatherUniformPhotos). An iced twin files
+  # under its base: same uniform.
+  def search_uniform
+    rescue_and_log(target: @appearance) do
+      summary = Appearances::GatherUniformPhotos.call(@appearance)
+      flash_key = summary.returned.zero? ? :alert : :notice
+      redirect_to appearance_path, flash_key => summary.sentence
+    end
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "The uniform search failed: #{e.message}"
+  end
+
+  # CHOOSE OR DROP ONE UNIFORM PHOTO. Free. At most
+  # AppearanceUniformPhoto::CHOSEN_LIMIT ride in a build; a fourth is refused here.
+  def pick_uniform
+    photo = @appearance.uniform_source.uniform_photos.find_by!(slug: params[:photo_slug])
+    chosen = ActiveModel::Type::Boolean.new.cast(params[:chosen])
+    if photo.update(chosen: chosen, chosen_at: chosen ? Time.current : nil)
+      redirect_to appearance_path, notice: chosen ? "Uniform photo chosen." : "Uniform photo dropped."
+    else
+      redirect_to appearance_path, alert: "Not chosen: #{photo.errors.full_messages.to_sentence}."
+    end
+  end
+
   private
 
   def keep_jersey_number
@@ -253,6 +278,11 @@ class AppearancesController < ApplicationController
   def set_build_inputs
     @body_archetypes = BodyArchetype.ordered.to_a
     @body_archetype = @appearance.body_archetype
+    uniform_look = @appearance.uniform_source
+    @uniform_look = uniform_look
+    @uniform_chosen = uniform_look.uniform_photos.chosen.to_a
+    @uniform_candidates = uniform_look.uniform_photos.candidates.to_a
+    @uniform_query = Appearances::GatherUniformPhotos.new(@appearance).query
   end
 
   # PHOTOGRAPHS THIS PAGE LEFT OUT BECAUSE THEIR HOST COULD NOT BE LOOKED UP.

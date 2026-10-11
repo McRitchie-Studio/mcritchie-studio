@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_151000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -298,6 +298,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_150000) do
     t.index ["appearance_slug", "image_url"], name: "index_reference_photos_unique_per_look", unique: true
     t.index ["appearance_slug", "operator_verdict"], name: "index_reference_photos_verdict_per_look"
     t.index ["slug"], name: "index_appearance_reference_photos_on_slug", unique: true
+  end
+
+  create_table "appearance_uniform_photos", force: :cascade do |t|
+    t.string "appearance_slug", null: false
+    t.boolean "chosen", default: false, null: false
+    t.datetime "chosen_at"
+    t.datetime "created_at", null: false
+    t.integer "height"
+    t.text "image_url", null: false
+    t.text "page_url"
+    t.integer "position"
+    t.string "provider"
+    t.text "query"
+    t.string "slug", null: false
+    t.text "thumb_url"
+    t.text "title"
+    t.datetime "updated_at", null: false
+    t.integer "width"
+    t.index ["appearance_slug", "chosen"], name: "index_uniform_photos_per_look"
+    t.index ["appearance_slug", "image_url"], name: "index_uniform_photos_unique_per_look", unique: true
+    t.index ["slug"], name: "index_appearance_uniform_photos_on_slug", unique: true
   end
 
   create_table "appearances", force: :cascade do |t|
@@ -2507,6 +2528,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_150000) do
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "appearance_uniform_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "appearances", "appearances", column: "base_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "body_archetypes", column: "body_archetype_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade

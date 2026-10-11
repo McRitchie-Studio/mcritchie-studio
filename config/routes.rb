@@ -497,6 +497,10 @@ Rails.application.routes.draw do
         post :generate
         # The body archetype this look's sheet is drawn to (free; a pointer).
         patch :archetype
+        # Game-action photos of the uniform: #search_uniform buys ONE image-search
+        # query; #pick_uniform chooses or drops one candidate (free).
+        post :search_uniform
+        post :pick_uniform
       end
     end
 

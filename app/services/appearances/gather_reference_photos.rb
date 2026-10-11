@@ -491,6 +491,8 @@ module Appearances
     def team_name
       team_record_name.presence || team_slug&.titleize.presence
     end
+    # Public for Appearances::GatherUniformPhotos, which asks for the same team.
+    public :team_name
 
     def team_record_name
       @appearance&.team&.name.presence || @appearance&.person&.athlete_profile&.team&.name.presence
