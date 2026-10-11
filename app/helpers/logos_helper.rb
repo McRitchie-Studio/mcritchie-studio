@@ -31,7 +31,7 @@ module LogosHelper
   # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
   LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
   # A stacked guide drawing carries its ruler beside it, so it is wider than the logo and needs more height to keep
-  # its numbers readable (the tagline form's tallest least-width height is 531 px).
+  # its numbers readable (the tagline form's tallest least-width height is 465 px).
   LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 540 }.freeze
   # A guide drawing FITS its plate first, like any logo. It only stops shrinking at the width where its labels
   # would render below this many px, and from there the plate scrolls sideways inside itself. The widest plate on

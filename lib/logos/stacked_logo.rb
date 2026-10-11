@@ -38,7 +38,7 @@ module Logos
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
     # between the two, and the small line itself turned on end beside the icon. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
-    GUIDE_FONT = 28
+    GUIDE_FONT = 32                            # the ruler numbers: 0.8u, so the widest drawing (a tagline ruler of tracked copies) fits 1028 px at 9 px labels
     NUMBER_X = 50                              # a ruler number's centre, right of the logo
     RULER_X = 90                               # the ruler's left ink edge, right of the logo
     PROOF_GAP = 0.5 * U                        # the turned line's baseline, left of the icon's box
@@ -48,9 +48,8 @@ module Logos
     # `edges`: every horizontal boundary, top to bottom. `letters` carry their own baseline and cap. `line` is the
     # small line exactly as the logo sets it (the second word, the tagline, or in the one-line form the whole name),
     # tracking and word gap included, at a cap of 1 with its ink from x = 0, `line_width` wide; each letter carries
-    # its glyph's ink edges `l` and `r`. `ruler` is the small line as the ruler's ghosts copy it, `ruler_width` wide.
-    Layout = Struct.new(:form, :width, :height, :icon_height, :icon_left, :edges, :letters, :line, :line_width, :ruler, :ruler_width,
-                        keyword_init: true)
+    # its glyph's ink edges `l` and `r`. The ruler's ghosts and the icon-height proof are copies of it.
+    Layout = Struct.new(:form, :width, :height, :icon_height, :icon_left, :edges, :letters, :line, :line_width, keyword_init: true)
 
     undef_method :examples                     # the Navbar Logo's list: its keys name a rule, which this has none of
 
@@ -98,9 +97,8 @@ module Logos
         line = [small, form == :tagline ? tagline_glyphs : second, U]
       end
       line, line_width = unit_line(*line)
-      ruler, ruler_width = ruler(form, first, second)
       Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(tone, icon_height, width)) / 2,
-                 edges:, letters: placed, line:, line_width:, ruler:, ruler_width:)
+                 edges:, letters: placed, line:, line_width:)
     end
 
     def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, **unknown)
@@ -128,21 +126,6 @@ module Logos
       return if unknown.empty?
 
       raise Error, "a stacked logo takes #{taken}, not #{unknown.keys.join(', ')}: it has no rule"
-    end
-
-    # The small line at a cap of 1, untracked, each letter with its glyph's ink edges: the ghosts' copy of it.
-    def ruler(form, first, second)
-      runs = case form
-             when :two_line then [[second, 1, 0]]
-             when :tagline then [[tagline_glyphs, 2, 0]]
-             else [[first, 0, @tracking], [second, 1, @tracking]]
-             end
-      right = -space
-      letters = runs.flat_map do |glyphs, index, tracking|
-        placed, right = place(glyphs, 1.0, right + space, index, tracking)
-        placed.zip(glyphs).map { |letter, g| letter.merge(l: g["l"], r: g["r"], fill_rule: (form == :tagline ? "nonzero" : @fill_rule)) }
-      end
-      [letters, right]
     end
 
     def tagline_glyphs = tagline.each_char.map { |char| glyph(char, TAGLINE_WEIGHT) }
@@ -227,15 +210,16 @@ module Logos
                right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
 
-    def ruler_right(box) = box.width + RULER_X + box.ruler_width * U
+    def ruler_right(box) = box.width + RULER_X + box.line_width * U
 
     # Each band under the icon as [top, bottom, its size in units].
     def bands(box) = box.edges.drop(1).each_cons(2).map { |top, bottom| [top, bottom, ((bottom - top) / U).round] }
 
-    # The ruler: one copy of the small line per unit, edge to edge, from the icon's foot to the logo's foot.
+    # The ruler: one copy of the small line per unit, edge to edge, from the icon's foot to the logo's foot. Each copy
+    # is the small line exactly as the logo sets it, tracking included, so it is exactly as wide as the real one.
     def ruler_markup(box, fill)
       bands(box).flat_map do |top, _, size|
-        (1..size).map { |row| box.ruler.map { |l| letter_markup(l.merge(x: box.width + RULER_X + l[:x] * U), top + row * U, U, fill) }.join }
+        (1..size).map { |row| box.line.map { |l| letter_markup(l.merge(x: box.width + RULER_X + l[:x] * U), top + row * U, U, fill) }.join }
       end.join
     end
 

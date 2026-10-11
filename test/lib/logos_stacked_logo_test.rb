@@ -234,17 +234,28 @@ class LogosStackedLogoTest < Minitest::Test
     end
   end
 
-  def test_the_ruler_copies_the_small_line_the_tagline_or_a_third_size_name
-    box = stacked("turf").layout(text: :second)
-    assert_in_delta box.width / (3 * U), box.ruler_width, 1e-9, "one line: the name at a third of its size"
-    navbar = Navbar.new("turf").layout(rule: 4, text: :second)
-    assert_equal navbar.letters.map { |l| l[:d] }, box.ruler.map { |l| l[:d] }
-    tagline = stacked("welding").layout(form: :tagline)
-    assert_equal "BUILDING STRONG CONNECTIONS".chars.map { |char| glyph(char, 500)["d"] }, tagline.ruler.map { |l| l[:d] }
-    assert_equal ["nonzero"], tagline.ruler.map { |l| l[:fill_rule] }.uniq
-    two = stacked("industries").layout(text: :first)
-    assert_equal "INDUSTRIES".chars.map { |char| glyph(char, 300)["d"] }, two.ruler.map { |l| l[:d] }, "the small word in its own weight, untracked"
-    assert_in_delta "INDUSTRIES".chars.map { |c| glyph(c, 300) }.then { |g| g[0...-1].sum { |x| x["adv"] } + g.last["r"] - g.first["l"] }, two.ruler_width, 1e-9
+  # Item 4a (task navbar-spacing-and-rotated-guides): the ruler's copies were set untracked, so each was narrower than
+  # the real small line. Each copy is now the small line exactly as the logo sets it, and exactly as wide.
+  def test_each_ruler_copy_is_the_small_line_with_its_tracking_and_as_wide
+    guided.each do |brand, form, tone|
+      box = stacked(brand).layout(form:, tone:, text: :second)
+      xml = doc(stacked(brand).svg(form:, tone:, text: :second, guides: true)).remove_namespaces!
+      where = "#{brand} #{form} #{tone}"
+      real = small_line(box).reject { |l| l[:d].empty? }
+      real_width = box.line_width * real.first[:cap]
+      assert_in_delta(form == :one_line ? box.width : 0.6 * box.width, real_width, 1e-6, "#{where}: the real small line's ink width")
+      ruler_rows(xml, box).each do |baseline, copy|
+        assert_equal real.map { |l| l[:d] }, copy.map { |p| p["d"] }, "#{where} #{baseline}: the whole small line"
+        xs = copy.map { |p| translate(p).first }
+        real.zip(xs).each do |letter, x|
+          assert_in_delta (letter[:x] - real.first[:x]) * U / letter[:cap], x - xs.first, 0.02, "#{where}: the same steps as the real line, at 1u"
+        end
+        ink = box.line.reject { |l| l[:d].empty? }
+        copy_width = xs.last + ink.last[:r] * U - (xs.first + ink.first[:l] * U)
+        assert_in_delta real_width * U / real.first[:cap], copy_width, 0.02, "#{where}: as wide as the real line at 1u"
+        assert_in_delta box.width + Stacked::RULER_X, xs.first + ink.first[:l] * U, 0.02, "#{where}: from the ruler's left edge"
+      end
+    end
   end
 
   def icon_box(brand, tone, box)
@@ -331,7 +342,7 @@ class LogosStackedLogoTest < Minitest::Test
   def test_the_guide_drawing_reaches_past_the_ruler
     box = stacked("industries").layout(text: :first)
     xml = doc(stacked("industries").svg(text: :first, guides: true))
-    right = Stacked::RULER_X + box.ruler_width * U + 40
+    right = Stacked::RULER_X + box.line_width * U + 40
     assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"], "the column fits in the usual pad"
   end
 

@@ -467,7 +467,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
     get logo_brand_path("industries", type: "stacked", guides: 1)
-    assert_equal ["max-height: 540px; min-width: 480px", "max-height: 540px; min-width: 476px", "max-height: 540px; min-width: 467px"],
+    assert_equal ["max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 464px"],
                  css_select("[data-test='logo-plate'].overflow-x-auto img.max-w-full").map { |img| img["style"] }
     get logo_brand_path("industries", type: "stacked")
     assert_select "[data-test='logo-plate'].overflow-x-auto, [data-test='logo-plate'][tabindex]", 0
