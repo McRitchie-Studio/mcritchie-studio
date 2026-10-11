@@ -70,6 +70,37 @@ module Appearances
                      "profile. This is a gentle natural turn, NOT a sharp ninety-degree look over the " \
                      "shoulder, and the neck must appear relaxed and unstrained.".freeze
 
+    # ── THE REFERENCE ROLES AND THE UNIFORM (task player-sheet-uniform-and-build) ──
+    #
+    # Each attached image is named by its position and told what to take from it, so a
+    # uniform photo of another player never lends his face and the body archetype never
+    # lends its practice gear.
+    ROLE_TEXT = {
+      identity: "IDENTITY ANCHOR - this man's face. Every face on the sheet is his: take his facial " \
+                "features, skin tone and hair from here and from nowhere else.",
+      uniform: "UNIFORM REFERENCE - real game photos of his team's uniform in this colourway. Copy ONLY " \
+               "the uniform from them: badges, patch placement, stripes, number font and outline, collar " \
+               "and sleeve trim, pants and socks. Take NOTHING else: not a face, not a body, not a pose; the " \
+               "players in them may be other men.",
+      body: "BODY BUILD REFERENCE - match this body's build and proportions; take nothing else from it: " \
+            "not the face, not the uniform."
+    }.freeze
+
+    UNIFORM_FROM_PHOTOS = "UNIFORM DETAILS - copy them EXACTLY from the UNIFORM REFERENCE images: the team " \
+                          "logo on BOTH shoulders, the NFL shield at the collar, a captain \"C\" patch on the " \
+                          "chest ONLY if the uniform references show one, the number font and outline, the " \
+                          "collar and sleeve trim, and the pants and sock colours.".freeze
+    UNIFORM_FROM_TEXT = "UNIFORM DETAILS, as on a real NFL game jersey: the team logo on BOTH shoulders, the " \
+                        "NFL shield at the collar, the numbers in the team's own font and outline, the team's " \
+                        "collar and sleeve trim, and the team's pants and sock colours. No captain patch.".freeze
+
+    # The operator, 2026-10-11: "most football players have the same bulky athletic
+    # build". Used only when a look resolves no archetype at all.
+    GENERIC_BUILD = "BUILD: he has the bulky athletic build of an NFL player - broad padded shoulders, a " \
+                    "thick muscular back, solid glutes and powerful thighs.".freeze
+    BODY_IMAGE_RULE = "Match the BODY BUILD REFERENCE image's build and proportions in both full-body " \
+                      "figures; take nothing else from it: not the face, not the uniform.".freeze
+
     # The six right-hand head views, in the operator-approved reading order.
     HEAD_VIEWS = [
       "front neutral",
@@ -118,21 +149,27 @@ module Appearances
 
     # `iced:` defaults to the look's own flag, so an iced twin's build reads the
     # iced prompt with no change to Appearances::GenerateArtifact's call.
-    def initialize(appearance, colourway: nil, number: nil, surname: nil, iced: nil)
+    # `references:` is the build's Appearances::SheetReferences: which images ride and
+    # in what order, so the prompt can name each by position. Nil (a prompt read with
+    # no build behind it) means one face and nothing else attached.
+    def initialize(appearance, colourway: nil, number: nil, surname: nil, iced: nil, references: nil)
       @appearance = appearance
       @colourway = colourway
       @number = number
       @surname = surname
       @iced = iced.nil? ? appearance&.iced? || false : iced
+      @references = references || (appearance && SheetReferences.prompt_only(appearance))
     end
 
     def iced? = @iced
 
     def call
       parts = [preamble]
+      parts << reference_roles if @references
+      parts += [uniform_clause, build_clause]
       parts << iced_clause if iced?
       parts += [left_columns, right_columns, closing]
-      parts.join("\n\n")
+      parts.compact.join("\n\n")
     end
 
     # WHAT THE SHEET IS OF. Falls back through the look before giving up, because
@@ -208,9 +245,39 @@ module Appearances
     end
 
     def closing
-      "The SAME individual in every panel, facial features faithful to the reference photograph. " \
+      "The SAME individual in every panel, facial features faithful to the IDENTITY ANCHOR photograph. " \
         "Photorealistic, sharp focus."
     end
+
+    # WHAT EACH ATTACHED IMAGE IS FOR, by position. The images ride before this text
+    # (ImageGeneration::OpenAI#request_body), in Appearances::SheetReferences' order.
+    def reference_roles
+      lines = @references.roles.map { |first, last, role| "  - #{image_span(first, last)}: #{ROLE_TEXT.fetch(role)}" }
+      "REFERENCE IMAGES, in the order attached:\n#{lines.join("\n")}"
+    end
+
+    def image_span(first, last) = first == last ? "Image #{first}" : "Images #{first}-#{last}"
+
+    # THE BADGES, named, because a plain jersey is what came back without them (the
+    # operator's review, 2026-10-11). With uniform references the model is told to copy
+    # them exactly, and the captain patch rides only if the photos show one.
+    def uniform_clause
+      return UNIFORM_FROM_PHOTOS if uniform_references?
+
+      UNIFORM_FROM_TEXT
+    end
+
+    # THE BODY. The archetype's description always (it is text the operator can read on
+    # /body-archetypes); the image instruction only when its image is attached.
+    def build_clause
+      archetype = @references&.archetype
+      text = archetype ? "BUILD: he has #{archetype.description}." : GENERIC_BUILD
+      text += " #{BODY_IMAGE_RULE}" if body_reference?
+      text
+    end
+
+    def uniform_references? = @references.present? && @references.uniform_urls.any?
+    def body_reference? = @references.present? && @references.body_url.present?
 
     def head_views = iced? ? ICED_HEAD_VIEWS : HEAD_VIEWS
     def panel_suffix = iced? ? "#{PANEL_SUFFIX}#{ICED_PANEL_SUFFIX}" : PANEL_SUFFIX

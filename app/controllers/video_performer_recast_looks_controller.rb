@@ -88,8 +88,7 @@ class VideoPerformerRecastLooksController < ApplicationController
   def start_one(target, started, refused)
     Appearances::SheetBuild.start!(target, number: params[:number].presence)
     started << target
-  rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto,
-         Appearances::SheetBuild::Busy => e
+  rescue *Appearances::GenerateArtifact::REFUSALS, Appearances::SheetBuild::Busy => e
     refused << "#{sheet_name(target)} did not start: #{e.message}"
   end
 

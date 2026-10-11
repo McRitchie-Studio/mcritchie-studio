@@ -26,7 +26,7 @@ module Appearances
       started_at = claim!(appearance)
       SheetBuildJob.perform_later(appearance.slug, started_at.iso8601(6), number)
       started_at
-    rescue Busy, Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto
+    rescue Busy, *Appearances::GenerateArtifact::REFUSALS
       raise
     rescue StandardError => e
       finish(appearance, started_at, FAILED, e.message) if started_at
@@ -55,7 +55,7 @@ module Appearances
       begin
         Appearances::GenerateArtifact.call(appearance, number: number)
         finish(appearance, running_at, DONE)
-      rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto => e
+      rescue *Appearances::GenerateArtifact::REFUSALS => e
         finish(appearance, running_at, FAILED, e.message)
       rescue StandardError => e
         log = ErrorLog.capture!(e)

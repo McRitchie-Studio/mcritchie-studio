@@ -210,9 +210,7 @@ class AppearancesController < ApplicationController
     keep_jersey_number
     Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
     redirect_to appearance_path, notice: [Appearances::SheetBuild::STARTED_NOTICE, twin_build_sentence].compact.join(" ")
-  rescue Appearances::GenerateArtifact::NoGenerator,
-         Appearances::GenerateArtifact::NoIdentityPhoto,
-         Appearances::SheetBuild::Busy => e
+  rescue *Appearances::GenerateArtifact::REFUSALS, Appearances::SheetBuild::Busy => e
     redirect_to appearance_path, alert: e.message
   end
 
@@ -221,9 +219,7 @@ class AppearancesController < ApplicationController
 
     Appearances::SheetBuild.start!(twin, number: params[:number].presence)
     "The iced twin's sheet (#{twin.descriptor}) is building too: two paid builds in all."
-  rescue Appearances::GenerateArtifact::NoGenerator,
-         Appearances::GenerateArtifact::NoIdentityPhoto,
-         Appearances::SheetBuild::Busy => e
+  rescue *Appearances::GenerateArtifact::REFUSALS, Appearances::SheetBuild::Busy => e
     "The iced twin's sheet did not start: #{e.message}"
   end
 

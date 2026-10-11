@@ -62,6 +62,24 @@ module Appearances
 
     class NoIdentityPhoto < StandardError; end
     class NoGenerator < StandardError; end
+    class TooManyReferences < StandardError; end
+
+    # THE FREE REFUSALS, raised before any spend; a caller rescues these as states.
+    REFUSALS = [NoGenerator, NoIdentityPhoto, TooManyReferences].freeze
+
+    # THE MOST IMAGES ONE SHEET REQUEST MAY CARRY, faces, uniform photos and body
+    # archetype together. ⚠ OUR CEILING, NOT A MEASURED VENDOR LIMIT: this repo records
+    # none for the Responses `input_image` path (config/image_generators.yml says the
+    # endpoint "accepts as many `input_image` blocks as you send", unmeasured), and the
+    # only per-image cap on file is ImageGeneration::OpenAI::MAX_REFERENCE_BYTES (20 MB,
+    # base64-inlined). Eight is the largest set the composition can produce:
+    # ReferenceSet::GENERATION_LIMIT faces (4, if the row's arity were ever `many`) +
+    # AppearanceUniformPhoto::CHOSEN_LIMIT (3) + one archetype. A request over it means
+    # a composition bug, and it is refused before anything is spent.
+    MAX_REQUEST_IMAGES = 8
+
+    # Read through a method so a test can lower it without a real over-limit set.
+    def self.max_request_images = MAX_REQUEST_IMAGES
 
     # WIDEST FIRST, AND `original` LEADS — a deliberate departure from
     # Appearances::ReferenceImages::HEADSHOT_VARIANTS (`%w[400 100]`).
@@ -93,7 +111,8 @@ module Appearances
     # in /error_logs, where somebody reading it a day later can find it.
     def call
       check!
-      result = client.generate_and_wait(prompt: prompt, reference_urls: references)
+      result = client.generate_and_wait(prompt: prompt, reference_urls: references,
+                                        supporting_reference_urls: supporting_references)
       raise ImageGeneration::GenerationFailed, "#{row.label} returned no image" unless result.any?
 
       # OUR COPY, BEFORE THE ROW EXISTS. The adapters answer in two different
@@ -111,7 +130,30 @@ module Appearances
       refusal = inputs.refusal_for(:sheet)
       raise NoIdentityPhoto, refusal if refusal
       raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?
+      limit = self.class.max_request_images
+      return unless sheet_references && sheet_references.total_count > limit
+
+      raise TooManyReferences,
+            "This sheet would send #{sheet_references.total_count} reference images, over the " \
+            "#{limit} one request may carry. Drop a uniform photo. Nothing was generated and " \
+            "nothing was spent."
     end
+
+    # THE PLAYER SHEET'S ROLE-TAGGED IMAGES (Appearances::SheetReferences): faces, then
+    # uniform photos, then the body archetype. Nil for a music-video or character look,
+    # whose prompts attach faces or art only.
+    def sheet_references
+      return @sheet_references if defined?(@sheet_references)
+
+      @sheet_references =
+        if @appearance.music_video_look? || @appearance.character_owned?
+          nil
+        else
+          SheetReferences.new(@appearance, identity_urls: references, row: row)
+        end
+    end
+
+    def supporting_references = sheet_references&.supporting_urls || []
 
     # THE ROW THAT WOULD SERVE, so the page can say WHICH generator is off rather
     # than only that generation is off.
@@ -123,14 +165,19 @@ module Appearances
     # THE WHOLE SHEET'S INSTRUCTION. Built by Appearances::CharacterSheetPrompt,
     # which carries the operator-approved layout and the per-panel repetition rule
     # that layout depends on.
+    #
+    # MEMOIZED because it is read twice (the request and the stamp) and the player
+    # prompt now names each attached image by position: both reads must be the one
+    # text that matched the images actually sent.
     def prompt
       return @prompt if @prompt.present?
-      return ArtistSheetPrompt.call(@appearance) if @appearance.music_video_look?
+      return @built_prompt if defined?(@built_prompt)
+      return @built_prompt = ArtistSheetPrompt.call(@appearance) if @appearance.music_video_look?
       # A CHARACTER IS DRAWN, NOT PHOTOGRAPHED: its own prompt carries no
       # person or likeness wording (Appearances::CastSheetPrompt).
-      return CastSheetPrompt.call(@appearance) if @appearance.character_owned?
+      return @built_prompt = CastSheetPrompt.call(@appearance) if @appearance.character_owned?
 
-      CharacterSheetPrompt.call(@appearance, number: @number)
+      @built_prompt = CharacterSheetPrompt.call(@appearance, number: @number, references: sheet_references)
     end
 
     # THE PHOTOGRAPH THE LIKENESS IS GUARANTEED TO CARRY — the build's ANCHOR, as

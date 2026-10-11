@@ -151,7 +151,78 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     prompt = Appearances::CharacterSheetPrompt.call(@look)
 
     assert_includes prompt, "SAME individual in every panel"
-    assert_includes prompt, "faithful to the reference photograph"
+    assert_includes prompt, "faithful to the IDENTITY ANCHOR photograph"
+  end
+
+  # ── THE BADGES, THE ROLES AND THE BUILD (task player-sheet-uniform-and-build) ──
+
+  # A stand-in for the build's Appearances::SheetReferences with fixed counts, so the
+  # prompt is read without any photo row or fetch check.
+  FakeRefs = Struct.new(:roles, :uniform_urls, :body_url, :archetype, keyword_init: true)
+
+  def refs(identity: 1, uniform: 0, body: false, archetype: body_archetypes(:nfl_qb_skill))
+    spans = []
+    cursor = 1
+    [[:identity, identity], [:uniform, uniform], [:body, body ? 1 : 0]].each do |role, n|
+      next if n.zero?
+
+      spans << [cursor, cursor + n - 1, role]
+      cursor += n
+    end
+    FakeRefs.new(roles: spans, uniform_urls: Array.new(uniform) { |i| "https://u.test/#{i}.jpg" },
+                 body_url: body ? "https://b.test/body.png" : nil, archetype: archetype)
+  end
+
+  test "the badges are named on every sheet, and copied from photos when there are photos" do
+    plain = Appearances::CharacterSheetPrompt.call(@look, references: refs)
+    assert_includes plain, Appearances::CharacterSheetPrompt::UNIFORM_FROM_TEXT
+    assert_includes plain, "the team logo on BOTH shoulders, the NFL shield at the collar"
+    assert_includes plain, "No captain patch."
+    assert_not_includes plain, "UNIFORM REFERENCE"
+
+    with_photos = Appearances::CharacterSheetPrompt.call(@look, references: refs(uniform: 3))
+    assert_includes with_photos, Appearances::CharacterSheetPrompt::UNIFORM_FROM_PHOTOS
+    assert_includes with_photos, "copy them EXACTLY from the UNIFORM REFERENCE images"
+    assert_includes with_photos, "captain \"C\" patch on the chest ONLY if the uniform references show one"
+    assert_not_includes with_photos, "No captain patch."
+  end
+
+  test "every attached image is named by its role, in the fixed order face, uniform, body" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(uniform: 3, body: true))
+
+    identity = prompt.index("  - Image 1: IDENTITY ANCHOR - this man's face.")
+    uniform = prompt.index("  - Images 2-4: UNIFORM REFERENCE - real game photos")
+    body = prompt.index("  - Image 5: BODY BUILD REFERENCE - match this body's build and proportions; " \
+                        "take nothing else from it: not the face, not the uniform.")
+    assert identity && uniform && body, "all three roles are named with their positions"
+    assert_operator identity, :<, uniform
+    assert_operator uniform, :<, body
+    assert_includes prompt, "Take NOTHING else: not a face, not a body, not a pose"
+  end
+
+  test "a role with no image is not named, and the numbering closes up" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(body: true))
+
+    assert_includes prompt, "  - Image 1: IDENTITY ANCHOR"
+    assert_includes prompt, "  - Image 2: BODY BUILD REFERENCE"
+    assert_not_includes prompt, "UNIFORM REFERENCE -"
+  end
+
+  test "the archetype's description always rides; the image rule only with its image" do
+    lineman = body_archetypes(:nfl_lineman)
+
+    text_only = Appearances::CharacterSheetPrompt.call(@look, references: refs(archetype: lineman))
+    assert_includes text_only, "BUILD: he has #{lineman.description}."
+    assert_not_includes text_only, Appearances::CharacterSheetPrompt::BODY_IMAGE_RULE
+
+    with_image = Appearances::CharacterSheetPrompt.call(@look, references: refs(body: true, archetype: lineman))
+    assert_includes with_image, Appearances::CharacterSheetPrompt::BODY_IMAGE_RULE
+  end
+
+  test "a look that resolves no archetype still asks for an NFL build" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(archetype: nil))
+
+    assert_includes prompt, Appearances::CharacterSheetPrompt::GENERIC_BUILD
   end
 
   # ── THE ICED VARIANT (piece 15). Synthetic jewelry only. ──

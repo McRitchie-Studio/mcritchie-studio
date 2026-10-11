@@ -247,6 +247,35 @@ class ImageGeneration::OpenAITest < ActiveSupport::TestCase
     assert_empty calls, "the refusal must happen before the POST"
   end
 
+  # SUPPORTING REFERENCES ARE NOT FACES (a uniform photo, a body archetype), so the
+  # row's `one` cuts the faces only and the rest ride after them in the order given:
+  # the prompt names each image by that position.
+  test "supporting references ride in full after the arity-cut faces, prompt last" do
+    client = client_with_reference
+    assert_equal "one", client.row.reference_arity
+    client.define_singleton_method(:fetch_reference) { |url| [url.b, "image/png"] }
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "p",
+                             reference_urls: %w[https://example.com/face1.png https://example.com/face2.png],
+                             supporting_reference_urls: %w[https://example.com/u1.png https://example.com/body.png])
+
+    content = calls.sole.dig("input", 0, "content")
+    sent = content.select { |b| b["type"] == "input_image" }.map { |b| Base64.decode64(b["image_url"].split(",", 2).last) }
+    assert_equal %w[https://example.com/face1.png https://example.com/u1.png https://example.com/body.png], sent
+    assert_equal "input_text", content.last["type"]
+  end
+
+  test "text_only generates from the prompt alone, and only when asked" do
+    client = client_with_reference
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "a faceless body", reference_urls: [], text_only: true)
+
+    content = calls.sole.dig("input", 0, "content")
+    assert_equal ["input_text"], content.map { |b| b["type"] }
+  end
+
   # A CALLER SHOULD NEVER HAVE TO ENUMERATE ADAPTERS. That list goes stale in the
   # direction that lets an exception escape as a 500.
   test "the adapter's failure is rescuable as the shared ImageGeneration error" do
