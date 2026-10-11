@@ -56,6 +56,10 @@ studio:
     - { name: Deep Violet, hex: "#635BB2" }
     - { name: Violet Mist, hex: "#EEECFF" }
     - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 800 }
+    - { role: Text, family: Montserrat, weight: 300 }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#1A1535"
@@ -81,6 +85,10 @@ industries:
     - { name: Light Steel, hex: "#D3D6DA" }
     - { name: Shop Black, hex: "#141516" }
     - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 700 }
+    - { role: Text, family: Montserrat, weight: 300 }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#262A30"
@@ -107,6 +115,9 @@ turf:
     - { name: Cream, hex: "#F0EBCF" }
     - { name: Ink, hex: "#1A1535" }
     - { name: Violet, hex: "#8E82FE" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 800 }
+    - { role: Text, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#1A1535"
@@ -131,6 +142,9 @@ welding:
     - { name: Spark Orange, hex: "#D7602E" }
     - { name: Ember, hex: "#F08A5A" }
     - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, label: Traced lettering (face not identified) }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#2D5E8E"

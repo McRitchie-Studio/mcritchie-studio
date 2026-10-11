@@ -73,3 +73,60 @@ class LogosBrandKitTest < Minitest::Test
     end
   end
 end
+
+# [unit] The typeface hierarchy: at most three levels, each a role and a face the hub serves (or the brand's own
+# traced lettering, which names no font), named "Montserrat ExtraBold" by family and weight.
+class LogosBrandKitTypefacesTest < Minitest::Test
+  BrandKit = Logos::BrandKit
+
+  def levels(brand) = BrandKit.new(brand).typefaces.map { |typeface| [typeface.role, typeface.name, typeface.weight] }
+
+  def refusal(typefaces)
+    styles = { "kit" => Logos::NavbarLogo.styles.fetch("studio").merge("typefaces" => typefaces) }
+    assert_raises(Logos::NavbarLogo::Error) { BrandKit.new("kit", styles:) }.message
+  end
+
+  def montserrat(role, weight) = { "role" => role, "family" => "Montserrat", "weight" => weight }
+
+  def test_each_brands_hierarchy_as_alex_asked
+    assert_equal [["Display", "Montserrat ExtraBold", 800], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]], levels("studio")
+    assert_equal [["Display", "Montserrat Bold", 700], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]], levels("industries")
+    assert_equal [["Display", "Montserrat ExtraBold", 800], ["Text", "Montserrat Medium", 500]], levels("turf")
+    assert_equal [["Display", "Traced lettering (face not identified)", nil], ["Tagline", "Montserrat Medium", 500]], levels("welding")
+  end
+
+  def test_only_the_traced_level_is_traced
+    assert_equal [true, false], BrandKit.new("welding").typefaces.map(&:traced?)
+    assert_nil BrandKit.new("welding").typefaces.first.family
+    refute BrandKit.all.reject { |kit| kit.brand == "welding" }.flat_map(&:typefaces).any?(&:traced?)
+  end
+
+  def test_no_more_than_three_levels_and_at_least_one
+    assert_match(/1 to 3 levels/, refusal([montserrat("A", 800), montserrat("B", 500), montserrat("C", 300), montserrat("D", 300)]))
+    assert_match(/1 to 3 levels/, refusal([]))
+    assert_match(/1 to 3 levels/, refusal(nil))
+    assert_equal 3, BrandKit::MAX_LEVELS
+  end
+
+  def test_a_family_must_be_one_the_hub_serves
+    assert_match(/family must be one of Montserrat, got "Inter"/, refusal([{ "role" => "Display", "family" => "Inter", "weight" => 700 }]))
+  end
+
+  def test_a_weight_must_be_a_named_one
+    [450, "800", nil, 1000].each do |bad|
+      assert_match(/weight must be one of 100, .*900/, refusal([montserrat("Display", bad)]), bad.inspect)
+    end
+  end
+
+  def test_a_traced_level_has_a_label_and_no_weight_and_a_font_level_no_label
+    assert_match(/traced lettering, so it takes no weight/, refusal([{ "role" => "Display", "label" => "Traced", "weight" => 800 }]))
+    assert_match(/typeface Display label must be plain words/, refusal([{ "role" => "Display" }]))
+    assert_match(/takes no label/, refusal([montserrat("Display", 800).merge("label" => "Big")]))
+  end
+
+  def test_a_level_needs_a_plain_role_and_only_known_keys
+    assert_match(/with a role/, refusal([{ "family" => "Montserrat", "weight" => 800 }]))
+    assert_match(/with a role/, refusal([montserrat("Display", 800).merge("size" => 30)]))
+    assert_match(/typeface role must be plain words/, refusal([montserrat("<b>Display</b>", 800)]))
+  end
+end

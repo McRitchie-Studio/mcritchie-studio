@@ -121,8 +121,14 @@
     </div>
   </section>
 
-  <section class="card p-4 sm:p-5 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
-    <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
-    <%= render "palette", kit: @kit %>
-  </section>
+  <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
+    <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
+      <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
+      <%= render "palette", kit: @kit %>
+    </section>
+    <section class="min-w-0 space-y-3" data-test="brand-typefaces" aria-labelledby="brand-typefaces-title">
+      <h2 id="brand-typefaces-title" class="text-sm font-bold text-heading">Typefaces</h2>
+      <%= render "typefaces", kit: @kit %>
+    </section>
+  </div>
 </div>

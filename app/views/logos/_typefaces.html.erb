@@ -1,0 +1,26 @@
+<%# A BRAND'S TYPEFACE HIERARCHY (Logos::BrandKit, config/logo_brands.yml
+    `typefaces:`): at most three levels, the most prominent first. Each level
+    shows its own name ("Montserrat ExtraBold") set IN that face, at a size that
+    steps down with the level, under its role as a small label. A level set in
+    the brand's own traced lettering has no font to set its name in, so it shows
+    a small picture of the brand's name in that lettering instead (the Navbar
+    Logo, both words alike, in the page theme's tone). Montserrat is the engine's
+    own vendored variable face: nothing else is loaded. Locals: kit; compact
+    (true in the index table: smaller steps). %>
+<% compact = local_assigns.fetch(:compact, false) %>
+<ol class="<%= compact ? 'space-y-1.5' : 'space-y-4' %>" data-test="logo-typefaces" data-brand="<%= kit.brand %>" aria-label="Typefaces">
+  <% kit.typefaces.each_with_index do |typeface, level| %>
+    <li class="min-w-0" data-test="logo-typeface-level" data-level="<%= level + 1 %>" data-role="<%= typeface.role %>">
+      <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= typeface.role %></span>
+      <% if typeface.traced? %>
+        <span class="block" data-test="logo-typeface-traced">
+          <%= logo_themed_images(logo_traced_name_variants(kit.brand), height: logo_typeface_size(level, compact:) + 4, test: "logo-typeface-sample") %>
+          <span class="block text-3xs text-muted" data-test="logo-typeface-name"><%= typeface.name %></span>
+        </span>
+      <% else %>
+        <span class="block leading-tight text-heading break-words" data-test="logo-typeface-name"
+              style="font-family: 'Montserrat', sans-serif; font-weight: <%= typeface.weight %>; font-size: <%= logo_typeface_size(level, compact:) %>px"><%= typeface.name %></span>
+      <% end %>
+    </li>
+  <% end %>
+</ol>

@@ -61,19 +61,37 @@ module LogosHelper
 
   # One logo as a picture that carries its name. It scales down inside its plate, up to `height` px tall. A guide
   # drawing also has a least width (above), so its plate scrolls once the plate is narrower than that.
-  def logo_image(variant, height:)
+  def logo_image(variant, height:, loading: "lazy", test: "logo-image")
     least = "; min-width: #{logo_guide_min_width(variant)}px" if variant.guides
-    image_tag logo_asset_path(variant), alt: variant.label, loading: "lazy", data: { test: "logo-image" },
+    image_tag logo_asset_path(variant), alt: variant.label, loading:, data: { test: },
               style: "max-height: #{height}px#{least}", class: class_names("block max-w-full w-auto h-auto", "mx-auto" => variant.guides)
   end
 
-  # What a brand's name is set in, as [typeface, detail]: Montserrat and its
-  # weights (heaviest first), or the brand's own traced lettering.
-  def logo_brand_typeface(brand)
-    style = Logos::NavbarLogo.styles.fetch(brand)
-    return ["Traced from its own lettering", "(typeface not identified)"] if style["lettering"]
+  # A typeface level's name size, in px, by level (0 is the most prominent): it steps down so the hierarchy reads as
+  # one. The index table's cell is narrower, so its steps are smaller.
+  LOGO_TYPEFACE_SIZES = { false => [30, 20, 15], true => [17, 13, 11] }.freeze
 
-    weights = [style["heavy"], (style["light"] if style["highlight"] == "weight")].compact.uniq
-    ["Montserrat", "#{'weight'.pluralize(weights.size)} #{weights.join(' and ')}"]
+  def logo_typeface_size(level, compact: false) = LOGO_TYPEFACE_SIZES.fetch(compact).fetch(level)
+
+  # The brand's name in its own traced lettering, as the typeface hierarchy shows it: the rule-of-4 Navbar Logo with
+  # both words alike, one per baked tone.
+  def logo_traced_name_variants(brand)
+    logo = Logos::NavbarLogo.new(brand)
+    Logos::NavbarLogo::BAKED.to_h { |tone| [tone, Logos::Variant.new(logo, rule: 4, text: :homogeneous, tone:)] }
   end
+
+  # One logo in the hub theme's tone: the light version while the page is light and the dark one under html.dark,
+  # switched by CSS alone, so a change of theme needs no request and the first paint is already right. Given one
+  # tone only (the watermark), that one is shown. Both pictures load eagerly: a hidden lazy picture would only start
+  # loading when the theme turns, and a waiting reader would see an empty space.
+  def logo_themed_images(variants, height:, test: "logo-image")
+    return logo_image(variants.values.first, height:, loading: "eager", test:) if variants.size == 1
+
+    safe_join(variants.map do |tone, variant|
+      tag.span(logo_image(variant, height:, loading: "eager", test:), class: LOGO_THEME_CLASSES.fetch(tone), data: { test: "logo-themed", tone: })
+    end)
+  end
+
+  # Which picture of a light/dark pair shows: the light one unless the hub's root carries `dark`.
+  LOGO_THEME_CLASSES = { light: "contents dark:hidden", dark: "hidden dark:contents" }.freeze
 end

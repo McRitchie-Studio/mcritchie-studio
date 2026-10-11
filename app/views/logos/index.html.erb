@@ -2,7 +2,7 @@
     each type (its icon, its rule-of-4 Navbar Logo with the second word
     leading, its Stacked Logo with the first word leading), each shown once in
     the context the dropdown picks (light, dark or watermark), then its
-    typeface and its palette (its one list of named colours; a click copies a hex). Each logo links to its own tab of the brand page.
+    typeface hierarchy (each level's name in its own face) and its palette (its one list of named colours; a click copies a hex). Each logo links to its own tab of the brand page.
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
     scrolls sideways if a table row ever outgrows it, so the page body never
     does. Read-only. Admin only (LogosController). %>
@@ -59,11 +59,9 @@
                   <% end %>
                 </td>
               <% end %>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-typeface">
-                <span class="xl:hidden text-3xs uppercase tracking-wide text-muted">Typeface </span>
-                <% typeface, detail = logo_brand_typeface(logo.brand) %>
-                <span class="font-semibold text-heading"><%= typeface %></span>
-                <span class="text-2xs text-muted whitespace-nowrap"><%= detail %></span>
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[11rem]" data-test="logo-typeface">
+                <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Typeface</p>
+                <%= render "typefaces", kit: Logos::BrandKit.new(logo.brand), compact: true %>
               </td>
               <td class="block xl:table-cell pb-3 xl:py-3 align-top xl:min-w-[15.5rem]" data-test="logo-colours">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Colours</p>
