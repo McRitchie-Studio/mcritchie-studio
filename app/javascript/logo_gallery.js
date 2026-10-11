@@ -113,7 +113,18 @@ export function installLogoGallery(root = document) {
   root.querySelectorAll("button[data-copy-hex]").forEach(wireSwatch);
 }
 
+// Turbo keeps a copy of the page to show on Back. The copy carries the wired markers (and a select disabled on the
+// way out of a watermark page) but none of the listeners, so clear them first: the restored page is wired afresh.
+export function clearForCache(root = document) {
+  root.querySelectorAll("[data-logo-context-wired], [data-copy-hex-wired]").forEach((el) => {
+    delete el.dataset.logoContextWired;
+    delete el.dataset.copyHexWired;
+    if (el.matches("select")) el.disabled = false;
+  });
+}
+
 if (typeof document !== "undefined") {
+  document.addEventListener("turbo:before-cache", () => clearForCache());
   document.addEventListener("turbo:load", () => installLogoGallery());
   if (document.readyState !== "loading") installLogoGallery();
 }

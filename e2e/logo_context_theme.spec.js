@@ -91,6 +91,20 @@ test("Watermark turns the page dark and shows the watermark logos; Light leaves 
   expect(await visibleTones(page, "[data-test='logo-frame'] img[data-test='logo-image']")).toEqual(["light"]);
 });
 
+test("after Back to the gallery (Turbo's cached copy) the Context control still drives the theme", async ({ page }) => {
+  await openIn(page, "light", "/logos");
+  await page.evaluate(() => { window.__sameDocument = true; });
+  await Promise.all([page.waitForURL(/\/logos\/studio/), page.click("a[href^='/logos/studio']")]);
+  await page.waitForSelector("[data-test='brand-kit']");
+  await page.goBack();
+  // The index's own cluster, so the control is the restored index's and not the brand page's still on screen.
+  await page.waitForFunction(() => window.__sameDocument && document.querySelector("[data-test='logo-cluster']"));
+  await page.waitForSelector("#logo-context[data-logo-context-wired]", { state: "attached" });
+  await page.selectOption("#logo-context", "dark");
+  await expect.poll(() => isDark(page)).toBe(true);
+  expect(await storedTheme(page)).toBe("dark");
+});
+
 test("an explicit watermark link opens dark, whatever theme the hub was in", async ({ page }) => {
   await openIn(page, "light", "/logos?context=watermark");
   expect(await isDark(page)).toBe(true);
