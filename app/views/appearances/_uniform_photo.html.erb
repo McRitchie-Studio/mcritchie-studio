@@ -5,9 +5,9 @@
 <div class="rounded border border-subtle bg-surface overflow-hidden flex flex-col min-w-0"
      data-test="uniform-photo" data-slug="<%= photo.slug %>" data-chosen="<%= chosen %>">
   <%= link_to (photo.page_url.presence || photo.image_url), target: "_blank", rel: "noopener noreferrer",
-              class: "block aspect-[4/3] bg-surface-alt" do %>
+              class: "block relative aspect-[4/3] overflow-hidden bg-surface-alt" do %>
     <%= image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
-                  referrerpolicy: "no-referrer", class: "w-full h-full object-cover" %>
+                  referrerpolicy: "no-referrer", class: "absolute inset-0 w-full h-full object-cover" %>
   <% end %>
   <div class="p-1.5 space-y-1 min-w-0">
     <p class="text-3xs text-muted truncate" title="<%= photo.title %>"><%= photo.title.presence || photo.provider.presence || "Search result" %></p>
