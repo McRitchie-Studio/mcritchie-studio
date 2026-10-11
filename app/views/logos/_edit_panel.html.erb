@@ -1,0 +1,107 @@
+<%# THE EDIT PANEL (task logo-part-editor, Alex's item 4b), on the Navbar Logo
+    and Stacked Logo tabs: one row per part (Icon, First word, Ending, and on
+    the Stacked tab's tagline form, Tagline). Each row picks the part's colour
+    from the brand's palette, a word's weight, and whether the tagline shows.
+    The sizes, spacing and shapes stay as the rules set them.
+
+    It is a plain GET form: its hidden fields carry the page's other settings
+    (logo_unedited_params), and every other control carries the edits
+    (logo_page_params), so each survives the other. app/javascript/logo_editor.js
+    submits it on a change, leaves the blank "as styled" fields out of the URL,
+    keeps the scroll where it was, and warns when a picked colour is under 3:1
+    against the page's background. With JavaScript off it has an Apply button.
+
+    A watermark is one colour, so in Watermark the panel says the edits do not
+    apply and shows no controls; the edits stay in the URL for Light and Dark.
+    Locals: kit (the brand's Logos::BrandKit). %>
+<% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading disabled:opacity-60" %>
+<% outline = "has-checked:outline-2 has-checked:outline-offset-2 has-checked:outline-solid has-checked:outline-[#4338CA] dark:has-checked:outline-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-dashed has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
+<section class="card p-4 sm:p-5 space-y-3" data-test="edit-panel" aria-labelledby="edit-panel-title">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h2 id="edit-panel-title" class="text-sm font-bold text-heading mr-auto">Edit</h2>
+    <% if @edits.any? %>
+      <%= link_to "Reset", logo_brand_path(@logo.brand, logo_unedited_params), class: "text-xs font-semibold text-primary hover:underline",
+                  data: { test: "edit-reset" } %>
+    <% end %>
+  </div>
+  <% if @context == :watermark %>
+    <p class="text-sm text-secondary" data-test="edit-watermark">A watermark is the whole logo in one colour, so edits do not apply here. Any you made come back in Light and Dark.</p>
+  <% else %>
+    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. Nothing is saved: saving waits for the brand kit record.</p>
+    <% if @edit_refusal %>
+      <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="edit-refusal">These edits cannot be drawn here, so the logos are shown as styled: <%= @edit_refusal %></p>
+    <% end %>
+    <%= form_with url: logo_brand_path(@logo.brand), method: :get, data: { test: "edit-form", logo_edit: true } do %>
+      <% logo_unedited_params.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+      <div class="divide-y divide-subtle">
+      <% logo_edit_rows.each do |row| %>
+        <% part = row[:part] %>
+        <div class="py-3 first:pt-0 grid gap-2 sm:grid-cols-[9rem_1fr] sm:items-start" data-test="edit-row" data-part="<%= part %>">
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-heading"><%= row[:label] %></div>
+            <% if row[:word] %>
+              <div class="font-mono text-2xs text-muted break-words" data-test="edit-word"><%= row[:word] %></div>
+            <% end %>
+          </div>
+          <div class="min-w-0 space-y-2">
+            <% colour_param = logo_edit_param(part, :colour) %>
+            <% picked = @edits.dig(part, :colour) %>
+            <fieldset class="min-w-0" data-test="edit-colours">
+              <legend class="sr-only"><%= row[:label] %> colour</legend>
+              <div class="flex flex-wrap items-center gap-2">
+                <label class="inline-flex h-8 items-center rounded-md border border-subtle px-2 text-2xs font-semibold text-heading cursor-pointer <%= outline %>"
+                       data-test="edit-swatch" data-hex="">
+                  <%= radio_button_tag colour_param, "", picked.nil?, id: nil, class: "sr-only" %>As styled
+                </label>
+                <% kit.palette.each do |swatch| %>
+                  <label class="relative inline-block h-8 w-8 rounded-md border border-subtle cursor-pointer <%= outline %>" style="background-color: <%= swatch.hex %>"
+                         title="<%= swatch.name %> <%= swatch.hex %>" data-test="edit-swatch" data-hex="<%= swatch.hex %>">
+                    <%= radio_button_tag colour_param, swatch.hex.delete_prefix("#"), picked == swatch.hex, id: nil, class: "sr-only" %>
+                    <span class="sr-only"><%= swatch.name %> <%= swatch.hex %></span>
+                  </label>
+                <% end %>
+              </div>
+            </fieldset>
+            <% if part == :icon %>
+              <p class="text-2xs text-muted" data-test="edit-icon-note"><%= logo_icon_edit_note(@logo) %></p>
+            <% end %>
+            <% if picked %>
+              <p class="text-2xs font-semibold text-amber-700 dark:text-amber-300" hidden role="status" data-test="edit-contrast"
+                 data-edit-contrast="<%= picked %>" data-name="<%= logo_swatch_name(kit, picked) %>"></p>
+            <% end %>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <% if row[:settings].include?(:weight) %>
+                <% weight_param = logo_edit_param(part, :weight) %>
+                <% traced = part != :tagline && @logo.traced? %>
+                <label class="inline-flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-muted">
+                  Weight
+                  <%= select_tag weight_param,
+                                 options_for_select([["As styled", ""]] + Logos::NavbarLogo::EDIT_WEIGHTS.map { |weight| ["#{weight} #{Logos::BrandKit::WEIGHT_NAMES.fetch(weight)}", weight] },
+                                                    selected: @edits.dig(part, :weight),
+                                                    disabled: (traced ? [] : Logos::NavbarLogo::EDIT_WEIGHTS.select { |weight| logo_edit_weight_refusal(part, weight) })),
+                                 id: nil, class: field, disabled: traced, autocomplete: "off", data: { test: "edit-weight" } %>
+                </label>
+                <% if traced %>
+                  <span class="text-2xs text-muted" data-test="edit-weight-reason">The name is traced lettering, which has one weight.</span>
+                <% end %>
+              <% end %>
+              <% if row[:settings].include?(:visible) %>
+                <% hidden = @edits.dig(part, :visible) == false %>
+                <fieldset class="inline-flex items-center gap-2" data-test="edit-visible">
+                  <legend class="sr-only">Tagline visibility</legend>
+                  <% [["Shown", "", !hidden], ["Hidden", "0", hidden]].each do |label, value, on| %>
+                    <label class="inline-flex h-8 items-center rounded-md border border-subtle px-2 text-2xs font-semibold text-heading cursor-pointer <%= outline %>">
+                      <%= radio_button_tag logo_edit_param(part, :visible), value, on, id: nil, class: "sr-only" %><%= label %>
+                    </label>
+                  <% end %>
+                </fieldset>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      <% end %>
+      </div>
+      <noscript><div class="pt-3"><%= submit_tag "Apply", name: nil, class: "btn btn-sm btn-neutral", data: { test: "edit-submit", disable_with: false } %></div></noscript>
+    <% end %>
+  <% end %>
+</section>

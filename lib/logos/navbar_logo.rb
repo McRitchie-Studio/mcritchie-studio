@@ -113,9 +113,12 @@ module Logos
     # The icon layer an icon colour edit recolours: the tone's icon's `primary` layer, or, for an icon with none (Turf
     # Monster's head: outline, body, light), its first layer. Every other layer keeps its styled fill.
     def icon_role(tone = :light)
-      roles = @icons.fetch(tone).fetch("layers").map { |layer| layer["role"] }
+      roles = icon_roles(tone)
       roles.include?("primary") ? "primary" : roles.first
     end
+
+    # The tone's icon's layer roles, in drawing order: ["primary", "edge"].
+    def icon_roles(tone = :light) = @icons.fetch(tone).fetch("layers").map { |layer| layer["role"] }
 
     # `given` checked: { part => { setting => value } } with parts and settings from PARTS, a colour from the palette
     # (any case; answered in the palette's spelling), a weight from EDIT_WEIGHTS (refused for traced lettering) and a

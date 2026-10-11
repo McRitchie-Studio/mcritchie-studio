@@ -9,13 +9,52 @@
 # A logo file has no background of its own either.
 module LogosHelper
   # The gallery's page params: the type, context, rule, form and guides in force, less the defaults (the Navbar Logo,
-  # the theme's own logos, the rule of 4, the brand's own stacked form, guides off), with `changes` on top. A change
-  # to nil goes back to the default. Only the watermark is carried as a context: light and dark are the hub's theme,
-  # which every page already keeps.
+  # the theme's own logos, the rule of 4, the brand's own stacked form, guides off), and the edits in force (task
+  # logo-part-editor), with `changes` on top. A change to nil goes back to the default. Only the watermark is carried
+  # as a context: light and dark are the hub's theme, which every page already keeps.
   def logo_page_params(**changes)
     { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), rule: (@rule unless @rule == 4),
-      form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }.merge(changes).compact
+      form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }
+      .merge(Logos::Variant.edit_params(@edits || {})).merge(changes).compact
   end
+
+  # The page params with no edits: the edit panel's Reset, and the hidden fields of its own form (which sends its own).
+  def logo_unedited_params = logo_page_params.except(*Logos::Variant::EDIT_PARAMS.keys)
+
+  # The edit panel's rows (logos/_edit_panel): each part this tab's logos show, with what it is called, the words it
+  # draws, and the settings it takes. The tagline only on the Stacked Logo's tagline form.
+  def logo_edit_rows
+    rows = [{ part: :icon, label: "Icon", settings: %i[colour] },
+            { part: :first, label: "First word", word: @logo.words.first, settings: %i[colour weight] },
+            { part: :ending, label: "Ending", word: @logo.words.last, settings: %i[colour weight] }]
+    rows << { part: :tagline, label: "Tagline", word: @logo.tagline, settings: %i[colour weight visible] } if @type == :stacked && @form == :tagline
+    rows
+  end
+
+  # The URL param of one part's setting: first_colour, tagline_visible.
+  def logo_edit_param(part, setting) = :"#{part}_#{setting}"
+
+  # Why `weight` on `part` cannot be drawn in this rule or form with the other edits in force, or nil. A weight that
+  # cannot is offered disabled.
+  def logo_edit_weight_refusal(part, weight)
+    edits = @edits.merge(part => (@edits[part] || {}).merge(weight:))
+    @logo.refusal(edits, **(@type == :stacked ? { form: @form } : { rule: @rule }))
+  end
+
+  # What the icon's colour edit recolours, in one line: the whole icon, or its one main layer of several (Turf
+  # Monster's head has no primary layer, so its outline).
+  def logo_icon_edit_note(logo)
+    roles = logo.icon_roles
+    return "Recolours the whole icon." if roles.size == 1
+
+    role = logo.icon_role
+    others = roles - [role]
+    "Recolours the icon's #{role == 'primary' ? 'main' : role} layer only; its #{others.to_sentence} " \
+      "#{others.size == 1 ? 'layer keeps its' : 'layers keep their'} brand #{others.size == 1 ? 'colour' : 'colours'}."
+  end
+
+  # The palette swatch a hex names ("Deep Violet").
+  def logo_swatch_name(kit, hex) = kit.palette.find { |swatch| swatch.hex.casecmp?(hex) }&.name || hex
 
   # How tall each type's sample is in the index table's cluster (logos/_cluster), in px: the most each fits in its
   # tile under the tile's badge.

@@ -38,17 +38,60 @@ module Logos
     TONES = NavbarLogo::TONES
     CONTEXTS = { light: "Light", dark: "Dark", watermark: "Watermark" }.freeze
     FLAGS = { nil => false, "0" => false, "1" => true }.freeze
+    # The operator's edits (task logo-part-editor) as URL params: each names a part and a setting of
+    # NavbarLogo::PARTS. A colour is a palette hex without its "#" (?first_colour=635BB2), a weight a number, and
+    # ?tagline_visible=0 hides the tagline. A blank param is no edit (the edit form sends one for "as styled").
+    EDIT_PARAMS = { icon_colour: %i[icon colour], first_colour: %i[first colour], first_weight: %i[first weight],
+                    ending_colour: %i[ending colour], ending_weight: %i[ending weight], tagline_colour: %i[tagline colour],
+                    tagline_weight: %i[tagline weight], tagline_visible: %i[tagline visible] }.freeze
+    # The parts each type's logo shows an edit on (the icon tab has none); the tagline only in the tagline form.
+    EDITED_PARTS = { icon: [], navbar: %i[icon first ending], stacked: %i[icon first ending tagline] }.freeze
 
-    attr_reader :logo, :type, :rule, :form, :text, :tone, :guides
+    attr_reader :logo, :type, :rule, :form, :text, :tone, :guides, :edits
 
     # The library object that draws a brand's logos of one type.
     def self.logo(brand, type = :navbar) = (type == :stacked ? StackedLogo : NavbarLogo).new(brand)
 
-    # A brand page's logos of one type in one tone: the icon, or the three text versions (a Navbar Logo's on `rule`).
-    def self.all(logo, type: :navbar, rule: 4, form: nil, tone: :light, guides: false)
+    # A brand page's logos of one type in one tone: the icon, or the three text versions (a Navbar Logo's on `rule`),
+    # every one with the same edits.
+    def self.all(logo, type: :navbar, rule: 4, form: nil, tone: :light, guides: false, edits: NavbarLogo::NO_EDITS)
       return [new(logo, type:, tone:)] if type == :icon
 
-      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, text:, tone:, guides:) }
+      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, text:, tone:, guides:, edits:) }
+    end
+
+    # The edit params (EDIT_PARAMS) as the library's edits, unchecked: the logo checks them (NavbarLogo#checked_edits).
+    # A colour must be a hex, a weight a number and a visibility 0 or 1; anything else is refused here.
+    def self.edits(params)
+      EDIT_PARAMS.each_with_object({}) do |(name, (part, setting)), edits|
+        value = params[name].to_s
+        next if value.empty?
+
+        (edits[part] ||= {})[setting] = edit_value(setting, value, name)
+      end
+    end
+
+    def self.edit_value(setting, value, name)
+      case setting
+      when :colour then value.match?(/\A#?\h{6}\z/) ? "##{value.delete_prefix('#').upcase}" : refuse_edit(name, value, "a six-digit hex")
+      when :weight then value.match?(/\A\d{3}\z/) ? value.to_i : refuse_edit(name, value, "a weight such as 300")
+      else flag(value, name)
+      end
+    end
+
+    def self.refuse_edit(name, value, expected) = raise(NavbarLogo::Error, "unknown #{name} #{value.inspect[0, 40]}: expected #{expected}")
+
+    # Edits (checked) back as URL params, in EDIT_PARAMS order: the inverse of `edits`.
+    def self.edit_params(edits)
+      EDIT_PARAMS.each_with_object({}) do |(name, path), params|
+        value = edits.dig(*path)
+        params[name] = case value
+                       when String then value.delete_prefix("#")
+                       when false then 0
+                       else value
+                       end
+        params.delete(name) if value.nil?
+      end
     end
 
     # A ?form= as a stacked form. Given the Stacked Logo, only a form it draws is taken, and absent is its own form;
@@ -80,7 +123,7 @@ module Logos
         tone: -> { pick(params[:tone], tones_by_name, :light, "tone") },
         guides: -> { flag(params[:guides], "guides") }
       }
-      new(logo, type:, **CHOICES.fetch(type).to_h { |choice| [choice, read.fetch(choice).call] })
+      new(logo, type:, edits: edits(params), **CHOICES.fetch(type).to_h { |choice| [choice, read.fetch(choice).call] })
     end
 
     def self.pick(value, known, default, name)
@@ -88,10 +131,11 @@ module Logos
 
       known.fetch(value) { raise NavbarLogo::Error, "unknown #{name} #{value.inspect}: expected one of #{known.keys.join(', ')}" }
     end
-    private_class_method :pick, :tones_by_name, :rules_by_name
+    private_class_method :pick, :tones_by_name, :rules_by_name, :edit_value, :refuse_edit
 
-    # A choice the type does not take is dropped, so two variants that draw the same thing are named the same.
-    def initialize(logo, type: :navbar, rule: 3, form: nil, text: :homogeneous, tone: :light, guides: false)
+    # A choice the type does not take is dropped, so two variants that draw the same thing are named the same. So is an
+    # edit the logo does not show (#shown_edits): every edit is checked first all the same.
+    def initialize(logo, type: :navbar, rule: 3, form: nil, text: :homogeneous, tone: :light, guides: false, edits: NavbarLogo::NO_EDITS)
       choices = CHOICES.fetch(type) { raise NavbarLogo::Error, "unknown type #{type.inspect}: expected one of #{TYPES.keys.join(', ')}" }
       raise ArgumentError, "a #{type} variant of #{logo.brand} was given a #{logo.class}" unless logo.is_a?(StackedLogo) == (type == :stacked)
 
@@ -102,23 +146,39 @@ module Logos
       @form = form || logo.form if choices.include?(:form)
       @text = text if choices.include?(:text)
       @guides = guides && choices.include?(:guides)
+      @edits = shown_edits(logo.checked_edits(edits))
     end
 
     def svg
       @svg ||= case type
                when :icon then logo.icon_svg(tone:)
-               when :navbar then logo.svg(rule:, text:, tone:, guides:)
-               else logo.svg(form:, text:, tone:, guides:)
+               when :navbar then logo.svg(rule:, text:, tone:, guides:, edits:)
+               else logo.svg(form:, text:, tone:, guides:, edits:)
                end
     end
+
+    def edited? = edits.any?
 
     # A guide drawing's own measures, in its design units: how wide the drawing is and how tall its labels are.
     def guide_width = svg[/viewBox="\S+ \S+ (\S+) /, 1].to_f
     def guide_font = logo.guide_font(rule)
 
     # The type's own choices, as its SVG route's params.
-    def params = { rule:, form:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type))
+    def params = { rule:, form:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type)).merge(self.class.edit_params(edits))
     def filename = [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("guides" if guides)].compact.join("-") + ".svg"
+
+    private
+
+    # The edits this logo shows: none on the icon or a watermark (one colour by definition), and the tagline's only in
+    # the tagline form.
+    def shown_edits(checked)
+      return NavbarLogo::NO_EDITS if tone == :watermark
+
+      parts = EDITED_PARTS.fetch(type) - (form == :tagline ? [] : %i[tagline])
+      checked.slice(*parts).freeze
+    end
+
+    public
 
     # "McRITCHIE INDUSTRIES" as a reader says it: "McRitchie Industries".
     def self.brand_name(logo)

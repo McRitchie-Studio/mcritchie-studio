@@ -19,7 +19,14 @@
 # shows the watermark logos instead; an explicit ?context=light or dark sets the
 # hub's theme to it (data-logo-theme, app/javascript/logo_gallery.js) and otherwise behaves like no context.
 #
-# No model and nothing stored: choosing a logo waits for the brand kit record.
+# The Navbar and Stacked tabs have an EDIT panel (task logo-part-editor): a
+# palette colour per part (icon, first word, ending, tagline), a weight per word
+# and the tagline's visibility, kept in the URL (Logos::Variant::EDIT_PARAMS),
+# carried by every other control, and applied to every logo on the tab and to
+# its downloads and copies. A watermark is one colour, so they do not apply there.
+#
+# No model and nothing stored: choosing a logo, and saving edits, waits for the
+# brand kit record.
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
   before_action :require_admin
@@ -49,8 +56,13 @@ class LogosController < ApplicationController
     @rule = Logos::Variant.rule(params[:rule])
     @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
     @guides = Logos::Variant.flag(params[:guides], "guides")
+    @edits = @logo.checked_edits(Logos::Variant.edits(params))
+    # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
+    # the page, and the logos are drawn as styled, so a change of form never loses the page.
+    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon)
+    drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
-    @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides) }
+    @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides, edits: drawn) }
                       .transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
   end
