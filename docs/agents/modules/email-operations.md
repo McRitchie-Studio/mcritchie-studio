@@ -110,8 +110,6 @@ Do not print secret values in docs, logs, or handoffs.
 Runtime mail env:
 
 ```env
-MAILER_FROM="App Name <team@example.com>"
-MARKETING_MAILER_FROM="Alex from App Name <alex@example.com>"
 RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"
 RESEND_API_KEY=...
 LOCAL_EMAIL_CAPTURE=1    # local/worktree proof mode
@@ -126,8 +124,12 @@ account as `RESEND_API_KEY`. A successful app response (`{"success":true}` from
 not prove provider delivery. A provider smoke is complete only when the durable
 outbox job finishes successfully and the provider accepts the message.
 
-`RESEND_MAILER_FROM` is the sender that ships (`MAILER_FROM` was read only
-while SES was active). Before pointing it at a
+`RESEND_MAILER_FROM` is the sender that ships. An app that sets
+`Studio.mailer_from` from `Studio.mailer_from_for_transport` (the hub does) never
+reads `MAILER_FROM`; studio-engine 0.102.0 falls back to `MAILER_FROM` only when
+`Studio.mailer_from` is unset (its `ApplicationMailer` default and
+`Studio::EmailSmoke#sender`). Nothing reads `MARKETING_MAILER_FROM`; broadcast
+mail takes `RESEND_MARKETING_FROM`, then `RESEND_MAILER_FROM`. Before pointing it at a
 domain, confirm the domain is verified (`GET https://api.resend.com/domains`):
 Resend rejects an unverified sender, and magic links are the sign-in path, so a
 wrong flip is an auth outage. Free apps send with the engine's default

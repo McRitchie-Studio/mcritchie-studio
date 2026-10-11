@@ -1,6 +1,6 @@
 class BroadcastMailer < ApplicationMailer
   helper :broadcasts # BroadcastsHelper#broadcast_greeting_name (mailers don't auto-include app helpers)
-  default from: -> { Studio.marketing_from_for_transport(ses_from: "Alex McRitchie <alex@mcritchie.studio>") }
+  default from: -> { Studio.marketing_from_for_transport }
 
   # Renders a broadcast for ONE contact: personalized greeting, public S3 images,
   # a per-contact unsubscribe link, and (when a delivery is given) the open pixel

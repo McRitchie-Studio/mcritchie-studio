@@ -29,7 +29,7 @@ class PokemonRakeImageBaseTest < ActiveSupport::TestCase
   # The AWS branch (a path-style amazonaws.com URL when no endpoint was set) is
   # gone with AWS (hub-storage-runs-r2-only). Under any configuration the seed
   # base is the production asset host.
-  test "no configuration yields an amazonaws.com URL" do
+  test "a configured public URL yields the production asset host, never amazonaws" do
     Studio.s3_public_url = "https://assets.mcritchie.studio"
     ENV["POKEMON_S3_BUCKET"] = "mcritchie-studio-dev"
     assert_equal "https://assets.mcritchie.studio/pokemon", @rake.send(:pokemon_image_base)

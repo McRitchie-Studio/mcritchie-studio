@@ -51,12 +51,10 @@ Studio.configure do |config|
   config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
 
-  # Verified sending address for the active mail transport. SES uses the
-  # McRitchie domain; Resend fallback uses the shared McRitchie Studio sender so
-  # future apps can send before their own SES setup is complete.
-  config.mailer_from = Studio.mailer_from_for_transport(
-    ses_from: "McRitchie Studio <team@mcritchie.studio>"
-  )
+  # Transactional sender: RESEND_MAILER_FROM, else the engine's shared
+  # McRitchie Studio sender (studio-engine 0.102.0 lib/studio.rb). Setting it
+  # here means the engine's MAILER_FROM fallback is never read on the hub.
+  config.mailer_from = Studio.mailer_from_for_transport
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
   config.sso_logo = "/studio-logo.svg"
