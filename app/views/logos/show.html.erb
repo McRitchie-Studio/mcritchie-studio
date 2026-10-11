@@ -68,10 +68,11 @@
     <% if @guides && @type != :icon %>
       <p class="text-sm text-secondary" data-test="guides-sentence">
         <% if @type == :navbar %>
-          The guide drawings: the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts.
+          The guide drawings: the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height.
         <% else %>
           <% small = { two_line: "the small word", one_line: "the name at a third of its size", tagline: "the tagline" }.fetch(@form) %>
-          The guide drawings prove each measurement with faint copies of <%= small %>: one copy per unit, stacked beside the logo and numbered, so each band can be counted, and its letters in a bracketed column beside the icon, from its top to its foot. A line marks each boundary.
+          <% turned = @form == :one_line ? "the name at 60% of its size turned on end" : "one copy turned on end" %>
+          The guide drawings prove each measurement with faint copies of <%= small %>, spaced exactly as the logo spaces it: one copy per unit, stacked beside the logo and numbered, so each band can be counted, and <%= turned %> beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long. A line marks each boundary.
         <% end %>
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways.
       </p>

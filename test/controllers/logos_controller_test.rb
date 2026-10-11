@@ -261,7 +261,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_examples variants(brand, :stacked, guides: true)
       assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 3
       assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?(%(<g class="guide-ghosts")) }
-      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size: one copy per unit/ : /faint copies of the small word: one copy per unit/
+      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size, spaced exactly as the logo spaces it: one copy per unit.*and the name at 60% of its size turned on end beside the icon, bracketed, reading up from its foot to its top/ : /faint copies of the small word, spaced exactly as the logo spaces it: one copy per unit.*and one copy turned on end beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long/
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
     end
   end
@@ -456,7 +456,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 3
     assert_select "a[data-test='logo-download'][href*='guides=1']", 3
     assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
-    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
+    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
 
     # A guide drawing fits its plate (max-width) down to a least width of its own, where its plate starts to scroll.
     assert_select "[data-test='logo-plate'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
@@ -643,7 +643,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding stacked logo, with tagline, ']", 3
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
-    assert_select "[data-test='guides-sentence']", /faint copies of the tagline: one copy per unit/
+    assert_select "[data-test='guides-sentence']", /faint copies of the tagline, spaced exactly as the logo spaces it: one copy per unit/
 
     get stacked_logo_path("welding", form: "tagline", text: "first", tone: "light", download: 1)
     assert_response :success
