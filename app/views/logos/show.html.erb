@@ -107,7 +107,7 @@
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
-    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
+    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as default. Each tab then opens on it.</p>
     <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
