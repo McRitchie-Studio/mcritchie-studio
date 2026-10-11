@@ -155,6 +155,16 @@ turf:
       text: "#FFFFFF"
       accent: "#4BAF50"
       icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+  # The three-colour head, the brand's own art, in both tones: ink and green lettering on light, white and green on dark.
+  original:
+    light:
+      text: "#1A1535"
+      accent: "#4BAF50"
+      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+    dark:
+      text: "#FFFFFF"
+      accent: "#4BAF50"
+      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
   watermark:
     icon_key: turf_mono
 

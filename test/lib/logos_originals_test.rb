@@ -52,6 +52,16 @@ class LogosOriginalsTest < Minitest::Test
                  logo.svg(rule: 3, text: :first, colouring: :original).scan(/fill="([^"]+)"/).flatten.uniq, "v1's Original colours"
   end
 
+  # Turf Monster's original is the three-colour head trace, in both tones, with its ink (or white) and green name.
+  def test_turf_monsters_original_is_the_three_colour_head
+    logo = Navbar.new("turf")
+    { light: "#1A1535", dark: "#FFFFFF" }.each do |tone, ink|
+      icon = logo.icon_svg(tone:, colouring: :original)
+      assert_equal %w[#1A550D #5C972A #F0EBCF], fills(icon), "#{tone}: outline, body and light"
+      assert_equal %w[#1A550D #5C972A #F0EBCF #4BAF50] + [ink], fills(logo.svg(rule: 3, text: :first, tone:, colouring: :original)), tone
+    end
+  end
+
   def test_commercial_weldings_alt_is_untouched
     logo = Navbar.new("welding")
     assert_equal logo.svg(rule: 4, tone: :dark), logo.svg(rule: 4, tone: :dark, colouring: :alt)
