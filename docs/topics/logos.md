@@ -32,21 +32,26 @@ Logos::StackedLogo.new("industries").svg(text: :first, tone: :light)   # the ico
 A logo has no background. The SVG is transparent wherever it draws nothing, in
 every tone.
 
-## The two rules
+## The three rules
 
 The icon is 300 design units tall and split into equal rows. The name is
-centred on the icon in both.
+centred on the icon in all three.
 
 | Rule | Rows | Capitals | Where the name sits |
 |------|------|----------|---------------------|
 | Rule of 3 (`rule: 3`) | 3 | 1 row (a third of the icon) | the middle row |
 | Rule of 4 (`rule: 4`) | 4 | 2 rows (half the icon) | the middle two rows |
+| Rule of 6 (`rule: 6`) | 6 | 4 rows (two thirds of the icon) | the middle four rows, one row above and below |
 
-- The gap between icon and name is half the ink width of the name's first letter.
-- The word space is Montserrat's own (the space glyph at weight 300). Kerning is off.
+- **The two gaps are equal.** The gap from the icon's box to the name's ink and
+  the gap from the first word's ink to the second's are each half a cap height
+  (`GAP_CAPS = 0.5`), on every rule. Until task navbar-spacing-and-rotated-guides
+  the icon gap was half the first letter's ink (0.38 to 0.58 cap heights by
+  brand) and the word gap was the font's space (0.367; Commercial Welding's
+  lettering 0.351), which read tight between the words. Kerning is off.
 - `tracking` in a brand's style adds space after every letter, in em (negative
   tightens). It is converted to cap heights with the glyph data's own
-  `cap_height_em`. It never widens the word space or the logo's right edge: a
+  `cap_height_em`. It never widens the word gap or the logo's right edge: a
   word ends at its last letter's ink.
 - `text:` is `:homogeneous` (one weight, one colour), `:first` or `:second`
   (that word leads). A brand highlights by **weight** (leading word heavy, the
@@ -133,17 +138,17 @@ Let **u** be the small word's cap height (40 design units).
 - **The icon** is as tall as the small word is wide, 0.6W, and scaled to that.
 - **Centring.** The icon and the small word are centred on the big line.
 - **One line.** The name is set exactly as the Navbar Logo sets it, with the
-  brand's tracking and word space, and the icon is 60% of its width tall. Turf
+  brand's tracking and word gap, and the icon is 60% of its width tall. Turf
   Monster uses it: "Monster" is already 68% as wide as "Turf", so it cannot be
   tracked out under it.
 - **Width over height** is 3n / (1.8n + 8) for two lines and 3n / (1.8n + 5) for
   one, where n is the big line's ink width in cap heights. Studio measures
   1.078 with the first word leading and 1.056 with the second; Industries 1.073
-  and 1.056; Turf Monster 1.28.
+  and 1.056; Turf Monster 1.289 (1.285 before the word gap was half a cap).
 - **A lettering brand** (Commercial Welding) stacks in two lines: its traced
   letters carry their own advances, so the small word can be tracked.
 - **With tagline.** The name is set exactly as the one-line form sets it (both
-  words, the word space, the brand's tracking and lettering). The tagline is
+  words, the word gap, the brand's tracking and lettering). The tagline is
   the small line: Montserrat 500 for every brand (Commercial Welding's own
   tagline lettering is not traced yet), tracked between its characters, a space
   being one, until its ink is exactly 60% of the name's; the icon is as tall as
@@ -171,23 +176,31 @@ Let **u** be the small word's cap height (40 design units).
 
 `guides: true` returns the construction drawing, on the method of the 3-2-1
 reel: every measurement is proved with **ghost copies** of the small line (the
-second word; the tagline; in the one-line form the whole name at 1u, a third of
-its size), set untracked in their own weight:
+second word; the tagline; in the one-line form the whole name), each set
+exactly as the logo sets it, tracking and word gap included. The layout keeps
+that line once, at a cap of 1 (`line`, `line_width`), and both proofs copy it:
 
-- **The ruler.** Right of the logo, one copy per unit, edge to edge, from the
-  icon's foot to the logo's foot: 2 beside the first gap, 3 beside the big line,
-  2 beside the second gap, 1 beside the small line (the one-line form stops
-  after the 3). The copies are numbered 1-2, 1-2-3, 1-2, 1 between the logo and
-  the ruler, so each band can be counted.
-- **The icon's height.** The small line's letters one under another in a column
-  half a unit left of the icon's box, each where it sits along the line, the
-  first capital's top on the icon's top and the last letter on its foot, with a
-  magenta bracket beside the column ticked at both ends: the icon is as tall as
-  the small line is wide. The column stands on the plate, never on the icon, so
-  it reads whatever the icon is filled with (review of PR 2042: drawn over the
-  icon it vanished, 1.02-1.32:1). A letter is never above 1u, and is drawn small
-  enough not to touch the next. A vertical line runs through the logo's centre,
-  and a 1 marks the icon's top.
+- **The ruler.** Right of the logo, one copy per unit at 1u, edge to edge, from
+  the icon's foot to the logo's foot: 2 beside the first gap, 3 beside the big
+  line, 2 beside the second gap, 1 beside the small line (the one-line form
+  stops after the 3). Each copy is exactly as wide as the real small line (the
+  one-line form's, a third of the name). The copies are numbered 1-2, 1-2-3,
+  1-2, 1 between the logo and the ruler, so each band can be counted. Until
+  task navbar-spacing-and-rotated-guides the copies were untracked, so each was
+  narrower than the line it copied.
+- **The icon's height.** ONE copy of the small line turned a quarter turn
+  (`rotate(-90)`, in `<g class="guide-proof">`), reading from bottom to top, its
+  baseline half a unit left of the icon's box (`PROOF_GAP`), its first letter's
+  ink on the icon's foot and its last letter's ink on the icon's top. In the
+  two-line and tagline forms it is the small line at its own 1u, so its length
+  is the icon's height by construction, and the 3-2-1 rule shows. The one-line
+  form has no small line, so its copy is the whole name at the size whose width
+  is the icon's height (60% of the name, 1.8u). A magenta bracket beside it is
+  ticked at the icon's top and foot. It stands on the background, never on the icon,
+  so it reads whatever the icon is filled with (review of PR 2042: drawn over the
+  icon it vanished, 1.02-1.32:1). Alex's item 4a replaced the column of letters
+  spelled downwards that stood here before. A vertical line runs through the
+  logo's centre, and a 1 marks the icon's top.
 - **Lines** only at band boundaries, across the logo and the ruler.
 
 The ghosts are the logo's own text colour (the watermark's fill in a
@@ -197,7 +210,8 @@ measure 1.4:1 to 2.2:1 against the hub card the gallery shows them on (white in
 the light theme, #3C3853 in the dark theme and the watermark context), and the
 logo's text is more than twice that
 (`test/helpers/logos_helper_test.rb`). The lines (1.0 design units) and the
-numbers (28) are in the guide magenta, inside `<g class="guide-lines">`. Both
+numbers (32, 0.8u: the tracked ruler made Industries' tagline drawing need
+1127 px at 28) are in the guide magenta, inside `<g class="guide-lines">`. Both
 groups sit outside a watermark's translucent group, and the logo inside the
 drawing is the plain logo to the byte. `examples` is not defined on a
 Stacked Logo, and the rake task writes Navbar Logos only.
@@ -215,9 +229,10 @@ Three things a style may ask for beyond an icon and two Montserrat weights:
 
 - **Its own lettering** (`lettering: welding`). The name's two words are looked
   up whole in `brand_lettering.json` and drawn from the brand's traced letters.
-  There is one weight, so the brand must use `highlight: colour`; the word
-  space and the fill rule are the lettering's own (`evenodd`: a traced letter
-  carries its counters as sub-paths). `highlight: weight`, a `tracking`, or a
+  There is one weight, so the brand must use `highlight: colour`; the fill rule
+  is the lettering's own (`evenodd`: a traced letter carries its counters as
+  sub-paths). Its word gap is half a cap height like every brand's; the
+  lettering's own `space` is no longer read. `highlight: weight`, a `tracking`, or a
   word the lettering does not hold is refused.
 - **Tracking** (`tracking: -0.025`), above. Montserrat brands only.
 - **An icon per tone** (`icon_key:` inside a tone). Commercial Welding's dark
@@ -237,9 +252,13 @@ no external reference. Its viewBox is its own box, `0 0 <width> 300`.
 icon's right edge, the name's left ink edge, the row numbers, and ghost copies
 of the name one row tall in every row, as the rule-of-thirds reel draws them.
 Rule of 3: a copy above and below the real name make three. Rule of 4: four
-copies, two of them behind the two-row name. The ghosts are the logo's text
-colour, faint, in `<g class="guide-ghosts">` BEHIND the logo; the lines (1.0)
-and numbers (30) are in `<g class="guide-lines">`. That drawing does use
+copies, two of them behind the two-row name. Rule of 6: six copies, four of them
+behind the four-row name. Above the drawing, a bracket labelled ½ spans each of
+the two equal gaps (after the icon, between the words), so the reader sees they
+match. The ghosts are the logo's text colour, faint, in `<g class="guide-ghosts">`
+BEHIND the logo; the lines (1.0) and numbers (30; 40 on the rule of 6, whose
+drawing is the widest, so it still fits the 1028 px frame at 9 px labels) are in
+`<g class="guide-lines">`. That drawing does use
 `<line>` and `<text>`, so it is for looking at, never for shipping. Only logos
 WITHOUT guides are pinned to the byte (SHA-256 tests in
 `test/lib/logos_navbar_logo_test.rb` and `test/lib/logos_stacked_logo_test.rb`).
@@ -251,8 +270,8 @@ bin/rails 'logos:navbar[industries]'            # writes tmp/logos/industries/*.
 bin/rails 'logos:navbar[studio,/some/dir]'      # or into a directory you name
 ```
 
-It writes 24 files per brand, named
-`<brand>-rule<3|4>-<homogeneous|first|second>-<light|dark>[-guides].svg`.
+It writes 36 files per brand, named
+`<brand>-rule<3|4|6>-<homogeneous|first|second>-<light|dark>[-guides].svg`.
 
 ## The gallery
 
@@ -265,7 +284,7 @@ linked from the admin sidebar as **Logos**.
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo (first word leading) as a square on the left, the **Navbar** Logo (rule of 4, second word leading) beside it, and the **Icon** as a small square under the Navbar Logo, each a tile with a badge naming its type and linking to its tab of the brand page. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs, the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
-| `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4>-<text>-<tone>[-guides].svg`. |
+| `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
 
 On the three SVG routes an absent param takes the library's default (so
@@ -328,11 +347,11 @@ class and `localStorage` `theme`):
 | Tab | Shows | Its own controls |
 |-----|-------|------------------|
 | Icon | the icon, once | none |
-| Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3` or `4`; the page shows the rule of 4 unless asked) and **Show guides** |
+| Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked) and **Show guides** |
 | Stacked Logo | the three text versions in one form, and a short paragraph stating the 3-2-1 method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line) and **Show guides** |
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
-  carries `aria-current="page"`. The Rule control is a `role="group"` of two
+  carries `aria-current="page"`. The Rule control is a `role="group"` of three
   links; the current one carries `aria-current="true"`. All are `.btn` links.
   They, and Download and Copy SVG, have a focus ring fixed per hub theme,
   because the engine's own ring (`--color-cta` at 70%) is too faint on the
@@ -354,8 +373,8 @@ class and `localStorage` `theme`):
   `LogosHelper#logo_guide_min_width`, computed from its viewBox: the width at
   which its labels are 9 px tall (`LOGO_GUIDE_LABEL_PX`). Below that width the
   drawing stops shrinking and its frame scrolls sideways inside itself. The
-  widest least width is 954 px (Commercial Welding, with tagline), under the
-  1028 px plate of a 1280 px page, so nothing scrolls there; on a phone every
+  widest least width is 993 px (McRitchie Industries, with tagline), under the
+  1028 px frame of a 1280 px page, so nothing scrolls there; on a phone every
   drawing does. The page body never scrolls sideways.
 - **A guide frame is a tab stop only while it scrolls.** It is served with
   `tabindex="0"` and `data-scroll-tab-stop`; `app/javascript/scroll_tab_stop.js`
@@ -401,11 +420,11 @@ class and `localStorage` `theme`):
 | `lib/logos/data/brand_icons.json` | Studio's and Industries' icon layers: a path, a role (`primary`, `edge`) and a fill rule each. |
 | `lib/logos/data/brand_icons_turf_welding.json` | The same format for `turf` (roles `outline`, `body`, `light`), `welding` (`primary`, `accent`) and `welding_mono` (`primary`). |
 | `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. The library reads the three icon files as one set. |
-| `lib/logos/data/brand_lettering.json` | A brand's own lettering: per word, a list of letters (`d`, `adv`, `l`, `r`) in the glyph file's units, plus the word `space` and the `fill_rule`. |
+| `lib/logos/data/brand_lettering.json` | A brand's own lettering: per word, a list of letters (`d`, `adv`, `l`, `r`) in the glyph file's units, plus the `fill_rule` (and the traced word `space`, which the equal-gap rule no longer reads). |
 | `lib/logos/data/montserrat_glyphs.json` | Letter outlines for weights 300 to 800, 95 ASCII glyphs each. Cap height is 1, the baseline is y = 0, y grows downward. Letters fill `nonzero`. |
 | `lib/logos/data/extract_glyphs.py` | The script that made the glyph file. It needs Python with fonttools and brotli and the engine's Montserrat file; it runs by hand, never in CI. |
 
-A brand that is not in the data, a rule other than 3 or 4, a name that is not
+A brand that is not in the data, a rule other than 3, 4 or 6, a name that is not
 exactly two words, and a character with no glyph each raise
 `Logos::NavbarLogo::Error` with the reason. A fill that is not a `#hex` colour
 is refused too.

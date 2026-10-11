@@ -56,10 +56,13 @@ class LogosHelperTest < ActionView::TestCase
   def view_box(variant) = Nokogiri::XML(variant.svg).root["viewBox"].split.map(&:to_f)
 
   test "no guide drawing needs more than the 1028 px plate of a 1280 px page, so nothing scrolls there" do
-    assert_equal 45, guide_drawings.size
+    assert_equal 57, guide_drawings.size
     guide_drawings.each { |variant| assert_operator logo_guide_min_width(variant), :<=, LogosHelper::LOGO_PLATE_WIDTH, variant.label }
     widest = guide_drawings.max_by { |variant| logo_guide_min_width(variant) }
-    assert_equal ["Commercial Welding stacked logo, with tagline, homogeneous, light, construction guides", 954], [widest.label, logo_guide_min_width(widest)]
+    # Task navbar-spacing-and-rotated-guides: the ruler's copies are now tracked as the real line is, so the widest
+    # drawing became Industries' tagline form (1127 px at 28-unit labels; 986 px at the 32-unit labels it now has), and
+    # 993 px once the word gap became half a cap height.
+    assert_equal ["McRitchie Industries stacked logo, with tagline, homogeneous, light, construction guides", 993], [widest.label, logo_guide_min_width(widest)]
   end
 
   test "at its least width every guide drawing's labels are at least 9 px, read from the drawing itself" do

@@ -21,9 +21,9 @@ class LogosNavbarTaskTest < ActiveSupport::TestCase
     out, = run_task("industries", @dir)
     paths = out.lines.map(&:strip)
 
-    assert_equal 24, paths.size
+    assert_equal 36, paths.size
     assert_equal Dir[File.join(@dir, "*.svg")].sort, paths.sort, "prints exactly the files it wrote"
-    expected = [3, 4].product(%w[homogeneous first second], %w[light dark], ["", "-guides"]).map do |rule, text, tone, guides|
+    expected = [3, 4, 6].product(%w[homogeneous first second], %w[light dark], ["", "-guides"]).map do |rule, text, tone, guides|
       "industries-rule#{rule}-#{text}-#{tone}#{guides}.svg"
     end
     assert_equal expected.sort, paths.map { |p| File.basename(p) }.sort
@@ -47,7 +47,7 @@ class LogosNavbarTaskTest < ActiveSupport::TestCase
   test "writes under tmp/logos/<brand> by default" do
     out, = run_task("studio")
     dir = Rails.root.join("tmp/logos/studio")
-    assert_equal 24, out.lines.size
+    assert_equal 36, out.lines.size
     out.lines.each do |line|
       assert_equal dir.to_s, File.dirname(line.strip)
       assert File.size?(line.strip), line
