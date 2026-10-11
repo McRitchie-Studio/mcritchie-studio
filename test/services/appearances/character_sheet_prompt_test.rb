@@ -51,17 +51,17 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "NOT a sharp ninety-degree"
   end
 
-  # ⚠ THIS RECIPE DOES NOT READ `athletes.jersey_number`, though the column has
-  # existed since 2026-09-27 — the number arrives only as the caller's `number:`
-  # argument, so nil is still the ordinary case here. Wiring the column would change
-  # the text of every generated prompt and is a task of its own. A template that
-  # emitted the placeholder instead would have the model render the angle brackets.
-  test "an unknown jersey number omits the clause rather than emitting a placeholder" do
-    prompt = Appearances::CharacterSheetPrompt.call(@look)
+  # A LOOK WITH NO NUMBER OMITS THE CLAUSES rather than emitting a placeholder. A
+  # template that emitted one would have the model render the angle brackets.
+  test "a look with no jersey number omits the clause rather than emitting a placeholder" do
+    @look.update_columns(jersey_number: nil)
+    prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
 
     assert_not_includes prompt, "<NUMBER>"
     assert_not_includes prompt, "jersey number ,"
     assert_not_includes prompt, "jersey number "
+    assert_not_includes prompt, "above number"
+    assert_includes prompt, "nameplate ALLEN clearly legible", "the nameplate stands without a number"
   end
 
   test "a supplied jersey number reaches both the uniform and the nameplate" do
@@ -69,6 +69,58 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
 
     assert_includes prompt, "jersey number 14"
     assert_includes prompt, "above number 14"
+  end
+
+  # THE LOOK'S OWN COLUMN IS READ BY DEFAULT (task player-sheet-uniform-and-build): a
+  # sheet built with no `number:` argument came back numberless on production.
+  test "the look's stored jersey number reaches the prompt when no number is passed" do
+    @look.update!(jersey_number: 23)
+    prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
+
+    assert_includes prompt, "game uniform, jersey number 23"
+    assert_includes prompt, "nameplate ALLEN above number 23 clearly legible"
+  end
+
+  test "a passed number outranks the stored one, and jersey 0 is a number" do
+    @look.update!(jersey_number: 23)
+
+    assert_includes Appearances::CharacterSheetPrompt.call(@look.reload, number: "7"), "jersey number 7,"
+    @look.update!(jersey_number: 0)
+    assert_includes Appearances::CharacterSheetPrompt.call(@look.reload), "jersey number 0,"
+  end
+
+  test "an iced twin with no number of its own wears its base's" do
+    @look.update!(jersey_number: 23)
+    twin = Appearances::IcedTwin.create!(@look)
+    twin.update_columns(jersey_number: nil)
+
+    assert_includes Appearances::CharacterSheetPrompt.call(twin.reload), "jersey number 23"
+  end
+
+  # ── THE BACK VIEW IS BARE-HEADED (the operator's review, 2026-10-11) ──
+
+  def back_view_line(prompt) = prompt.lines.find { |l| l.start_with?("Column 2:") }
+
+  test "the back view is bare-headed: no helmet, hair visible, nameplate and number" do
+    @look.update!(jersey_number: 23)
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(@look.reload))
+
+    assert line, "column 2 has its own line"
+    assert_includes line, "NO helmet, bare head with his hair visible from behind"
+    assert_includes line, "nameplate ALLEN above number 23"
+    assert_includes line, "about fifteen degrees"
+    assert_not_includes line, "wearing his helmet"
+    assert_not_includes line, "edge of the helmet"
+    assert_equal ["NO helmet"], line.scan(/\S*\s?helmet/i).map(&:strip),
+                 "the only helmet word left on the back view is the refusal of one"
+  end
+
+  test "no panel on either sheet asks for a helmet" do
+    [Appearances::CharacterSheetPrompt.call(@look), iced_prompt].each do |prompt|
+      assert_not_includes prompt, "wearing his helmet"
+      assert_not_includes prompt, "edge of the helmet"
+      assert_equal 2, prompt.scan("NO helmet").length, "both full-body columns refuse a helmet"
+    end
   end
 
   # THE NAMEPLATE IS THE SURNAME, UPPERCASED, because that is what is printed on

@@ -163,19 +163,11 @@
     <% elsif admin? %>
       <%= form_with url: generate_person_appearance_path(@person.slug, @appearance.slug),
                     method: :post, class: "space-y-2" do |f| %>
-        <%# THE JERSEY NUMBER IS STILL TYPED, AND THAT IS NOW A CHOICE RATHER THAN A
-            LIMIT. This comment used to say nothing stored a number, measured the day
-            before `athletes.jersey_number` landed (Athletes::AcquireOrValidate, its
-            `:roster` policy) — the column exists, and the model-pipeline card already
-            prints it. What has not changed is that Appearances::CharacterSheetPrompt
-            does not READ it: doing so would change the text of every generated prompt,
-            and a prompt change costs money to evaluate and owes its own before/after
-            artifacts, so it is a task rather than a side effect of correcting a
-            comment. Until then this field is the only number the prompt sees, and left
-            blank the prompt omits the number and nameplate clauses rather than asking
-            the model to render a placeholder. It opens filled with the look's stored
-            jersey number, and a number typed here is kept on the look for the clip
-            prompts (AppearancesController#keep_jersey_number). %>
+        <%# THE JERSEY NUMBER. It opens filled with the look's stored number, which
+            Appearances::CharacterSheetPrompt now reads by default; a number typed here
+            outranks it for this build and is kept on the look for the clip prompts
+            (AppearancesController#keep_jersey_number). Left blank on a look with no
+            number, the prompt omits the number clauses rather than a placeholder. %>
         <%= f.number_field :number, placeholder: "Jersey number (optional)", value: @appearance.jersey_number,
               min: 0, max: 99, class: "input-field w-full text-xs" %>
         <% sheet_word = @appearance.iced? ? "iced character sheet" : "character sheet" %>
