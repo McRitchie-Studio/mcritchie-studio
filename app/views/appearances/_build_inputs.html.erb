@@ -1,0 +1,118 @@
+<%# THE SHEET'S NON-FACE INPUTS (task player-sheet-uniform-and-build): the body
+    archetype the sheet is drawn to, and the uniform photos its badges are copied
+    from. Neither is ever a face; the prompt names each image's role. Only a player
+    sheet reads them, so a character's or a music-video look does not render this. %>
+<div data-test="sheet-build-inputs" class="card p-4 sm:p-5 space-y-4">
+  <header class="space-y-1">
+    <p class="label-upper text-primary">1b &middot; Uniform and build</p>
+    <h2 class="text-lg font-bold text-heading">What the sheet copies besides the face</h2>
+    <p class="text-xs text-muted">
+      Sent with the headshot as labelled references: the body archetype for build and proportions only, the
+      uniform photos for badges, trim, pants and socks only. A chosen photo is copied to our storage first.
+    </p>
+  </header>
+
+  <div data-test="archetype-picker" class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
+    <div class="flex items-baseline justify-between gap-2 flex-wrap">
+      <p class="label-upper">Body archetype</p>
+      <% if admin? %><%= link_to "All archetypes", body_archetypes_path, class: "text-2xs text-primary" %><% end %>
+    </div>
+    <div class="flex gap-3 items-start">
+      <div class="w-20 h-14 shrink-0 rounded border border-subtle bg-surface overflow-hidden flex items-center justify-center">
+        <% if @body_archetype&.image? %>
+          <%= image_tag @body_archetype.image_url, alt: "#{@body_archetype.name} body build", class: "w-full h-full object-contain" %>
+        <% else %>
+          <% if admin? %>
+            <%= link_to "no image", body_archetypes_path, class: "text-3xs text-primary text-center px-1",
+                        data: { test: "archetype-no-image-link" } %>
+          <% else %>
+            <span class="text-3xs text-muted text-center px-1">no image</span>
+          <% end %>
+        <% end %>
+      </div>
+      <div class="min-w-0 space-y-0.5">
+        <p class="text-xs text-heading font-bold" data-test="archetype-current" data-slug="<%= @body_archetype&.slug %>">
+          <%= @body_archetype ? @body_archetype.name : "None" %>
+          <span class="text-3xs text-muted font-normal">
+            <%= @appearance.body_archetype_chosen? ? "chosen for this look" : "default for #{@appearance.athlete_position.presence || 'an unknown position'}" %>
+          </span>
+        </p>
+        <% if @body_archetype %>
+          <p class="text-2xs text-muted break-words"><%= @body_archetype.description %></p>
+          <% unless @body_archetype.image? %>
+            <p class="text-3xs text-warning-ink">
+              No image yet: the sheet reads the description only until one is generated<% if admin? %>
+              on <%= link_to "Body archetypes", body_archetypes_path, class: "underline", data: { test: "archetype-generate-link" } %><% end %>.
+            </p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+    <% if admin? && @body_archetypes.any? %>
+      <%= form_with url: archetype_person_appearance_path(@person.slug, @appearance.slug), method: :patch,
+                    class: "flex gap-2 items-center flex-wrap", data: { test: "archetype-form" } do |f| %>
+        <%= f.select :body_archetype_slug,
+              options_for_select([["Default for his position", ""]] + @body_archetypes.map { |a| [a.name, a.slug] },
+                                 @appearance.body_archetype_slug.to_s),
+              {}, class: "input-field text-xs flex-1 min-w-0" %>
+        <%= f.submit "Use", class: "btn btn-sm btn-outline shrink-0" %>
+      <% end %>
+    <% end %>
+  </div>
+
+  <%# THE UNIFORM PHOTOS. Found by one search, picked by the operator (at most
+      AppearanceUniformPhoto::CHOSEN_LIMIT), the same loop as the face photos:
+      candidates shown, a human chooses. An iced twin reads its base's. %>
+  <div data-test="uniform-photos" class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-3">
+    <div class="flex items-start justify-between gap-2 flex-wrap">
+      <div class="min-w-0 space-y-0.5">
+        <p class="label-upper">Uniform photos (<%= @uniform_chosen.length %> of <%= AppearanceUniformPhoto::CHOSEN_LIMIT %>)</p>
+        <p class="text-2xs text-muted break-words">
+          Game-action photos the sheet copies the badges from: team logo on both shoulders, NFL shield at the
+          collar, a captain patch only if they show one, number font, trim, pants and socks. Never the face.
+        </p>
+        <% if @uniform_look != @appearance %>
+          <p class="text-3xs text-muted">
+            Read from the base look,
+            <%= link_to @uniform_look.descriptor, person_appearance_path(@person.slug, @uniform_look.slug), class: "text-primary" %>:
+            same uniform.
+          </p>
+        <% end %>
+      </div>
+      <% if admin? && @search_available %>
+        <%= button_to Appearances::GatherUniformPhotos.button_label,
+              search_uniform_person_appearance_path(@person.slug, @appearance.slug), method: :post,
+              class: "btn btn-sm btn-outline shrink-0", form: { data: { test: "uniform-search" } } %>
+      <% end %>
+    </div>
+    <p class="text-3xs text-muted break-words">Searches &ldquo;<%= @uniform_query %>&rdquo;.</p>
+
+    <% if @uniform_chosen.any? %>
+      <div data-test="uniform-chosen" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <% @uniform_chosen.each do |photo| %>
+          <%= render "appearances/uniform_photo", photo: photo, chosen: true %>
+        <% end %>
+      </div>
+    <% else %>
+      <p data-test="uniform-none" class="text-2xs text-muted">
+        None chosen: the sheet names the badges from the prompt alone.
+      </p>
+    <% end %>
+
+    <% if @uniform_candidates.any? %>
+      <div class="space-y-1">
+        <p class="label-upper">Found, not chosen (<%= @uniform_candidates.length %>)</p>
+        <% if @uniform_chosen.length >= AppearanceUniformPhoto::CHOSEN_LIMIT %>
+          <p data-test="uniform-full" class="text-2xs text-muted">
+            <%= AppearanceUniformPhoto::CHOSEN_LIMIT %> chosen, the most a sheet takes. Remove one to use another.
+          </p>
+        <% end %>
+        <div data-test="uniform-candidates" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <% @uniform_candidates.each do |photo| %>
+            <%= render "appearances/uniform_photo", photo: photo, chosen: false %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>

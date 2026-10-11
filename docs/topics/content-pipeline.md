@@ -425,6 +425,53 @@ Every look a person is given gets an **iced-out twin** (the operator's ask,
   both: this and <twin> (2 paid builds)**. Each build is its own claim and job in
   `Appearances::SheetBuild`.
 
+#### Building a player sheet: number, uniform photos and body archetype
+
+The operator's review of a real sheet (2026-10-11) found a plain jersey with no
+badges, a slim generic back and a helmet on the back view. The player sheet now
+reads three more inputs, all set on the look page (`/people/<slug>/models/<look>`,
+the **1b · Uniform and build** card), and the back view is bare-headed (the helmeted
+view will be its own model later).
+
+1. **The number and nameplate.** `Appearances::CharacterSheetPrompt` reads the
+   look's `jersey_number` (filled from the roster when the look is made, editable on
+   the person page or in the Generate form) and the person's surname. A number typed
+   in the Generate form outranks the column for that build and is kept on the look.
+   A look with no number omits the number clauses; it never prints a placeholder.
+2. **Uniform photos (optional, up to 3).** Press **Find game photos (1 search)**:
+   one image-search query, `"<player> <team> <colourway> game action"`, through the
+   same `Appearances::ImageSearch` providers as the face photos. Every result is
+   filed unchosen in `appearance_uniform_photos` (`AppearanceUniformPhoto`); press
+   **Use** on up to three that show the jersey clearly (shoulder logos, collar
+   shield, a captain patch if he wears one). **Use copies the photo into our
+   storage** (`Appearances::MirrorUniformPhoto`, through the same vetted, pinned
+   `Studio::ImageCache.fetch_response` path as the face photos) and the build sends
+   only that copy; a photo whose host refuses the copy is not chosen, and the page
+   says why. The search button names its cost: free on Wikimedia Commons, one paid
+   query on Serper. They are a separate table from the face
+   photos so no identity query can ever pick one up. An iced twin reads its base
+   look's photos.
+3. **Body archetype.** Each look is drawn to a `BodyArchetype`
+   (`/body-archetypes`): `nfl-qb-skill`, `nfl-receiver-db` or `nfl-lineman`. With no
+   pick, the look uses the default for the athlete's position (QB → `nfl-qb-skill`,
+   unknown → `nfl-qb-skill`); the operator changes it with the picker on the look
+   page. The archetype's description always rides in the prompt; its image rides as a
+   reference only once it has one. The migration inserted the three rows WITHOUT
+   images: press **Generate image (1 paid image)** on `/body-archetypes` to buy one
+   (front and back, faceless, plain padded practice gear, no team marks).
+4. **Generate the sheet** as before. The request carries the images in a fixed
+   order, each named by position in the prompt: **IDENTITY ANCHOR** (the face), then
+   **UNIFORM REFERENCE** (copy only the uniform: badges, trim, number font, pants,
+   socks; never a face), then **BODY BUILD REFERENCE** (build and proportions only).
+   The sheet row's `reference_arity: one` still cuts the faces to one; the uniform
+   and body images are not faces and ride in full. A request over
+   `Appearances::GenerateArtifact::MAX_REQUEST_IMAGES` (8, our ceiling; no vendor
+   limit is recorded for this path) is refused before anything is spent.
+
+**Cost:** one paid GPT-5 image per sheet build (unchanged), one paid GPT-5 image
+per archetype generation, and one image-search query per **Find game photos**
+press (paid on Serper, free on Wikimedia Commons). Nothing generates or searches on its own.
+
 #### Where it lives in the app
 
 | Piece | File |
@@ -437,6 +484,9 @@ Every look a person is given gets an **iced-out twin** (the operator's ask,
 | Shared failure type | `ImageGeneration::GenerationFailed` |
 | Normalised answer | `ImageGeneration::Result` |
 | The prompt | `Appearances::CharacterSheetPrompt` (`iced:` for the iced-out variant) |
+| The images and their roles | `Appearances::SheetReferences` (face, uniform photos, body archetype) |
+| Uniform photos | `AppearanceUniformPhoto` (`appearance_uniform_photos`), `Appearances::GatherUniformPhotos` |
+| Body archetypes | `BodyArchetype`, `BodyArchetypes::Generate`, `/body-archetypes` (`BodyArchetypesController`) — `require_admin` |
 | The iced twin | `Appearances::IcedTwin`; `appearances.iced`, `appearances.base_appearance_slug` |
 | A person's jewelry | `PersonJewelry` (`person_jewelries`), `PersonJewelriesController` — `require_admin` |
 | The use case | `Appearances::GenerateArtifact` |
@@ -487,15 +537,12 @@ variant — deliberately unlike `Appearances::ReferenceImages::HEADSHOT_VARIANTS
 (`%w[400 100]`), because that list feeds a TRAINING set while this feeds a
 generator reading one image.
 
-**The jersey number is in the data model, and this recipe still does not read it.**
-`athletes.jersey_number` landed 2026-09-27 (`Athletes::AcquireOrValidate`, `:roster`
-policy); before that no table carried one and the approved reference sheet's "14" was
-supplied by hand. `Appearances::CharacterSheetPrompt` takes `number:` as a caller's
-argument and reads no column, deliberately: wiring it changes the text of every
-generated prompt, and a prompt change costs money to evaluate and owes its own
-before/after artifacts. Until then the page offers an optional number field; left
-blank, the prompt omits the number and nameplate clauses rather than asking the model
-to render a placeholder.
+**The prompt reads the look's jersey number.** `appearances.jersey_number` is filled
+from the roster (`athletes.jersey_number`, `Athletes::AcquireOrValidate`, `:roster`
+policy) when a look is made, and `Appearances::CharacterSheetPrompt` reads it whenever
+no `number:` is passed (task player-sheet-uniform-and-build, 2026-10-11; before it, a
+sheet built without the argument came back numberless). A look with no number omits
+the number clauses rather than asking the model to render a placeholder.
 
 **⚠ `POST https://queue.fal.run/<model>` submits billable work on ANY body**,
 including an empty one. Probe fal with the GET status endpoint: a real key answers

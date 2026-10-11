@@ -56,6 +56,7 @@ module StringStates
     "appearances.sheet_build_state" => NO_LIST,
     "apps.status" => NO_LIST,
     "arenas.state" => "geography: the state an arena stands in",
+    "body_archetypes.generation_state" => NO_LIST,
     "ci_check_jobs.status" => PROVIDER,
     "communications.status" => "validated on asks only; other kinds leave it unset",
     "contacts.verification_status" => PROVIDER,

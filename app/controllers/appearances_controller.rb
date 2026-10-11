@@ -109,7 +109,78 @@ class AppearancesController < ApplicationController
     redirect_to appearance_path, alert: "Could not reach Higgsfield: #{e.message}"
   end
 
+  # POINT THIS LOOK AT A BODY ARCHETYPE, or back at its position default (blank).
+  # Free: a pointer, read by the next sheet build. Logged like every write here.
+  def archetype
+    rescue_and_log(target: @appearance) { point_at_archetype }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "Could not change the body archetype: #{e.message}"
+  end
+
+  # BUY ONE IMAGE-SEARCH QUERY for game-action photos of this look's uniform and file
+  # every result as a candidate (Appearances::GatherUniformPhotos). An iced twin files
+  # under its base: same uniform.
+  def search_uniform
+    rescue_and_log(target: @appearance) do
+      summary = Appearances::GatherUniformPhotos.call(@appearance)
+      flash_key = summary.returned.zero? ? :alert : :notice
+      redirect_to appearance_path, flash_key => summary.sentence
+    end
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "The uniform search failed: #{e.message}"
+  end
+
+  # CHOOSE OR DROP ONE UNIFORM PHOTO. Free. Choosing COPIES the photo into our
+  # storage first (Appearances::MirrorUniformPhoto), so a build sends our copy and
+  # never the search hit; a photo we cannot copy is refused here, with the reason,
+  # before any build is claimed. At most AppearanceUniformPhoto::CHOSEN_LIMIT ride.
+  def pick_uniform
+    rescue_and_log(target: @appearance) { pick_uniform_photo }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "Could not change the uniform photo: #{e.message}"
+  end
+
   private
+
+  def point_at_archetype
+    slug = params[:body_archetype_slug].presence
+    if slug && !BodyArchetype.exists?(slug: slug)
+      return redirect_to appearance_path, alert: "No body archetype #{slug.inspect}. Nothing changed."
+    end
+
+    @appearance.update!(body_archetype_slug: slug)
+    chosen = @appearance.body_archetype
+    redirect_to appearance_path,
+                notice: "This look's sheet will be drawn to #{chosen ? chosen.name : 'no archetype'}" \
+                        "#{slug ? '' : ' (the default for his position)'}."
+  end
+
+  # The expected refusals (a full set, a photo we could not copy) are states, not
+  # failures: they answer here and leave no ErrorLog row.
+  def pick_uniform_photo
+    photo = @appearance.uniform_source.uniform_photos.find_by!(slug: params[:photo_slug])
+    chosen = ActiveModel::Type::Boolean.new.cast(params[:chosen])
+    return drop_uniform_photo(photo) unless chosen
+
+    photo.chosen = true
+    photo.chosen_at = Time.current
+    return refuse_uniform_pick(photo.errors.full_messages.to_sentence) unless photo.valid?
+
+    Appearances::MirrorUniformPhoto.call(photo)
+    photo.save!
+    redirect_to appearance_path, notice: "Uniform photo chosen and copied to our storage."
+  rescue Appearances::MirrorUniformPhoto::Refused => e
+    refuse_uniform_pick("we could not copy it: #{e.message}. Nothing was spent")
+  end
+
+  def drop_uniform_photo(photo)
+    photo.update!(chosen: false, chosen_at: nil)
+    redirect_to appearance_path, notice: "Uniform photo dropped."
+  end
+
+  def refuse_uniform_pick(reason)
+    redirect_to appearance_path, alert: "Not chosen: #{reason}."
+  end
 
   def keep_jersey_number
     number = Appearance.jersey_from(params[:number])
@@ -170,9 +241,7 @@ class AppearancesController < ApplicationController
     keep_jersey_number
     Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
     redirect_to appearance_path, notice: [Appearances::SheetBuild::STARTED_NOTICE, twin_build_sentence].compact.join(" ")
-  rescue Appearances::GenerateArtifact::NoGenerator,
-         Appearances::GenerateArtifact::NoIdentityPhoto,
-         Appearances::SheetBuild::Busy => e
+  rescue *Appearances::GenerateArtifact::REFUSALS, Appearances::SheetBuild::Busy => e
     redirect_to appearance_path, alert: e.message
   end
 
@@ -181,9 +250,7 @@ class AppearancesController < ApplicationController
 
     Appearances::SheetBuild.start!(twin, number: params[:number].presence)
     "The iced twin's sheet (#{twin.descriptor}) is building too: two paid builds in all."
-  rescue Appearances::GenerateArtifact::NoGenerator,
-         Appearances::GenerateArtifact::NoIdentityPhoto,
-         Appearances::SheetBuild::Busy => e
+  rescue *Appearances::GenerateArtifact::REFUSALS, Appearances::SheetBuild::Busy => e
     "The iced twin's sheet did not start: #{e.message}"
   end
 
@@ -230,7 +297,19 @@ class AppearancesController < ApplicationController
     @face_ranked = @search_rows.any?(&:face_scored?)
     @face_ranking_available = Appearances::FaceVisibility.available?
     set_generator
+    set_build_inputs
     note_unchecked_photos
+  end
+
+  # THE SHEET'S NON-FACE INPUTS: the body archetype it is drawn to.
+  def set_build_inputs
+    @body_archetypes = BodyArchetype.ordered.to_a
+    @body_archetype = @appearance.body_archetype
+    uniform_look = @appearance.uniform_source
+    @uniform_look = uniform_look
+    @uniform_chosen = uniform_look.uniform_photos.chosen.to_a
+    @uniform_candidates = uniform_look.uniform_photos.candidates.to_a
+    @uniform_query = Appearances::GatherUniformPhotos.new(@appearance).query
   end
 
   # PHOTOGRAPHS THIS PAGE LEFT OUT BECAUSE THEIR HOST COULD NOT BE LOOKED UP.

@@ -164,6 +164,13 @@ Rails.application.routes.draw do
   post "characters/:slug/looks/:look_slug/default", to: "characters#make_default", as: :default_character_look
   post "characters/:slug/looks/:look_slug/sheet", to: "characters#build_sheet", as: :character_look_sheet
 
+  # Body archetypes (BodyArchetypesController, require_admin): the reusable body-build
+  # references a player sheet is drawn to. #generate buys ONE paid image, on the
+  # operator's click only. Task player-sheet-uniform-and-build.
+  resources :body_archetypes, path: "body-archetypes", param: :slug, only: [:index] do
+    member { post :generate }
+  end
+
   # Logo studio (LogosController, require_admin): a read-only gallery over
   # Logos::NavbarLogo and Logos::StackedLogo. /icon, /navbar and /stacked each
   # serve one logo of that type as image/svg+xml; ?download=1 sends it as a
@@ -496,6 +503,12 @@ Rails.application.routes.draw do
         # spenders, for the reason spelled out above: hub signup is open, so a
         # session is no control over a paid endpoint.
         post :generate
+        # The body archetype this look's sheet is drawn to (free; a pointer).
+        patch :archetype
+        # Game-action photos of the uniform: #search_uniform buys ONE image-search
+        # query; #pick_uniform chooses or drops one candidate (free).
+        post :search_uniform
+        post :pick_uniform
       end
     end
 

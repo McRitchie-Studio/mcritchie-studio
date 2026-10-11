@@ -1,0 +1,22 @@
+# The three starting rows the migration inserts, without images (an image is a
+# paid generation, bought on the operator's click only).
+nfl_qb_skill:
+  slug: nfl-qb-skill
+  name: Quarterback / skill position
+  description: a tall NFL quarterback's athletic build with broad padded shoulders
+  position_hints: ["QB", "RB", "FB", "TE", "LB", "K", "P", "LS"]
+  position: 1
+
+nfl_receiver_db:
+  slug: nfl-receiver-db
+  name: Receiver / defensive back
+  description: a long, lean NFL receiver or defensive back
+  position_hints: ["WR", "CB", "S", "FS", "SS", "DB"]
+  position: 2
+
+nfl_lineman:
+  slug: nfl-lineman
+  name: Lineman
+  description: a very large NFL lineman
+  position_hints: ["OT", "OG", "T", "G", "C", "OL", "DT", "DE", "DL", "NT", "EDGE"]
+  position: 3

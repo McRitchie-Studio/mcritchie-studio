@@ -1,0 +1,30 @@
+<%# One uniform photo tile: the picture, where it came from, and the one button
+    that chooses or drops it. A tap opens the image itself (our copy once chosen)
+    so the badges can be judged at full size. A full set offers no Use button;
+    the list above says "Remove one to use another." %>
+<% full = @uniform_chosen.length >= AppearanceUniformPhoto::CHOSEN_LIMIT %>
+<div class="rounded border border-subtle bg-surface overflow-hidden flex flex-col min-w-0"
+     data-test="uniform-photo" data-slug="<%= photo.slug %>" data-chosen="<%= chosen %>"
+     data-hosted="<%= photo.hosted? %>">
+  <%= link_to photo.full_url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer",
+              class: "block relative aspect-[4/3] overflow-hidden bg-surface-alt",
+              title: "Open the full image", data: { test: "uniform-photo-open" } do %>
+    <%= image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
+                  referrerpolicy: "no-referrer", class: "absolute inset-0 w-full h-full object-cover" %>
+  <% end %>
+  <div class="p-1.5 space-y-1 min-w-0 mt-auto">
+    <p class="text-3xs text-muted truncate" title="<%= photo.title %>">
+      <%= photo.title.presence || photo.provider.presence || "Search result" %>
+      <% if photo.page_url.present? %>
+        &middot; <%= link_to "source", photo.page_url, target: "_blank", rel: "noopener noreferrer", class: "text-primary" %>
+      <% end %>
+    </p>
+    <% if admin? && (chosen || !full) %>
+      <%= button_to (chosen ? "Remove" : "Use"),
+            pick_uniform_person_appearance_path(@person.slug, @appearance.slug), method: :post,
+            params: { photo_slug: photo.slug, chosen: !chosen },
+            class: "btn btn-sm #{chosen ? 'btn-outline' : 'btn-primary'} w-full",
+            form: { data: { test: chosen ? "uniform-drop" : "uniform-use" } } %>
+    <% end %>
+  </div>
+</div>

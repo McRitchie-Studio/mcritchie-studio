@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_151000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -300,8 +300,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_140000) do
     t.index ["slug"], name: "index_appearance_reference_photos_on_slug", unique: true
   end
 
+  create_table "appearance_uniform_photos", force: :cascade do |t|
+    t.string "appearance_slug", null: false
+    t.boolean "chosen", default: false, null: false
+    t.datetime "chosen_at"
+    t.datetime "created_at", null: false
+    t.integer "height"
+    t.text "hosted_url"
+    t.text "image_url", null: false
+    t.text "page_url"
+    t.integer "position"
+    t.string "provider"
+    t.text "query"
+    t.string "slug", null: false
+    t.text "thumb_url"
+    t.text "title"
+    t.datetime "updated_at", null: false
+    t.integer "width"
+    t.index ["appearance_slug", "chosen"], name: "index_uniform_photos_per_look"
+    t.index ["appearance_slug", "image_url"], name: "index_uniform_photos_unique_per_look", unique: true
+    t.index ["slug"], name: "index_appearance_uniform_photos_on_slug", unique: true
+  end
+
   create_table "appearances", force: :cascade do |t|
     t.string "base_appearance_slug"
+    t.string "body_archetype_slug"
     t.string "character_slug"
     t.string "colorway"
     t.datetime "created_at", null: false
@@ -522,6 +545,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_140000) do
     t.index ["sport"], name: "index_athletes_on_sport"
     t.index ["team_slug"], name: "index_athletes_on_team_slug"
     t.index ["updated_at"], name: "index_athletes_on_updated_at"
+  end
+
+  create_table "body_archetypes", force: :cascade do |t|
+    t.bigint "billable_units"
+    t.datetime "created_at", null: false
+    t.text "description", null: false
+    t.datetime "generated_at"
+    t.text "generation_error"
+    t.datetime "generation_started_at"
+    t.string "generation_state"
+    t.text "image_prompt"
+    t.text "image_url"
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.string "position_hints", default: [], null: false, array: true
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_body_archetypes_on_slug", unique: true
   end
 
   create_table "brand_kits", force: :cascade do |t|
@@ -2499,7 +2540,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_140000) do
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "appearance_uniform_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "appearances", "appearances", column: "base_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "appearances", "body_archetypes", column: "body_archetype_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "appearances", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "people", column: "person_slug", primary_key: "slug", on_update: :cascade

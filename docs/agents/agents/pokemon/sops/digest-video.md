@@ -233,7 +233,9 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    from their jewelry records, else generic diamond rings), **casts the card in
    the look**, and starts the chosen sheets through the one existing build
    (`Appearances::SheetBuild`, in a job; see `docs/topics/content-pipeline.md`,
-   "Character sheets" and "The iced-out twin"). **Each sheet costs money**:
+   "Character sheets", "The iced-out twin" and "Building a player sheet": the
+   look page's uniform photos and body archetype improve the badges and the
+   build, and each archetype image is one more paid image). **Each sheet costs money**:
    single-digit thousands of tokens (`config/image_generators.yml`). The
    default builds the look's sheet only; **Both sheets** is two paid builds,
    **Iced sheet only** one, **No sheet yet** none. **The kicker: "create the Dak

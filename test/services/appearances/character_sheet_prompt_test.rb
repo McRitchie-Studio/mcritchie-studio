@@ -51,17 +51,17 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "NOT a sharp ninety-degree"
   end
 
-  # ⚠ THIS RECIPE DOES NOT READ `athletes.jersey_number`, though the column has
-  # existed since 2026-09-27 — the number arrives only as the caller's `number:`
-  # argument, so nil is still the ordinary case here. Wiring the column would change
-  # the text of every generated prompt and is a task of its own. A template that
-  # emitted the placeholder instead would have the model render the angle brackets.
-  test "an unknown jersey number omits the clause rather than emitting a placeholder" do
-    prompt = Appearances::CharacterSheetPrompt.call(@look)
+  # A LOOK WITH NO NUMBER OMITS THE CLAUSES rather than emitting a placeholder. A
+  # template that emitted one would have the model render the angle brackets.
+  test "a look with no jersey number omits the clause rather than emitting a placeholder" do
+    @look.update_columns(jersey_number: nil)
+    prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
 
     assert_not_includes prompt, "<NUMBER>"
     assert_not_includes prompt, "jersey number ,"
     assert_not_includes prompt, "jersey number "
+    assert_not_includes prompt, "above number"
+    assert_includes prompt, "nameplate ALLEN clearly legible", "the nameplate stands without a number"
   end
 
   test "a supplied jersey number reaches both the uniform and the nameplate" do
@@ -69,6 +69,58 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
 
     assert_includes prompt, "jersey number 14"
     assert_includes prompt, "above number 14"
+  end
+
+  # THE LOOK'S OWN COLUMN IS READ BY DEFAULT (task player-sheet-uniform-and-build): a
+  # sheet built with no `number:` argument came back numberless on production.
+  test "the look's stored jersey number reaches the prompt when no number is passed" do
+    @look.update!(jersey_number: 23)
+    prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
+
+    assert_includes prompt, "game uniform, jersey number 23"
+    assert_includes prompt, "nameplate ALLEN above number 23 clearly legible"
+  end
+
+  test "a passed number outranks the stored one, and jersey 0 is a number" do
+    @look.update!(jersey_number: 23)
+
+    assert_includes Appearances::CharacterSheetPrompt.call(@look.reload, number: "7"), "jersey number 7,"
+    @look.update!(jersey_number: 0)
+    assert_includes Appearances::CharacterSheetPrompt.call(@look.reload), "jersey number 0,"
+  end
+
+  test "an iced twin with no number of its own wears its base's" do
+    @look.update!(jersey_number: 23)
+    twin = Appearances::IcedTwin.create!(@look)
+    twin.update_columns(jersey_number: nil)
+
+    assert_includes Appearances::CharacterSheetPrompt.call(twin.reload), "jersey number 23"
+  end
+
+  # ── THE BACK VIEW IS BARE-HEADED (the operator's review, 2026-10-11) ──
+
+  def back_view_line(prompt) = prompt.lines.find { |l| l.start_with?("Column 2:") }
+
+  test "the back view is bare-headed: no helmet, hair visible, nameplate and number" do
+    @look.update!(jersey_number: 23)
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(@look.reload))
+
+    assert line, "column 2 has its own line"
+    assert_includes line, "NO helmet, bare head with his hair visible from behind"
+    assert_includes line, "nameplate ALLEN above number 23"
+    assert_includes line, "about fifteen degrees"
+    assert_not_includes line, "wearing his helmet"
+    assert_not_includes line, "edge of the helmet"
+    assert_equal ["NO helmet"], line.scan(/\S*\s?helmet/i).map(&:strip),
+                 "the only helmet word left on the back view is the refusal of one"
+  end
+
+  test "no panel on either sheet asks for a helmet" do
+    [Appearances::CharacterSheetPrompt.call(@look), iced_prompt].each do |prompt|
+      assert_not_includes prompt, "wearing his helmet"
+      assert_not_includes prompt, "edge of the helmet"
+      assert_equal 2, prompt.scan("NO helmet").length, "both full-body columns refuse a helmet"
+    end
   end
 
   # THE NAMEPLATE IS THE SURNAME, UPPERCASED, because that is what is printed on
@@ -99,7 +151,78 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     prompt = Appearances::CharacterSheetPrompt.call(@look)
 
     assert_includes prompt, "SAME individual in every panel"
-    assert_includes prompt, "faithful to the reference photograph"
+    assert_includes prompt, "faithful to the IDENTITY ANCHOR photograph"
+  end
+
+  # ── THE BADGES, THE ROLES AND THE BUILD (task player-sheet-uniform-and-build) ──
+
+  # A stand-in for the build's Appearances::SheetReferences with fixed counts, so the
+  # prompt is read without any photo row or fetch check.
+  FakeRefs = Struct.new(:roles, :uniform_urls, :body_url, :archetype, keyword_init: true)
+
+  def refs(identity: 1, uniform: 0, body: false, archetype: body_archetypes(:nfl_qb_skill))
+    spans = []
+    cursor = 1
+    [[:identity, identity], [:uniform, uniform], [:body, body ? 1 : 0]].each do |role, n|
+      next if n.zero?
+
+      spans << [cursor, cursor + n - 1, role]
+      cursor += n
+    end
+    FakeRefs.new(roles: spans, uniform_urls: Array.new(uniform) { |i| "https://u.test/#{i}.jpg" },
+                 body_url: body ? "https://b.test/body.png" : nil, archetype: archetype)
+  end
+
+  test "the badges are named on every sheet, and copied from photos when there are photos" do
+    plain = Appearances::CharacterSheetPrompt.call(@look, references: refs)
+    assert_includes plain, Appearances::CharacterSheetPrompt::UNIFORM_FROM_TEXT
+    assert_includes plain, "the team logo on BOTH shoulders, the NFL shield at the collar"
+    assert_includes plain, "No captain patch."
+    assert_not_includes plain, "UNIFORM REFERENCE"
+
+    with_photos = Appearances::CharacterSheetPrompt.call(@look, references: refs(uniform: 3))
+    assert_includes with_photos, Appearances::CharacterSheetPrompt::UNIFORM_FROM_PHOTOS
+    assert_includes with_photos, "copy them EXACTLY from the UNIFORM REFERENCE images"
+    assert_includes with_photos, "captain \"C\" patch on the chest ONLY if the uniform references show one"
+    assert_not_includes with_photos, "No captain patch."
+  end
+
+  test "every attached image is named by its role, in the fixed order face, uniform, body" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(uniform: 3, body: true))
+
+    identity = prompt.index("  - Image 1: IDENTITY ANCHOR - this man's face.")
+    uniform = prompt.index("  - Images 2-4: UNIFORM REFERENCE - real game photos")
+    body = prompt.index("  - Image 5: BODY BUILD REFERENCE - match this body's build and proportions; " \
+                        "take nothing else from it: not the face, not the uniform.")
+    assert identity && uniform && body, "all three roles are named with their positions"
+    assert_operator identity, :<, uniform
+    assert_operator uniform, :<, body
+    assert_includes prompt, "Take NOTHING else: not a face, not a body, not a pose"
+  end
+
+  test "a role with no image is not named, and the numbering closes up" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(body: true))
+
+    assert_includes prompt, "  - Image 1: IDENTITY ANCHOR"
+    assert_includes prompt, "  - Image 2: BODY BUILD REFERENCE"
+    assert_not_includes prompt, "UNIFORM REFERENCE -"
+  end
+
+  test "the archetype's description always rides; the image rule only with its image" do
+    lineman = body_archetypes(:nfl_lineman)
+
+    text_only = Appearances::CharacterSheetPrompt.call(@look, references: refs(archetype: lineman))
+    assert_includes text_only, "BUILD: he has #{lineman.description}."
+    assert_not_includes text_only, Appearances::CharacterSheetPrompt::BODY_IMAGE_RULE
+
+    with_image = Appearances::CharacterSheetPrompt.call(@look, references: refs(body: true, archetype: lineman))
+    assert_includes with_image, Appearances::CharacterSheetPrompt::BODY_IMAGE_RULE
+  end
+
+  test "a look that resolves no archetype still asks for an NFL build" do
+    prompt = Appearances::CharacterSheetPrompt.call(@look, references: refs(archetype: nil))
+
+    assert_includes prompt, Appearances::CharacterSheetPrompt::GENERIC_BUILD
   end
 
   # ── THE ICED VARIANT (piece 15). Synthetic jewelry only. ──
