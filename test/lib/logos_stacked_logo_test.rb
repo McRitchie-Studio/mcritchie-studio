@@ -31,7 +31,9 @@ class LogosStackedLogoTest < Minitest::Test
   # logos_brand_pins_test.rb.
   PINNED = %w[studio industries turf welding].freeze
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
-  TWO_LINE_DIGEST = "56b61a906342849119fcc5233c97f04e3d710f6941126411ea0b7ed852ea93cb"
+  # Re-taken again by the same task's review fix: v1's tracked small line keeps its WELDING LLC word gap (two tracking
+  # steps plus the kit's); was 56b61a90…. Studio and Industries still did not move.
+  TWO_LINE_DIGEST = "96644c91ec96d2b94990f20cdc7564607aa085e53b38c15b26e9148c5803f24c"
   ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
   TAGLINE_DIGEST = "4a47fdc768de8b58bad7efe628c1b2f903bf5b694b1d608a1d90e9c634f2d3cf"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
