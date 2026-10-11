@@ -525,8 +525,8 @@ module Athletes
     # THE HEADSHOT, AND WHY IT CANNOT FAIL THE ACT.
     #
     # The image is the one part of this act that needs a credential — ESPN's PNG is
-    # public, but Studio::ImageCache.cache! puts the variants in S3 through
-    # Studio::S3. A desk with no bucket configured must still be able to fill a
+    # public, but Studio::ImageCache.reference_or_cache! puts the variants in S3
+    # through Studio::S3 (or HEADs production's bucket for them). A desk with no bucket configured must still be able to fill a
     # player's data, so every failure here is REPORTED and none of it raises. The
     # source URL is stored either way, which is what `nfl:upload_headshots` needs to
     # finish the job later.
@@ -535,6 +535,15 @@ module Athletes
     # that string, and the report reads the STORED `s3_key` back off the rows rather
     # than rebuilding a path — a re-key moves objects, so a derived path names
     # objects that are no longer there.
+    #
+    # REFERENCE_OR_CACHE!, NOT CACHE!, because an ESPN headshot is a seed asset
+    # whichever mode runs: the key is a pure function of the athlete
+    # (headshot_key_prefix) and the bytes of ESPN's public PNG, so production's
+    # object under that key IS the image this act would upload. A VALIDATE, or an
+    # ACQUIRE on a laptop of a player production already has, then records a
+    # reference instead of a dev-bucket duplicate; a genuinely new rookie is a
+    # HEAD 404 and is uploaded to the own bucket exactly as before. In production
+    # the helper is cache!, so nothing there changes.
     def settle_headshot(athlete, profile, changes)
       return { status: :absent, reason: "#{profile.source} published no headshot url" } if profile.headshot_url.blank?
       return { status: :skipped, reason: "dry run" } if @dry_run
@@ -550,7 +559,7 @@ module Athletes
       end
 
       source_url = changes.find { |c| c.field == :espn_headshot_url }&.incoming.presence || profile.headshot_url
-      Studio::ImageCache.cache!(
+      Studio::ImageCache.reference_or_cache!(
         owner: athlete, purpose: "headshot", source_url: source_url,
         key_prefix: athlete.headshot_key_prefix, widths: widths, content_type: "image/png"
       )

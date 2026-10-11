@@ -179,4 +179,16 @@ Studio.configure do |config|
   # Cloudflare R2, always (AWS was retired 2026-10-10). A missing R2_* variable
   # raises here in production and QA: config/initializers/00_storage_backend.rb.
   StorageBackend.studio_s3_settings.each { |name, value| config.public_send("#{name}=", value) }
+
+  # Production's public asset host, which lets a non-production process (QA, a
+  # laptop, a desk) REFERENCE a seed asset production already holds instead of
+  # uploading a copy into the dev bucket: Studio::ImageCache.reference_or_cache!
+  # HEADs "<prefix>-production" read-only and records a stored_in "production" row
+  # when the object is there (docs/agents/modules/object-storage.md, "Seed
+  # assets"). Production never reads it: there, reference_or_cache! IS cache!.
+  #
+  # NIL UNDER THE TEST SUITE, so no test can send a live HEAD to production. With
+  # it unset, reference_or_cache! falls straight through to cache!; a test that
+  # exercises the reference path sets it and stubs the S3 client itself.
+  config.s3_production_public_url = "https://assets.mcritchie.studio" unless Rails.env.test?
 end

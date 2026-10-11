@@ -182,7 +182,11 @@ module Athletes
     def initialize(api_key: nil, transport: nil, downloader: nil)
       @api_key = api_key || ENV[API_KEY_ENV].presence
       @transport = transport || VisionTransport.method(:call)
-      @downloader = downloader || ->(key:) { Studio::S3.download(key: key) }
+      # THE ROW READS ITS OWN BYTES (ImageCache#download), because only the row
+      # knows WHICH BUCKET holds them: a stored_in "production" reference made by a
+      # non-production seeder lives in production's bucket, and reading its key out
+      # of this process's own bucket finds nothing.
+      @downloader = downloader || ->(row:) { row.download }
     end
 
     # IS THE PAID LANE ARMED FOR *THIS* DESCRIBER? `self.available?` answers for the
@@ -201,9 +205,9 @@ module Athletes
       cache = headshot_row(athlete)
       return BLANK if cache.nil?
 
-      # BY THE RECORDED KEY. See the class comment: recomputing the prefix looks in
-      # a folder the bytes are not in.
-      image = @downloader.call(key: cache.s3_key)
+      # BY THE RECORDED ROW. See the class comment: recomputing the prefix looks in
+      # a folder the bytes are not in, and only the row knows its bucket.
+      image = @downloader.call(row: cache)
       return BLANK if image.blank?
 
       parse(@transport.call(body: request_body(image, cache.content_type), api_key: @api_key), target: athlete)
