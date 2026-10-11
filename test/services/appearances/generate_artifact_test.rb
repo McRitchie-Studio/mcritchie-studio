@@ -245,6 +245,21 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
     assert_predicate artifact, :generated?
   end
 
+  # THE NAMEPLATE REACHES THE GENERATOR QUOTED AND SPELLED (task
+  # sheet-nameplate-quotes-surname). Reads the prompt the fake generator was handed,
+  # not the prompt object, so a caller that rebuilt the text could not hide a bare
+  # surname.
+  test "the prompt sent to the generator carries the quoted, spelled nameplate" do
+    cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
+    @look.update!(jersey_number: 17)
+
+    with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+
+    sent = FakeAdapter.calls.last.prompt
+    assert_includes sent, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals above number 17, clearly legible)
+    assert_not_includes sent, "nameplate ALLEN"
+  end
+
   # THE BYTES BECOME OURS. A data URI cannot live in the column and a vendor CDN
   # link is not a library.
   test "the generated image is stored in our own bucket and that url is recorded" do

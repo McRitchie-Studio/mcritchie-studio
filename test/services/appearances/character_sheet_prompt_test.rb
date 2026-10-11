@@ -61,7 +61,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_not_includes prompt, "jersey number ,"
     assert_not_includes prompt, "jersey number "
     assert_not_includes prompt, "above number"
-    assert_includes prompt, "nameplate ALLEN clearly legible", "the nameplate stands without a number"
+    assert_includes prompt, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals, clearly legible), "the nameplate stands without a number"
   end
 
   test "a supplied jersey number reaches both the uniform and the nameplate" do
@@ -78,7 +78,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     prompt = Appearances::CharacterSheetPrompt.call(@look.reload)
 
     assert_includes prompt, "game uniform, jersey number 23"
-    assert_includes prompt, "nameplate ALLEN above number 23 clearly legible"
+    assert_includes prompt, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals above number 23, clearly legible)
   end
 
   test "a passed number outranks the stored one, and jersey 0 is a number" do
@@ -107,7 +107,7 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
 
     assert line, "column 2 has its own line"
     assert_includes line, "NO helmet, bare head with his hair visible from behind"
-    assert_includes line, "nameplate ALLEN above number 23"
+    assert_includes line, %(nameplate reading "ALLEN" (spelled A-L-L-E-N) in block capitals above number 23)
     assert_includes line, "about fifteen degrees"
     assert_not_includes line, "wearing his helmet"
     assert_not_includes line, "edge of the helmet"
@@ -128,8 +128,94 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
   test "the nameplate uses the surname in upper case" do
     prompt = Appearances::CharacterSheetPrompt.call(@look)
 
-    assert_includes prompt, "nameplate ALLEN"
-    assert_not_includes prompt, "nameplate Josh Allen"
+    assert_includes prompt, 'nameplate reading "ALLEN"'
+    assert_not_includes prompt, "Josh Allen"
+  end
+
+  # ── THE SURNAME IS QUOTED LITERAL TEXT (task sheet-nameplate-quotes-surname) ──
+  #
+  # Production, 2026-10-11: "nameplate LITTLE above number 39" came back reading
+  # PLAYER. A surname that is an English word read as a description of the plate.
+  # Synthetic surnames only; the read is the back-view line that ships.
+
+  # AND SPELLED (the operator, 2026-10-11): the spelling is a second reading of the
+  # same text. Letters hyphen-spelled; punctuation and spaces named, never spelled.
+  # Each row pins the whole clause, number and all, as it ships.
+  {
+    "Little" => %(, nameplate reading "LITTLE" (spelled L-I-T-T-L-E) in block capitals above number 39, clearly legible),
+    "Young" => %(, nameplate reading "YOUNG" (spelled Y-O-U-N-G) in block capitals above number 39, clearly legible),
+    "Will" => %(, nameplate reading "WILL" (spelled W-I-L-L) in block capitals above number 39, clearly legible),
+    "Smith-Njigba" => %(, nameplate reading "SMITH-NJIGBA" (spelled S-M-I-T-H, hyphen, N-J-I-G-B-A) in block ) +
+                      "capitals above number 39, clearly legible",
+    "O'Neil" => %(, nameplate reading "O'NEIL" (spelled O, apostrophe, N-E-I-L) in block capitals above number ) +
+                "39, clearly legible",
+    "St. Brown" => %(, nameplate reading "ST. BROWN" (spelled S-T, period, space, B-R-O-W-N) in block capitals ) +
+                   "above number 39, clearly legible",
+    "Van Noy" => %(, nameplate reading "VAN NOY" (spelled V-A-N, space, N-O-Y) in block capitals above number ) +
+                 "39, clearly legible"
+  }.each do |given, clause|
+    test "the back view quotes and spells #{given.inspect}" do
+      line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: given, number: "39"))
+
+      assert_includes line, clause
+      assert_not_includes line, "nameplate #{given.upcase}", "the bare unquoted form is the defect"
+      assert_not_includes line, "\\", "no escaping artefacts"
+    end
+  end
+
+  test "the clause reads cleanly with no number" do
+    @look.update_columns(jersey_number: nil)
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(@look.reload, surname: "Little"))
+
+    assert_includes line, %(, nameplate reading "LITTLE" (spelled L-I-T-T-L-E) in block capitals, clearly legible,)
+  end
+
+  test "a double quote inside the surname cannot close the literal early" do
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(@look, surname: %(Lit"tle)))
+
+    assert_includes line, %(nameplate reading "LITTLE" (spelled L-I-T-T-L-E))
+    assert_equal 2, line.count('"')
+  end
+
+  # THE STORED last_name OUTRANKS THE LAST WORD OF THE FULL NAME. The last word
+  # printed "BROWN" for a St. Brown. Synthetic people only.
+  def look_for(first, last)
+    person = Person.create!(first_name: first, last_name: last)
+    Appearance.create!(person_slug: person.slug, descriptor: "Bills home")
+  end
+
+  { "St. Brown" => "ST. BROWN", "Van Noy" => "VAN NOY" }.each do |last, plate|
+    test "a stored multi-word last_name (#{last}) is the whole nameplate" do
+      line = back_view_line(Appearances::CharacterSheetPrompt.call(look_for("Synthetic", last)))
+
+      assert_includes line, "nameplate reading \"#{plate}\" (spelled #{Appearances::CharacterSheetPrompt.spell(plate)})"
+    end
+  end
+
+  test "a blank stored last_name falls back to the last word of the full name" do
+    look = look_for("Synthetic Testman", "Placeholder")
+    look.person.update_columns(last_name: "")
+
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(look.reload))
+
+    assert_includes line, %(nameplate reading "TESTMAN" (spelled T-E-S-T-M-A-N))
+  end
+
+  test "a passed surname outranks the stored last_name" do
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(look_for("Synthetic", "Van Noy"), surname: "Little"))
+
+    assert_includes line, %(nameplate reading "LITTLE")
+  end
+
+  test "no surname means no nameplate clause and no empty quotes" do
+    [nil, "  ", %("")].each do |given|
+      prompt = Appearances::CharacterSheetPrompt.call(nil, surname: given, number: "39")
+
+      assert_not_includes prompt, "nameplate", "surname #{given.inspect} draws no plate"
+      assert_not_includes prompt, '""'
+      assert_not_includes prompt, "spelled"
+      assert_includes back_view_line(prompt), "visible from behind, #{Appearances::CharacterSheetPrompt::PADS_CLAUSE}"
+    end
   end
 
   # READS THE STORED VALUE, not the string that was typed. Appearance normalizes

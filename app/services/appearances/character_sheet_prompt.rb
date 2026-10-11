@@ -184,9 +184,16 @@ module Appearances
         "team"
     end
 
-    # THE SURNAME FOR THE NAMEPLATE, or nil.
+    # THE SURNAME FOR THE NAMEPLATE, or nil: the caller's `surname:`, then the
+    # person's stored `last_name`, and only when that is blank the last word of the
+    # full name. The last word alone printed "BROWN" for Amon-Ra St. Brown and "NOY"
+    # for Kyle Van Noy (task sheet-nameplate-quotes-surname); the importers already
+    # keep a multi-word surname whole in `last_name`.
     def surname
-      @surname.presence || @appearance&.person&.full_name.to_s.split.last.presence
+      person = @appearance&.person
+      @surname.presence ||
+        person&.last_name.presence ||
+        person&.full_name.to_s.split.last.presence
     end
 
     # THE NUMBER: the caller's `number:` when one is passed, otherwise THE LOOK'S OWN
@@ -204,6 +211,17 @@ module Appearances
         @appearance&.jersey_number ||
         (@appearance&.iced? && @appearance.base_appearance&.jersey_number) ||
         nil
+    end
+
+    PUNCTUATION_NAMES = { "-" => "hyphen", "'" => "apostrophe", "’" => "apostrophe", "." => "period",
+                          " " => "space" }.freeze
+
+    # "SMITH-NJIGBA" => "S-M-I-T-H, hyphen, N-J-I-G-B-A". Public so a test (or any
+    # other prompt that draws a name) reads the one spelling rule.
+    def self.spell(text)
+      text.to_s.scan(/[[:alnum:]]+|[^[:alnum:]]/).map { |token|
+        token.match?(/[[:alnum:]]/) ? token.chars.join("-") : PUNCTUATION_NAMES.fetch(token, token)
+      }.join(", ")
     end
 
     private
@@ -329,12 +347,34 @@ module Appearances
 
     def number_clause = number.present? ? ", jersey number #{number}" : ""
 
+    # THE SURNAME IS QUOTED LITERAL TEXT (task sheet-nameplate-quotes-surname). The
+    # unquoted form, "nameplate LITTLE above number 39", came back on production
+    # (2026-10-11) reading "PLAYER": a surname that is also an English word reads as
+    # a description of the nameplate ("a little nameplate"), and the model invents a
+    # name. Quoted, the word can only be the text to print. Straight quotes, as the
+    # captain "C" patch in UNIFORM_FROM_PHOTOS; a double quote inside the surname is
+    # dropped so it cannot close the literal early. Apostrophes, hyphens and periods
+    # (O'NEIL, SMITH-NJIGBA, ST. BROWN) pass through untouched.
+    #
+    # AND SPELLED LETTER BY LETTER after the quotes (the operator, 2026-10-11): a
+    # second, independent reading of the same text, so any surname the model could
+    # misread (a word, a rare spelling) is pinned twice. Only letters and digits are
+    # hyphen-spelled; punctuation and spaces are NAMED between the spelled parts
+    # rather than spelled, because "S-M-I-T-H---N-J..." would make the name's own
+    # hyphen indistinguishable from the spelling's separators. So:
+    #   LITTLE        -> L-I-T-T-L-E
+    #   SMITH-NJIGBA  -> S-M-I-T-H, hyphen, N-J-I-G-B-A
+    #   O'NEIL        -> O, apostrophe, N-E-I-L
+    #   ST. BROWN     -> S-T, period, space, B-R-O-W-N
     def nameplate_clause
-      return "" if surname.blank?
+      text = nameplate_text
+      return "" if text.blank?
 
-      part = ", nameplate #{surname.upcase}"
+      part = %(, nameplate reading "#{text}" (spelled #{self.class.spell(text)}) in block capitals)
       part += " above number #{number}" if number.present?
-      "#{part} clearly legible"
+      "#{part}, clearly legible"
     end
+
+    def nameplate_text = surname.to_s.delete('"').squish.upcase.presence
   end
 end
