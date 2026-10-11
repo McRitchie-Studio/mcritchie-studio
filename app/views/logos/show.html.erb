@@ -32,7 +32,7 @@
   <div class="card p-4 sm:p-5 space-y-3">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
-      <%= render "context_form", url: logo_brand_path(@logo.brand) %>
+      <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
     </div>
     <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record), "#kit", class: "hover:text-primary" %></p>
 
@@ -85,7 +85,7 @@
       </p>
     <% end %>
     <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
-    <%= render "context_notes", logo: (@logo unless @type == :icon) %>
+    <%= render "logos/context_notes", logo: (@logo unless @type == :icon) %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
@@ -136,20 +136,20 @@
   </section>
 
   <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits. %>
-  <%= render "edit_panel", kit: @kit unless @type == :icon %>
+  <%= render "logos/edit_panel", kit: @kit unless @type == :icon %>
   <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
-  <%= render "kit_choice", kit_record: @kit_record unless @type == :icon %>
-  <%= render "kit_card", kit_record: @kit_record %>
-  <%= render "kit_originals", kit_record: @kit_record %>
+  <%= render "logos/kit_choice", kit_record: @kit_record unless @type == :icon %>
+  <%= render "logos/kit_card", kit_record: @kit_record %>
+  <%= render "logos/kit_originals", kit_record: @kit_record %>
 
   <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
     <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
       <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
-      <%= render "palette", kit: @kit %>
+      <%= render "logos/palette", kit: @kit %>
     </section>
     <section class="min-w-0 space-y-3" data-test="brand-typefaces" aria-labelledby="brand-typefaces-title">
       <h2 id="brand-typefaces-title" class="text-sm font-bold text-heading">Typefaces</h2>
-      <%= render "typefaces", kit: @kit %>
+      <%= render "logos/typefaces", kit: @kit %>
     </section>
   </div>
 <% end %>

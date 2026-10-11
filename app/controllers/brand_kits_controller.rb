@@ -11,13 +11,16 @@
 #   DELETE /logos/:brand/kit/originals/:id       remove one
 #
 # A choice is read through the gallery's own parser (BrandKit#save_choice), so what is saved is what the page drew.
-# A refusal (a choice the page could not draw, a file that is not artwork) is a plain-text 422, like the gallery's.
+# A refused choice is a plain-text 422, like the gallery's. A refused upload (a file that is not artwork) draws the
+# brand page again, as a 422, with the reason in the Kit originals card (LogoBrandPage; task logo-gallery-polish-pass).
 # A brand's record is created on its first save.
 #
 # ADMIN ONLY, reads included: the originals are unreleased brand work. They are served from here, behind the wall,
 # never from an Active Storage URL, which anyone holding it could open. An SVG is served with a sandboxing CSP, so a
 # script inside one never runs on the hub's origin even when it is opened on its own.
 class BrandKitsController < ApplicationController
+  include LogoBrandPage
+
   # The page settings a save or a clear carries back to the brand page, so the operator lands where they were.
   RETURN_PARAMS = (%i[type rule form guides context] + Logos::Variant::EDIT_PARAMS.keys).freeze
   # An original is served with no power of its own: an SVG opened by itself draws, but runs no script and loads nothing.
@@ -57,6 +60,8 @@ class BrandKitsController < ApplicationController
     names = @kit.originals.last(files.size).map { |original| original.filename.to_s }
     redirect_to back_to_page(anchor: "kit-originals"),
                 notice: "Uploaded #{helpers.pluralize(names.size, 'original')}: #{names.to_sentence}."
+  rescue Logos::NavbarLogo::Error, ActiveRecord::RecordInvalid => e
+    refuse_upload(e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.to_sentence : e.message)
   end
 
   def original
@@ -75,6 +80,16 @@ class BrandKitsController < ApplicationController
   end
 
   private
+
+  # The brand page again, on the tab and in the context the upload form carried, with `reason` in the Kit originals
+  # card and every other card as it was. The kit is read afresh, so nothing of the refused upload is shown.
+  def refuse_upload(reason)
+    set_logo
+    set_context
+    load_brand_page
+    @original_refusal = reason
+    render "logos/show", status: :unprocessable_content
+  end
 
   # An unknown brand is a 404. The record is the brand's own, or a new one its first save creates.
   def set_kit

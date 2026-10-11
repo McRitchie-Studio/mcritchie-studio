@@ -16,6 +16,9 @@
 <section class="card p-4 sm:p-5 space-y-3" id="kit-originals" data-test="kit-originals" aria-labelledby="kit-originals-title">
   <h2 id="kit-originals-title" class="text-sm font-bold text-heading">Kit originals</h2>
   <p class="text-sm text-secondary">The originals the logos were derived from.</p>
+  <% if @original_refusal %>
+    <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="kit-original-refused">Not uploaded: <%= @original_refusal %></p>
+  <% end %>
   <% if originals.empty? %>
     <p class="text-sm text-muted" data-test="kit-originals-empty">No originals uploaded yet.</p>
   <% else %>
