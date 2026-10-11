@@ -397,12 +397,21 @@ class and `localStorage` `theme`):
   there, or turning the theme light with the moon icon, loads the page without it.
 - **On load with no context param** the page leaves the theme as it is and shows
   that theme's logos; the control reads the theme and follows it if it changes.
-  An explicit `?context=light`, `dark` or `watermark` sets the theme before the
-  page is shown (the page's `data-logo-theme`, read by `logo_gallery.js`; a
-  module runs after the first paint, so such a link can flash the old theme). Only `watermark` is carried in the page's
-  links; light and dark are the hub's, which every page keeps.
+  An explicit `?context=light`, `dark` or `watermark` is in that theme from the
+  first paint: the page sets `content_for :html_theme`, the hub layout renders it
+  on `<html>` (`data-theme-context`, and `class="dark"` for dark), and
+  `app/javascript/theme_context.js`, a classic script in the head after the
+  engine's pre-paint script, stores the theme (localStorage `theme`) and settles
+  the class before anything paints. A Turbo visit is synced by `logo_gallery.js`
+  (`data-logo-theme`). Only `watermark` is carried in the page's links; light and
+  dark are the hub's, which every page keeps.
 - Downloads and Copy SVG give the version shown: each logo has a pair per tone,
-  and the theme shows the matching pair.
+  and the theme shows the matching pair. **Copy SVG** carries only its logo's URL
+  (`data-copy-svg`, the Download's without `download=1`) and fetches the SVG on
+  click (`logo_gallery.js`), so the page carries no SVG of its own (`/logos/turf`
+  went from about 1.5 MB to about 0.26 MB). The clipboard write starts inside the
+  click with a promise of the text (`ClipboardItem`), as Safari requires, and falls
+  back to fetch-then-`writeText`; the button says Copied or Copy failed.
 
 ### The brand page's tabs and controls
 
@@ -572,14 +581,21 @@ rule or form and its edits, with the text version picked in its select (it
 starts on the saved one, else the default: second word leads for the Navbar
 Logo, first for the Stacked), and lands back on the tab with a line saying
 what was saved. **Clear saved choice** puts the brand back on its default.
-The brand page's header says `Kit: saved <date> by <who>` or `Kit: not saved
-yet`, and its **Kit** card shows both choices in the page's tone, each with
+The brand page's header says `Kit: saved <date> by <who>` (the saver's user
+name, else their email's local part; the title adds the email) while a Navbar
+or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
+originals included; ` · originals: N` follows when the kit holds any. The /logos
+table shows the same status cut to one line. Save and Clear land on the tab at
+the Kit choice card (`#kit-choice`). Its **Kit** card shows both choices in the page's tone, each with
 **Open on its tab** and **Download**, and the kit's notes.
 
 **Originals.** The **Kit originals** card ("The originals the logos were
 derived from.") uploads one or more files, lists each with its name, type,
 size and upload date, shows an SVG, PNG or JPEG as a picture, and has a
-**Download** and a **Delete** for each. A file must be an SVG, PNG, JPEG, PDF
+**Download** and a **Delete** for each. Delete takes two steps with no script:
+it opens a disclosure (`<details>`) asking "Delete <file> from the kit?", whose
+own **Delete <file>** button removes it, and the same control reads Cancel to
+close it. A file must be an SVG, PNG, JPEG, PDF
 or ZIP, read from its BYTES (Marcel), never its name, and at most 25 MB; one
 bad file refuses the whole upload. They are stored by Active Storage on the
 hub's service (R2: `amazon` in production, `amazon_dev` on desks), and
@@ -599,8 +615,11 @@ download is an attachment. A deleted original is purged to the bucket's trash
 | `DELETE /logos/:brand/kit/originals/:id` | removes one |
 
 Every write is a CSRF-protected form post and lands back on the brand page
-with the page's settings; a refusal is a plain-text 422 naming what was
-refused; an unknown brand or original is a 404. A visitor is sent to log in
+with the page's settings; a refused choice or note is a plain-text 422 naming
+what was refused, and a refused upload draws the brand page again (422, on the
+tab and context the form carried; `LogoBrandPage`) with the reason in the Kit
+originals card. A failed write is logged against the kit (`rescue_and_log`;
+a kit not yet saved is not named, since the log would save it); an unknown brand or original is a 404. A visitor is sent to log in
 and a non-admin is turned away by the admin wall, writes and reads alike.
 
 ## The data
