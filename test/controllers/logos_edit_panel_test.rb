@@ -171,4 +171,24 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     get navbar_logo_path("industries", rule: 4, text: "second", download: 1)
     assert_match(/filename="industries-navbar-rule4-second-light\.svg"/, response.headers["Content-Disposition"])
   end
+
+  test "Commercial Welding v1's ending row names its whole traced ending, and v2 gets the panel with its weights disabled" do
+    get logo_brand_path("welding", type: "stacked", form: "tagline")
+    assert_equal ["COMMERCIAL", "WELDING LLC", "BUILDING STRONG CONNECTIONS"], css_select("[data-test='edit-word']").map { |w| w.text.strip }
+
+    get logo_brand_path("welding_v2")
+    assert_equal %w[icon first ending], row_parts
+    assert_equal %w[COMMERCIAL WELDING], css_select("[data-test='edit-word']").map { |w| w.text.strip }
+    assert(css_select("select[data-test='edit-weight']").all? { |s| s.key?("disabled") }, "traced lettering: one weight")
+    assert_equal ["The name is traced lettering, which has one weight."] * 2, css_select("[data-test='edit-weight-reason']").map { |r| r.text.strip }
+
+    get logo_brand_path("welding_v2", type: "stacked", form: "tagline", ending_colour: "D7602E", tagline_weight: 700)
+    assert_response :success
+    assert_equal %w[icon first ending tagline], row_parts
+    logo_srcs.each { |src| assert_equal %w[D7602E 700], query(src).values_at("ending_colour", "tagline_weight"), src }
+
+    get logo_brand_path("welding_v2", first_weight: 700)
+    assert_response :unprocessable_content
+    assert_match(/traced lettering, which has one weight/, response.body)
+  end
 end

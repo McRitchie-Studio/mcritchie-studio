@@ -152,4 +152,18 @@ class LogosEditsTest < Minitest::Test
     assert_nil navbar("industries").refusal({ ending: { weight: 800 } }, rule: 6)
     assert_match(/palette/, stacked("studio").refusal({ first: { colour: "#000000" } }, form: :two_line))
   end
+
+  def test_a_multi_word_traced_ending_takes_its_colour_on_every_letter
+    box = navbar("welding").layout(rule: 4)
+    ending = word(box, 1).count { |letter| !letter[:d].empty? }
+    svg = navbar("welding").svg(rule: 4, edits: { ending: { colour: "#F08A5A" } })
+    assert_equal ["#F08A5A"] * ending, fills(svg).last(ending), "WELDING LLC, both words"
+    refute_includes fills(navbar("welding").svg(rule: 4)), "#F08A5A"
+  end
+
+  def test_welding_v2_is_traced_too
+    assert_predicate navbar("welding_v2"), :traced?
+    assert_match(/traced lettering, which has one weight/, refusal { navbar("welding_v2").svg(edits: { ending: { weight: 300 } }) })
+    assert_nil stacked("welding_v2").refusal({ tagline: { weight: 800 }, first: { colour: "#D7602E" } }, form: :tagline)
+  end
 end
