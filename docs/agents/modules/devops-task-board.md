@@ -1192,6 +1192,20 @@ leaves `building`), which the author roll call reads. The 120s lease this replac
 is gone: headless agents never renewed it, and its refusals sent builders to
 `--steal` on their own tasks. Code: `bin/lib/desk_claim.rb`.
 
+### A silent claim: `silent 30m+`
+
+A live review claim (`submitted`, a renewing `TaskReviewClaim`) or a build claim
+(`building`, not blocked, `devops.claimed_session` set) whose holder has written no
+activity (`bin/agent-activity`), task note or task event on the task for 30
+minutes wears a **`silent 30m+`** marker on its board card, and `bin/task show`
+prints a `silent 30m+:` line. The API serves it as `silent_claim` (kind, holder,
+last write, seconds). A review lease's own renewer keeps it alive after the
+reviewer stops, so a stalled review otherwise reads as a healthy one: two reviewer
+subagents sat six hours that way on 2026-10-10/11 after ending their turns
+"waiting for CI". The flag is computed at read time (`Task::SilentClaim`); nothing
+is reclaimed or released. The session that spawned the holder reads it and
+resumes or replaces its agent.
+
 ## The release owns the gem version — builders never write one
 
 **Do not set a gem's version in a feature PR** — `lib/studio/version.rb`, or the

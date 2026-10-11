@@ -9,7 +9,7 @@ module TaskCardRendering
       agents: agents, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0,
       unresolved_feedback: task.unresolved_feedback_activity, ever_blocked: task.ever_blocked?,
       review_in_progress: task.review_in_progress?, ci_progress: Ci::ProgressReader.new.for_task(task),
-      resubmission: task.resubmission, agent_session: nil
+      resubmission: task.resubmission, agent_session: nil, silent_claim: nil
     }.merge(given))
   end
 

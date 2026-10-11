@@ -53,7 +53,7 @@ class TaskCardComponentTest < ActionView::TestCase
       unresolved_feedback: Task.unresolved_feedback_by_slug(slugs),
       ever_blocked_slugs: Activity.where(task_slug: slugs, activity_type: "qa_feedback").distinct.pluck(:task_slug).to_set,
       resubmissions: Task::Resubmission.for_tasks(tasks), ci_progress_by_slug: {},
-      agent_sessions: AgentSession.live_by_task(tasks)
+      agent_sessions: AgentSession.live_by_task(tasks), silent_claims: Task::SilentClaim.by_slug(tasks)
     )
   end
 
@@ -156,6 +156,41 @@ class TaskCardComponentTest < ActionView::TestCase
 
     assert_equal "carl", card_for(built).css("[data-test='task-card-soul']").first["data-soul"]
     assert_empty card_for(lapsed).css("[data-test='task-card-soul']")
+  end
+
+  # A review claim whose reviewer has gone quiet (Task::SilentClaim) wears a marker.
+  test "a silent claim shows its marker on the card, and a quiet-free card shows none" do
+    task = Task.create!(title: "Component silent claim card", stage: "submitted")
+    silent = Task::SilentClaim::Result.new(kind: "review", holder: "carl", last_write_at: 42.minutes.ago, seconds: 42 * 60)
+
+    render_task_card(task.reload, silent_claim: silent)
+    marker = card_for(task).css("[data-test='task-card-silent-claim']").first
+    assert_equal "review", marker["data-silent-kind"]
+    assert_equal "silent 30m+ · review claim · 42m", marker.text.squish
+    assert_match(/held by carl/, marker["title"])
+
+    render_task_card(task, silent_claim: nil)
+    assert_empty card_for(task).css("[data-test='task-card-silent-claim']")
+  end
+
+  test "the page batch flags a live review claim nobody has written on for 30 minutes" do
+    quiet = Task.create!(title: "Component batch silent review", stage: "submitted")
+    busy = Task.create!(title: "Component batch busy review", stage: "submitted")
+    [quiet, busy].each do |task|
+      TaskReviewClaim.acquire(task_slug: task.slug, session: "sess-#{task.id}", nonce: "n", reviewer: "carl",
+                              now: 2.hours.ago)
+      TaskReviewClaim.find_by!(task_slug: task.slug).update!(claim_expires_at: 10.minutes.from_now)
+      TaskEvent.where(task_slug: task.slug).update_all(occurred_at: 2.hours.ago)
+    end
+    AgentActivity.create!(session_id: "sess-busy", category: "Verify", reason_slug: "read the diff",
+                          opened_at: 2.minutes.ago, task_slug: busy.slug)
+
+    loaded = Task.where(slug: [quiet.slug, busy.slug]).includes(:task_events, :gate_runs, :review_claim).to_a
+    board = board_for(loaded)
+    loaded.each { |task| render board.card(task, crew_board: :deploy) }
+
+    assert_equal ["review"], card_for(quiet).css("[data-test='task-card-silent-claim']").map { |m| m["data-silent-kind"] }
+    assert_empty card_for(busy).css("[data-test='task-card-silent-claim']"), "control: a reviewer still writing"
   end
 
   test "test_no_query_with_preloads: a card built from the page batch issues no query" do

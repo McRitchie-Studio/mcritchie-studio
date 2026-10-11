@@ -43,6 +43,18 @@
     </div>
   <% end %>
 
+  <%# A claim whose holder has written nothing on the task for 30 minutes
+      (Task::SilentClaim): a review lease its renewer keeps alive after the reviewer
+      stopped, or a desk nobody narrates from. Read-side only; nothing is reclaimed. %>
+  <% if silent_claim %>
+    <div class="flex items-center gap-1.5 mb-1.5 text-3xs font-semibold text-warning-ink"
+         data-test="task-card-silent-claim"
+         data-silent-kind="<%= silent_claim.kind %>"
+         title="<%= silent_claim.sentence %>. Read-side flag: nothing is reclaimed.">
+      <span class="truncate"><%= silent_claim.label %> · <%= silent_claim.kind %> claim · <%= silent_claim.age %></span>
+    </div>
+  <% end %>
+
   <%# The crew: the mascot on the build lane, then who reviewed, assembled and
       shipped. A logged-in soul sits on the crew row's corner, beside the mascot;
       logged out, the row renders alone and unwrapped. %>
