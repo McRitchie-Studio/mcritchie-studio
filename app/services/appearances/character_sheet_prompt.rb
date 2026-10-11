@@ -329,12 +329,23 @@ module Appearances
 
     def number_clause = number.present? ? ", jersey number #{number}" : ""
 
+    # THE SURNAME IS QUOTED LITERAL TEXT (task sheet-nameplate-quotes-surname). The
+    # unquoted form, "nameplate LITTLE above number 39", came back on production
+    # (2026-10-11) reading "PLAYER": a surname that is also an English word reads as
+    # a description of the nameplate ("a little nameplate"), and the model invents a
+    # name. Quoted, the word can only be the text to print. Straight quotes, as the
+    # captain "C" patch in UNIFORM_FROM_PHOTOS; a double quote inside the surname is
+    # dropped so it cannot close the literal early. Apostrophes, hyphens and periods
+    # (O'NEIL, SMITH-NJIGBA, ST. BROWN) pass through untouched.
     def nameplate_clause
-      return "" if surname.blank?
+      text = nameplate_text
+      return "" if text.blank?
 
-      part = ", nameplate #{surname.upcase}"
+      part = %(, nameplate reading "#{text}" in block capitals)
       part += " above number #{number}" if number.present?
-      "#{part} clearly legible"
+      "#{part}, clearly legible"
     end
+
+    def nameplate_text = surname.to_s.delete('"').squish.upcase.presence
   end
 end
