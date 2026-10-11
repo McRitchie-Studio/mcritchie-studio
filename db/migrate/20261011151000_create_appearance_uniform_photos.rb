@@ -6,6 +6,10 @@
 # each one by hand, and a missed exclusion would put another player's face into
 # this man's identity.
 #
+# `hosted_url` is OUR copy of the photo, made when the operator chooses it
+# (Appearances::MirrorUniformPhoto); a build sends only hosted copies, never the
+# search hit itself.
+#
 # A new table only: no existing row is read or written.
 class CreateAppearanceUniformPhotos < ActiveRecord::Migration[8.1]
   def change
@@ -13,6 +17,7 @@ class CreateAppearanceUniformPhotos < ActiveRecord::Migration[8.1]
       t.string :slug, null: false
       t.string :appearance_slug, null: false
       t.text :image_url, null: false
+      t.text :hosted_url
       t.text :thumb_url
       t.text :page_url
       t.text :title

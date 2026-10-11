@@ -306,6 +306,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_151000) do
     t.datetime "chosen_at"
     t.datetime "created_at", null: false
     t.integer "height"
+    t.text "hosted_url"
     t.text "image_url", null: false
     t.text "page_url"
     t.integer "position"

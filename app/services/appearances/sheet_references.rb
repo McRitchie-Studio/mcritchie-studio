@@ -44,13 +44,16 @@ module Appearances
       @identity_urls.length
     end
 
-    # Fetch-checked, because the adapter downloads every one of them: a search hit
-    # is somebody else's server, and the SSRF guard is the same one the face uses.
+    # OUR HOSTED COPIES ONLY (Appearances::MirrorUniformPhoto, made at the pick). A
+    # chosen photo with no copy is never sent: the search hit is somebody else's
+    # server, and downloading it here would re-resolve its host unpinned and fail the
+    # build after the claim on a hotlink refusal. Still fetch-checked, like every URL
+    # the adapter downloads.
     def uniform_urls
       return [] if @prompt_only
 
       @uniform_urls ||= @appearance.uniform_source.uniform_photos.chosen
-                                   .first(AppearanceUniformPhoto::CHOSEN_LIMIT).map(&:image_url)
+                                   .first(AppearanceUniformPhoto::CHOSEN_LIMIT).map(&:hosted_url).compact_blank
                                    .select { |url| FetchableUrl.ok_for?(url, look: @appearance.slug, what: UNIFORM_PHOTO) }
     end
 

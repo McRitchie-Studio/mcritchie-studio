@@ -16,6 +16,12 @@ class AppearanceUniformPhoto < ApplicationRecord
 
   belongs_to :appearance, foreign_key: :appearance_slug, primary_key: :slug, inverse_of: :uniform_photos
 
+  # OUR COPY OF THE BYTES (Appearances::MirrorUniformPhoto), the same shape the face
+  # photos use. `hosted_url` on the row is the address a build sends; a chosen photo
+  # without one is never sent. Not `dependent: :destroy`, for AppearanceReferencePhoto's
+  # reason: nothing here deletes from the bucket.
+  has_many :image_caches, as: :owner, class_name: "ImageCache", inverse_of: :owner, dependent: nil
+
   validates :slug, presence: true, uniqueness: true
   validates :image_url, presence: true, uniqueness: { scope: :appearance_slug }
   validate :chosen_within_limit, if: -> { chosen? && will_save_change_to_chosen? }
@@ -25,7 +31,12 @@ class AppearanceUniformPhoto < ApplicationRecord
   scope :chosen, -> { where(chosen: true).order(:chosen_at, :id) }
   scope :candidates, -> { where(chosen: false).order(:position, :id) }
 
-  def display_url = thumb_url.presence || image_url
+  def display_url = hosted_url.presence || thumb_url.presence || image_url
+
+  # What a tap opens: the picture itself, our copy once there is one.
+  def full_url = hosted_url.presence || image_url
+
+  def hosted? = hosted_url.present?
 
   private
 

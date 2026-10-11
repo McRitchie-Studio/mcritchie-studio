@@ -35,21 +35,23 @@ class Appearances::GenerateArtifactRolesTest < ActiveSupport::TestCase
     end
   end
 
-  def build
+  def build(fetchable: true)
     Recorder.calls = []
     ImageGeneration::Adapter.stub(:for, Recorder) do
       Appearances::StoreGeneratedImage.stub(:call, STORED) do
-        Appearances::FetchableUrl.stub(:ok_for?, true) do
+        Appearances::FetchableUrl.stub(:ok_for?, fetchable) do
           with_env("OPENAI_API_KEY", "sk-test") { Appearances::GenerateArtifact.call(@look.reload) }
         end
       end
     end
   end
 
-  def choose_uniform(count)
+  # Chosen AND copied: the state a pick leaves (Appearances::MirrorUniformPhoto).
+  def choose_uniform(count, hosted: true)
     count.times do |i|
       @look.uniform_photos.create!(image_url: "https://img.example.test/u#{i}.jpg", chosen: true,
-                                   chosen_at: Time.current + i)
+                                   chosen_at: Time.current + i,
+                                   hosted_url: hosted ? "https://assets.example.test/uniform-photos/u#{i}.jpg" : nil)
     end
   end
 
@@ -72,9 +74,11 @@ class Appearances::GenerateArtifactRolesTest < ActiveSupport::TestCase
     artifact = build
     call = Recorder.calls.sole
 
-    assert_equal ["https://img.example.test/u0.jpg", "https://img.example.test/u1.jpg",
+    assert_equal ["https://assets.example.test/uniform-photos/u0.jpg", "https://assets.example.test/uniform-photos/u1.jpg",
                   "https://assets.example.test/body-archetypes/qb.png"], call[:supporting_reference_urls],
-                 "uniform photos in the order chosen, then the body build, last"
+                 "our copies of the uniform photos in the order chosen, then the body build, last"
+    assert call[:supporting_reference_urls].none? { |url| url.include?("img.example.test") },
+           "a search hit itself is never sent"
     assert_includes artifact.prompt, "  - Image 1: IDENTITY ANCHOR"
     assert_includes artifact.prompt, "  - Images 2-3: UNIFORM REFERENCE"
     assert_includes artifact.prompt, "  - Image 4: BODY BUILD REFERENCE"
@@ -91,6 +95,36 @@ class Appearances::GenerateArtifactRolesTest < ActiveSupport::TestCase
     assert_operator Recorder.calls.sole[:reference_urls].length, :>, 1, "more faces are OFFERED"
     assert_includes artifact.prompt, "  - Image 2: UNIFORM REFERENCE",
                     "the sheet row sends one face, so the uniform photo is image 2"
+  end
+
+  # THE NEGATIVE CARL ASKED FOR: everything else here passes a URL check stubbed
+  # true, so this case would stay green if hosted-only were undone. A chosen photo
+  # with no copy is dropped and the numbering closes up behind it.
+  test "a chosen photo with no hosted copy is never sent and the image numbering closes up" do
+    @look.uniform_photos.create!(image_url: "https://img.example.test/raw.jpg", chosen: true, chosen_at: Time.current)
+    @look.uniform_photos.create!(image_url: "https://img.example.test/kept.jpg", chosen: true,
+                                 chosen_at: Time.current + 1, hosted_url: "https://assets.example.test/uniform-photos/kept.jpg")
+    body_archetypes(:nfl_qb_skill).update!(image_url: "https://assets.example.test/body-archetypes/qb.png")
+
+    artifact = build
+    sent = Recorder.calls.sole[:supporting_reference_urls]
+
+    assert_equal ["https://assets.example.test/uniform-photos/kept.jpg",
+                  "https://assets.example.test/body-archetypes/qb.png"], sent
+    assert_includes artifact.prompt, "  - Image 2: UNIFORM REFERENCE"
+    assert_includes artifact.prompt, "  - Image 3: BODY BUILD REFERENCE"
+    assert_not_includes artifact.prompt, "Images 2-3"
+  end
+
+  test "a hosted copy the URL guard refuses is dropped too, and the roles name only what rides" do
+    choose_uniform(2)
+    guard = ->(url, **) { !url.include?("/u0.jpg") }
+
+    artifact = build(fetchable: guard)
+
+    assert_equal ["https://assets.example.test/uniform-photos/u1.jpg"], Recorder.calls.sole[:supporting_reference_urls]
+    assert_includes artifact.prompt, "  - Image 2: UNIFORM REFERENCE"
+    assert_not_includes artifact.prompt, "Image 3"
   end
 
   test "a request over the image limit is refused before anything is claimed or spent" do
