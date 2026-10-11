@@ -1689,7 +1689,12 @@ uniform_person = Person.create!(first_name: "Quill", last_name: "Uniformfixture"
 Athlete.find_or_create_by!(person_slug: uniform_person.slug) { |a| a.sport = "football"; a.position = "QB" }
 uniform_look = Appearance.create!(person_slug: uniform_person.slug, slug: "look-uniformfixture",
                                   descriptor: "Comets home", colorway: "teal", jersey_number: 16)
+# Each already carries `hosted_url`, the state a pick leaves after
+# Appearances::MirrorUniformPhoto copies it: the e2e server cannot fetch a remote
+# image, and a photo with a copy is not fetched again. The copy path itself is
+# pinned by test/services/appearances/mirror_uniform_photo_test.rb.
 4.times do |i|
   uniform_look.uniform_photos.create!(image_url: "https://upload.wikimedia.org/uniformfixture/#{i}.jpg",
+                                      hosted_url: "https://assets.example.test/uniform-photos/uniformfixture/#{i}.jpg",
                                       title: "Comets at Rockets, week #{i + 1}", position: i, provider: "fixture")
 end

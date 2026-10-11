@@ -8,7 +8,7 @@
     <h2 class="text-lg font-bold text-heading">What the sheet copies besides the face</h2>
     <p class="text-xs text-muted">
       Sent with the headshot as labelled references: the body archetype for build and proportions only, the
-      uniform photos for badges, trim, pants and socks only.
+      uniform photos for badges, trim, pants and socks only. A chosen photo is copied to our storage first.
     </p>
   </header>
 
@@ -22,7 +22,12 @@
         <% if @body_archetype&.image? %>
           <%= image_tag @body_archetype.image_url, alt: "#{@body_archetype.name} body build", class: "w-full h-full object-contain" %>
         <% else %>
-          <span class="text-3xs text-muted text-center px-1">no image</span>
+          <% if admin? %>
+            <%= link_to "no image", body_archetypes_path, class: "text-3xs text-primary text-center px-1",
+                        data: { test: "archetype-no-image-link" } %>
+          <% else %>
+            <span class="text-3xs text-muted text-center px-1">no image</span>
+          <% end %>
         <% end %>
       </div>
       <div class="min-w-0 space-y-0.5">
@@ -35,7 +40,10 @@
         <% if @body_archetype %>
           <p class="text-2xs text-muted break-words"><%= @body_archetype.description %></p>
           <% unless @body_archetype.image? %>
-            <p class="text-3xs text-warning-ink">No image yet: the sheet reads the description only until one is generated.</p>
+            <p class="text-3xs text-warning-ink">
+              No image yet: the sheet reads the description only until one is generated<% if admin? %>
+              on <%= link_to "Body archetypes", body_archetypes_path, class: "underline", data: { test: "archetype-generate-link" } %><% end %>.
+            </p>
           <% end %>
         <% end %>
       </div>
@@ -72,7 +80,7 @@
         <% end %>
       </div>
       <% if admin? && @search_available %>
-        <%= button_to "Find game photos (1 search)",
+        <%= button_to Appearances::GatherUniformPhotos.button_label,
               search_uniform_person_appearance_path(@person.slug, @appearance.slug), method: :post,
               class: "btn btn-sm btn-outline shrink-0", form: { data: { test: "uniform-search" } } %>
       <% end %>
@@ -94,7 +102,12 @@
     <% if @uniform_candidates.any? %>
       <div class="space-y-1">
         <p class="label-upper">Found, not chosen (<%= @uniform_candidates.length %>)</p>
-        <div data-test="uniform-candidates" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <% if @uniform_chosen.length >= AppearanceUniformPhoto::CHOSEN_LIMIT %>
+          <p data-test="uniform-full" class="text-2xs text-muted">
+            <%= AppearanceUniformPhoto::CHOSEN_LIMIT %> chosen, the most a sheet takes. Remove one to use another.
+          </p>
+        <% end %>
+        <div data-test="uniform-candidates" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <% @uniform_candidates.each do |photo| %>
             <%= render "appearances/uniform_photo", photo: photo, chosen: false %>
           <% end %>

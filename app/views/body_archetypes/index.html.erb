@@ -22,7 +22,9 @@
   <% else %>
     <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" data-test="archetypes">
       <% @archetypes.each do |archetype| %>
-        <div class="card p-4 space-y-3 min-w-0" data-test="archetype" data-slug="<%= archetype.slug %>">
+        <%# A column flex with the button at mt-auto, so the Generate buttons line up
+            across a row whatever each card's description runs to. %>
+        <div class="card p-4 flex flex-col gap-3 min-w-0" data-test="archetype" data-slug="<%= archetype.slug %>">
           <div class="aspect-[3/2] rounded-lg border border-subtle bg-surface-alt overflow-hidden flex items-center justify-center">
             <% if archetype.image? %>
               <%= link_to archetype.image_url, target: "_blank", rel: "noopener", class: "block w-full h-full" do %>
@@ -50,19 +52,35 @@
             </p>
           </div>
 
-          <% if archetype.building? %>
-            <p class="text-2xs text-primary" data-test="archetype-building">Generating&hellip; reload in a minute or two.</p>
-          <% else %>
-            <% if archetype.failed? && archetype.generation_error.present? %>
-              <p class="text-2xs text-danger-ink break-words" data-test="archetype-failed">
-                The last generation failed: <%= archetype.generation_error %>
+          <div class="mt-auto space-y-2">
+            <% if archetype.building? %>
+              <p class="text-2xs text-primary" data-test="archetype-building">
+                Generating&hellip; started <%= time_ago_in_words(archetype.generation_started_at) %> ago. Reload in a
+                minute or two.
               </p>
+            <% else %>
+              <% if archetype.stalled? %>
+                <p class="text-2xs text-warning-ink" data-test="archetype-stalled">
+                  The last generation started <%= time_ago_in_words(archetype.generation_started_at) %> ago and never
+                  finished (no answer within <%= (BodyArchetype::STALE_AFTER / 60).to_i %> minutes), so it was given up.
+                  Whether it was charged is not known; generating again buys a new image.
+                </p>
+              <% elsif archetype.failed? %>
+                <p class="text-2xs text-danger-ink break-words" data-test="archetype-failed">
+                  <% if archetype.generation_error.present? %>
+                    The last generation failed: <%= archetype.generation_error %>
+                  <% else %>
+                    The last generation failed without a recorded reason; see
+                    <%= link_to "Error logs", error_logs_path, class: "underline" %> for this archetype.
+                  <% end %>
+                </p>
+              <% end %>
+              <%= button_to (archetype.image? ? "Regenerate image (1 paid image)" : "Generate image (1 paid image)"),
+                    generate_body_archetype_path(archetype.slug), method: :post,
+                    class: "btn btn-sm #{archetype.image? ? 'btn-outline' : 'btn-primary'} w-full",
+                    form: { data: { test: "archetype-generate", turbo_confirm: "Buy one generated image for #{archetype.name}?" } } %>
             <% end %>
-            <%= button_to (archetype.image? ? "Regenerate image (1 paid image)" : "Generate image (1 paid image)"),
-                  generate_body_archetype_path(archetype.slug), method: :post,
-                  class: "btn btn-sm #{archetype.image? ? 'btn-outline' : 'btn-primary'} w-full",
-                  form: { data: { test: "archetype-generate", turbo_confirm: "Buy one generated image for #{archetype.name}?" } } %>
-          <% end %>
+          </div>
         </div>
       <% end %>
     </div>

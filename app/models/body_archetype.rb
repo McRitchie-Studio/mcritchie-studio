@@ -48,5 +48,9 @@ class BodyArchetype < ApplicationRecord
 
   def failed? = generation_state == FAILED
 
+  # Marked building, but older than STALE_AFTER: the run died without closing its
+  # claim (a dyno restart, a discarded job). A new press may replace it.
+  def stalled? = generation_state == BUILDING && !building?
+
   def position_hint_list = position_hints.join(", ")
 end

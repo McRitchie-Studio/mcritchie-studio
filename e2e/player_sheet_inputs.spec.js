@@ -29,10 +29,11 @@ test("operator attaches an archetype and uniform photos to a look", async ({ pag
     await expect(uniform.locator("[data-test='uniform-chosen'] [data-test='uniform-photo']")).toHaveCount(i + 1);
   }
   await expect(uniform).toContainText("Uniform photos (2 of 3)");
+  await expect(uniform.locator("[data-test='uniform-search'] button")).toHaveText(/Find game photos \((free search|1 paid search)\)/);
   await uniform.locator("[data-test='uniform-chosen'] [data-test='uniform-drop'] button").first().click();
   await expect(uniform.locator("[data-test='uniform-chosen'] [data-test='uniform-photo']")).toHaveCount(1);
 
-  await page.locator("[data-test='archetype-picker']").getByRole("link", { name: "All archetypes" }).click();
+  await page.locator("[data-test='archetype-generate-link']").click();
   await expect(page).toHaveURL(/\/body-archetypes$/);
   await expect(page.locator("[data-test='archetype']")).toHaveCount(3);
   await expect(page.locator("[data-test='archetype-no-image']")).toHaveCount(3);

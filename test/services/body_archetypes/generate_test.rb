@@ -89,4 +89,42 @@ class BodyArchetypes::GenerateTest < ActiveSupport::TestCase
     assert_equal 1, Recorder.calls.length
     assert_equal BodyArchetype::DONE, @archetype.reload.generation_state
   end
+
+  # THE STALE WINDOW COUNTS FROM WHEN THE PAID CALL STARTS (Carl): a job that sat in
+  # the queue past STALE_AFTER must not be reclaimable while it spends.
+  test "the run restamps the claim with now, not with the enqueue time" do
+    started = nil
+    with_env("OPENAI_API_KEY", "sk-test") { started = BodyArchetypes::Generate.claim!(@archetype) }
+    seen = nil
+    second_press = nil
+
+    travel(BodyArchetype::STALE_AFTER + 5.minutes) do
+      Recorder.calls = []
+      spy = Recorder.instance
+      archetype = @archetype
+      spy.define_singleton_method(:generate_and_wait) do |**kwargs|
+        seen = archetype.reload.generation_started_at
+        second_press = begin
+          BodyArchetypes::Generate.claim!(archetype)
+          :claimed
+        rescue BodyArchetypes::Generate::Refused
+          :refused
+        end
+        Recorder.calls << kwargs
+        ImageGeneration::Result.new(image_urls: ["data:image/png;base64,QUJD"], seed: nil, request_id: "r",
+                                    generator_key: "openai_gpt5_sheet", version: "v", billable_units: 1)
+      end
+      ImageGeneration::Adapter.stub(:for, Recorder) do
+        Appearances::StoreGeneratedImage.stub(:call, STORED) do
+          with_env("OPENAI_API_KEY", "sk-test") { BodyArchetypes::Generate.run(@archetype, started_at: started) }
+        end
+      end
+      assert_in_delta Time.current, seen, 1.second, "the claim is restamped at the take"
+      assert_equal :refused, second_press, "a press during the paid call is refused, not taken as stale"
+    end
+    assert_equal BodyArchetype::DONE, @archetype.reload.generation_state
+  ensure
+    Recorder.instance.singleton_class.send(:remove_method, :generate_and_wait) if
+      Recorder.instance.singleton_methods.include?(:generate_and_wait)
+  end
 end

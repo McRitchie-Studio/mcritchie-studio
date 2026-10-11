@@ -95,6 +95,19 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert models[:hover_emoji].present?
   end
 
+  test "the Studio section links the body archetypes beside the model pipeline" do
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+
+    labels = public_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
+    archetypes = public_link_sections.flat_map { |section| section.fetch(:links) }
+                                     .find { |link| link[:label] == "Body archetypes" }
+
+    assert archetypes, "expected a Body archetypes link"
+    assert_equal "/body-archetypes", archetypes.fetch(:href)
+    assert_equal labels.index("Models") + 1, labels.index("Body archetypes")
+  end
+
   test "public (non-admin) sidebar omits the Activities admin link" do
     self.admin_enabled = false
 
@@ -246,6 +259,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # route helper is defined for it: a new link raises NoMethodError in every test in
   # this file.
   def model_pipeline_path = "/model_pipeline"
+  def body_archetypes_path = "/body-archetypes"
   def broadcasts_path = "/broadcasts"
   def contacts_path = "/contacts"
   def broadcast_analytics_path = "/broadcasts/analytics"

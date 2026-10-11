@@ -70,4 +70,30 @@ class BodyArchetypesControllerTest < ActionDispatch::IntegrationTest
     assert_nil @look.reload.body_archetype_slug
     assert_match(/No body archetype/, flash[:alert])
   end
+
+  test "a stalled generation and a reasonless failure each explain themselves" do
+    log_in_as(@admin)
+    body_archetypes(:nfl_lineman).update!(generation_state: BodyArchetype::BUILDING,
+                                          generation_started_at: (BodyArchetype::STALE_AFTER + 10.minutes).ago)
+    body_archetypes(:nfl_receiver_db).update!(generation_state: BodyArchetype::FAILED, generation_error: nil)
+
+    get body_archetypes_path
+
+    assert_select "[data-slug='nfl-lineman'] [data-test=archetype-stalled]", /never\s+finished/
+    assert_select "[data-slug='nfl-lineman'] [data-test=archetype-generate]", 1, "a stalled run may be replaced"
+    assert_select "[data-slug='nfl-receiver-db'] [data-test=archetype-failed]", /without a recorded reason/
+    assert_select "[data-slug='nfl-receiver-db'] [data-test=archetype-failed] a[href='/error_logs']"
+  end
+
+  test "an archetype change that raises is logged against the look" do
+    log_in_as(@admin)
+
+    BodyArchetype.stub(:exists?, ->(*) { raise ActiveRecord::StatementInvalid, "boom" }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        patch archetype_person_appearance_path(@person.slug, @look.slug), params: { body_archetype_slug: "nfl-lineman" }
+      end
+    end
+    assert_match(/Could not change the body archetype/, flash[:alert])
+    assert_equal @look.slug, ErrorLog.order(:id).last.target_name
+  end
 end

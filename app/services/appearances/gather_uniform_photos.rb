@@ -12,8 +12,9 @@ module Appearances
   # question "does this show the jersey's badges clearly?" is the operator's eye, and
   # he picks at most AppearanceUniformPhoto::CHOSEN_LIMIT.
   #
-  # ⚠ ONE SEARCH PER PRESS (a paid query on the paid provider). Admin-gated at the
-  # call site, never run from a callback or a render.
+  # ⚠ ONE SEARCH PER PRESS: a paid query when Serper serves, free on the Wikimedia
+  # Commons floor (.paid?). Admin-gated at the call site, never run from a callback
+  # or a render.
   class GatherUniformPhotos
     RESULT_LIMIT = 12
 
@@ -25,6 +26,14 @@ module Appearances
     end
 
     def self.call(appearance) = new(appearance).call
+
+    # WHAT ONE PRESS COSTS, from the provider that would serve it: Serper bills per
+    # query; the keyless Wikimedia Commons floor does not. This search ranks and
+    # classifies nothing, so no vision call is bought either way.
+    def self.paid? = ImageSearch.provider_name.present? &&
+                     ImageSearch.provider_name != ImageSearch::WikimediaCommons.provider_name
+
+    def self.button_label = paid? ? "Find game photos (1 paid search)" : "Find game photos (free search)"
 
     def initialize(appearance)
       @appearance = appearance.uniform_source

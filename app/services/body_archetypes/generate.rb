@@ -73,13 +73,18 @@ module BodyArchetypes
     end
 
     # Runs in the job. Returns without spending when the claim is no longer this run's.
+    #
+    # THE TAKE RESTAMPS THE CLAIM WITH NOW, as Appearances::SheetBuild.take does, so the
+    # STALE_AFTER window counts from when the paid call starts, not from enqueue: a job
+    # that sat in the queue must not be reclaimable as "crashed" while it is spending.
+    # The 1 µs floor keeps the new stamp distinct from the claim's even within a tick.
     def self.run(archetype, started_at:)
+      running_at = [Time.current.floor(6), started_at + Rational(1, 1_000_000)].max
       taken = BodyArchetype.where(id: archetype.id, generation_state: BodyArchetype::BUILDING,
                                   generation_started_at: started_at)
-                           .update_all(generation_started_at: started_at + Rational(1, 1_000_000))
+                           .update_all(generation_started_at: running_at, updated_at: Time.current)
       return unless taken == 1
 
-      running_at = started_at + Rational(1, 1_000_000)
       new(archetype).call
       finish(archetype, running_at, BodyArchetype::DONE)
     rescue StandardError => e
