@@ -27,6 +27,8 @@ class LogosStackedLogoTest < Minitest::Test
   # was split by task navbar-spacing-and-rotated-guides, when item 4c gave the one-line name the Navbar Logo's new word
   # gap: the two-line brands' digest was taken BEFORE that change and still holds, so they did not move by a byte; Turf
   # Monster's one-line logos and every tagline-form logo were re-taken deliberately after it.
+  # The brands ICON_DIGEST was taken over; a brand added later is pinned on its own in logos_brand_pins_test.rb.
+  PINNED = %w[studio industries turf welding].freeze
   TWO_LINE_DIGEST = "f066b3ee448c37018089636ee6d7c9f5bad5213551a5c88a7322eb2ecd9e3be4"
   ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
   TAGLINE_DIGEST = "cc5f5a64a6534e759b48f85a152d939e594b518de1593b3b9e33328264ca831d"
@@ -402,7 +404,7 @@ class LogosStackedLogoTest < Minitest::Test
     end
     assert_equal 27, taglines.size
     assert_equal TAGLINE_DIGEST, Digest::SHA256.hexdigest(taglines.join)
-    icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
+    icons = PINNED.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
     assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
   end
 

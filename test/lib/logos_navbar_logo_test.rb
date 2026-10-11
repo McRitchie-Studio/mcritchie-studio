@@ -40,6 +40,9 @@ class LogosNavbarLogoTest < Minitest::Test
   WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
   RULE_6_DIGEST = "c16934f5d230e0f1a7eaf56602e7d9553aabbc75bc4ee65e9c85b988d16b7b4a"
+  # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
+  # logos_brand_pins_test.rb, so it cannot move these.
+  PINNED = %w[studio industries turf welding].freeze
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -287,13 +290,13 @@ class LogosNavbarLogoTest < Minitest::Test
   end
 
   def test_every_rule_of_6_logo_is_unchanged_to_the_byte
-    all = unguided(Logo.brands, [6]) + Logo.brands.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
+    all = unguided(PINNED, [6]) + PINNED.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
     assert_equal 36, all.size
     assert_equal RULE_6_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 
   def test_every_watermark_logo_is_unchanged_to_the_byte
-    all = Logo.brands.flat_map do |brand|
+    all = PINNED.flat_map do |brand|
       logo = Logo.new(brand)
       [3, 4].product(Logo::TEXTS).map do |rule, text|
         "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
