@@ -36,20 +36,21 @@ module Logos
     FORMS = %w[two_line one_line].freeze       # a style's own form; `tagline` is offered beside it, never named in a style
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
-    # between the two, and the small line's letters in a column beside the icon. Distances are in design units.
+    # between the two, and the small line itself turned on end beside the icon. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
     GUIDE_FONT = 28
     NUMBER_X = 50                              # a ruler number's centre, right of the logo
     RULER_X = 90                               # the ruler's left ink edge, right of the logo
-    AXIS_FILL = 0.8                            # an axis letter is at most this share of the step between letters
-    AXIS_GAP = 0.5 * U                         # the axis column's right ink edge, left of the icon's box
-    BRACKET_GAP = 12                           # the bracket, left of the axis column
+    PROOF_GAP = 0.5 * U                        # the turned line's baseline, left of the icon's box
+    BRACKET_GAP = 12                           # the bracket, left of the turned line's cap line
     TICK = 12                                  # the bracket's ticks at the icon's top and foot
 
-    # `edges`: every horizontal boundary, top to bottom. `letters` carry their own baseline and cap. `ruler` is the
-    # small line as its ghosts copy it: its letters at a cap of 1 with their ink from x = 0, untracked, `ruler_width`
-    # wide (the second word, the tagline, or in the one-line form the whole name).
-    Layout = Struct.new(:form, :width, :height, :icon_height, :icon_left, :edges, :letters, :ruler, :ruler_width, keyword_init: true)
+    # `edges`: every horizontal boundary, top to bottom. `letters` carry their own baseline and cap. `line` is the
+    # small line exactly as the logo sets it (the second word, the tagline, or in the one-line form the whole name),
+    # tracking and word gap included, at a cap of 1 with its ink from x = 0, `line_width` wide; each letter carries
+    # its glyph's ink edges `l` and `r`. `ruler` is the small line as the ruler's ghosts copy it, `ruler_width` wide.
+    Layout = Struct.new(:form, :width, :height, :icon_height, :icon_left, :edges, :letters, :line, :line_width, :ruler, :ruler_width,
+                        keyword_init: true)
 
     undef_method :examples                     # the Navbar Logo's list: its keys name a rule, which this has none of
 
@@ -89,14 +90,17 @@ module Logos
       icon_height = SPAN * width
       edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
+      line = [big, first + second, cap]
       unless form == :one_line
         edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
         small = form == :tagline ? tagline_line(width) : small_line(second, width)
         placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) }
+        line = [small, form == :tagline ? tagline_glyphs : second, U]
       end
+      line, line_width = unit_line(*line)
       ruler, ruler_width = ruler(form, first, second)
       Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(tone, icon_height, width)) / 2,
-                 edges:, letters: placed, ruler:, ruler_width:)
+                 edges:, letters: placed, line:, line_width:, ruler:, ruler_width:)
     end
 
     def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, **unknown)
@@ -142,6 +146,14 @@ module Logos
     end
 
     def tagline_glyphs = tagline.each_char.map { |char| glyph(char, TAGLINE_WEIGHT) }
+
+    # Placed letters set at `cap` from their glyphs, brought to a cap of 1 with the first letter's ink at x = 0. Each
+    # keeps its glyph's ink edges. Returns them and the run's ink width (at a cap of 1).
+    def unit_line(placed, glyphs, cap)
+      left = placed.first[:x] + glyphs.first["l"] * cap
+      letters = placed.zip(glyphs).map { |letter, g| letter.except(:baseline, :cap).merge(x: (letter[:x] - left) / cap, l: g["l"], r: g["r"]) }
+      [letters, letters.last[:x] + letters.last[:r]]
+    end
 
     def check_form(form)
       return if forms.include?(form)
@@ -204,13 +216,13 @@ module Logos
     end
 
     # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
-    # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the axis bracket.
+    # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the turned line's bracket.
     def render(box, height, text, tone, guides)
       return super unless guides
 
       body = toned(tone, drawing(box, tone, *fills(tone, text)))
-      ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + axis_markup(box, ghost_fill(tone)))
-      left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the column and its bracket
+      ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + proof_markup(box, ghost_fill(tone)))
+      left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
       document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, left:,
                right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
@@ -227,44 +239,29 @@ module Logos
       end.join
     end
 
-    # The small line's letters one under another in a column JUST LEFT of the icon's box, from the icon's top to its
-    # foot: the icon is as tall as the small line is wide. The column stands on the plate, never on the icon, so it
-    # reads wherever the icon is filled. Each letter keeps its place along the line, is never above 1u, and is drawn
-    # small enough not to touch the next. Returns the column's letters (x and baseline set), their cap, and its left
-    # ink edge.
-    AxisColumn = Struct.new(:letters, :cap, :left, keyword_init: true)
+    # The icon-height proof: the small line, set exactly as the logo sets it, turned a quarter turn to read bottom to
+    # top, its baseline PROOF_GAP left of the icon's box and its ink from the icon's foot to the icon's top. It stands on
+    # the plate, never on the icon, so it reads wherever the icon is filled. In the two-line and tagline forms it is
+    # the small line at its own size (1u): the icon is as tall as the small line is wide, by construction. The one-line
+    # form has no small line, so it is the whole name at the size whose width is the icon's height (60% of the name).
+    def proof_cap(box) = box.icon_height / box.line_width
+    def proof_x(box) = box.icon_left - PROOF_GAP
 
-    def axis_column(box)
-      inked = box.ruler.reject { |l| l[:d].empty? }
-      centres = inked.map { |l| l[:x] + (l[:l] + l[:r]) / 2 }
-      length = centres.last - centres.first
-      return AxisColumn.new(letters: [], cap: U, left: box.icon_left - AXIS_GAP) unless length.positive?
-
-      share = centres.each_cons(2).map { |a, b| b - a }.min / length
-      cap = [U, AXIS_FILL * share * box.icon_height / (1 + AXIS_FILL * share)].min
-      width = inked.map { |l| (l[:r] - l[:l]) * cap }.max
-      middle_x = box.icon_left - AXIS_GAP - width / 2
-      letters = inked.zip(centres).map do |letter, centre|
-        middle = cap / 2 + (centre - centres.first) * (box.icon_height - cap) / length
-        letter.merge(x: middle_x - (letter[:l] + letter[:r]) / 2 * cap, baseline: middle + cap / 2)
-      end
-      AxisColumn.new(letters:, cap:, left: middle_x - width / 2)
+    def proof_markup(box, fill)
+      cap = proof_cap(box)
+      letters = box.line.map { |letter| letter_markup(letter.merge(x: letter[:x] * cap), 0, cap, fill) }.join
+      %(<g class="guide-proof" transform="translate(#{f(proof_x(box))},#{f(box.icon_height)}) rotate(-90)">#{letters}</g>)
     end
 
-    def axis_markup(box, fill)
-      column = axis_column(box)
-      column.letters.map { |letter| letter_markup(letter, letter[:baseline], column.cap, fill) }.join
-    end
+    def bracket_x(box) = proof_x(box) - proof_cap(box) - BRACKET_GAP
 
-    def bracket_x(box) = axis_column(box).left - BRACKET_GAP
-
-    # A bracket beside the axis column, its ticks at the icon's top and foot: the column is as tall as the icon.
+    # A bracket beside the turned line, its ticks at the icon's top and foot: the line is as long as the icon is tall.
     def bracket_markup(box)
       x = bracket_x(box)
       [guide_line(x, 0, x, box.icon_height), guide_line(x, 0, x + TICK, 0), guide_line(x, box.icon_height, x + TICK, box.icon_height)]
     end
 
-    # A line at each band boundary, across the logo and the ruler; the icon's centre line; the axis column's bracket;
+    # A line at each band boundary, across the logo and the ruler; the icon's centre line; the turned line's bracket;
     # each ruler copy's number; and a 1 at the icon's top.
     def guide_markup(box)
       right = ruler_right(box) + 20
