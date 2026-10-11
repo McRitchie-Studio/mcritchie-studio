@@ -338,8 +338,9 @@ Do not do that: it **silently disarmed** this gate while printing "already green
 - **A killed ship is an interruption, not an abort.** A background kill (a harness
   timeout, a low-memory stop) lands most often in a satellite's `bin/deploy` local
   suite, before anything reaches Heroku. Confirm no ship is alive
-  (`ps aux | grep "[r]elease\.rb"`), free memory if that was the cause, and re-run
-  `bin/release ship --yes`; it resumes. Run that `ps` check before every merge onto
+  (`pgrep -fl 'ruby .*bin/release[.]rb'`: no output means none; a `ps | grep` once
+  matched its own wrapping shell and reported a false hold), free memory if that was the cause, and re-run
+  `bin/release ship --yes`; it resumes. Run that `pgrep` check before every merge onto
   `accepted` while a release is in flight, too: a running ship is easy to miss.
 - **A local-suite red with green CI on the same frozen SHA** is usually machine
   load. turf-monster's `bin/deploy` deletes its test log on failure, so compare
