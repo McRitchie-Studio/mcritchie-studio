@@ -14,7 +14,7 @@ A brand has three logo types, all drawn from the same data:
 | Stacked Logo | `Logos::StackedLogo#svg` | the icon above the name ([below](#the-stacked-logo)) |
 
 The **Navbar Logo** (the main logo) is drawn from two things: an ICON (vector
-path layers) and a NAME (two words). `Logos::NavbarLogo`
+path layers) and a NAME (a first word and an ending: one word each, or, in a brand's own lettering, an ending of several words). `Logos::NavbarLogo`
 (`lib/logos/navbar_logo.rb`) returns it as an SVG. It reads no database and
 loads no font: the letters are outlines shipped as data, Montserrat's or the
 brand's own traced lettering.
@@ -156,7 +156,9 @@ Let **u** be the small word's cap height (40 design units).
   the tagline takes the tone's `quiet` fill (`text` without one), and the
   watermark's one fill. Width over height is 3n / (1.8n + 8), n the name's ink
   width in cap heights: Studio 1.271 homogeneous, Industries 1.327, Commercial
-  Welding 1.284 (`TAGLINE_RATIOS` in `test/lib/logos_stacked_logo_test.rb`).
+  Welding v1 1.328 (1.287 before it took LLC, and v2's 1.287 now: the closed
+  form does not depend on the icon) (`TAGLINE_RATIOS` in
+  `test/lib/logos_stacked_logo_test.rb`).
   Turf Monster has no tagline, so it has no tagline form.
 
 `Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
@@ -222,17 +224,32 @@ Stacked Logo, and the rake task writes Navbar Logos only.
 | `studio` | traced chest, one layer | Montserrat 800 and 300 | weight | BUILD SMARTER |
 | `industries` | kit set square, two layers, drawn flat | Montserrat 700 and 300 | weight | BUILD BETTER |
 | `turf` | traced head, three solid layers; its linework alone as a watermark | Montserrat 800, tracking -0.025 em | colour | none |
-| `welding` | traced helmet: two colours on light, one on dark | its own traced lettering | colour | BUILDING STRONG CONNECTIONS |
+| `welding` (Commercial Welding v1) | traced helmet: two colours on light, one on dark | its own traced lettering: COMMERCIAL WELDING LLC | colour | BUILDING STRONG CONNECTIONS |
+| `welding_v2` (Commercial Welding v2) | v1's helmet, centred and with the lens moved down ([below](#commercial-welding-v2)) | v1's lettering: COMMERCIAL WELDING | colour | BUILDING STRONG CONNECTIONS |
+
+A style's optional `title` is the brand's name in the gallery and in every
+logo's accessible label ("Commercial Welding v1"), where the name's own words
+would not tell two versions of a brand apart. Without one, the name's words are
+put in reading case ("McRitchie Industries").
 
 Three things a style may ask for beyond an icon and two Montserrat weights:
 
-- **Its own lettering** (`lettering: welding`). The name's two words are looked
+- **Its own lettering** (`lettering: welding`). The name's words are looked
   up whole in `brand_lettering.json` and drawn from the brand's traced letters.
   There is one weight, so the brand must use `highlight: colour`; the fill rule
   is the lettering's own (`evenodd`: a traced letter carries its counters as
-  sub-paths). Its word gap is half a cap height like every brand's; the
-  lettering's own `space` is no longer read. `highlight: weight`, a `tracking`, or a
-  word the lettering does not hold is refused.
+  sub-paths). Its word gap is half a cap height like every brand's.
+  `highlight: weight`, a `tracking`, or a word the lettering does not hold is
+  refused.
+- **An ending of several words** (lettering brands only). A name is two parts:
+  its first word and its ending, everything after it. In Montserrat the ending
+  is one word. In a brand's own lettering it may be several traced words:
+  `COMMERCIAL WELDING LLC` is COMMERCIAL, then the ending WELDING LLC. The
+  ending is one word to the logo (one colour when a word leads, the half-cap
+  gap only before it, the small line of the two-line Stacked Logo), and inside
+  it each pair of words is set the lettering's own `spaces["WELDING LLC"]`
+  apart: the kit's space, ink to ink, in cap heights (0.4305, 39.61 px at the
+  PNG's 92 px cap height). A pair with no space in the data is refused.
 - **Tracking** (`tracking: -0.025`), above. Montserrat brands only.
 - **An icon per tone** (`icon_key:` inside a tone). Commercial Welding's dark
   tone draws `welding_mono`, the helmet in one colour (half of it filled, half
@@ -241,6 +258,44 @@ Three things a style may ask for beyond an icon and two Montserrat weights:
 
 A style's optional `note` is the line its brand page shows about where the art
 came from.
+
+### Commercial Welding v2
+
+Alex's item 5 (task welding-llc-and-v2-helmet): a second Commercial Welding
+brand to compare his tweaks with the original, listed in the row after v1. Its
+helmet (`welding_v2`, and `welding_v2_mono` on dark and as the watermark) is
+derived from v1's traced helmet by `Logos::WeldingV2`
+(`lib/logos/welding_v2.rb`); `bin/rails logos:welding_v2` writes it to
+`lib/logos/data/brand_icons_welding_v2.json`, and a test fails if the file is
+not exactly what the derivation writes. The steps, on each tone's own trace:
+
+1. **Find the parts.** The primary layer has three sub-paths: the outer
+   helmet (the widest), the white half (the taller hole) and the window (the
+   other hole). The orange spark is the `accent` layer; on the single-colour
+   helmet it is cut into the window's own contour.
+2. **Centre.** The midline is the white half's straight left edge, the line
+   where the two halves meet: the mean x of its on-curve points within 2 units
+   of the leftmost, away from its corners (x = 204.13 on the colour helmet,
+   205.07 on the single-colour one). Every layer moves right so the midline
+   is the box's centre. The box is widened on the short side, never cropped:
+   426 to 443.75, shared by both tones (as v1's 426 is, so a logo's geometry
+   is the same in every tone), each helmet centred on its own midline in it
+   (right 17.75 and 16.80).
+3. **Move the lens.** In the rule of 3 the icon is three rows, 161 of 483
+   units each. The window is 145.8 tall, shorter than a row, so it cannot sit
+   on both row lines; it is centred on the middle row instead: down 23.42
+   (23.39 single-colour), leaving about 7.6 units of the row above and below
+   it. The spark moves with it. The blue frame around the window is the notch
+   the white half's contour makes around it; that contour's on-curve points
+   within 40 units of the window (the band is 16 to 20 thick) move down with
+   it, each curve's control points following their own end, so the band keeps
+   its width and the rest of the white half stays put.
+
+`test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
+data: the midline at the box's centre, the ears inside the box, the lens's
+shape unchanged and centred on the middle row, the spark and frame moved with
+it and nothing else moved down. Its logos are v1's in every other respect
+(palette, tagline, lettering, tones), with the name COMMERCIAL WELDING.
 
 ## Pure vector
 
@@ -258,9 +313,12 @@ match. The ghosts are the logo's text colour, faint, in `<g class="guide-ghosts"
 BEHIND the logo; the lines (1.0) and numbers (30; 40 on the rule of 6, whose
 drawing is the widest, so it still fits the 1028 px plate at 9 px labels) are in
 `<g class="guide-lines">`. That drawing does use
-`<line>` and `<text>`, so it is for looking at, never for shipping. Only logos
-WITHOUT guides are pinned to the byte (SHA-256 tests in
-`test/lib/logos_navbar_logo_test.rb` and `test/lib/logos_stacked_logo_test.rb`).
+`<line>` and `<text>`, so it is for looking at, never for shipping. The
+combined pins cover logos WITHOUT guides (SHA-256 tests in
+`test/lib/logos_navbar_logo_test.rb` and `test/lib/logos_stacked_logo_test.rb`);
+`test/lib/logos_brand_pins_test.rb` pins each brand on its own, over everything
+it draws, guides and icons included, so a change by design to one brand shows
+which brand moved and that no other did.
 
 ## The rake task
 
@@ -374,13 +432,15 @@ a `?type=` in the query string cannot change it.
 | `config/logo_brands.yml` | Each brand's name, tagline, icon, highlight, weights or lettering, tracking, stacked form, note, fills and watermark. Add a brand here. |
 | `lib/logos/data/brand_icons.json` | Studio's and Industries' icon layers: a path, a role (`primary`, `edge`) and a fill rule each. |
 | `lib/logos/data/brand_icons_turf_welding.json` | The same format for `turf` (roles `outline`, `body`, `light`), `welding` (`primary`, `accent`) and `welding_mono` (`primary`). |
-| `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. The library reads the three icon files as one set. |
-| `lib/logos/data/brand_lettering.json` | A brand's own lettering: per word, a list of letters (`d`, `adv`, `l`, `r`) in the glyph file's units, plus the `fill_rule` (and the traced word `space`, which the equal-gap rule no longer reads). |
+| `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. |
+| `lib/logos/data/brand_icons_welding_v2.json` | `welding_v2` and `welding_v2_mono`, written by `bin/rails logos:welding_v2` ([above](#commercial-welding-v2)); edit the derivation, never the file. The library reads the four icon files as one set. |
+| `lib/logos/data/brand_lettering.json` | A brand's own lettering: per word, a list of letters (`d`, `adv`, `l`, `r`) in the glyph file's units, plus the `fill_rule` and `spaces`, the kit's space between two words as it sets them (`"WELDING LLC"`: 0.4305 cap heights, ink to ink), which an ending of several words uses. `"COMMERCIAL WELDING"` is kept for the record; the equal-gap rule sets the first word's gap. Commercial Welding's words (COMMERCIAL, WELDING, LLC) are traced from the kit's text-only PNG by the prototype's potrace method (`traced_words`), which reproduces COMMERCIAL and WELDING byte for byte; it runs by hand, never in CI. |
 | `lib/logos/data/montserrat_glyphs.json` | Letter outlines for weights 300 to 800, 95 ASCII glyphs each. Cap height is 1, the baseline is y = 0, y grows downward. Letters fill `nonzero`. |
 | `lib/logos/data/extract_glyphs.py` | The script that made the glyph file. It needs Python with fonttools and brotli and the engine's Montserrat file; it runs by hand, never in CI. |
 
 A brand that is not in the data, a rule other than 3, 4 or 6, a name that is not
-exactly two words, and a character with no glyph each raise
+exactly two words (in Montserrat; a lettering brand's is two or more), and a
+character with no glyph each raise
 `Logos::NavbarLogo::Error` with the reason. A fill that is not a `#hex` colour
 is refused too.
 
