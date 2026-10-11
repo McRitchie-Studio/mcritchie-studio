@@ -19,12 +19,18 @@ module LogoBrandPage
   end
 
   # @context is nil (follow the hub theme), :light, :dark or :watermark; @theme is the theme the page sets on load
-  # (nil: leave it as it is); @tones the logo versions the page renders.
+  # (nil: leave it as it is); @tones the logo versions the page renders. @colouring_param is the page's ?colouring=
+  # (task logo-original-and-alt): nil (each brand's own default), :original or :alt.
   def set_context
     @context = Logos::Variant.context(params[:context]) if params.key?(:context)
     @theme = @context == :watermark ? :dark : @context
     @tones = @context == :watermark ? [:watermark] : Logos::NavbarLogo::BAKED
+    @colouring_param = Logos::Variant.colouring(params[:colouring])
   end
+
+  # The colouring a brand's logos are shown in: the page's ?colouring=, else the brand's Original where it has one.
+  # A brand with no original (Studio) is shown in Alt whatever the page asks, and says why (logos/_colouring_control).
+  def page_colouring(logo) = logo.original? ? (@colouring_param || :original) : :alt
 
   # Every setting is read on every tab, so a tab that does not use one (the icon has no rule and no guides) still
   # carries it to the next. Needs set_logo and set_context first.
@@ -33,13 +39,16 @@ module LogoBrandPage
     @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
     @guides = Logos::Variant.flag(params[:guides], "guides")
     @edits = @logo.checked_edits(Logos::Variant.edits(params))
+    @colouring = page_colouring(@logo)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
-    # the page, and the logos are drawn as styled, so a change of form never loses the page.
-    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon)
+    # the page, and the logos are drawn as styled, so a change of form never loses the page. Edits apply to Alt only:
+    # an Original keeps them in the URL and draws none (Logos::Variant).
+    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon && @colouring == :alt)
     drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
-    @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides, edits: drawn) }
-                      .transpose.map { |versions| @tones.zip(versions).to_h }
+    @variants = @tones.map do |tone|
+      Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, colouring: @colouring, guides: @guides, edits: drawn)
+    end.transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
     @kit_record = BrandKit.for(@logo.brand)
     @savers = BrandKit.saver_names([@kit_record])

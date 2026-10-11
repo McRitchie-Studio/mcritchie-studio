@@ -8,15 +8,23 @@
 # logos to match; Watermark turns the page dark and shows the watermark logos.
 # A logo file has no background of its own either.
 module LogosHelper
-  # The gallery's page params: the type, context, rule, form and guides in force, less the defaults (the Navbar Logo,
-  # the theme's own logos, the rule of 4, the brand's own stacked form, guides off), and the edits in force (task
-  # logo-part-editor), with `changes` on top. A change to nil goes back to the default. Only the watermark is carried
-  # as a context: light and dark are the hub's theme, which every page already keeps.
+  # The gallery's page params: the type, context, colouring, rule, form and guides in force, less the defaults (the
+  # Navbar Logo, the theme's own logos, each brand's own colouring, the rule of 4, the brand's own stacked form, guides
+  # off), and the edits in force (task logo-part-editor), with `changes` on top. A change to nil goes back to the
+  # default. Only the watermark is carried as a context: light and dark are the hub's theme, which every page already
+  # keeps. The colouring is the page's own ?colouring= (task logo-original-and-alt), carried as asked even on a brand
+  # that shows only Alt, so it comes back on the next brand.
   def logo_page_params(**changes)
-    { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), rule: (@rule unless @rule == 4),
-      form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }
+    { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), colouring: @colouring_param,
+      rule: (@rule unless @rule == 4), form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }
       .merge(Logos::Variant.edit_params(@edits || {})).merge(changes).compact
   end
+
+  # The page params that keep the page's context and colouring, for a link or form that leaves the tab's own settings.
+  def logo_page_keeps(*more) = logo_page_params.slice(:context, :colouring, *more)
+
+  # A brand's own colouring on a page with no ?colouring=: its Original where it has one, else Alt.
+  def logo_default_colouring(logo) = logo.original? ? :original : :alt
 
   # The page params with no edits: the edit panel's Reset, and the hidden fields of its own form (which sends its own).
   def logo_unedited_params = logo_page_params.except(*Logos::Variant::EDIT_PARAMS.keys)
@@ -65,9 +73,13 @@ module LogosHelper
 
   # A Navbar or Stacked choice in words, as the kit saves it (BrandKit): "rule of 4, second word leads, as styled",
   # "with tagline, first word leads, first word Deep Violet 300 Light; tagline hidden".
+  # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original shows no
+  # edits, so it says none.
   def logo_choice_summary(variant)
     shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
-    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, logo_edits_summary(variant.logo, variant.edits)].join(", ")
+    colouring = ("#{Logos::Variant::COLOURINGS.fetch(variant.colouring).downcase} colouring" if variant.logo.original?)
+    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original?)
+    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, colouring, edits].compact.join(", ")
   end
 
   # Checked edits in words, by part, the colours by their palette names; "as styled" for none.
@@ -123,6 +135,7 @@ module LogosHelper
   def logo_kit_save_fields
     choice = @type == :stacked ? { form: @form } : { rule: @rule }
     { type: @type }.merge(choice).merge(Logos::Variant.edit_params(@edits)).merge(logo_page_params.slice(:guides, :context))
+                   .merge(colouring: @colouring)
   end
 
   # The brand page's params that open a kit choice on its own tab: its rule or form and its edits (less the page's
@@ -133,7 +146,8 @@ module LogosHelper
             else
               { rule: (variant.rule unless variant.rule == 4) }
             end
-    shape.merge(Logos::Variant.edit_params(variant.edits)).merge(logo_page_params.slice(:context)).compact
+    colouring = (variant.colouring unless variant.colouring == logo_default_colouring(variant.logo))
+    shape.merge(Logos::Variant.edit_params(variant.edits)).merge(logo_page_params.slice(:context)).merge(colouring:).compact
   end
 
   # How tall the kit card's Navbar and Stacked logos are, in px.

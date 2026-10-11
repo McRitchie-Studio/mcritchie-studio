@@ -52,7 +52,7 @@
     <% end %>
   </div>
   <%= form_with url: brand_kit_path(@logo.brand), method: :patch, class: "space-y-2", data: { test: "kit-notes-form", turbo: false } do %>
-    <% logo_page_params.slice(:type, :context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+    <% logo_page_keeps(:type).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
     <label for="kit-notes" class="block text-3xs font-semibold uppercase tracking-wide text-muted">Notes</label>
     <%= text_area_tag :notes, kit_record.notes, id: "kit-notes", rows: 2, maxlength: BrandKit::MAX_NOTES,
                       class: "w-full rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-sm text-heading", data: { test: "kit-notes" } %>

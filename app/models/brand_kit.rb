@@ -4,8 +4,10 @@
 # operator has SAVED for one brand of config/logo_brands.yml, and the artwork its
 # logos were derived from.
 #
-#   navbar_choice   the Navbar Logo the brand uses: {"rule" => 4, "text" => "second", "edits" => {...}}
-#   stacked_choice  the Stacked Logo it uses:       {"form" => "tagline", "text" => "first", "edits" => {...}}
+#   navbar_choice   the Navbar Logo the brand uses: {"rule" => 4, "text" => "second", "colouring" => "alt", "edits" => {...}}
+#   stacked_choice  the Stacked Logo it uses:       {"form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {...}}
+#                   `colouring` (task logo-original-and-alt) is optional: a choice saved before it has none and is
+#                   read as "alt", which is what it showed when it was saved. No migration: the JSON reads it so.
 #   originals       the ORIGINAL artwork, unedited (Active Storage, the hub's R2 service): SVG, PNG, JPEG, PDF or ZIP,
 #                   25 MB each. Alex: every kit keeps its original, so anyone can see where a derivation came from.
 #   notes           the operator's own words on the kit
@@ -24,8 +26,9 @@ class BrandKit < ApplicationRecord
   Error = Logos::NavbarLogo::Error
 
   TYPES = %i[navbar stacked].freeze
-  # The keys a stored choice may carry, per type. `edits` may be absent (no edits).
-  CHOICE_KEYS = { navbar: %w[rule text edits], stacked: %w[form text edits] }.freeze
+  # The keys a stored choice may carry, per type. `edits` and `colouring` may be absent (no edits; Alt).
+  CHOICE_KEYS = { navbar: %w[rule text colouring edits], stacked: %w[form text colouring edits] }.freeze
+  OPTIONAL_KEYS = %w[colouring edits].freeze
   # The logo a brand shows with nothing saved: the rule-of-4 Navbar Logo with the second word leading, and its Stacked
   # Logo, in its own form, with the first word leading. The text versions are also the save form's default.
   DEFAULTS = { navbar: { rule: 4, text: :second }, stacked: { text: :first } }.freeze
@@ -63,12 +66,13 @@ class BrandKit < ApplicationRecord
     User.where(email: emails).where.not(name: [nil, ""]).pluck(:email, :name).to_h
   end
 
-  # A stored choice as the Logos::Variant it draws in `tone` (light unless given). Anything the gallery's parser
+  # A stored choice as the Logos::Variant it draws in `tone` (light unless given), in its saved colouring or, given one,
+  # in `colouring` (the table's): an Original for a brand that has none is drawn in Alt. Anything the gallery's parser
   # refuses is an Error, and so are edits that cannot be drawn in the choice's rule or form.
-  def self.variant(brand, type, choice, tone: :light)
+  def self.variant(brand, type, choice, tone: :light, colouring: nil)
     type = type.to_sym
     keys = CHOICE_KEYS.fetch(type) { raise Error, "a kit saves a navbar or a stacked choice, not #{type.inspect}" }
-    unless choice.is_a?(Hash) && (choice.keys - keys).empty? && (keys - %w[edits]).all? { |key| choice.key?(key) }
+    unless choice.is_a?(Hash) && (choice.keys - keys).empty? && (keys - OPTIONAL_KEYS).all? { |key| choice.key?(key) }
       raise Error, "a #{type} choice is a map of #{keys.join(', ')}, got #{choice.inspect[0, 80]}"
     end
 
@@ -78,8 +82,10 @@ class BrandKit < ApplicationRecord
     end
 
     logo = Logos::Variant.logo(brand, type)
+    colouring = colouring.to_s if colouring && (colouring.to_sym == :alt || logo.original?)
     params = edits.to_h { |name, value| [name.to_sym, value.to_s] }
-                  .merge(text: choice["text"].to_s, rule: choice["rule"]&.to_s, form: choice["form"]&.to_s, tone: tone.to_s).compact
+                  .merge(text: choice["text"].to_s, rule: choice["rule"]&.to_s, form: choice["form"]&.to_s, tone: tone.to_s,
+                         colouring: colouring || choice["colouring"]&.to_s).compact
     variant = Logos::Variant.parse(logo, params, type:)
     refusal = logo.refusal(variant.edits, **(type == :stacked ? { form: variant.form } : { rule: variant.rule }))
     raise Error, refusal if refusal
@@ -87,11 +93,12 @@ class BrandKit < ApplicationRecord
     variant
   end
 
-  # A choice as it is stored: the variant's own choices and its checked, shown edits, in one spelling.
+  # A choice as it is stored: the variant's own choices, its colouring and its checked, shown edits (an Original shows
+  # none), in one spelling.
   def self.choice_of(variant)
     choice = variant.type == :stacked ? { "form" => variant.form.to_s } : { "rule" => variant.rule }
     edits = Logos::Variant.edit_params(variant.edits).to_h { |name, value| [name.to_s, value.to_s] }
-    choice.merge("text" => variant.text.to_s, "edits" => edits)
+    choice.merge("text" => variant.text.to_s, "colouring" => variant.colouring.to_s, "edits" => edits)
   end
 
   def choice(type) = public_send(:"#{type}_choice")
@@ -101,11 +108,16 @@ class BrandKit < ApplicationRecord
   # A saved edit the brand's data can no longer draw (a colour since taken out of the palette) is DROPPED here, not
   # refused, so a stale kit never takes the table or the brand page down: #stale_edits names what was dropped, and
   # the brand page says so. Only a choice whose rule, form or text is itself refused is an Error.
-  def variant(type, tone: :light)
+  # `colouring` draws the choice in that colouring instead of its saved one (the table's; Alt for a brand with no
+  # original). With nothing saved, the default is drawn in the brand's own colouring (its Original where it has one)
+  # unless asked.
+  def variant(type, tone: :light, colouring: nil)
     type = type.to_sym
-    return self.class.variant(brand, type, drawable_choice(type), tone:) if saved?(type)
+    return self.class.variant(brand, type, drawable_choice(type), tone:, colouring:) if saved?(type)
 
-    Logos::Variant.new(Logos::Variant.logo(brand, type), type:, tone:, **DEFAULTS.fetch(type))
+    logo = Logos::Variant.logo(brand, type)
+    colouring = logo.colourings.first unless colouring && logo.colourings.include?(colouring.to_sym)
+    Logos::Variant.new(logo, type:, tone:, colouring: colouring.to_sym, **DEFAULTS.fetch(type))
   end
 
   # The saved edits of `type` that #variant drops because they can no longer be drawn: { "first_colour" => reason }.
@@ -125,12 +137,13 @@ class BrandKit < ApplicationRecord
     type = type.to_sym
     raise Error, "a kit saves a navbar or a stacked choice, not #{type.inspect}" unless TYPES.include?(type)
 
-    keys = CHOICE_KEYS.fetch(type) - %w[edits]
+    keys = CHOICE_KEYS.fetch(type) - OPTIONAL_KEYS
     choice = keys.to_h { |key| [key, params[key.to_sym].presence] }
     raise Error, "a #{type} choice needs a #{keys.join(' and a ')}" if choice.values.any?(&:nil?)
 
     edits = Logos::Variant::EDIT_PARAMS.keys.to_h { |name| [name.to_s, params[name].to_s] }.reject { |_, value| value.empty? }
-    variant = self.class.variant(brand, type, choice.merge("edits" => edits))
+    colouring = params[:colouring].presence
+    variant = self.class.variant(brand, type, choice.merge("edits" => edits, "colouring" => colouring).compact)
     self[:"#{type}_choice"] = self.class.choice_of(variant)
     self.updated_by = by
     save!

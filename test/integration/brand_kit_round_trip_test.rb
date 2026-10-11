@@ -58,14 +58,15 @@ class BrandKitRoundTripTest < ActionDispatch::IntegrationTest
     refute_match(/custom/, index.join, "an unedited choice's file is not named custom")
   end
 
-  test "with nothing saved the table draws exactly what it drew before the kit record" do
+  # With nothing saved the brand's own colouring is shown: Turf Monster's Original (task logo-original-and-alt).
+  test "with nothing saved the table draws exactly what it drew before the kit record, in the brand's own colouring" do
     get logos_path
     srcs = css_select("[data-brand='turf'] [data-test='logo-sample'] img").map { |img| img["src"] }
     navbar = Logos::NavbarLogo.new("turf")
     stacked = Logos::StackedLogo.new("turf")
-    expected = Logos::NavbarLogo::BAKED.flat_map { |tone| [stacked.svg(text: :first, tone:)] } +
-               Logos::NavbarLogo::BAKED.map { |tone| navbar.svg(rule: 4, text: :second, tone:) } +
-               Logos::NavbarLogo::BAKED.map { |tone| navbar.icon_svg(tone:) }
+    expected = Logos::NavbarLogo::BAKED.flat_map { |tone| [stacked.svg(text: :first, tone:, colouring: :original)] } +
+               Logos::NavbarLogo::BAKED.map { |tone| navbar.svg(rule: 4, text: :second, tone:, colouring: :original) } +
+               Logos::NavbarLogo::BAKED.map { |tone| navbar.icon_svg(tone:, colouring: :original) }
     assert_equal expected, srcs.map { |src| svg_at(src) }
   end
 end

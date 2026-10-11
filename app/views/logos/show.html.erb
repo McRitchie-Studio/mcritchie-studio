@@ -26,7 +26,7 @@
 <% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
-    <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
+    <%= link_to "Logos", logos_path(logo_page_keeps), class: "hover:text-primary", data: { test: "logos-crumb" } %>
     <span aria-hidden="true">/</span>
     <span class="text-heading font-bold font-mono break-all"><%= @logo.brand %></span>
   </nav>
@@ -35,6 +35,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
+      <%= render "logos/colouring_control", path: ->(page) { logo_brand_path(@logo.brand, page) }, chosen: @colouring, logo: @logo %>
     </div>
     <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
 
@@ -87,7 +88,7 @@
       </p>
     <% end %>
     <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
-    <%= render "logos/context_notes", logo: (@logo unless @type == :icon) %>
+    <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>

@@ -52,4 +52,67 @@ class LogosColouringTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_match(/unknown colouring "sepia": expected one of original, alt/, response.body)
   end
+
+  def query(href) = Rack::Utils.parse_query(URI(href).query.to_s)
+  def srcs = css_select("img[data-test='logo-image']").map { |img| img["src"] }
+  def options = css_select("[data-test='colouring-option']")
+
+  test "a brand page opens on the brand's Original, with a Colouring control beside Context" do
+    get logo_brand_path("welding", type: "stacked")
+    assert_response :success
+    assert_select "[data-test='context-form'] ~ [data-test='colouring-control']", 1, "beside Context"
+    assert_equal %w[original alt], options.map { |option| option["data-colouring"] }
+    assert_equal ["original"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
+    assert_equal 6, srcs.size
+    srcs.each { |src| assert_equal "original", query(src)["colouring"], src }
+    css_select("a[data-test='logo-download']").each { |link| assert_equal "original", query(link["href"])["colouring"] }
+    assert_select "img[data-test='logo-image'][alt$='original colouring']", 6
+    assert_select "[data-test='colouring-note']", /Original is the brand's own art/
+  end
+
+  test "Alt draws today's logos, and the colouring is kept across every other control" do
+    get logo_brand_path("industries", colouring: "alt", rule: 3)
+    srcs.each { |src| assert_nil query(src)["colouring"], "an Alt logo's URL is as before: #{src}" }
+    assert_equal ["alt"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
+    links = css_select("[data-test='logo-tab'], [data-test='rule-option'], [data-test='guides-toggle'], [data-test='logos-crumb']").map { |a| a["href"] }
+    links.each { |href| assert_equal "alt", query(href)["colouring"], href }
+    hidden = css_select("[data-test='context-form'] input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
+    assert_equal "alt", hidden["colouring"]
+    original = css_select("[data-test='colouring-option'][data-colouring='original']").first["href"]
+    assert_equal({ "rule" => "3" }, query(original), "Original is the default, so choosing it drops the param and keeps the rest")
+  end
+
+  test "the index shows each brand's Original where it has one, and Alt on asking" do
+    get logos_path
+    assert_select "[data-test='colouring-control']", 1
+    { "welding" => "original", "industries" => "original", "turf" => "original", "studio" => nil }.each do |brand, colouring|
+      css_select("[data-brand='#{brand}'] [data-test='logo-sample'] img").each { |img| assert_equal colouring, query(img["src"])["colouring"], brand }
+    end
+    get logos_path(colouring: "alt")
+    css_select("[data-test='logo-sample'] img").each { |img| assert_nil query(img["src"])["colouring"], img["src"] }
+    css_select("[data-test='logo-brand-row'] th a").each { |link| assert_equal "alt", query(link["href"])["colouring"], "the brand links keep it" }
+  end
+
+  test "a kit choice saves the page's colouring, and a choice saved before colourings reads as Alt" do
+    get logo_brand_path("welding", type: "stacked", form: "tagline")
+    form = css_select("form[data-test='kit-save-form']").first
+    fields = form.css("input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
+    assert_equal "original", fields["colouring"]
+    patch form["action"], params: fields.merge("text" => "first")
+    assert_response :redirect
+    assert_equal({ "form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {} }, BrandKit.for("welding").stacked_choice)
+    assert_equal :original, BrandKit.for("welding").variant(:stacked).colouring
+
+    legacy = BrandKit.for("industries")
+    legacy.update!(navbar_choice: { "rule" => 4, "text" => "first", "edits" => {} }, updated_by: "alex@test.com")
+    assert_equal :alt, legacy.variant(:navbar).colouring, "no colouring saved: what it showed then"
+    assert_equal :original, legacy.variant(:navbar, colouring: :original).colouring, "the table may ask for the Original"
+    assert_equal :alt, BrandKit.for("studio").variant(:navbar, colouring: :original).colouring, "a brand with none draws Alt"
+  end
+
+  test "an unknown page colouring is a 422 in plain text" do
+    get logo_brand_path("welding", colouring: "sepia")
+    assert_response :unprocessable_content
+    assert_match(/unknown colouring "sepia"/, response.body)
+  end
 end
