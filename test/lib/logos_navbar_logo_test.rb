@@ -28,14 +28,16 @@ class LogosNavbarLogoTest < Minitest::Test
   # 5.87, welding 5.98 and 8.52.
   ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.065, ["welding", 4] => 8.657 }.freeze
   # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
-  # brand's logos may change by a byte. Re-taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid),
-  # where the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task
-  # add-turf-and-welding-logos) still passed; guide drawings are construction drawings and are free to change.
-  ORIGINAL_BRANDS_DIGEST = "3926684129a86ab64613d06c7e828fb60031f274402bf7091d8d40d812301f24"
+  # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
+  # the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task add-turf-and-welding-logos)
+  # still passed; guide drawings are construction drawings and are free to change. Re-taken DELIBERATELY by task
+  # navbar-spacing-and-rotated-guides, after Alex's item 4c made the icon gap and the word gap each half a cap height
+  # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
+  ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
-  ADDED_BRANDS_DIGEST = "315197c04927adfccd746b54c86fba1f719384a416c78b3f66a06da2e6739b25"
+  ADDED_BRANDS_DIGEST = "84708d03dc90a4f0b31db6589342380ef8ad33436aa08ba2a32e2903f590b6fd"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
-  WATERMARK_DIGEST = "6d1da5ed149c514b58c6d8b8ee5682ea06764f6264706a2e4af742e1ca1abbb3"
+  WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },

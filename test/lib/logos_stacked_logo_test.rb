@@ -22,10 +22,14 @@ class LogosStackedLogoTest < Minitest::Test
     ["industries", :first] => 1.073, ["industries", :homogeneous] => 1.073, ["industries", :second] => 1.056
   }.freeze
 
-  # SHA-256 over every stacked logo WITHOUT guides (4 brands x 3 texts x 3 tones, "<key>\n<svg>" each) and every icon
-  # (4 brands x 3 tones), taken on `accepted` at 4368b9183 before the tagline form and the ghost grids (task
-  # stacked-tagline-and-ghost-grid): a new form and new guide drawings may not move a shipped logo by a byte.
-  STACKED_DIGEST = "6b40237f0a2b759fe9d3d67f5d3af417e982c18c99d54d73859bd7974cdd8a6d"
+  # SHA-256 over every stacked logo WITHOUT guides in its brand's own form (3 texts x 3 tones each, "<key>\n<svg>") and
+  # every icon (4 brands x 3 tones). The single digest over all four brands (6b40237f…, taken on `accepted` at 4368b9183)
+  # was split by task navbar-spacing-and-rotated-guides, when item 4c gave the one-line name the Navbar Logo's new word
+  # gap: the two-line brands' digest was taken BEFORE that change and still holds, so they did not move by a byte; Turf
+  # Monster's one-line logos and every tagline-form logo were re-taken deliberately after it.
+  TWO_LINE_DIGEST = "f066b3ee448c37018089636ee6d7c9f5bad5213551a5c88a7322eb2ecd9e3be4"
+  ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
+  TAGLINE_DIGEST = "cc5f5a64a6534e759b48f85a152d939e594b518de1593b3b9e33328264ca831d"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
@@ -382,12 +386,22 @@ class LogosStackedLogoTest < Minitest::Test
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).form] })
   end
 
-  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
-    all = Navbar.brands.flat_map do |brand|
+  def own_form(brands)
+    brands.flat_map do |brand|
       Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-#{text}-#{tone}\n#{stacked(brand).svg(text:, tone:)}" }
     end
-    assert_equal 36, all.size
-    assert_equal STACKED_DIGEST, Digest::SHA256.hexdigest(all.join)
+  end
+
+  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
+    two_line = own_form(%w[studio industries welding])
+    assert_equal 27, two_line.size
+    assert_equal TWO_LINE_DIGEST, Digest::SHA256.hexdigest(two_line.join), "the two-line form, unmoved by the word gap"
+    assert_equal ONE_LINE_DIGEST, Digest::SHA256.hexdigest(own_form(%w[turf]).join)
+    taglines = TAGLINES.compact.keys.flat_map do |brand|
+      Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-tagline-#{text}-#{tone}\n#{stacked(brand).svg(form: :tagline, text:, tone:)}" }
+    end
+    assert_equal 27, taglines.size
+    assert_equal TAGLINE_DIGEST, Digest::SHA256.hexdigest(taglines.join)
     icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
     assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
   end
