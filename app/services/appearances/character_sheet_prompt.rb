@@ -184,9 +184,16 @@ module Appearances
         "team"
     end
 
-    # THE SURNAME FOR THE NAMEPLATE, or nil.
+    # THE SURNAME FOR THE NAMEPLATE, or nil: the caller's `surname:`, then the
+    # person's stored `last_name`, and only when that is blank the last word of the
+    # full name. The last word alone printed "BROWN" for Amon-Ra St. Brown and "NOY"
+    # for Kyle Van Noy (task sheet-nameplate-quotes-surname); the importers already
+    # keep a multi-word surname whole in `last_name`.
     def surname
-      @surname.presence || @appearance&.person&.full_name.to_s.split.last.presence
+      person = @appearance&.person
+      @surname.presence ||
+        person&.last_name.presence ||
+        person&.full_name.to_s.split.last.presence
     end
 
     # THE NUMBER: the caller's `number:` when one is passed, otherwise THE LOOK'S OWN

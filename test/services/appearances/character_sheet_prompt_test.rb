@@ -177,6 +177,36 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_equal 2, line.count('"')
   end
 
+  # THE STORED last_name OUTRANKS THE LAST WORD OF THE FULL NAME. The last word
+  # printed "BROWN" for a St. Brown. Synthetic people only.
+  def look_for(first, last)
+    person = Person.create!(first_name: first, last_name: last)
+    Appearance.create!(person_slug: person.slug, descriptor: "Bills home")
+  end
+
+  { "St. Brown" => "ST. BROWN", "Van Noy" => "VAN NOY" }.each do |last, plate|
+    test "a stored multi-word last_name (#{last}) is the whole nameplate" do
+      line = back_view_line(Appearances::CharacterSheetPrompt.call(look_for("Synthetic", last)))
+
+      assert_includes line, "nameplate reading \"#{plate}\" (spelled #{Appearances::CharacterSheetPrompt.spell(plate)})"
+    end
+  end
+
+  test "a blank stored last_name falls back to the last word of the full name" do
+    look = look_for("Synthetic Testman", "Placeholder")
+    look.person.update_columns(last_name: "")
+
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(look.reload))
+
+    assert_includes line, %(nameplate reading "TESTMAN" (spelled T-E-S-T-M-A-N))
+  end
+
+  test "a passed surname outranks the stored last_name" do
+    line = back_view_line(Appearances::CharacterSheetPrompt.call(look_for("Synthetic", "Van Noy"), surname: "Little"))
+
+    assert_includes line, %(nameplate reading "LITTLE")
+  end
+
   test "no surname means no nameplate clause and no empty quotes" do
     [nil, "  ", %("")].each do |given|
       prompt = Appearances::CharacterSheetPrompt.call(nil, surname: given, number: "39")
