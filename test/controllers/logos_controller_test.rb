@@ -80,10 +80,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
     assert_equal({ "icon" => "max-height: 48px", "navbar" => "max-height: 28px", "stacked" => "max-height: 96px" },
                  css_select("[data-brand='studio'] [data-test='logo-sample']").to_h { |cell| [cell["data-type"], cell.at_css("img")["style"]] })
-    swatches = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-swatch']").map { |swatch| swatch.text.strip } }
-    assert_equal %w[#262A30 #41464D #8C939C #F4F5F7 #D3D6DA #FFFFFF #FFFFFF], swatches.("industries")
-    assert_equal %w[#1A1535 #FFFFFF #8E82FE #FFFFFF], swatches.("studio")
-    assert_select "[data-brand='industries'] [data-test='logo-swatch'] span[style='background-color: #8C939C']", 1
     assert_select "[data-test='logo-brand-row'][data-brand='studio'] [data-test='logo-typeface']", /weights 800 and 300/
     assert_select "[data-test='read-only-note']", /Choosing one for a brand comes later/
   end
@@ -114,25 +110,59 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-brand='turf'] [data-test='logo-image']", 2, "its icon and its navbar logo are still shown"
     assert_select "[data-test='logo-sample-refused']", 1
     assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size - 1
-    assert_select "[data-brand='turf'] [data-test='logo-colours'] [data-test='logo-swatch']", 11
+    assert_select "[data-brand='turf'] [data-test='logo-colours'] [data-test='logo-swatch']", 7
 
     get logos_path
     assert_select "[data-test='logo-sample-refused']", 0, "and the shipped brands all stack"
     assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size
   end
 
-  test "the Colours column lists the watermark's fill and opacity after light and dark" do
+  # The palettes Alex chose (epic brand-studio, 2026-10-10 22:45), in order, as config/logo_brands.yml lists them.
+  PALETTES = {
+    "studio" => [["Ink", "#1A1535"], ["Violet", "#8E82FE"], ["Deep Violet", "#635BB2"], ["Violet Mist", "#EEECFF"], ["White", "#FFFFFF"]],
+    "industries" => [["Forge Orange", "#C8661F"], ["Ember Orange", "#E07B2E"], ["Charcoal Steel", "#262A30"], ["Gunmetal", "#59606A"],
+                     ["Brushed Steel", "#8C939C"], ["Light Steel", "#D3D6DA"], ["Shop Black", "#141516"], ["White", "#FFFFFF"]],
+    "turf" => [["Brand Green", "#4BAF50"], ["Forest", "#2E7D32"], ["Deep Green", "#1A550D"], ["Grass", "#5C972A"], ["Cream", "#F0EBCF"],
+               ["Ink", "#1A1535"], ["Violet", "#8E82FE"]],
+    "welding" => [["Welding Blue", "#2D5E8E"], ["Spark Orange", "#D7602E"], ["Ember", "#F08A5A"], ["White", "#FFFFFF"]]
+  }.freeze
+
+  def palette_shown(scope)
+    css_select("#{scope} [data-test='logo-swatch']").map do |swatch|
+      [swatch.at_css("[data-test='logo-swatch-name']").text.strip, swatch.at_css("[data-test='logo-swatch-hex']").text.strip]
+    end
+  end
+
+  test "the Colours column shows each brand's one named palette, and nothing about light, dark or watermark" do
     log_in_as(@admin)
     get logos_path
-    Logos::NavbarLogo.brands.each do |brand|
-      assert_equal %w[light dark watermark], css_select("[data-brand='#{brand}'] [data-test='logo-colour-row']").map { |row| row["data-tone"] }, brand
-      assert_select "[data-brand='#{brand}'] [data-test='logo-colour-row'][data-tone='watermark']" do
-        assert_select "[data-test='logo-swatch']", { count: 1, text: "#FFFFFF" }
-        assert_select "[data-test='logo-swatch'] span[style='background-color: #FFFFFF']", 1
-        assert_select "[data-test='logo-watermark-opacity']", "at 60% opacity"
-        assert_select "span.w-20.shrink-0[data-test='logo-colour-tone']", "watermark", "the label's box is wide enough for the longest tone"
+    PALETTES.each do |brand, palette|
+      assert_equal palette, palette_shown("[data-brand='#{brand}'] [data-test='logo-colours']"), brand
+      palette.each do |name, hex|
+        assert_select "[data-brand='#{brand}'] [data-test='logo-swatch'][data-hex='#{hex}']" do
+          assert_select "[data-test='logo-swatch-chip'][style=?]", "background-color: #{hex}"
+          assert_select "button[data-test='logo-swatch-copy'][aria-label=?]", "Copy #{name} #{hex}"
+        end
+        copy = css_select("[data-brand='#{brand}'] [data-test='logo-swatch'][data-hex='#{hex}'] button").first
+        assert_includes copy["@click"], "window.copyText('#{hex}')", "a click copies the hex"
+        assert_select "[data-brand='#{brand}'] [data-test='logo-swatch'][data-hex='#{hex}']" do
+        end
       end
-      assert_select "[data-brand='#{brand}'] [data-test='logo-watermark-opacity']", 1
+    end
+    assert_select "[data-test='logo-colours']" do
+      assert_select "[data-test='logo-colour-row'], [data-test='logo-colour-tone'], [data-test='logo-watermark-opacity']", 0
+    end
+    assert_no_match(/opacity/, css_select("[data-test='logo-colours']").text)
+    assert_select "script", /window\.copyText = window\.copyText/, "the page carries the copy helper the swatches call"
+  end
+
+  test "a brand page shows the brand's palette as named swatches, on every tab and in every context" do
+    log_in_as(@admin)
+    %w[icon navbar stacked].product(%w[light dark watermark]).each do |type, context|
+      get logo_brand_path("industries", type:, context:)
+      assert_response :success
+      assert_select "section[data-test='brand-colours'] h2", "Colours"
+      assert_equal PALETTES.fetch("industries"), palette_shown("[data-test='brand-colours']"), "#{type} #{context}"
     end
   end
 
@@ -156,9 +186,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         end
       end
     end
-    swatches = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-swatch']").map { |swatch| swatch.text.strip } }
-    assert_equal %w[#1A1535 #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF #4BAF50 #1A550D #5C972A #F0EBCF #FFFFFF], swatches.("turf")
-    assert_equal %w[#2D5E8E #D7602E #FFFFFF #F08A5A #FFFFFF], swatches.("welding")
   end
 
   test "the admin tools list links to the page" do

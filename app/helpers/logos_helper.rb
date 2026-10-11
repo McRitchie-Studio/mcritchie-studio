@@ -76,15 +76,4 @@ module LogosHelper
     weights = [style["heavy"], (style["light"] if style["highlight"] == "weight")].compact.uniq
     ["Montserrat", "#{'weight'.pluralize(weights.size)} #{weights.join(' and ')}"]
   end
-
-  # Every fill the brand's logos use, per tone, in the order the style lists them. The watermark has one.
-  def logo_brand_colours(logo)
-    baked = Logos::NavbarLogo.styles.fetch(logo.brand).fetch("tones").transform_values do |fills|
-      [fills["text"], fills["quiet"], fills["accent"], *fills.fetch("icon").values].compact.uniq
-    end
-    baked.merge("watermark" => [logo.watermark.fetch("fill")])
-  end
-
-  # "60%": how much of the watermark shows.
-  def logo_watermark_opacity(logo) = number_to_percentage(logo.watermark.fetch("opacity") * 100, precision: 0)
 end

@@ -45,6 +45,7 @@ class LogosController < ApplicationController
     @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
     @guides = Logos::Variant.flag(params[:guides], "guides")
     @variants = Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone: @context, guides: @guides)
+    @kit = Logos::BrandKit.new(@logo.brand)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.

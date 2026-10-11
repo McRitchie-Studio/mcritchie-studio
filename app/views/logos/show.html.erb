@@ -120,4 +120,9 @@
       <% end %>
     </div>
   </section>
+
+  <section class="card p-4 sm:p-5 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
+    <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
+    <%= render "palette", kit: @kit %>
+  </section>
 </div>
