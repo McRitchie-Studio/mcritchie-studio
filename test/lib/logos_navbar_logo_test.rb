@@ -371,10 +371,46 @@ class LogosNavbarLogoTest < Minitest::Test
 
   def test_a_lettering_source_refuses_what_it_cannot_draw
     assert_match(/one weight, so highlight must be colour, not weight/, refusal { Logo.new("x", styles: welding_style(highlight: "weight")) })
-    assert_match(/no word "FORGE" in the welding lettering \(it has COMMERCIAL, WELDING\)/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL FORGE")) })
+    assert_match(/no word "FORGE" in the welding lettering \(it has COMMERCIAL, WELDING, LLC\)/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL FORGE")) })
+    assert_match(/no word "INC" in the welding lettering/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING INC")) })
+    assert_match(/a first word and an ending of one or more words, got 1/, refusal { Logo.new("x", styles: welding_style(name: "WELDING")) })
+    no_space = letterings_with { |lettering| lettering["spaces"].delete("WELDING LLC") }
+    assert_match(/no space between WELDING and LLC/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"), letterings: no_space) })
+    bad_space = letterings_with { |lettering| lettering["spaces"]["WELDING LLC"] = "0.43" }
+    assert_match(/no space between WELDING and LLC/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"), letterings: bad_space) })
     assert_match(/no word "Welding"/, refusal { Logo.new("x", styles: welding_style(name: "COMMERCIAL Welding")) }, "a word is matched as written")
     assert_match(/no lettering "anvil" in the lettering data/, refusal { Logo.new("x", styles: welding_style(lettering: "anvil")) })
     assert_match(/tracking is in em, which a lettering source does not have/, refusal { Logo.new("x", styles: welding_style(tracking: -0.02)) })
+  end
+
+  # Task welding-llc-and-v2-helmet: the name is a first word and an ending; in a brand's own lettering the ending may
+  # be several traced words, set apart by the kit's own space between them (measured from the kit's PNG).
+  def test_a_traced_ending_of_several_words_keeps_the_kits_space_between_them
+    lettering = Logo.letterings.fetch("welding")
+    commercial, welding, llc = lettering.fetch("words").values_at("COMMERCIAL", "WELDING", "LLC")
+    logo = Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING LLC"))
+    assert_equal ["COMMERCIAL", "WELDING LLC"], logo.words, "two parts: the first word and the ending"
+    box = logo.layout(rule: 3)
+    first, ending = box.letters.partition { |l| l[:word].zero? }
+    assert_equal commercial.map { |g| g["d"] }, first.map { |l| l[:d] }
+    assert_equal (welding + llc).map { |g| g["d"] }, ending.map { |l| l[:d] }, "the ending is one word to the logo: one colour, one gap rule"
+
+    right1 = first.last[:x] + commercial.last["r"] * box.cap
+    assert_in_delta 0.5 * box.cap, ending.first[:x] - right1, 1e-9, "the word gap after the first word is the rule's half cap height"
+    g_right = ending[welding.size - 1][:x] + welding.last["r"] * box.cap
+    l_left = ending[welding.size][:x] + llc.first["l"] * box.cap
+    assert_in_delta 0.4305, lettering.dig("spaces", "WELDING LLC"), 1e-9, "measured from the kit PNG: 39.61 px at a 92 px cap height"
+    assert_in_delta 0.4305 * box.cap, l_left - g_right, 1e-9, "inside the ending, the kit's own space"
+    assert_in_delta ending.last[:x] + llc.last["r"] * box.cap, box.width, 1e-9
+
+    { first: ["#D7602E"] * 10 + ["#2D5E8E"] * 10, second: ["#2D5E8E"] * 10 + ["#D7602E"] * 10 }.each do |text, fills|
+      assert_equal fills, letters(logo.svg(text:)).map { |p| p["fill"] }, "#{text}: the whole ending leads or follows as one"
+    end
+    assert_equal ["COMMERCIAL", "WELDING"], Logo.new("x", styles: welding_style(name: "COMMERCIAL WELDING")).words, "an ending of one traced word"
+  end
+
+  def test_a_name_set_in_a_font_is_still_exactly_two_words
+    assert_match(/exactly two words, got 3/, refusal { Logo.new("x", styles: { "x" => Logo.styles.fetch("studio").merge("name" => "McRITCHIE STUDIO LABS") }) })
   end
 
   def test_tracking_is_added_to_every_advance_but_not_to_the_ink_edge
@@ -423,7 +459,7 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [6, 10, 6 * 95, 17], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [6, 10, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
