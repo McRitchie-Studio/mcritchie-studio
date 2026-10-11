@@ -50,8 +50,9 @@ class BrandKit < ApplicationRecord
   # The brand's record, or a new unsaved one: a brand's first save creates it.
   def self.for(brand) = find_or_initialize_by(brand: brand.to_s)
 
-  # Every saved record for these brands, by brand: the index table reads them all in one query.
-  def self.by_brand(brands) = where(brand: brands).index_by(&:brand)
+  # Every saved record for these brands, by brand, with its originals' attachment rows (the kit status counts them):
+  # the index table reads them all in two queries, whatever the number of brands.
+  def self.by_brand(brands) = where(brand: brands).includes(:originals_attachments).index_by(&:brand)
 
   # A stored choice as the Logos::Variant it draws in `tone` (light unless given). Anything the gallery's parser
   # refuses is an Error, and so are edits that cannot be drawn in the choice's rule or form.

@@ -160,13 +160,16 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_raises(Logos::NavbarLogo::Error) { kit.clear_choice(:icon, by: BY) }
   end
 
-  test "by_brand reads every saved kit in one query" do
+  # Two since task logo-gallery-polish-pass: the kits, then their originals' attachment rows (the kit status counts them).
+  test "by_brand reads every saved kit and its originals' rows in two queries" do
     BrandKit.for("studio").save_choice(:navbar, params(rule: "4", text: "first"), by: BY)
+    BrandKit.for("industries").save_choice(:navbar, params(rule: "4", text: "first"), by: BY)
     queries = 0
     counter = ->(*, payload) { queries += 1 unless payload[:name] == "SCHEMA" }
     kits = ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { BrandKit.by_brand(Logos::NavbarLogo.brands) }
-    assert_equal %w[studio], kits.keys
-    assert_equal 1, queries
+    assert_equal %w[industries studio], kits.keys.sort
+    assert_equal 2, queries
+    assert kits.values.all? { |kit| kit.association(:originals_attachments).loaded? }
   end
 
   test "originals are kept as uploaded, typed by their bytes" do

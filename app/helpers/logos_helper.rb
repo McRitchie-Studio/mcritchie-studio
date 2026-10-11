@@ -99,11 +99,18 @@ module LogosHelper
     "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
   end
 
-  # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet": a kit is saved once its record exists.
+  # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet", then " · originals: 2" when it holds any. A kit is
+  # saved once it holds a saved Navbar or Stacked choice: a record left with neither (a cleared choice, only originals
+  # or notes) is not saved yet (task logo-gallery-polish-pass, item 4).
   def logo_kit_status(kit)
-    return "Kit: not saved yet" unless kit&.persisted?
-
-    ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", ("by #{kit.updated_by}" if kit.updated_by.present?)].compact.join(" ")
+    saved = kit&.persisted? && BrandKit::TYPES.any? { |type| kit.saved?(type) }
+    status = if saved
+               ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", ("by #{kit.updated_by}" if kit.updated_by.present?)].compact.join(" ")
+             else
+               "Kit: not saved yet"
+             end
+    originals = kit&.persisted? ? kit.originals_attachments.size : 0
+    originals.positive? ? "#{status} · originals: #{originals}" : status
   end
 
   # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page

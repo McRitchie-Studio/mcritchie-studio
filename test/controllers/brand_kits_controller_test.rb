@@ -179,6 +179,49 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, counted.size, counted.join("\n")
   end
 
+  # Task logo-gallery-polish-pass, item 4: a record is not a saved kit. Only a saved Navbar or Stacked choice is; the
+  # originals are counted beside it.
+  test "the kit status says not saved yet once no choice is saved, whatever else the record holds, and counts the originals" do
+    log_in_as(@admin)
+    patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first" }
+    delete brand_kit_choice_path("studio"), params: { type: "navbar" }
+    assert BrandKit.exists?(brand: "studio")
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet"
+    assert_select "[data-test='kit-card-status']", "Kit: not saved yet"
+
+    patch brand_kit_path("studio"), params: { notes: "From the 2024 kit." }
+    post brand_kit_originals_path("studio"), params: { originals: [fixture_file_upload("brand_kit/original.svg", "image/svg+xml")] }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet · originals: 1"
+    get logos_path
+    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", "Kit: not saved yet · originals: 1"
+
+    patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "two_line", text: "first" }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by #{@admin.email} · originals: 1"
+
+    delete brand_kit_original_path("studio", kit.originals.first)
+    delete brand_kit_choice_path("studio"), params: { type: "stacked" }
+    get logo_brand_path("studio")
+    assert_select "[data-test='kit-status']", "Kit: not saved yet"
+  end
+
+  test "the table counts every kit's originals without a query per brand" do
+    %w[studio industries turf].each do |brand|
+      BrandKit.for(brand).add_originals([fixture_file_upload("brand_kit/original.svg", "image/svg+xml")], by: "alex@test.com")
+    end
+    log_in_as(@admin)
+    get logos_path
+    counted = []
+    counter = lambda do |*, payload|
+      counted << payload[:sql] if payload[:sql].include?("active_storage_attachments") && Array(payload[:type_casted_binds].then { |binds| binds.respond_to?(:call) ? binds.call : binds }).include?("BrandKit")
+    end
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { get logos_path }
+    assert_equal 1, counted.size, counted.join("\n")
+    assert_equal 3, css_select("[data-test='logo-kit-status']").count { |status| status.text.end_with?("originals: 1") }
+  end
+
   test "a saved colour since taken out of the palette is dropped and flagged, and the table, the page and other saves still work" do
     record = BrandKit.for("studio")
     record.save!
