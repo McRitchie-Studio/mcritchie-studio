@@ -63,7 +63,16 @@
               </div>
             </fieldset>
             <% if part == :icon %>
-              <p class="text-2xs text-muted" data-test="edit-icon-note"><%= logo_icon_edit_note(@logo) %></p>
+              <%# The note follows the icon each tone draws: where light and dark draw different icons (Commercial
+                  Welding's dark helmet is one layer), each tone's note shows with its own logos. %>
+              <% notes = logo_icon_edit_notes(@logo, @tones) %>
+              <p class="text-2xs text-muted" data-test="edit-icon-note">
+                <% if notes.is_a?(Hash) %>
+                  <% notes.each do |tone, note| %><%= tag.span(note, class: LogosHelper::LOGO_THEME_CLASSES.fetch(tone), data: { test: "edit-icon-note-tone", tone: }) %><% end %>
+                <% else %>
+                  <%= notes %>
+                <% end %>
+              </p>
             <% end %>
             <% if picked %>
               <p class="text-2xs font-semibold text-warning-ink" hidden role="status" data-test="edit-contrast"

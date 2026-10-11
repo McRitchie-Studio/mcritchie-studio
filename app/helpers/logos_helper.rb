@@ -41,16 +41,23 @@ module LogosHelper
     @logo.refusal(edits, **(@type == :stacked ? { form: @form } : { rule: @rule }))
   end
 
-  # What the icon's colour edit recolours, in one line: the whole icon, or its one main layer of several (Turf
-  # Monster's head has no primary layer, so its outline).
-  def logo_icon_edit_note(logo)
-    roles = logo.icon_roles
+  # What the icon's colour edit recolours in `tone`, in one line, read from the icon that tone draws: the whole icon,
+  # or its one main layer of several (Turf Monster's head has no primary layer, so its outline). Commercial Welding's
+  # dark tone draws a one-layer helmet, so there the edit recolours all of it.
+  def logo_icon_edit_note(logo, tone = :light)
+    roles = logo.icon_roles(tone)
     return "Recolours the whole icon." if roles.size == 1
 
-    role = logo.icon_role
+    role = logo.icon_role(tone)
     others = roles - [role]
     "Recolours the icon's #{role == 'primary' ? 'main' : role} layer only; its #{others.to_sentence} " \
       "#{others.size == 1 ? 'layer keeps its' : 'layers keep their'} brand #{others.size == 1 ? 'colour' : 'colours'}."
+  end
+
+  # The icon note for each tone the page shows ({ light: "…", dark: "…" }), or one note when every tone says the same.
+  def logo_icon_edit_notes(logo, tones)
+    notes = tones.to_h { |tone| [tone, logo_icon_edit_note(logo, tone)] }
+    notes.values.uniq.size == 1 ? notes.values.first : notes
   end
 
   # What a part is called in a sentence.

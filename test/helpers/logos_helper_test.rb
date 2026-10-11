@@ -153,4 +153,13 @@ class LogosHelperTest < ActionView::TestCase
       assert_equal sizes.sort.reverse.uniq, sizes, "compact: #{compact}"
     end
   end
+
+  # Task logo-gallery-polish-pass, item 1.
+  test "the icon note is read from the icon each tone draws" do
+    welding = Logos::NavbarLogo.new("welding")
+    assert_equal "Recolours the icon's main layer only; its accent layer keeps its brand colour.", logo_icon_edit_note(welding, :light)
+    assert_equal "Recolours the whole icon.", logo_icon_edit_note(welding, :dark)
+    assert_equal({ light: logo_icon_edit_note(welding, :light), dark: "Recolours the whole icon." }, logo_icon_edit_notes(welding, %i[light dark]))
+    assert_equal "Recolours the whole icon.", logo_icon_edit_notes(Logos::NavbarLogo.new("studio"), %i[light dark])
+  end
 end

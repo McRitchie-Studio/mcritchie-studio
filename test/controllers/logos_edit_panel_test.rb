@@ -58,6 +58,20 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Task logo-gallery-polish-pass, item 1: Commercial Welding's dark tone draws the one-layer helmet, so in Dark the
+  # icon colour recolours all of it; the note follows the icon each tone draws.
+  test "the icon note follows the icon each tone draws: Commercial Welding's dark helmet is one layer" do
+    %w[welding welding_v2].each do |brand|
+      get logo_brand_path(brand)
+      notes = css_select("[data-test='edit-icon-note'] [data-test='edit-icon-note-tone']").to_h { |span| [span["data-tone"], [span.text.strip, span["class"]]] }
+      assert_equal({ "light" => ["Recolours the icon's main layer only; its accent layer keeps its brand colour.", "contents dark:hidden"],
+                     "dark" => ["Recolours the whole icon.", "hidden dark:contents"] }, notes, brand)
+    end
+
+    get logo_brand_path("industries")
+    assert_empty css_select("[data-test='edit-icon-note-tone']"), "one note when every tone draws the same icon"
+  end
+
   test "each word offers the six weights; traced lettering's weight is disabled with its reason" do
     get logo_brand_path("studio", first_weight: 300)
     selects = css_select("select[data-test='edit-weight']")
