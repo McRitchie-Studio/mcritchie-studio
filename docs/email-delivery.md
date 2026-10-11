@@ -80,17 +80,23 @@ Credential inventory entry:
 Environment variables:
 
 - `RESEND_API_KEY`
-- `MAILER_FROM`
-- `MARKETING_MAILER_FROM`
+- `RESEND_MAILER_FROM`
+- `RESEND_MARKETING_FROM` (optional) for newsletter/product-update mail
 - `BROADCAST_HOST` only if broadcast unsubscribe/tracking links should use a
   host different from `MAILER_HOST`
-- `RESEND_MAILER_FROM`
 
-Newsletter/product-update mail can use
-`MARKETING_MAILER_FROM="Alex McRitchie <alex@mcritchie.studio>"`. Resend
-sends as `RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`, which
-works only while `mcritchie.studio` is verified in the Resend account backing
-`RESEND_API_KEY`.
+Transactional mail sends as `Studio.mailer_from`, which the initializer sets from
+`Studio.mailer_from_for_transport` (studio-engine 0.102.0): `RESEND_MAILER_FROM`,
+else the engine default `McRitchie Studio <team@mcritchie.studio>`. Broadcast
+mail uses `Studio.marketing_from_for_transport`: `RESEND_MARKETING_FROM`, then
+`RESEND_MAILER_FROM`, then that same default. Either sender works only while its
+domain is verified in the Resend account backing `RESEND_API_KEY`.
+
+`MAILER_FROM` and `MARKETING_MAILER_FROM` are **dead on the hub**: no hub code
+reads them. The engine reads `MAILER_FROM` only as a fallback when an app leaves
+`Studio.mailer_from` unset (its `ApplicationMailer` default and
+`Studio::EmailSmoke#sender`), and the hub always sets it. Nothing reads
+`MARKETING_MAILER_FROM`. Any Heroku values for the two can be unset.
 Broadcast unsubscribe, open-pixel, and click-tracking links use Action Mailer's
 default URL options, so QA inherits `MAILER_HOST=qa.mcritchie.studio` and
 worktrees inherit `APP_PORT`. Set `BROADCAST_HOST` only for an intentional
