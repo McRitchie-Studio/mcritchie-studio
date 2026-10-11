@@ -227,9 +227,8 @@ module Logos
       raise NavbarLogo::Error, "brand #{logo.brand}: it has no original colouring (its logo is solid colour), so only alt"
     end
 
-    # The colouring in words, for a brand that has both ("original colouring", "alt colouring"); nothing for a brand
-    # that has only Alt, or a watermark.
-    def colouring_words = ("#{colouring} colouring" if logo.original? && tone != :watermark)
+    # An Original says so ("original colouring"), as its filename does; Alt is the default and says nothing, as before.
+    def colouring_words = ("original colouring" if original?)
 
     def form_words
       return unless form

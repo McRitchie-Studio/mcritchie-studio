@@ -464,12 +464,12 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [10, 19, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [12, 25, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
     assert_equal ["evenodd"], Logo.letterings.values.map { |l| l["fill_rule"] }
-    assert_equal ["translate(-190,-166)"], Logo.icons.values.filter_map { |icon| icon["transform"] }
+    assert_equal ["translate(-190,-166)"] * 3, Logo.icons.values.filter_map { |icon| icon["transform"] }, "Industries: Alt and both Originals"
     Logo.brands.each { |brand| assert_kind_of Logo, Logo.new(brand) }
   end
 

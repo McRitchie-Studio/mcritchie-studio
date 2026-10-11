@@ -38,7 +38,9 @@
 #            `quiet`, `accent` and `icon` fills and an optional `icon_key` (the
 #            original's own icon data). A brand whose logo is solid colour
 #            (Studio) has none, and draws Alt only. Edits and the watermark
-#            never use it.
+#            never use it. An original's fill may be url(#<id>), naming a
+#            gradient its own icon data declares in `defs`; every other fill is
+#            a #hex.
 # watermark  optional: the watermark logo (the whole logo in one colour, slightly
 #            transparent, for placing over a photograph). `fill` (default
 #            "#FFFFFF"), `opacity` (greater than 0, at most 1; default 0.6) and
@@ -54,7 +56,7 @@
 #            (Montserrat). A level set in the brand's own traced lettering has no
 #            family and no weight, only a `label` saying so (Logos::BrandKit)
 #
-# Fills are solid #hex only: no gradients.
+# Fills are solid #hex only, except an original's gradients (above).
 
 studio:
   name: McRITCHIE STUDIO
@@ -88,7 +90,7 @@ industries:
   highlight: weight
   heavy: 700
   light: 300
-  note: The Industries icon is drawn flat here, as two solid layers, without the marketing kit's steel gradient and tick marks. That is deliberate in this first version.
+  note: The Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks, and the name in the kit wordmark's steel gradient. Alt draws the icon flat, as two solid layers.
   palette:
     - { name: Forge Orange, hex: "#C8661F" }
     - { name: Ember Orange, hex: "#E07B2E" }
@@ -111,6 +113,19 @@ industries:
       text: "#F4F5F7"
       quiet: "#D3D6DA"
       icon: { primary: "#D3D6DA", edge: "#FFFFFF" }
+  # The kit's 05_icon light and dark SVGs (steel gradient, ruler ticks) and its horizontal logos' lettering: the
+  # leading word in the wordmark's steel gradient, the other word in the kit's solid gunmetal (light) or light steel.
+  original:
+    light:
+      icon_key: industries_original_light
+      text: url(#steel_name)
+      quiet: "#41464D"
+      icon: { primary: url(#steel), edge: "#8C939C", ticks: "#3A3F45" }
+    dark:
+      icon_key: industries_original_dark
+      text: url(#steel_name)
+      quiet: "#D3D6DA"
+      icon: { primary: url(#steel), edge: "#FFFFFF", ticks: "#6B7179" }
 
 turf:
   name: Turf Monster

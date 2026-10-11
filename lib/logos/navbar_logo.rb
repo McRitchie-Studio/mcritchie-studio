@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 require "yaml"
 
@@ -54,6 +55,22 @@ module Logos
     HIGHLIGHTS = %w[weight colour].freeze
     COLOURINGS = %i[original alt].freeze      # the brand's own art, or one solid colour per part (the style's `tones`)
     ORIGINAL_KEYS = %w[icon_key text quiet accent icon].freeze   # what an original's tone may set
+    # An original's fill may name a GRADIENT its own icon data declares in `defs` (the Industries kit's steel): a
+    # linearGradient with numeric coordinates and #hex stops, nothing else. The id is the data's own; the drawing
+    # writes it namespaced by the icon and by a digest of the drawing (#with_defs), so two logos on a page never share
+    # one. Every other fill stays a #hex.
+    DEF_ID = /\A[a-z][a-z0-9_]*\z/
+    URL = /\Aurl\(#([a-z][a-z0-9_]*)\)\z/
+    DEF_TOKEN = "__LOGO_DEF__"                 # stands for the namespace in markup until the drawing is whole
+    # A checked reference to one of an original's gradients (#gradient_ref): never a string, so no style value can
+    # pose as one.
+    GradientRef = Data.define(:id) do
+      def to_s = "url(##{DEF_TOKEN}#{id})"
+    end
+    GRADIENT_KEYS = %w[id units x1 y1 x2 y2 stops].freeze
+    GRADIENT_UNITS = %w[userSpaceOnUse objectBoundingBox].freeze
+    STOP_KEYS = %w[colour offset].freeze
+    PAINTS = %w[fill stroke].freeze           # a layer is filled (the default), or stroked (the kit's ruler ticks)
     # What the operator may edit on each part (task logo-part-editor). The tagline is the Stacked Logo's; the icon's
     # colour recolours one layer (#icon_role). Geometry is never an edit.
     PARTS = { icon: %i[colour], first: %i[colour weight], ending: %i[colour weight], tagline: %i[colour weight visible] }.freeze
@@ -204,7 +221,7 @@ module Logos
       look = look(tone, colouring)
       icon = @icons.fetch(look)
       height = icon.fetch("h")
-      document(toned(look, icon_markup(icon, fills(look, :homogeneous).first, height)), icon.fetch("w"), height)
+      document(with_defs(look, toned(look, icon_markup(icon, fills(look, :homogeneous).first, height))), icon.fetch("w"), height)
     end
 
     # The guide labels' size, in design units, on a rule's drawing (the stacked logo, which has no rule, takes none).
@@ -313,9 +330,10 @@ module Logos
     # `look` is the drawing's tone, or an original's look (#look).
     def render(box, height, text, look, guides, edits = NO_EDITS)
       body = toned(look, drawing(box, look, *fills(look, text, edits)))
-      return document(body, box.width, height) unless guides
+      return document(with_defs(look, body), box.width, height) unless guides
 
-      document(ghost_group(look, ghost_markup(box, ghost_fill(look))) + body + line_group(guide_markup(box)), box.width, height, **self.class::GUIDE_PAD)
+      document(with_defs(look, ghost_group(look, ghost_markup(box, ghost_fill(look))) + body + line_group(guide_markup(box))), box.width, height,
+               **self.class::GUIDE_PAD)
     end
 
     # The logo's own Alt text colour in the tone (an original's ghosts too: a ghost is a solid ruler); a watermark's one fill.
@@ -355,7 +373,37 @@ module Logos
       baked = tone_style(look)
       icon = baked.fetch("icon")
       icon = icon.merge(icon_role(look) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
-      [icon, word_colours(text, baked).zip(%i[first ending]).map { |colour, part| edits.dig(part, :colour) || colour }]
+      colours = word_colours(text, baked).zip(%i[first ending]).map { |colour, part| edits.dig(part, :colour) || colour }
+      return [icon, colours] unless original_look?(look)
+
+      [icon.transform_values { |fill| gradient_ref(look, fill) }, colours.map { |fill| gradient_ref(look, fill) }]
+    end
+
+    # An original's fill as markup will write it: a #hex as it is; a url(#id) naming one of its icon's own gradients
+    # as that gradient's placeholder id (#with_defs). A url naming no gradient of its icon is refused.
+    def gradient_ref(look, fill)
+      id = fill.to_s[URL, 1] or return hex(fill)
+      declared = Array(@icons.fetch(look)["defs"]).map { |gradient| gradient["id"] }
+      raise Error, "brand #{brand}: original #{base_tone(look)}'s #{fill} names no gradient in icon #{icon_key(look)}'s defs" unless declared.include?(id)
+
+      GradientRef.new(id:)
+    end
+
+    # A drawing in `look` with the gradients it uses declared first, in one <defs>, their ids namespaced by the icon
+    # and by a digest of the drawing itself: two drawings on a page never share an id, and one drawing is the same
+    # bytes every time. A drawing with no gradient (every Alt one) is returned as it was.
+    def with_defs(look, body)
+      return body unless body.include?(DEF_TOKEN)
+
+      used = @icons.fetch(look).fetch("defs").select { |gradient| body.include?("##{DEF_TOKEN}#{gradient['id']})") }
+      markup = "<defs>#{used.map { |gradient| gradient_markup(gradient) }.join}</defs>#{body}"
+      markup.gsub(DEF_TOKEN, "#{icon_key(look)}-#{Digest::SHA256.hexdigest(markup)[0, 8]}-")
+    end
+
+    def gradient_markup(gradient)
+      stops = gradient.fetch("stops").map { |stop| %(<stop offset="#{format('%g', stop['offset'])}" stop-color="#{hex(stop['colour'])}"/>) }.join
+      coordinates = %w[x1 y1 x2 y2].map { |name| %(#{name}="#{format('%g', gradient.fetch(name))}") }.join(" ")
+      %(<linearGradient id="#{DEF_TOKEN}#{gradient['id']}" gradientUnits="#{gradient['units']}" #{coordinates}>#{stops}</linearGradient>)
     end
 
     def drawing(box, look, icon_fills, colours)
@@ -461,8 +509,62 @@ module Logos
       unless transform.nil? || (transform.is_a?(String) && TRANSFORM.match?(transform))
         raise Error, "brand #{brand}: icon #{key} has a transform that is not a list of translate, scale, rotate or matrix calls: #{transform.inspect[0, 80]}"
       end
-      icon.fetch("layers").each { |layer| check_path(layer["d"], layer["fill_rule"], "icon #{key} layer #{layer['role'].inspect}") }
+      icon.fetch("layers").each do |layer|
+        check_path(layer["d"], layer["fill_rule"], "icon #{key} layer #{layer['role'].inspect}")
+        check_paint(key, layer)
+      end
+      check_defs(key, icon["defs"]) if icon.key?("defs")
       icon
+    end
+
+    # A layer is filled, or (paint: stroke) stroked at its stroke_width: a number greater than 0.
+    def check_paint(key, layer)
+      paint = layer.fetch("paint", "fill")
+      where = "icon #{key} layer #{layer['role'].inspect}"
+      raise Error, "brand #{brand}: #{where} has paint #{paint.inspect}: expected #{PAINTS.join(' or ')}" unless PAINTS.include?(paint)
+
+      width = layer["stroke_width"]
+      if paint == "stroke"
+        raise Error, "brand #{brand}: #{where} is stroked, so it needs a stroke_width greater than 0, got #{width.inspect[0, 40]}" unless positive_number?(width)
+      elsif layer.key?("stroke_width")
+        raise Error, "brand #{brand}: #{where} is filled, so it takes no stroke_width"
+      end
+    end
+
+    def positive_number?(value) = (value.is_a?(Integer) || value.is_a?(Float)) && value.finite? && value.positive?
+    def finite_number?(value) = value.is_a?(Integer) || (value.is_a?(Float) && value.finite?)
+
+    # An icon's `defs`: linear gradients only, each { id, units, x1, y1, x2, y2, stops }, ids unique, a lower-case id,
+    # finite coordinates, and two or more stops of a #hex colour at an offset from 0 to 1. The icon's own key names its
+    # gradients in markup, so it must be an id too.
+    def check_defs(key, defs)
+      where = "icon #{key}'s defs"
+      raise Error, "brand #{brand}: #{where} must be a list of linear gradients, got #{defs.inspect[0, 80]}" unless defs.is_a?(Array) && defs.any?
+      raise Error, "brand #{brand}: icon key #{key.inspect} cannot name a gradient: expected lower-case letters, digits and _" unless DEF_ID.match?(key.to_s)
+
+      defs.each do |gradient|
+        unless gradient.is_a?(Hash) && gradient.keys.sort == GRADIENT_KEYS.sort
+          raise Error, "brand #{brand}: #{where}: a gradient is a map of #{GRADIENT_KEYS.join(', ')}, got #{gradient.inspect[0, 80]}"
+        end
+        id = gradient["id"]
+        raise Error, "brand #{brand}: #{where}: gradient id #{id.inspect[0, 40]} must be lower-case letters, digits and _" unless id.is_a?(String) && DEF_ID.match?(id)
+        raise Error, "brand #{brand}: #{where}: gradient #{id} units must be #{GRADIENT_UNITS.join(' or ')}" unless GRADIENT_UNITS.include?(gradient["units"])
+        %w[x1 y1 x2 y2].each do |name|
+          raise Error, "brand #{brand}: #{where}: gradient #{id} #{name} must be a number, got #{gradient[name].inspect[0, 40]}" unless finite_number?(gradient[name])
+        end
+        check_stops(where, id, gradient["stops"])
+      end
+      raise Error, "brand #{brand}: #{where}: two gradients share an id" unless defs.map { |gradient| gradient["id"] }.uniq.size == defs.size
+    end
+
+    def check_stops(where, id, stops)
+      raise Error, "brand #{brand}: #{where}: gradient #{id} needs two or more stops" unless stops.is_a?(Array) && stops.size >= 2
+
+      stops.each do |stop|
+        ok = stop.is_a?(Hash) && stop.keys.sort == STOP_KEYS && finite_number?(stop["offset"]) && stop["offset"].between?(0, 1) &&
+             stop["colour"].is_a?(String) && HEX.match?(stop["colour"])
+        raise Error, "brand #{brand}: #{where}: gradient #{id} has a stop that is not {offset 0 to 1, #hex colour}: #{stop.inspect[0, 80]}" unless ok
+      end
     end
 
     def check_path(d, fill_rule, where)
@@ -499,7 +601,11 @@ module Logos
     def icon_markup(icon, fills, height = H)
       paths = icon.fetch("layers").map do |layer|
         fill = fills[layer["role"]] or raise Error, "brand #{brand}: no fill for icon layer #{layer['role'].inspect}"
-        %(<path d="#{layer['d']}" fill="#{paint(fill)}" fill-rule="#{layer['fill_rule']}"/>)
+        if layer["paint"] == "stroke"
+          %(<path d="#{layer['d']}" fill="none" stroke="#{paint(fill)}" stroke-width="#{format('%g', layer['stroke_width'])}"/>)
+        else
+          %(<path d="#{layer['d']}" fill="#{paint(fill)}" fill-rule="#{layer['fill_rule']}"/>)
+        end
       end.join
       paths = %(<g transform="#{icon['transform']}">#{paths}</g>) if icon["transform"]
       %(<g transform="scale(#{f(height.to_f / icon.fetch('h'), 5)})">#{paths}</g>)
@@ -554,8 +660,8 @@ module Logos
 
     def hex(colour) = HEX.match?(colour.to_s) ? colour : raise(Error, "brand #{brand}: #{colour.inspect} is not a #hex colour")
 
-    # A fill as markup writes it: a #hex.
-    def paint(fill) = hex(fill)
+    # A fill as markup writes it: a #hex, or an original's gradient as #gradient_ref placed it.
+    def paint(fill) = fill.is_a?(GradientRef) ? fill.to_s : hex(fill)
     def f(number, places = 2) = format("%.#{places}f", number)
   end
 end

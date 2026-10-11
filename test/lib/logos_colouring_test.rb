@@ -84,12 +84,15 @@ class LogosColouringTest < Minitest::Test
     assert_match(/original light has no fill for icon layer "primary"/,
                  refusal { duo(original: ORIGINAL.merge("light" => { "text" => "#000000", "icon" => { "edge" => "#000000" } })) })
     assert_match(/no icon "anvil"/, refusal { duo(original: ORIGINAL.merge("dark" => ORIGINAL["dark"].merge("icon_key" => "anvil"))) })
-    [%(#000"/><script>), "#000000\n", "red", "url(#steel)"].each do |fill|
+    [%(#000"/><script>), "#000000\n", "red", "url(#steel)\n", "url(#__LOGO_DEF__steel)", "url(#Steel)"].each do |fill|
       bad = ORIGINAL.merge("light" => { "text" => fill, "icon" => { "primary" => "#000000" } })
       assert_match(/is not a #hex colour/, refusal { duo(original: bad) }, fill.inspect)
       bad_icon = ORIGINAL.merge("light" => { "text" => "#000000", "icon" => { "primary" => fill } })
       assert_match(/is not a #hex colour/, refusal { duo(original: bad_icon) }, fill.inspect)
     end
+    # A url names a gradient only when the original's own icon declares it (logos_gradients_test.rb has the rest).
+    assert_match(/original light's url\(#steel\) names no gradient in icon studio's defs/,
+                 refusal { duo(original: ORIGINAL.merge("light" => { "text" => "url(#steel)", "icon" => { "primary" => "#000000" } })) })
     colour = { "highlight" => "colour", "accent" => nil }
     assert_match(/original light needs an accent, because one word leads by colour/,
                  refusal { Navbar.new("duo", styles: { "duo" => styles.fetch("duo").merge(colour).merge("tones" => { "light" => { "text" => "#000000", "accent" => "#635BB2", "icon" => { "primary" => "#000000" } }, "dark" => { "text" => "#FFFFFF", "accent" => "#635BB2", "icon" => { "primary" => "#FFFFFF" } } }) }) })
@@ -108,7 +111,7 @@ class LogosColouringTest < Minitest::Test
     assert_equal :alt, alt.colouring, "an SVG route draws Alt unless asked"
     assert_equal "duo-navbar-rule4-first-dark.svg", alt.filename, "an Alt file is named as before"
     assert_equal({ rule: 4, text: :first, tone: :dark, guides: 0 }, alt.params, "an Alt URL is as before")
-    assert_match(/, dark, alt colouring\z/, alt.label, "a brand with both names which one")
+    assert_match(/, dark\z/, alt.label, "Alt is the default, named as before")
 
     icon = Variant.parse(logo, { tone: "light", colouring: "original" }, type: :icon)
     assert_equal "duo-icon-light-original.svg", icon.filename

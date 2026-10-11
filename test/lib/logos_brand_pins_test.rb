@@ -49,6 +49,7 @@ class LogosBrandPinsTest < Minitest::Test
   # Task logo-original-and-alt: every ORIGINAL drawing of each brand that has one (light and dark: the watermark has
   # no colouring), pinned as first shipped. DIGESTS above are the Alt drawings, which that task left as they were.
   ORIGINAL_DIGESTS = {
+    "industries" => "164e879afa7dfec2a5336d4113c56234cb40d0742d775479f79d4c1557e61bf3",
     "welding" => "0f1083dc461623e7bb84e07049ce8c14e10ad581c1200b74023413279a2a65d4",
     "welding_v2" => "7635ac2b3d772e1f573a93f6ffff854ce81347f5b94871c02075fe922a064984"
   }.freeze

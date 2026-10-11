@@ -193,7 +193,8 @@ module Logos
       return [icon, colours + [@watermark["fill"]]] if look == :watermark
 
       baked = tone_style(look)
-      [icon, colours + [edits.dig(:tagline, :colour) || baked.fetch("quiet", baked.fetch("text"))]]
+      tagline = edits.dig(:tagline, :colour) || baked.fetch("quiet", baked.fetch("text"))
+      [icon, colours + [original_look?(look) ? gradient_ref(look, tagline) : tagline]]
     end
 
     def icon_width(look, height, width)
@@ -218,7 +219,7 @@ module Logos
       body = toned(look, drawing(box, look, *fills(look, text, edits)))
       ghosts = ghost_group(look, ruler_markup(box, ghost_fill(look)) + proof_markup(box, ghost_fill(look)))
       left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
-      document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, left:,
+      document(with_defs(look, body + ghosts + line_group(guide_markup(box))), box.width, height, **GUIDE_PAD, left:,
                right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
 

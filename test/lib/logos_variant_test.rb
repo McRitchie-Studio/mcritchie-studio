@@ -72,7 +72,7 @@ class LogosVariantTest < Minitest::Test
     welding = Logos::NavbarLogo.styles.fetch("welding")
     titled = Logos::NavbarLogo.new("x", styles: { "x" => welding.merge("title" => "Commercial Welding v9") })
     assert_equal "Commercial Welding v9", Variant.brand_name(titled)
-    assert_equal "Commercial Welding v9 icon, light, alt colouring", Variant.new(titled, type: :icon).label
+    assert_equal "Commercial Welding v9 icon, light", Variant.new(titled, type: :icon).label
     untitled = Logos::NavbarLogo.new("x", styles: { "x" => welding.except("title").merge("name" => "COMMERCIAL WELDING LLC") })
     assert_equal "Commercial Welding Llc", Variant.brand_name(untitled), "without one, each word of the name in reading case"
   end
