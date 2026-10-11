@@ -2,7 +2,11 @@
 # draws a brand's Navbar Logo and icon from, and Logos::StackedLogo its Stacked
 # Logo. Rules and rake task: docs/topics/logos.md.
 #
-# name       two words; the logo sets them on one line beside the icon
+# title      optional: the brand's name as the gallery says it, where the name's
+#            words would not tell two versions of a brand apart
+# name       two words, a first word and an ending; the logo sets them on one
+#            line beside the icon. A brand with `lettering` may end in several
+#            traced words ("COMMERCIAL WELDING LLC": the ending is WELDING LLC)
 # icon       a key in the icon data (lib/logos/data/brand_icons*.json)
 # lettering  optional: a key in lib/logos/data/brand_lettering.json. The name is
 #            then set from the brand's own traced letters, not Montserrat: one
@@ -90,12 +94,13 @@ turf:
     icon_key: turf_mono
 
 welding:
-  name: COMMERCIAL WELDING
+  title: Commercial Welding v1
+  name: COMMERCIAL WELDING LLC
   tagline: BUILDING STRONG CONNECTIONS
   icon: welding
   lettering: welding
   highlight: colour
-  note: The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version.
   tones:
     light:
       text: "#2D5E8E"
@@ -108,3 +113,26 @@ welding:
       icon: { primary: "#FFFFFF" }
   watermark:
     icon_key: welding_mono
+
+# Alex's item 5 (task welding-llc-and-v2-helmet): v1 beside v2, to compare his tweaks with the original branding. The
+# helmet is v1's, derived by Logos::WeldingV2 (rake logos:welding_v2); the name is v1's without LLC.
+welding_v2:
+  title: Commercial Welding v2
+  name: COMMERCIAL WELDING
+  tagline: BUILDING STRONG CONNECTIONS
+  icon: welding_v2
+  lettering: welding
+  highlight: colour
+  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  tones:
+    light:
+      text: "#2D5E8E"
+      accent: "#D7602E"
+      icon: { primary: "#2D5E8E", accent: "#D7602E" }
+    dark:
+      icon_key: welding_v2_mono
+      text: "#FFFFFF"
+      accent: "#F08A5A"
+      icon: { primary: "#FFFFFF" }
+  watermark:
+    icon_key: welding_v2_mono

@@ -67,6 +67,16 @@ class LogosVariantTest < Minitest::Test
                  Variant.new(Logos::NavbarLogo.new("studio"), rule: 3, text: :homogeneous, tone: :dark, guides: true).label
   end
 
+  # Task welding-llc-and-v2-helmet: a style's `title` names the brand where its words would not tell two versions apart.
+  def test_a_styles_title_names_the_brand_in_place_of_its_words
+    welding = Logos::NavbarLogo.styles.fetch("welding")
+    titled = Logos::NavbarLogo.new("x", styles: { "x" => welding.merge("title" => "Commercial Welding v9") })
+    assert_equal "Commercial Welding v9", Variant.brand_name(titled)
+    assert_equal "Commercial Welding v9 icon, light", Variant.new(titled, type: :icon).label
+    untitled = Logos::NavbarLogo.new("x", styles: { "x" => welding.except("title").merge("name" => "COMMERCIAL WELDING LLC") })
+    assert_equal "Commercial Welding Llc", Variant.brand_name(untitled), "without one, each word of the name in reading case"
+  end
+
   def test_all_lists_one_rules_three_text_versions_in_page_order
     all = Variant.all(logo, rule: 3, tone: :dark, guides: true)
     assert_equal [[:navbar, 3, :homogeneous], [:navbar, 3, :first], [:navbar, 3, :second]], all.map { |v| [v.type, v.rule, v.text] }

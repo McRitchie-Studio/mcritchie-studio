@@ -27,9 +27,13 @@ class LogosStackedLogoTest < Minitest::Test
   # was split by task navbar-spacing-and-rotated-guides, when item 4c gave the one-line name the Navbar Logo's new word
   # gap: the two-line brands' digest was taken BEFORE that change and still holds, so they did not move by a byte; Turf
   # Monster's one-line logos and every tagline-form logo were re-taken deliberately after it.
-  TWO_LINE_DIGEST = "f066b3ee448c37018089636ee6d7c9f5bad5213551a5c88a7322eb2ecd9e3be4"
+  # The brands ICON_DIGEST and TAGLINE_DIGEST were taken over; a brand added later is pinned on its own in
+  # logos_brand_pins_test.rb.
+  PINNED = %w[studio industries turf welding].freeze
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
+  TWO_LINE_DIGEST = "56b61a906342849119fcc5233c97f04e3d710f6941126411ea0b7ed852ea93cb"
   ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
-  TAGLINE_DIGEST = "cc5f5a64a6534e759b48f85a152d939e594b518de1593b3b9e33328264ca831d"
+  TAGLINE_DIGEST = "4a47fdc768de8b58bad7efe628c1b2f903bf5b694b1d608a1d90e9c634f2d3cf"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
@@ -38,9 +42,10 @@ class LogosStackedLogoTest < Minitest::Test
   TAGLINE_RATIOS = {
     ["studio", :homogeneous] => 1.2736, ["studio", :first] => 1.2674, ["studio", :second] => 1.2638,
     ["industries", :homogeneous] => 1.3290, ["industries", :first] => 1.3235, ["industries", :second] => 1.3236,
-    ["welding", :homogeneous] => 1.2867, ["welding", :first] => 1.2867, ["welding", :second] => 1.2867
+    ["welding", :homogeneous] => 1.3284, ["welding", :first] => 1.3284, ["welding", :second] => 1.3284   # 1.2867 before LLC
   }.freeze
-  TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
+  TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil,
+               "welding_v2" => "BUILDING STRONG CONNECTIONS" }.freeze
 
   def stacked(brand) = (@stacked ||= {})[brand] ||= Stacked.new(brand)
   def doc(svg) = Nokogiri::XML(svg) { |config| config.strict }
@@ -139,7 +144,8 @@ class LogosStackedLogoTest < Minitest::Test
   def test_everything_is_centred_and_the_icon_is_scaled_to_its_height
     Navbar.brands.product(Navbar::TONES).each do |brand, tone|
       box = stacked(brand).layout(text: :first, tone:)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Navbar.icons.fetch(key)
       icon_width = icon["w"] * box.icon_height / icon["h"]
       assert_in_delta (box.width - icon_width) / 2, box.icon_left, 1e-9, "#{brand} #{tone}"
@@ -265,7 +271,8 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def icon_box(brand, tone, box)
-    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
     icon = Navbar.icons.fetch(key)
     [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
   end
@@ -382,7 +389,8 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def test_every_shipped_brand_stacks_in_the_form_its_style_names
-    assert_equal({ "studio" => :two_line, "industries" => :two_line, "turf" => :one_line, "welding" => :two_line },
+    assert_equal({ "studio" => :two_line, "industries" => :two_line, "turf" => :one_line, "welding" => :two_line,
+                   "welding_v2" => :two_line },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).form] })
   end
 
@@ -397,12 +405,12 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal 27, two_line.size
     assert_equal TWO_LINE_DIGEST, Digest::SHA256.hexdigest(two_line.join), "the two-line form, unmoved by the word gap"
     assert_equal ONE_LINE_DIGEST, Digest::SHA256.hexdigest(own_form(%w[turf]).join)
-    taglines = TAGLINES.compact.keys.flat_map do |brand|
+    taglines = (TAGLINES.compact.keys & PINNED).flat_map do |brand|
       Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-tagline-#{text}-#{tone}\n#{stacked(brand).svg(form: :tagline, text:, tone:)}" }
     end
     assert_equal 27, taglines.size
     assert_equal TAGLINE_DIGEST, Digest::SHA256.hexdigest(taglines.join)
-    icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
+    icons = PINNED.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
     assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
   end
 
@@ -497,7 +505,8 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal "brand turf: no stacked form :tagline (it has no tagline)", refusal { stacked("turf").svg(form: :tagline) }
     assert_equal "brand studio: no stacked form :one_line (it draws two_line and tagline)", refusal { stacked("studio").layout(form: :one_line) }
     assert_equal "brand studio: no stacked form \"tagline\" (it draws two_line and tagline)", refusal { stacked("studio").svg(form: "tagline") }
-    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line], "welding" => %i[two_line tagline] },
+    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line], "welding" => %i[two_line tagline],
+                   "welding_v2" => %i[two_line tagline] },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).forms] })
     assert_equal stacked("studio").svg, stacked("studio").svg(form: :two_line), "a brand's own form is the default"
   end

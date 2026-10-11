@@ -37,8 +37,8 @@ class LogosHelperTest < ActionView::TestCase
     assert_in_delta 2.14, worst_contrast(%w[#3F5E8C #4F9A94], Logos::NavbarLogo::WATERMARK), 0.01, "the plate this replaced measured about 2.1:1"
   end
 
-  # Every guide drawing the gallery can show: 4 brands x (2 rules x 3 texts of the Navbar Logo + 3 texts of each form of
-  # the Stacked Logo: two for the three brands with a tagline, one for Turf Monster).
+  # Every guide drawing the gallery can show: 5 brands x (3 rules x 3 texts of the Navbar Logo + 3 texts of each form of
+  # the Stacked Logo: two for the four brands with a tagline, one for Turf Monster).
   def guide_drawings
     Logos::NavbarLogo.brands.flat_map do |brand|
       navbar = Logos::Variant::RULES.keys.flat_map { |rule| Logos::Variant.all(Logos::Variant.logo(brand), rule:, guides: true) }
@@ -50,7 +50,7 @@ class LogosHelperTest < ActionView::TestCase
   def view_box(variant) = Nokogiri::XML(variant.svg).root["viewBox"].split.map(&:to_f)
 
   test "no guide drawing needs more than the 1028 px plate of a 1280 px page, so nothing scrolls there" do
-    assert_equal 57, guide_drawings.size
+    assert_equal 72, guide_drawings.size
     guide_drawings.each { |variant| assert_operator logo_guide_min_width(variant), :<=, LogosHelper::LOGO_PLATE_WIDTH, variant.label }
     widest = guide_drawings.max_by { |variant| logo_guide_min_width(variant) }
     # Task navbar-spacing-and-rotated-guides: the ruler's copies are now tracked as the real line is, so the widest

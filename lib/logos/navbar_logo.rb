@@ -50,7 +50,7 @@ module Logos
     NUMBER = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/
     CALL = /(?:translate|scale|rotate|matrix)\(#{NUMBER}(?:[ ,]#{NUMBER})*\)/
     TRANSFORM = /\A#{CALL}(?: #{CALL})*\z/
-    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json].freeze
+    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json brand_icons_welding_v2.json].freeze
     ROOT = File.expand_path("../..", __dir__)
 
     # `gap` is both the icon gap (icon_width to name_left) and the word gap (word_left - gap to word_left).
@@ -77,8 +77,7 @@ module Logos
       @style = styles[@brand] or raise Error, "unknown brand #{@brand.inspect}: expected one of #{styles.keys.join(', ')}"
       @watermark = checked_watermark
       @icons = TONES.to_h { |tone| [tone, checked_icon(icon_key(tone), icons)] }
-      @words = @style["name"].to_s.split
-      raise Error, "brand #{@brand}: the name must be exactly two words, got #{@words.size} (#{@style['name'].inspect})" unless @words.size == 2
+      @words = name_parts
       raise Error, "brand #{@brand}: highlight must be one of #{HIGHLIGHTS.join(', ')}, got #{@style['highlight'].inspect}" unless HIGHLIGHTS.include?(@style["highlight"])
       @lettering = own_lettering(letterings)
       @fill_rule = @lettering ? @lettering["fill_rule"] : "nonzero"   # font contours overlap: evenodd would punch holes in them
@@ -88,6 +87,9 @@ module Logos
 
     # What the brand's page says about where its art came from (optional).
     def note = @style["note"]
+
+    # The brand's name as the gallery says it ("Commercial Welding v1"), when the style gives one (optional).
+    def title = @style["title"]
 
     # "weight" or "colour": how one word leads the other. A watermark has one colour, so only weight shows in it.
     def highlight = @style["highlight"]
@@ -243,9 +245,36 @@ module Logos
       found.each { |letter| check_path(letter["d"], @fill_rule, "a letter of #{word.inspect}") }
     end
 
-    def traced(word)
+    # The name's two parts: its first word, then its ending. The ending is one word, or, for a brand set in its own
+    # lettering, several traced words ("WELDING LLC") that the lettering's `spaces` set apart as the brand's art does.
+    def name_parts
+      words = @style["name"].to_s.split
+      if @style["lettering"]
+        raise Error, "brand #{@brand}: the name must be a first word and an ending of one or more words, got #{words.size} (#{@style['name'].inspect})" if words.size < 2
+      elsif words.size != 2
+        raise Error, "brand #{@brand}: the name must be exactly two words, got #{words.size} (#{@style['name'].inspect})"
+      end
+      [words.first, words.drop(1).join(" ")]
+    end
+
+    # A part's traced letters: each word's, in order. Where one word ends and the next begins, the last letter's
+    # advance is set so the next word's ink starts the lettering's own space after it (in cap heights, ink to ink).
+    def traced(part)
       words = @lettering.fetch("words")
-      words[word] or raise Error, "brand #{brand}: no word #{word.inspect} in the #{@style['lettering']} lettering (it has #{words.keys.join(', ')})"
+      runs = part.split.map do |word|
+        words[word] or raise Error, "brand #{brand}: no word #{word.inspect} in the #{@style['lettering']} lettering (it has #{words.keys.join(', ')})"
+      end
+      runs.each_cons(2).with_index.map do |(run, following), i|
+        space = traced_space(part.split[i, 2])
+        run[0...-1] + [run.last.merge("adv" => run.last["r"] - following.first["l"] + space)]
+      end.flatten + runs.last
+    end
+
+    def traced_space(pair)
+      space = @lettering.fetch("spaces", {})[pair.join(" ")]
+      return space if space.is_a?(Numeric) && space >= 0
+
+      raise Error, "brand #{brand}: the #{@style['lettering']} lettering has no space between #{pair.join(' and ')} (a number of cap heights in `spaces`)"
     end
 
     def weight_set(weight)
