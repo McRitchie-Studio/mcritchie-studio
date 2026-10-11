@@ -76,6 +76,22 @@ module LogosHelper
     end.join("; ")
   end
 
+  # The saved edits of `type` the kit leaves out because the brand can no longer draw them (BrandKit#stale_edits), in
+  # one sentence, or nil: "Left out of the saved choice, because the brand can no longer draw it: first word colour
+  # #123456."
+  def logo_stale_edits_sentence(kit, type)
+    stale = kit.stale_edits(type)
+    return if stale.empty?
+
+    words = stale.keys.map do |name|
+      part, setting = Logos::Variant::EDIT_PARAMS.fetch(name.to_sym)
+      value = kit.choice(type).dig("edits", name).to_s
+      value = "##{value.upcase}" if setting == :colour
+      "#{LOGO_PART_NAMES.fetch(part)} #{setting} #{value}"
+    end
+    "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
+  end
+
   # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet": a kit is saved once its record exists.
   def logo_kit_status(kit)
     return "Kit: not saved yet" unless kit&.persisted?

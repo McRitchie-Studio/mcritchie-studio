@@ -179,18 +179,43 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, counted.size, counted.join("\n")
   end
 
-  test "a saved choice the brand's data can no longer draw shows the refusal in its cell, and the page still answers" do
+  test "a saved colour since taken out of the palette is dropped and flagged, and the table, the page and other saves still work" do
     record = BrandKit.for("studio")
     record.save!
-    record.update_column(:navbar_choice, { "rule" => 4, "text" => "first", "edits" => { "first_colour" => "123456" } })
+    # Written around the parser, as a palette change in config/logo_brands.yml would leave it.
+    record.update_column(:navbar_choice, { "rule" => 3, "text" => "first", "edits" => { "first_colour" => "123456", "ending_weight" => "300" } })
     log_in_as(@admin)
     get logos_path
     assert_response :success
-    assert_select "[data-brand='studio'] [data-type='navbar'] [data-test='logo-sample-refused']", /palette/
+    src = css_select("[data-brand='studio'] [data-test='logo-sample'][data-type='navbar'] img").first["src"]
+    assert_equal({ "rule" => "3", "text" => "first", "ending_weight" => "300", "tone" => "light", "guides" => "0" }, Rack::Utils.parse_query(URI(src).query),
+                 "drawn with the edits it can still draw")
+
+    get logo_brand_path("studio")
+    assert_response :success
+    assert_select "[data-test='kit-choice-saved']", /Saved Navbar Logo: rule of 3, first word leads, ending 300 Light/
+    assert_select "[data-test='kit-stale-edits']",
+                  "Left out of the saved choice, because the brand can no longer draw it: first word colour #123456. Save again to keep the choice as shown."
+    assert_select "[data-test='kit-pick'][data-type='navbar'] [data-test='kit-pick-stale']", /first word colour #123456/
+
+    patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "two_line", text: "first" }
+    assert_response :redirect, "a stale navbar choice does not refuse a save of the stacked one"
+    patch brand_kit_path("studio"), params: { notes: "still saves" }
+    assert_response :redirect
+  end
+
+  test "a saved choice whose rule the brand can no longer draw shows the refusal in its cell, and the page still answers" do
+    record = BrandKit.for("studio")
+    record.save!
+    record.update_column(:navbar_choice, { "rule" => 5, "text" => "first", "edits" => {} })
+    log_in_as(@admin)
+    get logos_path
+    assert_response :success
+    assert_select "[data-brand='studio'] [data-type='navbar'] [data-test='logo-sample-refused']", /unknown rule "5"/
     get logo_brand_path("studio")
     assert_response :success
     assert_select "[data-test='kit-choice-saved']", /can no longer be drawn/
-    assert_select "[data-test='kit-pick'][data-type='navbar'] [data-test='kit-pick-refused']", /palette/
+    assert_select "[data-test='kit-pick'][data-type='navbar'] [data-test='kit-pick-refused']", /unknown rule/
   end
 
   test "the brand page's Kit card shows the saved choice in the page's tones, opens it on its tab and downloads it" do

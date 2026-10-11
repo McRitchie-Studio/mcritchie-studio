@@ -88,11 +88,22 @@ class BrandKit < ApplicationRecord
   def saved?(type) = choice(type).present?
 
   # The saved choice for `type` as a Logos::Variant in `tone`, or the brand's default (DEFAULTS) when none is saved.
+  # A saved edit the brand's data can no longer draw (a colour since taken out of the palette) is DROPPED here, not
+  # refused, so a stale kit never takes the table or the brand page down: #stale_edits names what was dropped, and
+  # the brand page says so. Only a choice whose rule, form or text is itself refused is an Error.
   def variant(type, tone: :light)
     type = type.to_sym
-    return self.class.variant(brand, type, choice(type), tone:) if saved?(type)
+    return self.class.variant(brand, type, drawable_choice(type), tone:) if saved?(type)
 
     Logos::Variant.new(Logos::Variant.logo(brand, type), type:, tone:, **DEFAULTS.fetch(type))
+  end
+
+  # The saved edits of `type` that #variant drops because they can no longer be drawn: { "first_colour" => reason }.
+  def stale_edits(type)
+    return {} unless saved?(type)
+
+    drawable_choice(type)
+    @stale_edits.fetch(type.to_sym, {})
   end
 
   # The text version the save form offers first: the saved one, else the default.
@@ -167,6 +178,38 @@ class BrandKit < ApplicationRecord
 
   private
 
+  # The saved choice less its edits that cannot be drawn, kept edit by edit in the saved order; the dropped ones go
+  # to @stale_edits. Read again whenever the stored choice changes.
+  def drawable_choice(type)
+    type = type.to_sym
+    stored = choice(type)
+    @drawable ||= {}
+    @stale_edits ||= {}
+    return @drawable[type][:choice] if @drawable[type] && @drawable[type][:stored] == stored
+
+    @stale_edits[type] = {}
+    # A choice that is no map, or whose rule, form or text is refused, is not mended: #variant refuses it whole.
+    return stored unless stored.is_a?(Hash) && stored["edits"].is_a?(Hash) && base_drawable?(type, stored)
+
+    kept = {}
+    stale = {}
+    stored["edits"].each do |name, value|
+      self.class.variant(brand, type, stored.merge("edits" => kept.merge(name => value)))
+      kept[name] = value
+    rescue Error => e
+      stale[name] = e.message
+    end
+    @stale_edits[type] = stale
+    (@drawable[type] = { stored:, choice: stored.merge("edits" => kept) })[:choice]
+  end
+
+  def base_drawable?(type, stored)
+    self.class.variant(brand, type, stored.merge("edits" => {}))
+    true
+  rescue Error
+    false
+  end
+
   def brand_has_a_style
     errors.add(:brand, "is not a brand in config/logo_brands.yml") unless Logos::NavbarLogo.brands.include?(brand)
   end
@@ -175,7 +218,9 @@ class BrandKit < ApplicationRecord
     return unless Logos::NavbarLogo.brands.include?(brand)
 
     TYPES.each do |type|
-      next unless saved?(type)
+      # Only a choice being written is checked strictly: one saved earlier that has since gone stale is drawn without
+      # its stale edits (#variant), and must not refuse a save of the other type or of the notes.
+      next unless saved?(type) && will_save_change_to_attribute?(:"#{type}_choice")
 
       self.class.variant(brand, type, choice(type))
     rescue Error => e

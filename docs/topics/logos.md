@@ -556,10 +556,16 @@ choice through `Logos::Variant.parse` and the logo's `#refusal`, so a saved
 choice can never hold what the page could not draw. A choice is stored in one
 spelling (`BrandKit.choice_of`): a hex in capitals, a weight and a visibility
 as strings, and only the edits the type shows (a Navbar Logo drops the
-tagline's; a Stacked Logo keeps them only in the tagline form). If the brand's
-data later changes so a saved choice cannot be drawn (a palette colour taken
-out), the table's cell and the Kit card show the refusal and the page still
-answers; save again or clear it.
+tagline's; a Stacked Logo keeps them only in the tagline form). It is stored in
+the flat URL spelling because a jsonb column hands back STRING keys while
+`#checked_edits` takes symbols: reading goes through `Logos::Variant.edits`
+first. If the brand's data later changes so a saved EDIT cannot be drawn (a
+palette colour taken out), loading drops that edit (`BrandKit#stale_edits`),
+draws the rest, and the brand page names what was left out; the table and
+page never 422 for it, and only a choice being written is checked strictly,
+so a stale one never refuses another save. A choice whose rule, form or text
+is itself refused is shown as the refusal in its cell and on the Kit card;
+save again or clear it.
 
 **Saving.** On the Navbar and Stacked tabs, **Kit choice** saves the tab's
 rule or form and its edits, with the text version picked in its select (it

@@ -25,6 +25,9 @@
       No <%= type_name %> saved yet: the brand shows its default, <%= logo_choice_summary(BrandKit.new(brand: @logo.brand).variant(@type)) %>.
     <% end %>
   </p>
+  <% if (stale = logo_stale_edits_sentence(kit_record, @type)) %>
+    <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="status" data-test="kit-stale-edits"><%= stale %></p>
+  <% end %>
   <% if @edit_refusal %>
     <p class="text-sm text-secondary" data-test="kit-save-refused">These edits cannot be drawn here, so they cannot be saved.</p>
   <% else %>

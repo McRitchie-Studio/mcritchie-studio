@@ -121,6 +121,34 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_empty kit.variant(:navbar, tone: :watermark).edits, "a watermark is one colour"
   end
 
+  test "a choice is stored in the flat URL spelling and read back from the jsonb's string keys through the URL parser" do
+    BrandKit.for("studio").save_choice(:stacked, params(form: "tagline", text: "first", first_colour: "635BB2", tagline_weight: "600"), by: BY)
+    stored = BrandKit.connection.select_value("SELECT stacked_choice FROM brand_kits WHERE brand = 'studio'")
+    assert_equal({ "form" => "tagline", "text" => "first", "edits" => { "first_colour" => "635BB2", "tagline_weight" => "600" } }, JSON.parse(stored))
+
+    kit = BrandKit.find_by!(brand: "studio")
+    assert(kit.stacked_choice["edits"].keys.all?(String), "jsonb hands back string keys")
+    variant = kit.variant(:stacked)
+    assert_equal({ first: { colour: "#635BB2" }, tagline: { weight: 600 } }, variant.edits, "the URL parser turned them into the checker's symbols")
+    assert_equal Logos::StackedLogo.new("studio").checked_edits(Logos::Variant.edits(first_colour: "635BB2", tagline_weight: "600")), variant.edits
+  end
+
+  test "a saved edit the brand can no longer draw is dropped on load and named, and the rest of the choice still draws" do
+    kit = BrandKit.for("studio")
+    kit.save!
+    kit.update_column(:navbar_choice, { "rule" => 4, "text" => "first", "edits" => { "first_colour" => "123456", "ending_colour" => "635BB2" } })
+    kit.reload
+    variant = kit.variant(:navbar, tone: :dark)
+    assert_equal({ ending: { colour: "#635BB2" } }, variant.edits)
+    assert_equal ["first_colour"], kit.stale_edits(:navbar).keys
+    assert_match(/palette/, kit.stale_edits(:navbar)["first_colour"])
+    assert_empty kit.stale_edits(:stacked)
+    assert kit.valid?, "a stale choice that is not being written does not make the record invalid"
+
+    kit.navbar_choice = kit.navbar_choice.merge("text" => "second")
+    refute kit.valid?, "a stale choice being written is refused"
+  end
+
   test "clearing a choice goes back to the default and keeps the record" do
     kit = BrandKit.for("studio")
     kit.save_choice(:stacked, params(form: "tagline", text: "first"), by: BY)
