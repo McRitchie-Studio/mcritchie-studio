@@ -36,3 +36,10 @@ if (typeof document !== "undefined") {
   document.addEventListener("turbo:load", () => installScrollTabStops());
   if (document.readyState !== "loading") installScrollTabStops();
 }
+
+// The logo gallery shows a light and a dark guide drawing and lets the hub theme (html.dark) pick one by CSS, so a
+// change of theme swaps the drawing without resizing the region: check every region again when the root's class
+// changes.
+if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+  new MutationObserver(() => installScrollTabStops()).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+}

@@ -1,14 +1,21 @@
-<%# THE CONTEXT DROPDOWN (shared by the index and a brand page): a GET form
-    whose select picks the tone every logo on the page is shown in. It submits
-    on change. The Apply button is inside a noscript element, so it shows only
-    with JavaScript off, where nothing else would submit the form. It carries every other
-    page setting in force (type, rule, guides), so a change of context keeps
-    them. Local: url. %>
+<%# THE CONTEXT CONTROL (shared by the index and a brand page). It drives the
+    HUB'S OWN THEME, the same switch as the moon icon: Light and Dark set the
+    theme and the page's logos follow it by CSS alone, with no request;
+    Watermark sets the theme to dark and loads the page with ?context=watermark,
+    which shows the watermark logos. Leaving the watermark (choosing Light or
+    Dark, or turning the theme light with the moon icon) loads the page without
+    it. The behaviour is app/javascript/logo_gallery.js (data-logo-context).
+
+    The select shows the theme the page is in: chosen on load from the hub's
+    theme, and kept in step when the theme changes elsewhere. With JavaScript
+    off it is a plain GET form with an Apply button, and the hidden fields carry
+    every other page setting in force (type, rule, form, guides). Local: url. %>
+<% watermark = @context == :watermark %>
 <%= form_with url: url, method: :get, class: "flex flex-wrap items-center gap-2", data: { test: "context-form" } do %>
   <% logo_page_params.except(:context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
   <label for="logo-context" class="text-3xs font-semibold uppercase tracking-wide text-muted">Context</label>
   <%= select_tag :context, options_for_select(Logos::Variant::CONTEXTS.map { |tone, label| [label, tone] }, @context),
                  id: "logo-context", class: "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading",
-                 onchange: "this.form.requestSubmit()" %>
+                 data: { logo_context: true, watermark: watermark.to_s } %>
   <noscript><%= submit_tag "Apply", name: nil, class: "btn btn-sm btn-neutral", data: { test: "context-submit", disable_with: false } %></noscript>
 <% end %>

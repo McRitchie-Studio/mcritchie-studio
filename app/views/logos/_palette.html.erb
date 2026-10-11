@@ -1,0 +1,26 @@
+<%# A BRAND'S PALETTE: its one ordered list of named colours (Logos::BrandKit,
+    config/logo_brands.yml `palette:`), each a swatch with its name and hex. No
+    split by light, dark or watermark: those are the logos' fills, not the
+    brand's colours. A click copies the hex (app/javascript/logo_gallery.js,
+    data-copy-hex, through window.copyText from components/_copy_text_script,
+    which the page renders once). Locals: kit;
+    compact (true in the index table: small swatches in two columns). %>
+<% compact = local_assigns.fetch(:compact, false) %>
+<ul class="<%= compact ? 'grid grid-cols-2 gap-x-3 gap-y-1.5' : 'grid grid-cols-2 sm:grid-cols-4 gap-3' %>" data-test="logo-palette" data-brand="<%= kit.brand %>" aria-label="Colours">
+  <% kit.palette.each do |swatch| %>
+    <li class="min-w-0" data-test="logo-swatch" data-hex="<%= swatch.hex %>">
+      <button type="button"
+              class="group flex w-full min-w-0 text-left rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary <%= compact ? 'items-center gap-1.5' : 'flex-col gap-1.5' %>"
+              aria-label="Copy <%= swatch.name %> <%= swatch.hex %>" data-test="logo-swatch-copy" data-copy-hex="<%= swatch.hex %>">
+        <span class="block shrink-0 rounded border border-subtle <%= compact ? 'w-4 h-4' : 'w-full h-12 sm:h-14' %>" style="background-color: <%= swatch.hex %>" aria-hidden="true" data-test="logo-swatch-chip"></span>
+        <span class="block min-w-0 leading-tight">
+          <span class="block truncate font-semibold text-heading <%= compact ? 'text-3xs' : 'text-xs' %>" data-test="logo-swatch-name"><%= swatch.name %></span>
+          <span class="block font-mono text-muted group-hover:text-primary <%= compact ? 'text-3xs' : 'text-2xs' %>">
+            <span data-test="logo-swatch-hex" data-copy-hex-label><%= swatch.hex %></span>
+          </span>
+        </span>
+      </button>
+      <span class="sr-only" role="status" data-copy-hex-status></span>
+    </li>
+  <% end %>
+</ul>

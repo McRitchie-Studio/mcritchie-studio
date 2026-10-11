@@ -33,6 +33,13 @@
 #            "#FFFFFF"), `opacity` (greater than 0, at most 1; default 0.6) and
 #            `icon_key`, a single-colour icon for a brand whose own icon would
 #            fill in solid when every layer takes the one colour.
+# palette    the brand's colours, as the gallery shows them: an ordered list of
+#            {name, hex}, one list per brand, no split by tone (Logos::BrandKit).
+#            The logo fills above stay per tone; this is only what is shown
+# typefaces  the brand's typeface hierarchy, most prominent first, 1 to 3 levels
+#            of {role, family, weight}. `family` is a face the hub serves
+#            (Montserrat). A level set in the brand's own traced lettering has no
+#            family and no weight, only a `label` saying so (Logos::BrandKit)
 #
 # Fills are solid #hex only: no gradients.
 
@@ -43,6 +50,16 @@ studio:
   highlight: weight
   heavy: 800
   light: 300
+  palette:
+    - { name: Ink, hex: "#1A1535" }
+    - { name: Violet, hex: "#8E82FE" }
+    - { name: Deep Violet, hex: "#635BB2" }
+    - { name: Violet Mist, hex: "#EEECFF" }
+    - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 800 }
+    - { role: Text, family: Montserrat, weight: 300 }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#1A1535"
@@ -59,6 +76,19 @@ industries:
   heavy: 700
   light: 300
   note: The Industries icon is drawn flat here, as two solid layers, without the marketing kit's steel gradient and tick marks. That is deliberate in this first version.
+  palette:
+    - { name: Forge Orange, hex: "#C8661F" }
+    - { name: Ember Orange, hex: "#E07B2E" }
+    - { name: Charcoal Steel, hex: "#262A30" }
+    - { name: Gunmetal, hex: "#59606A" }
+    - { name: Brushed Steel, hex: "#8C939C" }
+    - { name: Light Steel, hex: "#D3D6DA" }
+    - { name: Shop Black, hex: "#141516" }
+    - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 700 }
+    - { role: Text, family: Montserrat, weight: 300 }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#262A30"
@@ -77,6 +107,17 @@ turf:
   tracking: -0.025
   stacked: one_line
   note: The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours.
+  palette:
+    - { name: Brand Green, hex: "#4BAF50" }
+    - { name: Forest, hex: "#2E7D32" }
+    - { name: Deep Green, hex: "#1A550D" }
+    - { name: Grass, hex: "#5C972A" }
+    - { name: Cream, hex: "#F0EBCF" }
+    - { name: Ink, hex: "#1A1535" }
+    - { name: Violet, hex: "#8E82FE" }
+  typefaces:
+    - { role: Display, family: Montserrat, weight: 800 }
+    - { role: Text, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#1A1535"
@@ -96,6 +137,14 @@ welding:
   lettering: welding
   highlight: colour
   note: The helmet and the lettering are auto-traced from the current PNG files. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  palette:
+    - { name: Welding Blue, hex: "#2D5E8E" }
+    - { name: Spark Orange, hex: "#D7602E" }
+    - { name: Ember, hex: "#F08A5A" }
+    - { name: White, hex: "#FFFFFF" }
+  typefaces:
+    - { role: Display, label: Traced lettering (face not identified) }
+    - { role: Tagline, family: Montserrat, weight: 500 }
   tones:
     light:
       text: "#2D5E8E"
