@@ -31,8 +31,9 @@ test("a warning is written only under 3:1, with the colour's name and its ratio"
   assert.equal(contrastWarning("Deep Violet", 3), "");
   assert.equal(
     contrastWarning("Violet Mist", 1.16),
-    "Violet Mist measures 1.2:1 against this page's background, under 3:1: it may be hard to see here."
+    "Violet Mist measures 1.1:1 against this page's background, under 3:1: it may be hard to see here."
   );
+  assert.match(contrastWarning("Ember Orange", 2.97), /measures 2\.9:1/, "just under 3 never reads 3.0");
 });
 
 test("blank fields (as styled, a shown tagline) stay out of the URL; picked and hidden fields do not", () => {

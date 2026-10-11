@@ -42,7 +42,9 @@ export function contrastRatio(a, b) {
 // The warning for a colour of `ratio` against the page, or "" when it reads well enough.
 export function contrastWarning(name, ratio) {
   if (ratio >= MIN_CONTRAST) return "";
-  return `${name} measures ${ratio.toFixed(1)}:1 against this page's background, under ${MIN_CONTRAST}:1: it may be hard to see here.`;
+  // Rounded down, so a ratio just under 3 never reads "3.0:1 … under 3:1".
+  const shown = (Math.floor(ratio * 10) / 10).toFixed(1);
+  return `${name} measures ${shown}:1 against this page's background, under ${MIN_CONTRAST}:1: it may be hard to see here.`;
 }
 
 // The form's fields that would put nothing in the URL: a blank value ("As styled", a shown tagline).
