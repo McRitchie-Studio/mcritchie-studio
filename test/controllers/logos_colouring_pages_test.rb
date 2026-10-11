@@ -5,7 +5,7 @@ require "test_helper"
 # [component] Logo COLOURINGS through the routes (task logo-original-and-alt): every SVG endpoint takes
 # ?colouring=original|alt (Alt unless asked, so every existing URL serves what it served), names an Original's file
 # -original, and refuses an Original of a brand that has none.
-class LogosColouringTest < ActionDispatch::IntegrationTest
+class LogosColouringPagesTest < ActionDispatch::IntegrationTest
   setup { log_in_as(users(:alex)) }
 
   def disposition = response.headers["Content-Disposition"]
