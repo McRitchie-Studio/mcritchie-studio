@@ -41,7 +41,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_difference -> { BrandKit.count }, 1 do
       patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first", first_colour: "635BB2", ending_weight: "300", guides: "1" }
     end
-    assert_redirected_to logo_brand_path("studio", rule: "3", first_colour: "635BB2", ending_weight: "300", guides: "1")
+    assert_redirected_to logo_brand_path("studio", rule: "3", first_colour: "635BB2", ending_weight: "300", guides: "1", anchor: "kit-choice")
     assert_equal "Saved the Navbar Logo kit choice: rule of 3, first word leads, first word Deep Violet; ending 300 Light.", flash[:notice]
     assert_equal({ "rule" => 3, "text" => "first", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
     assert_equal @admin.email, kit.updated_by
@@ -56,7 +56,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
   test "saving the Stacked choice, then a second save, keeps one record per brand" do
     log_in_as(@admin)
     patch brand_kit_choice_path("industries"), params: { type: "stacked", form: "tagline", text: "second", tagline_colour: "c8661f" }
-    assert_redirected_to logo_brand_path("industries", type: "stacked", form: "tagline", tagline_colour: "c8661f")
+    assert_redirected_to logo_brand_path("industries", type: "stacked", form: "tagline", tagline_colour: "c8661f", anchor: "kit-choice")
     patch brand_kit_choice_path("industries"), params: { type: "navbar", rule: "6", text: "homogeneous" }
     assert_equal 1, BrandKit.where(brand: "industries").count
     assert_equal({ "form" => "tagline", "text" => "second", "edits" => { "tagline_colour" => "C8661F" } }, kit("industries").stacked_choice)
@@ -67,7 +67,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "tagline", text: "first" }
     delete brand_kit_choice_path("studio"), params: { type: "stacked", form: "tagline" }
-    assert_redirected_to logo_brand_path("studio", type: "stacked", form: "tagline")
+    assert_redirected_to logo_brand_path("studio", type: "stacked", form: "tagline", anchor: "kit-choice")
     assert_equal "Cleared the Stacked Logo kit choice. The brand shows its default again.", flash[:notice]
     assert_nil kit.stacked_choice
     assert BrandKit.exists?(brand: "studio"), "the record stays"

@@ -46,3 +46,23 @@ test("deleting a kit original asks first: Delete opens the question, Cancel clos
   await expect(page.getByText("Removed turf-polish.svg.")).toBeVisible();
   await expect(page.locator("[data-test='kit-original']").filter({ hasText: "turf-polish.svg" })).toHaveCount(0);
 });
+
+test("saving and clearing a kit choice return to the same tab, scrolled to the Kit choice card", async ({ page }) => {
+  await open(page, "/logos/studio?type=stacked&form=tagline");
+  // Scrolled to the card, and the card's heading clear of the sticky navbar.
+  const inView = () => page.evaluate(() => {
+    const top = document.querySelector("[data-test='kit-choice']").getBoundingClientRect().top;
+    const navBottom = document.querySelector("header").getBoundingClientRect().bottom;
+    return window.scrollY > 0 && top >= navBottom - 1 && top < window.innerHeight / 2;
+  });
+
+  await page.locator("[data-test='kit-save']").click();
+  await page.waitForURL(/\/logos\/studio\?(?=.*type=stacked)(?=.*form=tagline).*#kit-choice$/);
+  await expect(page.getByText(/Saved the Stacked Logo kit choice/)).toBeAttached();
+  await expect.poll(inView).toBe(true);
+
+  await page.locator("[data-test='kit-clear']").click();
+  await page.waitForURL(/\/logos\/studio\?(?=.*type=stacked)(?=.*form=tagline).*#kit-choice$/);
+  await expect(page.getByText("Cleared the Stacked Logo kit choice. The brand shows its default again.")).toBeAttached();
+  await expect.poll(inView).toBe(true);
+});

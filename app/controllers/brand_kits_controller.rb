@@ -40,13 +40,13 @@ class BrandKitsController < ApplicationController
   def save_choice
     type = choice_type
     variant = @kit.save_choice(type, params, by: who)
-    redirect_to back_to_page, notice: "Saved the #{Logos::Variant::TYPES.fetch(type)} kit choice: #{helpers.logo_choice_summary(variant)}."
+    redirect_to back_to_page(anchor: "kit-choice"), notice: "Saved the #{Logos::Variant::TYPES.fetch(type)} kit choice: #{helpers.logo_choice_summary(variant)}."
   end
 
   def clear_choice
     type = choice_type
     @kit.clear_choice(type, by: who) if @kit.persisted?
-    redirect_to back_to_page, notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. The brand shows its default again."
+    redirect_to back_to_page(anchor: "kit-choice"), notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. The brand shows its default again."
   end
 
   def update
