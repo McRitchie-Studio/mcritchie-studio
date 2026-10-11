@@ -464,7 +464,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
       assert_select "form[data-test='context-form'][method='get'][action=?]", logo_brand_path("industries"), 1 do
         assert_select "label[for='logo-context']", "Context"
-        assert_select "select#logo-context[name='context']:not([onchange])", 1
+        assert_select "select#logo-context[name='context'][autocomplete='off']:not([onchange])", 1, "autocomplete off: the browser must not restore a stale value over the theme after Back"
         assert_equal [%w[light Light], %w[dark Dark], %w[watermark Watermark]], css_select("select#logo-context option").map { |o| [o["value"], o.text] }
         assert_equal [context].compact, css_select("select#logo-context option[selected]").map { |o| o["value"] }, where
         assert_select "noscript input[type='submit'][value='Apply']", 1, "the form works with JavaScript off"

@@ -16,6 +16,6 @@
   <label for="logo-context" class="text-3xs font-semibold uppercase tracking-wide text-muted">Context</label>
   <%= select_tag :context, options_for_select(Logos::Variant::CONTEXTS.map { |tone, label| [label, tone] }, @context),
                  id: "logo-context", class: "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading",
-                 data: { logo_context: true, watermark: watermark.to_s } %>
+                 autocomplete: "off", data: { logo_context: true, watermark: watermark.to_s } %>
   <noscript><%= submit_tag "Apply", name: nil, class: "btn btn-sm btn-neutral", data: { test: "context-submit", disable_with: false } %></noscript>
 <% end %>
