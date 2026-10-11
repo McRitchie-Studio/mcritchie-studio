@@ -200,7 +200,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[logo-tab logo-tab logo-tab rule-option rule-option guides-toggle] + %w[logo-download logo-copy] * 3, ringed.map { |control| control["data-test"] }
+    assert_equal %w[logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle] + %w[logo-download logo-copy] * 3, ringed.map { |control| control["data-test"] }
     assert_select "[data-test='read-only-note']", /Choosing one for the brand comes later/
     assert_select "[data-test='brand-note']", /drawn flat.*without the marketing kit's steel gradient and tick marks/
   end
@@ -225,11 +225,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "the Rule control shows one rule at a time, with its sentence" do
     log_in_as(@admin)
-    { nil => 4, "4" => 4, "3" => 3 }.each do |param, rule|
+    { nil => 4, "4" => 4, "3" => 3, "6" => 6 }.each do |param, rule|
       get logo_brand_path("studio", { rule: param }.compact)
       assert_response :success
       assert_select "[data-test='rule-control'][role='group'][aria-label='Rule']", 1
-      assert_equal [["3", "Rule of 3", logo_brand_path("studio", rule: 3)], ["4", "Rule of 4", logo_brand_path("studio")]],
+      assert_equal [["3", "Rule of 3", logo_brand_path("studio", rule: 3)], ["4", "Rule of 4", logo_brand_path("studio")], ["6", "Rule of 6", logo_brand_path("studio", rule: 6)]],
                    css_select("a[data-test='rule-option']").map { |option| [option["data-rule"], option.text.strip, option["href"]] }
       assert_equal [rule.to_s], css_select("a[data-test='rule-option'][aria-current='true']").map { |option| option["data-rule"] }
       assert_select "a[data-test='rule-option'][aria-current='true'].btn-primary.border.border-transparent", 1
@@ -261,7 +261,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_examples variants(brand, :stacked, guides: true)
       assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 3
       assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?(%(<g class="guide-ghosts")) }
-      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size: one copy per unit/ : /faint copies of the small word: one copy per unit/
+      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size, spaced exactly as the logo spaces it: one copy per unit.*and the name at 60% of its size turned on end beside the icon, bracketed, reading up from its foot to its top/ : /faint copies of the small word, spaced exactly as the logo spaces it: one copy per unit.*and one copy turned on end beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long/
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
     end
   end
@@ -297,7 +297,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test='logos-crumb'][href=?]", logos_path(context: "watermark"), text: "Logos"
 
     get logo_brand_path("turf", context: "dark", guides: 1)
-    assert_equal [logo_brand_path("turf", context: "dark", rule: 3, guides: 1), logo_brand_path("turf", context: "dark", guides: 1)],
+    assert_equal [logo_brand_path("turf", context: "dark", rule: 3, guides: 1), logo_brand_path("turf", context: "dark", guides: 1), logo_brand_path("turf", context: "dark", rule: 6, guides: 1)],
                  css_select("a[data-test='rule-option']").map { |option| option["href"] }
     assert_equal [%w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
     assert_select "a[data-test='logos-crumb'][href=?]", logos_path(context: "dark")
@@ -456,7 +456,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 3
     assert_select "a[data-test='logo-download'][href*='guides=1']", 3
     assert_equal 3, css_select("button[data-test='logo-copy']").count { |button| button["data-clip"].include?("<line") }
-    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
+    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways\./
 
     # A guide drawing fits its plate (max-width) down to a least width of its own, where its plate starts to scroll.
     assert_select "[data-test='logo-plate'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
@@ -467,7 +467,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
     get logo_brand_path("industries", type: "stacked", guides: 1)
-    assert_equal ["max-height: 540px; min-width: 480px", "max-height: 540px; min-width: 476px", "max-height: 540px; min-width: 467px"],
+    assert_equal ["max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 464px"],
                  css_select("[data-test='logo-plate'].overflow-x-auto img.max-w-full").map { |img| img["style"] }
     get logo_brand_path("industries", type: "stacked")
     assert_select "[data-test='logo-plate'].overflow-x-auto, [data-test='logo-plate'][tabindex]", 0
@@ -491,6 +491,12 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get navbar_logo_path("studio", tone: "dark", guides: 1, download: 1)
     assert_equal Logos::NavbarLogo.new("studio").svg(tone: :dark, guides: true), response.body
     assert_match(/\Aattachment; filename="studio-navbar-rule3-homogeneous-dark-guides\.svg"/, response.headers["Content-Disposition"])
+
+    # Item 4d (task navbar-spacing-and-rotated-guides): the endpoint and its filenames take the rule of 6.
+    get navbar_logo_path("industries", rule: 6, text: "second", tone: "light", download: 1)
+    assert_response :success
+    assert_equal Logos::NavbarLogo.new("industries").svg(rule: 6, text: :second, tone: :light), response.body
+    assert_match(/\Aattachment; filename="industries-navbar-rule6-second-light\.svg"/, response.headers["Content-Disposition"])
   end
 
   test "icon serves the brand's icon alone in the tone asked for, named by brand and tone" do
@@ -582,7 +588,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_match(/unknown guides "maybe"/, response.body)
 
     { logo_brand_path("industries", type: "submark") => /unknown type "submark": expected one of icon, navbar, stacked/,
-      logo_brand_path("industries", type: "") => /unknown type ""/, logo_brand_path("industries", rule: 5) => /unknown rule "5": expected one of 3, 4/,
+      logo_brand_path("industries", type: "") => /unknown type ""/, logo_brand_path("industries", rule: 5) => /unknown rule "5": expected one of 3, 4, 6/,
       logo_brand_path("industries", type: "icon", rule: "four") => /unknown rule "four"/,
       logo_brand_path("industries", type: "icon", guides: "yes") => /unknown guides "yes"/ }.each do |path, message|
       get path
@@ -637,7 +643,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding stacked logo, with tagline, ']", 3
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
-    assert_select "[data-test='guides-sentence']", /faint copies of the tagline: one copy per unit/
+    assert_select "[data-test='guides-sentence']", /faint copies of the tagline, spaced exactly as the logo spaces it: one copy per unit/
 
     get stacked_logo_path("welding", form: "tagline", text: "first", tone: "light", download: 1)
     assert_response :success
@@ -658,7 +664,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  css_select("a[data-test='form-option']").map { |option| option["href"] }
 
     get logo_brand_path("studio", form: "tagline", rule: 3)
-    assert_equal [logo_brand_path("studio", form: "tagline", rule: 3), logo_brand_path("studio", form: "tagline")],
+    assert_equal [logo_brand_path("studio", form: "tagline", rule: 3), logo_brand_path("studio", form: "tagline"), logo_brand_path("studio", form: "tagline", rule: 6)],
                  css_select("a[data-test='rule-option']").map { |option| option["href"] }, "the Navbar tab carries the form to the Stacked tab"
     assert_equal logo_brand_path("studio", type: "stacked", rule: 3, form: "tagline"), css_select("a[data-test='logo-tab'][data-type='stacked']").first["href"]
   end

@@ -33,7 +33,7 @@ class LogosVariantTest < Minitest::Test
   end
 
   def test_a_param_it_does_not_know_is_refused_by_name
-    assert_match(/unknown rule "5": expected one of 3, 4/, refusal { parse(rule: "5") })
+    assert_match(/unknown rule "5": expected one of 3, 4, 6/, refusal { parse(rule: "5") })
     assert_match(/unknown rule "4abc"/, refusal { parse(rule: "4abc") })
     assert_match(/unknown rule ""/, refusal { parse(rule: "") })
     assert_match(/unknown rule \["4"\]/, refusal { parse(rule: ["4"]) })
@@ -41,6 +41,19 @@ class LogosVariantTest < Minitest::Test
     assert_match(/unknown tone "sepia": expected one of light, dark, watermark/, refusal { parse(tone: "sepia") })
     assert_match(/unknown guides "true": expected 0 or 1/, refusal { parse(guides: "true") })
     assert_match(/unknown download "yes": expected 0 or 1/, refusal { Variant.flag("yes", "download") })
+  end
+
+  # Task navbar-spacing-and-rotated-guides (item 4d): the rule of 6 is read, drawn, named and labelled like the others.
+  def test_the_rule_of_6_is_read_drawn_named_and_labelled
+    variant = parse(rule: "6", text: "first", tone: "dark", guides: "1")
+    assert_equal [6, :first, :dark, true], [variant.rule, variant.text, variant.tone, variant.guides]
+    assert_equal logo.svg(rule: 6, text: :first, tone: :dark, guides: true), variant.svg
+    assert_equal "industries-navbar-rule6-first-dark-guides.svg", variant.filename
+    assert_equal "McRitchie Industries navbar logo, rule of 6, first word leads, dark, construction guides", variant.label
+    assert_equal 40, variant.guide_font
+    assert_equal 6, Variant.rule("6")
+    assert_equal [6] * 3, Variant.all(logo, rule: 6).map(&:rule)
+    assert_match(/six rows tall.*four rows/, Variant::RULE_SENTENCES.fetch(6))
   end
 
   def test_the_filename_names_the_brand_and_every_choice

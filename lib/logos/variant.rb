@@ -17,10 +17,11 @@ module Logos
     CHOICES = { icon: %i[tone], navbar: %i[rule text tone guides], stacked: %i[form text tone guides] }.freeze
     # The Stacked Logo's forms, as the Form control names them; a brand offers only its own (StackedLogo#forms).
     FORMS = { two_line: "Two lines", one_line: "One line", tagline: "With tagline" }.freeze
-    RULES = { 3 => "Rule of 3", 4 => "Rule of 4" }.freeze
+    RULES = { 3 => "Rule of 3", 4 => "Rule of 4", 6 => "Rule of 6" }.freeze
     RULE_SENTENCES = {
       3 => "The icon is three rows tall. The capitals are one row, a third of the icon, and the name sits in the middle row.",
-      4 => "The icon is four rows tall. The capitals are two rows, half the icon, and the name fills the middle two rows."
+      4 => "The icon is four rows tall. The capitals are two rows, half the icon, and the name fills the middle two rows.",
+      6 => "The icon is six rows tall. The capitals are four rows, two thirds of the icon, and the name fills the middle four rows."
     }.freeze
     # The Stacked Logo's 3-2-1 method in plain words, then which form the brand uses.
     METHOD_SENTENCE = "The 3-2-1 method: take the small word's capitals as one unit. The big word's capitals are 3 units tall, " \
@@ -113,7 +114,7 @@ module Logos
 
     # A guide drawing's own measures, in its design units: how wide the drawing is and how tall its labels are.
     def guide_width = svg[/viewBox="\S+ \S+ (\S+) /, 1].to_f
-    def guide_font = logo.class::GUIDE_FONT
+    def guide_font = logo.guide_font(rule)
 
     # The type's own choices, as its SVG route's params.
     def params = { rule:, form:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type))

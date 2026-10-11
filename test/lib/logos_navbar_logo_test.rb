@@ -16,23 +16,30 @@ require_relative "../../lib/logos/navbar_logo"
 class LogosNavbarLogoTest < Minitest::Test
   Logo = Logos::NavbarLogo
   H = Logo::H
-  # Width / height of the logo box, measured from the Python prototype Alex approved.
+  # Width / height of the logo box. First measured from the Python prototype Alex approved; re-measured when task
+  # navbar-spacing-and-rotated-guides made the icon gap and the word gap each half a cap height (item 4c). Before it:
+  # industries 3 6.85 / 6.83 / 6.97, industries 4 second 9.75, studio 3 6.08 / 6.00 / 6.18.
   PROTOTYPE_RATIOS = {
-    ["industries", 3, :first] => 6.85, ["industries", 3, :second] => 6.83, ["industries", 3, :homogeneous] => 6.97,
-    ["industries", 4, :second] => 9.75,
-    ["studio", 3, :first] => 6.08, ["studio", 3, :second] => 6.00, ["studio", 3, :homogeneous] => 6.18
+    ["industries", 3, :first] => 6.871, ["industries", 3, :second] => 6.873, ["industries", 3, :homogeneous] => 6.989,
+    ["industries", 4, :second] => 9.815,
+    ["studio", 3, :first] => 6.100, ["studio", 3, :second] => 6.046, ["studio", 3, :homogeneous] => 6.198
   }.freeze
-  # Measured from the prototype too (homogeneous text), for the two brands added after it was approved.
-  ADDED_RATIOS = { ["turf", 3] => 4.24, ["turf", 4] => 5.87, ["welding", 3] => 5.98, ["welding", 4] => 8.52 }.freeze
+  # The same for the two brands added after the prototype (homogeneous text). Before the equal gaps: turf 4.24 and
+  # 5.87, welding 5.98 and 8.52.
+  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.065, ["welding", 4] => 8.657 }.freeze
   # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
-  # brand's logos may change by a byte. Re-taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid),
-  # where the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task
-  # add-turf-and-welding-logos) still passed; guide drawings are construction drawings and are free to change.
-  ORIGINAL_BRANDS_DIGEST = "3926684129a86ab64613d06c7e828fb60031f274402bf7091d8d40d812301f24"
+  # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
+  # the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task add-turf-and-welding-logos)
+  # still passed; guide drawings are construction drawings and are free to change. Re-taken DELIBERATELY by task
+  # navbar-spacing-and-rotated-guides, after Alex's item 4c made the icon gap and the word gap each half a cap height
+  # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
+  ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
-  ADDED_BRANDS_DIGEST = "315197c04927adfccd746b54c86fba1f719384a416c78b3f66a06da2e6739b25"
+  ADDED_BRANDS_DIGEST = "84708d03dc90a4f0b31db6589342380ef8ad33436aa08ba2a32e2903f590b6fd"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
-  WATERMARK_DIGEST = "6d1da5ed149c514b58c6d8b8ee5682ea06764f6264706a2e4af742e1ca1abbb3"
+  WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
+  # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
+  RULE_6_DIGEST = "c16934f5d230e0f1a7eaf56602e7d9553aabbc75bc4ee65e9c85b988d16b7b4a"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -98,18 +105,49 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/\Atranslate\([\d.]+,225\.00\) scale\(150\.0000\)\z/, first["transform"])
   end
 
-  def test_the_gap_is_half_the_first_letter_and_the_word_space_is_the_fonts_own
+  # Item 4c (task navbar-spacing-and-rotated-guides): the icon gap was half the first letter's ink and the word gap
+  # the font's space (0.367 cap heights; the welding lettering's 0.351), so "hie stu" looked tight. Both are now
+  # half a cap height, ink to ink, on every rule.
+  # Item 4d (task navbar-spacing-and-rotated-guides): "a rule of 6 navbar where the text takes the height of 4".
+  def test_rule_of_6_fills_the_middle_four_of_six_rows
+    box = industries.layout(rule: 6, text: :second)
+    assert_equal 6, box.count
+    assert_in_delta H / 6, box.row
+    assert_in_delta 4 * H / 6, box.cap, 1e-9, "the capitals are four rows"
+    assert_in_delta H / 6, box.baseline - box.cap, 1e-9, "one row above the capitals"
+    assert_in_delta H / 6, H - box.baseline, 1e-9, "and one below"
+    first = letters(industries.svg(rule: 6, text: :second)).first
+    assert_match(/\Atranslate\([\d.]+,250\.00\) scale\(200\.0000\)\z/, first["transform"])
+    assert_in_delta 100, box.gap, 1e-9, "the gaps are half a cap height here too"
+    four = industries.layout(rule: 4, text: :second)
+    assert_in_delta (four.width - four.icon_width) * 4 / 3, box.width - box.icon_width, 1e-9, "the name, a third larger than the rule of 4's"
+
+    xml = doc(industries.svg(rule: 6, text: :second, guides: true)).remove_namespaces!
+    rows = xml.css("g.guide-lines line").select { |l| l["y1"] == l["y2"] && !l["y1"].start_with?("-") }
+    assert_equal (0..6).map { |i| format("%.2f", i * 50.0) }, rows.map { |l| l["y1"] }
+    assert_equal %w[1 2 3 4 5 6 ½ ½], xml.css("g.guide-lines text").map(&:text), "numbered 1-6, and the two gaps"
+    assert_equal 40, industries.guide_font(6)
+    assert_equal 30, industries.guide_font(4)
+  end
+
+  def test_the_icon_gap_and_the_word_gap_are_each_half_a_cap_height
     box = industries.layout(rule: 3, text: :first)
     m = glyph("M", 700)
     assert_in_delta 215.0 * H / 217, box.icon_width, 1e-9
-    assert_in_delta (m["r"] - m["l"]) * box.cap / 2, box.gap, 1e-9
+    assert_in_delta box.cap / 2, box.gap, 1e-9
     assert_in_delta box.icon_width + box.gap, box.letters.first[:x] + m["l"] * box.cap, 1e-9, "the first letter's ink starts after the gap"
 
     word1, word2 = box.letters.partition { |l| l[:word].zero? }
     assert_equal [9, 10], [word1.size, word2.size]
     right1 = word1.last[:x] + glyph("E", 700)["r"] * box.cap
     left2 = word2.first[:x] + glyph("I", 300)["l"] * box.cap
-    assert_in_delta glyph(" ", 300)["adv"] * box.cap, left2 - right1, 1e-9
+    assert_in_delta box.cap / 2, left2 - right1, 1e-9, "the word gap, ink to ink"
+    assert_in_delta left2, box.word_left, 1e-9
+    Logo.brands.product(Logo::RULES.keys, Logo::TEXTS).each do |brand, rule, text|
+      each = Logo.new(brand).layout(rule:, text:)
+      assert_in_delta each.cap / 2, each.name_left - each.icon_width, 1e-9, "#{brand} #{rule} #{text}: the icon gap"
+      assert_in_delta each.cap / 2, each.gap, 1e-9, "#{brand} #{rule} #{text}"
+    end
     assert_in_delta glyph("M", 700)["adv"] * box.cap, word1[1][:x] - word1[0][:x], 1e-9, "letters advance by adv x cap, no kerning"
     assert_in_delta word2.last[:x] + glyph("S", 300)["r"] * box.cap, box.width, 1e-9, "the box ends at the last letter's ink"
   end
@@ -117,7 +155,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_the_box_matches_the_prototypes_proportions
     PROTOTYPE_RATIOS.each do |(brand, rule, text), ratio|
       logo = Logo.new(brand)
-      assert_in_delta ratio, logo.layout(rule:, text:).width / H, 0.03, "#{brand} rule #{rule} #{text}"
+      assert_in_delta ratio, logo.layout(rule:, text:).width / H, 0.001, "#{brand} rule #{rule} #{text}"
       _, _, width, height = doc(logo.svg(rule:, text:)).root["viewBox"].split.map(&:to_f)
       assert_in_delta ratio, width / height, 0.03, "#{brand} rule #{rule} #{text} viewBox"
     end
@@ -167,10 +205,10 @@ class LogosNavbarLogoTest < Minitest::Test
 
   def test_every_example_without_guides_is_paths_only_in_the_logos_own_box
     examples = Logo.brands.flat_map { |brand| Logo.new(brand).examples }
-    assert_equal 24 * Logo.brands.size, examples.size
+    assert_equal 36 * Logo.brands.size, examples.size
     assert_equal examples.size, examples.map { |e| e[:key] }.uniq.size
     plain = examples.reject { |e| e[:guides] }
-    assert_equal 12 * Logo.brands.size, plain.size
+    assert_equal 18 * Logo.brands.size, plain.size
 
     plain.each do |example|
       xml = doc(example[:svg])
@@ -189,18 +227,29 @@ class LogosNavbarLogoTest < Minitest::Test
       xml = doc(industries.svg(rule:, text:, guides: true))
       xml.remove_namespaces!
       horizontal, vertical = xml.css("line").partition { |l| l["y1"] == l["y2"] }
+      bars, horizontal = horizontal.partition { |l| l["y1"].to_f.negative? }
       assert_equal (0..rule).map { |i| format("%.2f", i * H / rule) }, horizontal.map { |l| l["y1"] }
-      assert_equal [box.icon_width, box.name_left].map { |x| format("%.2f", x) }, vertical.map { |l| l["x1"] }
-      assert_equal (1..rule).map(&:to_s), xml.css("text").map(&:text)
+      edges, ticks = vertical.partition { |l| l["y1"] == "-20.00" }
+      assert_equal [box.icon_width, box.name_left].map { |x| format("%.2f", x) }, edges.map { |l| l["x1"] }
+      assert_equal (1..rule).map(&:to_s) + %w[½ ½], xml.css("text").map(&:text)
       assert_equal industries.svg(rule:, text:).scan(/<path /).size, xml.css("path").size - xml.css("g.guide-ghosts path").size, "guides add no logo paths"
-      assert_equal format("-40 -40 %.2f 380.00", box.width + 120), xml.root["viewBox"]
+      assert_equal format("-40 -70 %.2f 410.00", box.width + 120), xml.root["viewBox"]
+
+      # Item 4c: a bracket over each of the two equal gaps, labelled the same.
+      spans = [[box.icon_width, box.name_left], [box.word_left - box.gap, box.word_left]]
+      assert_equal spans.map { |a, b| [format("%.2f", a), format("%.2f", b)] }, bars.map { |l| [l["x1"], l["x2"]] }, "#{rule}: a bar over each gap"
+      assert_equal spans.flatten.map { |x| format("%.2f", x) }, ticks.map { |l| l["x1"] }, "#{rule}: ticked at each gap's two ink edges"
+      halves = xml.css("text[data-gap]")
+      assert_equal [["0.5", "½"]] * 2, halves.map { |t| [t["data-gap"], t.text] }
+      assert_equal spans.map { |a, b| format("%.2f", (a + b) / 2) }, halves.map { |t| t["x"] }, "#{rule}: each label centred on its gap"
+      spans.each { |a, b| assert_in_delta box.cap / 2, b - a, 1e-9, "#{rule}: the two spans are equal, half a cap height" }
     end
   end
 
   def test_refusals_name_what_is_wrong
     style = ->(**changes) { { "x" => Logo.styles.fetch("studio").merge(changes.transform_keys(&:to_s)) } }
     assert_match(/unknown brand "acme": expected one of studio, industries/, refusal { Logo.new("acme") })
-    assert_match(/unknown rule 5: expected 3 or 4/, refusal { industries.svg(rule: 5) })
+    assert_match(/unknown rule 5: expected one of 3, 4, 6/, refusal { industries.svg(rule: 5) })
     assert_match(/unknown text :third/, refusal { industries.svg(text: :third) })
     assert_match(/unknown tone :sepia/, refusal { industries.svg(tone: :sepia) })
     assert_match(/no glyph for "Ü" at weight 800/, refusal { Logo.new("x", styles: style.(name: "McRITCHIE STÜDIO")) })
@@ -223,7 +272,10 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/no fill for icon layer "primary"/, refusal { Logo.new("x", styles: no_role).svg })
   end
 
-  def unguided(brands) = brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+  # The pinned rules are 3 and 4 (the rule of 6 came later, with its own pin), so a new rule cannot move them.
+  def unguided(brands, rules = [3, 4])
+    brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.select { |e| rules.include?(e[:rule]) }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+  end
 
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
     assert_equal 24, unguided(%w[studio industries]).size
@@ -234,10 +286,16 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[turf welding]).join)
   end
 
+  def test_every_rule_of_6_logo_is_unchanged_to_the_byte
+    all = unguided(Logo.brands, [6]) + Logo.brands.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
+    assert_equal 36, all.size
+    assert_equal RULE_6_DIGEST, Digest::SHA256.hexdigest(all.join)
+  end
+
   def test_every_watermark_logo_is_unchanged_to_the_byte
     all = Logo.brands.flat_map do |brand|
       logo = Logo.new(brand)
-      Logo::RULES.keys.product(Logo::TEXTS).map do |rule, text|
+      [3, 4].product(Logo::TEXTS).map do |rule, text|
         "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
       end
     end
@@ -277,7 +335,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_the_added_brands_match_the_prototypes_proportions
     ADDED_RATIOS.each do |(brand, rule), ratio|
       logo = Logo.new(brand)
-      assert_in_delta ratio, logo.layout(rule:).width / H, 0.03, "#{brand} rule #{rule}"
+      assert_in_delta ratio, logo.layout(rule:).width / H, 0.001, "#{brand} rule #{rule}"
       _, _, width, height = doc(logo.svg(rule:)).root["viewBox"].split.map(&:to_f)
       assert_in_delta ratio, width / height, 0.03, "#{brand} rule #{rule} viewBox"
     end
@@ -292,10 +350,10 @@ class LogosNavbarLogoTest < Minitest::Test
 
     assert_equal words.map { |word| word.map { |g| g["d"] } }, [first, second].map { |word| word.map { |l| l[:d] } }
     c = words[0][0]
-    assert_in_delta (c["r"] - c["l"]) * box.cap / 2, box.gap, 1e-9
+    assert_in_delta box.cap / 2, box.gap, 1e-9, "the icon gap is half a cap height, like every brand's"
     assert_in_delta c["adv"] * box.cap, first[1][:x] - first[0][:x], 1e-9, "no tracking: letters advance by adv x cap"
     right1 = first.last[:x] + words[0].last["r"] * box.cap
-    assert_in_delta 0.3507 * box.cap, second.first[:x] + words[1][0]["l"] * box.cap - right1, 1e-9, "the word space is the lettering's own"
+    assert_in_delta 0.5 * box.cap, second.first[:x] + words[1][0]["l"] * box.cap - right1, 1e-9, "the word gap is half a cap height, not the lettering's own space"
     assert_in_delta second.last[:x] + words[1].last["r"] * box.cap, box.width, 1e-9
 
     # Traced letters carry their counters as sub-paths, so they fill evenodd; the leading word takes the accent.
@@ -329,7 +387,7 @@ class LogosNavbarLogoTest < Minitest::Test
     end
     right1 = first.last[:x] + glyph("f", 800)["r"] * box.cap
     left2 = second.first[:x] + glyph("M", 800)["l"] * box.cap
-    assert_in_delta glyph(" ", 300)["adv"] * box.cap, left2 - right1, 1e-9, "the word space starts at the ink, with no trailing tracking step"
+    assert_in_delta box.cap / 2, left2 - right1, 1e-9, "the word gap starts at the ink, with no trailing tracking step"
     assert_in_delta second.last[:x] + glyph("r", 800)["r"] * box.cap, box.width, 1e-9, "the box ends at the last letter's ink"
 
     loose = Logo.new("x", styles: { "x" => Logo.styles.fetch("turf").except("tracking") })
@@ -477,7 +535,7 @@ class LogosNavbarLogoTest < Minitest::Test
     xml.remove_namespaces!
     assert_equal [%w[g guide-ghosts], ["g", nil], %w[g guide-lines]], xml.root.element_children.map { |g| [g.name, g["class"]] }
     assert_equal "0.6", xml.root.element_children[1]["opacity"]
-    assert_equal %w[line] * 7 + %w[text] * 4, xml.at_css("g.guide-lines").element_children.map(&:name)
+    assert_equal %w[line] * 7 + %w[text] * 4 + (%w[line] * 3 + %w[text]) * 2, xml.at_css("g.guide-lines").element_children.map(&:name)
     assert_empty xml.css("g[opacity='0.6'] line, g[opacity='0.6'] text, g[opacity='0.6'] g.guide-ghosts")
     assert_equal doc(industries.svg(rule: 4, text: :second, guides: true)).root["viewBox"], xml.root["viewBox"]
     assert_equal [Logo::GUIDE], xml.css("line").map { |l| l["stroke"] }.uniq
@@ -524,7 +582,7 @@ class LogosNavbarLogoTest < Minitest::Test
       refute_includes ghosts.to_xml, Logo::GUIDE, where
 
       copies = ghosts.css("path").group_by { |p| p["transform"][/,([-\d.]+)\)/, 1] }
-      rows = rule == 3 ? [1, 3] : [1, 2, 3, 4]
+      rows = rule == 3 ? [1, 3] : (1..rule).to_a
       assert_equal rows.map { |row| format("%.2f", row * box.row) }, copies.keys, "#{where}: one copy per row the real name does not fill"
       named = box.letters.count { |l| !l[:d].empty? }
       copies.each_value do |copy|
@@ -532,9 +590,9 @@ class LogosNavbarLogoTest < Minitest::Test
         x = copy.first["transform"][/translate\(([-\d.]+),/, 1].to_f
         assert_in_delta box.name_left + (box.letters.first[:x] - box.name_left) * box.row / box.cap, x, 0.01, "#{where}: starts where the name's ink does"
       end
-      assert_equal (1..rule).map(&:to_s), lines.css("text").map(&:text), "#{where}: numbered 1-#{rule}"
+      assert_equal (1..rule).map(&:to_s) + %w[½ ½], lines.css("text").map(&:text), "#{where}: numbered 1-#{rule}, and the two gaps"
       assert_equal ["1.0"], lines.css("line").map { |l| l["stroke-width"] }.uniq, "#{where}: thinner than the 1.5 before"
-      assert_equal ["30"], lines.css("text").map { |t| t["font-size"] }.uniq, "#{where}: smaller than the 32 before"
+      assert_equal [rule == 6 ? "40" : "30"], lines.css("text").map { |t| t["font-size"] }.uniq, "#{where}: smaller than the 32 before; the rule of 6's larger, to fit its plate"
     end
   end
 end

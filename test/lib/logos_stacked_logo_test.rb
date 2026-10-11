@@ -22,17 +22,23 @@ class LogosStackedLogoTest < Minitest::Test
     ["industries", :first] => 1.073, ["industries", :homogeneous] => 1.073, ["industries", :second] => 1.056
   }.freeze
 
-  # SHA-256 over every stacked logo WITHOUT guides (4 brands x 3 texts x 3 tones, "<key>\n<svg>" each) and every icon
-  # (4 brands x 3 tones), taken on `accepted` at 4368b9183 before the tagline form and the ghost grids (task
-  # stacked-tagline-and-ghost-grid): a new form and new guide drawings may not move a shipped logo by a byte.
-  STACKED_DIGEST = "6b40237f0a2b759fe9d3d67f5d3af417e982c18c99d54d73859bd7974cdd8a6d"
+  # SHA-256 over every stacked logo WITHOUT guides in its brand's own form (3 texts x 3 tones each, "<key>\n<svg>") and
+  # every icon (4 brands x 3 tones). The single digest over all four brands (6b40237f…, taken on `accepted` at 4368b9183)
+  # was split by task navbar-spacing-and-rotated-guides, when item 4c gave the one-line name the Navbar Logo's new word
+  # gap: the two-line brands' digest was taken BEFORE that change and still holds, so they did not move by a byte; Turf
+  # Monster's one-line logos and every tagline-form logo were re-taken deliberately after it.
+  TWO_LINE_DIGEST = "f066b3ee448c37018089636ee6d7c9f5bad5213551a5c88a7322eb2ecd9e3be4"
+  ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
+  TAGLINE_DIGEST = "cc5f5a64a6534e759b48f85a152d939e594b518de1593b3b9e33328264ca831d"
   ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
+  # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as
+  # the one-line form does). Before: studio 1.2708 / 1.2645 / 1.2609, industries 1.3270 / 1.3214 / 1.3215, welding 1.2838.
   TAGLINE_RATIOS = {
-    ["studio", :homogeneous] => 1.2708, ["studio", :first] => 1.2645, ["studio", :second] => 1.2609,
-    ["industries", :homogeneous] => 1.3270, ["industries", :first] => 1.3214, ["industries", :second] => 1.3215,
-    ["welding", :homogeneous] => 1.2838, ["welding", :first] => 1.2838, ["welding", :second] => 1.2838
+    ["studio", :homogeneous] => 1.2736, ["studio", :first] => 1.2674, ["studio", :second] => 1.2638,
+    ["industries", :homogeneous] => 1.3290, ["industries", :first] => 1.3235, ["industries", :second] => 1.3236,
+    ["welding", :homogeneous] => 1.2867, ["welding", :first] => 1.2867, ["welding", :second] => 1.2867
   }.freeze
   TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 
@@ -125,7 +131,7 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal 11, box.letters.size
     box.letters.zip(navbar.letters).each do |mine, theirs|
       assert_equal [theirs[:d], theirs[:word]], [mine[:d], mine[:word]]
-      assert_in_delta (theirs[:x] - navbar.name_left) * scale, mine[:x], 1e-6, "the brand's tracking and word space, at this size"
+      assert_in_delta (theirs[:x] - navbar.name_left) * scale, mine[:x], 1e-6, "the brand's tracking and word gap, at this size"
     end
     assert_in_delta (navbar.width - navbar.name_left) * scale, box.width, 1e-6
   end
@@ -190,7 +196,7 @@ class LogosStackedLogoTest < Minitest::Test
 
   # The ruler's copies, by baseline: { baseline => letters drawn at 1u right of the logo }.
   def ruler_rows(xml, box)
-    xml.css("g.guide-ghosts path").select { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }
+    xml.css("g.guide-ghosts > path").select { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }
        .group_by { |p| p["transform"][/,([-\d.]+)\)/, 1].to_f }
   end
 
@@ -234,17 +240,28 @@ class LogosStackedLogoTest < Minitest::Test
     end
   end
 
-  def test_the_ruler_copies_the_small_line_the_tagline_or_a_third_size_name
-    box = stacked("turf").layout(text: :second)
-    assert_in_delta box.width / (3 * U), box.ruler_width, 1e-9, "one line: the name at a third of its size"
-    navbar = Navbar.new("turf").layout(rule: 4, text: :second)
-    assert_equal navbar.letters.map { |l| l[:d] }, box.ruler.map { |l| l[:d] }
-    tagline = stacked("welding").layout(form: :tagline)
-    assert_equal "BUILDING STRONG CONNECTIONS".chars.map { |char| glyph(char, 500)["d"] }, tagline.ruler.map { |l| l[:d] }
-    assert_equal ["nonzero"], tagline.ruler.map { |l| l[:fill_rule] }.uniq
-    two = stacked("industries").layout(text: :first)
-    assert_equal "INDUSTRIES".chars.map { |char| glyph(char, 300)["d"] }, two.ruler.map { |l| l[:d] }, "the small word in its own weight, untracked"
-    assert_in_delta "INDUSTRIES".chars.map { |c| glyph(c, 300) }.then { |g| g[0...-1].sum { |x| x["adv"] } + g.last["r"] - g.first["l"] }, two.ruler_width, 1e-9
+  # Item 4a (task navbar-spacing-and-rotated-guides): the ruler's copies were set untracked, so each was narrower than
+  # the real small line. Each copy is now the small line exactly as the logo sets it, and exactly as wide.
+  def test_each_ruler_copy_is_the_small_line_with_its_tracking_and_as_wide
+    guided.each do |brand, form, tone|
+      box = stacked(brand).layout(form:, tone:, text: :second)
+      xml = doc(stacked(brand).svg(form:, tone:, text: :second, guides: true)).remove_namespaces!
+      where = "#{brand} #{form} #{tone}"
+      real = small_line(box).reject { |l| l[:d].empty? }
+      real_width = box.line_width * real.first[:cap]
+      assert_in_delta(form == :one_line ? box.width : 0.6 * box.width, real_width, 1e-6, "#{where}: the real small line's ink width")
+      ruler_rows(xml, box).each do |baseline, copy|
+        assert_equal real.map { |l| l[:d] }, copy.map { |p| p["d"] }, "#{where} #{baseline}: the whole small line"
+        xs = copy.map { |p| translate(p).first }
+        real.zip(xs).each do |letter, x|
+          assert_in_delta (letter[:x] - real.first[:x]) * U / letter[:cap], x - xs.first, 0.02, "#{where}: the same steps as the real line, at 1u"
+        end
+        ink = box.line.reject { |l| l[:d].empty? }
+        copy_width = xs.last + ink.last[:r] * U - (xs.first + ink.first[:l] * U)
+        assert_in_delta real_width * U / real.first[:cap], copy_width, 0.02, "#{where}: as wide as the real line at 1u"
+        assert_in_delta box.width + Stacked::RULER_X, xs.first + ink.first[:l] * U, 0.02, "#{where}: from the ruler's left edge"
+      end
+    end
   end
 
   def icon_box(brand, tone, box)
@@ -253,45 +270,50 @@ class LogosStackedLogoTest < Minitest::Test
     [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
   end
 
-  # The axis column: the ghosts left of the logo's centre that are not ruler copies, as [path, ruler letter].
-  def axis_letters(xml, box)
-    xml.css("g.guide-ghosts path").reject { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }.zip(box.ruler.reject { |l| l[:d].empty? })
-  end
+  def translate(node) = node["transform"][/translate\(([-\d.]+),([-\d.]+)\)/, 0].then { |t| t.scan(/[-\d.]+/).map(&:to_f) }
 
-  # Review of PR 2042 (Carl, activity-17641): the column stood on the icon and vanished over its fill. It now stands
-  # beside the icon, on the plate, and reaches exactly from the icon's top to its foot.
-  def test_the_small_line_stands_in_a_column_beside_the_icon_as_tall_as_the_icon
+  # The small line as the logo itself draws it: the second word, the tagline, or in the one-line form the whole name.
+  def small_line(box) = box.letters.select { |l| { two_line: [1], tagline: [2], one_line: [0, 1] }.fetch(box.form).include?(l[:word]) }
+
+  # Item 4a (task navbar-spacing-and-rotated-guides): Alex's annotated screenshot asked for the line ITSELF, spaced
+  # exactly as in the logo, turned 90 degrees beside the icon, not its letters spelled downwards in a column. Review
+  # of PR 2042 (Carl, activity-17641) still holds: it stands beside the icon, on the plate, never on the icon.
+  def test_the_small_line_turned_on_end_spans_the_icon_beside_it
     guided.each do |brand, form, tone|
       box = stacked(brand).layout(form:, tone:, text: :first)
       xml = doc(stacked(brand).svg(form:, tone:, text: :first, guides: true)).remove_namespaces!
       where = "#{brand} #{form} #{tone}"
-      axis = axis_letters(xml, box)
-      assert_equal box.ruler.reject { |l| l[:d].empty? }.map { |l| l[:d] }, axis.map { |p, _| p["d"] }, "#{where}: the small line's letters, in order"
-      cap = axis.first.first["transform"][/scale\(([\d.]+)\)/, 1].to_f
-      assert_operator cap, :<=, U, where
-      left, top, right, bottom = icon_box(brand, tone, box)
-      inks = axis.map do |path, letter|
-        x = path["transform"][/translate\(([-\d.]+),/, 1].to_f
-        baseline = path["transform"][/,([-\d.]+)\)/, 1].to_f
-        [x + letter[:l] * cap, baseline - cap, x + letter[:r] * cap, baseline]
+      proof = xml.css("g.guide-ghosts > g.guide-proof")
+      assert_equal 1, proof.size, "#{where}: one turned copy, inside the ghosts' translucent group"
+      x, y = translate(proof.first)
+      assert_match(/\Atranslate\([-\d.]+,[-\d.]+\) rotate\(-90\)\z/, proof.first["transform"], "#{where}: a quarter turn, so it reads bottom to top")
+      left, top, _, bottom = icon_box(brand, tone, box)
+      assert_in_delta left - Stacked::PROOF_GAP, x, 0.01, "#{where}: its baseline half a unit left of the icon's box"
+      assert_in_delta bottom, y, 0.01, "#{where}: it starts at the icon's foot"
+
+      real = small_line(box)
+      paths = proof.first.css("path")
+      assert_equal real.map { |l| l[:d] }.reject(&:empty?), paths.map { |p| p["d"] }, "#{where}: the small line's letters, in order"
+      cap = paths.map { |p| p["transform"][/scale\(([\d.]+)\)/, 1].to_f }.uniq
+      assert_equal 1, cap.size, where
+      cap = cap.first
+      expected_cap = form == :one_line ? 0.6 * 3 * U : U
+      assert_in_delta expected_cap, cap, 0.01, "#{where}: #{form == :one_line ? 'the name at 60% of its size' : 'the small line at its own 1u'}"
+      inked = real.reject { |l| l[:d].empty? }
+      scale = cap / inked.first[:cap]
+      paths.zip(inked).each do |path, letter|
+        assert_in_delta (letter[:x] - inked.first[:x]) * scale, translate(path).first - translate(paths.first).first, 0.02,
+                        "#{where}: the logo's own spacing, tracking and word gap included"
       end
-      inks.each do |x1, y1, x2, y2|
-        outside = x2 <= left || x1 >= right || y2 <= top || y1 >= bottom
-        assert outside, "#{where}: every letter's box lies outside the icon's box (#{[x1, y1, x2, y2].map { |n| n.round(1) }} vs #{[left, top, right, bottom].map { |n| n.round(1) }})"
-      end
-      assert_in_delta left - Stacked::AXIS_GAP, inks.map { |ink| ink[2] }.max, 0.01, "#{where}: half a unit left of the icon"
-      assert_in_delta 0, inks.first[1], 0.01, "#{where}: the column starts at the icon's top"
-      assert_in_delta box.icon_height, inks.last[3], 0.01, "#{where}: and ends on its foot: as tall as the icon"
-      baselines = inks.map(&:last)
-      assert_equal baselines.sort, baselines, "#{where}: one under another"
-      assert_operator baselines.each_cons(2).map { |a, b| b - a }.min, :>=, cap / Stacked::AXIS_FILL - 0.02, "#{where}: no two letters touch"
-      middles = inks.map { |x1, _, x2, _| (x1 + x2) / 2 }
-      middles.each { |m| assert_in_delta middles.first, m, 0.01, "#{where}: one column" }
+      ends = box.line.reject { |l| l[:d].empty? }.then { |run| [run.first[:x] + run.first[:l], run.last[:x] + run.last[:r]] }
+      assert_in_delta 0, ends.first * cap, 0.01, "#{where}: its first letter's ink is on the icon's foot"
+      assert_in_delta bottom - top, ends.last * cap, 0.01, "#{where}: its last letter's ink is on the icon's top: as long as the icon is tall"
+      assert_operator x, :<, left, "#{where}: on the plate, never over the icon"
 
       lines = xml.css("g.guide-lines line")
       bands, rest = lines.partition { |l| l["x1"] == "-20.00" }
-      assert_equal box.edges.map { |y| format("%.2f", y) }, bands.map { |l| l["y1"] }, "#{where}: a line at each band boundary"
-      bracket_x = inks.map(&:first).min - Stacked::BRACKET_GAP
+      assert_equal box.edges.map { |edge| format("%.2f", edge) }, bands.map { |l| l["y1"] }, "#{where}: a line at each band boundary"
+      bracket_x = x - cap - Stacked::BRACKET_GAP
       expected = [[box.width / 2, -20, box.width / 2, box.height + 20], [bracket_x, 0, bracket_x, box.icon_height],
                   [bracket_x, 0, bracket_x + Stacked::TICK, 0], [bracket_x, box.icon_height, bracket_x + Stacked::TICK, box.icon_height]]
       assert_equal expected.size, rest.size, where
@@ -309,10 +331,24 @@ class LogosStackedLogoTest < Minitest::Test
     end
   end
 
+  def test_the_line_is_the_small_line_at_a_cap_of_one
+    { ["studio", :two_line] => 1, ["industries", :tagline] => 2, ["turf", :one_line] => nil }.each do |(brand, form), word|
+      box = stacked(brand).layout(form:, text: :second)
+      real = small_line(box)
+      assert_equal real.map { |l| l[:d] }, box.line.map { |l| l[:d] }, brand
+      first = real.first
+      box.line.zip(real).each { |mine, theirs| assert_in_delta (theirs[:x] - first[:x]) / theirs[:cap], mine[:x] - box.line.first[:x], 1e-9, brand }
+      assert_in_delta 0, box.line.first[:x] + box.line.first[:l], 1e-9, "#{brand}: its ink starts at 0"
+      width = form == :one_line ? box.width / (3 * U) : 0.6 * box.width / U
+      assert_in_delta width, box.line_width, 1e-9, "#{brand}: the small line's ink width, at a cap of 1"
+      assert(word.nil? || real.all? { |l| l[:word] == word }, brand)
+    end
+  end
+
   def test_the_guide_drawing_reaches_past_the_ruler
     box = stacked("industries").layout(text: :first)
     xml = doc(stacked("industries").svg(text: :first, guides: true))
-    right = Stacked::RULER_X + box.ruler_width * U + 40
+    right = Stacked::RULER_X + box.line_width * U + 40
     assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"], "the column fits in the usual pad"
   end
 
@@ -350,12 +386,22 @@ class LogosStackedLogoTest < Minitest::Test
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).form] })
   end
 
-  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
-    all = Navbar.brands.flat_map do |brand|
+  def own_form(brands)
+    brands.flat_map do |brand|
       Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-#{text}-#{tone}\n#{stacked(brand).svg(text:, tone:)}" }
     end
-    assert_equal 36, all.size
-    assert_equal STACKED_DIGEST, Digest::SHA256.hexdigest(all.join)
+  end
+
+  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
+    two_line = own_form(%w[studio industries welding])
+    assert_equal 27, two_line.size
+    assert_equal TWO_LINE_DIGEST, Digest::SHA256.hexdigest(two_line.join), "the two-line form, unmoved by the word gap"
+    assert_equal ONE_LINE_DIGEST, Digest::SHA256.hexdigest(own_form(%w[turf]).join)
+    taglines = TAGLINES.compact.keys.flat_map do |brand|
+      Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-tagline-#{text}-#{tone}\n#{stacked(brand).svg(form: :tagline, text:, tone:)}" }
+    end
+    assert_equal 27, taglines.size
+    assert_equal TAGLINE_DIGEST, Digest::SHA256.hexdigest(taglines.join)
     icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
     assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
   end
@@ -417,7 +463,7 @@ class LogosStackedLogoTest < Minitest::Test
       scale = 3 * U / navbar.cap
       assert_equal navbar.letters.map { |l| [l[:d], l[:word]] }, mine.map { |l| [l[:d], l[:word]] }, "#{brand} #{text}"
       mine.zip(navbar.letters).each do |letter, theirs|
-        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word space and tracking"
+        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word gap and tracking"
       end
     end
   end
