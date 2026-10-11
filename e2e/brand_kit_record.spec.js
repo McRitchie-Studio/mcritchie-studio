@@ -78,9 +78,12 @@ test("uploading an SVG and a PNG original shows both as pictures on the brand pa
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(fits).toBe(true);
 
+  // Delete takes two steps (task logo-gallery-polish-pass): the first opens the question, the second deletes.
   await items.nth(0).locator("[data-test='kit-original-delete']").click();
+  await items.nth(0).locator("[data-test='kit-original-delete-confirm']").click();
   await expect(page.getByText("Removed welding-kit.svg.")).toBeVisible();
   await page.locator("[data-test='kit-original'] [data-test='kit-original-delete']").click();
+  await page.locator("[data-test='kit-original'] [data-test='kit-original-delete-confirm']").click();
   await expect(page.locator("[data-test='kit-originals-empty']")).toBeVisible();
 });
 

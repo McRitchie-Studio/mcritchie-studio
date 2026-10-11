@@ -4,9 +4,12 @@
     Each file is listed with its name, type, size and upload date; an SVG, PNG
     or JPEG is shown as a picture, and every file has a download and a delete.
     Files are served from behind the admin wall (BrandKitsController#original),
-    never from a storage URL. Plain forms; a refused upload is a plain 422. A
-    delete has no confirm (no inline script): the hub's storage keeps a purged
-    file in trash for three days (StudioTrashS3).
+    never from a storage URL. Plain forms. A refused upload re-renders the page
+    with the reason in this card (BrandKitsController#create_original). A delete
+    takes two steps with no script (task logo-gallery-polish-pass): Delete opens
+    a disclosure (<details>) naming the file, whose own button deletes it, and
+    the same control reads Cancel to close it again. The hub's storage keeps a
+    purged file in trash for three days (StudioTrashS3).
     Locals: kit_record (the brand's BrandKit, saved or not). %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% originals = kit_record.persisted? ? kit_record.originals.includes(:blob).order(:created_at, :id).to_a : [] %>
@@ -32,12 +35,22 @@
               <%= kind %> · <%= number_to_human_size(original.byte_size) %> · uploaded <%= original.created_at.strftime("%b %-d, %Y") %>
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-start gap-2">
             <%= link_to "Download", brand_kit_original_path(kit_record.brand, original, download: 1), class: "btn btn-sm btn-neutral #{ring}",
                         data: { test: "kit-original-download", turbo: false }, aria: { label: "Download #{original.filename}" } %>
-            <%= button_to "Delete", brand_kit_original_path(kit_record.brand, original), method: :delete, params: logo_page_params.slice(:type, :context),
-                          class: "btn btn-sm btn-neutral #{ring}", aria: { label: "Delete #{original.filename}" },
-                          form: { data: { turbo: false }, onsubmit: nil }, data: { test: "kit-original-delete" } %>
+            <%# Step one opens the disclosure; it takes the row's whole width when open, so the question sits under it. %>
+            <details class="group min-w-0 open:basis-full" data-test="kit-original-delete-disclosure">
+              <summary class="btn btn-sm btn-neutral list-none cursor-pointer [&::-webkit-details-marker]:hidden <%= ring %>" data-test="kit-original-delete">
+                <span class="group-open:hidden">Delete<span class="sr-only"> <%= original.filename %></span></span>
+                <span class="hidden group-open:inline">Cancel<span class="sr-only"> deleting <%= original.filename %></span></span>
+              </summary>
+              <div class="mt-2 space-y-2 rounded-md border border-subtle p-2" data-test="kit-original-delete-ask">
+                <p class="text-2xs text-secondary break-all">Delete <span class="font-semibold text-heading"><%= original.filename %></span> from the kit?</p>
+                <%= button_to "Delete #{original.filename}", brand_kit_original_path(kit_record.brand, original), method: :delete,
+                              params: logo_page_params.slice(:type, :context), class: "btn btn-sm btn-danger max-w-full break-all #{ring}",
+                              form: { data: { turbo: false } }, data: { test: "kit-original-delete-confirm" } %>
+              </div>
+            </details>
           </div>
         </li>
       <% end %>
