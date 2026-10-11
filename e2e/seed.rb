@@ -1672,3 +1672,24 @@ Appearance.create!(person_slug: ice_person.slug, descriptor: "Comets white")
 Character.destroy_all
 kit_paths = { "image/webp" => "/agents/turf-monster.webp", "image/jpeg" => "/email_brand/turf-monster-style-anchor.jpg" }
 Characters::SeedTurfMonster.call(store: ->(_bytes, type) { kit_paths.fetch(type) })
+# /people/quill-uniformfixture/models/look-uniformfixture — a synthetic QB whose
+# look has four uniform-photo candidates, none chosen, and the three body
+# archetypes with no images (e2e/player_sheet_inputs.spec.js). The archetype rows
+# are what the migration inserts in production; schema:load does not run it. The
+# photo URLs are external and never fetched (blockThirdPartyRequests).
+[["nfl-qb-skill", "Quarterback / skill position", "a tall NFL quarterback's athletic build", %w[QB RB FB TE LB K P LS], 1],
+ ["nfl-receiver-db", "Receiver / defensive back", "a long, lean NFL receiver or defensive back", %w[WR CB S FS SS DB], 2],
+ ["nfl-lineman", "Lineman", "a very large NFL lineman", %w[OT OG T G C OL DT DE DL NT EDGE], 3]].each do |slug, name, description, hints, position|
+  BodyArchetype.find_or_initialize_by(slug: slug)
+               .update!(name: name, description: description, position_hints: hints, position: position,
+                        image_url: nil, generation_state: nil, generation_started_at: nil)
+end
+Person.where(last_name: "Uniformfixture").destroy_all
+uniform_person = Person.create!(first_name: "Quill", last_name: "Uniformfixture", slug: "quill-uniformfixture", athlete: true)
+Athlete.find_or_create_by!(person_slug: uniform_person.slug) { |a| a.sport = "football"; a.position = "QB" }
+uniform_look = Appearance.create!(person_slug: uniform_person.slug, slug: "look-uniformfixture",
+                                  descriptor: "Comets home", colorway: "teal", jersey_number: 16)
+4.times do |i|
+  uniform_look.uniform_photos.create!(image_url: "https://upload.wikimedia.org/uniformfixture/#{i}.jpg",
+                                      title: "Comets at Rockets, week #{i + 1}", position: i, provider: "fixture")
+end
