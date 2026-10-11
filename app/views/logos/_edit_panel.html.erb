@@ -27,7 +27,7 @@
   <% if @context == :watermark %>
     <p class="text-sm text-secondary" data-test="edit-watermark">A watermark is the whole logo in one colour, so edits do not apply here. Any you made come back in Light and Dark.</p>
   <% else %>
-    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. Nothing is saved: saving waits for the brand kit record.</p>
+    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. To keep them, Save as kit choice below.</p>
     <% if @edit_refusal %>
       <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="edit-refusal">These edits cannot be drawn here, so the logos are shown as styled: <%= @edit_refusal %></p>
     <% end %>

@@ -173,6 +173,14 @@ Rails.application.routes.draw do
   # other walled page redirects. docs/topics/logos.md.
   get "logos", to: "logos#index", as: :logos
   get "logos/:brand", to: "logos#show", as: :logo_brand
+  # The brand kit record (BrandKitsController, require_admin; task brand-kit-record): the saved Navbar and Stacked
+  # choices, the kit's notes, and its original artwork, served from behind the wall.
+  patch  "logos/:brand/kit", to: "brand_kits#update", as: :brand_kit
+  patch  "logos/:brand/kit/choice", to: "brand_kits#save_choice", as: :brand_kit_choice
+  delete "logos/:brand/kit/choice", to: "brand_kits#clear_choice"
+  post   "logos/:brand/kit/originals", to: "brand_kits#create_original", as: :brand_kit_originals
+  get    "logos/:brand/kit/originals/:id", to: "brand_kits#original", as: :brand_kit_original
+  delete "logos/:brand/kit/originals/:id", to: "brand_kits#destroy_original"
   %w[icon navbar stacked].each do |type|
     get "logos/:brand/#{type}", to: "logos#asset", defaults: { type: }, as: :"#{type}_logo"
   end
