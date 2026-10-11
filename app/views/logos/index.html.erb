@@ -4,9 +4,12 @@
     the page's own background in the hub theme's tone (Context sets the theme;
     Watermark turns it dark and shows the watermark logos), then its
     typeface hierarchy (each level's name in its own face) and its palette (its one list of named colours; a click copies a hex). Each logo links to its own tab of the brand page.
+    The Navbar and Stacked Logos are the brand's saved kit choices (BrandKit,
+    read in one query; their badges say Saved) or its defaults, each with a
+    download, and the brand cell says when its kit was saved.
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
     scrolls sideways if a table row ever outgrows it, so the page body never
-    does. Read-only. Admin only (LogosController). %>
+    does. Admin only (LogosController). %>
 <%= render "components/copy_text_script" %>
 <%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
@@ -16,7 +19,7 @@
       <%= render "context_form", url: logos_path %>
     </div>
     <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
-    <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for a brand comes later, with the brand kit record.</p>
+    <p class="text-2xs text-muted" data-test="kit-note">A brand's Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults. Choose and save them on the brand's page.</p>
     <%= render "context_notes" %>
   </div>
 
@@ -38,10 +41,25 @@
               <th scope="row" class="block xl:table-cell py-3 xl:pr-3 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
                 <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
+                <p class="text-3xs text-muted font-normal" data-test="logo-kit-status"><%= logo_kit_status(@kits[logo.brand]) %></p>
               </th>
               <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-cell">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Logos</p>
-                <%= render "cluster", logo:, name:, samples: %>
+                <% kit = @kits[logo.brand] %>
+                <%= render "cluster", logo:, name:, samples:, saved: BrandKit::TYPES.select { |type| kit&.saved?(type) } %>
+                <%# The Navbar and Stacked Logos as shown, saved choice or default, as files: one pair per tone. %>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 text-3xs" data-test="logo-downloads">
+                  <% BrandKit::TYPES.each do |type| %>
+                    <% sample = samples.fetch(type) %>
+                    <% next if sample.is_a?(Logos::NavbarLogo::Error) %>
+                    <%= logo_themed(sample.keys) do |tone| %>
+                      <% shown = sample.fetch(tone) %>
+                      <%= link_to "Download #{LogosHelper::LOGO_BADGES.fetch(type)}", logo_asset_path(shown, download: 1),
+                                  class: "font-semibold text-primary hover:underline", data: { test: "logo-sample-download", type:, turbo: false },
+                                  aria: { label: "Download: #{shown.label}#{', kit choice' if kit&.saved?(type)}" } %>
+                    <% end %>
+                  <% end %>
+                </div>
               </td>
               <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[11rem]" data-test="logo-typeface">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Typeface</p>

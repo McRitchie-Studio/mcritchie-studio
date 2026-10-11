@@ -10,7 +10,9 @@
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
     others' settings, the edit panel's edits among them (logos/_edit_panel, on
-    the Navbar and Stacked tabs). Nothing is saved. Admin only (LogosController). %>
+    the Navbar and Stacked tabs). The kit record (BrandKit) saves a Navbar and a
+    Stacked choice (logos/_kit_choice) and shows them on every tab
+    (logos/_kit_card). Admin only (LogosController, BrandKitsController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
@@ -32,6 +34,7 @@
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "context_form", url: logo_brand_path(@logo.brand) %>
     </div>
+    <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record), "#kit", class: "hover:text-primary" %></p>
 
     <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
       <% Logos::Variant::TYPES.each do |type, label| %>
@@ -81,7 +84,7 @@
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
-    <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
+    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
     <%= render "context_notes", logo: (@logo unless @type == :icon) %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
@@ -134,6 +137,9 @@
 
   <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits. %>
   <%= render "edit_panel", kit: @kit unless @type == :icon %>
+  <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
+  <%= render "kit_choice", kit_record: @kit_record unless @type == :icon %>
+  <%= render "kit_card", kit_record: @kit_record %>
 
   <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
     <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
