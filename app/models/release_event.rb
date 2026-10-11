@@ -11,6 +11,7 @@ class ReleaseEvent < ApplicationRecord
     release_notes
     archive_tasks
     rollback
+    devnet_gauntlet
   ].freeze
   STATUSES = %w[started completed failed].freeze
 

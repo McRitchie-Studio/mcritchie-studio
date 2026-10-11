@@ -13,6 +13,11 @@ The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 
 ## What this gate verifies
 
+Before the window opens, the ship's decision snapshot also refuses a release that
+carries turf-monster or turf-vault work with no completed `devnet_gauntlet` event: a
+green Turf contest-rehearsal on QA, recorded by `qa-release`
+(`Release::DevnetGauntlet`; waived only by `--skip-devnet-gauntlet "<Alex's words>"`).
+
 The gate window spans the whole irreversible half of the ship:
 
 - **The frozen-SHA test gate** (`ship_test_gate` SOPs) — **GitHub CI's settled

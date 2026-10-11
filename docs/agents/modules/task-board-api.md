@@ -252,8 +252,12 @@ Canonical release steps are:
 
 ```text
 review_tests assemble_release deploy_qa qa_smoke ship_gate ship_authorized
-deploy_prod prod_smoke release_notes archive_tasks
+deploy_prod prod_smoke release_notes archive_tasks devnet_gauntlet
 ```
+
+`devnet_gauntlet` stamps no stage: it records a green Turf contest-rehearsal on QA,
+which `bin/release ship` requires of a release carrying turf-monster or turf-vault
+work (`Release::DevnetGauntlet`; `qa-release`, "The devnet gauntlet").
 
 The tracker aliases also work: `testing`, `assembling`, `qa_deploying`,
 `confirming`, and `production_deploying`.
