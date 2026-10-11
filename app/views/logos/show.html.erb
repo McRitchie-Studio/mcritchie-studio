@@ -1,10 +1,12 @@
 <%# ONE BRAND'S LOGOS, TABBED BY TYPE: Icon, Navbar Logo (the default) or
-    Stacked Logo. Each tab shows that type's logos once, in the context the
-    dropdown picks (light, dark or watermark), with a download and a copy of
-    the logo as shown: the icon, or the three text versions. The Navbar Logo tab
+    Stacked Logo. Each tab shows that type's logos once, on the page's own
+    background (no plates), in the hub theme's tone: the Context control sets
+    the theme, and Watermark turns the page dark and shows the watermark logos
+    (LogosController#set_context). Each logo has a download and a copy of the
+    logo as shown: the icon, or the three text versions. The Navbar Logo tab
     has a Rule control (3, 4 or 6) and shows one rule at a time; it and the Stacked
     Logo tab has a Form control (the brand's own form, and With tagline where
-    the brand has a tagline); both can swap every logo for its guide drawing, which fits its plate
+    the brand has a tagline); both can swap every logo for its guide drawing, which fits its frame
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
     others' settings. Read-only. Admin only (LogosController). %>
@@ -16,7 +18,8 @@
     ring is --color-cta at 70 percent, which measures about 2:1 on the light theme's white card. %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+<%# An explicit context sets the hub theme on load (app/javascript/logo_gallery.js, data-logo-theme). %>
+<%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
     <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
     <span aria-hidden="true">/</span>
@@ -74,7 +77,7 @@
           <% turned = @form == :one_line ? "the name at 60% of its size turned on end" : "one copy turned on end" %>
           The guide drawings prove each measurement with faint copies of <%= small %>, spaced exactly as the logo spaces it: one copy per unit, stacked beside the logo and numbered, so each band can be counted, and <%= turned %> beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long. A line marks each boundary.
         <% end %>
-        They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its plate, scroll it sideways.
+        They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
     <p class="text-2xs text-muted" data-test="read-only-note">This page only shows the logos. Choosing one for the brand comes later, with the brand kit record.</p>
@@ -86,39 +89,56 @@
 
   <section class="card p-4 sm:p-5" data-test="logo-type" data-type="<%= @type %>" aria-label="<%= Logos::Variant::TYPES.fetch(@type) %>">
     <div class="grid gap-4 <%= 'md:grid-cols-3' if @type == :stacked && !@guides %>">
-      <% @variants.each do |variant| %>
-        <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tone="<%= variant.tone %>" data-text="<%= variant.text %>">
+      <% @variants.each do |versions| %>
+        <% variant = versions.values.first %>
+        <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tones="<%= versions.keys.join(' ') %>" data-text="<%= variant.text %>">
           <% if variant.text %>
             <h2 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(variant.text) %></h2>
           <% end %>
           <% if variant.guides %>
-            <%# A guide drawing fits its plate until its labels would be too small to read; from there it keeps its width
-                and the plate scrolls sideways inside itself. The plate is a tab stop only while it scrolls:
+            <%# A guide drawing fits its frame until its labels would be too small to read; from there it keeps its width
+                and the frame scrolls sideways inside itself. The frame is a tab stop only while it scrolls:
                 app/javascript/scroll_tab_stop.js takes the tabindex away when the drawing fits and puts it back when
-                it does not. With JavaScript off it stays a tab stop, which costs one extra Tab. %>
+                it does not (and checks again when the theme swaps the drawing). With JavaScript off it stays a tab
+                stop, which costs one extra Tab. No plate: the frame has no background of its own. %>
             <div class="overflow-x-auto rounded-lg border border-subtle p-4 sm:p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                 style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>"
-                 tabindex="0" data-scroll-tab-stop role="group" aria-label="Guide drawing: <%= variant.label %>">
-              <%= logo_image(variant, height: logo_height(variant)) %>
+                 data-test="logo-frame" tabindex="0" data-scroll-tab-stop role="group" aria-label="Guide drawing: <%= variant.label.sub(", #{variant.tone}", '') %>">
+              <%= logo_themed_images(versions, height: logo_height(variant)) %>
             </div>
           <% else %>
-            <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" style="<%= logo_plate_style(variant.tone) %>" data-test="logo-plate" data-tone="<%= variant.tone %>">
-              <%= logo_image(variant, height: logo_height(variant)) %>
+            <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" data-test="logo-frame">
+              <%= logo_themed_images(versions, height: logo_height(variant)) %>
             </div>
           <% end %>
-          <div class="flex flex-wrap items-center justify-end gap-2"
-               x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
-            <%= link_to "Download", logo_asset_path(variant, download: 1),
-                        class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
-                        aria: { label: "Download: #{variant.label}" } %>
-            <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
-            <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-clip="<%= variant.svg %>"
-                    aria-label="Copy SVG: <%= variant.label %>" x-text="words[state]"
-                    @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
-            <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
+          <%# The download and the copy give the logo as shown: one pair per tone, and the theme shows the matching pair. %>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <%= logo_themed(versions.keys) do |tone| %>
+              <% shown = versions.fetch(tone) %>
+              <%= link_to "Download", logo_asset_path(shown, download: 1),
+                          class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
+                          aria: { label: "Download: #{shown.label}" } %>
+              <%# copyText answers false (or rejects) when nothing reached the clipboard: say that, not "Copied". %>
+              <span class="contents" x-data="{ state: 'idle', words: { idle: 'Copy SVG', copied: 'Copied', failed: 'Copy failed' } }">
+                <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-clip="<%= shown.svg %>"
+                        aria-label="Copy SVG: <%= shown.label %>" x-text="words[state]"
+                        @click="Promise.resolve(window.copyText($el.dataset.clip)).then(ok => ok === false ? 'failed' : 'copied', () => 'failed').then(result => { state = result; setTimeout(() => state = 'idle', 1600) })">Copy SVG</button>
+                <span class="sr-only" role="status" x-text="state === 'idle' ? '' : words[state]"></span>
+              </span>
+            <% end %>
           </div>
         </div>
       <% end %>
     </div>
   </section>
-</div>
+
+  <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
+    <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
+      <h2 id="brand-colours-title" class="text-sm font-bold text-heading">Colours</h2>
+      <%= render "palette", kit: @kit %>
+    </section>
+    <section class="min-w-0 space-y-3" data-test="brand-typefaces" aria-labelledby="brand-typefaces-title">
+      <h2 id="brand-typefaces-title" class="text-sm font-bold text-heading">Typefaces</h2>
+      <%= render "typefaces", kit: @kit %>
+    </section>
+  </div>
+<% end %>

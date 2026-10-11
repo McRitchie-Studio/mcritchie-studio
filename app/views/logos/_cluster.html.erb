@@ -1,0 +1,36 @@
+<%# ONE BRAND'S LOGOS AS ONE TIGHT CLUSTER (the index table's Logos cell, from
+    Alex's mock): the Stacked Logo as a square on the left, the Navbar Logo to
+    its right, and the icon as a small square under the Navbar Logo, each in its
+    own rounded tile inside one rounded frame, with a small badge naming its
+    type. Each tile links to its tab of the brand page. Where the cell is too
+    narrow for both columns (a phone), the right column wraps under the square.
+    The square is exactly as tall as the right column (two 3.5rem tiles and the
+    gap), so the three read as one block. Locals: logo, name, samples (per type,
+    the variants to show by tone, or the library's refusal). %>
+<% badge = "pointer-events-none absolute left-1.5 top-1.5 rounded-full border border-subtle bg-surface px-1.5 py-px text-[0.5625rem] font-semibold uppercase leading-tight tracking-wide text-muted" %>
+<% tile = "relative flex rounded-xl border border-subtle min-w-0 hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" %>
+<% piece = lambda do |type, box, height| %>
+  <% sample = samples.fetch(type) %>
+  <% label = LogosHelper::LOGO_BADGES.fetch(type) %>
+  <% if sample.is_a?(Logos::NavbarLogo::Error) %>
+    <%# The library refused to draw this type for this brand: the reason, in its own words, not a picture. %>
+    <div class="<%= tile %> <%= box %> items-end p-1.5 pt-6" data-test="logo-sample" data-type="<%= type %>">
+      <span class="<%= badge %>" data-test="logo-badge"><%= label %></span>
+      <p class="text-3xs leading-snug text-muted overflow-hidden" data-test="logo-sample-refused">Not drawn. <%= sample.message %></p>
+    </div>
+  <% else %>
+    <%= link_to logo_brand_path(logo.brand, logo_page_params(type: (type unless type == :navbar))),
+                class: "#{tile} #{box} items-center justify-center px-2 pt-5 pb-1.5", data: { test: "logo-sample", type: },
+                aria: { label: "#{name}: #{Logos::Variant::TYPES.fetch(type).downcase}" } do %>
+      <span class="<%= badge %>" data-test="logo-badge" aria-hidden="true"><%= label %></span>
+      <%= logo_themed_images(sample, height:) %>
+    <% end %>
+  <% end %>
+<% end %>
+<div class="inline-flex max-w-full flex-wrap items-start gap-1.5 rounded-2xl border border-subtle p-1.5" data-test="logo-cluster" data-brand="<%= logo.brand %>">
+  <% piece.(:stacked, "w-[7.375rem] h-[7.375rem] shrink-0", LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(:stacked)) %>
+  <div class="flex min-w-0 max-w-full flex-col items-start gap-1.5">
+    <% piece.(:navbar, "h-14 max-w-full", LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(:navbar)) %>
+    <% piece.(:icon, "h-14 w-14 shrink-0", LogosHelper::LOGO_SAMPLE_HEIGHTS.fetch(:icon)) %>
+  </div>
+</div>

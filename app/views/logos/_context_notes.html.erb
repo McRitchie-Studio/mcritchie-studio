@@ -2,10 +2,10 @@
     brand page passes its own on a tab that shows text versions, so the line
     about them can be true). %>
 <% logo = local_assigns[:logo] %>
-<p class="text-2xs text-muted" data-test="transparent-note">Every logo file has a transparent background. The plate behind a logo belongs to this page, not to the file.</p>
+<p class="text-2xs text-muted" data-test="transparent-note">Every logo file has a transparent background, and here every logo sits on the page's own background. Context switches the hub between its light and dark theme, and the logos follow.</p>
 <% if @context == :watermark %>
   <p class="text-2xs text-muted" data-test="watermark-note">
-    A watermark is the whole logo in one colour, slightly transparent, for placing over a photograph. The plate here stands in for one.
+    A watermark is the whole logo in one colour, slightly transparent, for placing over a photograph. Watermark turns the page dark to show it.
     <% if logo && logo.highlight == "colour" %>
       <span data-test="watermark-text-note">This brand leads with a colour, and a watermark has only one, so its three text versions look the same here.</span>
     <% end %>

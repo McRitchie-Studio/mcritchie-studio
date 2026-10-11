@@ -2,9 +2,12 @@
 
 require "test_helper"
 
-# [unit] LogosHelper's two measured promises (task logo-tabs-icon-and-stacked):
-# the watermark plate is dark enough for the watermark to be read on it, and a
-# guide drawing is shown large enough for its labels to be read.
+# [unit] LogosHelper's measured promises (task logo-tabs-icon-and-stacked): the
+# watermark is readable where it is shown, and a guide drawing is shown large
+# enough for its labels to be read. Task brand-gallery-palette-and-theme: no
+# plates (the hub's own card is the background), a logo's light and dark
+# versions switched by html.dark, the cluster's sizes and badges, and the
+# typeface hierarchy's steps.
 class LogosHelperTest < ActionView::TestCase
   def channels(hex) = hex.delete("#").scan(/../).map { |pair| pair.hex.to_f }
 
@@ -19,22 +22,25 @@ class LogosHelperTest < ActionView::TestCase
     (light + 0.05) / (dark + 0.05)
   end
 
-  # The lowest contrast of a brand's watermark against any point of a gradient plate.
-  def worst_contrast(plate, mark)
-    from, to = plate.map { |hex| channels(hex) }
-    (0..20).map do |step|
-      behind = from.zip(to).map { |a, b| a + (b - a) * step / 20.0 }
-      shown = channels(mark.fetch("fill")).zip(behind).map { |fill, back| mark.fetch("opacity") * fill + (1 - mark.fetch("opacity")) * back }
-      contrast(shown, behind)
-    end.min
+  # No plates (task brand-gallery-palette-and-theme): a logo sits on the hub's own card, whose background is the hub
+  # theme's --color-surface, measured in a browser on 2026-10-10 (studio-engine 0.102.0): white in the light theme,
+  # #3C3853 in the dark one. The watermark context turns the page dark, so a watermark sits on the dark card.
+  HUB_SURFACES = { light: "#FFFFFF", dark: "#3C3853", watermark: "#3C3853" }.freeze
+
+  def seen_on(fill, opacity, behind) = channels(fill).zip(channels(behind)).map { |f, b| opacity * f + (1 - opacity) * b }
+
+  test "no plate style is left in the helper: the page's own background is the only one" do
+    refute respond_to?(:logo_plate_style)
+    refute LogosHelper.const_defined?(:LOGO_PLATES)
+    refute LogosHelper.const_defined?(:WATERMARK_PLATE)
   end
 
-  test "every brand's watermark is at least 3:1 against every point of the watermark plate" do
-    assert_equal "background-image: linear-gradient(135deg, #263B5C, #2C625E)", logo_plate_style(:watermark)
+  test "every brand's watermark is at least 3:1 on the dark card the watermark context puts it on" do
     Logos::NavbarLogo.brands.each do |brand|
-      assert_operator worst_contrast(LogosHelper::WATERMARK_PLATE, Logos::NavbarLogo.new(brand).watermark), :>=, 3.0, brand
+      mark = Logos::NavbarLogo.new(brand).watermark
+      shown = seen_on(mark.fetch("fill"), mark.fetch("opacity"), HUB_SURFACES.fetch(:watermark))
+      assert_operator contrast(shown, channels(HUB_SURFACES.fetch(:watermark))), :>=, 3.0, brand
     end
-    assert_in_delta 2.14, worst_contrast(%w[#3F5E8C #4F9A94], Logos::NavbarLogo::WATERMARK), 0.01, "the plate this replaced measured about 2.1:1"
   end
 
   # Every guide drawing the gallery can show: 4 brands x (2 rules x 3 texts of the Navbar Logo + 3 texts of each form of
@@ -91,7 +97,7 @@ class LogosHelperTest < ActionView::TestCase
   end
 
   # Task stacked-tagline-and-ghost-grid: a ghost is the logo's own text colour, faint, and every ghost stands on the
-  # plate (the axis column beside the icon, never on it: test/lib/logos_stacked_logo_test.rb). Measured against every
+  # background (once a plate; since task brand-gallery-palette-and-theme the hub's card) (the axis column beside the icon, never on it: test/lib/logos_stacked_logo_test.rb). Measured against every
   # point of each plate, both ends of the watermark's gradient included, it reads at 1.4:1 to 2.2:1, and the logo's
   # own text is more than twice as strong. The bar is 2x: at the watermark plate's lighter end (#2C625E) the logo
   # (white at 0.6) is 3.66:1 and its ghost (white at 0.22) 1.69:1, 2.17x; the darker end is 2.68x. Review of PR
@@ -99,24 +105,52 @@ class LogosHelperTest < ActionView::TestCase
   # claim rather than the watermark ghosts (shared with the Navbar guides) going fainter.
   STRONGER = 2.0
 
-  test "every ghost is visible on every point of its plate and far fainter than the logo's own text" do
-    from, to = LogosHelper::WATERMARK_PLATE.map { |hex| channels(hex) }
-    gradient = (0..20).map { |step| from.zip(to).map { |a, b| a + (b - a) * step / 20.0 } }   # 21 points, both ends included
-    plates = { light: [channels("#FFFFFF")], dark: [channels("#12141A")], watermark: gradient }
+  test "every ghost is visible on the hub card it sits on and far fainter than the logo's own text" do
     Logos::NavbarLogo.brands.product(Logos::NavbarLogo::TONES).each do |brand, tone|
       logo = Logos::StackedLogo.new(brand)
       fill = tone == :watermark ? logo.watermark.fetch("fill") : Logos::NavbarLogo.styles.fetch(brand).fetch("tones").fetch(tone.to_s).fetch("text")
       text_opacity = tone == :watermark ? logo.watermark.fetch("opacity") : 1
-      plates.fetch(tone).each do |plate|
-        behind = plate
-        seen = ->(opacity) { channels(fill).zip(behind).map { |f, b| opacity * f + (1 - opacity) * b } }
-        ghost = contrast(seen.(Logos::StackedLogo::GHOST_OPACITY.fetch(tone)), behind)
-        where = "#{brand} #{tone} on #{plate.map(&:round)}"
-        assert_operator ghost, :>=, 1.4, "#{where}: visible"
-        assert_operator ghost, :<=, 2.2, "#{where}: faint"
-        assert_operator contrast(seen.(text_opacity), behind), :>=, STRONGER * ghost, "#{where}: the logo is far the stronger"
-      end
+      behind = HUB_SURFACES.fetch(tone)
+      ghost = contrast(seen_on(fill, Logos::StackedLogo::GHOST_OPACITY.fetch(tone), behind), channels(behind))
+      where = "#{brand} #{tone} on #{behind}"
+      assert_operator ghost, :>=, 1.4, "#{where}: visible"
+      assert_operator ghost, :<=, 2.2, "#{where}: faint"
+      assert_operator contrast(seen_on(fill, text_opacity, behind), channels(behind)), :>=, STRONGER * ghost, "#{where}: the logo is far the stronger"
     end
-    assert_equal [from, to], [gradient.first, gradient.last], "both ends of the gradient"
+  end
+
+  test "a light and dark pair is switched by html.dark alone, and a single tone is shown as it is" do
+    logo = Logos::NavbarLogo.new("studio")
+    pair = Logos::NavbarLogo::BAKED.to_h { |tone| [tone, Logos::Variant.new(logo, rule: 4, tone:)] }
+    html = Nokogiri::HTML.fragment(logo_themed_images(pair, height: 28))
+    assert_equal [%w[light contents\ dark:hidden], %w[dark hidden\ dark:contents]],
+                 html.css("[data-test='logo-themed']").map { |span| [span["data-tone"], span["class"]] }
+    assert_equal %w[light dark], html.css("img").map { |img| img["src"][/tone=(\w+)/, 1] }
+    assert_equal %w[eager eager], html.css("img").map { |img| img["loading"] }, "a hidden picture is loaded before the theme turns"
+
+    single = Nokogiri::HTML.fragment(logo_themed_images({ watermark: Logos::Variant.new(logo, tone: :watermark) }, height: 28))
+    assert_empty single.css("[data-test='logo-themed']")
+    assert_equal ["watermark"], single.css("img").map { |img| img["src"][/tone=(\w+)/, 1] }
+  end
+
+  test "only the watermark is carried in a page link; light and dark are the hub theme's" do
+    @type, @rule, @guides = :navbar, 4, false
+    { nil => {}, light: {}, dark: {}, watermark: { context: :watermark } }.each do |context, carried|
+      @context = context
+      assert_equal carried, logo_page_params, context.inspect
+    end
+  end
+
+  test "the cluster's samples fit their tiles under the badges, and every type has a badge" do
+    assert_equal({ icon: 28, navbar: 28, stacked: 88 }, LogosHelper::LOGO_SAMPLE_HEIGHTS)
+    assert_equal Logos::Variant::TYPES.keys.sort, LogosHelper::LOGO_BADGES.keys.sort
+    assert_equal %w[Stacked Navbar Icon], LogosHelper::LOGO_BADGES.values
+  end
+
+  test "each typeface level is smaller than the one above, at both sizes, for up to three levels" do
+    [false, true].each do |compact|
+      sizes = (0...Logos::BrandKit::MAX_LEVELS).map { |level| logo_typeface_size(level, compact:) }
+      assert_equal sizes.sort.reverse.uniq, sizes, "compact: #{compact}"
+    end
   end
 end
