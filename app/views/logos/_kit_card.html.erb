@@ -26,7 +26,10 @@
         <% else %>
           <%# In words and as a link, the choice as saved: the watermark's versions carry no edits. %>
           <% shown = kit_record.variant(type) %>
-          <div class="flex items-center justify-center rounded-lg border border-subtle p-4 min-w-0" data-test="kit-pick-frame">
+          <%# The frame holds its height before the pictures load, so the page below the edit panel never grows under a
+              kept scroll (app/javascript/logo_editor.js restores it once the tab's own logos have loaded). %>
+          <div class="flex items-center justify-center rounded-lg border border-subtle p-4 min-w-0" data-test="kit-pick-frame"
+               style="height: <%= LogosHelper::LOGO_KIT_HEIGHTS.fetch(type) + 34 %>px">
             <%= logo_themed_images(versions, height: LogosHelper::LOGO_KIT_HEIGHTS.fetch(type), test: "kit-pick-image") %>
           </div>
           <p class="text-2xs text-secondary" data-test="kit-pick-summary"><%= logo_choice_summary(shown).upcase_first %></p>

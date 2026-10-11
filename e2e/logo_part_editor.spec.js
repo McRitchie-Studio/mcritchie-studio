@@ -31,7 +31,10 @@ test("picking a colour redraws every logo on the tab, and the download carries i
   await page.evaluate(() => window.scrollTo(0, document.querySelector("[data-test='edit-panel']").offsetTop - 100));
   const before = await page.evaluate(() => window.scrollY);
 
-  await reloads(page, () => swatch(page, "first", "#635BB2").click(), /first_colour=635BB2/);
+  // force: the swatch is in view and hit-testable, but Playwright's own actionability scroll can still move the page
+  // before the click (seen once the brand page grew the kit cards below the panel), and that is not the scroll
+  // the editor is meant to keep. The click itself is the user's.
+  await reloads(page, () => swatch(page, "first", "#635BB2").click({ force: true }), /first_colour=635BB2/);
   const url = new URL(page.url());
   expect([...url.searchParams.keys()].sort()).toEqual(["first_colour", "form", "type"]);
   await expect(row(page, "first").locator("input[type=radio][value='635BB2']")).toBeChecked();
