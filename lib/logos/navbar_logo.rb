@@ -21,6 +21,16 @@ module Logos
   # on the icon. The gap after the icon and the gap between
   # the words are equal: each is half a cap height. Rules and data:
   # docs/topics/logos.md.
+  #
+  # The operator's EDITS (task logo-part-editor) recolour or reweigh a part and
+  # never move the geometry, except that a heavier word is wider and the layout
+  # reflows by the same rules:
+  #
+  #   logo.svg(rule: 4, edits: { first: { colour: "#635BB2", weight: 600 }, icon: { colour: "#8E82FE" } })
+  #
+  # A colour must be one of the brand's palette hexes; a weight one of
+  # EDIT_WEIGHTS, and never for a name set in traced lettering. No edits draws
+  # exactly what it drew before, byte for byte.
   class NavbarLogo
     class Error < ArgumentError; end
 
@@ -32,6 +42,11 @@ module Logos
     WATERMARK = { "fill" => "#FFFFFF", "opacity" => 0.6 }.freeze
     WATERMARK_KEYS = %w[fill opacity icon_key].freeze
     HIGHLIGHTS = %w[weight colour].freeze
+    # What the operator may edit on each part (task logo-part-editor). The tagline is the Stacked Logo's; the icon's
+    # colour recolours one layer (#icon_role). Geometry is never an edit.
+    PARTS = { icon: %i[colour], first: %i[colour weight], ending: %i[colour weight], tagline: %i[colour weight visible] }.freeze
+    EDIT_WEIGHTS = [300, 400, 500, 600, 700, 800].freeze
+    NO_EDITS = {}.freeze
     GAP_CAPS = 0.5                             # the icon gap and the word gap, ink to ink, in cap heights: equal by rule
     GUIDE = "#D4189F"
     GUIDE_PAD = { left: 40, top: 70, right: 80, bottom: 40 }.freeze   # `top` holds the gap brackets and their labels
@@ -88,6 +103,51 @@ module Logos
     # What the brand's page says about where its art came from (optional).
     def note = @style["note"]
 
+    # The brand's palette hexes (style `palette:`), in its order: the only colours an edit may pick.
+    def palette = Array(@style["palette"]).map { |swatch| swatch["hex"] }
+
+    # True when the name is set in the brand's own traced letters, which have one weight.
+    def traced? = !@lettering.nil?
+
+    # The icon layer an icon colour edit recolours: the tone's icon's `primary` layer, or, for an icon with none (Turf
+    # Monster's head: outline, body, light), its first layer. Every other layer keeps its styled fill.
+    def icon_role(tone = :light)
+      roles = icon_roles(tone)
+      roles.include?("primary") ? "primary" : roles.first
+    end
+
+    # The tone's icon's layer roles, in drawing order: ["primary", "edge"].
+    def icon_roles(tone = :light) = @icons.fetch(tone).fetch("layers").map { |layer| layer["role"] }
+
+    # `given` checked: { part => { setting => value } } with parts and settings from PARTS, a colour from the palette
+    # (any case; answered in the palette's spelling), a weight from EDIT_WEIGHTS (refused for traced lettering) and a
+    # visibility of true or false. A setting that changes nothing (a visible tagline) and an empty part are dropped, so
+    # equal edits are equal hashes. Anything else is an Error.
+    def checked_edits(given)
+      return NO_EDITS if given.nil? || given == NO_EDITS
+      raise Error, "brand #{brand}: edits must be a map of parts, got #{given.inspect[0, 80]}" unless given.is_a?(Hash)
+
+      given.each_with_object({}) do |(part, settings), out|
+        takes = PARTS.fetch(part) { raise Error, "brand #{brand}: no part #{part.inspect} to edit: expected one of #{PARTS.keys.join(', ')}" }
+        unless settings.is_a?(Hash) && (settings.keys - takes).empty?
+          raise Error, "brand #{brand}: the #{part} takes #{takes.join(', ')}, got #{settings.inspect[0, 80]}"
+        end
+        raise Error, "brand #{brand}: it has no tagline to edit" if part == :tagline && @style["tagline"].nil?
+
+        checked = settings.to_h { |setting, value| [setting, send(:"edit_#{setting}", part, value)] }.reject { |setting, value| setting == :visible && value }
+        out[part] = checked.freeze if checked.any?
+      end.freeze
+    end
+
+    # Why these edits cannot be drawn with these choices (a rule, or a stacked form), or nil when every text version in
+    # every baked tone draws: a heavier word can be too wide to sit where the rules put it.
+    def refusal(edits, **choices)
+      TEXTS.product(BAKED) { |text, tone| layout(text:, tone:, edits:, **choices) }
+      nil
+    rescue Error => e
+      e.message
+    end
+
     # The brand's name as the gallery says it ("Commercial Welding v1"), when the style gives one (optional).
     def title = @style["title"]
 
@@ -96,12 +156,12 @@ module Logos
 
     # The geometry alone, in design units (the icon is H tall, x = 0 is its left edge).
     # `tone:` matters only to a brand whose tones name different icons.
-    def layout(rule: 3, text: :homogeneous, tone: :light)
+    def layout(rule: 3, text: :homogeneous, tone: :light, edits: NO_EDITS)
       cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected one of #{RULES.keys.join(', ')}"
       check_text(text)
       row = H / rule
       cap = cap_rows * row
-      first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
+      first, second = @words.zip(edited_weights(text, checked_edits(edits))).map { |word, weight| letters(word, weight) }
       icon = @icons.fetch(tone)
       icon_width = icon.fetch("w") * H / icon.fetch("h")
       gap = GAP_CAPS * cap
@@ -111,9 +171,10 @@ module Logos
                  letters: placed1 + placed2, width: right2)
     end
 
-    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false)
+    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false, edits: NO_EDITS)
       check_tone(tone)
-      render(layout(rule:, text:, tone:), H, text, tone, guides)
+      edits = edits_in(tone, edits)
+      render(layout(rule:, text:, tone:, edits:), H, text, tone, guides, edits)
     end
 
     # The brand's icon alone, in its own box (`0 0 <w> <h>` of the icon data), with the tone's fills and the
@@ -151,10 +212,38 @@ module Logos
       raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
     end
 
+    # Checked edits for a drawing in `tone`. A watermark is one colour by definition, so no edit applies to it.
+    def edits_in(tone, given)
+      edits = checked_edits(given)
+      raise Error, "brand #{brand}: a watermark is one colour, so edits do not apply to it" if tone == :watermark && edits.any?
+
+      edits
+    end
+
+    def edit_colour(part, value)
+      found = palette.find { |hex| hex.casecmp?(value.to_s) }
+      return found if found && HEX.match?(found)
+
+      raise Error, "brand #{brand}: the #{part}'s colour must be one of the brand's palette (#{palette.join(', ')}), got #{value.inspect[0, 40]}"
+    end
+
+    def edit_weight(part, value)
+      raise Error, "brand #{brand}: the name is traced lettering, which has one weight, so the #{part}'s weight cannot change" if part != :tagline && traced?
+      return value if EDIT_WEIGHTS.include?(value)
+
+      raise Error, "brand #{brand}: the #{part}'s weight must be one of #{EDIT_WEIGHTS.join(', ')}, got #{value.inspect[0, 40]}"
+    end
+
+    def edit_visible(part, value)
+      return value if [true, false].include?(value)
+
+      raise Error, "brand #{brand}: the #{part}'s visibility must be true or false, got #{value.inspect[0, 40]}"
+    end
+
     # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it: the ghosts BEHIND the logo
     # (in the rule of 4 they cross the real name), the logo, then the lines and numbers.
-    def render(box, height, text, tone, guides)
-      body = toned(tone, drawing(box, tone, *fills(tone, text)))
+    def render(box, height, text, tone, guides, edits = NO_EDITS)
+      body = toned(tone, drawing(box, tone, *fills(tone, text, edits)))
       return document(body, box.width, height) unless guides
 
       document(ghost_group(tone, ghost_markup(box, ghost_fill(tone))) + body + line_group(guide_markup(box)), box.width, height, **self.class::GUIDE_PAD)
@@ -187,11 +276,14 @@ module Logos
     end
 
     # [each icon layer role's fill, [first word's fill, second word's fill]]. A watermark has one fill for everything.
-    def fills(tone, text)
+    # An edited colour takes the place of the styled one: the icon's on its one role, a word's in every text version.
+    def fills(tone, text, edits = NO_EDITS)
       return [Hash.new(@watermark["fill"]), [@watermark["fill"]] * 2] if tone == :watermark
 
       baked = @style.fetch("tones").fetch(tone.to_s)
-      [baked.fetch("icon"), word_colours(text, baked)]
+      icon = baked.fetch("icon")
+      icon = icon.merge(icon_role(tone) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
+      [icon, word_colours(text, baked).zip(%i[first ending]).map { |colour, part| edits.dig(part, :colour) || colour }]
     end
 
     def drawing(box, tone, icon_fills, colours)
@@ -229,6 +321,11 @@ module Logos
 
       light = @style.fetch("light")
       text == :first ? [heavy, light] : [light, heavy]
+    end
+
+    # word_weights, with each word's edited weight in place of its styled one (in every text version).
+    def edited_weights(text, edits)
+      word_weights(text).zip(%i[first ending]).map { |weight, part| edits.dig(part, :weight) || weight }
     end
 
     # [first word's fill, second word's fill]

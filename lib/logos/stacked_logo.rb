@@ -24,6 +24,11 @@ module Logos
   #                       is as tall as the tagline is wide. The tagline takes the
   #                       tone's `quiet` fill (`text` without one).
   #
+  # The operator's edits (NavbarLogo#checked_edits) also reach the tagline: its
+  # colour, its weight (in place of TAGLINE_WEIGHT; still tracked out to 60%,
+  # so it is as wide as before), and `visible: false`, which leaves every band
+  # where it was and simply does not draw the tagline.
+  #
   # A brand's own form (`form`) is the default; `forms` lists every form it can
   # draw. Everything is centred on the big line, whose ink is the logo's width.
   # Rules, forms and guides: docs/topics/logos.md. Outside Rails, require
@@ -75,11 +80,12 @@ module Logos
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, form: self.form, **unknown)
-      check_keywords(unknown, "text, tone and form")
+    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, **unknown)
+      check_keywords(unknown, "text, tone, form and edits")
       check_text(text)
       check_form(form)
-      first, second = @words.zip(word_weights(text)).map { |word, weight| letters(word, weight) }
+      edits = checked_edits(edits)
+      first, second = @words.zip(edited_weights(text, edits)).map { |word, weight| letters(word, weight) }
       cap = BIG * U
       big, width = place(first, cap, 0, 0)
       unless form == :two_line
@@ -92,20 +98,22 @@ module Logos
       line = [big, first + second, cap]
       unless form == :one_line
         edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
-        small = form == :tagline ? tagline_line(width) : small_line(second, width)
-        placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) }
-        line = [small, form == :tagline ? tagline_glyphs : second, U]
+        weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
+        small = form == :tagline ? tagline_line(width, weight) : small_line(second, width)
+        placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) } unless form == :tagline && edits.dig(:tagline, :visible) == false
+        line = [small, form == :tagline ? tagline_glyphs(weight) : second, U]
       end
       line, line_width = unit_line(*line)
       Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(tone, icon_height, width)) / 2,
                  edges:, letters: placed, line:, line_width:)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, **unknown)
-      check_keywords(unknown, "text, tone, form and guides")
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, **unknown)
+      check_keywords(unknown, "text, tone, form, guides and edits")
       check_tone(tone)
-      box = layout(text:, tone:, form:)
-      render(box, box.height, text, tone, guides)
+      edits = edits_in(tone, edits)
+      box = layout(text:, tone:, form:, edits:)
+      render(box, box.height, text, tone, guides, edits)
     end
 
     private
@@ -128,7 +136,7 @@ module Logos
       raise Error, "a stacked logo takes #{taken}, not #{unknown.keys.join(', ')}: it has no rule"
     end
 
-    def tagline_glyphs = tagline.each_char.map { |char| glyph(char, TAGLINE_WEIGHT) }
+    def tagline_glyphs(weight = TAGLINE_WEIGHT) = tagline.each_char.map { |char| glyph(char, weight) }
 
     # Placed letters set at `cap` from their glyphs, brought to a cap of 1 with the first letter's ink at x = 0. Each
     # keeps its glyph's ink edges. Returns them and the run's ink width (at a cap of 1).
@@ -153,10 +161,10 @@ module Logos
       end
     end
 
-    # The tagline, set like the small word: Montserrat at TAGLINE_WEIGHT, every character (a space too) one glyph.
-    # Its paths are font outlines, so they keep the font's fill rule whatever the name is set in.
-    def tagline_line(width)
-      tracked(tagline_glyphs, width, 2) do |why|
+    # The tagline, set like the small word: Montserrat at TAGLINE_WEIGHT (or its edited weight), every character (a
+    # space too) one glyph. Its paths are font outlines, so they keep the font's fill rule whatever the name is set in.
+    def tagline_line(width, weight = TAGLINE_WEIGHT)
+      tracked(tagline_glyphs(weight), width, 2) do |why|
         "the tagline #{tagline.inspect} cannot be tracked out to #{(SPAN * 100).round}% of the name's width (#{why}): " \
           "shorten it, or leave it out of the brand's style"
       end.map { |letter| letter.merge(fill_rule: "nonzero") }
@@ -176,13 +184,14 @@ module Logos
       place(glyphs, U, (width - target) / 2, index, (target - natural) / (steps * U)).first
     end
 
-    # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet.
-    def fills(tone, text)
+    # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet, unless
+    # its colour is edited.
+    def fills(tone, text, edits = NO_EDITS)
       icon, colours = super
       return [icon, colours + [@watermark["fill"]]] if tone == :watermark
 
       baked = @style.fetch("tones").fetch(tone.to_s)
-      [icon, colours + [baked.fetch("quiet", baked.fetch("text"))]]
+      [icon, colours + [edits.dig(:tagline, :colour) || baked.fetch("quiet", baked.fetch("text"))]]
     end
 
     def icon_width(tone, height, width)
@@ -201,10 +210,10 @@ module Logos
 
     # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
     # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the turned line's bracket.
-    def render(box, height, text, tone, guides)
+    def render(box, height, text, tone, guides, edits = NO_EDITS)
       return super unless guides
 
-      body = toned(tone, drawing(box, tone, *fills(tone, text)))
+      body = toned(tone, drawing(box, tone, *fills(tone, text, edits)))
       ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + proof_markup(box, ghost_fill(tone)))
       left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
       document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, left:,

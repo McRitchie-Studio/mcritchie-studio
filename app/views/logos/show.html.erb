@@ -9,7 +9,8 @@
     the brand has a tagline); both can swap every logo for its guide drawing, which fits its frame
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
-    others' settings. Read-only. Admin only (LogosController). %>
+    others' settings, the edit panel's edits among them (logos/_edit_panel, on
+    the Navbar and Stacked tabs). Nothing is saved. Admin only (LogosController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
@@ -130,6 +131,9 @@
       <% end %>
     </div>
   </section>
+
+  <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits. %>
+  <%= render "edit_panel", kit: @kit unless @type == :icon %>
 
   <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
     <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
