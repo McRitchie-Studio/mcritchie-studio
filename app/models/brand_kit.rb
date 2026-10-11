@@ -54,6 +54,15 @@ class BrandKit < ApplicationRecord
   # the index table reads them all in two queries, whatever the number of brands.
   def self.by_brand(brands) = where(brand: brands).includes(:originals_attachments).index_by(&:brand)
 
+  # The names of the people who last changed these kits, by email, in one query: { "alex@…" => "Alex McRitchie" }. An
+  # email with no named user is left out (the kit status then shows the email's local part).
+  def self.saver_names(kits)
+    emails = kits.filter_map(&:updated_by).uniq
+    return {} if emails.empty?
+
+    User.where(email: emails).where.not(name: [nil, ""]).pluck(:email, :name).to_h
+  end
+
   # A stored choice as the Logos::Variant it draws in `tone` (light unless given). Anything the gallery's parser
   # refuses is an Error, and so are edits that cannot be drawn in the choice's rule or form.
   def self.variant(brand, type, choice, tone: :light)

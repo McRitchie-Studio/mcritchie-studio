@@ -41,9 +41,14 @@
               <th scope="row" class="block xl:table-cell py-3 xl:pr-3 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
                 <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
-                <p class="text-3xs text-muted font-normal" data-test="logo-kit-status"><%= logo_kit_status(@kits[logo.brand]) %></p>
+                <%# Cut to one line at the brand column's width, so a long status never widens the column and wraps a
+                    brand's logos; the title gives it in full, the saver's email included. %>
+                <p class="text-3xs text-muted font-normal truncate xl:max-w-44" data-test="logo-kit-status"
+                   title="<%= logo_kit_status(@kits[logo.brand], @savers, full: true) %>"><%= logo_kit_status(@kits[logo.brand], @savers) %></p>
               </th>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-cell">
+              <%# At least as wide as the widest brand's cluster on one line (Industries and Commercial Welding, about
+                  432 px with the cell's padding), so the table never squeezes a brand's Navbar tile under its square. %>
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[28rem]" data-test="logo-cell">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Logos</p>
                 <% kit = @kits[logo.brand] %>
                 <%= render "cluster", logo:, name:, samples:, saved: BrandKit::TYPES.select { |type| kit&.saved?(type) } %>

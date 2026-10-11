@@ -42,5 +42,6 @@ module LogoBrandPage
                       .transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
     @kit_record = BrandKit.for(@logo.brand)
+    @savers = BrandKit.saver_names([@kit_record])
   end
 end

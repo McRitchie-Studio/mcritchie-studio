@@ -29,7 +29,7 @@ test("saving a stacked choice with an edit shows it in the table, marked Saved, 
 
   await page.waitForURL(/\/logos\/industries\?.*form=tagline/);
   await expect(page.getByText("Saved the Stacked Logo kit choice: with tagline, second word leads, ending Forge Orange.")).toBeVisible();
-  await expect(page.locator("[data-test='kit-status']")).toContainText(/Kit: saved \w{3} \d+, \d{4} by alex@test\.com/);
+  await expect(page.locator("[data-test='kit-status']")).toContainText(/Kit: saved \w{3} \d+, \d{4} by Alex Test/);
   await expect(page.locator("[data-test='kit-pick'][data-type='stacked'] [data-test='kit-pick-summary']")).toHaveText("With tagline, second word leads, ending Forge Orange");
 
   await page.goto("/logos");

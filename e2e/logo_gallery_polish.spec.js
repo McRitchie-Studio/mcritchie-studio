@@ -66,3 +66,25 @@ test("saving and clearing a kit choice return to the same tab, scrolled to the K
   await expect(page.getByText("Cleared the Stacked Logo kit choice. The brand shows its default again.")).toBeAttached();
   await expect.poll(inView).toBe(true);
 });
+
+test("at 1280 a saved kit's status stays on one line and no brand's logo tiles wrap", async ({ page }) => {
+  await open(page, "/logos/industries?type=stacked");
+  await page.locator("[data-test='kit-save']").click();
+  await page.waitForURL(/#kit-choice$/);
+  try {
+    await page.goto("/logos");
+    const status = page.locator("[data-brand='industries'] [data-test='logo-kit-status']");
+    await expect(status).toHaveText(/^Kit: saved \w{3} \d+, \d{4} by Alex Test$/);
+    await expect(status).toHaveAttribute("title", /by Alex Test \(alex@test\.com\)$/);
+    const rows = await page.evaluate(() => Array.from(document.querySelectorAll("[data-test='logo-cluster']")).map((cluster) => {
+      const top = (type) => cluster.querySelector(`[data-test='logo-sample'][data-type='${type}']`).getBoundingClientRect().top;
+      const line = cluster.closest("tr").querySelector("[data-test='logo-kit-status']");
+      return { brand: cluster.dataset.brand, sameLine: Math.abs(top("stacked") - top("navbar")) < 1, oneLine: line.getClientRects().length === 1 && line.offsetHeight < 20 };
+    }));
+    for (const row of rows) expect(row, row.brand).toEqual({ brand: row.brand, sameLine: true, oneLine: true });
+  } finally {
+    await page.goto("/logos/industries?type=stacked");
+    await page.locator("[data-test='kit-clear']").click();
+    await page.waitForURL(/#kit-choice$/);
+  }
+});

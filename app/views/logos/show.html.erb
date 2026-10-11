@@ -34,7 +34,7 @@
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
     </div>
-    <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record), "#kit", class: "hover:text-primary" %></p>
+    <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
 
     <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
       <% Logos::Variant::TYPES.each do |type, label| %>

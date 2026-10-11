@@ -50,6 +50,7 @@ class LogosController < ApplicationController
   def index
     brands = Logos::NavbarLogo.brands
     @kits = BrandKit.by_brand(brands)
+    @savers = BrandKit.saver_names(@kits.values)
     @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)

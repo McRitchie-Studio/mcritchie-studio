@@ -47,7 +47,9 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @admin.email, kit.updated_by
 
     follow_redirect!
-    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by #{@admin.email}"
+    # The saver by their user name (task logo-gallery-polish-pass, item 8), their email in the title.
+    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie"
+    assert_select "[data-test='kit-status'] a[title=?]", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie (#{@admin.email})"
     assert_select "[data-test='kit-choice-saved']", /Saved Navbar Logo: rule of 3, first word leads, first word Deep Violet; ending 300 Light/
     assert_equal "first", css_select("select[name=text] option[selected]").first["value"], "the select starts on the saved text"
     assert_select "[data-test='kit-clear']", 1
@@ -158,7 +160,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "form" => "tagline", "text" => "second", "tone" => "light", "guides" => "0" }, Rack::Utils.parse_query(URI(stacked["src"]).query))
     assert_equal %w[STACKED·SAVED NAVBAR·SAVED ICON], css_select("[data-brand='studio'] [data-test='logo-badge']").map { |b| b.text.upcase.delete(" ") }
     assert_equal %w[true true false], css_select("[data-brand='studio'] [data-test='logo-sample']").map { |s| s["data-saved"] }
-    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", /\AKit: saved \w{3} \d+, \d{4} by alex@test.com\z/
+    assert_select "[data-brand='studio'] [data-test='logo-kit-status']", /\AKit: saved \w{3} \d+, \d{4} by alex\z/
     assert_select "[data-brand='industries'] [data-test='logo-kit-status']", "Kit: not saved yet"
     assert_equal %w[STACKED NAVBAR ICON], css_select("[data-brand='industries'] [data-test='logo-badge']").map { |b| b.text.upcase }
 
@@ -199,12 +201,42 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
 
     patch brand_kit_choice_path("studio"), params: { type: "stacked", form: "two_line", text: "first" }
     get logo_brand_path("studio")
-    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by #{@admin.email} · originals: 1"
+    assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie · originals: 1"
 
     delete brand_kit_original_path("studio", kit.originals.first)
     delete brand_kit_choice_path("studio"), params: { type: "stacked" }
     get logo_brand_path("studio")
     assert_select "[data-test='kit-status']", "Kit: not saved yet"
+  end
+
+  # Task logo-gallery-polish-pass, item 8: a long status must not widen the brand column, so the table shows the
+  # saver's name (or their email's local part) on one cut line, and the title carries it in full.
+  test "the table names each kit's saver, cut to one line, with the whole status in its title" do
+    BrandKit.for("studio").save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: @admin.email)
+    BrandKit.for("industries").save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: "someone.with.a.very.long.address@example.com")
+    log_in_as(@admin)
+    get logos_path
+    studio = css_select("[data-brand='studio'] [data-test='logo-kit-status']").first
+    date = kit.updated_at.strftime("%b %-d, %Y")
+    assert_equal "Kit: saved #{date} by Alex McRitchie", studio.text.strip
+    assert_equal "Kit: saved #{date} by Alex McRitchie (alex@mcritchie.studio)", studio["title"]
+    assert_includes studio["class"].split, "truncate"
+    industries = css_select("[data-brand='industries'] [data-test='logo-kit-status']").first
+    assert_match(/ by someone\.with\.a\.very\.long\.address\z/, industries.text.strip)
+    assert_match(/ by someone\.with\.a\.very\.long\.address \(someone\.with\.a\.very\.long\.address@example\.com\)\z/, industries["title"])
+    refute_match(/@/, css_select("[data-test='logo-kit-status']").map(&:text).join, "no email is printed in the table")
+  end
+
+  test "the table names every saver in one users query" do
+    %w[studio industries turf].each do |brand|
+      BrandKit.for(brand).save_choice(:navbar, ActionController::Parameters.new(rule: "3", text: "first"), by: "#{brand}@example.com")
+    end
+    log_in_as(@admin)
+    get logos_path
+    counted = []
+    counter = ->(*, payload) { counted << payload[:sql] if payload[:sql].match?(/FROM "users" WHERE "users"."email" IN/) }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { get logos_path }
+    assert_equal 1, counted.size, counted.join("\n")
   end
 
   test "the table counts every kit's originals without a query per brand" do

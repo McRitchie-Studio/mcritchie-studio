@@ -99,18 +99,23 @@ module LogosHelper
     "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
   end
 
-  # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet", then " · originals: 2" when it holds any. A kit is
-  # saved once it holds a saved Navbar or Stacked choice: a record left with neither (a cleared choice, only originals
-  # or notes) is not saved yet (task logo-gallery-polish-pass, item 4).
-  def logo_kit_status(kit)
+  # "Kit: saved Oct 11, 2026 by Alex McRitchie" or "Kit: not saved yet", then " · originals: 2" when it holds any. A
+  # kit is saved once it holds a saved Navbar or Stacked choice: a record left with neither (a cleared choice, only
+  # originals or notes) is not saved yet (task logo-gallery-polish-pass, item 4). The saver is named by their user
+  # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
+  # for the title attribute of a status cut short.
+  def logo_kit_status(kit, savers = {}, full: false)
     saved = kit&.persisted? && BrandKit::TYPES.any? { |type| kit.saved?(type) }
-    status = if saved
-               ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", ("by #{kit.updated_by}" if kit.updated_by.present?)].compact.join(" ")
-             else
-               "Kit: not saved yet"
-             end
+    status = saved ? ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
     originals = kit&.persisted? ? kit.originals_attachments.size : 0
     originals.positive? ? "#{status} · originals: #{originals}" : status
+  end
+
+  # "by Alex McRitchie", "by alex" (an email with no named user), with " (alex@…)" when `full`; nil when nobody is named.
+  def logo_kit_saver(kit, savers, full:)
+    email = kit.updated_by.presence or return
+    name = savers[email].presence || email.split("@").first
+    "by #{name}#{" (#{email})" if full}"
   end
 
   # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page
