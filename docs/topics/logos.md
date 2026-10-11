@@ -32,6 +32,73 @@ Logos::StackedLogo.new("industries").svg(text: :first, tone: :light)   # the ico
 A logo has no background. The SVG is transparent wherever it draws nothing, in
 every tone.
 
+## Original and Alt colourings
+
+Every logo type has a **colouring** (task logo-original-and-alt; Alex,
+2026-10-11: "when building the marketing kit we need the original"):
+
+| Colouring | What it draws | From |
+|-----------|---------------|------|
+| **Original** | the brand's true art, as its kit draws it: its own icon, fills and name colours, per tone | the style's `original:` (`light`, `dark`) |
+| **Alt** | one solid colour per part: today's logos, unchanged to the byte | the style's `tones` |
+
+```ruby
+logo.svg(rule: 3, tone: :dark, colouring: :original)   # Alt is the default
+logo.icon_svg(colouring: :original)
+logo.original?        # false for Studio
+logo.colourings       # [:original, :alt], or [:alt]
+```
+
+- A brand whose logo is solid colour has **no original**: Studio. Asking for
+  its Original raises `Logos::NavbarLogo::Error` (an SVG route answers 422);
+  its pages show Alt, offer Original disabled, and say "McRitchie Studio's logo
+  is solid colour, so it has no separate original."
+- The **watermark** is always the single-colour version: colouring does not
+  apply to it, and an Original asked of a watermark is the watermark.
+- **Edits apply to Alt only.** An Original is the brand's own art: the library
+  refuses edits with it, `Logos::Variant` drops them (still checked), and on
+  Original the Edit panel says so and links to Alt, keeping the edits in the URL.
+- The guide drawings' ghost copies stay the brand's Alt text colour: a ghost is
+  a solid ruler.
+- Each SVG route takes `?colouring=original|alt` (Alt unless asked, so every
+  existing URL serves what it served). An Original's file is named
+  `-original` (`welding-navbar-rule3-first-dark-original.svg`) and its
+  accessible label ends `original colouring`; an Alt file and label are as before.
+
+The brands' originals:
+
+| Brand | Original | Alt |
+|-------|----------|-----|
+| `studio` | none | the chest, one colour |
+| `industries` | the kit's own `mcritchie_icon_light.svg` and `_dark.svg` (05_icon): steel gradient, flat edge, ruler ticks; the leading word in the kit wordmark's steel gradient, the other in gunmetal `#41464D` (light) or light steel `#D3D6DA` (dark), as the kit's horizontal logos set them | the set square flat, two solid layers |
+| `turf` | the three-colour head trace; ink `#1A1535` and green on light, white and green on dark | the head's linework alone (`turf_mono`) in the brand green `#4BAF50` |
+| `welding` | the kit's square logo (`COM - Square - Large.png`), traced: a blue silhouette, the opaque white right half and lens window over it, the orange spark; one icon for both tones, since the white fill holds the helmet on a dark page; the name in the kit's blue `#2D5E8E` with the orange `#D7602E` accent and tagline on light, and white with the orange on dark (the kit has no dark lettering) | the two-colour helmet on light, the single-colour one on dark |
+| `welding_v2` | v1's Original with the v2 derivation ([below](#commercial-welding-v2)) | v2's helmet as before |
+
+**Turf Monster's Alt changed on purpose.** Alt means one solid colour per part
+for every brand; Turf's Alt was its three-colour head, which is now its
+Original. Its brand pin and the digests that mix it were re-taken in their own
+commit; no other brand's Alt moved by a byte (`test/lib/logos_brand_pins_test.rb`
+pins every brand's Alt drawings and, separately, every Original).
+
+### Gradients in an original
+
+An original's fill may be `url(#<id>)`, but only when its own icon data
+declares that gradient in `defs`: a list of
+`{ id, units, x1, y1, x2, y2, stops: [{ offset, colour }] }`, a
+`linearGradient` with a lower-case id, `units` of `userSpaceOnUse` or
+`objectBoundingBox`, finite numeric coordinates, and two or more stops of a
+`#hex` colour at an offset from 0 to 1. Anything else, or a url naming a
+gradient the icon does not declare, is refused when the brand loads; every
+other fill (and every Alt fill) stays `#hex`. The drawing declares the
+gradients it uses in one `<defs>`, each id written as
+`<icon key>-<8 hex of a digest of the drawing>-<id>`, so two logos on one page
+never share an id and the same drawing is the same bytes every time. A
+gradient for the name is in a letter's own units (cap top `y = -1`, baseline
+`0`), since each letter is drawn scaled from its glyph. An icon layer may also
+be stroked (`"paint": "stroke"`, with a `stroke_width` greater than 0): the
+Industries kit's ruler ticks.
+
 ## The three rules
 
 The icon is 300 design units tall and split into equal rows. The name is
@@ -223,8 +290,8 @@ Stacked Logo, and the rake task writes Navbar Logos only.
 | Brand | Icon | Name set in | Leads by | Tagline |
 |-------|------|-------------|----------|---------|
 | `studio` | traced chest, one layer | Montserrat 800 and 300 | weight | BUILD SMARTER |
-| `industries` | kit set square, two layers, drawn flat | Montserrat 700 and 300 | weight | BUILD BETTER |
-| `turf` | traced head, three solid layers; its linework alone as a watermark | Montserrat 800, tracking -0.025 em | colour | none |
+| `industries` | kit set square, two layers, drawn flat in Alt; the kit's steel in the Original | Montserrat 700 and 300 | weight | BUILD BETTER |
+| `turf` | traced head: three solid layers in the Original, its linework alone in Alt and as a watermark | Montserrat 800, tracking -0.025 em | colour | none |
 | `welding` (Commercial Welding v1) | traced helmet: two colours on light, one on dark | its own traced lettering: COMMERCIAL WELDING LLC | colour | BUILDING STRONG CONNECTIONS |
 | `welding_v2` (Commercial Welding v2) | v1's helmet, centred and with the lens moved down ([below](#commercial-welding-v2)) | v1's lettering: COMMERCIAL WELDING | colour | BUILDING STRONG CONNECTIONS |
 
@@ -273,10 +340,13 @@ derived from v1's traced helmet by `Logos::WeldingV2`
 `lib/logos/data/brand_icons_welding_v2.json`, and a test fails if the file is
 not exactly what the derivation writes. The steps, on each tone's own trace:
 
-1. **Find the parts.** The primary layer has three sub-paths: the outer
-   helmet (the widest), the white half (the taller hole) and the window (the
-   other hole). The orange spark is the `accent` layer; on the single-colour
-   helmet it is cut into the window's own contour.
+1. **Find the parts.** The outer helmet is the widest sub-path of any layer.
+   The HALVES layer holds the white half (the taller) and the window (the
+   other): on the Alt helmets it is the `primary` layer, the two as holes in
+   it beside the outer helmet; on the Original it is the `white` layer, the
+   two as opaque shapes over the blue silhouette (`blue`, the outer helmet).
+   The orange spark is the `accent` layer; on the single-colour helmet it is
+   cut into the window's own contour.
 2. **Centre.** The midline is the white half's straight left edge, the line
    where the two halves meet: the mean x of its on-curve points within 2 units
    of the leftmost, away from its corners (x = 204.13 on the colour helmet,
@@ -295,8 +365,14 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
    it, each curve's control points following their own end, so the band keeps
    its width and the rest of the white half stays put.
 
+**v2's Original** (`welding_v2_original`) is the same derivation run on v1's
+Original (`welding_original`), in its own box: the trace is at about twice
+the scale (975 tall), so the measures above (2, 20 and 40 units) are taken at
+its scale (`WeldingV2#scaled`; v1's own numbers are unchanged). Its midline is
+x = 411.85, its box 858 widened to 892.30 (right 34.30), its lens down 47.42.
+
 `test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
-data: the midline at the box's centre, the ears inside the box, the lens's
+data, for all three helmets: the midline at the box's centre, the ears inside the box, the lens's
 shape unchanged and centred on the middle row, the spark and frame moved with
 it and nothing else moved down. Its logos are v1's in every other respect
 (palette, tagline, lettering, tones), with the name COMMERCIAL WELDING.
@@ -412,6 +488,18 @@ class and `localStorage` `theme`):
   went from about 1.5 MB to about 0.26 MB). The clipboard write starts inside the
   click with a promise of the text (`ClipboardItem`), as Safari requires, and falls
   back to fetch-then-`writeText`; the button says Copied or Copy failed.
+
+### The Colouring control
+
+Beside Context on `/logos` and on a brand page, **Colouring: Original | Alt**
+(`logos/_colouring_control`, plain links) switches every logo on the page, its
+downloads and its copies. A brand page opens on the brand's Original where it
+has one (or its saved kit choice's colouring); the table shows each brand's
+Original where it has one (a saved choice in its own colouring) unless
+`?colouring=alt` asks for Alt. The page's `?colouring=` is kept across every
+other control, the breadcrumb and the brand links, and even on Studio's pages,
+so it comes back on the next brand. The Context notes say what each colouring
+is, and that a watermark has none.
 
 ### The brand page's tabs and controls
 
@@ -553,8 +641,11 @@ YAML and stores nothing; those stay in the YAML for now.
 | Column | Holds |
 |--------|-------|
 | `brand` | the style key (`studio`, `welding_v2`), unique |
-| `navbar_choice` | `{"rule" => 4, "text" => "second", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
-| `stacked_choice` | `{"form" => "tagline", "text" => "first", "edits" => {"tagline_visible" => "0"}}`, or null |
+| `navbar_choice` | `{"rule" => 4, "text" => "second", "colouring" => "alt", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
+| `stacked_choice` | `{"form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {}}`, or null |
+
+A choice's `colouring` is optional: one saved before colourings has none and
+is read as `alt`, what it showed then (no migration).
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
 | `originals` | Active Storage attachments: the original artwork |
@@ -576,17 +667,33 @@ so a stale one never refuses another save. A choice whose rule, form or text
 is itself refused is shown as the refusal in its cell and on the Kit card;
 save again or clear it.
 
-**Saving.** On the Navbar and Stacked tabs, **Kit choice** saves the tab's
-rule or form and its edits, with the text version picked in its select (it
-starts on the saved one, else the default: second word leads for the Navbar
-Logo, first for the Stacked), and lands back on the tab with a line saying
-what was saved. **Clear saved choice** puts the brand back on its default.
+**The saved choice is the tab's default** (task logo-original-and-alt, item 9;
+Alex: "The goal of the logo modification is to set the defaults"). A Navbar or
+Stacked tab whose type the kit has saved opens on it: its rule or form, its
+colouring, its edits, and its text version marked **Kit default**
+(`BrandKit#page_defaults`, read by `LogoBrandPage`). URL params override it one
+by one for exploring; the edits override as one set (any edit param replaces
+the saved edits). Under the controls the tab says **Showing the kit default**,
+or **Changed from the kit default · Back to kit default** (the bare tab), or,
+with nothing saved, that it shows the brand's style. Links leave out a rule,
+form or edits equal to the page's default, so each tab reads its own saved
+choice. The Edit panel's **Reset** goes back to the kit default's edits, and to
+the brand's style only when none is saved; **Clear saved choice** goes all the
+way back.
+
+**Saving.** On the Navbar and Stacked tabs, **Save as default** in the tab's
+control row saves the tab as shown (rule or form, colouring, edits) with the
+kit's current text version, and lands on the bare tab, which opens on it. The
+**Kit choice** card below saves the same with the text version picked in its
+select (it starts on the saved one, else the default: second word leads for
+the Navbar Logo, first for the Stacked), and lands on the bare tab at the card,
+with a line saying what was saved. **Clear saved choice** puts the brand back on its default.
 The brand page's header says `Kit: saved <date> by <who>` (the saver's user
 name, else their email's local part; the title adds the email) while a Navbar
 or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
 originals included; ` · originals: N` follows when the kit holds any. The /logos
-table shows the same status cut to one line. Save and Clear land on the tab at
-the Kit choice card (`#kit-choice`). Its **Kit** card shows both choices in the page's tone, each with
+table shows the same status cut to one line. Clear lands on the tab at the Kit
+choice card (`#kit-choice`). Its **Kit** card shows both choices in the page's tone, each with
 **Open on its tab** and **Download**, and the kit's notes.
 
 **Originals.** The **Kit originals** card ("The originals the logos were
@@ -630,7 +737,8 @@ and a non-admin is turned away by the admin wall, writes and reads alike.
 | `lib/logos/data/brand_icons.json` | Studio's and Industries' icon layers: a path, a role (`primary`, `edge`) and a fill rule each. |
 | `lib/logos/data/brand_icons_turf_welding.json` | The same format for `turf` (roles `outline`, `body`, `light`), `welding` (`primary`, `accent`) and `welding_mono` (`primary`). |
 | `lib/logos/data/brand_icons_turf_mono.json` | `turf_mono` (`primary`, `evenodd`): the head's silhouette with the body cut out, which leaves the linework. |
-| `lib/logos/data/brand_icons_welding_v2.json` | `welding_v2` and `welding_v2_mono`, written by `bin/rails logos:welding_v2` ([above](#commercial-welding-v2)); edit the derivation, never the file. The library reads the four icon files as one set. |
+| `lib/logos/data/brand_icons_originals.json` | The originals' own icons: `welding_original` (`blue`, `white`, `accent`; traced from the kit's square PNG by potrace in a scratch Python outside the repo, never in CI) and `industries_original_light` / `_dark` (`primary` with the `steel` gradient, `edge`, and the stroked `ticks`; the kit's SVG paths unchanged, with `defs`). |
+| `lib/logos/data/brand_icons_welding_v2.json` | `welding_v2`, `welding_v2_mono` and `welding_v2_original`, written by `bin/rails logos:welding_v2` ([above](#commercial-welding-v2)); edit the derivation, never the file. The library reads the five icon files as one set. |
 | `lib/logos/data/brand_lettering.json` | A brand's own lettering: per word, a list of letters (`d`, `adv`, `l`, `r`) in the glyph file's units, plus the `fill_rule` and `spaces`, the kit's space between two words as it sets them (`"WELDING LLC"`: 0.4305 cap heights, ink to ink), which an ending of several words uses. `"COMMERCIAL WELDING"` is kept for the record; the equal-gap rule sets the first word's gap. Commercial Welding's words (COMMERCIAL, WELDING, LLC) are traced from the kit's text-only PNG by the prototype's potrace method (`traced_words`), which reproduces COMMERCIAL and WELDING byte for byte; it runs by hand, never in CI. |
 | `lib/logos/data/montserrat_glyphs.json` | Letter outlines for weights 300 to 800, 95 ASCII glyphs each. Cap height is 1, the baseline is y = 0, y grows downward. Letters fill `nonzero`. |
 | `lib/logos/data/extract_glyphs.py` | The script that made the glyph file. It needs Python with fonttools and brotli and the engine's Montserrat file; it runs by hand, never in CI. |
@@ -653,6 +761,9 @@ drawn:
 | a path `d` (icon layer, glyph, traced letter) | a string of SVG path characters only: the command letters `MLHVCSQTAZ` in either case, digits, space, comma, dot, minus, plus, and `e`/`E` for exponents |
 | a `fill_rule` (icon layer, lettering) | `nonzero` or `evenodd` |
 | an icon's `transform`, when present | `translate`, `scale`, `rotate` or `matrix` calls with numeric arguments, separated by single spaces |
+| an icon's `defs`, when present | linear gradients only, as [above](#gradients-in-an-original) |
+| an icon layer's `paint`, when present | `fill` or `stroke`; a stroked layer needs a `stroke_width` greater than 0, a filled one takes none |
+| an original's tone | a map of `icon_key`, `text`, `quiet`, `accent` and `icon`, with a `text`, an `icon` filling every layer of its icon, and an `accent` when a word leads by colour; every fill a `#hex` or a declared gradient |
 
 The patterns are anchored at both ends (`\A…\z`), so a value that only starts
 clean, or ends in a newline, is refused. New art comes in through these files,

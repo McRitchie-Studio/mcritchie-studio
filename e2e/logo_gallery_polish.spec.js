@@ -57,7 +57,8 @@ test("saving and clearing a kit choice return to the same tab, scrolled to the K
   });
 
   await page.locator("[data-test='kit-save']").click();
-  await page.waitForURL(/\/logos\/studio\?(?=.*type=stacked)(?=.*form=tagline).*#kit-choice$/);
+  // The saved choice is the tab's default (task logo-original-and-alt), so saving returns to the bare tab.
+  await page.waitForURL(/\/logos\/studio\?type=stacked#kit-choice$/);
   await expect(page.getByText(/Saved the Stacked Logo kit choice/)).toBeAttached();
   await expect.poll(inView).toBe(true);
 

@@ -17,7 +17,8 @@ class LogosBrandPinsTest < Minitest::Test
   DIGESTS = {
     "studio" => "76cfc2cf8c56af93bbd5334773663f5741bd70b44c1ea298f5f997083c4d1331",
     "industries" => "dcdca12428a65e46d7a821b31f13c9e1337fa57a93d89bfec4c2fa3bd2c3524e",
-    "turf" => "2b18c47ce5a2c08231f558ad17581f9d4bee1020c5d6d1fa676ce83ef9c2eb9f",
+    # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2b18c47c….
+    "turf" => "0015bbd78dfe945652e610878e246af6bc1d4fedb8e7b17adda0ad34a99d59cc",
     # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was d1411cdd…. The three
     # others above did not move by a byte.
     # Re-taken by the review fix: the stacked two-line small line keeps its WELDING LLC word gap when tracked (only
@@ -44,5 +45,32 @@ class LogosBrandPinsTest < Minitest::Test
 
   def test_each_brand_draws_exactly_what_it_drew_when_pinned
     assert_equal DIGESTS, Navbar.brands.to_h { |brand| [brand, self.class.digest(brand)] }
+  end
+
+  # Task logo-original-and-alt: every ORIGINAL drawing of each brand that has one (light and dark: the watermark has
+  # no colouring), pinned as first shipped. DIGESTS above are the Alt drawings, which that task left as they were.
+  ORIGINAL_DIGESTS = {
+    "industries" => "164e879afa7dfec2a5336d4113c56234cb40d0742d775479f79d4c1557e61bf3",
+    "turf" => "9ba3b7bf55a7f3b60166f286b875883457c5b8269520672275d0f694858c53ff",
+    "welding" => "0f1083dc461623e7bb84e07049ce8c14e10ad581c1200b74023413279a2a65d4",
+    "welding_v2" => "7635ac2b3d772e1f573a93f6ffff854ce81347f5b94871c02075fe922a064984"
+  }.freeze
+
+  def self.original_drawings(brand)
+    navbar = Navbar.new(brand)
+    stacked = Stacked.new(brand)
+    flags = [false, true]
+    navbars = Navbar::RULES.keys.product(Navbar::TEXTS, Navbar::BAKED, flags).map do |rule, text, tone, guides|
+      "#{brand}-navbar-rule#{rule}-#{text}-#{tone}-original-#{guides}\n#{navbar.svg(rule:, text:, tone:, guides:, colouring: :original)}"
+    end
+    stackeds = stacked.forms.product(Navbar::TEXTS, Navbar::BAKED, flags).map do |form, text, tone, guides|
+      "#{brand}-stacked-#{form}-#{text}-#{tone}-original-#{guides}\n#{stacked.svg(form:, text:, tone:, guides:, colouring: :original)}"
+    end
+    navbars + stackeds + Navbar::BAKED.map { |tone| "#{brand}-icon-#{tone}-original\n#{navbar.icon_svg(tone:, colouring: :original)}" }
+  end
+
+  def test_each_original_draws_exactly_what_it_drew_when_pinned
+    originals = Navbar.brands.select { |brand| Navbar.new(brand).original? }
+    assert_equal ORIGINAL_DIGESTS, originals.to_h { |brand| [brand, Digest::SHA256.hexdigest(self.class.original_drawings(brand).join)] }
   end
 end

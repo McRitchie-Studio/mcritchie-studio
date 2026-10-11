@@ -43,7 +43,8 @@ class LogosController < ApplicationController
     render plain: error.message, status: :unprocessable_content
   end
 
-  # Per brand, one logo of each type: the samples the table shows. A brand whose name cannot be stacked (its style
+  # Per brand, one logo of each type: the samples the table shows. The icon is in the page's colouring
+  # (LogoBrandPage#page_colouring); the Navbar and Stacked samples as #kit_sample says. A brand whose name cannot be stacked (its style
   # needs `stacked: one_line`) keeps its row: its Stacked cell holds the refusal, and the cell says why.
   # Each sample is a map of the tones it is shown in to its variant (logos/_cluster).
   # The Navbar and Stacked samples are the brand's SAVED kit choices where it has them (BrandKit; task
@@ -55,8 +56,9 @@ class LogosController < ApplicationController
     @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)
+      colouring = page_colouring(logo)
       [logo, { stacked: kit_sample(kit, :stacked), navbar: kit_sample(kit, :navbar),
-               icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:)] } }]
+               icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:, colouring:)] } }]
     end
   end
 
@@ -76,8 +78,10 @@ class LogosController < ApplicationController
 
   # A sample is the kit's saved choice or the brand's default, by tone; or the library's refusal, which the cell
   # shows in its place: a brand that cannot be stacked, or a saved choice the brand's data can no longer draw.
+  # A saved choice is shown in its saved colouring, and a default in the brand's own (its Original where it has one),
+  # unless the page asks for one (?colouring=), which every brand that has it is shown in.
   def kit_sample(kit, type)
-    @tones.to_h { |tone| [tone, kit.variant(type, tone:)] }
+    @tones.to_h { |tone| [tone, kit.variant(type, tone:, colouring: @colouring_param)] }
   rescue Logos::NavbarLogo::Error => e
     e
   end

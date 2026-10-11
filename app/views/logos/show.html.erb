@@ -26,7 +26,7 @@
 <% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
   <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
-    <%= link_to "Logos", logos_path(logo_page_params.slice(:context)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
+    <%= link_to "Logos", logos_path(logo_page_keeps), class: "hover:text-primary", data: { test: "logos-crumb" } %>
     <span aria-hidden="true">/</span>
     <span class="text-heading font-bold font-mono break-all"><%= @logo.brand %></span>
   </nav>
@@ -35,6 +35,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
+      <%= render "logos/colouring_control", path: ->(page) { logo_brand_path(@logo.brand, page) }, chosen: @colouring, default: @default_colouring, logo: @logo %>
     </div>
     <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
 
@@ -51,7 +52,7 @@
           <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Rule" data-test="rule-control">
             <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Rule</span>
             <% Logos::Variant::RULES.each do |rule, label| %>
-              <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(rule: (rule unless rule == 4))),
+              <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(rule: (rule unless rule == @defaults[:rule]))),
                           class: chosen.(rule == @rule), aria: { current: ("true" if rule == @rule) }, data: { test: "rule-option", rule: rule } %>
             <% end %>
           </div>
@@ -60,14 +61,34 @@
           <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Form" data-test="form-control">
             <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Form</span>
             <% @logo.forms.each do |form| %>
-              <%= link_to Logos::Variant::FORMS.fetch(form), logo_brand_path(@logo.brand, logo_page_params(form: (form unless form == @logo.form))),
+              <%= link_to Logos::Variant::FORMS.fetch(form), logo_brand_path(@logo.brand, logo_page_params(form: (form unless form == @defaults[:form]))),
                           class: chosen.(form == @form), aria: { current: ("true" if form == @form) }, data: { test: "form-option", form: form } %>
             <% end %>
           </div>
         <% end %>
         <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
                     class: chosen.(@guides), data: { test: "guides-toggle" } %>
+        <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, colouring and edits, with the
+            text version the kit already has (the Kit choice card below picks another, or clears it), become the
+            brand's kit choice, which this tab then opens on. A plain form, no JavaScript. %>
+        <% unless @edit_refusal %>
+          <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "contents", data: { test: "kit-save-default-form", turbo: false } do %>
+            <% logo_kit_save_fields.merge(text: @kit_record.default_text(@type), return: "top").each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+            <%= submit_tag "Save as default", name: nil, class: chosen.(false), disabled: @kit_default_shown,
+                           data: { test: "kit-save-default", disable_with: false }, title: ("This is the kit default already" if @kit_default_shown) %>
+          <% end %>
+        <% end %>
       </div>
+      <%# Which defaults the tab is on: its kit's saved choice, changed from it, or the built-in style (none saved). %>
+      <p class="text-2xs text-muted" data-test="kit-default-state" data-state="<%= @kit_default ? (@kit_default_shown ? 'shown' : 'changed') : 'none' %>">
+        <% if @kit_default_shown %>
+          Showing the kit default.
+        <% elsif @kit_default %>
+          Changed from the kit default · <%= link_to "Back to kit default", logo_tab_default_path, class: "font-semibold text-primary hover:underline", data: { test: "kit-default-back" } %>
+        <% else %>
+          No kit default saved for this type: showing the brand's style. Save as default to open this tab on what you pick.
+        <% end %>
+      </p>
     <% end %>
 
     <p class="text-sm text-secondary" data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule, (@form if @type == :stacked)) %></p>
@@ -86,8 +107,8 @@
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
-    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as kit choice.</p>
-    <%= render "logos/context_notes", logo: (@logo unless @type == :icon) %>
+    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as default. Each tab then opens on it.</p>
+    <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
@@ -99,7 +120,11 @@
         <% variant = versions.values.first %>
         <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tones="<%= versions.keys.join(' ') %>" data-text="<%= variant.text %>">
           <% if variant.text %>
-            <h2 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(variant.text) %></h2>
+            <h2 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(variant.text) %>
+              <% if @kit_default_shown && @kit_default.text == variant.text %>
+                <span class="ml-1 rounded-full border border-subtle px-1.5 py-px normal-case tracking-normal text-heading" data-test="kit-default-text">Kit default</span>
+              <% end %>
+            </h2>
           <% end %>
           <% if variant.guides %>
             <%# A guide drawing fits its frame until its labels would be too small to read; from there it keeps its width

@@ -1,11 +1,17 @@
-<%# What the page's context means, in a line or two. Local: logo (optional; a
-    brand page passes its own on a tab that shows text versions, so the line
-    about them can be true). %>
+<%# What the page's context and colouring mean, in a line or two. Locals: logo
+    (optional; a brand page passes its own on a tab that shows text versions,
+    so the line about them can be true), brand_logo (optional: a brand page's
+    logo on every tab, for its colouring line). %>
 <% logo = local_assigns[:logo] %>
+<% brand_logo = local_assigns[:brand_logo] %>
 <p class="text-2xs text-muted" data-test="transparent-note">Every logo file has a transparent background, and here every logo sits on the page's own background. Context switches the hub between its light and dark theme, and the logos follow.</p>
+<p class="text-2xs text-muted" data-test="colouring-note">Colouring: Original is the brand's own art, as its kit draws it; Alt is one solid colour per part.<%= " Brands with no original show Alt." unless brand_logo %></p>
+<% if brand_logo && !brand_logo.original? %>
+  <p class="text-sm text-secondary" data-test="no-original"><%= Logos::Variant.brand_name(brand_logo) %>'s logo is solid colour, so it has no separate original.</p>
+<% end %>
 <% if @context == :watermark %>
   <p class="text-2xs text-muted" data-test="watermark-note">
-    A watermark is the whole logo in one colour, slightly transparent, for placing over a photograph. Watermark turns the page dark to show it.
+    A watermark is the whole logo in one colour, slightly transparent, for placing over a photograph. Watermark turns the page dark to show it. Colouring does not apply to a watermark: it is always the single-colour version.
     <% if logo && logo.highlight == "colour" %>
       <span data-test="watermark-text-note">This brand leads with a colour, and a watermark has only one, so its three text versions look the same here.</span>
     <% end %>

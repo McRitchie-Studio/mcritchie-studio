@@ -37,13 +37,15 @@ class LogosNavbarLogoTest < Minitest::Test
   ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 84708d03…. Turf Monster did not move (logos_brand_pins_test.rb).
-  ADDED_BRANDS_DIGEST = "3251e085eccc13a25870218d3654bb274ff459cc95da8a950feff639d9de314c"
+  # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 3251e085….
+  ADDED_BRANDS_DIGEST = "4d95d34120593eb66428e7386e63aa25233e336dc057dadf6bb71de386a1031c"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 69c5428f….
   WATERMARK_DIGEST = "817c912e0b1ded68805948d7048f9a799baaa9e8c3c1eb403064f1af24916ef2"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was c16934f5….
-  RULE_6_DIGEST = "2581fbeb23a878ca5dda233f2da62bd23c2a671bf024a486b9694218e5ad0e54"
+  # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2581fbeb….
+  RULE_6_DIGEST = "cb6f5e7551da6199baf0ca58e7217a68768d2c5ec1f228d772471f4072c0f88d"
   # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
   # logos_brand_pins_test.rb, so it cannot move these.
   PINNED = %w[studio industries turf welding].freeze
@@ -315,6 +317,7 @@ class LogosNavbarLogoTest < Minitest::Test
     Logo.brands.product(Logo::TONES).each do |brand, tone|
       logo = Logo.new(brand)
       key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+              %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
               %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Logo.icons.fetch(key)
       xml = doc(logo.icon_svg(tone:))
@@ -464,12 +467,12 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [8, 13, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [12, 25, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
     assert_equal ["evenodd"], Logo.letterings.values.map { |l| l["fill_rule"] }
-    assert_equal ["translate(-190,-166)"], Logo.icons.values.filter_map { |icon| icon["transform"] }
+    assert_equal ["translate(-190,-166)"] * 3, Logo.icons.values.filter_map { |icon| icon["transform"] }, "Industries: Alt and both Originals"
     Logo.brands.each { |brand| assert_kind_of Logo, Logo.new(brand) }
   end
 

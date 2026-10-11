@@ -29,7 +29,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       stacked: -> { get stacked_logo_path("industries", text: "first") } }
   end
 
-  # The sample of one type the index shows for a brand: [its SVG route, its accessible name].
+  # The sample of one type the index shows for a brand: [its SVG route, its accessible name]. A page shows a brand's
+  # Original where it has one (task logo-original-and-alt), except in a watermark, which has no colouring.
   def sample(brand, name, type, context)
     params, words = SAMPLES.fetch(type)
     guides = type == "icon" ? {} : { guides: 0 }
@@ -37,7 +38,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       params = params.merge(form: OWN_FORMS.fetch(brand))
       words = format(words, form: Logos::Variant::FORMS.fetch(OWN_FORMS.fetch(brand).to_sym).downcase)
     end
-    [public_send(:"#{type}_logo_path", brand, params.merge(tone: context, **guides)), "#{name} #{words}, #{context}"]
+    original = context != "watermark" && Logos::NavbarLogo.new(brand).original?
+    colouring = original ? { colouring: "original" } : {}
+    [public_send(:"#{type}_logo_path", brand, params.merge(tone: context, **colouring, **guides)),
+     "#{name} #{words}, #{context}#{', original colouring' if original}"]
   end
 
   test "every routed action is refused to a visitor and to a signed-in non-admin" do
@@ -81,7 +85,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
           assert_select "img[data-test='logo-image'][alt=?][src=?]", alt, src
         end
       end
-      assert_equal LABEL, sample("industries", "McRitchie Industries", "navbar", "light").last
+      assert_equal "#{LABEL}, original colouring", sample("industries", "McRitchie Industries", "navbar", "light").last
       assert_select "[data-test='logo-plate']", 0, "no plate: the logos sit on the page's own background"
     end
     assert_equal %w[Stacked Navbar Icon], css_select("[data-brand='studio'] [data-test='logo-badge']").map { |badge| badge.text.strip }
@@ -281,7 +285,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal variants.map { |v| "Copy SVG: #{v.label}" }, css_select("button[data-test='logo-copy']").map { |button| button["aria-label"] }
   end
 
-  def variants(brand, type, **choices) = Logos::Variant.all(Logos::Variant.logo(brand, type), type:, **choices)
+  # In the brand's own page colouring: its Original where it has one (task logo-original-and-alt).
+  def variants(brand, type, **choices)
+    logo = Logos::Variant.logo(brand, type)
+    Logos::Variant.all(logo, type:, colouring: logo.colourings.first, **choices)
+  end
 
   # A page that follows the hub theme: each example's light and dark versions, in page order.
   def themed(brand, type, **choices) = variants(brand, type, tone: :light, **choices).zip(variants(brand, type, tone: :dark, **choices)).flatten
@@ -303,7 +311,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["Homogeneous", "First word leads", "Second word leads"], css_select("[data-test='logo-example'] h2").map { |h| h.text.strip }
     assert_examples themed("industries", :navbar, rule: 4), examples: 3
     assert_themed_pairs(3)
-    assert_select "img[data-test='logo-image'][alt=?][src=?]", LABEL, navbar_logo_path("industries", rule: 4, text: "second", tone: "light", guides: 0)
+    assert_select "img[data-test='logo-image'][alt=?][src=?]", "#{LABEL}, original colouring",
+                  navbar_logo_path("industries", rule: 4, text: "second", tone: "light", colouring: "original", guides: 0)
     assert_select "[data-test='logo-plate'], [data-test='logo-type'] [style*='background']", 0, "no plate: each logo sits on the page's own background"
     assert_select "[data-test='logo-frame']", 3
     assert_select "[data-logo-theme]", 0, "with no context the page leaves the hub theme as it is"
@@ -314,10 +323,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle] + %w[logo-download logo-copy] * 6 + %w[kit-save] +
+    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle kit-save-default] +
+                 %w[logo-download logo-copy] * 6 + %w[kit-save] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 2 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
-    assert_select "[data-test='kit-note']", /pick on their tabs, then Save as kit choice/
-    assert_select "[data-test='brand-note']", /drawn flat.*without the marketing kit's steel gradient and tick marks/
+    assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./
+    assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/
   end
 
   test "the tabs are links by logo type, and the current one says so" do
@@ -389,8 +399,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       tones = context == "watermark" ? %w[watermark] : %w[light dark]
       assert_examples tones.flat_map { |tone| variants("welding", :icon, tone: tone.to_sym) }, examples: 1
       tones.each do |tone|
-        assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{tone}", icon_logo_path("welding", tone:)
-        assert_select "a[data-test='logo-download'][href=?]", icon_logo_path("welding", tone:, download: 1)
+        original = tone == "watermark" ? {} : { colouring: "original" }
+        assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{tone}#{', original colouring' if original.any?}",
+                      icon_logo_path("welding", tone:, **original)
+        assert_select "a[data-test='logo-download'][href=?]", icon_logo_path("welding", tone:, **original, download: 1)
       end
       assert_select "[data-test='logo-frame']", 1
       assert_select "[data-test='logo-plate']", 0
@@ -443,9 +455,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   test "each added brand's page says how its art was derived on every tab" do
     log_in_as(@admin)
     notes = {
-      "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours."],
+      "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture. The Original flattens its grass texture to three solid colours; Alt is the head's linework in the brand green alone."],
       "welding" => ["Commercial Welding v1", "The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole " \
-                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version."],
+                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. The Original is the kit's square logo, traced in its three colours; its helmet's right half is filled white, so it holds on a dark page. The kit has no lettering for dark pages, so the Original's name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version."],
       "welding_v2" => ["Commercial Welding v2", Logos::NavbarLogo.styles.fetch("welding_v2").fetch("note")]
     }
     notes.to_a.product(%w[icon navbar stacked]).each do |(brand, (name, note)), type|
@@ -595,7 +607,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     # A guide drawing fits its frame (max-width) down to a least width of its own, where its frame starts to scroll.
     # One frame per example holds both tones' drawings; its name is the drawing's, without the tone.
     assert_select "[data-test='logo-frame'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
-    assert_equal ["Guide drawing: McRitchie Industries navbar logo, rule of 3, homogeneous, construction guides"],
+    assert_equal ["Guide drawing: McRitchie Industries navbar logo, rule of 3, homogeneous, original colouring, construction guides"],
                  css_select("[data-test='logo-frame']").first(1).map { |frame| frame["aria-label"] }
     # A tab stop as served (so it works with JavaScript off); scroll_tab_stop.js drops the tabindex wherever the drawing fits.
     assert_select "[data-test='logo-frame'][tabindex='0'][data-scroll-tab-stop]", 3
@@ -776,7 +788,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_examples themed("welding", :stacked, form: :tagline, guides: true), examples: 3
     assert_equal ["tagline"], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
-    assert_equal %w[welding-stacked-tagline-homogeneous-light-guides.svg welding-stacked-tagline-first-light-guides.svg welding-stacked-tagline-second-light-guides.svg],
+    assert_equal %w[welding-stacked-tagline-homogeneous-light-original-guides.svg welding-stacked-tagline-first-light-original-guides.svg
+                    welding-stacked-tagline-second-light-original-guides.svg],
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 6
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/

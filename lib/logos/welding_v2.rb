@@ -12,14 +12,20 @@ module Logos
   #      that row. The blue frame around the window moves with it: its outer edge is the notch the white half's
   #      contour makes around the frame, and the points of that notch move by the same amount.
   #
-  # The traced data's own shapes are found, not numbered: of the primary layer's three sub-paths the outer one is the
-  # widest, the white half is the tallest of the two holes, and the window is the other. Only absolute M, L, C and Z
-  # are read (the potrace output); anything else is refused. `rake logos:welding_v2` writes the result to
+  # The traced data's own shapes are found, not numbered. The HALVES layer holds the white half and the window: v1's
+  # Alt helmets' `primary` (one blue layer, the two as holes in it) or the Original's `white` (the two as opaque white
+  # shapes over a blue silhouette; task logo-original-and-alt). The outer helmet is the widest sub-path of any layer;
+  # of the halves layer's other two, the white half is the taller and the window the other. Only absolute M, L, C and
+  # Z are read (the potrace output); anything else is refused. `rake logos:welding_v2` writes the result to
   # data/brand_icons_welding_v2.json; docs/topics/logos.md has the steps with the numbers.
   class WeldingV2
     class Error < ArgumentError; end
 
-    SOURCES = { "welding_v2" => "welding", "welding_v2_mono" => "welding_mono" }.freeze
+    # Each group shares one box (the widest its helmets need): the two Alt helmets, which share v1's box, and the
+    # Original, whose trace has its own scale.
+    GROUPS = [{ "welding_v2" => "welding", "welding_v2_mono" => "welding_mono" }, { "welding_v2_original" => "welding_original" }].freeze
+    SOURCES = GROUPS.reduce(:merge).freeze
+    HALVES = %w[primary white].freeze          # the layer holding the white half and the window, by role, in this order
     FILE = File.join(__dir__, "data/brand_icons_welding_v2.json")
     ROWS = 3                                   # the navbar rule whose rows the lens is set on
     # How far past the window's edges the frame's points lie, in icon units: the band is 16 to 20 thick, and the next
@@ -27,6 +33,9 @@ module Logos
     FRAME_REACH = 40.0
     SPLIT_TOLERANCE = 2.0                      # the midline's points lie within this of the white half's left edge
     CORNER = 20.0                              # the white half's corners, where its left edge turns into its top and bottom curves
+    # The three measures above are in v1's units, a helmet this tall; a trace at another scale (the Original's, 975
+    # tall) takes them scaled to its own height (#scaled), so every helmet is read the same way.
+    REFERENCE_HEIGHT = 483.0
     NUMBER = /-?\d+(?:\.\d+)?/
     SEGMENT = /([MLCZ])([^MLCZ]*)/
 
@@ -34,9 +43,11 @@ module Logos
     # needs, as v1's do: a logo's geometry is the same in every tone (the colour and the single-colour helmet are
     # separate traces, whose midlines differ by about one unit), and each is centred on its own midline in it.
     def self.icons(icons = NavbarLogo.icons)
-      helmets = SOURCES.transform_values { |from| new(icons.fetch(from), from) }
-      width = helmets.values.map(&:width).max
-      helmets.transform_values { |helmet| helmet.icon(width) }
+      GROUPS.each_with_object({}) do |group, out|
+        helmets = group.transform_values { |from| new(icons.fetch(from), from) }
+        width = helmets.values.map(&:width).max
+        out.merge!(helmets.transform_values { |helmet| helmet.icon(width) })
+      end
     end
 
     # The data file's contents, exactly as `rake logos:welding_v2` writes them.
@@ -49,11 +60,16 @@ module Logos
       @from = from
       @source = icon
       @height = icon.fetch("h").to_f
-      primary = icon.fetch("layers").find { |layer| layer["role"] == "primary" } or raise Error, "#{from}: no primary layer"
-      subpaths = self.class.subpaths(primary.fetch("d"))
-      raise Error, "#{from}: expected the outer helmet, the white half and the window, got #{subpaths.size} sub-paths" unless subpaths.size == 3
+      @layers = icon.fetch("layers").map { |layer| [layer, self.class.subpaths(layer.fetch("d"))] }
+      halves = HALVES.lazy.filter_map { |role| @layers.find { |layer, _| layer["role"] == role } }.first or
+        raise Error, "#{from}: no #{HALVES.join(' or ')} layer"
+      @outer = @layers.flat_map(&:last).max_by { |sub| self.class.bbox(sub)[2] - self.class.bbox(sub)[0] }   # widest
+      holes = halves.last.reject { |sub| sub.equal?(@outer) }
+      unless holes.size == 2 && halves.last.size == (halves.last.any? { |sub| sub.equal?(@outer) } ? 3 : 2)
+        raise Error, "#{from}: expected the white half and the window in the #{halves.first['role']} layer (with the outer helmet if it is " \
+                     "the primary), got #{halves.last.size} sub-paths"
+      end
 
-      @outer, *holes = subpaths.sort_by { |sub| -self.class.bbox(sub)[2] + self.class.bbox(sub)[0] }   # widest first
       @hole, @lens = holes.sort_by { |sub| self.class.bbox(sub)[1] - self.class.bbox(sub)[3] }       # tallest first
       @split = midline
       @window = self.class.bbox(@lens)
@@ -69,11 +85,17 @@ module Logos
       raise Error, "#{@from}: a box #{width} wide cannot hold the helmet centred (it needs #{self.width})" if width < self.width
 
       across = dx(width)
-      layers = @source.fetch("layers").map do |layer|
-        d = if layer["role"] == "primary"
-              [moved(@outer) { [across, 0] }, moved(@hole) { |x, y| frame?(x, y) ? [across, dy] : [across, 0] }, moved(@lens) { [across, dy] }].join
+      shapes = { @outer => ->(*) { [across, 0] }, @hole => ->(x, y) { frame?(x, y) ? [across, dy] : [across, 0] }, @lens => ->(*) { [across, dy] } }
+      layers = @layers.map do |layer, subpaths|
+        # A layer holding the outer helmet, the white half or the window is written in that order (v1's primary was
+        # written so), and every other sub-path (the spark) moves with the lens.
+        found = shapes.keys.select { |shape| subpaths.any? { |sub| sub.equal?(shape) } }
+        raise Error, "#{@from}: the #{layer['role']} layer mixes the helmet's halves with other shapes" if found.any? && found.size != subpaths.size
+
+        d = if found.any?
+              found.map { |shape| moved(shape, &shapes.fetch(shape)) }.join
             else
-              self.class.subpaths(layer.fetch("d")).map { |sub| moved(sub) { [across, dy] } }.join
+              subpaths.map { |sub| moved(sub) { [across, dy] } }.join
             end
         layer.merge("d" => d)
       end
@@ -83,7 +105,8 @@ module Logos
     # The frame's points: those of the white half's contour that lie within FRAME_REACH of the window.
     def frame?(x, y)
       left, top, right, bottom = window
-      x.between?(left - FRAME_REACH, right + FRAME_REACH) && y.between?(top - FRAME_REACH, bottom + FRAME_REACH)
+      reach = scaled(FRAME_REACH)
+      x.between?(left - reach, right + reach) && y.between?(top - reach, bottom + reach)
     end
 
     # A path's sub-paths, each a list of [command, [[x, y], ...]]: M and L carry one point, C three, Z none.
@@ -134,13 +157,17 @@ module Logos
 
     private
 
+    # A measure in v1's units at this helmet's scale: exactly itself for v1's own helmets.
+    def scaled(measure) = measure * height / REFERENCE_HEIGHT
+
     # The midline: the mean x of the white half's straight left edge: its on-curve points within SPLIT_TOLERANCE of
     # the leftmost, leaving out the corners where the edge turns into the top and bottom curves (CORNER of each end).
     def midline
       _, top, _, bottom = self.class.bbox(@hole)
-      points = @hole.flat_map { |_, segment| segment.last(1) }.select { |_, y| y.between?(top + CORNER, bottom - CORNER) }
+      corner = scaled(CORNER)
+      points = @hole.flat_map { |_, segment| segment.last(1) }.select { |_, y| y.between?(top + corner, bottom - corner) }
       left = points.map(&:first).min
-      edge = points.map(&:first).select { |x| x <= left + SPLIT_TOLERANCE }
+      edge = points.map(&:first).select { |x| x <= left + scaled(SPLIT_TOLERANCE) }
       edge.sum / edge.size
     end
 

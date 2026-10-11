@@ -20,7 +20,8 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     form = css_select("form[data-test='kit-save-form']").first
     assert_equal brand_kit_choice_path("studio"), form["action"]
     assert_equal "patch", form_fields(form)["_method"]
-    assert_equal({ "type" => "navbar", "rule" => "3", "first_colour" => "635BB2", "guides" => "1" }, form_fields(form).except("_method", "authenticity_token"))
+    assert_equal({ "type" => "navbar", "rule" => "3", "first_colour" => "635BB2", "guides" => "1", "colouring" => "alt" },
+                 form_fields(form).except("_method", "authenticity_token"))
     assert_equal "second", form.at_css("select[name=text] option[selected]")["value"]
     assert_select "[data-test='kit-choice-saved']", /No Navbar Logo saved yet: the brand shows its default, rule of 4, second word leads, as styled/
     assert_select "[data-test='kit-clear']", count: 0
@@ -28,7 +29,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
 
     get logo_brand_path("studio", type: "stacked", form: "tagline", tagline_visible: 0)
     fields = form_fields(css_select("form[data-test='kit-save-form']").first).except("_method", "authenticity_token")
-    assert_equal({ "type" => "stacked", "form" => "tagline", "tagline_visible" => "0" }, fields)
+    assert_equal({ "type" => "stacked", "form" => "tagline", "tagline_visible" => "0", "colouring" => "alt" }, fields)
     assert_equal "first", css_select("select[name=text] option[selected]").first["value"]
 
     get logo_brand_path("studio", type: "icon")
@@ -36,14 +37,15 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='kit-card']", 1
   end
 
-  test "saving the Navbar choice creates the kit, says what was saved, and returns to the tab as it was" do
+  # Task logo-original-and-alt, item 9: the saved choice is the tab's default, so saving returns to the bare tab.
+  test "saving the Navbar choice creates the kit, says what was saved, and returns to the tab, which opens on it" do
     log_in_as(@admin)
     assert_difference -> { BrandKit.count }, 1 do
       patch brand_kit_choice_path("studio"), params: { type: "navbar", rule: "3", text: "first", first_colour: "635BB2", ending_weight: "300", guides: "1" }
     end
-    assert_redirected_to logo_brand_path("studio", rule: "3", first_colour: "635BB2", ending_weight: "300", guides: "1", anchor: "kit-choice")
+    assert_redirected_to logo_brand_path("studio", guides: "1", anchor: "kit-choice")
     assert_equal "Saved the Navbar Logo kit choice: rule of 3, first word leads, first word Deep Violet; ending 300 Light.", flash[:notice]
-    assert_equal({ "rule" => 3, "text" => "first", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
+    assert_equal({ "rule" => 3, "text" => "first", "colouring" => "alt", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
     assert_equal @admin.email, kit.updated_by
 
     follow_redirect!
@@ -53,16 +55,18 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='kit-choice-saved']", /Saved Navbar Logo: rule of 3, first word leads, first word Deep Violet; ending 300 Light/
     assert_equal "first", css_select("select[name=text] option[selected]").first["value"], "the select starts on the saved text"
     assert_select "[data-test='kit-clear']", 1
+    assert_select "[data-test='rule-option'][data-rule='3'][aria-current='true']", 1, "the bare tab opens on the saved rule"
+    assert_select "[data-test='kit-default-state'][data-state='shown']", "Showing the kit default."
   end
 
   test "saving the Stacked choice, then a second save, keeps one record per brand" do
     log_in_as(@admin)
     patch brand_kit_choice_path("industries"), params: { type: "stacked", form: "tagline", text: "second", tagline_colour: "c8661f" }
-    assert_redirected_to logo_brand_path("industries", type: "stacked", form: "tagline", tagline_colour: "c8661f", anchor: "kit-choice")
+    assert_redirected_to logo_brand_path("industries", type: "stacked", anchor: "kit-choice")
     patch brand_kit_choice_path("industries"), params: { type: "navbar", rule: "6", text: "homogeneous" }
     assert_equal 1, BrandKit.where(brand: "industries").count
-    assert_equal({ "form" => "tagline", "text" => "second", "edits" => { "tagline_colour" => "C8661F" } }, kit("industries").stacked_choice)
-    assert_equal({ "rule" => 6, "text" => "homogeneous", "edits" => {} }, kit("industries").navbar_choice)
+    assert_equal({ "form" => "tagline", "text" => "second", "colouring" => "alt", "edits" => { "tagline_colour" => "C8661F" } }, kit("industries").stacked_choice)
+    assert_equal({ "rule" => 6, "text" => "homogeneous", "colouring" => "alt", "edits" => {} }, kit("industries").navbar_choice)
   end
 
   test "clearing a choice puts the brand back on its default" do
@@ -342,14 +346,16 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [%w[navbar false], %w[stacked true]], picks.map { |p| [p["data-type"], p["data-saved"]] }
     stacked = picks.last
     assert_equal "Stacked Logo · saved", stacked.at_css("h3").text.squish
-    assert_equal "With tagline, second word leads, ending Forge Orange", stacked.at_css("[data-test='kit-pick-summary']").text.strip
-    assert_equal logo_brand_path("industries", type: "stacked", form: "tagline", ending_colour: "C8661F"), stacked.at_css("[data-test='kit-pick-open']")["href"]
+    # Saved before colourings, so in Alt (task logo-original-and-alt), which its tab is opened in.
+    assert_equal "With tagline, second word leads, alt colouring, ending Forge Orange", stacked.at_css("[data-test='kit-pick-summary']").text.strip
+    assert_equal logo_brand_path("industries", type: "stacked", form: "tagline", ending_colour: "C8661F", colouring: "alt"),
+                 stacked.at_css("[data-test='kit-pick-open']")["href"]
     assert_equal 2, stacked.css("img[data-test='kit-pick-image']").size
 
     get logo_brand_path("industries", context: "watermark")
     stacked = css_select("[data-test='kit-pick'][data-type='stacked']").first
     assert_equal ["watermark"], stacked.css("img").map { |img| Rack::Utils.parse_query(URI(img["src"]).query)["tone"] }
-    assert_equal logo_brand_path("industries", type: "stacked", form: "tagline", ending_colour: "C8661F", context: "watermark"),
+    assert_equal logo_brand_path("industries", type: "stacked", form: "tagline", ending_colour: "C8661F", context: "watermark", colouring: "alt"),
                  stacked.at_css("[data-test='kit-pick-open']")["href"], "the link keeps the saved edits and the context"
   end
 end

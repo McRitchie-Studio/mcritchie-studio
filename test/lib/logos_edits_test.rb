@@ -54,9 +54,14 @@ class LogosEditsTest < Minitest::Test
   def test_an_icon_colour_recolours_its_primary_layer_only
     edited = fills(navbar("industries").svg(edits: { icon: { colour: "#C8661F" } })).first(3)
     assert_equal ["#C8661F", "#8C939C", "#262A30"], edited, "the edge keeps its styled steel, the name its own ink"
-    assert_equal "outline", navbar("turf").icon_role(:light), "Turf's head has no primary layer: its outline is recoloured"
-    turf = fills(navbar("turf").svg(edits: { icon: { colour: "#2E7D32" } })).first(3)
+    # Turf Monster's three-colour head (its Original; task logo-original-and-alt) has no primary layer, so an icon with
+    # those tones would have its outline recoloured. Turf's Alt is its single-colour head, whose one layer is primary.
+    turf_style = Logos::NavbarLogo.styles.fetch("turf")
+    three = Logos::NavbarLogo.new("x", styles: { "x" => turf_style.merge("tones" => turf_style.fetch("original")) })
+    assert_equal "outline", three.icon_role(:light), "an icon with no primary layer: its first layer, the outline, is recoloured"
+    turf = fills(three.svg(edits: { icon: { colour: "#2E7D32" } })).first(3)
     assert_equal ["#2E7D32", "#5C972A", "#F0EBCF"], turf
+    assert_equal "primary", navbar("turf").icon_role(:light), "Turf's Alt head is one layer"
     assert_equal "primary", navbar("welding").icon_role(:dark), "the single-colour helmet on dark"
   end
 

@@ -34,9 +34,11 @@ class LogosStackedLogoTest < Minitest::Test
   # Re-taken again by the same task's review fix: v1's tracked small line keeps its WELDING LLC word gap (two tracking
   # steps plus the kit's); was 56b61a90…. Studio and Industries still did not move.
   TWO_LINE_DIGEST = "96644c91ec96d2b94990f20cdc7564607aa085e53b38c15b26e9148c5803f24c"
-  ONE_LINE_DIGEST = "b21a2b809641dfc8f3c5084a2a1550540e8ba0d222952ebaadb4c50a5822d1ae"
+  # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green); was b21a2b80….
+  ONE_LINE_DIGEST = "e2af15cdfefb98cc94bc4053fa5a80e174eff6eb269f523457b82120455e21ed"
   TAGLINE_DIGEST = "4a47fdc768de8b58bad7efe628c1b2f903bf5b694b1d608a1d90e9c634f2d3cf"
-  ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
+  # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head; was 4196eaad….
+  ICON_DIGEST = "c3b2958606a98a5e98438ccd6461b3617bccb625920438cb1a935d8dcf189b2a"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
   # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as
@@ -146,7 +148,7 @@ class LogosStackedLogoTest < Minitest::Test
   def test_everything_is_centred_and_the_icon_is_scaled_to_its_height
     Navbar.brands.product(Navbar::TONES).each do |brand, tone|
       box = stacked(brand).layout(text: :first, tone:)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
               %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Navbar.icons.fetch(key)
       icon_width = icon["w"] * box.icon_height / icon["h"]
@@ -273,7 +275,7 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def icon_box(brand, tone, box)
-    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
               %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
     icon = Navbar.icons.fetch(key)
     [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
@@ -379,10 +381,10 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone, form, guides and edits, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text, tone, form and edits, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone, form, guides and edits, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text, tone, form and edits, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form, guides, edits and colouring, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone, form, edits and colouring, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form, guides, edits and colouring, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone, form, edits and colouring, not guides/, refusal { stacked("studio").layout(guides: true) })
 
     wide = JSON.parse(JSON.generate(Navbar.icons)).tap { |icons| icons.fetch("studio")["w"] = 2000 }
     assert_match(/brand studio: the icon is too wide to stack \(2\.22 of the name's width at this height\)/, refusal { Stacked.new("studio", icons: wide) })

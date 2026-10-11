@@ -39,7 +39,7 @@ class BrandKitTest < ActiveSupport::TestCase
     kit.save_choice(:navbar, params(rule: "3", text: "first", first_colour: "635bb2", ending_weight: "300", tagline_visible: "0", tone: "dark"), by: BY)
     kit.reload
     # The tagline edit is dropped: a Navbar Logo has no tagline. The tone is the page's, never saved.
-    assert_equal({ "rule" => 3, "text" => "first", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
+    assert_equal({ "rule" => 3, "text" => "first", "colouring" => "alt", "edits" => { "first_colour" => "635BB2", "ending_weight" => "300" } }, kit.navbar_choice)
     assert_equal BY, kit.updated_by
     assert kit.saved?(:navbar)
     refute kit.saved?(:stacked)
@@ -48,11 +48,11 @@ class BrandKitTest < ActiveSupport::TestCase
   test "a saved stacked choice keeps its form and the tagline's edits only in the tagline form" do
     kit = BrandKit.for("studio")
     kit.save_choice(:stacked, params(form: "tagline", text: "second", tagline_visible: "0", icon_colour: "1A1535"), by: BY)
-    assert_equal({ "form" => "tagline", "text" => "second", "edits" => { "icon_colour" => "1A1535", "tagline_visible" => "0" } },
+    assert_equal({ "form" => "tagline", "text" => "second", "colouring" => "alt", "edits" => { "icon_colour" => "1A1535", "tagline_visible" => "0" } },
                  kit.reload.stacked_choice)
 
     kit.save_choice(:stacked, params(form: "two_line", text: "first", tagline_visible: "0"), by: BY)
-    assert_equal({ "form" => "two_line", "text" => "first", "edits" => {} }, kit.reload.stacked_choice)
+    assert_equal({ "form" => "two_line", "text" => "first", "colouring" => "alt", "edits" => {} }, kit.reload.stacked_choice)
   end
 
   test "saving refuses what the page could not draw, and stores nothing" do
@@ -96,7 +96,7 @@ class BrandKitTest < ActiveSupport::TestCase
     kit = BrandKit.new(brand: "studio")
     {
       { "rule" => 4, "text" => "first", "edits" => { "first_colour" => "000000" } } => /must be one of the brand.s palette/,
-      { "rule" => 4, "text" => "first", "extra" => 1 } => /a map of rule, text, edits/,
+      { "rule" => 4, "text" => "first", "extra" => 1 } => /a map of rule, text, colouring, edits/,
       { "rule" => 4, "text" => "first", "edits" => { "onclick" => "x" } } => /edit params/,
       { "rule" => 4, "text" => "first", "edits" => { "first_colour" => ["635BB2"] } } => /edit params/,
       "rule of 4" => /a map of/
@@ -121,10 +121,16 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_empty kit.variant(:navbar, tone: :watermark).edits, "a watermark is one colour"
   end
 
+  test "a saved choice of a brand with no original asked for in Original is drawn in Alt" do
+    kit = BrandKit.for("studio")
+    kit.save_choice(:navbar, params(rule: "3", text: "first"), by: BY)
+    assert_equal :alt, kit.variant(:navbar, colouring: :original).colouring, "the table's ?colouring=original"
+  end
+
   test "a choice is stored in the flat URL spelling and read back from the jsonb's string keys through the URL parser" do
     BrandKit.for("studio").save_choice(:stacked, params(form: "tagline", text: "first", first_colour: "635BB2", tagline_weight: "600"), by: BY)
     stored = BrandKit.connection.select_value("SELECT stacked_choice FROM brand_kits WHERE brand = 'studio'")
-    assert_equal({ "form" => "tagline", "text" => "first", "edits" => { "first_colour" => "635BB2", "tagline_weight" => "600" } }, JSON.parse(stored))
+    assert_equal({ "form" => "tagline", "text" => "first", "colouring" => "alt", "edits" => { "first_colour" => "635BB2", "tagline_weight" => "600" } }, JSON.parse(stored))
 
     kit = BrandKit.find_by!(brand: "studio")
     assert(kit.stacked_choice["edits"].keys.all?(String), "jsonb hands back string keys")
@@ -212,5 +218,36 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_empty kit.originals
     assert_equal "other@test.com", kit.updated_by
     assert_raises(ActiveRecord::RecordNotFound) { kit.remove_original(0, by: BY) }
+  end
+
+  # Task logo-original-and-alt, item 9: the saved kit choice is the tab's default.
+  test "a tab's defaults are its saved choice, else the built-in style" do
+    kit = BrandKit.for("welding")
+    assert_equal({ rule: 4, form: :two_line, colouring: nil, edits: {}, choice: nil }, kit.page_defaults(:stacked), "nothing saved")
+    kit.save_choice(:stacked, params(form: "tagline", text: "first", colouring: "original"), by: BY)
+    kit.save_choice(:navbar, params(rule: "3", text: "second", colouring: "alt", ending_colour: "D7602E"), by: BY)
+    kit.reload
+    stacked = kit.page_defaults(:stacked)
+    assert_equal [3, :tagline, :original, {}], stacked.values_at(:rule, :form, :colouring, :edits), "the navbar rule is read on every tab"
+    assert_equal :first, stacked[:choice].text
+    navbar = kit.page_defaults(:navbar)
+    assert_equal [3, :tagline, :alt, { ending: { colour: "#D7602E" } }], navbar.values_at(:rule, :form, :colouring, :edits)
+    icon = kit.page_defaults(:icon)
+    assert_equal [3, :tagline, nil, {}, nil], icon.values_at(:rule, :form, :colouring, :edits, :choice), "the icon tab has no saved choice"
+
+    assert kit.default_shown?(:stacked, rule: 4, form: :tagline, colouring: :original, edits: {})
+    refute kit.default_shown?(:stacked, rule: 4, form: :two_line, colouring: :original, edits: {}), "another form"
+    refute kit.default_shown?(:stacked, rule: 4, form: :tagline, colouring: :alt, edits: {}), "another colouring"
+    assert kit.default_shown?(:navbar, rule: 3, form: nil, colouring: :alt, edits: { ending: { colour: "#D7602E" } })
+    refute kit.default_shown?(:navbar, rule: 3, form: nil, colouring: :alt, edits: {}), "the edits are part of it"
+    refute BrandKit.for("studio").default_shown?(:navbar, rule: 4, form: nil, colouring: :alt, edits: {}), "nothing saved"
+  end
+
+  test "a saved choice the brand can no longer draw is no default" do
+    kit = BrandKit.for("studio")
+    kit.save!
+    kit.update_column(:navbar_choice, { "rule" => 5, "text" => "first", "edits" => {} })
+    assert_nil kit.saved_variant(:navbar)
+    assert_equal [4, nil], kit.page_defaults(:navbar).values_at(:rule, :choice)
   end
 end

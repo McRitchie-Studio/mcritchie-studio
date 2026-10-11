@@ -67,6 +67,7 @@ module Logos
       @form = form.to_sym
       @tagline = checked_tagline
       TEXTS.product(TONES, forms) { |text, tone, each| layout(text:, tone:, form: each) }
+      TEXTS.product(BAKED, forms) { |text, tone, each| layout(text:, tone:, form: each, colouring: :original) } if original?
     end
 
     # :two_line or :one_line
@@ -80,8 +81,9 @@ module Logos
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, **unknown)
-      check_keywords(unknown, "text, tone, form and edits")
+    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, colouring: :alt, **unknown)
+      check_keywords(unknown, "text, tone, form, edits and colouring")
+      look = look(tone, colouring)
       check_text(text)
       check_form(form)
       edits = checked_edits(edits)
@@ -104,16 +106,16 @@ module Logos
         line = [small, form == :tagline ? tagline_glyphs(weight) : second, U]
       end
       line, line_width = unit_line(*line)
-      Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(tone, icon_height, width)) / 2,
+      Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(look, icon_height, width)) / 2,
                  edges:, letters: placed, line:, line_width:)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, **unknown)
-      check_keywords(unknown, "text, tone, form, guides and edits")
-      check_tone(tone)
-      edits = edits_in(tone, edits)
-      box = layout(text:, tone:, form:, edits:)
-      render(box, box.height, text, tone, guides, edits)
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, colouring: :alt, **unknown)
+      check_keywords(unknown, "text, tone, form, guides, edits and colouring")
+      look = look(tone, colouring)
+      edits = edits_in(look, edits)
+      box = layout(text:, tone:, form:, edits:, colouring:)
+      render(box, box.height, text, look, guides, edits)
     end
 
     private
@@ -186,37 +188,38 @@ module Logos
 
     # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet, unless
     # its colour is edited.
-    def fills(tone, text, edits = NO_EDITS)
+    def fills(look, text, edits = NO_EDITS)
       icon, colours = super
-      return [icon, colours + [@watermark["fill"]]] if tone == :watermark
+      return [icon, colours + [@watermark["fill"]]] if look == :watermark
 
-      baked = @style.fetch("tones").fetch(tone.to_s)
-      [icon, colours + [edits.dig(:tagline, :colour) || baked.fetch("quiet", baked.fetch("text"))]]
+      baked = tone_style(look)
+      tagline = edits.dig(:tagline, :colour) || baked.fetch("quiet", baked.fetch("text"))
+      [icon, colours + [original_look?(look) ? gradient_ref(look, tagline) : tagline]]
     end
 
-    def icon_width(tone, height, width)
-      icon = @icons.fetch(tone)
+    def icon_width(look, height, width)
+      icon = @icons.fetch(look)
       wide = icon.fetch("w") * height / icon.fetch("h")
       raise Error, "brand #{brand}: the icon is too wide to stack (#{f(wide / width)} of the name's width at this height)" if wide > width
 
       wide
     end
 
-    def drawing(box, tone, icon_fills, colours)
-      icon = icon_markup(@icons.fetch(tone), icon_fills, box.icon_height)
+    def drawing(box, look, icon_fills, colours)
+      icon = icon_markup(@icons.fetch(look), icon_fills, box.icon_height)
       %(<g transform="translate(#{f(box.icon_left)},0)">#{icon}</g>) +
         box.letters.map { |l| letter_markup(l, l[:baseline], l[:cap], colours[l[:word]]) }.join
     end
 
     # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
     # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the turned line's bracket.
-    def render(box, height, text, tone, guides, edits = NO_EDITS)
+    def render(box, height, text, look, guides, edits = NO_EDITS)
       return super unless guides
 
-      body = toned(tone, drawing(box, tone, *fills(tone, text, edits)))
-      ghosts = ghost_group(tone, ruler_markup(box, ghost_fill(tone)) + proof_markup(box, ghost_fill(tone)))
+      body = toned(look, drawing(box, look, *fills(look, text, edits)))
+      ghosts = ghost_group(look, ruler_markup(box, ghost_fill(look)) + proof_markup(box, ghost_fill(look)))
       left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
-      document(body + ghosts + line_group(guide_markup(box)), box.width, height, **GUIDE_PAD, left:,
+      document(with_defs(look, body + ghosts + line_group(guide_markup(box))), box.width, height, **GUIDE_PAD, left:,
                right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
 

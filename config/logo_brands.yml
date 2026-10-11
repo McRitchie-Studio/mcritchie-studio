@@ -27,11 +27,20 @@
 #            in the glyph data. A brand without one has no tagline form
 # tracking   optional: extra space after every letter, in em (negative tightens)
 # note       optional: one line the brand's page shows about where its art came from
-# tones      fills for a light and a dark background. `text` is the name's
+# tones      the ALT colouring (task logo-original-and-alt): one solid colour per
+#            part, the fills for a light and a dark background. `text` is the name's
 #            colour; `quiet` (optional, defaults to `text`) is the non-leading
 #            word under highlight: weight; `accent` is the leading word under
 #            highlight: colour; `icon` maps each icon layer role to a fill;
 #            `icon_key` (optional) names a different icon for this tone.
+# original   optional: the ORIGINAL colouring, the brand's true art (its kit's
+#            own logo), as `light` and `dark`, each a map like a tone: `text`,
+#            `quiet`, `accent` and `icon` fills and an optional `icon_key` (the
+#            original's own icon data). A brand whose logo is solid colour
+#            (Studio) has none, and draws Alt only. Edits and the watermark
+#            never use it. An original's fill may be url(#<id>), naming a
+#            gradient its own icon data declares in `defs`; every other fill is
+#            a #hex.
 # watermark  optional: the watermark logo (the whole logo in one colour, slightly
 #            transparent, for placing over a photograph). `fill` (default
 #            "#FFFFFF"), `opacity` (greater than 0, at most 1; default 0.6) and
@@ -47,7 +56,7 @@
 #            (Montserrat). A level set in the brand's own traced lettering has no
 #            family and no weight, only a `label` saying so (Logos::BrandKit)
 #
-# Fills are solid #hex only: no gradients.
+# Fills are solid #hex only, except an original's gradients (above).
 
 studio:
   name: McRITCHIE STUDIO
@@ -81,7 +90,7 @@ industries:
   highlight: weight
   heavy: 700
   light: 300
-  note: The Industries icon is drawn flat here, as two solid layers, without the marketing kit's steel gradient and tick marks. That is deliberate in this first version.
+  note: The Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks, and the name in the kit wordmark's steel gradient. Alt draws the icon flat, as two solid layers.
   palette:
     - { name: Forge Orange, hex: "#C8661F" }
     - { name: Ember Orange, hex: "#E07B2E" }
@@ -104,6 +113,19 @@ industries:
       text: "#F4F5F7"
       quiet: "#D3D6DA"
       icon: { primary: "#D3D6DA", edge: "#FFFFFF" }
+  # The kit's 05_icon light and dark SVGs (steel gradient, ruler ticks) and its horizontal logos' lettering: the
+  # leading word in the wordmark's steel gradient, the other word in the kit's solid gunmetal (light) or light steel.
+  original:
+    light:
+      icon_key: industries_original_light
+      text: url(#steel_name)
+      quiet: "#41464D"
+      icon: { primary: url(#steel), edge: "#8C939C", ticks: "#3A3F45" }
+    dark:
+      icon_key: industries_original_dark
+      text: url(#steel_name)
+      quiet: "#D3D6DA"
+      icon: { primary: url(#steel), edge: "#FFFFFF", ticks: "#6B7179" }
 
 turf:
   name: Turf Monster
@@ -112,7 +134,7 @@ turf:
   heavy: 800
   tracking: -0.025
   stacked: one_line
-  note: The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours.
+  note: The head is auto-traced from the 880 px picture. The Original flattens its grass texture to three solid colours; Alt is the head's linework in the brand green alone.
   palette:
     - { name: Brand Green, hex: "#4BAF50" }
     - { name: Forest, hex: "#2E7D32" }
@@ -124,7 +146,21 @@ turf:
   typefaces:
     - { role: Display, family: Montserrat, weight: 800 }
     - { role: Text, family: Montserrat, weight: 500 }
+  # Alt is one solid colour per part, as for every brand: the single-colour head (turf_mono, the linework) in the
+  # brand green. The three-colour head is the Original (task logo-original-and-alt).
   tones:
+    light:
+      icon_key: turf_mono
+      text: "#1A1535"
+      accent: "#4BAF50"
+      icon: { primary: "#4BAF50" }
+    dark:
+      icon_key: turf_mono
+      text: "#FFFFFF"
+      accent: "#4BAF50"
+      icon: { primary: "#4BAF50" }
+  # The three-colour head, the brand's own art, in both tones: ink and green lettering on light, white and green on dark.
+  original:
     light:
       text: "#1A1535"
       accent: "#4BAF50"
@@ -143,7 +179,7 @@ welding:
   icon: welding
   lettering: welding
   highlight: colour
-  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version.
+  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark. The Original is the kit's square logo, traced in its three colours; its helmet's right half is filled white, so it holds on a dark page. The kit has no lettering for dark pages, so the Original's name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version.
   palette:
     - { name: Welding Blue, hex: "#2D5E8E" }
     - { name: Spark Orange, hex: "#D7602E" }
@@ -162,6 +198,21 @@ welding:
       text: "#FFFFFF"
       accent: "#F08A5A"
       icon: { primary: "#FFFFFF" }
+  # The kit's square logo (COM - Square - Large.png): the icon fills are sampled from it; the name colours are the
+  # kit's blue and orange (the tagline in orange). The kit has no dark lettering: on dark the name is white.
+  original:
+    light:
+      icon_key: welding_original
+      text: "#2D5E8E"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
+    dark:
+      icon_key: welding_original
+      text: "#FFFFFF"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
   watermark:
     icon_key: welding_mono
 
@@ -174,7 +225,7 @@ welding_v2:
   icon: welding_v2
   lettering: welding
   highlight: colour
-  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. On dark backgrounds the helmet is the single-colour version.
+  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. The Original is v1's Original (the kit's square logo) with the same two tweaks; the kit has no lettering for dark pages, so its name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version.
   palette:
     - { name: Welding Blue, hex: "#2D5E8E" }
     - { name: Spark Orange, hex: "#D7602E" }
@@ -193,5 +244,19 @@ welding_v2:
       text: "#FFFFFF"
       accent: "#F08A5A"
       icon: { primary: "#FFFFFF" }
+  # v1's Original with the v2 derivation applied (Logos::WeldingV2: welding_v2_original), in v1's Original colours.
+  original:
+    light:
+      icon_key: welding_v2_original
+      text: "#2D5E8E"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
+    dark:
+      icon_key: welding_v2_original
+      text: "#FFFFFF"
+      quiet: "#D7602E"
+      accent: "#D7602E"
+      icon: { blue: "#2E5E8E", white: "#FFFFFF", accent: "#D5752B" }
   watermark:
     icon_key: welding_v2_mono
