@@ -165,7 +165,8 @@ module Logos
 
     # The type's own choices, as its SVG route's params.
     def params = { rule:, form:, text:, tone:, guides: guides ? 1 : 0 }.slice(*CHOICES.fetch(type)).merge(self.class.edit_params(edits))
-    def filename = [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("guides" if guides)].compact.join("-") + ".svg"
+    # An edited logo's file says so: studio-stacked-tagline-first-light-custom.svg.
+    def filename = [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("guides" if guides), ("custom" if edited?)].compact.join("-") + ".svg"
 
     private
 
@@ -190,7 +191,7 @@ module Logos
     def label
       ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), (FORMS.fetch(form).downcase if form),
        (TEXTS.fetch(text).downcase if text),
-       tone.to_s, ("construction guides" if guides)].compact.join(", ")
+       tone.to_s, ("construction guides" if guides), ("edited" if edited?)].compact.join(", ")
     end
   end
 end

@@ -145,4 +145,30 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
       assert_equal "text/plain", response.media_type
     end
   end
+
+  test "every download and copy on the tab honours the edits, and an edited file is named -custom" do
+    get logo_brand_path("industries", rule: 4, ending_weight: 300, ending_colour: "C8661F")
+    downloads = css_select("a[data-test='logo-download']")
+    copies = css_select("button[data-test='logo-copy']")
+    assert_equal 6, downloads.size
+    assert_equal 6, copies.size
+    logo = Logos::NavbarLogo.new("industries")
+    edits = { ending: { weight: 300, colour: "#C8661F" } }
+    expected = Logos::Variant::TEXTS.keys.product(Logos::NavbarLogo::BAKED).map { |text, tone| logo.svg(rule: 4, text:, tone:, edits:) }
+    assert_equal expected.sort, copies.map { |b| b["data-clip"] }.sort
+    copies.each { |b| assert_match(/, edited\z/, b["aria-label"]) }
+
+    downloads.each do |link|
+      assert_equal %w[300 C8661F 1], query(link["href"]).values_at("ending_weight", "ending_colour", "download")
+      get link["href"]
+      assert_response :success
+      assert_match(/attachment; filename="industries-navbar-rule4-\w+-(light|dark)-custom\.svg"/, response.headers["Content-Disposition"])
+      assert_includes response.body, %(fill="#C8661F")
+    end
+  end
+
+  test "an unedited download keeps its old name" do
+    get navbar_logo_path("industries", rule: 4, text: "second", download: 1)
+    assert_match(/filename="industries-navbar-rule4-second-light\.svg"/, response.headers["Content-Disposition"])
+  end
 end
