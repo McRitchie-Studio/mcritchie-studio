@@ -181,9 +181,12 @@ module Logos
 
     public
 
-    # "McRITCHIE INDUSTRIES" as a reader says it: "McRitchie Industries".
+    # "McRITCHIE INDUSTRIES" as a reader says it: "McRitchie Industries"; or the style's own `title` where it gives
+    # one, so two versions of a brand ("Commercial Welding v1", "Commercial Welding v2") are told apart.
     def self.brand_name(logo)
-      logo.words.map { |word| word.sub(/\A(Mc)?(.)(.*)\z/) { "#{$1}#{$2.upcase}#{$3.downcase}" } }.join(" ")
+      return logo.title if logo.title
+
+      logo.words.join(" ").split.map { |word| word.sub(/\A(Mc)?(.)(.*)\z/) { "#{$1}#{$2.upcase}#{$3.downcase}" } }.join(" ")
     end
 
     # The accessible name: "McRitchie Industries navbar logo, rule of 4, second word leads, light",

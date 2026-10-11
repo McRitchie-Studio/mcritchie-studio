@@ -176,11 +176,12 @@ module Logos
       target = SPAN * width
       natural = place(glyphs, U, 0, index, 0).last   # its ink width: `place` starts the ink at 0
       gaps = glyphs.size - 1
+      steps = glyphs[0...-1].sum { |glyph| steps(glyph) }   # a word gap inside a traced ending takes two (NavbarLogo#place)
       if natural > target || gaps.zero?
         raise Error, "brand #{brand}: #{yield(gaps.zero? ? 'it has one letter' : "it is #{(100 * natural / width).round}% already")}"
       end
 
-      place(glyphs, U, (width - target) / 2, index, (target - natural) / (gaps * U)).first
+      place(glyphs, U, (width - target) / 2, index, (target - natural) / (steps * U)).first
     end
 
     # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet, unless
