@@ -35,7 +35,7 @@
     <p class="text-sm text-secondary" data-test="edit-original">The Original is the brand's own art, so edits apply to Alt only. Any you made come back in Alt.
       <%= link_to "Edit in Alt", logo_brand_path(@logo.brand, logo_page_params(colouring: :alt)), class: "font-semibold text-primary hover:underline", data: { test: "edit-in-alt" } %></p>
   <% else %>
-    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. To keep them, Save as kit choice below.</p>
+    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. To keep them, Save as default. Reset goes back to the kit default, or to the brand's style when none is saved.</p>
     <% if @edit_refusal %>
       <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="edit-refusal">These edits cannot be drawn here, so the logos are shown as styled: <%= @edit_refusal %></p>
     <% end %>

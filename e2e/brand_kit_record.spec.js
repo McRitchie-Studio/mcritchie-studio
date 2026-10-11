@@ -21,16 +21,19 @@ const stackedTile = (page, brand) => page.locator(`[data-test='logo-cluster'][da
 
 // Written as literal tests, not a loop: bin/e2e-executed-set-check counts `test(` calls in the source.
 test("saving a stacked choice with an edit shows it in the table, marked Saved, and clearing it brings the default back", async ({ page }) => {
-  await open(page, "/logos/industries?type=stacked&form=tagline&ending_colour=C8661F");
+  // Edits apply to Alt (task logo-original-and-alt): Industries opens on its Original unless asked.
+  await open(page, "/logos/industries?type=stacked&form=tagline&ending_colour=C8661F&colouring=alt");
   const choice = page.locator("[data-test='kit-choice']");
   await expect(choice.locator("[data-test='kit-save-text']")).toHaveValue("first");
   await choice.locator("[data-test='kit-save-text']").selectOption("second");
   await choice.locator("[data-test='kit-save']").click();
 
-  await page.waitForURL(/\/logos\/industries\?.*form=tagline/);
-  await expect(page.getByText("Saved the Stacked Logo kit choice: with tagline, second word leads, ending Forge Orange.")).toBeVisible();
+  // The saved choice is the tab's default (task logo-original-and-alt): back to the bare tab, which opens on it.
+  await page.waitForURL(/\/logos\/industries\?type=stacked#kit-choice$/);
+  await expect(page.locator("a[data-test='form-option'][aria-current='true']")).toHaveText("With tagline");
+  await expect(page.getByText("Saved the Stacked Logo kit choice: with tagline, second word leads, alt colouring, ending Forge Orange.")).toBeVisible();
   await expect(page.locator("[data-test='kit-status']")).toContainText(/Kit: saved \w{3} \d+, \d{4} by Alex Test/);
-  await expect(page.locator("[data-test='kit-pick'][data-type='stacked'] [data-test='kit-pick-summary']")).toHaveText("With tagline, second word leads, ending Forge Orange");
+  await expect(page.locator("[data-test='kit-pick'][data-type='stacked'] [data-test='kit-pick-summary']")).toHaveText("With tagline, second word leads, alt colouring, ending Forge Orange");
 
   await page.goto("/logos");
   const tile = stackedTile(page, "industries");

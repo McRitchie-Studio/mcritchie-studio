@@ -19,7 +19,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Logos</h1>
       <%= render "context_form", url: logos_path %>
-      <%= render "colouring_control", path: ->(page) { logos_path(page) }, chosen: @colouring_param || :original %>
+      <%= render "colouring_control", path: ->(page) { logos_path(page) }, chosen: @colouring_param || :original, default: :original %>
     </div>
     <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
     <p class="text-2xs text-muted" data-test="kit-note">A brand's Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults. Choose and save them on the brand's page.</p>

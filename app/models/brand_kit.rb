@@ -120,6 +120,35 @@ class BrandKit < ApplicationRecord
     Logos::Variant.new(logo, type:, tone:, colouring: colouring.to_sym, **DEFAULTS.fetch(type))
   end
 
+  # What a brand page's tab opens on (task logo-original-and-alt, item 9: the saved kit choice is the default): the
+  # Navbar rule and Stacked form (read on every tab, so each carries to its own), and the tab's colouring and edits,
+  # from the saved choices, else the built-in defaults (the rule of 4, the brand's own form, the brand's own colouring,
+  # no edits). `choice` is the tab's saved choice as a Logos::Variant, or nil (the Icon tab, nothing saved, or a
+  # saved choice the brand can no longer draw).
+  def page_defaults(type)
+    navbar = saved_variant(:navbar)
+    stacked = saved_variant(:stacked)
+    choice = { navbar:, stacked: }[type.to_sym]
+    { rule: navbar&.rule || 4, form: stacked&.form || Logos::StackedLogo.new(brand).form, colouring: choice&.colouring,
+      edits: choice&.edits || Logos::NavbarLogo::NO_EDITS, choice: }
+  end
+
+  # True when a tab's settings are exactly its saved choice's (the page then says it shows the kit default).
+  def default_shown?(type, rule:, form:, colouring:, edits:)
+    choice = saved_variant(type) or return false
+    shape = type.to_sym == :stacked ? choice.form == form : choice.rule == rule
+    shape && choice.colouring == colouring && choice.edits == edits
+  end
+
+  # The saved choice of `type` as a Logos::Variant, or nil when none is saved or it can no longer be drawn.
+  def saved_variant(type)
+    return unless TYPES.include?(type.to_sym) && saved?(type)
+
+    variant(type)
+  rescue Error
+    nil
+  end
+
   # The saved edits of `type` that #variant drops because they can no longer be drawn: { "first_colour" => reason }.
   def stale_edits(type)
     return {} unless saved?(type)

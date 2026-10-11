@@ -1,11 +1,11 @@
 <%# THE COLOURING CONTROL (task logo-original-and-alt), beside Context on the
     index and on a brand page: Original (the brand's own art) or Alt (one solid
     colour per part). Plain links built from logo_page_params, so every other
-    setting is kept, and every other control keeps this one. Original is the
-    default, so choosing it drops the param. A brand page whose brand has no
+    setting is kept, and every other control keeps this one. Choosing the
+    page's default (Original, or a brand's saved kit colouring) drops the param. A brand page whose brand has no
     original (Studio) shows Original disabled and says why. Locals: path (a
-    lambda from page params to a URL), chosen (the colouring shown), logo
-    (optional: the brand page's logo). %>
+    lambda from page params to a URL), chosen (the colouring shown), default
+    (the colouring with no param), logo (optional: the brand page's logo). %>
 <% logo = local_assigns[:logo] %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% look = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
@@ -15,7 +15,7 @@
     <% if logo && !logo.colourings.include?(colouring) %>
       <span class="btn btn-sm btn-neutral opacity-50 cursor-not-allowed" aria-disabled="true" data-test="colouring-option" data-colouring="<%= colouring %>" data-disabled="true"><%= label %></span>
     <% else %>
-      <%= link_to label, path.(logo_page_params(colouring: (colouring unless colouring == :original))),
+      <%= link_to label, path.(logo_page_params(colouring: (colouring unless colouring == default))),
                   class: look.(colouring == chosen), aria: { current: ("true" if colouring == chosen) },
                   data: { test: "colouring-option", colouring: colouring } %>
     <% end %>

@@ -213,4 +213,35 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_equal "other@test.com", kit.updated_by
     assert_raises(ActiveRecord::RecordNotFound) { kit.remove_original(0, by: BY) }
   end
+
+  # Task logo-original-and-alt, item 9: the saved kit choice is the tab's default.
+  test "a tab's defaults are its saved choice, else the built-in style" do
+    kit = BrandKit.for("welding")
+    assert_equal({ rule: 4, form: :two_line, colouring: nil, edits: {}, choice: nil }, kit.page_defaults(:stacked), "nothing saved")
+    kit.save_choice(:stacked, params(form: "tagline", text: "first", colouring: "original"), by: BY)
+    kit.save_choice(:navbar, params(rule: "3", text: "second", colouring: "alt", ending_colour: "D7602E"), by: BY)
+    kit.reload
+    stacked = kit.page_defaults(:stacked)
+    assert_equal [3, :tagline, :original, {}], stacked.values_at(:rule, :form, :colouring, :edits), "the navbar rule is read on every tab"
+    assert_equal :first, stacked[:choice].text
+    navbar = kit.page_defaults(:navbar)
+    assert_equal [3, :tagline, :alt, { ending: { colour: "#D7602E" } }], navbar.values_at(:rule, :form, :colouring, :edits)
+    icon = kit.page_defaults(:icon)
+    assert_equal [3, :tagline, nil, {}, nil], icon.values_at(:rule, :form, :colouring, :edits, :choice), "the icon tab has no saved choice"
+
+    assert kit.default_shown?(:stacked, rule: 4, form: :tagline, colouring: :original, edits: {})
+    refute kit.default_shown?(:stacked, rule: 4, form: :two_line, colouring: :original, edits: {}), "another form"
+    refute kit.default_shown?(:stacked, rule: 4, form: :tagline, colouring: :alt, edits: {}), "another colouring"
+    assert kit.default_shown?(:navbar, rule: 3, form: nil, colouring: :alt, edits: { ending: { colour: "#D7602E" } })
+    refute kit.default_shown?(:navbar, rule: 3, form: nil, colouring: :alt, edits: {}), "the edits are part of it"
+    refute BrandKit.for("studio").default_shown?(:navbar, rule: 4, form: nil, colouring: :alt, edits: {}), "nothing saved"
+  end
+
+  test "a saved choice the brand can no longer draw is no default" do
+    kit = BrandKit.for("studio")
+    kit.save!
+    kit.update_column(:navbar_choice, { "rule" => 5, "text" => "first", "edits" => {} })
+    assert_nil kit.saved_variant(:navbar)
+    assert_equal [4, nil], kit.page_defaults(:navbar).values_at(:rule, :choice)
+  end
 end

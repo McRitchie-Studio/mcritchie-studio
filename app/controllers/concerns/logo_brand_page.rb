@@ -28,18 +28,30 @@ module LogoBrandPage
     @colouring_param = Logos::Variant.colouring(params[:colouring])
   end
 
-  # The colouring a brand's logos are shown in: the page's ?colouring=, else the brand's Original where it has one.
-  # A brand with no original (Studio) is shown in Alt whatever the page asks, and says why (logos/_colouring_control).
-  def page_colouring(logo) = logo.original? ? (@colouring_param || :original) : :alt
+  # The colouring a brand's logos are shown in: the page's ?colouring=, else `default` (a brand page's kit default),
+  # else the brand's Original where it has one. A brand with no original (Studio) is shown in Alt whatever the page
+  # asks, and says why (logos/_colouring_control).
+  def page_colouring(logo, default = nil) = logo.original? ? (@colouring_param || default || :original) : :alt
 
   # Every setting is read on every tab, so a tab that does not use one (the icon has no rule and no guides) still
   # carries it to the next. Needs set_logo and set_context first.
+  #
+  # THE SAVED KIT CHOICE IS THE TAB'S DEFAULT (task logo-original-and-alt, item 9): a tab whose type the brand's kit
+  # has saved opens on it (its rule or form, colouring and edits; its text version is marked), and the URL's params
+  # override it one by one for exploring. The edits override as one set: any edit param in the URL replaces the
+  # saved edits. With nothing saved, the built-in defaults (BrandKit#page_defaults).
   def load_brand_page
-    @rule = Logos::Variant.rule(params[:rule])
-    @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
+    @kit_record = BrandKit.for(@logo.brand)
+    @defaults = @kit_record.page_defaults(@type)
+    @kit_default = @defaults[:choice]
+    @rule = params.key?(:rule) ? Logos::Variant.rule(params[:rule]) : @defaults[:rule]
+    @form = params.key?(:form) ? Logos::Variant.form(params[:form], (@logo if @type == :stacked)) : (@defaults[:form] if @type == :stacked)
     @guides = Logos::Variant.flag(params[:guides], "guides")
-    @edits = @logo.checked_edits(Logos::Variant.edits(params))
-    @colouring = page_colouring(@logo)
+    url_edits = Logos::Variant::EDIT_PARAMS.keys.any? { |name| params.key?(name) }
+    @edits = url_edits ? @logo.checked_edits(Logos::Variant.edits(params)) : @defaults[:edits]
+    @colouring = page_colouring(@logo, @defaults[:colouring])
+    @default_colouring = @logo.original? ? (@defaults[:colouring] || :original) : :alt
+    @kit_default_shown = @kit_default && @kit_record.default_shown?(@type, rule: @rule, form: @form, colouring: @colouring, edits: @edits)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
     # the page, and the logos are drawn as styled, so a change of form never loses the page. Edits apply to Alt only:
     # an Original keeps them in the URL and draws none (Logos::Variant).
@@ -50,7 +62,6 @@ module LogoBrandPage
       Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, colouring: @colouring, guides: @guides, edits: drawn)
     end.transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
-    @kit_record = BrandKit.for(@logo.brand)
     @savers = BrandKit.saver_names([@kit_record])
   end
 end

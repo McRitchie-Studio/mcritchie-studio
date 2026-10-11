@@ -132,4 +132,67 @@ class LogosColouringTest < ActionDispatch::IntegrationTest
     get logo_brand_path("welding")
     assert_select "[data-test='no-original']", 0
   end
+
+  # Item 9 (Alex, 13:11): "The goal of the logo modification is to set the defaults." A saved kit choice is the tab's
+  # default; URL params override it for exploring; the page says which it shows.
+  def save(brand, **choice) = BrandKit.for(brand).save_choice(choice.delete(:type), ActionController::Parameters.new(choice), by: "alex@test.com")
+  def state = css_select("[data-test='kit-default-state']").first
+
+  test "a saved kit choice is the tab's default: the bare tab opens on it and says so" do
+    save("welding", type: :stacked, form: "tagline", text: "first", colouring: "alt", ending_colour: "D7602E")
+    get logo_brand_path("welding", type: "stacked")
+    assert_equal ["tagline"], css_select("[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
+    assert_equal ["alt"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
+    srcs.each { |src| assert_equal %w[tagline D7602E], query(src).values_at("form", "ending_colour"), src }
+    assert_equal "shown", state["data-state"]
+    assert_equal "Showing the kit default.", state.text.squish
+    assert_equal ["first"], css_select("[data-test='kit-default-text']").map { |badge| badge.ancestors("[data-test='logo-example']").first["data-text"] }
+    assert_select "input[data-test='kit-save-default'][disabled]", 1, "already the default"
+    # Links leave the defaults out, so the next tab reads its own saved choice.
+    tabs = css_select("[data-test='logo-tab']").map { |a| a["href"] }
+    assert_equal [logo_brand_path("welding", type: "icon"), logo_brand_path("welding"), logo_brand_path("welding", type: "stacked")], tabs
+  end
+
+  test "a param overrides the kit default, the page says so, and Back to kit default is the bare tab" do
+    save("welding", type: :stacked, form: "tagline", text: "first")
+    get logo_brand_path("welding", type: "stacked", form: "two_line", guides: 1)
+    assert_equal ["two_line"], css_select("[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
+    assert_equal "changed", state["data-state"]
+    assert_match(/Changed from the kit default · Back to kit default/, state.text.squish)
+    assert_equal logo_brand_path("welding", type: "stacked", guides: 1), css_select("[data-test='kit-default-back']").first["href"]
+    assert_select "[data-test='kit-default-text']", 0
+    tagline = css_select("[data-test='form-option'][data-form='tagline']").first["href"]
+    assert_nil query(tagline)["form"], "the saved form is the default: its link carries no form"
+  end
+
+  test "the edit panel's Reset goes back to the kit default's edits, and with none saved to the brand's style" do
+    save("industries", type: :navbar, rule: "3", text: "second", colouring: "alt", ending_colour: "C8661F")
+    get logo_brand_path("industries")
+    assert_equal "shown", state["data-state"]
+    srcs.each { |src| assert_equal "C8661F", query(src)["ending_colour"], src }
+    get logo_brand_path("industries", ending_colour: "E07B2E")
+    assert_equal "changed", state["data-state"]
+    reset = css_select("[data-test='edit-reset']").first["href"]
+    assert_equal logo_brand_path("industries"), reset, "no edit param: the kit default's edits"
+    get reset
+    srcs.each { |src| assert_equal "C8661F", query(src)["ending_colour"], src }
+
+    get logo_brand_path("studio", first_colour: "635BB2")
+    assert_equal "none", state["data-state"]
+    assert_equal logo_brand_path("studio"), css_select("[data-test='edit-reset']").first["href"]
+  end
+
+  test "Save as default sits in the tab's control row and saves the tab as shown" do
+    get logo_brand_path("welding", type: "stacked", form: "tagline")
+    assert_equal "none", state["data-state"]
+    form = css_select("[data-test='logo-controls'] form[data-test='kit-save-default-form']").first
+    fields = form.css("input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
+    assert_equal({ "type" => "stacked", "form" => "tagline", "colouring" => "original", "text" => "first", "return" => "top" },
+                 fields.except("_method", "authenticity_token"))
+    patch form["action"], params: fields
+    assert_redirected_to logo_brand_path("welding", type: "stacked")
+    follow_redirect!
+    assert_equal ["tagline"], css_select("[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
+    assert_equal "shown", state["data-state"]
+  end
 end

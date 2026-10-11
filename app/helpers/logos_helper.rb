@@ -14,11 +14,21 @@ module LogosHelper
   # default. Only the watermark is carried as a context: light and dark are the hub's theme, which every page already
   # keeps. The colouring is the page's own ?colouring= (task logo-original-and-alt), carried as asked even on a brand
   # that shows only Alt, so it comes back on the next brand.
+  #
+  # A brand page's defaults are its kit's saved choices (task logo-original-and-alt, item 9; LogoBrandPage): a rule,
+  # form or set of edits equal to the page's default is left out, so a link never pins a setting the next tab would
+  # read from its own saved choice.
   def logo_page_params(**changes)
+    defaults = @defaults || {}
+    edits = (@edits unless @edits.nil? || @edits == defaults.fetch(:edits, Logos::NavbarLogo::NO_EDITS))
     { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), colouring: @colouring_param,
-      rule: (@rule unless @rule == 4), form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }
-      .merge(Logos::Variant.edit_params(@edits || {})).merge(changes).compact
+      rule: (@rule unless @rule == defaults.fetch(:rule, 4)),
+      form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)), guides: (1 if @guides) }
+      .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
   end
+
+  # The bare tab: what it opens on, its kit default where it has one. Only the context and guides are kept.
+  def logo_tab_default_path = logo_brand_path(@logo.brand, { type: (@type unless @type == :navbar) }.merge(logo_page_params.slice(:context, :guides)).compact)
 
   # The page params that keep the page's context and colouring, for a link or form that leaves the tab's own settings.
   def logo_page_keeps(*more) = logo_page_params.slice(:context, :colouring, *more)

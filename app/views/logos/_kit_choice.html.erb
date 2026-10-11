@@ -41,7 +41,7 @@
       </label>
       <%= submit_tag "Save as kit choice", name: nil, class: "btn btn-sm btn-primary #{ring}", data: { test: "kit-save", disable_with: false } %>
     <% end %>
-    <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form" : "rule" %> and edits, with the text version picked here, as the brand's <%= type_name %>. The table and this page then show it.</p>
+    <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form" : "rule" %>, colouring and edits, with the text version picked here, as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
   <% end %>
   <% if kit_record.saved?(@type) %>
     <%= button_to "Clear saved choice", brand_kit_choice_path(@logo.brand), method: :delete, params: logo_kit_save_fields,

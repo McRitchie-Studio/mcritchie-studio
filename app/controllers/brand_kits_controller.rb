@@ -40,7 +40,10 @@ class BrandKitsController < ApplicationController
   def save_choice
     type = choice_type
     variant = logged { @kit.save_choice(type, params, by: who) }
-    redirect_to back_to_page(anchor: "kit-choice"), notice: "Saved the #{Logos::Variant::TYPES.fetch(type)} kit choice: #{helpers.logo_choice_summary(variant)}."
+    # The saved choice is the tab's default now (task logo-original-and-alt, item 9): back to the bare tab, which opens
+    # on it, at its Kit choice card, or at the top from the tab's own Save as default (return=top).
+    anchor = ("kit-choice" unless params[:return] == "top")
+    redirect_to back_to_page(anchor:, keep: %i[type guides context]), notice: "Saved the #{Logos::Variant::TYPES.fetch(type)} kit choice: #{helpers.logo_choice_summary(variant)}."
   end
 
   def clear_choice
@@ -115,8 +118,8 @@ class BrandKitsController < ApplicationController
   def who = current_user.email
 
   # The brand page with the settings the form carried; the Navbar tab is the page's default, so it is not named.
-  def back_to_page(anchor: nil)
-    page = params.permit(*RETURN_PARAMS).to_h.symbolize_keys.compact_blank
+  def back_to_page(anchor: nil, keep: RETURN_PARAMS)
+    page = params.permit(*keep).to_h.symbolize_keys.compact_blank
     page.delete(:type) if page[:type] == "navbar"
     logo_brand_path(@kit.brand, page.merge(anchor:).compact)
   end

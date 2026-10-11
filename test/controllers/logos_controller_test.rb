@@ -323,7 +323,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle] +
+    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle kit-save-default] +
                  %w[logo-download logo-copy] * 6 + %w[kit-save] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 2 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='kit-note']", /pick on their tabs, then Save as kit choice/
