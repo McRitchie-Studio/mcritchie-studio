@@ -235,10 +235,16 @@ class E2eExecutedSet
     actual = executed_tests.size
     return [] if actual == expected_executed
 
+    [self.class.count_mismatch(actual, expected_executed)]
+  end
+
+  # The count diagnosis, shared with bin/e2e-census-check (the pre-flight that
+  # predicts this gate from Playwright's --list), so both say the same thing.
+  def self.count_mismatch(actual, expected_executed, verb: "EXECUTED")
     delta = actual - expected_executed
     direction = delta.negative? ? "FEWER" : "MORE"
 
-    ["the lane EXECUTED #{actual} spec(s); the committed suite under e2e/ counts " \
+    "the lane #{verb} #{actual} spec(s); the committed suite under e2e/ counts " \
      "#{expected_executed} (#{delta.abs} #{direction} than the census).\n" \
      "The green `playwright` check now covers a DIFFERENT SET than the one this repo signed " \
      "off on, and the source may look completely innocent — this assertion is deliberately " \
@@ -249,6 +255,6 @@ class E2eExecutedSet
      ".github/workflows/ci.yml (`@quarantine|board` drops 8), a `--only-changed` or " \
      "`--last-failed` flag, a `--max-failures` early exit, a narrowed `testDir`/`testIgnore`, " \
      "a dropped shard, or a runtime skip. The census reads bare `test(` declarations, so a " \
-     "spec declared some other way also lands here: declare it bare."]
+     "spec declared some other way also lands here: declare it bare."
   end
 end

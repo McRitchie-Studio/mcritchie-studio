@@ -312,6 +312,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Help anywhere prints usage; an argument it cannot place exits 2 before
     # `index --write`. test/lib/dream_cli_test.rb runs both.
     "dream"                  => :own_guard,
+    # Read-only (it lists Playwright's suite and counts e2e/): `--help` prints usage
+    # and an argument it cannot place aborts before anything runs.
+    "e2e-census-check"       => :own_guard,
     # --- OptionParser ---------------------------------------------------------
     "submit"                 => :optparse,
     # submit-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
