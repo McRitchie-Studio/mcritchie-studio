@@ -397,7 +397,7 @@ class and `localStorage` `theme`):
 
 - An unknown brand is a 404. Any other param the library or the parser refuses
   (an unknown `type`, `context`, `rule`, `form`, `text`, `tone`, `guides` or
-  `download`, or a `form` the brand does not draw)
+  `download`, a `form` the brand does not draw, or an edit param it refuses)
   is a 422 whose body is the reason in plain text.
 - `Logos::Variant` (`lib/logos/variant.rb`) reads the params and gives each logo
   its type, its filename and its accessible name. `Variant.logo(brand, type)`
@@ -411,6 +411,65 @@ class and `localStorage` `theme`):
   kit's steel gradient and tick marks. Turf Monster's head and Commercial
   Welding's helmet and lettering are auto-traced from pictures. Each brand's
   `note` says so on its page.
+
+### Editing a logo's parts
+
+Alex's item 4b (task logo-part-editor): the rules give the sizes, spacing and
+shapes; the operator picks the colours and weights. The Navbar Logo and
+Stacked Logo tabs have an **Edit** panel with one row per part:
+
+| Part | Row shows | Colour | Weight | Visible |
+|------|-----------|--------|--------|---------|
+| Icon | — | yes: the icon's `primary` layer, or its first layer when it has none (Turf Monster's outline); every other layer keeps its styled fill, and the row says which | — | — |
+| First word | the brand's first word (McRITCHIE, Turf, COMMERCIAL) | yes, in every text version | 300 to 800; disabled, with a one-line reason, for traced lettering | — |
+| Ending | the brand's ending (STUDIO, INDUSTRIES, Monster, WELDING …) | yes, in every text version | as the first word | — |
+| Tagline | the tagline (Stacked tab, tagline form only) | yes | 300 to 800 (Montserrat, so traced brands too) | Shown or Hidden |
+
+The rules:
+
+- **A colour is one of the brand's palette hexes** (`palette:` in
+  `config/logo_brands.yml`), matched in any case and drawn in the palette's
+  spelling. Anything else is refused.
+- **A weight is one of `NavbarLogo::EDIT_WEIGHTS`** (300, 400, 500, 600, 700,
+  800). A brand set in its own traced lettering has one weight, so its words
+  refuse a weight; its tagline, set in Montserrat, takes one.
+- **Geometry never moves**, except that a heavier word is wider: the layout
+  reflows by the same rules (the gaps stay half a cap height; a stacked icon is
+  still 60% of the name's width). A heavier tagline is still tracked out to
+  60%, so it is as wide as before. **A hidden tagline** leaves every band where
+  it was and is simply not drawn: the logo keeps its 3-2-1 box. A weight that
+  cannot be drawn in the current rule or form is offered disabled, and a URL
+  that asks for one shows the logos as styled with the reason.
+- **Every logo on the tab changes at once**: the three text versions, in both
+  tones, with their downloads and copies. An edited file is named
+  `…-custom.svg` and its accessible name ends ", edited".
+- **Watermark**: a watermark is one colour by definition, so edits do not apply
+  there; the panel says so, and the edits stay in the URL for Light and Dark.
+  The Icon tab takes no edits.
+- **Contrast**: the operator may pick a colour that disappears on the current
+  theme. Under 3:1 against the page's background, the row shows a one-line
+  warning, measured again when the hub theme turns.
+- **No edits draws exactly what it drew before**, byte for byte (the per-brand
+  pins).
+
+The edits live in the URL, one param per setting
+(`Logos::Variant::EDIT_PARAMS`): `icon_colour`, `first_colour`, `first_weight`,
+`ending_colour`, `ending_weight`, `tagline_colour`, `tagline_weight` and
+`tagline_visible=0`. A colour is its hex without the `#`
+(`?first_colour=635BB2`). Every other control carries them
+(`logo_page_params`); **Reset** drops only them. The SVG endpoints take the
+same params, so a download is the logo as shown. A bad value is a 422 naming
+it. The panel is a GET form; `app/javascript/logo_editor.js` submits it on a
+change, leaves blank fields out of the URL, keeps the scroll, and measures the
+contrast; with JavaScript off it has an **Apply** button.
+
+In the library, `NavbarLogo#svg` and `StackedLogo#svg` (and `#layout`) take
+`edits:`, a map such as `{ first: { colour: "#635BB2", weight: 600 },
+tagline: { visible: false } }`, checked by `#checked_edits`;
+`#refusal(edits, rule:)` or `(edits, form:)` says why a set cannot be drawn.
+
+**Saving waits for the kit record** (piece 3): nothing here is stored. To keep
+an edited logo, download it or keep its URL.
 
 ## The data
 

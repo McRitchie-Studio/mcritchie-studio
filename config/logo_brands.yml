@@ -35,7 +35,9 @@
 #            fill in solid when every layer takes the one colour.
 # palette    the brand's colours, as the gallery shows them: an ordered list of
 #            {name, hex}, one list per brand, no split by tone (Logos::BrandKit).
-#            The logo fills above stay per tone; this is only what is shown
+#            The logo fills above stay per tone; the palette is what the gallery
+#            shows, and the only colours its edit panel may pick (task
+#            logo-part-editor, docs/topics/logos.md)
 # typefaces  the brand's typeface hierarchy, most prominent first, 1 to 3 levels
 #            of {role, family, weight}. `family` is a face the hub serves
 #            (Montserrat). A level set in the brand's own traced lettering has no
