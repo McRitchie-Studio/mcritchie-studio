@@ -20,6 +20,8 @@
 class BrandKitsController < ApplicationController
   # The page settings a save or a clear carries back to the brand page, so the operator lands where they were.
   RETURN_PARAMS = (%i[type rule form guides context] + Logos::Variant::EDIT_PARAMS.keys).freeze
+  # An original is served with no power of its own: an SVG opened by itself draws, but runs no script and loads nothing.
+  ORIGINAL_CSP = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
 
   before_action :require_admin
   before_action :set_kit
@@ -47,6 +49,29 @@ class BrandKitsController < ApplicationController
   def update
     @kit.update!(notes: params[:notes].to_s.strip.presence, updated_by: who)
     redirect_to back_to_page(anchor: "kit"), notice: "Saved the kit's notes."
+  end
+
+  def create_original
+    files = Array(params[:originals]).compact_blank
+    @kit.add_originals(files, by: who)
+    names = @kit.originals.last(files.size).map { |original| original.filename.to_s }
+    redirect_to back_to_page(anchor: "kit-originals"),
+                notice: "Uploaded #{helpers.pluralize(names.size, 'original')}: #{names.to_sentence}."
+  end
+
+  def original
+    attachment = @kit.originals.find(params[:id])
+    download = Logos::Variant.flag(params[:download], "download")
+    inline = !download && BrandKit::PREVIEWABLE.include?(attachment.content_type)
+    response.headers["Content-Security-Policy"] = ORIGINAL_CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    send_data attachment.download, type: attachment.content_type, filename: attachment.filename.to_s,
+                                   disposition: inline ? "inline" : "attachment"
+  end
+
+  def destroy_original
+    removed = @kit.remove_original(params[:id], by: who)
+    redirect_to back_to_page(anchor: "kit-originals"), notice: "Removed #{removed.filename}."
   end
 
   private

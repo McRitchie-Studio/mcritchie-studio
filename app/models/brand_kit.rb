@@ -129,6 +129,7 @@ class BrandKit < ApplicationRecord
   def add_originals(files, by:)
     files = Array(files).compact_blank
     raise Error, "choose at least one file to upload" if files.empty?
+    raise Error, "an original must be an uploaded file" unless files.all? { |file| file.respond_to?(:original_filename) && file.respond_to?(:read) }
 
     attachables = files.map { |file| self.class.original_attachable(file) }
     self.updated_by = by
@@ -151,7 +152,7 @@ class BrandKit < ApplicationRecord
 
     content_type = original_type_of(file)
     unless ORIGINAL_TYPES.key?(content_type)
-      raise Error, "#{name} is not an SVG, PNG, JPEG, PDF or ZIP (its contents read as #{content_type})"
+      raise Error, "#{name} is not an SVG, PNG, JPEG, PDF or ZIP (read from its contents, not its name)"
     end
 
     { io: file, filename: name, content_type:, identify: false }

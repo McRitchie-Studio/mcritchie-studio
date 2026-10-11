@@ -140,6 +140,7 @@
   <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
   <%= render "kit_choice", kit_record: @kit_record unless @type == :icon %>
   <%= render "kit_card", kit_record: @kit_record %>
+  <%= render "kit_originals", kit_record: @kit_record %>
 
   <div class="card p-4 sm:p-5 grid gap-6 lg:grid-cols-[3fr_2fr]" data-test="brand-kit">
     <section class="min-w-0 space-y-3" data-test="brand-colours" aria-labelledby="brand-colours-title">
