@@ -314,7 +314,8 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_the_icon_alone_is_the_navbar_logos_icon_in_its_own_box
     Logo.brands.product(Logo::TONES).each do |brand, tone|
       logo = Logo.new(brand)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Logo.icons.fetch(key)
       xml = doc(logo.icon_svg(tone:))
       where = "#{brand} #{tone}"
@@ -463,7 +464,7 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [6, 10, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [8, 13, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES

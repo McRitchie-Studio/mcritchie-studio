@@ -20,7 +20,9 @@ class LogosBrandPinsTest < Minitest::Test
     "turf" => "2b18c47ce5a2c08231f558ad17581f9d4bee1020c5d6d1fa676ce83ef9c2eb9f",
     # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was d1411cdd…. The three
     # others above did not move by a byte.
-    "welding" => "854451d3b56bc0babf5d2f7bfbe26c6837d69d1cdf1dcd4d0db22e0b3fee7236"
+    "welding" => "854451d3b56bc0babf5d2f7bfbe26c6837d69d1cdf1dcd4d0db22e0b3fee7236",
+    # Added by task welding-llc-and-v2-helmet: Commercial Welding v2 as it first shipped.
+    "welding_v2" => "63a49eae4d6d076ccb9498a427f6e4db1dd8e28f20c49cb57989586476215a6a"
   }.freeze
 
   def self.drawings(brand)

@@ -50,7 +50,7 @@ module Logos
     NUMBER = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/
     CALL = /(?:translate|scale|rotate|matrix)\(#{NUMBER}(?:[ ,]#{NUMBER})*\)/
     TRANSFORM = /\A#{CALL}(?: #{CALL})*\z/
-    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json].freeze
+    ICON_FILES = %w[brand_icons.json brand_icons_turf_welding.json brand_icons_turf_mono.json brand_icons_welding_v2.json].freeze
     ROOT = File.expand_path("../..", __dir__)
 
     # `gap` is both the icon gap (icon_width to name_left) and the word gap (word_left - gap to word_left).

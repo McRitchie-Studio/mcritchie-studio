@@ -14,7 +14,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   SAMPLES = { "icon" => [{}, "icon"], "navbar" => [{ rule: 4, text: "second" }, "navbar logo, rule of 4, second word leads"],
               "stacked" => [{ text: "first" }, "stacked logo, %<form>s, first word leads"] }.freeze
   # The index's stacked sample is each brand's own form.
-  OWN_FORMS = { "studio" => "two_line", "industries" => "two_line", "turf" => "one_line", "welding" => "two_line" }.freeze
+  OWN_FORMS = { "studio" => "two_line", "industries" => "two_line", "turf" => "one_line", "welding" => "two_line", "welding_v2" => "two_line" }.freeze
 
   setup do
     @admin = users(:alex)
@@ -141,7 +141,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    assert_equal %w[studio industries turf welding], css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
+    assert_equal %w[studio industries turf welding welding_v2], css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
     typeface = ->(brand) { css_select("[data-brand='#{brand}'] [data-test='logo-typeface']").text.squish }
     assert_equal "Typeface Montserrat weight 800", typeface.("turf")
     assert_equal "Typeface Traced from its own lettering (typeface not identified)", typeface.("welding")
