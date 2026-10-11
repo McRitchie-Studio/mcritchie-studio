@@ -52,7 +52,8 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
 
   test "the icon row says which layer it recolours" do
     { "studio" => "Recolours the whole icon.", "industries" => "Recolours the icon's main layer only; its edge layer keeps its brand colour.",
-      "turf" => "Recolours the icon's outline layer only; its body and light layers keep their brand colours." }.each do |brand, note|
+      # Turf Monster's Alt head is single-colour (task logo-original-and-alt); its three-colour head is the Original.
+      "turf" => "Recolours the whole icon." }.each do |brand, note|
       get logo_brand_path(brand)
       assert_equal note, css_select("[data-test='edit-icon-note']").first.text.strip, brand
     end

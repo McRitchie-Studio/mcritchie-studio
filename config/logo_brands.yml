@@ -134,7 +134,7 @@ turf:
   heavy: 800
   tracking: -0.025
   stacked: one_line
-  note: The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours.
+  note: The head is auto-traced from the 880 px picture. The Original flattens its grass texture to three solid colours; Alt is the head's linework in the brand green alone.
   palette:
     - { name: Brand Green, hex: "#4BAF50" }
     - { name: Forest, hex: "#2E7D32" }
@@ -146,15 +146,19 @@ turf:
   typefaces:
     - { role: Display, family: Montserrat, weight: 800 }
     - { role: Text, family: Montserrat, weight: 500 }
+  # Alt is one solid colour per part, as for every brand: the single-colour head (turf_mono, the linework) in the
+  # brand green. The three-colour head is the Original (task logo-original-and-alt).
   tones:
     light:
+      icon_key: turf_mono
       text: "#1A1535"
       accent: "#4BAF50"
-      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+      icon: { primary: "#4BAF50" }
     dark:
+      icon_key: turf_mono
       text: "#FFFFFF"
       accent: "#4BAF50"
-      icon: { outline: "#1A550D", body: "#5C972A", light: "#F0EBCF" }
+      icon: { primary: "#4BAF50" }
   # The three-colour head, the brand's own art, in both tones: ink and green lettering on light, white and green on dark.
   original:
     light:

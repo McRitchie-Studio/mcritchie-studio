@@ -17,7 +17,8 @@ class LogosBrandPinsTest < Minitest::Test
   DIGESTS = {
     "studio" => "76cfc2cf8c56af93bbd5334773663f5741bd70b44c1ea298f5f997083c4d1331",
     "industries" => "dcdca12428a65e46d7a821b31f13c9e1337fa57a93d89bfec4c2fa3bd2c3524e",
-    "turf" => "2b18c47ce5a2c08231f558ad17581f9d4bee1020c5d6d1fa676ce83ef9c2eb9f",
+    # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2b18c47c….
+    "turf" => "0015bbd78dfe945652e610878e246af6bc1d4fedb8e7b17adda0ad34a99d59cc",
     # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was d1411cdd…. The three
     # others above did not move by a byte.
     # Re-taken by the review fix: the stacked two-line small line keeps its WELDING LLC word gap when tracked (only
