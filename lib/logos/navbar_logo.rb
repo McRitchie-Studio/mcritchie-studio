@@ -16,15 +16,16 @@ module Logos
   # group, for placing over a photograph.
   #
   # The icon is H units tall. Rule of 3: the capitals are one of three rows.
-  # Rule of 4: the capitals fill the middle two of four rows. Either way the
-  # name is centred on the icon. The gap after the icon and the gap between
+  # Rule of 4: the capitals fill the middle two of four rows. Rule of 6: the
+  # capitals fill the middle four of six rows. Every way, the name is centred
+  # on the icon. The gap after the icon and the gap between
   # the words are equal: each is half a cap height. Rules and data:
   # docs/topics/logos.md.
   class NavbarLogo
     class Error < ArgumentError; end
 
     H = 300.0
-    RULES = { 3 => 1, 4 => 2 }.freeze          # rows the icon spans => rows the capitals span
+    RULES = { 3 => 1, 4 => 2, 6 => 4 }.freeze  # rows the icon spans => rows the capitals span
     TEXTS = %i[homogeneous first second].freeze
     TONES = %i[light dark watermark].freeze
     BAKED = %i[light dark].freeze               # the tones whose fills a style lists; `examples` draws these
@@ -35,6 +36,9 @@ module Logos
     GUIDE = "#D4189F"
     GUIDE_PAD = { left: 40, top: 70, right: 80, bottom: 40 }.freeze   # `top` holds the gap brackets and their labels
     GUIDE_FONT = 30                            # the guide labels' size, in design units
+    # A rule's own label size where it needs a larger one: the rule of 6's capitals are twice the rule of 3's, so its
+    # drawing is the widest, and its labels are larger so it still fits a 1280 px page's plate at 9 px labels.
+    GUIDE_FONTS = { 6 => 40 }.freeze
     GUIDE_STROKE = 1.0                         # the guide lines' width, in design units
     # A guide drawing's ghosts (faint copies of the name that show how it measures) are the logo's own text colour at
     # this opacity: visible, never mistaken for the logo (test/helpers/logos_helper_test.rb measures them on each plate).
@@ -91,7 +95,7 @@ module Logos
     # The geometry alone, in design units (the icon is H tall, x = 0 is its left edge).
     # `tone:` matters only to a brand whose tones name different icons.
     def layout(rule: 3, text: :homogeneous, tone: :light)
-      cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected #{RULES.keys.join(' or ')}"
+      cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected one of #{RULES.keys.join(', ')}"
       check_text(text)
       row = H / rule
       cap = cap_rows * row
@@ -119,10 +123,13 @@ module Logos
       document(toned(tone, icon_markup(icon, fills(tone, :homogeneous).first, height)), icon.fetch("w"), height)
     end
 
+    # The guide labels' size, in design units, on a rule's drawing (the stacked logo, which has no rule, takes none).
+    def guide_font(rule = nil) = self.class::GUIDE_FONTS.fetch(rule, self.class::GUIDE_FONT)
+
     # The watermark's checked settings: { "fill" => "#FFFFFF", "opacity" => 0.6 }, and "icon_key" when the style names one.
     def watermark = @watermark.dup
 
-    # Every light and dark example for the brand: 2 rules x 3 texts x 2 tones, each with its guide drawing.
+    # Every light and dark example for the brand: 3 rules x 3 texts x 2 tones, each with its guide drawing.
     def examples
       RULES.keys.product(TEXTS, BAKED, [false, true]).map do |rule, text, tone, guides|
         key = [brand, "rule#{rule}", text, tone, ("guides" if guides)].compact.join("-")
@@ -310,18 +317,19 @@ module Logos
     def guide_markup(box)
       rows = (0..box.count).map { |i| guide_line(-20, i * box.row, box.width + 20, i * box.row) }
       edges = [box.icon_width, box.name_left].map { |x| guide_line(x, -20, x, H + 20) }
-      numbers = (0...box.count).map { |i| guide_label(box.width + 30, (i + 0.5) * box.row + 12, i + 1) }
-      (rows + edges + numbers + [box.icon_width, box.word_left - box.gap].flat_map { |x| gap_bracket(x, box.gap) }).join
+      font = guide_font(box.count)
+      numbers = (0...box.count).map { |i| guide_label(box.width + 30, (i + 0.5) * box.row + 0.4 * font, i + 1, font:) }
+      (rows + edges + numbers + [box.icon_width, box.word_left - box.gap].flat_map { |x| gap_bracket(x, box.gap, font) }).join
     end
 
     GAP_BRACKET_Y = -30                        # the gap brackets' bar, above the drawing's top row edge
     GAP_TICK = 10                              # their ticks, down toward the gap's two ink edges
 
-    def gap_bracket(left, width)
+    def gap_bracket(left, width, font)
       right = left + width
       [guide_line(left, GAP_BRACKET_Y, right, GAP_BRACKET_Y), guide_line(left, GAP_BRACKET_Y, left, GAP_BRACKET_Y + GAP_TICK),
        guide_line(right, GAP_BRACKET_Y, right, GAP_BRACKET_Y + GAP_TICK),
-       guide_label(left + width / 2, GAP_BRACKET_Y - 8, "½", %( text-anchor="middle" data-gap="#{format('%g', GAP_CAPS)}"))]
+       guide_label(left + width / 2, GAP_BRACKET_Y - 8, "½", %( text-anchor="middle" data-gap="#{format('%g', GAP_CAPS)}"), font:)]
     end
 
     def guide_line(x1, y1, x2, y2)
@@ -329,8 +337,8 @@ module Logos
     end
 
     # `words` is the library's own (a row number, a band's size): never a name or a style value. `attributes` likewise.
-    def guide_label(x, y, words, attributes = "")
-      %(<text x="#{f(x)}" y="#{f(y)}"#{attributes} font-family="Helvetica,Arial,sans-serif" font-size="#{self.class::GUIDE_FONT}" font-weight="700" fill="#{GUIDE}">#{words}</text>)
+    def guide_label(x, y, words, attributes = "", font: guide_font)
+      %(<text x="#{f(x)}" y="#{f(y)}"#{attributes} font-family="Helvetica,Arial,sans-serif" font-size="#{font}" font-weight="700" fill="#{GUIDE}">#{words}</text>)
     end
 
     def document(body, width, height = H, left: 0, top: 0, right: 0, bottom: 0)

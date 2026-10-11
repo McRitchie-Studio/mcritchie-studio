@@ -38,6 +38,8 @@ class LogosNavbarLogoTest < Minitest::Test
   ADDED_BRANDS_DIGEST = "84708d03dc90a4f0b31db6589342380ef8ad33436aa08ba2a32e2903f590b6fd"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
   WATERMARK_DIGEST = "69c5428ff736b1f5255f21ec8249f8606465335339c0cbcf772513d4f63bbda8"
+  # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
+  RULE_6_DIGEST = "c16934f5d230e0f1a7eaf56602e7d9553aabbc75bc4ee65e9c85b988d16b7b4a"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -106,6 +108,28 @@ class LogosNavbarLogoTest < Minitest::Test
   # Item 4c (task navbar-spacing-and-rotated-guides): the icon gap was half the first letter's ink and the word gap
   # the font's space (0.367 cap heights; the welding lettering's 0.351), so "hie stu" looked tight. Both are now
   # half a cap height, ink to ink, on every rule.
+  # Item 4d (task navbar-spacing-and-rotated-guides): "a rule of 6 navbar where the text takes the height of 4".
+  def test_rule_of_6_fills_the_middle_four_of_six_rows
+    box = industries.layout(rule: 6, text: :second)
+    assert_equal 6, box.count
+    assert_in_delta H / 6, box.row
+    assert_in_delta 4 * H / 6, box.cap, 1e-9, "the capitals are four rows"
+    assert_in_delta H / 6, box.baseline - box.cap, 1e-9, "one row above the capitals"
+    assert_in_delta H / 6, H - box.baseline, 1e-9, "and one below"
+    first = letters(industries.svg(rule: 6, text: :second)).first
+    assert_match(/\Atranslate\([\d.]+,250\.00\) scale\(200\.0000\)\z/, first["transform"])
+    assert_in_delta 100, box.gap, 1e-9, "the gaps are half a cap height here too"
+    four = industries.layout(rule: 4, text: :second)
+    assert_in_delta (four.width - four.icon_width) * 4 / 3, box.width - box.icon_width, 1e-9, "the name, a third larger than the rule of 4's"
+
+    xml = doc(industries.svg(rule: 6, text: :second, guides: true)).remove_namespaces!
+    rows = xml.css("g.guide-lines line").select { |l| l["y1"] == l["y2"] && !l["y1"].start_with?("-") }
+    assert_equal (0..6).map { |i| format("%.2f", i * 50.0) }, rows.map { |l| l["y1"] }
+    assert_equal %w[1 2 3 4 5 6 ½ ½], xml.css("g.guide-lines text").map(&:text), "numbered 1-6, and the two gaps"
+    assert_equal 40, industries.guide_font(6)
+    assert_equal 30, industries.guide_font(4)
+  end
+
   def test_the_icon_gap_and_the_word_gap_are_each_half_a_cap_height
     box = industries.layout(rule: 3, text: :first)
     m = glyph("M", 700)
@@ -181,10 +205,10 @@ class LogosNavbarLogoTest < Minitest::Test
 
   def test_every_example_without_guides_is_paths_only_in_the_logos_own_box
     examples = Logo.brands.flat_map { |brand| Logo.new(brand).examples }
-    assert_equal 24 * Logo.brands.size, examples.size
+    assert_equal 36 * Logo.brands.size, examples.size
     assert_equal examples.size, examples.map { |e| e[:key] }.uniq.size
     plain = examples.reject { |e| e[:guides] }
-    assert_equal 12 * Logo.brands.size, plain.size
+    assert_equal 18 * Logo.brands.size, plain.size
 
     plain.each do |example|
       xml = doc(example[:svg])
@@ -225,7 +249,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_refusals_name_what_is_wrong
     style = ->(**changes) { { "x" => Logo.styles.fetch("studio").merge(changes.transform_keys(&:to_s)) } }
     assert_match(/unknown brand "acme": expected one of studio, industries/, refusal { Logo.new("acme") })
-    assert_match(/unknown rule 5: expected 3 or 4/, refusal { industries.svg(rule: 5) })
+    assert_match(/unknown rule 5: expected one of 3, 4, 6/, refusal { industries.svg(rule: 5) })
     assert_match(/unknown text :third/, refusal { industries.svg(text: :third) })
     assert_match(/unknown tone :sepia/, refusal { industries.svg(tone: :sepia) })
     assert_match(/no glyph for "Ü" at weight 800/, refusal { Logo.new("x", styles: style.(name: "McRITCHIE STÜDIO")) })
@@ -248,7 +272,10 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/no fill for icon layer "primary"/, refusal { Logo.new("x", styles: no_role).svg })
   end
 
-  def unguided(brands) = brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+  # The pinned rules are 3 and 4 (the rule of 6 came later, with its own pin), so a new rule cannot move them.
+  def unguided(brands, rules = [3, 4])
+    brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.select { |e| rules.include?(e[:rule]) }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+  end
 
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
     assert_equal 24, unguided(%w[studio industries]).size
@@ -259,10 +286,16 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[turf welding]).join)
   end
 
+  def test_every_rule_of_6_logo_is_unchanged_to_the_byte
+    all = unguided(Logo.brands, [6]) + Logo.brands.flat_map { |brand| Logo::TEXTS.map { |text| "#{brand}-rule6-#{text}-watermark\n#{Logo.new(brand).svg(rule: 6, text:, tone: :watermark)}" } }
+    assert_equal 36, all.size
+    assert_equal RULE_6_DIGEST, Digest::SHA256.hexdigest(all.join)
+  end
+
   def test_every_watermark_logo_is_unchanged_to_the_byte
     all = Logo.brands.flat_map do |brand|
       logo = Logo.new(brand)
-      Logo::RULES.keys.product(Logo::TEXTS).map do |rule, text|
+      [3, 4].product(Logo::TEXTS).map do |rule, text|
         "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
       end
     end
@@ -549,7 +582,7 @@ class LogosNavbarLogoTest < Minitest::Test
       refute_includes ghosts.to_xml, Logo::GUIDE, where
 
       copies = ghosts.css("path").group_by { |p| p["transform"][/,([-\d.]+)\)/, 1] }
-      rows = rule == 3 ? [1, 3] : [1, 2, 3, 4]
+      rows = rule == 3 ? [1, 3] : (1..rule).to_a
       assert_equal rows.map { |row| format("%.2f", row * box.row) }, copies.keys, "#{where}: one copy per row the real name does not fill"
       named = box.letters.count { |l| !l[:d].empty? }
       copies.each_value do |copy|
@@ -559,7 +592,7 @@ class LogosNavbarLogoTest < Minitest::Test
       end
       assert_equal (1..rule).map(&:to_s) + %w[½ ½], lines.css("text").map(&:text), "#{where}: numbered 1-#{rule}, and the two gaps"
       assert_equal ["1.0"], lines.css("line").map { |l| l["stroke-width"] }.uniq, "#{where}: thinner than the 1.5 before"
-      assert_equal ["30"], lines.css("text").map { |t| t["font-size"] }.uniq, "#{where}: smaller than the 32 before"
+      assert_equal [rule == 6 ? "40" : "30"], lines.css("text").map { |t| t["font-size"] }.uniq, "#{where}: smaller than the 32 before; the rule of 6's larger, to fit its plate"
     end
   end
 end
