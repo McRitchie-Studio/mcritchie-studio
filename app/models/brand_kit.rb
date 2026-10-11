@@ -82,7 +82,7 @@ class BrandKit < ApplicationRecord
     end
 
     logo = Logos::Variant.logo(brand, type)
-    colouring = colouring.to_s if colouring && (colouring.to_sym == :alt || logo.original?)
+    colouring = (colouring.to_s if colouring && (colouring.to_sym == :alt || logo.original?))   # else the saved one (Alt)
     params = edits.to_h { |name, value| [name.to_sym, value.to_s] }
                   .merge(text: choice["text"].to_s, rule: choice["rule"]&.to_s, form: choice["form"]&.to_s, tone: tone.to_s,
                          colouring: colouring || choice["colouring"]&.to_s).compact

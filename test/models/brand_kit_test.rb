@@ -121,6 +121,12 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_empty kit.variant(:navbar, tone: :watermark).edits, "a watermark is one colour"
   end
 
+  test "a saved choice of a brand with no original asked for in Original is drawn in Alt" do
+    kit = BrandKit.for("studio")
+    kit.save_choice(:navbar, params(rule: "3", text: "first"), by: BY)
+    assert_equal :alt, kit.variant(:navbar, colouring: :original).colouring, "the table's ?colouring=original"
+  end
+
   test "a choice is stored in the flat URL spelling and read back from the jsonb's string keys through the URL parser" do
     BrandKit.for("studio").save_choice(:stacked, params(form: "tagline", text: "first", first_colour: "635BB2", tagline_weight: "600"), by: BY)
     stored = BrandKit.connection.select_value("SELECT stacked_choice FROM brand_kits WHERE brand = 'studio'")
