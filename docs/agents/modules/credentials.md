@@ -114,7 +114,9 @@ The board API takes two bearers (design:
   owner-only, where no commit can reach it, with the harness session (Claude or
   Codex) that ran `begin`. Only that harness session presents it: anyone else running
   `bin/task` in the desk, a reviewer included, uses the shared token. A studio session is scoped to that task,
-  lives while the task is `building` or `submitted`, and expires after 24 hours. Its
+  lives while the task is `building`; `bin/submit` logs the desk out once the task
+  reads back `submitted`, `bin/task begin <slug>` logs it in again on a resume, and
+  it expires after 24 hours. Its
   soul is the actor on every board write it makes; an `actor` or `by` param is
   ignored. It may write only its own task, and a release endpoint answers 403.
 - **A reviewer's session.** A review claim taken with the harness key or the

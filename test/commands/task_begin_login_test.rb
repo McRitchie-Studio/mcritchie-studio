@@ -207,6 +207,25 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
     end
   end
 
+  # bin/submit logs the desk out at `submitted` (DeskSession.logout). A reviewer's
+  # block sends the task back to `building`, and the builder's resume must log in
+  # again, or its writes go out on the shared token.
+  test "a resume after a block logs the builder in again, replacing the ended login" do
+    blocked = { top: { stage: "building", blocked_at: Time.now.utc.iso8601, block_kind: "rework" } }
+    with_desk(task: blocked) do |dir, desk, requests|
+      DeskSession.write(desk, { "slug" => "sess-old", "task_slug" => SLUG, "dropped_at" => Time.now.utc.iso8601,
+                                "harness_session_id" => BUILDER })
+
+      _out, err, status = begin_task(dir, desk)
+
+      assert status.success?, err
+      assert requests.any? { |r| r[:line].start_with?("POST /api/v1/agent_sessions") },
+             "the resume logs in: #{requests.map { |r| r[:line] }}"
+      assert_equal [SESSION, "sess-x"], DeskSession.read(desk).values_at("token", "slug")
+      assert_includes err, "begin login — pokemon logged in to #{SLUG}"
+    end
+  end
+
   # ---- the review claim's login (DeskSession.write_review) ------------------------
 
   test "a reviewer's write presents its review login, and the builder's keeps the desk's" do
@@ -299,8 +318,10 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
   def with_sink(requests, refuse_session:, task: {})
     server = TCPServer.new("127.0.0.1", 0)
     devops = { worktree_slug: SLUG, repositories: ["mcritchie-studio"], built_by: "pokemon" }.merge(task.except(:title))
+    top = task.fetch(:top, {})
+    devops = devops.except(:top)
     task = { data: { slug: SLUG, stage: "designed", title: task.fetch(:title, "Probe Task"),
-                     metadata: { devops: devops } } }.to_json
+                     metadata: { devops: devops } }.merge(top) }.to_json
     session = { data: { slug: "sess-x", soul: "pokemon", tier: "studio", task_slug: SLUG,
                         expires_at: (Time.now + 3600).utc.iso8601, token: SESSION } }.to_json
     thread = Thread.new do

@@ -34,6 +34,10 @@ require "fileutils"
 # several, beside a desk's own login. For a write to its task it is offered ahead
 # of the desk's login, under the same owner rule.
 #
+# The build claim ends at `submitted`: bin/submit then logs the desk out (logout),
+# revoking the session on the board and forgetting the file. A resume
+# (`bin/task begin <slug>` after a block) logs in again.
+#
 # The token is a bearer credential: it lives in the file, never on stdout.
 module DeskSession
   FILE = "agent-session.json"
@@ -208,6 +212,39 @@ module DeskSession
     return nil if !data["token"].to_s.empty? && live?(data, now)
 
     data["slug"]
+  end
+
+  # The path that logs the presenting session out (Api::V1::AgentSessionsController#destroy).
+  LOGOUT_PATH = "/api/v1/agent_sessions/current"
+
+  # Log the desk out of `slug` once the task has left the build lane (bin/submit,
+  # after the stage reads back `submitted`). The desk's login outlives the build
+  # otherwise, and any later `bin/task` write from the same harness session (a
+  # reviewer subagent above all) presents it and is refused on `reviewed`.
+  #
+  # `revoke` is called with the token and returns the board's response (anything
+  # answering #code). The local file is forgotten whatever the board says, since a
+  # login nobody presents is what the reviewer needs; the board's answer only picks
+  # the line the caller prints. Returns [outcome, message]: :none (the desk holds no
+  # login to `slug`), :revoked, :already (401: revoked or expired before this),
+  # :failed (any other answer, or the call raised). Never raises.
+  def logout(root, slug, revoke:)
+    data = read(root)
+    return [:none, "the desk holds no board login to #{slug}"] unless data && data["task_slug"] == slug
+
+    session = data["slug"].to_s.empty? ? "the desk's session" : "session #{data["slug"]}"
+    token = data["token"].to_s
+    clear(root)
+    return [:already, "#{session} was already dropped; forgot it"] if token.empty?
+
+    code = revoke.call(token).code.to_i
+    return [:revoked, "logged the desk out of #{slug} (#{session} revoked)"] if code.between?(200, 299)
+    return [:already, "#{session} had already ended (HTTP 401); forgot it"] if code == 401
+
+    [:failed, "the board did not revoke #{session} (HTTP #{code}); forgot it locally, so no write from this desk presents it"]
+  rescue StandardError => e
+    clear(root)
+    [:failed, "the board did not revoke the desk's login (#{e.class}: #{e.message}); forgot it locally"]
   end
 
   def live?(data, now)

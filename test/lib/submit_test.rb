@@ -14,6 +14,7 @@
 
 require "minitest/autorun"
 require_relative "../../bin/lib/ship_wait"
+require_relative "../../bin/lib/desk_session"
 require "json"
 require "open3"
 require "socket"
@@ -903,7 +904,9 @@ class SubmitTest < Minitest::Test
   # A one-connection-at-a-time stub board that answers every request with a mint
   # and records what it was asked. Only POST /api/v1/auth reaches it from a ship:
   # every other board call goes through the TASK/DOR stubs, which never dial out.
-  def with_stub_board(token:)
+  # `logout_code` is the board's answer to the desk's logout (DELETE
+  # /api/v1/agent_sessions/current); every other request gets the mint.
+  def with_stub_board(token:, logout_code: 200)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -920,9 +923,10 @@ class SubmitTest < Minitest::Test
           headers[k.strip.downcase] = v.strip if v
         end
         body = headers["content-length"] ? client.read(headers["content-length"].to_i) : ""
-        requests << { method: method, path: path, body: body }
-        payload = JSON.generate("token" => token)
-        client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
+        requests << { method: method, path: path, body: body, auth: headers["authorization"] }
+        code = method == "DELETE" ? logout_code : 200
+        payload = JSON.generate(method == "DELETE" ? { "data" => { "session" => {} } } : { "token" => token })
+        client.write("HTTP/1.1 #{code} OK\r\nContent-Type: application/json\r\n" \
                      "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
         client.close
       end
@@ -933,6 +937,61 @@ class SubmitTest < Minitest::Test
   ensure
     server&.close
     thread&.join(1)
+  end
+
+  # --- the desk's board login ends at `submitted` (DeskSession.logout) ----------
+  # A login left in the desk was presented by the reviewer subagent of the same
+  # harness, which the board refused on the move to `reviewed`.
+
+  def keep_desk_login(dir, slug: SLUG)
+    DeskSession.write(dir, { "slug" => "sess-desk", "task_slug" => slug, "token" => "tok-desk",
+                             "expires_at" => (Time.now + 3600).utc.iso8601, "harness_session_id" => "h-1" })
+  end
+
+  def test_submit_logs_the_desk_out_once_the_task_is_submitted
+    with_repo do |dir|
+      keep_desk_login(dir)
+      with_stub_board(token: "tok-ship") do |port, requests|
+        out, err, status, lines = run_ship(dir, extra_env: { "TASK_API_BASE" => "http://127.0.0.1:#{port}" })
+
+        assert status.success?, err
+        assert_includes markers(lines), "TASK move", "the logout follows the move to submitted"
+        logouts = requests.select { |r| r[:method] == "DELETE" }
+        assert_equal ["/api/v1/agent_sessions/current"], logouts.map { |r| r[:path] }
+        assert_equal "Bearer tok-desk", logouts.first[:auth], "the logout presents the desk's own login"
+        refute File.exist?(DeskSession.path(dir)), "and the desk forgets it"
+        assert_includes err, "logout — logged the desk out of #{SLUG}"
+        refute_includes "#{out}#{err}", "tok-desk", "the token is never printed"
+      end
+    end
+  end
+
+  def test_a_refused_logout_warns_and_never_fails_the_submit
+    with_repo do |dir|
+      keep_desk_login(dir)
+      with_stub_board(token: "tok-ship", logout_code: 500) do |port, _requests|
+        out, err, status, = run_ship(dir, extra_env: { "TASK_API_BASE" => "http://127.0.0.1:#{port}" })
+
+        assert status.success?, err
+        assert_includes out, ShipWait::SUCCESS_LINE
+        assert_match(/logout — the board did not revoke session sess-desk \(HTTP 500\).*warning only/, err)
+        refute File.exist?(DeskSession.path(dir)), "forgotten locally even so"
+      end
+    end
+  end
+
+  def test_a_red_gate_keeps_the_desk_logged_in
+    with_repo do |dir|
+      keep_desk_login(dir)
+      with_stub_board(token: "tok-ship") do |port, requests|
+        _out, _err, status, = run_ship(dir, extra_env: { "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+                                                         "FAIL_DOR" => "1" })
+
+        refute status.success?
+        assert_empty requests.select { |r| r[:method] == "DELETE" }, "a task still building keeps its login"
+        assert File.exist?(DeskSession.path(dir))
+      end
+    end
   end
 
   def test_red_dor_check_aborts_before_move
