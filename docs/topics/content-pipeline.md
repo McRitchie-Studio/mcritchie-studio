@@ -443,7 +443,12 @@ view will be its own model later).
    same `Appearances::ImageSearch` providers as the face photos. Every result is
    filed unchosen in `appearance_uniform_photos` (`AppearanceUniformPhoto`); press
    **Use** on up to three that show the jersey clearly (shoulder logos, collar
-   shield, a captain patch if he wears one). They are a separate table from the face
+   shield, a captain patch if he wears one). **Use copies the photo into our
+   storage** (`Appearances::MirrorUniformPhoto`, through the same vetted, pinned
+   `Studio::ImageCache.fetch_response` path as the face photos) and the build sends
+   only that copy; a photo whose host refuses the copy is not chosen, and the page
+   says why. The search button names its cost: free on Wikimedia Commons, one paid
+   query on Serper. They are a separate table from the face
    photos so no identity query can ever pick one up. An iced twin reads its base
    look's photos.
 3. **Body archetype.** Each look is drawn to a `BodyArchetype`
@@ -465,7 +470,7 @@ view will be its own model later).
 
 **Cost:** one paid GPT-5 image per sheet build (unchanged), one paid GPT-5 image
 per archetype generation, and one image-search query per **Find game photos**
-press on a paid provider. Nothing generates or searches on its own.
+press (paid on Serper, free on Wikimedia Commons). Nothing generates or searches on its own.
 
 #### Where it lives in the app
 
