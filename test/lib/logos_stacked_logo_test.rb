@@ -370,10 +370,10 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone, form and guides, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text, tone and form, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone, form and guides, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text, tone and form, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form, guides and edits, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone, form and edits, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form, guides and edits, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone, form and edits, not guides/, refusal { stacked("studio").layout(guides: true) })
 
     wide = JSON.parse(JSON.generate(Navbar.icons)).tap { |icons| icons.fetch("studio")["w"] = 2000 }
     assert_match(/brand studio: the icon is too wide to stack \(2\.22 of the name's width at this height\)/, refusal { Stacked.new("studio", icons: wide) })

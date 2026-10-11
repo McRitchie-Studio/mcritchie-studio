@@ -172,7 +172,7 @@ Let **u** be the small word's cap height (40 design units).
   has no tagline)";
 - an icon so wide that, at its height, it would overhang the name;
 - a keyword `svg` or `layout` does not take, `rule:` above all: "a stacked
-  logo takes text, tone, form and guides, not rule: it has no rule".
+  logo takes text, tone, form, guides and edits, not rule: it has no rule".
 
 `guides: true` returns the construction drawing, on the method of the 3-2-1
 reel: every measurement is proved with **ghost copies** of the small line (the
