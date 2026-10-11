@@ -26,8 +26,11 @@ module LogosHelper
       form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }.merge(changes).compact
   end
 
-  # How tall each type's sample is in the index table, in px: one size per type, so a column reads as a column.
-  LOGO_SAMPLE_HEIGHTS = { icon: 48, navbar: 28, stacked: 96 }.freeze
+  # How tall each type's sample is in the index table's cluster (logos/_cluster), in px: the most each fits in its
+  # tile under the tile's badge.
+  LOGO_SAMPLE_HEIGHTS = { icon: 28, navbar: 28, stacked: 88 }.freeze
+  # The badge on each tile of the cluster, so each type is easy to tell.
+  LOGO_BADGES = { stacked: "Stacked", navbar: "Navbar", icon: "Icon" }.freeze
   # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
   LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
   # A stacked guide drawing carries its ruler beside it, so it is wider than the logo and needs more height to keep

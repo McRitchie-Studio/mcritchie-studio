@@ -53,31 +53,38 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the index lists each brand with one logo of each type, on the light plate, its typeface and its colours" do
+  test "the index shows each brand's logos as one tight cluster: stacked square, navbar beside it, icon under the navbar" do
     log_in_as(@admin)
     get logos_path
     assert_response :success
 
-    assert_equal ["Brand", "Icon", "Navbar Logo", "Stacked Logo", "Typeface", "Colours"], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
+    assert_equal %w[Brand Logos Typeface Colours], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
     assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
     assert_select "[data-test='logo-table-scroll'].overflow-x-auto [data-test='logo-brands']", 1, "a wide row scrolls inside its own container"
+    assert_select "[data-test='logo-cluster']", Logos::NavbarLogo.brands.size, "one cluster per brand"
     assert_select "[data-test='logo-brand-row'][data-brand='industries']" do
       assert_select "th a[href=?]", logo_brand_path("industries"), text: "McRitchie Industries"
-      assert_equal %w[icon navbar stacked], css_select("[data-brand='industries'] [data-test='logo-sample']").map { |cell| cell["data-type"] }
+      assert_select "[data-test='logo-cell'] p", "Logos", "the cell names itself where the header row is hidden"
+      assert_select "[data-test='logo-cell'] > [data-test='logo-cluster'].rounded-2xl.flex-wrap", 1
+      # The square on the left; the navbar logo, then the icon, stacked in the column beside it.
+      assert_select "[data-test='logo-cluster'] > [data-test='logo-sample'][data-type='stacked'].w-\\[7\\.375rem\\].h-\\[7\\.375rem\\]", 1
+      assert_select "[data-test='logo-cluster'] > div.flex-col > [data-test='logo-sample']", 2
+      assert_equal %w[stacked navbar icon], css_select("[data-brand='industries'] [data-test='logo-sample']").map { |cell| cell["data-type"] }
+      assert_equal %w[navbar icon], css_select("[data-brand='industries'] [data-test='logo-cluster'] > div.flex-col > [data-test='logo-sample']").map { |c| c["data-type"] }
+      assert_select "[data-test='logo-sample'][data-type='icon'].h-14.w-14", 1, "the icon is a small square"
+      assert_select "[data-test='logo-sample'][data-type='navbar'].h-14", 1, "as tall as the icon: the two make the square's height"
       SAMPLES.each_key do |type|
         src, alt = sample("industries", "McRitchie Industries", type, "light")
-        assert_select "[data-test='logo-sample'][data-type='#{type}']" do
-          assert_select "a[href=?] [data-test='logo-plate'][data-tone='light'][style*='#FFFFFF'] img[alt=?][src=?]",
-                        logo_brand_path("industries", { type: (type unless type == "navbar") }.compact), alt, src
-          assert_select "[data-test='logo-plate']", 1
-          assert_select "[data-test='logo-image']", 1
-          assert_select "p", Logos::Variant::TYPES.fetch(type.to_sym), "the cell names its type where the header row is hidden"
+        assert_select "a[data-test='logo-sample'][data-type='#{type}'][href=?]", logo_brand_path("industries", { type: (type unless type == "navbar") }.compact) do
+          assert_select "[data-test='logo-badge']", LogosHelper::LOGO_BADGES.fetch(type.to_sym)
+          assert_select "img[data-test='logo-image'][alt=?][src=?]", alt, src
         end
       end
       assert_equal LABEL, sample("industries", "McRitchie Industries", "navbar", "light").last
-      assert_select "[data-test='logo-plate']", 3
+      assert_select "[data-test='logo-plate']", 0, "no plate: the logos sit on the page's own background"
     end
-    assert_equal({ "icon" => "max-height: 48px", "navbar" => "max-height: 28px", "stacked" => "max-height: 96px" },
+    assert_equal %w[Stacked Navbar Icon], css_select("[data-brand='studio'] [data-test='logo-badge']").map { |badge| badge.text.strip }
+    assert_equal({ "stacked" => "max-height: 88px", "navbar" => "max-height: 28px", "icon" => "max-height: 28px" },
                  css_select("[data-brand='studio'] [data-test='logo-sample']").to_h { |cell| [cell["data-type"], cell.at_css("img")["style"]] })
     assert_select "[data-test='read-only-note']", /Choosing one for a brand comes later/
   end
@@ -103,8 +110,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-brand='turf'] [data-test='logo-sample'][data-type='stacked']" do
       assert_select "[data-test='logo-sample-refused']", "Not drawn. #{reason}"
       assert_select "img, a, [data-test='logo-plate']", 0
-      assert_select "p", "Stacked Logo"
+      assert_select "[data-test='logo-badge']", "Stacked", "the tile still names its type"
     end
+    assert_select "[data-brand='turf'] [data-test='logo-cluster'] > div[data-test='logo-sample'][data-type='stacked']", 1, "it keeps its place in the cluster"
     assert_select "[data-brand='turf'] [data-test='logo-image']", 2, "its icon and its navbar logo are still shown"
     assert_select "[data-test='logo-sample-refused']", 1
     assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size - 1
@@ -245,7 +253,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_select "th a[href=?]", logo_brand_path(brand), text: name
         SAMPLES.each_key do |type|
           src, alt = sample(brand, name, type, "light")
-          assert_select "[data-test='logo-sample'][data-type='#{type}'] [data-test='logo-plate'][data-tone='light'] img[alt=?][src=?]", alt, src
+          assert_select "[data-test='logo-cluster'] [data-test='logo-sample'][data-type='#{type}'] img[alt=?][src=?]", alt, src
         end
       end
     end
@@ -471,7 +479,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   test "the index shows one logo of each type per brand in the chosen context, and its links carry the context" do
     log_in_as(@admin)
-    PLATES.each do |context, plate|
+    PLATES.each_key do |context|
       get logos_path(context:)
       assert_response :success
       carried = context == "light" ? {} : { context: }
@@ -480,12 +488,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "form[data-test='context-form'] noscript input[type='submit'][value='Apply']", 1
       assert_select "form[data-test='context-form'] > input[type='submit']", 0
       assert_equal [context], css_select("select#logo-context option[selected]").map { |o| o["value"] }
-      assert_select "[data-test='logo-plate']", 3 * Logos::NavbarLogo.brands.size
+      assert_select "[data-test='logo-plate']", 0
       assert_select "[data-test='logo-image']", 3 * Logos::NavbarLogo.brands.size
       Logos::NavbarLogo.brands.each do |brand|
         name = Logos::Variant.brand_name(Logos::NavbarLogo.new(brand))
         assert_select "[data-test='logo-brand-row'][data-brand='#{brand}']" do
-          assert_select "[data-test='logo-plate'][data-tone='#{context}'][style=?]", plate, 3
           assert_select "a[href=?]", logo_brand_path(brand, carried), 2, "the name and the navbar logo open the default tab"
           SAMPLES.each_key do |type|
             src, alt = sample(brand, name, type, context)

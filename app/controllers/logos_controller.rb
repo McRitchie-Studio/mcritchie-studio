@@ -29,12 +29,13 @@ class LogosController < ApplicationController
 
   # Per brand, one logo of each type: the samples the table shows. A brand whose name cannot be stacked (its style
   # needs `stacked: one_line`) keeps its row: its Stacked cell holds the refusal, and the cell says why.
+  # Each sample is a map of the tones it is shown in to its variant (logos/_cluster).
   def index
     @rows = Logos::NavbarLogo.brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
-      [logo, { icon: Logos::Variant.new(logo, type: :icon, tone: @context),
-               navbar: Logos::Variant.new(logo, rule: 4, text: :second, tone: @context),
-               stacked: stacked_sample(brand) }]
+      [logo, { stacked: stacked_sample(brand),
+               navbar: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, rule: 4, text: :second, tone:)] },
+               icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:)] } }]
     end
   end
 
@@ -58,13 +59,15 @@ class LogosController < ApplicationController
   private
 
   def stacked_sample(brand)
-    Logos::Variant.new(Logos::Variant.logo(brand, :stacked), type: :stacked, text: :first, tone: @context)
+    stacked = Logos::Variant.logo(brand, :stacked)
+    @tones.to_h { |tone| [tone, Logos::Variant.new(stacked, type: :stacked, text: :first, tone:)] }
   rescue Logos::NavbarLogo::Error => e
     e
   end
 
   def set_context
     @context = Logos::Variant.context(params[:context])
+    @tones = [@context]
   end
 
   # An unknown brand is a 404; every other refusal is a 422 (above). The logo is the one that draws the type asked for.
