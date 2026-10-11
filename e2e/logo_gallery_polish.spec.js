@@ -88,3 +88,11 @@ test("at 1280 a saved kit's status stays on one line and no brand's logo tiles w
     await page.waitForURL(/#kit-choice$/);
   }
 });
+
+test("at 1280 the Kit card's two button rows line up", async ({ page }) => {
+  await open(page, "/logos/welding_v2?type=stacked");
+  const rows = page.locator("[data-test='kit-card'] [data-test='kit-pick-actions']");
+  await expect(rows).toHaveCount(2);
+  const [navbar, stacked] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox()];
+  expect(Math.abs(navbar.y - stacked.y)).toBeLessThan(1);
+});

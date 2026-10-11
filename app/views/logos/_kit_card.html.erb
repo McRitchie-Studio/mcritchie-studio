@@ -17,7 +17,9 @@
          rescue Logos::NavbarLogo::Error => e
            e
          end %>
-      <div class="min-w-0 space-y-1.5" data-test="kit-pick" data-type="<%= type %>" data-saved="<%= kit_record.saved?(type) %>">
+      <%# A column whose button row sits at its foot (mt-auto), so the two picks' rows line up side by side whatever
+          the length of the words above them. %>
+      <div class="min-w-0 flex flex-col gap-1.5" data-test="kit-pick" data-type="<%= type %>" data-saved="<%= kit_record.saved?(type) %>">
         <h3 class="text-2xs font-semibold uppercase tracking-wide text-muted">
           <%= type_name %> · <%= kit_record.saved?(type) ? "saved" : "default" %>
         </h3>
@@ -36,7 +38,7 @@
           <% if (stale = logo_stale_edits_sentence(kit_record, type)) %>
             <p class="text-2xs text-heading" role="status" data-test="kit-pick-stale"><%= stale %></p>
           <% end %>
-          <div class="flex flex-wrap items-center justify-end gap-2">
+          <div class="mt-auto flex flex-wrap items-center justify-end gap-2" data-test="kit-pick-actions">
             <%= link_to "Open on its tab", logo_brand_path(@logo.brand, logo_kit_tab_params(shown)),
                         class: "btn btn-sm btn-neutral #{ring}", data: { test: "kit-pick-open" } %>
             <%= logo_themed(versions.keys) do |tone| %>
