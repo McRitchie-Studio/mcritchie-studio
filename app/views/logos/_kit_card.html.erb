@@ -1,0 +1,59 @@
+<%# THE BRAND'S KIT (task brand-kit-record), on every tab of the brand page: the
+    Navbar Logo and the Stacked Logo the brand uses, which is its saved kit
+    choice (BrandKit) or, with none saved, its default, each in the page's tone
+    with its words, a link to its tab set up as saved, and a download; then the
+    kit's notes. Locals: kit_record (the brand's BrandKit, saved or not). %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<section class="card p-4 sm:p-5 space-y-4" id="kit" data-test="kit-card" aria-labelledby="kit-title">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h2 id="kit-title" class="text-sm font-bold text-heading mr-auto">Kit</h2>
+    <p class="text-2xs text-muted" data-test="kit-card-status"><%= logo_kit_status(kit_record) %></p>
+  </div>
+  <div class="grid gap-4 md:grid-cols-2">
+    <% BrandKit::TYPES.each do |type| %>
+      <% type_name = Logos::Variant::TYPES.fetch(type) %>
+      <% versions = begin
+           @tones.to_h { |tone| [tone, kit_record.variant(type, tone:)] }
+         rescue Logos::NavbarLogo::Error => e
+           e
+         end %>
+      <div class="min-w-0 space-y-1.5" data-test="kit-pick" data-type="<%= type %>" data-saved="<%= kit_record.saved?(type) %>">
+        <h3 class="text-2xs font-semibold uppercase tracking-wide text-muted">
+          <%= type_name %> · <%= kit_record.saved?(type) ? "saved" : "default" %>
+        </h3>
+        <% if versions.is_a?(Logos::NavbarLogo::Error) %>
+          <p class="text-sm text-secondary" data-test="kit-pick-refused">Not drawn. <%= versions.message %></p>
+        <% else %>
+          <%# In words and as a link, the choice as saved: the watermark's versions carry no edits. %>
+          <% shown = kit_record.variant(type) %>
+          <%# The frame holds its height before the pictures load, so the page below the edit panel never grows under a
+              kept scroll (app/javascript/logo_editor.js restores it once the tab's own logos have loaded). %>
+          <div class="flex items-center justify-center rounded-lg border border-subtle p-4 min-w-0" data-test="kit-pick-frame"
+               style="height: <%= LogosHelper::LOGO_KIT_HEIGHTS.fetch(type) + 34 %>px">
+            <%= logo_themed_images(versions, height: LogosHelper::LOGO_KIT_HEIGHTS.fetch(type), test: "kit-pick-image") %>
+          </div>
+          <p class="text-2xs text-secondary" data-test="kit-pick-summary"><%= logo_choice_summary(shown).upcase_first %></p>
+          <% if (stale = logo_stale_edits_sentence(kit_record, type)) %>
+            <p class="text-2xs text-heading" role="status" data-test="kit-pick-stale"><%= stale %></p>
+          <% end %>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <%= link_to "Open on its tab", logo_brand_path(@logo.brand, logo_kit_tab_params(shown)),
+                        class: "btn btn-sm btn-neutral #{ring}", data: { test: "kit-pick-open" } %>
+            <%= logo_themed(versions.keys) do |tone| %>
+              <% each = versions.fetch(tone) %>
+              <%= link_to "Download", logo_asset_path(each, download: 1), class: "btn btn-sm btn-neutral #{ring}",
+                          data: { test: "kit-pick-download", turbo: false }, aria: { label: "Download: #{each.label}" } %>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+  <%= form_with url: brand_kit_path(@logo.brand), method: :patch, class: "space-y-2", data: { test: "kit-notes-form", turbo: false } do %>
+    <% logo_page_params.slice(:type, :context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+    <label for="kit-notes" class="block text-3xs font-semibold uppercase tracking-wide text-muted">Notes</label>
+    <%= text_area_tag :notes, kit_record.notes, id: "kit-notes", rows: 2, maxlength: BrandKit::MAX_NOTES,
+                      class: "w-full rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-sm text-heading", data: { test: "kit-notes" } %>
+    <%= submit_tag "Save notes", name: nil, class: "btn btn-sm btn-neutral #{ring}", data: { test: "kit-notes-save", disable_with: false } %>
+  <% end %>
+</section>

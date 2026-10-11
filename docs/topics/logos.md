@@ -336,14 +336,15 @@ It writes 36 files per brand, named
 
 ## The gallery
 
-A read-only admin gallery (`LogosController`) shows the library's output. It
-stores nothing: choosing a logo for a brand waits for the brand kit record. It is
-linked from the admin sidebar as **Logos**.
+An admin gallery (`LogosController`) shows the library's output. Its one store
+is each brand's **kit record** ([below](#the-kit-record)): the Navbar and
+Stacked Logo the brand uses, and its original artwork. It is linked from the
+admin sidebar as **Logos**.
 
 | Route | Shows |
 |-------|-------|
-| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo (first word leading) as a square on the left, the **Navbar** Logo (rule of 4, second word leading) beside it, and the **Icon** as a small square under the Navbar Logo, each a tile with a badge naming its type and linking to its tab of the brand page. Then its **Typeface** hierarchy and its **Colours** (below). |
-| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs, the brand's **Colours** and **Typefaces**. |
+| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo, each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (Navbar and Stacked tabs), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
@@ -529,8 +530,78 @@ In the library, `NavbarLogo#svg` and `StackedLogo#svg` (and `#layout`) take
 tagline: { visible: false } }`, checked by `#checked_edits`;
 `#refusal(edits, rule:)` or `(edits, form:)` says why a set cannot be drawn.
 
-**Saving waits for the kit record** (piece 3): nothing here is stored. To keep
-an edited logo, download it or keep its URL.
+To keep an edited logo as the brand's own, save it as the **kit choice**
+([below](#the-kit-record)).
+
+## The kit record
+
+`BrandKit` (`app/models/brand_kit.rb`, table `brand_kits`; task
+brand-kit-record) is what the operator has SAVED for a brand: one row per
+brand of `config/logo_brands.yml`, created on its first save (no seed rows).
+It is not `Logos::BrandKit`, which reads the palette and typefaces from the
+YAML and stores nothing; those stay in the YAML for now.
+
+| Column | Holds |
+|--------|-------|
+| `brand` | the style key (`studio`, `welding_v2`), unique |
+| `navbar_choice` | `{"rule" => 4, "text" => "second", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
+| `stacked_choice` | `{"form" => "tagline", "text" => "first", "edits" => {"tagline_visible" => "0"}}`, or null |
+| `notes` | the operator's own words on the kit |
+| `updated_by` | the admin who changed it last (email) |
+| `originals` | Active Storage attachments: the original artwork |
+
+**A choice is the page's own params.** Its `edits` are the edit panel's URL
+params (`Logos::Variant::EDIT_PARAMS`), and both saving and drawing read a
+choice through `Logos::Variant.parse` and the logo's `#refusal`, so a saved
+choice can never hold what the page could not draw. A choice is stored in one
+spelling (`BrandKit.choice_of`): a hex in capitals, a weight and a visibility
+as strings, and only the edits the type shows (a Navbar Logo drops the
+tagline's; a Stacked Logo keeps them only in the tagline form). It is stored in
+the flat URL spelling because a jsonb column hands back STRING keys while
+`#checked_edits` takes symbols: reading goes through `Logos::Variant.edits`
+first. If the brand's data later changes so a saved EDIT cannot be drawn (a
+palette colour taken out), loading drops that edit (`BrandKit#stale_edits`),
+draws the rest, and the brand page names what was left out; the table and
+page never 422 for it, and only a choice being written is checked strictly,
+so a stale one never refuses another save. A choice whose rule, form or text
+is itself refused is shown as the refusal in its cell and on the Kit card;
+save again or clear it.
+
+**Saving.** On the Navbar and Stacked tabs, **Kit choice** saves the tab's
+rule or form and its edits, with the text version picked in its select (it
+starts on the saved one, else the default: second word leads for the Navbar
+Logo, first for the Stacked), and lands back on the tab with a line saying
+what was saved. **Clear saved choice** puts the brand back on its default.
+The brand page's header says `Kit: saved <date> by <who>` or `Kit: not saved
+yet`, and its **Kit** card shows both choices in the page's tone, each with
+**Open on its tab** and **Download**, and the kit's notes.
+
+**Originals.** The **Kit originals** card ("The originals the logos were
+derived from.") uploads one or more files, lists each with its name, type,
+size and upload date, shows an SVG, PNG or JPEG as a picture, and has a
+**Download** and a **Delete** for each. A file must be an SVG, PNG, JPEG, PDF
+or ZIP, read from its BYTES (Marcel), never its name, and at most 25 MB; one
+bad file refuses the whole upload. They are stored by Active Storage on the
+hub's service (R2: `amazon` in production, `amazon_dev` on desks), and
+served only through the admin wall (`BrandKitsController#original`), never by
+an Active Storage URL, with a `sandbox` CSP and `nosniff`, so a script in an
+SVG never runs on the hub's origin. Only pictures are served inline; a
+download is an attachment. A deleted original is purged to the bucket's trash
+(StudioTrashS3, three days).
+
+| Route (`BrandKitsController`, admin only) | Does |
+|------|------|
+| `PATCH /logos/:brand/kit/choice` | saves `type` (`navbar`, `stacked`) with `rule` or `form`, `text` and the edit params |
+| `DELETE /logos/:brand/kit/choice` | clears `type`'s choice |
+| `PATCH /logos/:brand/kit` | saves `notes` |
+| `POST /logos/:brand/kit/originals` | uploads `originals[]` |
+| `GET /logos/:brand/kit/originals/:id` | one original (`download=1` for an attachment) |
+| `DELETE /logos/:brand/kit/originals/:id` | removes one |
+
+Every write is a CSRF-protected form post and lands back on the brand page
+with the page's settings; a refusal is a plain-text 422 naming what was
+refused; an unknown brand or original is a 404. A visitor is sent to log in
+and a non-admin is turned away by the admin wall, writes and reads alike.
 
 ## The data
 

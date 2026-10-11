@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# LOGO STUDIO (epic brand-studio): a read-only gallery over Logos::NavbarLogo
+# LOGO STUDIO (epic brand-studio): a gallery over Logos::NavbarLogo
 # and Logos::StackedLogo. Three logo TYPES per brand: the icon alone, the
 # Navbar Logo and the Stacked Logo (Logos::Variant::TYPES; task
 # logo-tabs-icon-and-stacked). The index lists each brand in
@@ -25,8 +25,10 @@
 # carried by every other control, and applied to every logo on the tab and to
 # its downloads and copies. A watermark is one colour, so they do not apply there.
 #
-# No model and nothing stored: choosing a logo, and saving edits, waits for the
-# brand kit record.
+# The brand's KIT RECORD (BrandKit, task brand-kit-record) holds the saved
+# Navbar and Stacked choices and the original artwork: the table draws the
+# saved choices, and the brand page shows them and saves them
+# (BrandKitsController does the writing).
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
   before_action :require_admin
@@ -41,11 +43,15 @@ class LogosController < ApplicationController
   # Per brand, one logo of each type: the samples the table shows. A brand whose name cannot be stacked (its style
   # needs `stacked: one_line`) keeps its row: its Stacked cell holds the refusal, and the cell says why.
   # Each sample is a map of the tones it is shown in to its variant (logos/_cluster).
+  # The Navbar and Stacked samples are the brand's SAVED kit choices where it has them (BrandKit; task
+  # brand-kit-record), else its defaults (BrandKit::DEFAULTS); every saved kit is read in one query.
   def index
-    @rows = Logos::NavbarLogo.brands.map do |brand|
+    brands = Logos::NavbarLogo.brands
+    @kits = BrandKit.by_brand(brands)
+    @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
-      [logo, { stacked: stacked_sample(brand),
-               navbar: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, rule: 4, text: :second, tone:)] },
+      kit = @kits[brand] || BrandKit.new(brand:)
+      [logo, { stacked: kit_sample(kit, :stacked), navbar: kit_sample(kit, :navbar),
                icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:)] } }]
     end
   end
@@ -65,6 +71,7 @@ class LogosController < ApplicationController
     @variants = @tones.map { |tone| Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, guides: @guides, edits: drawn) }
                       .transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)
+    @kit_record = BrandKit.for(@logo.brand)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
@@ -76,9 +83,10 @@ class LogosController < ApplicationController
 
   private
 
-  def stacked_sample(brand)
-    stacked = Logos::Variant.logo(brand, :stacked)
-    @tones.to_h { |tone| [tone, Logos::Variant.new(stacked, type: :stacked, text: :first, tone:)] }
+  # A sample is the kit's saved choice or the brand's default, by tone; or the library's refusal, which the cell
+  # shows in its place: a brand that cannot be stacked, or a saved choice the brand's data can no longer draw.
+  def kit_sample(kit, type)
+    @tones.to_h { |tone| [tone, kit.variant(type, tone:)] }
   rescue Logos::NavbarLogo::Error => e
     e
   end

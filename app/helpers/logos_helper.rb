@@ -53,6 +53,73 @@ module LogosHelper
       "#{others.size == 1 ? 'layer keeps its' : 'layers keep their'} brand #{others.size == 1 ? 'colour' : 'colours'}."
   end
 
+  # What a part is called in a sentence.
+  LOGO_PART_NAMES = { icon: "icon", first: "first word", ending: "ending", tagline: "tagline" }.freeze
+
+  # A Navbar or Stacked choice in words, as the kit saves it (BrandKit): "rule of 4, second word leads, as styled",
+  # "with tagline, first word leads, first word Deep Violet 300 Light; tagline hidden".
+  def logo_choice_summary(variant)
+    shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
+    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, logo_edits_summary(variant.logo, variant.edits)].join(", ")
+  end
+
+  # Checked edits in words, by part, the colours by their palette names; "as styled" for none.
+  def logo_edits_summary(logo, edits)
+    return "as styled" if edits.empty?
+
+    palette = Logos::BrandKit.new(logo.brand)
+    edits.map do |part, settings|
+      words = [(logo_swatch_name(palette, settings[:colour]) if settings[:colour]),
+               ("#{settings[:weight]} #{Logos::BrandKit::WEIGHT_NAMES.fetch(settings[:weight])}" if settings[:weight]),
+               ("hidden" if settings[:visible] == false)]
+      "#{LOGO_PART_NAMES.fetch(part)} #{words.compact.join(' ')}"
+    end.join("; ")
+  end
+
+  # The saved edits of `type` the kit leaves out because the brand can no longer draw them (BrandKit#stale_edits), in
+  # one sentence, or nil: "Left out of the saved choice, because the brand can no longer draw it: first word colour
+  # #123456."
+  def logo_stale_edits_sentence(kit, type)
+    stale = kit.stale_edits(type)
+    return if stale.empty?
+
+    words = stale.keys.map do |name|
+      part, setting = Logos::Variant::EDIT_PARAMS.fetch(name.to_sym)
+      value = kit.choice(type).dig("edits", name).to_s
+      value = "##{value.upcase}" if setting == :colour
+      "#{LOGO_PART_NAMES.fetch(part)} #{setting} #{value}"
+    end
+    "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
+  end
+
+  # "Kit: saved Oct 11, 2026 by alex@…" or "Kit: not saved yet": a kit is saved once its record exists.
+  def logo_kit_status(kit)
+    return "Kit: not saved yet" unless kit&.persisted?
+
+    ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", ("by #{kit.updated_by}" if kit.updated_by.present?)].compact.join(" ")
+  end
+
+  # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page
+  # settings the redirect brings back (guides, context). The text version is the form's own select.
+  def logo_kit_save_fields
+    choice = @type == :stacked ? { form: @form } : { rule: @rule }
+    { type: @type }.merge(choice).merge(Logos::Variant.edit_params(@edits)).merge(logo_page_params.slice(:guides, :context))
+  end
+
+  # The brand page's params that open a kit choice on its own tab: its rule or form and its edits (less the page's
+  # defaults), in the page's context.
+  def logo_kit_tab_params(variant)
+    shape = if variant.type == :stacked
+              { type: :stacked, form: (variant.form unless variant.form == variant.logo.form) }
+            else
+              { rule: (variant.rule unless variant.rule == 4) }
+            end
+    shape.merge(Logos::Variant.edit_params(variant.edits)).merge(logo_page_params.slice(:context)).compact
+  end
+
+  # How tall the kit card's Navbar and Stacked logos are, in px.
+  LOGO_KIT_HEIGHTS = { navbar: 48, stacked: 140 }.freeze
+
   # The palette swatch a hex names ("Deep Violet").
   def logo_swatch_name(kit, hex) = kit.palette.find { |swatch| swatch.hex.casecmp?(hex) }&.name || hex
 

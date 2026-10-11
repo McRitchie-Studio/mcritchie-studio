@@ -564,6 +564,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_151000) do
     t.index ["slug"], name: "index_body_archetypes_on_slug", unique: true
   end
 
+  create_table "brand_kits", force: :cascade do |t|
+    t.string "brand", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "navbar_choice"
+    t.text "notes"
+    t.jsonb "stacked_choice"
+    t.datetime "updated_at", null: false
+    t.string "updated_by"
+    t.index ["brand"], name: "index_brand_kits_on_brand", unique: true
+  end
+
   create_table "broadcast_deliveries", force: :cascade do |t|
     t.string "bounce_kind"
     t.datetime "bounced_at"

@@ -1,0 +1,50 @@
+<%# SAVE AS KIT CHOICE (task brand-kit-record), on the Navbar Logo and Stacked
+    Logo tabs under the edit panel: saves this tab's rule (or form) and its
+    edits, with the text version picked here, as the brand's kit choice for the
+    type (BrandKitsController#save_choice; BrandKit reads it through the same
+    parser as the page's URL). The select starts on the saved text version, else
+    the brand's default. Clear saved choice puts the brand back on its default.
+    Plain forms, no JavaScript; a refusal is a plain 422. Locals: kit_record
+    (the brand's BrandKit, saved or not). %>
+<% type_name = Logos::Variant::TYPES.fetch(@type) %>
+<% saved = begin
+     kit_record.variant(@type) if kit_record.saved?(@type)
+   rescue Logos::NavbarLogo::Error => e
+     e
+   end %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
+<section class="card p-4 sm:p-5 space-y-3" id="kit-choice" data-test="kit-choice" data-type="<%= @type %>" aria-labelledby="kit-choice-title">
+  <h2 id="kit-choice-title" class="text-sm font-bold text-heading">Kit choice</h2>
+  <p class="text-sm text-secondary" data-test="kit-choice-saved">
+    <% if saved.is_a?(Logos::NavbarLogo::Error) %>
+      The saved <%= type_name %> can no longer be drawn, so the brand shows its default: <%= saved.message %>
+    <% elsif saved %>
+      Saved <%= type_name %>: <span class="font-semibold text-heading"><%= logo_choice_summary(saved) %></span>.
+    <% else %>
+      No <%= type_name %> saved yet: the brand shows its default, <%= logo_choice_summary(BrandKit.new(brand: @logo.brand).variant(@type)) %>.
+    <% end %>
+  </p>
+  <% if (stale = logo_stale_edits_sentence(kit_record, @type)) %>
+    <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="status" data-test="kit-stale-edits"><%= stale %></p>
+  <% end %>
+  <% if @edit_refusal %>
+    <p class="text-sm text-secondary" data-test="kit-save-refused">These edits cannot be drawn here, so they cannot be saved.</p>
+  <% else %>
+    <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "flex flex-wrap items-center gap-2",
+                  data: { test: "kit-save-form", turbo: false } do %>
+      <% logo_kit_save_fields.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+      <label class="inline-flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-muted">
+        Text
+        <%= select_tag :text, options_for_select(Logos::Variant::TEXTS.map { |text, label| [label, text] }, kit_record.default_text(@type)),
+                       id: nil, class: field, autocomplete: "off", data: { test: "kit-save-text" } %>
+      </label>
+      <%= submit_tag "Save as kit choice", name: nil, class: "btn btn-sm btn-primary #{ring}", data: { test: "kit-save", disable_with: false } %>
+    <% end %>
+    <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form" : "rule" %> and edits, with the text version picked here, as the brand's <%= type_name %>. The table and this page then show it.</p>
+  <% end %>
+  <% if kit_record.saved?(@type) %>
+    <%= button_to "Clear saved choice", brand_kit_choice_path(@logo.brand), method: :delete, params: logo_kit_save_fields,
+                  class: "btn btn-sm btn-neutral #{ring}", form: { data: { turbo: false } }, data: { test: "kit-clear" } %>
+  <% end %>
+</section>

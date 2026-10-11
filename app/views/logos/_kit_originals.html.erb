@@ -1,0 +1,55 @@
+<%# KIT ORIGINALS (task brand-kit-record; Alex: every kit keeps its original, so
+    anyone can see where a derivation came from), on every tab of the brand
+    page: the brand's original artwork or marketing kit as uploaded, unedited.
+    Each file is listed with its name, type, size and upload date; an SVG, PNG
+    or JPEG is shown as a picture, and every file has a download and a delete.
+    Files are served from behind the admin wall (BrandKitsController#original),
+    never from a storage URL. Plain forms; a refused upload is a plain 422. A
+    delete has no confirm (no inline script): the hub's storage keeps a purged
+    file in trash for three days (StudioTrashS3).
+    Locals: kit_record (the brand's BrandKit, saved or not). %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% originals = kit_record.persisted? ? kit_record.originals.includes(:blob).order(:created_at, :id).to_a : [] %>
+<section class="card p-4 sm:p-5 space-y-3" id="kit-originals" data-test="kit-originals" aria-labelledby="kit-originals-title">
+  <h2 id="kit-originals-title" class="text-sm font-bold text-heading">Kit originals</h2>
+  <p class="text-sm text-secondary">The originals the logos were derived from.</p>
+  <% if originals.empty? %>
+    <p class="text-sm text-muted" data-test="kit-originals-empty">No originals uploaded yet.</p>
+  <% else %>
+    <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-test="kit-original-list">
+      <% originals.each do |original| %>
+        <% kind = BrandKit::ORIGINAL_TYPES.fetch(original.content_type, original.content_type) %>
+        <li class="min-w-0 rounded-lg border border-subtle p-3 space-y-2" data-test="kit-original" data-type="<%= kind %>">
+          <% if BrandKit::PREVIEWABLE.include?(original.content_type) %>
+            <div class="flex items-center justify-center rounded-md border border-subtle p-2 h-32">
+              <%= image_tag brand_kit_original_path(kit_record.brand, original), alt: "Original: #{original.filename}", loading: "lazy",
+                            class: "max-h-full max-w-full w-auto h-auto", data: { test: "kit-original-preview" } %>
+            </div>
+          <% end %>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-heading break-all" data-test="kit-original-name"><%= original.filename %></p>
+            <p class="text-2xs text-muted" data-test="kit-original-meta">
+              <%= kind %> · <%= number_to_human_size(original.byte_size) %> · uploaded <%= original.created_at.strftime("%b %-d, %Y") %>
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <%= link_to "Download", brand_kit_original_path(kit_record.brand, original, download: 1), class: "btn btn-sm btn-neutral #{ring}",
+                        data: { test: "kit-original-download", turbo: false }, aria: { label: "Download #{original.filename}" } %>
+            <%= button_to "Delete", brand_kit_original_path(kit_record.brand, original), method: :delete, params: logo_page_params.slice(:type, :context),
+                          class: "btn btn-sm btn-neutral #{ring}", aria: { label: "Delete #{original.filename}" },
+                          form: { data: { turbo: false }, onsubmit: nil }, data: { test: "kit-original-delete" } %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+  <%= form_with url: brand_kit_originals_path(kit_record.brand), multipart: true, class: "flex flex-wrap items-center gap-2",
+                data: { test: "kit-original-form", turbo: false } do %>
+    <% logo_page_params.slice(:type, :context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+    <label class="sr-only" for="kit-original-files">Original files</label>
+    <%= file_field_tag "originals[]", multiple: true, id: "kit-original-files", accept: ".svg,.png,.jpg,.jpeg,.pdf,.zip,#{BrandKit::ORIGINAL_TYPES.keys.join(',')}",
+                       class: "min-w-0 max-w-full text-xs text-secondary", data: { test: "kit-original-input" } %>
+    <%= submit_tag "Upload", name: nil, class: "btn btn-sm btn-primary #{ring}", data: { test: "kit-original-upload", disable_with: false } %>
+  <% end %>
+  <p class="text-2xs text-muted">SVG, PNG, JPEG, PDF or ZIP, up to <%= BrandKit::MAX_ORIGINAL_BYTES / 1.megabyte %> MB each. A file's type is read from its contents, not its name.</p>
+</section>
