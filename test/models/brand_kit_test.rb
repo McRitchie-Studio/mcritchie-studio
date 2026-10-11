@@ -83,7 +83,7 @@ class BrandKitTest < ActiveSupport::TestCase
     rescue Logos::NavbarLogo::Error
       false
     end
-    skip "every weight draws in every rule for this brand" unless refused
+    assert refused, "welding_v2 has a weight too wide for some rule: the case this test needs"
 
     weight, rule = refused
     error = assert_raises(Logos::NavbarLogo::Error) do
