@@ -464,7 +464,7 @@ class LogosNavbarLogoTest < Minitest::Test
     layers = Logo.icons.values.flat_map { |icon| icon.fetch("layers") }
     glyphs = Logo.glyphs.values.flat_map { |set| set.fetch("glyphs").values }
     traced = Logo.letterings.values.flat_map { |lettering| lettering.fetch("words").values.flatten }
-    assert_equal [8, 13, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
+    assert_equal [9, 16, 6 * 95, 20], [Logo.icons.size, layers.size, glyphs.size, traced.size]
 
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES

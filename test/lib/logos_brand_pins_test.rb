@@ -45,4 +45,28 @@ class LogosBrandPinsTest < Minitest::Test
   def test_each_brand_draws_exactly_what_it_drew_when_pinned
     assert_equal DIGESTS, Navbar.brands.to_h { |brand| [brand, self.class.digest(brand)] }
   end
+
+  # Task logo-original-and-alt: every ORIGINAL drawing of each brand that has one (light and dark: the watermark has
+  # no colouring), pinned as first shipped. DIGESTS above are the Alt drawings, which that task left as they were.
+  ORIGINAL_DIGESTS = {
+    "welding" => "0f1083dc461623e7bb84e07049ce8c14e10ad581c1200b74023413279a2a65d4"
+  }.freeze
+
+  def self.original_drawings(brand)
+    navbar = Navbar.new(brand)
+    stacked = Stacked.new(brand)
+    flags = [false, true]
+    navbars = Navbar::RULES.keys.product(Navbar::TEXTS, Navbar::BAKED, flags).map do |rule, text, tone, guides|
+      "#{brand}-navbar-rule#{rule}-#{text}-#{tone}-original-#{guides}\n#{navbar.svg(rule:, text:, tone:, guides:, colouring: :original)}"
+    end
+    stackeds = stacked.forms.product(Navbar::TEXTS, Navbar::BAKED, flags).map do |form, text, tone, guides|
+      "#{brand}-stacked-#{form}-#{text}-#{tone}-original-#{guides}\n#{stacked.svg(form:, text:, tone:, guides:, colouring: :original)}"
+    end
+    navbars + stackeds + Navbar::BAKED.map { |tone| "#{brand}-icon-#{tone}-original\n#{navbar.icon_svg(tone:, colouring: :original)}" }
+  end
+
+  def test_each_original_draws_exactly_what_it_drew_when_pinned
+    originals = Navbar.brands.select { |brand| Navbar.new(brand).original? }
+    assert_equal ORIGINAL_DIGESTS, originals.to_h { |brand| [brand, Digest::SHA256.hexdigest(self.class.original_drawings(brand).join)] }
+  end
 end
