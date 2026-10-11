@@ -18,18 +18,21 @@ module LogosHelper
 
   def logo_plate_style(tone) = LOGO_PLATES.fetch(tone.to_sym)
 
-  # The gallery's page params: the type, context, rule and guides in force, less the defaults (the Navbar Logo,
-  # light, the rule of 4, guides off), with `changes` on top. A change to nil goes back to the default.
+  # The gallery's page params: the type, context, rule, form and guides in force, less the defaults (the Navbar Logo,
+  # light, the rule of 4, the brand's own stacked form, guides off), with `changes` on top. A change to nil goes back
+  # to the default.
   def logo_page_params(**changes)
     { type: (@type unless @type == :navbar), context: (@context unless @context == :light), rule: (@rule unless @rule == 4),
-      guides: (1 if @guides) }.merge(changes).compact
+      form: (@form unless @type == :stacked && @form == @logo.form), guides: (1 if @guides) }.merge(changes).compact
   end
 
   # How tall each type's sample is in the index table, in px: one size per type, so a column reads as a column.
   LOGO_SAMPLE_HEIGHTS = { icon: 48, navbar: 28, stacked: 96 }.freeze
   # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
   LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
-  LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 380 }.freeze
+  # A stacked guide drawing carries its ruler beside it, so it is wider than the logo and needs more height to keep
+  # its numbers readable (the tagline form's tallest least-width height is 531 px).
+  LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 540 }.freeze
   # A guide drawing FITS its plate first, like any logo. It only stops shrinking at the width where its labels
   # would render below this many px, and from there the plate scrolls sideways inside itself. The widest plate on
   # a 1280 px page is LOGO_PLATE_WIDTH px, and every drawing's minimum is under it, so nothing scrolls there
@@ -42,12 +45,12 @@ module LogosHelper
 
   def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
 
-  # A brand page's one-line account of the type being shown.
-  def logo_type_sentence(logo, type, rule)
+  # A brand page's one-line account of the type being shown (a Stacked Logo's in the form shown).
+  def logo_type_sentence(logo, type, rule, form = nil)
     case type
     when :icon then "The icon alone, as this brand's logos draw it."
     when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
-    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(logo.form)}"
+    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
     end
   end
 

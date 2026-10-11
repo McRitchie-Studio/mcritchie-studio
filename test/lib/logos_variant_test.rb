@@ -80,11 +80,12 @@ class LogosVariantTest < Minitest::Test
     assert_equal "industries-icon-watermark.svg", Variant.new(logo, type: :icon, tone: :watermark).filename
 
     first = Variant.parse(stacked, { text: "first", rule: "9" }, type: :stacked)
-    assert_equal [{ text: :first, tone: :light, guides: 0 }, "industries-stacked-first-light.svg", "McRitchie Industries stacked logo, first word leads, light"],
+    assert_equal [{ form: :two_line, text: :first, tone: :light, guides: 0 }, "industries-stacked-two-line-first-light.svg",
+                  "McRitchie Industries stacked logo, two lines, first word leads, light"],
                  [first.params, first.filename, first.label]
     assert_equal stacked.svg(text: :first), first.svg
     guides = Variant.parse(stacked, { tone: "dark", guides: "1" }, type: :stacked)
-    assert_equal ["industries-stacked-homogeneous-dark-guides.svg", "McRitchie Industries stacked logo, homogeneous, dark, construction guides"],
+    assert_equal ["industries-stacked-two-line-homogeneous-dark-guides.svg", "McRitchie Industries stacked logo, two lines, homogeneous, dark, construction guides"],
                  [guides.filename, guides.label]
     assert_match(/unknown text "third"/, refusal { Variant.parse(stacked, { text: "third" }, type: :stacked) })
     assert_match(/unknown tone "sepia"/, refusal { Variant.parse(logo, { tone: "sepia" }, type: :icon) })
@@ -123,5 +124,30 @@ class LogosVariantTest < Minitest::Test
     assert_equal "industries-navbar-rule4-second-watermark.svg", variant.filename
     assert_equal "McRitchie Industries navbar logo, rule of 4, second word leads, watermark", variant.label
     assert_equal "industries-navbar-rule3-homogeneous-watermark-guides.svg", parse(tone: "watermark", guides: "1").filename
+  end
+
+  # Task stacked-tagline-and-ghost-grid: the Stacked Logo's form.
+  def test_a_stacked_form_is_read_named_and_drawn
+    tagline = Variant.parse(stacked, { form: "tagline", text: "first" }, type: :stacked)
+    assert_equal [:tagline, { form: :tagline, text: :first, tone: :light, guides: 0 }], [tagline.form, tagline.params]
+    assert_equal "industries-stacked-tagline-first-light.svg", tagline.filename
+    assert_equal "McRitchie Industries stacked logo, with tagline, first word leads, light", tagline.label
+    assert_equal stacked.svg(form: :tagline, text: :first), tagline.svg
+    welding = Variant.parse(Logos::StackedLogo.new("welding"), { form: "tagline", text: "first", tone: "light" }, type: :stacked)
+    assert_equal "welding-stacked-tagline-first-light.svg", welding.filename, "the brief's own example"
+    assert_equal "turf-stacked-one-line-homogeneous-light.svg", Variant.parse(Logos::StackedLogo.new("turf"), {}, type: :stacked).filename
+    assert_equal :two_line, Variant.parse(stacked, {}, type: :stacked).form, "absent is the brand's own form"
+
+    assert_match(/unknown form "tagline": expected one of one_line/, refusal { Variant.parse(Logos::StackedLogo.new("turf"), { form: "tagline" }, type: :stacked) })
+    ["one_line", "three_line", "", "Tagline", ["tagline"]].each do |value|
+      assert_match(/unknown form .*: expected one of two_line, tagline/, refusal { Variant.parse(stacked, { form: value }, type: :stacked) }, value.inspect)
+    end
+    assert_nil Variant.parse(logo, { form: "nonsense" }).form, "a Navbar Logo does not read the form"
+    assert_equal({ rule: 3, text: :homogeneous, tone: :light, guides: 0 }, Variant.parse(logo, { form: "tagline" }).params)
+
+    assert_equal %i[tagline tagline tagline], Variant.all(stacked, type: :stacked, form: :tagline).map(&:form)
+    assert_equal %i[two_line two_line two_line], Variant.all(stacked, type: :stacked).map(&:form)
+    assert_equal [nil, :tagline, :one_line], [nil, "tagline", "one_line"].map { |value| Variant.form(value) }, "off the Stacked tab any form name is carried"
+    assert_match(/unknown form "sideways"/, refusal { Variant.form("sideways") })
   end
 end

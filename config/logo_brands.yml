@@ -17,6 +17,10 @@
 #            (default) sets the first word big and the second small beneath it;
 #            `one_line` sets the whole name on one line, for a brand whose
 #            second word is too wide to sit under its first
+# tagline    optional: the brand's tagline as the logo sets it, in capitals with
+#            no full stop. The Stacked Logo's tagline form sets it under the
+#            name in Montserrat 500 (Logos::StackedLogo); every character must be
+#            in the glyph data. A brand without one has no tagline form
 # tracking   optional: extra space after every letter, in em (negative tightens)
 # note       optional: one line the brand's page shows about where its art came from
 # tones      fills for a light and a dark background. `text` is the name's
@@ -34,6 +38,7 @@
 
 studio:
   name: McRITCHIE STUDIO
+  tagline: BUILD SMARTER
   icon: studio
   highlight: weight
   heavy: 800
@@ -48,6 +53,7 @@ studio:
 
 industries:
   name: McRITCHIE INDUSTRIES
+  tagline: BUILD BETTER
   icon: industries
   highlight: weight
   heavy: 700
@@ -85,6 +91,7 @@ turf:
 
 welding:
   name: COMMERCIAL WELDING
+  tagline: BUILDING STRONG CONNECTIONS
   icon: welding
   lettering: welding
   highlight: colour

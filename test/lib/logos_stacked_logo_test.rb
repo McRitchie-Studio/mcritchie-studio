@@ -5,6 +5,7 @@
 # text versions and tones it shares with the Navbar Logo, the guide drawing,
 # the vector-only output, and the refusals.
 
+require "digest"
 require "minitest/autorun"
 require "nokogiri"
 require_relative "../../lib/logos/navbar_logo"
@@ -20,6 +21,20 @@ class LogosStackedLogoTest < Minitest::Test
     ["studio", :first] => 1.078, ["studio", :homogeneous] => 1.078, ["studio", :second] => 1.056,
     ["industries", :first] => 1.073, ["industries", :homogeneous] => 1.073, ["industries", :second] => 1.056
   }.freeze
+
+  # SHA-256 over every stacked logo WITHOUT guides (4 brands x 3 texts x 3 tones, "<key>\n<svg>" each) and every icon
+  # (4 brands x 3 tones), taken on `accepted` at 4368b9183 before the tagline form and the ghost grids (task
+  # stacked-tagline-and-ghost-grid): a new form and new guide drawings may not move a shipped logo by a byte.
+  STACKED_DIGEST = "6b40237f0a2b759fe9d3d67f5d3af417e982c18c99d54d73859bd7974cdd8a6d"
+  ICON_DIGEST = "4196eaad2022f4866444301ed821104d48a6f06f793fbd95b90e7fe4c86d2c58"
+  # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
+  # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
+  TAGLINE_RATIOS = {
+    ["studio", :homogeneous] => 1.2708, ["studio", :first] => 1.2645, ["studio", :second] => 1.2609,
+    ["industries", :homogeneous] => 1.3270, ["industries", :first] => 1.3214, ["industries", :second] => 1.3215,
+    ["welding", :homogeneous] => 1.2838, ["welding", :first] => 1.2838, ["welding", :second] => 1.2838
+  }.freeze
+  TAGLINES = { "studio" => "BUILD SMARTER", "industries" => "BUILD BETTER", "welding" => "BUILDING STRONG CONNECTIONS", "turf" => nil }.freeze
 
   def stacked(brand) = (@stacked ||= {})[brand] ||= Stacked.new(brand)
   def doc(svg) = Nokogiri::XML(svg) { |config| config.strict }
@@ -168,51 +183,137 @@ class LogosStackedLogoTest < Minitest::Test
     end
   end
 
-  def test_guides_draw_each_boundary_each_bands_size_and_the_small_word_on_its_side
-    logo = stacked("industries")
-    box = logo.layout(text: :first)
-    xml = doc(logo.svg(text: :first, guides: true)).remove_namespaces!
-    pad = Stacked::GUIDE_PAD
-    assert_equal format("-60 -40 %.2f %.2f", box.width + pad[:left] + pad[:right], box.height + pad[:top] + pad[:bottom]), xml.root["viewBox"]
+  # Every guide drawing: [brand, form, tone].
+  def guided = Navbar.brands.flat_map { |brand| stacked(brand).forms.product(Navbar::TONES).map { |form, tone| [brand, form, tone] } }
 
-    lines = xml.css("line")
-    assert_equal box.edges.map { |y| format("%.2f", y) }, lines.map { |l| l["y1"] }
-    lines.each { |l| assert_equal [l["y1"], "-20.00", format("%.2f", box.width + 20)], [l["y2"], l["x1"], l["x2"]] }
-    labels = xml.css("text")
-    assert_equal %w[2u 3u 2u 1u], labels.map(&:text)
-    assert_equal ["30"], labels.map { |t| t["font-size"] }.uniq
-    labels.zip(box.edges.drop(1).each_cons(2)).each do |label, (top, bottom)|
-      assert_in_delta (top + bottom) / 2, label["y"].to_f - 10.5, 0.01, "#{label.text} sits in the middle of its band"
-      assert_operator label["x"].to_f, :>, box.width
+  def ghost_fill(brand, tone) = tone == :watermark ? "#FFFFFF" : Navbar.styles.fetch(brand).fetch("tones").fetch(tone.to_s).fetch("text")
+
+  # The ruler's copies, by baseline: { baseline => letters drawn at 1u right of the logo }.
+  def ruler_rows(xml, box)
+    xml.css("g.guide-ghosts path").select { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }
+       .group_by { |p| p["transform"][/,([-\d.]+)\)/, 1].to_f }
+  end
+
+  def test_guides_are_the_logo_untouched_then_a_ghost_group_then_a_line_group
+    guided.each do |brand, form, tone|
+      where = "#{brand} #{form} #{tone}"
+      plain = stacked(brand).svg(form:, tone:, text: :first)
+      svg = stacked(brand).svg(form:, tone:, text: :first, guides: true)
+      xml = doc(svg).remove_namespaces!
+      assert_includes svg, plain[/<svg[^>]*>(.*)<\/svg>/, 1], "#{where}: the logo itself, to the byte"
+      ghosts, lines = xml.root.element_children.to_a.last(2)
+      assert_equal [["g", "guide-ghosts"], ["g", "guide-lines"]], [ghosts, lines].map { |g| [g.name, g["class"]] }, where
+      assert_equal Stacked::GHOST_OPACITY.fetch(tone).to_s, ghosts["opacity"], where
+      assert_operator ghosts["opacity"].to_f, :<, 0.4, "#{where}: the ghosts are faint"
+      assert_equal [ghost_fill(brand, tone)], ghosts.css("path").map { |p| p["fill"] }.uniq, "#{where}: the logo's own text colour"
+      refute_includes svg[svg.index('<g class="guide-ghosts"')..svg.index('<g class="guide-lines"')], Stacked::GUIDE, "#{where}: no ghost in the guide magenta"
+      assert_equal %w[line text], lines.element_children.map(&:name).uniq.sort, "#{where}: lines and numbers only"
+      assert_equal [Stacked::GUIDE], (lines.css("line").map { |l| l["stroke"] } + lines.css("text").map { |t| t["fill"] }).uniq, where
+      assert_equal ["1.0"], lines.css("line").map { |l| l["stroke-width"] }.uniq, "#{where}: thinner than the 1.5 before"
+      assert_empty xml.css("g[opacity] g.guide-ghosts, g[opacity] g.guide-lines"), "#{where}: never inside a watermark's group"
     end
-
-    turned = xml.css("g").select { |g| g["transform"].to_s.include?("rotate(-90)") }
-    assert_equal [format("translate(%.2f,%.2f) rotate(-90)", box.icon_left - 60, box.icon_height)], turned.map { |g| g["transform"] }
-    small = turned.first.css("path")
-    glyphs = "INDUSTRIES".chars.map { |char| glyph(char, 300) }
-    assert_equal glyphs.map { |g| g["d"] }, small.map { |p| p["d"] }, "the small word again, turned"
-    assert_equal [Stacked::GUIDE], small.map { |p| p["fill"] }.uniq
-    xs = small.map { |p| p["transform"][/translate\(([-\d.]+),0\.00\)/, 1].to_f }
-    assert_in_delta 0, xs.first + glyphs.first["l"] * U, 0.01, "its ink starts at the icon's bottom edge"
-    assert_in_delta box.icon_height, xs.last + glyphs.last["r"] * U, 0.01, "and ends at the icon's top: the icon is as tall as the word is wide"
   end
 
-  def test_the_one_line_guides_stop_at_3u_and_bracket_the_icons_height
-    box = stacked("turf").layout
-    xml = doc(stacked("turf").svg(guides: true)).remove_namespaces!
-    horizontal, vertical = xml.css("line").partition { |l| l["y1"] == l["y2"] }
-    assert_equal box.edges.map { |y| format("%.2f", y) }, horizontal.map { |l| l["y1"] }
-    assert_equal [["0.00", format("%.2f", box.icon_height)]], vertical.map { |l| [l["y1"], l["y2"]] }
-    assert_equal ["2u", "3u", "60% of the name's width"], xml.css("text").map(&:text)
-    assert_equal ["middle"], xml.css("text[transform*='rotate(-90)']").map { |t| t["text-anchor"] }
-    assert_empty xml.css("g").select { |g| g["transform"].to_s.include?("rotate") }, "there is no small word to turn"
+  def test_the_ruler_stacks_one_copy_of_the_small_line_per_unit_numbered_in_each_band
+    { "studio" => [:two_line, "STUDIO"], "industries" => [:tagline, "BUILD BETTER"], "welding" => [:tagline, "BUILDING STRONG CONNECTIONS"],
+      "turf" => [:one_line, "Turf Monster"] }.each do |brand, (form, line)|
+      box = stacked(brand).layout(form:, text: :first)
+      xml = doc(stacked(brand).svg(form:, text: :first, guides: true)).remove_namespaces!
+      rows = ruler_rows(xml, box)
+      bands = form == :one_line ? [2, 3] : [2, 3, 2, 1]
+      tops = box.edges.drop(1)
+      expected = bands.zip(tops).flat_map { |size, top| (1..size).map { |row| (top + row * U).round(2) } }
+      assert_equal expected, rows.keys.sort, "#{brand}: a copy on every unit from the icon's foot to the logo's foot, edge to edge"
+      assert_in_delta box.height, rows.keys.max, 0.01, brand
+      rows.each_value do |copy|
+        assert_equal [format("scale(%.4f)", U)], copy.map { |p| p["transform"][/scale.*/] }.uniq, "#{brand}: each copy is 1u"
+        assert_equal line.delete(" ").size, copy.size, "#{brand}: the whole small line"
+      end
+      numbers = xml.css("g.guide-lines text").map(&:text)
+      assert_equal ["1"] + bands.flat_map { |size| (1..size).map(&:to_s) }, [numbers.last] + numbers[0...-1], "#{brand}: 1-2, 1-2-3, 1-2, 1, and the icon's 1"
+    end
   end
 
-  def test_a_watermarks_guides_are_drawn_at_full_strength_outside_the_group
-    xml = doc(stacked("studio").svg(tone: :watermark, guides: true)).remove_namespaces!
-    assert_equal "0.6", xml.root.element_children.first["opacity"]
-    assert_empty xml.css("g[opacity] line, g[opacity] text, g[opacity] g[transform*='rotate']")
-    assert_equal 6, xml.root.xpath("./line").size
+  def test_the_ruler_copies_the_small_line_the_tagline_or_a_third_size_name
+    box = stacked("turf").layout(text: :second)
+    assert_in_delta box.width / (3 * U), box.ruler_width, 1e-9, "one line: the name at a third of its size"
+    navbar = Navbar.new("turf").layout(rule: 4, text: :second)
+    assert_equal navbar.letters.map { |l| l[:d] }, box.ruler.map { |l| l[:d] }
+    tagline = stacked("welding").layout(form: :tagline)
+    assert_equal "BUILDING STRONG CONNECTIONS".chars.map { |char| glyph(char, 500)["d"] }, tagline.ruler.map { |l| l[:d] }
+    assert_equal ["nonzero"], tagline.ruler.map { |l| l[:fill_rule] }.uniq
+    two = stacked("industries").layout(text: :first)
+    assert_equal "INDUSTRIES".chars.map { |char| glyph(char, 300)["d"] }, two.ruler.map { |l| l[:d] }, "the small word in its own weight, untracked"
+    assert_in_delta "INDUSTRIES".chars.map { |c| glyph(c, 300) }.then { |g| g[0...-1].sum { |x| x["adv"] } + g.last["r"] - g.first["l"] }, two.ruler_width, 1e-9
+  end
+
+  def icon_box(brand, tone, box)
+    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono" }.fetch([brand, tone.to_s], brand)
+    icon = Navbar.icons.fetch(key)
+    [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
+  end
+
+  # The axis column: the ghosts left of the logo's centre that are not ruler copies, as [path, ruler letter].
+  def axis_letters(xml, box)
+    xml.css("g.guide-ghosts path").reject { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f > box.width }.zip(box.ruler.reject { |l| l[:d].empty? })
+  end
+
+  # Review of PR 2042 (Carl, activity-17641): the column stood on the icon and vanished over its fill. It now stands
+  # beside the icon, on the plate, and reaches exactly from the icon's top to its foot.
+  def test_the_small_line_stands_in_a_column_beside_the_icon_as_tall_as_the_icon
+    guided.each do |brand, form, tone|
+      box = stacked(brand).layout(form:, tone:, text: :first)
+      xml = doc(stacked(brand).svg(form:, tone:, text: :first, guides: true)).remove_namespaces!
+      where = "#{brand} #{form} #{tone}"
+      axis = axis_letters(xml, box)
+      assert_equal box.ruler.reject { |l| l[:d].empty? }.map { |l| l[:d] }, axis.map { |p, _| p["d"] }, "#{where}: the small line's letters, in order"
+      cap = axis.first.first["transform"][/scale\(([\d.]+)\)/, 1].to_f
+      assert_operator cap, :<=, U, where
+      left, top, right, bottom = icon_box(brand, tone, box)
+      inks = axis.map do |path, letter|
+        x = path["transform"][/translate\(([-\d.]+),/, 1].to_f
+        baseline = path["transform"][/,([-\d.]+)\)/, 1].to_f
+        [x + letter[:l] * cap, baseline - cap, x + letter[:r] * cap, baseline]
+      end
+      inks.each do |x1, y1, x2, y2|
+        outside = x2 <= left || x1 >= right || y2 <= top || y1 >= bottom
+        assert outside, "#{where}: every letter's box lies outside the icon's box (#{[x1, y1, x2, y2].map { |n| n.round(1) }} vs #{[left, top, right, bottom].map { |n| n.round(1) }})"
+      end
+      assert_in_delta left - Stacked::AXIS_GAP, inks.map { |ink| ink[2] }.max, 0.01, "#{where}: half a unit left of the icon"
+      assert_in_delta 0, inks.first[1], 0.01, "#{where}: the column starts at the icon's top"
+      assert_in_delta box.icon_height, inks.last[3], 0.01, "#{where}: and ends on its foot: as tall as the icon"
+      baselines = inks.map(&:last)
+      assert_equal baselines.sort, baselines, "#{where}: one under another"
+      assert_operator baselines.each_cons(2).map { |a, b| b - a }.min, :>=, cap / Stacked::AXIS_FILL - 0.02, "#{where}: no two letters touch"
+      middles = inks.map { |x1, _, x2, _| (x1 + x2) / 2 }
+      middles.each { |m| assert_in_delta middles.first, m, 0.01, "#{where}: one column" }
+
+      lines = xml.css("g.guide-lines line")
+      bands, rest = lines.partition { |l| l["x1"] == "-20.00" }
+      assert_equal box.edges.map { |y| format("%.2f", y) }, bands.map { |l| l["y1"] }, "#{where}: a line at each band boundary"
+      bracket_x = inks.map(&:first).min - Stacked::BRACKET_GAP
+      expected = [[box.width / 2, -20, box.width / 2, box.height + 20], [bracket_x, 0, bracket_x, box.icon_height],
+                  [bracket_x, 0, bracket_x + Stacked::TICK, 0], [bracket_x, box.icon_height, bracket_x + Stacked::TICK, box.icon_height]]
+      assert_equal expected.size, rest.size, where
+      expected.zip(rest).each do |line, drawn|
+        line.zip(%w[x1 y1 x2 y2].map { |k| drawn[k].to_f }).each do |want, got|
+          assert_in_delta want, got, 0.02, "#{where}: the centre line, and a bracket ticked at the icon's top and foot"
+        end
+      end
+      assert_operator bands.first["x2"].to_f, :>, ruler_rows(xml, box).values.flatten.map { |p| p["transform"][/translate\(([-\d.]+),/, 1].to_f }.max, "#{where}: across the ruler"
+      label = xml.css("g.guide-lines text").last
+      assert_equal ["1", format("%.2f", box.width / 2 + 10), "-10.00"], [label.text, label["x"], label["y"]], "#{where}: a 1 at the icon's top"
+      _, _, width, = xml.root["viewBox"].split.map(&:to_f)
+      assert_operator xml.root["viewBox"].split.first.to_f, :<=, bracket_x - 20, "#{where}: the bracket is inside the drawing"
+      assert_operator width, :>, box.width, where
+    end
+  end
+
+  def test_the_guide_drawing_reaches_past_the_ruler
+    box = stacked("industries").layout(text: :first)
+    xml = doc(stacked("industries").svg(text: :first, guides: true))
+    right = Stacked::RULER_X + box.ruler_width * U + 40
+    assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"], "the column fits in the usual pad"
   end
 
   def test_a_second_word_too_wide_to_track_is_refused_by_name_never_drawn_tighter
@@ -233,10 +334,10 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone and guides, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text and tone, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone and guides, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text and tone, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form and guides, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone and form, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form and guides, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone and form, not guides/, refusal { stacked("studio").layout(guides: true) })
 
     wide = JSON.parse(JSON.generate(Navbar.icons)).tap { |icons| icons.fetch("studio")["w"] = 2000 }
     assert_match(/brand studio: the icon is too wide to stack \(2\.22 of the name's width at this height\)/, refusal { Stacked.new("studio", icons: wide) })
@@ -247,5 +348,111 @@ class LogosStackedLogoTest < Minitest::Test
   def test_every_shipped_brand_stacks_in_the_form_its_style_names
     assert_equal({ "studio" => :two_line, "industries" => :two_line, "turf" => :one_line, "welding" => :two_line },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).form] })
+  end
+
+  def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
+    all = Navbar.brands.flat_map do |brand|
+      Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-#{text}-#{tone}\n#{stacked(brand).svg(text:, tone:)}" }
+    end
+    assert_equal 36, all.size
+    assert_equal STACKED_DIGEST, Digest::SHA256.hexdigest(all.join)
+    icons = Navbar.brands.flat_map { |brand| Navbar::TONES.map { |tone| "#{brand}-icon-#{tone}\n#{Navbar.new(brand).icon_svg(tone:)}" } }
+    assert_equal ICON_DIGEST, Digest::SHA256.hexdigest(icons.join)
+  end
+
+  # Task stacked-tagline-and-ghost-grid: the tagline is data, in capitals with no full stop.
+  def test_each_brand_has_its_tagline_or_none
+    assert_equal TAGLINES, Navbar.brands.to_h { |brand| [brand, stacked(brand).tagline] }
+    TAGLINES.compact.each_value { |line| assert_equal line.upcase, line and refute line.end_with?(".") }
+  end
+
+  def test_a_tagline_with_a_character_the_glyph_data_lacks_or_a_bad_shape_is_refused
+    assert_equal "brand x: no glyph for \"Ü\" at weight 500 in the glyph data", refusal { Stacked.new("x", styles: style("studio", tagline: "BÜILD")) }
+    ["", " BUILD", "BUILD ", "BUILD  BETTER", "BUILD\nBETTER", 7, ["BUILD"]].each do |line|
+      message = refusal { Stacked.new("x", styles: style("studio", tagline: line)) }
+      assert_match(/brand x: (tagline must be words separated by single spaces|no glyph for)/, message, line.inspect)
+    end
+    assert_nil Stacked.new("x", styles: style("studio", tagline: nil)).tagline
+  end
+
+  def test_the_tagline_forms_ratio_is_measured_and_meets_the_closed_form
+    TAGLINE_RATIOS.each do |(brand, text), ratio|
+      box = stacked(brand).layout(text:, form: :tagline)
+      n = box.width / (3 * U)
+      assert_in_delta ratio, box.width / box.height, 5e-5, "#{brand} #{text}: measured"
+      assert_in_delta 3 * n / (1.8 * n + 8), box.width / box.height, 1e-9, "#{brand} #{text}: the closed form"
+      _, _, width, height = doc(stacked(brand).svg(text:, form: :tagline)).root["viewBox"].split.map(&:to_f)
+      assert_in_delta ratio, width / height, 5e-4, "#{brand} #{text} viewBox"
+    end
+  end
+
+  def test_the_tagline_form_stacks_icon_2u_name_3u_2u_tagline_1u
+    TAGLINE_RATIOS.each_key do |brand, text|
+      box = stacked(brand).layout(text:, form: :tagline)
+      where = "#{brand} #{text}"
+      assert_equal :tagline, box.form, where
+      top = box.icon_height
+      assert_equal [0, top, top + 2 * U, top + 5 * U, top + 7 * U, top + 8 * U], box.edges, where
+      assert_in_delta 0.6 * box.width + 8 * U, box.height, 1e-9, where
+      name, line = box.letters.partition { |letter| letter[:word] < 2 }
+      assert_equal [[top + 5 * U, 3 * U]], name.map { |l| [l[:baseline], l[:cap]] }.uniq, "#{where}: the name, capitals 3u"
+      assert_equal [[top + 8 * U, U, "nonzero"]], line.map { |l| [l[:baseline], l[:cap], l[:fill_rule]] }.uniq, "#{where}: the tagline, capitals 1u"
+      assert_equal TAGLINES.fetch(brand).chars.map { |char| glyph(char, 500)["d"] }, line.map { |l| l[:d] }, "#{where}: Montserrat 500"
+
+      glyphs = TAGLINES.fetch(brand).chars.map { |char| glyph(char, 500) }
+      left, right = ink(line, glyphs)
+      assert_in_delta 0.6 * box.width, right - left, 1e-9, "#{where}: exactly 60% of the name"
+      assert_in_delta box.icon_height, right - left, 1e-9, "#{where}: the icon is as tall as the tagline is wide"
+      assert_in_delta box.width / 2, (left + right) / 2, 1e-9, "#{where}: centred on the name"
+      steps = line.each_cons(2).zip(glyphs).map { |(a, b), g| (b[:x] - a[:x]) / U - g["adv"] }
+      assert_operator steps.min, :>, 0, "#{where}: tracked out, never in"
+      steps.each { |step| assert_in_delta steps.first, step, 1e-9, "#{where}: the same space between every pair, a space included" }
+    end
+  end
+
+  def test_the_tagline_forms_name_is_the_one_line_name
+    TAGLINE_RATIOS.each_key do |brand, text|
+      mine = stacked(brand).layout(text:, form: :tagline).letters.reject { |letter| letter[:word] == 2 }
+      navbar = Navbar.new(brand).layout(rule: 4, text:)
+      scale = 3 * U / navbar.cap
+      assert_equal navbar.letters.map { |l| [l[:d], l[:word]] }, mine.map { |l| [l[:d], l[:word]] }, "#{brand} #{text}"
+      mine.zip(navbar.letters).each do |letter, theirs|
+        assert_in_delta (theirs[:x] - navbar.name_left) * scale, letter[:x], 1e-6, "#{brand} #{text}: both words, the word space and tracking"
+      end
+    end
+  end
+
+  def test_the_tagline_is_quiet_in_light_and_dark_and_the_watermarks_one_fill
+    { "studio" => ["#1A1535", "#FFFFFF"], "industries" => ["#41464D", "#D3D6DA"], "welding" => ["#2D5E8E", "#FFFFFF"] }.each do |brand, (light, dark)|
+      line = ->(tone) { doc(stacked(brand).svg(form: :tagline, tone:, text: :first)).css("path[transform]").to_a.last(TAGLINES.fetch(brand).delete(" ").size) }
+      assert_equal [light], line.(:light).map { |p| p["fill"] }.uniq, brand
+      assert_equal [dark], line.(:dark).map { |p| p["fill"] }.uniq, brand
+      assert_equal ["#FFFFFF"], line.(:watermark).map { |p| p["fill"] }.uniq, brand
+      assert_equal ["nonzero"], line.(:light).map { |p| p["fill-rule"] }.uniq, "#{brand}: font outlines"
+    end
+    names = doc(stacked("welding").svg(form: :tagline)).css("path[transform]").to_a.first(17)
+    assert_equal ["evenodd"], names.map { |p| p["fill-rule"] }.uniq, "welding's own lettering keeps its fill rule"
+    assert_equal 1, stacked("studio").svg(form: :tagline, tone: :watermark).scan("opacity").size, "one translucent group"
+  end
+
+  def test_the_tagline_form_draws_only_paths_in_its_own_box
+    TAGLINE_RATIOS.each_key do |brand, text|
+      box = stacked(brand).layout(text:, form: :tagline)
+      xml = doc(stacked(brand).svg(text:, form: :tagline))
+      assert_equal %w[g path svg], xml.xpath("//*").map(&:name).uniq.sort
+      assert_equal format("0 0 %.2f %.2f", box.width, box.height), xml.root["viewBox"]
+    end
+  end
+
+  def test_a_tagline_too_wide_to_track_or_a_form_the_brand_lacks_is_refused
+    message = refusal { Stacked.new("x", styles: style("studio", tagline: "BUILDING STRONG CONNECTIONS EVERY DAY")) }
+    assert_match(/\Abrand x: the tagline "BUILDING STRONG CONNECTIONS EVERY DAY" cannot be tracked out to 60% of the name's width \(it is \d+% already\)/, message)
+    assert_match(/brand x: the tagline "B" cannot be tracked out .* \(it has one letter\)/, refusal { Stacked.new("x", styles: style("studio", tagline: "B")) })
+    assert_equal "brand turf: no stacked form :tagline (it has no tagline)", refusal { stacked("turf").svg(form: :tagline) }
+    assert_equal "brand studio: no stacked form :one_line (it draws two_line and tagline)", refusal { stacked("studio").layout(form: :one_line) }
+    assert_equal "brand studio: no stacked form \"tagline\" (it draws two_line and tagline)", refusal { stacked("studio").svg(form: "tagline") }
+    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line], "welding" => %i[two_line tagline] },
+                 Navbar.brands.to_h { |brand| [brand, stacked(brand).forms] })
+    assert_equal stacked("studio").svg, stacked("studio").svg(form: :two_line), "a brand's own form is the default"
   end
 end

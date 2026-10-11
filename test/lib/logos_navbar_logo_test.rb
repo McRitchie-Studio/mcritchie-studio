@@ -24,15 +24,15 @@ class LogosNavbarLogoTest < Minitest::Test
   }.freeze
   # Measured from the prototype too (homogeneous text), for the two brands added after it was approved.
   ADDED_RATIOS = { ["turf", 3] => 4.24, ["turf", 4] => 5.87, ["welding", 3] => 5.98, ["welding", 4] => 8.52 }.freeze
-  # SHA-256 over every Studio and Industries example ("<key>\n<svg>" each, in `examples` order), taken on
-  # `accepted` before the two brands were added: neither brand's logos may change by a byte.
-  ORIGINAL_BRANDS_DIGEST = "b3dd0ef4b8a4a56f2ad55ebfa4b12f60ed4542cf1e18fdcb4723637e5a124dc0"
-  # The same digest over every Turf Monster and Commercial Welding example, taken on `accepted` before the
-  # watermark tone was added (task logo-gallery-context-dropdown): a third tone may not move light or dark.
-  ADDED_BRANDS_DIGEST = "087d05d81ed367d276b82e29637395efed28bec65c7b3d9692b193d8e7878736"
-  # Every watermark logo and guide drawing of all four brands ("<key>\n<svg>" each: brand, then rule, text, guides),
-  # taken on `accepted` before the icon and the stacked logo were added (task logo-tabs-icon-and-stacked).
-  WATERMARK_DIGEST = "a75b407b25b28a92cb0f63d9af92b818c8d78b6492313f2a8581b9103764f3cb"
+  # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
+  # brand's logos may change by a byte. Re-taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid),
+  # where the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task
+  # add-turf-and-welding-logos) still passed; guide drawings are construction drawings and are free to change.
+  ORIGINAL_BRANDS_DIGEST = "3926684129a86ab64613d06c7e828fb60031f274402bf7091d8d40d812301f24"
+  # The same digest over every Turf Monster and Commercial Welding example without guides.
+  ADDED_BRANDS_DIGEST = "315197c04927adfccd746b54c86fba1f719384a416c78b3f66a06da2e6739b25"
+  # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
+  WATERMARK_DIGEST = "6d1da5ed149c514b58c6d8b8ee5682ea06764f6264706a2e4af742e1ca1abbb3"
   HOSTILE = %(M0,0"/><script>alert(1)</script>)
   COLOUR_STYLE = { "duo" => { "name" => "Turf Monster", "icon" => "studio", "highlight" => "colour", "heavy" => 800,
                               "tones" => { "light" => { "text" => "#111111", "accent" => "#4BAF50", "icon" => { "primary" => "#111111" } },
@@ -192,7 +192,7 @@ class LogosNavbarLogoTest < Minitest::Test
       assert_equal (0..rule).map { |i| format("%.2f", i * H / rule) }, horizontal.map { |l| l["y1"] }
       assert_equal [box.icon_width, box.name_left].map { |x| format("%.2f", x) }, vertical.map { |l| l["x1"] }
       assert_equal (1..rule).map(&:to_s), xml.css("text").map(&:text)
-      assert_equal industries.svg(rule:, text:).scan(/<path /).size, xml.css("path").size, "guides add no paths"
+      assert_equal industries.svg(rule:, text:).scan(/<path /).size, xml.css("path").size - xml.css("g.guide-ghosts path").size, "guides add no logo paths"
       assert_equal format("-40 -40 %.2f 380.00", box.width + 120), xml.root["viewBox"]
     end
   end
@@ -223,24 +223,25 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/no fill for icon layer "primary"/, refusal { Logo.new("x", styles: no_role).svg })
   end
 
+  def unguided(brands) = brands.flat_map { |brand| Logo.new(brand).examples }.reject { |e| e[:guides] }.map { |e| "#{e[:key]}\n#{e[:svg]}" }
+
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
-    all = %w[studio industries].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
-    assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+    assert_equal 24, unguided(%w[studio industries]).size
+    assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[studio industries]).join)
   end
 
   def test_turf_and_welding_light_and_dark_logos_are_unchanged_to_the_byte
-    all = %w[turf welding].flat_map { |brand| Logo.new(brand).examples }.map { |e| "#{e[:key]}\n#{e[:svg]}" }.join
-    assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(all)
+    assert_equal ADDED_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[turf welding]).join)
   end
 
   def test_every_watermark_logo_is_unchanged_to_the_byte
     all = Logo.brands.flat_map do |brand|
       logo = Logo.new(brand)
-      Logo::RULES.keys.product(Logo::TEXTS, [false, true]).map do |rule, text, guides|
-        "#{brand}-rule#{rule}-#{text}-watermark#{'-guides' if guides}\n#{logo.svg(rule:, text:, tone: :watermark, guides:)}"
+      Logo::RULES.keys.product(Logo::TEXTS).map do |rule, text|
+        "#{brand}-rule#{rule}-#{text}-watermark\n#{logo.svg(rule:, text:, tone: :watermark)}"
       end
     end
-    assert_equal 48, all.size
+    assert_equal 24, all.size
     assert_equal WATERMARK_DIGEST, Digest::SHA256.hexdigest(all.join)
   end
 
@@ -474,9 +475,10 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_a_watermarks_guides_are_drawn_at_full_strength_outside_the_group
     xml = doc(industries.svg(rule: 4, text: :second, tone: :watermark, guides: true))
     xml.remove_namespaces!
-    assert_equal %w[g line line line line line line line text text text text], xml.root.element_children.map(&:name).sort
-    assert_equal "0.6", xml.root.at_css("g")["opacity"]
-    assert_empty xml.css("g line, g text")
+    assert_equal [%w[g guide-ghosts], ["g", nil], %w[g guide-lines]], xml.root.element_children.map { |g| [g.name, g["class"]] }
+    assert_equal "0.6", xml.root.element_children[1]["opacity"]
+    assert_equal %w[line] * 7 + %w[text] * 4, xml.at_css("g.guide-lines").element_children.map(&:name)
+    assert_empty xml.css("g[opacity='0.6'] line, g[opacity='0.6'] text, g[opacity='0.6'] g.guide-ghosts")
     assert_equal doc(industries.svg(rule: 4, text: :second, guides: true)).root["viewBox"], xml.root["viewBox"]
     assert_equal [Logo::GUIDE], xml.css("line").map { |l| l["stroke"] }.uniq
   end
@@ -498,6 +500,41 @@ class LogosNavbarLogoTest < Minitest::Test
     end
     ["#FFFFFF", ["fill"], { "colour" => "#FFFFFF" }, { "fill" => "#FFFFFF", "blur" => 2 }].each do |value|
       assert_match(/watermark must be a map of fill, opacity, icon_key, got/, refusal { Logo.new("x", styles: mark.(value)) }, value.inspect)
+    end
+  end
+
+  # Task stacked-tagline-and-ghost-grid: the rule-of-thirds reel's ghost copies of the name.
+  def test_guides_stack_ghost_copies_of_the_name_one_per_row_numbered
+    Logo.brands.product(Logo::RULES.keys, Logo::TONES).each do |brand, rule, tone|
+      logo = Logo.new(brand)
+      box = logo.layout(rule:, text: :second, tone:)
+      plain = logo.svg(rule:, text: :second, tone:)
+      svg = logo.svg(rule:, text: :second, tone:, guides: true)
+      xml = doc(svg).remove_namespaces!
+      where = "#{brand} rule #{rule} #{tone}"
+      assert_includes svg, plain[%r{<svg[^>]*>(.*)</svg>}, 1], "#{where}: the logo itself, to the byte"
+      ghosts, *logo_part, lines = xml.root.element_children.to_a
+      assert_equal "guide-ghosts", ghosts["class"], "#{where}: the ghosts first, behind the logo"
+      assert_equal "guide-lines", lines["class"], where
+      assert_equal [nil], logo_part.map { |node| node["class"] }.uniq, where
+      assert_equal Logo::GHOST_OPACITY.fetch(tone).to_s, ghosts["opacity"], where
+      assert_operator ghosts["opacity"].to_f, :<, 0.4, where
+      text = tone == :watermark ? "#FFFFFF" : Logo.styles.fetch(brand).fetch("tones").fetch(tone.to_s).fetch("text")
+      assert_equal [text], ghosts.css("path").map { |p| p["fill"] }.uniq, "#{where}: the logo's own text colour, never the guide magenta"
+      refute_includes ghosts.to_xml, Logo::GUIDE, where
+
+      copies = ghosts.css("path").group_by { |p| p["transform"][/,([-\d.]+)\)/, 1] }
+      rows = rule == 3 ? [1, 3] : [1, 2, 3, 4]
+      assert_equal rows.map { |row| format("%.2f", row * box.row) }, copies.keys, "#{where}: one copy per row the real name does not fill"
+      named = box.letters.count { |l| !l[:d].empty? }
+      copies.each_value do |copy|
+        assert_equal [named, format("scale(%.4f)", box.row)], [copy.size, copy.map { |p| p["transform"][/scale.*/] }.uniq.first], "#{where}: the whole name, one row tall"
+        x = copy.first["transform"][/translate\(([-\d.]+),/, 1].to_f
+        assert_in_delta box.name_left + (box.letters.first[:x] - box.name_left) * box.row / box.cap, x, 0.01, "#{where}: starts where the name's ink does"
+      end
+      assert_equal (1..rule).map(&:to_s), lines.css("text").map(&:text), "#{where}: numbered 1-#{rule}"
+      assert_equal ["1.0"], lines.css("line").map { |l| l["stroke-width"] }.uniq, "#{where}: thinner than the 1.5 before"
+      assert_equal ["30"], lines.css("text").map { |t| t["font-size"] }.uniq, "#{where}: smaller than the 32 before"
     end
   end
 end

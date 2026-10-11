@@ -7,7 +7,8 @@
 # config/logo_brands.yml with one of each; a brand page is TABBED by type
 # (?type=, the Navbar Logo unless asked) and shows that type's logos: the icon,
 # or the three text versions, a Navbar Logo's on the rule ?rule= picks (4
-# unless asked), with their guide drawings behind one toggle and the brand's
+# unless asked) and a Stacked Logo's in the form ?form= picks (the brand's own
+# unless asked: two_line, one_line or tagline), with their guide drawings behind one toggle and the brand's
 # `note` on where its art came from; /icon, /navbar and /stacked serve one logo
 # as SVG, inline or as a download.
 #
@@ -41,8 +42,9 @@ class LogosController < ApplicationController
   # carries it to the next.
   def show
     @rule = Logos::Variant.rule(params[:rule])
+    @form = Logos::Variant.form(params[:form], (@logo if @type == :stacked))
     @guides = Logos::Variant.flag(params[:guides], "guides")
-    @variants = Logos::Variant.all(@logo, type: @type, rule: @rule, tone: @context, guides: @guides)
+    @variants = Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone: @context, guides: @guides)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
