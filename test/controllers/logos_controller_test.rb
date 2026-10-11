@@ -325,7 +325,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     notes = {
       "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture, with its grass texture flattened to three solid colours."],
       "welding" => ["Commercial Welding v1", "The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole " \
-                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version."]
+                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. On dark backgrounds the helmet is the single-colour version."],
+      "welding_v2" => ["Commercial Welding v2", Logos::NavbarLogo.styles.fetch("welding_v2").fetch("note")]
     }
     notes.to_a.product(%w[icon navbar stacked]).each do |(brand, (name, note)), type|
       get logo_brand_path(brand, type:)
@@ -685,5 +686,43 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
     get navbar_logo_path("studio", form: "sideways")
     assert_response :success, "a Navbar Logo has no form, so the param is not read"
+  end
+
+  # Task welding-llc-and-v2-helmet (Alex's item 5): v1 and v2 side by side, so his tweaks compare with the original.
+  test "Commercial Welding v1 and v2 sit side by side in the table, each with its own name and helmet" do
+    log_in_as(@admin)
+    get logos_path
+    assert_response :success
+    rows = css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
+    assert_equal rows.index("welding") + 1, rows.index("welding_v2"), "v2 is the row after v1"
+    { "welding" => "Commercial Welding v1", "welding_v2" => "Commercial Welding v2" }.each do |brand, name|
+      assert_select "[data-test='logo-brand-row'][data-brand='#{brand}'] th a[href=?]", logo_brand_path(brand), text: name
+    end
+
+    words = Logos::NavbarLogo.letterings.fetch("welding").fetch("words")
+    { "welding" => [%w[COMMERCIAL WELDING LLC], "welding"], "welding_v2" => [%w[COMMERCIAL WELDING], "welding_v2"] }.each do |brand, (name, icon)|
+      get navbar_logo_path(brand, rule: 3, guides: 1)
+      assert_response :success
+      logo = Nokogiri::XML(response.body).remove_namespaces!.css("svg > path")
+      icon_paths, letters = logo.partition { |path| path["transform"].nil? }
+      assert_equal words.values_at(*name).flatten.map { |letter| letter["d"] }, letters.map { |path| path["d"] }, "#{brand} reads #{name.join(' ')}"
+      helmet = Nokogiri::XML(response.body).remove_namespaces!.css("svg > g:not([class]) path").map { |path| path["d"] }
+      assert_equal Logos::NavbarLogo.icons.fetch(icon).fetch("layers").map { |layer| layer["d"] }, helmet, "#{brand}'s own helmet"
+      assert icon_paths.empty?, "the helmet is inside its scale group"
+    end
+  end
+
+  test "Commercial Welding v2's brand page draws every type, and its guide drawings, from its own data" do
+    log_in_as(@admin)
+    get logo_brand_path("welding_v2", type: "icon")
+    assert_response :success
+    assert_select "h1", "Commercial Welding v2"
+    assert_examples variants("welding_v2", :icon)
+    get logo_brand_path("welding_v2", type: "navbar", rule: 3, guides: 1)
+    assert_response :success
+    assert_examples variants("welding_v2", :navbar, rule: 3, guides: true)
+    get logo_brand_path("welding_v2", type: "stacked", form: "tagline", guides: 1)
+    assert_response :success
+    assert_examples variants("welding_v2", :stacked, form: :tagline, guides: true)
   end
 end
