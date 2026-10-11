@@ -516,9 +516,14 @@ class Nflverse::SeedPlayers
   # spelled here AND in `nfl:upload_headshots`, and the two spellings disagreed
   # about whether a teamless athlete gets a headshot at all — this side said yes,
   # the rake task said no, and the rake task is the one operators run.
+  #
+  # REFERENCE, THEN UPLOAD. A headshot is a seed asset: outside production,
+  # reference_or_cache! records a row pointing at production's copy when
+  # production holds the key, and uploads to this process's own bucket only when
+  # it does not. In production it is exactly cache!.
   def cache_headshot(athlete)
     key_prefix = athlete.headshot_key_prefix
-    Studio::ImageCache.cache!(
+    Studio::ImageCache.reference_or_cache!(
       owner: athlete,
       purpose: "headshot",
       source_url: athlete.espn_headshot_url,

@@ -122,7 +122,10 @@ namespace :nfl do
       # from the prefix -- so this is a taxonomy defect, not an outage, and
       # reddening a rebuild over a cosmetic path segment is how an operator learns
       # to stop reading the line.
-      misfiled += 1 if rows.any? { |c| Athletes::RekeyHeadshots.misfiled?(c, key_prefix) }
+      # Only rows the repair would MOVE: off production it leaves a
+      # production reference where it is (Athletes::RekeyHeadshots.movable?), so
+      # counting one would name a task that then declines to act.
+      misfiled += 1 if rows.any? { |c| Athletes::RekeyHeadshots.movable?(c) && Athletes::RekeyHeadshots.misfiled?(c, key_prefix) }
 
       # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache!
       # stores the unmodified source as variant "original" PLUS one variant per
@@ -163,7 +166,9 @@ namespace :nfl do
       fetchable += 1
 
       begin
-        Studio::ImageCache.cache!(
+        # A SEED ASSET: off production this references production's copy when it
+        # holds the key and uploads only what it lacks; in production it is cache!.
+        Studio::ImageCache.reference_or_cache!(
           owner: athlete,
           purpose: "headshot",
           source_url: athlete.espn_headshot_url,
@@ -1145,7 +1150,8 @@ namespace :nfl do
       # 100w and 400w aren't from different photos (e.g., McVay's old ESPN
       # B&W still cached at 100w while 400w came from a later NFL.com URL).
       cached_sources = headshots.map(&:source_url).uniq
-      if headshots.any? && (cached_sources.size > 1 || cached_sources.first != coach.espn_headshot_url)
+      stale = headshots.any? && (cached_sources.size > 1 || cached_sources.first != coach.espn_headshot_url)
+      if stale
         ImageCache.where(owner: coach, purpose: "headshot").destroy_all
         # Note: the S3 objects stay (orphaned). Studio::ImageCache.cache! will
         # overwrite them on re-upload since the s3_key is deterministic.
@@ -1164,8 +1170,16 @@ namespace :nfl do
       key_prefix = "headshots/nfl/coaches/#{coach.slug}"
       content_type = coach.espn_headshot_url.to_s.end_with?(".png") ? "image/png" : "image/jpeg"
 
+      # A SEED ASSET, referenced from production off production (see
+      # nfl:upload_headshots), EXCEPT ON A REFRESH. The key is deterministic, so
+      # production's object under it may be the OLD photo this refresh exists to
+      # replace; referencing it would bring the stale image straight back. A
+      # refresh is a genuinely new upload, so it goes through cache!.
+      cache_with = stale ? :cache! : :reference_or_cache!
+
       begin
-        Studio::ImageCache.cache!(
+        Studio::ImageCache.public_send(
+          cache_with,
           owner: coach,
           purpose: "headshot",
           source_url: coach.espn_headshot_url,

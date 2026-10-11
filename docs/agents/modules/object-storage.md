@@ -83,15 +83,41 @@ What holds it in the hub:
   name, refuse the production bucket off production before any upload
   (`pokemon_upload_bucket!`).
 
-**Not yet conforming: cached headshots.** `nfl:players_seed`,
-`nfl:upload_headshots` and `nfl:upload_coach_headshots` fetch each headshot from
-ESPN and upload its variants to the bucket of the process that runs them, so a
-laptop or QA run puts copies in the dev bucket under the keys production
-already holds. An `ImageCache` row stores a key, and `ImageCache#url`
-(studio-engine) joins it to the process's one public base, so a row cannot say
-"this object is production's". Referencing production's copies needs that in
-the engine first; until then `WITH_NFL_HEADSHOTS=1` on a rebuild is the path
-that makes the copies, and it is opt-in.
+**Cached headshots reference production.** The NFL headshot seeders
+(`nfl:players_seed` via `Nflverse::SeedPlayers`, `nfl:upload_headshots`,
+`nfl:upload_coach_headshots`) and the per-player `Athletes::AcquireOrValidate`
+call `Studio::ImageCache.reference_or_cache!` (studio-engine 0.103.0), which
+takes `cache!`'s arguments. Outside production (QA, a laptop, a desk) it sends a
+read-only HEAD to `mcritchie-studio-production` for each missing variant under the
+key `cache!` would write. If production holds the key, the row is recorded with
+`image_caches.stored_in = "production"` and its `#url` resolves on
+`Studio.s3_production_public_url` (`https://assets.mcritchie.studio`, set in
+`config/initializers/studio.rb`). If production lacks the key, the variant is
+uploaded to the dev bucket as before. In production the helper is `cache!`, so
+nothing changes there. Measured 2026-10-10: a missing key answers the dev token
+404 (`NotFound`), which is what makes the fallback work. Any other HEAD failure,
+such as a 403 from a token without read on production, raises and counts as a
+failed upload; it never falls through to a dev-bucket copy.
+
+What the hub does with a reference row:
+
+- **Bytes.** Read through `ImageCache#download`, never
+  `Studio::S3.download(key: row.s3_key)`, which reads only the process's own
+  bucket. `Athletes::DescribeFromHeadshot` does this.
+- **Keys.** `Athletes::RekeyHeadshots` skips a reference off production
+  (`.movable?`, counted as `references_skipped`). Production's bucket is
+  read-only there, and a repointed reference would name a key production lacks.
+  `nfl:upload_headshots` leaves references out of its misfiled count for the
+  same reason.
+- **Deletes.** `ImageCache#delete_object!` sends no request for a reference off
+  production. Destroying the row is always fine.
+- **Coach refresh.** When a coach's source URL has changed,
+  `nfl:upload_coach_headshots` re-uploads with `cache!`, because production's
+  object under the deterministic key may be the old photo.
+
+The test suite leaves `s3_production_public_url` nil, so no test can send a live
+HEAD; `test/services/headshot_reference_production_test.rb` sets it and runs the
+reference path against a stubbed `Aws::S3::Client`.
 
 ## R2 — gaps against the S3 rules
 
