@@ -19,6 +19,7 @@ bin/digest-video <url> --dry-run         # download and print the plan only
 bin/digest-video <url> --production      # production bucket and mcritchie.studio
 bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session
 bin/digest-video <url> --kind cinematic  # a cinematic video; the default is music_video
+bin/digest-video <url> --kind movie_scene  # a scene from a movie
 bin/digest-video <url> --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
 bin/digest-video <url> --no-tile         # record the source only; cut no chunks
 bin/digest-video <url> --retile          # replace the chunks a re-digested source already has
@@ -71,8 +72,9 @@ The script posts to `POST /api/v1/videos` (bearer token from
 `/api/v1/auth`); `GET /api/v1/videos/<slug>` reads it back. A second post of
 the same video answers 200 with the record it already has. The record carries:
 
-- type (`kind`) `music_video`, or `cinematic` when the script ran with
-  `--kind cinematic`; the API refuses any other;
+- type (`kind`) `music_video`, or `cinematic` or `movie_scene` when the script
+  ran with `--kind cinematic` or `--kind movie_scene`; the API refuses any other.
+  The page shows it as a badge: Music video, Cinematic or Movie scene;
 - platform, source URL and source id (from `.info.json`);
 - title, duration, and stage `digested`;
 - the credited artists: each `primary` or `featured`. A group such as Migos is

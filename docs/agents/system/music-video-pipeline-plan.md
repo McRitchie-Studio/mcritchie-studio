@@ -29,7 +29,8 @@ inputs complete in the UI.
 `digest video <url>` (`bin/digest-video`) downloads through a platform sub-SOP
 (YouTube, TikTok and Instagram built; all yt-dlp), stores the source MP4
 in R2 and creates a `Video` record through `POST /api/v1/videos`: type
-`music_video` (the default) or `cinematic` (`--kind cinematic`), platform, source
+`music_video` (the default), `cinematic` (`--kind cinematic`) or `movie_scene`
+(`--kind movie_scene`), platform, source
 URL and id, title, duration and stage. It links the credited primary and featured
 artists. Then, still on the Mac (a dyno has no ffmpeg), it cuts the whole video
 into the recast pipeline's chunks (below, under Clips) and posts them, before
@@ -245,9 +246,17 @@ draws them, since the Homebrew ffmpeg has no `drawtext`.
 
 Record slugs stay kebab-case, the app's existing convention.
 
+The tables were `music_videos` and `music_video_artists`, and every child's
+`music_video_slug` was the column now called `video_slug`, until the
+`music-videos-become-videos` task (2026-10-12) made the pipeline general, so a
+movie scene is not filed under music. The pages moved from `/music_videos` to
+`/videos` (every old URL redirects, query kept) and the API from
+`/api/v1/music_videos` to `/api/v1/videos` (the old path stays as an alias, not a
+redirect, so a POST is never bounced). The R2 prefix below did not move.
+
 | Table | Holds |
 |---|---|
-| `videos` | type (`kind`: `music_video` or `cinematic`), the chunk tiling (`chunk_ms`, `chunk_overlap_ms`; null until tiled), platform, source URL and id, title, duration, stage, source asset |
+| `videos` | type (`kind`: `music_video`, `cinematic` or `movie_scene`), the chunk tiling (`chunk_ms`, `chunk_overlap_ms`; null until tiled), platform, source URL and id, title, duration, stage, source asset |
 | `artists` | kind `person` or `group`; `person_slug` for individuals; source ids: Wikidata, MusicBrainz, Discogs, Spotify |
 | `artist_aliases` | alternate names per artist |
 | `artist_memberships` | member → group, start and end years |
@@ -279,6 +288,11 @@ Writes go to the hub's existing R2 buckets, `mcritchie-studio-dev` and
 folders are human-readable **snake_case**. Alex amended the asset library's
 "object keys carry no meaning" rule for this content on 2026-09-29
 ([`asset-library-plan.md`](asset-library-plan.md)).
+
+Every kind of video (music video, cinematic, movie scene) is stored under the
+`music_videos/` prefix: the rename to `Video` moved no object, and new digests
+keep writing here (`Videos::ObjectKeys::PREFIX`). Renaming the prefix is its own
+task, since every stored key column would move with the objects.
 
 ```text
 music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
