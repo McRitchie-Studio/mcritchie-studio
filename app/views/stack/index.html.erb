@@ -87,7 +87,7 @@
                 <% end %>
               </ul>
             </td>
-            <td class="px-3 py-3"><%= render "stack/dns_host", client: client, host: (client.dns_domain && @dns_hosts[client.dns_domain]) %></td>
+            <td class="px-3 py-3"><%= render "stack/dns_host", client: client, host: (client.dns_domain && @dns_hosts.to_h[client.dns_domain]) %></td>
             <td class="px-3 py-3 text-right tabular-nums" data-test="stack-google-users">
               <% if client.google_users %>
                 <span class="font-semibold text-heading"><%= client.google_users %></span>

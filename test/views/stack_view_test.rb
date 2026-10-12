@@ -56,4 +56,19 @@ class StackViewTest < ActionView::TestCase
     assert_select "#{row('studio')} [data-test='stack-google-users']", text: /—/
     assert_select "#{row('studio')} [data-test='stack-resend']", text: /—/
   end
+
+  test "[component] rendered without DNS lookups, the DNS column draws a dash, never an error" do
+    render template: "stack/index"
+
+    assert_select "#{row('turf-monster')} [data-test='stack-dns'][data-dns-host='']", text: "—"
+  end
+
+  test "[component] the DNS column badges the host and the tier's standing" do
+    @dns_hosts = { "turfmonster.media" => DnsHost::Result.new(domain: "turfmonster.media", key: "squarespace",
+                                                               nameservers: %w[nsa1.squarespacedns.com]) }
+    render template: "stack/index"
+
+    dns = "#{row('turf-monster')} [data-test='stack-dns'][data-dns-host='squarespace'][data-dns-standing='migration_pending']"
+    assert_select dns, text: /Squarespace\s+turfmonster\.media\s+Migration pending/
+  end
 end
