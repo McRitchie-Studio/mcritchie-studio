@@ -227,6 +227,8 @@ for r in 1.1.1.1 8.8.8.8; do
   dig +short @$r MX <domain>                      # 1 smtp.google.com. (unchanged)
   dig +short @$r TXT <domain>                     # verification + the one SPF (unchanged)
   dig +short @$r TXT google._domainkey.<domain>   # unchanged
+  dig +short @$r MX in.<domain>                   # unchanged (a past Cloudflare move dropped in.* MX)
+  dig +short @$r MX send.<domain>                 # unchanged; plus every subdomain row from step 1
 done
 dig DS <domain> +trace | tail -4                  # still no DS
 curl -sS -o /dev/null -w "%{http_code}\n" https://<domain>/up                         # 200
