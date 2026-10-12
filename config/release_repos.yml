@@ -396,9 +396,8 @@ apps:
   commercial-welding:
     # Managed studio-engine satellite (planned in config/satellites.yml) with all
     # three rungs on origin, but no Heroku app, production URL or QA copy: nothing
-    # may go public before the acquisition closes (~2026-10-30), and the hosting
-    # spend is Alex's call. `dormant` is that decision: its PRs land on `accepted`
-    # and stay there, unswept. Flip to three-rung, with a prod_deploy naming the
-    # real Heroku app, the CI test_cmd and a QA decision, in the PR that gives it
-    # a deploy target.
+    # may go public before the acquisition closes, and the hosting spend is Alex's
+    # call. `dormant` is that decision: its PRs land on `accepted` and stay there,
+    # unswept. Flip to three-rung, with a prod_deploy naming the real Heroku app,
+    # the CI test_cmd and a QA decision, in the PR that gives it a deploy target.
     ladder: dormant
