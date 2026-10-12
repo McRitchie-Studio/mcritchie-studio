@@ -213,15 +213,21 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    reviewed build and that the buffer's authority is the vault. Then run:
 
    ```bash
-   shasum -a 256 target/deploy/turf_vault.so   # the reviewed build; the buffer is written without --max-len
+   solana program set-buffer-authority <BUFFER> --new-buffer-authority <vault PDA>   # step 3, before the send; on mainnet its signer needs his ruling (signing rule)
+   shasum -a 256 target/deploy/turf_vault.so   # the REVIEWED build; the buffer is written without --max-len
    node scripts/squad-upgrade.js --cluster=mainnet <BUFFER> \
-     --spill=<vault PDA> --expect-buffer-sha256=<that sha256> --send
+     --spill=<vault PDA> --expect-buffer-sha256=<the reviewed .so's sha256> --send
    ```
 
-   Since turf-vault PR 61 (`squad-tools-hardening`), a mainnet `--send` refuses
-   before it reads a key unless `--spill` is given and is the Squad vault PDA, and
-   `--expect-buffer-sha256` equals the sha256 of the buffer's program bytes. The
-   dry run prints the buffer's own hash to compare. The `system` seat creates the proposal,
+   **Set the buffer's authority to the vault before the send**, and **take
+   `--expect-buffer-sha256` from the reviewed `.so`, never from the dry run's
+   printed hash.** The dry run prints the buffer's own hash so you can compare
+   the two; copying it into the flag would make the check compare the buffer with
+   itself. A mainnet `--send` refuses before it reads a key unless `--spill` is
+   given and is the Squad vault PDA and `--expect-buffer-sha256` equals the
+   sha256 of the buffer's program bytes (turf-vault PR 61,
+   `squad-tools-hardening`). With turf-vault PR 62 (`squad-upgrade-gate-followups`)
+   it also refuses unless the buffer's authority is the vault PDA. The `system` seat creates the proposal,
    and `system` and `governance` approve it. Hand Mr. McRitchie the proposal as
    [`squad-vault-ops`](squad-vault-ops.md) step 3 does: the Squads
    `/transactions` link on the vault PDA, and one line naming the program, the
