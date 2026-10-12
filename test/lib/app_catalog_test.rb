@@ -127,10 +127,10 @@ class AppCatalogTest < Minitest::Test
     assert_equal AppCatalog.apps.map(&:slug) + AppCatalog.libraries.map(&:slug), groups.map { |g| g[:key] }
     assert_includes groups.find { |g| g[:key] == "turf-vault" }[:aliases], "vault"
     hidden = groups.select { |g| g[:hide_when_empty] }.map { |g| g[:key] }
-    assert_equal AppCatalog.apps.select { |app| app.archived? || app.repo.nil? }.map(&:slug), hidden,
-                 "only an archived or repo-less app's group hides when empty"
+    assert_equal AppCatalog.apps.select { |app| app.archived? || app.repo.nil? || app.heroku_app.nil? }.map(&:slug), hidden,
+                 "only an archived, repo-less or undeployed app's group hides when empty"
     assert_includes hidden, "acquisition-studio"
-    refute_includes hidden, "commercial-welding"
+    assert_includes hidden, "commercial-welding", "a repo with no deploy target cannot ship, so its group hides"
     refute_includes hidden, "cyvasse"
 
     rows = AppCatalog.seed_rows
