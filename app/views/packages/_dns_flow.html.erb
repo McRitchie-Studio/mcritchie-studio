@@ -1,0 +1,43 @@
+<%# Cloudflare DNS, in action: the worked example /packages/stack draws under
+    the matrix for the `Cloudflare DNS` row. A visitor's www. address and old
+    links are redirected at Cloudflare's edge to the bare domain, which serves
+    the app. The example domain is generic on purpose: this page is public and
+    names no client. %>
+<% steps = [
+     { label: "Visitor types", value: "www.yourcompany.com", note: "or an old link, or another domain you own" },
+     { label: "Cloudflare edge", value: "301 → yourcompany.com", note: "a redirect rule, before your app is ever asked", brand: true },
+     { label: "Your address", value: "yourcompany.com", note: "the bare domain, pointed at your app" },
+     { label: "Your app", value: "Served over HTTPS", note: "hosted by us, certificate renewed for you" }
+   ] %>
+<section class="mt-12 rounded-2xl border border-subtle bg-surface p-5 md:p-6" data-test="dns-flow" aria-labelledby="dns-flow-title">
+  <div class="flex items-start gap-3">
+    <%= render "packages/brand", key: feature.brand, size: :lead if feature.brand? %>
+    <div class="min-w-0">
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary">Growth and Enterprise</p>
+      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading"><%= feature.name %>, in action</h2>
+      <p class="mt-1 max-w-2xl text-sm text-muted"><%= feature.blurb %></p>
+    </div>
+  </div>
+
+  <ol class="mt-6 grid gap-3 md:grid-cols-4" data-test="dns-flow-steps">
+    <% steps.each_with_index do |step, index| %>
+      <li class="relative rounded-xl border <%= step[:brand] ? 'border-primary/40 bg-primary/5' : 'border-subtle bg-surface-alt' %> p-3" data-test="dns-flow-step">
+        <p class="text-2xs font-semibold uppercase tracking-wider text-muted"><%= index + 1 %>. <%= step[:label] %></p>
+        <p class="mt-1 font-mono text-sm font-semibold text-heading [overflow-wrap:anywhere]"><%= step[:value] %></p>
+        <p class="mt-1 text-xs text-muted"><%= step[:note] %></p>
+        <% if index < steps.size - 1 %>
+          <span class="absolute -bottom-3 left-1/2 z-10 -translate-x-1/2 text-primary md:bottom-auto md:left-auto md:-right-3 md:top-1/2 md:-translate-y-1/2 md:translate-x-0" aria-hidden="true">
+            <span class="md:hidden">↓</span><span class="hidden md:inline">→</span>
+          </span>
+        <% end %>
+      </li>
+    <% end %>
+  </ol>
+
+  <ul class="mt-5 grid gap-2 text-sm text-body sm:grid-cols-3" data-test="dns-flow-facts">
+    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Records managed by our agents through Cloudflare's API, not by hand.</li>
+    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Your email records moved across exactly, so mail never stops.</li>
+    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> <span>Cloudflare's Turnstile bot check for your forms, on the same zone <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted">Coming soon</span></span></li>
+  </ul>
+  <p class="mt-4 text-xs text-muted">On Pro, www.yourcompany.com is the address and the bare domain forwards to it.</p>
+</section>

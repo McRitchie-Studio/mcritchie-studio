@@ -6,7 +6,8 @@
     <h1 class="text-3xl font-bold text-heading mb-2">Every client's stack</h1>
     <p class="text-muted max-w-2xl">
       Each client's app tier and status, its package tier, and the software it runs on. The McRitchie Studio chest in a logo's corner means
-      we host it for them; a plain logo is the client's own account.
+      we host it for them; a plain logo is the client's own account. DNS is read live from each production domain's
+      nameservers: Growth and up run on Cloudflare, so a Growth client elsewhere reads Migration pending.
       <%= link_to "Client matrix", stack_matrix_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-matrix-link" } %>
       <span class="text-muted" aria-hidden="true">·</span>
       <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
@@ -26,13 +27,14 @@
 
   <%# The table scrolls sideways inside its own box on a phone; the page never does. %>
   <div class="overflow-x-auto rounded-2xl border border-subtle bg-surface" data-test="stack-table">
-    <table class="w-full min-w-[920px] text-sm border-collapse">
+    <table class="w-full min-w-[1040px] text-sm border-collapse">
       <thead>
         <tr class="border-b border-subtle text-left text-xs font-semibold uppercase tracking-wider text-muted">
           <th scope="col" class="sticky left-0 z-10 bg-surface px-4 py-3 w-56">Client</th>
           <th scope="col" class="px-3 py-3">App</th>
           <th scope="col" class="px-3 py-3">Tier</th>
           <th scope="col" class="px-3 py-3">Software</th>
+          <th scope="col" class="px-3 py-3">DNS</th>
           <th scope="col" class="px-3 py-3 text-right">Google users</th>
           <th scope="col" class="px-4 py-3">Resend</th>
         </tr>
@@ -85,6 +87,7 @@
                 <% end %>
               </ul>
             </td>
+            <td class="px-3 py-3"><%= render "stack/dns_host", client: client, host: (client.dns_domain && @dns_hosts.to_h[client.dns_domain]) %></td>
             <td class="px-3 py-3 text-right tabular-nums" data-test="stack-google-users">
               <% if client.google_users %>
                 <span class="font-semibold text-heading"><%= client.google_users %></span>
@@ -108,7 +111,7 @@
           </tr>
         <% end %>
         <% if @clients.empty? %>
-          <tr><td colspan="6" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr>
+          <tr><td colspan="7" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr>
         <% end %>
       </tbody>
     </table>

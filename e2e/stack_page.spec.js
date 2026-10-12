@@ -25,3 +25,16 @@ test("admin reads each client's tier and software, with hosted logos badged", as
 
   await expect(turf.locator("[data-test='stack-resend']")).toContainText("McRitchie Studio account");
 });
+
+test("admin sees a DNS column that fails soft when nameservers cannot be read", async ({ page }) => {
+  // The e2e server arms DNS_HOST_NO_LIVE_CALLS (playwright.config.js): no real
+  // DNS, so every host reads Unknown and no client is accused of a pending move.
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/stack");
+
+  await expect(page.getByRole("columnheader", { name: "DNS" })).toBeVisible();
+  const welding = page.locator("[data-test='stack-client'][data-client='commercial-welding'] [data-test='stack-dns']");
+  await expect(welding).toHaveAttribute("data-dns-standing", "unknown");
+  await expect(welding).toContainText("commercialwelding.llc");
+  await expect(page.locator("[data-test='stack-dns-standing']")).toHaveCount(0);
+});

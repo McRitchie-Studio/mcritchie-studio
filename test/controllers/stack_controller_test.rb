@@ -120,4 +120,65 @@ class StackControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='stack-matrix-link'][href='#{stack_matrix_path}']"
   end
+
+  # --- the DNS column: live nameservers through a STUBBED resolver ----------
+
+  def stub_dns(zones)
+    DnsHost.resolver = ->(name) { zones.fetch(name) { [] } }
+  end
+
+  test "[integration] each client shows its live DNS host against its tier's promise" do
+    StackClient.find_by!(slug: "turf-monster").update!(tier: "growth")
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+    StackClient.create!(slug: "industries", name: "McRitchie Industries", tier: StackClient::INTERNAL, position: 20)
+    StackClient.create!(slug: "cyvasse", name: "Cyvasse", tier: "pro", position: 50)
+    stub_dns("turfmonster.media" => %w[howard.ns.cloudflare.com.],
+             "commercialwelding.llc" => %w[nsa1.squarespacedns.com.],
+             "mcritchie.industries" => %w[nsa2.squarespacedns.com.],
+             "cyvasse.xyz" => %w[nsa3.squarespacedns.com.])
+    log_in_as users(:alex)
+    get stack_path
+
+    assert_response :success
+    assert_select "th", text: "DNS"
+    dns = ->(slug) { "[data-client='#{slug}'] [data-test='stack-dns']" }
+    assert_select "#{dns.call('turf-monster')}[data-dns-host='cloudflare'][data-dns-standing='on_cloudflare']", 1
+    assert_select "#{dns.call('turf-monster')} [data-brand='cloudflare']", 1
+    assert_select "#{dns.call('turf-monster')} [data-test='stack-dns-standing']", text: "On Cloudflare"
+    %w[commercial-welding industries].each do |slug|
+      assert_select "#{dns.call(slug)}[data-dns-host='squarespace'][data-dns-standing='migration_pending']", 1, slug
+      assert_select "#{dns.call(slug)} [data-test='stack-dns-standing']", text: "Migration pending"
+    end
+    assert_select "#{dns.call('commercial-welding')}", text: /Squarespace\s+commercialwelding\.llc/
+    assert_select "#{dns.call('cyvasse')}[data-dns-host='squarespace'][data-dns-standing='not_in_tier']", 1
+    assert_select "#{dns.call('cyvasse')} [data-test='stack-dns-standing']", 0, "Pro promises no Cloudflare DNS"
+  ensure
+    DnsHost.reset_resolver!
+  end
+
+  test "[integration] a Growth client flips to On Cloudflare when its nameservers move" do
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+    stub_dns("commercialwelding.llc" => %w[ada.ns.cloudflare.com. bob.ns.cloudflare.com.])
+    log_in_as users(:alex)
+    get stack_path
+
+    assert_select "[data-client='commercial-welding'] [data-test='stack-dns'][data-dns-host='cloudflare'][data-dns-standing='on_cloudflare']", 1
+  ensure
+    DnsHost.reset_resolver!
+  end
+
+  test "[integration] a DNS failure never 500s the page: the host reads Unknown" do
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+    StackClient.create!(slug: "family", name: "McRitchie Family", tier: StackClient::INTERNAL, position: 95)
+    DnsHost.resolver = ->(_name) { raise Resolv::ResolvTimeout }
+    log_in_as users(:alex)
+    get stack_path
+
+    assert_response :success
+    assert_select "[data-client='commercial-welding'] [data-test='stack-dns'][data-dns-host='unknown'][data-dns-standing='unknown']", text: /Unknown/
+    assert_select "[data-client='commercial-welding'] [data-test='stack-dns-standing']", 0, "a failed lookup accuses no one"
+    assert_select "[data-client='family'] [data-test='stack-dns'][data-dns-host='']", text: "—"
+  ensure
+    DnsHost.reset_resolver!
+  end
 end

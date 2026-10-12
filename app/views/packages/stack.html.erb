@@ -126,6 +126,10 @@
   </div>
   <p class="mt-2 text-xs text-muted md:hidden">Swipe the table sideways to compare tiers.</p>
 
+  <% if (dns = features.find { |feature| feature.name == WorkspacePackage::CLOUDFLARE_DNS }) %>
+    <%= render "packages/dns_flow", feature: dns %>
+  <% end %>
+
   <% if admin? %>
     <section class="mt-14 rounded-2xl border border-subtle bg-surface p-6" data-test="sop-map" aria-labelledby="sop-map-title">
       <div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">

@@ -115,4 +115,35 @@ class StackClientTest < ActiveSupport::TestCase
     orphans = StackClient.all.reject(&:catalog_app).map(&:slug)
     assert_empty orphans, "stack clients with no config/apps.yml workspace: #{orphans.join(', ')}"
   end
+
+  def dns(key, domain = "example.com") = DnsHost::Result.new(domain: domain, key: key, nameservers: [ "ns.#{key}" ])
+
+  test "[unit] dns_domain reads the app's production URL, else the client's own domain" do
+    assert_equal "commercialwelding.llc", client.dns_domain, "https://www.commercialwelding.llc, www dropped"
+    assert_equal "mcritchie.industries", client(slug: "industries", tier: StackClient::INTERNAL).dns_domain
+    assert_equal "10and5.mcritchie.studio", client(slug: "10and5", tier: "vibe").dns_domain
+    assert_equal "family.example", client(slug: "family", tier: StackClient::INTERNAL, domain: "family.example").dns_domain
+    assert_nil client(slug: "family", tier: StackClient::INTERNAL).dns_domain
+  end
+
+  test "[unit] Growth and up (and our own internal stacks) are held to Cloudflare DNS; Vibe and Pro are not" do
+    assert client(tier: "growth").cloudflare_dns_promised?
+    assert client(tier: "enterprise").cloudflare_dns_promised?
+    assert client(slug: "industries", tier: StackClient::INTERNAL).cloudflare_dns_promised?
+    refute client(slug: "cyvasse", tier: "pro").cloudflare_dns_promised?
+    refute client(slug: "10and5", tier: "vibe").cloudflare_dns_promised?
+  end
+
+  test "[unit] dns_standing: on Cloudflare, migration pending, not in tier, or unknown" do
+    growth = client(tier: "growth")
+    pro = client(slug: "cyvasse", tier: "pro")
+
+    assert_equal :on_cloudflare, growth.dns_standing(dns("cloudflare"))
+    assert_equal :migration_pending, growth.dns_standing(dns("squarespace")), "a Growth client still on Squarespace"
+    assert_equal :migration_pending, growth.dns_standing(dns("other"))
+    assert_equal :not_in_tier, pro.dns_standing(dns("squarespace"))
+    assert_equal :not_in_tier, pro.dns_standing(dns("cloudflare"))
+    assert_equal :unknown, growth.dns_standing(dns(DnsHost::UNKNOWN)), "a failed lookup accuses no one"
+    assert_equal :unknown, growth.dns_standing(nil)
+  end
 end

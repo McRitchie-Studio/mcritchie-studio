@@ -105,3 +105,26 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   await expect(page).toHaveURL(/\/packages$/);
   await expect(page.locator("[data-test='package-card']")).toHaveCount(4);
 });
+
+test("Growth and Enterprise show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
+  await page.goto("/packages");
+
+  for (const key of ["growth", "enterprise"]) {
+    const spot = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-spotlight'][data-feature='cloudflare-dns']`);
+    await expect(spot).toContainText("Cloudflare DNS");
+    const logo = spot.locator("[data-brand='cloudflare'] img");
+    await expect(logo).toBeVisible();
+    expect(await logo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
+  }
+  await expect(page.locator("[data-package='pro'] [data-test='package-spotlight']")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/packages/stack");
+  await expect(page.locator("[data-test='stack-row'][data-feature='cloudflare-dns']")).toBeVisible();
+  const flow = page.locator("[data-test='dns-flow']");
+  await flow.scrollIntoViewIfNeeded();
+  await expect(flow.getByRole("heading", { name: "Cloudflare DNS, in action" })).toBeVisible();
+  await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
+  const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(pageOverflow).toBeLessThanOrEqual(0);
+});
