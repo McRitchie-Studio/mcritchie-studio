@@ -192,8 +192,9 @@ test("Pro and Team cards mark their lines, tease the next tier, and the full sta
   // A check for included, a muted cross naming the next tier, Coming soon for promises.
   const pro = page.locator("[data-test='package-card'][data-package='pro']");
   await expect(pro.locator("[data-mark='included']").first()).toHaveAttribute("aria-label", "Included");
-  const teaser = pro.locator("[data-test='package-line'][data-status='missing']");
-  await expect(teaser).toHaveCount(1);
+  await expect(pro.locator("[data-test='package-line'][data-status='missing']")).toHaveCount(2);
+  await expect(pro.locator("[data-test='package-line'][data-lane='drafting'][data-status='missing']")).toContainText("(In Team)");
+  const teaser = pro.locator("[data-test='package-line'][data-lane='cmo'][data-status='missing']");
   await expect(teaser).toContainText("Fractional CMO");
   await expect(teaser).toContainText("(In Team)");
   await expect(teaser.locator("[data-mark='missing']")).toHaveAttribute("aria-label", "In Team");

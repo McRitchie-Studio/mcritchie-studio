@@ -95,7 +95,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     # Marks carry their words: never color alone.
     assert_select "#{card('builder')} [data-test='package-line'][data-status='included'] [data-test='line-mark'][data-mark='included'][role='img'][aria-label='Included']", 3
     { "vibe" => [ %w[domain], "Builder" ], "builder" => [ %w[workspace vault], "Pro" ],
-      "pro" => [ %w[cmo], "Team" ] }.each do |key, (lanes, tier)|
+      "pro" => [ %w[cmo drafting], "Team" ] }.each do |key, (lanes, tier)|
       assert_equal lanes, css_select("#{card(key)} [data-test='package-line'][data-status='missing']").map { |l| l["data-lane"] }, key
       lanes.each do |lane|
         row = "#{card(key)} [data-test='package-line'][data-lane='#{lane}']"
@@ -111,7 +111,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     soon = "#{card('team')} [data-test='package-line'][data-status='soon']"
     assert_select soon, 2
     assert_select "#{soon} [data-test='line-mark'][data-mark='soon'][aria-label='Coming soon']", 2
-    assert_select "#{soon} [data-test='coming-soon']", 2
+    assert_select "#{soon} [data-test='line-sub'] [data-test='coming-soon']", 2, "the tag sits on the subtext line"
+    assert_select "#{soon} [data-test='line-title'] [data-test='coming-soon']", 0
+    assert_select "#{card('team')} [data-test='package-line'][data-lane='social'] [data-test='line-title']", text: "Social posting"
+    assert_select "#{card('team')} [data-test='package-line'][data-lane='social'] [data-test='line-sub']", text: /X and TikTok\s*Coming soon/
+    assert_equal %w[cto cmo drafting], css_select("#{card('team')} [data-test='package-line-group'][data-group='Agents'] ~ [data-test='package-line']").map { |l| l["data-lane"] }.select { |k| %w[cto cmo drafting].include?(k) }
+    assert_select "#{card('pro')} [data-test='package-line'][data-lane='drafting'][data-status='missing'] [data-test='line-in-tier']", text: "(In Team)"
     assert_select "#{soon} [data-mark='included']", 0
 
     assert_select "#{card('pro')} [data-test='line-sub']", text: "4 build requests a month"

@@ -121,13 +121,13 @@ card_lanes:
   - { group: Platform, key: workspace, title: Google Workspace }
   - { group: Platform, key: vault, title: Password vault }
   - { group: Agents, key: cto, title: Fractional CTO }
-  - { group: Agents, key: drafting, title: Email drafting agent }
   - { group: Agents, key: cmo, title: Fractional CMO }
+  - { group: Agents, key: drafting, title: Email drafting agent }
   - { group: Marketing, key: email_marketing, title: Email marketing }
   - { group: Marketing, key: content, title: Content sprints }
   - { group: Marketing, key: warmup, title: Launch warm-up }
   - { group: Marketing, key: funnels, title: Funnels built for you }
-  - { group: Marketing, key: social, title: Social posting to X and TikTok }
+  - { group: Marketing, key: social, title: Social posting }
 
 packages:
   - key: vibe
@@ -165,7 +165,6 @@ packages:
       workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: monthly architecture review }
-      drafting: { sub: replies drafted in your inbox }
     cta: { label: Talk to us about Pro, action: schedule }
   - key: team
     name: Team
@@ -187,7 +186,7 @@ packages:
       content: { sub: "short-form, tested at volume" }
       warmup: { sub: new domains ramped safely }
       funnels: { status: soon }
-      social: { status: soon }
+      social: { sub: X and TikTok, status: soon }
     cta: { label: Talk to us about Team, action: schedule }
   - key: enterprise
     name: Enterprise
@@ -389,11 +388,14 @@ features:
     you_do: Sign up and create the users
     status: live
     software: [google]
+  # A Team feature from 2026-10-12 (Mr. McRitchie), with the Knowledge base
+  # that feeds it. Commercial Welding (Pro) keeps its live drafting mailbox:
+  # grandfathering is decided separately, and neither row provisions software,
+  # so its /stack column is unchanged.
   - name: Email drafting agent
     category: platform
     icon: "✍️"
     blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
-    pro: true
     team: true
     enterprise: true
     sop: workspace-provision
@@ -404,7 +406,6 @@ features:
     category: platform
     icon: "📚"
     blurb: Your agent indexes the folders you choose, so drafts use your real documents.
-    pro: Google Drive
     team: Google Drive
     enterprise: Drive + custom connectors
     sop: workspace-provision

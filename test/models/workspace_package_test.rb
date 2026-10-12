@@ -259,7 +259,12 @@ class WorkspacePackageTest < ActiveSupport::TestCase
       refute feature(name).included_in?(:pro), "#{name} is a Team row"
       assert feature(name).included_in?(:team), name
     end
-    [ "Error alerts", "Google Workspace", "Email drafting agent", "Knowledge base", "Password vault",
+    [ "Email drafting agent", "Knowledge base" ].each do |name|
+      refute feature(name).included_in?(:pro), "#{name} is a Team feature from 2026-10-12"
+      assert feature(name).included_in?(:team), name
+    end
+    assert_equal [ nil, nil, nil, "Google Drive", "Drive + custom connectors" ], TIERS.map { |key| feature("Knowledge base").value_for(key) }
+    [ "Error alerts", "Google Workspace", "Password vault",
       "Dedicated browser profile", "Credential rotation", "Fast, protected domain" ].each do |name|
       assert feature(name).included_in?(:pro), "#{name} is a Pro row"
     end
@@ -394,9 +399,9 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal WorkspacePackage::CARD_GROUPS, lanes.map(&:first)
     assert_equal({ "Application" => [ "Custom Web App", "%{tier} Host & Storage", "Custom Domain" ],
                    "Platform" => [ "Google Workspace", "Password vault" ],
-                   "Agents" => [ "Fractional CTO", "Email drafting agent", "Fractional CMO" ],
+                   "Agents" => [ "Fractional CTO", "Fractional CMO", "Email drafting agent" ],
                    "Marketing" => [ "Email marketing", "Content sprints", "Launch warm-up", "Funnels built for you",
-                                    "Social posting to X and TikTok" ] },
+                                    "Social posting" ] },
                  lanes.to_h { |group, list| [ group, list.map(&:title) ] })
 
     assert_equal({ "vibe" => %w[Application], "builder" => %w[Application Platform],
@@ -417,7 +422,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     missing = WorkspacePackage.cards.to_h { |c| [ c.key, c.card_lines.select(&:missing?).map { |l| [ l.title, l.in_tier.name ] } ] }
     assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ] ],
                    "builder" => [ [ "Google Workspace", "Pro" ], [ "Password vault", "Pro" ] ],
-                   "pro" => [ [ "Fractional CMO", "Team" ] ], "team" => [] }, missing)
+                   "pro" => [ [ "Fractional CMO", "Team" ], [ "Email drafting agent", "Team" ] ], "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
     assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
     assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
@@ -429,7 +434,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute WorkspacePackage.find(:vibe).card_lines.any? { |l| l.title == "Web address" }, "Web address folded into the Custom Domain lane"
 
     soon = WorkspacePackage.find(:team).card_lines.select(&:soon?).map(&:title)
-    assert_equal [ "Funnels built for you", "Social posting to X and TikTok" ], soon
+    assert_equal [ "Funnels built for you", "Social posting" ], soon
+    assert_equal "X and TikTok", WorkspacePackage.find(:team).card_lines.find { |l| l.key == "social" }.sub
     assert feature("Funnel generation").planned? && feature("Social posting").planned?, "Coming soon lanes match planned rows"
   end
 

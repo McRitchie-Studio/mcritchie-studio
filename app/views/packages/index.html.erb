@@ -105,12 +105,10 @@
                       <%= line.title %>
                       <% if line.missing? && line.in_tier %>
                         <span class="ml-1 whitespace-nowrap text-2xs font-medium text-muted" data-test="line-in-tier">(In <%= line.in_tier.name %>)</span>
-                      <% elsif line.soon? %>
-                        <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 text-2xs font-medium text-muted" data-test="coming-soon">Coming soon</span>
                       <% end %>
                     </p>
-                    <% if line.sub.present? %>
-                      <p class="mt-0.5 text-xs text-muted [overflow-wrap:anywhere]" data-test="line-sub"><%= line.sub %></p>
+                    <% if line.sub.present? || line.soon? %>
+                      <p class="mt-0.5 text-xs text-muted [overflow-wrap:anywhere]" data-test="line-sub"><%= line.sub %><% if line.soon? %><span class="<%= 'ml-1.5 ' if line.sub.present? %>inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted" data-test="coming-soon">Coming soon</span><% end %></p>
                     <% end %>
                   </div>
                 </div>
