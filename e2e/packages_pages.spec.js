@@ -94,12 +94,19 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   const box = page.locator("[data-test='stack-matrix-scroll']");
   await expect(page.locator("[data-test='stack-row']").first()).toBeVisible();
 
-  // The narrow feature column leaves two tiers in view, row descriptions hide,
-  // and a one-brand row leads with that brand's logo.
+  // The narrow feature column leaves the first tier in full view, row
+  // descriptions hide, and a one-brand row leads with that brand's logo. (Two
+  // tiers fit until 2026-10-12; the domain pills now never break inside a
+  // hostname, so the columns size to "mcritchie.studio" and the box scrolls.)
   const boxRight = await box.evaluate((el) => el.getBoundingClientRect().right);
-  const proRight = await page.locator("[data-test='stack-tier-header'][data-package='builder']")
+  const vibeRight = await page.locator("[data-test='stack-tier-header'][data-package='vibe']")
     .evaluate((el) => el.getBoundingClientRect().right);
-  expect(proRight).toBeLessThanOrEqual(boxRight);
+  expect(vibeRight).toBeLessThanOrEqual(boxRight);
+  // A hostname pill wraps only at a label boundary, never mid-word.
+  const vibeHost = page.locator("[data-feature='web-address'] [data-test='stack-cell'][data-package='vibe'] [data-test='stack-hostname']");
+  const hostLines = await vibeHost.evaluate((el) =>
+    Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+  expect(hostLines).toBeLessThanOrEqual(2);
   await expect(page.locator("[data-test='stack-blurb']").first()).toBeHidden();
   const serverLogo = page.locator("[data-feature='server'] [data-test='stack-lead'] [data-brand='heroku'] img");
   await expect(serverLogo).toBeVisible();

@@ -112,7 +112,7 @@
                   <% else %>
                     <% segments = package_cell_segments(value) %>
                     <% if segments.any?(&:last) %>
-                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(package_hostname(text), data: { test: "stack-hostname" }) : text }, " + ") %></span>
+                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(segments.one? ? package_hostname(text) : text, class: ("whitespace-nowrap" unless segments.one?), data: { test: "stack-hostname" }) : text }, " + ") %></span>
                     <% else %>
                       <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>
                     <% end %>

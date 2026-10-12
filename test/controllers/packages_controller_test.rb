@@ -185,8 +185,9 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "wbr", 1, "the one place it may wrap: after its first label"
     end
     assert_select "#{vibe} [class*='overflow-wrap']", 0, "a hostname never breaks mid-word"
-    assert_equal %w[yourname.com www.yourname.com],
-                 css_select("[data-feature='web-address'] [data-test='stack-cell'][data-package='pro'] [data-test='stack-hostname']").map(&:text)
+    pro = css_select("[data-feature='web-address'] [data-test='stack-cell'][data-package='pro'] [data-test='stack-hostname']")
+    assert_equal %w[yourname.com www.yourname.com], pro.map(&:text)
+    assert pro.all? { |host| host["class"].to_s.include?("whitespace-nowrap") && host.css("wbr").empty? }, "a listed hostname breaks only at the plus"
   end
 
   test "values read across the row, with a check or a dash where nothing is quantified" do

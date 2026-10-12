@@ -33,9 +33,10 @@ module PackagesHelper
     value.to_s.split(" + ").map { |part| [ part, part.match?(HOSTNAME) ] }
   end
 
-  # A hostname that may wrap only at its first label, and only while a dot
-  # remains after it ("yourname." / "mcritchie.studio", "www." / "yourname.com"),
-  # so a narrow phone column never splits a word and "yourname.com" never wraps.
+  # A lone hostname that may wrap only at its first label, and only while a dot
+  # remains after it ("yourname." / "mcritchie.studio"), so a narrow phone column
+  # never splits a word and "yourname.com" never wraps. A hostname listed with
+  # another ("yourname.com + www.yourname.com") wraps only at the " + ".
   def package_hostname(text)
     first, rest = text.split(".", 2)
     rest&.include?(".") ? safe_join([ "#{first}.", tag.wbr, rest ]) : text
