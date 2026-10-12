@@ -344,6 +344,13 @@ class ProgramDriftTest < Minitest::Test
                  "an RPC that reports no ProgramData size cannot price the float"
   end
 
+  def test_a_transport_failure_names_the_host_never_the_os_text
+    error = assert_raises(ProgramDrift::ReadError) { ProgramDrift.rpc_call("http://127.0.0.1:1/", "getBalance", []) }
+
+    assert_equal "getBalance: cannot reach 127.0.0.1 (no connection)", error.message
+    refute_match(/refused/i, error.message, "status prints this; 'refused' there reads as a lane refusal")
+  end
+
   def test_clusters_without_a_reserve_read_nothing
     calls = []
     out = ProgramDrift.reserve_readings(programs: [program], rpc: reserve_rpc(balance: 0, calls: calls))

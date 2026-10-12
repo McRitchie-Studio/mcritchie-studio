@@ -325,6 +325,12 @@ module ProgramDrift
     body["result"]
   rescue ReadError
     raise
+  rescue SystemCallError, SocketError, Net::OpenTimeout, Net::ReadTimeout => e
+    # A transport failure names the host and timed-out/no-connection, never the OS text:
+    # "Connection refused" printed inside `bin/release status` reads as a lane REFUSAL,
+    # which the status suite forbids a clean ladder to print.
+    why = e.is_a?(Net::OpenTimeout) || e.is_a?(Net::ReadTimeout) ? "timed out" : "no connection"
+    raise ReadError, "#{method}: cannot reach #{uri&.host || 'the RPC'} (#{why})"
   rescue StandardError => e
     raise ReadError, "#{e.class}: #{e.message}"[0, 160]
   end
