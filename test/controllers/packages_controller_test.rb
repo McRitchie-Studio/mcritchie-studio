@@ -178,4 +178,36 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "[data-test='sop-map-comps']", text: /Pro — Cyvasse/
   end
+
+  test "[component] Growth and Enterprise cards spotlight Cloudflare DNS with its logo; Vibe and Pro do not" do
+    get packages_path
+
+    %w[growth enterprise].each do |key|
+      spot = "#{card(key)} [data-test='package-spotlight'][data-feature='cloudflare-dns']"
+      assert_select spot, 1, key
+      assert_select "#{spot} [data-brand='cloudflare'][aria-label='Cloudflare'] img"
+      assert_select spot, text: /Cloudflare DNS.*yourcompany\.com is the address; www and old links redirect at the edge/m
+    end
+    assert_select "#{card('growth')} [data-test='package-spotlight']", text: /Bare domain \+ edge redirects/
+    %w[vibe pro].each { |key| assert_select "#{card(key)} [data-test='package-spotlight']", 0, key }
+  end
+
+  test "[component] the full stack draws the Cloudflare DNS row, the planned bot check, and the flow in action" do
+    get packages_stack_path
+
+    row = "[data-test='stack-row'][data-feature='cloudflare-dns'][data-status='live']"
+    assert_select "#{row} [data-test='stack-lead'] [data-brand='cloudflare']"
+    assert_select "#{row} [data-test='coming-soon']", 0
+    assert_equal [ "—", "—", "Bare domain + edge redirects", "Every domain, edge redirects" ],
+                 css_select("#{row} [data-test='stack-cell']").map { |td| td.text.strip }
+    assert_select "[data-feature='bot-check'][data-status='planned'] [data-test='coming-soon']"
+    assert_select "[data-feature='bot-check'] [data-test='stack-lead'] [data-brand='cloudflare']"
+
+    assert_select "[data-test='dns-flow'] h2", text: "Cloudflare DNS, in action"
+    assert_select "[data-test='dns-flow'] [data-brand='cloudflare']"
+    assert_equal [ "www.yourcompany.com", "301 → yourcompany.com", "yourcompany.com", "Served over HTTPS" ],
+                 css_select("[data-test='dns-flow-step'] p.font-mono").map { |p| p.text.strip }
+    assert_select "[data-test='dns-flow-facts']", text: /Turnstile.*Coming soon/m
+    %w[Welding Industries Turf].each { |client| assert_no_match(/#{client}/, css_select("[data-test='dns-flow']").to_s) }
+  end
 end

@@ -211,4 +211,41 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_empty WorkspacePackage::LEGACY_TIERS.values - WorkspacePackage.keys
     assert_empty WorkspacePackage::LEGACY_TIERS.keys & WorkspacePackage.keys, "a legacy key may not be reused"
   end
+
+  test "[unit] Cloudflare DNS is a live Growth and Enterprise row, led by the Cloudflare logo, delivered by domain-dns" do
+    dns = feature(WorkspacePackage::CLOUDFLARE_DNS)
+
+    assert_equal "domain", dns.category
+    assert_equal "cloudflare", dns.brand, "the row leads with the Cloudflare logo"
+    assert dns.live?, "mcritchie.studio and turfmonster.media already run on it"
+    assert_equal "domain-dns", dns.sop
+    assert_equal "Cloudflare DNS — Growth and above", dns.section
+    assert_equal %w[growth enterprise], TIERS.select { |key| dns.included_in?(key) }
+    assert_equal "Bare domain + edge redirects", dns.value_for(:growth)
+    assert_equal %w[cloudflare], dns.software_keys(:growth)
+    assert_match(/bare domain/i, dns.blurb)
+    assert_match(/redirect at Cloudflare's edge/, dns.blurb)
+    assert_match(/agents manage every record by API/, dns.blurb)
+  end
+
+  test "[unit] the Turnstile bot check is promised honestly: planned, Coming soon, in no stack" do
+    bot = feature("Bot check")
+
+    assert bot.planned?, "no app wires Turnstile yet"
+    assert_nil bot.sop
+    assert_equal "cloudflare", bot.brand
+    assert_equal %w[growth enterprise], TIERS.select { |key| bot.included_in?(key) }
+    assert_empty bot.card_brands("growth"), "a planned row names no brand on a card"
+    refute bot.spotlight?
+  end
+
+  test "[unit] a card spotlights a delivered spotlight row from the tier that includes it" do
+    TIERS.each do |key|
+      names = WorkspacePackage.find(key).spotlight_features.map(&:name)
+      expected = %w[growth enterprise].include?(key) ? [ WorkspacePackage::CLOUDFLARE_DNS ] : []
+      assert_equal expected, names, key
+    end
+    planned = WorkspacePackage::Feature.new(name: "Later", status: "planned", spotlight: "soon", values: {})
+    refute planned.spotlight?, "a planned row is never spotlit"
+  end
 end
