@@ -230,7 +230,7 @@ for r in 1.1.1.1 8.8.8.8; do
 done
 dig DS <domain> +trace | tail -4                  # still no DS
 curl -sS -o /dev/null -w "%{http_code}\n" https://<domain>/up                         # 200
-curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://www.<domain>/x?y=1   # 301 https://<domain>/x?y=1
+curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" "https://www.<domain>/x?y=1"   # 301 https://<domain>/x?y=1
 ```
 
 Green when every mail and verification record matches step 1's snapshot, the
