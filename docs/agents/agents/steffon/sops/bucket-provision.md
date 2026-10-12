@@ -18,14 +18,16 @@ not this act.
 
 The AWS S3 procedure this replaced is in git history:
 `git show 64d6f3a8:docs/agents/agents/steffon/sops/bucket-provision.md`.
-Use it only to reason about the legacy S3 buckets until they are retired.
+The legacy S3 buckets were retired on 2026-10-10, except two kept for sent
+emails' images ([`../../../modules/object-storage.md`](../../../modules/object-storage.md), **What remains of AWS**).
 
 ## What this act is NOT
 
 - **It never deletes a bucket that holds objects.** Recreating a misplaced
   bucket is legal only after a list proves it empty.
-- **It never touches the legacy S3 buckets.** Those still serve live apps
-  until each app's Wave 2 cutover.
+- **It never touches the legacy S3 buckets.** No app uses S3 since the
+  Wave 2 cutovers; the two buckets kept after the AWS exit (2026-10-10) are
+  not this act's.
 - **It never sets Heroku config.** An app starts reading R2 in its own
   cutover task, which writes the config vars and proves the read.
 - **It never merges, deploys, or moves board tasks.**

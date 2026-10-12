@@ -1,6 +1,33 @@
 # Asset Library Plan — files, documents and assets across the fleet
 
-## Status: Active
+## Status: Completed (2026-10-11)
+
+**The S3 → R2 move is complete as of 2026-10-11 09:20 MDT.** What it ended as:
+
+- **Storage.** All four production apps (`mcritchie-studio`,
+  `turf-monster-mainnet`, `mcritchie-industries`, `moms-app`) and all three QA
+  apps run R2 only. The S3 and mirror stages were removed from code on
+  2026-10-10 (tasks `hub-storage-runs-r2-only`, `turf-storage-runs-r2-only`,
+  `industries-storage-runs-r2-only`, `moms-app-storage-runs-r2-only`).
+- **Undo.** Every app's R2 services are the engine's `StudioTrashS3`: a deleted
+  or replaced file is copied to `trash/` and the bucket rule `expire-trash-3d`
+  removes it. Proven live on hub production 2026-10-10 (a purge left one object
+  in `trash/`). Behind that, nightly `r2-backup` covers `mcritchie-studio`,
+  `turf-monster`, `mcritchie-industries`, `moms-app` and
+  `mcritchie-studio-desk`; all five rows succeeded on 2026-10-11 15:56 UTC.
+- **Seed assets.** Hub and Turf headshots outside production reference
+  production's copy (studio-engine 0.103.0 `ImageCache.stored_in` and
+  `reference_or_cache!`; tasks `engine-seed-assets-reference-production`,
+  `hub-headshots-reference-production`, `turf-headshots-reference-production`,
+  shipped 2026-10-11). Pokémon seeds pin the production host
+  (`seeds-reference-production-assets`).
+- **AWS exit (Wave 7)**, done 2026-10-10, with what was kept on purpose: see
+  [Wave 7 — the AWS exit record](#wave-7--the-aws-exit-record).
+
+Waves 3, 4 and 6 (the catalog, loading it, large media) and Commercial
+Welding's document tier were never part of the move and stay proposals; they
+are listed under **Open decisions** below. Tables dated before 2026-10-11 are
+snapshots of the day they name, kept as measured.
 
 Alex set the direction on 2026-09-26: leave AWS for a simpler operator
 experience (not for cost), keep business documents where people already work,
@@ -61,23 +88,23 @@ made); it cannot create shared drives or manage membership.
 
 **Proposed, not decided.** The Decisions table and the Shared Drives above are
 decided; the Waves states, the writer checklist, the DNS measurements and the
-Wave 7 inventory record what exists. These are proposals until Alex says
-otherwise: the Wave 2 recipe, the catalog's shape and where it lives, the Wave 4
-order, Cloudflare Stream for video and CAD in the business-document tier,
-and `DeskCapture`'s private R2 bucket.
+Wave 7 record describe what exists. These are proposals until Alex says
+otherwise: the catalog's shape and where it lives, the Wave 4 order, and
+Cloudflare Stream for video and CAD in the business-document tier. The Wave 2
+recipe and `DeskCapture`'s private R2 bucket were proposals too; both have run.
 
 ## Waves
 
 | Wave | Goal | State |
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
-| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app`, `mcritchie-industries`, `mcritchie-studio` and `turf-monster` |
-| 2 | per-app S3 → R2 cutover | **done** except `commercial-welding`: `moms-app`, `mcritchie-industries`, `mcritchie-studio` and `turf-monster` serve from R2 alone since 2026-10-03 (moms v25, industries v54, hub v543, turf v305), each backed up nightly; record in [`r2-cutover-record.md`](r2-cutover-record.md) |
+| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app`, `mcritchie-industries`, `mcritchie-studio`, `turf-monster` and (since 2026-10-10) `mcritchie-studio-desk` |
+| 2 | per-app S3 → R2 cutover | **done**: `moms-app`, `mcritchie-industries`, `mcritchie-studio` and `turf-monster` serve from R2 alone since 2026-10-03 (moms v25, industries v54, hub v543, turf v305), each backed up nightly, and their code has run R2 only since 2026-10-10; `commercial-welding` had nothing to migrate (no app, empty S3 pair, deleted 2026-10-10); record in [`r2-cutover-record.md`](r2-cutover-record.md) |
 | 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
 | 6 | large media | proposed: video on Cloudflare Stream, CAD in the business-document tier, when the first one arrives |
-| 7 | leave AWS | after every app has cut over; inventory below |
+| 7 | leave AWS | **done 2026-10-10**; record and what was kept below |
 
 ## Readiness review — measured 2026-09-28
 
@@ -112,7 +139,9 @@ every text and JSON column): only the hub has any.
 | `artifacts.image_url` | 3 | `character-sheets/` |
 | `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
 
-They keep resolving while the S3 bucket stays public. Before S3 is retired
+*Outcome:* the hub's step 5 rewrote the served ones on 2026-09-30
+([`r2-cutover-record.md`](r2-cutover-record.md)), before any bucket was
+deleted. The plan as written that day follows. They keep resolving while the S3 bucket stays public. Before S3 is retired
 (Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`. The hub's
 Wave 2 task built it: `S3UrlRewrite` (`rake s3_urls:rewrite`) covers the
 `pokemons` columns, the mascot avatar, `artifacts.image_url` and
@@ -126,9 +155,11 @@ heroku run -a mcritchie-studio -- APPLY=1 bin/rails "s3_urls:rewrite[https://ass
 APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  # locally, then commit pokemon.json so a re-seed keeps them
 ```
 
-**Per-app verdict.**
+**Per-app verdict, as of 2026-09-30.** Every row below has since finished:
+all four apps served from R2 alone from 2026-10-03 and run R2-only code since
+2026-10-10, and `commercial-welding`'s S3 pair was deleted on 2026-10-10.
 
-| App | Verdict | Why |
+| App | Verdict (2026-09-30) | Why |
 |---|---|---|
 | `moms-app` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` (R2 primary), soaking before step 9 (2026-09-29) | Active Storage only, no `Studio::S3`; now registered in `config/release_repos.yml` (profile `standalone-heroku`) and on `studio-engine` 0.77.3 |
 | `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
@@ -137,6 +168,9 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 | `turf-monster` | **cutting over**: `STUDIO_S3_BACKEND=r2` and `ACTIVE_STORAGE_BACKEND=mirror_to_s3`, soaking before step 9 (2026-09-30, release v297) | DNS for `assets.` cleared 2026-09-30; no stored S3 URL, so no rewrite |
 
 ## Wave 2 — the per-app cutover recipe
+
+*Done.* Every app has run steps 1–11; the recipe is kept as the record of how
+the move ran and as the pattern for a future store move.
 
 The hub and Turf Monster cutovers of 2026-09-30, as run and measured, and the
 runbooks' step 7 they still owe (this recipe's steps 9–11): [`r2-cutover-record.md`](r2-cutover-record.md).
@@ -345,10 +379,50 @@ becomes a read-through onto the catalog, then folds into it.
 teams (bulk import with source and license per row), then people (with
 consent), then content (the generating services write through the catalog).
 
-## Wave 7 — the AWS exit inventory
+## Wave 7 — the AWS exit record
 
-Retire nothing until every row is replaced. Re-derive the list from the AWS
-account before starting; this is what the docs name today.
+**Done 2026-10-10.** What was retired:
+
+- **IAM users** `mcritchie-s3`, `mcritchie-ses`,
+  `mcr-mcritchie-industries-prod` and `mcr-mcritchie-industries-dev`, deleted
+  with their access keys, policies and login profile.
+- **SES identities**, all deleted: in `us-east-1`, `mcritchie.studio` and
+  `alex@mcritchie.studio`; in `us-east-2`, `mcritchie.studio` and
+  `turfmonster.media`. `include:amazonses.com` was removed from
+  `turfmonster.media`'s root SPF record. The SES transport left studio-engine
+  in 0.102.0.
+- **S3 buckets.** Deleted on 2026-10-10: `mcritchie-studio-desk`,
+  `commercial-welding-dev`, `commercial-welding-production`,
+  `mcritchie-industries-dev`, `mcritchie-studio-dev` and `turf-monster-dev`.
+  Deleted about 23:00 MDT the same day, after every old version's key was
+  verified present on R2: `mcritchie-industries-production` and
+  `moms-app-production`.
+- **1Password items** `agent.aws`, `agent.aws.mcritchie-ses` and
+  `mcritchie-industries.aws`, tagged `retired`
+  ([`../modules/credential-inventory.md`](../modules/credential-inventory.md)).
+- **Copy.** The Industries privacy page names Cloudflare only (2026-10-11).
+- **The account sweep.** `agents-admin`, with `ViewOnlyAccess` (granted by
+  Alex 2026-10-07), swept the whole account and found nothing beyond S3, IAM
+  and the SES identities. That covers the check the 2026-09-29 measurement
+  below left to Alex's root login (EC2, Lambda, RDS, Route 53, CloudFront).
+
+**Kept on purpose** (Alex's decisions):
+
+| What | Why |
+|---|---|
+| The AWS account itself | a foothold "in case there was ever a reason to go back" |
+| IAM user `agents-admin`, with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` (1Password item `AWS`, vault `studio-agents-admin`) | Alex kept both admin permissions, and the Cloudflare token's Zone WAF Edit, "to build trust" |
+| S3 `mcritchie-studio-production` (6 `email/` images) | old sent emails embed these URLs; kept about one year |
+| S3 `turf-monster-production` (2 `email_banners/` images) | the same, about one year |
+| Resend's DNS records (`in.*` MX, `send.*` MX and SPF, `resend._domainkey`) | Resend's, not ours: Resend runs on SES, so some point at `amazonses.com` / `amazonaws.com` hosts. They stay |
+
+**Measured access** (Cloudflare API and HEAD, 2026-10-10): each QA/dev R2
+token holds Item Read on `<app>-production` and Item Write only on
+`<app>-dev`, and a missing key answers it 404.
+
+### The inventory, as planned before the exit (2026-09-29)
+
+Kept as written; every row is now retired or in the kept list above.
 
 | AWS piece | Used for | Replacement |
 |---|---|---|
@@ -362,8 +436,9 @@ account before starting; this is what the docs name today.
 ### Measured from the account, 2026-09-29
 
 Read-only, account `534727954137`, with the admin key (`AWS` in
-`studio-agents-admin`) and, for SES, `agent.aws.mcritchie-ses`. A re-run before
-the exit must re-measure every row.
+`studio-agents-admin`) and, for SES, `agent.aws.mcritchie-ses`. A snapshot of
+that day: the "mid-cutover" rows finished on 2026-10-03, and every bucket,
+user and SES identity below is deleted except what the kept list above names.
 
 **Buckets (10: nine in `us-east-2`, `mcritchie-studio-desk` in `us-east-1`).**
 R2 copy state is from an `rclone copy` S3 → R2 the same morning; `rclone size` matched on both sides unless noted.
@@ -407,7 +482,10 @@ September, and no other service above half a cent. The exit buys nimbleness, not
 
 **Not visible to the admin key.** Its policy grants S3, IAM reads and Cost
 Explorer, and refuses EC2, Lambda, RDS, Route 53 (zones and registered domains),
-CloudFront and SES. Cost Explorer shows no measurable spend on any of them, which argues
+CloudFront and SES. *Resolved:* Alex granted the key `ViewOnlyAccess` on
+2026-10-07, and the exit's account sweep found nothing beyond S3, IAM and SES
+identities.
+The paragraph below is as written on 2026-09-29. Cost Explorer shows no measurable spend on any of them, which argues
 they are empty but does not prove it: Route 53 domain registrations bill once a
 year, and free-tier resources cost nothing, so either can tie the account
 without showing in August or September. Before closing the account,
@@ -416,11 +494,14 @@ read-only on them for one audit.
 
 ## Open decisions and blockers
 
-| Item | Owner |
-|---|---|
-| Commercial Welding's document tier (Egnyte or Drive); decision 3 of [`knowledge-layer-design.md`](knowledge-layer-design.md) | Alex, after the compliance question |
-| Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit. **Done 2026-10-10** | Steffon, before Wave 7 |
-| Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
-| What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
-| Before closing the AWS account, check EC2, Lambda, RDS, Route 53 (zones and registered domains) and CloudFront with the root login: the admin key cannot read them (Wave 7, **Not visible to the admin key**) | Alex |
-| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, `DeskCapture` bucket) | Alex |
+No item blocks the storage move; it is complete. The open rows are the
+plan's non-storage proposals.
+
+| Item | Owner | State |
+|---|---|---|
+| Commercial Welding's document tier (Egnyte or Drive); decision 3 of [`knowledge-layer-design.md`](knowledge-layer-design.md) | Alex, after the compliance question | **open** |
+| Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon | **done 2026-10-10** |
+| Does Commercial Welding carry CMMC or ITAR obligations? | Alex | **open** |
+| What writes the `commercial-welding-*` S3 buckets | Steffon | **closed 2026-10-10**: nothing did; both were empty and are deleted |
+| Before closing the AWS account, check EC2, Lambda, RDS, Route 53 (zones and registered domains) and CloudFront with the root login | Alex | **closed**: covered by the `ViewOnlyAccess` sweep (Wave 7 record); the account is kept on purpose, not closed |
+| Approve or amend the proposals (catalog, Wave 4 order, Stream and CAD) | Alex | **open**; the Wave 2 recipe and the `DeskCapture` bucket were proposals that have since run |

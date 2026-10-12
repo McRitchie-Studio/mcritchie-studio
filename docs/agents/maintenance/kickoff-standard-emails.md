@@ -75,7 +75,7 @@ magic-link banner, and MI's admin page can replace it with MI-branded artwork.
 
 ### Decision to confirm before you build
 
-**Each app has its own S3 bucket AND its own `image_caches` table**
+**Each app has its own storage bucket AND its own `image_caches` table**
 (`mcritchie-studio-dev`, `turf-monster-dev`, …). So McRitchie Industries cannot
 read a row McRitchie Studio wrote — inheritance has to come from somewhere both
 apps can see.
@@ -84,7 +84,7 @@ apps can see.
 artwork in `studio-engine/app/assets/images/emails/`, and resolve in this order:
 
 ```
-app's own ImageCache row (its S3 bucket)  →  engine default asset  →  nil
+app's own ImageCache row (its bucket)  →  engine default asset  →  nil
 ```
 
 Uploading writes to the app's own bucket and creates its own `ImageCache` row —

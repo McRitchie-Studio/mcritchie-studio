@@ -12,15 +12,15 @@ is the act that applies them to a new app.
 **Where storage lives now.** Every app's object storage is an R2 bucket pair in
 **McRitchie Studio's Cloudflare account**. Apps inherit that account; none holds
 its own. AWS S3 is **retired**: the hub, Turf Monster, Industries and
-`moms-app` have served from R2 alone since 2026-10-03 (`commercial-welding` has
-not cut over), and the AWS section at the end of this page is history. **The
-AWS side was retired on 2026-10-10**: the app IAM users (`mcritchie-s3`,
-`mcritchie-ses`, `mcr-mcritchie-industries-prod` and `-dev`) and their keys
-deleted, every SES identity deleted, the S3 desk bucket gone, no `AWS_*`
-variable left on Heroku. The hub's code followed in task
-`hub-storage-runs-r2-only`: it has no S3 stage, no mirror stage and no SES path
-left to select (see **The hub runs R2 only** below). Why R2:
-Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
+`moms-app` have served from R2 alone since 2026-10-03, and since 2026-10-10
+their code, in production and QA, has no S3 or mirror stage left
+(`hub-storage-runs-r2-only`, `turf-storage-runs-r2-only`,
+`industries-storage-runs-r2-only`, `moms-app-storage-runs-r2-only`).
+`commercial-welding` has no app and had nothing to move. **The AWS side was
+retired on 2026-10-10**; the little that remains is listed in
+[What remains of AWS](#what-remains-of-aws) at the end of this page. The hub's
+rules are in **The hub runs R2 only** below. The move closed on 2026-10-11.
+Why R2: Alex left AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
 [`../system/asset-library-plan.md`](../system/asset-library-plan.md).
@@ -177,7 +177,7 @@ dates where they changed after the census.
 | `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542), and R2 only since 2026-10-10: the S3 desk bucket and the SES fallback that read it are gone | enabled 2026-10-10, `mcritchie-studio-desk-backup` (token `r2-mcritchie-studio-desk-backup`, fields in `r2.mcritchie-studio-desk`, repo secrets `R2_BACKUP_MCRITCHIE_STUDIO_DESK_*`); isolation probes passed; the first run mirrored 104 of 104 objects; nightly via `.github/workflows/r2-backup.yml` |
 | `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | R2 alone since 2026-10-03 (Active Storage `r2`, v305; `Studio::S3` on R2 since 2026-09-30); `assets.turfmonster.media` serves production, `assets-dev.turfmonster.media` the dev bucket; QA and local dev on the dev bucket | enabled 2026-10-03, `turf-monster-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | R2 alone since 2026-10-03 (Active Storage `r2`, v54; knowledge docs on R2 since 2026-09-28); QA on the dev bucket | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
-| `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
+| `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | none: no Commercial Welding app exists, so there was nothing to cut over | not enabled |
 | `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | R2 alone since 2026-10-03 (Active Storage `r2`, v25) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
 
 Re-derive before trusting: `GET /accounts/<id>/r2/buckets` with the tier-2
@@ -186,117 +186,19 @@ is only true for the day it was taken.
 
 ---
 
-# Legacy — AWS S3 (retired 2026-10-10)
+# What remains of AWS
 
-Everything below is the pre-R2 posture, kept for history. The identities it
-names (`mcritchie-s3`, the `/mcr/` users) no longer exist; the admin item `AWS`
-in `studio-agents-admin` is the one AWS credential kept, as a read-only
-foothold. Nothing below is a procedure to run: no cut-over app has
-used S3 since 2026-10-03, and the cutover session reports the production buckets
-cleared that night (versioned; noncurrent versions expire after 30 days). The
-IAM users and keys named below were deleted on 2026-10-10, so the commands in
-this section no longer authenticate. Do not provision new S3 buckets.
+The fleet left AWS on 2026-10-10; the record of what was retired is the plan's
+[Wave 7 — the AWS exit record](../system/asset-library-plan.md#wave-7--the-aws-exit-record).
+No app holds an AWS credential, and nothing here is a procedure to run. Do not
+provision S3 buckets. What Alex kept on purpose:
 
-## S3 — the rules
-
-| Rule | Standard |
+| What | Why |
 |---|---|
-| Buckets per app | `<app>-dev` + `<app>-production`; provisioning is opt-in at app creation — a silly little app can decline |
-| Region | `us-east-2` — the fleet's home; do not scatter |
-| Write routing | prod app → production bucket; **QA and local → dev bucket** |
-| Read routing | QA/local may read prod — enforced by IAM, never by app discipline |
-| App credentials | two IAM users per app under path `/mcr/`: `mcr-<app>-prod` (RW its production bucket) and `mcr-<app>-dev` (RW its dev bucket + **read-only** its production bucket). QA runs the dev credential |
-| Public access | private by default: Block Public Access all-on, no bucket policy. Public serving is an explicit, documented exception (see **S3 — legacy posture**) |
-| Private assets | served through app auth via presigned URLs (~15-min GET). Any key with `s3:GetObject` can presign; no extra permission exists |
-| Versioning | ON for production buckets (an errant overwrite or delete is recoverable); dev unversioned |
-| Lifecycle | **design pending** — dev buckets carry seed assets apps still serve, so a blanket dev expiry would break local stacks. Do not add lifecycle rules ad hoc |
-| Encryption | SSE-S3 (AES256, the account default). Buckets are `bucket-owner-enforced`: ACLs are disabled, `put_object(acl: …)` raises — grant reads through bucket policy or presigned URLs, never per-object ACLs |
-| Tags | `app`, `env`, `entity` on every bucket — the cost lines |
-| Code discipline | S3 writes fail loudly. Never wrap an upload in a rescue that returns success — a QA lane once shared prod's bucket with no credentials and its writes failed silently for weeks |
-| URL style | path-style (`https://s3.us-east-2.amazonaws.com/<bucket>/<key>`); the virtual-hosted host trips Chrome's lookalike-domain interstitial against `mcritchie.studio` |
+| The AWS account | a foothold, in case there is ever a reason to go back |
+| IAM user `agents-admin` (1Password item `AWS`, vault `studio-agents-admin`), with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` | the admin foothold; Alex kept both permissions on purpose, "to build trust" |
+| S3 `mcritchie-studio-production`: 6 `email/` images | emails already sent embed their URLs; kept about one year from 2026-10-10 |
+| S3 `turf-monster-production`: 2 `email_banners/` images | the same, about one year |
 
-## S3 — the credential tiers
-
-| Tier | Identity | Holds | Store |
-|---|---|---|---|
-| 1 | `alex-admin` / root | Alex only | his private vault |
-| 2 | `studio-agents-admin` | Steffon's provisioning lane: `s3:*`, mint/rotate `/mcr/*` users, account read-only | item `AWS`, vault `studio-agents-admin` (admin op lane only) |
-| 3 | `agent-studio` | day-to-day agent object surgery across the fleet; no IAM, no bucket create/delete | **design pending** — nothing mints it yet, `bucket-provision` included; until it exists, use tier 2 or the app's tier-4 key |
-| 4 | `mcr-<app>-prod` / `mcr-<app>-dev` | one app's buckets, exactly | Heroku config vars + 1Password record |
-
-A credential belongs to exactly one kind of principal. Apps never borrow agent
-keys; agents never borrow app keys.
-
-Reading tier 2 (the only lane this module's procedures need):
-
-```bash
-source ~/.zprofile.admin
-export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
-export AWS_ACCESS_KEY_ID=$(op item get AWS --vault studio-agents-admin --fields label=access-key --reveal)
-export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault studio-agents-admin --fields label=secret-access-key --reveal)
-export AWS_DEFAULT_REGION=us-east-2
-```
-
-The ordinary agent token cannot list the `studio-agents-admin` vault — that
-invisibility is the design
-([`credential-inventory.md`](credential-inventory.md)). The admin service
-account has read AND write on `studio-agents*` since 2026-09-02, so `op item
-edit` succeeds and a refusal is a symptom (`credential-filing` §4). This line
-said read-only until 2026-09-26.
-
-**Guards, stated honestly.** `studio-agents-admin` sits outside the `/mcr/` IAM path,
-so it cannot edit its own policy — policy changes are an operator console
-paste. It CAN write arbitrary inline policies onto the `/mcr/*` users it
-mints, so a compromised tier 2 could mint an over-privileged user; the sealed
-fix is an IAM permissions boundary, filed as OPSEC backlog, not ceremony.
-
-## S3 — fleet census, 2026-09-01, post-remediation
-
-| Bucket | Region | Public read | Versioned | Notes |
-|---|---|---|---|---|
-| `mcritchie-studio-production` | us-east-2 | **yes — legacy** | yes | Active Storage + public assets |
-| `mcritchie-studio-dev` | us-east-2 | **yes — legacy** | no | has `archive-after-90-days` lifecycle |
-| `turf-monster-production` | us-east-2 | **yes — legacy** | yes | |
-| `turf-monster-dev` | us-east-2 | **yes — legacy** | no | |
-| `mcritchie-industries-production` | us-east-2 | no (flipped 2026-09-01) | yes | knowledge-layer destination; was world-readable while empty |
-| `mcritchie-industries-dev` | us-east-2 | no (flipped 2026-09-01) | no | |
-| `commercial-welding-production` | us-east-2 | no | yes | recreated 2026-09-01 from us-east-1 |
-| `commercial-welding-dev` | us-east-2 | no | no | recreated 2026-09-01 from us-east-1 |
-| `moms-app-production` | us-east-2 | no | yes | was the fleet's one private bucket all along |
-
-Re-derive before trusting: `aws s3api get-bucket-policy` /
-`get-public-access-block` / `get-bucket-versioning` per bucket — a census is
-only true for the day it was taken.
-
-## S3 — legacy posture
-
-- **Shared app identity.** One IAM user, `mcritchie-s3` (item `agent.aws`),
-  still backs Active Storage for every deployed app. The per-app tier-4 users
-  are the successor; migration is ladder work, one app per task, coordinated
-  with that app's config vars. Blast radius and rotation choreography:
-  [`credential-inventory.md`](credential-inventory.md) **Shared AWS identity**.
-- **Public-read buckets.** The four studio/turf buckets keep
-  `PublicReadGetObject` because deployed apps serve raw object URLs from them.
-  Removing it is app work (CDN or public-prefix migration — see
-  [`../system/cdn-rollout.md`](../system/cdn-rollout.md)), not a console flip;
-  on those buckets `public: false` in `storage.yml` is NOT a privacy control.
-- **Industries QA — Active Storage CUT OVER 2026-09-02; `Studio::S3` was NOT.**
-  Industries became the first app on tier-4 credentials:
-  `mcr-mcritchie-industries-{prod,dev}` were minted under `/mcr/` by
-  `bucket-provision`'s first live run, the routing law was proven by refusal
-  (the dev key's write to the production bucket was rejected by IAM), and both
-  Heroku apps carry their vars (prod key on `mcritchie-industries`, dev key on
-  `mcritchie-industries-qa`). `QA_ENV=true` now ships on the QA app and is
-  declared in `config/qa_environments.yml`, so `storage.yml` resolves
-  `mcritchie-industries-dev` (`/tasks/industries-qa-bucket-cutover`) — **but
-  that marker fixes only ONE of the app's TWO S3 writers.** Measured on a QA
-  dyno 2026-09-02, post-cutover: `ActiveStorage_bucket` =
-  `mcritchie-industries-dev`, `Studio::S3.bucket` =
-  `mcritchie-industries-production`. The engine has since been fixed:
-  `Studio::S3`'s private `environment` now returns `dev` when
-  `EnvironmentBanner.qa_environment?` holds, so both writers agree on a QA
-  dyno (read in `studio-engine/lib/studio/s3.rb` on 2026-09-26; re-measure on
-  a dyno before relying on it for an app pinned to an older engine). The
-  1Password record (`agent.mcritchie-industries.aws`, `industries-agents`
-  vault) is owed by a write-capable lane — values live in Heroku config until
-  it lands.
+The S3 rules, credential tiers and census this section used to carry are in git
+history: `git show cff9522b7:docs/agents/modules/object-storage.md`.
