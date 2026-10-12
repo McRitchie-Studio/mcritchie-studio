@@ -141,20 +141,20 @@ class MusicVideosAssetZipManifestTest < ActiveSupport::TestCase
 
   test "the README names the chunks with people on screen and no lettered frames, in the page's words" do
     readme = manifest.readme
-    assert_includes readme, "LETTERED FRAMES\n  3 of 4 chunks have no A/B/C reference frames yet. Higgsfield works best with them: " \
+    assert_includes readme, "A/B/C FRAMES\n  3 of 4 clips have no A/B/C frames yet. Higgsfield works best with them: " \
                             "ask the agent to run lettered references.\n"
     folders = @alt.clips.reject { |c| c.chunk_ordinal == 3 }.map { |c| "#{Manifest.clip_folder_name(c)}/" }
     assert_includes readme, "  No A/B/C frames: #{folders.join(', ')}\n"
     assert_includes readme, "    No A/B/C frames: ask the agent to run lettered references"
-    assert_includes manifest(only: "1").readme, "1 of 1 chunk has no A/B/C reference frames yet."
-    assert_no_match(/LETTERED FRAMES/, manifest(only: "3").readme, "chunk 3 has its frames")
+    assert_includes manifest(only: "1").readme, "1 of 1 clip has no A/B/C frames yet."
+    assert_no_match(/A\/B\/C FRAMES/, manifest(only: "3").readme, "chunk 3 has its frames")
   end
 
   test "a chunk nobody is sighted in needs no frames, and the README says so" do
     @video.video_performers.each { |p| p.update_columns(sightings: p.sightings.select { |s| s["t_ms"] <= 57_000 }) }
     readme = manifest(only: "4").readme
-    assert_no_match(/LETTERED FRAMES/, readme)
-    assert_includes readme, "    no lettered frames: no one is sighted on screen in this window, so it needs none"
+    assert_no_match(/A\/B\/C FRAMES/, readme)
+    assert_includes readme, "    Nobody is on screen in this window, so it needs no A/B/C frames."
   end
 
   test "the manifest reads a fixed number of queries whatever the clip count" do

@@ -25,12 +25,12 @@ module MusicVideos
 
     # The warning the alt video page and the zip README both carry, or nil
     # when nothing is missing. missing: how many chunks owe frames; total: how
-    # many chunks the page or zip covers.
+    # many clips the page or zip covers (one chunk each).
     def warning(missing, total)
       return if missing.zero?
 
       verb = missing == 1 ? "has" : "have"
-      "#{missing} of #{total} #{'chunk'.pluralize(total)} #{verb} no A/B/C reference frames yet. " \
+      "#{missing} of #{total} #{'clip'.pluralize(total)} #{verb} no A/B/C frames yet. " \
         "Higgsfield works best with them: ask the agent to run lettered references."
     end
 

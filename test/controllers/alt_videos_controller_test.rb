@@ -168,13 +168,20 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
     # Person A is sighted throughout; only chunk 3 has frames.
     assert_select "[data-test='alt-video-frames-missing'][data-count='3']",
-                  "3 of 4 chunks have no A/B/C reference frames yet. Higgsfield works best with them: " \
+                  "3 of 4 clips have no A/B/C frames yet. Higgsfield works best with them: " \
                   "ask the agent to run lettered references."
     assert_select "[data-test='clip-frames-missing']", 3
     [1, 2, 4].each do |ordinal|
       assert_select "[data-test='alt-clip'][data-ordinal='#{ordinal}'] [data-test='clip-frames-missing']", "No A/B/C frames"
     end
     assert_select "[data-test='alt-clip'][data-ordinal='3'] [data-test='clip-frames-missing']", 0
+    # Chunk 1 has Person A on screen, kept as filmed: the target line says nobody
+    # is swapped (not that nobody is there), so it agrees with the badge.
+    assert_select "[data-test='alt-clip'][data-ordinal='1']" do
+      assert_select "[data-test='clip-target-none']", "Nobody swapped in this window."
+      assert_select "[data-test='clip-frames-missing']", "No A/B/C frames"
+    end
+    assert_no_match(/labelled or swapped/, response.body)
     # The warning sits above the swaps, near the top.
     assert_operator response.body.index("alt-video-frames-missing"), :<, response.body.index("data-test=\"alt-video-swaps\"")
   end
@@ -197,7 +204,8 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='alt-video-frames-missing']", 0
     assert_select "[data-test='clip-frames-missing']", 0
-    assert_select "[data-test='alt-clip'][data-ordinal='4'] [data-test='clip-frames-none'][data-reason='nobody']"
+    assert_select "[data-test='alt-clip'][data-ordinal='4'] [data-test='clip-frames-none'][data-reason='nobody']",
+                  "Nobody is on screen in this window, so it needs no A/B/C frames."
   end
 
   test "a swapped person with no sheet keeps the number in the card's label" do

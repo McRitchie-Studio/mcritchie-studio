@@ -50,7 +50,7 @@ test("the page warns about chunks with people on screen and no lettered frames",
 
   const warning = page.locator("[data-test='alt-video-frames-missing']");
   await expect(warning).toHaveText(
-    "3 of 4 chunks have no A/B/C reference frames yet. Higgsfield works best with them: ask the agent to run lettered references."
+    "3 of 4 clips have no A/B/C frames yet. Higgsfield works best with them: ask the agent to run lettered references."
   );
   const warningBox = await warning.boundingBox();
   const swapsBox = await page.locator("[data-test='alt-video-swaps']").boundingBox();

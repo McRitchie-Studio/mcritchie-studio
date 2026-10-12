@@ -40,9 +40,9 @@ class MusicVideosMissingReferencesTest < ActiveSupport::TestCase
   end
 
   test "the warning counts the missing chunks out of the total, and says nothing when none are missing" do
-    assert_equal "3 of 13 chunks have no A/B/C reference frames yet. Higgsfield works best with them: " \
+    assert_equal "3 of 13 clips have no A/B/C frames yet. Higgsfield works best with them: " \
                  "ask the agent to run lettered references.", MissingReferences.warning(3, 13)
-    assert_match(/\A1 of 1 chunk has no A\/B\/C/, MissingReferences.warning(1, 1))
+    assert_match(/\A1 of 1 clip has no A\/B\/C frames yet\./, MissingReferences.warning(1, 1))
     assert_nil MissingReferences.warning(0, 13)
   end
 end

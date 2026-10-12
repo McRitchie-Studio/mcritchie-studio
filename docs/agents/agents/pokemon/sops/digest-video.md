@@ -161,6 +161,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
 
    ```bash
    # r = max(round(H * 0.045), 14); ring = max(round(r / 6), 2); point size = round(r * 1.25)
+   # clamp first, so a disc near the edge is not cut off: X = min(max(X, r), W - r); Y = min(max(Y, r), H - r)
    magick f_<mmss>.jpg -font "/System/Library/Fonts/Supplemental/Arial Bold.ttf" \
      -fill "#FFD400" -stroke black -strokewidth <ring> -draw "circle X,Y X+r,Y" \
      -fill black -stroke none -pointsize <size> -gravity center \
@@ -187,7 +188,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    recasts on the old set and says how many of each (`meta.dropped_labels`,
    `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
 5. **Letter the references. Required.** Once the cast is posted, give every
-   chunk with people on screen its lettered reference frames: stills of the
+   chunk with people on screen its A/B/C frames: stills of the
    chunk with a yellow A, B, C disc over each person. Higgsfield's output is
    only as good as its references, so this step is part of the cast run, not
    an extra:
@@ -204,7 +205,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    how-to, with the tag format, is [Lettered references](#lettered-references).
 
    **The hand-back to Alex for a video is not complete until every chunk with
-   people on screen has lettered frames.** A chunk with no sightings in its
+   people on screen has A/B/C frames.** A chunk with no sightings in its
    window (credits, black, a title card) legitimately has none, and the alt
    video page does not count it. The alt video page and the asset zip's
    README both name every chunk still missing its frames; read that list
@@ -445,7 +446,7 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    Editing the cast cards afterwards never changes an existing alt video:
    change the cards and press Build Clips again for another version.
 2. **Take the hand-off** on each clip card, in time order: **Download 25 s
-   clip** (the source chunk, as an attachment), the **lettered frames** (each
+   clip** (the source chunk, as an attachment), the **A/B/C frames** (each
    with **Download**; the cast run made them, see
    [Lettered references](#lettered-references); a card marked "No A/B/C
    frames" means that step was skipped), one sheet button per person
@@ -463,7 +464,7 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, chunks with no A/B/C frames, anything missing
    <video>_alt_<n>/clip_03_0040-0105/source_clip.mp4   the 25 s source chunk
    .../prompt.txt                                      the card's prompt, byte for byte (built at download from the alt video's swaps and current jersey numbers)
-   .../frames/frame_1_ABC_0045.jpg                     lettered frames in card order: number, letters, time
+   .../frames/frame_1_ABC_0045.jpg                     A/B/C frames in card order: number, letters, time
    .../sheets/sheet_1_B_04_<person>_<look>.png         sheets in the prompt's order: number, letter, jersey, person, look
    ```
 
@@ -550,7 +551,7 @@ one the prompt uses the name. To show Higgsfield who is who, every chunk with
 people on screen gets 2-3 stills of the source with the letters drawn over the
 people. This is the how-to for [Stage 2, step 5](#stage-2-cast), which is
 required: the cast run is not handed back until these frames exist. The alt
-video page warns ("N of M chunks have no A/B/C reference frames yet") and marks
+video page warns ("N of M clips have no A/B/C frames yet") and marks
 each card "No A/B/C frames" while any chunk with sightings in its window has
 none; the asset zip's README names the same chunks.
 

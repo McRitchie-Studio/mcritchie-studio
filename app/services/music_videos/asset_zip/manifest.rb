@@ -17,7 +17,7 @@ module MusicVideos
     # `missing` and never becomes an entry; the Writer adds what fails to read.
     #
     # A chunk with people on screen and no lettered frames is not a missing
-    # file but a skipped step: the README's LETTERED FRAMES section names it in
+    # file but a skipped step: the README's A/B/C FRAMES section names it in
     # the alt video page's words (MissingReferences).
     class Manifest
       # kind: :object (an R2 key), :url (an https sheet image) or :text (inline).
@@ -226,13 +226,13 @@ module MusicVideos
         return [] unless warning
 
         folders = @clips.select { |c| c.chunk && @frames_missing.include?(c.chunk.ordinal) }.map { |c| "#{File.basename(c.folder)}/" }
-        ["LETTERED FRAMES", "  #{warning}", "  No A/B/C frames: #{folders.join(', ')}", ""]
+        ["A/B/C FRAMES", "  #{warning}", "  No A/B/C frames: #{folders.join(', ')}", ""]
       end
 
       def frames_absent_line(clip_folder)
         return "No A/B/C frames: ask the agent to run lettered references" if @frames_missing.include?(clip_folder.chunk.ordinal)
 
-        "no lettered frames: no one is sighted on screen in this window, so it needs none"
+        "Nobody is on screen in this window, so it needs no A/B/C frames."
       end
 
       def number_label(appearance_slug)
