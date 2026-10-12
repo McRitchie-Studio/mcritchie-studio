@@ -98,6 +98,24 @@ class LogosKitIconTest < ActionDispatch::IntegrationTest
     assert_equal({ "first_colour" => "8E82FE" }, BrandKit.find_by(brand: "studio").navbar_choice["edits"])
   end
 
+  # Item 5: the watermark is still the single-colour icon, and a dark page draws the dark tone of the kit icon's colouring.
+  test "the watermark draws the single-colour icon and a dark page the kit icon's dark tone" do
+    save_icon("welding_v2")   # Original
+    get logo_brand_path("welding_v2", colouring: "alt", context: "watermark")
+    assert_equal 3, logo_srcs.size
+    logo_srcs.each { |src| assert_equal ["watermark", nil, nil], query(src).values_at("tone", "colouring", "icon_colouring"), src }
+    assert_equal Logos::NavbarLogo.new("welding_v2").svg(rule: 4, text: :second, tone: :watermark), Logos::Variant.parse(Logos::NavbarLogo.new("welding_v2"), query(logo_srcs.last).symbolize_keys).svg
+
+    get logo_brand_path("welding_v2", colouring: "alt")
+    dark = logo_srcs.select { |src| query(src)["tone"] == "dark" }
+    assert_equal 3, dark.size
+    dark.each { |src| assert_equal "original", query(src)["icon_colouring"] }
+    get dark.first
+    text = query(dark.first)["text"].to_sym
+    assert_equal Logos::NavbarLogo.new("welding_v2").svg(rule: 4, text:, tone: :dark, colouring: :alt, icon_colouring: :original), response.body,
+                 "the Original helmet's dark tone (its white half holds on a dark page), with Alt words"
+  end
+
   test "each /logos row draws one icon in all three tiles: the kit's, else the brand's own" do
     BrandKit.for("welding_v2").save_choice(:stacked, ActionController::Parameters.new(form: "tagline", text: "first", colouring: "alt"), by: "alex@test.com")
     get logos_path
