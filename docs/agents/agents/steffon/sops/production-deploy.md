@@ -481,6 +481,13 @@ The release is `shipped` (members `merged: main`), or a no-op ("nothing to ship"
 Report slug, production SHA and URL, smoke result, and **the archive result,
 separately** ("nothing to archive" is a clean answer).
 
+**Program drift.** A ship never upgrades an on-chain program, so production can
+be green while a cluster runs an older program than `main` carries. Run
+`bin/program-drift` (or read the **Programs** block of `bin/release status`) and
+report every `PROGRAM DRIFT` line with the card it names. A cluster with "NO
+upgrade card" gets one filed per [`program-upgrade`](program-upgrade.md); a
+`cannot confirm` line is reported as unknown, never as clean.
+
 ## Related
 
 - [`qa-release.md`](../../avi/sops/qa-release.md) (the assembler act) · [`archive-shipped.md`](archive-shipped.md) (the closeout) · [`g4-ship.md`](../../../modules/gates/g4-ship.md) (the gate this act produces).

@@ -110,6 +110,7 @@ its invocation exactly.
 | Steffon `domain-dns` SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
 | Steffon `domain-purchase` SOP (buy on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
 | Steffon `production-deploy` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
+| Steffon `program-upgrade` SOP (on-chain program upgrade, devnet then mainnet, through Squads) | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | Steffon `r2-backup` SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | Steffon `website-launch` SOP (hosted site: Squarespace or our app) | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | Steffon `workspace-icon` SOP (badged software icons per client, /credentials matrix, 1Password vault icons) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
