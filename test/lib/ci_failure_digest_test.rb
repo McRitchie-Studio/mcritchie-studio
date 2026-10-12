@@ -157,6 +157,17 @@ class CiFailureDigestTest < Minitest::Test
     assert_equal 2, calls.size, "one checks read and one log read; the census job's log is not fetched"
   end
 
+  # A log with a non-UTF-8 byte is still read, and does not blank its neighbour's digest.
+  def test_an_invalid_byte_in_one_log_does_not_cost_the_other_jobs
+    checks = [{ "name" => "ci / rails (1)", "bucket" => "fail", "link" => "https://github.com/o/r/actions/runs/1/job/7" },
+              { "name" => "ci / rails (2)", "bucket" => "fail", "link" => "https://github.com/o/r/actions/runs/1/job/8" }]
+    bad = "#{MINITEST_FAILURE}stray \xFF byte\n".dup.force_encoding(Encoding::UTF_8)
+    gh = ->(args) { args[0] == "pr" ? [JSON.generate(checks), false] : [args[1].end_with?("/7/logs") ? bad : MINITEST_FAILURE, true] }
+    jobs = CiFailureDigest.collect("u", gh: gh)
+    assert_equal ["ci / rails (1)", "ci / rails (2)"], jobs.map { |j| j[:job] }
+    assert_equal [1, 1], jobs.map { |j| j[:failures].size }, jobs.inspect
+  end
+
   def test_collect_degrades_to_nothing_or_a_note_never_an_exception
     assert_empty CiFailureDigest.collect("u", gh: ->(_args) { ["", true] }), "an empty checks answer prints nothing"
     assert_empty CiFailureDigest.collect("u", gh: ->(_args) { ["HTTP 502", false] })

@@ -51,7 +51,8 @@ module CiFailureDigest
   end
 
   def clean(log)
-    log.to_s.each_line.map { |l| l.sub(TIMESTAMP, "").gsub(ANSI, "").rstrip }
+    # A job log can carry a byte that is not UTF-8; scrub it rather than raise on the regexps.
+    log.to_s.dup.force_encoding(Encoding::UTF_8).scrub.each_line.map { |l| l.sub(TIMESTAMP, "").gsub(ANSI, "").rstrip }
   end
 
   # PURE. A job log → { failures: [{ name:, location:, excerpt: [...] }], infra: "…"|nil }.
@@ -164,7 +165,11 @@ module CiFailureDigest
       log, read = gh.call(["api", "repos/#{ref[0]}/actions/jobs/#{ref[1]}/logs"])
       next entry.merge(unread: log.to_s.lines.first.to_s.strip[0, 100]) unless read
 
-      entry.merge(extract(log))
+      begin
+        entry.merge(extract(log))
+      rescue StandardError => e # one unparseable log costs its own job, never the whole digest
+        entry.merge(unread: "#{e.class}: #{e.message}"[0, 120])
+      end
     end
   rescue StandardError => e
     [{ job: "(digest)", failures: [], infra: nil, unread: "#{e.class}: #{e.message}"[0, 120] }]
