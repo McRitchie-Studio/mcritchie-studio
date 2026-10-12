@@ -147,6 +147,31 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
 3. **Upload one still per person** to the same bucket as the source, at
    `music_videos/<artist>/<video>/stills/person_<NN>_<mmss>.jpg`. The API refuses
    a still outside the video's own folder or numbered for another person.
+
+   **Letter the still before you upload it.** A still often shows several
+   people, and nothing else tells the operator which one the card means. Draw
+   the card's own letter on it (Person 1 is A, Person 2 is B, and so on: the
+   card's ordinal letter) as the same disc `bin/clip-references` draws: a
+   yellow (`#FFD400`) disc with a black ring and the letter in black, placed
+   over that person (the chest, clear of the face). One letter per still:
+   only the card's own person, never names. Pick a moment where that person
+   is clearly the subject when the sightings offer one; a still with someone
+   else front and centre misleads the operator even with the disc. With
+   ImageMagick, for a frame `W` x `H` pixels and the person at `X`, `Y`:
+
+   ```bash
+   # r = max(round(H * 0.045), 14); ring = max(round(r / 6), 2); point size = round(r * 1.25)
+   magick f_<mmss>.jpg -font "/System/Library/Fonts/Supplemental/Arial Bold.ttf" \
+     -fill "#FFD400" -stroke black -strokewidth <ring> -draw "circle X,Y X+r,Y" \
+     -fill black -stroke none -pointsize <size> -gravity center \
+     -annotate <dx><dy> B -quality 90 person_02_<mmss>.jpg   # dx = X - W/2, dy = Y - H/2, each signed: +120-40
+   ```
+
+   (These are `ClipReferences.draw_command`'s numbers, in
+   `bin/lib/clip_references.rb`.) To fix a still already posted, upload the
+   lettered one **to the same key**: it replaces the object, and the card
+   shows it without re-posting the cast (a re-post would replace the whole
+   set, step 4).
 4. **Post the set**, which replaces any set already there:
 
    ```bash
