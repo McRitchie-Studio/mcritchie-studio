@@ -49,11 +49,11 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
     }
     return byKey;
   });
-  expect(Object.keys(laneTops).length).toBe(20);
+  expect(Object.keys(laneTops).length).toBe(17);
   for (const [key, offsets] of Object.entries(laneTops)) {
     expect(new Set(offsets).size, `${key} at ${offsets}`).toBe(1);
   }
-  expect(laneTops["host"].length).toBe(4);
+  expect(laneTops["host_storage"].length).toBe(4);
   expect(laneTops["cmo"].length).toBe(2);
   // Every lane's subtext is one line at a 1280px desktop: short copy, never a
   // wrap or an ellipsis, so new copy cannot regress the swim lanes.
@@ -63,7 +63,7 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
     ratio: el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight),
     clipped: el.scrollWidth > el.clientWidth,
   })));
-  expect(subs.length).toBeGreaterThan(30);
+  expect(subs.length).toBeGreaterThan(20);
   for (const sub of subs) {
     expect(sub.ratio, `"${sub.text}" wraps`).toBeLessThanOrEqual(1.5);
     expect(sub.clipped, `"${sub.text}" is cut off`).toBe(false);

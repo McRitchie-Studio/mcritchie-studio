@@ -90,11 +90,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     # Every card spans the same tracks, so lanes share rows across the cards.
     spans = css_select("[data-test='package-card']").map { |c| c["style"] }
     assert_equal 1, spans.uniq.size
-    assert_match(/grid-row: span 25/, spans.first)
+    assert_match(/grid-row: span 22/, spans.first)
 
     # Marks carry their words: never color alone.
-    assert_select "#{card('builder')} [data-test='package-line'][data-status='included'] [data-test='line-mark'][data-mark='included'][role='img'][aria-label='Included']", 5
-    { "vibe" => [ %w[domain app_email], "Builder" ], "builder" => [ %w[custom_email workspace vault], "Pro" ],
+    assert_select "#{card('builder')} [data-test='package-line'][data-status='included'] [data-test='line-mark'][data-mark='included'][role='img'][aria-label='Included']", 3
+    { "vibe" => [ %w[domain], "Builder" ], "builder" => [ %w[workspace vault], "Pro" ],
       "pro" => [ %w[cmo], "Team" ] }.each do |key, (lanes, tier)|
       assert_equal lanes, css_select("#{card(key)} [data-test='package-line'][data-status='missing']").map { |l| l["data-lane"] }, key
       lanes.each do |lane|
@@ -117,8 +117,9 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{card('pro')} [data-test='line-sub']", text: "4 build requests a month"
     assert_select "#{card('team')} [data-test='line-sub']", text: "6 build requests a month"
     assert_select "#{card('pro')} [data-test='line-sub']", text: "your-app.com on Cloudflare"
-    assert_select "#{card('pro')} [data-test='line-sub']", text: "send from team@your-app.com"
-    assert_select "#{card('builder')} [data-test='line-title']", text: /\ACustom Email\z/, count: 0
+    assert_select "[data-test='package-line'][data-lane='app_email'], [data-test='package-line'][data-lane='custom_email']", 0
+    assert_select "#{card('pro')} [data-test='package-line'][data-lane='host_storage'] [data-test='line-title']", text: "Pro Host & Storage"
+    assert_select "#{card('pro')} [data-test='line-sub']", text: "you@your-app.com, 2 users"
     assert_no_match(/yourname|yourcompany/, response.body)
     assert_no_match(/credit/i, css_select("[data-test='package-cards']").text)
     assert_select "#{card('team')}[data-featured='true'] [data-test='featured-badge']", text: /Most popular/
@@ -201,7 +202,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal %w[application domain platform marketing service add_ons],
                  css_select("[data-test='stack-category']").map { |tbody| tbody["data-category"] }
-    { "application" => "custom-web-app", "domain" => "web-address", "platform" => "google-workspace" }.each do |group, lead|
+    { "application" => "custom-web-app", "domain" => "web-address", "platform" => "branded-emails" }.each do |group, lead|
       assert_equal lead, css_select("[data-test='stack-category'][data-category='#{group}'] [data-test='stack-row']").first["data-feature"], group
     end
     assert_equal %w[web-address fast-protected-domain],

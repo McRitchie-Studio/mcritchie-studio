@@ -193,7 +193,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "a row about one brand's product leads with that brand; generic rows stay neutral" do
     {
       "Host" => "heroku", "Error alerts" => "sentry", "Storage" => "postgres",
-      "Live updates and jobs" => "redis", "App email from your domain" => "resend",
+      "Live updates and jobs" => "redis", "Branded emails" => "resend",
       "Google Workspace" => "google", "Fast, protected domain" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
     [ "Custom Web App", "Web address", "Hosting mode", "Changes after launch", "Support", "Social posting" ].each do |name|
@@ -295,14 +295,17 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[Application Domain Platform Marketing Service], groups.map { |g| g[1] }.first(5)
     assert_equal "Talk to us", WorkspacePackage.categories["add_ons"]
     leads = groups.to_h { |key, _, rows| [ key, rows.first.name ] }
-    assert_equal({ "application" => "Custom Web App", "domain" => "Web address", "platform" => "Google Workspace",
+    assert_equal({ "application" => "Custom Web App", "domain" => "Web address", "platform" => "Branded emails",
                    "marketing" => "Fractional CMO", "service" => "Changes after launch", "add_ons" => "Custom connectors" }, leads)
     assert_equal [ "Web address", "Fast, protected domain" ], groups.assoc("domain").last.first(2).map(&:name)
     assert_equal({ "domain" => "builder", "platform" => "pro", "marketing" => "team" },
                  %w[application domain platform marketing service add_ons].to_h { |k| [ k, WorkspacePackage.category_from(k)&.key ] }.compact)
     # Marketing is Team's alone. Platform holds Hosting mode, whose lower tiers
-    # read "McRitchie Studio hosted"; every other Platform row starts at Pro.
-    groups.assoc("platform").last.reject { |row| row.name == "Hosting mode" }.each { |row| refute row.included_in?(:builder), row.name }
+    # read "McRitchie Studio hosted", and Branded emails, which leads Platform
+    # though Builder has it; every other Platform row starts at Pro.
+    assert_equal "Branded emails", groups.assoc("platform").last.first.name
+    assert feature("Branded emails").included_in?(:builder), "Branded emails keeps Builder as its first tier"
+    groups.assoc("platform").last.reject { |row| [ "Hosting mode", "Branded emails" ].include?(row.name) }.each { |row| refute row.included_in?(:builder), row.name }
     groups.assoc("marketing").last.each { |row| refute row.included_in?(:pro), row.name }
     assert_equal "domain", feature("Web address").glyph, "the domain leads with the drawn globe mark"
     assert_equal %w[squarespace], feature("Web address").strip_brands, "the registrar stays in the strip"
@@ -389,8 +392,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] card lanes: one fixed list per group, the same order on every card, missing lanes name the first tier that has them" do
     lanes = WorkspacePackage.card_lanes
     assert_equal WorkspacePackage::CARD_GROUPS, lanes.map(&:first)
-    assert_equal({ "Application" => [ "Custom Web App", "%{tier} Host", "%{tier} Storage", "Custom Domain", "App email" ],
-                   "Platform" => [ "Custom Email", "Google Workspace", "Password vault" ],
+    assert_equal({ "Application" => [ "Custom Web App", "%{tier} Host & Storage", "Custom Domain" ],
+                   "Platform" => [ "Google Workspace", "Password vault" ],
                    "Agents" => [ "Fractional CTO", "Email drafting agent", "Fractional CMO" ],
                    "Marketing" => [ "Email marketing", "Content sprints", "Launch warm-up", "Funnels built for you",
                                     "Social posting to X and TikTok" ] },
@@ -407,18 +410,22 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
 
     titles = ->(key, lane) { WorkspacePackage.find(key).card_lines.find { |l| l.key == lane }.title }
-    assert_equal %w[Vibe\ Host Builder\ Host Pro\ Host Team\ Host], WorkspacePackage.cards.map { |c| titles.call(c.key, "host") }
+    assert_equal [ "Vibe Host & Storage", "Builder Host & Storage", "Pro Host & Storage", "Team Host & Storage" ],
+                 WorkspacePackage.cards.map { |c| titles.call(c.key, "host_storage") }
     assert_equal [ "Custom Domain" ] * 4, WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
 
     missing = WorkspacePackage.cards.to_h { |c| [ c.key, c.card_lines.select(&:missing?).map { |l| [ l.title, l.in_tier.name ] } ] }
-    assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ], [ "App email", "Builder" ] ],
-                   "builder" => [ [ "Custom Email", "Pro" ], [ "Google Workspace", "Pro" ], [ "Password vault", "Pro" ] ],
+    assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ] ],
+                   "builder" => [ [ "Google Workspace", "Pro" ], [ "Password vault", "Pro" ] ],
                    "pro" => [ [ "Fractional CMO", "Team" ] ], "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
     assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
     assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
-    assert_equal [ "read-only", "11 GB, backed up nightly", "60 GB, backed up nightly", "132 GB, backed up nightly" ],
-                 WorkspacePackage.cards.map { |c| c.card_lines.find { |l| l.key == "storage" }.sub }
+    # ", nightly backups" wrapped at 1280px, so it left all three (the stack carries backups).
+    assert_equal [ "light server, read-only data", "always on, 11 GB", "background jobs, 60 GB", "background jobs, 132 GB" ],
+                 WorkspacePackage.cards.map { |c| c.card_lines.find { |l| l.key == "host_storage" }.sub }
+    refute WorkspacePackage.card_lanes.flat_map(&:last).any? { |lane| %w[app_email custom_email host storage].include?(lane.key) },
+           "app email and Custom Email left the cards; Host and Storage merged"
     refute WorkspacePackage.find(:vibe).card_lines.any? { |l| l.title == "Web address" }, "Web address folded into the Custom Domain lane"
 
     soon = WorkspacePackage.find(:team).card_lines.select(&:soon?).map(&:title)
@@ -426,16 +433,20 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert feature("Funnel generation").planned? && feature("Social posting").planned?, "Coming soon lanes match planned rows"
   end
 
-  test "[unit] the card lines and the stack agree: Custom Email is a Pro feature, Builder keeps app email" do
-    titles = ->(key) { WorkspacePackage.find(key).card_lines.select(&:included?).map(&:title) }
-    refute_includes titles.call(:builder), "Custom Email"
-    assert_includes titles.call(:builder), "App email"
-    assert_includes titles.call(:pro), "Custom Email"
+  test "[unit] the card lines and the stack agree: Google Workspace is your email from Pro, the stack keeps Branded emails" do
+    workspace = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "workspace" } }
+    assert workspace.call(:builder).missing?
+    assert_equal "Pro", workspace.call(:builder).in_tier.name
+    assert_equal "you@your-app.com, 2 users", workspace.call(:pro).sub
     refute feature("Google Workspace").included_in?(:builder)
     assert_match(/team@your-app\.com/, feature("Google Workspace").blurb)
-    { vibe: "Vibe Storage", builder: "Builder Storage", pro: "Pro Storage", team: "Team Storage" }.each do |key, title|
-      assert WorkspacePackage.find(key).card_lines.any? { |l| l.title == title }, key
-      assert feature("Storage").value_for(key).start_with?(title), key
+    assert_equal [ nil, "Low volume", "Higher volume", "Higher volume", "Custom volume" ],
+                 TIERS.map { |key| feature("Branded emails").value_for(key) }, "the stack row keeps its cells"
+    # The stack keeps Host and Storage as their own rows; the card lane names both.
+    %w[vibe builder pro team].each do |key|
+      name = WorkspacePackage.find(key).name
+      assert feature("Host").value_for(key).start_with?("#{name} Host"), key
+      assert feature("Storage").value_for(key).start_with?("#{name} Storage"), key
     end
   end
 end

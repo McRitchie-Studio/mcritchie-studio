@@ -116,11 +116,8 @@ category_from:
 # <first tier that has it>)", computed, never hand-written.
 card_lanes:
   - { group: Application, key: app, title: Custom Web App }
-  - { group: Application, key: host, title: "%{tier} Host" }
-  - { group: Application, key: storage, title: "%{tier} Storage" }
+  - { group: Application, key: host_storage, title: "%{tier} Host & Storage" }
   - { group: Application, key: domain, title: Custom Domain }
-  - { group: Application, key: app_email, title: App email }
-  - { group: Platform, key: custom_email, title: Custom Email }
   - { group: Platform, key: workspace, title: Google Workspace }
   - { group: Platform, key: vault, title: Password vault }
   - { group: Agents, key: cto, title: Fractional CTO }
@@ -141,8 +138,7 @@ packages:
     card_groups: [Application]
     lanes:
       app: { sub: Bring your idea to life }
-      host: { sub: "light server, wakes on visit" }
-      storage: { sub: read-only }
+      host_storage: { sub: "light server, read-only data" }
       domain: { sub: on your-app.mcritchie.studio, status: missing }
     cta: { label: Build your app, action: build }
   - key: builder
@@ -153,10 +149,8 @@ packages:
     card_groups: [Application, Platform]
     lanes:
       app: { sub: small changes after launch }
-      host: { sub: always on }
-      storage: { sub: "11 GB, backed up nightly" }
+      host_storage: { sub: "always on, 11 GB" }
       domain: { sub: www.your-app.com }
-      app_email: { sub: sign-in links from @your-app.com }
     cta: { label: Talk to us about Builder, action: schedule }
   - key: pro
     name: Pro
@@ -166,12 +160,9 @@ packages:
     card_groups: [Application, Platform, Agents]
     lanes:
       app: { sub: 4 build requests a month }
-      host: { sub: always on + background jobs }
-      storage: { sub: "60 GB, backed up nightly" }
+      host_storage: { sub: "background jobs, 60 GB" }
       domain: { sub: your-app.com on Cloudflare }
-      app_email: { sub: sign-in links from @your-app.com }
-      custom_email: { sub: send from team@your-app.com }
-      workspace: { sub: "2 users, 30 GB each" }
+      workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: monthly architecture review }
       drafting: { sub: replies drafted in your inbox }
@@ -185,12 +176,9 @@ packages:
     card_groups: [Application, Platform, Agents, Marketing]
     lanes:
       app: { sub: 6 build requests a month }
-      host: { sub: always on + background jobs }
-      storage: { sub: "132 GB, backed up nightly" }
+      host_storage: { sub: "background jobs, 132 GB" }
       domain: { sub: your-app.com on Cloudflare }
-      app_email: { sub: sign-in links from @your-app.com }
-      custom_email: { sub: send from team@your-app.com }
-      workspace: { sub: "2 users, 30 GB each" }
+      workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: monthly architecture review }
       drafting: { sub: replies drafted in your inbox }
@@ -367,17 +355,6 @@ features:
     sop: domain-dns
     you_do: Paste the records we give you
     status: live
-  - name: App email from your domain
-    category: domain
-    icon: resend
-    blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
-    builder: Low volume
-    pro: Higher volume
-    team: Higher volume
-    enterprise: Custom volume
-    you_do: Paste the records we give you
-    status: builtin
-    software: [resend]
   - name: SEO and link previews
     category: domain
     icon: "🔎"
@@ -389,6 +366,18 @@ features:
     status: builtin
 
   # --- platform (Pro and up) -----------------------------------------------
+  # Leads Platform (Mr. McRitchie, 2026-10-12) though Builder already has it.
+  - name: Branded emails
+    category: platform
+    icon: resend
+    blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
+    builder: Low volume
+    pro: Higher volume
+    team: Higher volume
+    enterprise: Custom volume
+    you_do: Paste the records we give you
+    status: builtin
+    software: [resend]
   - name: Google Workspace
     category: platform
     icon: google
