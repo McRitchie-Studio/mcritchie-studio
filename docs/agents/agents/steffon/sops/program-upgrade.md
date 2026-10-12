@@ -79,7 +79,15 @@ so two programs' cards cannot collide.
 
 - **Devnet**: the agent seats on the devnet Squad drive the upgrade end to end.
   `scripts/squad-upgrade.js` takes its AUTONOMOUS path there (turf-vault
-  `RUNBOOK.md`, *Deploy Failures*).
+  `RUNBOOK.md`, *Deploy Failures*). Mr. McRitchie's grant of 2026-10-12 ("Your
+  good with the admin access") lets the Steffon lane sign with admin-vault keys
+  for devnet-only Squad votes, the devnet upgrade, and devnet
+  `init_governance`/`update_signers`/`set_action_threshold`. The devnet
+  `VaultState` holds three agent keys (`2eGs`, Mack `foUu`,
+  `solana.turf.governance.devnet` `BVQH`), so every devnet governance action
+  needs no human tap; turf-vault `docs/CURRENT_DEPLOYMENT.md` lists the set.
+  Load a key only into a process that prints its public half, and never pipe or
+  redirect an `op read` of a secret (activity-17894 records why).
 - **Mainnet**: **no agent signs a mainnet transaction.** The upgrade's human taps
   are Mr. McRitchie's two Squads approvals. An agent runs only reads and dry runs
   on mainnet: `squad-upgrade.js` without `--send`, `squad-inventory.js`,

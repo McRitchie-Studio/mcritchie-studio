@@ -40,8 +40,18 @@ bin/qa-contest-rehearsal <step>
 before any key is loaded and refuses anything but `turf-monster-qa` running the
 devnet program, checking BOTH the network and the program id. That is not
 ceremony: the cast's keys are real wallets, and Mason's is a signer on the
-MAINNET vault too. Mason only plays. The settle's co-signer is Alex's wallet
-(`7ZDJ…`, `SOLANA_MULTISIG_COSIGNER`), signing in Phantom under `--cosign link`.
+MAINNET vault too. Mason only plays.
+
+**Agents co-sign on devnet.** Devnet runs turf-vault v0.26 with `settle_contest`
+at 2 signatures (card `devnet-v026-upgrade`, 2026-10-12). The default
+`conclude --cosign agent` settles with the QA server key (`2eGs…`) plus the
+devnet-only agent key Mack (`foUu…`), and the v0.26 lock and close take the same
+two, so the whole run needs **no human tap**. The rehearsal refuses any
+co-signer key that is also a MAINNET `VaultState` signer, even on devnet
+(turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`).
+`--cosign link` still exists for a run Mr. McRitchie wants to sign himself in
+Phantom (`7ZDJ…` is no longer a devnet signer, so that path needs a wallet the
+devnet `VaultState` seats, such as `9gAC…`).
 
 What each step needs to be true on QA, the message each one stops with, and the
 operator's co-signing clicks are in `turf-monster/docs/qa-contest-rehearsal.md`.
@@ -59,18 +69,17 @@ Three wallets are filed in 1Password `studio-agents`, and all three PLAY:
 
 > **There is no admin actor.** No agent-readable wallet signs in as an admin
 > account, so `KeyStore::ITEMS` files none: the house account holds no wallet,
-> and `solana.turf.admin` is rotated out and archived. The one step that needed
-> an admin session, `--cosign agent`, is refused before it touches anything.
+> and `solana.turf.admin` is rotated out and archived. `--cosign agent` needs no
+> admin session: it confirms on the dyno through `heroku run`.
 
 Two exclusions, and neither is a preference:
 
-- **Xan cannot play, and is no longer filed for it.** Xan (`8K81…`, called
-  "Alex Bot" until 2026-09-15) is the fee payer and contest creator, and when
-  the player is also the fee payer the transaction needs one signature slot,
-  not two — `prepare_entry` refuses. Since 2026-09-15 `KeyStore::ITEMS` files
-  NO key for it: the item became `agent.xan.solana` in `studio-agents-admin`,
-  which this service account cannot read. The server still signs as Xan from
-  `SOLANA_ADMIN_KEY` on the dyno; the rehearsal simply cannot.
+- **The server key cannot play.** QA's server key (`2eGs…`,
+  `solana.turf.system.devnet`, `SOLANA_ADMIN_KEY` on the dyno) is the fee payer
+  and contest creator, and when the player is also the fee payer the
+  transaction needs one signature slot, not two — `prepare_entry` refuses.
+  Production's key, Xan (`8K81…`), is in no devnet signer set and is not filed
+  for the rehearsal.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
   and it has no `UserAccount`, so the program refuses to register it.
 
@@ -79,24 +88,35 @@ Two exclusions, and neither is a preference:
 Each step from `create` on prints the URLs it just made relevant. **Open them** — the driver runs
 in a terminal but the thing being rehearsed is a web app.
 
-### ⛔ ONE STEP PER TURN — this is the whole point of the split
+### Two ways to run it: unattended (the gauntlet) or watched
 
-**If you are an agent running this SOP: run ONE step, hand the URLs to
-Alex, and STOP. Do not run the next step until he has answered.** He is
-not reading a log afterwards; he is watching a board while it moves, and a run
-that does all five in one turn gives him nothing to watch. Ending your turn IS
-the step — a message that reports the step and then keeps going has not stopped.
+**Unattended, the default for an agent.** The devnet gauntlet is agent-run
+(Alex, 2026-10-12): run every step in one turn with `--cosign agent`, and at
+each `── STOP ──` block check the thing it names yourself and record it, rather
+than handing back. What to check, per step: `seed` names every parked username;
+`create` reads pool $500, on-chain yes; `enter` reports every cast member
+entered; `play` ends "replay: done" with every game FINAL; `conclude` prints
+`confirmed` with `onchain_settled: true`; then **check the arithmetic** from the
+settle transaction's own token balances (the prize escrow, owned by the
+`VaultState` PDA, falls by exactly the sum paid; each winner's USDC rises by
+exactly their rank's payout); `close` returns a signature. Any step that stops
+or answers otherwise ends the run: report it.
+
+**Watched, when Alex asks to watch.** Then the old rule holds: run ONE step,
+hand him the URLs, and STOP until he answers.
 
 The driver prints a `── STOP ──` block at the end of every step naming what he
-is confirming and what to run next. **When you see it, hand back.** It is there
+is confirming and what to run next. **In a watched run, when you see it, hand
+back; in an unattended run, check that thing yourself and record it.** It is there
 because this instruction, living only in this file, was read once at the top of
 a run and lost to momentum: on 2026-09-04 an agent ran create through close in a
 single turn and Alex never saw a board mid-flight. Nothing failed — the
 SOP simply never said to stop.
 
-Step 4 with `--cosign link` is the one that cannot be waved through. The settle
-is 2-of-3 and the server has signed only its own half, so **a run that continues
-past it closes a contest that never paid.**
+Step 4 with `--cosign link` is the one that cannot be waved through: the server
+has signed only its own half, so **a run that continues past an unsigned link
+closes a contest that never paid.** `close` refuses an unsettled contest, but do
+not lean on that.
 
 ### Step 0 — seed the parked roster (once per QA database)
 
@@ -123,7 +143,7 @@ the unproven holders on QA.
 
 **Look at the roster line.** It should name every parked username.
 
-→ **Hand back now.** Wait for his go-ahead before step 1.
+→ **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 1.
 
 ### Step 1 — create the contest
 
@@ -153,7 +173,7 @@ Live Board:   https://qa.turfmonster.media/contests/<slug>/live
 **Look at the contest page.** It should read `$500 Prizes`, `$19 Entry`,
 `0/29 Entries`, and show the matchup cards unlocked.
 
-→ **Hand back now.** Wait for his go-ahead before step 2.
+→ **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 2.
 
 ### Step 2 — enter the cast
 
@@ -173,7 +193,7 @@ Contest:      https://qa.turfmonster.media/contests/<slug>
 **Look at the contest page.** Entries should read `3/29`, and each player should
 appear on the leaderboard at 0.
 
-→ **Hand back now.** Wait for his go-ahead before step 3.
+→ **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 3.
 
 ### Step 3 — play the preseason
 
@@ -203,17 +223,21 @@ League Board: https://qa.turfmonster.media/live
 zero, games flip to FINAL as their last play lands, and the standings reshuffle.
 At `--pace 4` a 129-play week takes about nine minutes.
 
-→ **Hand back now.** Wait for his go-ahead before step 4.
+→ **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 4.
 
 ### Step 4 — conclude and pay
 
 ```bash
-bin/qa-contest-rehearsal conclude                   # --cosign link, the default: he signs in Phantom
+bin/qa-contest-rehearsal conclude                   # --cosign agent, the default: unattended
+bin/qa-contest-rehearsal conclude --cosign link     # watched: he signs in Phantom
 ```
 
-Grades the contest, ranks the entries, and builds the 2-of-3 settle transaction.
-The server has already signed with its own key; the second signature is Alex's,
-from the co-signer wallet the step prints (`7ZDJ…`).
+Grades the contest, ranks the entries, and settles. Under `--cosign agent` the
+driver signs with the seated devnet agent key, broadcasts, and confirms on the
+dyno with the same checks the Treasury page runs (`TxVerifier` per signer, then
+the contest is marked settled). Under `--cosign link` the server has already
+signed with its own key and the second signature is Alex's, from the co-signer
+wallet the step prints.
 
 ```text
 Magic Link:   https://qa.turfmonster.media/l/<token>   → /admin/pending_transactions
@@ -231,18 +255,17 @@ sum paid, and each winner's balance should rise by exactly their rank's payout.
 That subtraction is the proof the payout landed — not the transaction signature,
 which only proves something was broadcast.
 
-→ **Hand back now.** Which halt this is depends on the flag you ran, and step 4
-has two exits:
+→ **Unattended: check the arithmetic and go on. Watched: hand back now.** Step 4
+has three exits:
 
 | Exit | Who acts next |
 |---|---|
+| `--cosign agent` | Nobody: the row reads `confirmed`; check the arithmetic, then `close` |
 | `--cosign link` | **He does.** He signs in Phantom; you cannot do this half |
 | nobody was owed | Nobody — the contest graded with no winner to pay |
 
-Both stop. When nobody was owed he is confirming the arithmetic
-rather than performing the signature, and on `--cosign link` **nothing can
-proceed until he signs**: the settle is 2-of-3 with only the server's half
-signed, so continuing past it closes a contest that never paid.
+On `--cosign link` **nothing can proceed until he signs**: only the server's half
+is signed, so continuing past it closes a contest that never paid.
 
 ### Step 5 — close
 
@@ -266,7 +289,7 @@ final standings and each winner's payout beside their rank. That is the same
 page the operator would open to answer "did this contest actually pay out?" —
 so it is the one worth leaving open.
 
-→ **Hand back.** The rehearsal is done; report what he should see.
+→ **Report.** The rehearsal is done; report the contest slug, the signatures and the arithmetic.
 
 ### As the release's devnet gauntlet
 
