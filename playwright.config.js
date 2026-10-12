@@ -87,8 +87,11 @@ if (!externalBaseURL) {
     // Cost is ~0.4s. This is the first thing that bit the CI lane on the day it was
     // wired (PR #543): green on a laptop that had run test:prepare by hand, red on
     // every clean runner.
+    // DNS_HOST_NO_LIVE_CALLS: /stack reads each client's nameservers through
+    // DnsHost; armed, the server reads none (every host shows Unknown), so the
+    // browser tier never depends on, or waits on, real DNS.
     command:
-      `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && E2E_FAKE_IMAGE_GENERATION=1 E2E_FAKE_VIDEO_STORAGE=1 bin/rails server -p ${port} -e test`,
+      `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && E2E_FAKE_IMAGE_GENERATION=1 E2E_FAKE_VIDEO_STORAGE=1 DNS_HOST_NO_LIVE_CALLS=1 bin/rails server -p ${port} -e test`,
     url: `http://127.0.0.1:${port}/up`,
     reuseExistingServer: !process.env.CI,
     // The command above chains FOUR Rails boots (db:test:prepare, tailwindcss:build,
