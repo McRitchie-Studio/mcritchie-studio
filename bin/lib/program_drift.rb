@@ -220,7 +220,10 @@ module ProgramDrift
       CiStatus.gh_read_status(*args)
     end
     out, ok = gh.call("api", "repos/#{github}/contents/#{path}?ref=#{ref}", "--jq", ".content")
-    return [nil, "gh api refused: #{out.to_s.lines.first.to_s.strip[0, 120]}"] unless ok
+    unless ok
+      said = out.to_s.lines.first.to_s.strip[0, 120]
+      return [nil, "gh api failed#{said.empty? ? '' : ": #{said}"}"]
+    end
 
     text = Base64.decode64(out.to_s)
     text.strip.empty? ? [nil, "empty file"] : [text.force_encoding(Encoding::UTF_8), nil]

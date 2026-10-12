@@ -22,7 +22,7 @@ USAGE = <<~TXT
   --fresh   skip the 10-minute cache and read GitHub and the chain now
 
   Exit: 0 every cluster current · 1 a cluster behind (or ahead) · 2 a cluster could
-  not be confirmed. An unreadable chain is never reported as current.
+  not be confirmed · 3 this help. An unreadable chain is never reported as current.
 TXT
 
 args = CliArgGuard.guard!(
@@ -30,6 +30,8 @@ args = CliArgGuard.guard!(
   program: "program-drift",
   usage: USAGE,
   bool: %w[--json --fresh],
+  # 0 is a verdict here ("every cluster current"), so the help probe must not say it.
+  help_exit: 3,
   consequence: "NOTHING was read."
 )
 
