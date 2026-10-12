@@ -559,7 +559,6 @@ and adding one would re-open the mismatch the pinning closed. Full table:
 | Higgsfield | yearly | Hygiene |
 | TikTok client secret | yearly | Hygiene |
 | TikTok refresh token | on `invalid_grant` (1y default) | Auth error |
-| AWS S3 keys | quarterly | Hygiene |
 | Google OAuth client secret | yearly | Hygiene |
 
 Add a calendar reminder for the quarterly cycle so this doesn't slip.
