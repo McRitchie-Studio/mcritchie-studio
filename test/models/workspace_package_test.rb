@@ -49,19 +49,20 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   end
 
   test "the server row reads across: Eco, Basic, Basic web + worker, sized to need" do
-    server = feature("Server")
+    server = feature("Host")
 
-    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Basic web + worker", "Sized to need" ],
+    assert_equal [ "Vibe Host · wakes on first visit", "Builder Host · always on", "Pro Host · always on + background jobs",
+                   "Team Host · always on + background jobs", "Sized to need" ],
                  TIERS.map { |key| server.value_for(key) }
     assert server.varies?
     refute feature("HTTPS and deploys").varies?, "a row every tier shares identically is not highlighted"
   end
 
-  test "an omitted value means not included: Vibe has no database, Builder no Google Workspace" do
-    refute feature("Database").included_in?(:vibe)
-    assert_nil feature("Database").value_for(:vibe)
+  test "an omitted value means not included: Vibe has no Live updates row, Builder no Google Workspace" do
+    refute feature("Live updates and jobs").included_in?(:vibe)
+    assert_nil feature("Live updates and jobs").value_for(:vibe)
     refute feature("Google Workspace").included_in?(:builder)
-    assert_equal "2 seats included", feature("Google Workspace").value_for(:pro)
+    assert_equal "2 seats · 30 GB each", feature("Google Workspace").value_for(:pro)
   end
 
   test "each package carries a card: a tagline, 4-6 highlights and a known CTA" do
@@ -184,18 +185,18 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
   test "a row about one brand's product leads with that brand; generic rows stay neutral" do
     {
-      "Server" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
-      "Cache and job queue" => "redis", "App email from your domain" => "resend",
+      "Host" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
+      "Live updates and jobs" => "redis", "App email from your domain" => "resend",
       "Google Workspace" => "google", "File storage" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
-    [ "Custom app", "Web address", "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
+    [ "Custom app", "Web address", "Hosting mode", "Changes after launch", "Support", "Social posting" ].each do |name|
       refute feature(name).brand?, "#{name} is no single brand's product"
     end
   end
 
   test "the strip shows every other brand on the row, never the lead twice" do
     assert_equal %w[github rails], feature("Custom app").strip_brands, "the app leads with its own mark, so both logos strip"
-    assert_empty feature("Server").strip_brands
+    assert_empty feature("Host").strip_brands
     assert_equal %w[zerobounce], feature("Email marketing").strip_brands
     assert_equal %w[x tiktok], feature("Social posting").strip_brands
     assert_equal %w[egnyte slack], feature("Custom connectors").strip_brands
@@ -236,9 +237,12 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   end
 
   test "[unit] Builder carries Redis for its realtime updates" do
-    assert_equal "Redis mini", feature("Cache and job queue").value_for(:builder)
-    assert feature("Realtime updates").included_in?(:builder)
-    refute feature("Cache and job queue").included_in?(:vibe)
+    live = feature("Live updates and jobs")
+    assert_equal [ nil, "Included", "Included", "Included", "Included" ], TIERS.map { |key| live.value_for(key) }
+    assert_equal %w[redis], live.software_keys(:builder)
+    refute_includes WorkspacePackage.find(:vibe).software_keys, "redis", "Vibe's Host provisions no Redis"
+    WorkspacePackage.cards.drop(1).each { |tier| assert_includes tier.software_keys, "redis", tier.key }
+    assert_nil WorkspacePackage.features.find { |f| f.name == "Cache and job queue" || f.name == "Realtime updates" }
   end
 
   test "[unit] Pro is Growth's platform; Team adds the marketing rows, funnel generation planned" do
@@ -291,13 +295,13 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal "domain", feature("Web address").glyph, "the domain leads with the drawn globe mark"
     assert_equal %w[squarespace], feature("Web address").strip_brands, "the registrar stays in the strip"
     assert_equal "google", feature("Google Workspace").brand
-    assert_equal [ nil, nil, "2 seats included", "2 seats included", "Custom" ],
+    assert_equal [ nil, nil, "2 seats · 30 GB each", "2 seats · 30 GB each", "Custom" ],
                  TIERS.map { |key| feature("Google Workspace").value_for(key) }
     app = feature("Custom app")
     assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
     refute app.brand?
     assert_includes WorkspacePackage::GLYPHS, app.glyph
-    assert_nil feature("Server").glyph
+    assert_nil feature("Host").glyph
   end
 
   test "[unit] the web address reads three domain levels across the tiers" do
@@ -322,6 +326,19 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute_match(/uptime|never goes down|100%|99/i, row.blurb, "no uptime promise")
     refute_includes WorkspacePackage.find(:pro).card_brands(WorkspacePackage.find(:builder)), "cloudflare",
                     "Builder already names Cloudflare for its R2 storage, so Pro adds no second chip"
+  end
+
+  test "[unit] the database reads as a tier-branded product with its storage, on the plan each tier provisions" do
+    db = feature("Database")
+
+    assert_equal [ "Vibe Data · in your app's files", "Builder Database · 1 GB records + 10 GB files",
+                   "Pro Database · 10 GB records + 50 GB files", "Team Database · 32 GB records + 100 GB files", "Custom" ],
+                 TIERS.map { |key| db.value_for(key) }
+    assert_empty db.software_keys(:vibe), "Vibe keeps its data in files: no Postgres in its stack"
+    assert_equal %w[postgres], db.software_keys(:builder)
+    refute_includes WorkspacePackage.find(:vibe).software_keys, "postgres"
+    assert_equal [ nil, "10 GB", "50 GB", "100 GB", "Sized to need" ], TIERS.map { |key| feature("File storage").value_for(key) }
+    assert_equal "Where your app runs. Vibe naps when nobody's visiting; from Builder it's always on.", feature("Host").blurb
   end
 
   test "[unit] taglines carry the 2026-10-12 promises" do

@@ -13,7 +13,7 @@ on the package, and the customer never needs to know which:
 | Package | What the customer gets | What runs it |
 |---------|------------------------|--------------|
 | Vibe | you.mcritchie.studio · Eco dyno | **Our app** on a Heroku Eco dyno, no database ([`app-deploy-standard`](./app-deploy-standard.md)) |
-| Builder and up | 1 own domain · Basic dyno + Postgres + Redis mini, for realtime updates (Pro adds a worker) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
+| Builder and up | 1 own domain · Basic dyno + Postgres + Redis mini, for realtime updates (Pro adds a worker). Postgres by tier: essential-0 (1 GB) Builder, essential-1 (10 GB) Pro, essential-2 (32 GB) Team; R2 files 10 / 50 / 100 GB (`config/workspace_packages.yml`) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
 | Pro and up | The bare domain as the address, `www` and other domains redirected at the edge | **Cloudflare DNS** ([`domain-dns` § Cloudflare DNS](./domain-dns.md#cloudflare-dns--pro-and-above)); Builder keeps `www` on Squarespace DNS |
 
 Tiers per the ladder Alex set on 2026-10-12: Vibe, Builder, Pro, Team, and Enterprise on request (`config/workspace_packages.yml`).
@@ -89,7 +89,7 @@ onboarding SOP). Then:
 
 ```bash
 heroku create <app-name>
-heroku addons:create heroku-postgresql:<plan> -a <app-name>
+heroku addons:create heroku-postgresql:<plan> -a <app-name>   # essential-0 Builder · essential-1 Pro · essential-2 Team
 heroku domains:add www.<domain> -a <app-name>      # prints the DNS target
 heroku certs:auto:enable -a <app-name>
 ```

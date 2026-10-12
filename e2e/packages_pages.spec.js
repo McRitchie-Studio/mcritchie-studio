@@ -108,7 +108,7 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
     Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
   expect(hostLines).toBeLessThanOrEqual(2);
   await expect(page.locator("[data-test='stack-blurb']").first()).toBeHidden();
-  const serverLogo = page.locator("[data-feature='server'] [data-test='stack-lead'] [data-brand='heroku'] img");
+  const serverLogo = page.locator("[data-feature='host'] [data-test='stack-lead'] [data-brand='heroku'] img");
   await expect(serverLogo).toBeVisible();
   expect(await serverLogo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
 

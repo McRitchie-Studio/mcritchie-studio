@@ -42,6 +42,13 @@ module PackagesHelper
     rest&.include?(".") ? safe_join([ "#{first}.", tag.wbr, rest ]) : text
   end
 
+  # A "<product> · <metric>" value as [product, metric]; any other value as
+  # [value, nil]. The matrix draws the metric as a smaller muted second line.
+  def package_cell_parts(value)
+    product, metric = value.to_s.split(" · ", 2)
+    [ product, metric.presence ]
+  end
+
   # "✓", the row's value, or "—" — one cell of the full-stack matrix.
   def package_cell_text(value)
     return "—" if value.nil?

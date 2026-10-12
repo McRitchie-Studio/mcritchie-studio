@@ -5,7 +5,7 @@
 #                    `highlights` and its call to action
 #   /packages/stack  the full stack: every feature row below, grouped by
 #                    `category`, one column per tier, so the difference between
-#                    tiers reads across the row ("Eco dyno" / "Basic dyno" / ...)
+#                    tiers reads across the row ("Vibe Host" / "Builder Host" / ...)
 #
 # The ladder Mr. McRitchie set on 2026-10-12 (task cto-and-team-tiers), where
 # each tier includes the one below: Vibe free, Builder $100/mo, Pro $500/mo
@@ -55,7 +55,9 @@
 #   blurb     one customer-facing sentence: what they get, not how
 #   vibe/builder/pro/team/enterprise
 #             what that tier gets, shown IN the row:
-#               a string  → the package's value ("Basic dyno")
+#               a string  → the package's value ("Basic dyno"); written
+#                           "<product> · <metric>" it renders as two lines, the
+#                           metric smaller and muted ("Pro Host · always on")
 #               true      → included, nothing to quantify
 #               omitted   → not included (the cell shows "—")
 #   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md)
@@ -183,14 +185,22 @@ features:
     you_do: Describe what you want built
     status: live
     software: [github, rails]
-  - name: Server
+  # Infrastructure reads as tier-branded products with one scale metric
+  # (Mr. McRitchie, 2026-10-12): "<product> · <metric>" renders as two lines.
+  # What each tier provisions on Heroku (checked against Heroku's docs that day):
+  #   Vibe     Eco dyno, which sleeps after 30 minutes without web traffic
+  #   Builder  Basic dyno · heroku-postgresql:essential-0 (1 GB) · Redis mini
+  #   Pro      Basic web + worker · essential-1 (10 GB) · Redis
+  #   Team     Basic web + worker · essential-2 (32 GB) · Redis
+  # R2 file storage caps: Builder 10 GB, Pro 50 GB, Team 100 GB.
+  - name: Host
     category: application
     icon: heroku
-    blurb: Where your app runs. Bigger tiers stay awake and add a worker for background jobs.
-    vibe: Eco dyno (sleeps when idle)
-    builder: Basic dyno
-    pro: Basic web + worker
-    team: Basic web + worker
+    blurb: Where your app runs. Vibe naps when nobody's visiting; from Builder it's always on.
+    vibe: Vibe Host · wakes on first visit
+    builder: Builder Host · always on
+    pro: Pro Host · always on + background jobs
+    team: Team Host · always on + background jobs
     enterprise: Sized to need
     sop: app-deploy-standard
     status: live
@@ -198,34 +208,30 @@ features:
   - name: Database
     category: application
     icon: postgres
-    blurb: A Postgres database for your app's records. Vibe apps keep their data in files.
-    builder: Postgres, small
-    pro: Postgres, larger
-    team: Postgres, larger
+    blurb: Where your app keeps its records.
+    vibe: Vibe Data · in your app's files
+    builder: Builder Database · 1 GB records + 10 GB files
+    pro: Pro Database · 10 GB records + 50 GB files
+    team: Team Database · 32 GB records + 100 GB files
     enterprise: Custom
     sop: app-deploy-standard
     status: live
     software: [postgres]
-  - name: Cache and job queue
+    # Vibe keeps its data in files: no Postgres in its stack.
+    brand_from: builder
+  # Redis stays its own row: a row's software cannot vary by tier, and Vibe's
+  # Host must not provision Redis. It also carries what was "Realtime updates".
+  - name: Live updates and jobs
     category: application
     icon: redis
-    blurb: Redis for realtime updates, caching and the background jobs your worker runs.
-    builder: Redis mini
-    pro: Redis
-    team: Redis
-    enterprise: Redis, sized to need
+    blurb: Pages that update live without a refresh, and background jobs that run on their own, on Redis.
+    builder: Included
+    pro: Included
+    team: Included
+    enterprise: Included
     sop: app-deploy-standard
     status: live
     software: [redis]
-  - name: Realtime updates
-    category: application
-    icon: "⚡"
-    blurb: Pages that update live as data changes, without a refresh. Redis carries them.
-    builder: true
-    pro: true
-    team: true
-    enterprise: true
-    status: builtin
   - name: HTTPS and deploys
     category: application
     icon: "🛡️"
@@ -258,10 +264,10 @@ features:
     category: application
     icon: cloudflare
     blurb: A private Cloudflare R2 bucket for your app's uploads and exports.
-    builder: 1 private bucket
-    pro: 1 private bucket
-    team: 1 private bucket
-    enterprise: Buckets sized to need
+    builder: 10 GB
+    pro: 50 GB
+    team: 100 GB
+    enterprise: Sized to need
     sop: bucket-provision
     status: live
     software: [cloudflare]
@@ -363,8 +369,8 @@ features:
     category: platform
     icon: google
     blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    pro: 2 seats included
-    team: 2 seats included
+    pro: 2 seats · 30 GB each
+    team: 2 seats · 30 GB each
     enterprise: Custom
     sop: workspace-signup
     you_do: Sign up and create the users

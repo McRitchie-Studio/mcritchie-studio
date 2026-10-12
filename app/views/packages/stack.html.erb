@@ -111,7 +111,13 @@
                     <span class="font-semibold text-primary" aria-label="Included">✓</span>
                   <% else %>
                     <% segments = package_cell_segments(value) %>
-                    <% if segments.any?(&:last) %>
+                    <% product, metric = package_cell_parts(value) %>
+                    <% if metric %>
+                      <span class="block leading-tight" data-test="stack-product">
+                        <span class="block text-xs font-semibold <%= feature.varies? ? 'text-primary' : 'text-body' %>" data-test="stack-product-name"><%= product %></span>
+                        <span class="mt-0.5 block text-2xs text-muted" data-test="stack-product-metric"><%= metric %></span>
+                      </span>
+                    <% elsif segments.any?(&:last) %>
                       <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(segments.one? ? package_hostname(text) : text, class: ("whitespace-nowrap" unless segments.one?), data: { test: "stack-hostname" }) : text }, " + ") %></span>
                     <% else %>
                       <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>

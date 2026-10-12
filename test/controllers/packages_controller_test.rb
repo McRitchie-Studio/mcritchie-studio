@@ -8,6 +8,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
   def card(key) = "[data-test='package-card'][data-package='#{key}']"
   def cta(key) = "#{card(key)} [data-test='package-cta']"
+
+  # A matrix cell as text: a two-line product cell reads "product|metric".
+  def cell_text(td)
+    name = td.at_css("[data-test='stack-product-name']")
+    name ? "#{name.text.strip}|#{td.at_css("[data-test='stack-product-metric']").text.strip}" : td.text.strip
+  end
   TALK = "[data-test='talk-to-us'][data-package='enterprise']".freeze
   TALK_CTA = "#{TALK} [data-test='package-cta']".freeze
 
@@ -175,8 +181,8 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='web-address'] [data-test='stack-lead'] [data-brand='squarespace']", 0, "Squarespace moves to the strip"
     assert_select "[data-feature='web-address'] [data-test='stack-software'] [data-brand='squarespace']"
     assert_select "[data-feature='google-workspace'] [data-test='stack-lead'] [data-brand='google']"
-    assert_equal [ "—", "—", "2 seats included", "2 seats included", "Custom" ],
-                 css_select("[data-feature='google-workspace'] [data-test='stack-cell']").map { |td| td.text.strip }
+    assert_equal [ "—", "—", "2 seats|30 GB each", "2 seats|30 GB each", "Custom" ],
+                 css_select("[data-feature='google-workspace'] [data-test='stack-cell']").map { |td| cell_text(td) }
     assert_equal [ "yourname.mcritchie.studio", "www.yourname.com", "yourname.com + www.yourname.com",
                    "yourname.com + www.yourname.com", "Multiple domains" ],
                  css_select("[data-feature='web-address'] [data-test='stack-cell']").map { |td| td.text.strip }
@@ -193,15 +199,25 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "values read across the row, with a check or a dash where nothing is quantified" do
     get packages_stack_path
 
-    row = "[data-test='stack-row'][data-feature='server']"
-    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Basic web + worker", "Sized to need" ],
-                 css_select("#{row} [data-test='stack-cell']").map { |td| td.text.strip }
-    assert_select "[data-feature='cache-and-job-queue'] [data-test='stack-cell'][data-package='builder']", text: "Redis mini"
+    row = "[data-test='stack-row'][data-feature='host']"
+    assert_equal [ "Vibe Host|wakes on first visit", "Builder Host|always on", "Pro Host|always on + background jobs",
+                   "Team Host|always on + background jobs", "Sized to need" ],
+                 css_select("#{row} [data-test='stack-cell']").map { |td| cell_text(td) }
+    assert_select "#{row} [data-test='stack-cell'][data-package='pro'] [data-test='stack-product-metric'].text-muted", text: "always on + background jobs"
+    assert_equal [ "Vibe Data|in your app's files", "Builder Database|1 GB records + 10 GB files",
+                   "Pro Database|10 GB records + 50 GB files", "Team Database|32 GB records + 100 GB files", "Custom" ],
+                 css_select("[data-feature='database'] [data-test='stack-cell']").map { |td| cell_text(td) }
+    assert_equal [ "—", "10 GB", "50 GB", "100 GB", "Sized to need" ],
+                 css_select("[data-feature='file-storage'] [data-test='stack-cell']").map { |td| cell_text(td) }
+    assert_select "[data-feature='live-updates-and-jobs'] [data-test='stack-cell'][data-package='builder']", text: "Included"
+    assert_select "[data-feature='live-updates-and-jobs'] [data-test='stack-cell'][data-package='vibe']", text: "—"
+    assert_select "[data-feature='cache-and-job-queue']", 0
+    assert_select "[data-feature='realtime-updates']", 0
     assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='pro']", text: "4 build requests a month"
     assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='team']", text: "6 build requests a month"
     assert_select "[data-feature='credential-rotation'] [data-test='stack-cell'][data-package='enterprise']", text: "CMMC/ITAR review on request"
-    assert_select "[data-feature='realtime-updates'] [data-test='stack-cell'][data-package='vibe']", text: "—"
-    assert_select "[data-feature='realtime-updates'] [data-test='stack-cell'][data-package='builder']", text: "✓"
+    assert_select "[data-feature='https-and-deploys'] [data-test='stack-cell'][data-package='vibe']", text: "✓"
+    assert_select "[data-feature='customer-sign-in'] [data-test='stack-cell'][data-package='vibe']", text: "—"
   end
 
   test "rows carry their software logos, and planned rows say Coming soon" do
@@ -220,7 +236,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='funnel-generation'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='pro']", text: "—"
     assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='team']", text: "✓"
-    assert_select "[data-feature='server'] [data-test='coming-soon']", 0
+    assert_select "[data-feature='host'] [data-test='coming-soon']", 0
   end
 
   test "the matrix scrolls inside its own box with a sticky tier header" do
