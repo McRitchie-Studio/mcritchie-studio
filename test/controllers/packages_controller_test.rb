@@ -156,7 +156,14 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "[component] the matrix opens with the custom app, then the web address at three domain levels" do
     get packages_stack_path
 
-    assert_equal [ "custom-app", "web-address", "server" ], css_select("[data-test='stack-row']").first(3).map { |tr| tr["data-feature"] }
+    assert_equal [ "custom-app", "web-address", "google-workspace", "server" ], css_select("[data-test='stack-row']").first(4).map { |tr| tr["data-feature"] }
+    assert_select "[data-test='stack-category'][data-category='app'] th[scope='colgroup']", text: /Your business/
+    assert_select "[data-feature='web-address'] [data-test='stack-lead'][data-lead='glyph-domain'] [data-glyph='domain'][aria-label='Your domain'] svg"
+    assert_select "[data-feature='web-address'] [data-test='stack-lead'] [data-brand='squarespace']", 0, "Squarespace moves to the strip"
+    assert_select "[data-feature='web-address'] [data-test='stack-software'] [data-brand='squarespace']"
+    assert_select "[data-feature='google-workspace'] [data-test='stack-lead'] [data-brand='google']"
+    assert_equal [ "—", "—", "2 seats included", "2 seats included", "Custom" ],
+                 css_select("[data-feature='google-workspace'] [data-test='stack-cell']").map { |td| td.text.strip }
     assert_equal [ "yourname.mcritchie.studio", "www.yourname.com", "yourname.com + www.yourname.com",
                    "yourname.com + www.yourname.com", "Multiple domains" ],
                  css_select("[data-feature='web-address'] [data-test='stack-cell']").map { |td| td.text.strip }

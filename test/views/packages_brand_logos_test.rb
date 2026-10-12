@@ -50,6 +50,14 @@ class PackagesBrandLogosTest < ActionView::TestCase
       assert_select "svg path", 3, "one large and two small sparkles"
     end
     assert_select "[data-feature='custom-app'] [data-test='stack-lead'] [data-test='brand-logo']", 0
+    # The domain is the same family: the window, cut away behind a globe.
+    assert_select "[data-feature='web-address'] [data-test='stack-lead'][data-lead='glyph-domain'] [data-test='glyph'][data-glyph='domain'][role='img'][aria-label='Your domain']" do
+      assert_select "svg mask#glyph-domain-gap circle", 1, "the gap cut from the window behind the globe"
+      assert_select "svg g[mask='url(#glyph-domain-gap)'] rect", 2, "the same window as the custom app"
+      assert_select "svg g[mask='url(#glyph-domain-gap)'] circle", 3, "its three title-bar dots"
+      assert_select "svg circle[r='5.4']", 1, "the globe"
+      assert_select "svg ellipse", 1, "the globe's meridian"
+    end
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-brand='egnyte']"
   end

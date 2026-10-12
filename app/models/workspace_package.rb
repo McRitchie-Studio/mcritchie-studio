@@ -20,7 +20,7 @@ class WorkspacePackage
   ADD_ON = "Add-on".freeze
   # An icon written "glyph:<name>" is drawn as an inline SVG mark, not an emoji.
   GLYPH_PREFIX = "glyph:".freeze
-  GLYPHS = %w[app].freeze
+  GLYPHS = %w[app domain].freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
                        :brand_from, :spotlight, keyword_init: true) do

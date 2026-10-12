@@ -185,10 +185,10 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "a row about one brand's product leads with that brand; generic rows stay neutral" do
     {
       "Server" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
-      "Cache and job queue" => "redis", "Web address" => "squarespace", "App email from your domain" => "resend",
+      "Cache and job queue" => "redis", "App email from your domain" => "resend",
       "Google Workspace" => "google", "File storage" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
-    [ "Custom app", "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
+    [ "Custom app", "Web address", "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
       refute feature(name).brand?, "#{name} is no single brand's product"
     end
   end
@@ -217,7 +217,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
     assert_equal %w[github rails heroku], vibe.card_brands
     assert_equal %w[squarespace postgres redis resend cloudflare], pro.card_brands(vibe)
-    assert_equal %w[sentry google 1password], cto.card_brands(pro)
+    assert_equal %w[google sentry 1password], cto.card_brands(pro)
     assert_equal %w[zerobounce], team.card_brands(cto)
     assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.card_brands(team)
     refute_includes vibe.brand_keys, "squarespace", "Vibe's address is a subdomain, not a Squarespace domain"
@@ -272,11 +272,17 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert WorkspacePackage.find(:team).highlights.any? { |h| h.start_with?("6 build requests a month") }
   end
 
-  test "[unit] the custom app is the first row and the web address the second, then hosting" do
+  test "[unit] the custom app, the web address and Google Workspace lead, then hosting" do
     names = WorkspacePackage.features_by_category.flat_map(&:last).map(&:name)
 
-    assert_equal [ "Custom app", "Web address", "Server", "Hosting mode" ], names.first(4)
+    assert_equal [ "Custom app", "Web address", "Google Workspace", "Server", "Hosting mode" ], names.first(5)
     assert_equal %w[app hosting], WorkspacePackage.features_by_category.map(&:first).first(2)
+    assert_equal "Your business", WorkspacePackage.categories["app"]
+    assert_equal "domain", feature("Web address").glyph, "the domain leads with the drawn globe mark"
+    assert_equal %w[squarespace], feature("Web address").strip_brands, "the registrar stays in the strip"
+    assert_equal "google", feature("Google Workspace").brand
+    assert_equal [ nil, nil, "2 seats included", "2 seats included", "Custom" ],
+                 TIERS.map { |key| feature("Google Workspace").value_for(key) }
     app = feature("Custom app")
     assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
     refute app.brand?

@@ -84,7 +84,7 @@ billing:
 enterprise_booking_url:
 
 categories:
-  app: Your app
+  app: Your business
   hosting: Hosting
   data: Data
   domain: Domain
@@ -162,7 +162,7 @@ packages:
     cta: { label: Book a call, action: enterprise_booking }
 
 features:
-  # --- your app ------------------------------------------------------------
+  # --- your business: the app, its domain and its Workspace (rows 1-3) -----
   - name: Custom app
     category: app
     icon: "glyph:app"
@@ -182,7 +182,7 @@ features:
   # Cloudflare DNS, which points the apex at Heroku (domain-dns).
   - name: Web address
     category: app
-    icon: squarespace
+    icon: "glyph:domain"
     blurb: "Where people find your app. Vibe lives on a mcritchie.studio address. Pro puts it on www at your own domain, which we register and point at your app, with the bare domain forwarding there. CTO and up serve the bare domain itself, with www redirected to it."
     vibe: yourname.mcritchie.studio
     pro: www.yourname.com
@@ -194,6 +194,17 @@ features:
     status: live
     software: [squarespace]
     brand_from: pro
+  - name: Google Workspace
+    category: app
+    icon: google
+    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
+    cto: 2 seats included
+    team: 2 seats included
+    enterprise: Custom
+    sop: workspace-signup
+    you_do: Sign up and create the users
+    status: live
+    software: [google]
 
   # --- hosting -------------------------------------------------------------
   - name: Server
@@ -342,18 +353,6 @@ features:
     section: Phase 1 — Clean the list before anyone mails it
     status: live
     software: [zerobounce]
-  - name: Google Workspace
-    category: email
-    icon: google
-    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    cto: 2 seats included
-    team: 2 seats included
-    enterprise: Custom
-    sop: workspace-signup
-    you_do: Sign up and create the users
-    status: live
-    software: [google]
-
   # --- sign-in -------------------------------------------------------------
   - name: Customer sign-in
     category: auth
