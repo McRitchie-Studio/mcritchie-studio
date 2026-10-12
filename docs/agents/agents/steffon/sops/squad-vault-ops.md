@@ -1,12 +1,13 @@
 # Squad Vault Ops
-<!-- registry: move funds out of a Squads vault: agents queue and double-sign, Alex approves -->
+<!-- registry: mainnet Squad vault transfers and upgrades: agents queue and double-sign, Alex approves -->
 
 ## Status: Active
 
-This is Steffon's `squad-vault-ops` SOP. It moves SOL or a classic SPL token out
-of a Squads vault, mainnet first of all. The agent builds the transaction and
-casts both agent votes. Mr. McRitchie gets one link and one line, and he
-approves. The agent executes only after his approval is on chain.
+This is Steffon's `squad-vault-ops` SOP. It covers two kinds of mainnet Squad
+vault transaction: moving SOL or a classic SPL token out of the vault, and
+upgrading a program the vault holds the upgrade authority for. The agent builds
+the proposal and casts both agent votes. Mr. McRitchie gets one link and one
+line, and he approves. The agent executes only after his approval is on chain.
 
 It is the sole exception to First Rule 10 in `AGENTS.md` (no agent signs
 mainnet). Mr. McRitchie set it on 2026-10-12, after mainnet Squad tx #7:
@@ -14,6 +15,13 @@ mainnet). Mr. McRitchie set it on 2026-10-12, after mainnet Squad tx #7:
 > "That was beautiful, that is exactly how we should be using the squad, you make
 > the transaction and double sign and provide me the URL to sign and execute."
 > (`squad-vault-ops-sop`, activity-17964)
+
+The same day Xan told him "the upgrade proposal itself follows the same pattern:
+one click from you", and he answered "Cool let me know when the upgrade URL is
+ready" (chat, 2026-10-12, relayed in the `squad-vault-ops-sop` rework). Mainnet
+Squad #8, the v0.26 `Upgrade` of turf-vault, was the first upgrade queued this
+way: `7auwTL` created it, `7auwTL` and `4bKN` approved, and he approved from
+`7ZDJ` (read off chain 2026-10-12).
 
 **Callers.** [`program-upgrade`](program-upgrade.md) (rent floats for a buffer)
 and Turf Monster's [`collect-vault-revenue`](../../turf_monster/sops/collect-vault-revenue.md)
@@ -50,10 +58,34 @@ before you act (`node scripts/squad-inventory.js`). This table is a snapshot.
    create anything. A stale index means someone created a transaction since your
    read, and it may be this same transfer.
 
-The exception covers only Squads vault transactions on the mainnet Squad, signed
-by the two agent seats above. A buffer write, `extendProgram`, `init_governance`
-or any other mainnet signature is not covered. It still needs his ruling on the
-card ([`program-upgrade`](program-upgrade.md#signing-rule)).
+### What the exception covers, and what it does not
+
+It covers exactly two kinds of vault transaction on the mainnet Squad, signed by
+the two agent seats above:
+
+1. **A transfer** of SOL or a classic SPL token out of vault 0, queued by turf-vault
+   `scripts/squad-vault-transfer.js` (the procedure below).
+2. **A program upgrade:** one BPF Upgradeable Loader `Upgrade` instruction, queued
+   by turf-vault `scripts/squad-upgrade.js --send`, and only when all of these
+   hold:
+   - the program's upgrade authority is the vault;
+   - the buffer's authority is the vault;
+   - the buffer's content hash was checked against the reviewed build;
+   - the spill (the buffer's rent refund) goes to the vault.
+
+   [`program-upgrade`](program-upgrade.md) step 4 runs it. Its hand-back is the same
+   link and one line, naming the program, the version and the buffer.
+
+It does **not** cover:
+
+- **Config transactions:** members, threshold, time lock.
+- **Any other instruction** in a vault transaction, or a transfer from any vault
+  other than vault 0.
+- **Signatures outside a proposal:** a buffer write, `set-buffer-authority`,
+  `extendProgram`, `init_governance`, or any other mainnet signature.
+
+These still need his ruling on the card
+([`program-upgrade`](program-upgrade.md#signing-rule)).
 
 ## Preconditions
 
@@ -125,12 +157,33 @@ before it reads anything.
 
 | Refusal | Meaning | Remedy |
 |---|---|---|
-| `transaction_index is N, not M` | A transaction was created since your plan | Open the Squads page and find out what it is. It may be this move. Re-plan; never retry blind |
+| `transaction_index is N, not M` | A transaction was created since your plan | The tool reads back every transaction created since. If one carries exactly this move and is still Active or Approved, it prints the `approve --index=<n>` that finishes it; run that. Otherwise read the Squads page, then re-plan. Never send again |
+| `confirmation expired for <signature>` | The blockhash expired before the network confirmed; the transaction may still land | Follow *An expired confirmation* below |
+| `the vault holds …, less than` / `no token account … for mint` | The vault cannot fund the move | Nothing was created. Fund the vault or correct the amount, then re-plan |
 | `MISMATCH` / `not the planned transfer` | The instruction at that index is not your move | Stop. Do not approve. Escalate if you created it |
 | `no approval from Mr. McRitchie's seats` | His approval is not on chain | Wait for him, or ask him to approve from the link |
 | `never signs on mainnet` | A forbidden key was loaded | Stop. The roster or the environment is wrong |
 | `does not derive to … recorded key` | The 1Password item does not hold that seat | Stop. Run [`credential-issues`](../../../modules/credential-issues.md) |
-| `has no token account` | The destination has no ATA for the mint | Any wallet can create it; the vault does not pay rent for it |
+| `has no token account` | The destination has no ATA for the mint | Any wallet can create it; the vault does not pay rent for it. A PDA destination is allowed; plan prints a NOTE that it is off-curve |
+
+## An expired confirmation
+
+Each transaction carries a compute-unit limit and a priority fee, so this should
+be rare under load. When it happens:
+
+1. **Do not re-run `send`.** The create may have landed, and a second `send`
+   would create a second proposal for the same move.
+2. Look up the printed signature on an explorer, or rerun `plan` and read
+   `transaction_index`.
+3. **If the index did not move,** the create never landed. Run `send` again with
+   the same `--expect-index`.
+4. **If the index moved,** run `send` with the old `--expect-index`. It refuses
+   and names the transaction that carries this move, with the `approve --index=<n>`
+   that finishes it. If it names none, the new transaction is someone else's;
+   read it on the Squads page before you do anything.
+5. **An expired approve or execute** is safe to rerun. `approve` casts only the
+   votes still owed, and `execute` refuses a proposal that already reads
+   `Executed`.
 
 ## Devnet
 

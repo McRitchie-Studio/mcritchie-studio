@@ -112,7 +112,7 @@ its invocation exactly.
 | Steffon `production-deploy` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon `program-upgrade` SOP (on-chain program upgrade, devnet then mainnet, through Squads) | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | Steffon `r2-backup` SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
-| Steffon `squad-vault-ops` SOP (move funds out of a Squads vault: agents queue and double-sign, Alex approves) | `mcritchie-studio/docs/agents/agents/steffon/sops/squad-vault-ops.md` |
+| Steffon `squad-vault-ops` SOP (mainnet Squad vault transfers and upgrades: agents queue and double-sign, Alex approves) | `mcritchie-studio/docs/agents/agents/steffon/sops/squad-vault-ops.md` |
 | Steffon `website-launch` SOP (hosted site: Squarespace or our app) | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | Steffon `workspace-icon` SOP (badged software icons per client, /credentials matrix, 1Password vault icons) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
 | Steffon `workspace-launch` SOP (new domain to first draft, walks the operator) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
