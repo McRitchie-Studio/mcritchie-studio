@@ -80,8 +80,9 @@ class LogosIconAtomicUnitTest < Minitest::Test
     words = { first: { colour: "#D7602E" } }
     assert_includes logo.svg(rule: 4, colouring: :original, icon_colouring: :alt, edits: icon), 'fill="#D7602E"', "an Alt icon takes its colour under Original words"
     assert_includes logo.svg(rule: 4, colouring: :alt, icon_colouring: :original, edits: words), 'fill="#D7602E"'
-    assert_match(/an original is the brand's own art/, refusal { logo.svg(rule: 4, colouring: :alt, icon_colouring: :original, edits: icon) })
-    assert_match(/an original is the brand's own art/, refusal { logo.svg(rule: 4, colouring: :original, icon_colouring: :alt, edits: words) })
+    assert_match(/an original icon is the brand's own art/, refusal { logo.svg(rule: 4, colouring: :alt, icon_colouring: :original, edits: icon) })
+    # Task logo-compare-and-original-edits: Original words take their edits too.
+    assert_includes logo.svg(rule: 4, colouring: :original, icon_colouring: :alt, edits: words), 'fill="#D7602E"'
   end
 
   def test_the_watermark_is_the_single_colour_icon_whatever_the_icon_colouring
@@ -99,7 +100,7 @@ class LogosIconAtomicUnitTest < Minitest::Test
     assert_includes edited, 'fill="#635BB2"'
     refute_equal logo.icon_svg, edited
     assert_match(/takes only the icon's colour edit/, refusal { logo.icon_svg(edits: { first: { colour: "#635BB2" } }) })
-    assert_match(/apply to alt only/, refusal { Navbar.new("welding_v2").icon_svg(colouring: :original, edits: { icon: { colour: "#D7602E" } }) })
+    assert_match(/applies to an alt icon only/, refusal { Navbar.new("welding_v2").icon_svg(colouring: :original, edits: { icon: { colour: "#D7602E" } }) })
   end
 
   def test_the_variant_names_and_routes_an_icon_of_its_own
@@ -122,9 +123,9 @@ class LogosIconAtomicUnitTest < Minitest::Test
   def test_the_variant_shows_an_icon_edit_only_on_an_alt_icon
     logo = Navbar.new("welding_v2")
     edits = { icon: { colour: "#D7602E" }, first: { colour: "#D7602E" } }
-    assert_equal({ icon: { colour: "#D7602E" } }, Variant.new(logo, colouring: :original, icon_colouring: :alt, edits:).edits)
+    assert_equal(edits, Variant.new(logo, colouring: :original, icon_colouring: :alt, edits:).edits, "an Alt icon and Original words both take theirs")
     assert_equal({ first: { colour: "#D7602E" } }, Variant.new(logo, colouring: :alt, icon_colouring: :original, edits:).edits)
-    assert_empty Variant.new(logo, colouring: :original, edits:).edits
+    assert_equal({ first: { colour: "#D7602E" } }, Variant.new(logo, colouring: :original, edits:).edits, "Original words keep their edit")
     assert_empty Variant.new(logo, type: :icon, colouring: :original, edits:).edits
   end
 end

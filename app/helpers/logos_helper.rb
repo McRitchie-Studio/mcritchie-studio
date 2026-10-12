@@ -29,6 +29,29 @@ module LogosHelper
       .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
   end
 
+  # The compare page's params (task logo-compare-and-original-edits): the two brands, the type (less the Navbar Logo),
+  # the watermark context, and the shared controls in force (each absent: every side's kit default), with `changes`
+  # on top; a change to nil drops a param.
+  def logo_compare_params(**changes)
+    { left: @left, right: @right, type: (@type unless @type == :navbar), context: (@context if @context == :watermark),
+      colouring: @colouring_param, rule: @rule_param, form: @form_param, grid: (1 if @grid) }.merge(changes).compact
+  end
+
+  # The compare page a brand page's Compare button opens: this brand on the left, its other version (or the next
+  # brand) on the right, on the tab's type, in the page's context and colouring.
+  def logo_compare_path_for(brand, type: nil)
+    logos_compare_path({ left: brand, right: LogoComparison.partner(brand), type: (type unless type == :navbar) }
+                         .merge(logo_page_keeps).compact)
+  end
+
+  # What a compare side draws, in a line: "Kit default: …" (its saved choice) or "Brand style: …" (nothing saved), as
+  # moved by the page's controls ("rule and colouring from the controls above").
+  def logo_compare_source(side)
+    source = side.saved ? "Kit default" : "Brand style (no #{Logos::Variant::TYPES.fetch(side.variant.type)} saved)"
+    moved = (" · #{side.changed.map(&:to_s).to_sentence} from the controls above" if side.changed.any?)
+    "#{source}: #{logo_choice_summary(side.variant)}#{moved}"
+  end
+
   # The bare tab: what it opens on, its kit default where it has one. Only the context and guides are kept.
   def logo_tab_default_path = logo_brand_path(@logo.brand, { type: (@type unless @type == :navbar) }.merge(logo_page_params.slice(:context, :guides)).compact)
 
@@ -54,6 +77,10 @@ module LogosHelper
     rows << { part: :tagline, label: "Tagline", word: @logo.tagline, settings: %i[colour weight visible] } if @type == :stacked && @form == :tagline
     rows
   end
+
+  # True when the tab's icon is drawn in its Original (the brand's art), so the edit panel's Icon row offers no colour.
+  # The icon's colouring is its own where it has one (the URL's ?icon_colouring=), else the tab's.
+  def logo_icon_original? = (@icon_colouring || @colouring) == :original
 
   # The URL param of one part's setting: first_colour, tagline_visible.
   def logo_edit_param(part, setting) = :"#{part}_#{setting}"
@@ -89,13 +116,13 @@ module LogosHelper
 
   # A Navbar or Stacked choice in words, as the kit saves it (BrandKit): "rule of 4, second word leads, as styled",
   # "with tagline, first word leads, first word Deep Violet 300 Light; tagline hidden".
-  # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original shows no
-  # edits, so it says none. An Icon choice is its colouring and its colour ("alt colouring, icon Deep Violet"); a logo
+  # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original's words
+  # show their edits (task logo-compare-and-original-edits), and an all-Original choice with none says none. An Icon choice is its colouring and its colour ("alt colouring, icon Deep Violet"); a logo
   # drawing an icon of its own colouring says so ("original icon": the kit's, task kit-icon-atomic-unit).
   def logo_choice_summary(variant)
     colouring = ("#{Logos::Variant::COLOURINGS.fetch(variant.colouring).downcase} colouring" if variant.logo.original?)
     icon = ("#{Logos::Variant::COLOURINGS.fetch(variant.icon_colouring).downcase} icon" if variant.own_icon?)
-    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original? && variant.icon_colouring == :original)
+    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original? && variant.icon_colouring == :original && !variant.edited?)
     return [colouring, edits].compact.join(", ") if variant.type == :icon
 
     shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)

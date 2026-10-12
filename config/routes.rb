@@ -179,6 +179,9 @@ Rails.application.routes.draw do
   # the admin wall answers a non-HTML format with a bare 401/403 where every
   # other walled page redirects. docs/topics/logos.md.
   get "logos", to: "logos#index", as: :logos
+  # Two brands' kits side by side (task logo-compare-and-original-edits): ?left= and ?right= name the brands. Before
+  # logos/:brand, so "compare" is never read as a brand.
+  get "logos/compare", to: "logos#compare", as: :logos_compare
   get "logos/:brand", to: "logos#show", as: :logo_brand
   # The brand kit record (BrandKitsController, require_admin; task brand-kit-record): the saved Navbar and Stacked
   # choices, the kit's notes, and its original artwork, served from behind the wall.

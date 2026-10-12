@@ -1,0 +1,142 @@
+<%# COMPARE TWO KITS (task logo-compare-and-original-edits; Alex 2026-10-11:
+    "comparing two marketing kits ... Commercial Welding V1 vs V2"). Two
+    dropdowns pick the brands; each side draws its brand's KIT DEFAULT for the
+    type (its saved choice and kit icon, else the brand's style: LogoComparison)
+    with its name and kit status above it, until the shared controls change it:
+    Context, Colouring, the type tabs, and the Rule or Form. Show grid swaps both
+    sides for their construction guide drawings. Both sides are drawn at ONE
+    scale (each drawing's width a share of the wider one's), bottoms aligned, so
+    their rows and units line up; the Navbar's guide drawings are all one height
+    in design units, so there they are the same height too. Side by side from
+    the md breakpoint, one above the other on a phone. Every control is a plain
+    link or GET form (logo_compare_params), so each keeps the others. Each side
+    has its own downloads and copies. Admin only (LogosController). %>
+<%= render "components/copy_text_script" %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
+<% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
+<% label_class = "text-3xs font-semibold uppercase tracking-wide text-muted" %>
+<% brands = Logos::NavbarLogo.brands %>
+<% names = brands.to_h { |brand| [brand, Logos::Variant.brand_name(Logos::NavbarLogo.new(brand))] } %>
+<% content_for :html_theme, @theme.to_s if @theme %>
+<%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap" aria-label="Breadcrumb">
+    <%= link_to "Logos", logos_path(logo_compare_params.slice(:context, :colouring)), class: "hover:text-primary", data: { test: "logos-crumb" } %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono">compare</span>
+  </nav>
+
+  <div class="card p-4 sm:p-5 space-y-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Compare kits</h1>
+      <%= render "logos/context_form", url: logos_compare_path, keep: logo_compare_params %>
+    </div>
+
+    <%# The two brands: a plain GET form, its hidden fields carrying every other control. %>
+    <%= form_with url: logos_compare_path, method: :get, class: "flex flex-wrap items-end gap-3", data: { test: "compare-brands-form", turbo: false } do %>
+      <% logo_compare_params.except(:left, :right).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+      <% { left: ["Left", @left], right: ["Right", @right] }.each do |side, (label, brand)| %>
+        <label class="flex flex-col gap-1">
+          <span class="<%= label_class %>"><%= label %></span>
+          <%= select_tag side, options_for_select(names.invert, brand), id: "compare-#{side}", class: field, autocomplete: "off", data: { test: "compare-brand", side: } %>
+        </label>
+      <% end %>
+      <%= submit_tag "Compare", name: nil, class: chosen.(true), data: { test: "compare-submit", disable_with: false } %>
+      <%= link_to "Swap sides", logos_compare_path(logo_compare_params(left: @right, right: @left)), class: chosen.(false), data: { test: "compare-swap" } %>
+    <% end %>
+
+    <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
+      <% Logos::Variant::TYPES.each do |type, label| %>
+        <%= link_to label, logos_compare_path(logo_compare_params(type: (type unless type == :navbar))),
+                    class: chosen.(type == @type), aria: { current: ("page" if type == @type) }, data: { test: "logo-tab", type: } %>
+      <% end %>
+    </nav>
+
+    <%# The shared controls. Kit default drops the param, so each side goes back to its own. %>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-test="compare-controls">
+      <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Colouring" data-test="colouring-control">
+        <span class="<%= label_class %>" aria-hidden="true">Colouring</span>
+        <% [[nil, "Kit default"]].concat(Logos::Variant::COLOURINGS.to_a).each do |colouring, label| %>
+          <%= link_to label, logos_compare_path(logo_compare_params(colouring:)), class: chosen.(colouring == @colouring_param),
+                      aria: { current: ("true" if colouring == @colouring_param) }, data: { test: "colouring-option", colouring: colouring || "kit" } %>
+        <% end %>
+      </div>
+      <% if @type == :navbar %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Rule" data-test="rule-control">
+          <span class="<%= label_class %>" aria-hidden="true">Rule</span>
+          <% [[nil, "Kit default"]].concat(Logos::Variant::RULES.to_a).each do |rule, label| %>
+            <%= link_to label, logos_compare_path(logo_compare_params(rule:)), class: chosen.(rule == @rule_param),
+                        aria: { current: ("true" if rule == @rule_param) }, data: { test: "rule-option", rule: rule || "kit" } %>
+          <% end %>
+        </div>
+      <% end %>
+      <% if @type == :stacked %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Form" data-test="form-control">
+          <span class="<%= label_class %>" aria-hidden="true">Form</span>
+          <% [[nil, "Kit default"]].concat(@comparison.forms.map { |form| [form, Logos::Variant::FORMS.fetch(form)] }).each do |form, label| %>
+            <%= link_to label, logos_compare_path(logo_compare_params(form:)), class: chosen.(form == @form_param),
+                        aria: { current: ("true" if form == @form_param) }, data: { test: "form-option", form: form || "kit" } %>
+          <% end %>
+        </div>
+      <% end %>
+      <% unless @type == :icon %>
+        <%= link_to (@grid ? "Hide grid" : "Show grid"), logos_compare_path(logo_compare_params(grid: (1 unless @grid))),
+                    class: chosen.(@grid), aria: { pressed: @grid.to_s }, data: { test: "grid-toggle" } %>
+      <% end %>
+    </div>
+
+    <p class="text-sm text-secondary" data-test="compare-sentence">Each side draws its brand's kit default: the saved choice and the kit's icon, or the brand's style where nothing is saved. The controls above change both sides at once; Kit default puts a side back on its own. Both sides are drawn at one scale, so their sizes compare directly.</p>
+    <% if @grid %>
+      <p class="text-sm text-secondary" data-test="grid-sentence">The grid: each side's construction guide drawing, as its brand page shows it, at one scale and aligned at the foot, so the rows, units and gaps line up across the two sides. They are for looking at, never for shipping.</p>
+    <% end %>
+    <%= render "logos/context_notes" %>
+  </div>
+
+  <section class="card p-4 sm:p-5" aria-label="<%= names.fetch(@left) %> and <%= names.fetch(@right) %>, <%= Logos::Variant::TYPES.fetch(@type) %>" data-test="compare" data-type="<%= @type %>" data-grid="<%= @grid ? 1 : 0 %>">
+    <%# From md up, two columns whose three rows (heading, drawing, downloads) are shared by both sides through a
+        subgrid, so the two drawings start on one line whatever each heading says; on a phone, one side above the other. %>
+    <div class="grid gap-x-6 gap-y-8 md:grid-cols-2 md:grid-rows-[auto_1fr_auto] md:gap-y-3">
+      <% @comparison.sides.each_with_index do |side, index| %>
+        <% shares = @tones.to_h { |tone| [tone, @comparison.widths(tone)&.fetch(index)] } %>
+        <div class="min-w-0 space-y-3 md:space-y-0 md:row-span-3 md:grid md:grid-rows-subgrid md:gap-y-3" data-test="compare-side" data-side="<%= index.zero? ? 'left' : 'right' %>" data-brand="<%= side.brand %>">
+          <div class="min-w-0 space-y-1">
+            <h2 class="text-base font-bold text-heading break-words">
+              <%= link_to side.name, logo_brand_path(side.brand, { type: (@type unless @type == :navbar) }.merge(logo_compare_params.slice(:context, :colouring)).compact),
+                          class: "hover:text-primary hover:underline", data: { test: "compare-brand-link" } %>
+            </h2>
+            <p class="text-3xs text-muted font-mono"><%= side.brand %></p>
+            <p class="text-2xs text-muted" data-test="compare-kit-status" title="<%= logo_kit_status(side.kit, @savers, full: true) %>"><%= logo_kit_status(side.kit, @savers) %></p>
+            <p class="text-2xs text-secondary" data-test="compare-source" data-saved="<%= side.saved %>"><%= logo_compare_source(side) %></p>
+            <% side.notes.each do |note| %>
+              <p class="text-2xs text-heading rounded-md border border-subtle px-2 py-1" data-test="compare-note"><%= note %></p>
+            <% end %>
+          </div>
+          <%# The drawing's frame. A Navbar or Stacked drawing is a share of the frame's width (LogoComparison#widths),
+              the same share of the same width on both sides, so both are at one scale; the icon fits its frame. %>
+          <div class="flex min-w-0 items-end justify-center rounded-lg border border-subtle p-4" data-test="logo-frame"
+               role="group" aria-label="<%= side.variant.guides ? 'Guide drawing' : 'Logo' %>: <%= side.variant.label.sub(", #{side.variant.tone}", '') %>">
+            <% if shares.values.first %>
+              <%= logo_themed(side.variants.keys) do |tone| %>
+                <% shown = side.variants.fetch(tone) %>
+                <%= image_tag logo_asset_path(shown), alt: shown.label, loading: "eager", class: "block h-auto max-w-full",
+                              style: "width: #{format('%.4f', shares.fetch(tone) * 100)}%", data: { test: "logo-image", share: format("%.4f", shares.fetch(tone)) } %>
+              <% end %>
+            <% else %>
+              <%= logo_themed_images(side.variants, height: LogosHelper::LOGO_HEIGHTS.fetch(:icon)) %>
+            <% end %>
+          </div>
+          <div class="flex flex-wrap items-start justify-end gap-2">
+            <%= logo_themed(side.variants.keys) do |tone| %>
+              <% shown = side.variants.fetch(tone) %>
+              <%= link_to "Download", logo_asset_path(shown, download: 1), class: "btn btn-sm btn-neutral #{ring}",
+                          data: { test: "logo-download", turbo: false }, aria: { label: "Download: #{shown.label}" } %>
+              <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-copy-svg="<%= logo_asset_path(shown) %>"
+                      aria-label="Copy SVG: <%= shown.label %>"><span data-copy-svg-label>Copy SVG</span></button>
+              <span class="sr-only" role="status" data-copy-svg-status></span>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </section>
+<% end %>

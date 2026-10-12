@@ -9,10 +9,12 @@
     The select shows the theme the page is in: chosen on load from the hub's
     theme, and kept in step when the theme changes elsewhere. With JavaScript
     off it is a plain GET form with an Apply button, and the hidden fields carry
-    every other page setting in force (type, rule, form, guides). Local: url. %>
+    every other page setting in force (type, rule, form, guides). Locals: url,
+    keep (optional: the params the hidden fields carry; the compare page's own,
+    else the brand page's logo_page_params). %>
 <% watermark = @context == :watermark %>
 <%= form_with url: url, method: :get, class: "flex flex-wrap items-center gap-2", data: { test: "context-form" } do %>
-  <% logo_page_params.except(:context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+  <% (local_assigns[:keep] || logo_page_params).except(:context).each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
   <label for="logo-context" class="text-3xs font-semibold uppercase tracking-wide text-muted">Context</label>
   <%= select_tag :context, options_for_select(Logos::Variant::CONTEXTS.map { |tone, label| [label, tone] }, @context),
                  id: "logo-context", class: "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading",

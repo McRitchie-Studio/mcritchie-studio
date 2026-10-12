@@ -114,8 +114,8 @@ class BrandKit < ApplicationRecord
   end
   private_class_method :with_icon
 
-  # A choice as it is stored: the variant's own choices, its colouring and its checked, shown edits (an Original shows
-  # none), in one spelling. An icon's is its colouring and its colour.
+  # A choice as it is stored: the variant's own choices, its colouring and its checked, shown edits (an Original's
+  # words keep theirs, task logo-compare-and-original-edits; an original icon shows no colour), in one spelling. An icon's is its colouring and its colour.
   def self.choice_of(variant)
     edits = Logos::Variant.edit_params(variant.edits).to_h { |name, value| [name.to_s, value.to_s] }
     return { "colouring" => variant.colouring.to_s, "edits" => edits } if variant.type == :icon

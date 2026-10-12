@@ -2,7 +2,8 @@
 
 # [unit] Logo COLOURINGS (task logo-original-and-alt): every logo type draws Original (the brand's own art, from the
 # style's `original:`) or Alt (the style's `tones`, exactly as drawn before). A brand with no original draws Alt only;
-# the watermark is one colour, so colouring does not apply to it; edits apply to Alt only.
+# the watermark is one colour, so colouring does not apply to it. The word edits apply in either colouring, the icon's
+# colour edit to an Alt icon only (task logo-compare-and-original-edits).
 
 require "minitest/autorun"
 require_relative "../../lib/logos/navbar_logo"
@@ -62,11 +63,23 @@ class LogosColouringTest < Minitest::Test
     assert_equal logo.icon_svg(tone: :watermark), logo.icon_svg(tone: :watermark, colouring: :original)
   end
 
-  def test_edits_apply_to_alt_only
+  # Task logo-compare-and-original-edits: Alex coloured welding_v2's words in Alt only because Original refused them,
+  # and Alt swapped the helmet for its single-colour version. The words now take their edits in Original too, and the
+  # icon stays the original art.
+  def test_word_edits_apply_in_original_and_leave_the_icon_as_the_brands_art
     edits = { first: { colour: "#8E82FE" } }
     assert_includes duo.svg(edits:), "#8E82FE"
-    assert_match(/an original is the brand's own art, so edits apply to alt only/, refusal { duo.svg(edits:, colouring: :original) })
-    assert_match(/edits apply to alt only/, refusal { duo(Stacked).svg(edits:, colouring: :original) })
+    plain = duo.svg(rule: 4, text: :homogeneous, colouring: :original)
+    edited = duo.svg(rule: 4, text: :homogeneous, colouring: :original, edits:)
+    refute_equal plain, edited
+    assert_includes edited, 'fill="#8E82FE"', "the first word takes the picked colour"
+    assert_equal plain[%r{<path[^>]*/>}], edited[%r{<path[^>]*/>}], "the icon's first layer is drawn as the original drew it"
+    assert_includes duo(Stacked).svg(edits:, colouring: :original), 'fill="#8E82FE"'
+  end
+
+  def test_an_original_icon_still_refuses_its_colour_edit
+    assert_match(/an original icon is the brand's own art, so the icon's colour edit applies to an alt icon only/,
+                 refusal { duo.svg(edits: { icon: { colour: "#8E82FE" } }, colouring: :original) })
   end
 
   def test_the_guide_ghosts_stay_the_alt_text_colour
@@ -120,12 +133,13 @@ class LogosColouringTest < Minitest::Test
     assert_equal "duo-stacked-tagline-homogeneous-light-original.svg", stacked.filename
   end
 
-  def test_the_variant_keeps_edits_for_alt_and_drops_them_from_an_original
+  def test_the_variant_keeps_word_edits_in_either_colouring_and_drops_an_original_icons
     edited = { first_colour: "8E82FE" }
     assert_equal({ first: { colour: "#8E82FE" } }, Variant.parse(duo, edited).edits)
-    original = Variant.parse(duo, edited.merge(colouring: "original"))
-    assert_empty original.edits, "an original is the brand's art: the edit is checked, then not shown"
-    refute_includes original.filename, "custom"
+    original = Variant.parse(duo, edited.merge(colouring: "original", icon_colour: "635BB2"))
+    assert_equal({ first: { colour: "#8E82FE" } }, original.edits, "the words' edit is shown; the original icon's colour is not")
+    assert_includes original.filename, "custom"
+    assert_includes original.svg, 'fill="#8E82FE"'
   end
 
   def test_a_watermark_variant_is_alt_and_says_no_colouring
