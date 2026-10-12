@@ -61,8 +61,10 @@ logo.colourings       # [:original, :alt], or [:alt]
   single-colour version.) An Original's words take the picked colour and
   weight, and its icon stays the brand's art. An original ICON is the brand's
   own art, so the library refuses an icon colour with it and `Logos::Variant`
-  drops one (still checked); the Edit panel's Icon row says so and links to an
-  Alt icon (`?icon_colouring=alt`, or `?colouring=alt` on the Icon tab).
+  drops one (still checked); the Edit panel's Icon row says so and links to the
+  Icon tab in Alt (`?type=icon&colouring=alt`), whose Save as default makes the
+  kit icon every logo draws. Not `?icon_colouring=alt`: a kit choice saves no
+  icon colouring, so a Navbar or Stacked save would drop the Alt icon on reload.
 - The guide drawings' ghost copies stay the brand's Alt text colour: a ghost is
   a solid ruler.
 - Each SVG route takes `?colouring=original|alt` (Alt unless asked, so every
