@@ -70,7 +70,7 @@ bin/agent-activity heartbeat steffon
 | 0 | Open the launch task | this file | Steffon | growth |
 | 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | growth |
 | 2 | Sign up for Google Workspace, create `alex@` + `team@` (Growth: 2 seats included) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | growth |
-| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC); Growth then moves the zone to Cloudflare | [`domain-dns`](./domain-dns.md), § Cloudflare DNS | Steffon writes records · **Alex** pastes · Steffon checks | growth |
+| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC); Growth moves the zone to Cloudflare in row 4 | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | growth |
 | 4 | Launch the hosted website (our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | growth |
 | 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | growth |
 | 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | growth |
