@@ -47,12 +47,13 @@ const CONTRAST = (selector) => {
 // error box sits on the card surface with no tint: it measures 4.5 in dark.
 // The 0.1 allowance is the canvas's 8-bit rounding, not a looser bar.
 const TEXT_ON_SURFACE = 4.4;
-// A chip lays its ink over its own 10% role tint, which the ink is NOT derived
-// against: the danger chip measures 4.17 in dark (warning 4.51, success 4.6).
-// This floor holds the chips to "legible in both themes" (the dark-only chips
-// they replaced measured under 2 in light); lifting it to AA needs the engine's
-// contrast_ink to search against the tint. Named on the task, not hidden here.
-const CHIP_ON_TINT = 4.0;
+// A chip lays its ink over its own role tint. Since studio-engine 0.103.0
+// (chips-clear-aa-both-themes) the resolver derives each ink against its role's
+// 10%, 15% and 20% tints as Chromium paints them, one unit off in every channel
+// included (ThemeResolver::TINT_ALPHAS), so a chip on one of those tints holds AA
+// with no allowance. A stronger tint is not covered: test/views/chip_tint_contrast_test.rb
+// refuses one in the hub's markup.
+const CHIP_ON_TINT = 4.5;
 
 async function eachTheme(page, check) {
   for (const theme of ["light", "dark"]) {
