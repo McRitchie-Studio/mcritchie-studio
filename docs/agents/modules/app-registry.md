@@ -200,7 +200,7 @@ deployment shape.
 | 🐊 Turf Monster | Product · Showcase | 3100-3199 | Managed satellite on studio-engine; `bin/deploy` to `turf-monster-mainnet`; QA at `qa.turfmonster.media` |
 | 🐉 Cyvasse | Product · Showcase | 3600-3699 | Managed satellite on studio-engine; git push to Heroku `cyvasse`; canonical host `cyvasse.xyz` (`cyvasse.mcritchie.studio` 301s there and stays reserved); no QA copy by Alex's cost decision, so `qa_evidence: exempt` |
 | 📐 McRitchie Industries | Product · Active | 3500-3599 (3510 held for the MSAA dev server) | Managed satellite on studio-engine; the private business knowledge base; git push to Heroku `mcritchie-industries`; QA at `qa.mcritchie.industries` |
-| 🔥 Commercial Welding | Product · Active | none | A Google Workspace client with no app; not hosted by McRitchie Studio |
+| 🔥 Commercial Welding | Product · Active | 4500-4599 | Managed satellite on studio-engine, `planned` in `config/satellites.yml`; a Google Workspace client. No Heroku app, URL or QA copy until the acquisition closes (~2026-10-30), so its ladder is `dormant` and its PRs wait on `accepted`; flip to `three-rung` with a deploy target |
 | 📚 Moms App | Basic · Active | 4400-4499 | Release-managed standalone on studio-engine, profile `standalone-heroku` |
 | 🎞️ Dads App, 🎲 Prisoners Dilemma, 🏈 Weekly Lock, 📣 Rantly, 🗂️ Portfolio, 🍽️ 10&5 Hospitality, 🔎 Search Position | Basic · Showcase | 3700-4399, one block each | Release-managed standalones on profile `standalone-heroku`, Heroku `dads-app` or `mcr-<repo>`, no QA copies (`qa_evidence: exempt`). Rantly runs on studio-engine; the others have no engine and no database |
 | 📇 Rolio | Archived | 3300-3399 | Dormant; ladder `dormant`; Heroku `rolio-prod` and `rolio-qa` |
@@ -208,7 +208,7 @@ deployment shape.
 | 📊 Tax Studio | Archived | 3200-3299 | Heroku app `tax-studio` with no repo; ladder `planned` |
 | 🤝 Acquisition Studio | Archived | none | Retired prototype; McRitchie Industries holds its old block |
 
-Do not reuse `3200-4499`. To wake Rolio: scale its web dynos back to 1, restore
+Do not reuse `3200-4599`. To wake Rolio: scale its web dynos back to 1, restore
 `.github/dependabot.yml` (revert rolio commit `a79e818`; the file content is blob
 `f0527e6`), delete `test/dormancy_test.rb` (revert `d10b9ec`), and set its
 catalog status.
