@@ -22,8 +22,8 @@ class PackagesHelperTest < ActionView::TestCase
     assert_nil link["data-booking-popup"]
   end
 
-  test "Pro and Growth open the booking popup, with /schedule as the no-script fallback" do
-    %i[pro growth].each do |key|
+  test "Pro, CTO and Team open the booking popup, with /schedule as the no-script fallback" do
+    %i[pro cto team].each do |key|
       link = link_for(key)
       assert_equal "/schedule", link["href"], key
       assert_equal "true", link["data-booking-popup"], key

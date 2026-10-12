@@ -8,6 +8,8 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
   def card(key) = "[data-test='package-card'][data-package='#{key}']"
   def cta(key) = "#{card(key)} [data-test='package-cta']"
+  TALK = "[data-test='talk-to-us'][data-package='enterprise']".freeze
+  TALK_CTA = "#{TALK} [data-test='package-cta']".freeze
 
   def log_in_admin
     admin = User.find_by(role: "admin") || User.create!(email: "packages-admin@example.com", name: "Packages Admin", role: "admin")
@@ -16,18 +18,36 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
   # --- /packages ------------------------------------------------------------
 
-  test "anyone sees four cards with prices, without signing in" do
+  test "[component] anyone sees four cards with prices, without signing in" do
     get packages_path
 
     assert_response :success
-    assert_equal %w[vibe pro growth enterprise], css_select("[data-test='package-card']").map { |c| c["data-package"] }
+    assert_equal %w[vibe pro cto team], css_select("[data-test='package-card']").map { |c| c["data-package"] }
+    assert_equal %w[Vibe Pro CTO Team], css_select("[data-test='package-card'] h2").map { |h| h.text.strip }
     assert_select "#{card('vibe')} [data-test='price-free']", text: /Free/
     assert_select "#{card('pro')} [data-test='price-monthly']", text: %r{\$100\s*/month}
-    assert_select "#{card('growth')} [data-test='price-monthly']", text: %r{\$500\s*/month}
-    assert_select "#{card('growth')} [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
-    assert_select "#{card('enterprise')} [data-test='price-custom']", text: /Custom/
-    assert_select "#{card('enterprise')} [data-test='price-monthly']", count: 0
+    assert_select "#{card('cto')} [data-test='price-monthly']", text: %r{\$500\s*/month}
+    assert_select "#{card('cto')} [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
+    assert_select "#{card('team')} [data-test='price-monthly']", text: %r{\$1,500\s*/month}
+    assert_select "#{card('team')} [data-test='price-annual']", text: /\$1,350.*\$16,200 billed annually/m
+    assert_select card("enterprise"), 0, "Enterprise is a Talk to us line, not a card"
+    assert_select "[data-test='price-custom']", 0
     assert_select "[data-test='billing-toggle']", text: /save 10%/
+  end
+
+  test "[component] Enterprise is one Talk to us line under the cards, with a Book a call button" do
+    get packages_path
+
+    assert_select TALK, 1
+    assert_operator response.body.rindex("data-test=\"package-card\""), :<, response.body.index("data-test=\"talk-to-us\""),
+                    "the line sits under the cards"
+    assert_select "#{TALK} [data-test='talk-to-us-question']", text: "Need more apps, white label or custom connectors? Talk to us."
+    assert_select "#{TALK_CTA}[data-cta-action='enterprise_booking']", text: "Book a call"
+    assert_select "#{TALK} [data-test='talk-to-us-highlight']", WorkspacePackage.find(:enterprise).highlights.size
+    assert_select "#{TALK} [data-test='talk-to-us-highlight']", text: /CMMC\/ITAR compliance review, available on request/
+    assert_select "#{TALK} [data-test='talk-to-us-add-ons']", text: /Add-ons, priced per contract/
+    assert_equal %w[stripe coinbase solana squads anthropic openai],
+                 css_select("#{TALK} [data-test='talk-to-us-add-ons'] [data-test='brand-logo']").map { |l| l["data-brand"] }
   end
 
   test "each card names the brands its tier adds, Vibe first as Powered by" do
@@ -35,29 +55,38 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "#{card('vibe')} [data-test='package-powered-by']", text: /Powered by/
     assert_equal %w[github rails heroku], css_select("#{card('vibe')} [data-test='brand-logo']").map { |l| l["data-brand"] }
-    assert_select "#{card('pro')} [data-test='package-powered-by']", text: /Adds/
-    assert_select "#{card('growth')} [data-test='brand-logo'][data-brand='1password']"
-    assert_select "#{card('enterprise')} [data-test='brand-logo'][data-brand='openai']"
+    assert_select "#{card('pro')} [data-test='package-powered-by']", text: /Also powered by/
+    assert_select "[data-test='package-powered-by']", text: /\AAdds\z/, count: 0
+    assert_select "#{card('pro')} [data-test='brand-logo'][data-brand='redis']"
+    assert_select "#{card('cto')} [data-test='brand-logo'][data-brand='1password']"
+    assert_equal %w[zerobounce], css_select("#{card('team')} [data-test='package-powered-by'] [data-test='brand-logo']").map { |l| l["data-brand"] }
+    assert_select "[data-test='package-card'] [data-test='brand-logo'][data-brand='openai']", 0, "add-ons are not a card's brands"
     assert_select "[data-test='package-card'] [data-test='brand-logo'][data-brand='egnyte']", 0
   end
 
-  test "each card leads with its promise and its highlights, Growth featured" do
+  test "each card leads with its promise and its highlights, Team featured" do
     get packages_path
 
     assert_select "#{card('vibe')} [data-test='package-tagline']", text: /you\.mcritchie\.studio/
-    WorkspacePackage.all.each do |package|
+    assert_select "#{card('cto')} [data-test='package-tagline']", text: /fractional CTO/
+    assert_select "#{card('team')} [data-test='package-tagline']", text: /founding team: a CTO and a CMO/
+    WorkspacePackage.cards.each do |package|
       assert_select "#{card(package.key)} [data-test='package-highlight']", package.highlights.size
     end
-    assert_select "#{card('growth')}[data-featured='true'] [data-test='featured-badge']", text: /Most popular/
+    assert_select "#{card('team')} [data-test='package-highlight']", text: /6 build requests a month/
+    assert_select "#{card('cto')} [data-test='package-highlight']", text: /4 build requests a month/
+    assert_select "#{card('team')}[data-featured='true'] [data-test='featured-badge']", text: /Most popular/
+    assert_select "[data-test='featured-badge']", 1
     assert_select "#{card('vibe')} [data-test='includes-previous']", 0
     assert_select "#{card('pro')} [data-test='includes-previous']", text: /Everything in Vibe, plus/
+    assert_select "#{card('team')} [data-test='includes-previous']", text: /Everything in CTO, plus/
   end
 
-  test "Vibe builds; Pro and Growth open the booking popup on /schedule" do
+  test "Vibe builds; Pro, CTO and Team open the booking popup on /schedule" do
     get packages_path
 
     assert_select "#{cta('vibe')}[href='/build'][data-cta-target='build']", text: "Build your app"
-    %w[pro growth].each do |key|
+    %w[pro cto team].each do |key|
       assert_select "#{cta(key)}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true'][data-cta-target='schedule']"
     end
     assert_select "dialog[data-booking-dialog][data-studio-booking]", 1, "the popup the schedule CTAs open must be on the page"
@@ -66,8 +95,8 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "Enterprise Book a call falls back to the studio's booking popup while no URL is configured" do
     get packages_path
 
-    assert_select "#{cta('enterprise')}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true']", text: "Book a call"
-    assert_select "#{cta('enterprise')}[target]", 0, "the fallback stays on the page in the popup"
+    assert_select "#{TALK_CTA}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true']", text: "Book a call"
+    assert_select "#{TALK_CTA}[target]", 0, "the fallback stays on the page in the popup"
   end
 
   test "Enterprise Book a call opens the configured Google Calendar page in a new tab" do
@@ -75,10 +104,10 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       get packages_path
     end
 
-    assert_select "#{cta('enterprise')}[href='#{BOOKING}'][target='_blank'][rel='noopener'][data-cta-target='enterprise-booking']",
+    assert_select "#{TALK_CTA}[href='#{BOOKING}'][target='_blank'][rel='noopener'][data-cta-target='enterprise-booking']",
                   text: "Book a call"
-    assert_select "#{cta('enterprise')}[data-booking-popup]", 0
-    assert_select "#{cta('growth')}[href='/schedule']", 1, "only Enterprise takes the enterprise URL"
+    assert_select "#{TALK_CTA}[data-booking-popup]", 0
+    assert_select "#{cta('team')}[href='/schedule']", 1, "only Enterprise takes the enterprise URL"
   end
 
   test "the billing toggle tells assistive tech which option is selected" do
@@ -113,12 +142,13 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "a[data-test='back-to-packages'][href='/packages']"
-    assert_equal %w[vibe pro growth enterprise], css_select("[data-test='stack-tier-header']").map { |th| th["data-package"] }
+    assert_equal %w[vibe pro cto team enterprise], css_select("[data-test='stack-tier-header']").map { |th| th["data-package"] }
+    assert_select "[data-test='stack-tier-header'][data-package='enterprise']", text: /Enterprise\s*Talk to us/
     assert_equal WorkspacePackage.features_by_category.map(&:first),
                  css_select("[data-test='stack-category']").map { |tbody| tbody["data-category"] }
     assert_select "[data-test='stack-row']", WorkspacePackage.features.size
     css_select("[data-test='stack-row']").each do |row|
-      assert_equal 4, row.css("[data-test='stack-cell']").size, "#{row['data-feature']} must have a cell per tier"
+      assert_equal 5, row.css("[data-test='stack-cell']").size, "#{row['data-feature']} must have a cell per tier"
     end
     assert_select "[data-test='stack-legend']", text: /Included.*Not included.*Coming soon.*Add-on/m
   end
@@ -127,8 +157,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     get packages_stack_path
 
     row = "[data-test='stack-row'][data-feature='server']"
-    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Sized to need" ],
+    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Basic web + worker", "Sized to need" ],
                  css_select("#{row} [data-test='stack-cell']").map { |td| td.text.strip }
+    assert_select "[data-feature='cache-and-job-queue'] [data-test='stack-cell'][data-package='pro']", text: "Redis mini"
+    assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='cto']", text: "4 build requests a month"
+    assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='team']", text: "6 build requests a month"
+    assert_select "[data-feature='credential-rotation'] [data-test='stack-cell'][data-package='enterprise']", text: "CMMC/ITAR review on request"
     assert_select "[data-feature='realtime-updates'] [data-test='stack-cell'][data-package='vibe']", text: "—"
     assert_select "[data-feature='realtime-updates'] [data-test='stack-cell'][data-package='pro']", text: "✓"
   end
@@ -143,6 +177,9 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='social-posting'] [data-test='stack-software'] [data-brand='x']"
     assert_select "[data-feature='social-posting'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
+    assert_select "[data-feature='funnel-generation'][data-status='planned'] [data-test='coming-soon']"
+    assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='cto']", text: "—"
+    assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='team']", text: "✓"
     assert_select "[data-feature='server'] [data-test='coming-soon']", 0
   end
 
@@ -159,6 +196,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "tfoot [data-test='package-cta'][data-cta-action='build'][href='/build']"
     assert_select "tfoot [data-test='package-cta'][data-cta-action='enterprise_booking'][href='/schedule']"
+    assert_select "#{TALK_CTA}[data-cta-action='enterprise_booking']", text: "Book a call"
   end
 
   test "the SOP map is hidden from customers" do
@@ -179,16 +217,16 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='sop-map-comps']", text: /Pro — Cyvasse/
   end
 
-  test "[component] Growth and Enterprise cards spotlight Cloudflare DNS with its logo; Vibe and Pro do not" do
+  test "[component] CTO and Team cards spotlight Cloudflare DNS with its logo; Vibe and Pro do not" do
     get packages_path
 
-    %w[growth enterprise].each do |key|
+    %w[cto team].each do |key|
       spot = "#{card(key)} [data-test='package-spotlight'][data-feature='cloudflare-dns']"
       assert_select spot, 1, key
       assert_select "#{spot} [data-brand='cloudflare'][aria-label='Cloudflare'] img"
       assert_select spot, text: /Cloudflare DNS.*yourcompany\.com is the address; www and old links redirect at the edge/m
     end
-    assert_select "#{card('growth')} [data-test='package-spotlight']", text: /Bare domain \+ edge redirects/
+    assert_select "#{card('cto')} [data-test='package-spotlight']", text: /Bare domain \+ edge redirects/
     %w[vibe pro].each { |key| assert_select "#{card(key)} [data-test='package-spotlight']", 0, key }
   end
 
@@ -198,12 +236,13 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     row = "[data-test='stack-row'][data-feature='cloudflare-dns'][data-status='live']"
     assert_select "#{row} [data-test='stack-lead'] [data-brand='cloudflare']"
     assert_select "#{row} [data-test='coming-soon']", 0
-    assert_equal [ "—", "—", "Bare domain + edge redirects", "Every domain, edge redirects" ],
+    assert_equal [ "—", "—", "Bare domain + edge redirects", "Bare domain + edge redirects", "Every domain, edge redirects" ],
                  css_select("#{row} [data-test='stack-cell']").map { |td| td.text.strip }
     assert_select "[data-feature='bot-check'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='bot-check'] [data-test='stack-lead'] [data-brand='cloudflare']"
 
     assert_select "[data-test='dns-flow'] h2", text: "Cloudflare DNS, in action"
+    assert_select "[data-test='dns-flow-tiers']", text: "CTO, Team, and Enterprise"
     assert_select "[data-test='dns-flow'] [data-brand='cloudflare']"
     assert_equal [ "www.yourcompany.com", "301 → yourcompany.com", "yourcompany.com", "Served over HTTPS" ],
                  css_select("[data-test='dns-flow-step'] p.font-mono").map { |p| p.text.strip }

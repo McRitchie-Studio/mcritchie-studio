@@ -2,15 +2,28 @@ require "test_helper"
 
 # [unit] WorkspacePackage — config/workspace_packages.yml is the one place
 # package contents live, shaped as feature ROWS so the full-stack page can
-# compare the four tiers on the same line. The suite holds it to the SOP files
-# on disk (a row that names an SOP must name one that exists) and to the honesty
-# rules the tier design was approved with on 2026-09-30.
+# compare the tiers on the same line. The suite holds it to the SOP files on
+# disk (a row that names an SOP must name one that exists), to the honesty rules
+# the tier design was approved with on 2026-09-30, and to the 2026-10-12 ladder:
+# Vibe, Pro, CTO and Team as cards, Enterprise as a "Talk to us" line.
 class WorkspacePackageTest < ActiveSupport::TestCase
-  TIERS = %w[vibe pro growth enterprise].freeze
+  TIERS = %w[vibe pro cto team enterprise].freeze
 
   def feature(name) = WorkspacePackage.features.find { |f| f.name == name } || flunk("no feature #{name}")
 
-  test "four tiers load in ladder order, and each includes everything below it" do
+  test "[unit] four priced tiers load as cards in ladder order, plus the Enterprise talk-to-us line" do
+    assert_equal %w[vibe pro cto team], WorkspacePackage.cards.map(&:key)
+    assert WorkspacePackage.cards.all?(&:priced?), "every card carries a price"
+    line = WorkspacePackage.talk_to_us
+    assert_equal "enterprise", line.key
+    refute line.card?
+    assert_match(/Need more apps, white label or custom connectors\? Talk to us/, line.tagline)
+    assert_equal({ "label" => "Book a call", "action" => "enterprise_booking" }, line.cta)
+    assert_includes WorkspacePackage.keys, "enterprise", "Enterprise keeps its key for the clients stored on it"
+    refute_includes WorkspacePackage.keys, "growth", "Growth split into CTO and Team on 2026-10-12"
+  end
+
+  test "five tiers load in ladder order, and each includes everything below it" do
     assert_equal TIERS, WorkspacePackage.all.map(&:key)
 
     TIERS.each_cons(2) do |lower, upper|
@@ -21,14 +34,15 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
   end
 
-  test "prices: Vibe free, Pro $100, Growth $500, Enterprise custom; 10% off billed annually" do
-    vibe, pro, growth, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
+  test "[unit] prices: Vibe free, Pro $100, CTO $500, Team $1,500, Enterprise custom; 10% off billed annually" do
+    vibe, pro, cto, team, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
 
     assert vibe.free?
     assert_nil vibe.annual_price, "a free tier has no annual bill to discount"
     assert_equal 10, WorkspacePackage.annual_discount_percent
     assert_equal [ 100, 1080, 90 ], [ pro.price_monthly, pro.annual_price, pro.annual_monthly_equivalent ]
-    assert_equal [ 500, 5400, 450 ], [ growth.price_monthly, growth.annual_price, growth.annual_monthly_equivalent ]
+    assert_equal [ 500, 5400, 450 ], [ cto.price_monthly, cto.annual_price, cto.annual_monthly_equivalent ]
+    assert_equal [ 1500, 16_200, 1350 ], [ team.price_monthly, team.annual_price, team.annual_monthly_equivalent ]
     refute enterprise.priced?
     assert_equal "Custom", enterprise.price_label
     assert_nil enterprise.annual_price
@@ -37,7 +51,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "the server row reads across: Eco, Basic, Basic web + worker, sized to need" do
     server = feature("Server")
 
-    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Sized to need" ],
+    assert_equal [ "Eco dyno (sleeps when idle)", "Basic dyno", "Basic web + worker", "Basic web + worker", "Sized to need" ],
                  TIERS.map { |key| server.value_for(key) }
     assert server.varies?
     refute feature("HTTPS and deploys").varies?, "a row every tier shares identically is not highlighted"
@@ -47,7 +61,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute feature("Database").included_in?(:vibe)
     assert_nil feature("Database").value_for(:vibe)
     refute feature("Google Workspace").included_in?(:pro)
-    assert_equal "2 seats included", feature("Google Workspace").value_for(:growth)
+    assert_equal "2 seats included", feature("Google Workspace").value_for(:cto)
   end
 
   test "each package carries a card: a tagline, 4-6 highlights and a known CTA" do
@@ -60,7 +74,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
     assert_equal "build", WorkspacePackage.find(:vibe).cta["action"]
     assert_equal "enterprise_booking", WorkspacePackage.find(:enterprise).cta["action"]
-    assert_equal [ "growth" ], WorkspacePackage.all.select(&:featured?).map(&:key), "exactly one card is featured"
+    assert_equal [ "team" ], WorkspacePackage.all.select(&:featured?).map(&:key), "exactly one card is featured"
   end
 
   test "the enterprise booking URL is blank until supplied, and only an https URL counts" do
@@ -98,7 +112,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[x tiktok], social.display_software
     assert connectors.planned?, "Egnyte is not built"
     assert_equal "Scoped per client", connectors.value_for(:enterprise)
-    refute connectors.included_in?(:growth)
+    refute connectors.included_in?(:team)
     WorkspacePackage.features.each do |f|
       refute_match(/instagram/i, "#{f.name} #{f.blurb} #{f.values.values.join(' ')}", "Instagram posting does not exist")
       refute_includes f.display_software, "instagram", "#{f.name} may not show Instagram"
@@ -109,7 +123,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     [ "Payments", "Crypto and wallets", "AI features" ].each do |name|
       add_on = feature(name)
       assert_equal "Add-on", add_on.value_for(:enterprise), name
-      TIERS.first(3).each { |key| refute add_on.included_in?(key), "#{name} is not in #{key}" }
+      TIERS.first(4).each { |key| refute add_on.included_in?(key), "#{name} is not in #{key}" }
       assert_empty add_on.software_keys, "#{name}: an add-on is recorded per client, not provisioned by the tier"
       assert add_on.display_software.any?, "#{name} shows its software on the full-stack page"
     end
@@ -124,10 +138,13 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[github rails heroku], WorkspacePackage.find(:vibe).software_keys
     pro = WorkspacePackage.find(:pro).software_keys
     assert_includes pro, "postgres"
-    refute_includes pro, "redis"
-    growth = WorkspacePackage.find(:growth).software_keys
-    %w[google redis sentry zerobounce 1password resend cloudflare].each { |key| assert_includes growth, key }
-    refute_includes growth, "x", "planned social posting puts no X in a stack"
+    assert_includes pro, "redis", "Pro's realtime updates run on Redis"
+    cto = WorkspacePackage.find(:cto).software_keys
+    %w[google redis sentry 1password resend cloudflare].each { |key| assert_includes cto, key }
+    refute_includes cto, "zerobounce", "email marketing is a Team row"
+    team = WorkspacePackage.find(:team).software_keys
+    assert_includes team, "zerobounce"
+    refute_includes team, "x", "planned social posting puts no X in a stack"
 
     every = WorkspacePackage.features.flat_map(&:display_software).uniq
     assert_empty every - WorkspaceIconConfig.softwares.keys, "every software key must have an icon in config/workspace_icons.yml"
@@ -196,33 +213,81 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   end
 
   test "a card's Powered by row adds only what that tier adds, and never a planned brand" do
-    vibe, pro, growth, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
+    vibe, pro, cto, team, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
 
     assert_equal %w[github rails heroku], vibe.card_brands
-    assert_equal %w[postgres squarespace resend cloudflare], pro.card_brands(vibe)
-    assert_equal %w[sentry redis zerobounce google 1password], growth.card_brands(pro)
-    assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.card_brands(growth)
+    assert_equal %w[postgres redis squarespace resend cloudflare], pro.card_brands(vibe)
+    assert_equal %w[sentry google 1password], cto.card_brands(pro)
+    assert_equal %w[zerobounce], team.card_brands(cto)
+    assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.card_brands(team)
     refute_includes vibe.brand_keys, "squarespace", "Vibe's address is a subdomain, not a Squarespace domain"
     %w[x tiktok egnyte slack].each { |key| refute_includes enterprise.brand_keys, key, "#{key} rides a planned row" }
   end
 
-  test "every legacy tier maps to a current tier" do
-    assert_equal %w[launch host workspace agentic], WorkspacePackage::LEGACY_TIERS.keys
-    assert_empty WorkspacePackage::LEGACY_TIERS.values - WorkspacePackage.keys
-    assert_empty WorkspacePackage::LEGACY_TIERS.keys & WorkspacePackage.keys, "a legacy key may not be reused"
+  test "[unit] the talk-to-us line names Enterprise's add-ons as add-ons, and reads CMMC/ITAR as on request" do
+    enterprise = WorkspacePackage.talk_to_us
+
+    assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.add_on_brands
+    WorkspacePackage.cards.each { |card| assert_empty card.add_on_brands, "#{card.key} sells no add-ons" }
+    assert_equal "CMMC/ITAR review on request", feature("Credential rotation").value_for(:enterprise)
+    assert_includes enterprise.highlights, "CMMC/ITAR compliance review, available on request"
+    every = WorkspacePackage.all.flat_map(&:highlights) + WorkspacePackage.features.flat_map { |f| f.values.values.grep(String) }
+    every.grep(/CMMC|ITAR/).each { |text| assert_match(/on request/, text, "CMMC/ITAR is offered, not delivered: #{text}") }
   end
 
-  test "[unit] Cloudflare DNS is a live Growth and Enterprise row, led by the Cloudflare logo, delivered by domain-dns" do
+  test "[unit] Pro carries Redis for its realtime updates" do
+    assert_equal "Redis mini", feature("Cache and job queue").value_for(:pro)
+    assert feature("Realtime updates").included_in?(:pro)
+    refute feature("Cache and job queue").included_in?(:vibe)
+  end
+
+  test "[unit] CTO is Growth's platform; Team adds the marketing rows, funnel generation planned" do
+    marketing = WorkspacePackage.features.select { |f| f.category == "marketing" }.map(&:name)
+    assert_equal [ "Marketing strategy", "Content sprints", "Social posting", "Launch warm-up", "Funnel generation" ], marketing
+    (marketing + [ "Email marketing" ]).each do |name|
+      refute feature(name).included_in?(:cto), "#{name} is a Team row"
+      assert feature(name).included_in?(:team), name
+    end
+    [ "Error alerts", "Google Workspace", "Agentic email drafting", "Knowledge base", "Password vault",
+      "Dedicated browser profile", "Credential rotation", "Cloudflare DNS" ].each do |name|
+      assert feature(name).included_in?(:cto), "#{name} is a CTO row"
+    end
+
+    funnel = feature("Funnel generation")
+    assert funnel.planned?, "no SOP builds a funnel yet"
+    assert_nil funnel.sop
+    assert_match(/landing page.*lead capture.*email sequence.*measured/m, funnel.blurb)
+
+    review = feature("Architecture and roadmap review")
+    assert_equal "builtin", review.status
+    assert_equal [ nil, nil, "Monthly", "Monthly", "Monthly" ], TIERS.map { |key| review.value_for(key) }
+  end
+
+  test "[unit] build requests read 4 a month on CTO and 6 a month on Team" do
+    changes = feature("Changes after launch")
+
+    assert_equal "4 build requests a month", changes.value_for(:cto)
+    assert_equal "6 build requests a month", changes.value_for(:team)
+    assert WorkspacePackage.find(:cto).highlights.any? { |h| h.start_with?("4 build requests a month") }
+    assert WorkspacePackage.find(:team).highlights.any? { |h| h.start_with?("6 build requests a month") }
+  end
+
+  test "[unit] taglines carry the 2026-10-12 promises" do
+    assert_match(/fractional CTO/, WorkspacePackage.find(:cto).tagline)
+    assert_match(/founding team: a CTO and a CMO/, WorkspacePackage.find(:team).tagline)
+  end
+
+  test "[unit] Cloudflare DNS is a live CTO-and-up row, led by the Cloudflare logo, delivered by domain-dns" do
     dns = feature(WorkspacePackage::CLOUDFLARE_DNS)
 
     assert_equal "domain", dns.category
     assert_equal "cloudflare", dns.brand, "the row leads with the Cloudflare logo"
     assert dns.live?, "mcritchie.studio and turfmonster.media already run on it"
     assert_equal "domain-dns", dns.sop
-    assert_equal "Cloudflare DNS — Growth and above", dns.section
-    assert_equal %w[growth enterprise], TIERS.select { |key| dns.included_in?(key) }
-    assert_equal "Bare domain + edge redirects", dns.value_for(:growth)
-    assert_equal %w[cloudflare], dns.software_keys(:growth)
+    assert_equal "Cloudflare DNS — CTO and above", dns.section
+    assert_equal %w[cto team enterprise], TIERS.select { |key| dns.included_in?(key) }
+    assert_equal "Bare domain + edge redirects", dns.value_for(:cto)
+    assert_equal %w[cloudflare], dns.software_keys(:cto)
     assert_match(/bare domain/i, dns.blurb)
     assert_match(/redirect at Cloudflare's edge/, dns.blurb)
     assert_match(/agents manage every record by API/, dns.blurb)
@@ -234,15 +299,15 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert bot.planned?, "no app wires Turnstile yet"
     assert_nil bot.sop
     assert_equal "cloudflare", bot.brand
-    assert_equal %w[growth enterprise], TIERS.select { |key| bot.included_in?(key) }
-    assert_empty bot.card_brands("growth"), "a planned row names no brand on a card"
+    assert_equal %w[cto team enterprise], TIERS.select { |key| bot.included_in?(key) }
+    assert_empty bot.card_brands("cto"), "a planned row names no brand on a card"
     refute bot.spotlight?
   end
 
   test "[unit] a card spotlights a delivered spotlight row from the tier that includes it" do
     TIERS.each do |key|
       names = WorkspacePackage.find(key).spotlight_features.map(&:name)
-      expected = %w[growth enterprise].include?(key) ? [ WorkspacePackage::CLOUDFLARE_DNS ] : []
+      expected = %w[cto team enterprise].include?(key) ? [ WorkspacePackage::CLOUDFLARE_DNS ] : []
       assert_equal expected, names, key
     end
     planned = WorkspacePackage::Feature.new(name: "Later", status: "planned", spotlight: "soon", values: {})

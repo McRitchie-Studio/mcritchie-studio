@@ -43,7 +43,7 @@ class StackMatrixTest < ActiveSupport::TestCase
 
   test "Pro and up carry the Squarespace domain in their stack; Vibe's subdomain does not" do
     assert_includes WorkspacePackage.find("pro").software_keys, "squarespace"
-    assert_includes WorkspacePackage.find("growth").software_keys, "squarespace"
+    assert_includes WorkspacePackage.find("cto").software_keys, "squarespace"
     refute_includes WorkspacePackage.find("vibe").software_keys, "squarespace"
   end
 

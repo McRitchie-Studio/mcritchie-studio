@@ -128,8 +128,8 @@ class StackControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] each client shows its live DNS host against its tier's promise" do
-    StackClient.find_by!(slug: "turf-monster").update!(tier: "growth")
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+    StackClient.find_by!(slug: "turf-monster").update!(tier: "team")
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
     StackClient.create!(slug: "industries", name: "McRitchie Industries", tier: StackClient::INTERNAL, position: 20)
     StackClient.create!(slug: "cyvasse", name: "Cyvasse", tier: "pro", position: 50)
     stub_dns("turfmonster.media" => %w[howard.ns.cloudflare.com.],
@@ -156,8 +156,8 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     DnsHost.reset_resolver!
   end
 
-  test "[integration] a Growth client flips to On Cloudflare when its nameservers move" do
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+  test "[integration] a CTO client flips to On Cloudflare when its nameservers move" do
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
     stub_dns("commercialwelding.llc" => %w[ada.ns.cloudflare.com. bob.ns.cloudflare.com.])
     log_in_as users(:alex)
     get stack_path
@@ -168,7 +168,7 @@ class StackControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] a DNS failure never 500s the page: the host reads Unknown" do
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "growth", position: 30)
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
     StackClient.create!(slug: "family", name: "McRitchie Family", tier: StackClient::INTERNAL, position: 95)
     DnsHost.resolver = ->(_name) { raise Resolv::ResolvTimeout }
     log_in_as users(:alex)
