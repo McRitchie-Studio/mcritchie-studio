@@ -24,10 +24,9 @@ class MusicVideosClipPromptTest < Minitest::Test
     prompt = P.fill(target: nil)
 
     assert_equal "Replace the singer in this music video with {athlete}, the football player. The player should " \
-                 "have his normal hair, athletic build and be in uniform, full pads with no helmet (like the model " \
-                 "provided). He should also be mouthing all the mouth movements of the singer. Give him a diamond " \
-                 "encrusted watch, necklace, rings, and some designer sunglasses. Please keep everyone else the " \
-                 "same. Please give the video the same cinematic lighting as the music video.", prompt
+                 "have his normal hair, athletic build and be in uniform, full pads with no helmet, dressed and accessorized " \
+                 "exactly like the model provided. He should also be mouthing all the mouth movements of the singer. Please keep everyone " \
+                 "else the same. Please give the video the same cinematic lighting as the music video.", prompt
   end
 
   def test_athlete_stays_a_placeholder_until_the_target_is_recast
@@ -40,7 +39,7 @@ class MusicVideosClipPromptTest < Minitest::Test
     prompt = P.fill(target: "long-haired man", athlete: "Test Athlete Alpha", look: "Home Blue")
 
     assert prompt.start_with?("Replace the long-haired man in this music video with Test Athlete Alpha, the football player.")
-    assert_includes prompt, "no helmet (like the Home Blue model provided)."
+    assert_includes prompt, "no helmet, dressed and accessorized exactly like the Home Blue model provided."
     refute_includes prompt, "{"
   end
 
@@ -48,7 +47,7 @@ class MusicVideosClipPromptTest < Minitest::Test
     prompt = P.fill(target: "desk", athlete: "Test Athlete Alpha")
 
     assert_includes prompt, "with Test Athlete Alpha, the football player."
-    assert_includes prompt, "(like the model provided)"
+    assert_includes prompt, "dressed and accessorized exactly like the model provided."
   end
 
   def test_names_are_flattened_so_they_cannot_open_a_blank
@@ -107,9 +106,8 @@ class MusicVideosClipPromptTest < Minitest::Test
       - Person B (lead) -> #4 Test Athlete Alpha, Home White (character sheet 1)
       - Person D (background) -> #88 Test Athlete Beta, Home White (character sheet 2)
 
-      Each player should have his normal hair, athletic build and be in uniform, full pads with no helmet (like his character sheet).
+      Each player should have his normal hair, athletic build and be in uniform, full pads with no helmet, dressed and accessorized exactly like his character sheet.
       #4 Test Athlete Alpha should also be mouthing all the mouth movements of Person B.
-      Give each of them a diamond encrusted watch, necklace, rings, and some designer sunglasses.
       Keep everyone else exactly as they are.
       Please give the video the same cinematic lighting as the music video.
     PROMPT
@@ -129,7 +127,6 @@ class MusicVideosClipPromptTest < Minitest::Test
     assert_includes prompt, "- Person B (lead) -> Test Athlete Alpha (character sheet 1)"
     assert_includes prompt, "Swap this person:"
     assert_includes prompt, "The player should have his normal hair"
-    assert_includes prompt, "Give him a diamond encrusted watch"
     refute_includes prompt, "#"
   end
 
@@ -162,5 +159,36 @@ class MusicVideosClipPromptTest < Minitest::Test
     (1..60).each { |n| assert_equal n, letters.ordinal(letters.for(n)) }
     assert_nil letters.ordinal("b")
     assert_raises(ArgumentError) { letters.for(0) }
+  end
+
+  # --- no jewelry: the look decides (an iced look's sheet already wears it) ---
+
+  JEWELRY = /diamond|jewel|watch|necklace|rings?\b|sunglasses/i
+
+  def test_single_target_prompt_adds_no_jewelry_and_keeps_its_other_lines
+    prompt = P.fill(target: "man in the leopard-print shirt", others: ["long-haired man"],
+                    athlete: "Test Athlete Alpha", look: "Iced Out")
+
+    refute_match JEWELRY, prompt
+    assert_includes prompt, "full pads with no helmet, dressed and accessorized exactly like the Iced Out model provided."
+    assert_includes prompt, "Replace the man in the leopard-print shirt in this music video with Test Athlete Alpha"
+    assert_includes prompt, "He should also be mouthing all the mouth movements of the man in the leopard-print shirt."
+    assert_includes prompt, "Please keep the long-haired man the same."
+    assert_includes prompt, "Please give the video the same cinematic lighting as the music video."
+  end
+
+  def test_lettered_prompts_add_no_jewelry_and_keep_their_other_lines
+    { [DAK] => "The player", [DAK, LAMB] => "Each player" }.each do |swaps, player|
+      prompt = P.lettered(swaps:)
+
+      refute_match JEWELRY, prompt
+      assert_includes prompt, "Swap #{swaps.one? ? 'this person' : 'these people'}:"
+      assert_includes prompt, "#{player} should have his normal hair"
+      sheet = swaps.one? ? "the character sheet provided" : "his character sheet"
+      assert_includes prompt, "full pads with no helmet, dressed and accessorized exactly like #{sheet}.\n"
+      assert_includes prompt, "#4 Test Athlete Alpha should also be mouthing all the mouth movements of Person B."
+      assert_includes prompt, "Keep everyone else exactly as they are."
+      assert prompt.end_with?("Please give the video the same cinematic lighting as the music video.")
+    end
   end
 end

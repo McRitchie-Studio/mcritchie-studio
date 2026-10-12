@@ -3,14 +3,15 @@
 module MusicVideos
   # The Higgsfield swap prompt for a clip or a chunk. TEMPLATE is the operator's
   # proven prompt (2026-09-29) with "the singer" generalised: edit it here only.
+  # Its jewelry sentence was removed on 2026-10-11: the look's character sheet
+  # now decides accessories (an iced look wears them, a base look stays clean).
   # {athlete} is filled once the operator recasts the target on the cast panel
   # (the hub's MusicVideos::ClipPrompts); until then it stays a placeholder.
   module ClipPrompt
     TEMPLATE = "Replace {target_description} in this {video} with {athlete}, the football player. " \
                "The player should have his normal hair, athletic build and be in uniform, full pads with " \
-               "no helmet (like the {look}model provided). He should also be mouthing all the mouth movements of " \
-               "{target_description}. Give him a diamond encrusted watch, necklace, rings, and some designer " \
-               "sunglasses. Please keep {keep_others} the same. Please give the video the same cinematic " \
+               "no helmet, dressed and accessorized exactly like the {look}model provided. He should also be mouthing all the mouth movements of " \
+               "{target_description}. Please keep {keep_others} the same. Please give the video the same cinematic " \
                "lighting as the {source}."
     ATHLETE = "{athlete}"
     NO_TARGET = "the singer"
@@ -95,11 +96,11 @@ module MusicVideos
       end
       lines << ""
       lines << "#{one ? 'The player' : 'Each player'} should have his normal hair, athletic build and be in uniform, " \
-               "full pads with no helmet (like #{one ? 'the character sheet provided' : 'his character sheet'})."
+               "full pads with no helmet, dressed and accessorized exactly like " \
+               "#{one ? 'the character sheet provided' : 'his character sheet'}."
       list.select(&:lead).each do |s|
         lines << "#{s.player} should also be mouthing all the mouth movements of Person #{s.letter}."
       end
-      lines << "Give #{one ? 'him' : 'each of them'} a diamond encrusted watch, necklace, rings, and some designer sunglasses."
       lines << KEEP_REST
       lines << LETTERED_LIGHTING.gsub("{source}", SOURCE_WORDS.fetch(kind, SOURCE_WORDS["music_video"]))
       lines.join("\n")
