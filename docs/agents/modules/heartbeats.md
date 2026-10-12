@@ -25,8 +25,8 @@ a **prompt-like row 1** plus **copyable action rows**:
   - `entry-forfeit` — externally triggered: an entrant asks to withdraw.
   - `market-refresh` / `content-build` — schedule- and queue-shaped.
   - `collect-vault-revenue` — operator-triggered, and it moves money: it runs
-    when Alex asks for the revenue, and its second hop is three approvals in
-    Squads' own UI.
+    when Alex asks for the revenue, and its second hop runs through Steffon's
+    `squad-vault-ops`: the agent queues and double-signs, and Alex approves.
 
   A chip does not imply a cadence (`clean-infra`, `deploy-with-task` and
   `contest-rehearsal` are chips and are direct-invoke); do not restate that

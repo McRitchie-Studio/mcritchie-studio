@@ -96,6 +96,7 @@ Where each command may run, the author set, and the long form:
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
 9. **Dream before you decide.** Session start loads the platform dream sequence: good answers from past sessions, signed off by Alex. A soul's own sequence loads with `bin/dream <soul>`. Read it, and answer a matching situation the same way. A dream never overrides a rule here or an SOP. Detail: `docs/agents/modules/dream.md`.
+10. **No agent signs mainnet.** The sole exception is two kinds of mainnet Squad vault transaction: a SOL or classic SPL transfer out of vault 0 through turf-vault `scripts/squad-vault-transfer.js`, and a program `Upgrade` from a vault-owned, hash-verified buffer with the spill to the vault. For those, the agent seats `7auwTL` (`solana.turf.system`) and `4bKN` (`solana.turf.governance`) create and approve the proposal, Alex approves from his own seat, and an agent executes only after his approval is on chain. Config transactions, any other instruction, and buffer, extend or init signatures are not covered. An agent never runs a mainnet signature with `8K81`, `CytJ` or Mack unless Alex gives an explicit ruling for that one instance; the app's own server key signing inside the running app is the app, not an agent. Detail: `docs/agents/agents/steffon/sops/squad-vault-ops.md`.
 
 Namespace scratch writes by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
 Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style*.
@@ -188,6 +189,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `program-upgrade` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
+| `squad-vault-ops` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/squad-vault-ops.md` |
 | `website-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | `workspace-icon` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
 | `workspace-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |

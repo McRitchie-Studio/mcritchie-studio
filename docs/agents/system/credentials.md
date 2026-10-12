@@ -160,15 +160,19 @@ export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents
 | Squads V4 multisig — **one per cluster, and they differ** | the program **upgrade** authority | **threshold 3 of FIVE**, all mask 7. mainnet `4H3fP3ot…`: `7auwTL…`, `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…`. devnet `7nRuVw3V…`: `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`, `8K81…`, `BLSBw8…` |
 | `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops — *the money* | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged on both clusters |
 
+**Superseded for Squads by the 2026-10-09 governance rotation.** `BLSBw8…` left both Squads (mainnet config tx #6, devnet #19) and `4bKNSqkr…` (`solana.turf.governance`, `studio-agents-admin`) took its seat. Read off chain 2026-10-12, mainnet `4H3fP3ot…` is threshold 3 of `7auwTL…`, `4bKNSqkr…`, `7ZDJ…`, `9gACbz…`, `3Qj4v9…`, every mask 7. Where this section names `BLSBw8…` as a Squads seat, read `4bKNSqkr…`. Moving funds out of the vault: [`squad-vault-ops`](../agents/steffon/sops/squad-vault-ops.md).
+
 **They are two different authorities with different thresholds — but on mainnet their MEMBERSHIP has converged, and not by design.** Both are five wallets; Squads is live at threshold 3, `VaultState` is the target at threshold 2 once `update_signers` runs:
 
 | Wallet | Squads mainnet (upgrade) | `VaultState.signers` (the money) |
 |---|---|---|
-| system `7auwTL…` (`solana.turf.system`) | ✅ **seated, mask 7 — against policy** | slot 1 |
+| system `7auwTL…` (`solana.turf.system`) | ✅ **seated, mask 7 — a deliberate agent seat since 2026-10-12** ([`squad-vault-ops`](../agents/steffon/sops/squad-vault-ops.md)) | slot 1 |
 | admin `BLSBw8…` (`solana.turf.admin`) | ✅ | slot 2 |
 | Alex's Phantom `7ZDJ…` | ✅ | slot 3 |
 | Alex's second `3Qj4v9…` | ✅ | slot 4 |
 | Alex's third `9gACbz…` | ✅ | slot 5 |
+
+**Superseded 2026-10-12: `7auwTL…` is a deliberate agent seat now, and no removal task stands.** Under Alex's [`squad-vault-ops`](../agents/steffon/sops/squad-vault-ops.md) pattern it creates and approves mainnet vault proposals alongside `4bKNSqkr…`, and one of his own seats remains the required third approval. The paragraph below is the 2026-09-15 reasoning, kept as history.
 
 ⚠ **THE SYSTEM KEY WAS MEANT TO BE OFF SQUADS. ON CHAIN IT IS NOT.** The policy is right and unchanged: `7auwTL…` is the app's HOT operational key — it lives in Heroku config on a running web dyno and signs on every entry and every payout. That makes it the most exposed key in the system and the last one that should hold program upgrade authority, and it has no job there anyway, since upgrading a program is a rare, deliberate, human act and never something the server does unattended. **What the chain says is the opposite:** `7auwTL…` holds `Initiate|Vote|Execute` on the mainnet Squad, and `2eGs8G3w…` (`solana.turf.system.devnet`) holds the same on devnet. This document asserted the policy as fact for a day. Closing the gap is a **Squads config transaction** with Alex's signature on it — its own task, not an edit here. **Bound the exposure correctly, though, because overstating it is its own kind of wrong:** that dyno holds ONE seat of five against a threshold of THREE, so compromising it alone does **not** reach program upgrade authority — it buys an attacker the ability to open a proposal and cast one of the three approvals it needs. The real shape is subtler and is the reason this still matters: it is a seat the agent can reach without Alex, which alongside `BLSBw8…` makes **two of the three**. The third must still come from one of his personal wallets. So the margin is one signature where the policy intended two.
 
