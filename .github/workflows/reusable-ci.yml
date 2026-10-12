@@ -53,9 +53,9 @@ on:
         type: boolean
         default: true
       postgres-image:
-        description: The Postgres service image, on the ECR Public mirror, pinned to production's major.
+        description: The Postgres service image, pinned to production's major. A ghcr.io name is pulled with the run's token; any other registry anonymously.
         type: string
-        default: public.ecr.aws/docker/library/postgres:17
+        default: ghcr.io/mcritchie-studio/postgres:17
       # ---- the static lane ----
       gem-audit-command:
         description: An extra gem advisory scan for the static lane (bin/bundler-audit); empty runs none.
@@ -79,10 +79,12 @@ on:
         type: string
         default: bin/rails db:test:prepare test:system
 
-# The lanes read the tree and nothing else. A called workflow can narrow the caller's
-# token, never widen it.
+# The lanes read the tree, and the Postgres service image from the hub's own ghcr.io
+# packages (mirror-ci-images.yml), and nothing else. A called workflow can narrow the
+# caller's token, never widen it; a repo whose default token is `read` grants both.
 permissions:
   contents: read
+  packages: read
 
 jobs:
   # THE STATIC LANE — brakeman, importmap audit and rubocop in ONE job.
@@ -264,15 +266,20 @@ jobs:
 
     services:
       postgres:
-        # The official image, pulled from ECR Public rather than Docker Hub: the
-        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
-        # afternoon and every lane with a database dies at setup
-        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. The name is the `postgres-image`
-        # input, whose default pins production's major (17);
-        # test/lib/ci_service_images_test.rb holds the default and every service
-        # block to it.
+        # The official image, copied into GitHub's own registry by
+        # mirror-ci-images.yml and pulled with the run's token. Anonymous pulls
+        # die at setup on someone else's quota: Docker Hub's (toomanyrequests,
+        # 2026-10-09), then ECR Public's (Data limit exceeded, 2026-10-10). The
+        # name is the `postgres-image` input, whose default pins production's
+        # major (17). The credentials apply only to a ghcr.io name; for any other
+        # registry both are empty and the runner skips the login, so a caller
+        # that passes an ECR name still pulls anonymously.
+        # test/lib/ci_service_images_test.rb holds the default, the credentials
+        # and every service block to it.
         image: ${{ inputs.postgres-image }}
+        credentials:
+          username: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.actor || '' }}
+          password: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.token || '' }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -530,15 +537,20 @@ jobs:
 
     services:
       postgres:
-        # The official image, pulled from ECR Public rather than Docker Hub: the
-        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
-        # afternoon and every lane with a database dies at setup
-        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. The name is the `postgres-image`
-        # input, whose default pins production's major (17);
-        # test/lib/ci_service_images_test.rb holds the default and every service
-        # block to it.
+        # The official image, copied into GitHub's own registry by
+        # mirror-ci-images.yml and pulled with the run's token. Anonymous pulls
+        # die at setup on someone else's quota: Docker Hub's (toomanyrequests,
+        # 2026-10-09), then ECR Public's (Data limit exceeded, 2026-10-10). The
+        # name is the `postgres-image` input, whose default pins production's
+        # major (17). The credentials apply only to a ghcr.io name; for any other
+        # registry both are empty and the runner skips the login, so a caller
+        # that passes an ECR name still pulls anonymously.
+        # test/lib/ci_service_images_test.rb holds the default, the credentials
+        # and every service block to it.
         image: ${{ inputs.postgres-image }}
+        credentials:
+          username: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.actor || '' }}
+          password: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.token || '' }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -695,15 +707,20 @@ jobs:
 
     services:
       postgres:
-        # The official image, pulled from ECR Public rather than Docker Hub: the
-        # runners' shared IPs exhaust Docker Hub's anonymous pull quota on a busy
-        # afternoon and every lane with a database dies at setup
-        # (toomanyrequests, 2026-10-09). ECR Public mirrors the library with no
-        # anonymous limit and no credential. The name is the `postgres-image`
-        # input, whose default pins production's major (17);
-        # test/lib/ci_service_images_test.rb holds the default and every service
-        # block to it.
+        # The official image, copied into GitHub's own registry by
+        # mirror-ci-images.yml and pulled with the run's token. Anonymous pulls
+        # die at setup on someone else's quota: Docker Hub's (toomanyrequests,
+        # 2026-10-09), then ECR Public's (Data limit exceeded, 2026-10-10). The
+        # name is the `postgres-image` input, whose default pins production's
+        # major (17). The credentials apply only to a ghcr.io name; for any other
+        # registry both are empty and the runner skips the login, so a caller
+        # that passes an ECR name still pulls anonymously.
+        # test/lib/ci_service_images_test.rb holds the default, the credentials
+        # and every service block to it.
         image: ${{ inputs.postgres-image }}
+        credentials:
+          username: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.actor || '' }}
+          password: ${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.token || '' }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

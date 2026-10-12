@@ -5,10 +5,15 @@
 # Why this test exists: `image: postgres` resolves to Docker Hub, and Docker Hub
 # meters anonymous pulls per IP. GitHub's hosted runners share their IPs, so on a
 # busy afternoon every lane with a database dies at setup with `toomanyrequests`
-# before a single test runs (three consecutive runs on 2026-10-09). ECR Public
-# mirrors the official library with no anonymous limit and no credential. A bare
-# image name, a Docker Hub name, or a drift between the three service blocks puts
-# the quota back on the critical path, so this asserts the name directly.
+# before a single test runs (three consecutive runs on 2026-10-09). ECR Public, the
+# mirror that replaced it, then answered `toomanyrequests: Data limit exceeded` five
+# times on 2026-10-10 and blocked the release. So the lanes pull from GitHub's own
+# registry: .github/workflows/mirror-ci-images.yml copies the official image to
+# ghcr.io/mcritchie-studio, and each service block logs in with the run's token. A
+# bare name, a Docker Hub or ECR name, a missing login, a token without
+# `packages: read`, an image the mirror does not copy, or a drift between the three
+# service blocks puts an anonymous quota back on the critical path, so this asserts
+# each directly.
 #
 # The name reaches the service blocks through the `postgres-image` input, so the
 # guard reads the workflow as a bare call runs it (every input at its default) and
@@ -23,23 +28,36 @@ require_relative "../../bin/lib/ci_suite_workflow"
 
 class CiServiceImagesTest < Minitest::Test
   WORKFLOW = File.expand_path("../../.github/workflows/reusable-ci.yml", __dir__)
-  MIRROR = "public.ecr.aws/docker/library/"
+  MIRROR_WORKFLOW = File.expand_path("../../.github/workflows/mirror-ci-images.yml", __dir__)
+  MIRROR = "ghcr.io/mcritchie-studio/"
   # Production runs Postgres 17 (heroku pg:info, 2026-10-09); the lanes test against
   # the same major.
   POSTGRES = "#{MIRROR}postgres:17"
   IMAGE_INPUT = "postgres-image"
+  # The login every service block carries: the run's own token for a ghcr.io name,
+  # and nothing (the runner then skips the login) for a caller's other registry.
+  CREDENTIALS = {
+    "username" => "${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.actor || '' }}",
+    "password" => "${{ startsWith(inputs.postgres-image, 'ghcr.io/') && github.token || '' }}"
+  }.freeze
 
   def as_run(text = File.read(WORKFLOW)) = CiSuiteWorkflow.as_called(text)
 
-  def service_images(text)
+  def services(text)
     YAML.safe_load(text).fetch("jobs").flat_map do |job, spec|
-      (spec["services"] || {}).map { |name, service| ["#{job}.#{name}", service["image"].to_s] }
+      (spec["services"] || {}).map { |name, service| ["#{job}.#{name}", service] }
     end
   end
 
+  def service_images(text) = services(text).map { |where, service| [where, service["image"].to_s] }
+
+  # The `<name>:<tag>` rows mirror-ci-images.yml copies, and where it copies them.
+  def mirror_job = YAML.safe_load(File.read(MIRROR_WORKFLOW)).fetch("jobs").fetch("mirror")
+  def mirrored = mirror_job.dig("env", "IMAGES").to_s.split
+
   # Every image the text names that is not a pinned mirror pull, as "where: why".
   # Reads `image:` lines and every `*-image` input default.
-  def docker_hub_pulls(text)
+  def anonymous_pulls(text)
     named = text.each_line.with_index(1).filter_map do |line, number|
       (m = line.match(/^\s*image:\s*(.+?)\s*$/)) && ["line #{number}", m[1]]
     end
@@ -48,7 +66,7 @@ class CiServiceImagesTest < Minitest::Test
     named.filter_map do |where, image|
       next if image.match?(/\A\$\{\{\s*inputs\.[a-z-]+-image\s*\}\}\z/) # judged at its default
 
-      why = if !image.start_with?(MIRROR) then "is a Docker Hub pull (bare or docker.io name)"
+      why = if !image.start_with?(MIRROR) then "is an anonymous pull (bare, docker.io or another registry's name)"
             elsif image.end_with?(":latest") then "pins latest, not a major"
             elsif !image.match?(/:\d+\z/) then "carries no major tag"
             end
@@ -70,9 +88,33 @@ class CiServiceImagesTest < Minitest::Test
     end
   end
 
-  def test_no_image_anywhere_in_the_workflow_resolves_to_docker_hub
-    assert_empty docker_hub_pulls(File.read(WORKFLOW))
-    assert_empty docker_hub_pulls(as_run)
+  def test_every_service_block_logs_in_to_ghcr_with_the_run_token
+    services(File.read(WORKFLOW)).each do |where, service|
+      assert_equal CREDENTIALS, service["credentials"], "#{where} pulls without the run's ghcr.io login"
+    end
+  end
+
+  def test_the_suite_token_may_read_packages
+    permissions = YAML.safe_load(File.read(WORKFLOW)).fetch("permissions")
+    assert_equal({ "contents" => "read", "packages" => "read" }, permissions)
+  end
+
+  def test_the_mirror_copies_the_image_the_suite_pulls_before_the_suite_needs_it
+    assert_equal MIRROR.chomp("/"), mirror_job.dig("env", "TARGET")
+    assert_includes mirrored, POSTGRES.delete_prefix(MIRROR), "mirror-ci-images.yml does not copy the image the lanes pull"
+
+    doc = YAML.safe_load(File.read(MIRROR_WORKFLOW))
+    assert_equal "write", doc.dig("permissions", "packages")
+    on = doc.fetch(true) # YAML 1.1 reads the bare key `on` as true
+    assert_includes on.dig("push", "paths"), ".github/workflows/mirror-ci-images.yml",
+                    "a push that edits the mirror must run it, so a new row exists before CI pulls it"
+    refute on["push"].key?("branches"), "the push trigger must fire on a feature branch, before merge"
+    assert on.key?("schedule") && on.key?("workflow_dispatch")
+  end
+
+  def test_no_image_anywhere_in_the_workflow_is_an_anonymous_pull
+    assert_empty anonymous_pulls(File.read(WORKFLOW))
+    assert_empty anonymous_pulls(as_run)
   end
 
   def test_control_the_guard_reads_the_image_it_asserts_against
@@ -101,27 +143,27 @@ class CiServiceImagesTest < Minitest::Test
   def fixture(default: POSTGRES, image: "${{ inputs.postgres-image }}") = format(FIXTURE, default: default, image: image)
 
   def test_unit_the_pinned_default_through_the_input_is_clean
-    assert_empty docker_hub_pulls(fixture)
-    assert_empty docker_hub_pulls(as_run(fixture))
+    assert_empty anonymous_pulls(fixture)
+    assert_empty anonymous_pulls(as_run(fixture))
     assert_equal [["rails.postgres", POSTGRES]], service_images(as_run(fixture))
   end
 
   def test_unit_a_bare_or_docker_io_input_default_is_caught
-    %w[postgres postgres:17 docker.io/library/postgres:17].each do |bad|
+    %w[postgres postgres:17 docker.io/library/postgres:17 public.ecr.aws/docker/library/postgres:17].each do |bad|
       text = fixture(default: bad)
 
-      assert_equal 1, docker_hub_pulls(text).size, "#{bad}: the raw read sees the input default"
-      assert_match(/input `postgres-image` default/, docker_hub_pulls(text).first)
-      assert_equal 2, docker_hub_pulls(as_run(text)).size, "#{bad}: the resolved read sees the service line too"
+      assert_equal 1, anonymous_pulls(text).size, "#{bad}: the raw read sees the input default"
+      assert_match(/input `postgres-image` default/, anonymous_pulls(text).first)
+      assert_equal 2, anonymous_pulls(as_run(text)).size, "#{bad}: the resolved read sees the service line too"
     end
   end
 
   def test_unit_a_latest_or_untagged_mirror_default_is_caught
-    assert_match(/pins latest/, docker_hub_pulls(fixture(default: "#{MIRROR}postgres:latest")).first)
-    assert_match(/no major tag/, docker_hub_pulls(fixture(default: "#{MIRROR}postgres")).first)
+    assert_match(/pins latest/, anonymous_pulls(fixture(default: "#{MIRROR}postgres:latest")).first)
+    assert_match(/no major tag/, anonymous_pulls(fixture(default: "#{MIRROR}postgres")).first)
   end
 
   def test_unit_a_literal_docker_hub_image_beside_the_input_is_caught
-    assert_equal 1, docker_hub_pulls(fixture(image: "postgres")).size
+    assert_equal 1, anonymous_pulls(fixture(image: "postgres")).size
   end
 end

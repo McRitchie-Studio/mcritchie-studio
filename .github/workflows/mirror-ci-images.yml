@@ -1,0 +1,86 @@
+# Mirror CI images: copies the service images CI pulls into GitHub Container Registry.
+#
+# WHY. Every database lane in reusable-ci.yml starts a Postgres service container.
+# Pulled anonymously, that image sits behind someone else's quota: Docker Hub's
+# per-IP limit killed every lane on 2026-10-09 (`toomanyrequests`), and ECR Public,
+# the mirror that replaced it, answered `toomanyrequests: Data limit exceeded` five
+# times on 2026-10-10 and blocked the release. ghcr.io is GitHub's own registry; a
+# hosted runner pulls from it with the run's own token and no anonymous quota.
+#
+# WHAT. Each row below is copied, linux/amd64 only (the runners' platform, and a
+# quarter of the bytes against the source's data limit), to
+# ghcr.io/mcritchie-studio/<name>:<tag>. The source is tried on ECR Public first and
+# Docker Hub second, round after round with a growing pause, so one throttled
+# registry cannot fail the copy. The package is linked to this repo by the push
+# itself, so the hub's CI token reads it with `packages: read`.
+#
+# WHEN. On a push that edits this file (any branch, so the copy exists before the
+# CI that pulls it), weekly to pick up the upstream patch release, and by hand.
+# A tag is overwritten in place: the CI pulls a major (`:17`), never a patch.
+#
+# ADDING AN IMAGE: add a row to `IMAGES`, push, and only after this run is green
+# point the CI at the ghcr name. test/lib/ci_service_images_test.rb holds the CI's
+# image to a row here.
+name: Mirror CI images
+
+on:
+  push:
+    paths:
+      - .github/workflows/mirror-ci-images.yml
+  schedule:
+    # Off the hour: GitHub queues top-of-hour schedules behind everyone else's.
+    - cron: "41 8 * * 1" # Mondays 08:41 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-ci-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # One `<name>:<tag>` per line, from the official library. 17 is production's
+      # Postgres major (the hub's CI default); 18 is what cyvasse and moms-app pin.
+      IMAGES: |
+        postgres:17
+        postgres:18
+      TARGET: ghcr.io/mcritchie-studio
+    steps:
+      - name: Copy each image to ghcr.io
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          sources=(public.ecr.aws/docker/library docker.io/library)
+          failed=0
+          for image in $IMAGES; do
+            copied=""
+            for round in 1 2 3 4; do
+              for source in "${sources[@]}"; do
+                echo "::group::${image}: round ${round}, from ${source}"
+                if skopeo copy --retry-times 2 --override-os linux --override-arch amd64 \
+                     --dest-creds "${GHCR_USER}:${GHCR_TOKEN}" \
+                     "docker://${source}/${image}" "docker://${TARGET}/${image}"; then
+                  copied="$source"
+                fi
+                echo "::endgroup::"
+                [ -n "$copied" ] && break 2
+              done
+              sleep $((round * 30))
+            done
+            if [ -z "$copied" ]; then
+              echo "::error::${image}: every source refused after 4 rounds"
+              failed=1
+              continue
+            fi
+            digest=$(skopeo inspect --creds "${GHCR_USER}:${GHCR_TOKEN}" --format '{{.Digest}}' "docker://${TARGET}/${image}")
+            echo "${TARGET}/${image} <- ${copied}/${image} (${digest})" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          exit "$failed"
