@@ -107,9 +107,10 @@ options = {
 
 parser = OptionParser.new do |o|
   o.banner = "Usage: bin/submit-wait <task-slug> [--launch [-m MSG]] [--log PATH] [--pid PID] " \
-             "[--timeout S] [--interval S] [--dir PATH] [--quiet]"
+             "[--skip-preflight] [--timeout S] [--interval S] [--dir PATH] [--quiet]"
   o.on("--launch", "start bin/submit detached first, capturing its PID") { options[:launch] = true }
   o.on("-m", "--message MSG", "commit message forwarded to bin/submit") { |v| options[:message] = v }
+  o.on("--skip-preflight", "forwarded to bin/submit: push past a red pre-flight") { options[:skip_preflight] = true }
   o.on("--log PATH", "log file to read") { |v| options[:log] = v }
   o.on("--pid PID", Integer, "PID of an already-launched submit") { |v| options[:pid] = v }
   o.on("--timeout SECONDS", Float, "bound on the wait") { |v| options[:timeout] = v }
@@ -135,6 +136,9 @@ die!("name the task slug.\n#{parser.banner}", ShipWait::EXIT_USAGE) if slug.empt
 die!("unexpected argument(s): #{ARGV.join(" ")}\n#{parser.banner}", ShipWait::EXIT_USAGE) unless ARGV.empty?
 if options[:message] && !options[:launch]
   die!("-m is only meaningful with --launch (it is forwarded to bin/submit).", ShipWait::EXIT_USAGE)
+end
+if options[:skip_preflight] && !options[:launch]
+  die!("--skip-preflight is only meaningful with --launch (it is forwarded to bin/submit).", ShipWait::EXIT_USAGE)
 end
 
 state_dir = File.expand_path(options[:dir] || File.join(RepoRoot.code_root(nil, ROOT), "tmp", "ship-wait")) # kept across the rename: one pidfile guards both names
@@ -191,6 +195,7 @@ if options[:launch]
 
   ship_argv = [SHIP_BIN, slug]
   ship_argv += ["-m", options[:message]] if options[:message]
+  ship_argv << "--skip-preflight" if options[:skip_preflight]
   child = Process.spawn("/bin/sh", "-c", SENTINEL_WRAPPER, PROGRAM, log_path, *ship_argv,
                         pgroup: true, in: File::NULL, out: File::NULL, err: File::NULL)
   Process.detach(child)
