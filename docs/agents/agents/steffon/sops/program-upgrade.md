@@ -210,8 +210,18 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    deploy key (as for v0.26, `HwqC…`), or as Mr. McRitchie rules on the card.
    Re-run the dry run, and go on only when it plans no extend. **The agent creates
    the upgrade proposal.** First confirm that the buffer's SHA256 matches the
-   reviewed build and that the buffer's authority is the vault. Then run `squad-upgrade.js --cluster=mainnet
-   <BUFFER> --spill=<vault PDA> --send`. The `system` seat creates the proposal,
+   reviewed build and that the buffer's authority is the vault. Then run:
+
+   ```bash
+   shasum -a 256 target/deploy/turf_vault.so   # the reviewed build; the buffer is written without --max-len
+   node scripts/squad-upgrade.js --cluster=mainnet <BUFFER> \
+     --spill=<vault PDA> --expect-buffer-sha256=<that sha256> --send
+   ```
+
+   Since turf-vault PR 61 (`squad-tools-hardening`), a mainnet `--send` refuses
+   before it reads a key unless `--spill` is given and is the Squad vault PDA, and
+   `--expect-buffer-sha256` equals the sha256 of the buffer's program bytes. The
+   dry run prints the buffer's own hash to compare. The `system` seat creates the proposal,
    and `system` and `governance` approve it. Hand Mr. McRitchie the proposal as
    [`squad-vault-ops`](squad-vault-ops.md) step 3 does: the Squads
    `/transactions` link on the vault PDA, and one line naming the program, the
