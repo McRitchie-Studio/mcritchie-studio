@@ -289,6 +289,28 @@ def api(method, path, body = nil, auth: true)
   parsed
 end
 
+# Another task's {"slug","stage"} for the pluggable checks (Dor::Checks::Context#board_task),
+# or nil when the board has no such task. RAISES on anything else, so the check that
+# asked fails closed (the registry records a raising check as an error).
+# DOR_CHECK_BOARD_TASKS is the test seam: a JSON object of slug -> stage.
+def board_task_lookup(task_slug)
+  if (seam = ENV["DOR_CHECK_BOARD_TASKS"])
+    stage = JSON.parse(seam)[task_slug]
+    return stage ? { "slug" => task_slug, "stage" => stage } : nil
+  end
+
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{task_slug}", base_url: BASE_URL, token: token)
+  return nil if res.code.to_i == 404
+  raise "GET /api/v1/tasks/#{task_slug} -> #{res.code}" unless res.code.to_i.between?(200, 299)
+
+  data = TaskBoard.parse_body!(res)["data"]
+  raise "GET /api/v1/tasks/#{task_slug} answered no task" unless data.is_a?(Hash)
+
+  { "slug" => data["slug"], "stage" => data["stage"] }
+rescue SystemExit
+  raise "the board token could not be minted"
+end
+
 def load_task(slug, file)
   if file
     raw = JSON.parse(File.read(file))
@@ -2466,7 +2488,7 @@ if gate != "build"
   check_context = Dor::Checks::Context.new(
     gate: gate, gate_role: options[:gate_role], task: task, devops: devops, slug: slug,
     diff_root: diff_root, diff_base: diff_base(diff_root), pr_url: devops["pr_url"],
-    changed_files: changed_files, json: options[:json]
+    changed_files: changed_files, json: options[:json], board_task: method(:board_task_lookup)
   )
   Dor::Checks.run(:merge, check_context)
   check_context.lines.each { |line| puts line }

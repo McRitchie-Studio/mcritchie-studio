@@ -23,8 +23,12 @@ module Dor
       attr_reader :gate, :gate_role, :task, :devops, :slug, :diff_root, :diff_base, :pr_url,
                   :changed_files, :errors, :suggestions, :lines
 
+      # board_task: a callable, slug -> {"slug","stage"} | nil (no such task). It
+      # RAISES when the board cannot answer, so a check that needs another task's
+      # existence fails closed instead of reading an outage as "none". nil when the
+      # caller wired no board; a check that needs one then refuses.
       def initialize(gate:, gate_role:, task:, devops:, slug:, diff_root:, diff_base:,
-                     pr_url:, changed_files: [], json: false)
+                     pr_url:, changed_files: [], json: false, board_task: nil)
         @gate          = gate.to_s
         @gate_role     = gate_role.to_s
         @task          = task || {}
@@ -35,6 +39,7 @@ module Dor
         @pr_url        = pr_url.to_s
         @changed_files = Array(changed_files)
         @json          = json
+        @board_task    = board_task
         @errors        = []
         @suggestions   = []
         @lines         = []
@@ -59,6 +64,14 @@ module Dor
 
       def json?
         !!@json
+      end
+
+      # Another task on the board, by slug: {"slug","stage"} or nil. Raises when no
+      # board is wired or the board cannot answer.
+      def board_task(slug)
+        raise "no board reader wired into this gate" unless @board_task
+
+        @board_task.call(slug)
       end
 
       # The review gate-zero is the AUTHORITATIVE CI verdict, so several checks are
