@@ -93,6 +93,17 @@ class QaIdlPairTest < Minitest::Test
     end
   end
 
+  # The registry is the other half: a `sha256:` spec here is the single-hash
+  # value that broke turf-monster-qa, whatever the code does with it.
+  def test_the_turf_qa_registry_derives_the_pin_as_an_idl_pair
+    require "yaml"
+    registry = YAML.load_file(File.expand_path("../../config/qa_environments.yml", __dir__))
+    spec = registry.fetch("qa_environments").fetch("turf-monster").fetch("derived_config").fetch("EXPECTED_IDL_HASH")
+
+    assert QaIdlPair.spec?(spec), "turf-monster QA must pin the governance-aware pair, got #{spec.inspect}"
+    assert_equal "config/turf_vault", QaIdlPair.stem(spec)
+  end
+
   # ── the allow-list as a set ─────────────────────────────────────────────────
 
   def test_a_live_pin_that_covers_the_declared_pair_in_any_order_is_covered
