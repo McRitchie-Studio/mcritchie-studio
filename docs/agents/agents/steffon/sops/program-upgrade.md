@@ -83,10 +83,18 @@ so two programs' cards cannot collide.
 - **Mainnet**: **no agent signs a mainnet transaction.** The upgrade's human taps
   are Mr. McRitchie's two Squads approvals. An agent runs only reads and dry runs
   on mainnet: `squad-upgrade.js` without `--send`, `squad-inventory.js`,
-  `check-signer-slots.js`, `bin/program-drift`. `squad-upgrade.js --send` casts
-  the agent seats' approvals on mainnet (its HANDOFF path), so an agent never runs
-  it armed against mainnet. The mainnet card names who writes the buffer and
-  creates the proposal under this rule before the window opens.
+  `check-signer-slots.js`, `bin/program-drift`.
+- **The rule and the chain disagree, and only Mr. McRitchie settles it.** The
+  mainnet Squad is 3-of-5, so two approvals of his do not reach quorum; and every
+  step before them is itself a signed mainnet transaction: `write-buffer` and
+  `set-buffer-authority` (payer funds about 3.8 SOL of rent), `extendProgram` if
+  the dry run asks, `vaultTransactionCreate` and `proposalCreate`.
+  `squad-upgrade.js --send` signs all of those with an agent seat and then casts
+  BOTH agent seats' approvals. `init-governance.js --cluster mainnet` takes keypair
+  files only, so its two signatures are agent keys. **Until he records a ruling on
+  `mainnet-v026-upgrade` naming each mainnet signer, key and payer, no agent runs
+  any of these on mainnet**; the mainnet run stops at the dry runs. Any armed run
+  passes `--spill=<his wallet>` so the buffer refund never lands on an agent seat.
 
 ## Preconditions
 
