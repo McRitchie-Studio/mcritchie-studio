@@ -3,7 +3,8 @@
 
 # bin/program-drift — is each cluster running the program version its source branch
 # carries? Read-only: it reads GitHub, two accounts per cluster over JSON-RPC, and the
-# board for the upgrade cards. It signs nothing. Logic: bin/lib/program_drift.rb;
+# board for the upgrade cards; then each upgrade reserve's balance against the next
+# upgrade's float. It signs nothing. Logic: bin/lib/program_drift.rb;
 # programs: config/onchain_programs.yml; the act it feeds:
 # docs/agents/agents/steffon/sops/program-upgrade.md.
 
@@ -18,11 +19,18 @@ USAGE = <<~TXT
     PROGRAM DRIFT <name> <cluster>: chain runs vA, source is vB — upgrade card <slug> (<stage>)
     PROGRAM DRIFT <name> <cluster>: cannot confirm the deployed version — <reason>
 
-  --json    one JSON object: {"readings": [...], "exit": N}
+  and one line per cluster that names an upgrade reserve (config/onchain_programs.yml):
+    upgrade reserve <name> <cluster>: <label> holds X SOL; next float F SOL, minimum M SOL
+    UPGRADE RESERVE LOW <name> <cluster>: … below the minimum (float + headroom)
+    UPGRADE RESERVE SHORT <name> <cluster>: … less than the next upgrade's float
+    UPGRADE RESERVE <name> <cluster>: cannot confirm — <reason>
+
+  --json    one JSON object: {"readings": [...], "reserves": [...], "exit": N}
   --fresh   skip the 10-minute cache and read GitHub and the chain now
 
   Exit: 0 every cluster current · 1 a cluster behind (or ahead) · 2 a cluster could
   not be confirmed · 3 this help. An unreadable chain is never reported as current.
+  A reserve line is a warning and never changes the exit code.
 TXT
 
 args = CliArgGuard.guard!(
@@ -38,10 +46,17 @@ args = CliArgGuard.guard!(
 readings = ProgramDrift.readings(cache: ProgramDrift.default_cache_path, fresh: args.bool?("--fresh"))
 ProgramDrift.attach_cards(readings, ProgramDrift.board_lookup)
 code = ProgramDrift.exit_code(readings)
+reserves = begin
+  ProgramDrift.reserve_readings(cache: ProgramDrift.default_reserve_cache_path, fresh: args.bool?("--fresh"))
+rescue StandardError => e
+  warn "UPGRADE RESERVE: cannot confirm — the check failed (#{e.class}: #{e.message})"
+  []
+end
 
 if args.bool?("--json")
-  puts JSON.generate(readings: readings.map(&:to_h), exit: code)
+  puts JSON.generate(readings: readings.map(&:to_h), reserves: reserves.map(&:to_h), exit: code)
 else
   puts ProgramDrift.lines(readings)
+  puts ProgramDrift.reserve_lines(reserves)
 end
 exit code

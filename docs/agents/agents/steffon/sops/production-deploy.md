@@ -486,7 +486,9 @@ be green while a cluster runs an older program than `main` carries. Run
 `bin/program-drift` (or read the **Programs** block of `bin/release status`) and
 report every `PROGRAM DRIFT` line with the card it names. A cluster with "NO
 upgrade card" gets one filed per [`program-upgrade`](program-upgrade.md); a
-`cannot confirm` line is reported as unknown, never as clean.
+`cannot confirm` line is reported as unknown, never as clean. Report an
+`UPGRADE RESERVE SHORT` or `LOW` line too: the mainnet Squad vault cannot fund
+the next program upgrade (`program-upgrade`, *The upgrade reserve*).
 
 ## Related
 

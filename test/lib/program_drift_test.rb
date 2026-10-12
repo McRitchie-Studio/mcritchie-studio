@@ -241,6 +241,142 @@ class ProgramDriftTest < Minitest::Test
     end
   end
 
+  # ── the upgrade reserve: warns below the next float, and below the minimum ──
+
+  SOL = ProgramDrift::LAMPORTS_PER_SOL
+
+  def reserved_cluster(headroom_sol: 1)
+    ProgramDrift::Cluster.new(
+      name: "mainnet", program_id: "MAINNETPROGRAM", rpc_url: "https://mainnet.test", doc_section: "Mainnet",
+      reserve: ProgramDrift::Reserve.new(address: "RESERVEVAULT", label: "mainnet Squad vault",
+                                         headroom_lamports: headroom_sol * SOL)
+    )
+  end
+
+  def reserved_program
+    ProgramDrift::Program.new(name: "turf-vault", github: "Org/turf-vault", source_branch: "main",
+                              version_file: "x", deployment_doc: "y", card_slug: "{cluster}-{version}-upgrade",
+                              clusters: [program.clusters.first, reserved_cluster])
+  end
+
+  # A fake RPC for the reserve read: the program account, its ProgramData size, the
+  # rent the cluster quotes per byte, and the reserve's balance. `calls` records each.
+  def reserve_rpc(balance:, space: 707_645, rent_per_byte: 5_080, calls: [])
+    lambda do |_url, method, params|
+      calls << [method, params]
+      case method
+      when "getAccountInfo"
+        if params[1]["encoding"] == "jsonParsed"
+          { "value" => { "owner" => ProgramDrift::UPGRADEABLE_LOADER,
+                         "data" => { "parsed" => { "info" => { "programData" => "PROGRAMDATA" } } } } }
+        else
+          { "value" => { "data" => ["", "base64"], "space" => space } }
+        end
+      when "getMinimumBalanceForRentExemption" then (params[0] + 128) * rent_per_byte
+      when "getBalance" then { "context" => { "slot" => 1 }, "value" => balance }
+      else raise "unexpected #{method}"
+      end
+    end
+  end
+
+  def test_reserve_float_is_the_rent_of_a_buffer_the_size_of_the_deployed_program
+    calls = []
+    reading = ProgramDrift.reserve_readings(programs: [reserved_program],
+                                            rpc: reserve_rpc(balance: 10_304_529_006, calls: calls)).first
+
+    # 707,645-byte ProgramData less its 45-byte header = 707,600 program bytes; the
+    # buffer adds 37, and rent is asked for exactly that size.
+    assert_equal 707_600, reading.program_bytes
+    assert_includes calls, ["getMinimumBalanceForRentExemption", [707_637]]
+    assert_includes calls, ["getBalance", ["RESERVEVAULT"]]
+    assert_equal (707_637 + 128) * 5_080, reading.float
+    assert_equal reading.float + SOL, reading.minimum
+    assert_equal :ok, reading.state
+    assert_equal "upgrade reserve turf-vault mainnet: mainnet Squad vault RESE… holds 10.3045 SOL; " \
+                 "next float 3.5954 SOL, minimum 4.5954 SOL", ProgramDrift.reserve_line(reading)
+  end
+
+  def test_reserve_below_the_float_warns_short
+    reading = ProgramDrift.reserve_readings(programs: [reserved_program], rpc: reserve_rpc(balance: 3 * SOL)).first
+
+    assert_equal :short, reading.state
+    assert_match(/\AUPGRADE RESERVE SHORT turf-vault mainnet: mainnet Squad vault RESE… holds 3\.0000 SOL, less than the next upgrade's float 3\.5954 SOL/,
+                 ProgramDrift.reserve_line(reading))
+  end
+
+  def test_reserve_above_the_float_but_below_the_minimum_warns_low
+    reading = ProgramDrift.reserve_readings(programs: [reserved_program], rpc: reserve_rpc(balance: 4 * SOL)).first
+
+    assert_equal :low, reading.state
+    assert_match(/\AUPGRADE RESERVE LOW .* holds 4\.0000 SOL, below the minimum 4\.5954 SOL/,
+                 ProgramDrift.reserve_line(reading))
+  end
+
+  def test_reserve_boundaries_are_inclusive_of_the_float_and_the_minimum
+    float = (707_637 + 128) * 5_080
+    states = [float - 1, float, float + SOL - 1, float + SOL].map do |balance|
+      ProgramDrift.reserve_readings(programs: [reserved_program], rpc: reserve_rpc(balance: balance)).first.state
+    end
+
+    assert_equal %i[short low low ok], states
+  end
+
+  def test_reserve_float_follows_the_rent_the_cluster_quotes
+    cheap = ProgramDrift.reserve_readings(programs: [reserved_program],
+                                          rpc: reserve_rpc(balance: 4 * SOL, rent_per_byte: 3_000)).first
+    dear = ProgramDrift.reserve_readings(programs: [reserved_program],
+                                         rpc: reserve_rpc(balance: 4 * SOL, rent_per_byte: 6_960)).first
+
+    assert_equal %i[ok short], [cheap.state, dear.state], "a rent change moves the float; nothing is hard-coded"
+  end
+
+  def test_unreadable_reserve_fails_closed_never_ok
+    down = ->(*_a) { raise ProgramDrift::ReadError, "connection refused" }
+    reading = ProgramDrift.reserve_readings(programs: [reserved_program], rpc: down).first
+
+    assert_equal :unconfirmed, reading.state
+    assert_equal "UPGRADE RESERVE turf-vault mainnet: cannot confirm — cannot read mainnet Squad vault on mainnet " \
+                 "(connection refused)", ProgramDrift.reserve_line(reading)
+
+    no_size = reserve_rpc(balance: 9 * SOL, space: nil)
+    assert_equal :unconfirmed,
+                 ProgramDrift.reserve_readings(programs: [reserved_program], rpc: no_size).first.state,
+                 "an RPC that reports no ProgramData size cannot price the float"
+  end
+
+  def test_clusters_without_a_reserve_read_nothing
+    calls = []
+    out = ProgramDrift.reserve_readings(programs: [program], rpc: reserve_rpc(balance: 0, calls: calls))
+
+    assert_empty out
+    assert_empty calls
+  end
+
+  def test_reserve_cache_serves_a_complete_read_and_never_stores_a_failed_one
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "reserve.json")
+      ProgramDrift.reserve_readings(programs: [reserved_program], cache: path, rpc: reserve_rpc(balance: 9 * SOL))
+      cached = ProgramDrift.reserve_readings(programs: [reserved_program], cache: path,
+                                             rpc: ->(*_a) { flunk "a fresh cache must not re-read the chain" })
+      assert_equal %i[ok], cached.map(&:state)
+
+      refused = ->(*_a) { raise ProgramDrift::ReadError, "down" }
+      later = Time.now + ProgramDrift::CACHE_TTL + 1
+      assert_equal %i[unconfirmed],
+                   ProgramDrift.reserve_readings(programs: [reserved_program], cache: path, now: later,
+                                                 rpc: refused).map(&:state)
+    end
+  end
+
+  def test_config_names_the_mainnet_squad_vault_as_the_only_reserve
+    tv = ProgramDrift.programs.find { |p| p.name == "turf-vault" }
+    devnet, mainnet = tv.clusters
+
+    assert_nil devnet.reserve
+    assert_equal "Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm", mainnet.reserve.address
+    assert_equal SOL, mainnet.reserve.headroom_lamports, "the SOP's minimum is the float plus 1 SOL"
+  end
+
   # ── configuration ────────────────────────────────────────────────────────
 
   def test_config_lists_turf_vault_on_both_clusters_devnet_first
@@ -259,6 +395,9 @@ class ProgramDriftTest < Minitest::Test
                File.expand_path("../../bin/program-drift", __dir__)].map { |f| File.read(f) }
     ProgramDrift.programs.flat_map(&:clusters).each do |cluster|
       sources.each { |src| refute_includes src, cluster.program_id, "program IDs live in config/onchain_programs.yml" }
+      next unless cluster.reserve
+
+      sources.each { |src| refute_includes src, cluster.reserve.address, "reserve addresses live in the config too" }
     end
   end
 end
