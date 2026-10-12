@@ -27,7 +27,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       compare: -> { get logos_compare_path(left: "welding", right: "welding_v2", grid: 1) },
       icon: -> { get icon_logo_path("industries", tone: "dark") },
       navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") },
-      stacked: -> { get stacked_logo_path("industries", text: "first") } }
+      stacked: -> { get stacked_logo_path("industries", text: "first") },
+      kit_export: -> { get brand_kit_export_path("industries") },
+      kit_file: -> { get brand_kit_file_path("industries", "navbar-dark.svg") } }
   end
 
   # The sample of one type the index shows for a brand: [its SVG route, its accessible name]. A page shows a brand's
@@ -326,7 +328,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
     assert_equal %w[colouring-option colouring-option compare-link logo-tab logo-tab logo-tab rule-option rule-option rule-option edit-jump guides-toggle kit-save-default] +
-                 %w[logo-download logo-copy] * 6 + %w[kit-save] +
+                 %w[logo-download logo-copy] * 6 + %w[kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./
     assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/

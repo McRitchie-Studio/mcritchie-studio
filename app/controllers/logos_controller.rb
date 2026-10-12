@@ -107,7 +107,30 @@ class LogosController < ApplicationController
   # The params that choose a logo, of any type: one of them in the query and the SVG routes draw what it says, not the kit.
   KIT_OVERRIDES = (Logos::Variant::CHOICES.values.flatten.uniq - %i[tone] + Logos::Variant::EDIT_PARAMS.keys).map(&:to_s).freeze
 
+  # THE KIT AS FILES (task kit-export-and-clear-lens): every saved logo, light, dark and watermark, with a README, as
+  # one zip (BrandKitExport). Admin only, like every logo route.
+  def kit_export
+    send_data kit_files.zip, type: "application/zip", filename: kit_files.zip_filename, disposition: "attachment"
+  end
+
+  # One kit file at its stable name (/logos/welding_v2/kit/navbar-dark.svg): always the current kit choice. An unknown
+  # name is a 404; a logo the brand cannot draw is a 422 with the reason, as on every logo route.
+  def kit_file
+    raise ActiveRecord::RecordNotFound, "No kit file #{params[:file].to_s.inspect[0, 60]}" unless BrandKitExport.file?(params[:file])
+
+    download = Logos::Variant.flag(params[:download], "download")
+    send_data kit_files.svg(params[:file]), type: "image/svg+xml", filename: "#{@logo.brand}-#{params[:file]}",
+                                            disposition: download ? "attachment" : "inline"
+  end
+
   private
+
+  def kit_files
+    @kit_files ||= begin
+      kit = BrandKit.for(@logo.brand)
+      BrandKitExport.new(kit, base_url: request.base_url, saver: BrandKit.saver_names([kit])[kit.updated_by])
+    end
+  end
 
   # The brand's kit logo of this type in `tone`, or nil: a choice param was given, nothing is saved, or the kit cannot
   # be drawn (then the route answers as it always has, never a 422 an app did not ask for).
