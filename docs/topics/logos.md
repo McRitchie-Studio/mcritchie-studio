@@ -55,9 +55,14 @@ logo.colourings       # [:original, :alt], or [:alt]
   is solid colour, so it has no separate original."
 - The **watermark** is always the single-colour version: colouring does not
   apply to it, and an Original asked of a watermark is the watermark.
-- **Edits apply to Alt only.** An Original is the brand's own art: the library
-  refuses edits with it, `Logos::Variant` drops them (still checked), and on
-  Original the Edit panel says so and links to Alt, keeping the edits in the URL.
+- **Word edits apply in Original and Alt; the icon's colour in Alt only.**
+  (Task logo-compare-and-original-edits, Alex 2026-10-11 23:06: to colour
+  welding_v2's words he had to switch to Alt, which swapped the helmet for its
+  single-colour version.) An Original's words take the picked colour and
+  weight, and its icon stays the brand's art. An original ICON is the brand's
+  own art, so the library refuses an icon colour with it and `Logos::Variant`
+  drops one (still checked); the Edit panel's Icon row says so and links to an
+  Alt icon (`?icon_colouring=alt`, or `?colouring=alt` on the Icon tab).
 - The guide drawings' ghost copies stay the brand's Alt text colour: a ghost is
   a solid ruler.
 - Each SVG route takes `?colouring=original|alt` (Alt unless asked, so every
@@ -173,7 +178,7 @@ same layers, the same fills and the same per-tone icon the Navbar Logo draws.
 - `logo.watermark` returns the checked watermark settings (`fill`, `opacity`,
   and `icon_key` when set).
 - `colouring:` and `edits:` draw it in Original or Alt and with its colour
-  edit (`{ icon: { colour: "#635BB2" } }`, Alt only); any other part's edit is
+  edit (`{ icon: { colour: "#635BB2" } }`, Alt icon only); any other part's edit is
   refused.
 
 ### The icon is the atomic unit
@@ -192,7 +197,7 @@ colouring then governs the **words** (the name and the tagline) only.
   the icon in `icon_colouring` and the words in `colouring`. Left out, the
   icon takes the words' colouring, which is every drawing exactly as before
   (the byte pins hold). The icon's colour edit follows the icon's colouring,
-  the word edits the words' (each Alt only). The layout follows the icon drawn
+  the word edits apply to the words in either colouring. The layout follows the icon drawn
   (its width), and the gradients a drawing declares come from whichever part
   is Original (an Alt part is all `#hex`). The watermark is one colour, so it
   ignores both. A dark page draws the dark tone of each part's colouring.
@@ -463,6 +468,7 @@ admin sidebar as **Logos**.
 | Route | Shows |
 |-------|-------|
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (all three drawing the row's one icon: the kit's, else the brand's own), each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
+| `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
@@ -618,7 +624,10 @@ is, and that a watermark has none.
 
 Alex's item 4b (task logo-part-editor): the rules give the sizes, spacing and
 shapes; the operator picks the colours and weights. The Navbar Logo and
-Stacked Logo tabs have an **Edit** panel with one row per part:
+Stacked Logo tabs draw ONE **Edit** panel (`logos/_edit_panel`), with the same
+rows in the same order on both, in Original and in Alt; **Edit parts** in the
+controls row jumps to it (`#edit`), since on the Navbar tab it sits under three
+full-width logos. One row per part:
 
 | Part | Row shows | Colour | Weight | Visible |
 |------|-----------|--------|--------|---------|
@@ -672,6 +681,44 @@ tagline: { visible: false } }`, checked by `#checked_edits`;
 
 To keep an edited logo as the brand's own, save it as the **kit choice**
 ([below](#the-kit-record)).
+
+### Comparing two kits
+
+Alex, 2026-10-11 23:06: "a new button/drop down for comparing two marketing
+kits. That way I can compare the marketing kits for Commercial Welding V1 vs
+V2. I also want a grid to be showable." (Task logo-compare-and-original-edits.)
+
+**Compare kits** on `/logos` opens `/logos/compare?left=welding&right=welding_v2`;
+**Compare** on a brand page opens that brand on the left and its other version
+(`welding` and `welding_v2` are one family: the key less `_vN`), else the next
+brand, on the right, on the tab's type (`LogoComparison.partner`).
+
+- **Two dropdowns** pick any two brands (a plain GET form with a **Compare**
+  button; **Swap sides** trades them). An unknown brand is a 404, an unknown
+  control a plain-text 422.
+- **Each side draws its brand's kit default** for the type: its saved choice
+  (rule or form, text version, colouring, edits) and the kit's icon, exactly as
+  its brand page opens on them, else the brand's style (`LogoComparison`). Above
+  it: the brand's name (linking to its tab), its kit status, and a line saying
+  "Kit default: …" or "Brand style (no … saved): …".
+- **The shared controls** change both sides at once: Context, Colouring, the
+  type tabs, and the Rule (Navbar) or Form (Stacked; every form either side
+  draws). Each offers **Kit default**, which drops the param so each side goes
+  back to its own. A side that cannot take a control (a form its name does not
+  draw, an Original for Studio) keeps its own and says so; saved word edits the
+  page's rule cannot draw are left out with the reason.
+- **One scale.** Each Navbar or Stacked drawing is drawn at a width that is its
+  share of the wider drawing's (`LogoComparison#widths`), in frames of equal
+  width, feet aligned, so sizes compare directly. Icons share no unit, so each
+  fits its frame.
+- **Show grid** (`?grid=1`, Navbar and Stacked) swaps both sides for their
+  construction guide drawings, the brand pages' Show guides. Every Navbar guide
+  drawing is 410 design units tall, so at one scale the two are one height and
+  their rows line up; a Stacked pair shares its units and its foot, so the name
+  and tagline bands line up and the icons differ above them.
+- Side by side from the `md` breakpoint (a subgrid keeps the two drawings on
+  one line whatever each heading says); one above the other on a phone.
+  Each side has its own **Download** and **Copy SVG**. Admin only.
 
 ## The kit record
 
