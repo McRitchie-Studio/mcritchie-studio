@@ -86,6 +86,11 @@ so two programs' cards cannot collide.
   `VaultState` holds three agent keys (`2eGs`, Mack `foUu`,
   `solana.turf.governance.devnet` `BVQH`), so every devnet governance action
   needs no human tap; turf-vault `docs/CURRENT_DEPLOYMENT.md` lists the set.
+  No key is a `VaultState` signer on both clusters: when the mainnet rotation
+  seats `9gAC` and `3Qj4`, Steffon rotates them off devnet in the same sitting
+  (`scripts/rotate-devnet-signers.js`, signed by the three devnet agent keys),
+  and turf-monster's `config/mainnet_vault_signers.yml` keeps every mainnet key
+  fenced from the QA rehearsal.
   Load a key only into a process that prints its public half, and never pipe or
   redirect an `op read` of a secret (activity-17894 records why).
 - **Mainnet**: **no agent signs a mainnet transaction.** The upgrade's human taps

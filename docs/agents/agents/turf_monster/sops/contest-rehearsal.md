@@ -39,16 +39,17 @@ bin/qa-contest-rehearsal <step>
 **You do not choose the environment; the guard does.** `NetworkGuard` runs
 before any key is loaded and refuses anything but `turf-monster-qa` running the
 devnet program, checking BOTH the network and the program id. That is not
-ceremony: the cast's keys are real wallets, and Mason's is a signer on the
-MAINNET vault too. Mason only plays.
+ceremony: the cast's keys are real wallets.
 
 **Agents co-sign on devnet.** Devnet runs turf-vault v0.26 with `settle_contest`
 at 2 signatures (card `devnet-v026-upgrade`, 2026-10-12). The default
 `conclude --cosign agent` settles with the QA server key (`2eGs…`) plus the
 devnet-only agent key Mack (`foUu…`), and the v0.26 lock and close take the same
-two, so the whole run needs **no human tap**. The rehearsal refuses any
-co-signer key that is also a MAINNET `VaultState` signer, even on devnet
-(turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`).
+two, so the whole run needs **no human tap**. The rehearsal refuses any key it
+loads, player or co-signer, that holds MAINNET authority (a mainnet `VaultState`
+signer, seated or incoming, or a mainnet Squads member), even on devnet
+(turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`). That is
+why Mason (`CytJ…`, a mainnet signer) no longer plays.
 `--cosign link` still exists for a run Mr. McRitchie wants to sign himself in
 Phantom (`7ZDJ…` is no longer a devnet signer, so that path needs a wallet the
 devnet `VaultState` seats, such as `9gAC…`).
@@ -59,11 +60,11 @@ This SOP is the order and the hand-backs; that page is the detail.
 
 ## The cast
 
-Three wallets are filed in 1Password `studio-agents`, and all three PLAY:
+Two wallets are filed in 1Password `studio-agents`, and both PLAY. Mack also
+co-signs:
 
 | Slug | 1Password item | Plays as |
 |---|---|---|
-| `mason` | `agent.mason.solana` | mason-3 |
 | `mack` | `agent.mack.solana` | mack-4 |
 | `turf` | `phantom.turf` | regal-parsley-167 |
 
@@ -178,8 +179,8 @@ Live Board:   https://qa.turfmonster.media/contests/<slug>/live
 ### Step 2 — enter the cast
 
 ```bash
-bin/qa-contest-rehearsal enter                    # all three, the default
-bin/qa-contest-rehearsal enter --cast mason,mack  # or a subset
+bin/qa-contest-rehearsal enter                    # the whole cast, the default
+bin/qa-contest-rehearsal enter --cast mack        # or a subset
 ```
 
 Each player signs in as a wallet (nonce → message → signature → verify), clears
@@ -190,8 +191,8 @@ signature comes from 1Password; no browser is involved.
 Contest:      https://qa.turfmonster.media/contests/<slug>
 ```
 
-**Look at the contest page.** Entries should read `3/29`, and each player should
-appear on the leaderboard at 0.
+**Look at the contest page.** Entries should read `2/29` (the step prints the
+count it expects), and each player should appear on the leaderboard at 0.
 
 → **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 3.
 
@@ -233,9 +234,12 @@ bin/qa-contest-rehearsal conclude --cosign link     # watched: he signs in Phant
 ```
 
 Grades the contest, ranks the entries, and settles. Under `--cosign agent` the
-driver signs with the seated devnet agent key, broadcasts, and confirms on the
-dyno with the same checks the Treasury page runs (`TxVerifier` per signer, then
-the contest is marked settled). Under `--cosign link` the server has already
+driver signs with the seated devnet agent key, claims the settle row
+`submitted` with the transaction's signature BEFORE it broadcasts (the Treasury
+page's order), then confirms on the dyno with the same checks the Treasury page
+runs (`TxVerifier` per signer, then the contest is marked settled). If the send
+or the verification fails, the row stays `submitted` naming its transaction:
+press **Reconcile** on Treasury; never re-run the settle. Under `--cosign link` the server has already
 signed with its own key and the second signature is Alex's, from the co-signer
 wallet the step prints.
 
