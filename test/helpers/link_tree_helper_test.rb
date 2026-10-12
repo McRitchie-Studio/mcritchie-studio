@@ -247,6 +247,19 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     !!logged_in_enabled
   end
 
+  test "the Studio section links the source videos beside the body archetypes" do
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+
+    links = public_link_sections.flat_map { |section| section.fetch(:links) }
+    labels = links.map { |link| link[:label] }
+    videos = links.find { |link| link[:label] == "Source videos" }
+
+    assert videos, "expected a Source videos link"
+    assert_equal "/music_videos", videos.fetch(:href)
+    assert_equal labels.index("Body archetypes") + 1, labels.index("Source videos")
+  end
+
   def dashboard_path = "/dashboard"
   def logos_path = "/logos"
   def agents_path = "/agents"
@@ -260,6 +273,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # this file.
   def model_pipeline_path = "/model_pipeline"
   def body_archetypes_path = "/body-archetypes"
+  def music_videos_path = "/music_videos"
   def broadcasts_path = "/broadcasts"
   def contacts_path = "/contacts"
   def broadcast_analytics_path = "/broadcasts/analytics"

@@ -1,0 +1,86 @@
+<% content_for :title, "Source videos · McRitchie Studio" %>
+
+<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="music-videos-index">
+  <header class="mb-6 min-w-0">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Music video pipeline</p>
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2">Source videos</h1>
+    <p class="text-sm text-muted">Every digested video, newest first: its cast, its A/B/C frames and the alt videos built from it. <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline" %></p>
+  </header>
+
+  <% if @rows.empty? %>
+    <div class="empty-state text-muted" data-test="music-videos-empty">No source videos yet. Digest one with <span class="font-mono">bin/digest-video</span>.</div>
+  <% else %>
+    <%# A table at md and up (the header row and each row share one set of tracks); stacked cards below. %>
+    <div class="card p-0 overflow-hidden min-w-0" role="table" aria-label="Source videos">
+      <div class="hidden md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,4fr)] gap-4 px-4 py-2 border-b border-subtle bg-surface-alt text-xs font-semibold uppercase tracking-wider text-muted" role="row">
+        <span role="columnheader">Video</span>
+        <span role="columnheader">People</span>
+        <span role="columnheader">A/B/C frames</span>
+        <span role="columnheader">Alt videos</span>
+      </div>
+      <% @rows.each do |row| %>
+        <% video = row.video %>
+        <% thumb = @thumb_urls[row.thumbnail_key] if row.thumbnail_key %>
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,4fr)] gap-3 md:gap-4 p-4 border-b border-subtle last:border-b-0 min-w-0"
+             role="row" data-test="music-video-row" data-slug="<%= video.slug %>">
+          <div class="flex gap-3 min-w-0" role="cell">
+            <%# The still is a background over the placeholder, so one that fails to load (an expired or unreachable store) leaves the placeholder, not a broken image. %>
+            <div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-surface-alt border border-subtle flex items-center justify-center" data-test="music-video-thumb">
+              <span class="text-xl" aria-hidden="true">🎬</span>
+              <% if thumb %>
+                <span class="absolute inset-0 bg-cover bg-center" style="background-image: url('<%= j thumb %>')" aria-hidden="true" data-test="music-video-still"></span>
+              <% end %>
+            </div>
+            <div class="min-w-0">
+              <p class="text-3xs font-semibold uppercase tracking-wider text-primary" data-test="music-video-kind"><%= video.kind_label %></p>
+              <%= link_to video.title, music_video_path(video), class: "font-semibold text-heading hover:text-primary break-words", data: { test: "music-video-link" } %>
+              <p class="text-xs text-muted flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                <% if video.duration_ms %><span data-test="music-video-length"><%= video_timecode(video.duration_ms) %></span><% end %>
+                <span class="badge text-3xs <%= video.cast_confirmed? ? 'bg-success/10 text-success-ink border-success/40' : 'bg-primary/10 text-primary border-primary/20' %>" data-test="music-video-stage"><%= video.stage.humanize %></span>
+                <%= link_to "Watch source", video.source_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %>
+              </p>
+            </div>
+          </div>
+
+          <div class="text-sm text-body min-w-0" role="cell">
+            <span class="md:hidden text-3xs font-semibold uppercase tracking-wider text-muted mr-1">People</span>
+            <span data-test="music-video-people"><%= row.carded %> carded · <%= row.swapped %> swapped</span>
+          </div>
+
+          <div class="text-sm min-w-0" role="cell">
+            <span class="md:hidden text-3xs font-semibold uppercase tracking-wider text-muted mr-1">A/B/C frames</span>
+            <% case row.frames_state %>
+            <% when :complete %>
+              <span class="text-success-ink" data-test="music-video-frames">All clips have A/B/C frames</span>
+            <% when :missing %>
+              <span class="text-warning-ink" data-test="music-video-frames"><%= row.frames_missing %> <%= "clip".pluralize(row.frames_missing) %> missing A/B/C frames</span>
+            <% else %>
+              <span class="text-muted" data-test="music-video-frames">Not tiled into clips yet</span>
+            <% end %>
+          </div>
+
+          <div class="min-w-0" role="cell">
+            <span class="md:hidden block text-3xs font-semibold uppercase tracking-wider text-muted mb-1">Alt videos</span>
+            <% if row.alts.empty? %>
+              <span class="text-sm text-muted" data-test="music-video-no-alts">None yet</span>
+            <% else %>
+              <ul class="flex flex-col gap-1.5 min-w-0">
+                <% row.alts.each do |alt| %>
+                  <li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0" data-test="music-video-alt">
+                    <%# A 28px tap target; a long label ends in an ellipsis rather than a hard cut. %>
+                    <%= link_to music_video_alt_video_path(video, alt.alt_video),
+                                class: "inline-flex items-center min-w-0 max-w-full rounded-md border border-subtle bg-surface-alt px-2 py-1 text-xs font-medium text-heading hover:border-primary/60",
+                                title: alt.alt_video.swaps_summary, data: { test: "music-video-alt-link" } do %>
+                      <span class="block min-w-0 truncate"><%= alt.label %></span>
+                    <% end %>
+                    <span class="text-xs text-muted whitespace-nowrap" data-test="music-video-alt-progress"><%= alt.with_primary %>/<%= alt.clips %> clips<% if alt.drafts_sent.positive? %><span data-test="music-video-alt-drafts"> · <%= pluralize(alt.drafts_sent, "TikTok draft") %> sent</span><% end %></span>
+                  </li>
+                <% end %>
+              </ul>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</section>

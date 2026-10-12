@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# /music_videos — every source video, newest first, with its cast, frame and
+# alt video state (MusicVideos::IndexRows loads the page in a fixed number of
+# queries).
+#
 # /music_videos/:slug — the source video's cast panel (music video pipeline,
 # stage 2) with each performer's recast (the working swap selection), the
 # clip candidates (stage 5), the chunks the whole video is tiled into, and its
@@ -8,9 +12,15 @@
 # stills and clips are private objects shown through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
-  before_action :set_video
+  before_action :set_video, except: :index
 
   SIGNED_URL_TTL = 15.minutes.to_i
+
+  def index
+    @rows = MusicVideos::IndexRows.call
+    # One still per row, signed here: presigning reads no row.
+    @thumb_urls = signed_urls(@rows.filter_map(&:thumbnail_key))
+  end
 
   def show
     @credits = @video.music_video_artists.includes(:artist).sort_by { |c| [c.role == "primary" ? 0 : 1, c.position] }

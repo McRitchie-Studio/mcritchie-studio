@@ -29,6 +29,8 @@ class TiktokDraft < ApplicationRecord
   PENDING = %w[queued uploading processing unknown].freeze
   # TikTok holds the bytes and has not said how it went: a status read can settle these.
   WITH_TIKTOK = %w[processing unknown].freeze
+  # TikTok sent the operator an inbox notification: the one state that counts as sent.
+  DELIVERED = "delivered"
 
   belongs_to :clip, class_name: "AltVideoClip", foreign_key: :clip_slug, primary_key: :slug, inverse_of: :tiktok_drafts
 
@@ -53,7 +55,7 @@ class TiktokDraft < ApplicationRecord
 
   def pending? = PENDING.include?(state)
 
-  def delivered? = state == "delivered"
+  def delivered? = state == DELIVERED
 
   def failed? = state == "failed"
 

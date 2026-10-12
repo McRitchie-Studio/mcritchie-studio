@@ -86,6 +86,7 @@ pages:
   contents:       { page: "contents#index",       audience: admin, label: Content, emoji: "🎬", hover_emoji: "✨", desc: Content pipeline }
   model_pipeline: { page: "model_pipeline#index", audience: admin, label: Models, emoji: "🪪", hover_emoji: "🎭", desc: Character model pipeline }
   body_archetypes: { page: "body_archetypes#index", audience: admin, label: Body archetypes, emoji: "🏈", hover_emoji: "💪", desc: Body builds a player sheet is drawn to }
+  music_videos:    { page: "music_videos#index",    audience: admin, label: Source videos, emoji: "🎞️", hover_emoji: "🎬", desc: "Every digested video: cast, A/B/C frames, alt videos" }
 
   # ── Directory ────────────────────────────────────────────────────────────
   teams:  { page: "teams#index",  audience: admin, label: Teams, emoji: "🛡️", hover_emoji: "📋", desc: All teams }
@@ -151,7 +152,7 @@ sidebar:
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }
   # Studio and Directory hold admin pages only, so a visitor never sees them.
-  - { title: Studio,    group: general, pages: [dashboard, agents, builders, tasks, news_index, contents, model_pipeline, body_archetypes] }
+  - { title: Studio,    group: general, pages: [dashboard, agents, builders, tasks, news_index, contents, model_pipeline, body_archetypes, music_videos] }
   - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
   - { title: Directory, group: general, pages: [teams, people, docs] }
   # Public on purpose: the App Builder is the funnel's front door and the packages
