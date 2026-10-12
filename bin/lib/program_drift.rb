@@ -6,6 +6,7 @@ require "net/http"
 require "uri"
 require "yaml"
 require "fileutils"
+require "tmpdir"
 require "rubygems" # Gem::Version, for comparing x.y.z
 
 # ProgramDrift — is each cluster running the program version its source branch carries?
@@ -376,12 +377,11 @@ module ProgramDrift
     0
   end
 
-  # The cache file under the projects dir's .agents (shared by every desk, so one
-  # read serves every status call for CACHE_TTL).
-  def default_cache_path(env: ENV)
-    require_relative "projects_root"
-    root = env["CLAUDE_PROJECTS_DIR"].to_s.strip
-    root = ProjectsRoot.default_projects_dir if root.empty?
-    File.join(root, ".agents", "cache", "program-drift.json")
+  # The cache file, in the system temp dir: shared by every desk on this machine, so
+  # one read serves every status call for CACHE_TTL. Deliberately NOT under
+  # <projects>/.agents — that tree is the operator's guarded state store
+  # (lib/task_usage_sandbox.rb), and a re-readable cache does not belong in it.
+  def default_cache_path
+    File.join(Dir.tmpdir, "mcritchie-program-drift.json")
   end
 end
