@@ -1,4 +1,4 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; Draft to TikTok with its attempts (alt_videos/_clip_tiktok); and the regenerate flag. The header carries the clip's slug with a copy control, the name the tiktok-draft SOP takes. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; Draft to TikTok with its attempts (alt_videos/_clip_tiktok); and the regenerate flag. frames_missing (MusicVideos::MissingReferences): people are sighted in this window and it has no lettered frames, so the card says "No A/B/C frames". The header carries the clip's slug with a copy control, the name the tiktok-draft SOP takes. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
@@ -75,6 +75,9 @@
           <span class="badge text-xs bg-success/10 text-success-ink border-success/40" data-test="clip-state"><%= primary.name %> primary</span>
         <% else %>
           <span class="badge text-xs bg-surface-alt text-muted border-subtle" data-test="clip-state">No version yet</span>
+        <% end %>
+        <% if local_assigns[:frames_missing] %>
+          <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="clip-frames-missing">No A/B/C frames</span>
         <% end %>
         <% if clip.regenerate_requested? %>
           <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="clip-flag">Regenerate requested</span>
@@ -158,7 +161,11 @@
               <% end %>
             </div>
           <% else %>
-            <p class="text-sm text-muted" data-test="clip-frames-none">No lettered frames yet: run <code class="text-xs">bin/clip-references <%= video.slug %></code> on the Mac.</p>
+            <% if local_assigns[:frames_missing] %>
+              <p class="text-sm text-warning-ink" data-test="clip-frames-none">No lettered frames yet: ask the agent to run lettered references (<code class="text-xs">bin/clip-references <%= video.slug %></code> on the Mac).</p>
+            <% else %>
+              <p class="text-sm text-muted" data-test="clip-frames-none" data-reason="nobody">No lettered frames: no one is sighted on screen in this window, so it needs none.</p>
+            <% end %>
           <% end %>
         </div>
       <% end %>

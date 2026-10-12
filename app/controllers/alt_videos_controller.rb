@@ -42,6 +42,11 @@ class AltVideosController < ApplicationController
     @numbers = MusicVideos::ClipPrompts.numbers_for(@swaps)
     @watch = helpers.alt_watch_data(@clips, @chunk_for, @urls)
     @stitch_here = MusicVideos::Stitcher.available?
+    # Chunks with people on screen and no lettered frames: the page's warning
+    # and each such card's note. Read off the rows loaded above, no query.
+    chunks = @chunk_for.values.compact
+    @frames_missing = MusicVideos::MissingReferences.chunks(chunks, @performers).to_set(&:ordinal)
+    @frames_warning = MusicVideos::MissingReferences.warning(@frames_missing.size, chunks.size)
   end
 
   # The page's signed URLs again, by object key: `inline` plays or shows a file,

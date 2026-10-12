@@ -31,6 +31,12 @@
     </p>
   </header>
 
+  <% if @frames_warning %>
+    <%# Chunks with people on screen (a sighting in the window) and no lettered frames: Higgsfield needs them (digest-video Stage 2, step 5). %>
+    <p class="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning-ink min-w-0 break-words" role="status"
+       data-test="alt-video-frames-missing" data-count="<%= @frames_missing.size %>"><%= @frames_warning %></p>
+  <% end %>
+
   <div class="card p-4 mb-4 min-w-0" data-test="alt-video-swaps" data-count="<%= @swaps.size %>">
     <p class="label-upper mb-2">Swaps <span class="normal-case tracking-normal">· snapshotted from the cast when the clips were built; editing the cast never changes them</span></p>
     <% if @swaps.empty? %>
@@ -61,7 +67,7 @@
       <% @clips.each do |clip| %>
         <%= render "alt_videos/clip", clip: clip, chunk: @chunk_for[clip.chunk_ordinal], alt_video: @alt_video, video: @video,
                    swaps: @swaps, urls: @urls, downloads: @downloads, sheets: @sheets, numbers: @numbers,
-                   overlap_ms: @video.chunk_overlap_ms.to_i %>
+                   overlap_ms: @video.chunk_overlap_ms.to_i, frames_missing: @frames_missing.include?(clip.chunk_ordinal) %>
       <% end %>
     </div>
   <% else %>
