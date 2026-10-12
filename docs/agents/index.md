@@ -79,8 +79,9 @@ from GitHub and keeps the columns as a cache.
 release; each prints a rename note and runs the new script.
 
 A cold submit takes about 12 minutes, so run it in the background with `bin/submit-wait`;
-do not hand-roll a pgrep watcher. `bin/fast-check` is an optional one-minute
-pre-flight, and the cert gate (test-only included) reads only the PR's settled green CI.
+do not hand-roll a pgrep watcher. Before the push it pre-checks the DoR rules and runs
+the one-minute `bin/fast-check` pre-flight; a red stops it (`--skip-preflight` overrides
+the pre-flight). The cert gate (test-only included) reads only the PR's settled green CI.
 Where each command may run, the author set, and the long form:
 `docs/agents/modules/fast-lane.md`.
 

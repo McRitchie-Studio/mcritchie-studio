@@ -1,8 +1,9 @@
-# Pre-flight — the builder's optional local check
+# Pre-flight — the builder's local check before the push
 
-`bin/fast-check` is the builder's **optional local pre-flight**: it runs the
-tests the branch diff maps to, the core spine, and rubocop on the changed
-files, prints its result, and **records nothing**. It is not a gate. The one
+`bin/fast-check` is the builder's **local pre-flight**: it runs the tests the
+branch diff maps to, the core spine, rubocop on the changed files and the
+whole-repo ratchets, prints its result, and **records nothing**. It is not the
+verdict. The one
 verdict per tree is the PR's **settled GREEN GitHub CI**, which
 [DoR](gates/dor.md) reads at the submit seam and review's gate-zero reads again.
 The pre-flight buys earliness: it catches the obvious break in about a minute,
@@ -14,10 +15,13 @@ The gate flow order: [DoR](gates/dor.md) → [G2 Review](gates/g2-review.md) →
 ## Who runs it
 
 The **feature (builder) agent**, from the task worktree, by hand or through
-`bin/submit`, which runs it at step 5/8, after the push and the PR so CI is
-already running, and **carries on whatever it says**. A red pre-flight is
-printed loudly there because it almost always means a red CI ten minutes later;
-it is not a refusal. `SHIP_PREFLIGHT=off` skips it.
+`bin/submit`, which runs it at step 2/8, after the commit and **before the
+push**. A red pre-flight **stops the push**, because it almost always means a red
+CI ten minutes later and pushing it buys nothing but that cycle (before
+2026-10-12 it ran after the push and stopped nothing; 407 of 1,121 submits in the
+previous 14 days came back refused). `bin/submit <slug> --skip-preflight` (or
+`SHIP_PREFLIGHT=off`) pushes past a red the builder has judged unrelated to the
+diff, and CI decides. A resumed submit with nothing new to push skips it.
 
 ## Procedure
 
@@ -70,6 +74,13 @@ Lanes, in order:
     guard `test/lib/e2e_quarantine_ratchet_test.rb`. Playwright is found in the
     checkout or above it (a desk resolves the hub's `node_modules`); with none,
     the lane says `NOT CHECKED` and CI is the only check.
+  - `repo-ratchets` (hub) and `turf-ratchets` (turf-monster), on ANY change: the
+    cheap guards that read every file, so any line can trip them. The hub's are
+    the test-health ratchet, the bin help-flag classification, the fast-cert
+    subject cap margin and the citation-resolution guard (~20s together); turf's
+    are its workflow-citation and dated-comment ratchets. About 30 of 139 failed
+    PR jobs in the 14 days to 2026-10-12 were one of these. Each repo carries only
+    its own files, so each desk runs only its own.
 
 Exit 0 means every lane that ran is green, including a run where **no test
 lane ran at all** (a diff that maps to nothing on a checkout with no spine),

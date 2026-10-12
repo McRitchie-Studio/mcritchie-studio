@@ -71,7 +71,7 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      `tests/` or `e2e/`. One non-test file and the claim is refused.
   2. It is **not exempt from the CI gate** (unlike `docs`): the PR's settled green
      CI satisfies it exactly as for a feature, and `bin/fast-check` is only the
-     optional pre-flight before it.
+     pre-flight before it.
   3. It owes a **control**: evidence the changed test **still bites**. Run
      `bin/control-check <task>`. Where it has nothing to replay (an added test,
      or no runner for `e2e/`/`tests/`), re-run it with `--why "<the control you
@@ -224,18 +224,25 @@ latest handoff note, then merges on its own verdict, and the move to `reviewed`
 settles the request. So make that note say what he should look at. If his answer
 must come BEFORE the merge, tell him directly.
 
-## Step 5 — Pre-flight (optional)
+## Step 5 — Pre-flight
 
-Commit, then run the local pre-flight ([`pre-flight.md`](pre-flight.md)):
+`bin/submit` runs the local pre-flight for you ([`pre-flight.md`](pre-flight.md)) at
+step 2/8, after the commit and **before the push**. You can run it yourself sooner:
 
 ```bash
-bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop on changed files, ~1 min
+bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop + the whole-repo ratchets, ~1 min
 ```
 
-It records nothing; the PR's settled green CI is the verdict. A red lane here
-usually means a red CI later, so fix it first. `bin/submit` runs it for you at step
-5/8, after the push and the PR so CI is already running, and carries on whatever
-it says.
+It records nothing; the PR's settled green CI is the verdict. But a red lane here
+almost always means a red CI ten minutes later, so **a red pre-flight stops the
+push**. If the red is unrelated to your diff (a known-flaky lane), push anyway with
+`bin/submit <slug> --skip-preflight` and let CI decide.
+
+Before that, at 0/8, `bin/submit` runs `bin/dor-check <slug> --precheck`: every DoR
+rule except the CI read (shape, metadata, tagged test tiers in `checks_run`). It
+refuses in a second what step 7/8 would refuse after a CI round trip, so **record
+your `[unit]`/`[integration]` lines with `bin/task update --checks` before you
+submit**.
 
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
@@ -249,9 +256,11 @@ naming the fixed-path script and standing in the desk:
 ```
 
 The ship commits, pushes, opens the **non-draft** PR into **`accepted`** led by
-the task URL, records `pr_url`, runs the pre-flight while CI is already running,
-**waits for CI to settle**, runs `bin/dor-check`, and moves the task to
-`submitted`. It mints one board token for the run and hands it to every
+the task URL, records `pr_url`, **waits for CI to settle**, runs `bin/dor-check`,
+and moves the task to `submitted`. It pre-checks the DoR rules and runs the
+pre-flight first, before the push, and stops on either. On a red CI it prints each
+failing test with its message, read from the failing jobs' logs: fix them all
+before the next push. It mints one board token for the run and hands it to every
 `bin/task` and `bin/dor-check` call it spawns (`AGENT_API_TOKEN`).
 
 - `/Users/alex/projects/.agents/bin` is the fast-lane tooling at a fixed path that

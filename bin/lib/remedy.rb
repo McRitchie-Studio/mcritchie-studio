@@ -25,7 +25,7 @@
 #
 #   - a usage banner (it describes the grammar the reader just typed; banners use
 #     $PROGRAM_NAME),
-#   - a step transcript (bin/submit's `say "5/8 pre-flight — running ..."`),
+#   - a step transcript (bin/submit's `say "2/8 pre-flight — running ..."`),
 #   - a script named as a subject in prose ("could not be read (bin/task show)"),
 #   - a field written into the board (`"cmd" => "bin/dor-check <slug> --gate ..."`),
 #     where an absolute path would stamp one laptop's layout into shared records,

@@ -43,32 +43,40 @@ class CertFailureExitContractTest < Minitest::Test
 
   # ------------------------------------------------------------- bin/submit ----
 
-  # THE PUSH COMES FIRST, AND A FAILED PUSH OWNS THE EXIT. bin/submit pushes at 2/8
-  # and runs the optional pre-flight at 5/8, after the PR, so CI is already running
-  # while it does. In THIS harness the push dies (no origin): that is the step that
-  # must own the non-zero exit — never a silent 0 — and the pre-flight, which comes
-  # after it, must not have spoken at all. (That a RED pre-flight is reported and
-  # walked past is proven with a real origin in test/lib/submit_test.rb.)
-  def test_a_failed_push_owns_the_exit_and_the_pre_flight_has_not_run_before_it
-    out, code = ship(cert_exit: 1)
+# A FAILED PUSH OWNS THE EXIT. bin/submit pre-checks at 0/8, runs the pre-flight at
+# 2/8 BEFORE the push (/tasks/submit-checks-before-push) and pushes at 3/8. In THIS
+# harness the pre-flight is green and the push dies (no origin): the push is the
+# step that must own the non-zero exit — never a silent 0 — and gh, after it, is
+# never reached.
+def test_a_failed_push_owns_the_exit_after_a_green_pre_flight
+  out, code = ship(cert_exit: 0)
 
-    assert_equal 1, code, "the push failed in this harness — a failed step must never yield exit 0"
-    assert_match(/2\/8 push — git push/, out, "the push is the step that ran and failed")
-    assert_match(/git push failed/, out, "and the refusal names it")
-    refute_match(/pre-flight/, out, "the pre-flight runs AFTER the push; it has nothing to say before one lands")
-    refute_match(/did NOT certify/, out, "the retired cert refusal never prints")
-  end
+  assert_equal 1, code, "the push failed in this harness — a failed step must never yield exit 0"
+  assert_match(/2\/8 pre-flight — green/, out, "the pre-flight ran first, and passed")
+  assert_match(/3\/8 push — git push/, out, "the push is the step that ran and failed")
+  assert_match(/git push failed/, out, "and the refusal names it")
+  refute_match(/stub gh should never be reached/, out)
+  refute_match(/did NOT certify/, out, "the retired cert refusal never prints")
+end
 
-  # The OTHER shape: a runner that cannot be spawned at all. Before the push it is
-  # never reached, so an unlaunchable pre-flight changes nothing about a failed
-  # push — the exit is the push's, and no spawn error leaks into the transcript.
-  def test_a_missing_pre_flight_runner_is_not_reached_before_the_push
-    out, code = ship(cert_exit: :missing)
+# A RED pre-flight owns the exit, and the push never runs.
+def test_a_red_pre_flight_owns_the_exit_and_the_push_never_runs
+  out, code = ship(cert_exit: 1)
 
-    assert_equal 1, code, "the push failed in this harness"
-    assert_match(/2\/8 push — git push/, out)
-    refute_match(/pre-flight|Errno::ENOENT|fast-check/, out, "the runner was never consulted before the push")
-  end
+  assert_equal 1, code
+  assert_match(/the pre-flight is RED \(exit 1\) — nothing was pushed/, out)
+  refute_match(/3\/8 push/, out, "the push never ran")
+end
+
+# The OTHER shape: a runner that cannot be spawned at all is a red pre-flight. It
+# owns the exit, the push never runs, and no spawn error leaks into the transcript.
+def test_an_unlaunchable_pre_flight_owns_the_exit_and_the_push_never_runs
+  out, code = ship(cert_exit: :missing)
+
+  assert_equal 1, code
+  assert_match(/the pre-flight is RED/, out)
+  refute_match(/3\/8 push|Errno::ENOENT/, out, "the push never ran, and no spawn error leaked")
+end
 
   # THE CONTROL. Without it, the assertions above are satisfied by a `bin/submit`
   # that exits 1 unconditionally. This drives a real exit-0 path through the same
@@ -158,8 +166,8 @@ class CertFailureExitContractTest < Minitest::Test
   private
 
   # Drive the REAL bin/submit with a stubbed board CLI and a stubbed cert runner, in
-  # a throwaway git repo. It never reaches the network: it dies at the 2/8 push (no
-  # origin), or (the control) returns before its first side effect.
+  # a throwaway git repo. It never reaches the network: it dies at the 2/8 pre-flight
+  # or the 3/8 push (no origin), or (the control) returns before its first side effect.
   def ship(cert_exit:, stage: "building")
     with_repo do |tmp, repo, bin|
       write(bin, "task", <<~RUBY_STUB)
@@ -176,6 +184,8 @@ class CertFailureExitContractTest < Minitest::Test
       unless cert_exit == :missing
         write(bin, "fast-check", "#!/bin/sh\necho 'stub cert: red' >&2\nexit #{cert_exit}\n")
       end
+      # The 0/8 DoR pre-check passes; the real one would reach for the (unroutable) board.
+      write(bin, "dor-check", "#!/bin/sh\nexit 0\n")
       # `gh` must exist but must never succeed: the push dies first in this harness
       # (no origin), so reaching gh at all would mean a failed push did not stop the run.
       write(bin, "gh", "#!/bin/sh\necho 'stub gh should never be reached' >&2\nexit 1\n")
@@ -184,6 +194,7 @@ class CertFailureExitContractTest < Minitest::Test
       capture(
         { "SHIP_TASK_BIN" => File.join(bin, "task"),
           "SHIP_FAST_CHECK_BIN" => File.join(bin, "fast-check"),
+          "SHIP_DOR_CHECK_BIN" => File.join(bin, "dor-check"),
           "SHIP_GH_BIN" => File.join(bin, "gh"),
           "SHIP_ROOT" => repo, "SHIP_CI_WAIT" => "off",
           # The ship's own up-front board mint: the secret chain stops at ENV (never
