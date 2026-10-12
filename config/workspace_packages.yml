@@ -32,12 +32,16 @@
 #                   ("Custom"), or "Pricing coming soon" without one
 #   comp            the real client the tier was worked back from. Internal: the
 #                   cards do not name clients; the admin SOP map does
-#   highlights      the 4-6 inclusions the card leads with, customer-facing
+#   card_groups     the card_lanes groups this card shows, in order
+#   lanes           lane key => { sub: one muted line, status: included (the
+#                   default) | missing | soon }. A lane in a shown group that is
+#                   not listed is missing. Keep the stack rows below consistent.
+#   highlights      the Talk to us line's inclusions (Enterprise has no card)
 #   cta             label + action: `build` (/build), `schedule` (the studio's
 #                   booking calendar) or `enterprise_booking` (enterprise_booking_url
 #                   below, else the studio's booking calendar)
 #   featured        true on the one card the page highlights
-#   card            false on a tier drawn as the "Talk to us" line under the cards
+#   talk_to_us      true on the tier drawn as the "Talk to us" line under the cards
 #                   instead of as a card (Enterprise). It keeps its key, its column
 #                   on /packages/stack and its stored clients.
 #
@@ -60,7 +64,8 @@
 #                           metric smaller and muted ("Pro Host · always on")
 #               true      → included, nothing to quantify
 #               omitted   → not included (the cell shows "—")
-#   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md)
+#   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md),
+#             or a list when two SOPs deliver one row (Storage: Postgres and the R2 bucket)
 #   section   optional — the part of that SOP that applies
 #   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
 #   status    live     an SOP delivers it today (names that SOP)
@@ -75,9 +80,6 @@
 #             row's logo strip; /packages draws a delivered row's brands on its
 #             tier's card. A planned row's logos show only on /packages/stack,
 #             beside its Coming soon tag.
-#   spotlight optional — one customer-facing line. The row is called out, with
-#             its lead logo, on every /packages card whose tier includes it, and
-#             /packages/stack draws its worked example (the Cloudflare DNS flow)
 #   shows     software keys drawn beside the row on /packages/stack WITHOUT
 #             provisioning them: an add-on a client takes per contract, recorded
 #             on the client (stack_clients.extra_software), not by its tier
@@ -106,42 +108,73 @@ category_from:
   platform: pro
   marketing: team
 
+# The swim lanes every card lists (Mr. McRitchie, 2026-10-12): one fixed lane
+# list per group, in this order on every card that shows the group, each lane
+# on a row shared across the cards so it reads like a table. `title` may carry
+# %{tier} ("Pro Host"). A card shows the groups in its `card_groups`; in them, a
+# lane its `lanes` omits (or marks `missing`) renders as a muted cross "(In
+# <first tier that has it>)", computed, never hand-written.
+card_lanes:
+  - { group: Application, key: app, title: Custom Web App }
+  - { group: Application, key: host, title: "%{tier} Host" }
+  - { group: Application, key: storage, title: "%{tier} Storage" }
+  - { group: Application, key: domain, title: Custom Domain }
+  - { group: Application, key: app_email, title: App email }
+  - { group: Platform, key: custom_email, title: Custom Email }
+  - { group: Platform, key: workspace, title: Google Workspace }
+  - { group: Platform, key: vault, title: Password vault }
+  - { group: Agents, key: cto, title: Fractional CTO }
+  - { group: Agents, key: drafting, title: Email drafting agent }
+  - { group: Agents, key: cmo, title: Fractional CMO }
+  - { group: Marketing, key: email_marketing, title: Email marketing }
+  - { group: Marketing, key: content, title: Content sprints }
+  - { group: Marketing, key: warmup, title: Launch warm-up }
+  - { group: Marketing, key: funnels, title: Funnels built for you }
+  - { group: Marketing, key: social, title: Social posting to X and TikTok }
+
 packages:
   - key: vibe
     name: Vibe
-    tagline: A real app built by our agents, live at yourname.mcritchie.studio.
+    tagline: A real app built by our agents, live at your-app.mcritchie.studio.
     price_monthly: 0
     comp: 10and5
-    highlights:
-      - An app built by our agents from your description
-      - Live at yourname.mcritchie.studio
-      - Hosted for you on an Eco server
-      - HTTPS and deploys handled for you
+    card_groups: [Application]
+    lanes:
+      app: { sub: built by our agents from your description }
+      host: { sub: "light server, wakes on first visit" }
+      storage: { sub: "read-only, built into your app" }
+      domain: { sub: your-app.mcritchie.studio for now, status: missing }
     cta: { label: Build your app, action: build }
   - key: builder
     name: Builder
     tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
     comp: Cyvasse
-    highlights:
-      - Your app at www.yourname.com, your own domain
-      - Postgres and Redis, so pages update live
-      - Sign-in links and app email from your domain
-      - File storage with nightly backups
-      - Small changes after launch, by email
+    card_groups: [Application, Platform]
+    lanes:
+      app: { sub: small changes after launch }
+      host: { sub: always on }
+      storage: { sub: "1 GB records + 10 GB files, backed up nightly" }
+      domain: { sub: www.your-app.com }
+      app_email: { sub: sign-in links and receipts from @your-app.com }
     cta: { label: Talk to us about Builder, action: schedule }
   - key: pro
     name: Pro
     tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
     comp: Commercial Welding
-    highlights:
-      - Your domain on Cloudflare, managed for you
-      - Web and worker servers on a larger Postgres, with error alerts
-      - Google Workspace with 2 seats and an agent that drafts your email
-      - Your logins in 1Password, rotated when they leak or age
-      - A monthly architecture and roadmap review
-      - 4 build requests a month and priority support
+    card_groups: [Application, Platform, Agents]
+    lanes:
+      app: { sub: 4 build requests a month }
+      host: { sub: always on + background jobs }
+      storage: { sub: 10 GB records + 50 GB files }
+      domain: { sub: "your-app.com on Cloudflare, managed for you" }
+      app_email: { sub: sign-in links and receipts from @your-app.com }
+      custom_email: { sub: send from team@your-app.com }
+      workspace: { sub: "2 users, 30 GB each" }
+      vault: { sub: "logins in 1Password, rotated when they leak or age" }
+      cto: { sub: monthly architecture and roadmap review }
+      drafting: { sub: replies drafted in your inbox }
     cta: { label: Talk to us about Pro, action: schedule }
   - key: team
     name: Team
@@ -149,16 +182,28 @@ packages:
     price_monthly: 1500
     comp: Turf Monster
     featured: true
-    highlights:
-      - A CMO agent that finds what holds your demand back
-      - Content sprints, tested at volume and measured
-      - Launch warm-up and email marketing with list cleaning
-      - Funnels built for you (coming soon)
-      - 6 build requests a month
+    card_groups: [Application, Platform, Agents, Marketing]
+    lanes:
+      app: { sub: 6 build requests a month }
+      host: { sub: always on + background jobs }
+      storage: { sub: 32 GB records + 100 GB files }
+      domain: { sub: "your-app.com on Cloudflare, managed for you" }
+      app_email: { sub: sign-in links and receipts from @your-app.com }
+      custom_email: { sub: send from team@your-app.com }
+      workspace: { sub: "2 users, 30 GB each" }
+      vault: { sub: "logins in 1Password, rotated when they leak or age" }
+      cto: { sub: monthly architecture and roadmap review }
+      drafting: { sub: replies drafted in your inbox }
+      cmo: { sub: a monthly demand plan }
+      email_marketing: { sub: "broadcasts, list cleaning and analytics" }
+      content: { sub: short-form content tested at volume }
+      warmup: { sub: new domains ramped safely }
+      funnels: { status: soon }
+      social: { status: soon }
     cta: { label: Talk to us about Team, action: schedule }
   - key: enterprise
     name: Enterprise
-    card: false
+    talk_to_us: true
     tagline: Need more apps, white label or custom connectors? Talk to us.
     price_label: Custom
     comp: McRitchie Industries
@@ -172,7 +217,7 @@ packages:
 
 features:
   # --- application (Vibe and up) -------------------------------------------
-  - name: Custom app
+  - name: Custom Web App
     category: application
     icon: "glyph:app"
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
@@ -197,7 +242,7 @@ features:
     category: application
     icon: heroku
     blurb: Where your app runs. Vibe naps when nobody's visiting; from Builder it's always on.
-    vibe: Vibe Host · wakes on first visit
+    vibe: Vibe Host · light server, wakes on first visit
     builder: Builder Host · always on
     pro: Pro Host · always on + background jobs
     team: Team Host · always on + background jobs
@@ -205,19 +250,22 @@ features:
     sop: app-deploy-standard
     status: live
     software: [heroku]
-  - name: Database
+  # Storage folds what were Database and File storage (Mr. McRitchie,
+  # 2026-10-12): Postgres for records, a private Cloudflare R2 bucket for files,
+  # so it names both SOPs that provision them.
+  - name: Storage
     category: application
     icon: postgres
-    blurb: Where your app keeps its records.
-    vibe: Vibe Data · in your app's files
-    builder: Builder Database · 1 GB records + 10 GB files
-    pro: Pro Database · 10 GB records + 50 GB files
-    team: Team Database · 32 GB records + 100 GB files
+    blurb: Where your app keeps its records and files, backed up every night.
+    vibe: "Vibe Storage · read-only, built into your app"
+    builder: Builder Storage · 1 GB records + 10 GB files
+    pro: Pro Storage · 10 GB records + 50 GB files
+    team: Team Storage · 32 GB records + 100 GB files
     enterprise: Custom
-    sop: app-deploy-standard
+    sop: [app-deploy-standard, bucket-provision]
     status: live
-    software: [postgres]
-    # Vibe keeps its data in files: no Postgres in its stack.
+    software: [postgres, cloudflare]
+    # Vibe keeps its data in its own files: no Postgres or bucket in its stack.
     brand_from: builder
   # Redis stays its own row: a row's software cannot vary by tier, and Vibe's
   # Host must not provision Redis. It also carries what was "Realtime updates".
@@ -260,17 +308,6 @@ features:
     team: true
     enterprise: true
     status: builtin
-  - name: File storage
-    category: application
-    icon: cloudflare
-    blurb: A private Cloudflare R2 bucket for your app's uploads and exports.
-    builder: 10 GB
-    pro: 50 GB
-    team: 100 GB
-    enterprise: Sized to need
-    sop: bucket-provision
-    status: live
-    software: [cloudflare]
   - name: Nightly backups
     category: application
     icon: "💾"
@@ -291,19 +328,22 @@ features:
     category: domain
     icon: "glyph:domain"
     blurb: Your app's address, from our subdomain up to your own domain.
-    vibe: yourname.mcritchie.studio
-    builder: www.yourname.com
-    pro: yourname.com + www.yourname.com
-    team: yourname.com + www.yourname.com
+    vibe: your-app.mcritchie.studio
+    builder: www.your-app.com
+    pro: your-app.com + www.your-app.com
+    team: your-app.com + www.your-app.com
     enterprise: Multiple domains
     sop: domain-purchase
     you_do: Approve the domain
     status: live
     software: [squarespace]
     brand_from: builder
-  # Pro sells the Cloudflare move (Mr. McRitchie, 2026-10-12). Claims stay to
-  # what Cloudflare's free plan gives: global DNS, DDoS protection, optional
-  # caching and SSL. No uptime figure is promised.
+  # Pro sells the Cloudflare move (Mr. McRitchie, 2026-10-12); this ONE row is
+  # the Cloudflare DNS promise /stack holds each Pro-and-up client to
+  # (WorkspacePackage::CLOUDFLARE_DNS). Claims stay to what Cloudflare's free
+  # plan gives: global DNS, DDoS protection, optional caching and SSL. No uptime
+  # figure is promised. Live on mcritchie.studio and turfmonster.media since
+  # 2026-09-30; domain-dns carries the move.
   - name: Fast, protected domain
     category: domain
     icon: cloudflare
@@ -314,22 +354,6 @@ features:
     sop: domain-dns
     section: Cloudflare DNS — Pro and above
     you_do: Approve the move once
-    status: live
-    software: [cloudflare]
-  # Cloudflare DNS, from Pro up (Mr. McRitchie, 2026-10-12; set on Growth, which Pro replaced). Live: mcritchie.studio
-  # and turfmonster.media have run on Cloudflare DNS since 2026-09-30, and
-  # domain-dns carries the move. /stack shows each client's actual DNS host.
-  - name: Cloudflare DNS
-    category: domain
-    icon: cloudflare
-    blurb: Your bare domain is the address. www and old links redirect at Cloudflare's edge, and our agents manage every record by API.
-    spotlight: yourname.com is the address; www and old links redirect at the edge.
-    pro: Bare domain + edge redirects
-    team: Bare domain + edge redirects
-    enterprise: Every domain, edge redirects
-    sop: domain-dns
-    section: Cloudflare DNS — Pro and above
-    you_do: Add the zone and paste two nameservers, once
     status: live
     software: [cloudflare]
   - name: Email that lands in the inbox
@@ -368,15 +392,15 @@ features:
   - name: Google Workspace
     category: platform
     icon: google
-    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    pro: 2 seats · 30 GB each
-    team: 2 seats · 30 GB each
+    blurb: Custom email at team@your-app.com, with Calendar and Drive. Google's Business Starter, 30 GB per user.
+    pro: 2 users · 30 GB each
+    team: 2 users · 30 GB each
     enterprise: Custom
     sop: workspace-signup
     you_do: Sign up and create the users
     status: live
     software: [google]
-  - name: Agentic email drafting
+  - name: Email drafting agent
     category: platform
     icon: "✍️"
     blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
@@ -398,13 +422,13 @@ features:
     section: "4. Attach the folders"
     you_do: Name the folders
     status: live
-  - name: Architecture and roadmap review
+  - name: Fractional CTO
     category: platform
     icon: "🗺️"
     blurb: Once a month we review how your app is built and agree what comes next.
-    pro: Monthly
-    team: Monthly
-    enterprise: Monthly
+    pro: Monthly architecture and roadmap review
+    team: Monthly architecture and roadmap review
+    enterprise: Monthly architecture and roadmap review
     status: builtin
   - name: Error alerts
     category: platform
@@ -467,11 +491,11 @@ features:
     status: live
 
   # --- marketing (Team) ----------------------------------------------------
-  - name: Marketing strategy
+  - name: Fractional CMO
     category: marketing
     icon: "🧠"
     blurb: Our CMO agent finds the one thing holding your demand back and sets the plan around it.
-    team: true
+    team: A monthly demand plan
     enterprise: true
     sop: constraint-diagnosis
     status: live

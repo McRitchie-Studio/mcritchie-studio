@@ -44,12 +44,12 @@ class PackagesBrandLogosTest < ActionView::TestCase
     assert_select "[data-feature='hosting-mode'] [data-test='stack-lead'][data-lead='emoji']", text: "🏷️"
     # The custom app leads with its own drawn mark (the browser window and
     # sparkles), not GitHub's logo, and the mark is no software brand.
-    assert_select "[data-feature='custom-app'] [data-test='stack-lead'][data-lead='glyph-app'] [data-test='glyph'][data-glyph='app'][role='img'][aria-label='Custom app']" do
+    assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'][data-lead='glyph-app'] [data-test='glyph'][data-glyph='app'][role='img'][aria-label='Custom app']" do
       assert_select "svg rect", 2, "the window and its body"
       assert_select "svg circle", 3, "the three title-bar dots"
       assert_select "svg path", 3, "one large and two small sparkles"
     end
-    assert_select "[data-feature='custom-app'] [data-test='stack-lead'] [data-test='brand-logo']", 0
+    assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'] [data-test='brand-logo']", 0
     # The domain is the same family: the window, cut away behind a globe.
     assert_select "[data-feature='web-address'] [data-test='stack-lead'][data-lead='glyph-domain'] [data-test='glyph'][data-glyph='domain'][role='img'][aria-label='Your domain']" do
       assert_select "svg mask#glyph-domain-gap circle", 1, "the gap cut from the window behind the globe"

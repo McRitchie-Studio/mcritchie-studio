@@ -32,6 +32,38 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await expect(cards.locator("h2")).toHaveText(["Vibe", "Builder", "Pro", "Team"]);
   await expect(page.locator("[data-test='package-card'][data-package='team'] [data-test='price-monthly']")).toContainText("$1,500");
 
+  // The cards line up at desktop width: equal heights, and every CTA and
+  // first group heading at the same height, however the taglines wrap.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const tops = async (selector) => page.locator(selector).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  const heights = await cards.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  expect(new Set(heights).size).toBe(1);
+  expect(new Set(await tops("[data-test='package-card'] [data-test='package-cta']")).size).toBe(1);
+  // Swim lanes: every group heading and every lane sits at one height across
+  // the cards that show it, even where a subtext wraps in one card and not another.
+  const laneTops = await page.locator("[data-test='package-line'], [data-test='package-line-group']").evaluateAll((els) => {
+    const byKey = {};
+    for (const el of els) {
+      const key = el.dataset.lane || `group:${el.dataset.group}`;
+      (byKey[key] ||= []).push(Math.round(el.getBoundingClientRect().top));
+    }
+    return byKey;
+  });
+  expect(Object.keys(laneTops).length).toBe(20);
+  for (const [key, offsets] of Object.entries(laneTops)) {
+    expect(new Set(offsets).size, `${key} at ${offsets}`).toBe(1);
+  }
+  expect(laneTops["host"].length).toBe(4);
+  expect(laneTops["cmo"].length).toBe(2);
+  // The Most popular badge is fully inside the page, not clipped at the card's edge.
+  const badge = await page.locator("[data-test='featured-badge']").boundingBox();
+  const teamCard = await page.locator("[data-test='package-card'][data-package='team']").boundingBox();
+  expect(badge.y).toBeGreaterThanOrEqual(teamCard.y);
+  // The Vibe hostname never breaks at its hyphen.
+  const host = page.locator("[data-package='vibe'] [data-test='tagline-host']");
+  const hostLines = await host.evaluate((el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+  expect(hostLines).toBe(1);
+
   // Each card names its brands in full-color logos that actually load.
   const vibeLogos = page.locator("[data-package='vibe'] [data-test='package-powered-by'] [data-test='brand-logo']");
   await expect(vibeLogos).toHaveCount(3);
@@ -139,24 +171,28 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   expect(packagesOverflow).toBeLessThanOrEqual(0);
 });
 
-test("Pro and Team show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
+test("Pro and Team cards mark their lines, tease the next tier, and the full stack draws the Cloudflare row on a phone", async ({ page }) => {
   await page.goto("/packages");
 
-  for (const key of ["pro", "team"]) {
-    const spot = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-spotlight'][data-feature='cloudflare-dns']`);
-    await expect(spot).toContainText("Cloudflare DNS");
-    const logo = spot.locator("[data-brand='cloudflare'] img");
-    await expect(logo).toBeVisible();
-    expect(await logo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
-  }
-  await expect(page.locator("[data-package='builder'] [data-test='package-spotlight']")).toHaveCount(0);
+  // A check for included, a muted cross naming the next tier, Coming soon for promises.
+  const pro = page.locator("[data-test='package-card'][data-package='pro']");
+  await expect(pro.locator("[data-mark='included']").first()).toHaveAttribute("aria-label", "Included");
+  const teaser = pro.locator("[data-test='package-line'][data-status='missing']");
+  await expect(teaser).toHaveCount(1);
+  await expect(teaser).toContainText("Fractional CMO");
+  await expect(teaser).toContainText("(In Team)");
+  await expect(teaser.locator("[data-mark='missing']")).toHaveAttribute("aria-label", "In Team");
+  const team = page.locator("[data-test='package-card'][data-package='team']");
+  await expect(team.locator("[data-test='package-line'][data-status='soon'] [data-test='coming-soon']")).toHaveCount(2);
+  await expect(pro).toContainText("your-app.com on Cloudflare, managed for you");
+  await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/packages/stack");
-  await expect(page.locator("[data-test='stack-row'][data-feature='cloudflare-dns']")).toBeVisible();
+  await expect(page.locator("[data-test='stack-row'][data-feature='fast-protected-domain']")).toBeVisible();
   const flow = page.locator("[data-test='dns-flow']");
   await flow.scrollIntoViewIfNeeded();
-  await expect(flow.getByRole("heading", { name: "Cloudflare DNS, in action" })).toBeVisible();
+  await expect(flow.getByRole("heading", { name: "Your domain on Cloudflare, in action" })).toBeVisible();
   await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(pageOverflow).toBeLessThanOrEqual(0);

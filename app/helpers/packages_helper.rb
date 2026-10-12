@@ -33,6 +33,16 @@ module PackagesHelper
     value.to_s.split(" + ").map { |part| [ part, part.match?(HOSTNAME) ] }
   end
 
+  # A card tagline with every hostname in it kept on one line, so
+  # "your-app.mcritchie.studio" never breaks at its hyphen.
+  def package_tagline(text)
+    parts = text.to_s.split(/(\s+)/).map do |word|
+      host, tail = word.match(/\A(.+?)([.,;:!?]?)\z/).captures
+      host.match?(HOSTNAME) ? safe_join([ tag.span(host, class: "whitespace-nowrap", data: { test: "tagline-host" }), tail ]) : word
+    end
+    safe_join(parts)
+  end
+
   # A lone hostname that may wrap only at its first label, and only while a dot
   # remains after it ("yourname." / "mcritchie.studio"), so a narrow phone column
   # never splits a word and "yourname.com" never wraps. A hostname listed with

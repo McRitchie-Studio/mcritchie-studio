@@ -1,12 +1,12 @@
-<%# Cloudflare DNS, in action: the worked example /packages/stack draws under
-    the matrix for the `Cloudflare DNS` row. A visitor's www. address and old
+<%# Your domain on Cloudflare, in action: the worked example /packages/stack
+    draws under the matrix for the `Fast, protected domain` row. A visitor's www. address and old
     links are redirected at Cloudflare's edge to the bare domain, which serves
     the app. The example domain is generic on purpose: this page is public and
     names no client. %>
 <% steps = [
-     { label: "Visitor types", value: "www.yourname.com", note: "or an old link, or another domain you own" },
-     { label: "Cloudflare edge", value: "301 → yourname.com", note: "a redirect rule, before your app is ever asked", brand: true },
-     { label: "Your address", value: "yourname.com", note: "the bare domain, pointed at your app" },
+     { label: "Visitor types", value: "www.your-app.com", note: "or an old link, or another domain you own" },
+     { label: "Cloudflare edge", value: "301 → your-app.com", note: "a redirect rule, before your app is ever asked", brand: true },
+     { label: "Your address", value: "your-app.com", note: "the bare domain, pointed at your app" },
      { label: "Your app", value: "Served over HTTPS", note: "hosted by us, certificate renewed for you" }
    ] %>
 <section class="mt-12 rounded-2xl border border-subtle bg-surface p-5 md:p-6" data-test="dns-flow" aria-labelledby="dns-flow-title">
@@ -14,7 +14,7 @@
     <%= render "packages/brand", key: feature.brand, size: :lead if feature.brand? %>
     <div class="min-w-0">
       <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="dns-flow-tiers"><%= WorkspacePackage.all.select { |package| feature.included_in?(package.key) }.map(&:name).to_sentence %></p>
-      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading"><%= feature.name %>, in action</h2>
+      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading">Your domain on Cloudflare, in action</h2>
       <p class="mt-1 max-w-2xl text-sm text-muted"><%= feature.blurb %></p>
     </div>
   </div>
@@ -39,5 +39,5 @@
     <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Your email records moved across exactly, so mail never stops.</li>
     <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> <span>Cloudflare's Turnstile bot check for your forms, on the same zone <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted">Coming soon</span></span></li>
   </ul>
-  <p class="mt-4 text-xs text-muted">On Builder, www.yourname.com is the address and the bare domain forwards to it.</p>
+  <p class="mt-4 text-xs text-muted">On Builder, www.your-app.com is the address and the bare domain forwards to it.</p>
 </section>

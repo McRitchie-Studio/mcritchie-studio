@@ -73,6 +73,12 @@ class PackagesHelperTest < ActionView::TestCase
     assert_equal "yourname.com", package_hostname("yourname.com").to_s
   end
 
+  test "[unit] a tagline keeps its hostname on one line, trailing period outside" do
+    html = package_tagline("A real app built by our agents, live at your-app.mcritchie.studio.").to_s
+    assert_equal 'A real app built by our agents, live at <span class="whitespace-nowrap" data-test="tagline-host">your-app.mcritchie.studio</span>.', html
+    assert_equal "Your founding team: a CTO and a CMO.", package_tagline("Your founding team: a CTO and a CMO.").to_s
+  end
+
   test "a matrix cell reads a check, a dash or the value" do
     assert_equal "✓", package_cell_text(true)
     assert_equal "—", package_cell_text(nil)

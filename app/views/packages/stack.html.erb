@@ -42,7 +42,7 @@
 
   <ul class="mb-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted" data-test="stack-legend" aria-label="Legend">
     <li><span class="font-semibold text-primary">✓</span> Included</li>
-    <li><span class="inline-block rounded-full border border-primary px-2 text-xs font-semibold text-primary">Value</span> What that tier gets</li>
+    <li><span class="inline-block rounded-lg border border-primary px-2 text-xs font-semibold text-primary">Value</span> What that tier gets</li>
     <li><span class="font-semibold">—</span> Not included</li>
     <li><span class="rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium">Coming soon</span> Not delivered yet</li>
     <li><span class="font-semibold text-body">Add-on</span> Priced per contract</li>
@@ -118,9 +118,9 @@
                         <span class="mt-0.5 block text-2xs text-muted" data-test="stack-product-metric"><%= metric %></span>
                       </span>
                     <% elsif segments.any?(&:last) %>
-                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(segments.one? ? package_hostname(text) : text, class: ("whitespace-nowrap" unless segments.one?), data: { test: "stack-hostname" }) : text }, " + ") %></span>
+                      <span class="inline-block max-w-full rounded-lg border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold leading-snug" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(segments.one? ? package_hostname(text) : text, class: ("whitespace-nowrap" unless segments.one?), data: { test: "stack-hostname" }) : text }, " + ") %></span>
                     <% else %>
-                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>
+                      <span class="inline-block max-w-full rounded-lg border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold leading-snug [overflow-wrap:anywhere]"><%= value %></span>
                     <% end %>
                   <% end %>
                 </td>
@@ -174,12 +174,12 @@
             </tr>
           </thead>
           <tbody>
-            <% features.each do |feature| %>
-              <tr class="border-b border-subtle last:border-0 align-top" data-test="sop-map-row" data-sop="<%= feature.sop %>">
+            <% features.flat_map { |feature| feature.sops.presence&.map { |sop| [ feature, sop ] } || [ [ feature, nil ] ] }.each do |feature, sop| %>
+              <tr class="border-b border-subtle last:border-0 align-top" data-test="sop-map-row" data-sop="<%= sop %>">
                 <td class="py-2 pr-4 text-heading"><%= feature.name %></td>
                 <td class="py-2 pr-4">
-                  <% if feature.doc_path %>
-                    <%= link_to feature.sop, doc_path(feature.doc_path), class: "font-mono text-primary hover:underline" %>
+                  <% if (path = feature.doc_path_for(sop)) %>
+                    <%= link_to sop, doc_path(path), class: "font-mono text-primary hover:underline" %>
                     <% if feature.section %><span class="text-muted"> · §<%= feature.section %></span><% end %>
                   <% else %>
                     <span class="text-muted">— <%= feature.planned? ? "no SOP yet" : "built in" %></span>
