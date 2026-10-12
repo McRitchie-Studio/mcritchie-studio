@@ -112,7 +112,7 @@ at Cloudflare's edge, and every later record is an API call. Live today on
 `mcritchie.studio` and `turfmonster.media` (both since 2026-09-30, records DNS
 only); `/stack` tracks the rest. The edge-proxy and certificate work beyond DNS
 is the separate [CDN rollout](../../../system/cdn-rollout.md); this section
-moves DNS only and proxies nothing that serves the app.
+moves DNS only and proxies only `www`, for its redirect, and nothing that serves the app.
 
 The agent token `cloudflare.studio.provision` has DNS read/write on every zone
 in the account but **no Zone grant** ([credential
