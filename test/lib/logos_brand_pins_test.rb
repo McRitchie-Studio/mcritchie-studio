@@ -53,7 +53,10 @@ class LogosBrandPinsTest < Minitest::Test
     "industries" => "164e879afa7dfec2a5336d4113c56234cb40d0742d775479f79d4c1557e61bf3",
     "turf" => "9ba3b7bf55a7f3b60166f286b875883457c5b8269520672275d0f694858c53ff",
     "welding" => "0f1083dc461623e7bb84e07049ce8c14e10ad581c1200b74023413279a2a65d4",
-    "welding_v2" => "7635ac2b3d772e1f573a93f6ffff854ce81347f5b94871c02075fe922a064984"
+    # Re-taken DELIBERATELY by task kit-export-and-clear-lens, when v2's Original lens window became a hole in the
+    # silhouette, not an opaque white shape (Alex 2026-10-12: "remove the white of the lens so I can see it clear"); was
+    # 7635ac2b…. Every other pin, Alt and Original, did not move by a byte.
+    "welding_v2" => "da4a25d267b6cb0b599f09c85919de06c1952b9bc2871719deb34f35f5cb5893"
   }.freeze
 
   def self.original_drawings(brand)

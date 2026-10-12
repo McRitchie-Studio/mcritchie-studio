@@ -191,6 +191,15 @@ Rails.application.routes.draw do
   post   "logos/:brand/kit/originals", to: "brand_kits#create_original", as: :brand_kit_originals
   get    "logos/:brand/kit/originals/:id", to: "brand_kits#original", as: :brand_kit_original
   delete "logos/:brand/kit/originals/:id", to: "brand_kits#destroy_original"
+  # The kit as files an app takes its logo from (LogosController#kit_export and #kit_file, BrandKitExport; task
+  # kit-export-and-clear-lens): the whole kit as a zip, and each file at a stable name that always serves the current kit
+  # choice. The .zip and .svg endings are part of the path (format: false), and the request format is pinned to HTML,
+  # because Rails otherwise reads a format from the path's extension and the wall would answer a visitor with a bare
+  # 401 where every other walled page redirects to sign-in. The file name is checked by the controller
+  # (BrandKitExport::FILES), not here, so the wall's route walk reaches it.
+  get "logos/:brand/kit.zip", to: "logos#kit_export", as: :brand_kit_export, format: false, defaults: { format: "html" }
+  get "logos/:brand/kit/:file", to: "logos#kit_file", as: :brand_kit_file, format: false, defaults: { format: "html" },
+                                constraints: { file: %r{[^/]+} }
   %w[icon navbar stacked].each do |type|
     get "logos/:brand/#{type}", to: "logos#asset", defaults: { type: }, as: :"#{type}_logo"
   end

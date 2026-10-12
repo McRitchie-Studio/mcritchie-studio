@@ -91,13 +91,59 @@ class LogosController < ApplicationController
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
+  # THE KIT IS THE DEFAULT (task kit-export-and-clear-lens): asked with no choice params (only ?tone= and ?download=),
+  # a brand with a saved kit answers with its kit's logo for that tone, exactly as the Kit card and the kit export draw
+  # it (BrandKit#variant); any choice param (KIT_OVERRIDES) means the caller says what it wants, and gets exactly that.
+  # A brand with nothing saved, or a kit its data can no longer draw, answers exactly as before. X-Logo-Source says
+  # which: "kit" or "params".
   def asset
-    variant = Logos::Variant.parse(@logo, params, type: @type)
+    asked = Logos::Variant.parse(@logo, params, type: @type)
+    variant = kit_default(asked.tone) || asked
     download = Logos::Variant.flag(params[:download], "download")
+    response.headers["X-Logo-Source"] = variant.equal?(asked) ? "params" : "kit"
     send_data variant.svg, type: "image/svg+xml", filename: variant.filename, disposition: download ? "attachment" : "inline"
   end
 
+  # The params that choose a logo, of any type: one of them in the query and the SVG routes draw what it says, not the kit.
+  KIT_OVERRIDES = (Logos::Variant::CHOICES.values.flatten.uniq - %i[tone] + Logos::Variant::EDIT_PARAMS.keys).map(&:to_s).freeze
+
+  # THE KIT AS FILES (task kit-export-and-clear-lens): every saved logo, light, dark and watermark, with a README, as
+  # one zip (BrandKitExport). Admin only, like every logo route.
+  def kit_export
+    send_data kit_files.zip, type: "application/zip", filename: kit_files.zip_filename, disposition: "attachment"
+  end
+
+  # One kit file at its stable name (/logos/welding_v2/kit/navbar-dark.svg): always the current kit choice. An unknown
+  # name is a 404; a logo the brand cannot draw is a 422 with the reason, as on every logo route.
+  def kit_file
+    raise ActiveRecord::RecordNotFound, "No kit file #{params[:file].to_s.inspect[0, 60]}" unless BrandKitExport.file?(params[:file])
+
+    download = Logos::Variant.flag(params[:download], "download")
+    send_data kit_files.svg(params[:file]), type: "image/svg+xml", filename: "#{@logo.brand}-#{params[:file]}",
+                                            disposition: download ? "attachment" : "inline"
+  end
+
   private
+
+  def kit_files
+    @kit_files ||= begin
+      kit = BrandKit.for(@logo.brand)
+      BrandKitExport.new(kit, base_url: request.base_url, saver: BrandKit.saver_names([kit])[kit.updated_by])
+    end
+  end
+
+  # The brand's kit logo of this type in `tone`, or nil: a choice param was given, nothing is saved, or the kit cannot
+  # be drawn (then the route answers as it always has, never a 422 an app did not ask for).
+  def kit_default(tone)
+    return if KIT_OVERRIDES.any? { |name| params.key?(name) }
+
+    kit = BrandKit.find_by(brand: @logo.brand)
+    return unless kit && BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }
+
+    kit.variant(@type, tone:)
+  rescue Logos::NavbarLogo::Error
+    nil
+  end
 
   def compare_brand(value, fallback, brands)
     return fallback if value.nil?

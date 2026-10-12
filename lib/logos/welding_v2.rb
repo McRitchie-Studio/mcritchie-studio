@@ -11,10 +11,13 @@ module Logos
   #      middle row: its top and bottom on the row lines if it were one row tall; it is shorter, so it is centred on
   #      that row. The blue frame around the window moves with it: its outer edge is the notch the white half's
   #      contour makes around the frame, and the points of that notch move by the same amount.
+  #   3. Clear lens (task kit-export-and-clear-lens): the window is a hole in the outer helmet, so the page shows
+  #      through it. Alt's helmets always drew it so; the Original's trace filled it white (#clear_lens).
   #
   # The traced data's own shapes are found, not numbered. The HALVES layer holds the white half and the window: v1's
   # Alt helmets' `primary` (one blue layer, the two as holes in it) or the Original's `white` (the two as opaque white
-  # shapes over a blue silhouette; task logo-original-and-alt). The outer helmet is the widest sub-path of any layer;
+  # shapes over a blue silhouette; task logo-original-and-alt; v2's Original then holds the window as a hole in the
+  # silhouette, step 3, and reads back the same way). The outer helmet is the widest sub-path of any layer;
   # of the halves layer's other two, the white half is the taller and the window the other. Only absolute M, L, C and
   # Z are read (the potrace output); anything else is refused. `rake logos:welding_v2` writes the result to
   # data/brand_icons_welding_v2.json; docs/topics/logos.md has the steps with the numbers.
@@ -63,11 +66,15 @@ module Logos
       @layers = icon.fetch("layers").map { |layer| [layer, self.class.subpaths(layer.fetch("d"))] }
       halves = HALVES.lazy.filter_map { |role| @layers.find { |layer, _| layer["role"] == role } }.first or
         raise Error, "#{from}: no #{HALVES.join(' or ')} layer"
+      @halves_role = halves.first["role"]
       @outer = @layers.flat_map(&:last).max_by { |sub| self.class.bbox(sub)[2] - self.class.bbox(sub)[0] }   # widest
-      holes = halves.last.reject { |sub| sub.equal?(@outer) }
-      unless holes.size == 2 && halves.last.size == (halves.last.any? { |sub| sub.equal?(@outer) } ? 3 : 2)
-        raise Error, "#{from}: expected the white half and the window in the #{halves.first['role']} layer (with the outer helmet if it is " \
-                     "the primary), got #{halves.last.size} sub-paths"
+      # The white half and the window: the halves layer's shapes and, once the window is cut clear (#icon), the outer
+      # helmet's layer's other shape, so a v2 helmet reads back the same way v1's does.
+      outer_layer = @layers.find { |_, subs| subs.any? { |sub| sub.equal?(@outer) } }
+      holes = (halves.last + (outer_layer.equal?(halves) ? [] : outer_layer.last)).reject { |sub| sub.equal?(@outer) }
+      unless holes.size == 2 && outer_layer.last.size <= 3
+        raise Error, "#{from}: expected the white half and the window in the #{halves.first['role']} layer (the window may be a hole in " \
+                     "the outer helmet's), got #{holes.size} shapes besides the outer helmet"
       end
 
       @hole, @lens = holes.sort_by { |sub| self.class.bbox(sub)[1] - self.class.bbox(sub)[3] }       # tallest first
@@ -93,13 +100,24 @@ module Logos
         raise Error, "#{@from}: the #{layer['role']} layer mixes the helmet's halves with other shapes" if found.any? && found.size != subpaths.size
 
         d = if found.any?
-              found.map { |shape| moved(shape, &shapes.fetch(shape)) }.join
+              clear_lens(found).map { |shape| moved(shape, &shapes.fetch(shape)) }.join
             else
               subpaths.map { |sub| moved(sub) { [across, dy] } }.join
             end
         layer.merge("d" => d)
       end
       { "w" => width, "h" => @source.fetch("h"), "source" => source_note(across, width), "layers" => layers }
+    end
+
+    # THE LENS IS SEE-THROUGH (task kit-export-and-clear-lens; Alex 2026-10-12: "remove the white of the lens so I can
+    # see it clear"): the window is always written as a hole in the outer helmet's layer (even-odd), never as a shape
+    # of its own. Alt's primary already holds it so; the Original's trace drew it as an opaque white shape in its white
+    # layer over the blue silhouette, so there it moves into the silhouette and the page shows through. The white half
+    # stays opaque (it holds the helmet on a dark page), and the spark, the frame and the outer edge are unchanged.
+    # `found` is one layer's shapes, in their written order.
+    def clear_lens(found)
+      found = found.reject { |shape| shape.equal?(@lens) }
+      found.any? { |shape| shape.equal?(@outer) } ? found + [@lens] : found
     end
 
     # The frame's points: those of the white half's contour that lie within FRAME_REACH of the window.
@@ -186,10 +204,13 @@ module Logos
       self.class.serialise(out)
     end
 
+    # The Original's note says its window was cut clear; Alt's always was a hole, and its note is unchanged.
+    def clear_note = @halves_role == "white" ? "; the lens window is cut out of the white layer into a hole in the silhouette, so it is see-through" : ""
+
     def source_note(dx, width)
       "derived from '#{@from}' by Logos::WeldingV2: moved right #{self.class.number(dx)} so the line where the helmet's two " \
         "halves meet (x = #{self.class.number(split)}) is the box's centre, in a box #{self.class.number(width)} wide; the lens " \
-        "and its frame moved down #{self.class.number(dy)} to centre the lens on the rule of 3's middle row"
+        "and its frame moved down #{self.class.number(dy)} to centre the lens on the rule of 3's middle row#{clear_note}"
     end
   end
 end

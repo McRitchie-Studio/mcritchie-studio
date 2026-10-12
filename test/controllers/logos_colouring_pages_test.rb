@@ -6,6 +6,10 @@ require "test_helper"
 # ?colouring=original|alt (Alt unless asked, so every existing URL serves what it served), names an Original's file
 # -original, and refuses an Original of a brand that has none.
 class LogosColouringPagesTest < ActionDispatch::IntegrationTest
+  # The colouring an SVG route's src names: an icon always names its own, Alt included (task kit-export-and-clear-lens:
+  # an icon asked with no colouring draws the brand's kit icon); a Navbar or Stacked Logo names only an Original.
+  def named(src, colouring) = src.include?("/icon?") ? (colouring || "alt") : colouring
+
   setup { log_in_as(users(:alex)) }
 
   def disposition = response.headers["Content-Disposition"]
@@ -86,10 +90,10 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_select "[data-test='colouring-control']", 1
     { "welding" => "original", "industries" => "original", "turf" => "original", "studio" => nil }.each do |brand, colouring|
-      css_select("[data-brand='#{brand}'] [data-test='logo-sample'] img").each { |img| assert_equal colouring, query(img["src"])["colouring"], brand }
+      css_select("[data-brand='#{brand}'] [data-test='logo-sample'] img").each { |img| assert_equal named(img["src"], colouring), query(img["src"])["colouring"], brand }
     end
     get logos_path(colouring: "alt")
-    css_select("[data-test='logo-sample'] img").each { |img| assert_nil query(img["src"])["colouring"], img["src"] }
+    css_select("[data-test='logo-sample'] img").each { |img| assert_equal named(img["src"], nil), query(img["src"])["colouring"], img["src"] }
     css_select("[data-test='logo-brand-row'] th a").each { |link| assert_equal "alt", query(link["href"])["colouring"], "the brand links keep it" }
   end
 
@@ -125,7 +129,7 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='colouring-option'][data-colouring='original'][aria-disabled='true']", 1
       assert_select "a[data-test='colouring-option'][data-colouring='original']", 0
       assert_select "a[data-test='colouring-option'][data-colouring='alt'][aria-current='true']", 1
-      srcs.each { |src| assert_nil query(src)["colouring"], "#{params.inspect}: Alt: #{src}" }
+      srcs.each { |src| assert_equal named(src, nil), query(src)["colouring"], "#{params.inspect}: Alt: #{src}" }
     end
     get logo_brand_path("studio", colouring: "original")
     assert_equal "original", query(css_select("[data-test='logo-tab']").first["href"])["colouring"], "the ask is carried on to the next brand"

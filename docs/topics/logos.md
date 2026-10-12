@@ -80,7 +80,7 @@ The brands' originals:
 | `industries` | the kit's own `mcritchie_icon_light.svg` and `_dark.svg` (05_icon): steel gradient, flat edge, ruler ticks; the leading word in the kit wordmark's steel gradient, the other in gunmetal `#41464D` (light) or light steel `#D3D6DA` (dark), as the kit's horizontal logos set them | the set square flat, two solid layers |
 | `turf` | the three-colour head trace; ink `#1A1535` and green on light, white and green on dark | the head's linework alone (`turf_mono`) in the brand green `#4BAF50` |
 | `welding` | the kit's square logo (`COM - Square - Large.png`), traced: a blue silhouette, the opaque white right half and lens window over it, the orange spark; one icon for both tones, since the white fill holds the helmet on a dark page; the name in the kit's blue `#2D5E8E` with the orange `#D7602E` accent and tagline on light, and white with the orange on dark (the kit has no dark lettering) | the two-colour helmet on light, the single-colour one on dark |
-| `welding_v2` | v1's Original with the v2 derivation ([below](#commercial-welding-v2)) | v2's helmet as before |
+| `welding_v2` | v1's Original with the v2 derivation ([below](#commercial-welding-v2)), its lens window cut clear (see-through, not white) | v2's helmet as before |
 
 **Turf Monster's Alt changed on purpose.** Alt means one solid colour per part
 for every brand; Turf's Alt was its three-colour head, which is now its
@@ -414,12 +414,25 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
    within 40 units of the window (the band is 16 to 20 thick) move down with
    it, each curve's control points following their own end, so the band keeps
    its width and the rest of the white half stays put.
+4. **Clear the lens** (task kit-export-and-clear-lens; Alex 2026-10-12: "remove
+   the white of the lens so I can see it clear"). The window is always written
+   as a hole in the outer helmet's layer (even-odd), so the page shows through
+   it. The Alt helmets already held it so; the Original's trace drew it as an
+   opaque white shape in its `white` layer, so there it moves into the blue
+   silhouette (`WeldingV2#clear_lens`). The white right half stays opaque (it
+   holds the helmet on a dark page); the frame, the spark and the outer edge do
+   not change. v1's Original keeps its white window. The parser reads the
+   cleared helmet back the same way (the window may be the outer layer's
+   second sub-path), so the derivation's measures still hold on v2's data.
 
 **v2's Original** (`welding_v2_original`) is the same derivation run on v1's
 Original (`welding_original`), in its own box: the trace is at about twice
 the scale (975 tall), so the measures above (2, 20 and 40 units) are taken at
 its scale (`WeldingV2#scaled`; v1's own numbers are unchanged). Its midline is
-x = 411.85, its box 858 widened to 892.30 (right 34.30), its lens down 47.42.
+x = 411.85, its box 858 widened to 892.30 (right 34.30), its lens down 47.42,
+and its window cut clear (step 4): its `blue` layer is the silhouette with the
+window as a hole, its `white` layer the white half alone. Only welding_v2's
+Original pin moved for it (`test/lib/logos_brand_pins_test.rb`).
 
 `test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
 data, for all three helmets: the midline at the box's centre, the ears inside the box, the lens's
@@ -472,14 +485,28 @@ admin sidebar as **Logos**.
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (all three drawing the row's one icon: the kit's, else the brand's own), each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
-| `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
+| `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
 
-On the three SVG routes an absent param takes the library's default (so
-`/navbar` alone is the rule of 3), a param the type does not take is not read,
-and `download=1` sends the file as an attachment. The type is the route's own:
-a `?type=` in the query string cannot change it.
+On the three SVG routes a param the type does not take is not read, and
+`download=1` sends the file as an attachment. The type is the route's own: a
+`?type=` in the query string cannot change it.
+
+**The kit is the default** (task kit-export-and-clear-lens). Asked with no
+CHOICE param (only `tone` and `download`), a brand with a saved kit (an Icon,
+Navbar or Stacked choice) answers with its kit's logo of that type in that
+tone, exactly as the Kit card and the [kit export](#the-kit-export) draw it
+(`BrandKit#variant`: the saved choice with the kit icon, or the brand's default
+for a type nothing is saved for). Any choice param (`rule`, `form`, `text`,
+`colouring`, `icon_colouring`, `guides` or an edit param;
+`LogosController::KIT_OVERRIDES`) means the caller says what it wants, and an
+absent one then takes the library's default (so `/navbar?rule=4` is the rule
+of 4, homogeneous, Alt). A brand with nothing saved, or a kit its data can no
+longer draw, answers byte for byte as before (`/navbar` alone is the rule of 3).
+The `X-Logo-Source` header says which: `kit` or `params`. Because of this the
+gallery's own icon URLs always name their colouring, Alt included
+(`Logos::Variant#params`), so a gallery picture is never read as the kit.
 
 ### Colours and typefaces
 
@@ -788,7 +815,8 @@ Navbar or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
 originals included; ` · originals: N` follows when the kit holds any. The /logos
 table shows the same status cut to one line. Clear lands on the tab at the Kit
 choice card (`#kit-choice`). Its **Kit** card shows the three choices (Icon, Navbar, Stacked) in the page's tone, each with
-**Open on its tab** and **Download**, and the kit's notes.
+**Open on its tab** and **Download**, and the kit's notes; its **Download kit** button gives them all as files
+([the kit export](#the-kit-export)).
 
 **Originals.** The **Kit originals** card ("The originals the logos were
 derived from.") uploads one or more files, lists each with its name, type,
@@ -822,6 +850,55 @@ tab and context the form carried; `LogoBrandPage`) with the reason in the Kit
 originals card. A failed write is logged against the kit (`rescue_and_log`;
 a kit not yet saved is not named, since the log would save it); an unknown brand or original is a 404. A visitor is sent to log in
 and a non-admin is turned away by the admin wall, writes and reads alike.
+
+## The kit export
+
+Task kit-export-and-clear-lens (Alex 2026-10-12 00:55: his Commercial Welding
+site drew an old navbar, not the one his kit saves). `BrandKitExport`
+(`app/models/brand_kit_export.rb`) gives a kit as files. Each is what the Kit
+card shows: the saved Icon, Navbar Logo and Stacked Logo, each drawing the kit
+icon, or the brand's default for a type nothing is saved for.
+
+| Route (`LogosController`, admin only) | Gives |
+|------|------|
+| `GET /logos/:brand/kit.zip` | `<brand>-kit.zip`: a `<brand>-kit/` folder holding `README.md` and the nine files below. The **Download kit** button on every brand page tab's Kit card links here. |
+| `GET /logos/:brand/kit/<type>-<tone>.svg` | One file, always the CURRENT kit choice: `icon-light.svg`, `icon-dark.svg`, `icon-watermark.svg`, `navbar-light.svg`, `navbar-dark.svg`, `navbar-watermark.svg`, `stacked-light.svg`, `stacked-dark.svg`, `stacked-watermark.svg`. Inline, or `download=1` for an attachment named `<brand>-<file>`. Any other name is a 404. |
+
+`light` is for a light background, `dark` for a dark one, `watermark` is one
+colour, slightly transparent. The README lists each file (saved or default,
+and its accessible name), the palette, the typefaces, who saved the kit and
+when (UTC), and the stable URLs at the host it was downloaded from. A logo the
+brand cannot draw is left out of the zip and named in the README as not
+drawn; a single file the brand cannot draw is a 422 with the reason.
+
+With no params, the plain routes agree with the kit files once a kit is saved:
+`/logos/welding_v2/navbar?tone=dark` and `/logos/welding_v2/kit/navbar-dark.svg`
+are the same bytes.
+
+### How an app takes its logo from the kit
+
+1. **Save the kit** on the hub: on `/logos/<brand>`, save the Icon, Navbar and
+   Stacked choices (Save as default, or the Kit choice card). The Kit card
+   shows what the app will get.
+2. **Take the files.** Either a person clicks **Download kit** and commits
+   the SVGs into the app (for example under `public/brand/`, named as they
+   come: `navbar-light.svg`, `navbar-dark.svg`, `icon-light.svg`, …), or the
+   app's build fetches the stable URLs. Use the files as they are; never
+   hand-edit a copy (that is how a site ends up showing an old navbar).
+3. **Pick the tone by the background**: `navbar-dark.svg` on a dark navbar,
+   `navbar-light.svg` on a light one; the icon files for a favicon or avatar,
+   the stacked ones for a hero or a footer.
+4. **When the kit changes**, download or fetch again. The URLs never change;
+   their content follows the saved kit.
+
+**Access.** Every route is behind the admin wall, like the rest of `/logos`;
+it is not public (opening it to the world is Alex's call). A build fetch needs
+an admin's signed-in hub session cookie (sign in with a magic link, keep the
+cookie jar, then `curl -sS -b <jar> -o kit.zip -w '%{http_code} %{content_type}' https://mcritchie.studio/logos/<brand>/kit.zip`).
+Without one the hub answers with a 302 to sign-in, not the file, and `curl -f`
+does not fail on a 302, so a fetch must check for `200` and `image/svg+xml` or
+`application/zip` itself (do not follow redirects). There is no API-token door
+yet.
 
 ## The data
 
