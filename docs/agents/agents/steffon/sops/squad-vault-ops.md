@@ -22,10 +22,13 @@ ready" (chat, 2026-10-12, relayed in the `squad-vault-ops-sop` rework). Mainnet
 Squad #8, the v0.26 `Upgrade` of turf-vault, was the first upgrade done this
 way. `7auwTL` created it, `7auwTL` and `4bKN` approved it, and he approved from
 `7ZDJ` and executed it himself at about 13:28 MDT on 2026-10-12. The program's
-last deploy is now slot 456161810, with a 707,600-byte program (sha256
-`3dfcb0c4…`), and `init_governance` followed at `5KqNaY9r…`, slot 456162765.
-The proposal status, deploy slot, size and `init_governance` signature were
-read off chain on 2026-10-12; the hash is as Xan reported it.
+last deploy is now slot 456161810, with a 707,600-byte program. Its sha256,
+`3dfcb0c4…`, is the hash of the full 707,600-byte `solana program dump` output,
+not of a trimmed binary, so compare like with like. `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
+That `init_governance` is NOT under this SOP: it is the per-instance ruling
+First Rule 10 requires for any agent-run signature with a barred key. The
+proposal status, deploy slot, size and `init_governance` signature were read off
+chain on 2026-10-12; Xan measured the hash.
 
 **Callers.** [`program-upgrade`](program-upgrade.md) (rent floats for a buffer)
 and Turf Monster's [`collect-vault-revenue`](../../turf_monster/sops/collect-vault-revenue.md)
@@ -39,7 +42,7 @@ hop 2 (swept revenue to his wallet) both run their Squads step here.
 | Vault (vault 0) | `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm` |
 | Agent seats | `7auwTL…` (`solana.turf.system`, `studio-agents`); `4bKNSq…` (`solana.turf.governance`, `studio-agents-admin`) |
 | Mr. McRitchie's seats | `7ZDJp7FU…` (Phantom), `9gACbz…`, `3Qj4v9…` |
-| Never signs mainnet | Xan `8K81…`, Mason `CytJ…`, Mack `foUu…` |
+| No agent-run mainnet signature, barring his ruling for one instance | Xan `8K81…`, Mason `CytJ…`, Mack `foUu…`. The app's own server key (`8K81` today) signing inside the running app is the app, not an agent |
 
 The set was read off chain on 2026-10-12. turf-vault
 `scripts/lib/squad-clusters.js` holds it, and its test pins it. Read the live set
@@ -131,7 +134,8 @@ before it reads anything.
    It creates transaction `n+1`, reads the instruction back from chain, and
    refuses on any difference. Then it approves with `system` and `governance`.
    If an approval fails partway, re-run with `approve --index=<n+1>` and the same
-   `--to` and amount. Never re-run `send`: it would create a second proposal.
+   `--to` and amount. If `send` itself stopped on an expired confirmation, follow
+   *An expired confirmation* below.
 
 3. **Hand back.** Paste the two lines the tool printed under `HAND-BACK` into
    chat and onto the card:
@@ -175,19 +179,18 @@ before it reads anything.
 Each transaction carries a compute-unit limit and a priority fee, so this should
 be rare under load. When it happens:
 
-1. **Do not re-run `send`.** The create may have landed, and a second `send`
-   would create a second proposal for the same move.
-2. Look up the printed signature on an explorer, or rerun `plan` and read
-   `transaction_index`.
-3. **If the index did not move,** the create never landed. Run `send` again with
-   the same `--expect-index`.
-4. **If the index moved,** run `send` with the old `--expect-index`. It refuses
-   and names the transaction that carries this move, with the `approve --index=<n>`
-   that finishes it. If it names none, the new transaction is someone else's;
-   read it on the Squads page before you do anything.
-5. **An expired approve or execute** is safe to rerun. `approve` casts only the
-   votes still owed, and `execute` refuses a proposal that already reads
-   `Executed`.
+1. **Re-run the same `send`, with the same `--expect-index`.** Never run `plan`
+   for a fresh index: a `send` on the new index creates a second proposal for the
+   same move. An expired blockhash cannot land later, so the same `send` is safe:
+   - **If the create never landed,** the index has not moved, and `send` proceeds.
+   - **If it landed,** the index moved. `send` refuses, reads back every
+     transaction created since, and names the one that carries this move: the
+     `approve --index=<n>` that finishes it, or "already executed at #n". If it
+     names none, the new transaction is someone else's; read it on the Squads page
+     before you do anything.
+2. **An expired approve or execute** is safe to re-run as the same command.
+   `approve` casts only the votes still owed, and `execute` refuses a proposal
+   that already reads `Executed`.
 
 ## Devnet
 

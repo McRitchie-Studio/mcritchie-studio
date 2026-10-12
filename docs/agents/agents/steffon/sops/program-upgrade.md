@@ -107,7 +107,11 @@ so two programs' cards cannot collide.
   approval is on chain. Mr. McRitchie set this on 2026-10-12 ("Cool let me know
   when the upgrade URL is ready"), and mainnet Squad #8 was the first upgrade
   done this way: he executed it at about 13:28 MDT, landing v0.26 at slot
-  456161810, and `init_governance` followed at `5KqNaY9r…` (slot 456162765). Config transactions and any other instruction are not covered.
+  456161810. Config transactions and any other instruction are not covered.
+- **The barred keys.** No agent runs a mainnet signature with `8K81`, `CytJ` or
+  Mack unless Mr. McRitchie rules on that one instance. The app's own server key
+  (`8K81` today) signing inside the running app is the app, not an agent. The
+  v0.26 mainnet `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
   Outside the exception, an agent runs only reads and dry runs on mainnet:
   `squad-upgrade.js` without `--send`, `squad-inventory.js`,
   `check-signer-slots.js`, `bin/program-drift`.
@@ -115,16 +119,15 @@ so two programs' cards cannot collide.
   mainnet Squad is 3-of-5, so two approvals of his do not reach quorum; and every
   step before them is itself a signed mainnet transaction: `write-buffer` and
   `set-buffer-authority` (payer funds about 3.8 SOL of rent), `extendProgram` if
-  the dry run asks, `vaultTransactionCreate` and `proposalCreate`.
-  `squad-upgrade.js --send` signs all of those with an agent seat and then casts
-  BOTH agent seats' approvals. `init-governance.js --cluster mainnet` takes keypair
-  files only, so its two signatures are agent keys. **Until he records a ruling on
-  `mainnet-v026-upgrade` naming each mainnet signer, key and payer, no agent runs
-  any of these on mainnet**; the mainnet run stops at the dry runs. The
-  `squad-vault-ops` exception does not cover them: it covers the Squad's vault
-  transfers and the upgrade proposal, not buffer, extend or init signatures. The
-  armed upgrade passes `--spill=<the vault PDA>`, so the buffer's rent refund
-  returns to the vault and never lands on an agent seat.
+  the dry run asks, then `vaultTransactionCreate` and `proposalCreate`. The last
+  two, and the two agent approvals after them, are the upgrade proposal, which the
+  `squad-vault-ops` exception covers. The rest are not covered: `write-buffer`,
+  `set-buffer-authority`, `extendProgram`, and `init-governance.js --cluster
+  mainnet` (which takes keypair files only, so its two signatures are agent-run).
+  **No agent runs any of those on mainnet until he records a ruling on the card
+  naming each signer, key and payer.** The armed upgrade passes `--spill=<the
+  vault PDA>`, so the buffer's rent refund returns to the vault and never lands
+  on an agent seat.
 
 ## Preconditions
 
@@ -156,9 +159,13 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
 4. **Squads proposal.** `node scripts/squad-inventory.js` names the path the
    upgrade will take. `node scripts/squad-upgrade.js --cluster=<cluster> <BUFFER>`
    is the dry run; read its plan. On devnet, re-run with `--send`. On mainnet,
-   follow the signing rule above. **The agent creates the upgrade proposal.**
-   First confirm that the buffer's SHA256 matches the reviewed build and that the
-   buffer's authority is the vault. Then run `squad-upgrade.js --cluster=mainnet
+   follow the signing rule above. **STOP if the dry run plans an `extendProgram`.**
+   `squad-upgrade.js --send` would sign the extend with an agent seat, and the
+   exception does not cover it. Extend first, separately: with the single-use
+   deploy key (as for v0.26, `HwqC…`), or as Mr. McRitchie rules on the card.
+   Re-run the dry run, and go on only when it plans no extend. **The agent creates
+   the upgrade proposal.** First confirm that the buffer's SHA256 matches the
+   reviewed build and that the buffer's authority is the vault. Then run `squad-upgrade.js --cluster=mainnet
    <BUFFER> --spill=<vault PDA> --send`. The `system` seat creates the proposal,
    and `system` and `governance` approve it. Hand Mr. McRitchie the proposal as
    [`squad-vault-ops`](squad-vault-ops.md) step 3 does: the Squads
@@ -171,7 +178,8 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    the upgrade lands. For v0.26 that is `scripts/init-governance.js` (dry run,
    then armed), because every vault-authorized instruction needs the account it
    creates (`RUNBOOK.md`, *v0.26 Upgrade Ordering*). On mainnet its signatures
-   follow the signing rule.
+   follow the signing rule: they need his ruling for that one run. For v0.26 an
+   agent signed with `8K81` and `CytJ` under his ruling "A" (activity-18004).
 6. **Signer set.** If the card rotates the vault's signers, run the ceremony in
    turf-vault's `docs/SIGNER_ROTATION.md`; otherwise confirm the set is untouched
    with `node scripts/check-signer-slots.js`.
