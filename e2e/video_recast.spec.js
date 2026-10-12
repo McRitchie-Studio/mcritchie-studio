@@ -43,7 +43,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await page.goto(VIDEO);
   await clearCard(page, 1);
 
-  await expect(page.locator("[data-test='video-kind']")).toHaveText("Cinematic video · Cast");
+  await expect(page.locator("[data-test='video-kind']")).toHaveText("Cinematic · Cast");
   await expect(page.locator("[data-test='cast-confirmed']")).toBeVisible();
 
   // Seeded under the old "keep as is" with nobody: only the search, no toggle, no hint, no Keep Original.
@@ -128,7 +128,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
 
   // The by-hand link lands on the athlete's look form, which knows the way back.
   await expect(recast(page, 1).locator("[data-test='recast-new-look']")).toHaveAttribute(
-    "href", /\/people\/test-athlete-alpha\?return_to=%2Fmusic_videos%2Ftest-cinematic-recast-demo%23person-1#new-model$/);
+    "href", /\/people\/test-athlete-alpha\?return_to=%2Fvideos%2Ftest-cinematic-recast-demo%23person-1#new-model$/);
   await recast(page, 1).locator("[data-test='recast-new-look']").click();
   await expect(page).toHaveURL(/\/people\/test-athlete-alpha\?return_to=/);
   await expect(page.locator("details#new-model [data-test='new-model-return']")).toBeVisible();

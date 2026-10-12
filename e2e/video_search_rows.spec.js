@@ -64,7 +64,7 @@ test("operator finds a look-less athlete in Replace with and is offered a first 
   const create = recast(page).locator("[data-test='recast-new-look']");
   await expect(create).toHaveText("Or add a look by hand on Test Rookie Bravo’s page");
   await expect(create).toHaveAttribute(
-    "href", /\/people\/test-rookie-bravo\?return_to=%2Fmusic_videos%2Ftest-cinematic-search-rows-demo%23person-1#new-model$/);
+    "href", /\/people\/test-rookie-bravo\?return_to=%2Fvideos%2Ftest-cinematic-search-rows-demo%23person-1#new-model$/);
 
   // The link opens his look form; saving a look lands back on the card, where he now has one to cast.
   await create.click();

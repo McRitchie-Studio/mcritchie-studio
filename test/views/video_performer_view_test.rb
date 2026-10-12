@@ -266,7 +266,7 @@ class VideoPerformerViewTest < ActionView::TestCase
     end
     assert_select "[data-test='performer-recast'][data-search-url='/recast_athletes/search.json'][data-looks-url='/recast_athletes/__slug__/looks.json']"
     assert_select "[data-test='performer-recast'][data-new-look-url=?]",
-                  "/people/__slug__?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model"
+                  "/people/__slug__?return_to=%2Fvideos%2Fsteve-aoki-night-call%23person-2#new-model"
     assert_select "[data-test='performer-recast'][data-athlete]", 0, "nobody is chosen until the search says so"
     assert_select "[data-test='swap-toggle'], [role='switch']", 0, "no Swap Person toggle"
     assert_no_match(/Swap Person|Check to replace|Pick who replaces them/, rendered)

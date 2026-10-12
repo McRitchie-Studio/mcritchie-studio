@@ -79,7 +79,7 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     get video_path(video)
 
     assert_response :success
-    assert_select "[data-test='video-kind']", "Cinematic video · Cast"
+    assert_select "[data-test='video-kind']", "Cinematic · Cast"
     assert_select "[data-test='clips-panel'] [data-test='clip-row']", 1
     assert_select "[data-test='clips-panel'] [data-test='chunk-window']", 0
     assert_select "[data-test='cast-panel'] [data-test='chunks-panel'] [data-test='clip-row']", 0

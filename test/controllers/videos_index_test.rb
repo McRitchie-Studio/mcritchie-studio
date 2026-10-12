@@ -41,7 +41,7 @@ class VideosIndexTest < ActionDispatch::IntegrationTest
     get videos_path
 
     assert_response :success
-    assert_select "[data-test='videos-empty']", "No source videos yet. Digest one with bin/digest-video."
+    assert_select "[data-test='videos-empty']", "No videos yet. Digest one with bin/digest-video."
     assert_select "[data-test='video-row']", 0
   end
 
@@ -57,7 +57,7 @@ class VideosIndexTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='video-row'][data-slug='#{lettered.slug}']" do
       assert_select "[data-test='video-link'][href='#{video_path(lettered)}']", lettered.title
-      assert_select "[data-test='video-row-kind']", "Cinematic video"
+      assert_select "[data-test='video-row-kind']", "Cinematic"
       assert_select "[data-test='video-length']", "1:12"
       assert_select "[data-test='video-row-stage']", "Cast confirmed"
       assert_select "a[href=?]", lettered.source_url, "Watch source"

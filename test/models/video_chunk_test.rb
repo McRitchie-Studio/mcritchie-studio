@@ -173,7 +173,7 @@ class VideoChunkTest < ActiveSupport::TestCase
 
   test "a video is a music video unless it is typed cinematic" do
     assert_equal "cinematic", @video.kind
-    assert_equal "Cinematic video", @video.kind_label
+    assert_equal "Cinematic", @video.kind_label
     assert_equal "music_video", Video.new.kind
     assert_equal "Music video", Video.new.kind_label
     @video.kind = "documentary"

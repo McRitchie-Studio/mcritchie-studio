@@ -12,7 +12,7 @@ test("Build Clips turns a tiled source into an alt video of clip cards", async (
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/videos/test-artist-a-tiled-demo");
 
-  await expect(page.locator("[data-test='video-kind']")).toHaveText("Cinematic video · Cast");
+  await expect(page.locator("[data-test='video-kind']")).toHaveText("Cinematic · Cast");
 
   // Four chunks, 25 s on a 20 s stride, the last one ending at the video's end.
   const windows = page.locator("[data-test='chunks-panel'] [data-test='chunk-window']");

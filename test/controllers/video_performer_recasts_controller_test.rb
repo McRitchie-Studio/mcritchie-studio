@@ -242,7 +242,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-ordinal='1'] [data-test='performer-recast'][data-state='pending']" do
       assert_select "[data-test='performer-recast'][data-athlete=?]",
                     { slug: gamma.slug, name: "Test Athlete Gamma", avatar_url: nil, vocation: "athlete", team: nil, looks: [] }.to_json
-      assert_select "[data-test='performer-recast'][data-new-look-url=?]", "/people/__slug__?return_to=%2Fmusic_videos%2F#{@video.slug}%23person-1#new-model"
+      assert_select "[data-test='performer-recast'][data-new-look-url=?]", "/people/__slug__?return_to=%2Fvideos%2F#{@video.slug}%23person-1#new-model"
       assert_select "button[data-test='look-generate-first']", "Generate first look"
       assert_select "[data-test='look-generate-form'][action=?]", video_performer_recast_looks_path(@video, 1)
     end

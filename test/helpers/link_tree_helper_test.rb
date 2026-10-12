@@ -253,11 +253,11 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     links = public_link_sections.flat_map { |section| section.fetch(:links) }
     labels = links.map { |link| link[:label] }
-    videos = links.find { |link| link[:label] == "Source videos" }
+    videos = links.find { |link| link[:label] == "Videos" }
 
-    assert videos, "expected a Source videos link"
+    assert videos, "expected a Videos link"
     assert_equal "/videos", videos.fetch(:href)
-    assert_equal labels.index("Body archetypes") + 1, labels.index("Source videos")
+    assert_equal labels.index("Body archetypes") + 1, labels.index("Videos")
   end
 
   def dashboard_path = "/dashboard"
