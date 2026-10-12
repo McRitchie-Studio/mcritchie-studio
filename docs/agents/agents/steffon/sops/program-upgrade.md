@@ -209,11 +209,12 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    exception does not cover it. Extend first, separately: with the single-use
    deploy key (as for v0.26, `HwqC…`), or as Mr. McRitchie rules on the card.
    Re-run the dry run, and go on only when it plans no extend. **The agent creates
-   the upgrade proposal.** First confirm that the buffer's SHA256 matches the
-   reviewed build and that the buffer's authority is the vault. Then run:
+   the upgrade proposal.** Set the buffer's authority to the vault, hash the
+   reviewed build, and confirm both on a fresh dry run's `BUFFER AUTHORITY:`
+   and `BUFFER SHA256:` lines before the send:
 
    ```bash
-   solana program set-buffer-authority <BUFFER> --new-buffer-authority <vault PDA>   # step 3, before the send; on mainnet its signer needs his ruling (signing rule)
+   solana program set-buffer-authority <BUFFER> --new-buffer-authority <vault PDA> --url mainnet-beta   # step 3, before the send; on mainnet its signer needs his ruling (signing rule)
    shasum -a 256 target/deploy/turf_vault.so   # the REVIEWED build; the buffer is written without --max-len
    node scripts/squad-upgrade.js --cluster=mainnet <BUFFER> \
      --spill=<vault PDA> --expect-buffer-sha256=<the reviewed .so's sha256> --send
