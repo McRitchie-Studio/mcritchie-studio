@@ -75,13 +75,14 @@ bin/agent-activity heartbeat steffon
 | 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | pro |
 | 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | pro |
 | 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | pro |
-| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | pro |
-| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | pro |
+| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | team |
+| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | team |
 | 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | pro |
 | 11 | Close out: report, record, close the task | this file | Steffon | pro |
 
-A `pro` or `team` launch runs all of them (Team's marketing rows run from Rex's
-SOPs after the launch); `enterprise` runs the same steps, and its custom
+A `team` launch runs all of them (Team's marketing rows run from Rex's SOPs after
+the launch). A `pro` launch skips rows 8 and 9: the drafting agent and its
+knowledge base are Team and up (`config/workspace_packages.yml`). `enterprise` runs the same steps, and its custom
 connectors are scoped per client on their own task.
 
 ### Step 0 — Open the launch task
