@@ -66,6 +66,13 @@ ENV["FAL_NO_LIVE_CALLS"] = "1"
 # two cannot drift apart in silence.
 ENV["OPENAI_NO_LIVE_CALLS"] = "1"
 
+# NO LIVE DNS FROM THIS SUITE. /stack reads each client's nameservers through
+# DnsHost; armed here, its default resolver answers nothing (every host reads
+# "unknown"), so a test that wants Cloudflare or Squarespace stubs
+# DnsHost.resolver. SPELLED AS A LITERAL for the same reason as the lines above;
+# test/models/dns_host_test.rb pins it against DnsHost::NO_LIVE_CALLS_ENV.
+ENV["DNS_HOST_NO_LIVE_CALLS"] = "1"
+
 # ZERO LIVE CALLS OUT OF THE PHOTO-SCOUTING LANE — the same mechanism, one variable
 # further along, and armed here for the same reason: nothing can call it first.
 #
