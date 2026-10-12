@@ -124,7 +124,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   SUITE_INPUTS = LANE_INPUTS.to_h { |name| [name, { "type" => "boolean", "default" => true }] }.merge(
     "rubygems" => { "type" => "string", "default" => "default" },
     "await-gem-propagation" => { "type" => "boolean", "default" => true },
-    "postgres-image" => { "type" => "string", "default" => "public.ecr.aws/docker/library/postgres:17" },
+    "postgres-image" => { "type" => "string", "default" => "ghcr.io/mcritchie-studio/postgres:17" },
     "gem-audit-command" => { "type" => "string", "default" => "" },
     "importmap-audit-command" => { "type" => "string", "default" => "bin/importmap-audit-ci" },
     "system-packages" => { "type" => "string", "default" => "curl libvips postgresql-client imagemagick librsvg2-bin" },
