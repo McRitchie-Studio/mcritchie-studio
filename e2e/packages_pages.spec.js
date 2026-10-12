@@ -55,6 +55,21 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   }
   expect(laneTops["host"].length).toBe(4);
   expect(laneTops["cmo"].length).toBe(2);
+  // Every lane's subtext is one line at a 1280px desktop: short copy, never a
+  // wrap or an ellipsis, so new copy cannot regress the swim lanes.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const subs = await page.locator("[data-test='package-card'] [data-test='line-sub']").evaluateAll((els) => els.map((el) => ({
+    text: el.textContent.trim(),
+    ratio: el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight),
+    clipped: el.scrollWidth > el.clientWidth,
+  })));
+  expect(subs.length).toBeGreaterThan(30);
+  for (const sub of subs) {
+    expect(sub.ratio, `"${sub.text}" wraps`).toBeLessThanOrEqual(1.5);
+    expect(sub.clipped, `"${sub.text}" is cut off`).toBe(false);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   // The Most popular badge is fully inside the page, not clipped at the card's edge.
   const badge = await page.locator("[data-test='featured-badge']").boundingBox();
   const teamCard = await page.locator("[data-test='package-card'][data-package='team']").boundingBox();
@@ -184,7 +199,7 @@ test("Pro and Team cards mark their lines, tease the next tier, and the full sta
   await expect(teaser.locator("[data-mark='missing']")).toHaveAttribute("aria-label", "In Team");
   const team = page.locator("[data-test='package-card'][data-package='team']");
   await expect(team.locator("[data-test='package-line'][data-status='soon'] [data-test='coming-soon']")).toHaveCount(2);
-  await expect(pro).toContainText("your-app.com on Cloudflare, managed for you");
+  await expect(pro).toContainText("your-app.com on Cloudflare");
   await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });

@@ -105,7 +105,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     end
     vibe_domain = "#{card('vibe')} [data-test='package-line'][data-lane='domain']"
     assert_select "#{vibe_domain} [data-test='line-title']", text: /Custom Domain\s*\(In Builder\)/
-    assert_select "#{vibe_domain} [data-test='line-sub']", text: "your-app.mcritchie.studio for now"
+    assert_select "#{vibe_domain} [data-test='line-sub']", text: "on your-app.mcritchie.studio"
     assert_select "[data-test='line-title']", text: /Web address/, count: 0
     assert_select "#{card('team')} [data-test='package-line'][data-status='missing']", 0
     soon = "#{card('team')} [data-test='package-line'][data-status='soon']"
@@ -116,7 +116,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "#{card('pro')} [data-test='line-sub']", text: "4 build requests a month"
     assert_select "#{card('team')} [data-test='line-sub']", text: "6 build requests a month"
-    assert_select "#{card('pro')} [data-test='line-sub']", text: "your-app.com on Cloudflare, managed for you"
+    assert_select "#{card('pro')} [data-test='line-sub']", text: "your-app.com on Cloudflare"
     assert_select "#{card('pro')} [data-test='line-sub']", text: "send from team@your-app.com"
     assert_select "#{card('builder')} [data-test='line-title']", text: /\ACustom Email\z/, count: 0
     assert_no_match(/yourname|yourcompany/, response.body)

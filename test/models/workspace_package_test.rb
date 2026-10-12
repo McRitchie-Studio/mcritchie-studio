@@ -325,7 +325,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                  "one short line: the cells already show the steps"
     domain = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "domain" } }
     assert_equal "www.your-app.com", domain.call(:builder).sub
-    assert_equal "your-app.com on Cloudflare, managed for you", domain.call(:pro).sub
+    assert_equal "your-app.com on Cloudflare", domain.call(:pro).sub
     refute_match(/yourname|yourcompany/, WorkspacePackage.config.to_s, "one placeholder, your-app, everywhere")
   end
 
@@ -415,7 +415,10 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                    "builder" => [ [ "Custom Email", "Pro" ], [ "Google Workspace", "Pro" ], [ "Password vault", "Pro" ] ],
                    "pro" => [ [ "Fractional CMO", "Team" ] ], "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
-    assert_equal "your-app.mcritchie.studio for now", vibe_domain.sub
+    assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
+    assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
+    assert_equal [ "read-only", "11 GB, backed up nightly", "60 GB, backed up nightly", "132 GB, backed up nightly" ],
+                 WorkspacePackage.cards.map { |c| c.card_lines.find { |l| l.key == "storage" }.sub }
     refute WorkspacePackage.find(:vibe).card_lines.any? { |l| l.title == "Web address" }, "Web address folded into the Custom Domain lane"
 
     soon = WorkspacePackage.find(:team).card_lines.select(&:soon?).map(&:title)

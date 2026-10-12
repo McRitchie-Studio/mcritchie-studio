@@ -140,10 +140,10 @@ packages:
     comp: 10and5
     card_groups: [Application]
     lanes:
-      app: { sub: built by our agents from your description }
-      host: { sub: "light server, wakes on first visit" }
-      storage: { sub: "read-only, built into your app" }
-      domain: { sub: your-app.mcritchie.studio for now, status: missing }
+      app: { sub: Bring your idea to life }
+      host: { sub: "light server, wakes on visit" }
+      storage: { sub: read-only }
+      domain: { sub: on your-app.mcritchie.studio, status: missing }
     cta: { label: Build your app, action: build }
   - key: builder
     name: Builder
@@ -154,9 +154,9 @@ packages:
     lanes:
       app: { sub: small changes after launch }
       host: { sub: always on }
-      storage: { sub: "1 GB records + 10 GB files, backed up nightly" }
+      storage: { sub: "11 GB, backed up nightly" }
       domain: { sub: www.your-app.com }
-      app_email: { sub: sign-in links and receipts from @your-app.com }
+      app_email: { sub: sign-in links from @your-app.com }
     cta: { label: Talk to us about Builder, action: schedule }
   - key: pro
     name: Pro
@@ -167,13 +167,13 @@ packages:
     lanes:
       app: { sub: 4 build requests a month }
       host: { sub: always on + background jobs }
-      storage: { sub: 10 GB records + 50 GB files }
-      domain: { sub: "your-app.com on Cloudflare, managed for you" }
-      app_email: { sub: sign-in links and receipts from @your-app.com }
+      storage: { sub: "60 GB, backed up nightly" }
+      domain: { sub: your-app.com on Cloudflare }
+      app_email: { sub: sign-in links from @your-app.com }
       custom_email: { sub: send from team@your-app.com }
       workspace: { sub: "2 users, 30 GB each" }
-      vault: { sub: "logins in 1Password, rotated when they leak or age" }
-      cto: { sub: monthly architecture and roadmap review }
+      vault: { sub: "logins in 1Password, rotated" }
+      cto: { sub: monthly architecture review }
       drafting: { sub: replies drafted in your inbox }
     cta: { label: Talk to us about Pro, action: schedule }
   - key: team
@@ -186,17 +186,17 @@ packages:
     lanes:
       app: { sub: 6 build requests a month }
       host: { sub: always on + background jobs }
-      storage: { sub: 32 GB records + 100 GB files }
-      domain: { sub: "your-app.com on Cloudflare, managed for you" }
-      app_email: { sub: sign-in links and receipts from @your-app.com }
+      storage: { sub: "132 GB, backed up nightly" }
+      domain: { sub: your-app.com on Cloudflare }
+      app_email: { sub: sign-in links from @your-app.com }
       custom_email: { sub: send from team@your-app.com }
       workspace: { sub: "2 users, 30 GB each" }
-      vault: { sub: "logins in 1Password, rotated when they leak or age" }
-      cto: { sub: monthly architecture and roadmap review }
+      vault: { sub: "logins in 1Password, rotated" }
+      cto: { sub: monthly architecture review }
       drafting: { sub: replies drafted in your inbox }
       cmo: { sub: a monthly demand plan }
-      email_marketing: { sub: "broadcasts, list cleaning and analytics" }
-      content: { sub: short-form content tested at volume }
+      email_marketing: { sub: broadcasts and list cleaning }
+      content: { sub: "short-form, tested at volume" }
       warmup: { sub: new domains ramped safely }
       funnels: { status: soon }
       social: { status: soon }
