@@ -13,7 +13,7 @@
   <div class="flex items-start gap-3">
     <%= render "packages/brand", key: feature.brand, size: :lead if feature.brand? %>
     <div class="min-w-0">
-      <p class="text-xs font-semibold uppercase tracking-wider text-primary">Growth and Enterprise</p>
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="dns-flow-tiers"><%= WorkspacePackage.all.select { |package| feature.included_in?(package.key) }.map(&:name).to_sentence %></p>
       <h2 id="dns-flow-title" class="text-xl font-semibold text-heading"><%= feature.name %>, in action</h2>
       <p class="mt-1 max-w-2xl text-sm text-muted"><%= feature.blurb %></p>
     </div>

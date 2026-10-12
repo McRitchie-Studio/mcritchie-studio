@@ -1,4 +1,4 @@
-# A McRitchie Studio package tier (Vibe, Pro, Growth, Enterprise) and the
+# A McRitchie Studio package tier (Vibe, Pro, CTO, Team, Enterprise) and the
 # features it includes, read from config/workspace_packages.yml — the one place
 # package contents live.
 #
@@ -16,11 +16,8 @@ class WorkspacePackage
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
   # The feature row /stack holds each client's live DNS host to.
   CLOUDFLARE_DNS = "Cloudflare DNS".freeze
-
-  # The tier keys of 2026-09-25, and the v2 tier each one became on 2026-09-30.
-  # Migration RemapPackageTiers applied it to stored rows; kept here so the
-  # mapping has one spelling the migration's test can hold it to.
-  LEGACY_TIERS = { "launch" => "vibe", "host" => "pro", "workspace" => "growth", "agentic" => "growth" }.freeze
+  # The value a row carries for a tier that sells it per contract.
+  ADD_ON = "Add-on".freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
                        :brand_from, :spotlight, keyword_init: true) do
@@ -110,6 +107,7 @@ class WorkspacePackage
     @highlights = Array(attrs["highlights"])
     @cta = (attrs["cta"] || {}).slice("label", "action")
     @featured = attrs["featured"] == true
+    @card = attrs["card"] != false
     @annual_discount_percent = annual_discount_percent.to_i
   end
 
@@ -121,6 +119,12 @@ class WorkspacePackage
   end
 
   def self.find(key) = all.find { |package| package.key == key.to_s }
+
+  # The tiers /packages draws as cards, in ladder order.
+  def self.cards = all.select(&:card?)
+
+  # The tier drawn as the "Talk to us" line under the cards (Enterprise), or nil.
+  def self.talk_to_us = all.reject(&:card?).last
 
   def self.keys = config.fetch("packages").map { |attrs| attrs.fetch("key") }
 
@@ -164,7 +168,10 @@ class WorkspacePackage
 
   def featured? = @featured
 
-  # The rows this tier's card calls out, logo first (Cloudflare DNS from Growth).
+  # false for the tier drawn as the "Talk to us" line instead of a card.
+  def card? = @card
+
+  # The rows this tier's card calls out, logo first (Cloudflare DNS from CTO).
   def spotlight_features = features.select(&:spotlight?)
 
   def priced? = price_monthly.present?
@@ -174,6 +181,13 @@ class WorkspacePackage
   # Every software this tier provisions, in feature order — what /stack draws
   # for a client on it.
   def software_keys = features.flat_map { |feature| feature.software_keys(key) }.uniq
+
+  # The brands of the rows this tier sells as add-ons, priced per contract
+  # (Payments, Crypto and wallets, AI features): what the "Talk to us" line
+  # draws, labelled as add-ons so no logo reads as included.
+  def add_on_brands
+    features.select { |feature| feature.value_for(key) == ADD_ON }.flat_map { |feature| feature.card_brands(key) }.uniq
+  end
 
   # Every brand this tier's delivered features put in front of the customer, in
   # row order: what its card's "Powered by" row draws.

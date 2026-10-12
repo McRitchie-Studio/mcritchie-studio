@@ -6,7 +6,7 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Packages</p>
     <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">From your first app to a connected company</h1>
     <p class="text-muted max-w-2xl mx-auto">
-      Start free with an app our agents build for you, then add your own domain, your email and a
+      Start free with an app our agents build for you, then add your own domain, a fractional CTO and a
       marketing team as you grow. Each tier includes everything in the one before it.
     </p>
   </header>
@@ -88,7 +88,7 @@
           <% brands = package.card_brands(previous) %>
           <% if brands.any? %>
             <div class="mt-auto pt-5" data-test="package-powered-by" data-package="<%= package.key %>">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted"><%= previous ? "Adds" : "Powered by" %></p>
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted"><%= previous ? "Also powered by" : "Powered by" %></p>
               <div class="flex flex-wrap gap-1.5">
                 <% brands.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
               </div>
@@ -99,6 +99,8 @@
       <% end %>
     </div>
   </div>
+
+  <%= render "packages/talk_to_us", package: @talk_to_us if @talk_to_us %>
 
   <div class="mt-10 text-center">
     <%= link_to packages_stack_path, class: "inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors",

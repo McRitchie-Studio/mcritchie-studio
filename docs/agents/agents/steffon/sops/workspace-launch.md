@@ -55,8 +55,8 @@ Ask for the three inputs, and nothing else, before step 0:
 
 1. **Domain** — e.g. `example.com`. Check it is free first (step 1 does).
 2. **Company name + entity slug** — e.g. `Example Co` / `example-co`.
-3. **Package** — `growth` or `enterprise` (see `/packages`; Growth is the first
-   tier with Google Workspace). Default `growth`.
+3. **Package** — `cto`, `team` or `enterprise` (see `/packages`; CTO is the first
+   tier with Google Workspace, and Team adds the marketing team). Default `cto`.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -67,20 +67,21 @@ bin/agent-activity heartbeat steffon
 
 | # | Step | SOP | Who acts | Package |
 |---|------|-----|----------|---------|
-| 0 | Open the launch task | this file | Steffon | growth |
-| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | growth |
-| 2 | Sign up for Google Workspace, create `alex@` + `team@` (Growth: 2 seats included) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | growth |
-| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC); Growth moves the zone to Cloudflare in row 4 | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | growth |
-| 4 | Launch the hosted website (our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | growth |
-| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | growth |
-| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | growth |
-| 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | growth |
-| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | growth |
-| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | growth |
-| 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | growth |
-| 11 | Close out: report, record, close the task | this file | Steffon | growth |
+| 0 | Open the launch task | this file | Steffon | cto |
+| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | cto |
+| 2 | Sign up for Google Workspace, create `alex@` + `team@` (CTO and up: 2 seats included) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | cto |
+| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC); CTO and up move the zone to Cloudflare in row 4 | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | cto |
+| 4 | Launch the hosted website (our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | cto |
+| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | cto |
+| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | cto |
+| 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | cto |
+| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | cto |
+| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | cto |
+| 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | cto |
+| 11 | Close out: report, record, close the task | this file | Steffon | cto |
 
-A `growth` launch runs all of them; `enterprise` runs the same steps, and its custom
+A `cto` or `team` launch runs all of them (Team's marketing rows run from Rex's
+SOPs after the launch); `enterprise` runs the same steps, and its custom
 connectors are scoped per client on their own task.
 
 ### Step 0 — Open the launch task
@@ -89,7 +90,7 @@ connectors are scoped per client on their own task.
 bin/task create --title "Launch <Company> Workspace" --kind chore --shape docs \
   --repo mcritchie-studio --agent steffon \
   --accept "Domain, Workspace, DNS, key and mailboxes all verified" \
-  --agent-context "workspace-launch for <domain>, package <growth|enterprise>"
+  --agent-context "workspace-launch for <domain>, package <cto|team|enterprise>"
 ```
 
 Record each finished step on the task (`bin/task update <slug> --checks "…"`) so
@@ -124,5 +125,5 @@ human half may already be done.
 
 ## Related
 
-- `config/workspace_packages.yml` — what each tier includes (Vibe, Pro, Growth, Enterprise).
+- `config/workspace_packages.yml` — what each tier includes (Vibe, Pro, CTO, Team, Enterprise).
 - `/packages` — the customer-facing tiers; `/packages/stack` — the full stack, with the SOP map for admins.

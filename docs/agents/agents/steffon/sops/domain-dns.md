@@ -13,12 +13,12 @@ no API, so the paste is his. Steffon then checks each record from the public
 internet — a record is published when `dig` sees it, not when the console shows
 it.
 
-**Growth and above run their DNS on Cloudflare** (Alex, 2026-10-12; the
+**CTO and above run their DNS on Cloudflare** (Alex, 2026-10-12, set on Growth, which CTO and Team replaced the same day; the
 `Cloudflare DNS` row in `config/workspace_packages.yml`). Once a zone is on
 Cloudflare, Steffon writes its records by API and nothing is pasted; moving it
-there is [§ Cloudflare DNS — Growth and above](#cloudflare-dns--growth-and-above).
+there is [§ Cloudflare DNS — CTO and above](#cloudflare-dns--cto-and-above).
 Pro and below stay on Squarespace DNS with the paste steps below. `/stack` shows
-each client's live DNS host, so a Growth client not yet moved reads
+each client's live DNS host, so a CTO or Team client not yet moved reads
 **Migration pending**.
 
 ## Entry
@@ -105,7 +105,7 @@ of clean reports — a separate, deliberate change.
   Registrar saves reach the registry minutes later, in order, so a save on the
   wrong domain is slow to undo.
 
-## Cloudflare DNS — Growth and above
+## Cloudflare DNS — CTO and above
 
 The bare domain becomes the app's address, `www` and any other domain redirect
 at Cloudflare's edge, and every later record is an API call. Live today on

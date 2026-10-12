@@ -44,7 +44,7 @@ pages:
   terms:          { page: "landing#terms",           audience: public, label: Terms of Service }
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
   about:          { page: "landing#about",           audience: public, label: About }
-  packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Pro, Growth and Enterprise tiers" }
+  packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Pro, CTO and Team tiers, and Enterprise" }
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
   build:          { page: "build#new",               audience: public, label: App Builder, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it }
   build_request:  { page: "build#show",              audience: public, label: Your app request }

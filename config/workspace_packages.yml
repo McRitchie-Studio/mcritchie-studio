@@ -7,11 +7,18 @@
 #                    `category`, one column per tier, so the difference between
 #                    tiers reads across the row ("Eco dyno" / "Basic dyno" / ...)
 #
-# Tiers approved by Mr. McRitchie 2026-09-30 (epic: pricing-tiers-v2), a ladder
-# where each includes the one below: Vibe free, Pro $100/mo, Growth $500/mo,
-# Enterprise custom; 10% off billed annually. They replaced Launch, Host,
-# Workspace and Agentic of 2026-09-25 (Workspace folded into Growth); migration
-# RemapPackageTiers moved every stored tier to the new keys.
+# The ladder Mr. McRitchie set on 2026-10-12 (task cto-and-team-tiers), where
+# each tier includes the one below: Vibe free, Pro $100/mo, CTO $500/mo, Team
+# $1,500/mo; 10% off billed annually. Enterprise is no longer a card: /packages
+# draws it as a "Talk to us" line under the cards, and /packages/stack keeps its
+# column so the Enterprise-only rows stay visible. CTO took Growth's platform
+# features (Growth, $500/mo, of 2026-09-30); Team adds the marketing rows. Pro
+# gained Redis, which its realtime updates need. Migration SplitGrowthTier moved
+# stored `growth` rows: Commercial Welding to cto, every other row to team.
+#
+# History: the 2026-09-30 ladder (epic pricing-tiers-v2) was Vibe, Pro, Growth
+# and Enterprise; it replaced Launch, Host, Workspace and Agentic of 2026-09-25,
+# and migration RemapPackageTiers moved those stored keys.
 #
 # Package keys:
 #   key, name       the tier; `key` is what stack_clients.tier and app_requests.tier store
@@ -25,6 +32,9 @@
 #                   booking calendar) or `enterprise_booking` (enterprise_booking_url
 #                   below, else the studio's booking calendar)
 #   featured        true on the one card the page highlights
+#   card            false on a tier drawn as the "Talk to us" line under the cards
+#                   instead of as a card (Enterprise). It keeps its key, its column
+#                   on /packages/stack and its stored clients.
 #
 # Feature keys:
 #   name      customer-facing label
@@ -38,7 +48,7 @@
 #   brand_from  optional — the first tier that gets the `icon` brand's product, when a
 #             lower tier has the row without it: its card then names no logo for it
 #   blurb     one customer-facing sentence: what they get, not how
-#   vibe/pro/growth/enterprise
+#   vibe/pro/cto/team/enterprise
 #             what that tier gets, shown IN the row:
 #               a string  → the package's value ("Basic dyno")
 #               true      → included, nothing to quantify
@@ -105,36 +115,49 @@ packages:
     comp: Cyvasse
     highlights:
       - Your app on your own domain
-      - A Postgres database and realtime updates
+      - Postgres and Redis, so pages update live
       - Sign-in links and app email from your domain
       - File storage with nightly backups
       - Small changes after launch, by email
     cta: { label: Talk to us about Pro, action: schedule }
-  - key: growth
-    name: Growth
-    tagline: Your app, your email, Google Workspace and a marketing team.
+  - key: cto
+    name: CTO
+    tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
-    comp: Turf Monster, Commercial Welding
+    comp: Commercial Welding
+    highlights:
+      - Web and worker servers on a larger Postgres
+      - Google Workspace with 2 seats and an agent that drafts your email
+      - Your logins in 1Password, rotated when they leak or age
+      - Error alerts the moment something breaks
+      - A monthly architecture and roadmap review
+      - 4 build requests a month and priority support
+    cta: { label: Talk to us about CTO, action: schedule }
+  - key: team
+    name: Team
+    tagline: "Your founding team: a CTO and a CMO."
+    price_monthly: 1500
+    comp: Turf Monster
     featured: true
     highlights:
-      - Web and worker servers, Postgres and Redis
-      - Google Workspace with 2 seats included
-      - An agent that drafts your email
-      - Email marketing with list cleaning and analytics
-      - A marketing team for strategy, content and launches
-      - Monthly build requests and priority support
-    cta: { label: Talk to us about Growth, action: schedule }
+      - A CMO agent that finds what holds your demand back
+      - Content sprints, tested at volume and measured
+      - Launch warm-up and email marketing with list cleaning
+      - Funnels built for you (coming soon)
+      - 6 build requests a month
+    cta: { label: Talk to us about Team, action: schedule }
   - key: enterprise
     name: Enterprise
-    tagline: Your systems connected, with a team that knows your business.
+    card: false
+    tagline: Need more apps, white label or custom connectors? Talk to us.
     price_label: Custom
     comp: McRitchie Industries
     highlights:
-      - Custom connectors to the systems you already use
-      - Multiple apps and domains, white label
-      - Credential rotation with compliance review
-      - Payments, crypto and AI as add-ons
-      - A dedicated build team and a named contact
+      - More than one app, and more than one domain
+      - White label on your own accounts
+      - Custom connectors to the systems you already use (coming soon)
+      - Payments, crypto and AI features as add-ons
+      - CMMC/ITAR compliance review, available on request
     cta: { label: Book a call, action: enterprise_booking }
 
 features:
@@ -145,7 +168,8 @@ features:
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
     vibe: 1 app
     pro: 1 app
-    growth: 1 app + workers
+    cto: 1 app + workers
+    team: 1 app + workers
     enterprise: Multiple apps
     sop: app-deploy-standard
     you_do: Describe what you want built
@@ -157,7 +181,8 @@ features:
     blurb: Where your app runs. Bigger tiers stay awake and add a worker for background jobs.
     vibe: Eco dyno (sleeps when idle)
     pro: Basic dyno
-    growth: Basic web + worker
+    cto: Basic web + worker
+    team: Basic web + worker
     enterprise: Sized to need
     sop: app-deploy-standard
     status: live
@@ -168,7 +193,8 @@ features:
     blurb: On McRitchie Studio's accounts, or white label on your own.
     vibe: McRitchie Studio hosted
     pro: McRitchie Studio hosted
-    growth: Hosted or white label
+    cto: Hosted or white label
+    team: Hosted or white label
     enterprise: White label
     sop: website-launch
     you_do: Approve the hosting costs
@@ -179,7 +205,8 @@ features:
     blurb: Certificates and continuous integration on every app, from day one.
     vibe: true
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
   - name: Error log
@@ -187,14 +214,16 @@ features:
     icon: "🧾"
     blurb: Every error your app raises, recorded with what the visitor was doing.
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
   - name: Error alerts
     category: hosting
     icon: sentry
     blurb: Errors reported with their full context the moment they happen, not when a customer writes in.
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
     software: [sentry]
@@ -205,7 +234,8 @@ features:
     icon: postgres
     blurb: A Postgres database for your app's records. Vibe apps keep their data in files.
     pro: Postgres, small
-    growth: Postgres, larger
+    cto: Postgres, larger
+    team: Postgres, larger
     enterprise: Custom
     sop: app-deploy-standard
     status: live
@@ -213,8 +243,10 @@ features:
   - name: Cache and job queue
     category: data
     icon: redis
-    blurb: Redis for caching and the background jobs your worker runs.
-    growth: Redis
+    blurb: Redis for realtime updates, caching and the background jobs your worker runs.
+    pro: Redis mini
+    cto: Redis
+    team: Redis
     enterprise: Redis, sized to need
     sop: app-deploy-standard
     status: live
@@ -222,9 +254,10 @@ features:
   - name: Realtime updates
     category: data
     icon: "⚡"
-    blurb: Pages that update live as data changes, without a refresh.
+    blurb: Pages that update live as data changes, without a refresh. Redis carries them.
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
 
@@ -235,14 +268,15 @@ features:
     blurb: Your app's address. From Pro, your own domain, registered and pointed at your app for you.
     vibe: you.mcritchie.studio
     pro: 1 own domain
-    growth: 1 own domain
+    cto: 1 own domain
+    team: 1 own domain
     enterprise: Multiple domains
     sop: domain-purchase
     you_do: Approve the domain
     status: live
     software: [squarespace]
     brand_from: pro
-  # Cloudflare DNS, from Growth up (Mr. McRitchie, 2026-10-12). Live: mcritchie.studio
+  # Cloudflare DNS, from CTO up (Mr. McRitchie, 2026-10-12; set on Growth, which CTO replaced). Live: mcritchie.studio
   # and turfmonster.media have run on Cloudflare DNS since 2026-09-30, and
   # domain-dns carries the move. /stack shows each client's actual DNS host.
   - name: Cloudflare DNS
@@ -250,10 +284,11 @@ features:
     icon: cloudflare
     blurb: Your bare domain is the address. www and old links redirect at Cloudflare's edge, and our agents manage every record by API.
     spotlight: yourcompany.com is the address; www and old links redirect at the edge.
-    growth: Bare domain + edge redirects
+    cto: Bare domain + edge redirects
+    team: Bare domain + edge redirects
     enterprise: Every domain, edge redirects
     sop: domain-dns
-    section: Cloudflare DNS — Growth and above
+    section: Cloudflare DNS — CTO and above
     you_do: Add the zone and paste two nameservers, once
     status: live
     software: [cloudflare]
@@ -262,7 +297,8 @@ features:
     icon: "🔎"
     blurb: Titles, descriptions and share cards, so a link to your app looks right everywhere it is posted.
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
 
@@ -272,7 +308,8 @@ features:
     icon: "📬"
     blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     sop: domain-dns
     you_do: Paste the records we give you
@@ -282,7 +319,8 @@ features:
     icon: resend
     blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
     pro: Low volume
-    growth: Higher volume
+    cto: Higher volume
+    team: Higher volume
     enterprise: Custom volume
     you_do: Paste the records we give you
     status: builtin
@@ -291,7 +329,7 @@ features:
     category: email
     icon: "📣"
     blurb: Broadcasts with one-click unsubscribe, lists cleaned before they are mailed, and opens and clicks measured.
-    growth: true
+    team: true
     enterprise: true
     sop: launch-warmup
     section: Phase 1 — Clean the list before anyone mails it
@@ -301,7 +339,8 @@ features:
     category: email
     icon: google
     blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    growth: 2 seats included
+    cto: 2 seats included
+    team: 2 seats included
     enterprise: Custom
     sop: workspace-signup
     you_do: Sign up and create the users
@@ -314,7 +353,8 @@ features:
     icon: "🔑"
     blurb: Magic-link sign-in for your customers, with no passwords to leak.
     pro: true
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     status: builtin
 
@@ -324,7 +364,8 @@ features:
     icon: cloudflare
     blurb: A private Cloudflare R2 bucket for your app's uploads and exports.
     pro: 1 private bucket
-    growth: 1 private bucket
+    cto: 1 private bucket
+    team: 1 private bucket
     enterprise: Buckets sized to need
     sop: bucket-provision
     status: live
@@ -334,7 +375,8 @@ features:
     icon: "💾"
     blurb: Your database and files copied every night, so a bad day is an hour, not a loss.
     pro: Nightly
-    growth: Nightly
+    cto: Nightly
+    team: Nightly
     enterprise: Nightly + restore drill
     sop: r2-backup
     status: live
@@ -344,7 +386,7 @@ features:
     category: marketing
     icon: "🧠"
     blurb: Our CMO agent finds the one thing holding your demand back and sets the plan around it.
-    growth: true
+    team: true
     enterprise: true
     sop: constraint-diagnosis
     status: live
@@ -352,7 +394,7 @@ features:
     category: marketing
     icon: "🎬"
     blurb: Short-form content tested at volume and measured, not just posted.
-    growth: true
+    team: true
     enterprise: true
     sop: content-sprint
     you_do: Approve the weekly plan
@@ -361,7 +403,7 @@ features:
     category: marketing
     icon: "📲"
     blurb: Approved posts published to X and TikTok for you.
-    growth: X and TikTok
+    team: X and TikTok
     enterprise: X and TikTok
     status: planned
     software: [x, tiktok]
@@ -369,17 +411,26 @@ features:
     category: marketing
     icon: "🔥"
     blurb: Your first sends ramped in gated batches, so a new domain earns its reputation instead of burning it.
-    growth: true
+    team: true
     enterprise: true
     sop: launch-warmup
     status: live
+  # No SOP builds a funnel yet (2026-10-12): planned, a promise.
+  - name: Funnel generation
+    category: marketing
+    icon: "🧲"
+    blurb: A landing page, lead capture and an email sequence for one offer, measured so you can read what it earns.
+    team: true
+    enterprise: true
+    status: planned
 
   # --- agents and service --------------------------------------------------
   - name: Agentic email drafting
     category: agents
     icon: "✍️"
     blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     sop: workspace-provision
     section: "7. Drafting mailboxes"
@@ -389,18 +440,28 @@ features:
     category: agents
     icon: "📚"
     blurb: Your agent indexes the folders you choose, so drafts use your real documents.
-    growth: Google Drive
+    cto: Google Drive
+    team: Google Drive
     enterprise: Drive + custom connectors
     sop: workspace-provision
     section: "4. Attach the folders"
     you_do: Name the folders
     status: live
+  - name: Architecture and roadmap review
+    category: agents
+    icon: "🗺️"
+    blurb: Once a month we review how your app is built and agree what comes next.
+    cto: Monthly
+    team: Monthly
+    enterprise: Monthly
+    status: builtin
   - name: Changes after launch
     category: agents
     icon: "🛠️"
     blurb: What happens when you want something new in your app.
     pro: Small, queued
-    growth: Monthly build requests
+    cto: 4 build requests a month
+    team: 6 build requests a month
     enterprise: Dedicated build team
     status: builtin
   - name: Support
@@ -408,7 +469,8 @@ features:
     icon: "💬"
     blurb: Who answers when you need us.
     pro: Email
-    growth: Priority
+    cto: Priority
+    team: Priority
     enterprise: Named contact
     status: builtin
 
@@ -417,7 +479,8 @@ features:
     category: security
     icon: 1password
     blurb: Every new login filed in 1Password, never pasted in chat.
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     sop: credential-filing
     you_do: Paste each password once
@@ -427,7 +490,8 @@ features:
     category: security
     icon: "🧭"
     blurb: A Chrome profile for your company, so accounts never mix.
-    growth: true
+    cto: true
+    team: true
     enterprise: true
     sop: chrome-profiles
     status: live
@@ -436,15 +500,17 @@ features:
     category: security
     icon: cloudflare
     blurb: Cloudflare Turnstile on your public forms, so spam bots are stopped without a puzzle for your customers.
-    growth: Turnstile
+    cto: Turnstile
+    team: Turnstile
     enterprise: Turnstile
     status: planned
   - name: Credential rotation
     category: security
     icon: "🔄"
     blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
-    growth: Included
-    enterprise: Plus CMMC/ITAR compliance
+    cto: Included
+    team: Included
+    enterprise: CMMC/ITAR review on request
     sop: credential-rotation
     status: live
 

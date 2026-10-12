@@ -3,9 +3,9 @@ require "resolv"
 # Who serves a domain's DNS today, read live from its nameservers: Cloudflare,
 # Squarespace, name.com, another host, or "unknown" when the lookup fails.
 #
-# /stack draws it per client, so a Growth client still on Squarespace reads as
+# /stack draws it per client, so a CTO client still on Squarespace reads as
 # "migration pending" and visibly flips to Cloudflare the moment its
-# nameservers move (domain-dns § Cloudflare DNS — Growth and above).
+# nameservers move (domain-dns § Cloudflare DNS — CTO and above).
 #
 # The page must never wait long on, or fail because of, DNS: each query times
 # out in about a second, every failure reads as "unknown", and answers are

@@ -1,0 +1,23 @@
+<%# The tier drawn without a card (Enterprise, `card: false` in config/workspace_packages.yml): one line under the cards on /packages and under the matrix on /packages/stack. Its question, what it adds, the add-ons it sells per contract, and its Book a call. %>
+<% add_ons = package.add_on_brands %>
+<section class="mt-8 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" data-test="talk-to-us" data-package="<%= package.key %>"
+         aria-labelledby="talk-to-us-<%= package.key %>">
+  <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+    <div class="min-w-0">
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary"><%= package.name %></p>
+      <h2 id="talk-to-us-<%= package.key %>" class="mt-1 text-xl font-semibold text-heading" data-test="talk-to-us-question"><%= package.tagline %></h2>
+      <ul class="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-body" data-test="talk-to-us-highlights">
+        <% package.highlights.each do |highlight| %>
+          <li class="flex gap-2" data-test="talk-to-us-highlight"><span class="text-primary" aria-hidden="true">✓</span> <%= highlight %></li>
+        <% end %>
+      </ul>
+      <% if add_ons.any? %>
+        <div class="mt-4 flex flex-wrap items-center gap-1.5" data-test="talk-to-us-add-ons">
+          <span class="mr-1 text-xs font-semibold uppercase tracking-wider text-muted">Add-ons, priced per contract</span>
+          <% add_ons.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
+        </div>
+      <% end %>
+    </div>
+    <%= package_cta_link package, class: "btn btn-primary shrink-0 justify-center md:w-auto w-full" %>
+  </div>
+</section>

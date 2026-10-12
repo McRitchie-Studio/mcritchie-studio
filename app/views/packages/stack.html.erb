@@ -2,7 +2,8 @@
 <% groups = WorkspacePackage.features_by_category %>
 <% features = groups.flat_map(&:last) %>
 <% price_short = ->(package) {
-     if package.free? then "Free"
+     if !package.card? then "Talk to us"
+     elsif package.free? then "Free"
      elsif package.priced? then "#{number_to_currency(package.price_monthly, precision: 0)}/mo"
      else package.price_label || "Pricing coming soon"
      end
@@ -125,6 +126,8 @@
     </table>
   </div>
   <p class="mt-2 text-xs text-muted md:hidden">Swipe the table sideways to compare tiers.</p>
+
+  <%= render "packages/talk_to_us", package: @talk_to_us if @talk_to_us %>
 
   <% if (dns = features.find { |feature| feature.name == WorkspacePackage::CLOUDFLARE_DNS }) %>
     <%= render "packages/dns_flow", feature: dns %>

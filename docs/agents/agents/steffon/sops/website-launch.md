@@ -13,10 +13,10 @@ on the package, and the customer never needs to know which:
 | Package | What the customer gets | What runs it |
 |---------|------------------------|--------------|
 | Vibe | you.mcritchie.studio · Eco dyno | **Our app** on a Heroku Eco dyno, no database ([`app-deploy-standard`](./app-deploy-standard.md)) |
-| Pro and up | 1 own domain · Basic dyno + Postgres (Growth adds a worker and Redis) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
-| Growth and up | The bare domain as the address, `www` and other domains redirected at the edge | **Cloudflare DNS** ([`domain-dns` § Cloudflare DNS](./domain-dns.md#cloudflare-dns--growth-and-above)); Pro keeps `www` on Squarespace DNS |
+| Pro and up | 1 own domain · Basic dyno + Postgres + Redis mini, for realtime updates (CTO adds a worker) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
+| CTO and up | The bare domain as the address, `www` and other domains redirected at the edge | **Cloudflare DNS** ([`domain-dns` § Cloudflare DNS](./domain-dns.md#cloudflare-dns--cto-and-above)); Pro keeps `www` on Squarespace DNS |
 
-Tiers per the v2 ladder Alex approved on 2026-09-30 (`config/workspace_packages.yml`).
+Tiers per the ladder Alex set on 2026-10-12: Vibe, Pro, CTO, Team, and Enterprise on request (`config/workspace_packages.yml`).
 Decided by Alex, 2026-09-24: "App we host. Behind the scenes it could
 be Squarespace."
 
@@ -99,10 +99,10 @@ before touching DNS. Then run step 3 and step 4, then the last step.
 
 ### 3. Point the domain at it — Alex
 
-**Growth and above:** skip this step and step 4. The domain moves to Cloudflare
+**CTO and above:** skip this step and step 4. The domain moves to Cloudflare
 DNS and the **bare domain** is the address, with `www` redirected at the edge:
-run [`domain-dns` § Cloudflare DNS — Growth and
-above](./domain-dns.md#cloudflare-dns--growth-and-above), whose steps 5 and 6
+run [`domain-dns` § Cloudflare DNS — CTO and
+above](./domain-dns.md#cloudflare-dns--cto-and-above), whose steps 5 and 6
 also add the bare domain to the app, set `APP_HOST`, re-issue the certificate
 and prove it. Then run the last step here.
 
