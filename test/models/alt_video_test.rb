@@ -58,7 +58,7 @@ class AltVideoTest < ActiveSupport::TestCase
   test "a later edit of the cast card changes neither the swaps nor the prompts" do
     recast!(@home)
     alt = AltVideo.build_from!(@video)
-    before = MusicVideos::ClipPrompts.for(chunk(1), swaps: alt.swap_set)
+    before = Videos::ClipPrompts.for(chunk(1), swaps: alt.swap_set)
     assert_includes before, "- Person A (lead) -> Test Athlete Alpha, Home Blue (character sheet 1)"
 
     recast!(@away)
@@ -66,8 +66,8 @@ class AltVideoTest < ActiveSupport::TestCase
     alt.reload
 
     assert_equal "Test Athlete Alpha > Home Blue", alt.swaps_summary
-    assert_equal before, MusicVideos::ClipPrompts.for(chunk(1), swaps: alt.swap_set), "the snapshot, not the card"
-    assert_includes MusicVideos::ClipPrompts.for(chunk(1)), "{athlete}", "the card itself now keeps person 1"
+    assert_equal before, Videos::ClipPrompts.for(chunk(1), swaps: alt.swap_set), "the snapshot, not the card"
+    assert_includes Videos::ClipPrompts.for(chunk(1)), "{athlete}", "the card itself now keeps person 1"
   end
 
   test "the snapshot is never rewritten" do
@@ -102,7 +102,7 @@ class AltVideoTest < ActiveSupport::TestCase
     alt = AltVideo.build_from!(@video)
 
     assert_equal [1], chunk(1).swapped_present(alt.swap_set).map(&:performer_ordinal)
-    assert_empty chunk(1).swapped_present(MusicVideos::SwapSet.new([]))
+    assert_empty chunk(1).swapped_present(Videos::SwapSet.new([]))
     assert_equal [@home.slug], alt.swap_set.appearance_slugs
   end
 
@@ -132,7 +132,7 @@ class AltVideoTest < ActiveSupport::TestCase
 
   test "a clip keeps its window after a re-tile, and no longer finds a chunk there" do
     alt = AltVideo.build_from!(@video)
-    MusicVideos::ReplaceClips.new(@video, TiledVideo.chunk_rows(@video, chunk_ms: 15_000, overlap_ms: 5_000),
+    Videos::ReplaceClips.new(@video, TiledVideo.chunk_rows(@video, chunk_ms: 15_000, overlap_ms: 5_000),
                                   kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000).call
 
     clip = alt.clips.second

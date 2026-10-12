@@ -141,8 +141,8 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     mine = source.appearances.create!(descriptor: "Home")
     moved = source.appearances.create!(descriptor: "Away")
     one, two = video.video_performers.to_a
-    MusicVideos::RecastPerformer.new(one).call(person_slug: source.slug, appearance_slug: mine.slug)
-    MusicVideos::RecastPerformer.new(two).call(person_slug: source.slug, appearance_slug: moved.slug)
+    Videos::RecastPerformer.new(one).call(person_slug: source.slug, appearance_slug: mine.slug)
+    Videos::RecastPerformer.new(two).call(person_slug: source.slug, appearance_slug: moved.slug)
 
     merge!(keep, source)
 

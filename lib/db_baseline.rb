@@ -50,10 +50,39 @@ module DbBaseline
   # table => the columns later migrations drop: every `remove_column "table", "column"`
   # above a migration's `down`. A database past such a drop is not short of the column.
   def removed_columns(migrate_dir)
-    later = Dir[File.join(migrate_dir.to_s, "*.rb")].reject { |path| baseline_file?(File.basename(path)) }
-    later.each_with_object(Hash.new { |hash, table| hash[table] = [] }) do |path, removed|
-      File.read(path).split(/^\s*def down\b/).first.scan(/^\s*remove_column "(\w+)", "(\w+)"/) { |table, column| removed[table] << column }
+    later_ups(migrate_dir).each_with_object(Hash.new { |hash, table| hash[table] = [] }) do |up, removed|
+      up.scan(/^\s*remove_column "(\w+)", "(\w+)"/) { |table, column| removed[table] << column }
     end
+  end
+
+  # old table name => new: every `rename_table "old", "new"` above a migration's
+  # `down`. A database past such a rename holds the baseline's table under the new name.
+  def renamed_tables(migrate_dir)
+    later_ups(migrate_dir).each_with_object({}) do |up, renamed|
+      up.scan(/^\s*rename_table "(\w+)", "(\w+)"/) { |from, to| renamed[from] = to }
+    end
+  end
+
+  # table (as named when the rename ran) => { old column => new }: every
+  # `rename_column "table", "old", "new"` above a migration's `down`.
+  def renamed_columns(migrate_dir)
+    later_ups(migrate_dir).each_with_object(Hash.new { |hash, table| hash[table] = {} }) do |up, renamed|
+      up.scan(/^\s*rename_column "(\w+)", "(\w+)", "(\w+)"/) { |table, from, to| renamed[table][from] = to }
+    end
+  end
+
+  # Every name a chain of renames gives (a -> b, b -> c): [a, b, c], oldest first.
+  # The marker runs before db:migrate, so a database may hold either end of it.
+  def rename_chain(name, renames)
+    chain = [name]
+    chain << renames[chain.last] while renames.key?(chain.last) && !chain.include?(renames[chain.last])
+    chain
+  end
+
+  # The `up` half of every migration after the baseline, in file order.
+  def later_ups(migrate_dir)
+    Dir[File.join(migrate_dir.to_s, "*.rb")].sort.reject { |path| baseline_file?(File.basename(path)) }
+                                            .map { |path| File.read(path).split(/^\s*def down\b/).first }
   end
 
   # Compares a schema dump taken from another database with the committed baseline,
@@ -66,9 +95,10 @@ module DbBaseline
     held = schema.tables.to_h { |table| [table.name, columns_in(table.block.join("\n"))] }
     marker = Marker.new(connection: nil, migrate_dir: File.join(root.to_s, "db/migrate"))
     tables = marker.entries.select { |entry| entry.kind == :table }
-    present, absent = tables.partition { |entry| held.key?(entry.name) }
+    present, absent = tables.partition { |entry| marker.table_names(entry).any? { |name| held.key?(name) } }
     short = present.filter_map do |entry|
-      missing = marker.required(entry) - held.fetch(entry.name)
+      table = marker.table_names(entry).reverse.find { |name| held.key?(name) }
+      missing = marker.missing(entry, held.fetch(table))
       "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
     end
     record = File.join(root.to_s, RECORD)
@@ -353,10 +383,25 @@ module DbBaseline
       Dir[File.join(@migrate_dir, "#{PREFIX}*.rb")].sort.map { |path| Entry.new(path) }
     end
 
-    # The baseline columns a table must still hold: all but those a later migration drops.
+    # The baseline columns a table must still hold: all but those a later migration
+    # drops. Each is a list of the names it may be held under: its baseline name,
+    # then each name a later migration renames it to (a database the release phase
+    # has not migrated yet still holds the old one).
     def required(entry)
-      entry.columns - (@removed ||= DbBaseline.removed_columns(@migrate_dir)).fetch(entry.name, [])
+      names = table_names(entry)
+      renames = names.map { |name| renamed_columns.fetch(name, {}) }.reduce({}, :merge)
+      dropped = names.flat_map { |name| removed.fetch(name, []) }
+      (entry.columns - dropped).map { |column| DbBaseline.rename_chain(column, renames) }
     end
+
+    # The newest name of each required column none of whose names `held` holds.
+    def missing(entry, held)
+      required(entry).reject { |names| names.intersect?(held) }.map(&:last)
+    end
+
+    # The names the entry's table may hold now: its baseline name, then each name
+    # a later migration renames it to.
+    def table_names(entry) = DbBaseline.rename_chain(entry.name, renamed_tables)
 
     # Reads only. `short` covers every baseline table the database holds.
     def report
@@ -378,20 +423,27 @@ module DbBaseline
 
     private
 
+    def removed = @removed ||= DbBaseline.removed_columns(@migrate_dir)
+    def renamed_tables = @renamed_tables ||= DbBaseline.renamed_tables(@migrate_dir)
+    def renamed_columns = @renamed_columns ||= DbBaseline.renamed_columns(@migrate_dir)
+
     def present?(entry)
       case entry.kind
-      when :table then @connection.table_exists?(entry.name)
+      when :table then table_names(entry).any? { |name| @connection.table_exists?(name) }
       # A database that holds the table and not its view stays as it is.
-      when :view then @connection.view_exists?(entry.name) || @connection.table_exists?(entry.base)
+      when :view
+        @connection.view_exists?(entry.name) ||
+          DbBaseline.rename_chain(entry.base, renamed_tables).any? { |name| @connection.table_exists?(name) }
       when :extensions then (entry.columns - @connection.extensions).empty?
       end
     end
 
     def shortfall(entry)
-      return unless entry.kind == :table && @connection.table_exists?(entry.name)
+      table = entry.kind == :table && table_names(entry).reverse.find { |name| @connection.table_exists?(name) }
+      return unless table
 
-      missing = required(entry) - @connection.columns(entry.name).map(&:name)
-      "#{entry.name} lacks #{missing.join(', ')}" if missing.any?
+      lacking = missing(entry, @connection.columns(table).map(&:name))
+      "#{table} lacks #{lacking.join(', ')}" if lacking.any?
     end
 
     def partway_message(short)

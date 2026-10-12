@@ -15,7 +15,7 @@ class VideoPerformerRecastLooksController < ApplicationController
   SHEETS = %w[standard iced both none].freeze
 
   def create
-    maker = MusicVideos::CreateRecastLook.new(@performer, **look_params)
+    maker = Videos::CreateRecastLook.new(@performer, **look_params)
     # A refusal is an answer, not an ErrorLog.
     return back(alert: "No look made: #{maker.refusal}.") if maker.refusal
 
@@ -26,7 +26,7 @@ class VideoPerformerRecastLooksController < ApplicationController
   private
 
   def set_performer
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
     @performer = @video.video_performers.find_by!(ordinal: params[:performer_ordinal])
   end
 
@@ -37,12 +37,12 @@ class VideoPerformerRecastLooksController < ApplicationController
 
   # look: the card previews the look just made.
   def back(look: nil, **flash)
-    redirect_to music_video_path(@video, look: look&.slug, anchor: "person-#{@performer.ordinal}"), **flash
+    redirect_to video_path(@video, look: look&.slug, anchor: "person-#{@performer.ordinal}"), **flash
   end
 
   def make(maker)
     rescue_and_log(target: @video) { maker.call }
-  rescue MusicVideos::CreateRecastLook::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+  rescue Videos::CreateRecastLook::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
     back(alert: "No look made: #{e.message}.")
     nil
   end

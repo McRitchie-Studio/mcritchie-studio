@@ -82,7 +82,7 @@ module Api
       def admin_session_hint = ADMIN_SESSION_HINT
 
       def set_clip
-        @clip = AltVideoClip.includes(:versions, :tiktok_drafts, alt_video: :music_video).find_by!(slug: params[:alt_video_clip_slug])
+        @clip = AltVideoClip.includes(:versions, :tiktok_drafts, alt_video: :video).find_by!(slug: params[:alt_video_clip_slug])
       end
 
       def clip_data

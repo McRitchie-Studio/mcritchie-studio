@@ -8,19 +8,19 @@ class AltVideoStitchesController < ApplicationController
   include AltVideoScoped
 
   def create
-    asking = MusicVideos::RequestStitch.new(@alt_video)
+    asking = Videos::RequestStitch.new(@alt_video)
     asking.check! # a refusal is an answer, not an ErrorLog
     outcome = rescue_and_log(target: @video) { asking.call }
     stitch = outcome.stitch
     return back(notice: "#{stitch.name} is already #{stitch.running? ? 'running' : 'waiting'}.") unless outcome.created?
 
-    if MusicVideos::Stitcher.available?
+    if Videos::Stitcher.available?
       StitchVideoJob.perform_later(@alt_video.slug, stitch.number)
       back(notice: "#{stitch.name} requested: stitching now.")
     else
       back(notice: "#{stitch.name} requested: waiting for bin/stitch-video #{@video.slug} --alt #{@alt_video.number} on the Mac.")
     end
-  rescue MusicVideos::RequestStitch::Refused => e
+  rescue Videos::RequestStitch::Refused => e
     back(alert: "Not ready to stitch: #{e.message}.")
   end
 

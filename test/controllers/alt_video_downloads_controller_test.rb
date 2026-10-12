@@ -30,21 +30,21 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "non-admins download nothing" do
-    get music_video_alt_video_download_path(@video, @alt)
+    get video_alt_video_download_path(@video, @alt)
     assert_redirected_to login_path
     log_in_as users(:viewer)
-    get music_video_alt_video_download_path(@video, @alt)
+    get video_alt_video_download_path(@video, @alt)
     assert_redirected_to root_path
-    get music_video_alt_video_clip_download_path(@video, @alt, 3)
+    get video_alt_video_clip_download_path(@video, @alt, 3)
     assert_redirected_to root_path
   end
 
   test "the all-assets zip holds one folder per clip, prompt.txt as the card shows it, and the README" do
     log_in_as users(:alex)
-    get music_video_alt_video_path(@video, @alt)
+    get video_alt_video_path(@video, @alt)
     card_prompt = CGI.unescapeHTML(css_select("[data-test='alt-clip'][data-ordinal='3'] [data-test='clip-prompt']").sole.inner_html)
 
-    get music_video_alt_video_download_path(@video, @alt), headers: { "Accept-Encoding" => "gzip" }
+    get video_alt_video_download_path(@video, @alt), headers: { "Accept-Encoding" => "gzip" }
     assert_response :success
     assert_equal "application/zip", response.media_type
     assert_match(/attachment; filename="#{ROOT}.zip"/, response.headers["Content-Disposition"])
@@ -62,7 +62,7 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
 
     readme = entries.fetch("#{ROOT}/README.txt").last
     assert_includes readme, "  B  Person 2 (woman in the blue dress)  -> #4 Test Passer Epsilon > Home White"
-    assert_includes readme, "Page          http://www.example.com/music_videos/test-artist-b-lettered-demo/alt_videos/1"
+    assert_includes readme, "Page          http://www.example.com/videos/test-artist-b-lettered-demo/alt_videos/1"
     # The seed's sheets are data: URIs, never fetched, so they are listed instead.
     assert_includes readme, "sheet_1_B_04_test-passer-epsilon_home-white.png  Sheet 1 · Person B · Test Passer Epsilon > Home White: " \
                             "the sheet image is not on an https public host"
@@ -73,7 +73,7 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
     sheet = Artifact.newest_character_sheets([@alt.swap_set[2].appearance_slug]).values.first
     sheet.update_columns(image_url: "https://assets.mcritchie.studio/sheets/b.png")
     log_in_as users(:alex)
-    get music_video_alt_video_clip_download_path(@video, @alt, 3)
+    get video_alt_video_clip_download_path(@video, @alt, 3)
     assert_response :success
     assert_match(/filename="#{ROOT}_clip_03.zip"/, response.headers["Content-Disposition"])
 
@@ -88,7 +88,7 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
   test "an object that cannot be read is listed in the README and the zip still opens" do
     @video.video_chunks.find_by!(ordinal: 3).update_columns(object_key: "music_videos/test_artist_b/lettered_demo/chunks/missing.mp4")
     log_in_as users(:alex)
-    get music_video_alt_video_clip_download_path(@video, @alt, 3)
+    get video_alt_video_clip_download_path(@video, @alt, 3)
     assert_response :success
     entries = zip_entries
     assert_not_includes entries.keys, "#{CLIP3}/source_clip.mp4"
@@ -97,21 +97,21 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
 
   test "an unknown alt video or clip is a 404" do
     log_in_as users(:alex)
-    get music_video_alt_video_clip_download_path(@video, @alt, 99)
+    get video_alt_video_clip_download_path(@video, @alt, 99)
     assert_response :not_found
-    get music_video_alt_video_download_path(@video, 99)
+    get video_alt_video_download_path(@video, 99)
     assert_response :not_found
   end
 
   test "the header offers every asset and each clip card its own" do
     log_in_as users(:alex)
-    get music_video_alt_video_path(@video, @alt)
-    assert_select "header [data-test='alt-video-download-all'][href=?]", music_video_alt_video_download_path(@video, @alt),
+    get video_alt_video_path(@video, @alt)
+    assert_select "header [data-test='alt-video-download-all'][href=?]", video_alt_video_download_path(@video, @alt),
                   text: "Download all assets"
     assert_select "[data-test='alt-clip']", @alt.clips.size
     @alt.clips.each do |clip|
       assert_select "[data-test='alt-clip'][data-ordinal='#{clip.chunk_ordinal}'] [data-test='clip-handoff'] " \
-                    "[data-test='clip-download-assets'][href=?]", music_video_alt_video_clip_download_path(@video, @alt, clip.chunk_ordinal),
+                    "[data-test='clip-download-assets'][href=?]", video_alt_video_clip_download_path(@video, @alt, clip.chunk_ordinal),
                     text: "Download clip assets"
     end
   end

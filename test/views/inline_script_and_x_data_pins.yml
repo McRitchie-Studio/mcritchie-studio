@@ -154,25 +154,25 @@ app/views/modals/_auth.html.erb:
 app/views/modals/_check_inbox.html.erb:
   x_data: 1
   script: 0
-app/views/music_videos/_clip.html.erb:
+app/views/videos/_clip.html.erb:
   x_data: 1
   script: 0
-app/views/music_videos/_look.html.erb:
+app/views/videos/_look.html.erb:
   x_data: 1
   script: 0
-app/views/music_videos/_naming.html.erb:
+app/views/videos/_naming.html.erb:
   x_data: 1
   script: 0
-app/views/music_videos/_performer.html.erb:
+app/views/videos/_performer.html.erb:
   x_data: 2
   script: 0
-app/views/music_videos/_player_scripts.html.erb:
+app/views/videos/_player_scripts.html.erb:
   x_data: 0
   script: 2
-app/views/music_videos/_swap_card.html.erb:
+app/views/videos/_swap_card.html.erb:
   x_data: 1
   script: 0
-app/views/music_videos/show.html.erb:
+app/views/videos/show.html.erb:
   x_data: 0
   script: 1
 app/views/news/edit.html.erb:

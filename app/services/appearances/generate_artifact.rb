@@ -140,13 +140,13 @@ module Appearances
     end
 
     # THE PLAYER SHEET'S ROLE-TAGGED IMAGES (Appearances::SheetReferences): faces, then
-    # uniform photos, then the body archetype. Nil for a music-video or character look,
+    # uniform photos, then the body archetype. Nil for a video or character look,
     # whose prompts attach faces or art only.
     def sheet_references
       return @sheet_references if defined?(@sheet_references)
 
       @sheet_references =
-        if @appearance.music_video_look? || @appearance.character_owned?
+        if @appearance.video_look? || @appearance.character_owned?
           nil
         else
           SheetReferences.new(@appearance, identity_urls: references, row: row)
@@ -172,7 +172,7 @@ module Appearances
     def prompt
       return @prompt if @prompt.present?
       return @built_prompt if defined?(@built_prompt)
-      return @built_prompt = ArtistSheetPrompt.call(@appearance) if @appearance.music_video_look?
+      return @built_prompt = ArtistSheetPrompt.call(@appearance) if @appearance.video_look?
       # A CHARACTER IS DRAWN, NOT PHOTOGRAPHED: its own prompt carries no
       # person or likeness wording (Appearances::CastSheetPrompt).
       return @built_prompt = CastSheetPrompt.call(@appearance) if @appearance.character_owned?
@@ -244,10 +244,10 @@ module Appearances
     # NEVER EMPTY WHEN #call PROCEEDS, because #call refuses first on a blank
     # `identity_photo_url` — which is the honest refusal: no face on file at all.
     def references
-      # A music-video look's floor IS its ranked stills, anchor first. Signed URLs
+      # A video look's floor IS its ranked stills, anchor first. Signed URLs
       # carry a timestamp, so prepending a second signing of the anchor could
       # slip past `uniq`.
-      return ReferenceSet.new(@appearance).generation_urls if @appearance.music_video_look?
+      return ReferenceSet.new(@appearance).generation_urls if @appearance.video_look?
 
       ([identity_photo_url] + Array(ReferenceSet.new(@appearance).generation_urls))
         .compact_blank

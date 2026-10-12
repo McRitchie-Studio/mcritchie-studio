@@ -1,5 +1,5 @@
 module Appearances
-  # A music-video look's references: that performer's stills from the video,
+  # A video look's references: that performer's stills from the video,
   # clearest first (VideoPerformer#reference_still_keys). The objects are private,
   # so each is handed out as a short-lived signed URL, signed at the moment of use.
   module VideoStills

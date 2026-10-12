@@ -14,7 +14,7 @@ module StitchReadyVideo
   def self.seed!
     video = TiledVideo.video!(slug: SLUG, source: SOURCE, source_id: "stitch-demo", title: "Test Artist A - Stitch Demo",
                               duration_ms: DURATION_MS)
-    MusicVideos::ReplaceClips.new(video, TiledVideo.chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
+    Videos::ReplaceClips.new(video, TiledVideo.chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
     alt = video.alt_videos.first || AltVideo.build_from!(video)
     first = alt.clips.first
     TiledVideo.version!(first, number: 1) if first.versions.empty?

@@ -71,7 +71,7 @@ class LookJerseyNumberTest < ActionDispatch::IntegrationTest
     assert_equal 4, Appearances::IcedTwin.create!(base).jersey_number
 
     video = LetteredVideo.seed!
-    look = MusicVideos::CreateRecastLook.new(video.video_performers.find_by!(ordinal: 1), person_slug: @person.slug,
+    look = Videos::CreateRecastLook.new(video.video_performers.find_by!(ordinal: 1), person_slug: @person.slug,
                                              descriptor: "Away Blue", jersey_number: "23").call
     assert_equal [23, 23], [look.jersey_number, look.iced_twin.jersey_number]
   end
@@ -100,7 +100,7 @@ class LookJerseyNumberTest < ActionDispatch::IntegrationTest
   test "the cast card's Generate a new look keeps the typed number" do
     video = LetteredVideo.seed!
     performer = video.video_performers.find_by!(ordinal: 1)
-    maker = MusicVideos::CreateRecastLook.new(performer, person_slug: @person.slug, descriptor: "Away Blue", jersey_number: "23")
+    maker = Videos::CreateRecastLook.new(performer, person_slug: @person.slug, descriptor: "Away Blue", jersey_number: "23")
 
     assert_equal 23, maker.call.jersey_number
   end

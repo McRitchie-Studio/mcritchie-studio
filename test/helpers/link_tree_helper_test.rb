@@ -256,7 +256,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     videos = links.find { |link| link[:label] == "Source videos" }
 
     assert videos, "expected a Source videos link"
-    assert_equal "/music_videos", videos.fetch(:href)
+    assert_equal "/videos", videos.fetch(:href)
     assert_equal labels.index("Body archetypes") + 1, labels.index("Source videos")
   end
 
@@ -273,7 +273,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # this file.
   def model_pipeline_path = "/model_pipeline"
   def body_archetypes_path = "/body-archetypes"
-  def music_videos_path = "/music_videos"
+  def videos_path = "/videos"
   def broadcasts_path = "/broadcasts"
   def contacts_path = "/contacts"
   def broadcast_analytics_path = "/broadcasts/analytics"

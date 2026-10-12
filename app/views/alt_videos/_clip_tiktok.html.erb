@@ -15,7 +15,7 @@
       <% end %>
     </p>
     <%# One press, one draft: the form turns its own button off as it submits, and swallows a second submit. The server holds the same line under the clip's row lock (Tiktok::DraftClip#record!), so this is the courtesy and that is the guard. `blocked` carries the server's own off state into Alpine, which would otherwise switch the button back on. %>
-    <%= button_to music_video_alt_video_clip_tiktok_drafts_path(video, alt_video, clip.chunk_ordinal), method: :post,
+    <%= button_to video_alt_video_clip_tiktok_drafts_path(video, alt_video, clip.chunk_ordinal), method: :post,
                   disabled: blocker.present?, title: blocker || "Send #{primary&.name} to your TikTok inbox",
                   "x-bind:disabled": "sending || blocked",
                   class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
@@ -47,7 +47,7 @@
                 title="This server's stand-in answered: nothing reached TikTok">stand-in</span>
         <% end %>
         <% if latest.with_tiktok? %>
-          <%= button_to "Check TikTok", refresh_music_video_alt_video_clip_tiktok_draft_path(video, alt_video, clip.chunk_ordinal, latest),
+          <%= button_to "Check TikTok", refresh_video_alt_video_clip_tiktok_draft_path(video, alt_video, clip.chunk_ordinal, latest),
                         method: :post, class: "text-xs text-primary hover:underline", form: { class: "contents", data: { test: "clip-tiktok-refresh" } } %>
         <% end %>
       </div>

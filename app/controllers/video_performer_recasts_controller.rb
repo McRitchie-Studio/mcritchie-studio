@@ -4,7 +4,7 @@
 # of their looks (or the athlete alone while they have no look); `keep=1` turns
 # the swap off and remembers them; `swap=1` turns it back on with what is
 # remembered; `clear=1` forgets. Allowed after the cast is confirmed too; the
-# video's stored prompts follow (MusicVideos::RecastPerformer).
+# video's stored prompts follow (Videos::RecastPerformer).
 #
 # The cast card saves every pick at once through the JSON variant (Accept:
 # application/json): 200 with the saved recast, 422 with the refusal. The HTML
@@ -20,19 +20,19 @@ class VideoPerformerRecastsController < ApplicationController
       return refuse("choose an athlete and one of their looks, or turn the swap off.")
     end
 
-    rescue_and_log(target: @video) { MusicVideos::RecastPerformer.new(@performer).call(**choice) }
+    rescue_and_log(target: @video) { Videos::RecastPerformer.new(@performer).call(**choice) }
     @performer.reload
     return render(json: saved_json) if json?
 
     back(notice: notice_for(@performer))
-  rescue MusicVideos::RecastPerformer::Refused, ActiveRecord::RecordInvalid => e
+  rescue Videos::RecastPerformer::Refused, ActiveRecord::RecordInvalid => e
     refuse(e.message)
   end
 
   private
 
   def set_performer
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
     @performer = @video.video_performers.find_by!(ordinal: params[:performer_ordinal])
   end
 
@@ -62,7 +62,7 @@ class VideoPerformerRecastsController < ApplicationController
   end
 
   def back(**flash)
-    redirect_to music_video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
+    redirect_to video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
   end
 
   def notice_for(performer)

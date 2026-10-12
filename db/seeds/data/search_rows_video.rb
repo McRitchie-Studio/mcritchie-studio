@@ -26,7 +26,7 @@ module SearchRowsVideo
   end
 
   def self.video!
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.kind = "cinematic"
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=search-rows-demo"
@@ -35,7 +35,7 @@ module SearchRowsVideo
       v.duration_ms = TiledVideo::DURATION_MS
       v.source_object_key = SOURCE
     end
-    MusicVideos::ReplacePerformers.new(video, TiledVideo::PERFORMERS.first(1)).call unless video.video_performers.exists?
+    Videos::ReplacePerformers.new(video, TiledVideo::PERFORMERS.first(1)).call unless video.video_performers.exists?
     video
   end
 

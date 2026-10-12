@@ -190,7 +190,7 @@ class AppearancesController < ApplicationController
     return unless @appearance.valid?
 
     @appearance.save!
-    MusicVideos::ClipPrompts.refresh_casting!(@appearance)
+    Videos::ClipPrompts.refresh_casting!(@appearance)
   end
 
   def run_search

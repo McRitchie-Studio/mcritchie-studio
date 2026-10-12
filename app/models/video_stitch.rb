@@ -1,7 +1,7 @@
 # One full-length stitch of an alt video (recast pipeline, pieces 4 and 13):
 # every clip's primary version crossfaded across the overlaps, over the
 # source's audio. Stitches are numbered per alt video and kept, never
-# overwritten. music_video_slug stays as the source's slug.
+# overwritten. video_slug stays as the source's slug.
 #
 # A stitch is REQUESTED on the page, RUNNING while ffmpeg works on it (a local
 # hub's StitchVideoJob, or bin/stitch-video on the Mac), then DONE with its
@@ -19,7 +19,7 @@ class VideoStitch < ApplicationRecord
 
   class WrongState < StandardError; end
 
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug
+  belongs_to :video, foreign_key: :video_slug, primary_key: :slug
   belongs_to :alt_video, foreign_key: :alt_video_slug, primary_key: :slug, inverse_of: :stitches
 
   validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :alt_video_slug }
@@ -42,14 +42,14 @@ class VideoStitch < ApplicationRecord
   # "1, 2, 1, 1": the version number of each clip, in clip order.
   def take_list = takes.map { |t| t["take"] }.join(", ")
 
-  # What the stitcher needs (MusicVideos::Stitcher's request), every version
+  # What the stitcher needs (Videos::Stitcher's request), every version
   # resolved to its object.
   def as_request
-    video = alt_video.music_video
+    video = alt_video.video
     versions = alt_video.clips.to_h { |c| [c.chunk_ordinal, c.versions.index_by(&:number)] }
     as_json(only: %w[number state object_key failure_reason duration_ms byte_size width height frame_rate warnings
                      started_at finished_at])
-      .merge("music_video_slug" => music_video_slug, "alt_video" => alt_video.number,
+      .merge("video_slug" => video_slug, "alt_video" => alt_video.number,
              "source_object_key" => video.source_object_key, "source_duration_ms" => video.duration_ms,
              "takes" => takes.map do |t|
                version = versions.dig(t["ordinal"], t["take"])
@@ -131,7 +131,7 @@ class VideoStitch < ApplicationRecord
   # Checked when the stitch is requested; stitches moved from piece 4 keep
   # their objects where they were (stitched/), so later saves do not re-check.
   def object_key_names_the_stitch
-    expected = MusicVideos::ObjectKeys.alt_stitched(source_key: alt_video&.music_video&.source_object_key,
+    expected = Videos::ObjectKeys.alt_stitched(source_key: alt_video&.video&.source_object_key,
                                                     alt_number: alt_video&.number, number:)
     errors.add(:object_key, "must be #{expected}") unless object_key == expected
   rescue ArgumentError, TypeError
@@ -141,6 +141,6 @@ class VideoStitch < ApplicationRecord
   def belongs_to_the_alt_videos_source
     return unless alt_video
 
-    errors.add(:music_video_slug, "must be #{alt_video.music_video_slug}") unless music_video_slug == alt_video.music_video_slug
+    errors.add(:video_slug, "must be #{alt_video.video_slug}") unless video_slug == alt_video.video_slug
   end
 end

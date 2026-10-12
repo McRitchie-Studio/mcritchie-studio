@@ -25,11 +25,11 @@ class VideoClipsController < ApplicationController
   private
 
   def set_clip
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
     @clip = @video.clip_candidates.find_by!(ordinal: params[:ordinal])
   end
 
   def back(**flash)
-    redirect_to music_video_path(@video, anchor: "clip-#{@clip.ordinal}"), **flash
+    redirect_to video_path(@video, anchor: "clip-#{@clip.ordinal}"), **flash
   end
 end

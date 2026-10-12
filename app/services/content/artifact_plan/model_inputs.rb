@@ -38,7 +38,7 @@ class Content
       end
 
       def anchor
-        @anchor ||= if @appearance.music_video_look? then video_still_anchor
+        @anchor ||= if @appearance.video_look? then video_still_anchor
                     elsif @appearance.character_owned? then character_anchor
                     elsif athlete then headshot_anchor
                     else operator_anchor
@@ -151,7 +151,7 @@ class Content
         end
       end
 
-      # A MUSIC-VIDEO LOOK IS ANCHORED BY ITS CLEAREST STILL from that video, not
+      # A VIDEO LOOK IS ANCHORED BY ITS CLEAREST STILL from that video, not
       # by a headshot: the look is how they appear in this video.
       def video_still_anchor
         url = Appearances::VideoStills.urls(@appearance).first

@@ -27,7 +27,7 @@ module TiktokDraftVideo
     person, look = athlete!
     video = TiledVideo.video!(slug: SLUG, source: SOURCE, source_id: "tiktok-demo", title: "Test Artist A - TikTok Demo",
                               duration_ms: DURATION_MS)
-    MusicVideos::ReplaceClips.new(video, TiledVideo.chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
+    Videos::ReplaceClips.new(video, TiledVideo.chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
     unless video.alt_videos.exists?
       video.video_performers.find_by!(ordinal: 1)
            .update!(recast_person_slug: person.slug, recast_appearance_slug: look.slug, recast_keep: false)

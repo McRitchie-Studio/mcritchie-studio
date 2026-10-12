@@ -44,15 +44,15 @@ class Appearances::IcedTwinTest < ActiveSupport::TestCase
     assert_enqueued_jobs 0
   end
 
-  test "a twin, a music-video look and a retired look get no twin" do
+  test "a twin, a video look and a retired look get no twin" do
     twin = Appearances::IcedTwin.create!(@base)
     assert_raises(Appearances::IcedTwin::Refused) { Appearances::IcedTwin.create!(twin) }
 
     @base.update!(retired_at: Time.current)
     assert_match(/retired/, Appearances::IcedTwin.refusal(@base))
 
-    performer_look = Appearance.new(person_slug: @person.slug, descriptor: "Video look", music_video_slug: "some-video")
-    assert_match(/music-video/, Appearances::IcedTwin.refusal(performer_look))
+    performer_look = Appearance.new(person_slug: @person.slug, descriptor: "Video look", video_slug: "some-video")
+    assert_match(/a video look is a performer/, Appearances::IcedTwin.refusal(performer_look))
   end
 
   test "a taken twin name steps to the next free one" do

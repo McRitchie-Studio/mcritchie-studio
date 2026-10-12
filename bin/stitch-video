@@ -1,14 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# stitch video <music_video_slug> --alt N: make the full stitched MP4 of one
+# stitch video <video_slug> --alt N: make the full stitched MP4 of one
 # alt video of a source. Every clip's primary version is crossfaded into the
 # next across their overlap, the original source audio runs underneath
 # untouched, and the result is stored in R2 as the alt video's next stitch. The final step of the recast
 # pipeline (docs/agents/agents/pokemon/sops/digest-video.md, "The final stitch").
 #
 # It fulfils the request "Generate full video" recorded on
-# /music_videos/<slug>/alt_videos/<N>;
+# /videos/<slug>/alt_videos/<N>;
 # with none waiting it asks for one itself. Runs on the Mac: production dynos
 # have no ffmpeg.
 #
@@ -26,7 +26,7 @@ require_relative "lib/stitch_video"
 
 options = { production: false, dry_run: false, force: false, alt: 1, workdir: File.expand_path("~/projects/.corpus/music_videos") }
 parser = OptionParser.new do |opts|
-  opts.banner = "Usage: bin/stitch-video <music_video_slug> [options]"
+  opts.banner = "Usage: bin/stitch-video <video_slug> [options]"
   opts.on("--alt N", Integer, "which alt video of the source (default 1)") { |v| options[:alt] = v }
   opts.on("--production", "read and write the production bucket and API (default: dev)") { options[:production] = true }
   opts.on("--api URL", "hub API base (default: localhost:3000, or mcritchie.studio with --production)") { |v| options[:api] = v }
@@ -59,6 +59,6 @@ begin
     shell: DigestVideo.shell, workdir: options[:workdir], source: options[:source], dry_run: options[:dry_run],
     force: options[:force], bucket: target[:bucket], alt: options[:alt]
   ).call(ARGV.first)
-rescue DigestVideo::Failure, MusicVideos::Stitcher::Failure => e
+rescue DigestVideo::Failure, Videos::Stitcher::Failure => e
   abort "stitch-video: #{e.message}"
 end

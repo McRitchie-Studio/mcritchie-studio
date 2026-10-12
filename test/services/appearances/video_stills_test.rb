@@ -1,11 +1,11 @@
 require "test_helper"
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s
 
-# [unit] A music-video look is anchored on its clearest still, never a headshot,
+# [unit] A video look is anchored on its clearest still, never a headshot,
 # and refuses to build when no still can be signed.
 class Appearances::VideoStillsTest < ActiveSupport::TestCase
   setup do
-    @look = MusicVideos::CreateLook.call(NightCallLooks.seed!.video_performers.find_by!(ordinal: 2))
+    @look = Videos::CreateLook.call(NightCallLooks.seed!.video_performers.find_by!(ordinal: 2))
   end
 
   test "the anchor and the floor are the performer's stills, clearest first" do

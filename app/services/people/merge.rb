@@ -176,14 +176,14 @@ class People::Merge
     source.association(:appearances).reset
     source.association(:artifact_subjects).reset
     source.association(:recast_performers).reset
-    MusicVideo.where(slug: recast_videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+    Video.where(slug: recast_videos).find_each { |video| Videos::ClipPrompts.refresh!(video) }
   end
 
   # On-screen performers the source replaces now name the keeper; returns the
   # videos touched, whose prompts are refreshed once the looks have moved too.
   def relocate_recasts
     recasts = VideoPerformer.where(recast_person_slug: source.slug)
-    videos = recasts.distinct.pluck(:music_video_slug)
+    videos = recasts.distinct.pluck(:video_slug)
     stats[:recasts_moved] += recasts.update_all(recast_person_slug: keep.slug, updated_at: Time.current)
     videos
   end

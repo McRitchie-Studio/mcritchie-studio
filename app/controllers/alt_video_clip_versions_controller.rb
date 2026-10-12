@@ -10,13 +10,13 @@ class AltVideoClipVersionsController < ApplicationController
   before_action :set_clip
 
   def create
-    store = MusicVideos::StoreClipVersion.new(@clip, params[:file])
+    store = Videos::StoreClipVersion.new(@clip, params[:file])
     store.validate! # a refusal is an answer, not an ErrorLog
     version = rescue_and_log(target: @video) { store.call }
     back(notice: "#{@clip.name}: #{version.name.downcase} uploaded and primary.")
-  rescue MusicVideos::StoreClipVersion::Refused => e
+  rescue Videos::StoreClipVersion::Refused => e
     back(alert: "#{@clip.name} version not uploaded: #{e.message}.")
-  rescue MusicVideos::StoreClipVersion::StorageFailed => e
+  rescue Videos::StoreClipVersion::StorageFailed => e
     back(alert: "#{@clip.name} version not uploaded: #{e.message}. Nothing was recorded; try again.")
   end
 

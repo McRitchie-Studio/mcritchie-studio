@@ -4,9 +4,9 @@
 # video, with its own swaps snapshotted from the cast card.
 #
 #   GET  /alt_videos                              every alt video, with progress
-#   POST /music_videos/:slug/alt_videos           Build Clips: the next alt video
-#   GET  /music_videos/:slug/alt_videos/:number   its clip builder
-#   GET  /music_videos/:slug/alt_videos/:number/links   fresh signed URLs for that page (JSON)
+#   POST /videos/:slug/alt_videos           Build Clips: the next alt video
+#   GET  /videos/:slug/alt_videos/:number   its clip builder
+#   GET  /videos/:slug/alt_videos/:number/links   fresh signed URLs for that page (JSON)
 #
 # Admin only: chunks, versions and stitches are private objects shown through
 # short-lived signed URLs. The page outlives them (it stays open while the
@@ -15,20 +15,20 @@ class AltVideosController < ApplicationController
   before_action :require_admin
   before_action :set_video, only: %i[create show links]
 
-  SIGNED_URL_TTL = MusicVideosController::SIGNED_URL_TTL
+  SIGNED_URL_TTL = VideosController::SIGNED_URL_TTL
 
   def index
-    @alt_videos = AltVideo.includes(:music_video, :stitches, clips: :versions)
+    @alt_videos = AltVideo.includes(:video, :stitches, clips: :versions)
                           .order(created_at: :desc, id: :desc).to_a
                           .sort_by { |alt| -alt.last_activity_at.to_f }
   end
 
   def create
     alt = rescue_and_log(target: @video) { AltVideo.build_from!(@video) }
-    redirect_to music_video_alt_video_path(@video, alt), status: :see_other,
+    redirect_to video_alt_video_path(@video, alt), status: :see_other,
                 notice: "#{alt.name} built: #{alt.clips.size} clips, #{alt.swaps_summary}."
   rescue AltVideo::NotReady => e
-    redirect_to music_video_path(@video), alert: "Not yet: #{e.message}.", status: :see_other
+    redirect_to video_path(@video), alert: "Not yet: #{e.message}.", status: :see_other
   end
 
   def show
@@ -39,14 +39,14 @@ class AltVideosController < ApplicationController
     ActiveRecord::Associations::Preloader.new(records: @performers, associations: :artist).call
     sign_files
     @sheets = Artifact.newest_character_sheets(@swaps.appearance_slugs)
-    @numbers = MusicVideos::ClipPrompts.numbers_for(@swaps)
+    @numbers = Videos::ClipPrompts.numbers_for(@swaps)
     @watch = helpers.alt_watch_data(@clips, @chunk_for, @urls)
-    @stitch_here = MusicVideos::Stitcher.available?
+    @stitch_here = Videos::Stitcher.available?
     # Chunks with people on screen and no lettered frames: the page's warning
     # and each such card's note. Read off the rows loaded above, no query.
     chunks = @chunk_for.values.compact
-    @frames_missing = MusicVideos::MissingReferences.chunks(chunks, @performers).to_set(&:ordinal)
-    @frames_warning = MusicVideos::MissingReferences.warning(@frames_missing.size, chunks.size)
+    @frames_missing = Videos::MissingReferences.chunks(chunks, @performers).to_set(&:ordinal)
+    @frames_warning = Videos::MissingReferences.warning(@frames_missing.size, chunks.size)
   end
 
   # The page's signed URLs again, by object key: `inline` plays or shows a file,
@@ -70,9 +70,9 @@ class AltVideosController < ApplicationController
   # The alt video with its stitches, its clips and each clip's source chunk.
   def load_alt_video(clips:)
     @alt_video = @video.alt_videos.includes(:stitches, clips:).find_by!(number: params[:number])
-    @alt_video.association(:music_video).target = @video
+    @alt_video.association(:video).target = @video
     @chunks = @video.video_chunks.to_a
-    @chunks.each { |chunk| chunk.association(:music_video).target = @video }
+    @chunks.each { |chunk| chunk.association(:video).target = @video }
     @clips = @alt_video.clips.to_a
     @clips.each { |clip| clip.association(:alt_video).target = @alt_video }
     @chunk_for = @clips.to_h { |clip| [clip.chunk_ordinal, clip.chunk_in(@chunks)] }
@@ -98,7 +98,7 @@ class AltVideosController < ApplicationController
   end
 
   def set_video
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
   end
 
   # key => signed URL, or nil when the store is not reachable (the card says so).

@@ -11,7 +11,7 @@
     <% end %>
     Its sheet adds shades, a chain, a watch, a bracelet, a grill and rings<%= " (#{pluralize(person.jewelries.size, 'jewelry record')})" if person.jewelries.any? %>.
   </p>
-<% elsif !look.music_video_look? %>
+<% elsif !look.video_look? %>
   <% if (twin = look.iced_twin) %>
     <p class="text-xs text-muted mt-2" data-test="twin-link">
       Iced twin:

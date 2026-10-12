@@ -217,14 +217,25 @@ Rails.application.routes.draw do
   # /assets — the object store as a folder tree (AssetsController, require_admin).
   # Query params only: Sprockets owns /assets/*, and cascades /assets itself here.
   get "assets", to: "assets#index", as: :asset_browser
-  # Music video pipeline: the cast panel (stage 2) and clips (stage 5), admin only.
+  # Video pipeline (music videos, cinematic videos, movie scenes): the cast panel
+  # (stage 2) and clips (stage 5), admin only.
   get "artists/search", to: "artists#search", as: :search_artists
   get "recast_athletes/search", to: "recast_athletes#search", as: :search_recast_athletes
   # One person's look dropdown rows, polled by a cast card while a sheet builds.
   get "recast_athletes/:slug/looks", to: "recast_athletes#looks", as: :recast_athlete_looks
   # Every alt video across every source, with its clip progress.
   get "alt_videos", to: "alt_videos#index", as: :alt_videos
-  resources :music_videos, only: [:index, :show], param: :slug do
+  # /music_videos/... was the section's path until 2026-10-12. Every old URL
+  # (bookmarks, chat links, TikTok-draft cards, return_to links) answers a
+  # redirect to the same path under /videos, query string kept: a 301 for a
+  # GET or HEAD, a 308 for any other verb so a stale tab's form keeps its
+  # method and body. The admin wall guards /videos itself, so a visitor learns
+  # nothing from the hop. test/integration/music_videos_redirect_test.rb.
+  legacy_videos = ->(_params, req) { req.fullpath.sub(%r{\A/music_videos(?=/|\?|\z)}, "/videos") }
+  get "music_videos(/*rest)", to: redirect(status: 301, &legacy_videos), format: false, as: nil
+  match "music_videos(/*rest)", to: redirect(status: 308, &legacy_videos), format: false, as: nil,
+                                via: %i[post patch put delete]
+  resources :videos, only: [:index, :show], param: :slug do
     post :confirm_cast, on: :member
     resources :performers, only: [:update], param: :ordinal, controller: "video_performers" do
       # Who replaces this performer: an athlete and a look, keep as is, or clear.
@@ -257,7 +268,7 @@ Rails.application.routes.draw do
       # its state as JSON for the page's progress poll.
       resources :stitches, only: [:create, :show], param: :number, controller: "alt_video_stitches"
     end
-    resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
+    resources :looks, only: [:create], param: :look_slug, controller: "video_looks" do
       post :sheet, on: :member
     end
   end
@@ -598,25 +609,33 @@ Rails.application.routes.draw do
       resources :athletes, only: [:index]
       # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5),
       # bin/clip-references (lettered frames) and bin/stitch-video (the final stitch).
-      resources :music_videos, only: [:show, :create], param: :slug do
-        post :performers, on: :member
-        post :clips, on: :member
-        # A chunk's lettered reference frames, as bin/clip-references --apply posts them.
-        resources :chunks, only: [], param: :ordinal do
-          resource :references, only: [:create], controller: "music_video_chunk_references"
-        end
-        # The final stitch of an alt video, as bin/stitch-video drives it: read
-        # the requests, open one, then report it started, finished or failed.
-        resources :alt_videos, only: [], param: :number do
-          resources :stitches, only: [:index, :create], param: :number, controller: "music_video_stitches" do
-            member do
-              post :start
-              post :finish
-              post :failed
+      # Drawn twice: /api/v1/videos is canonical, and /api/v1/music_videos (the
+      # path until 2026-10-12, which scripts installed before then still call)
+      # is an alias served by the same controllers. Not a redirect: a POST must
+      # not 301. Its helpers carry a legacy_ prefix nobody calls.
+      video_api = lambda do |path|
+        resources :videos, path:, only: [:show, :create], param: :slug do
+          post :performers, on: :member
+          post :clips, on: :member
+          # A chunk's lettered reference frames, as bin/clip-references --apply posts them.
+          resources :chunks, only: [], param: :ordinal do
+            resource :references, only: [:create], controller: "video_chunk_references"
+          end
+          # The final stitch of an alt video, as bin/stitch-video drives it: read
+          # the requests, open one, then report it started, finished or failed.
+          resources :alt_videos, only: [], param: :number do
+            resources :stitches, only: [:index, :create], param: :number, controller: "video_stitches" do
+              member do
+                post :start
+                post :finish
+                post :failed
+              end
             end
           end
         end
       end
+      video_api.call("videos")
+      scope(as: "legacy") { video_api.call("music_videos") }
       # The tiktok-draft SOP's chat door (piece 19), as bin/tiktok-draft drives it:
       # a clip by its slug, what a draft would send, its attempts, and the probe.
       resources :alt_video_clips, only: [], param: :slug do
