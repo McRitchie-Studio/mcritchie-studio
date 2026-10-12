@@ -19,9 +19,13 @@ mainnet). Mr. McRitchie set it on 2026-10-12, after mainnet Squad tx #7:
 The same day Xan told him "the upgrade proposal itself follows the same pattern:
 one click from you", and he answered "Cool let me know when the upgrade URL is
 ready" (chat, 2026-10-12, relayed in the `squad-vault-ops-sop` rework). Mainnet
-Squad #8, the v0.26 `Upgrade` of turf-vault, was the first upgrade queued this
-way: `7auwTL` created it, `7auwTL` and `4bKN` approved, and he approved from
-`7ZDJ` (read off chain 2026-10-12).
+Squad #8, the v0.26 `Upgrade` of turf-vault, was the first upgrade done this
+way. `7auwTL` created it, `7auwTL` and `4bKN` approved it, and he approved from
+`7ZDJ` and executed it himself at about 13:28 MDT on 2026-10-12. The program's
+last deploy is now slot 456161810, with a 707,600-byte program (sha256
+`3dfcb0c4…`), and `init_governance` followed at `5KqNaY9r…`, slot 456162765.
+The proposal status, deploy slot, size and `init_governance` signature were
+read off chain on 2026-10-12; the hash is as Xan reported it.
 
 **Callers.** [`program-upgrade`](program-upgrade.md) (rent floats for a buffer)
 and Turf Monster's [`collect-vault-revenue`](../../turf_monster/sops/collect-vault-revenue.md)

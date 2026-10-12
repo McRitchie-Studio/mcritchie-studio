@@ -106,7 +106,8 @@ so two programs' cards cannot collide.
   Mr. McRitchie approves from his own seat. An agent executes only after his
   approval is on chain. Mr. McRitchie set this on 2026-10-12 ("Cool let me know
   when the upgrade URL is ready"), and mainnet Squad #8 was the first upgrade
-  queued this way. Config transactions and any other instruction are not covered.
+  done this way: he executed it at about 13:28 MDT, landing v0.26 at slot
+  456161810, and `init_governance` followed at `5KqNaY9r…` (slot 456162765). Config transactions and any other instruction are not covered.
   Outside the exception, an agent runs only reads and dry runs on mainnet:
   `squad-upgrade.js` without `--send`, `squad-inventory.js`,
   `check-signer-slots.js`, `bin/program-drift`.
