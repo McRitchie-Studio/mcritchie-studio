@@ -62,9 +62,11 @@
           </div>
           <div class="min-w-0 space-y-2">
             <% if part == :icon && !@icon_from_kit && logo_icon_original? %>
-              <%# An original icon is the brand's own art: its colour edit needs Alt. The words' rows work here. %>
+              <%# An original icon is the brand's own art: its colour edit needs Alt, on the Icon tab, whose Save as default
+                  makes the kit icon every logo draws. Not ?icon_colouring=alt here: a kit choice saves no icon colouring,
+                  so Save as default would drop the Alt icon on reload (Carl's review zap). The words' rows work here. %>
               <p class="text-2xs text-secondary" data-test="edit-icon-original">The icon is the brand's original art, so its colour changes in Alt only.
-                <%= link_to "Recolour it in Alt", logo_brand_path(@logo.brand, logo_page_params(**(@type == :icon ? { colouring: :alt } : { icon_colouring: :alt }))),
+                <%= link_to (@type == :icon ? "Recolour it in Alt" : "Recolour it in Alt on the Icon tab"), logo_brand_path(@logo.brand, logo_page_params(type: :icon, colouring: :alt)),
                             class: "font-semibold text-primary hover:underline", data: { test: "edit-icon-in-alt" } %></p>
             <% elsif part == :icon && @icon_from_kit %>
               <%# The kit's icon, as the tab's logos draw it; its colour is changed on the Icon tab. %>

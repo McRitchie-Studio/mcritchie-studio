@@ -228,7 +228,8 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='edit-row'][data-part='ending'] input[type=radio][value='C8661F'][checked]"
     assert_select "[data-test='edit-icon-original']", /The icon is the brand's original art, so its colour changes in Alt only/
     alt = css_select("[data-test='edit-icon-in-alt']").first["href"]
-    assert_equal({ "icon_colouring" => "alt", "ending_colour" => "C8661F" }, query(alt), "the words stay Original; the icon goes to Alt")
+    # The Icon tab in Alt, where Save as default makes the kit icon; never ?icon_colouring=, which a kit choice cannot save.
+    assert_equal({ "type" => "icon", "colouring" => "alt", "ending_colour" => "C8661F" }, query(alt), "the icon is recoloured on the Icon tab")
     logo_srcs.each do |src|
       assert_equal "original", query(src)["colouring"], src
       assert_equal "C8661F", query(src)["ending_colour"], "the Original draws the word edit: #{src}"
