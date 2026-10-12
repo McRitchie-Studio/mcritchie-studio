@@ -3,7 +3,7 @@
 # THE BRAND KIT RECORD's writes (epic brand-studio, piece 3; task brand-kit-record), all from the logo gallery's
 # brand page (/logos/:brand, LogosController#show):
 #
-#   PATCH  /logos/:brand/kit/choice              save the tab's current Navbar or Stacked choice (?type=)
+#   PATCH  /logos/:brand/kit/choice              save the tab's current Icon, Navbar or Stacked choice (?type=)
 #   DELETE /logos/:brand/kit/choice              clear it: the brand shows its default again
 #   PATCH  /logos/:brand/kit                     the kit's notes
 #   POST   /logos/:brand/kit/originals           upload one or more original artwork files
@@ -49,7 +49,7 @@ class BrandKitsController < ApplicationController
   def clear_choice
     type = choice_type
     logged { @kit.clear_choice(type, by: who) } if @kit.persisted?
-    redirect_to back_to_page(anchor: "kit-choice"), notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. The brand shows its default again."
+    redirect_to back_to_page(anchor: "kit-choice"), notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. #{type == :icon ? 'Each logo draws its own icon again.' : 'The brand shows its default again.'}"
   end
 
   def update
@@ -111,8 +111,8 @@ class BrandKitsController < ApplicationController
 
   def choice_type
     type = params[:type].to_s
-    BrandKit::TYPES.find { |known| known.to_s == type } ||
-      raise(Logos::NavbarLogo::Error, "unknown type #{type.inspect}: a kit saves a navbar or a stacked choice")
+    BrandKit::CHOICE_TYPES.find { |known| known.to_s == type } ||
+      raise(Logos::NavbarLogo::Error, "unknown type #{type.inspect}: a kit saves an icon, a navbar or a stacked choice")
   end
 
   def who = current_user.email
