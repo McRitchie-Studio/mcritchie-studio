@@ -316,8 +316,12 @@ module ProgramDrift
   def board_lookup(api: nil)
     require_relative "agent_api"
     api ||= AgentApi.new(open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
-    token = api.token
+    token = nil
+    minted = false
     lambda do |slug|
+      # Minted on the first lookup, not up front: a run with no drift asks the board nothing.
+      token = api.token unless minted
+      minted = true
       next :unknown unless token
 
       res = api.http_get("/api/v1/tasks/#{slug}", bearer: token)

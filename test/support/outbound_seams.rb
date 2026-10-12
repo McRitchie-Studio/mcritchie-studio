@@ -155,6 +155,7 @@ module OutboundSeams
       "GIT_TERMINAL_PROMPT" => "0",
       "AGENT_WORKTREE_LSOF_BIN" => stub("port-lsof"),
       "AGENT_WORKTREE_CURL_BIN" => stub("port-curl"),
+      "PROGRAM_DRIFT_RPC_URL" => UNROUTABLE,
       "OUTBOUND_SEAM_LOG" => log_path,
       # THE SESSION-MARKER STORE, pinned for every child built from this env.
       #
