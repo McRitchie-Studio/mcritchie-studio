@@ -47,13 +47,15 @@ class BrandKitRoundTripTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The table draws one icon per row (task kit-icon-atomic-unit): with no kit icon saved, the brand's own (Industries'
+  # Original), so an Alt choice is drawn there with the Original icon; the kit card draws it exactly as saved.
   test "a saved navbar choice with no edits draws byte for byte the logo the page draws, in every baked tone" do
     BrandKit.for("industries").save_choice(:navbar, ActionController::Parameters.new(rule: "6", text: "first"), by: "alex@test.com")
     index, card = saved_srcs("industries", :navbar)
     logo = Logos::NavbarLogo.new("industries")
     Logos::NavbarLogo::BAKED.each_with_index do |tone, at|
-      assert_equal logo.svg(rule: 6, text: :first, tone:), svg_at(index.fetch(at)), tone
-      assert_equal index.fetch(at), card.fetch(at)
+      assert_equal logo.svg(rule: 6, text: :first, tone:, icon_colouring: :original), svg_at(index.fetch(at)), tone
+      assert_equal logo.svg(rule: 6, text: :first, tone:), svg_at(card.fetch(at)), tone
     end
     refute_match(/custom/, index.join, "an unedited choice's file is not named custom")
   end

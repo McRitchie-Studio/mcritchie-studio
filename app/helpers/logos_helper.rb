@@ -17,11 +17,13 @@ module LogosHelper
   #
   # A brand page's defaults are its kit's saved choices (task logo-original-and-alt, item 9; LogoBrandPage): a rule,
   # form or set of edits equal to the page's default is left out, so a link never pins a setting the next tab would
-  # read from its own saved choice.
+  # read from its own saved choice. The page's own ?icon_colouring= (task kit-icon-atomic-unit: exploring an icon other
+  # than the kit's) is carried as asked.
   def logo_page_params(**changes)
     defaults = @defaults || {}
     edits = (@edits unless @edits.nil? || @edits == defaults.fetch(:edits, Logos::NavbarLogo::NO_EDITS))
     { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), colouring: @colouring_param,
+      icon_colouring: @icon_colouring_param,
       rule: (@rule unless @rule == defaults.fetch(:rule, 4)),
       form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)), guides: (1 if @guides) }
       .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
@@ -37,12 +39,16 @@ module LogosHelper
   def logo_default_colouring(logo) = logo.original? ? :original : :alt
 
   # The page params with no edits: the edit panel's Reset, and the hidden fields of its own form (which sends its own).
-  def logo_unedited_params = logo_page_params.except(*Logos::Variant::EDIT_PARAMS.keys)
+  # On the Icon tab, whose only edit is the icon's colour, the word edits other tabs carry are kept for the way back.
+  def logo_unedited_params = logo_page_params.except(*(@type == :icon ? %i[icon_colour] : Logos::Variant::EDIT_PARAMS.keys))
 
   # The edit panel's rows (logos/_edit_panel): each part this tab's logos show, with what it is called, the words it
-  # draws, and the settings it takes. The tagline only on the Stacked Logo's tagline form.
+  # draws, and the settings it takes. The tagline only on the Stacked Logo's tagline form; the Icon tab, the icon alone.
   def logo_edit_rows
-    rows = [{ part: :icon, label: "Icon", settings: %i[colour] },
+    rows = [{ part: :icon, label: "Icon", settings: %i[colour] }]
+    return rows if @type == :icon
+
+    rows += [
             { part: :first, label: "First word", word: @logo.words.first, settings: %i[colour weight] },
             { part: :ending, label: "Ending", word: @logo.words.last, settings: %i[colour weight] }]
     rows << { part: :tagline, label: "Tagline", word: @logo.tagline, settings: %i[colour weight visible] } if @type == :stacked && @form == :tagline
@@ -84,12 +90,16 @@ module LogosHelper
   # A Navbar or Stacked choice in words, as the kit saves it (BrandKit): "rule of 4, second word leads, as styled",
   # "with tagline, first word leads, first word Deep Violet 300 Light; tagline hidden".
   # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original shows no
-  # edits, so it says none.
+  # edits, so it says none. An Icon choice is its colouring and its colour ("alt colouring, icon Deep Violet"); a logo
+  # drawing an icon of its own colouring says so ("original icon": the kit's, task kit-icon-atomic-unit).
   def logo_choice_summary(variant)
-    shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
     colouring = ("#{Logos::Variant::COLOURINGS.fetch(variant.colouring).downcase} colouring" if variant.logo.original?)
-    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original?)
-    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, colouring, edits].compact.join(", ")
+    icon = ("#{Logos::Variant::COLOURINGS.fetch(variant.icon_colouring).downcase} icon" if variant.own_icon?)
+    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original? && variant.icon_colouring == :original)
+    return [colouring, edits].compact.join(", ") if variant.type == :icon
+
+    shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
+    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, colouring, icon, edits].compact.join(", ")
   end
 
   # Checked edits in words, by part, the colours by their palette names; "as styled" for none.
@@ -122,12 +132,12 @@ module LogosHelper
   end
 
   # "Kit: saved Oct 11, 2026 by Alex McRitchie" or "Kit: not saved yet", then " · originals: 2" when it holds any. A
-  # kit is saved once it holds a saved Navbar or Stacked choice: a record left with neither (a cleared choice, only
+  # kit is saved once it holds a saved Icon, Navbar or Stacked choice: a record left with none (a cleared choice, only
   # originals or notes) is not saved yet (task logo-gallery-polish-pass, item 4). The saver is named by their user
   # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
   # for the title attribute of a status cut short.
   def logo_kit_status(kit, savers = {}, full: false)
-    saved = kit&.persisted? && BrandKit::TYPES.any? { |type| kit.saved?(type) }
+    saved = kit&.persisted? && BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }
     status = saved ? ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
     originals = kit&.persisted? ? kit.originals_attachments.size : 0
     originals.positive? ? "#{status} · originals: #{originals}" : status
@@ -143,25 +153,27 @@ module LogosHelper
   # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page
   # settings the redirect brings back (guides, context). The text version is the form's own select.
   def logo_kit_save_fields
-    choice = @type == :stacked ? { form: @form } : { rule: @rule }
+    choice = { icon: {}, stacked: { form: @form } }.fetch(@type) { { rule: @rule } }
     { type: @type }.merge(choice).merge(Logos::Variant.edit_params(@edits)).merge(logo_page_params.slice(:guides, :context))
                    .merge(colouring: @colouring)
   end
 
   # The brand page's params that open a kit choice on its own tab: its rule or form and its edits (less the page's
-  # defaults), in the page's context.
-  def logo_kit_tab_params(variant)
-    shape = if variant.type == :stacked
-              { type: :stacked, form: (variant.form unless variant.form == variant.logo.form) }
-            else
-              { rule: (variant.rule unless variant.rule == 4) }
+  # defaults), in the page's context. A logo drawing the kit's icon (`kit_icon`) leaves the icon's edit out: its tab
+  # draws the kit's icon of itself.
+  def logo_kit_tab_params(variant, kit_icon: false)
+    shape = case variant.type
+            when :icon then { type: :icon }
+            when :stacked then { type: :stacked, form: (variant.form unless variant.form == variant.logo.form) }
+            else { rule: (variant.rule unless variant.rule == 4) }
             end
     colouring = (variant.colouring unless variant.colouring == logo_default_colouring(variant.logo))
-    shape.merge(Logos::Variant.edit_params(variant.edits)).merge(logo_page_params.slice(:context)).merge(colouring:).compact
+    edits = kit_icon && variant.type != :icon ? variant.edits.except(:icon) : variant.edits
+    shape.merge(Logos::Variant.edit_params(edits)).merge(logo_page_params.slice(:context)).merge(colouring:).compact
   end
 
-  # How tall the kit card's Navbar and Stacked logos are, in px.
-  LOGO_KIT_HEIGHTS = { navbar: 48, stacked: 140 }.freeze
+  # How tall the kit card's Icon, Navbar and Stacked logos are, in px.
+  LOGO_KIT_HEIGHTS = { icon: 64, navbar: 48, stacked: 140 }.freeze
 
   # The palette swatch a hex names ("Deep Violet").
   def logo_swatch_name(kit, hex) = kit.palette.find { |swatch| swatch.hex.casecmp?(hex) }&.name || hex
@@ -191,7 +203,7 @@ module LogosHelper
   # A brand page's one-line account of the type being shown (a Stacked Logo's in the form shown).
   def logo_type_sentence(logo, type, rule, form = nil)
     case type
-    when :icon then "The icon alone, as this brand's logos draw it."
+    when :icon then "The icon alone: the kit's atomic unit. Save it as default here and every Navbar and Stacked Logo draws it."
     when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
     else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
     end

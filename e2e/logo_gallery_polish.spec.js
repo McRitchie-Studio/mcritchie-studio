@@ -90,12 +90,14 @@ test("at 1280 a saved kit's status stays on one line and no brand's logo tiles w
   }
 });
 
-test("at 1280 the Kit card's two button rows line up", async ({ page }) => {
+test("at 1280 the Kit card's button rows line up", async ({ page }) => {
   await open(page, "/logos/welding_v2?type=stacked");
   const rows = page.locator("[data-test='kit-card'] [data-test='kit-pick-actions']");
-  await expect(rows).toHaveCount(2);
-  const [navbar, stacked] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox()];
+  // Three picks since task kit-icon-atomic-unit: the Icon, the Navbar and the Stacked Logo.
+  await expect(rows).toHaveCount(3);
+  const [icon, navbar, stacked] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox(), await rows.nth(2).boundingBox()];
   expect(Math.abs(navbar.y - stacked.y)).toBeLessThan(1);
+  expect(Math.abs(icon.y - stacked.y)).toBeLessThan(1);
 });
 
 test("Copy SVG fetches the logo from its own URL on click, puts it on the clipboard and says Copied", async ({ page, context }) => {

@@ -4,9 +4,12 @@
     type (BrandKitsController#save_choice; BrandKit reads it through the same
     parser as the page's URL). The select starts on the saved text version, else
     the brand's default. Clear saved choice puts the brand back on its default.
-    Plain forms, no JavaScript; a refusal is a plain 422. Locals: kit_record
-    (the brand's BrandKit, saved or not). %>
+    Plain forms, no JavaScript; a refusal is a plain 422. On the Icon tab it
+    saves the icon's colouring and colour as the kit's icon, which every Navbar
+    and Stacked Logo then draws (task kit-icon-atomic-unit); an icon has no text
+    version. Locals: kit_record (the brand's BrandKit, saved or not). %>
 <% type_name = Logos::Variant::TYPES.fetch(@type) %>
+<% icon = @type == :icon %>
 <% saved = begin
      kit_record.variant(@type) if kit_record.saved?(@type)
    rescue Logos::NavbarLogo::Error => e
@@ -20,9 +23,13 @@
     <% if saved.is_a?(Logos::NavbarLogo::Error) %>
       The saved <%= type_name %> can no longer be drawn, so the brand shows its default: <%= saved.message %>
     <% elsif saved %>
-      Saved <%= type_name %>: <span class="font-semibold text-heading"><%= logo_choice_summary(saved) %></span>.
+      Saved <%= type_name %>: <span class="font-semibold text-heading"><%= logo_choice_summary(saved).presence || "as styled" %></span>.
     <% else %>
-      No <%= type_name %> saved yet: the brand shows its default, <%= logo_choice_summary(BrandKit.new(brand: @logo.brand).variant(@type)) %>.
+      <% if icon %>
+        No Icon saved yet: each logo draws its own icon, in its own colouring.
+      <% else %>
+        No <%= type_name %> saved yet: the brand shows its default, <%= logo_choice_summary(BrandKit.new(brand: @logo.brand).variant(@type)) %>.
+      <% end %>
     <% end %>
   </p>
   <% if (stale = logo_stale_edits_sentence(kit_record, @type)) %>
@@ -34,14 +41,20 @@
     <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "flex flex-wrap items-center gap-2",
                   data: { test: "kit-save-form", turbo: false } do %>
       <% logo_kit_save_fields.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
-      <label class="inline-flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-muted">
-        Text
-        <%= select_tag :text, options_for_select(Logos::Variant::TEXTS.map { |text, label| [label, text] }, kit_record.default_text(@type)),
-                       id: nil, class: field, autocomplete: "off", data: { test: "kit-save-text" } %>
-      </label>
+      <% unless icon %>
+        <label class="inline-flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-muted">
+          Text
+          <%= select_tag :text, options_for_select(Logos::Variant::TEXTS.map { |text, label| [label, text] }, kit_record.default_text(@type)),
+                         id: nil, class: field, autocomplete: "off", data: { test: "kit-save-text" } %>
+        </label>
+      <% end %>
       <%= submit_tag "Save as kit choice", name: nil, class: "btn btn-sm btn-primary #{ring}", data: { test: "kit-save", disable_with: false } %>
     <% end %>
-    <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form" : "rule" %>, colouring and edits, with the text version picked here, as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
+    <% if icon %>
+      <p class="text-2xs text-muted">Saves this tab's colouring and icon colour as the brand's Icon: every Navbar and Stacked Logo draws it, in the table and on their tabs.</p>
+    <% else %>
+      <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form" : "rule" %>, colouring and edits, with the text version picked here, as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
+    <% end %>
   <% end %>
   <% if kit_record.saved?(@type) %>
     <%= button_to "Clear saved choice", brand_kit_choice_path(@logo.brand), method: :delete, params: logo_kit_save_fields,

@@ -9,7 +9,10 @@ module Logos
   # COLOURING (task logo-original-and-alt): Original, the brand's own art, or
   # Alt, one solid colour per part; a watermark has neither (it is one colour),
   # and a brand with no original draws Alt only. A page's CONTEXT
-  # is the one tone every logo on it is shown in. It turns request strings
+  # is the one tone every logo on it is shown in. THE ICON IS AN ATOMIC UNIT
+  # (task kit-icon-atomic-unit): a Navbar or Stacked Logo's icon may take a
+  # colouring of its own (`icon_colouring`, the brand kit's icon), and then
+  # `colouring` governs the words alone; left out, the icon takes the words'. It turns request strings
   # into the library's arguments, refuses anything it does not know with
   # Logos::NavbarLogo::Error, and gives the logo its words: an accessible
   # label and a download filename. Nothing here draws; NavbarLogo and
@@ -17,7 +20,8 @@ module Logos
   # (the app autoloads all three).
   class Variant
     TYPES = { icon: "Icon", navbar: "Navbar Logo", stacked: "Stacked Logo" }.freeze
-    CHOICES = { icon: %i[tone colouring], navbar: %i[rule text tone colouring guides], stacked: %i[form text tone colouring guides] }.freeze
+    CHOICES = { icon: %i[tone colouring], navbar: %i[rule text tone colouring icon_colouring guides],
+                stacked: %i[form text tone colouring icon_colouring guides] }.freeze
     COLOURINGS = { original: "Original", alt: "Alt" }.freeze
     # The Stacked Logo's forms, as the Form control names them; a brand offers only its own (StackedLogo#forms).
     FORMS = { two_line: "Two lines", one_line: "One line", tagline: "With tagline" }.freeze
@@ -48,20 +52,23 @@ module Logos
     EDIT_PARAMS = { icon_colour: %i[icon colour], first_colour: %i[first colour], first_weight: %i[first weight],
                     ending_colour: %i[ending colour], ending_weight: %i[ending weight], tagline_colour: %i[tagline colour],
                     tagline_weight: %i[tagline weight], tagline_visible: %i[tagline visible] }.freeze
-    # The parts each type's logo shows an edit on (the icon tab has none); the tagline only in the tagline form.
-    EDITED_PARTS = { icon: [], navbar: %i[icon first ending], stacked: %i[icon first ending tagline] }.freeze
+    # The parts each type's logo shows an edit on (the icon its own colour: the kit icon's, task kit-icon-atomic-unit);
+    # the tagline only in the tagline form.
+    EDITED_PARTS = { icon: %i[icon], navbar: %i[icon first ending], stacked: %i[icon first ending tagline] }.freeze
+    WORD_PARTS = %i[first ending tagline].freeze
 
-    attr_reader :logo, :type, :rule, :form, :text, :tone, :colouring, :guides, :edits
+    attr_reader :logo, :type, :rule, :form, :text, :tone, :colouring, :icon_colouring, :guides, :edits
 
     # The library object that draws a brand's logos of one type.
     def self.logo(brand, type = :navbar) = (type == :stacked ? StackedLogo : NavbarLogo).new(brand)
 
     # A brand page's logos of one type in one tone: the icon, or the three text versions (a Navbar Logo's on `rule`),
     # every one with the same edits.
-    def self.all(logo, type: :navbar, rule: 4, form: nil, tone: :light, colouring: :alt, guides: false, edits: NavbarLogo::NO_EDITS)
-      return [new(logo, type:, tone:, colouring:)] if type == :icon
+    # every one with the same edits. `icon_colouring` is the icon's own colouring (nil: the words').
+    def self.all(logo, type: :navbar, rule: 4, form: nil, tone: :light, colouring: :alt, icon_colouring: nil, guides: false, edits: NavbarLogo::NO_EDITS)
+      return [new(logo, type:, tone:, colouring:, edits:)] if type == :icon
 
-      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, text:, tone:, colouring:, guides:, edits:) }
+      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, text:, tone:, colouring:, icon_colouring:, guides:, edits:) }
     end
 
     # The edit params (EDIT_PARAMS) as the library's edits, unchecked: the logo checks them (NavbarLogo#checked_edits).
@@ -128,6 +135,7 @@ module Logos
         text: -> { pick(params[:text], TEXTS.keys.to_h { |text| [text.to_s, text] }, :homogeneous, "text") },
         tone: -> { pick(params[:tone], tones_by_name, :light, "tone") },
         colouring: -> { colouring(params[:colouring]) || :alt },
+        icon_colouring: -> { colouring(params[:icon_colouring]) },
         guides: -> { flag(params[:guides], "guides") }
       }
       new(logo, type:, edits: edits(params), **CHOICES.fetch(type).to_h { |choice| [choice, read.fetch(choice).call] })
@@ -142,8 +150,10 @@ module Logos
 
     # A choice the type does not take is dropped, so two variants that draw the same thing are named the same. So is an
     # edit the logo does not show (#shown_edits): every edit is checked first all the same.
-    # An Original of a brand with none is refused; a watermark's colouring is always Alt (it is one colour).
-    def initialize(logo, type: :navbar, rule: 3, form: nil, text: :homogeneous, tone: :light, colouring: :alt, guides: false, edits: NavbarLogo::NO_EDITS)
+    # An Original of a brand with none is refused; a watermark's colouring is always Alt (it is one colour). The icon's
+    # colouring is the words' unless given (an icon's is its colouring).
+    def initialize(logo, type: :navbar, rule: 3, form: nil, text: :homogeneous, tone: :light, colouring: :alt, icon_colouring: nil, guides: false,
+                   edits: NavbarLogo::NO_EDITS)
       choices = CHOICES.fetch(type) { raise NavbarLogo::Error, "unknown type #{type.inspect}: expected one of #{TYPES.keys.join(', ')}" }
       raise ArgumentError, "a #{type} variant of #{logo.brand} was given a #{logo.class}" unless logo.is_a?(StackedLogo) == (type == :stacked)
 
@@ -151,6 +161,7 @@ module Logos
       @type = type
       @tone = tone
       @colouring = tone == :watermark ? :alt : checked_colouring(colouring)
+      @icon_colouring = icon_colouring.nil? || tone == :watermark || !choices.include?(:icon_colouring) ? @colouring : checked_colouring(icon_colouring)
       @rule = rule if choices.include?(:rule)
       @form = form || logo.form if choices.include?(:form)
       @text = text if choices.include?(:text)
@@ -160,42 +171,54 @@ module Logos
 
     def svg
       @svg ||= case type
-               when :icon then logo.icon_svg(tone:, colouring:)
-               when :navbar then logo.svg(rule:, text:, tone:, guides:, edits:, colouring:)
-               else logo.svg(form:, text:, tone:, guides:, edits:, colouring:)
+               when :icon then logo.icon_svg(tone:, colouring:, edits:)
+               when :navbar then logo.svg(rule:, text:, tone:, guides:, edits:, colouring:, **own_icon)
+               else logo.svg(form:, text:, tone:, guides:, edits:, colouring:, **own_icon)
                end
     end
 
     def edited? = edits.any?
     def original? = colouring == :original
+    # True when the icon is drawn in a colouring of its own, not the words' (the kit icon's).
+    def own_icon? = icon_colouring != colouring
 
     # A guide drawing's own measures, in its design units: how wide the drawing is and how tall its labels are.
     def guide_width = svg[/viewBox="\S+ \S+ (\S+) /, 1].to_f
     def guide_font = logo.guide_font(rule)
 
-    # The type's own choices, as its SVG route's params. Alt is the route's default, so only an Original says its colouring.
+    # The type's own choices, as its SVG route's params. Alt is the route's default, so only an Original says its colouring;
+    # the icon says its own only when it is not the words'.
     def params
-      { rule:, form:, text:, tone:, colouring: (colouring if original?), guides: guides ? 1 : 0 }.compact.slice(*CHOICES.fetch(type))
+      { rule:, form:, text:, tone:, colouring: (colouring if original?), icon_colouring: (icon_colouring if own_icon?), guides: guides ? 1 : 0 }
+        .compact.slice(*CHOICES.fetch(type))
                                                                                                   .merge(self.class.edit_params(edits))
     end
 
     # An edited logo's file says so: studio-stacked-tagline-first-light-custom.svg; an Original's says that:
-    # welding-navbar-rule3-first-dark-original.svg.
+    # welding-navbar-rule3-first-dark-original.svg; an icon of its own says its colouring: …-light-icon-original.svg.
     def filename
-      [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("original" if original?), ("guides" if guides),
+      [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), text, tone, ("original" if original?), ("icon-#{icon_colouring}" if own_icon?),
+       ("guides" if guides),
        ("custom" if edited?)].compact.join("-") + ".svg"
     end
 
     private
 
-    # The edits this logo shows: none on the icon, a watermark (one colour by definition) or an original (the brand's own
-    # art), and the tagline's only in the tagline form.
+    # The edits this logo shows: none on a watermark (one colour by definition); none on an original's part (the brand's
+    # own art): the words' edits follow the words' colouring, the icon's colour its own; and the tagline's only in the
+    # tagline form.
     def shown_edits(checked)
-      return NavbarLogo::NO_EDITS if tone == :watermark || original?
+      return NavbarLogo::NO_EDITS if tone == :watermark
 
       parts = EDITED_PARTS.fetch(type) - (form == :tagline ? [] : %i[tagline])
-      checked.slice(*parts).freeze
+      parts -= WORD_PARTS if original?
+      parts -= %i[icon] if icon_colouring == :original
+      parts.empty? ? NavbarLogo::NO_EDITS : checked.slice(*parts).freeze
     end
+
+    # The icon's own colouring as the library takes it, only when it is not the words' (so a drawing without one is
+    # called exactly as before).
+    def own_icon = own_icon? ? { icon_colouring: } : {}
 
     public
 
@@ -213,7 +236,8 @@ module Logos
     def label
       ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), form_words,
        (TEXTS.fetch(text).downcase if text),
-       tone.to_s, colouring_words, ("construction guides" if guides), ("edited" if edited?)].compact.join(", ")
+       tone.to_s, colouring_words, ("#{COLOURINGS.fetch(icon_colouring).downcase} icon" if own_icon?), ("construction guides" if guides),
+       ("edited" if edited?)].compact.join(", ")
     end
 
     private

@@ -81,9 +81,9 @@ module Logos
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, colouring: :alt, **unknown)
-      check_keywords(unknown, "text, tone, form, edits and colouring")
-      look = look(tone, colouring)
+    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, edits, colouring and icon_colouring")
+      look = look(tone, icon_colouring || colouring)   # the icon's: only the icon's width depends on the look
       check_text(text)
       check_form(form)
       edits = checked_edits(edits)
@@ -110,12 +110,13 @@ module Logos
                  edges:, letters: placed, line:, line_width:)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, colouring: :alt, **unknown)
-      check_keywords(unknown, "text, tone, form, guides, edits and colouring")
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, guides, edits, colouring and icon_colouring")
       look = look(tone, colouring)
-      edits = edits_in(look, edits)
-      box = layout(text:, tone:, form:, edits:, colouring:)
-      render(box, box.height, text, look, guides, edits)
+      icon_look = look(tone, icon_colouring || colouring)
+      edits = edits_in(look, edits, icon_look)
+      box = layout(text:, tone:, form:, edits:, colouring:, icon_colouring:)
+      render(box, box.height, text, look, guides, edits, icon_look)
     end
 
     private
@@ -188,7 +189,7 @@ module Logos
 
     # [each icon layer role's fill, [first word's, second word's, the tagline's fill]]: the tagline is quiet, unless
     # its colour is edited.
-    def fills(look, text, edits = NO_EDITS)
+    def fills(look, text, edits = NO_EDITS, icon_look = look)
       icon, colours = super
       return [icon, colours + [@watermark["fill"]]] if look == :watermark
 
@@ -205,21 +206,21 @@ module Logos
       wide
     end
 
-    def drawing(box, look, icon_fills, colours)
-      icon = icon_markup(@icons.fetch(look), icon_fills, box.icon_height)
+    def drawing(box, icon_look, icon_fills, colours)
+      icon = icon_markup(@icons.fetch(icon_look), icon_fills, box.icon_height)
       %(<g transform="translate(#{f(box.icon_left)},0)">#{icon}</g>) +
         box.letters.map { |l| letter_markup(l, l[:baseline], l[:cap], colours[l[:word]]) }.join
     end
 
     # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
     # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the turned line's bracket.
-    def render(box, height, text, look, guides, edits = NO_EDITS)
+    def render(box, height, text, look, guides, edits = NO_EDITS, icon_look = look)
       return super unless guides
 
-      body = toned(look, drawing(box, look, *fills(look, text, edits)))
+      body = toned(look, drawing(box, icon_look, *fills(look, text, edits, icon_look)))
       ghosts = ghost_group(look, ruler_markup(box, ghost_fill(look)) + proof_markup(box, ghost_fill(look)))
       left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
-      document(with_defs(look, body + ghosts + line_group(guide_markup(box))), box.width, height, **GUIDE_PAD, left:,
+      document(with_defs(def_look(look, icon_look), body + ghosts + line_group(guide_markup(box))), box.width, height, **GUIDE_PAD, left:,
                right: ruler_right(box) - box.width + GUIDE_PAD[:right])
     end
 

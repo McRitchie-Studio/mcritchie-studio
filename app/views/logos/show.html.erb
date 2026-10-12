@@ -10,9 +10,12 @@
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
     others' settings, the edit panel's edits among them (logos/_edit_panel, on
-    the Navbar and Stacked tabs). The kit record (BrandKit) saves a Navbar and a
-    Stacked choice (logos/_kit_choice) and shows them on every tab
-    (logos/_kit_card). Admin only (LogosController, BrandKitsController). %>
+    the Navbar and Stacked tabs; the Icon tab's is the icon's colour alone). The
+    kit record (BrandKit) saves an Icon, a Navbar and a Stacked choice
+    (logos/_kit_choice) and shows them on every tab (logos/_kit_card). The
+    Icon is the kit's atomic unit (task kit-icon-atomic-unit): once saved, the
+    Navbar and Stacked tabs draw it, and their Colouring sets the words.
+    Admin only (LogosController, BrandKitsController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
@@ -46,49 +49,55 @@
       <% end %>
     </nav>
 
-    <% unless @type == :icon %>
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-test="logo-controls">
-        <% if @type == :navbar %>
-          <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Rule" data-test="rule-control">
-            <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Rule</span>
-            <% Logos::Variant::RULES.each do |rule, label| %>
-              <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(rule: (rule unless rule == @defaults[:rule]))),
-                          class: chosen.(rule == @rule), aria: { current: ("true" if rule == @rule) }, data: { test: "rule-option", rule: rule } %>
-            <% end %>
-          </div>
-        <% end %>
-        <% if @type == :stacked %>
-          <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Form" data-test="form-control">
-            <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Form</span>
-            <% @logo.forms.each do |form| %>
-              <%= link_to Logos::Variant::FORMS.fetch(form), logo_brand_path(@logo.brand, logo_page_params(form: (form unless form == @defaults[:form]))),
-                          class: chosen.(form == @form), aria: { current: ("true" if form == @form) }, data: { test: "form-option", form: form } %>
-            <% end %>
-          </div>
-        <% end %>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-test="logo-controls">
+      <% if @type == :navbar %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Rule" data-test="rule-control">
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Rule</span>
+          <% Logos::Variant::RULES.each do |rule, label| %>
+            <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(rule: (rule unless rule == @defaults[:rule]))),
+                        class: chosen.(rule == @rule), aria: { current: ("true" if rule == @rule) }, data: { test: "rule-option", rule: rule } %>
+          <% end %>
+        </div>
+      <% end %>
+      <% if @type == :stacked %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Form" data-test="form-control">
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Form</span>
+          <% @logo.forms.each do |form| %>
+            <%= link_to Logos::Variant::FORMS.fetch(form), logo_brand_path(@logo.brand, logo_page_params(form: (form unless form == @defaults[:form]))),
+                        class: chosen.(form == @form), aria: { current: ("true" if form == @form) }, data: { test: "form-option", form: form } %>
+          <% end %>
+        </div>
+      <% end %>
+      <% unless @type == :icon %>
         <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
                     class: chosen.(@guides), data: { test: "guides-toggle" } %>
-        <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, colouring and edits, with the
-            text version the kit already has (the Kit choice card below picks another, or clears it), become the
-            brand's kit choice, which this tab then opens on. A plain form, no JavaScript. %>
-        <% unless @edit_refusal %>
-          <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "contents", data: { test: "kit-save-default-form", turbo: false } do %>
-            <% logo_kit_save_fields.merge(text: @kit_record.default_text(@type), return: "top").each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
-            <%= submit_tag "Save as default", name: nil, class: chosen.(false), disabled: @kit_default_shown,
-                           data: { test: "kit-save-default", disable_with: false }, title: ("This is the kit default already" if @kit_default_shown) %>
-          <% end %>
+      <% end %>
+      <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, colouring and edits, with the
+          text version the kit already has (the Kit choice card below picks another, or clears it), become the
+          brand's kit choice, which this tab then opens on. On the Icon tab, its colouring and colour become the kit's
+          icon, which every Navbar and Stacked Logo draws (task kit-icon-atomic-unit). A plain form, no JavaScript. %>
+      <% unless @edit_refusal %>
+        <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "contents", data: { test: "kit-save-default-form", turbo: false } do %>
+          <% logo_kit_save_fields.merge(text: @kit_record.default_text(@type), return: "top").compact.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+          <%= submit_tag "Save as default", name: nil, class: chosen.(false), disabled: @kit_default_shown,
+                         data: { test: "kit-save-default", disable_with: false }, title: ("This is the kit default already" if @kit_default_shown) %>
         <% end %>
-      </div>
-      <%# Which defaults the tab is on: its kit's saved choice, changed from it, or the built-in style (none saved). %>
-      <p class="text-2xs text-muted" data-test="kit-default-state" data-state="<%= @kit_default ? (@kit_default_shown ? 'shown' : 'changed') : 'none' %>">
-        <% if @kit_default_shown %>
-          Showing the kit default.
-        <% elsif @kit_default %>
-          Changed from the kit default · <%= link_to "Back to kit default", logo_tab_default_path, class: "font-semibold text-primary hover:underline", data: { test: "kit-default-back" } %>
-        <% else %>
-          No kit default saved for this type: showing the brand's style. Save as default to open this tab on what you pick.
-        <% end %>
-      </p>
+      <% end %>
+    </div>
+    <%# Which defaults the tab is on: its kit's saved choice, changed from it, or the built-in style (none saved). %>
+    <p class="text-2xs text-muted" data-test="kit-default-state" data-state="<%= @kit_default ? (@kit_default_shown ? 'shown' : 'changed') : 'none' %>">
+      <% if @kit_default_shown %>
+        Showing the kit default.
+      <% elsif @kit_default %>
+        Changed from the kit default · <%= link_to "Back to kit default", logo_tab_default_path, class: "font-semibold text-primary hover:underline", data: { test: "kit-default-back" } %>
+      <% else %>
+        No kit default saved for this type: showing the brand's style. Save as default to open this tab on what you pick.
+      <% end %>
+    </p>
+    <% if @icon_from_kit %>
+      <p class="text-2xs text-muted" data-test="kit-icon-note">The icon is the kit's (<%= logo_choice_summary(@kit_icon).presence || "as styled" %>), so Colouring here sets the words. Change the icon on the <%= link_to "Icon tab", logo_brand_path(@logo.brand, logo_page_params(type: :icon)), class: "font-semibold text-primary hover:underline", data: { test: "kit-icon-tab" } %>.</p>
+    <% elsif @kit_icon && @icon_overridden %>
+      <p class="text-2xs text-muted" data-test="kit-icon-note">This tab is exploring an icon other than the kit's. <%= link_to "Back to the kit icon", logo_brand_path(@logo.brand, logo_page_params(icon_colouring: nil).except(:icon_colour)), class: "font-semibold text-primary hover:underline", data: { test: "kit-icon-back" } %></p>
     <% end %>
 
     <p class="text-sm text-secondary" data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule, (@form if @type == :stacked)) %></p>
@@ -107,7 +116,7 @@
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
-    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as default. Each tab then opens on it.</p>
+    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Icon, one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as default. Each tab then opens on it, and every logo draws the kit's icon.</p>
     <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
@@ -160,10 +169,11 @@
     </div>
   </section>
 
-  <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits. %>
-  <%= render "logos/edit_panel", kit: @kit unless @type == :icon %>
+  <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits; the
+      Icon tab's icon colour. %>
+  <%= render "logos/edit_panel", kit: @kit %>
   <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
-  <%= render "logos/kit_choice", kit_record: @kit_record unless @type == :icon %>
+  <%= render "logos/kit_choice", kit_record: @kit_record %>
   <%= render "logos/kit_card", kit_record: @kit_record %>
   <%= render "logos/kit_originals", kit_record: @kit_record %>
 

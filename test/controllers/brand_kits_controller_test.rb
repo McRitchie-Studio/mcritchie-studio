@@ -32,8 +32,12 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "type" => "stacked", "form" => "tagline", "tagline_visible" => "0", "colouring" => "alt" }, fields)
     assert_equal "first", css_select("select[name=text] option[selected]").first["value"]
 
-    get logo_brand_path("studio", type: "icon")
-    assert_select "[data-test='kit-choice']", count: 0
+    # The Icon tab saves the kit's icon (task kit-icon-atomic-unit): its colouring and colour, no text version.
+    get logo_brand_path("studio", type: "icon", icon_colour: "635BB2", first_colour: "8E82FE")
+    fields = form_fields(css_select("form[data-test='kit-save-form']").first).except("_method", "authenticity_token")
+    assert_equal({ "type" => "icon", "icon_colour" => "635BB2", "first_colour" => "8E82FE", "colouring" => "alt" }, fields, "the model keeps the icon's colour alone")
+    assert_select "select[name=text]", count: 0
+    assert_select "[data-test='kit-choice-saved']", /No Icon saved yet: each logo draws its own icon/
     assert_select "[data-test='kit-card']", 1
   end
 
@@ -91,7 +95,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
       { type: "navbar", rule: "9", text: "first" } => /unknown rule "9"/,
       { type: "navbar", rule: "4" } => /needs a rule and a text/,
       { type: "stacked", form: "tagline", text: "first" }.merge(brand: "turf") => /unknown form "tagline"/,
-      { type: "icon", text: "first" } => /unknown type "icon"/,
+      { type: "logo", text: "first" } => /unknown type "logo"/,
       { type: "navbar", rule: "4", text: "first", first_weight: "<b>" } => /unknown first_weight/
     }.each do |given, message|
       patch brand_kit_choice_path(given.delete(:brand) || "studio"), params: given
@@ -343,7 +347,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     get logo_brand_path("industries")
     picks = css_select("[data-test='kit-pick']")
-    assert_equal [%w[navbar false], %w[stacked true]], picks.map { |p| [p["data-type"], p["data-saved"]] }
+    assert_equal [%w[icon false], %w[navbar false], %w[stacked true]], picks.map { |p| [p["data-type"], p["data-saved"]] }
     stacked = picks.last
     assert_equal "Stacked Logo · saved", stacked.at_css("h3").text.squish
     # Saved before colourings, so in Alt (task logo-original-and-alt), which its tab is opened in.

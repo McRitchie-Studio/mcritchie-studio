@@ -67,7 +67,7 @@ class BrandKitTest < ActiveSupport::TestCase
       "a form the brand does not draw" => [:stacked, { form: "one_line", text: "first" }],
       "no form" => [:stacked, { text: "first" }],
       "a visibility that is not 0 or 1" => [:stacked, { form: "tagline", text: "first", tagline_visible: "yes" }],
-      "a type that is not a logo with a choice" => [:icon, { text: "first" }]
+      "a type that is not a logo with a choice" => [:watermark, { text: "first" }]
     }
     refusals.each do |what, (type, given)|
       assert_raises(Logos::NavbarLogo::Error, what) { kit.save_choice(type, params(**given), by: BY) }
@@ -163,7 +163,7 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_nil kit.stacked_choice
     assert_equal "someone@test.com", kit.updated_by
     assert_equal :two_line, kit.variant(:stacked).form
-    assert_raises(Logos::NavbarLogo::Error) { kit.clear_choice(:icon, by: BY) }
+    assert_raises(Logos::NavbarLogo::Error) { kit.clear_choice(:logo, by: BY) }
   end
 
   # Two since task logo-gallery-polish-pass: the kits, then their originals' attachment rows (the kit status counts them).
@@ -223,7 +223,7 @@ class BrandKitTest < ActiveSupport::TestCase
   # Task logo-original-and-alt, item 9: the saved kit choice is the tab's default.
   test "a tab's defaults are its saved choice, else the built-in style" do
     kit = BrandKit.for("welding")
-    assert_equal({ rule: 4, form: :two_line, colouring: nil, edits: {}, choice: nil }, kit.page_defaults(:stacked), "nothing saved")
+    assert_equal({ rule: 4, form: :two_line, colouring: nil, edits: {}, choice: nil, icon: nil }, kit.page_defaults(:stacked), "nothing saved")
     kit.save_choice(:stacked, params(form: "tagline", text: "first", colouring: "original"), by: BY)
     kit.save_choice(:navbar, params(rule: "3", text: "second", colouring: "alt", ending_colour: "D7602E"), by: BY)
     kit.reload

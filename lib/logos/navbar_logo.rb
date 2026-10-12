@@ -42,6 +42,14 @@ module Logos
   # edits apply to Alt only: an original is the brand's own art.
   #
   #   logo.svg(rule: 3, tone: :dark, colouring: :original)
+  #
+  # THE ICON IS AN ATOMIC UNIT (task kit-icon-atomic-unit): a logo's icon may be
+  # drawn in a colouring of its own, `icon_colouring:`, while `colouring:`
+  # governs the words. Left out, the icon takes the words' colouring, which is
+  # every drawing as it was. The icon colour edit follows the icon's colouring
+  # (Alt only); the word edits follow the words'.
+  #
+  #   logo.svg(rule: 4, tone: :light, colouring: :alt, icon_colouring: :original)
   class NavbarLogo
     class Error < ArgumentError; end
 
@@ -194,13 +202,13 @@ module Logos
 
     # The geometry alone, in design units (the icon is H tall, x = 0 is its left edge).
     # `tone:` matters only to a brand whose tones name different icons.
-    def layout(rule: 3, text: :homogeneous, tone: :light, edits: NO_EDITS, colouring: :alt)
+    def layout(rule: 3, text: :homogeneous, tone: :light, edits: NO_EDITS, colouring: :alt, icon_colouring: nil)
       cap_rows = RULES[rule] or raise Error, "unknown rule #{rule.inspect}: expected one of #{RULES.keys.join(', ')}"
       check_text(text)
       row = H / rule
       cap = cap_rows * row
       first, second = @words.zip(edited_weights(text, checked_edits(edits))).map { |word, weight| letters(word, weight) }
-      icon = @icons.fetch(look(tone, colouring))
+      icon = @icons.fetch(look(tone, icon_colouring || colouring))
       icon_width = icon.fetch("w") * H / icon.fetch("h")
       gap = GAP_CAPS * cap
       placed1, right1 = place(first, cap, icon_width + gap, 0)
@@ -209,19 +217,24 @@ module Logos
                  letters: placed1 + placed2, width: right2)
     end
 
-    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false, edits: NO_EDITS, colouring: :alt)
+    def svg(rule: 3, text: :homogeneous, tone: :light, guides: false, edits: NO_EDITS, colouring: :alt, icon_colouring: nil)
       look = look(tone, colouring)
-      edits = edits_in(look, edits)
-      render(layout(rule:, text:, tone:, edits:, colouring:), H, text, look, guides, edits)
+      icon_look = look(tone, icon_colouring || colouring)
+      edits = edits_in(look, edits, icon_look)
+      render(layout(rule:, text:, tone:, edits:, colouring:, icon_colouring:), H, text, look, guides, edits, icon_look)
     end
 
     # The brand's icon alone, in its own box (`0 0 <w> <h>` of the icon data), with the tone's fills and the
-    # tone's icon: the icon exactly as the Navbar Logo draws it, without the name.
-    def icon_svg(tone: :light, colouring: :alt)
+    # tone's icon: the icon exactly as the Navbar Logo draws it, without the name. `edits` may carry the icon's colour
+    # edit (Alt only), the kit icon's (task kit-icon-atomic-unit); any other part is refused.
+    def icon_svg(tone: :light, colouring: :alt, edits: NO_EDITS)
       look = look(tone, colouring)
+      edits = edits_in(look, edits)
+      raise Error, "brand #{brand}: an icon takes only the icon's colour edit, not #{(edits.keys - %i[icon]).join(', ')}" if (edits.keys - %i[icon]).any?
+
       icon = @icons.fetch(look)
       height = icon.fetch("h")
-      document(with_defs(look, toned(look, icon_markup(icon, fills(look, :homogeneous).first, height))), icon.fetch("w"), height)
+      document(with_defs(look, toned(look, icon_markup(icon, fills(look, :homogeneous, edits).first, height))), icon.fetch("w"), height)
     end
 
     # The guide labels' size, in design units, on a rule's drawing (the stacked logo, which has no rule, takes none).
@@ -295,12 +308,15 @@ module Logos
       raise Error, "unknown text #{text.inspect}: expected one of #{TEXTS.join(', ')}" unless TEXTS.include?(text)
     end
 
-    # Checked edits for a drawing in `look`. A watermark is one colour by definition, and an original is the brand's
-    # own art, so no edit applies to either.
-    def edits_in(look, given)
+    # Checked edits for a drawing whose words are in `look` and whose icon is in `icon_look`. A watermark is one colour
+    # by definition, and an original is the brand's own art, so no edit applies to either: the word edits follow the
+    # words' look, the icon's colour edit the icon's.
+    def edits_in(look, given, icon_look = look)
       edits = checked_edits(given)
       raise Error, "brand #{brand}: a watermark is one colour, so edits do not apply to it" if look == :watermark && edits.any?
-      raise Error, "brand #{brand}: an original is the brand's own art, so edits apply to alt only" if original_look?(look) && edits.any?
+
+      original = (original_look?(look) && edits.except(:icon).any?) || (original_look?(icon_look) && edits.key?(:icon))
+      raise Error, "brand #{brand}: an original is the brand's own art, so edits apply to alt only" if original
 
       edits
     end
@@ -328,13 +344,18 @@ module Logos
     # A laid-out logo as a document: the drawing in its tone, or the guide drawing around it: the ghosts BEHIND the logo
     # (in the rule of 4 they cross the real name), the logo, then the lines and numbers.
     # `look` is the drawing's tone, or an original's look (#look).
-    def render(box, height, text, look, guides, edits = NO_EDITS)
-      body = toned(look, drawing(box, look, *fills(look, text, edits)))
-      return document(with_defs(look, body), box.width, height) unless guides
+    # `icon_look` is the icon's own look (task kit-icon-atomic-unit), the words' unless given.
+    def render(box, height, text, look, guides, edits = NO_EDITS, icon_look = look)
+      body = toned(look, drawing(box, icon_look, *fills(look, text, edits, icon_look)))
+      return document(with_defs(def_look(look, icon_look), body), box.width, height) unless guides
 
-      document(with_defs(look, ghost_group(look, ghost_markup(box, ghost_fill(look))) + body + line_group(guide_markup(box))), box.width, height,
-               **self.class::GUIDE_PAD)
+      document(with_defs(def_look(look, icon_look), ghost_group(look, ghost_markup(box, ghost_fill(look))) + body + line_group(guide_markup(box))),
+               box.width, height, **self.class::GUIDE_PAD)
     end
+
+    # The look whose icon data declares the gradients a drawing uses. A drawing's icon and words differ in look only
+    # when one is Alt, whose fills are all #hex, so at most one of the two can name a gradient: the original one.
+    def def_look(look, icon_look) = original_look?(icon_look) ? icon_look : look
 
     # The logo's own Alt text colour in the tone (an original's ghosts too: a ghost is a solid ruler); a watermark's one fill.
     def ghost_fill(look) = look == :watermark ? @watermark["fill"] : @style.fetch("tones").fetch(base_tone(look).to_s).fetch("text")
@@ -367,16 +388,18 @@ module Logos
 
     # [each icon layer role's fill, [first word's fill, second word's fill]]. A watermark has one fill for everything.
     # An edited colour takes the place of the styled one: the icon's on its one role, a word's in every text version.
-    def fills(look, text, edits = NO_EDITS)
+    # The icon's fills are its own look's (`icon_look`, the words' unless given).
+    def fills(look, text, edits = NO_EDITS, icon_look = look)
       return [Hash.new(@watermark["fill"]), [@watermark["fill"]] * 2] if look == :watermark
 
       baked = tone_style(look)
-      icon = baked.fetch("icon")
-      icon = icon.merge(icon_role(look) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
+      icon = tone_style(icon_look).fetch("icon")
+      icon = icon.merge(icon_role(icon_look) => edits.dig(:icon, :colour)) if edits.dig(:icon, :colour)
+      icon = icon.transform_values { |fill| gradient_ref(icon_look, fill) } if original_look?(icon_look)
       colours = word_colours(text, baked).zip(%i[first ending]).map { |colour, part| edits.dig(part, :colour) || colour }
       return [icon, colours] unless original_look?(look)
 
-      [icon.transform_values { |fill| gradient_ref(look, fill) }, colours.map { |fill| gradient_ref(look, fill) }]
+      [icon, colours.map { |fill| gradient_ref(look, fill) }]
     end
 
     # An original's fill as markup will write it: a #hex as it is; a url(#id) naming one of its icon's own gradients
@@ -406,8 +429,9 @@ module Logos
       %(<linearGradient id="#{DEF_TOKEN}#{gradient['id']}" gradientUnits="#{gradient['units']}" #{coordinates}>#{stops}</linearGradient>)
     end
 
-    def drawing(box, look, icon_fills, colours)
-      icon_markup(@icons.fetch(look), icon_fills) + box.letters.map { |l| letter_markup(l, box.baseline, box.cap, colours[l[:word]]) }.join
+    # `icon_look` names the icon drawn (the words' fills come in `colours`).
+    def drawing(box, icon_look, icon_fills, colours)
+      icon_markup(@icons.fetch(icon_look), icon_fills) + box.letters.map { |l| letter_markup(l, box.baseline, box.cap, colours[l[:word]]) }.join
     end
 
     # A watermark sits inside ONE translucent group: opacity on each path would compound where layers overlap.

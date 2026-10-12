@@ -47,7 +47,9 @@ test("saving a stacked choice with an edit shows it in the table, marked Saved, 
 
   const download = page.locator("[data-test='logo-brand-row'][data-brand='industries'] [data-test='logo-sample-download'][data-type='stacked']:visible");
   const response = await page.request.get(await download.getAttribute("href"));
-  expect(response.headers()["content-disposition"]).toMatch(/industries-stacked-tagline-second-(light|dark)-custom\.svg/);
+  // The table draws one icon per row (task kit-icon-atomic-unit): with no kit icon, the brand's own Original icon
+  // beside the saved Alt words, and the file says so.
+  expect(response.headers()["content-disposition"]).toMatch(/industries-stacked-tagline-second-(light|dark)-icon-original-custom\.svg/);
   expect(await response.text()).toContain('fill="#C8661F"');
 
   await page.goto("/logos/industries?type=stacked");

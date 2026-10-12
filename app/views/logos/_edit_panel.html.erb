@@ -1,6 +1,9 @@
 <%# THE EDIT PANEL (task logo-part-editor, Alex's item 4b), on the Navbar Logo
     and Stacked Logo tabs: one row per part (Icon, First word, Ending, and on
-    the Stacked tab's tagline form, Tagline). Each row picks the part's colour
+    the Stacked tab's tagline form, Tagline). On the Icon tab, the Icon row
+    alone: the kit's icon colour (task kit-icon-atomic-unit). While the kit has
+    an icon, the Navbar and Stacked tabs' Icon row shows it and sends the
+    reader to the Icon tab, unless the URL explores another icon. Each row picks the part's colour
     from the brand's palette, a word's weight, and whether the tagline shows.
     The sizes, spacing and shapes stay as the rules set them.
 
@@ -21,7 +24,7 @@
 <section class="card p-4 sm:p-5 space-y-3" data-test="edit-panel" aria-labelledby="edit-panel-title">
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <h2 id="edit-panel-title" class="text-sm font-bold text-heading mr-auto">Edit</h2>
-    <% if @edits.any? %>
+    <% if (@type == :icon ? @edits.slice(:icon) : @edits).any? %>
       <%# A 40 px tall hit area, like the page's other controls, without growing the heading row: the negative margin
           gives back what the padding adds. %>
       <%= link_to "Reset", logo_brand_path(@logo.brand, logo_unedited_params),
@@ -35,7 +38,11 @@
     <p class="text-sm text-secondary" data-test="edit-original">The Original is the brand's own art, so edits apply to Alt only. Any you made come back in Alt.
       <%= link_to "Edit in Alt", logo_brand_path(@logo.brand, logo_page_params(colouring: :alt)), class: "font-semibold text-primary hover:underline", data: { test: "edit-in-alt" } %></p>
   <% else %>
+    <% if @type == :icon %>
+    <p class="text-sm text-secondary">Pick the icon's colour from the brand's palette. Save as default to make it the kit's icon: every Navbar and Stacked Logo draws it.</p>
+    <% else %>
     <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. To keep them, Save as default. Reset goes back to the kit default, or to the brand's style when none is saved.</p>
+    <% end %>
     <% if @edit_refusal %>
       <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="edit-refusal">These edits cannot be drawn here, so the logos are shown as styled: <%= @edit_refusal %></p>
     <% end %>
@@ -52,6 +59,18 @@
             <% end %>
           </div>
           <div class="min-w-0 space-y-2">
+            <% if part == :icon && @icon_from_kit %>
+              <%# The kit's icon, as the tab's logos draw it; its colour is changed on the Icon tab. %>
+              <div class="flex flex-wrap items-center gap-2" data-test="edit-kit-icon">
+                <span class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-subtle p-0.5" data-test="edit-kit-icon-swatch">
+                  <%= logo_themed_images(@tones.to_h { |tone| [tone, Logos::Variant.new(@kit_icon.logo, type: :icon, tone:, colouring: @kit_icon.colouring, edits: @kit_icon.edits)] }, height: 26, test: "edit-kit-icon-image") %>
+                </span>
+                <% if (hex = @kit_icon.edits.dig(:icon, :colour)) %>
+                  <span class="inline-block h-8 w-8 rounded-md border border-subtle" style="background-color: <%= hex %>" title="<%= logo_swatch_name(kit, hex) %> <%= hex %>" data-test="edit-kit-icon-colour"></span>
+                <% end %>
+                <p class="text-2xs text-secondary">Uses the kit icon. Change it on the <%= link_to "Icon tab", logo_brand_path(@logo.brand, logo_page_params(type: :icon)), class: "font-semibold text-primary hover:underline", data: { test: "edit-kit-icon-link" } %>.</p>
+              </div>
+            <% else %>
             <% colour_param = logo_edit_param(part, :colour) %>
             <% picked = @edits.dig(part, :colour) %>
             <fieldset class="min-w-0" data-test="edit-colours">
@@ -85,6 +104,7 @@
             <% if picked %>
               <p class="text-2xs font-semibold text-warning-ink" hidden role="status" data-test="edit-contrast"
                  data-edit-contrast="<%= picked %>" data-name="<%= logo_swatch_name(kit, picked) %>"></p>
+            <% end %>
             <% end %>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
               <% if row[:settings].include?(:weight) %>

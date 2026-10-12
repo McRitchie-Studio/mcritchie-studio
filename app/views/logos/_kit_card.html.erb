@@ -1,16 +1,19 @@
 <%# THE BRAND'S KIT (task brand-kit-record), on every tab of the brand page: the
+    Icon (task kit-icon-atomic-unit: the atomic unit both logos draw), the
     Navbar Logo and the Stacked Logo the brand uses, which is its saved kit
     choice (BrandKit) or, with none saved, its default, each in the page's tone
     with its words, a link to its tab set up as saved, and a download; then the
     kit's notes. Locals: kit_record (the brand's BrandKit, saved or not). %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% kit_icon = kit_record.kit_icon.present? %>
 <section class="card p-4 sm:p-5 space-y-4 scroll-mt-28" id="kit" data-test="kit-card" aria-labelledby="kit-title">
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
     <h2 id="kit-title" class="text-sm font-bold text-heading mr-auto">Kit</h2>
     <p class="text-2xs text-muted" data-test="kit-card-status"><%= logo_kit_status(kit_record, @savers) %></p>
   </div>
-  <div class="grid gap-4 md:grid-cols-2">
-    <% BrandKit::TYPES.each do |type| %>
+  <%# The icon's column is the narrow one: it is a square. %>
+  <div class="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_minmax(0,3fr)]">
+    <% BrandKit::CHOICE_TYPES.each do |type| %>
       <% type_name = Logos::Variant::TYPES.fetch(type) %>
       <% versions = begin
            @tones.to_h { |tone| [tone, kit_record.variant(type, tone:)] }
@@ -39,7 +42,7 @@
             <p class="text-2xs text-heading" role="status" data-test="kit-pick-stale"><%= stale %></p>
           <% end %>
           <div class="mt-auto flex flex-wrap items-center justify-end gap-2" data-test="kit-pick-actions">
-            <%= link_to "Open on its tab", logo_brand_path(@logo.brand, logo_kit_tab_params(shown)),
+            <%= link_to "Open on its tab", logo_brand_path(@logo.brand, logo_kit_tab_params(shown, kit_icon:)),
                         class: "btn btn-sm btn-neutral #{ring}", data: { test: "kit-pick-open" } %>
             <%= logo_themed(versions.keys) do |tone| %>
               <% each = versions.fetch(tone) %>
