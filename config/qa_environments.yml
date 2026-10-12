@@ -75,7 +75,12 @@ qa_environments:
       SOLANA_RPC_URL: https://api.devnet.solana.com
       SOLANA_PROGRAM_ID: EQGFJAcABtDb6VXtiijTjZ6cE2UqdvhnqJvoharJbpMJ
     derived_config:
-      EXPECTED_IDL_HASH: sha256:config/turf_vault.idl.json
+      # The turf-vault IDL ALLOW-LIST, not one file's hash: the file the app's
+      # live SOLANA_VAULT_GOVERNANCE selects plus its sibling shape, read from the
+      # tree being deployed (turf lib/solana/idl_selection.rb's rule, mirrored in
+      # bin/lib/qa_idl_pair.rb). A single `sha256:` of the v0.25 file healed
+      # over the {v0.25,v0.26} pin and broke every boot (/tasks/qa-server-idl-pair-heal).
+      EXPECTED_IDL_HASH: idl_pair:config/turf_vault
     required_secrets:
       - RAILS_MASTER_KEY
       - RESEND_API_KEY
