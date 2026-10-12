@@ -5,7 +5,7 @@ require "test_helper"
 # default unless this client overrides it. The page draws exactly this.
 class StackClientTest < ActiveSupport::TestCase
   def client(**attrs)
-    StackClient.new({ slug: "commercial-welding", name: "Commercial Welding", tier: "growth" }.merge(attrs))
+    StackClient.new({ slug: "commercial-welding", name: "Commercial Welding", tier: "pro" }.merge(attrs))
   end
 
   test "the tier must be a package key or internal" do
@@ -13,6 +13,9 @@ class StackClientTest < ActiveSupport::TestCase
     assert client(tier: "internal").valid?
     refute client(tier: "basic").valid?, "Basic was retired for Workspace on 2026-09-25"
     refute client(tier: "agentic").valid?, "Agentic became Growth on 2026-09-30"
+    refute client(tier: "growth").valid?, "Growth split into Pro and Team on 2026-10-12"
+    assert client(tier: "team").valid?
+    assert client(tier: "enterprise").valid?, "Enterprise keeps its key without a card"
   end
 
   test "the slug must be a workspace in config/workspace_icons.yml" do
@@ -22,7 +25,7 @@ class StackClientTest < ActiveSupport::TestCase
   test "a tier's software comes first, in config order" do
     keys = client.software_keys([])
 
-    assert_equal WorkspacePackage.find(:growth).software_keys.sort, keys.sort
+    assert_equal WorkspacePackage.find(:pro).software_keys.sort, keys.sort
     order = WorkspaceIconConfig.softwares.keys
     assert_equal keys.sort_by { |k| order.index(k) }, keys, "the strip reads in config order"
   end
@@ -126,24 +129,25 @@ class StackClientTest < ActiveSupport::TestCase
     assert_nil client(slug: "family", tier: StackClient::INTERNAL).dns_domain
   end
 
-  test "[unit] Growth and up (and our own internal stacks) are held to Cloudflare DNS; Vibe and Pro are not" do
-    assert client(tier: "growth").cloudflare_dns_promised?
+  test "[unit] Pro and up (and our own internal stacks) are held to Cloudflare DNS; Vibe and Builder are not" do
+    assert client(tier: "pro").cloudflare_dns_promised?
+    assert client(slug: "turf-monster", tier: "team").cloudflare_dns_promised?
     assert client(tier: "enterprise").cloudflare_dns_promised?
     assert client(slug: "industries", tier: StackClient::INTERNAL).cloudflare_dns_promised?
-    refute client(slug: "cyvasse", tier: "pro").cloudflare_dns_promised?
+    refute client(slug: "cyvasse", tier: "builder").cloudflare_dns_promised?
     refute client(slug: "10and5", tier: "vibe").cloudflare_dns_promised?
   end
 
   test "[unit] dns_standing: on Cloudflare, migration pending, not in tier, or unknown" do
-    growth = client(tier: "growth")
-    pro = client(slug: "cyvasse", tier: "pro")
+    pro = client(tier: "pro")
+    builder = client(slug: "cyvasse", tier: "builder")
 
-    assert_equal :on_cloudflare, growth.dns_standing(dns("cloudflare"))
-    assert_equal :migration_pending, growth.dns_standing(dns("squarespace")), "a Growth client still on Squarespace"
-    assert_equal :migration_pending, growth.dns_standing(dns("other"))
-    assert_equal :not_in_tier, pro.dns_standing(dns("squarespace"))
-    assert_equal :not_in_tier, pro.dns_standing(dns("cloudflare"))
-    assert_equal :unknown, growth.dns_standing(dns(DnsHost::UNKNOWN)), "a failed lookup accuses no one"
-    assert_equal :unknown, growth.dns_standing(nil)
+    assert_equal :on_cloudflare, pro.dns_standing(dns("cloudflare"))
+    assert_equal :migration_pending, pro.dns_standing(dns("squarespace")), "a Pro client still on Squarespace"
+    assert_equal :migration_pending, pro.dns_standing(dns("other"))
+    assert_equal :not_in_tier, builder.dns_standing(dns("squarespace"))
+    assert_equal :not_in_tier, builder.dns_standing(dns("cloudflare"))
+    assert_equal :unknown, pro.dns_standing(dns(DnsHost::UNKNOWN)), "a failed lookup accuses no one"
+    assert_equal :unknown, pro.dns_standing(nil)
   end
 end

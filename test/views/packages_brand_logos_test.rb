@@ -35,12 +35,29 @@ class PackagesBrandLogosTest < ActionView::TestCase
 
     WorkspacePackage.features.each do |feature|
       row = "[data-test='stack-row'][data-feature='#{feature.name.parameterize}']"
-      assert_select "#{row} [data-test='stack-lead'][data-lead='#{feature.brand || 'emoji'}']", 1, feature.name
+      lead = feature.brand || (feature.glyph ? "glyph-#{feature.glyph}" : "emoji")
+      assert_select "#{row} [data-test='stack-lead'][data-lead='#{lead}']", 1, feature.name
       assert_equal feature.strip_brands, css_select("#{row} [data-test='stack-software'] [data-test='brand-logo']").map { |l| l["data-brand"] },
                    "#{feature.name} strip"
     end
-    assert_select "[data-feature='server'] [data-test='stack-lead'] [data-brand='heroku'] img"
+    assert_select "[data-feature='host'] [data-test='stack-lead'] [data-brand='heroku'] img"
     assert_select "[data-feature='hosting-mode'] [data-test='stack-lead'][data-lead='emoji']", text: "🏷️"
+    # The custom app leads with its own drawn mark (the browser window and
+    # sparkles), not GitHub's logo, and the mark is no software brand.
+    assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'][data-lead='glyph-app'] [data-test='glyph'][data-glyph='app'][role='img'][aria-label='Custom app']" do
+      assert_select "svg rect", 2, "the window and its body"
+      assert_select "svg circle", 3, "the three title-bar dots"
+      assert_select "svg path", 3, "one large and two small sparkles"
+    end
+    assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'] [data-test='brand-logo']", 0
+    # The domain is the same family: the window, cut away behind a globe.
+    assert_select "[data-feature='web-address'] [data-test='stack-lead'][data-lead='glyph-domain'] [data-test='glyph'][data-glyph='domain'][role='img'][aria-label='Your domain']" do
+      assert_select "svg mask#glyph-domain-gap circle", 1, "the gap cut from the window behind the globe"
+      assert_select "svg g[mask='url(#glyph-domain-gap)'] rect", 2, "the same window as the custom app"
+      assert_select "svg g[mask='url(#glyph-domain-gap)'] circle", 3, "its three title-bar dots"
+      assert_select "svg circle[r='5.4']", 1, "the globe"
+      assert_select "svg ellipse", 1, "the globe's meridian"
+    end
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-brand='egnyte']"
   end

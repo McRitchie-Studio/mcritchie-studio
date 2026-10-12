@@ -75,7 +75,7 @@ class StackClient < ApplicationRecord
   # client's own domain. nil when it has neither.
   def dns_domain = DnsHost.domain_for(catalog_app&.production_url.presence || domain)
 
-  # Whether the client's tier promises Cloudflare DNS (Growth and up). Our own
+  # Whether the client's tier promises Cloudflare DNS (Pro and up). Our own
   # two stacks are internal but run on the top tier, so they are held to it too.
   def cloudflare_dns_promised?
     return true if internal?

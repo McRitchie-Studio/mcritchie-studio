@@ -127,7 +127,7 @@ category; a new software key lands under Other until it is named in
 `StackMatrix::CATEGORIES` (`app/models/stack_matrix.rb`).
 
 1. Add the client to `db/seeds/60_stack_clients.rb`: `slug` (its workspace key in
-   `config/workspace_icons.yml`), `name`, `tier` (`vibe`, `pro`, `growth`, `enterprise`,
+   `config/workspace_icons.yml`), `name`, `tier` (`vibe`, `builder`, `pro`, `team`, `enterprise`,
    or `internal`), `domain`, and `google_users` / `resend_mode`
    (`ms` or `white_label`) once known. Leave an unknown blank; never guess one.
 2. **Do not list its software.** The strip is derived: the software its tier

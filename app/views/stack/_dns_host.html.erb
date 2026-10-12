@@ -1,4 +1,4 @@
-<%# The client's live DNS host (DnsHost, read from its nameservers) against what its tier promises: Growth and up promise Cloudflare DNS, so a Growth client on another host reads Migration pending until its nameservers move. %>
+<%# The client's live DNS host (DnsHost, read from its nameservers) against what its tier promises: Pro and up promise Cloudflare DNS, so a Pro client on another host reads Migration pending until its nameservers move. %>
 <% standing = client.dns_standing(host) %>
 <% pill = {
      on_cloudflare: [ "On Cloudflare", "border-success/40 bg-success/10 text-success-ink" ],

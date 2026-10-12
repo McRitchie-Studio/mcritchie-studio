@@ -24,6 +24,41 @@ module PackagesHelper
     end
   end
 
+  HOSTNAME = /\A[a-z0-9-]+(\.[a-z0-9-]+)+\z/i
+
+  # A matrix value as the pieces it may break between: a value that lists
+  # hostnames ("yourname.com + www.yourname.com") breaks only at its " + ",
+  # never inside a hostname. Each piece is [text, hostname?].
+  def package_cell_segments(value)
+    value.to_s.split(" + ").map { |part| [ part, part.match?(HOSTNAME) ] }
+  end
+
+  # A card tagline with every hostname in it kept on one line, so
+  # "your-app.mcritchie.studio" never breaks at its hyphen.
+  def package_tagline(text)
+    parts = text.to_s.split(/(\s+)/).map do |word|
+      host, tail = word.match(/\A(.+?)([.,;:!?]?)\z/).captures
+      host.match?(HOSTNAME) ? safe_join([ tag.span(host, class: "whitespace-nowrap", data: { test: "tagline-host" }), tail ]) : word
+    end
+    safe_join(parts)
+  end
+
+  # A lone hostname that may wrap only at its first label, and only while a dot
+  # remains after it ("yourname." / "mcritchie.studio"), so a narrow phone column
+  # never splits a word and "yourname.com" never wraps. A hostname listed with
+  # another ("yourname.com + www.yourname.com") wraps only at the " + ".
+  def package_hostname(text)
+    first, rest = text.split(".", 2)
+    rest&.include?(".") ? safe_join([ "#{first}.", tag.wbr, rest ]) : text
+  end
+
+  # A "<product> · <metric>" value as [product, metric]; any other value as
+  # [value, nil]. The matrix draws the metric as a smaller muted second line.
+  def package_cell_parts(value)
+    product, metric = value.to_s.split(" · ", 2)
+    [ product, metric.presence ]
+  end
+
   # "✓", the row's value, or "—" — one cell of the full-stack matrix.
   def package_cell_text(value)
     return "—" if value.nil?

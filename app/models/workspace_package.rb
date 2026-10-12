@@ -1,4 +1,4 @@
-# A McRitchie Studio package tier (Vibe, Pro, Growth, Enterprise) and the
+# A McRitchie Studio package tier (Vibe, Builder, Pro, Team, Enterprise) and the
 # features it includes, read from config/workspace_packages.yml — the one place
 # package contents live.
 #
@@ -14,26 +14,42 @@ class WorkspacePackage
   # service, nothing to provision. planned: not delivered yet ("Coming soon").
   STATUSES = %w[live builtin planned].freeze
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
-  # The feature row /stack holds each client's live DNS host to.
-  CLOUDFLARE_DNS = "Cloudflare DNS".freeze
+  # The feature row /stack holds each client's live DNS host to: the Cloudflare
+  # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12).
+  CLOUDFLARE_DNS = "Fast, protected domain".freeze
+  # A card's lanes are grouped under these headings, in this order.
+  CARD_GROUPS = %w[Application Platform Agents Marketing].freeze
+  # included: a check. missing: a muted cross, "In <first tier that has it>".
+  # soon: not delivered yet (Coming soon).
+  CARD_STATUSES = %w[included missing soon].freeze
 
-  # The tier keys of 2026-09-25, and the v2 tier each one became on 2026-09-30.
-  # Migration RemapPackageTiers applied it to stored rows; kept here so the
-  # mapping has one spelling the migration's test can hold it to.
-  LEGACY_TIERS = { "launch" => "vibe", "host" => "pro", "workspace" => "growth", "agentic" => "growth" }.freeze
+  # One swim lane every card lists (config `card_lanes`): its group, its key and
+  # its title, which may name the tier ("%{tier} Host").
+  Lane = Struct.new(:group, :key, :title, keyword_init: true)
+
+  # One lane as one card draws it: the title for this tier, one muted line,
+  # the status, and for a missing lane the tier that has it (`in_tier`).
+  CardLine = Struct.new(:lane, :title, :sub, :status, :in_tier, keyword_init: true) do
+    def included? = status == "included"
+    def missing? = status == "missing"
+    def soon? = status == "soon"
+    def key = lane.key
+    def group = lane.group
+  end
+  # The value a row carries for a tier that sells it per contract.
+  ADD_ON = "Add-on".freeze
+  # An icon written "glyph:<name>" is drawn as an inline SVG mark, not an emoji.
+  GLYPH_PREFIX = "glyph:".freeze
+  GLYPHS = %w[app domain].freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
-                       :brand_from, :spotlight, keyword_init: true) do
+                       :brand_from, keyword_init: true) do
     def live? = status == "live"
 
     def planned? = status == "planned"
 
     # Delivered today, by an SOP or by the platform itself.
     def delivered? = !planned?
-
-    # A delivered row with a `spotlight` line is called out on every card that
-    # includes it. A planned row is a promise, so it is never spotlit.
-    def spotlight? = spotlight.present? && delivered?
 
     # The software keys (config/workspace_icons.yml) this feature puts in a
     # client's stack. A planned feature provisions nothing: it is a promise. A
@@ -62,6 +78,10 @@ class WorkspacePackage
     def brand = WorkspaceIconConfig.software?(icon) ? icon.to_s : nil
     def brand? = !brand.nil?
 
+    # A drawn mark ("glyph:app" names app/views/packages/_glyph.html.erb's `app`)
+    # for a row no brand owns but an emoji would undersell: the custom app.
+    def glyph = icon.to_s.start_with?(GLYPH_PREFIX) ? icon.to_s.delete_prefix(GLYPH_PREFIX) : nil
+
     # The logo strip under the row: every brand the row shows, less the one it
     # already leads with.
     def strip_brands = display_software - [ brand ]
@@ -89,13 +109,15 @@ class WorkspacePackage
     # A row whose value changes between packages — the page highlights it.
     def varies? = values.values.uniq.size > 1
 
-    # "agents/steffon/sops/domain-dns" — the docs route's path for this row's
-    # SOP, or nil when it names none or the file is gone.
-    def doc_path
-      return nil if sop.blank?
+    # Every SOP that delivers the row: one, or a list (Storage names both the
+    # Postgres and the R2 bucket SOPs).
+    def sops = Array(sop)
 
-      WorkspacePackage.sop_paths[sop]
-    end
+    # "agents/steffon/sops/domain-dns" — the docs route's path for the row's
+    # first SOP, or nil when it names none or the file is gone.
+    def doc_path = doc_path_for(sops.first)
+
+    def doc_path_for(name) = name.blank? ? nil : WorkspacePackage.sop_paths[name]
   end
 
   attr_reader :key, :name, :tagline, :price_monthly, :price_label, :comp, :highlights, :cta
@@ -110,6 +132,9 @@ class WorkspacePackage
     @highlights = Array(attrs["highlights"])
     @cta = (attrs["cta"] || {}).slice("label", "action")
     @featured = attrs["featured"] == true
+    @card = attrs["talk_to_us"] != true
+    @card_group_names = Array(attrs["card_groups"])
+    @lanes = (attrs["lanes"] || {}).transform_values { |value| value || {} }
     @annual_discount_percent = annual_discount_percent.to_i
   end
 
@@ -121,6 +146,12 @@ class WorkspacePackage
   end
 
   def self.find(key) = all.find { |package| package.key == key.to_s }
+
+  # The tiers /packages draws as cards, in ladder order.
+  def self.cards = all.select(&:card?)
+
+  # The tier drawn as the "Talk to us" line under the cards (Enterprise), or nil.
+  def self.talk_to_us = all.reject(&:card?).last
 
   def self.keys = config.fetch("packages").map { |attrs| attrs.fetch("key") }
 
@@ -136,6 +167,12 @@ class WorkspacePackage
 
   # category key => heading, in page order.
   def self.categories = config.fetch("categories")
+
+  # The tier a /packages/stack group starts at ("From Builder"), or nil.
+  def self.category_from(category)
+    key = config.fetch("category_from", {})[category.to_s]
+    key && find(key)
+  end
 
   def self.features
     package_keys = keys
@@ -164,8 +201,47 @@ class WorkspacePackage
 
   def featured? = @featured
 
-  # The rows this tier's card calls out, logo first (Cloudflare DNS from Growth).
-  def spotlight_features = features.select(&:spotlight?)
+  # false for the tier drawn as the "Talk to us" line instead of a card.
+  def card? = @card
+
+  # Every lane, in group then config order: [[group, [Lane, ...]], ...].
+  def self.card_lanes
+    lanes = config.fetch("card_lanes", []).map { |attrs| Lane.new(**attrs.slice("group", "key", "title").symbolize_keys) }
+    CARD_GROUPS.filter_map do |group|
+      in_group = lanes.select { |lane| lane.group == group }
+      [ group, in_group ] if in_group.any?
+    end
+  end
+
+  # The groups this card shows, in CARD_GROUPS order.
+  def card_group_names = CARD_GROUPS & @card_group_names
+
+  def shows_group?(group) = card_group_names.include?(group)
+
+  # The status this tier gives a lane: included unless its `lanes` entry says
+  # otherwise; a lane it does not list is missing.
+  def lane_status(lane_key)
+    entry = @lanes[lane_key.to_s]
+    entry ? entry.fetch("status", "included") : "missing"
+  end
+
+  # The lane as this card draws it. A missing lane names the first card that
+  # has it (included or Coming soon), computed from the ladder.
+  def card_line(lane)
+    status = lane_status(lane.key)
+    in_tier = status == "missing" ? self.class.cards.find { |card| card.lane_status(lane.key) != "missing" } : nil
+    CardLine.new(lane: lane, title: format(lane.title, tier: name), sub: @lanes.dig(lane.key.to_s, "sub"),
+                 status: status, in_tier: in_tier)
+  end
+
+  # [[group, [CardLine, ...]], ...] for the groups this card shows.
+  def card_groups
+    self.class.card_lanes.filter_map do |group, lanes|
+      [ group, lanes.map { |lane| card_line(lane) } ] if shows_group?(group)
+    end
+  end
+
+  def card_lines = card_groups.flat_map(&:last)
 
   def priced? = price_monthly.present?
 
@@ -174,6 +250,13 @@ class WorkspacePackage
   # Every software this tier provisions, in feature order — what /stack draws
   # for a client on it.
   def software_keys = features.flat_map { |feature| feature.software_keys(key) }.uniq
+
+  # The brands of the rows this tier sells as add-ons, priced per contract
+  # (Payments, Crypto and wallets, AI features): what the "Talk to us" line
+  # draws, labelled as add-ons so no logo reads as included.
+  def add_on_brands
+    features.select { |feature| feature.value_for(key) == ADD_ON }.flat_map { |feature| feature.card_brands(key) }.uniq
+  end
 
   # Every brand this tier's delivered features put in front of the customer, in
   # row order: what its card's "Powered by" row draws.

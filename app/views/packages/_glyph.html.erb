@@ -1,0 +1,36 @@
+<%# Drawn row marks (WorkspacePackage::GLYPHS), the size of a brand logo in a row's lead, after Mr. McRitchie's reference icons (2026-10-12). One family, built from shared pieces: a lavender tile, a browser window whose outline and title bar take the heading color and whose body and dots take the surface color, and a primary-purple accent that stays purple in both themes.
+      app     the window with three sparkles at its top-right: your custom app
+      domain  the window with a wireframe globe over its bottom-right corner, the window cut away behind it: your domain %>
+<% window = lambda do |x, y, w, h| %>
+  <rect x="<%= x %>" y="<%= y %>" width="<%= w %>" height="<%= h %>" rx="2.6" fill="currentColor"/>
+  <rect x="<%= x + 1.7 %>" y="<%= y + 3.6 %>" width="<%= w - 3.4 %>" height="<%= h - 5.3 %>" rx="1.4" style="fill: var(--color-surface, #fff)"/>
+  <g style="fill: var(--color-surface, #fff)">
+    <circle cx="<%= x + 3.1 %>" cy="<%= y + 1.8 %>" r="0.8"/><circle cx="<%= x + 5.5 %>" cy="<%= y + 1.8 %>" r="0.8"/><circle cx="<%= x + 7.9 %>" cy="<%= y + 1.8 %>" r="0.8"/>
+  </g>
+<% end %>
+<% label = { "app" => "Custom app", "domain" => "Your domain" }.fetch(name) %>
+<span class="inline-flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-heading"
+      role="img" aria-label="<%= label %>" title="<%= label %>" data-test="glyph" data-glyph="<%= name %>">
+  <svg class="h-6 w-6 md:h-7 md:w-7" viewBox="0 0 24 24" aria-hidden="true">
+    <% case name %>
+    <% when "app" %>
+      <% window.call(1, 8, 16, 14) %>
+      <g style="fill: var(--color-primary, #7c6cf0)">
+        <path d="M18.6 0.6Q18.6 5.6 23.6 5.6Q18.6 5.6 18.6 10.6Q18.6 5.6 13.6 5.6Q18.6 5.6 18.6 0.6z"/>
+        <path d="M13.2 0.4Q13.2 2.6 15.4 2.6Q13.2 2.6 13.2 4.8Q13.2 2.6 11 2.6Q13.2 2.6 13.2 0.4z"/>
+        <path d="M21.3 10.4Q21.3 12.6 23.5 12.6Q21.3 12.6 21.3 14.8Q21.3 12.6 19.1 12.6Q21.3 12.6 21.3 10.4z"/>
+      </g>
+    <% when "domain" %>
+      <mask id="glyph-domain-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+        <rect width="24" height="24" fill="#fff"/>
+        <circle cx="18" cy="18" r="7.1" fill="#000"/>
+      </mask>
+      <g mask="url(#glyph-domain-gap)"><% window.call(0.5, 2, 18, 15.5) %></g>
+      <g fill="none" stroke-width="1.35" style="stroke: var(--color-primary, #7c6cf0)">
+        <circle cx="18" cy="18" r="5.4"/>
+        <ellipse cx="18" cy="18" rx="2.3" ry="5.4"/>
+        <path d="M13.03 15.9H22.97M13.03 20.1H22.97"/>
+      </g>
+    <% end %>
+  </svg>
+</span>

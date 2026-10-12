@@ -6,7 +6,7 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Packages</p>
     <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">From your first app to a connected company</h1>
     <p class="text-muted max-w-2xl mx-auto">
-      Start free with an app our agents build for you, then add your own domain, your email and a
+      Start free with an app our agents build for you, then add your own domain, a fractional CTO and a
       marketing team as you grow. Each tier includes everything in the one before it.
     </p>
   </header>
@@ -25,19 +25,26 @@
       </div>
     <% end %>
 
-    <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4" data-test="package-cards">
+    <%# Each card is a subgrid over shared row tracks (name, tagline, price, CTA,
+        then every group heading and lane, then the logos), so every section and
+        every lane starts at the same height across a row of cards however its
+        text wraps, and the cards end level. %>
+    <div class="grid gap-x-5 gap-y-5 md:grid-cols-2 xl:grid-cols-4" data-test="package-cards">
       <% previous = nil %>
+      <% card_tracks = 5 + WorkspacePackage.card_lanes.sum { |_, lanes| lanes.size + 1 } %>
       <% @packages.each do |package| %>
-        <article class="relative flex flex-col rounded-2xl border <%= package.featured? ? 'border-primary border-2 shadow-lg' : 'border-subtle' %> bg-surface p-6"
+        <article style="grid-row: span <%= card_tracks %> / span <%= card_tracks %>" class="grid grid-rows-subgrid gap-y-0 rounded-2xl border <%= package.featured? ? 'border-primary border-2 shadow-lg' : 'border-subtle' %> bg-surface p-6"
                  data-test="package-card" data-package="<%= package.key %>" data-featured="<%= package.featured? %>">
-          <% if package.featured? %>
-            <span class="absolute -top-3 left-6 rounded-full bg-primary px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
-                  data-test="featured-badge">Most popular</span>
-          <% end %>
-          <h2 class="text-2xl font-bold text-heading"><%= package.name %></h2>
-          <p class="mt-1 min-h-[3rem] text-body" data-test="package-tagline"><%= package.tagline %></p>
+          <div class="flex flex-wrap items-center justify-between gap-2" data-test="package-head">
+            <h2 class="text-2xl font-bold text-heading"><%= package.name %></h2>
+            <% if package.featured? %>
+              <span class="rounded-full bg-primary px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
+                    data-test="featured-badge">Most popular</span>
+            <% end %>
+          </div>
+          <p class="mt-1 text-body" data-test="package-tagline"><%= package_tagline(package.tagline) %></p>
 
-          <div class="mt-4 min-h-[4.5rem]" data-test="package-price">
+          <div class="mt-4" data-test="package-price">
             <% if package.free? %>
               <div data-test="price-free">
                 <span class="text-4xl font-bold text-heading">Free</span>
@@ -64,41 +71,72 @@
             <% end %>
           </div>
 
-          <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} mt-5 w-full justify-center" %>
+          <div class="mt-5"><%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} w-full justify-center" %></div>
 
-          <div class="mt-6 border-t border-subtle pt-5">
-            <% if previous %>
-              <p class="mb-3 text-sm font-semibold text-heading" data-test="includes-previous">Everything in <%= previous.name %>, plus:</p>
-            <% end %>
-            <ul class="space-y-2.5" data-test="package-highlights">
-              <% package.highlights.each do |highlight| %>
-                <li class="flex gap-2.5 text-sm text-body" data-test="package-highlight">
-                  <svg class="mt-0.5 h-4 w-4 shrink-0 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/>
-                  </svg>
-                  <span><%= highlight %></span>
-                </li>
+          <%# The card's swim lanes (config `card_lanes`): every group, heading and lane
+              sits on a row track shared with the other cards, so each lane reads
+              across the row like a table. A group this card does not show still
+              takes its tracks, as empty cells. Marks carry their words for screen
+              readers: status never rides on color alone. %>
+          <% WorkspacePackage.card_lanes.each_with_index do |(group, lanes), index| %>
+            <% if package.shows_group?(group) %>
+              <p class="<%= index.zero? ? 'mt-6 border-t border-subtle pt-5' : 'pt-4' %> pb-2 text-2xs font-semibold uppercase tracking-wider text-muted"
+                 data-test="package-line-group" data-group="<%= group %>"><%= group %></p>
+              <% lanes.each do |lane| %>
+                <% line = package.card_line(lane) %>
+                <div class="flex gap-2.5 pb-2.5" data-test="package-line" data-lane="<%= lane.key %>" data-status="<%= line.status %>">
+                  <% if line.included? %>
+                    <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success/15 text-success-ink"
+                          role="img" aria-label="Included" data-test="line-mark" data-mark="included">
+                      <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+                    </span>
+                  <% elsif line.missing? %>
+                    <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-alt text-muted"
+                          role="img" aria-label="In <%= line.in_tier&.name %>" data-test="line-mark" data-mark="missing">
+                      <svg class="h-2.5 w-2.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+                    </span>
+                  <% else %>
+                    <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-muted" role="img" aria-label="Coming soon" data-test="line-mark" data-mark="soon">
+                      <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                    </span>
+                  <% end %>
+                  <div class="min-w-0 text-sm">
+                    <p class="font-semibold <%= line.missing? ? 'text-muted' : 'text-heading' %>" data-test="line-title">
+                      <%= line.title %>
+                      <% if line.missing? && line.in_tier %>
+                        <span class="ml-1 whitespace-nowrap text-2xs font-medium text-muted" data-test="line-in-tier">(In <%= line.in_tier.name %>)</span>
+                      <% end %>
+                    </p>
+                    <% if line.sub.present? || line.soon? %>
+                      <p class="mt-0.5 text-xs text-muted [overflow-wrap:anywhere]" data-test="line-sub"><%= line.sub %><% if line.soon? %><span class="<%= 'ml-1.5 ' if line.sub.present? %>inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted" data-test="coming-soon">Coming soon</span><% end %></p>
+                    <% end %>
+                  </div>
+                </div>
               <% end %>
-            </ul>
-            <% package.spotlight_features.each do |feature| %>
-              <%= render "packages/spotlight", feature: feature, package: package %>
+            <% else %>
+              <% (lanes.size + 1).times do %><div aria-hidden="true"></div><% end %>
             <% end %>
-          </div>
+          <% end %>
 
           <% brands = package.card_brands(previous) %>
-          <% if brands.any? %>
-            <div class="mt-auto pt-5" data-test="package-powered-by" data-package="<%= package.key %>">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted"><%= previous ? "Adds" : "Powered by" %></p>
-              <div class="flex flex-wrap gap-1.5">
-                <% brands.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
+          <%# Always rendered, so every card fills its sixth row track. %>
+          <div class="pt-5">
+            <% if brands.any? %>
+              <div data-test="package-powered-by" data-package="<%= package.key %>">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted"><%= previous ? "Also powered by" : "Powered by" %></p>
+                <div class="flex flex-wrap gap-1.5">
+                  <% brands.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
+                </div>
               </div>
-            </div>
-          <% end %>
+            <% end %>
+          </div>
         </article>
         <% previous = package %>
       <% end %>
     </div>
   </div>
+
+  <%= render "packages/talk_to_us", package: @talk_to_us if @talk_to_us %>
 
   <div class="mt-10 text-center">
     <%= link_to packages_stack_path, class: "inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors",
