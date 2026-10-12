@@ -160,6 +160,8 @@ export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents
 | Squads V4 multisig — **one per cluster, and they differ** | the program **upgrade** authority | **threshold 3 of FIVE**, all mask 7. mainnet `4H3fP3ot…`: `7auwTL…`, `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…`. devnet `7nRuVw3V…`: `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`, `8K81…`, `BLSBw8…` |
 | `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops — *the money* | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged on both clusters |
 
+**Superseded for Squads by the 2026-10-09 governance rotation.** `BLSBw8…` left both Squads (mainnet config tx #6, devnet #19) and `4bKNSqkr…` (`solana.turf.governance`, `studio-agents-admin`) took its seat. Read off chain 2026-10-12, mainnet `4H3fP3ot…` is threshold 3 of `7auwTL…`, `4bKNSqkr…`, `7ZDJ…`, `9gACbz…`, `3Qj4v9…`, every mask 7. Where this section names `BLSBw8…` as a Squads seat, read `4bKNSqkr…`. Moving funds out of the vault: [`squad-vault-ops`](../agents/steffon/sops/squad-vault-ops.md).
+
 **They are two different authorities with different thresholds — but on mainnet their MEMBERSHIP has converged, and not by design.** Both are five wallets; Squads is live at threshold 3, `VaultState` is the target at threshold 2 once `update_signers` runs:
 
 | Wallet | Squads mainnet (upgrade) | `VaultState.signers` (the money) |

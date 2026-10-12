@@ -41,7 +41,7 @@ or `main`, never promotes, and never deploys.
 | Hop | Instruction / action | From → To | Where you run it | Signers | In our codebase? |
 |---|---|---|---|---|---|
 | **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **Squads Treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **2-of-3** VaultState multisig | **Yes** |
-| **2** | Squads transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | `app.squads.so`, reached from `/admin/hub` | **3-of-5** Squads multisig | **No — nothing in turf-monster or turf-vault performs or prepares it** |
+| **2** | Squads vault transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | Steffon's [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) queues it; Alex approves on `app.squads.so` | **3-of-5** Squads multisig: the two agent seats, then one of Alex's | **turf-vault `scripts/squad-vault-transfer.js` only — nothing in turf-monster** |
 
 **Hop 1 ends inside the Squads Treasury, not in a wallet.** The program pins the
 destination to the treasury authority — which IS the Squads vault PDA — so a
@@ -49,9 +49,11 @@ successful sweep moves the money from one account nobody can spend from to
 another account nobody can spend from alone. It is now under 3-of-5 control
 instead of 2-of-3, and that is the point: hop 1 consolidates, hop 2 withdraws.
 
-**Hop 2 has no code, no job, no rake task, and no admin button.** Do not go
-looking for one and do not build one in the middle of this SOP. It is a human in
-a browser, three approvals, and an execute.
+**Hop 2 runs through [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md).**
+The agent queues the transfer and casts both agent approvals. Alex approves from
+one of his seats on the Squads page, and executes it or tells the agent to.
+turf-monster has no job, rake task or admin button for it, and should not grow
+one.
 
 A sweep that confirms and a reader who stops there is the most expensive misread
 available here, because every signal looks like success: the `PendingTransaction`
@@ -84,7 +86,8 @@ declares them:
 | third | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Mason |
 
 So hop 1 needs **one human signature**: the server already holds the admin slot,
-and the cosigner slot is Alex's Phantom. Hop 2 needs **three**.
+and the cosigner slot is Alex's Phantom. Hop 2 needs **three** Squads approvals:
+the two agent seats cast theirs, so it needs **one** of Alex's.
 
 ## The money model — why sweeping strands no payout
 
@@ -114,7 +117,7 @@ program pins where a sweep can go; Squads pins who may approve the withdrawal.
 | Sweeping the FULL balance (the admin path always sends `amount: 0`) | How much should leave the Squads Treasury on hop 2 |
 | Refusing an empty `op_rev` account, and a wrong-owner treasury ATA | Reading a refusal and choosing its remedy |
 | Deriving both ATAs from the mint and the live `VaultState` | Confirming the destination wallet address with Alex |
-| Enforcing 2-of-3 on hop 1, 3-of-5 on hop 2 | Collecting the other two Squads approvals |
+| Enforcing 2-of-3 on hop 1, 3-of-5 on hop 2 | Queuing hop 2 and casting the two agent approvals (`squad-vault-ops`) |
 
 If you find yourself reasoning about **which address the sweep should go to**,
 stop. The program owns that, and the first live run lost a round trip to exactly
@@ -129,7 +132,7 @@ that reasoning — see the refusals table.
   which `Currencies`, `Treasury` and `Squads Treasury` all hang. `/admin` alone is
   a 404 in turf-monster.
 - **Alex has his Phantom available** — hop 1 needs his cosign, and hop 2 needs
-  his plus two more Squads approvals.
+  one approval from one of his Squads seats (`7ZDJ`, `9gAC` or `3Qj4`).
 - The turf-vault program on that cluster is not paused.
 
 Everything below runs against production:
@@ -323,20 +326,10 @@ the **vault PDA** plus a `/home` suffix — the same value the program holds as
 | `mainnet-beta` | `https://app.squads.so/squads/Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm/home` |
 | `devnet` | `https://app.squads.so/squads/BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC/home` |
 
-**⚠️ THE HELPER IS FIXED ON A PR THAT HAS NOT MERGED — so today the rendered link
-still 404s.** `link-squads-from-admin` (turf-monster PR #829) repoints
-`squads_app_url` at the vault PDA and adds the `/home` suffix, and adds the
-`Squads Treasury` tile. As of 2026-09-29 that PR is **open into `accepted`, not
-merged**: `accepted` and `main` both still interpolate the **multisig** address
-with no trailing path, so every deployed environment renders a dead link on
-`/admin/hub` and on `/admin/authorities` alike. **Until #829 merges and deploys,
-paste the literal from the table above rather than clicking through.** Re-read
-the helper before trusting this paragraph — it is a statement about a moment, and
-the whole point of the fix is that it stops being true.
-
-That 404 was the second lost round trip of the live run, and it is worse than a
-plain dead link because the URL comes from our own code and therefore reads as
-authoritative.
+`link-squads-from-admin` (turf-monster PR #829) fixed the helper: it once
+interpolated the **multisig** address, which 404s on `app.squads.so`. It is on
+`main` (turf-monster `Solana::Config.squads_app_url`). Re-read the helper if a
+tile 404s.
 
 **Two tiles point at the same Squad home, and that is deliberate — do not tidy
 one away.** A Squads link already existed on the Link Hub before #829, under
@@ -369,15 +362,21 @@ together:
   differ, you are looking at the wrong multisig — a devnet Squad on a mainnet
   read, most likely — and nothing you initiate here will move the swept balance.
 
-Then, in Squads: connect a member wallet, initiate a token transfer of the mint
-and amount Alex named from the vault to his destination wallet, collect
-approvals, and execute. **The transaction reads `Voting N/3`** and does not
-execute until `N` is 3.
+Then run [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) for the mint
+and amount Alex named, to his destination wallet:
 
-**Three approvals means three separate wallets, and this SOP cannot supply them.**
-Whose they are is Squads membership, which the read above prints. If the other
-two approvers are not reachable, the collection stops here with the money safely
-in the Squads Treasury — that is a wait, not a failure.
+```bash
+node scripts/squad-vault-transfer.js plan --cluster=mainnet \
+  --to=<his wallet> --mint=<mint> --amount=<amount> --memo="collect-vault-revenue"
+```
+
+The tool reads the transfer from the Squads Treasury ATA, which is the treasury
+ATA step 1 printed. It queues the transfer, casts both agent approvals, and
+prints the hand-back. **The transaction then reads `Voting 2/3`.** Alex approves
+from the link, and it executes once he or the agent runs execute. The agent
+executes only after his approval is on chain. If he is not reachable, the
+collection stops here with the money safely in the Squads Treasury. That is a
+wait, not a failure.
 
 **The exact button labels in Squads are Squads', and they change.** Nothing in
 this repo pins them, so read the page rather than trusting a remembered caption;
@@ -444,8 +443,9 @@ evidence of what is live.
 
 ## What this does NOT cover
 
-- **Building hop 2 in our app.** It does not exist and this SOP does not add it.
-  If Alex wants it, that is a task, and a treasury-risk one.
+- **Building hop 2 in our app.** turf-monster has no hop-2 code, and this SOP
+  does not add any; the turf-vault tool in `squad-vault-ops` queues it. An
+  in-app version would be a task, and a treasury-risk one.
 - **Creating the treasury ATA from the app.** Same answer; the Phantom transfer in
   step 1 is the remedy, not a workaround to productise mid-run.
 - **Partial sweeps from the UI.** The admin path is sweep-all.
@@ -480,7 +480,7 @@ arbitrary wallet. Pinning it to `vault_state.treasury_authority` means the most 
 compromised pair can do is move revenue into a 3-of-5 Squads Treasury — which is to say,
 nowhere useful. The two hops are the custody design, not an inconvenience in it.
 
-**Why hop 2 is deliberately absent from our code.** Squads ships its own web UI
+**Why hop 2 is deliberately absent from the app.** Squads ships its own web UI
 for exactly this, and turf-monster declines to reimplement it; `/admin/authorities`
 links out instead. A Squads transfer built in our app would put the withdrawal
 path behind our own auth, which is the opposite of what a 3-of-5 vault is for.
