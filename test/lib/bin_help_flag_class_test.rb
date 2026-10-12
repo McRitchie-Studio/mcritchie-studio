@@ -139,6 +139,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # a green light is the same defect one meaning over: the operator asked what the
     # command does and would be told the machine is free.
     "agent-presence"         => :cli_arg_guard,
+    # READ-ONLY too (GitHub, two RPC reads per cluster, the board; its only write is
+    # its own cache file, after the guard). Like agent-presence its exit status is a
+    # VERDICT (0 every cluster current), so its help exits 3, never 0.
+    "program-drift"          => :cli_arg_guard,
     # The harvest WRITES desk records to the board, so it is guarded like the rest of
     # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
     # rows are recorded", which a probe never established.
@@ -570,6 +574,7 @@ class BinHelpFlagClassTest < Minitest::Test
   # Ruby scripts must call it before their first mutating call — asserted by
   # position, because "it is in the file somewhere" is not the property that matters.
   FIRST_MUTATION = {
+    "program-drift"       => "ProgramDrift.readings",
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",
     "control-check"       => "ControlReplay.partition",

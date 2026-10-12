@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/program-drift — is each cluster running the program version its source branch
+# carries? Read-only: it reads GitHub, two accounts per cluster over JSON-RPC, and the
+# board for the upgrade cards. It signs nothing. Logic: bin/lib/program_drift.rb;
+# programs: config/onchain_programs.yml; the act it feeds:
+# docs/agents/agents/steffon/sops/program-upgrade.md.
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/program_drift"
+
+USAGE = <<~TXT
+  usage: bin/program-drift [--json] [--fresh]
+
+  Prints one line per program and cluster:
+    program <name> <cluster>: current at vX.Y.Z
+    PROGRAM DRIFT <name> <cluster>: chain runs vA, source is vB — upgrade card <slug> (<stage>)
+    PROGRAM DRIFT <name> <cluster>: cannot confirm the deployed version — <reason>
+
+  --json    one JSON object: {"readings": [...], "exit": N}
+  --fresh   skip the 10-minute cache and read GitHub and the chain now
+
+  Exit: 0 every cluster current · 1 a cluster behind (or ahead) · 2 a cluster could
+  not be confirmed · 3 this help. An unreadable chain is never reported as current.
+TXT
+
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "program-drift",
+  usage: USAGE,
+  bool: %w[--json --fresh],
+  # 0 is a verdict here ("every cluster current"), so the help probe must not say it.
+  help_exit: 3,
+  consequence: "NOTHING was read."
+)
+
+readings = ProgramDrift.readings(cache: ProgramDrift.default_cache_path, fresh: args.bool?("--fresh"))
+ProgramDrift.attach_cards(readings, ProgramDrift.board_lookup)
+code = ProgramDrift.exit_code(readings)
+
+if args.bool?("--json")
+  puts JSON.generate(readings: readings.map(&:to_h), exit: code)
+else
+  puts ProgramDrift.lines(readings)
+end
+exit code

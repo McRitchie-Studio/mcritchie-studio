@@ -191,6 +191,8 @@ require_relative "../app/models/release/cli"
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
+# `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
+require_relative "lib/program_drift"
 # Every command a refusal here hands the operator comes through the one remedy helper.
 require_relative "lib/remedy"
 RELEASE_SELF_CMD = Remedy.command("release", __dir__).freeze
@@ -4383,6 +4385,7 @@ def status
   verdict = ladder_clean_verdict(expedited: expedited, report_release: true)
   say("")
   say(verdict["message"])
+  program_drift_report
 
   # --clean-only is the GATE: a dirty ladder aborts the expedite (non-zero exit)
   # so `deploy-with-task` refuses instead of dragging the pending work to prod.
@@ -4391,6 +4394,24 @@ def status
     abort!("the `accepted → release → main` ladder is not clean — `deploy-with-task` refused " \
            "(ship the whole release with the `full-cycle` launcher)")
   end
+end
+
+# PROGRAM DRIFT — the release lane ships apps, never on-chain programs, so status also
+# says whether each cluster runs the program version its source branch carries, and
+# names the upgrade card that owns a gap (bin/lib/program_drift.rb). Display only: it
+# never fails status or the --clean-only gate, because a program upgrade rides its own
+# cards and SOP (program-upgrade), not this release. It stays fast: the RPC reads are
+# time-boxed, the clusters read in parallel, and a complete read is cached ten
+# minutes. Anything it could not read prints as "cannot confirm", never as current.
+def program_drift_report(readings: nil, lookup: nil)
+  readings ||= ProgramDrift.readings(cache: ProgramDrift.default_cache_path)
+  ProgramDrift.attach_cards(readings, lookup || ProgramDrift.board_lookup)
+  say("")
+  say("Programs (on-chain; upgrades ride the program-upgrade SOP, not this release):")
+  ProgramDrift.lines(readings).each { |line| say("  #{line}") }
+rescue StandardError => e
+  say("")
+  say("  PROGRAM DRIFT: cannot confirm any program's deployed version — the check failed (#{e.class}: #{e.message})")
 end
 
 # Gather BOTH clean-ladder signals on BOTH rungs and return the CleanCheck

@@ -439,6 +439,12 @@ Confirming deliberately DARK** — do NOT stamp `confirming` (Steffon does, in
 evidence, the devnet gauntlet's contest slug (or "no Turf work"), and "deployed to QA".
 No-op: "nothing to prepare."
 
+**Program drift.** This release ships apps, never an on-chain program. Read
+`bin/release status` (or `bin/program-drift`) and carry every `PROGRAM DRIFT` line
+into the report verbatim, with the upgrade card it names; a line that says "NO
+upgrade card" gets one filed per [`program-upgrade`](../../steffon/sops/program-upgrade.md).
+A `cannot confirm` line is reported as unknown. Drift never blocks the candidate.
+
 ## Related
 
 - [`../../steffon/sops/production-deploy.md`](../../steffon/sops/production-deploy.md) — the deployer act this candidate hands off to.

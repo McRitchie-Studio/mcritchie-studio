@@ -1,0 +1,37 @@
+# On-chain programs the DevOps cycle watches for upgrade drift.
+#
+# Read by bin/lib/program_drift.rb (bin/program-drift, bin/release status) and by
+# the dor-check plugin bin/lib/dor/checks/program_upgrade_cards.rb. The SOP that
+# acts on a drift is docs/agents/agents/steffon/sops/program-upgrade.md.
+#
+# A program joins by adding an entry here; no code names a program or a program ID.
+#
+#   github          owner/repo of the program's source
+#   source_branch   the branch whose version is the target (what has shipped as source)
+#   version_file    the file whose [package] `version = "x.y.z"` line is the version
+#   deployment_doc  the repo's deployment record; each cluster's section carries a
+#                   `| Version | vX.Y.Z |` row and a `| Deployed | <date>, slot `N` |` row
+#   card_slug       the upgrade card's slug; {cluster} and {version} are filled in,
+#                   {version} as v<major><minor, two digits>[p<patch>] (0.26.0 -> v026,
+#                   0.26.1 -> v026p1). A new program should put its own name in the
+#                   template so two programs' cards cannot collide.
+#   clusters        in upgrade order: devnet first, then mainnet
+#     program_id    the deployed program's address on that cluster
+#     rpc_url       the JSON-RPC endpoint read for the last-deploy slot
+#     doc_section   the `## <heading>` in deployment_doc that describes this cluster
+programs:
+  turf-vault:
+    github: McRitchie-Studio/turf-vault
+    source_branch: main
+    version_file: programs/turf_vault/Cargo.toml
+    deployment_doc: docs/CURRENT_DEPLOYMENT.md
+    card_slug: "{cluster}-{version}-upgrade"
+    clusters:
+      devnet:
+        program_id: EQGFJAcABtDb6VXtiijTjZ6cE2UqdvhnqJvoharJbpMJ
+        rpc_url: https://api.devnet.solana.com
+        doc_section: Devnet
+      mainnet:
+        program_id: DaFv83yokwTz8msP9CzJ13eazSGk15NuUTxjkfzJzxMM
+        rpc_url: https://api.mainnet-beta.solana.com
+        doc_section: Mainnet

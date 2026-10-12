@@ -50,6 +50,14 @@ never its own gate row.
   refused. An **undetermined** mergeability is NOT this state — it is a wait).
   CI is checked here but **never its own gate** — it records as a `ci` SOP on
   the DoR attempt.
+- A PR that **bumps an on-chain program's version** (a program in
+  `config/onchain_programs.yml`, today turf-vault's
+  `programs/turf_vault/Cargo.toml`) has an **upgrade card per cluster** on the
+  board, not archived: `devnet-v026-upgrade` and `mainnet-v026-upgrade` for
+  v0.26.0. The check reads the version at the PR's base and head from GitHub,
+  and an unreadable version or board refuses. Plugin:
+  `bin/lib/dor/checks/program_upgrade_cards.rb`; the card convention and the act
+  are in [`program-upgrade`](../../agents/steffon/sops/program-upgrade.md).
 
 ## The exemption is earned by the DIFF, never by the `kind`
 

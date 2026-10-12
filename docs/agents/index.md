@@ -185,6 +185,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `domain-dns` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
 | `domain-purchase` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
+| `program-upgrade` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | `website-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | `workspace-icon` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |

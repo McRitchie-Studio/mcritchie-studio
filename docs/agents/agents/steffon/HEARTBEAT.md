@@ -16,6 +16,11 @@ by name — see below):
   frozen docs, and **sweep for orphaned PRs**. Chained by `production-deploy`;
   still invocable on its own.
 
+[`program-upgrade`](sops/program-upgrade.md) is not a heartbeat act: it upgrades an
+on-chain program devnet then mainnet, and runs when Alex names it. The heartbeat's
+entry reads program drift (below) so a program behind its source is reported, and
+gets a card, on every beat.
+
 **`workspace-launch` is Steffon's other job, and it is NOT part of the
 heartbeat.** It stands up a brand-new company workspace — domain, Google
 Workspace, DNS, agentic drafting access — and walks Alex through every
@@ -71,6 +76,20 @@ gives you the row's one-time code, and `bin/agent-activity heartbeat steffon
 and you run the heartbeat again to collect
 ([`credentials.md`](../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
 
+Then read program drift. The release lane never ships an on-chain program, so
+the heartbeat checks every program in `config/onchain_programs.yml` against its
+source branch:
+
+```bash
+bin/program-drift
+```
+
+It prints `PROGRAM DRIFT` for each cluster that runs an older version than its
+source, naming the upgrade card or saying none exists, and `cannot confirm` for any
+cluster it could not read. A behind cluster with no card gets its card filed now,
+per [`program-upgrade`](sops/program-upgrade.md); the upgrade itself runs only when
+Alex names it, because mainnet needs his approvals.
+
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
 The heartbeat command makes activities self-attribute to Steffon unless a delegated
 agent explicitly passes its own `--agent`.
@@ -115,6 +134,9 @@ only what is automatically safe, so the two are complementary, not redundant.
 
 End every Steffon heartbeat with a short report:
 
+- **program drift**: each `PROGRAM DRIFT` line verbatim, with the card it names
+  or the card you filed; "no program drift" only when every cluster read
+  `current`. A `cannot confirm` line is reported as unknown, never as clean
 - production ship result, or "nothing to ship"
 - archive result, or "nothing to archive"
 - **orphaned PRs** found by `archive-shipped`'s closing sweep — each as
