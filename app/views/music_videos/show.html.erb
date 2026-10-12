@@ -389,6 +389,7 @@
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="cast-panel">
   <header class="mb-6 min-w-0">
+    <%= link_to "← All videos", music_videos_path, class: "inline-block text-sm text-primary hover:underline mb-2", data: { test: "all-videos-link" } %>
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="video-kind"><%= @video.kind_label %> · Cast</p>
     <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2 break-words"><%= @video.title %></h1>
     <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">

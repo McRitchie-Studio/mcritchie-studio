@@ -224,7 +224,7 @@ Rails.application.routes.draw do
   get "recast_athletes/:slug/looks", to: "recast_athletes#looks", as: :recast_athlete_looks
   # Every alt video across every source, with its clip progress.
   get "alt_videos", to: "alt_videos#index", as: :alt_videos
-  resources :music_videos, only: [:show], param: :slug do
+  resources :music_videos, only: [:index, :show], param: :slug do
     post :confirm_cast, on: :member
     resources :performers, only: [:update], param: :ordinal, controller: "video_performers" do
       # Who replaces this performer: an athlete and a look, keep as is, or clear.
