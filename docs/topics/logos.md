@@ -172,6 +172,49 @@ same layers, the same fills and the same per-tone icon the Navbar Logo draws.
 - It is paths only, with a transparent background. There is no guide drawing.
 - `logo.watermark` returns the checked watermark settings (`fill`, `opacity`,
   and `icon_key` when set).
+- `colouring:` and `edits:` draw it in Original or Alt and with its colour
+  edit (`{ icon: { colour: "#635BB2" } }`, Alt only); any other part's edit is
+  refused.
+
+### The icon is the atomic unit
+
+Alex, 2026-10-11 19:23, on a /logos row whose Stacked Logo (saved in Alt)
+showed the white single-colour helmet beside an Original Navbar and Icon:
+"Lets make sure the icon is distributed across the other logos. In a way the
+icon can act as an atomic unit that is used elsewhere." (Task
+kit-icon-atomic-unit.)
+
+So a brand's kit saves ONE icon (`icon_choice`: a colouring and the icon's
+colour), and every Navbar and Stacked Logo draws that icon. Their own
+colouring then governs the **words** (the name and the tagline) only.
+
+- **The library.** `svg(..., colouring:, icon_colouring:)` on both logos draws
+  the icon in `icon_colouring` and the words in `colouring`. Left out, the
+  icon takes the words' colouring, which is every drawing exactly as before
+  (the byte pins hold). The icon's colour edit follows the icon's colouring,
+  the word edits the words' (each Alt only). The layout follows the icon drawn
+  (its width), and the gradients a drawing declares come from whichever part
+  is Original (an Alt part is all `#hex`). The watermark is one colour, so it
+  ignores both. A dark page draws the dark tone of each part's colouring.
+- **The page.** On the Navbar and Stacked tabs the icon is, in order: the URL's
+  icon params (`?icon_colouring=`, and `?icon_colour=` while the kit has an
+  icon), for exploring; else the kit's icon; else the tab's own colouring and
+  icon edit, as before. Under a kit icon the tab says "The icon is the kit's
+  (…), so Colouring here sets the words", and the Edit panel's Icon row shows
+  the kit icon and its colour with "Uses the kit icon. Change it on the Icon
+  tab." When the URL explores another icon, the row is the picker again and
+  the tab offers **Back to the kit icon**.
+- **Saving.** The Icon tab has its own control row with **Save as default**,
+  an Edit panel of the Icon row alone, and the Kit choice card (no text
+  version), whose **Clear saved choice** clears the kit icon. A Navbar or
+  Stacked choice saved while the kit has an icon stores no icon colour of its
+  own; an older choice that carries one keeps working, and the kit icon wins
+  when it is drawn.
+- **The table.** Each /logos row draws one icon in its Icon, Navbar and Stacked
+  tiles: the kit's icon, else the brand's icon in the page's colouring (its
+  Original where it has one). So with no kit icon a saved Alt choice is drawn
+  there with the brand's own icon, while its brand page and Kit card still
+  draw it exactly as saved.
 
 ## The Stacked Logo
 
@@ -419,8 +462,8 @@ admin sidebar as **Logos**.
 
 | Route | Shows |
 |-------|-------|
-| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo, each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
-| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (Navbar and Stacked tabs), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
+| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (all three drawing the row's one icon: the kit's, else the brand's own), each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Param: `tone`. Named `<brand>-icon-<tone>.svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
@@ -641,14 +684,16 @@ YAML and stores nothing; those stay in the YAML for now.
 | Column | Holds |
 |--------|-------|
 | `brand` | the style key (`studio`, `welding_v2`), unique |
+| `icon_choice` | `{"colouring" => "original", "edits" => {}}` or `{"colouring" => "alt", "edits" => {"icon_colour" => "D7602E"}}`: the icon every logo draws ([the atomic unit](#the-icon-is-the-atomic-unit)), or null |
 | `navbar_choice` | `{"rule" => 4, "text" => "second", "colouring" => "alt", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
 | `stacked_choice` | `{"form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {}}`, or null |
-
-A choice's `colouring` is optional: one saved before colourings has none and
-is read as `alt`, what it showed then (no migration).
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
 | `originals` | Active Storage attachments: the original artwork |
+
+A choice's `colouring` is optional: one saved before colourings has none and
+is read as `alt`, what it showed then (no migration). Under a kit icon, a
+Navbar or Stacked choice's `colouring` is its words'.
 
 **A choice is the page's own params.** Its `edits` are the edit panel's URL
 params (`Logos::Variant::EDIT_PARAMS`), and both saving and drawing read a
@@ -681,7 +726,7 @@ choice. The Edit panel's **Reset** goes back to the kit default's edits, and to
 the brand's style only when none is saved; **Clear saved choice** goes all the
 way back.
 
-**Saving.** On the Navbar and Stacked tabs, **Save as default** in the tab's
+**Saving.** On the Icon, Navbar and Stacked tabs, **Save as default** in the tab's
 control row saves the tab as shown (rule or form, colouring, edits) with the
 kit's current text version, and lands on the bare tab, which opens on it. The
 **Kit choice** card below saves the same with the text version picked in its
@@ -689,11 +734,11 @@ select (it starts on the saved one, else the default: second word leads for
 the Navbar Logo, first for the Stacked), and lands on the bare tab at the card,
 with a line saying what was saved. **Clear saved choice** puts the brand back on its default.
 The brand page's header says `Kit: saved <date> by <who>` (the saver's user
-name, else their email's local part; the title adds the email) while a Navbar
-or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
+name, else their email's local part; the title adds the email) while an Icon,
+Navbar or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
 originals included; ` · originals: N` follows when the kit holds any. The /logos
 table shows the same status cut to one line. Clear lands on the tab at the Kit
-choice card (`#kit-choice`). Its **Kit** card shows both choices in the page's tone, each with
+choice card (`#kit-choice`). Its **Kit** card shows the three choices (Icon, Navbar, Stacked) in the page's tone, each with
 **Open on its tab** and **Download**, and the kit's notes.
 
 **Originals.** The **Kit originals** card ("The originals the logos were
@@ -714,7 +759,7 @@ download is an attachment. A deleted original is purged to the bucket's trash
 
 | Route (`BrandKitsController`, admin only) | Does |
 |------|------|
-| `PATCH /logos/:brand/kit/choice` | saves `type` (`navbar`, `stacked`) with `rule` or `form`, `text` and the edit params |
+| `PATCH /logos/:brand/kit/choice` | saves `type` (`icon`, `navbar`, `stacked`) with `rule` or `form`, `text`, `colouring` and the edit params (an icon keeps `icon_colour` alone) |
 | `DELETE /logos/:brand/kit/choice` | clears `type`'s choice |
 | `PATCH /logos/:brand/kit` | saves `notes` |
 | `POST /logos/:brand/kit/originals` | uploads `originals[]` |
