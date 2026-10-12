@@ -396,7 +396,7 @@ apps:
   commercial-welding:
     ladder: three-rung
     # Managed studio-engine satellite, shaped like mcritchie-industries: Heroku apps
-    # `commercial-welding` and `commercial-welding-qa` (provisioned 2026-10-12 on
+    # `commercial-welding` and `commercial-welding-qa` (provisioned on
     # Alex's word; Basic web + essential-0 Postgres each), QA through
     # config/qa_environments.yml under the same slug. Migrations ride the
     # Procfile's `release: bin/rails db:migrate`. git_push_heroku runs no tests, so
