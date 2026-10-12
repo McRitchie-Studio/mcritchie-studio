@@ -301,4 +301,76 @@ class QaServerCliTest < Minitest::Test
     assert_equal QaServerCli.config_drift(declared, live).map(&:first).sort,
                  QaServerCli.heal_plan(declared, live).keys.sort
   end
+
+  # ── allow-list keys (/tasks/qa-server-idl-pair-heal) ────────────────────────
+  # EXPECTED_IDL_HASH is a comma SET. Compared as a raw string, turf-monster-qa's
+  # working {v025,v026} pin read as drift from the declared single hash and the
+  # heal PATCHed the lone hash over it, so no dyno booted.
+  SETS = %w[EXPECTED_IDL_HASH].freeze
+
+  def test_a_live_allow_list_that_covers_the_declared_pair_is_not_drift
+    declared = { "EXPECTED_IDL_HASH" => "v026,v025" }
+
+    assert_empty QaServerCli.config_drift(declared, { "EXPECTED_IDL_HASH" => "v025,v026" }, sets: SETS)
+    assert_empty QaServerCli.heal_plan(declared, { "EXPECTED_IDL_HASH" => "v025,v026" }, sets: SETS),
+                 "the incident: a pin already accepting both shapes must see ZERO writes"
+  end
+
+  def test_a_live_allow_list_missing_a_declared_hash_heals_by_widening_not_replacing
+    plan = QaServerCli.heal_plan({ "EXPECTED_IDL_HASH" => "v026,v025" },
+                                 { "EXPECTED_IDL_HASH" => "old,v025" }, sets: SETS)
+
+    assert_equal({ "EXPECTED_IDL_HASH" => "old,v025,v026" }, plan,
+                 "the PATCH restarts the slug still running, so its hash must stay accepted")
+  end
+
+  def test_a_missing_allow_list_heals_to_the_declared_pair
+    assert_equal({ "EXPECTED_IDL_HASH" => "v026,v025" },
+                 QaServerCli.heal_plan({ "EXPECTED_IDL_HASH" => "v026,v025" }, {}, sets: SETS))
+  end
+
+  def test_tighten_narrows_a_widened_allow_list_to_the_declared_pair
+    declared = { "EXPECTED_IDL_HASH" => "v026,v025", "QA_ENV" => "true" }
+
+    assert_equal({ "EXPECTED_IDL_HASH" => "v026,v025" },
+                 QaServerCli.tighten_plan(declared, { "EXPECTED_IDL_HASH" => "old,v025,v026", "QA_ENV" => "x" },
+                                          sets: SETS),
+                 "tighten touches allow-list keys only")
+    assert_empty QaServerCli.tighten_plan(declared, { "EXPECTED_IDL_HASH" => "v025,v026" }, sets: SETS)
+  end
+
+  # ── release_verdict: did the release phase succeed? ─────────────────────────
+  # rel-20261012-db4d68: v281-v283 failed their release phase while the old slug
+  # kept answering /up 200 and qa-server deploy reported green.
+
+  def releases(*rows) = rows.map { |version, status| { "version" => version, "status" => status, "description" => "d#{version}" } }
+
+  def test_a_failed_release_after_the_deploy_started_is_failed
+    state, release = QaServerCli.release_verdict(releases([281, "failed"], [280, "succeeded"]), since_version: 280)
+
+    assert_equal :failed, state
+    assert_equal 281, release["version"]
+  end
+
+  def test_the_newest_release_above_the_snapshot_decides
+    state, release = QaServerCli.release_verdict(releases([279, "succeeded"], [281, "succeeded"], [280, "failed"]),
+                                                 since_version: 279)
+
+    assert_equal [:succeeded, 281], [state, release["version"]], "a failed heal PATCH under a good deploy is not the verdict"
+  end
+
+  def test_a_pending_release_is_pending
+    assert_equal :pending, QaServerCli.release_verdict(releases([281, "pending"]), since_version: 280).first
+  end
+
+  # A no-op push (the sha was already deployed) makes no release; a failed one
+  # already on top still means the app is broken — the case Avi's retry hit.
+  def test_no_new_release_reads_the_newest_release_overall
+    assert_equal :failed, QaServerCli.release_verdict(releases([283, "failed"]), since_version: 283).first
+    assert_equal :succeeded, QaServerCli.release_verdict(releases([285, "succeeded"]), since_version: 285).first
+  end
+
+  def test_no_releases_is_unknown_not_succeeded
+    assert_equal :unknown, QaServerCli.release_verdict([], since_version: nil).first
+  end
 end
