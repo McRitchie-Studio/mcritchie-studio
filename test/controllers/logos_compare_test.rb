@@ -4,8 +4,8 @@ require "test_helper"
 
 # [component] THE KIT COMPARE through the routes (task logo-compare-and-original-edits): the Compare buttons on /logos
 # and on a brand page, two brand dropdowns, each side's kit default with its name and kit status above it, the shared
-# controls (Context, Colouring, type tabs, Rule or Form) carried by every other control, both sides at one scale,
-# downloads per side, and the 404 and 422 for what it does not know.
+# controls (Context, Colouring, type tabs, Rule or Form) carried by every other control, the Show grid toggle drawing
+# both sides' construction guides at one scale, downloads per side, and the 404 and 422 for what it does not know.
 class LogosCompareTest < ActionDispatch::IntegrationTest
   BY = "alex@test.com"
 
@@ -70,6 +70,29 @@ class LogosCompareTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='compare-side'][data-brand='turf'] [data-test='compare-note']", /Turf Monster has no with tagline form/
   end
 
+  test "Show grid draws both sides' construction guides at one scale" do
+    get logos_compare_path(left: "welding", right: "welding_v2", type: "stacked")
+    assert_select "[data-test='grid-toggle']", "Show grid"
+    assert_equal "1", query(href("grid-toggle"))["grid"]
+
+    # The tagline form: v1's name carries LLC, so its drawing is the wider (the two-line forms are the same width).
+    get logos_compare_path(left: "welding", right: "welding_v2", type: "stacked", form: "tagline", grid: 1)
+    assert_select "[data-test='compare'][data-grid='1']"
+    assert_select "[data-test='grid-toggle'][aria-pressed='true']", "Hide grid"
+    assert_select "[data-test='grid-sentence']"
+    shares = sides.map do |side|
+      side_images(side).map do |img|
+        assert_equal "1", query(img["src"])["guides"]
+        img["data-share"].to_f
+      end
+    end
+    assert_equal [1.0], shares.flatten.max(1), "the wider drawing fills its frame"
+    assert_in_delta 3059.62 / 3521.28, shares.last.first, 1e-3, "v2's narrower drawing takes its share of the frame, so both are at one scale"
+
+    get logos_compare_path(left: "welding", right: "welding_v2", type: "icon", grid: 1)
+    assert_select "[data-test='grid-toggle']", 0, "the icon has no construction guides"
+  end
+
   test "an unknown brand is a 404 and an unknown control a plain-text 422" do
     get logos_compare_path(left: "acme", right: "welding")
     assert_response :not_found
@@ -77,6 +100,8 @@ class LogosCompareTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_match(/unknown rule "5"/, response.body)
     get logos_compare_path(type: "logo")
+    assert_response :unprocessable_content
+    get logos_compare_path(grid: "yes")
     assert_response :unprocessable_content
   end
 

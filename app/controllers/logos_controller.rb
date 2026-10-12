@@ -31,7 +31,8 @@
 # saved choices, and the brand page shows them and saves them
 # (BrandKitsController does the writing).
 # COMPARE (task logo-compare-and-original-edits): /logos/compare?left=welding&right=welding_v2 draws two brands' kits
-# side by side (LogoComparison), each in its kit default unless the page's shared controls change it.
+# side by side (LogoComparison), each in its kit default unless the page's shared controls change it, with a Show
+# grid toggle for both sides' construction guides.
 #
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
@@ -74,7 +75,7 @@ class LogosController < ApplicationController
 
   # Two brands' kits side by side: ?left= and ?right= (Commercial Welding v1 and v2 unless asked; an unknown brand is a
   # 404, as on a brand page), ?type= (the Navbar Logo unless asked), and the controls both sides share: ?rule=, ?form=
-  # and ?colouring= (absent: each side's kit default).
+  # and ?colouring= (absent: each side's kit default) and ?grid=1 (the construction guides).
   def compare
     brands = Logos::NavbarLogo.brands
     pair = LogoComparison.default_pair(brands)
@@ -82,10 +83,11 @@ class LogosController < ApplicationController
     @type = Logos::Variant.type(params[:type])
     @rule_param = (Logos::Variant.rule(params[:rule]) if params.key?(:rule))
     @form_param = (Logos::Variant.form(params[:form]) if params.key?(:form))
+    @grid = Logos::Variant.flag(params[:grid], "grid")
     kits = BrandKit.by_brand([@left, @right])
     @savers = BrandKit.saver_names(kits.values)
     @comparison = LogoComparison.new(left: @left, right: @right, type: @type, tones: @tones, rule: @rule_param, form: @form_param,
-                                     colouring: @colouring_param, kits:)
+                                     colouring: @colouring_param, grid: @grid, kits:)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.

@@ -68,12 +68,18 @@ class LogoComparisonTest < ActiveSupport::TestCase
     assert_match(/solid colour, so it has no Original/, studio.notes.first)
   end
 
+  test "the grid draws construction guides on Navbar and Stacked, never on the icon" do
+    assert compare(type: :navbar, grid: true).sides.all? { |side| side.variant.guides }
+    assert compare(type: :stacked, grid: true).sides.all? { |side| side.variant.guides }
+    refute compare(type: :icon, grid: true).grid
+  end
+
   test "both sides are drawn at one scale: each width a share of the wider drawing's" do
-    navbar = compare(type: :navbar)
+    navbar = compare(type: :navbar, grid: true)
     shares = navbar.widths(:light)
     assert_in_delta 1.0, shares.max
     left, right = navbar.sides.map { |side| side.variant.svg[/viewBox="([^"]+)"/, 1].split.map(&:to_f) }
-    assert_equal left[3], right[3], "every Navbar Logo is the same height in design units"
+    assert_equal left[3], right[3], "every Navbar guide drawing is the same height in design units"
     assert_in_delta left[2] / right[2], shares[0] / shares[1], 1e-9
     assert_nil compare(type: :icon).widths(:light), "icons share no unit, so each fits its frame"
   end

@@ -3,9 +3,11 @@
     dropdowns pick the brands; each side draws its brand's KIT DEFAULT for the
     type (its saved choice and kit icon, else the brand's style: LogoComparison)
     with its name and kit status above it, until the shared controls change it:
-    Context, Colouring, the type tabs, and the Rule or Form. Both sides are drawn
-    at ONE scale (each drawing's width a share of the wider one's), bottoms
-    aligned, so their sizes compare directly. Side by side from
+    Context, Colouring, the type tabs, and the Rule or Form. Show grid swaps both
+    sides for their construction guide drawings. Both sides are drawn at ONE
+    scale (each drawing's width a share of the wider one's), bottoms aligned, so
+    their rows and units line up; the Navbar's guide drawings are all one height
+    in design units, so there they are the same height too. Side by side from
     the md breakpoint, one above the other on a phone. Every control is a plain
     link or GET form (logo_compare_params), so each keeps the others. Each side
     has its own downloads and copies. Admin only (LogosController). %>
@@ -77,13 +79,20 @@
           <% end %>
         </div>
       <% end %>
+      <% unless @type == :icon %>
+        <%= link_to (@grid ? "Hide grid" : "Show grid"), logos_compare_path(logo_compare_params(grid: (1 unless @grid))),
+                    class: chosen.(@grid), aria: { pressed: @grid.to_s }, data: { test: "grid-toggle" } %>
+      <% end %>
     </div>
 
     <p class="text-sm text-secondary" data-test="compare-sentence">Each side draws its brand's kit default: the saved choice and the kit's icon, or the brand's style where nothing is saved. The controls above change both sides at once; Kit default puts a side back on its own. Both sides are drawn at one scale, so their sizes compare directly.</p>
+    <% if @grid %>
+      <p class="text-sm text-secondary" data-test="grid-sentence">The grid: each side's construction guide drawing, as its brand page shows it, at one scale and aligned at the foot, so the rows, units and gaps line up across the two sides. They are for looking at, never for shipping.</p>
+    <% end %>
     <%= render "logos/context_notes" %>
   </div>
 
-  <section class="card p-4 sm:p-5" aria-label="<%= names.fetch(@left) %> and <%= names.fetch(@right) %>, <%= Logos::Variant::TYPES.fetch(@type) %>" data-test="compare" data-type="<%= @type %>">
+  <section class="card p-4 sm:p-5" aria-label="<%= names.fetch(@left) %> and <%= names.fetch(@right) %>, <%= Logos::Variant::TYPES.fetch(@type) %>" data-test="compare" data-type="<%= @type %>" data-grid="<%= @grid ? 1 : 0 %>">
     <%# From md up, two columns whose three rows (heading, drawing, downloads) are shared by both sides through a
         subgrid, so the two drawings start on one line whatever each heading says; on a phone, one side above the other. %>
     <div class="grid gap-x-6 gap-y-8 md:grid-cols-2 md:grid-rows-[auto_1fr_auto] md:gap-y-3">
@@ -105,7 +114,7 @@
           <%# The drawing's frame. A Navbar or Stacked drawing is a share of the frame's width (LogoComparison#widths),
               the same share of the same width on both sides, so both are at one scale; the icon fits its frame. %>
           <div class="flex min-w-0 items-end justify-center rounded-lg border border-subtle p-4" data-test="logo-frame"
-               role="group" aria-label="Logo: <%= side.variant.label.sub(", #{side.variant.tone}", '') %>">
+               role="group" aria-label="<%= side.variant.guides ? 'Guide drawing' : 'Logo' %>: <%= side.variant.label.sub(", #{side.variant.tone}", '') %>">
             <% if shares.values.first %>
               <%= logo_themed(side.variants.keys) do |tone| %>
                 <% shown = side.variants.fetch(tone) %>

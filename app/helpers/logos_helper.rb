@@ -34,7 +34,7 @@ module LogosHelper
   # on top; a change to nil drops a param.
   def logo_compare_params(**changes)
     { left: @left, right: @right, type: (@type unless @type == :navbar), context: (@context if @context == :watermark),
-      colouring: @colouring_param, rule: @rule_param, form: @form_param }.merge(changes).compact
+      colouring: @colouring_param, rule: @rule_param, form: @form_param, grid: (1 if @grid) }.merge(changes).compact
   end
 
   # The compare page a brand page's Compare button opens: this brand on the left, its other version (or the next

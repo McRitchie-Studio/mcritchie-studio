@@ -7,6 +7,7 @@
 # edits) and the kit's icon, exactly as its brand page opens on it (BrandKit#page_defaults), else the brand's style.
 # The page's shared controls override it one by one: a rule, a form, a colouring. A control a side cannot take (a form
 # its name does not draw, an Original for a brand with none) leaves that side on its own, and the side says so.
+# With `grid`, both sides draw their construction guide drawings instead (the brand pages' Show guides).
 #
 # Plain Ruby over BrandKit records: nothing here writes.
 class LogoComparison
@@ -35,15 +36,16 @@ class LogoComparison
     [left, partner(left, brands)]
   end
 
-  attr_reader :type, :rule, :form, :colouring, :sides
+  attr_reader :type, :rule, :form, :colouring, :grid, :sides
 
   # `rule`, `form` and `colouring` are the page's controls (nil: each side's kit default); `kits` the saved records by
   # brand (BrandKit.by_brand), a brand with none drawing its style; `tones` the versions the page carries.
-  def initialize(left:, right:, type:, tones:, rule: nil, form: nil, colouring: nil, kits: {})
+  def initialize(left:, right:, type:, tones:, rule: nil, form: nil, colouring: nil, grid: false, kits: {})
     @type = type
     @rule = rule
     @form = form
     @colouring = colouring
+    @grid = grid && type != :icon
     @tones = tones
     @sides = [left, right].map { |brand| side(brand.to_s, kits[brand.to_s] || BrandKit.new(brand: brand.to_s)) }
   end
@@ -75,7 +77,7 @@ class LogoComparison
     edits, icon_colouring = side_edits(logo, defaults, rule, form, notes)
     variants = @tones.to_h do |tone|
       [tone, Logos::Variant.new(logo, type:, rule:, form:, text: kit.default_text(type) || :homogeneous, tone:, colouring:,
-                                      icon_colouring:, edits:)]
+                                      icon_colouring:, guides: grid, edits:)]
     end
     Side.new(brand:, logo:, kit:, variants:, saved: !defaults[:choice].nil?, changed:, notes:)
   end

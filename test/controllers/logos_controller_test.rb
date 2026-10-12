@@ -24,7 +24,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   def requests
     { index: -> { get logos_path }, show: -> { get logo_brand_path("industries") },
-      compare: -> { get logos_compare_path(left: "welding", right: "welding_v2") },
+      compare: -> { get logos_compare_path(left: "welding", right: "welding_v2", grid: 1) },
       icon: -> { get icon_logo_path("industries", tone: "dark") },
       navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") },
       stacked: -> { get stacked_logo_path("industries", text: "first") } }
