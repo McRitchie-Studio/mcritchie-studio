@@ -15,6 +15,10 @@ module MusicVideos
     # Anything already known to be absent (a clip whose window was re-tiled, a
     # swap with no character sheet, a sheet on a non-https host) is listed in
     # `missing` and never becomes an entry; the Writer adds what fails to read.
+    #
+    # A chunk with people on screen and no lettered frames is not a missing
+    # file but a skipped step: the README's A/B/C FRAMES section names it in
+    # the alt video page's words (MissingReferences).
     class Manifest
       # kind: :object (an R2 key), :url (an https sheet image) or :text (inline).
       Entry = Data.define(:path, :kind, :source, :label)
@@ -59,6 +63,7 @@ module MusicVideos
         @entries = []
         @missing = []
         @clips = clips.sort_by(&:chunk_ordinal).map { |clip| clip_folder(clip, clip.chunk_in(chunks)) }
+        @frames_missing = MissingReferences.chunks(@clips.map(&:chunk), @performers).to_set(&:ordinal)
       end
 
       # The download's file name: the whole alt video, or one clip of it.
@@ -74,7 +79,7 @@ module MusicVideos
       # list plus `also_missing` (what the Writer could not read).
       def readme(also_missing = [])
         absent = missing + Array(also_missing)
-        lines = header_lines + [""] + people_lines + [""] + clip_lines + [""]
+        lines = header_lines + [""] + frames_warning_lines + people_lines + [""] + clip_lines + [""]
         lines << "NOT INCLUDED"
         lines << "  Nothing: every file was fetched." if absent.empty?
         absent.each { |m| lines << "  #{m.path}  #{m.label}: #{m.reason}." }
@@ -206,12 +211,28 @@ module MusicVideos
             lines << "    sheet #{row.sheet}  Person #{row.letter} (#{role}) -> " \
                      "#{[number_label(entry.appearance_slug), entry.label].compact.join(' ')}  #{name ? "sheets/#{name}" : '(not included)'}"
           end
-          lines << "    no lettered frames yet" if c.frames.empty?
+          lines << "    #{frames_absent_line(c)}" if c.frames.empty?
           c.frames.each do |name, frame|
             lines << "    frames/#{name}  #{timecode(frame['t_ms'])} · #{Array(frame['letters']).join(' ')}"
           end
         end
         lines
+      end
+
+      # The alt video page's warning, word for word, and the folders it means;
+      # nothing when every chunk with people on screen has its lettered frames.
+      def frames_warning_lines
+        warning = MissingReferences.warning(@frames_missing.size, @clips.count(&:chunk))
+        return [] unless warning
+
+        folders = @clips.select { |c| c.chunk && @frames_missing.include?(c.chunk.ordinal) }.map { |c| "#{File.basename(c.folder)}/" }
+        ["A/B/C FRAMES", "  #{warning}", "  No A/B/C frames: #{folders.join(', ')}", ""]
+      end
+
+      def frames_absent_line(clip_folder)
+        return "No A/B/C frames: ask the agent to run lettered references" if @frames_missing.include?(clip_folder.chunk.ordinal)
+
+        "Nobody is on screen in this window, so it needs no A/B/C frames."
       end
 
       def number_label(appearance_slug)

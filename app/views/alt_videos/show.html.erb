@@ -16,7 +16,7 @@
         <%# The page's primary action: every clip's hand-off in one zip, one folder per clip (AltVideoDownloadsController). %>
         <%= link_to music_video_alt_video_download_path(@video, @alt_video), download: "",
                     class: "btn btn-primary w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2",
-                    title: "The source clips, prompts, lettered frames and sheets, one folder per clip",
+                    title: "The source clips, prompts, A/B/C frames and sheets, one folder per clip",
                     data: { test: "alt-video-download-all", turbo: false } do %>
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
           <span>Download all assets</span>
@@ -30,6 +30,12 @@
       <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline", data: { test: "alt-video-index-link" } %>
     </p>
   </header>
+
+  <% if @frames_warning %>
+    <%# Chunks with people on screen (a sighting in the window) and no lettered frames: Higgsfield needs them (digest-video Stage 2, step 5). %>
+    <p class="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning-ink min-w-0 break-words" role="status"
+       data-test="alt-video-frames-missing" data-count="<%= @frames_missing.size %>"><%= @frames_warning %></p>
+  <% end %>
 
   <div class="card p-4 mb-4 min-w-0" data-test="alt-video-swaps" data-count="<%= @swaps.size %>">
     <p class="label-upper mb-2">Swaps <span class="normal-case tracking-normal">· snapshotted from the cast when the clips were built; editing the cast never changes them</span></p>
@@ -61,7 +67,7 @@
       <% @clips.each do |clip| %>
         <%= render "alt_videos/clip", clip: clip, chunk: @chunk_for[clip.chunk_ordinal], alt_video: @alt_video, video: @video,
                    swaps: @swaps, urls: @urls, downloads: @downloads, sheets: @sheets, numbers: @numbers,
-                   overlap_ms: @video.chunk_overlap_ms.to_i %>
+                   overlap_ms: @video.chunk_overlap_ms.to_i, frames_missing: @frames_missing.include?(clip.chunk_ordinal) %>
       <% end %>
     </div>
   <% else %>

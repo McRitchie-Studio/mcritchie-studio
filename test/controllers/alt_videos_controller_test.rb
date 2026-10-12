@@ -158,6 +158,56 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='performer-card'][data-ordinal='2'] [data-test='performer-letter']", "B"
   end
 
+  # [integration] Chunks with people on screen and no lettered frames: one
+  # warning at the top and a note on each such card (digest-video Stage 2, step 5).
+  test "the page warns while chunks with people on screen have no lettered frames" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    log_in_as users(:alex)
+    get music_video_alt_video_path(video, alt)
+
+    # Person A is sighted throughout; only chunk 3 has frames.
+    assert_select "[data-test='alt-video-frames-missing'][data-count='3']",
+                  "3 of 4 clips have no A/B/C frames yet. Higgsfield works best with them: " \
+                  "ask the agent to run lettered references."
+    assert_select "[data-test='clip-frames-missing']", 3
+    [1, 2, 4].each do |ordinal|
+      assert_select "[data-test='alt-clip'][data-ordinal='#{ordinal}'] [data-test='clip-frames-missing']", "No A/B/C frames"
+    end
+    assert_select "[data-test='alt-clip'][data-ordinal='3'] [data-test='clip-frames-missing']", 0
+    # Chunk 1 has Person A on screen, kept as filmed: the target line says nobody
+    # is swapped (not that nobody is there), so it agrees with the badge.
+    assert_select "[data-test='alt-clip'][data-ordinal='1']" do
+      assert_select "[data-test='clip-target-none']", "Nobody swapped in this window."
+      assert_select "[data-test='clip-frames-missing']", "No A/B/C frames"
+    end
+    assert_no_match(/labelled or swapped/, response.body)
+    # The warning sits above the swaps, near the top.
+    assert_operator response.body.index("alt-video-frames-missing"), :<, response.body.index("data-test=\"alt-video-swaps\"")
+  end
+
+  test "the warning is gone once every chunk with people has frames; a chunk nobody is sighted in owes none" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    # Nobody sighted after 0:57, so chunk 4 (1:00-1:12) is credits.
+    video.video_performers.each do |p|
+      p.update_columns(sightings: p.sightings.select { |s| s["t_ms"] <= 57_000 })
+    end
+    video.video_chunks.where(ordinal: [1, 2]).find_each do |chunk|
+      key = MusicVideos::ObjectKeys.chunk_reference(source_key: LetteredVideo::SOURCE, ordinal: chunk.ordinal,
+                                                    start_ms: chunk.start_ms, end_ms: chunk.end_ms, number: 1)
+      chunk.update!(reference_frames: [{ "object_key" => key, "t_ms" => chunk.start_ms + 6000, "letters" => %w[A] }])
+    end
+    log_in_as users(:alex)
+    get music_video_alt_video_path(video, alt)
+
+    assert_response :success
+    assert_select "[data-test='alt-video-frames-missing']", 0
+    assert_select "[data-test='clip-frames-missing']", 0
+    assert_select "[data-test='alt-clip'][data-ordinal='4'] [data-test='clip-frames-none'][data-reason='nobody']",
+                  "Nobody is on screen in this window, so it needs no A/B/C frames."
+  end
+
   test "a swapped person with no sheet keeps the number in the card's label" do
     video = LetteredVideo.seed!
     alt = video.alt_videos.first

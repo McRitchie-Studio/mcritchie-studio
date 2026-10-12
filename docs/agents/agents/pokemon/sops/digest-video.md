@@ -147,6 +147,32 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
 3. **Upload one still per person** to the same bucket as the source, at
    `music_videos/<artist>/<video>/stills/person_<NN>_<mmss>.jpg`. The API refuses
    a still outside the video's own folder or numbered for another person.
+
+   **Letter the still before you upload it.** A still often shows several
+   people, and nothing else tells the operator which one the card means. Draw
+   the card's own letter on it (Person 1 is A, Person 2 is B, and so on: the
+   card's ordinal letter) as the same disc `bin/clip-references` draws: a
+   yellow (`#FFD400`) disc with a black ring and the letter in black, placed
+   over that person (the chest, clear of the face). One letter per still:
+   only the card's own person, never names. Pick a moment where that person
+   is clearly the subject when the sightings offer one; a still with someone
+   else front and centre misleads the operator even with the disc. With
+   ImageMagick, for a frame `W` x `H` pixels and the person at `X`, `Y`:
+
+   ```bash
+   # r = max(round(H * 0.045), 14); ring = max(round(r / 6), 2); point size = round(r * 1.25)
+   # clamp first, so a disc near the edge is not cut off: X = min(max(X, r), W - r); Y = min(max(Y, r), H - r)
+   magick f_<mmss>.jpg -font "/System/Library/Fonts/Supplemental/Arial Bold.ttf" \
+     -fill "#FFD400" -stroke black -strokewidth <ring> -draw "circle X,Y X+r,Y" \
+     -fill black -stroke none -pointsize <size> -gravity center \
+     -annotate <dx><dy> B -quality 90 person_02_<mmss>.jpg   # dx = X - W/2, dy = Y - H/2, each signed: +120-40
+   ```
+
+   (These are `ClipReferences.draw_command`'s numbers, in
+   `bin/lib/clip_references.rb`.) To fix a still already posted, upload the
+   lettered one **to the same key**: it replaces the object, and the card
+   shows it without re-posting the cast (a re-post would replace the whole
+   set, step 4).
 4. **Post the set**, which replaces any set already there:
 
    ```bash
@@ -161,13 +187,46 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    refused (`UNPERMITTED_KEYS`). A replace drops the operator's labels and
    recasts on the old set and says how many of each (`meta.dropped_labels`,
    `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
-5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
+5. **Letter the references. Required.** Once the cast is posted, give every
+   chunk with people on screen its A/B/C frames: stills of the
+   chunk with a yellow A, B, C disc over each person. Higgsfield's output is
+   only as good as its references, so this step is part of the cast run, not
+   an extra:
+
+   ```bash
+   bin/clip-references <slug> --extract --production   # stills each chunk at moments the sightings pick
+   # open each frame under references/<slug>/frames/ and place the tags by eye: letters only, never names
+   bin/clip-references <slug> --apply --dry-run --production   # draw into references/<slug>/lettered/
+   # look at every drawn frame: each disc on the right person, none on a face
+   bin/clip-references <slug> --apply --production     # draw, upload, post
+   ```
+
+   (Drop `--production` for the dev bucket and `localhost:3000`.) The full
+   how-to, with the tag format, is [Lettered references](#lettered-references).
+
+   **The hand-back to Alex for a video is not complete until every chunk with
+   people on screen has A/B/C frames.** A chunk with no sightings in its
+   window (credits, black, a title card) legitimately has none, and the alt
+   video page does not count it. The alt video page and the asset zip's
+   README both name every chunk still missing its frames; read that list
+   before you report. **A re-cast** (a new set of people posted) moves the
+   letters and the sightings, so run this step again in full.
+
+   Two traps, both from the first run (`migos-straightenin`, 2026-10-11):
+   - The frames belong to the source's chunks and every alt video shows the
+     same ones. `--extract --alt N` picks moments that favour alt video N's
+     swaps; use it only when one alt video is the point, and otherwise
+     extract without `--alt` so the frames show everyone.
+   - Nothing told Alex the frames were missing: he downloaded an alt video's
+     zip and found no A/B/C frames because this step had not run. The page now
+     warns, but the step is the agent's, not the warning's.
+6. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
    shows the still and the sightings as links to that second of the video.
    **Nothing on a card has to be pressed**: every card starts **Not named** and
    not swapped, and **Cast confirmed** is ready as soon as the vision
    pass has posted people; it moves the video from `digested` to
    `cast_confirmed`. A card reads top to bottom: the still and "Person N";
-   **Replace with** (step 6); the description and sightings; then, pinned to
+   **Replace with** (step 7); the description and sightings; then, pinned to
    the bottom so cards in a row line up, the **Keep Original / Swap back**
    button and **who is on screen**. Naming is optional and builds the artist
    rolodex: a small "Who is this on screen? (optional)" label over a search
@@ -187,7 +246,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    the header badge follows each save, naming someone who has looks offers
    **Swap with <name>?** at once, naming stays editable after the confirm, and
    the stored prompts follow each change.
-6. **The operator swaps**, on the same card, under **Replace with**, which sits
+7. **The operator swaps**, on the same card, under **Replace with**, which sits
    at the top of the card, under the still and the "Person N" heading and above
    the description and sightings: a people search on every card, with no toggle
    to press first. A card with nobody
@@ -222,7 +281,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    while one is in flight waits for it), so the server always ends where the
    card does. The prompts, targets and hand-offs below repaint after each save
    without a reload.
-7. **A new look, from the card.** The dropdown's last row is **Generate a new
+8. **A new look, from the card.** The dropdown's last row is **Generate a new
    look**; a person with **no look yet** (listed with "0 looks", saved alone
    as a pending swap) gets **Generate first look** in its place. The form asks
    for the look's name, which is the uniform or colours the sheet is drawn in
@@ -387,9 +446,10 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    Editing the cast cards afterwards never changes an existing alt video:
    change the cards and press Build Clips again for another version.
 2. **Take the hand-off** on each clip card, in time order: **Download 25 s
-   clip** (the source chunk, as an attachment), the **lettered frames** (each
-   with **Download**; make them first, see
-   [Lettered references](#lettered-references)), one sheet button per person
+   clip** (the source chunk, as an attachment), the **A/B/C frames** (each
+   with **Download**; the cast run made them, see
+   [Lettered references](#lettered-references); a card marked "No A/B/C
+   frames" means that step was skipped), one sheet button per person
    this alt video swaps in that window, labelled `Sheet 1 · Person B · #4 Dak
    Prescott`, and **Copy prompt** (built from the alt video's own swaps). Add
    the sheets to Higgsfield in their numbered order: the prompt names them as
@@ -401,10 +461,10 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    clip assets**, on each card's hand-off row, downloads one clip's. Inside:
 
    ```text
-   <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, anything missing
+   <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, chunks with no A/B/C frames, anything missing
    <video>_alt_<n>/clip_03_0040-0105/source_clip.mp4   the 25 s source chunk
    .../prompt.txt                                      the card's prompt, byte for byte (built at download from the alt video's swaps and current jersey numbers)
-   .../frames/frame_1_ABC_0045.jpg                     lettered frames in card order: number, letters, time
+   .../frames/frame_1_ABC_0045.jpg                     A/B/C frames in card order: number, letters, time
    .../sheets/sheet_1_B_04_<person>_<look>.png         sheets in the prompt's order: number, letter, jersey, person, look
    ```
 
@@ -487,8 +547,13 @@ every clip and every alt video. The prompt lists every swapped person seen in
 the clip, leads (lip-synced) and background alike; everyone else is kept. A
 look's number is `appearances.jersey_number`, typed when the look is made or
 its sheet generated, and edited on the person page (**Save number**); without
-one the prompt uses the name. To show Higgsfield who is who, each clip gets 2-3
-stills of the source with the letters drawn over the people.
+one the prompt uses the name. To show Higgsfield who is who, every chunk with
+people on screen gets 2-3 stills of the source with the letters drawn over the
+people. This is the how-to for [Stage 2, step 5](#stage-2-cast), which is
+required: the cast run is not handed back until these frames exist. The alt
+video page warns ("N of M clips have no A/B/C frames yet") and marks
+each card "No A/B/C frames" while any chunk with sightings in its window has
+none; the asset zip's README names the same chunks.
 
 Letters are not names. The agent places a tag where it sees a person; only
 the operator says who that person is.
@@ -497,7 +562,7 @@ the operator says who that person is.
 
    ```bash
    bin/clip-references <slug> --extract              # dev bucket, localhost:3000
-   bin/clip-references <slug> --extract --alt 2      # choose frames that show alt video 2's swaps
+   bin/clip-references <slug> --extract --alt 2      # favour alt video 2's swaps (every alt video shows the result)
    bin/clip-references <slug> --extract --production # production API and bucket
    ```
 

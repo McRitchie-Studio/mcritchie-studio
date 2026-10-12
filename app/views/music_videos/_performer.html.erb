@@ -36,7 +36,7 @@
         <%# The title is the disclosure: press it for the description and one row of clear sightings, again to fold them. The letter before it is the one clip prompts and lettered frames call this person (Person 2 is B), fixed for the source. %>
         <h2 class="min-w-0 flex items-baseline gap-2">
           <span class="badge text-3xs bg-warning/20 text-heading border-warning/40 font-bold shrink-0 self-center" data-test="performer-letter"
-                title="<%= performer.name %> is Person <%= performer.letter %> in clip prompts and lettered frames"><%= performer.letter %></span>
+                title="<%= performer.name %> is Person <%= performer.letter %> in clip prompts and A/B/C frames"><%= performer.letter %></span>
           <button type="button" @click="cardToggle()" aria-expanded="false" :aria-expanded="(cardLevel > 0).toString()"
                   aria-controls="person-<%= performer.ordinal %>-details"
                   class="group flex items-baseline gap-2 min-w-0 max-w-full text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
