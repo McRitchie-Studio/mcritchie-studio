@@ -98,6 +98,19 @@ class MusicVideosIndexTest < ActionDispatch::IntegrationTest
     assert_equal one, page_queries
   end
 
+  test "a row with a cast still shows it as a signed thumbnail" do
+    tiled, = seed_two
+    key = "music_videos/test_artist_a/tiled_demo/stills/person_01_0003.jpg"
+    tiled.video_performers.find_by!(ordinal: 1).update!(still_object_keys: [key])
+    log_in_as users(:alex)
+    get music_videos_path
+
+    assert_select "[data-test='music-video-row'][data-slug='#{tiled.slug}'] [data-test='music-video-still']" do |el|
+      assert_includes el.sole["style"], key
+      assert_includes el.sole["style"], "X-Amz-Signature"
+    end
+  end
+
   test "the source page links back to all videos" do
     tiled, = seed_two
     log_in_as users(:alex)

@@ -24,11 +24,11 @@
         <div class="grid grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,4fr)] gap-3 md:gap-4 p-4 border-b border-subtle last:border-b-0 min-w-0"
              role="row" data-test="music-video-row" data-slug="<%= video.slug %>">
           <div class="flex gap-3 min-w-0" role="cell">
-            <%# The placeholder sits under the still, so a still that fails to load (an expired or unreachable store) leaves it, not a broken image. %>
+            <%# The still is a background over the placeholder, so one that fails to load (an expired or unreachable store) leaves the placeholder, not a broken image. %>
             <div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-surface-alt border border-subtle flex items-center justify-center" data-test="music-video-thumb">
               <span class="text-xl" aria-hidden="true">🎬</span>
               <% if thumb %>
-                <img src="<%= thumb %>" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" x-data x-init="if ($el.complete && $el.naturalWidth === 0) $el.remove()" x-on:error="$el.remove()">
+                <span class="absolute inset-0 bg-cover bg-center" style="background-image: url('<%= j thumb %>')" aria-hidden="true" data-test="music-video-still"></span>
               <% end %>
             </div>
             <div class="min-w-0">
