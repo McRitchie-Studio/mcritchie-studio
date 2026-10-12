@@ -821,7 +821,8 @@ class Release::ReposTest < ActiveSupport::TestCase
     "search-position" => "git_push_heroku",
     "tax-studio" => "repo_script",
     "chain-ops" => nil,
-    "moms-app" => "git_push_heroku"
+    "moms-app" => "git_push_heroku",
+    "commercial-welding" => nil
   }.freeze
 
   test "every app keeps its production deploy strategy" do

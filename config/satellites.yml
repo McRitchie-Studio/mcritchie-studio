@@ -199,3 +199,16 @@ satellites:
     description: "Karen McRitchie's family audiobook and slideshow site; release-managed standalone on the standalone-heroku profile"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: commercial-welding
+    display_name: "Commercial Welding"
+    emoji: "🔥"
+    port: 4500
+    # No Heroku app or public URL until the acquisition closes (~2026-10-30):
+    # nothing pairing Commercial Welding with McRitchie goes public before then.
+    heroku_app: null
+    production_url: null
+    role: "viewer"
+    description: "Commercial Welding LLC company site; studio-engine satellite, not yet deployed"
+    deploy_provider: "heroku"
+    status: "planned"

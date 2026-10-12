@@ -107,15 +107,15 @@ apps:
     color: "#EA580C"
     tier: product
     status: active
-    port: null
-    repo: null
+    port: 4500
+    repo: McRitchie-Studio/commercial-welding
     heroku_app: null
     production_url: null
     qa_url: null
-    engine: false
+    engine: true
     hosted: false
     workspace: commercial-welding
-    description: Commercial Welding LLC; a Google Workspace client with no app yet
+    description: Commercial Welding LLC's company site on studio-engine; a Google Workspace client, not yet deployed
 
   - slug: moms-app
     name: Moms App
