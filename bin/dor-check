@@ -211,7 +211,7 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil, gate: "merge", gate_role: "builder", diff_base: false }
+options = { json: false, file: nil, gate: "merge", gate_role: "builder", diff_base: false, precheck: false }
 GATES = %w[merge build].freeze
 GATE_ROLES = %w[builder review].freeze
 
@@ -260,6 +260,8 @@ OptionParser.new do |o|
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
+  o.on("--precheck", "Builder-side pre-check (bin/submit step 0/8): every merge-gate rule EXCEPT the CI read, " \
+                     "and records nothing") { options[:precheck] = true }
   o.on("-h", "--help", "Show this help") do
     puts o
     exit 0
@@ -267,6 +269,18 @@ OptionParser.new do |o|
 end.parse!
 die!("--gate must be one of: #{GATES.join(", ")}") unless GATES.include?(options[:gate])
 die!("--gate-role must be one of: #{GATE_ROLES.join(", ")}") unless GATE_ROLES.include?(options[:gate_role])
+# THE PRE-CHECK (/tasks/submit-checks-before-push). 96 of 407 builder-side refusals in the
+# 14 days to 2026-10-12 were the tier gate alone — a board-metadata read — and bin/submit
+# asked it only at 7/8, after a ~10-minute CI wait it could have refused before. So
+# bin/submit asks the SAME rules here first, before it commits or pushes. Everything but
+# the CI read runs (shape, metadata, tiers, the observed-diff claim, the control stamp,
+# post_deploy_cmd); it writes no GateRun, because a pre-check is not the verdict — 7/8
+# still runs this gate in full on a settled CI. Builder role, merge gate only: review's
+# gate-zero exists to read CI, and the build gate has no CI half to drop.
+PRECHECK = options[:precheck]
+if PRECHECK && (options[:gate] != "merge" || options[:gate_role] != "builder")
+  die!("--precheck is the builder's merge-gate pre-check; it takes neither --gate build nor --gate-role review")
+end
 
 # --- task board auth + fetch (mirrors bin/task) ---------------------------
 
@@ -1612,6 +1626,7 @@ end
 # the attempt was recorded without a board.
 def gate_emission_enabled?(options, gate, slug)
   return false if options[:json]
+  return false if options[:precheck] # a pre-check is not the verdict; 7/8 records it
   return false if gate == "build"
   return false if slug.to_s.empty?
 
@@ -1671,6 +1686,12 @@ defaults = config.fetch("defaults", {})
 gate = options[:gate]
 boundary = gate == "build" ? "designed → building" : "submitted → reviewed"
 gate_label = gate == "build" ? "DoR-to-Build" : "DoR-to-Merge"
+# A pre-check names itself in every line it prints, so its pass can never be read as the
+# verdict: it read no CI, and bin/submit 7/8 still runs the full gate.
+if PRECHECK
+  boundary = "to the push (CI NOT read; the full DoR-to-Merge verdict runs at bin/submit 7/8 on a settled CI)"
+  gate_label = "DoR pre-check"
+end
 
 task = load_task(slug, options[:file])
 devops = task.dig("metadata", "devops") || {}
@@ -2151,7 +2172,7 @@ if EXEMPT_KINDS.include?(kind)
     # substitution when the receipts stopped being read
     # (/tasks/dor-reads-settled-ci-verdict). In BOTH roles GREEN advances, a
     # builder-side pending WAITS, and everything else refuses with its own remedy.
-    exempt_ci = gate == "build" ? nil : task_ci_verdict(devops).first
+    exempt_ci = gate == "build" || PRECHECK ? nil : task_ci_verdict(devops).first
     # WHAT ELSE IS ALREADY REFUSING THIS VERDICT, handed down so the CI refusal's own
     # closing line cannot promise that a green CI alone would carry this path. Read
     # from the SAME list the closing `refused_by` line below reads, and resolved ABOVE
@@ -2528,7 +2549,7 @@ end
 ci = nil
 ci_error = nil      # the CI refusal, if any — the suite gate's whole verdict
 ci_refused = false  # resolved after the review-side checks below; feeds the gates-card row
-if gate != "build"
+if gate != "build" && !PRECHECK # the pre-check drops the CI read and nothing else
   ci = task_ci_verdict(devops).first
 
   # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path

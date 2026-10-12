@@ -41,8 +41,9 @@ runs the same scripts.
 - A cold submit takes about 12 minutes, so run it in the background with
   `bin/submit-wait`; do not hand-roll a pgrep watcher.
 - `bin/ship` and `bin/ship-wait` are one-release aliases that print a rename note.
-- `bin/fast-check` is an optional pre-flight; the cert gate (test-only included)
-  reads only the PR's settled green CI.
+- `bin/submit` pre-checks the DoR rules and runs `bin/fast-check` before the push;
+  a red stops it (`--skip-preflight` overrides the pre-flight). The cert gate
+  (test-only included) still reads only the PR's settled green CI.
 - `bin/submit` stops at `submitted`. Never merge, deploy, or push `main` unless Alex
   assigned you that lane in this session.
 - Detail: `mcritchie-studio/docs/agents/modules/building-sop.md` and

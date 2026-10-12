@@ -16,13 +16,26 @@
 #                      source census bin/e2e-executed-set-check counts by) and the
 #                      static guard test/lib/e2e_quarantine_ratchet_test.rb.
 #
+#   repo-ratchets      (hub) and turf-ratchets (turf-monster): the cheap whole-repo
+#                      ratchets that read every file, so ANY change can trip them.
+#                      In the 14 days to 2026-10-12 they were ~30 of 139 failed PR
+#                      jobs, each a full CI cycle to learn about; locally they take
+#                      ~20s together (test_health 2s, bin_help_flag_class <1s,
+#                      fast_cert_subject 6s, citation_resolution_guard 10s, measured
+#                      2026-10-12). /tasks/submit-checks-before-push.
+#
 # The guards run as CI runs them, over the whole tree; only the CHOICE of guard
-# reads the diff. A guard whose files this checkout does not carry (a satellite
-# desk) is not selected.
+# reads the diff. A guard whose files this checkout does not carry is not
+# selected — which is also how each repo's ratchets stay in their own repo: the
+# hub carries none of turf's ratchet files and turf none of the hub's.
 module CiGuardLanes
   Guard = Struct.new(:label, :triggers, :tests, :scripts, keyword_init: true) do
     def triggered_by?(changed) = changed.any? { |path| triggers.any? { |pattern| path.match?(pattern) } }
   end
+
+  # A ratchet that reads every file is tripped by any path: a moved line breaks a
+  # citation, a new comment a date ceiling.
+  ANY_CHANGE = /./
 
   GUARDS = [
     Guard.new(
@@ -38,6 +51,19 @@ module CiGuardLanes
                  %r{\Abin/(?:e2e-|lib/e2e_)}, %r{\Atest/lib/e2e_quarantine_ratchet_test\.rb\z}],
       tests: %w[test/lib/e2e_quarantine_ratchet_test.rb],
       scripts: %w[bin/e2e-census-check]
+    ),
+    Guard.new(
+      label: "repo-ratchets",
+      triggers: [ANY_CHANGE],
+      tests: %w[test/lib/test_health_ratchet_test.rb test/lib/bin_help_flag_class_test.rb
+                test/lib/fast_cert_subject_test.rb test/docs/citation_resolution_guard_test.rb],
+      scripts: []
+    ),
+    Guard.new(
+      label: "turf-ratchets",
+      triggers: [ANY_CHANGE],
+      tests: %w[test/docs/workflow_citation_docs_test.rb test/lib/dated_comment_attribution_test.rb],
+      scripts: []
     )
   ].freeze
 

@@ -43,31 +43,39 @@ class CertFailureExitContractTest < Minitest::Test
 
   # ------------------------------------------------------------- bin/submit ----
 
-  # THE PUSH COMES FIRST, AND A FAILED PUSH OWNS THE EXIT. bin/submit pushes at 2/8
-  # and runs the optional pre-flight at 5/8, after the PR, so CI is already running
-  # while it does. In THIS harness the push dies (no origin): that is the step that
-  # must own the non-zero exit — never a silent 0 — and the pre-flight, which comes
-  # after it, must not have spoken at all. (That a RED pre-flight is reported and
-  # walked past is proven with a real origin in test/lib/submit_test.rb.)
-  def test_a_failed_push_owns_the_exit_and_the_pre_flight_has_not_run_before_it
-    out, code = ship(cert_exit: 1)
+  # A FAILED PUSH OWNS THE EXIT. bin/submit pre-checks at 0/8, runs the pre-flight at
+  # 2/8 BEFORE the push (/tasks/submit-checks-before-push) and pushes at 3/8. In THIS
+  # harness the pre-flight is green and the push dies (no origin): the push is the
+  # step that must own the non-zero exit — never a silent 0 — and gh, after it, is
+  # never reached.
+  def test_a_failed_push_owns_the_exit_after_a_green_pre_flight
+    out, code = ship(cert_exit: 0)
 
     assert_equal 1, code, "the push failed in this harness — a failed step must never yield exit 0"
-    assert_match(/2\/8 push — git push/, out, "the push is the step that ran and failed")
+    assert_match(/2\/8 pre-flight — green/, out, "the pre-flight ran first, and passed")
+    assert_match(/3\/8 push — git push/, out, "the push is the step that ran and failed")
     assert_match(/git push failed/, out, "and the refusal names it")
-    refute_match(/pre-flight/, out, "the pre-flight runs AFTER the push; it has nothing to say before one lands")
+    refute_match(/stub gh should never be reached/, out)
     refute_match(/did NOT certify/, out, "the retired cert refusal never prints")
   end
 
-  # The OTHER shape: a runner that cannot be spawned at all. Before the push it is
-  # never reached, so an unlaunchable pre-flight changes nothing about a failed
-  # push — the exit is the push's, and no spawn error leaks into the transcript.
-  def test_a_missing_pre_flight_runner_is_not_reached_before_the_push
+  # A RED pre-flight owns the exit, and the push never runs.
+  def test_a_red_pre_flight_owns_the_exit_and_the_push_never_runs
+    out, code = ship(cert_exit: 1)
+
+    assert_equal 1, code
+    assert_match(/the pre-flight is RED \(exit 1\) — nothing was pushed/, out)
+    refute_match(/3\/8 push/, out, "the push never ran")
+  end
+
+  # The OTHER shape: a runner that cannot be spawned at all is a red pre-flight. It
+  # owns the exit, the push never runs, and no spawn error leaks into the transcript.
+  def test_an_unlaunchable_pre_flight_owns_the_exit_and_the_push_never_runs
     out, code = ship(cert_exit: :missing)
 
-    assert_equal 1, code, "the push failed in this harness"
-    assert_match(/2\/8 push — git push/, out)
-    refute_match(/pre-flight|Errno::ENOENT|fast-check/, out, "the runner was never consulted before the push")
+    assert_equal 1, code
+    assert_match(/the pre-flight is RED/, out)
+    refute_match(/3\/8 push|Errno::ENOENT/, out, "the push never ran, and no spawn error leaked")
   end
 
   # THE CONTROL. Without it, the assertions above are satisfied by a `bin/submit`
@@ -157,12 +165,12 @@ class CertFailureExitContractTest < Minitest::Test
 
   private
 
-  # Drive the REAL bin/submit with a stubbed board CLI and a stubbed cert runner, in
-  # a throwaway git repo. It never reaches the network: it dies at the 2/8 push (no
-  # origin), or (the control) returns before its first side effect.
-  def ship(cert_exit:, stage: "building")
-    with_repo do |tmp, repo, bin|
-      write(bin, "task", <<~RUBY_STUB)
+    # Drive the REAL bin/submit with a stubbed board CLI and a stubbed cert runner, in
+    # a throwaway git repo. It never reaches the network: it dies at the 2/8 pre-flight
+    # or the 3/8 push (no origin), or (the control) returns before its first side effect.
+    def ship(cert_exit:, stage: "building")
+      with_repo do |tmp, repo, bin|
+        write(bin, "task", <<~RUBY_STUB)
         #!/usr/bin/env ruby
         require "json"
         if ARGV[0] == "show"
@@ -173,116 +181,119 @@ class CertFailureExitContractTest < Minitest::Test
         end
         exit 0
       RUBY_STUB
-      unless cert_exit == :missing
-        write(bin, "fast-check", "#!/bin/sh\necho 'stub cert: red' >&2\nexit #{cert_exit}\n")
+        unless cert_exit == :missing
+          write(bin, "fast-check", "#!/bin/sh\necho 'stub cert: red' >&2\nexit #{cert_exit}\n")
+        end
+        # The 0/8 DoR pre-check passes; the real one would reach for the (unroutable) board.
+        write(bin, "dor-check", "#!/bin/sh\nexit 0\n")
+        # `gh` must exist but must never succeed: the push dies first in this harness
+        # (no origin), so reaching gh at all would mean a failed push did not stop the run.
+        write(bin, "gh", "#!/bin/sh\necho 'stub gh should never be reached' >&2\nexit 1\n")
+
+        File.write(File.join(repo, "a.txt"), "changed\n")
+        capture(
+          { "SHIP_TASK_BIN" => File.join(bin, "task"),
+            "SHIP_FAST_CHECK_BIN" => File.join(bin, "fast-check"),
+            "SHIP_DOR_CHECK_BIN" => File.join(bin, "dor-check"),
+            "SHIP_GH_BIN" => File.join(bin, "gh"),
+            "SHIP_ROOT" => repo, "SHIP_CI_WAIT" => "off",
+            # The ship's own up-front board mint: the secret chain stops at ENV (never
+            # the desk's .env or 1Password) and the board is unroutable, so the mint
+            # fails fast and the run goes on exactly as it would with no token.
+            "AGENT_API_SECRET" => "test-secret", "TASK_API_BASE" => OutboundSeams::UNROUTABLE,
+            # bin/submit publishes a presence claim into the session-marker store
+            # (bin/lib/presence_claim.rb), so this harness must PIN that store like
+            # any other writer. Unpinned it is refused outright under the suite's
+            # sandbox — which is the guard working — and, run standalone with the
+            # sandbox off, it would write the operator's live .agents instead.
+            # Pinned OUTSIDE `repo` on purpose: a marker inside the working tree
+            # would be swept into ship's own 1/8 commit.
+            "CLAUDE_PROJECTS_DIR" => File.join(tmp, "projects"),
+            "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil },
+          [SHIP, "probe-slug", "-m", "probe"], chdir: tmp
+        )
       end
-      # `gh` must exist but must never succeed: the push dies first in this harness
-      # (no origin), so reaching gh at all would mean a failed push did not stop the run.
-      write(bin, "gh", "#!/bin/sh\necho 'stub gh should never be reached' >&2\nexit 1\n")
-
-      File.write(File.join(repo, "a.txt"), "changed\n")
-      capture(
-        { "SHIP_TASK_BIN" => File.join(bin, "task"),
-          "SHIP_FAST_CHECK_BIN" => File.join(bin, "fast-check"),
-          "SHIP_GH_BIN" => File.join(bin, "gh"),
-          "SHIP_ROOT" => repo, "SHIP_CI_WAIT" => "off",
-          # The ship's own up-front board mint: the secret chain stops at ENV (never
-          # the desk's .env or 1Password) and the board is unroutable, so the mint
-          # fails fast and the run goes on exactly as it would with no token.
-          "AGENT_API_SECRET" => "test-secret", "TASK_API_BASE" => OutboundSeams::UNROUTABLE,
-          # bin/submit publishes a presence claim into the session-marker store
-          # (bin/lib/presence_claim.rb), so this harness must PIN that store like
-          # any other writer. Unpinned it is refused outright under the suite's
-          # sandbox — which is the guard working — and, run standalone with the
-          # sandbox off, it would write the operator's live .agents instead.
-          # Pinned OUTSIDE `repo` on purpose: a marker inside the working tree
-          # would be swept into ship's own 1/8 commit.
-          "CLAUDE_PROJECTS_DIR" => File.join(tmp, "projects"),
-          "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil },
-        [SHIP, "probe-slug", "-m", "probe"], chdir: tmp
-      )
     end
-  end
 
-  # Drive the REAL bin/fast-check standalone (no task slug) so it runs its lanes;
-  # it writes nothing to the board either way.
-  def fast_check(env)
-    with_repo do |tmp, repo, _bin|
-      base = { "FAST_CHECK_ROOT" => repo,
-               "FAST_CHECK_CHANGED_FILES" => "",
-               "FAST_CHECK_TEST_CMD" => "/usr/bin/true",
-               "FAST_CHECK_RUBOCOP_CMD" => "/usr/bin/true",
-               "FAST_CHECK_SPINE" => write_spine(tmp) }
-      capture(base.merge(env), [FAST_CHECK], chdir: tmp)
+    # Drive the REAL bin/fast-check standalone (no task slug) so it runs its lanes;
+    # it writes nothing to the board either way.
+    def fast_check(env)
+      with_repo do |tmp, repo, _bin|
+        base = { "FAST_CHECK_ROOT" => repo,
+                 "FAST_CHECK_CHANGED_FILES" => "",
+                 "FAST_CHECK_TEST_CMD" => "/usr/bin/true",
+                 "FAST_CHECK_RUBOCOP_CMD" => "/usr/bin/true",
+                 "FAST_CHECK_SPINE" => write_spine(tmp) }
+        capture(base.merge(env), [FAST_CHECK], chdir: tmp)
+      end
     end
-  end
 
-  # A real git repo with one commit — `bin/submit` commits, and `bin/fast-check`
-  # diffs a git tree.
-  def with_repo
-    Dir.mktmpdir("exit-contract") do |tmp|
-      repo = File.join(tmp, "repo")
-      bin = File.join(tmp, "bin")
-      FileUtils.mkdir_p([repo, bin])
-      git(repo, "init", "-q", "-b", "feat/probe-slug", ".")
-      git(repo, "config", "user.email", "test@example.com")
-      git(repo, "config", "user.name", "Exit Contract Test")
-      File.write(File.join(repo, "a.txt"), "one\n")
-      git(repo, "add", "-A")
-      git(repo, "commit", "-qm", "init")
-      yield(tmp, repo, bin)
+    # A real git repo with one commit — `bin/submit` commits, and `bin/fast-check`
+    # diffs a git tree.
+    def with_repo
+      Dir.mktmpdir("exit-contract") do |tmp|
+        repo = File.join(tmp, "repo")
+        bin = File.join(tmp, "bin")
+        FileUtils.mkdir_p([repo, bin])
+        git(repo, "init", "-q", "-b", "feat/probe-slug", ".")
+        git(repo, "config", "user.email", "test@example.com")
+        git(repo, "config", "user.name", "Exit Contract Test")
+        File.write(File.join(repo, "a.txt"), "one\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "init")
+        yield(tmp, repo, bin)
+      end
     end
-  end
 
-  # A spine with ONE REAL ENTRY, and that detail is load-bearing. fast-check skips
-  # any spine path missing from the checkout, so an empty (or fictional) spine
-  # means the test lane never runs at all — every case below then measures a cert
-  # that skipped everything, and the "all lanes green" control would prove nothing
-  # but that skipping succeeds. Measured: with an empty spine the absent-runner
-  # case exited 0, because no lane ever reached for the runner.
-  def write_spine(dir)
-    path = File.join(dir, "spine.yml")
-    File.write(path, "spine:\n  - a.txt\n")
-    path
-  end
+    # A spine with ONE REAL ENTRY, and that detail is load-bearing. fast-check skips
+    # any spine path missing from the checkout, so an empty (or fictional) spine
+    # means the test lane never runs at all — every case below then measures a cert
+    # that skipped everything, and the "all lanes green" control would prove nothing
+    # but that skipping succeeds. Measured: with an empty spine the absent-runner
+    # case exited 0, because no lane ever reached for the runner.
+    def write_spine(dir)
+      path = File.join(dir, "spine.yml")
+      File.write(path, "spine:\n  - a.txt\n")
+      path
+    end
 
-  def git(repo, *args)
-    out, status = Open3.capture2e("git", "-C", repo, *args)
-    raise "git #{args.join(' ')} failed: #{out}" unless status.success?
-  end
+    def git(repo, *args)
+      out, status = Open3.capture2e("git", "-C", repo, *args)
+      raise "git #{args.join(' ')} failed: #{out}" unless status.success?
+    end
 
-  def write(dir, name, body)
-    path = File.join(dir, name)
-    File.write(path, body)
-    FileUtils.chmod(0o755, path)
-    path
-  end
+    def write(dir, name, body)
+      path = File.join(dir, name)
+      File.write(path, body)
+      FileUtils.chmod(0o755, path)
+      path
+    end
 
-  # NO PIPE. The whole reason the contract could be reported broken while holding
-  # is that `cmd | tail -20` reports tail's status. capture2e reads the child's
-  # own status.
-  #
-  # HERMETIC, and this cost a red cert to learn. `Open3.capture2e` MERGES its env
-  # onto the parent's, and when this file runs as one lane of a real
-  # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test
-  # database with `DATABASE_URL` exported. The child inherited it and resolved the
-  # DESK rather than the throwaway repo this test built (the retired orphan guard
-  # then refused it for its own parent's connection). Every fast-check case failed
-  # for a reason that had nothing to do with what they assert, and they passed
-  # standalone, which is the worst combination: green on the desk, red in the
-  # suite. So the child starts from a SCRUBBED env — every FAST_CHECK_*/SHIP_*
-  # and the database/Rails vars removed — and receives only what the case sets.
-  INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
-  # TEST_DATABASE_URL is the one that actually did it: an inherited value points the
-  # child's desk guard at the DESK's test database, which this test's parent holds.
-  INHERITED_NAMES = %w[TEST_DATABASE_URL DATABASE_URL RAILS_ENV MCRITCHIE_SESSION_KEY].freeze
+    # NO PIPE. The whole reason the contract could be reported broken while holding
+    # is that `cmd | tail -20` reports tail's status. capture2e reads the child's
+    # own status.
+    #
+    # HERMETIC, and this cost a red cert to learn. `Open3.capture2e` MERGES its env
+    # onto the parent's, and when this file runs as one lane of a real
+    # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test
+    # database with `DATABASE_URL` exported. The child inherited it and resolved the
+    # DESK rather than the throwaway repo this test built (the retired orphan guard
+    # then refused it for its own parent's connection). Every fast-check case failed
+    # for a reason that had nothing to do with what they assert, and they passed
+    # standalone, which is the worst combination: green on the desk, red in the
+    # suite. So the child starts from a SCRUBBED env — every FAST_CHECK_*/SHIP_*
+    # and the database/Rails vars removed — and receives only what the case sets.
+    INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
+    # TEST_DATABASE_URL is the one that actually did it: an inherited value points the
+    # child's desk guard at the DESK's test database, which this test's parent holds.
+    INHERITED_NAMES = %w[TEST_DATABASE_URL DATABASE_URL RAILS_ENV MCRITCHIE_SESSION_KEY].freeze
 
-  def capture(env, argv, chdir:)
-    scrubbed = ENV.keys.select { |k| INHERITED_PREFIXES.any? { |p| k.start_with?(p) } }
-    scrubbed.concat(INHERITED_NAMES)
-    child = scrubbed.uniq.to_h { |k| [k, nil] }.merge(env)
+    def capture(env, argv, chdir:)
+      scrubbed = ENV.keys.select { |k| INHERITED_PREFIXES.any? { |p| k.start_with?(p) } }
+      scrubbed.concat(INHERITED_NAMES)
+      child = scrubbed.uniq.to_h { |k| [k, nil] }.merge(env)
 
-    out, status = Open3.capture2e(child, *argv, chdir: chdir)
-    [out, status.exitstatus]
-  end
+      out, status = Open3.capture2e(child, *argv, chdir: chdir)
+      [out, status.exitstatus]
+    end
 end

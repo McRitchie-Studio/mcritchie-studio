@@ -1337,7 +1337,7 @@ moment they were already stuck.
 | a HANDOFF remedy (`cd <desk> && <abs>/bin/submit <slug>`) | absolute script **and** the desk | it points at a tree you are *not* in; the path picks the script, the cwd picks the tree it acts on |
 | a script named as a SUBJECT (`bin/dor-check credits this receipt only alongside a green CI`) | stays bare | prose, not an instruction — nobody pastes a sentence's subject |
 | a usage banner | `$PROGRAM_NAME` | it names the program the reader actually invoked — absolute when they reached it absolutely, bare when they typed it bare |
-| a step transcript (`4/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a transcript or a durable record — neither is addressed to a reader standing anywhere |
+| a step transcript (`5/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a transcript or a durable record — neither is addressed to a reader standing anywhere |
 | an argv a script runs itself (`Open3.capture2e("bin/agent-worktree", …)`) | stays bare | it is executed, not handed over |
 
 **Which copy you are sent to is decided by the disk, never by a repo's name.**

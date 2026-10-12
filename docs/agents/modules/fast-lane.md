@@ -209,12 +209,13 @@ row 3.7).
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
 task URL. `bin/submit` — the HUB's script, run with that worktree as the cwd —
-runs steps 5-6 (commit → push → **non-draft** PR into `accepted` led by the task
-URL → record `pr_url` (skipped when the board already derives it) → optional
-`bin/fast-check` pre-flight, while CI is already running → **wait for CI to
-settle** → `bin/dor-check` → `move submitted`). The push comes
-before the pre-flight so CI starts about a minute sooner; the pre-flight's
-verdict never stops the ship. One ship mints one board token and hands it to
+runs steps 5-6 (`bin/dor-check --precheck` → commit → `bin/fast-check`
+pre-flight → push → **non-draft** PR into `accepted` led by the task URL → record
+`pr_url` (skipped when the board already derives it) → **wait for CI to settle** →
+`bin/dor-check` → `move submitted`). The pre-check and the pre-flight come BEFORE
+the push and either one stops it: what they refuse, CI would turn red a cycle
+later. `--skip-preflight` pushes past a red pre-flight the builder judges
+unrelated. On a red CI the refusal prints each failing test from the job logs. One ship mints one board token and hands it to
 every `bin/task` and `bin/dor-check` it spawns (`AGENT_API_TOKEN`; a CLI run on
 its own still mints from the secret chain). Re-running either after a failure
 **resumes** — each skips the steps already durably recorded. Resume `begin` **by
@@ -305,7 +306,7 @@ Before editing a single file:
    dor-check OBSERVES to be all test code, it still owes the **CI gate**, and it
    owes a `[control]` line naming a file in the diff: *does the changed test
    still bite?* The CI gate it owes is the ORDINARY one: the PR's settled green
-   GitHub CI is the one verdict, and `bin/fast-check` is the optional pre-flight
+   GitHub CI is the one verdict, and `bin/fast-check` is the pre-flight
    before it, never evidence the gate reads. Read "owes the CI gate" as "is not
    exempt", never as "must run the full suite locally".
    **Shape by the files.** `bin/lib/code_diff.rb` classifies by file type, with one
@@ -331,13 +332,13 @@ While building:
 
 Before handoff:
 
-5. Commit, push, and open a PR **into `accepted`** (base `accepted`, not
-   `release`/`main`) whose body **leads with the task URL**, so CI starts at
-   once. Then the optional pre-flight
-   (`mcritchie-studio/docs/agents/modules/pre-flight.md`): run
-   `bin/fast-check <task>` (diff-mapped tests + core spine + rubocop on changed
-   files, ~1 min) while CI runs. It records nothing; the PR's settled green CI
-   is the verdict. From a satellite desk name it
+5. Run `bin/dor-check <task> --precheck` (every DoR rule but CI) and the
+   pre-flight (`mcritchie-studio/docs/agents/modules/pre-flight.md`):
+   `bin/fast-check <task>` (diff-mapped tests + core spine + rubocop + the
+   whole-repo ratchets, ~1 min). Fix any red BEFORE you push: neither records
+   anything and the PR's settled green CI is the verdict, but a red here is a
+   red CI later. Then commit, push, and open a PR **into `accepted`** (base
+   `accepted`, not `release`/`main`) whose body **leads with the task URL**. From a satellite desk name it
    `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
 6. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
    under-tested PR and its verdict closes the gate. Then
@@ -368,9 +369,9 @@ off rather than stalling on an answer. Update docs if behavior changes. Then han
 off, WITH THE DESK AS CWD, using the hub's copy of the script —
 /Users/alex/projects/mcritchie-studio/bin/submit <task> -m "<commit message>" (a
 satellite desk carries no copy of it; only the cwd is the desk's) — it
-commits, pushes, opens the non-draft PR into accepted led by the task URL, runs
-the optional pre-flight while CI runs, waits for the PR's CI to settle, runs
-dor-check, and moves the task to submitted (review's gate-zero still holds the
+pre-checks the DoR rules, commits, runs the pre-flight (a red stops it before
+the push), pushes, opens the non-draft PR into accepted led by the task URL,
+waits for the PR's CI to settle, runs dor-check, and moves the task to submitted (review's gate-zero still holds the
 authoritative CI verdict). Fall back to
 the long-form commands if the task spans repos or needs a bespoke PR body.
 Do not merge or deploy unless I explicitly assigned that lane.

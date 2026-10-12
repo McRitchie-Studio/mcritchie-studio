@@ -157,6 +157,13 @@ module OutboundSeams
       "AGENT_WORKTREE_CURL_BIN" => stub("port-curl"),
       "PROGRAM_DRIFT_RPC_URL" => UNROUTABLE,
       "OUTBOUND_SEAM_LOG" => log_path,
+      # THE HANDED-DOWN BOARD BEARER, unset. bin/submit mints one token and exports it
+      # to every child as AGENT_API_TOKEN, and bin/fast-check is one of those children —
+      # so a suite run BY a submit's pre-flight inherited the outer run's real token, and
+      # submit_test's own token cases ("reusing the board token handed in") went red
+      # there and green everywhere else (/tasks/submit-checks-before-push). nil unsets
+      # it; a case that wants a token passes one in `overrides`.
+      "AGENT_API_TOKEN" => nil,
       # THE SESSION-MARKER STORE, pinned for every child built from this env.
       #
       # Several bin/ entry points now publish a presence claim through SessionMarkers

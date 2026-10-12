@@ -242,6 +242,21 @@ class SubmitWaitScriptTest < Minitest::Test
     end
   end
 
+  # bin/submit's 2/8 refusal tells the builder to re-run with --skip-preflight, and the
+  # entry docs offer it beside submit-wait, so the wrapper must carry it to the child.
+  def test_launch_forwards_skip_preflight_to_the_ship
+    with_state do |dir|
+      ship = File.join(dir, "argv-ship")
+      File.write(ship, "#!/bin/sh\nprintf 'argv: %s\\n' \"$*\"\nprintf '%s\\n' '#{SUCCESS}'\n")
+      FileUtils.chmod(0o755, ship)
+      _out, err, code, = run_wait(dir, [SLUG, "--launch", "--skip-preflight", "--quiet", "--interval", "1", "--timeout", "25"],
+                                  extra_env: { "SHIP_WAIT_SHIP_BIN" => ship })
+
+      assert_equal ShipWait::EXIT_SUCCEEDED, code, "stderr:\n#{err}"
+      assert_includes File.read(ShipWait.log_path(dir, SLUG)), "argv: #{SLUG} --skip-preflight"
+    end
+  end
+
   def test_launch_relays_a_failing_ship_as_failed
     with_state do |dir|
       ship = stub_ship(dir, prints: ["ship: the move to submitted failed"], exits: 1)

@@ -90,6 +90,10 @@ class SubmitTest < Minitest::Test
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       log = ENV.fetch("STUB_LOG")
+      # bin/dor-check runs twice: the 0/8 pre-check (--precheck) and the 7/8 verdict.
+      # The pre-check logs and exits as PRECHECK, so FAIL_DOR still means "the verdict
+      # refuses" and a test can refuse the pre-check alone (FAIL_PRECHECK).
+      stub_name = ("#{marker}" == "DOR" && ARGV.include?("--precheck")) ? "PRECHECK" : "#{marker}"
       # The pre-flight stub carries a THIRD column: the tip of origin/#{BRANCH} as
       # seen from its cwd (ship's root), or "unpushed". It is the only vantage point
       # from which "had the push landed when the pre-flight ran?" can be answered.
@@ -99,7 +103,7 @@ class SubmitTest < Minitest::Test
         extra << (tip.empty? ? "unpushed" : tip)
       end
       # One log line per call: escape embedded newlines (the PR body is multi-line).
-      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV, *extra].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
+      File.open(log, "a") { |f| f.puts([stub_name, *ARGV, *extra].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
       # The board token each child saw, one line per call, so a test can say whether
       # ONE token served the whole ship or none did. A child mints for itself only
       # when this is blank; the stub records the fact, never a secret.
@@ -144,12 +148,22 @@ class SubmitTest < Minitest::Test
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr create]
         puts "#{PR_URL}"
       end
+      # The what-failed digest at 7/8 reads the red PR's checks, then each failing
+      # job's log. `gh pr checks` exits 8 on a red PR, with the JSON on stdout.
+      if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr checks] && ENV["GH_PR_CHECKS_JSON"]
+        puts ENV["GH_PR_CHECKS_JSON"]
+        exit 8
+      end
+      if "#{marker}" == "GH" && ARGV[0] == "api" && ARGV[1].to_s.end_with?("/logs") && ENV["GH_JOB_LOG"]
+        print ENV["GH_JOB_LOG"]
+        exit 0
+      end
       # EXIT_<MARKER> pins an EXACT status, because one stub now has to model a
       # verdict that is neither success nor failure: bin/fast-check exits 2 to say
       # DEFERRED (not certified, but carry on to the PR — capped-cert-blocks-the-pr).
       # FAIL_<MARKER>=1 stays the plain red.
-      forced = ENV["EXIT_#{marker}"].to_s
-      exit(forced.empty? ? (ENV["FAIL_#{marker}"] == "1" ? 1 : 0) : forced.to_i)
+      forced = ENV["EXIT_" + stub_name].to_s
+      exit(forced.empty? ? (ENV["FAIL_" + stub_name] == "1" ? 1 : 0) : forced.to_i)
     RUBY
     FileUtils.chmod("+x", stub)
     stub
@@ -413,12 +427,12 @@ class SubmitTest < Minitest::Test
       # the same-file OVERLAP ADVISORY's own `pr list` — asked after the PR exists so
       # it can exclude this one, and before the DoR verdict so the builder reads it
       # while a deliberate choice is still cheap. See bin/lib/pr_overlap.rb.
-      # The second `TASK show` is 4/8 asking the board whether it already derives the
+      # The second `TASK show` is 5/8 asking the board whether it already derives the
       # PR url; this board (the stub) predates the field, so ship writes it itself.
-      # The pre-flight (FAST) comes AFTER the PR and the record: CI is already
-      # running by the time it starts.
-      assert_equal ["TASK show", "GH pr", "GH pr", "GH pr", "TASK show", "TASK update", "FAST #{SLUG}", "DOR #{SLUG}",
-                    "TASK move"], markers(lines),
+      # The DoR pre-check (PRECHECK) and the pre-flight (FAST) come BEFORE the push and
+      # the PR: they stop a push CI would turn red. The verdict (DOR) still follows CI.
+      assert_equal ["TASK show", "PRECHECK #{SLUG}", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
+                    "TASK update", "DOR #{SLUG}", "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
       # The commit landed and was pushed: origin's branch tip equals local HEAD.
@@ -758,50 +772,95 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # --- the pre-flight is information, not a gate, and it runs AFTER the push -------
+  # --- cheap refusals come BEFORE the push (/tasks/submit-checks-before-push) -------
   #
-  # bin/fast-check is an OPTIONAL pre-flight that records nothing. Ship runs it at
-  # step 5, after the push and the PR so GitHub CI is already running, reports its
-  # verdict loudly, and carries on whatever it said: the PR's settled green CI is
-  # the verdict, and step 7's dor-check reads it.
+  # 0/8 asks bin/dor-check --precheck (every merge-gate rule but the CI read) before
+  # anything is committed; 2/8 runs bin/fast-check after the commit and BEFORE the
+  # push, and a red there stops it. Neither is the verdict — 7/8's dor-check on a
+  # settled CI still is — they only stop a push CI would turn red.
 
-  # [unit] The order. The pre-flight stub records the tip of origin/<branch> as it
-  # sees it from ship's root; that tip must already be the commit ship just made,
-  # and the PR must already be open. A pre-flight that ran first would see the
-  # remote one commit behind (or absent) and no `pr create` before it in the log.
-  def test_the_push_and_the_pr_land_before_the_pre_flight_runs
+  # [unit] The order: pre-check first, then the pre-flight on a tree origin has not
+  # seen (the stub's third column reads "unpushed"), then the PR, then the verdict.
+  def test_the_pre_check_and_the_pre_flight_run_before_anything_is_pushed
     with_repo do |dir|
       _out, err, status, lines = run_ship(dir)
 
       assert status.success?, err
+      seq = markers(lines)
+      assert_equal "PRECHECK #{SLUG}", seq[1], "the pre-check is the first gate call, after the task read"
+      assert_equal [SLUG, "--precheck"], lines[1][1, 2]
       fast = lines.find { |l| l[0] == "FAST" }
-      assert fast, "the pre-flight did run"
-      head = `git -C #{dir} rev-parse HEAD`.strip
-      assert_equal head, fast[2], "origin/#{BRANCH} must already carry ship's commit when the pre-flight starts"
-
+      assert_equal "unpushed", fast[2], "the pre-flight must run before origin/#{BRANCH} exists"
       create_at = lines.index { |l| l[0] == "GH" && l[2] == "create" }
-      record_at = lines.index { |l| l[0, 2] == %w[TASK update] }
-      fast_at = lines.index(fast)
-      assert create_at && create_at < fast_at, "the PR must be open before the pre-flight starts"
-      assert record_at && record_at < fast_at, "and pr_url recorded, so the board names the PR while the pre-flight runs"
-      ci_at = err.index("6/8 ci — ")
-      assert ci_at && err.index("5/8 pre-flight — ") < ci_at, "the CI wait follows the pre-flight"
+      assert lines.index(fast) < create_at, "the pre-flight runs before the PR is opened"
+      assert seq.index("DOR #{SLUG}") > create_at, "the verdict still runs after the PR, on CI"
+      assert err.index("0/8 pre-check — ") < err.index("1/8 commit — "), "the pre-check precedes the commit"
+      assert err.index("2/8 pre-flight — ") < err.index("3/8 push — "), "the pre-flight precedes the push"
     end
   end
 
-  def test_a_red_pre_flight_is_reported_loudly_and_the_ship_carries_on
+  def test_a_refused_pre_check_stops_before_the_commit_and_the_push
     with_repo do |dir|
-      out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
+      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_PRECHECK" => "1" })
 
-      assert status.success?, "a red pre-flight must NOT stop the line: #{err}"
-      assert_includes err, "5/8 pre-flight — RED"
-      assert_includes err, "step 7 REFUSES a red CI", "the builder is told where the verdict actually lands"
-      assert_includes markers(lines), "FAST #{SLUG}", "the pre-flight did run"
-      assert_includes markers(lines), "GH pr", "…and the PR was opened (before it, not because of it)"
-      assert_includes markers(lines), "DOR #{SLUG}", "…and the verdict gate still ran"
+      refute status.success?, "a refused pre-check must stop the submit"
+      assert_includes err, "the DoR pre-check refused"
+      assert_includes err, "Nothing was committed or pushed."
+      refute_empty `git -C #{dir} status --porcelain`.strip, "nothing was committed"
+      `git -C #{dir} rev-parse --verify --quiet origin/#{BRANCH}`
+      refute $?.success?, "nothing was pushed"
+      refute_includes markers(lines), "FAST #{SLUG}", "no pre-flight ran"
+      refute(lines.any? { |l| l[0] == "GH" }, "no PR call was made")
+      refute_includes markers(lines), "DOR #{SLUG}", "the verdict never ran"
+    end
+  end
+
+  # The repair seam skips the pre-check and nothing else: the 7/8 verdict still runs.
+  def test_the_pre_check_repair_seam_skips_it_and_the_verdict_still_runs
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_PRECHECK" => "off", "FAIL_PRECHECK" => "1" })
+
+      assert status.success?, err
+      assert_includes err, "0/8 pre-check — skipped (SHIP_PRECHECK=off)"
+      refute_includes markers(lines), "PRECHECK #{SLUG}"
+      assert_includes markers(lines), "DOR #{SLUG}", "the full verdict is not skipped with it"
+    end
+  end
+
+  def test_a_red_pre_flight_stops_the_push
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
+
+      refute status.success?, "a red pre-flight must stop the push"
+      assert_includes err, "the pre-flight is RED (exit 1) — nothing was pushed"
+      assert_includes err, "--skip-preflight", "the override is named"
+      `git -C #{dir} rev-parse --verify --quiet origin/#{BRANCH}`
+      refute $?.success?, "the branch was NOT pushed"
+      refute(lines.any? { |l| l[0] == "GH" && l[2] == "create" }, "no PR was opened")
+      refute_includes markers(lines), "DOR #{SLUG}"
+    end
+  end
+
+  def test_skip_preflight_pushes_past_a_red_pre_flight_and_ci_decides
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, args: [SLUG, "--skip-preflight"], extra_env: { "FAIL_FAST" => "1" })
+
+      assert status.success?, err
+      assert_includes err, "2/8 pre-flight — skipped (--skip-preflight); CI is the verdict."
+      refute_includes markers(lines), "FAST #{SLUG}", "the pre-flight did not run"
+      assert_includes markers(lines), "DOR #{SLUG}", "the verdict gate still did"
       assert_includes out, "stage: submitted (read back verified)"
-      _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
-      assert $?.success?, "the branch IS pushed on a red pre-flight — CI says so on the record"
+    end
+  end
+
+  def test_the_pre_flight_can_be_skipped_by_env_and_the_verdict_is_still_dor_checks
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_PREFLIGHT" => "off" })
+
+      assert status.success?, err
+      assert_includes err, "2/8 pre-flight — skipped (SHIP_PREFLIGHT=off)"
+      refute_includes markers(lines), "FAST #{SLUG}", "the pre-flight did not run"
+      assert_includes markers(lines), "DOR #{SLUG}", "the verdict gate still did"
     end
   end
 
@@ -810,29 +869,37 @@ class SubmitTest < Minitest::Test
       _out, err, status, = run_ship(dir)
 
       assert status.success?, err
-      assert_includes err, "5/8 pre-flight — running bin/fast-check #{SLUG} (optional; nothing is recorded; CI is already running)"
-      assert_includes err, "5/8 pre-flight — green. CI still runs the full suite on the PR."
+      assert_includes err, "2/8 pre-flight — running bin/fast-check #{SLUG} before the push (nothing is recorded)"
+      assert_includes err, "2/8 pre-flight — green. CI still runs the full suite on the PR."
     end
   end
 
-  def test_the_pre_flight_can_be_skipped_and_the_verdict_is_still_dor_checks
-    with_repo do |dir|
-      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_PREFLIGHT" => "off" })
-
-      assert status.success?, err
-      assert_includes err, "5/8 pre-flight — skipped (SHIP_PREFLIGHT=off)"
-      refute_includes markers(lines), "FAST #{SLUG}", "the pre-flight did not run"
-      assert_includes markers(lines), "DOR #{SLUG}", "the verdict gate still did"
-    end
-  end
-
-  def test_a_missing_pre_flight_runner_does_not_stop_the_line_either
+  # An unlaunchable pre-flight is a red one: it stops the push and names the override.
+  def test_a_missing_pre_flight_runner_stops_the_push_and_names_the_override
     with_repo do |dir|
       _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_FAST_CHECK_BIN" => "/nonexistent/fast-check" })
 
-      assert status.success?, "an unlaunchable pre-flight is a RED pre-flight, and a red pre-flight does not gate: #{err}"
-      assert_includes err, "5/8 pre-flight — RED"
-      assert_includes markers(lines), "DOR #{SLUG}"
+      refute status.success?
+      assert_includes err, "the pre-flight is RED"
+      assert_includes err, "--skip-preflight"
+      refute_includes markers(lines), "DOR #{SLUG}"
+    end
+  end
+
+  # A resumed submit (after a CI timeout, say) has nothing new to push, so it does not
+  # re-run a pre-flight on a tree that already went out.
+  def test_a_resumed_submit_with_nothing_new_to_push_skips_the_pre_flight
+    with_repo do |dir|
+      _out, err, status, = run_ship(dir)
+      assert status.success?, err
+      File.delete(File.join(dir, "stub.log"))
+
+      _out, err, status, lines = run_ship(dir)
+
+      assert status.success?, err
+      assert_match(/2\/8 pre-flight — skipped: HEAD \h{12} is already pushed/, err)
+      refute_includes markers(lines), "FAST #{SLUG}"
+      assert_includes markers(lines), "PRECHECK #{SLUG}", "the pre-check still runs: it costs a second"
     end
   end
 
@@ -1004,6 +1071,45 @@ class SubmitTest < Minitest::Test
     end
   end
 
+  # [integration] On a RED CI the refusal says WHAT failed — the failing test and its
+  # message, read from the failing job's log — so one fix pass covers it. The refusal
+  # itself is unchanged: still dor-check's, still exit 1, still no move.
+  def test_a_red_ci_refusal_prints_the_failing_tests_from_the_job_logs
+    checks = JSON.generate([
+      { "name" => "ci / rails (3)", "bucket" => "fail",
+        "link" => "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5/job/77" },
+      { "name" => "ci / static", "bucket" => "pass", "link" => "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5/job/78" }
+    ])
+    log = "2026-10-12T02:56:10.1Z Failure:\n" \
+          "2026-10-12T02:56:10.1Z ThingTest#test_it_persists [test/models/thing_test.rb:9]:\n" \
+          "2026-10-12T02:56:10.1Z Expected: 2\n2026-10-12T02:56:10.1Z   Actual: 1\n2026-10-12T02:56:10.1Z \n"
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_STATE" => "state:red", "FAIL_DOR" => "1",
+                                                            "GH_PR_CHECKS_JSON" => checks, "GH_JOB_LOG" => log })
+
+      refute status.success?
+      assert_includes err, "what failed (from the failing jobs' logs"
+      assert_includes err, "ci / rails (3)"
+      assert_includes err, "✗ ThingTest#test_it_persists  [test/models/thing_test.rb:9]"
+      assert_includes err, "Expected: 2"
+      refute_includes err, "ci / static", "a passing job is not listed"
+      assert_includes err, "fix every failure listed"
+      refute(lines.any? { |l| l[0, 2] == %w[TASK move] })
+    end
+  end
+
+  # A green CI that dor-check refuses for another reason prints no digest: there is no
+  # failing job to read.
+  def test_a_refusal_on_a_green_ci_prints_no_digest
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_DOR" => "1", "GH_PR_CHECKS_JSON" => "[]" })
+
+      refute status.success?
+      refute_includes err, "what failed"
+      refute(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr checks] }, "no checks read on a green CI")
+    end
+  end
+
   # Guard catalog row 3.3: bin/task move verifies the stage write and the board derives
   # the PR url, so ship does not read either back. A failed --pr-url write is a note.
   def test_a_failed_pr_url_write_is_a_note_and_the_ship_moves_on
@@ -1089,7 +1195,7 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # --- 4/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
+  # --- 5/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
 
   # A record whose board serves `pr_url_or_derived` — the recorded url when there is
   # one, else the PR the board found on the task branch (and cached).
@@ -1100,7 +1206,7 @@ class SubmitTest < Minitest::Test
   end
 
   # [integration] The board already names the PR ship opened, so ship writes nothing
-  # at 4/8, with the raw `devops.pr_url` still blank.
+  # at 5/8, with the raw `devops.pr_url` still blank.
   def test_record_skips_the_write_when_the_board_derives_the_same_pr
     with_repo do |dir|
       out, err, status, lines = run_ship(
@@ -1111,7 +1217,7 @@ class SubmitTest < Minitest::Test
 
       assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
       refute(lines.any? { |l| l[0, 2] == %w[TASK update] }, "a pr_url the board derives must not be written")
-      assert_includes out + err, "4/8 record — skipped: the board derives pr_url #{PR_URL}"
+      assert_includes out + err, "5/8 record — skipped: the board derives pr_url #{PR_URL}"
       assert_includes out, "PR: #{PR_URL}"
       assert_includes out, "stage: submitted (read back verified)"
     end
@@ -1347,7 +1453,7 @@ class SubmitTest < Minitest::Test
       dor = JSON.parse(File.read(File.join(snaps, "DOR.json")))
 
       # THE DISTINCTION, on disk, at the two boundaries that matter.
-      assert_equal ["working", "suite", "5/8 pre-flight"], cert.values_at("phase", "weight", "lane"),
+      assert_equal ["working", "suite", "2/8 pre-flight"], cert.values_at("phase", "weight", "lane"),
                    "the pre-flight phase is the one that costs everything — it must say so"
       assert_equal ["waiting", "idle", "6/8 ci"], ci.values_at("phase", "weight", "lane"),
                    "the CI wait costs NOTHING, and reading it as a competing cert is the whole defect"
@@ -1417,7 +1523,7 @@ class SubmitTest < Minitest::Test
       # it there strands a .git/HEAD.lock and the assertion becomes a race with the
       # tmpdir teardown rather than a statement about claims. Parked in the slow
       # stub, the kill lands where this test says it lands.
-      claim = wait_for_claim(dir, lane: "5/8 pre-flight")
+      claim = wait_for_claim(dir, lane: "2/8 pre-flight")
       Process.kill("KILL", pid)
       Process.wait(pid)
 
