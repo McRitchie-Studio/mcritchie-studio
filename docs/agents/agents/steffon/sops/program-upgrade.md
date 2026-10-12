@@ -136,12 +136,15 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
 6. **Signer set.** If the card rotates the vault's signers, run the ceremony in
    turf-vault's `docs/SIGNER_ROTATION.md`; otherwise confirm the set is untouched
    with `node scripts/check-signer-slots.js`.
-7. **IDL pin in turf-monster.** Build the IDL, commit it as the consumer's
-   `config/turf_vault.idl.json`, and set `EXPECTED_IDL_HASH` on the cluster's
-   consumer app (QA for devnet, `turf-monster-mainnet` for mainnet) to the built
-   file's hash. The app refuses to boot on a mismatch
-   (`app/services/solana/config.rb`); turf-monster's `MAINNET_LAUNCH.md` carries
-   the hash command.
+7. **IDL pin in turf-monster.** Never overwrite `config/turf_vault.idl.json`: it
+   is the running shape and the rollback. For v0.26 the new shape is already
+   committed as `config/turf_vault{,.mainnet}.v026.idl.json`, selected only when
+   `SOLANA_VAULT_GOVERNANCE` is on. Flip the hash and the switch in ONE config
+   write on the cluster's app (QA for devnet, `turf-monster-mainnet` for mainnet),
+   or the restart refuses to boot on the mismatch: `heroku config:set
+   EXPECTED_IDL_HASH=<v025>,<v026> SOLANA_VAULT_GOVERNANCE=on`; roll back with
+   `heroku config:unset SOLANA_VAULT_GOVERNANCE` (`app/services/solana/config.rb`).
+   That write is step 9's consumer switch; do not split them.
 8. **Re-derive `CURRENT_DEPLOYMENT.md` from chain.** After the upgrade,
    `bin/program-drift --fresh` prints `cannot confirm … chain last deployed at
    slot N but … records slot M`. That is the signal to re-derive the cluster's
