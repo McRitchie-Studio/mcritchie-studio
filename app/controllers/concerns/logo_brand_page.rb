@@ -60,9 +60,9 @@ module LogoBrandPage
                          @kit_record.default_shown?(@type, rule: @rule, form: @form, colouring: @colouring,
                                                            edits: @type == :icon ? @edits.slice(:icon) : @edits)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
-    # the page, and the logos are drawn as styled, so a change of form never loses the page. Edits apply to Alt only:
-    # an Original keeps them in the URL and draws none (Logos::Variant).
-    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon && @colouring == :alt)
+    # the page, and the logos are drawn as styled, so a change of form never loses the page. The word edits apply in
+    # Original as in Alt (task logo-compare-and-original-edits); an original icon draws no colour edit (Logos::Variant).
+    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon)
     drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     drawn = drawn.except(:icon).merge(@kit_icon.edits.slice(:icon)) if @icon_from_kit
     # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).

@@ -218,18 +218,61 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     assert_match(/traced lettering, which has one weight/, response.body)
   end
 
-  # Task logo-original-and-alt: the Original is the brand's own art, so the panel says edits apply to Alt, links there,
-  # and keeps any edits in the URL; the logos are drawn as the Original, with no edit.
-  test "on the Original the panel says edits apply to Alt only and links there, keeping the edits" do
+  # Task logo-compare-and-original-edits (Alex 2026-10-11 23:06): the word rows work in Original. The words take the
+  # edit and the icon stays the brand's art; only the Icon row needs Alt, and says so with a link that recolours the
+  # icon alone.
+  test "on the Original the word rows edit the words and the Icon row sends its colour to Alt" do
     get logo_brand_path("industries", ending_colour: "C8661F")
-    assert_select "[data-test='edit-row']", 0
-    assert_select "[data-test='edit-original']", /The Original is the brand's own art, so edits apply to Alt only/
-    alt = css_select("[data-test='edit-in-alt']").first["href"]
-    assert_equal({ "colouring" => "alt", "ending_colour" => "C8661F" }, query(alt))
+    assert_equal %w[icon first ending], row_parts
+    assert_select "[data-test='edit-original']", 0
+    assert_select "[data-test='edit-row'][data-part='ending'] input[type=radio][value='C8661F'][checked]"
+    assert_select "[data-test='edit-icon-original']", /The icon is the brand's original art, so its colour changes in Alt only/
+    alt = css_select("[data-test='edit-icon-in-alt']").first["href"]
+    assert_equal({ "icon_colouring" => "alt", "ending_colour" => "C8661F" }, query(alt), "the words stay Original; the icon goes to Alt")
     logo_srcs.each do |src|
       assert_equal "original", query(src)["colouring"], src
-      assert_nil query(src)["ending_colour"], "an Original draws no edit: #{src}"
+      assert_equal "C8661F", query(src)["ending_colour"], "the Original draws the word edit: #{src}"
     end
-    assert_equal "C8661F", query(css_select("[data-test='logo-tab']").first["href"])["ending_colour"], "the edit stays in the URL"
+
+    get logo_brand_path("industries", type: "icon")
+    assert_equal %w[icon], row_parts
+    assert_equal({ "type" => "icon", "colouring" => "alt" }, query(css_select("[data-test='edit-icon-in-alt']").first["href"]))
+  end
+
+  test "the Navbar and Stacked tabs show the same edit rows in the same order, in Original and in Alt" do
+    %w[welding_v2 industries].each do |brand|
+      [{}, { colouring: "alt" }].each do |colouring|
+        get logo_brand_path(brand, **colouring)
+        navbar = rows.map { |row| [row["data-part"], row.css("[data-test='edit-swatch']").size, row.css("select[data-test='edit-weight']").size] }
+        get logo_brand_path(brand, type: "stacked", **colouring)
+        stacked = rows.map { |row| [row["data-part"], row.css("[data-test='edit-swatch']").size, row.css("select[data-test='edit-weight']").size] }
+        assert_equal navbar, stacked, "#{brand} #{colouring}"
+        assert_equal %w[icon first ending], navbar.map(&:first)
+      end
+    end
+  end
+
+  # Alex's reproduction: on welding_v2's Stacked tab in Original, colour the first word orange and save it as the
+  # default. The tab then opens on the Original helmet with orange words, not on Alt's single-colour helmet.
+  test "welding_v2 Stacked saved in Original with an orange first word keeps the Original helmet" do
+    get logo_brand_path("welding_v2", type: "stacked", first_colour: "D7602E")
+    fields = css_select("form[data-test='kit-save-default-form'] input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
+    assert_equal "original", fields["colouring"]
+    assert_equal "D7602E", fields["first_colour"]
+    patch brand_kit_choice_path("welding_v2"), params: fields.except("_method", "authenticity_token")
+    choice = BrandKit.for("welding_v2").stacked_choice
+    assert_equal "original", choice["colouring"]
+    assert_equal({ "first_colour" => "D7602E" }, choice["edits"])
+
+    get logo_brand_path("welding_v2", type: "stacked")
+    assert_select "[data-test='kit-default-state'][data-state='shown']"
+    logo_srcs.each do |src|
+      assert_equal "original", query(src)["colouring"], src
+      assert_equal "D7602E", query(src)["first_colour"], src
+      assert_nil query(src)["icon_colouring"], "the icon is the words' Original: #{src}"
+    end
+    svg = BrandKit.for("welding_v2").variant(:stacked).svg
+    assert_includes svg, 'fill="#2E5E8E"', "the Original helmet's blue"
+    assert_includes svg, 'fill="#D7602E"'
   end
 end

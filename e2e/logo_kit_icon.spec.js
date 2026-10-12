@@ -45,7 +45,9 @@ test("save an icon colouring on the Icon tab and see every logo follow", async (
     expect(p.icon_colour).toBe("D7602E");
   }
   await expect(page.locator("[data-test='kit-icon-note']")).toContainText("Colouring here sets the words");
-  await expect(page.locator("[data-test='edit-kit-icon']")).toHaveCount(0); // Original words: the panel says edits apply to Alt only
+  // Original words take edits too (task logo-compare-and-original-edits), and the Icon row defers to the kit icon.
+  await expect(page.locator("[data-test='edit-kit-icon']")).toBeVisible();
+  await expect(page.locator("[data-test='edit-row'][data-part='first']")).toBeVisible();
 
   // In Alt words, the Edit panel's Icon row defers to the Icon tab.
   await page.goto("/logos/welding_v2?colouring=alt");

@@ -16,8 +16,11 @@
 
     A watermark is one colour, so in Watermark the panel says the edits do not
     apply and shows no controls; the edits stay in the URL for Light and Dark.
-    Edits apply to Alt only: on Original (the brand's own art) the panel says so
-    and links to Alt, and the edits stay in the URL.
+    The word rows work in Original as in Alt (task logo-compare-and-original-edits):
+    an Original's words take the picked colour and weight and its icon stays the
+    brand's art. Only the Icon row needs Alt: on an original icon it says so and
+    links there. The Navbar and Stacked tabs draw this one partial, so their rows
+    are the same and in the same order (LogosHelper#logo_edit_rows).
     Locals: kit (the brand's Logos::BrandKit). %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading disabled:opacity-60" %>
 <% outline = "has-checked:outline-2 has-checked:outline-offset-2 has-checked:outline-solid has-checked:outline-[#4338CA] dark:has-checked:outline-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-dashed has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
@@ -34,9 +37,6 @@
   </div>
   <% if @context == :watermark %>
     <p class="text-sm text-secondary" data-test="edit-watermark">A watermark is the whole logo in one colour, so edits do not apply here. Any you made come back in Light and Dark.</p>
-  <% elsif @colouring == :original %>
-    <p class="text-sm text-secondary" data-test="edit-original">The Original is the brand's own art, so edits apply to Alt only. Any you made come back in Alt.
-      <%= link_to "Edit in Alt", logo_brand_path(@logo.brand, logo_page_params(colouring: :alt)), class: "font-semibold text-primary hover:underline", data: { test: "edit-in-alt" } %></p>
   <% else %>
     <% if @type == :icon %>
     <p class="text-sm text-secondary">Pick the icon's colour from the brand's palette. Save as default to make it the kit's icon: every Navbar and Stacked Logo draws it.</p>
@@ -59,7 +59,12 @@
             <% end %>
           </div>
           <div class="min-w-0 space-y-2">
-            <% if part == :icon && @icon_from_kit %>
+            <% if part == :icon && !@icon_from_kit && logo_icon_original? %>
+              <%# An original icon is the brand's own art: its colour edit needs Alt. The words' rows work here. %>
+              <p class="text-2xs text-secondary" data-test="edit-icon-original">The icon is the brand's original art, so its colour changes in Alt only.
+                <%= link_to "Recolour it in Alt", logo_brand_path(@logo.brand, logo_page_params(**(@type == :icon ? { colouring: :alt } : { icon_colouring: :alt }))),
+                            class: "font-semibold text-primary hover:underline", data: { test: "edit-icon-in-alt" } %></p>
+            <% elsif part == :icon && @icon_from_kit %>
               <%# The kit's icon, as the tab's logos draw it; its colour is changed on the Icon tab. %>
               <div class="flex flex-wrap items-center gap-2" data-test="edit-kit-icon">
                 <span class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-subtle p-0.5" data-test="edit-kit-icon-swatch">

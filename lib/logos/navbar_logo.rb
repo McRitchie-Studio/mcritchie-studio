@@ -38,8 +38,10 @@ module Logos
   # drawn before; `colouring: :original` is the brand's true art, from the
   # style's `original:` (per tone: its own icon, fills and name colours). A
   # brand whose logo is solid colour (Studio) has no original. The watermark is
-  # always the single-colour version, so colouring does not apply to it, and
-  # edits apply to Alt only: an original is the brand's own art.
+  # always the single-colour version, so colouring does not apply to it. The
+  # WORD edits (colour and weight of the first word, the ending and the tagline)
+  # apply in either colouring (task logo-compare-and-original-edits): an
+  # original's words take the picked colour, and its icon stays the brand's art.
   #
   #   logo.svg(rule: 3, tone: :dark, colouring: :original)
   #
@@ -47,7 +49,8 @@ module Logos
   # drawn in a colouring of its own, `icon_colouring:`, while `colouring:`
   # governs the words. Left out, the icon takes the words' colouring, which is
   # every drawing as it was. The icon colour edit follows the icon's colouring
-  # (Alt only); the word edits follow the words'.
+  # (Alt only: an original icon is the brand's own art); the word edits apply to
+  # the words in either colouring.
   #
   #   logo.svg(rule: 4, tone: :light, colouring: :alt, icon_colouring: :original)
   class NavbarLogo
@@ -309,14 +312,14 @@ module Logos
     end
 
     # Checked edits for a drawing whose words are in `look` and whose icon is in `icon_look`. A watermark is one colour
-    # by definition, and an original is the brand's own art, so no edit applies to either: the word edits follow the
-    # words' look, the icon's colour edit the icon's.
+    # by definition, so no edit applies to it. An original ICON is the brand's own art, so its colour edit applies to
+    # an Alt icon only; the word edits apply in either colouring (task logo-compare-and-original-edits).
     def edits_in(look, given, icon_look = look)
       edits = checked_edits(given)
       raise Error, "brand #{brand}: a watermark is one colour, so edits do not apply to it" if look == :watermark && edits.any?
-
-      original = (original_look?(look) && edits.except(:icon).any?) || (original_look?(icon_look) && edits.key?(:icon))
-      raise Error, "brand #{brand}: an original is the brand's own art, so edits apply to alt only" if original
+      if original_look?(icon_look) && edits.key?(:icon)
+        raise Error, "brand #{brand}: an original icon is the brand's own art, so the icon's colour edit applies to an alt icon only"
+      end
 
       edits
     end

@@ -55,7 +55,6 @@ module Logos
     # The parts each type's logo shows an edit on (the icon its own colour: the kit icon's, task kit-icon-atomic-unit);
     # the tagline only in the tagline form.
     EDITED_PARTS = { icon: %i[icon], navbar: %i[icon first ending], stacked: %i[icon first ending tagline] }.freeze
-    WORD_PARTS = %i[first ending tagline].freeze
 
     attr_reader :logo, :type, :rule, :form, :text, :tone, :colouring, :icon_colouring, :guides, :edits
 
@@ -204,14 +203,13 @@ module Logos
 
     private
 
-    # The edits this logo shows: none on a watermark (one colour by definition); none on an original's part (the brand's
-    # own art): the words' edits follow the words' colouring, the icon's colour its own; and the tagline's only in the
-    # tagline form.
+    # The edits this logo shows: none on a watermark (one colour by definition); no icon colour on an original icon (the
+    # brand's own art); the word edits in either colouring (task logo-compare-and-original-edits); and the tagline's
+    # only in the tagline form.
     def shown_edits(checked)
       return NavbarLogo::NO_EDITS if tone == :watermark
 
       parts = EDITED_PARTS.fetch(type) - (form == :tagline ? [] : %i[tagline])
-      parts -= WORD_PARTS if original?
       parts -= %i[icon] if icon_colouring == :original
       parts.empty? ? NavbarLogo::NO_EDITS : checked.slice(*parts).freeze
     end

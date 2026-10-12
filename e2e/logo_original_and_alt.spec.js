@@ -35,7 +35,9 @@ test("switching to Original changes every logo and its download, and Alt changes
   for (const src of srcs) expect(src).toContain("colouring=original");
   for (const href of await attrs(downloads(page), "href")) expect(href).toContain("colouring=original");
   for (const alt of await attrs(images(page), "alt")) expect(alt).toContain("original colouring");
-  await expect(page.locator("[data-test='edit-original']")).toContainText("edits apply to Alt only");
+  // The word rows work in Original (task logo-compare-and-original-edits); only the icon's colour needs Alt.
+  await expect(page.locator("[data-test='edit-row'][data-part='first']")).toBeVisible();
+  await expect(page.locator("[data-test='edit-icon-original']")).toContainText("its colour changes in Alt only");
 
   await page.locator("a[data-test='colouring-option'][data-colouring='alt']").click();
   await expect(page.locator("a[data-test='colouring-option'][aria-current='true']")).toHaveText("Alt");

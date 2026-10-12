@@ -55,6 +55,10 @@ module LogosHelper
     rows
   end
 
+  # True when the tab's icon is drawn in its Original (the brand's art), so the edit panel's Icon row offers no colour.
+  # The icon's colouring is its own where it has one (the URL's ?icon_colouring=), else the tab's.
+  def logo_icon_original? = (@icon_colouring || @colouring) == :original
+
   # The URL param of one part's setting: first_colour, tagline_visible.
   def logo_edit_param(part, setting) = :"#{part}_#{setting}"
 
@@ -89,13 +93,13 @@ module LogosHelper
 
   # A Navbar or Stacked choice in words, as the kit saves it (BrandKit): "rule of 4, second word leads, as styled",
   # "with tagline, first word leads, first word Deep Violet 300 Light; tagline hidden".
-  # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original shows no
-  # edits, so it says none. An Icon choice is its colouring and its colour ("alt colouring, icon Deep Violet"); a logo
+  # A brand that has an Original says which colouring the choice is in ("original colouring"); an Original's words
+  # show their edits (task logo-compare-and-original-edits), and an all-Original choice with none says none. An Icon choice is its colouring and its colour ("alt colouring, icon Deep Violet"); a logo
   # drawing an icon of its own colouring says so ("original icon": the kit's, task kit-icon-atomic-unit).
   def logo_choice_summary(variant)
     colouring = ("#{Logos::Variant::COLOURINGS.fetch(variant.colouring).downcase} colouring" if variant.logo.original?)
     icon = ("#{Logos::Variant::COLOURINGS.fetch(variant.icon_colouring).downcase} icon" if variant.own_icon?)
-    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original? && variant.icon_colouring == :original)
+    edits = (logo_edits_summary(variant.logo, variant.edits) unless variant.original? && variant.icon_colouring == :original && !variant.edited?)
     return [colouring, edits].compact.join(", ") if variant.type == :icon
 
     shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
