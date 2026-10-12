@@ -40,7 +40,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       words = format(words, form: Logos::Variant::FORMS.fetch(OWN_FORMS.fetch(brand).to_sym).downcase)
     end
     original = context != "watermark" && Logos::NavbarLogo.new(brand).original?
-    colouring = original ? { colouring: "original" } : {}
+    # An icon names its colouring, Alt included (task kit-export-and-clear-lens: with none it draws the kit icon).
+    colouring = original ? { colouring: "original" } : ({ colouring: "alt" } if type == "icon").to_h
     [public_send(:"#{type}_logo_path", brand, params.merge(tone: context, **colouring, **guides)),
      "#{name} #{words}, #{context}#{', original colouring' if original}"]
   end
@@ -400,8 +401,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       tones = context == "watermark" ? %w[watermark] : %w[light dark]
       assert_examples tones.flat_map { |tone| variants("welding", :icon, tone: tone.to_sym) }, examples: 1
       tones.each do |tone|
-        original = tone == "watermark" ? {} : { colouring: "original" }
-        assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{tone}#{', original colouring' if original.any?}",
+        original = { colouring: tone == "watermark" ? "alt" : "original" }
+        assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{tone}#{', original colouring' if tone != 'watermark'}",
                       icon_logo_path("welding", tone:, **original)
         assert_select "a[data-test='logo-download'][href=?]", icon_logo_path("welding", tone:, **original, download: 1)
       end

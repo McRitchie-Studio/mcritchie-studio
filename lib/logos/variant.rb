@@ -186,9 +186,12 @@ module Logos
     def guide_font = logo.guide_font(rule)
 
     # The type's own choices, as its SVG route's params. Alt is the route's default, so only an Original says its colouring;
-    # the icon says its own only when it is not the words'.
+    # the icon says its own only when it is not the words'. An ICON always says its colouring (task
+    # kit-export-and-clear-lens): with no choice param the route draws the brand's kit icon, so an Alt icon must ask for
+    # Alt by name. A Navbar or Stacked Logo always names its rule or form and text, so it is never read as the kit's.
     def params
-      { rule:, form:, text:, tone:, colouring: (colouring if original?), icon_colouring: (icon_colouring if own_icon?), guides: guides ? 1 : 0 }
+      { rule:, form:, text:, tone:, colouring: (colouring if original? || type == :icon), icon_colouring: (icon_colouring if own_icon?),
+        guides: guides ? 1 : 0 }
         .compact.slice(*CHOICES.fetch(type))
                                                                                                   .merge(self.class.edit_params(edits))
     end

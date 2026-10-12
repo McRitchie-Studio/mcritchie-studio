@@ -99,7 +99,7 @@ class LogosVariantTest < Minitest::Test
 
   def test_each_type_is_named_and_routed_by_its_own_choices
     icon = Variant.parse(logo, { tone: "dark", rule: "9", text: "third", guides: "yes" }, type: :icon)
-    assert_equal [{ tone: :dark }, "industries-icon-dark.svg", "McRitchie Industries icon, dark"], [icon.params, icon.filename, icon.label]
+    assert_equal [{ tone: :dark, colouring: :alt }, "industries-icon-dark.svg", "McRitchie Industries icon, dark"], [icon.params, icon.filename, icon.label]
     assert_equal "industries-icon-watermark.svg", Variant.new(logo, type: :icon, tone: :watermark).filename
 
     first = Variant.parse(stacked, { text: "first", rule: "9" }, type: :stacked)
