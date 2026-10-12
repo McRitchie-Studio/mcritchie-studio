@@ -17,7 +17,8 @@ module MusicVideos
     CHIP_NAMES = 3
 
     Row = Data.define(:video, :carded, :swapped, :chunks, :frames_missing, :thumbnail_key, :alts) do
-      # nil when the video is not tiled into chunks yet: no clip can owe frames.
+      # :untiled when the video is not tiled into chunks yet (no clip can owe
+      # frames), :complete when none owes them, else :missing.
       def frames_state
         return :untiled if chunks.zero?
 
@@ -70,7 +71,7 @@ module MusicVideos
                     .pluck(:alt_video_slug, Arel.sql("COUNT(DISTINCT alt_video_clips.id)"),
                            Arel.sql("COUNT(DISTINCT alt_video_clip_versions.alt_video_clip_id)"))
                     .to_h { |slug, total, primary| [slug, [total, primary]] }
-      drafts = TiktokDraft.where(state: "delivered").joins(:clip).where(alt_video_clips: { alt_video_slug: slugs })
+      drafts = TiktokDraft.where(state: TiktokDraft::DELIVERED).joins(:clip).where(alt_video_clips: { alt_video_slug: slugs })
                           .group("alt_video_clips.alt_video_slug").count
 
       alt_videos.map do |alt|

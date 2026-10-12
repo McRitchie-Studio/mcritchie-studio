@@ -66,7 +66,7 @@ class MusicVideosIndexTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='music-video-alt-link'][href='#{music_video_alt_video_path(lettered, alt)}']",
                     "Alt 1 · Epsilon, Zeta"
       assert_select "[data-test='music-video-alt-progress']", "1/#{alt.clips.size} clips"
-      assert_select "[data-test='music-video-alt-drafts']", "0 TikTok drafts sent"
+      assert_select "[data-test='music-video-alt-drafts']", 0, "no zero drafts count"
     end
     assert_select "[data-test='music-video-row'][data-slug='#{tiled.slug}']" do
       assert_select "[data-test='music-video-people']", "2 carded · 0 swapped"
@@ -96,6 +96,17 @@ class MusicVideosIndexTest < ActionDispatch::IntegrationTest
                       source: "music_videos/test_artist_a/second_demo/source/second.mp4")
     assert_equal [3, 3], [MusicVideo.count, AltVideo.count]
     assert_equal one, page_queries
+  end
+
+  test "a chip counts the drafts TikTok delivered on the progress line, and only when there are some" do
+    _, lettered = seed_two
+    clip = lettered.alt_videos.sole.clips.first
+    TiktokDraft.create!(clip:, version_number: 1, version_object_key: "k1", caption: "c", state: TiktokDraft::DELIVERED)
+    log_in_as users(:alex)
+    get music_videos_path
+
+    assert_select "[data-test='music-video-row'][data-slug='#{lettered.slug}'] [data-test='music-video-alt-progress']",
+                  /\A0\/\d+ clips · 1 TikTok draft sent\z/
   end
 
   test "a row with a cast still shows it as a signed thumbnail" do

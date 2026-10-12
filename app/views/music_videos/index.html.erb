@@ -67,11 +67,13 @@
               <ul class="flex flex-col gap-1.5 min-w-0">
                 <% row.alts.each do |alt| %>
                   <li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0" data-test="music-video-alt">
-                    <%= link_to alt.label, music_video_alt_video_path(video, alt.alt_video),
-                                class: "badge text-3xs bg-surface-alt text-heading border-subtle hover:border-primary/60 max-w-full truncate",
-                                title: alt.alt_video.swaps_summary, data: { test: "music-video-alt-link" } %>
-                    <span class="text-xs text-muted" data-test="music-video-alt-progress"><%= alt.with_primary %>/<%= alt.clips %> clips</span>
-                    <span class="text-xs text-muted" data-test="music-video-alt-drafts"><%= pluralize(alt.drafts_sent, "TikTok draft") %> sent</span>
+                    <%# A 28px tap target; a long label ends in an ellipsis rather than a hard cut. %>
+                    <%= link_to music_video_alt_video_path(video, alt.alt_video),
+                                class: "inline-flex items-center min-w-0 max-w-full rounded-md border border-subtle bg-surface-alt px-2 py-1 text-xs font-medium text-heading hover:border-primary/60",
+                                title: alt.alt_video.swaps_summary, data: { test: "music-video-alt-link" } do %>
+                      <span class="block min-w-0 truncate"><%= alt.label %></span>
+                    <% end %>
+                    <span class="text-xs text-muted whitespace-nowrap" data-test="music-video-alt-progress"><%= alt.with_primary %>/<%= alt.clips %> clips<% if alt.drafts_sent.positive? %><span data-test="music-video-alt-drafts"> · <%= pluralize(alt.drafts_sent, "TikTok draft") %> sent</span><% end %></span>
                   </li>
                 <% end %>
               </ul>
