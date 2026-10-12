@@ -66,7 +66,7 @@ co-signs:
 | Slug | 1Password item | Plays as |
 |---|---|---|
 | `mack` | `agent.mack.solana` | mack-4 |
-| `turf` | `phantom.turf` | regal-parsley-167 |
+| `turf` | `phantom.turf` | regal-parsley |
 
 > **There is no admin actor.** No agent-readable wallet signs in as an admin
 > account, so `KeyStore::ITEMS` files none: the house account holds no wallet,
@@ -159,7 +159,7 @@ a signer in the devnet `VaultState`. It prints the key the server signs as and
 the co-signer the settle will name, and warns, without stopping, when the server
 key is missing from the app's `SOLANA_MULTISIG_SIGNERS`.
 
-Then it creates a standard-tier contest ($500 pool, five paid ranks), funded
+Then it creates a standard-tier contest ($500 pool, four paid ranks: $300, $100, $50, $50), funded
 on-chain from the server key's devnet USDC. When that key holds less than the
 pool it mints more, which works only while the server key is the devnet test
 mint's authority. Otherwise it stops before any contest is created: fund the
@@ -222,7 +222,8 @@ League Board: https://qa.turfmonster.media/live
 
 **Watch the live board.** This is the step worth watching: the scores build from
 zero, games flip to FINAL as their last play lands, and the standings reshuffle.
-At `--pace 4` a 129-play week takes about nine minutes.
+At `--pace 4` the 246-play week takes about 20 minutes (measured on
+rel-20261012-db4d68).
 
 → **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 4.
 

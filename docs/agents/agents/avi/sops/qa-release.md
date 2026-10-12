@@ -411,8 +411,12 @@ end of this act: run Turf Monster's
 green close — create, enter, play, settle with the on-chain payout co-signed and the
 arithmetic checked, close — and record it on the release. Alex, 2026-10-11: "it just
 feels right to run a devnet gauntlet on the package before giving production the green
-light." The rehearsal stops for him at every step and needs his Phantom co-sign at
-step 4, so this is his time: ask for it at the handoff, do not wait silently.
+light." **You run it unattended, by default** (Alex, 2026-10-12): every step in one
+turn with `--cosign agent`, so the QA server key and Mack co-sign the settle and no
+Phantom tap is owed. At each `── STOP ──` block, check what it names yourself (the
+per-step checks are in the SOP's "unattended" paragraph) and go on; a step that stops
+or answers otherwise ends the run red. Run it watched (`--cosign link`, his Phantom
+co-sign at step 4) only when Alex asks to watch. Budget about 20 minutes for step 3.
 
 Record the green close (your own usage on the event, as every agent completion carries):
 
