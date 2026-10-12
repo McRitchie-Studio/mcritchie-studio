@@ -98,7 +98,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     groups = WorkspacePackage.features_by_category
     assert_equal categories.select { |key| groups.map(&:first).include?(key) }, groups.map(&:first)
     assert_equal WorkspacePackage.features.size, groups.sum { |_, _, rows| rows.size }
-    %w[hosting data domain email auth storage marketing agents security connectors add_ons].each do |key|
+    %w[app hosting data domain email auth storage marketing agents security connectors add_ons].each do |key|
       assert_includes groups.map(&:first), key
     end
   end
@@ -184,17 +184,17 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
   test "a row about one brand's product leads with that brand; generic rows stay neutral" do
     {
-      "Apps" => "github", "Server" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
+      "Server" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
       "Cache and job queue" => "redis", "Web address" => "squarespace", "App email from your domain" => "resend",
       "Google Workspace" => "google", "File storage" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
-    [ "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
+    [ "Custom app", "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
       refute feature(name).brand?, "#{name} is no single brand's product"
     end
   end
 
   test "the strip shows every other brand on the row, never the lead twice" do
-    assert_equal %w[rails], feature("Apps").strip_brands
+    assert_equal %w[github rails], feature("Custom app").strip_brands, "the app leads with its own mark, so both logos strip"
     assert_empty feature("Server").strip_brands
     assert_equal %w[zerobounce], feature("Email marketing").strip_brands
     assert_equal %w[x tiktok], feature("Social posting").strip_brands
@@ -207,7 +207,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_empty address.card_brands("vibe"), "Vibe's address is a mcritchie.studio subdomain"
     assert_equal %w[squarespace], address.card_brands("pro")
     assert_equal %w[squarespace], address.card_brands("enterprise")
-    assert_equal %w[github rails], feature("Apps").card_brands("vibe"), "no brand_from: every tier names it"
+    assert_equal %w[github rails], feature("Custom app").card_brands("vibe"), "no brand_from: every tier names it"
     assert_empty feature("Custom connectors").card_brands("enterprise"), "a planned row is a promise"
     assert feature("Custom connectors").planned?
   end
@@ -216,7 +216,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     vibe, pro, cto, team, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
 
     assert_equal %w[github rails heroku], vibe.card_brands
-    assert_equal %w[postgres redis squarespace resend cloudflare], pro.card_brands(vibe)
+    assert_equal %w[squarespace postgres redis resend cloudflare], pro.card_brands(vibe)
     assert_equal %w[sentry google 1password], cto.card_brands(pro)
     assert_equal %w[zerobounce], team.card_brands(cto)
     assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.card_brands(team)
@@ -270,6 +270,29 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal "6 build requests a month", changes.value_for(:team)
     assert WorkspacePackage.find(:cto).highlights.any? { |h| h.start_with?("4 build requests a month") }
     assert WorkspacePackage.find(:team).highlights.any? { |h| h.start_with?("6 build requests a month") }
+  end
+
+  test "[unit] the custom app is the first row and the web address the second, then hosting" do
+    names = WorkspacePackage.features_by_category.flat_map(&:last).map(&:name)
+
+    assert_equal [ "Custom app", "Web address", "Server", "Hosting mode" ], names.first(4)
+    assert_equal %w[app hosting], WorkspacePackage.features_by_category.map(&:first).first(2)
+    app = feature("Custom app")
+    assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
+    refute app.brand?
+    assert_includes WorkspacePackage::GLYPHS, app.glyph
+    assert_nil feature("Server").glyph
+  end
+
+  test "[unit] the web address reads three domain levels across the tiers" do
+    address = feature("Web address")
+
+    assert_equal [ "yourname.mcritchie.studio", "www.yourname.com", "yourname.com + www.yourname.com",
+                   "yourname.com + www.yourname.com", "Multiple domains" ], TIERS.map { |key| address.value_for(key) }
+    assert_match(/bare domain forwarding there/, address.blurb, "Pro: the bare domain forwards to www")
+    assert_match(/CTO and up serve the bare domain itself, with www redirected to it/, address.blurb)
+    assert_includes WorkspacePackage.find(:pro).highlights, "Your app at www.yourname.com, your own domain"
+    assert_includes WorkspacePackage.find(:cto).highlights, "Your app on yourname.com itself, www redirected to it"
   end
 
   test "[unit] taglines carry the 2026-10-12 promises" do

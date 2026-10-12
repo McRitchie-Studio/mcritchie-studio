@@ -4,9 +4,9 @@
     the app. The example domain is generic on purpose: this page is public and
     names no client. %>
 <% steps = [
-     { label: "Visitor types", value: "www.yourcompany.com", note: "or an old link, or another domain you own" },
-     { label: "Cloudflare edge", value: "301 → yourcompany.com", note: "a redirect rule, before your app is ever asked", brand: true },
-     { label: "Your address", value: "yourcompany.com", note: "the bare domain, pointed at your app" },
+     { label: "Visitor types", value: "www.yourname.com", note: "or an old link, or another domain you own" },
+     { label: "Cloudflare edge", value: "301 → yourname.com", note: "a redirect rule, before your app is ever asked", brand: true },
+     { label: "Your address", value: "yourname.com", note: "the bare domain, pointed at your app" },
      { label: "Your app", value: "Served over HTTPS", note: "hosted by us, certificate renewed for you" }
    ] %>
 <section class="mt-12 rounded-2xl border border-subtle bg-surface p-5 md:p-6" data-test="dns-flow" aria-labelledby="dns-flow-title">
@@ -39,5 +39,5 @@
     <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Your email records moved across exactly, so mail never stops.</li>
     <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> <span>Cloudflare's Turnstile bot check for your forms, on the same zone <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted">Coming soon</span></span></li>
   </ul>
-  <p class="mt-4 text-xs text-muted">On Pro, www.yourcompany.com is the address and the bare domain forwards to it.</p>
+  <p class="mt-4 text-xs text-muted">On Pro, www.yourname.com is the address and the bare domain forwards to it.</p>
 </section>

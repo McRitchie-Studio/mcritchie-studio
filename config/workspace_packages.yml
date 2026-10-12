@@ -84,6 +84,7 @@ billing:
 enterprise_booking_url:
 
 categories:
+  app: Your app
   hosting: Hosting
   data: Data
   domain: Domain
@@ -99,12 +100,12 @@ categories:
 packages:
   - key: vibe
     name: Vibe
-    tagline: A real app built by our agents, live at you.mcritchie.studio.
+    tagline: A real app built by our agents, live at yourname.mcritchie.studio.
     price_monthly: 0
     comp: 10and5
     highlights:
       - An app built by our agents from your description
-      - Live at you.mcritchie.studio
+      - Live at yourname.mcritchie.studio
       - Hosted for you on an Eco server
       - HTTPS and deploys handled for you
     cta: { label: Build your app, action: build }
@@ -114,7 +115,7 @@ packages:
     price_monthly: 100
     comp: Cyvasse
     highlights:
-      - Your app on your own domain
+      - Your app at www.yourname.com, your own domain
       - Postgres and Redis, so pages update live
       - Sign-in links and app email from your domain
       - File storage with nightly backups
@@ -126,10 +127,10 @@ packages:
     price_monthly: 500
     comp: Commercial Welding
     highlights:
-      - Web and worker servers on a larger Postgres
+      - Your app on yourname.com itself, www redirected to it
+      - Web and worker servers on a larger Postgres, with error alerts
       - Google Workspace with 2 seats and an agent that drafts your email
       - Your logins in 1Password, rotated when they leak or age
-      - Error alerts the moment something breaks
       - A monthly architecture and roadmap review
       - 4 build requests a month and priority support
     cta: { label: Talk to us about CTO, action: schedule }
@@ -161,10 +162,10 @@ packages:
     cta: { label: Book a call, action: enterprise_booking }
 
 features:
-  # --- hosting -------------------------------------------------------------
-  - name: Apps
-    category: hosting
-    icon: github
+  # --- your app ------------------------------------------------------------
+  - name: Custom app
+    category: app
+    icon: "glyph:app"
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
     vibe: 1 app
     pro: 1 app
@@ -175,6 +176,26 @@ features:
     you_do: Describe what you want built
     status: live
     software: [github, rails]
+  # Second row, after the app (Mr. McRitchie, 2026-10-12): three domain levels.
+  # Pro's address is www because the bare domain forwards to it on Squarespace
+  # DNS (website-launch step 3); CTO and up serve the bare domain from
+  # Cloudflare DNS, which points the apex at Heroku (domain-dns).
+  - name: Web address
+    category: app
+    icon: squarespace
+    blurb: "Where people find your app. Vibe lives on a mcritchie.studio address. Pro puts it on www at your own domain, which we register and point at your app, with the bare domain forwarding there. CTO and up serve the bare domain itself, with www redirected to it."
+    vibe: yourname.mcritchie.studio
+    pro: www.yourname.com
+    cto: yourname.com + www.yourname.com
+    team: yourname.com + www.yourname.com
+    enterprise: Multiple domains
+    sop: domain-purchase
+    you_do: Approve the domain
+    status: live
+    software: [squarespace]
+    brand_from: pro
+
+  # --- hosting -------------------------------------------------------------
   - name: Server
     category: hosting
     icon: heroku
@@ -262,20 +283,6 @@ features:
     status: builtin
 
   # --- domain --------------------------------------------------------------
-  - name: Web address
-    category: domain
-    icon: squarespace
-    blurb: Your app's address. From Pro, your own domain, registered and pointed at your app for you.
-    vibe: you.mcritchie.studio
-    pro: 1 own domain
-    cto: 1 own domain
-    team: 1 own domain
-    enterprise: Multiple domains
-    sop: domain-purchase
-    you_do: Approve the domain
-    status: live
-    software: [squarespace]
-    brand_from: pro
   # Cloudflare DNS, from CTO up (Mr. McRitchie, 2026-10-12; set on Growth, which CTO replaced). Live: mcritchie.studio
   # and turfmonster.media have run on Cloudflare DNS since 2026-09-30, and
   # domain-dns carries the move. /stack shows each client's actual DNS host.
@@ -283,7 +290,7 @@ features:
     category: domain
     icon: cloudflare
     blurb: Your bare domain is the address. www and old links redirect at Cloudflare's edge, and our agents manage every record by API.
-    spotlight: yourcompany.com is the address; www and old links redirect at the edge.
+    spotlight: yourname.com is the address; www and old links redirect at the edge.
     cto: Bare domain + edge redirects
     team: Bare domain + edge redirects
     enterprise: Every domain, edge redirects

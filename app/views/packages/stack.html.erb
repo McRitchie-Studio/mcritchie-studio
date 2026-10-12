@@ -76,6 +76,9 @@
                 <div class="flex gap-2 md:gap-3">
                   <% if feature.brand? %>
                     <span class="mt-0.5" data-test="stack-lead" data-lead="<%= feature.brand %>"><%= render "packages/brand", key: feature.brand, size: :lead %></span>
+                  <% elsif feature.glyph %>
+                    <span class="mt-0.5 flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                          data-test="stack-lead" data-lead="glyph-<%= feature.glyph %>"><%= render "packages/glyph", name: feature.glyph %></span>
                   <% else %>
                     <span class="mt-0.5 flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-sm md:text-base"
                           aria-hidden="true" data-test="stack-lead" data-lead="emoji"><%= feature.icon %></span>

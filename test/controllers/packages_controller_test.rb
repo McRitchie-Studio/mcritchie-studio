@@ -67,7 +67,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "each card leads with its promise and its highlights, Team featured" do
     get packages_path
 
-    assert_select "#{card('vibe')} [data-test='package-tagline']", text: /you\.mcritchie\.studio/
+    assert_select "#{card('vibe')} [data-test='package-tagline']", text: /yourname\.mcritchie\.studio/
     assert_select "#{card('cto')} [data-test='package-tagline']", text: /fractional CTO/
     assert_select "#{card('team')} [data-test='package-tagline']", text: /founding team: a CTO and a CMO/
     WorkspacePackage.cards.each do |package|
@@ -153,6 +153,15 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stack-legend']", text: /Included.*Not included.*Coming soon.*Add-on/m
   end
 
+  test "[component] the matrix opens with the custom app, then the web address at three domain levels" do
+    get packages_stack_path
+
+    assert_equal [ "custom-app", "web-address", "server" ], css_select("[data-test='stack-row']").first(3).map { |tr| tr["data-feature"] }
+    assert_equal [ "yourname.mcritchie.studio", "www.yourname.com", "yourname.com + www.yourname.com",
+                   "yourname.com + www.yourname.com", "Multiple domains" ],
+                 css_select("[data-feature='web-address'] [data-test='stack-cell']").map { |td| td.text.strip }
+  end
+
   test "values read across the row, with a check or a dash where nothing is quantified" do
     get packages_stack_path
 
@@ -177,6 +186,9 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='social-posting'] [data-test='stack-software'] [data-brand='x']"
     assert_select "[data-feature='social-posting'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
+    assert_select "[data-feature='custom-app'] [data-test='stack-lead'][data-lead='glyph-app'] svg[data-glyph='app'][aria-label='Your custom app']"
+    assert_select "[data-feature='custom-app'] [data-test='stack-lead'] [data-brand='github']", 0, "GitHub moves to the strip"
+    assert_equal %w[github rails], css_select("[data-feature='custom-app'] [data-test='stack-software'] [data-test='brand-logo']").map { |l| l["data-brand"] }
     assert_select "[data-feature='funnel-generation'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='cto']", text: "—"
     assert_select "[data-feature='funnel-generation'] [data-test='stack-cell'][data-package='team']", text: "✓"
@@ -224,7 +236,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       spot = "#{card(key)} [data-test='package-spotlight'][data-feature='cloudflare-dns']"
       assert_select spot, 1, key
       assert_select "#{spot} [data-brand='cloudflare'][aria-label='Cloudflare'] img"
-      assert_select spot, text: /Cloudflare DNS.*yourcompany\.com is the address; www and old links redirect at the edge/m
+      assert_select spot, text: /Cloudflare DNS.*yourname\.com is the address; www and old links redirect at the edge/m
     end
     assert_select "#{card('cto')} [data-test='package-spotlight']", text: /Bare domain \+ edge redirects/
     %w[vibe pro].each { |key| assert_select "#{card(key)} [data-test='package-spotlight']", 0, key }
@@ -244,7 +256,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='dns-flow'] h2", text: "Cloudflare DNS, in action"
     assert_select "[data-test='dns-flow-tiers']", text: "CTO, Team, and Enterprise"
     assert_select "[data-test='dns-flow'] [data-brand='cloudflare']"
-    assert_equal [ "www.yourcompany.com", "301 → yourcompany.com", "yourcompany.com", "Served over HTTPS" ],
+    assert_equal [ "www.yourname.com", "301 → yourname.com", "yourname.com", "Served over HTTPS" ],
                  css_select("[data-test='dns-flow-step'] p.font-mono").map { |p| p.text.strip }
     assert_select "[data-test='dns-flow-facts']", text: /Turnstile.*Coming soon/m
     %w[Welding Industries Turf].each { |client| assert_no_match(/#{client}/, css_select("[data-test='dns-flow']").to_s) }

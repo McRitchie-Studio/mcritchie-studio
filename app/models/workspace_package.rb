@@ -18,6 +18,9 @@ class WorkspacePackage
   CLOUDFLARE_DNS = "Cloudflare DNS".freeze
   # The value a row carries for a tier that sells it per contract.
   ADD_ON = "Add-on".freeze
+  # An icon written "glyph:<name>" is drawn as an inline SVG mark, not an emoji.
+  GLYPH_PREFIX = "glyph:".freeze
+  GLYPHS = %w[app].freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
                        :brand_from, :spotlight, keyword_init: true) do
@@ -58,6 +61,10 @@ class WorkspacePackage
     # other icon is an emoji, the neutral lead of a row no single brand owns.
     def brand = WorkspaceIconConfig.software?(icon) ? icon.to_s : nil
     def brand? = !brand.nil?
+
+    # A drawn mark ("glyph:app" names app/views/packages/_glyph.html.erb's `app`)
+    # for a row no brand owns but an emoji would undersell: the custom app.
+    def glyph = icon.to_s.start_with?(GLYPH_PREFIX) ? icon.to_s.delete_prefix(GLYPH_PREFIX) : nil
 
     # The logo strip under the row: every brand the row shows, less the one it
     # already leads with.
