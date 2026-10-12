@@ -393,3 +393,23 @@ apps:
       smoke_url: https://karenmcritchie.com
     test_cmd: bin/rails db:test:prepare test
     qa_evidence: exempt
+  commercial-welding:
+    ladder: three-rung
+    # Managed studio-engine satellite, shaped like mcritchie-industries: Heroku apps
+    # `commercial-welding` and `commercial-welding-qa` (provisioned on
+    # Alex's word; Basic web + essential-0 Postgres each), QA through
+    # config/qa_environments.yml under the same slug. Migrations ride the
+    # Procfile's `release: bin/rails db:migrate`. git_push_heroku runs no tests, so
+    # both gates name CI's full suite, verbatim, and the two strings stay equal.
+    # No accepted_trigger_lint: the app's CI carries no trigger lint yet.
+    test_cmd: bin/rails db:test:prepare test test:system
+    qa_test_cmd: bin/rails db:test:prepare test test:system
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/commercial-welding.git
+      branch: main
+      # The herokuapp host until www.commercialwelding.llc resolves to Heroku and
+      # its ACM certificate issues: ship smokes after the push, and an
+      # unresolvable host aborts a live deploy. The app's APP_HOSTS includes this
+      # host, and /up is excluded from host authorization anyway.
+      smoke_url: https://commercial-welding-6d687a33cdea.herokuapp.com

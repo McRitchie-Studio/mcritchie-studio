@@ -117,6 +117,38 @@ qa_environments:
       - RAILS_MASTER_KEY
       - RESEND_API_KEY
 
+  commercial-welding:
+    display_name: Commercial Welding QA
+    repo: commercial-welding
+    heroku_app: commercial-welding-qa
+    heroku_domain: commercial-welding-qa-179b587e0fb1.herokuapp.com
+    qa_url: https://qa.commercialwelding.llc
+    custom_domains:
+      - qa.commercialwelding.llc
+    production_app: commercial-welding
+    production_url: https://www.commercialwelding.llc
+    deploy_provider: heroku
+    addons:
+      - heroku-postgresql:essential-0
+    dynos:
+      web: 1
+    # Provisioned 2026-10-12. The qa CNAME is Alex's to add on Squarespace DNS;
+    # until it resolves, QA answers on heroku_domain. Nothing pairing this app
+    # with the McRitchie names goes public before the acquisition closes, and
+    # the site is noindex.
+    safety_profile: private-pre-close-noindex
+    required_config:
+      # production.rb defaults APP_HOST to www.commercialwelding.llc, so QA MUST
+      # override it or QA mints production links. APP_HOSTS is the allow-list
+      # (production.rb reads it); the herokuapp host is in it so QA serves
+      # before DNS.
+      APP_HOST: qa.commercialwelding.llc
+      APP_HOSTS: qa.commercialwelding.llc,commercial-welding-qa-179b587e0fb1.herokuapp.com
+    # No mail secret: the app has no sending domain yet (it sends from a
+    # .invalid address), so no RESEND_* is declared until Alex picks a sender.
+    required_secrets:
+      - RAILS_MASTER_KEY
+
   rolio:
     display_name: Rolio QA
     repo: rolio

@@ -41,7 +41,7 @@ module ReleaseNotes
       message = Formatter.new(app: "mcritchie-studio", environment: "production", release: "v72",
                               sha: "abc1234", url: "", tasks: []).message
 
-      %w[rolio chain-ops tax-studio acquisition-studio commercial-welding].each do |slug|
+      %w[rolio chain-ops tax-studio acquisition-studio].each do |slug|
         group = Formatter::APP_GROUPS.find { |candidate| candidate[:key] == slug }
         assert group[:hide_when_empty], "#{slug} is archived or has no repo"
         refute_includes message, "#{group[:emoji]} #{group[:label]}", "#{slug} has no tasks, so no heading"

@@ -71,10 +71,11 @@ module AppCatalog
   end
 
   # One release-notes group per app, then per library, in catalog order. An
-  # archived or repo-less app cannot ship code, so its group is `hide_when_empty`:
-  # the notes draw it only when a task in the release names it.
+  # archived app, a repo-less one, one with no Heroku app to deploy to, or one in
+  # UNANNOUNCED is `hide_when_empty`: the notes draw it only when a task in the
+  # release names it. A >9-task release posts this body to Discord.
   def release_groups
-    @release_groups ||= (apps.map { |entry| group(entry.slug, entry.name, entry.emoji, [entry.slug], hide_when_empty: entry.archived? || entry.repo.nil?) } +
+    @release_groups ||= (apps.map { |entry| group(entry.slug, entry.name, entry.emoji, [entry.slug], hide_when_empty: unshippable?(entry)) } +
                          libraries.map { |lib| group(lib.slug, lib.name, lib.emoji, [lib.slug] + lib.aliases) }).freeze
   end
 
@@ -86,6 +87,13 @@ module AppCatalog
                                     description: lib.description, status: "active" } }
     rows.each_with_index.map { |row, index| row.merge(position: index).freeze }.freeze
   end
+
+  # Apps whose name must not reach a public post yet: nothing pairs Commercial
+  # Welding with the McRitchie names before the acquisition closes (Alex's
+  # standing default). Remove a slug here when its name may go public.
+  UNANNOUNCED = %w[commercial-welding].freeze
+
+  def unshippable?(entry) = entry.archived? || entry.repo.nil? || entry.heroku_app.nil? || UNANNOUNCED.include?(entry.slug)
 
   def group(key, label, emoji, aliases, hide_when_empty: false)
     { key: key, label: label, emoji: emoji, aliases: aliases.freeze, hide_when_empty: hide_when_empty }.freeze

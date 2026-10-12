@@ -44,7 +44,7 @@ class AppCatalogTest < Minitest::Test
       assert_equal ["basic", "showcase"], tiers.fetch(slug), slug
     end
     %w[rolio chain-ops tax-studio acquisition-studio].each { |slug| assert_equal [nil, "archived"], tiers.fetch(slug), slug }
-    assert_equal false, AppCatalog.app("commercial-welding").hosted
+    assert_equal true, AppCatalog.app("commercial-welding").hosted
     assert_nil AppCatalog.app("tax-studio").repo
   end
 
@@ -127,9 +127,13 @@ class AppCatalogTest < Minitest::Test
     assert_equal AppCatalog.apps.map(&:slug) + AppCatalog.libraries.map(&:slug), groups.map { |g| g[:key] }
     assert_includes groups.find { |g| g[:key] == "turf-vault" }[:aliases], "vault"
     hidden = groups.select { |g| g[:hide_when_empty] }.map { |g| g[:key] }
-    assert_equal AppCatalog.apps.select { |app| app.archived? || app.repo.nil? }.map(&:slug), hidden,
-                 "only an archived or repo-less app's group hides when empty"
-    assert_includes hidden, "commercial-welding"
+    unshippable = ->(app) { app.archived? || app.repo.nil? || app.heroku_app.nil? }
+    assert_equal AppCatalog.apps.select { |app| unshippable.(app) || AppCatalog::UNANNOUNCED.include?(app.slug) }.map(&:slug), hidden,
+                 "only an archived, repo-less, undeployed or unannounced app's group hides when empty"
+    assert_includes hidden, "acquisition-studio"
+    cw = AppCatalog.app("commercial-welding")
+    refute unshippable.(cw), "commercial-welding is deployed, so only UNANNOUNCED hides it"
+    assert_includes hidden, "commercial-welding", "no public release note names Commercial Welding before the acquisition closes"
     refute_includes hidden, "cyvasse"
 
     rows = AppCatalog.seed_rows
