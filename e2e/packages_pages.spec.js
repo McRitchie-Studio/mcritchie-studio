@@ -4,7 +4,9 @@ const { VISITOR } = require("./helpers");
 // What a visitor sees: signed out, not the suite's default admin session.
 test.use({ storageState: VISITOR });
 
-// /packages and /packages/stack (task tiered-packages-and-full-stack).
+// /packages and /packages/stack (task tiered-packages-and-full-stack; the
+// 2026-10-12 ladder from task cto-and-team-tiers: Vibe, Pro, CTO and Team cards,
+// Enterprise as a Talk to us line under them).
 //
 // WHY A BROWSER TIER EARNS ITS PLACE HERE. The integration tier proves the
 // markup: four cards, each CTA's href, the matrix's rows. Only a browser proves
@@ -27,7 +29,8 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
 
   const cards = page.locator("[data-test='package-card']");
   await expect(cards).toHaveCount(4);
-  await expect(cards.locator("h2")).toHaveText(["Vibe", "Pro", "Growth", "Enterprise"]);
+  await expect(cards.locator("h2")).toHaveText(["Vibe", "Pro", "CTO", "Team"]);
+  await expect(page.locator("[data-test='package-card'][data-package='team'] [data-test='price-monthly']")).toContainText("$1,500");
 
   // Each card names its brands in full-color logos that actually load.
   const vibeLogos = page.locator("[data-package='vibe'] [data-test='package-powered-by'] [data-test='brand-logo']");
@@ -42,14 +45,14 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await expect(page.locator("[data-package='vibe'] [data-test='package-cta']")).toHaveAttribute("href", "/build");
 
   // The annual toggle swaps the monthly price for its discounted equivalent.
-  const growth = page.locator("[data-test='package-card'][data-package='growth']");
-  await expect(growth.locator("[data-test='price-monthly']")).toBeVisible();
+  const cto = page.locator("[data-test='package-card'][data-package='cto']");
+  await expect(cto.locator("[data-test='price-monthly']")).toBeVisible();
   await page.locator("[data-test='billing-annual']").click();
-  await expect(growth.locator("[data-test='price-annual']")).toContainText("$450");
-  await expect(growth.locator("[data-test='price-monthly']")).toBeHidden();
+  await expect(cto.locator("[data-test='price-annual']")).toContainText("$450");
+  await expect(cto.locator("[data-test='price-monthly']")).toBeHidden();
 
-  // Growth's CTA opens the booking dialog on this page, not /schedule.
-  await growth.locator("[data-test='package-cta']").click();
+  // CTO's CTA opens the booking dialog on this page, not /schedule.
+  await cto.locator("[data-test='package-cta']").click();
   const dialog = page.locator("dialog[data-booking-dialog]");
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(/\/packages$/);
@@ -57,15 +60,31 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await dialog.locator("[data-booking-close]").click();
   await expect(dialog).toBeHidden();
 
-  // Enterprise's Book a call is live too: with no enterprise URL configured it
-  // opens the same popup rather than a dead link.
-  await page.locator("[data-package='enterprise'] [data-test='package-cta']").click();
+  // Enterprise is no card: a Talk to us line under the cards. Its Book a call is
+  // live: with no enterprise URL configured it opens the same booking popup
+  // rather than a dead link.
+  const talk = page.locator("[data-test='talk-to-us'][data-package='enterprise']");
+  await expect(talk).toContainText("Need more apps, white label or custom connectors? Talk to us");
+  const book = talk.getByRole("link", { name: "Book a call" });
+  await book.scrollIntoViewIfNeeded();
+  await book.click();
   await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/packages$/);
+  await expect(page.frameLocator("iframe[data-booking-popup-frame]").locator("#stub")).toHaveText("booking stub");
   await dialog.locator("[data-booking-close]").click();
 
   await page.locator("[data-test='full-stack-link']").click();
   await expect(page).toHaveURL(/\/packages\/stack$/);
   await expect(page.getByRole("heading", { name: "Everything in every tier" })).toBeVisible();
+
+  // The full stack keeps the Enterprise column and the same Talk to us line.
+  await expect(page.locator("[data-test='stack-tier-header']")).toHaveCount(5);
+  const stackTalk = page.locator("[data-test='talk-to-us'][data-package='enterprise']");
+  await stackTalk.scrollIntoViewIfNeeded();
+  await stackTalk.getByRole("link", { name: "Book a call" }).click();
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/packages\/stack$/);
+  await dialog.locator("[data-booking-close]").click();
 });
 
 test("on a phone the full stack scrolls inside its box, keeps its tier header, and links back", async ({ page }) => {
@@ -104,12 +123,19 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   await page.locator("[data-test='back-to-packages']").click();
   await expect(page).toHaveURL(/\/packages$/);
   await expect(page.locator("[data-test='package-card']")).toHaveCount(4);
+
+  // The Talk to us line stacks on a phone without pushing the page sideways.
+  const talkCta = page.locator("[data-test='talk-to-us'] [data-test='package-cta']");
+  await talkCta.scrollIntoViewIfNeeded();
+  await expect(talkCta).toBeVisible();
+  const packagesOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(packagesOverflow).toBeLessThanOrEqual(0);
 });
 
-test("Growth and Enterprise show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
+test("CTO and Team show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
   await page.goto("/packages");
 
-  for (const key of ["growth", "enterprise"]) {
+  for (const key of ["cto", "team"]) {
     const spot = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-spotlight'][data-feature='cloudflare-dns']`);
     await expect(spot).toContainText("Cloudflare DNS");
     const logo = spot.locator("[data-brand='cloudflare'] img");
