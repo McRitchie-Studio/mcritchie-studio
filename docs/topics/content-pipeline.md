@@ -397,7 +397,7 @@ Every look a person is given gets an **iced-out twin** (the operator's ask,
   the prompt reads the uniform through the base. It never takes the default.
 - **Who makes it**: `Appearances::IcedTwin`, called by both look-creation paths
   (`PeopleController#create_appearance` and the cast card's
-  `MusicVideos::CreateRecastLook`) in the same transaction. A look made before
+  `Videos::CreateRecastLook`) in the same transaction. A look made before
   twins existed gets one from **Create iced twin** on the person page or the look
   page. There is no backfill. Making a twin is a free row.
 - **The prompt**: one builder, `Appearances::CharacterSheetPrompt`, with `iced:`
@@ -758,7 +758,7 @@ The two fetches the hub makes itself from such a URL connect to the address that
 was vetted, so a name that answers differently a moment later is not followed
 (`/tasks/url-guard-remaining-fetchers`):
 `Appearances::MirrorCandidates::LiveCache.fetch` is the engine's own
-`Studio::ImageCache.fetch_response`, and `MusicVideos::AssetZip::Fetcher#remote`
+`Studio::ImageCache.fetch_response`, and `Videos::AssetZip::Fetcher#remote`
 pairs `vet_source_url!` with `pinned_http`. Each vets every redirect the same way.
 Both ask the engine directly, so neither goes through the memo or the budget
 above: one lookup per fetched URL, in a job or in a streaming body. Their tests

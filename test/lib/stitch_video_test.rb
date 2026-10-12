@@ -9,22 +9,22 @@ require_relative "../../bin/lib/stitch_video"
 # [unit] The agent side of the final stitch (bin/stitch-video) with ffmpeg, R2
 # and the hub API faked: it takes the waiting request or asks for one, reports
 # start, finish and failure in order, uploads only a finished file, and a dry
-# run changes nothing. The ffmpeg work itself is MusicVideos::Stitcher's,
-# proven against real ffmpeg in test/lib/music_videos/stitcher_test.rb.
+# run changes nothing. The ffmpeg work itself is Videos::Stitcher's,
+# proven against real ffmpeg in test/lib/videos/stitcher_test.rb.
 class StitchVideoTest < Minitest::Test
   SOURCE_KEY = "music_videos/test_artist_a/tiled_demo/source/test_artist_a_tiled_demo.mp4"
   SLUG = "test-artist-a-tiled-demo"
   LABEL = "#{SLUG} alt video 1".freeze
-  BASE = "/api/v1/music_videos/#{SLUG}/alt_videos/1/stitches".freeze
+  BASE = "/api/v1/videos/#{SLUG}/alt_videos/1/stitches".freeze
   TAKES = [[1, 0, 25_000, 2], [2, 20_000, 45_000, 1]].map do |ordinal, start_ms, end_ms, take|
     { "ordinal" => ordinal, "start_ms" => start_ms, "end_ms" => end_ms, "take" => take,
-      "object_key" => MusicVideos::ObjectKeys.alt_clip_version(source_key: SOURCE_KEY, alt_number: 1, ordinal:, start_ms:,
+      "object_key" => Videos::ObjectKeys.alt_clip_version(source_key: SOURCE_KEY, alt_number: 1, ordinal:, start_ms:,
                                                                end_ms:, number: take) }
   end.freeze
 
   def self.stitch(number, state, started_at: nil)
     { "number" => number, "state" => state, "started_at" => started_at, "source_object_key" => SOURCE_KEY,
-      "object_key" => MusicVideos::ObjectKeys.alt_stitched(source_key: SOURCE_KEY, alt_number: 1, number:),
+      "object_key" => Videos::ObjectKeys.alt_stitched(source_key: SOURCE_KEY, alt_number: 1, number:),
       "takes" => TAKES }
   end
 
@@ -230,7 +230,7 @@ class StitchVideoTest < Minitest::Test
     run = run_bin(api:, alt: 2, dry_run: true)
 
     assert_nil run[:error]
-    assert_equal [[:get, "/api/v1/music_videos/#{SLUG}/alt_videos/2/stitches"]], api.calls.first(1)
+    assert_equal [[:get, "/api/v1/videos/#{SLUG}/alt_videos/2/stitches"]], api.calls.first(1)
     assert_includes run[:out], "stitch 1 of #{SLUG} alt video 2 (dry run"
   end
 end

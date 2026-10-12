@@ -144,11 +144,12 @@ class DigestVideoTest < Minitest::Test
     end
   end
 
-  def test_a_video_is_a_music_video_unless_typed_cinematic
+  def test_a_video_is_a_video_unless_typed_cinematic
     run_digest { |_shell, _storage, api| assert_equal "music_video", api.payloads.first[:kind] }
     run_digest(kind: "cinematic") { |_shell, _storage, api| assert_equal "cinematic", api.payloads.first[:kind] }
+    run_digest(kind: "movie_scene") { |_shell, _storage, api| assert_equal "movie_scene", api.payloads.first[:kind] }
     error = assert_raises(DigestVideo::Failure) { run_digest(kind: "documentary") { flunk "never runs" } }
-    assert_match "kind must be one of: music_video, cinematic", error.message
+    assert_match "kind must be one of: music_video, cinematic, movie_scene", error.message
   end
 
   def ytdlp_calls(shell) = shell.calls.select { |c| File.basename(c.first) == "yt-dlp" }

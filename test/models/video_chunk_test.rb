@@ -42,8 +42,8 @@ class VideoChunkTest < ActiveSupport::TestCase
     assert_equal %w[candidate chunk chunk chunk chunk], @video.video_clips.map(&:kind)
     assert_equal [1, 2, 3, 4], @video.video_chunks.map(&:ordinal)
     assert_equal [@candidate], @video.clip_candidates.to_a
-    assert_equal @chunks, VideoClip.chunks.where(music_video_slug: @video.slug).order(:ordinal).to_a
-    assert_equal [@candidate], VideoClip.candidates.where(music_video_slug: @video.slug).to_a
+    assert_equal @chunks, VideoClip.chunks.where(video_slug: @video.slug).order(:ordinal).to_a
+    assert_equal [@candidate], VideoClip.candidates.where(video_slug: @video.slug).to_a
   end
 
   test "a chunk may not carry a seam" do
@@ -89,7 +89,7 @@ class VideoChunkTest < ActiveSupport::TestCase
 
   test "the video records the tiling its chunks were cut with" do
     assert_equal({ chunk_ms: 25_000, overlap_ms: 5_000 }, @video.chunk_tiling)
-    assert_nil MusicVideo.new.chunk_tiling
+    assert_nil Video.new.chunk_tiling
 
     @video.chunk_overlap_ms = 25_000
     assert_not @video.valid?
@@ -100,7 +100,7 @@ class VideoChunkTest < ActiveSupport::TestCase
 
   # Nothing about a chunk is pinned to 25 s: the fal model takes 15 s at most.
   test "a video tiled at 15 s with a 5 s overlap holds 15 s chunks on a 10 s stride" do
-    MusicVideos::ReplaceClips.new(@video, TiledVideo.chunk_rows(@video, chunk_ms: 15_000, overlap_ms: 5_000),
+    Videos::ReplaceClips.new(@video, TiledVideo.chunk_rows(@video, chunk_ms: 15_000, overlap_ms: 5_000),
                                   kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000).call
     chunks = @video.video_chunks.reload.to_a
 
@@ -168,14 +168,14 @@ class VideoChunkTest < ActiveSupport::TestCase
 
   test "bin/digest-video accepts exactly the kinds the model does" do
     require Rails.root.join("bin/lib/digest_video").to_s
-    assert_equal MusicVideo::KINDS, DigestVideo::KINDS
+    assert_equal Video::KINDS, DigestVideo::KINDS
   end
 
   test "a video is a music video unless it is typed cinematic" do
     assert_equal "cinematic", @video.kind
-    assert_equal "Cinematic video", @video.kind_label
-    assert_equal "music_video", MusicVideo.new.kind
-    assert_equal "Music video", MusicVideo.new.kind_label
+    assert_equal "Cinematic", @video.kind_label
+    assert_equal "music_video", Video.new.kind
+    assert_equal "Music video", Video.new.kind_label
     @video.kind = "documentary"
     assert_not @video.valid?
     assert @video.errors.key?(:kind)

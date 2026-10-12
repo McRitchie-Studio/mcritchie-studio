@@ -9,7 +9,7 @@ require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 class VideoClipsControllerTest < ActionDispatch::IntegrationTest
   setup { @video = NightCallClips.seed! }
 
-  def decide(ordinal, status) = patch music_video_clip_path(@video, ordinal), params: { status: }
+  def decide(ordinal, status) = patch video_clip_path(@video, ordinal), params: { status: }
 
   test "non-admins cannot approve" do
     log_in_as users(:viewer)
@@ -20,7 +20,7 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
 
   test "the page lists the clips below the cast with signed previews" do
     log_in_as users(:alex)
-    get music_video_path(@video)
+    get video_path(@video)
 
     assert_response :success
     assert_select "[data-test='cast-panel'] [data-test='clips-panel'] [data-test='clip-row']", 2
@@ -32,7 +32,7 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
 
     decide(1, "approved")
-    assert_redirected_to music_video_path(@video, anchor: "clip-1")
+    assert_redirected_to video_path(@video, anchor: "clip-1")
     assert_equal "Clip 1 approved.", flash[:notice]
     assert_equal "clips_ready", @video.reload.stage
 
@@ -54,19 +54,19 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
   test "a clips-ready video keeps its cast confirmed while a name changes" do
     log_in_as users(:alex)
     decide(1, "approved")
-    get music_video_path(@video)
+    get video_path(@video)
 
     assert_select "[data-test='video-stage']", "Clips ready"
     assert_select "[data-test='cast-confirmed']"
     # Naming is optional and stays editable after the confirm; the stage does not move back.
-    patch music_video_performer_path(@video, 2), params: { clear: "1" }
+    patch video_performer_path(@video, 2), params: { clear: "1" }
     assert_not @video.video_performers.find_by!(ordinal: 2).extra?
     assert_equal "clips_ready", @video.reload.stage, "the cast stays confirmed"
   end
 
   test "a video whose cast is not confirmed shows the clips locked" do
     log_in_as users(:alex)
-    get music_video_path(NightCallCast.seed!)
+    get video_path(NightCallCast.seed!)
     assert_select "[data-test='clips-locked']"
   end
 
@@ -76,10 +76,10 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
   test "a tiled video lists its chunks in time order, apart from the clip candidates" do
     video = TiledVideo.seed!
     log_in_as users(:alex)
-    get music_video_path(video)
+    get video_path(video)
 
     assert_response :success
-    assert_select "[data-test='video-kind']", "Cinematic video · Cast"
+    assert_select "[data-test='video-kind']", "Cinematic · Cast"
     assert_select "[data-test='clips-panel'] [data-test='clip-row']", 1
     assert_select "[data-test='clips-panel'] [data-test='chunk-window']", 0
     assert_select "[data-test='cast-panel'] [data-test='chunks-panel'] [data-test='clip-row']", 0
@@ -96,20 +96,20 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     video = TiledVideo.seed!
     log_in_as users(:alex)
     count = ->(&block) { [].tap { |q| ActiveSupport::Notifications.subscribed(->(*, payload) { q << payload[:sql] unless payload[:name] == "SCHEMA" }, "sql.active_record", &block) }.size }
-    four = count.call { get music_video_path(video) }
+    four = count.call { get video_path(video) }
 
     video.video_chunks.destroy_all
-    none = count.call { get music_video_path(video) }
+    none = count.call { get video_path(video) }
     assert_select "[data-test='chunks-empty']", /bin\/find-clips test-artist-a-tiled-demo --tile/
     assert_equal none, four, "four chunks render with the same queries as none"
   end
 
   test "the page describes a 15 s tiling in its own numbers" do
     video = TiledVideo.seed!
-    MusicVideos::ReplaceClips.new(video, TiledVideo.chunk_rows(video, chunk_ms: 15_000, overlap_ms: 5_000),
+    Videos::ReplaceClips.new(video, TiledVideo.chunk_rows(video, chunk_ms: 15_000, overlap_ms: 5_000),
                                   kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000).call
     log_in_as users(:alex)
-    get music_video_path(video)
+    get video_path(video)
 
     assert_select "[data-test='chunks-tiling']", /15 s chunks on a 10 s stride, so each shares 5 s with the one before\./
     assert_select "[data-test='chunk-window']", 7
@@ -120,22 +120,22 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     video = TiledVideo.seed!
     log_in_as users(:alex)
 
-    patch music_video_clip_path(video, 4), params: { status: "approved" }
+    patch video_clip_path(video, 4), params: { status: "approved" }
     assert_response :not_found
     assert_equal %w[proposed], video.video_chunks.pluck(:status).uniq
 
-    patch music_video_clip_path(video, 1), params: { status: "approved" }
+    patch video_clip_path(video, 1), params: { status: "approved" }
     assert_equal "approved", video.clip_candidates.sole.status
     assert_equal "proposed", video.video_chunks.first.status, "chunk 1 shares the ordinal and is untouched"
   end
 
   test "a video with no chunks says how to tile it, cast confirmed or not" do
     log_in_as users(:alex)
-    get music_video_path(@video)
+    get video_path(@video)
     assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call-clips --tile/
     assert_select "[data-test='video-kind']", "Music video · Cast"
 
-    get music_video_path(NightCallCast.seed!)
+    get video_path(NightCallCast.seed!)
     assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call --tile/
     assert_select "[data-test='chunks-locked']", false, "chunks no longer wait for the cast"
   end
@@ -146,13 +146,13 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
   test "an unconfirmed video lists the chunks the digest cut, with Build Clips off" do
     video = NightCallCast.seed!
     video.update!(duration_ms: 30_000)
-    rows = MusicVideos::ChunkTiler.windows(30_000).map do |w|
+    rows = Videos::ChunkTiler.windows(30_000).map do |w|
       { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => "unknown",
-        "performer_ordinals" => [], "object_key" => MusicVideos::ObjectKeys.chunk(source_key: video.source_object_key, **w.to_h) }
+        "performer_ordinals" => [], "object_key" => Videos::ObjectKeys.chunk(source_key: video.source_object_key, **w.to_h) }
     end
-    MusicVideos::ReplaceClips.new(video, rows, kind: "chunk").call
+    Videos::ReplaceClips.new(video, rows, kind: "chunk").call
     log_in_as users(:alex)
-    get music_video_path(video)
+    get video_path(video)
 
     assert_response :success
     assert_select "[data-test='video-stage']", "Digested"

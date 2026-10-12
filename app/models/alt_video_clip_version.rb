@@ -33,8 +33,8 @@ class AltVideoClipVersion < ApplicationRecord
 
   def object_key_names_the_version
     alt = clip&.alt_video
-    expected = MusicVideos::ObjectKeys.alt_clip_version(
-      source_key: alt&.music_video&.source_object_key, alt_number: alt&.number, ordinal: clip&.chunk_ordinal,
+    expected = Videos::ObjectKeys.alt_clip_version(
+      source_key: alt&.video&.source_object_key, alt_number: alt&.number, ordinal: clip&.chunk_ordinal,
       start_ms: clip&.start_ms, end_ms: clip&.end_ms, number:
     )
     errors.add(:object_key, "must be #{expected}") unless object_key == expected

@@ -13,7 +13,7 @@
 # Its clips (AltVideoClip, one per source chunk) hold the MP4s generated for
 # it; its stitches (VideoStitch) are its full-length cuts.
 class AltVideo < ApplicationRecord
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :alt_videos
+  belongs_to :video, foreign_key: :video_slug, primary_key: :slug, inverse_of: :alt_videos
   has_many :clips, -> { order(:chunk_ordinal) }, class_name: "AltVideoClip", foreign_key: :alt_video_slug,
            primary_key: :slug, inverse_of: :alt_video, dependent: :destroy
   has_many :stitches, -> { order(:number) }, class_name: "VideoStitch", foreign_key: :alt_video_slug,
@@ -21,7 +21,7 @@ class AltVideo < ApplicationRecord
 
   class NotReady < StandardError; end
 
-  validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :music_video_slug }
+  validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :video_slug }
   validates :slug, presence: true, uniqueness: true
   validate :slug_names_the_source_and_number
   validate :swaps_are_a_snapshot
@@ -31,7 +31,7 @@ class AltVideo < ApplicationRecord
 
   def name = "Alt video #{number}"
 
-  def swap_set = @swap_set ||= MusicVideos::SwapSet.new(swaps)
+  def swap_set = @swap_set ||= Videos::SwapSet.new(swaps)
 
   # "Justin Jefferson > Vikings home · Dak Prescott > Cowboys white", or that
   # nobody is swapped.
@@ -40,7 +40,7 @@ class AltVideo < ApplicationRecord
     labels.any? ? labels.join(" · ") : "nobody swapped"
   end
 
-  def self.slug_for(music_video_slug, number) = "#{music_video_slug}-alt-#{number}"
+  def self.slug_for(video_slug, number) = "#{video_slug}-alt-#{number}"
 
   # Build Clips: the next alt video of the source, its swaps snapshotted from
   # the cast card now, and one clip per chunk. Locks the source so two presses
@@ -54,7 +54,7 @@ class AltVideo < ApplicationRecord
       performers = video.video_performers.reset.includes(:recast_person, :recast_appearance).to_a
       number = video.alt_videos.maximum(:number).to_i + 1
       alt = video.alt_videos.create!(number:, slug: slug_for(video.slug, number),
-                                     swaps: MusicVideos::SwapSet.live(performers).to_rows)
+                                     swaps: Videos::SwapSet.live(performers).to_rows)
       video.video_chunks.each do |chunk|
         alt.clips.create!(chunk_ordinal: chunk.ordinal, start_ms: chunk.start_ms, end_ms: chunk.end_ms)
       end
@@ -105,7 +105,7 @@ class AltVideo < ApplicationRecord
   private
 
   def slug_names_the_source_and_number
-    expected = self.class.slug_for(music_video_slug, number)
+    expected = self.class.slug_for(video_slug, number)
     errors.add(:slug, "must be #{expected}") unless slug == expected
   end
 
@@ -115,10 +115,10 @@ class AltVideo < ApplicationRecord
 
   def swaps_are_a_snapshot
     ok = swaps.is_a?(Array) && swaps.all? do |row|
-      row.is_a?(Hash) && row.keys.sort == MusicVideos::SwapSet::KEYS.sort &&
+      row.is_a?(Hash) && row.keys.sort == Videos::SwapSet::KEYS.sort &&
         row["performer_ordinal"].is_a?(Integer) && row["person_slug"].present? && row["person_name"].present?
     end
-    return errors.add(:swaps, "must list each swap: #{MusicVideos::SwapSet::KEYS.join(', ')}") unless ok
+    return errors.add(:swaps, "must list each swap: #{Videos::SwapSet::KEYS.join(', ')}") unless ok
 
     ordinals = swaps.map { |row| row["performer_ordinal"] }
     errors.add(:swaps, "names a person twice") if ordinals.uniq.size != ordinals.size

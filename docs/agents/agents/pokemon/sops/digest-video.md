@@ -19,6 +19,7 @@ bin/digest-video <url> --dry-run         # download and print the plan only
 bin/digest-video <url> --production      # production bucket and mcritchie.studio
 bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session
 bin/digest-video <url> --kind cinematic  # a cinematic video; the default is music_video
+bin/digest-video <url> --kind movie_scene  # a scene from a movie
 bin/digest-video <url> --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
 bin/digest-video <url> --no-tile         # record the source only; cut no chunks
 bin/digest-video <url> --retile          # replace the chunks a re-digested source already has
@@ -65,14 +66,15 @@ the allowlist in [`download-youtube`](download-youtube.md) (a TikTok's in
 [`download-tiktok`](download-tiktok.md), which drops the caption, and an
 Instagram reel's the same); lyrics and signed URLs are dropped.
 
-## 4. Create the MusicVideo record
+## 4. Create the Video record
 
-The script posts to `POST /api/v1/music_videos` (bearer token from
-`/api/v1/auth`); `GET /api/v1/music_videos/<slug>` reads it back. A second post of
+The script posts to `POST /api/v1/videos` (bearer token from
+`/api/v1/auth`); `GET /api/v1/videos/<slug>` reads it back. A second post of
 the same video answers 200 with the record it already has. The record carries:
 
-- type (`kind`) `music_video`, or `cinematic` when the script ran with
-  `--kind cinematic`; the API refuses any other;
+- type (`kind`) `music_video`, or `cinematic` or `movie_scene` when the script
+  ran with `--kind cinematic` or `--kind movie_scene`; the API refuses any other.
+  The page shows it as a badge: Music video, Cinematic or Movie scene;
 - platform, source URL and source id (from `.info.json`);
 - title, duration, and stage `digested`;
 - the credited artists: each `primary` or `featured`. A group such as Migos is
@@ -104,7 +106,7 @@ prints the chunks it would cut and cuts, uploads and posts nothing.
 Nobody is cast yet, so every chunk is `unknown` with nobody on screen and
 carries the generic prompt ("the singer", or "the main person on screen" for a
 cinematic video). The hub labels the chunks from the cast when the vision pass
-posts it and again when the operator confirms it (`MusicVideos::LabelChunks`),
+posts it and again when the operator confirms it (`Videos::LabelChunks`),
 and the prompts follow.
 
 **A re-digest cuts nothing twice.** A second digest of the same source gets the
@@ -176,7 +178,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
 4. **Post the set**, which replaces any set already there:
 
    ```bash
-   POST /api/v1/music_videos/<slug>/performers
+   POST /api/v1/videos/<slug>/performers
    { "performers": [ { "ordinal": 1, "label": "desk",
        "still_object_keys": ["music_videos/steve_aoki/night_call/stills/person_01_0230.jpg"],
        "sightings": [ { "t_ms": 18000, "visibility": "clear" } ],
@@ -220,7 +222,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    - Nothing told Alex the frames were missing: he downloaded an alt video's
      zip and found no A/B/C frames because this step had not run. The page now
      warns, but the step is the agent's, not the warning's.
-6. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
+6. **Hand the operator the cast panel**, `/videos/<slug>` (admin). Each card
    shows the still and the sightings as links to that second of the video.
    **Nothing on a card has to be pressed**: every card starts **Not named** and
    not swapped, and **Cast confirmed** is ready as soon as the vision
@@ -360,15 +362,15 @@ bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s st
    points are exact, and uploaded to
    `music_videos/<artist>/<video>/clips/<video>_clip_<NN>_<seam>_<shape>_<mmss>_<mmss>.mp4`.
 6. **Post the set**, which replaces any set already there:
-   `POST /api/v1/music_videos/<slug>/clips` with `ordinal`, `start_ms`, `end_ms`,
+   `POST /api/v1/videos/<slug>/clips` with `ordinal`, `start_ms`, `end_ms`,
    `seam`, `seam_ms`, `cast_shape`, `target_performer`, `performer_ordinals` and
    `object_key`. The hub fills each prompt from the template in
-   `lib/music_videos/clip_prompt.rb`. It refuses candidates for a video whose
+   `lib/videos/clip_prompt.rb`. It refuses candidates for a video whose
    cast is not confirmed (`409 CAST_NOT_CONFIRMED`; chunks are never refused
    for that) and a prompt or status sent by the agent
    (`UNPERMITTED_KEYS`). A replace drops approvals on the old set and says how
    many (`meta.dropped_approvals`). Old clip files stay in the bucket.
-7. **Hand the operator the clips**, below the cast on `/music_videos/<slug>`:
+7. **Hand the operator the clips**, below the cast on `/videos/<slug>`:
    a preview, the window and seam, the cast shape, the target, the prompt with a
    Copy button, and Approve / Reject. One approved clip moves the video to
    `clips_ready`.
@@ -406,7 +408,7 @@ video: posting either never replaces the other.
    20-35 and on, for a swap model that takes 15 s at most. The last chunk ends at
    the video's end and may be shorter. A tail the previous chunk already covers
    makes no extra chunk (at the defaults, a 45 s video is two chunks). The rule
-   lives in `lib/music_videos/chunk_tiler.rb`. A chunk has no seam; only the
+   lives in `lib/videos/chunk_tiler.rb`. A chunk has no seam; only the
    duration is measured.
 2. **Check the source.** The file on disk must run within 1 s of the recorded
    duration, or the script stops: it is not the digested video. The tiling ends
@@ -417,7 +419,7 @@ video: posting either never replaces the other.
    from the cast when the vision pass posts it and when the cast is confirmed.
 4. **Cut and store.** Re-encoded like a candidate, uploaded to
    `music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4`.
-5. **Post the set**: `POST /api/v1/music_videos/<slug>/clips` with
+5. **Post the set**: `POST /api/v1/videos/<slug>/clips` with
    `"kind": "chunk"`, `chunk_ms` and `chunk_overlap_ms` beside `clips` (the two
    default to 25000 and 5000). The video records them as its tiling, and `GET`
    returns them. Each row carries `ordinal`, `start_ms`,
@@ -429,7 +431,7 @@ video: posting either never replaces the other.
    no `kind`, the post is the candidate set, as before. `GET` returns the
    candidates under `clips` and the chunks under `chunks`.
 6. **Hand the operator the chunks**, below the clip candidates on
-   `/music_videos/<slug>`: their windows in time order, and the source's alt
+   `/videos/<slug>`: their windows in time order, and the source's alt
    videos. A chunk has no Approve or Reject, and never moves the video's stage.
    Chunks are cut once per source and shared by every alt video.
 
@@ -441,7 +443,7 @@ The cast cards are the working selection; an alt video keeps a snapshot.
 
 1. **Build Clips.** In the cast summary bar, beside **Cast confirmed**, press
    **Build Clips** (on once the cast is confirmed and the video is tiled). It
-   makes the source's next alt video (`/music_videos/<slug>/alt_videos/<n>`)
+   makes the source's next alt video (`/videos/<slug>/alt_videos/<n>`)
    from the swaps as they stand, with one **clip** per chunk, and opens it.
    Editing the cast cards afterwards never changes an existing alt video:
    change the cards and press Build Clips again for another version.
@@ -480,7 +482,7 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    936 MB written. Cancel the download (or close the tab) and the server
    stops at once: no further file is fetched. A failure other than that is
    kept in the error log, once per download, as well as in the README.
-   Code: `MusicVideos::AssetZip`, `AltVideoDownloadsController`.
+   Code: `Videos::AssetZip`, `AltVideoDownloadsController`.
 3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
    click it to choose the file; it uploads at once. Each upload is a numbered
    **version**, kept and never overwritten, at
@@ -535,7 +537,7 @@ source that had any by the `CreateAltVideos` migration (old objects stay
 where they were; `video_chunk_takes` is kept, read by nothing).
 
 Timing comes from each chunk's `start_ms` and `end_ms`
-(`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
+(`lib/videos/stitch_timeline.rb`), never from a file's length: cut files
 run a frame long and a generated file may differ slightly.
 
 ### Lettered references
@@ -595,7 +597,7 @@ the operator says who that person is.
    (`magick`; this ffmpeg has no `drawtext`). The JPEGs go to
    `music_videos/<artist>/<video>/chunks/refs/<video>_chunk_<NN>_<mmss>_<mmss>_ref_<NN>.jpg`
    and each chunk's set is posted to
-   `POST /api/v1/music_videos/:slug/chunks/:ordinal/references`
+   `POST /api/v1/videos/:slug/chunks/:ordinal/references`
    (`{ frames: [{ object_key, t_ms, letters }] }`, agent token; any other key is
    refused). A post replaces the chunk's frames; a re-tile at the same windows
    keeps them. The frames belong to the source's chunks, so every alt video's
@@ -608,7 +610,7 @@ next across their overlap, over the original source audio. It runs where ffmpeg
 is. Production dynos have none, so on production the Mac does it.
 
 1. **Press Generate full video** in the **Full video** panel, above the clip
-   cards on `/music_videos/<slug>/alt_videos/<n>`. The button is on only when
+   cards on `/videos/<slug>/alt_videos/<n>`. The button is on only when
    every clip has a primary version and none is flagged; until then the panel
    says what holds it up. Pressing it records stitch N of that alt video with
    the version each clip has as primary at that moment.
@@ -648,8 +650,8 @@ works without the button. Downloads are kept under
 `~/projects/.corpus/music_videos/stitch/<slug>/alt_<NN>/`, so a second stitch
 fetches only the versions that changed.
 
-What the stitch does (`lib/music_videos/stitch_plan.rb`, pure and unit-tested;
-`lib/music_videos/stitcher.rb` runs it):
+What the stitch does (`lib/videos/stitch_plan.rb`, pure and unit-tested;
+`lib/videos/stitcher.rb` runs it):
 
 - **Picture.** Take N fades into take N+1 across exactly the frames their
   windows share (ffmpeg `xfade`). Each chunk owns output frames

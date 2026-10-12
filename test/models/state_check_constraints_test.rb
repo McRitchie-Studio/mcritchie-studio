@@ -41,7 +41,14 @@ class StateCheckConstraintsTest < ActiveSupport::TestCase
   end
 
   test "[unit] the migration's frozen lists equal the models' constants" do
-    assert_equal StringStates.columns.to_h { |column| [ column.name, column.values ] }, AddStateChecks::CHECKS
+    # A table renamed since (music_videos is videos) is compared under its name now.
+    renamed = DbBaseline.renamed_tables(Rails.root.join("db/migrate"))
+    frozen = AddStateChecks::CHECKS.transform_keys do |name|
+      table, column = name.split(".")
+      "#{DbBaseline.rename_chain(table, renamed).last}.#{column}"
+    end
+    assert_includes AddStateChecks::CHECKS.keys, "music_videos.stage", "control: the frozen list predates the rename"
+    assert_equal StringStates.columns.to_h { |column| [ column.name, column.values ] }, frozen
   end
 
   test "[integration] each constraint refuses a value outside its list and takes every listed value and NULL" do

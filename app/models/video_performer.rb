@@ -16,7 +16,7 @@ class VideoPerformer < ApplicationRecord
   # music_videos/<artist>/<video>/stills/person_<NN>_<mmss>.jpg
   STILL_KEY = %r{\A(?<folder>music_videos/[a-z0-9_]+/[a-z0-9_]+/)stills/person_(?<nn>\d{2})_\d{4,}\.jpg\z}
 
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :video_performers
+  belongs_to :video, foreign_key: :video_slug, primary_key: :slug, inverse_of: :video_performers
   belongs_to :artist, foreign_key: :artist_slug, primary_key: :slug, optional: true
   belongs_to :recast_person, class_name: "Person", foreign_key: :recast_person_slug, primary_key: :slug, optional: true
   belongs_to :recast_appearance, class_name: "Appearance", foreign_key: :recast_appearance_slug,
@@ -24,7 +24,7 @@ class VideoPerformer < ApplicationRecord
 
   validates :label, presence: true
   validates :ordinal, numericality: { only_integer: true, greater_than: 0 },
-                      uniqueness: { scope: :music_video_slug }
+                      uniqueness: { scope: :video_slug }
   validate :sightings_are_times_and_visibility
   validate :stills_live_under_the_video
   validate :artist_or_extra_not_both
@@ -33,8 +33,8 @@ class VideoPerformer < ApplicationRecord
   def name = "Person #{ordinal}"
 
   # The letter this person goes by in clip prompts and on lettered reference
-  # frames: Person 2 is B in every clip of the source (MusicVideos::PersonLetters).
-  def letter = MusicVideos::PersonLetters.for(ordinal)
+  # frames: Person 2 is B in every clip of the source (Videos::PersonLetters).
+  def letter = Videos::PersonLetters.for(ordinal)
 
   # The card owes nothing. Naming an artist is optional and the swap is off by
   # default, so every card is closed except a swap still waiting for its look.
@@ -123,7 +123,7 @@ class VideoPerformer < ApplicationRecord
       return errors.add(:still_object_keys, "must be a list of object keys")
     end
 
-    folder = music_video&.source_object_key.to_s[%r{\Amusic_videos/[^/]+/[^/]+/}]
+    folder = video&.source_object_key.to_s[%r{\Amusic_videos/[^/]+/[^/]+/}]
     still_object_keys.each do |key|
       m = STILL_KEY.match(key)
       if m.nil? || m[:folder] != folder || m[:nn].to_i != ordinal

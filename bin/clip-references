@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# clip references <music_video_slug>: lettered reference frames for every chunk
+# clip references <video_slug>: lettered reference frames for every chunk
 # of a source (recast pipeline, piece 16). Each chunk gets 2-3 stills where its
 # people are clearly on screen, with each person's letter drawn over them
 # (Person 1 = A, Person 2 = B, fixed per source), shown on every alt video's
@@ -26,7 +26,7 @@ require_relative "lib/clip_references"
 
 options = { production: false, dry_run: false, workdir: File.expand_path("~/projects/.corpus/music_videos") }
 parser = OptionParser.new do |opts|
-  opts.banner = "Usage: bin/clip-references <music_video_slug> --extract|--apply [options]"
+  opts.banner = "Usage: bin/clip-references <video_slug> --extract|--apply [options]"
   opts.on("--extract", "still each chunk's frames and write tags.json for the agent to fill") { options[:step] = :extract }
   opts.on("--apply", "draw the filled tags, upload the frames and post them to the hub") { options[:step] = :apply }
   opts.on("--alt N", Integer, "choose frames that show this alt video's swaps (default: everyone)") { |v| options[:alt] = v }

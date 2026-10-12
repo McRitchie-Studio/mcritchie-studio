@@ -32,7 +32,7 @@ class AltVideoClip < ApplicationRecord
 
   def self.slug_for(alt_video_slug, ordinal) = format("%<alt>s-clip-%<n>02d", alt: alt_video_slug, n: ordinal)
 
-  # Timeline windows (MusicVideos::StitchTimeline) read ordinal, start_ms, end_ms.
+  # Timeline windows (Videos::StitchTimeline) read ordinal, start_ms, end_ms.
   def ordinal = chunk_ordinal
 
   def name = "Clip #{chunk_ordinal}"

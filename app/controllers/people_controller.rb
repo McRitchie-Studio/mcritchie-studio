@@ -81,7 +81,7 @@ class PeopleController < ApplicationController
 
     rescue_and_log(target: look) do
       look.save!
-      MusicVideos::ClipPrompts.refresh_casting!(look)
+      Videos::ClipPrompts.refresh_casting!(look)
     end
     redirect_to person_path(@person.slug),
                 notice: "#{look.descriptor}: #{look.jersey_label ? "wears #{look.jersey_label}" : 'no jersey number'}."
@@ -205,9 +205,11 @@ class PeopleController < ApplicationController
     Fact.chains(Fact.for_subject("person", @person.slug).includes(:recorded_by_session).newest_first.to_a)
   end
 
-  # The cast card a "new look" link came from (/music_videos/<slug>#person-<n>),
+  # The cast card a "new look" link came from (/videos/<slug>#person-<n>),
   # so a saved look lands the operator back on it. Anything else is ignored.
-  RECAST_RETURN = %r{\A/music_videos/[a-z0-9]+(?:-[a-z0-9]+)*(?:#person-\d+)?\z}
+  # A link minted before 2026-10-12 still says /music_videos/, which now 301s
+  # to /videos/, so it is honoured too.
+  RECAST_RETURN = %r{\A/(?:music_)?videos/[a-z0-9]+(?:-[a-z0-9]+)*(?:#person-\d+)?\z}
   helper_method :recast_return_path
 
   def recast_return_path

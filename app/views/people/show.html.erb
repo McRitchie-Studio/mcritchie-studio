@@ -151,7 +151,7 @@
             <span class="text-heading font-bold min-w-0 break-words"><%= look.descriptor %></span>
             <% if look.iced? %>
               <span class="badge text-3xs bg-primary/10 text-primary border-primary/30" data-test="iced-badge">iced twin</span>
-            <% elsif admin? && !look.music_video_look? && !@twinned_slugs.include?(look.slug) %>
+            <% elsif admin? && !look.video_look? && !@twinned_slugs.include?(look.slug) %>
               <%# Looks made before twins existed: one free press, no sheet built. %>
               <%= button_to "Create iced twin", create_iced_twin_person_path(@person.slug),
                     method: :post, params: { appearance_slug: look.slug },

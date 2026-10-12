@@ -180,12 +180,12 @@ class ClipReferencesTest < Minitest::Test
 
       runner(dir, api:, storage:).apply(SLUG)
 
-      key = MusicVideos::ObjectKeys.chunk_reference(source_key: SOURCE_KEY, ordinal: 3, start_ms: 40_000, end_ms: 65_000, number: 1)
+      key = Videos::ObjectKeys.chunk_reference(source_key: SOURCE_KEY, ordinal: 3, start_ms: 40_000, end_ms: 65_000, number: 1)
       assert_equal "music_videos/test_artist_a/tiled_demo/chunks/refs/tiled_demo_chunk_03_0040_0105_ref_01.jpg", key
       assert_equal [[key, "chunk_03_ref_01.jpg", "image/jpeg"]], storage.puts
       posts = api.calls.select { |c| c.first == :post }
       assert_equal 1, posts.size, "chunk 1 has no tags and is left as it is"
-      assert_equal "/api/v1/music_videos/#{SLUG}/chunks/3/references", posts.first[1]
+      assert_equal "/api/v1/videos/#{SLUG}/chunks/3/references", posts.first[1]
       assert_equal [{ "object_key" => key, "t_ms" => doc["chunks"].last["frames"].first["t_ms"], "letters" => %w[C B] }],
                    posts.first[2][:frames]
     end

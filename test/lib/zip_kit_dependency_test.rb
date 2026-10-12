@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [unit] The alt video asset zips (MusicVideos::AssetZip::Writer) lean on
+# [unit] The alt video asset zips (Videos::AssetZip::Writer) lean on
 # zip_kit 6.3.6: write_stored_file rolls a half-written entry out of the
 # central directory when its block raises (a file that fails part way), and
 # before 6.3.6 the end of central directory record still counted the rolled

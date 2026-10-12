@@ -46,7 +46,7 @@ module TiledVideoFiles
         chunk = clip.chunk_in(video.video_chunks.to_a)
         next unless look && chunk && clip.versions.empty?
 
-        key = MusicVideos::ObjectKeys.alt_clip_version(source_key: video.source_object_key, alt_number: alt.number,
+        key = Videos::ObjectKeys.alt_clip_version(source_key: video.source_object_key, alt_number: alt.number,
                                                        ordinal: clip.chunk_ordinal, start_ms: clip.start_ms,
                                                        end_ms: clip.end_ms, number: 1)
         path = cut(source_file(source, video), chunk, File.join(dir, "version_#{clip.chunk_ordinal}.mp4"), look:)

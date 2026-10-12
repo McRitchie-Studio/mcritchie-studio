@@ -2,15 +2,15 @@
 
 require "tmpdir"
 require_relative "digest_video"
-require_relative "../../lib/music_videos/chunk_tiler"
-require_relative "../../lib/music_videos/clip_cast"
-require_relative "../../lib/music_videos/object_keys"
+require_relative "../../lib/videos/chunk_tiler"
+require_relative "../../lib/videos/clip_cast"
+require_relative "../../lib/videos/object_keys"
 
 # The Mac side of the recast pipeline's chunks, shared by bin/digest-video
 # (which tiles right after it records a source) and bin/find-clips --tile
 # (which re-tiles an old one). It cuts the whole video into overlapping chunks
-# (MusicVideos::ChunkTiler: 25 s with a 5 s overlap unless told otherwise),
-# uploads each to R2 and posts the set to POST /api/v1/music_videos/:slug/clips
+# (Videos::ChunkTiler: 25 s with a 5 s overlap unless told otherwise),
+# uploads each to R2 and posts the set to POST /api/v1/videos/:slug/clips
 # as kind "chunk". ffmpeg only, so it runs where the source MP4 is.
 module ChunkTiling
   Failure = DigestVideo::Failure
@@ -48,7 +48,7 @@ module ChunkTiling
   # (bin/find-clips --tile, bin/digest-video --retile) always cuts and posts.
   class Runner
     def initialize(api:, storage:, shell:, out: $stdout, dry_run: false, bucket: "mcritchie-studio-dev",
-                   chunk_ms: MusicVideos::ChunkTiler::CHUNK_MS, overlap_ms: MusicVideos::ChunkTiler::OVERLAP_MS,
+                   chunk_ms: Videos::ChunkTiler::CHUNK_MS, overlap_ms: Videos::ChunkTiler::OVERLAP_MS,
                    replace: false, retile_hint: "--retile")
       @api = api
       @shell = shell
@@ -61,7 +61,7 @@ module ChunkTiling
     end
 
     # nil when the tiling can cut; else why not. Ask before any download.
-    def problem = MusicVideos::ChunkTiler.problem(**@tiling)
+    def problem = Videos::ChunkTiler.problem(**@tiling)
 
     # video: the hub's record as the API serialises it (slug, duration_ms,
     # source_object_key, performers, chunks, chunk_ms, chunk_overlap_ms).
@@ -72,12 +72,12 @@ module ChunkTiling
       raise Failure, why if why
       return [] if keep_existing?(video)
 
-      rows = MusicVideos::ChunkTiler.windows(duration(video, mp4), **@tiling).map { |w| row(video, w) }
+      rows = Videos::ChunkTiler.windows(duration(video, mp4), **@tiling).map { |w| row(video, w) }
       report(video, rows)
       return rows if @dry_run
 
       @cutter.call(mp4, rows)
-      @api.post("/api/v1/music_videos/#{video['slug']}/clips",
+      @api.post("/api/v1/videos/#{video['slug']}/clips",
                 { kind: "chunk", chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms], clips: rows })
       @out.puts "posted #{rows.size} chunks for #{video['slug']}; the clip candidates are untouched"
       rows
@@ -117,7 +117,7 @@ module ChunkTiling
       recorded = video["duration_ms"]
       return on_disk unless recorded.is_a?(Integer)
 
-      if (on_disk - recorded).abs > MusicVideos::ChunkTiler::END_TOLERANCE_MS
+      if (on_disk - recorded).abs > Videos::ChunkTiler::END_TOLERANCE_MS
         raise Failure, "#{File.basename(mp4)} runs #{on_disk} ms but #{video['slug']} is recorded at #{recorded} ms: " \
                        "not the digested source"
       end
@@ -133,10 +133,10 @@ module ChunkTiling
 
     # Labelled from the cast as it is now. A freshly digested source has none,
     # so its chunks are "unknown" with nobody on screen; the hub relabels them
-    # from the cast when the vision pass posts it (MusicVideos::LabelChunks).
+    # from the cast when the vision pass posts it (Videos::LabelChunks).
     def row(video, window)
-      cast = MusicVideos::ClipCast.label(video["performers"] || [], window.start_ms, window.end_ms)
-      key = MusicVideos::ObjectKeys.chunk(source_key: video["source_object_key"], ordinal: window.ordinal,
+      cast = Videos::ClipCast.label(video["performers"] || [], window.start_ms, window.end_ms)
+      key = Videos::ObjectKeys.chunk(source_key: video["source_object_key"], ordinal: window.ordinal,
                                           start_ms: window.start_ms, end_ms: window.end_ms)
       { ordinal: window.ordinal, start_ms: window.start_ms, end_ms: window.end_ms, cast_shape: cast.cast_shape,
         target_performer: cast.target, performer_ordinals: cast.present, object_key: key }
@@ -145,7 +145,7 @@ module ChunkTiling
     def report(video, rows)
       people = (video["performers"] || []).to_h { |p| [p["ordinal"], p] }
       @out.puts "#{rows.size} chunks for #{video['slug']} (#{seconds(@tiling[:chunk_ms])} s on a " \
-                "#{seconds(MusicVideos::ChunkTiler.stride(**@tiling))} s stride)" \
+                "#{seconds(Videos::ChunkTiler.stride(**@tiling))} s stride)" \
                 "#{' (dry run: nothing cut, uploaded or posted)' if @dry_run}"
       rows.each do |r|
         target = people[r[:target_performer]]

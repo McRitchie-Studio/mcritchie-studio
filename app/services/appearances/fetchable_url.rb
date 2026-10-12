@@ -39,7 +39,7 @@ module Appearances
   # two fetches the hub makes itself by URL do hand the vetted address to the
   # client, and ask the engine directly for it rather than this module:
   # Appearances::MirrorCandidates::LiveCache.fetch (the engine's own
-  # `fetch_response`) and MusicVideos::AssetZip::Fetcher#remote
+  # `fetch_response`) and Videos::AssetZip::Fetcher#remote
   # (`vet_source_url!` + `pinned_http`).
   module FetchableUrl
     OK = :ok                 # hand it to a fetcher

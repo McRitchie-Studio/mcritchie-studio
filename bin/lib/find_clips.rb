@@ -5,13 +5,13 @@ require "json"
 require "tmpdir"
 require_relative "chunk_tiling"
 require_relative "digest_video"
-require_relative "../../lib/music_videos/clip_finder"
-require_relative "../../lib/music_videos/clip_prompt"
-require_relative "../../lib/music_videos/object_keys"
+require_relative "../../lib/videos/clip_finder"
+require_relative "../../lib/videos/clip_prompt"
+require_relative "../../lib/videos/object_keys"
 
 # The agent side of stage 5, clips (bin/find-clips): measure the source's
 # audio with ffmpeg, pick 25 s windows at seams, cut each to H.264/AAC, upload
-# to R2 and post the set to POST /api/v1/music_videos/:slug/clips. ffmpeg only;
+# to R2 and post the set to POST /api/v1/videos/:slug/clips. ffmpeg only;
 # no Python packages. Runs where the source MP4 is (the operator's Mac).
 #
 # With tile: true (bin/find-clips --tile) it hands the video to the shared
@@ -83,8 +83,8 @@ module FindClips
   # One run: fetch the video and cast, find windows, cut, upload, post.
   class Runner
     def initialize(api:, storage:, shell:, out: $stdout, workdir:, source: nil, dry_run: false, count: 5,
-                   bucket: "mcritchie-studio-dev", tile: false, chunk_ms: MusicVideos::ChunkTiler::CHUNK_MS,
-                   overlap_ms: MusicVideos::ChunkTiler::OVERLAP_MS)
+                   bucket: "mcritchie-studio-dev", tile: false, chunk_ms: Videos::ChunkTiler::CHUNK_MS,
+                   overlap_ms: Videos::ChunkTiler::OVERLAP_MS)
       @api = api
       @storage = storage
       @shell = shell
@@ -110,7 +110,7 @@ module FindClips
       return @tiler.call(video, source_mp4(video)) if @tiler
 
       unless READY.include?(video["stage"])
-        raise Failure, "#{slug} is #{video['stage']}: confirm the cast on /music_videos/#{slug} first"
+        raise Failure, "#{slug} is #{video['stage']}: confirm the cast on /videos/#{slug} first"
       end
 
       mp4 = source_mp4(video)
@@ -123,7 +123,7 @@ module FindClips
       return rows if @dry_run
 
       cut_and_upload(mp4, rows)
-      data = @api.post("/api/v1/music_videos/#{slug}/clips", { clips: rows })
+      data = @api.post("/api/v1/videos/#{slug}/clips", { clips: rows })
       @out.puts "posted #{rows.size} clips; #{slug} is #{data['stage']}"
       rows
     end
@@ -131,7 +131,7 @@ module FindClips
     private
 
     def find(video, mp4)
-      MusicVideos::ClipFinder.new(
+      Videos::ClipFinder.new(
         bands: @audio.bands(mp4), silences: @audio.silences(mp4), cuts: @audio.cuts(mp4),
         sections: video.dig("caption_timing", "sections") || [], performers: video["performers"] || [],
         count: @count
@@ -139,7 +139,7 @@ module FindClips
     end
 
     def row(video, proposal)
-      key = MusicVideos::ObjectKeys.clip(source_key: video["source_object_key"], ordinal: proposal.ordinal,
+      key = Videos::ObjectKeys.clip(source_key: video["source_object_key"], ordinal: proposal.ordinal,
                                          seam: proposal.seam, cast_shape: proposal.cast_shape,
                                          start_ms: proposal.start_ms, end_ms: proposal.end_ms)
       { ordinal: proposal.ordinal, start_ms: proposal.start_ms, end_ms: proposal.end_ms, seam: proposal.seam,

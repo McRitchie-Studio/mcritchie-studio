@@ -64,7 +64,7 @@
 
     <section class="lg:col-span-7 min-w-0 space-y-3">
       <%= render "appearances/input_panel" %>
-      <% unless @appearance.music_video_look? || @appearance.character_owned? %>
+      <% unless @appearance.video_look? || @appearance.character_owned? %>
         <%= render "appearances/build_inputs" %>
       <% end %>
     </section>

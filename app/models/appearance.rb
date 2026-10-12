@@ -42,9 +42,9 @@ class Appearance < ApplicationRecord
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :character, foreign_key: :character_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
-  # A music-video look: this artist as they appear in one video (music video
+  # A video look: this artist as they appear in one video (music video
   # pipeline, stage 4). Nil on athlete looks.
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, optional: true
+  belongs_to :video, foreign_key: :video_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
   # THE ICED-OUT TWIN. Every look a person is given gets a twin that is its own
@@ -111,17 +111,17 @@ class Appearance < ApplicationRecord
 
   scope :live, -> { where(retired_at: nil) }
   # Looks an on-screen performer can be recast INTO: live, and not themselves a
-  # capture of a performer in some video (a music-video look).
+  # capture of a performer in some video (a video look).
   # Person-owned only: a puppet in a Recast video is piece D of the Characters
   # addendum, not something a recast picker may offer by accident.
-  scope :recastable, -> { live.where(music_video_slug: nil).person_owned }
+  scope :recastable, -> { live.where(video_slug: nil).person_owned }
   scope :person_owned, -> { where.not(person_slug: nil) }
   scope :character_owned, -> { where.not(character_slug: nil) }
 
   def to_param = slug
   def retired? = retired_at.present?
 
-  def music_video_look? = music_video_slug.present?
+  def video_look? = video_slug.present?
 
   # The look names a team (team_slug) that has no row in `teams`, so `team` is
   # nil though a team was meant. Not the same as carrying no team.
@@ -159,11 +159,11 @@ class Appearance < ApplicationRecord
     ((sheet_build_finished_at || Time.current) - sheet_build_started_at).round
   end
 
-  # The on-screen performer a music-video look was built from.
+  # The on-screen performer a video look was built from.
   def video_performer
-    return unless music_video_look?
+    return unless video_look?
 
-    @video_performer ||= VideoPerformer.find_by(music_video_slug:, ordinal: performer_ordinal)
+    @video_performer ||= VideoPerformer.find_by(video_slug:, ordinal: performer_ordinal)
   end
 
   def default?
@@ -241,10 +241,10 @@ class Appearance < ApplicationRecord
   # THE ARCHETYPE THIS LOOK'S SHEET USES: the operator's choice, else the default
   # for the athlete's position (QB -> nfl-qb-skill), else the fallback row. An iced
   # twin reads its base look: same man, same body. Nil for a character's or a
-  # music-video look, which never build a player sheet.
+  # video look, which never build a player sheet.
   def body_archetype
     return base_appearance.body_archetype if iced? && base_appearance && body_archetype_slug.blank?
-    return nil if character_owned? || music_video_look?
+    return nil if character_owned? || video_look?
 
     chosen_body_archetype || BodyArchetype.default_for(athlete_position)
   end
@@ -413,12 +413,12 @@ class Appearance < ApplicationRecord
   # be found by this slug, and their videos' prompts refreshed after it.
   def remember_recasts
     recasts = VideoPerformer.where(recast_appearance_slug: slug)
-    @recast_videos = recasts.distinct.pluck(:music_video_slug)
+    @recast_videos = recasts.distinct.pluck(:video_slug)
     recasts.update_all(recast_appearance_slug: nil, updated_at: Time.current) if @recast_videos.any?
   end
 
   def release_recasts
-    MusicVideo.where(slug: Array(@recast_videos)).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+    Video.where(slug: Array(@recast_videos)).find_each { |video| Videos::ClipPrompts.refresh!(video) }
   end
 
   def normalize_colorway

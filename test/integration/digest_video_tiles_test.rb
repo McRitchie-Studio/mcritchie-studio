@@ -54,7 +54,7 @@ class DigestVideoTilesIntegrationTest < ActionDispatch::IntegrationTest
   Api = Struct.new(:session) do
     def authenticate = true
 
-    def create(payload) = post("/api/v1/music_videos", { music_video: payload })
+    def create(payload) = post("/api/v1/videos", { video: payload })
 
     def post(path, body)
       token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
@@ -78,12 +78,12 @@ class DigestVideoTilesIntegrationTest < ActionDispatch::IntegrationTest
     shell = Shell.new
     digest(shell:, storage:)
 
-    video = MusicVideo.find_by!(platform: "youtube", source_id: ID)
+    video = Video.find_by!(platform: "youtube", source_id: ID)
     assert_equal "digested", video.stage, "chunks never move the stage, and nobody is cast"
     assert_equal [[1, 0, 25_000], [2, 20_000, 45_000], [3, 40_000, 65_000], [4, 60_000, 72_000]],
                  video.video_chunks.pluck(:ordinal, :start_ms, :end_ms)
     assert_equal({ chunk_ms: 25_000, overlap_ms: 5_000 }, video.chunk_tiling)
-    assert_equal [MusicVideos::ClipPrompt.fill(target: nil)], video.video_chunks.pluck(:prompt).uniq, "the generic prompt"
+    assert_equal [Videos::ClipPrompt.fill(target: nil)], video.video_chunks.pluck(:prompt).uniq, "the generic prompt"
     assert_equal 4, shell.cuts
     assert_equal 6, storage.keys.size, "the source, its info.json and four chunks"
     assert_empty video.clip_candidates
@@ -100,7 +100,7 @@ class DigestVideoTilesIntegrationTest < ActionDispatch::IntegrationTest
   test "a re-digest at another tiling keeps the chunks unless told to replace them" do
     storage = Storage.new
     digest(shell: Shell.new, storage:)
-    video = MusicVideo.find_by!(platform: "youtube", source_id: ID)
+    video = Video.find_by!(platform: "youtube", source_id: ID)
 
     digest(shell: Shell.new, storage:, chunk_ms: 15_000, overlap_ms: 5_000)
     assert_equal 4, video.reload.video_chunks.count
@@ -113,13 +113,13 @@ class DigestVideoTilesIntegrationTest < ActionDispatch::IntegrationTest
 
   test "the vision pass and the cast confirm label the chunks the digest cut blind" do
     digest(shell: Shell.new, storage: Storage.new)
-    video = MusicVideo.find_by!(platform: "youtube", source_id: ID)
+    video = Video.find_by!(platform: "youtube", source_id: ID)
 
     performers = [{ "ordinal" => 1, "label" => "man in the red jacket", "still_object_keys" => [],
                     "sightings" => [3, 6, 9, 12].map { |s| { "t_ms" => s * 1000, "visibility" => "clear" } } },
                   { "ordinal" => 2, "label" => "woman in the doorway", "still_object_keys" => [],
                     "sightings" => [{ "t_ms" => 50_000, "visibility" => "partial" }] }]
-    Api.new(self).post("/api/v1/music_videos/#{video.slug}/performers", { performers: })
+    Api.new(self).post("/api/v1/videos/#{video.slug}/performers", { performers: })
 
     chunks = video.reload.video_chunks
     assert_equal [[1], [], [2], []], chunks.map(&:performer_ordinals), "who is on screen, from the sightings"

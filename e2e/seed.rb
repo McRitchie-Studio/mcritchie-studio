@@ -1592,14 +1592,14 @@ queue_broadcast = Broadcast.create!(slug: "e2e-queue", subject: "%{first_name}, 
 end
 queue_broadcast.stage!
 
-# /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
-# people (e2e/music_video_cast.spec.js). Its labels are synthetic: the spec finds
+# /videos/steve-aoki-night-call — the cast panel with its seven unlabelled
+# people (e2e/video_cast.spec.js). Its labels are synthetic: the spec finds
 # Test Artist A by its alias Test Alias A, and creates Test Artist E itself.
-Appearance.where.not(music_video_slug: nil).destroy_all
+Appearance.where.not(video_slug: nil).destroy_all
 VideoClip.delete_all
 VideoPerformer.delete_all
-MusicVideoArtist.delete_all
-MusicVideo.delete_all
+VideoArtist.delete_all
+Video.delete_all
 Artist.where(name: ["Steve Aoki", "Test Artist E"]).destroy_all
 require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
 NightCallCast.seed!
@@ -1607,57 +1607,57 @@ test_artist_a = Artist.find_or_create_by!(name: "Test Artist A") do |a|
   a.assign_attributes(slug: Artist.available_slug("Test Artist A"), kind: "person")
 end
 ArtistAlias.find_or_create_by!(artist_slug: test_artist_a.slug, name: "Test Alias A", locale: "en")
-# /music_videos/steve-aoki-night-call-clips — a confirmed cast and two clips
-# (e2e/music_video_clips.spec.js).
+# /videos/steve-aoki-night-call-clips — a confirmed cast and two clips
+# (e2e/video_clips.spec.js).
 require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
 NightCallClips.seed!
-# /music_videos/test-artist-a-tiled-demo — a synthetic cinematic video tiled into
-# four chunks beside one clip candidate (e2e/music_video_chunks.spec.js).
+# /videos/test-artist-a-tiled-demo — a synthetic cinematic video tiled into
+# four chunks beside one clip candidate (e2e/video_chunks.spec.js).
 require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 TiledVideo.seed!
-# /music_videos/test-artist-a-stitch-demo — a second synthetic tiled video, two
-# chunks, one take short of ready to stitch (e2e/music_video_full_video.spec.js).
+# /videos/test-artist-a-stitch-demo — a second synthetic tiled video, two
+# chunks, one take short of ready to stitch (e2e/video_full_video.spec.js).
 require Rails.root.join("db/seeds/data/stitch_ready_video.rb").to_s
 StitchReadyVideo.seed!
-# /music_videos/test-artist-a-tiktok-demo — a third synthetic tiled video whose alt
+# /videos/test-artist-a-tiktok-demo — a third synthetic tiled video whose alt
 # video 1 swaps Person 1 into a synthetic athlete in a Buffalo Bills look, clip 1
-# holding a version and no draft attempts (e2e/music_video_tiktok_draft.spec.js).
+# holding a version and no draft attempts (e2e/video_tiktok_draft.spec.js).
 require Rails.root.join("db/seeds/data/tiktok_draft_video.rb").to_s
 TiktokDraft.delete_all
 TiktokDraftVideo.seed!
-# /music_videos/test-cinematic-recast-demo — a synthetic cinematic video, both
+# /videos/test-cinematic-recast-demo — a synthetic cinematic video, both
 # people kept as is, tiled into four chunks, and a synthetic athlete with two
-# looks (e2e/music_video_recast.spec.js).
+# looks (e2e/video_recast.spec.js).
 require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 RecastVideo.seed!
 # The synthetic athlete is also a (synthetic) artist, so a card can be NAMED
-# after him and offered "Swap with Test Athlete Alpha?" (music_video_recast.spec.js).
+# after him and offered "Swap with Test Athlete Alpha?" (video_recast.spec.js).
 Artist.find_or_create_by!(slug: "test-athlete-alpha-artist") do |artist|
   artist.name = "Test Athlete Alpha"
   artist.kind = "person"
   artist.person_slug = RecastVideo.athlete!.slug
 end
-# /music_videos/test-cinematic-search-rows-demo — one open card, and a synthetic
-# athlete with a team and no look yet (e2e/music_video_search_rows.spec.js).
+# /videos/test-cinematic-search-rows-demo — one open card, and a synthetic
+# athlete with a team and no look yet (e2e/video_search_rows.spec.js).
 require Rails.root.join("db/seeds/data/search_rows_video.rb").to_s
 SearchRowsVideo.seed!
 # A non-sports person for the naming search ("Who is this on screen?"), which
-# leaves athletes to the swap search (e2e/music_video_search_rows.spec.js).
+# leaves athletes to the swap search (e2e/video_search_rows.spec.js).
 Person.find_by(first_name: "Test", last_name: "Actor Delta") ||
   Person.create!(first_name: "Test", last_name: "Actor Delta", primary_vocation: "actor", vocations: ["actor"],
                  avatar_url: SearchRowsVideo::AVATAR)
-# /music_videos/test-cinematic-look-picker-demo — two open cards and one recast, a
+# /videos/test-cinematic-look-picker-demo — two open cards and one recast, a
 # synthetic athlete with three looks (a sheet, none, one building) and a rookie
-# with none (e2e/music_video_look_picker.spec.js).
+# with none (e2e/video_look_picker.spec.js).
 require Rails.root.join("db/seeds/data/look_picker_video.rb").to_s
 LookPickerVideo.seed!
-# /music_videos/test-artist-b-lettered-demo — three synthetic people, two swapped in
+# /videos/test-artist-b-lettered-demo — three synthetic people, two swapped in
 # alt video 1 into looks with jersey numbers, chunk 3 lettered
-# (e2e/music_video_lettered_references.spec.js).
+# (e2e/video_lettered_references.spec.js).
 require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 LetteredVideo.seed!
-# /music_videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
-# test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
+# /videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
+# test artists and their stills, no looks yet (e2e/video_looks.spec.js).
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s
 NightCallLooks.seed!
 # /people/novice-icefixture — a synthetic athlete with one look made before iced

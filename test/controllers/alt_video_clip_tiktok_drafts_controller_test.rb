@@ -31,9 +31,9 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
 
   def card(ordinal) = "[data-test='alt-clip'][data-ordinal='#{ordinal}']"
 
-  def page = get(music_video_alt_video_path(@video, @alt))
+  def page = get(video_alt_video_path(@video, @alt))
 
-  def draft!(ordinal = 1) = post(music_video_alt_video_clip_tiktok_drafts_path(@video, @alt, ordinal))
+  def draft!(ordinal = 1) = post(video_alt_video_clip_tiktok_drafts_path(@video, @alt, ordinal))
 
   test "every card shows its clip's slug with a copy control" do
     log_in_as users(:alex)
@@ -73,7 +73,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     assert_enqueued_jobs(1, only: TiktokDraftJob) { draft! }
 
     draft = TiktokDraft.sole
-    assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+    assert_redirected_to video_alt_video_path(@video, @alt, anchor: "clip-1")
     assert_equal [@clip.slug, 1, "queued", users(:alex).email], [draft.clip_slug, draft.version_number, draft.state, draft.requested_by]
     assert_match(/on its way to your TikTok inbox .*The caption does not travel: paste it in the app/, flash[:notice])
 
@@ -113,7 +113,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
       assert_select "#{card(1)} [data-test='clip-tiktok'][data-enabled='false']"
       assert_select "#{card(1)} [data-test='clip-tiktok-blocker']", "TikTok is not connected on this server."
 
-      post music_video_alt_video_clip_tiktok_drafts_path(@video, @alt, 1)
+      post video_alt_video_clip_tiktok_drafts_path(@video, @alt, 1)
       assert_match(/the stored TikTok connection cannot be read; sign in again/, flash[:alert])
       assert_equal 0, TiktokDraft.count
     end
@@ -162,7 +162,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     draft = TiktokDraft.create!(clip: @clip, version_number: 1, version_object_key: "k1", caption: "c", state: "processing",
                                 publish_id: "v_inbox_file~p")
     log_in_as users(:alex)
-    post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
+    post refresh_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
 
     assert_equal ["delivered", "SEND_TO_USER_INBOX"], draft.reload.values_at(:state, :tiktok_status)
     assert_match(/Sent to your TikTok inbox\. Open the TikTok app on your phone → Inbox → System notifications/, flash[:notice])
@@ -204,7 +204,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     assert_no_enqueued_jobs { draft! }
 
-    assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+    assert_redirected_to video_alt_video_path(@video, @alt, anchor: "clip-1")
     assert_match(/Clip 1 not drafted: the TikTok keys are not set on this server/, flash[:alert])
     assert_equal 0, TiktokDraft.count
   end
@@ -215,7 +215,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
       log_in_as users(:alex)
       assert_no_enqueued_jobs { draft! }
 
-      assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+      assert_redirected_to video_alt_video_path(@video, @alt, anchor: "clip-1")
       assert_match(/Clip 1 not drafted: could not read ESPN/, flash[:alert])
       assert_equal 0, TiktokDraft.count
       assert_equal 0, ErrorLog.where("message LIKE ?", "%ESPN%").count, "a refusal is an answer, not an ErrorLog"
@@ -272,7 +272,7 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='clip-tiktok-refresh']"
     end
 
-    post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
+    post refresh_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
     assert_equal ["delivered", nil], draft.reload.values_at(:state, :error)
   end
 
@@ -281,9 +281,9 @@ class AltVideoClipTiktokDraftsControllerTest < ActionDispatch::IntegrationTest
                                 publish_id: "v_inbox_file~p", uploaded_at: 1.minute.ago)
     @uploader.define_singleton_method(:status) { |_id| raise EOFError, "end of file reached" }
     log_in_as users(:alex)
-    post refresh_music_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
+    post refresh_video_alt_video_clip_tiktok_draft_path(@video, @alt, 1, draft)
 
-    assert_redirected_to music_video_alt_video_path(@video, @alt, anchor: "clip-1")
+    assert_redirected_to video_alt_video_path(@video, @alt, anchor: "clip-1")
     assert_equal "unknown", draft.reload.state
     assert_match(/Uploaded, status unknown/, flash[:notice])
   end

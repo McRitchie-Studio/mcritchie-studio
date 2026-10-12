@@ -224,7 +224,7 @@ so, and Alex uses the card.
 
 ## Door two: the card
 
-`/music_videos/<source>/alt_videos/<n>`, on the clip's card, under its
+`/videos/<source>/alt_videos/<n>`, on the clip's card, under its
 versions: **Draft to TikTok**. It is off, with the reason beside it, when the
 clip has no generated version or the server is not connected to TikTok. After a click
 the card shows the attempt: its state, the version sent, the caption with

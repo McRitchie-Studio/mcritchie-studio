@@ -74,7 +74,7 @@ class ChunkTilingTest < Minitest::Test
     assert_equal rows.map { |r| r[:object_key] }, storage.puts.map(&:first)
     assert_equal 1, api.posts.size
     path, body = api.posts.first
-    assert_equal "/api/v1/music_videos/test-artist-a-tiled-demo/clips", path
+    assert_equal "/api/v1/videos/test-artist-a-tiled-demo/clips", path
     assert_equal({ kind: "chunk", chunk_ms: 25_000, chunk_overlap_ms: 5_000, clips: rows }, body)
   end
 

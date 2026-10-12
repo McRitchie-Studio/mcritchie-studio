@@ -18,7 +18,7 @@ module NightCallClips
 
   def self.video!
     NightCallCast.seed! # the artists
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=Sa7GSJJ_lOo"
       v.source_id = "night-call-clips-demo"
@@ -32,7 +32,7 @@ module NightCallClips
       Artist.find_or_create_by!(name:) { |a| a.assign_attributes(slug: Artist.available_slug(name), kind: "person") }
     end
 
-    MusicVideos::ReplacePerformers.new(video, NightCallCast::PERFORMERS.map do |ordinal, label, _still, note, seen|
+    Videos::ReplacePerformers.new(video, NightCallCast::PERFORMERS.map do |ordinal, label, _still, note, seen|
       { "ordinal" => ordinal, "label" => label, "confidence_note" => note, "sightings" => seen, "still_object_keys" => [] }
     end).call
     video.video_performers.each do |p|
@@ -45,14 +45,14 @@ module NightCallClips
 
   def self.rows
     CLIPS.map do |c|
-      c.merge(object_key: MusicVideos::ObjectKeys.clip(source_key: SOURCE, **c.slice(:ordinal, :seam, :cast_shape, :start_ms, :end_ms)))
+      c.merge(object_key: Videos::ObjectKeys.clip(source_key: SOURCE, **c.slice(:ordinal, :seam, :cast_shape, :start_ms, :end_ms)))
        .transform_keys(&:to_s)
     end
   end
 
   def self.seed!
     video = video!
-    MusicVideos::ReplaceClips.new(video, rows).call unless video.video_clips.exists?
+    Videos::ReplaceClips.new(video, rows).call unless video.video_clips.exists?
     video
   end
 end

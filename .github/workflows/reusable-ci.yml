@@ -603,7 +603,7 @@ jobs:
         # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
         # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
         # ImageMagick 6 reads SVG only through rsvg-convert. `ffmpeg` is for
-        # test/lib/music_videos/stitcher_test.rb, which stitches real takes with the
+        # test/lib/videos/stitcher_test.rb, which stitches real takes with the
         # final stitch's own arguments and reads the frames back; it too fails (not
         # skips) without ffmpeg and ffprobe.
         timeout-minutes: 25

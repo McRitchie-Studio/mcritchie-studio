@@ -12,7 +12,7 @@ require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 # only. [component] The clip card's buttons, drop zone and versions list, the
 # Watch full video timeline and the index row. Wholly synthetic people.
 class AltVideosControllerTest < ActionDispatch::IntegrationTest
-  Store = MusicVideos::StoreClipVersion
+  Store = Videos::StoreClipVersion
 
   setup do
     @video = TiledVideo.seed!
@@ -34,7 +34,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
   def clip(ordinal) = alt.reload.clips.find { |c| c.chunk_ordinal == ordinal }
 
-  def upload(ordinal) = post(music_video_alt_video_clip_versions_path(@video, alt, ordinal), params: { file: mp4 })
+  def upload(ordinal) = post(video_alt_video_clip_versions_path(@video, alt, ordinal), params: { file: mp4 })
 
   def timeline = JSON.parse(css_select("[data-test='stitch-preview']").sole["data-timeline"])
 
@@ -45,21 +45,21 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
     get alt_videos_path
     assert_redirected_to root_path
-    get music_video_alt_video_path(@video, built)
+    get video_alt_video_path(@video, built)
     assert_redirected_to root_path
-    post music_video_alt_videos_path(@video)
+    post video_alt_videos_path(@video)
     assert_redirected_to root_path
-    post music_video_alt_video_clip_versions_path(@video, built, 1), params: { file: mp4 }
+    post video_alt_video_clip_versions_path(@video, built, 1), params: { file: mp4 }
     assert_redirected_to root_path
-    post primary_music_video_alt_video_clip_version_path(@video, built, 1, 1)
+    post primary_video_alt_video_clip_version_path(@video, built, 1, 1)
     assert_redirected_to root_path
-    post music_video_alt_video_clip_regenerate_path(@video, built, 1)
+    post video_alt_video_clip_regenerate_path(@video, built, 1)
     assert_redirected_to root_path
-    delete music_video_alt_video_clip_regenerate_path(@video, built, 1)
+    delete video_alt_video_clip_regenerate_path(@video, built, 1)
     assert_redirected_to root_path
-    post music_video_alt_video_stitches_path(@video, built)
+    post video_alt_video_stitches_path(@video, built)
     assert_redirected_to root_path
-    get music_video_alt_video_stitch_path(@video, built, 1)
+    get video_alt_video_stitch_path(@video, built, 1)
     assert_redirected_to root_path
 
     assert_equal 1, AltVideo.count
@@ -69,14 +69,14 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
   test "Build Clips sits in the cast summary bar and opens the new alt video" do
     log_in_as users(:alex)
-    get music_video_path(@video)
+    get video_path(@video)
     assert_select "[data-test='cast-progress'] [data-test='build-clips-form'] button:not([disabled])", "Build Clips"
     assert_select "[data-test='source-alt-videos-none']"
 
     assert_difference -> { AltVideo.count }, 1 do
-      post music_video_alt_videos_path(@video)
+      post video_alt_videos_path(@video)
     end
-    assert_redirected_to music_video_alt_video_path(@video, 1)
+    assert_redirected_to video_alt_video_path(@video, 1)
     assert_equal "Alt video 1 built: 4 clips, Test Athlete Alpha > Home Blue.", flash[:notice]
 
     follow_redirect!
@@ -86,20 +86,20 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='alt-clip']", 4
     assert_select "[data-test='alt-progress-count']", "0 of 4"
 
-    get music_video_path(@video)
+    get video_path(@video)
     assert_select "[data-test='source-alt-video'][data-number='1']", /Alt video 1/
   end
 
   test "Build Clips is off, and refused, before the cast is confirmed" do
     @video.update!(stage: "digested")
     log_in_as users(:alex)
-    get music_video_path(@video)
+    get video_path(@video)
     assert_select "[data-test='build-clips-form'] button[disabled]"
 
     assert_no_difference -> { AltVideo.count } do
-      post music_video_alt_videos_path(@video)
+      post video_alt_videos_path(@video)
     end
-    assert_redirected_to music_video_path(@video)
+    assert_redirected_to video_path(@video)
     assert_equal "Not yet: confirm the cast first.", flash[:alert]
   end
 
@@ -108,7 +108,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     # The card is edited after the build: the alt video keeps its own swap.
     @video.video_performers.find_by!(ordinal: 1).update!(recast_keep: true)
     log_in_as users(:alex)
-    get music_video_alt_video_path(@video, alt)
+    get video_alt_video_path(@video, alt)
 
     assert_select "[data-test='alt-clip'][data-ordinal='2']" do
       assert_select "[data-test='clip-window']", /0:20–0:45/
@@ -133,7 +133,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     video = LetteredVideo.seed!
     alt = video.alt_videos.first
     log_in_as users(:alex)
-    get music_video_alt_video_path(video, alt)
+    get video_alt_video_path(video, alt)
 
     assert_select "[data-test='alt-video-swap'][data-ordinal='2']", /Person B.*Person 2.*#4.*Test Passer Epsilon > Home White/m
     assert_select "[data-test='alt-clip'][data-ordinal='3']" do
@@ -154,7 +154,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-frames-none']"
 
     # The cast card carries the same letter.
-    get music_video_path(video)
+    get video_path(video)
     assert_select "[data-test='performer-card'][data-ordinal='2'] [data-test='performer-letter']", "B"
   end
 
@@ -164,7 +164,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     video = LetteredVideo.seed!
     alt = video.alt_videos.first
     log_in_as users(:alex)
-    get music_video_alt_video_path(video, alt)
+    get video_alt_video_path(video, alt)
 
     # Person A is sighted throughout; only chunk 3 has frames.
     assert_select "[data-test='alt-video-frames-missing'][data-count='3']",
@@ -194,12 +194,12 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
       p.update_columns(sightings: p.sightings.select { |s| s["t_ms"] <= 57_000 })
     end
     video.video_chunks.where(ordinal: [1, 2]).find_each do |chunk|
-      key = MusicVideos::ObjectKeys.chunk_reference(source_key: LetteredVideo::SOURCE, ordinal: chunk.ordinal,
+      key = Videos::ObjectKeys.chunk_reference(source_key: LetteredVideo::SOURCE, ordinal: chunk.ordinal,
                                                     start_ms: chunk.start_ms, end_ms: chunk.end_ms, number: 1)
       chunk.update!(reference_frames: [{ "object_key" => key, "t_ms" => chunk.start_ms + 6000, "letters" => %w[A] }])
     end
     log_in_as users(:alex)
-    get music_video_alt_video_path(video, alt)
+    get video_alt_video_path(video, alt)
 
     assert_response :success
     assert_select "[data-test='alt-video-frames-missing']", 0
@@ -213,7 +213,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     alt = video.alt_videos.first
     ArtifactSubject.where(appearance_slug: alt.swap_set[3].appearance_slug).destroy_all
     log_in_as users(:alex)
-    get music_video_alt_video_path(video, alt)
+    get video_alt_video_path(video, alt)
 
     assert_select "[data-test='alt-clip'][data-ordinal='3']" do
       assert_select "[data-test='clip-sheet'][data-sheet='1']", "Sheet 1 · Person B · #4 Test Passer Epsilon"
@@ -226,7 +226,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
 
     upload(2)
-    assert_redirected_to music_video_alt_video_path(@video, 1, anchor: "clip-2")
+    assert_redirected_to video_alt_video_path(@video, 1, anchor: "clip-2")
     assert_equal "Clip 2: version 1 uploaded and primary.", flash[:notice]
     key = "music_videos/test_artist_a/tiled_demo/alt_videos/01/clips/tiled_demo_alt_01_chunk_02_0020_0045_v01.mp4"
     assert_equal [[key, file_fixture("stitch_demo.mp4").size]], @stored, "the whole file reached the bucket seam"
@@ -236,7 +236,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     end
     assert_equal 2, clip(2).primary_version.number
 
-    post primary_music_video_alt_video_clip_version_path(@video, alt, 2, 1)
+    post primary_video_alt_video_clip_version_path(@video, alt, 2, 1)
     assert_equal "Clip 2: version 1 is primary.", flash[:notice]
     assert_equal 1, clip(2).primary_version.number
     assert_equal 2, clip(2).versions.size, "both versions are kept"
@@ -270,7 +270,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     TiledVideo.version!(clip(2), number: 1, at: 1.hour.ago)
     TiledVideo.version!(clip(2), number: 2)
     log_in_as users(:alex)
-    get music_video_alt_video_path(@video, alt)
+    get video_alt_video_path(@video, alt)
 
     version_key = clip(2).primary_version.object_key
     assert_select "[data-test='alt-clip'][data-ordinal='2'][data-compare='true']" do
@@ -313,7 +313,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     TiledVideo.version!(clip(3), number: 2)
     log_in_as users(:alex)
 
-    post primary_music_video_alt_video_clip_version_path(@video, alt, 3, 1)
+    post primary_video_alt_video_clip_version_path(@video, alt, 3, 1)
     follow_redirect!
 
     one = clip(3).versions.find { |v| v.number == 1 }.object_key
@@ -332,7 +332,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     store = Object.new
     store.define_singleton_method(:signed_url) { |key:, **| key.include?("/clips/") ? nil : "https://fixture.invalid/#{key}?sig" }
     log_in_as users(:alex)
-    AssetBrowser.stub(:source, store) { get music_video_alt_video_path(@video, alt) }
+    AssetBrowser.stub(:source, store) { get video_alt_video_path(@video, alt) }
 
     assert_select "[data-test='alt-clip'][data-ordinal='2'][data-compare='false']" do
       assert_select "[data-test='clip-compare']", 0
@@ -343,7 +343,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
   test "a non-MP4 is refused and records nothing" do
     AltVideo.build_from!(@video)
     log_in_as users(:alex)
-    post music_video_alt_video_clip_versions_path(@video, alt, 1),
+    post video_alt_video_clip_versions_path(@video, alt, 1),
          params: { file: fixture_file_upload("notes.txt", "text/plain") }
 
     assert_equal "Clip 1 version not uploaded: that file is not an MP4.", flash[:alert]
@@ -356,20 +356,20 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     alt.clips.each { |c| TiledVideo.version!(c, number: 1, at: 1.hour.ago) }
     log_in_as users(:alex)
 
-    post music_video_alt_video_clip_regenerate_path(@video, alt, 3), params: { note: "the jersey flickers" }
+    post video_alt_video_clip_regenerate_path(@video, alt, 3), params: { note: "the jersey flickers" }
     assert_equal "Clip 3 flagged for a regenerate.", flash[:notice]
-    post music_video_alt_video_stitches_path(@video, alt)
+    post video_alt_video_stitches_path(@video, alt)
     assert_equal "Not ready to stitch: Clip 3 is flagged for a regenerate.", flash[:alert]
 
     upload(3)
     assert_not clip(3).regenerate_requested?
-    MusicVideos::Stitcher.stub(:available?, false) do
-      post music_video_alt_video_stitches_path(@video, alt)
+    Videos::Stitcher.stub(:available?, false) do
+      post video_alt_video_stitches_path(@video, alt)
     end
     assert_equal "Stitch 1 requested: waiting for bin/stitch-video #{@video.slug} --alt 1 on the Mac.", flash[:notice]
     assert_equal "1, 1, 2, 1", alt.stitches.sole.take_list
 
-    get music_video_alt_video_stitch_path(@video, alt, 1)
+    get video_alt_video_stitch_path(@video, alt, 1)
     assert_equal({ "number" => 1, "state" => "requested" }, JSON.parse(response.body))
   end
 
@@ -400,7 +400,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     count = lambda do
       queries = []
       ActiveSupport::Notifications.subscribed(->(*, payload) { queries << payload[:sql] unless payload[:name] == "SCHEMA" },
-                                              "sql.active_record") { get music_video_alt_video_path(@video, built) }
+                                              "sql.active_record") { get video_alt_video_path(@video, built) }
       queries.size
     end
     bare = count.call
@@ -419,16 +419,16 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
   test "the links endpoint answers a signed-out fetch 401 and a non-admin 403, with no link" do
     built = AltVideo.build_from!(@video)
 
-    get links_music_video_alt_video_path(@video, built), headers: JSON_FETCH
+    get links_video_alt_video_path(@video, built), headers: JSON_FETCH
     assert_response :unauthorized
     assert_equal({ "error" => "unauthenticated" }, JSON.parse(response.body))
 
     log_in_as users(:viewer)
-    get links_music_video_alt_video_path(@video, built), headers: JSON_FETCH
+    get links_video_alt_video_path(@video, built), headers: JSON_FETCH
     assert_response :forbidden
     assert_no_match(/fixture\.invalid/, response.body)
     # Opened as a page it is walled like every other: a redirect, and still no link.
-    get links_music_video_alt_video_path(@video, built)
+    get links_video_alt_video_path(@video, built)
     assert_redirected_to root_path
   end
 
@@ -436,18 +436,18 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     AltVideo.build_from!(@video)
     alt.clips.each { |c| TiledVideo.version!(c, number: 1, at: 1.hour.ago) }
     TiledVideo.version!(clip(2), number: 2)
-    stitch = MusicVideos::RequestStitch.new(alt.reload).call.stitch
+    stitch = Videos::RequestStitch.new(alt.reload).call.stitch
     stitch.update!(state: "done", duration_ms: 95_000, byte_size: 4_096, finished_at: Time.current)
     # Another alt video of the same source: its versions are not this page's.
     other = AltVideo.build_from!(@video)
     foreign = TiledVideo.version!(other.clips.first, number: 1).object_key
     log_in_as users(:alex)
 
-    get music_video_alt_video_path(@video, alt)
+    get video_alt_video_path(@video, alt)
     shown = css_select("[data-signed-key]").map { |el| el["data-signed-key"] }.uniq
 
     freeze_time do
-      get links_music_video_alt_video_path(@video, alt), params: { keys: [foreign, "secrets/elsewhere.mp4"], key: foreign }, headers: JSON_FETCH
+      get links_video_alt_video_path(@video, alt), params: { keys: [foreign, "secrets/elsewhere.mp4"], key: foreign }, headers: JSON_FETCH
       assert_response :ok
       assert_equal "no-store", response.headers["Cache-Control"]
       body = JSON.parse(response.body)
@@ -477,7 +477,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     store = Object.new
     store.define_singleton_method(:signed_url) { |**| raise AssetBrowser::Unavailable, "NotConfigured" }
     log_in_as users(:alex)
-    AssetBrowser.stub(:source, store) { get links_music_video_alt_video_path(@video, alt), headers: JSON_FETCH }
+    AssetBrowser.stub(:source, store) { get links_video_alt_video_path(@video, alt), headers: JSON_FETCH }
 
     assert_response :service_unavailable
     assert_equal({ "error" => "storage_unreachable" }, JSON.parse(response.body))
@@ -495,9 +495,9 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
 
     freeze_time do
-      get music_video_alt_video_path(video, alt)
+      get video_alt_video_path(video, alt)
       assert_select "[data-test='alt-video'][data-links-url=?][data-links-ttl='900'][data-links-signed-at=?]",
-                    links_music_video_alt_video_path(video, alt), (Time.current.to_f * 1000).round.to_s
+                    links_video_alt_video_path(video, alt), (Time.current.to_f * 1000).round.to_s
     end
     assert_select "[data-test='alt-clip'][data-ordinal='3']" do
       assert_select "video[data-test='clip-player'][data-signed-key=?]", chunk.object_key

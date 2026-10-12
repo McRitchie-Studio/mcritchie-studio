@@ -4,7 +4,7 @@ require "test_helper"
 # under the video's own folder and carry the performer's number.
 class VideoPerformerTest < ActiveSupport::TestCase
   setup do
-    @video = MusicVideo.create!(slug: "night-call", platform: "youtube", source_url: "https://www.youtube.com/watch?v=x",
+    @video = Video.create!(slug: "night-call", platform: "youtube", source_url: "https://www.youtube.com/watch?v=x",
                                 source_id: "x", title: "Night Call",
                                 source_object_key: "music_videos/steve_aoki/night_call/source/a.mp4")
   end

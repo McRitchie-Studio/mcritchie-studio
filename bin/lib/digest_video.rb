@@ -7,12 +7,12 @@ require "open3"
 require "tempfile"
 require "uri"
 require_relative "op_vaults"
-require_relative "../../lib/music_videos/credit_parser"
-require_relative "../../lib/music_videos/object_keys"
-require_relative "../../lib/music_videos/vtt_timing"
+require_relative "../../lib/videos/credit_parser"
+require_relative "../../lib/videos/object_keys"
+require_relative "../../lib/videos/vtt_timing"
 
 # The agent side of `digest video <url>` (docs/agents/agents/pokemon/sops/digest-video.md):
-# download → H.264 MP4 → R2 → POST /api/v1/music_videos → the 25 s chunks
+# download → H.264 MP4 → R2 → POST /api/v1/videos → the 25 s chunks
 # (a tiler: ChunkTiling::Runner, injected by bin/digest-video). It runs where
 # the download works (the operator's Mac); the app itself holds nothing
 # Mac-specific, and a dyno has no ffmpeg to cut chunks with.
@@ -20,7 +20,7 @@ require_relative "../../lib/music_videos/vtt_timing"
 module DigestVideo
   class Failure < StandardError; end
 
-  KINDS = %w[music_video cinematic].freeze # MusicVideo::KINDS; the hub refuses any other
+  KINDS = %w[music_video cinematic movie_scene].freeze # Video::KINDS; the hub refuses any other
 
   H264 = "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]"
   TIKTOK_H264 = "b[vcodec^=h264]/b[vcodec^=avc1]" # TikTok serves muxed files; the rest are H.265
@@ -155,12 +155,12 @@ module DigestVideo
     return [] unless creator # a caption name is never the primary
 
     caption = caption.to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
-    featured = MusicVideos::CreditParser.new.parse(title: caption).featured
+    featured = Videos::CreditParser.new.parse(title: caption).featured
                                         .reject { |n| n.split.size > CREDIT_WORDS || !key_safe?(n) }
     [creator, *featured].compact.uniq(&:downcase)
   end
 
-  def key_safe?(name) = !MusicVideos::ObjectKeys.snake(name).empty?
+  def key_safe?(name) = !Videos::ObjectKeys.snake(name).empty?
 
   def youtube_id(url)
     uri = URI.parse(url)
@@ -214,7 +214,7 @@ module DigestVideo
       id ||= info["id"].to_s
       mp4 = playable(find(dir, id, ".mp4"))
       vtts = Dir.glob(File.join(dir, "*#{id}*.vtt"))
-      timing = MusicVideos::VttTiming.parse(vtts.min && File.read(vtts.min))
+      timing = Videos::VttTiming.parse(vtts.min && File.read(vtts.min))
       payload = fields(platform, info, url, id)
       info = info.merge("webpage_url" => payload[:source_url]) if platform == "instagram"
       keys = object_keys(payload)
@@ -276,8 +276,8 @@ module DigestVideo
     # Same parse the hub runs, so the key matches the record's credits.
     def object_keys(payload)
       title, uploader, artists = payload.delete(:credits)
-      credits = MusicVideos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
-      MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
+      credits = Videos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
+      Videos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
     rescue ArgumentError => e # a title or name with no key-safe characters
       raise Failure, "no R2 key for these credits (#{e.message}); ask Alex"
     end
@@ -454,9 +454,9 @@ module DigestVideo
       end
     end
 
-    def create(payload) = post("/api/v1/music_videos", { music_video: payload })
+    def create(payload) = post("/api/v1/videos", { video: payload })
 
-    def show(slug) = data(request(Net::HTTP::Get, "/api/v1/music_videos/#{slug}", nil, authenticate))
+    def show(slug) = data(request(Net::HTTP::Get, "/api/v1/videos/#{slug}", nil, authenticate))
 
     def get(path) = data(request(Net::HTTP::Get, path, nil, authenticate))
 

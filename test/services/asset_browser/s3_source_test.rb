@@ -91,7 +91,7 @@ class AssetBrowserS3SourceTest < ActiveSupport::TestCase
   end
 end
 
-# [unit] Regression (music-video-cast-panel): the cast panel signs a still before
+# [unit] Regression (video-cast-panel): the cast panel signs a still before
 # anything has listed or headed, so signed_url must load aws-sdk-s3 itself, and a
 # missing credential must read as Unavailable. This file requires the gem, so the
 # check runs in a fresh process where it is not loaded.

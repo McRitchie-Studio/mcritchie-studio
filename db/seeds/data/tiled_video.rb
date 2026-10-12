@@ -18,7 +18,7 @@ module TiledVideo
 
   # The demo video, or with overrides a second one like it (StitchReadyVideo).
   def self.video!(slug: SLUG, source: SOURCE, source_id: "tiled-demo", title: "Test Artist A - Tiled Demo", duration_ms: DURATION_MS)
-    video = MusicVideo.find_or_create_by!(slug:) do |v|
+    video = Video.find_or_create_by!(slug:) do |v|
       v.kind = "cinematic"
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=#{source_id}"
@@ -30,7 +30,7 @@ module TiledVideo
     return video if video.video_performers.exists?
 
     artist = Artist.find_or_create_by!(name: ARTIST) { |a| a.assign_attributes(slug: Artist.available_slug(ARTIST), kind: "person") }
-    MusicVideos::ReplacePerformers.new(video, PERFORMERS).call
+    Videos::ReplacePerformers.new(video, PERFORMERS).call
     video.video_performers.each { |p| p.update!(p.ordinal == 1 ? { artist_slug: artist.slug } : { extra: true }) }
     video.confirm_cast!
     video
@@ -39,26 +39,26 @@ module TiledVideo
   # The rows bin/find-clips --tile would post: the tiling, labelled from the cast.
   def self.chunk_rows(video = video!, duration_ms: video.duration_ms, **tiling)
     cast = video.video_performers.map { |p| p.as_json(only: %w[ordinal artist_slug extra sightings]) }
-    MusicVideos::ChunkTiler.windows(duration_ms, **tiling).map do |w|
-      seen = MusicVideos::ClipCast.label(cast, w.start_ms, w.end_ms)
+    Videos::ChunkTiler.windows(duration_ms, **tiling).map do |w|
+      seen = Videos::ClipCast.label(cast, w.start_ms, w.end_ms)
       { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => seen.cast_shape,
         "target_performer" => seen.target, "performer_ordinals" => seen.present,
-        "object_key" => MusicVideos::ObjectKeys.chunk(source_key: video.source_object_key, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
+        "object_key" => Videos::ObjectKeys.chunk(source_key: video.source_object_key, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
     end
   end
 
   def self.candidate_rows
-    [CANDIDATE.merge(object_key: MusicVideos::ObjectKeys.clip(source_key: SOURCE, **CANDIDATE.slice(:ordinal, :seam, :cast_shape, :start_ms, :end_ms)))
+    [CANDIDATE.merge(object_key: Videos::ObjectKeys.clip(source_key: SOURCE, **CANDIDATE.slice(:ordinal, :seam, :cast_shape, :start_ms, :end_ms)))
               .transform_keys(&:to_s)]
   end
 
-  # A clip version row as MusicVideos::StoreClipVersion would record it, with
+  # A clip version row as Videos::StoreClipVersion would record it, with
   # no file behind it.
   def self.version!(clip, number:, at: Time.current, byte_size: 2_048)
     alt = clip.alt_video
     clip.versions.create!(
       number:, byte_size:, primary_since: at, original_filename: "generated_#{clip.chunk_ordinal}_#{number}.mp4",
-      object_key: MusicVideos::ObjectKeys.alt_clip_version(source_key: alt.music_video.source_object_key, alt_number: alt.number,
+      object_key: Videos::ObjectKeys.alt_clip_version(source_key: alt.video.source_object_key, alt_number: alt.number,
                                                            ordinal: clip.chunk_ordinal, start_ms: clip.start_ms,
                                                            end_ms: clip.end_ms, number:)
     )
@@ -66,8 +66,8 @@ module TiledVideo
 
   def self.seed!
     video = video!
-    MusicVideos::ReplaceClips.new(video, candidate_rows).call unless video.clip_candidates.exists?
-    MusicVideos::ReplaceClips.new(video, chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
+    Videos::ReplaceClips.new(video, candidate_rows).call unless video.clip_candidates.exists?
+    Videos::ReplaceClips.new(video, chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
     video
   end
 end

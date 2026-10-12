@@ -5,7 +5,7 @@
 #
 # The cast card's always-visible "Who is this on screen?" search saves each
 # pick at once through the JSON variant (Accept: application/json): 200 with
-# what the card shows (MusicVideos::CastCardNaming), 422 with the refusal. The
+# what the card shows (Videos::CastCardNaming), 422 with the refusal. The
 # HTML variant redirects back to the card, as before.
 class VideoPerformersController < ApplicationController
   before_action :require_admin
@@ -15,19 +15,19 @@ class VideoPerformersController < ApplicationController
     refusal = refusal_for(resolution)
     return refuse("#{refusal}.") if refusal
 
-    rescue_and_log(target: @video) { MusicVideos::ResolvePerformer.new(@performer).call(**resolution) }
+    rescue_and_log(target: @video) { Videos::ResolvePerformer.new(@performer).call(**resolution) }
     @performer.reload
     return render(json: saved_json) if json?
 
     back(notice: notice_for(@performer))
-  rescue MusicVideos::ResolvePerformer::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
+  rescue Videos::ResolvePerformer::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
     refuse(e.message)
   end
 
   private
 
   def set_performer
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
     @performer = @video.video_performers.find_by!(ordinal: params[:ordinal])
   end
 
@@ -55,12 +55,12 @@ class VideoPerformersController < ApplicationController
   end
 
   def saved_json
-    { named: MusicVideos::CastCardNaming.state(@performer), offer: MusicVideos::CastCardNaming.offer(@performer),
+    { named: Videos::CastCardNaming.state(@performer), offer: Videos::CastCardNaming.offer(@performer),
       message: notice_for(@performer) }
   end
 
   def back(**flash)
-    redirect_to music_video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
+    redirect_to video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
   end
 
   def notice_for(performer)

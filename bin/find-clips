@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# find clips <music_video_slug>: propose 25 s clip windows at verse, chorus or
+# find clips <video_slug>: propose 25 s clip windows at verse, chorus or
 # singer seams, cut them to R2 and post them to the hub. Stage 5 of the music
 # video pipeline (docs/agents/agents/pokemon/sops/digest-video.md, "Stage 5: Clips").
 #
@@ -20,7 +20,7 @@ require_relative "lib/find_clips"
 
 options = { production: false, dry_run: false, tile: false, chunk: 25.0, overlap: 5.0, count: 5, workdir: File.expand_path("~/projects/.corpus/music_videos") }
 parser = OptionParser.new do |opts|
-  opts.banner = "Usage: bin/find-clips <music_video_slug> [options]"
+  opts.banner = "Usage: bin/find-clips <video_slug> [options]"
   opts.on("--production", "write the production bucket and API (default: dev)") { options[:production] = true }
   opts.on("--api URL", "hub API base (default: localhost:3000, or mcritchie.studio with --production)") { |v| options[:api] = v }
   opts.on("--source FILE", "the source MP4 on disk (default: the digest folder, else R2)") { |v| options[:source] = File.expand_path(v) }
@@ -56,7 +56,7 @@ end
 abort "find-clips: no such file: #{options[:source]}" if options[:source] && !File.file?(options[:source])
 abort "find-clips: #{options[:tiling_flag]} sets the tiling: pass --tile with it" if options[:tiling_flag] && !options[:tile]
 tiling = { chunk_ms: (options[:chunk] * 1000).round, overlap_ms: (options[:overlap] * 1000).round }
-if options[:tile] && (why = MusicVideos::ChunkTiler.problem(**tiling))
+if options[:tile] && (why = Videos::ChunkTiler.problem(**tiling))
   abort "find-clips: #{why}"
 end
 

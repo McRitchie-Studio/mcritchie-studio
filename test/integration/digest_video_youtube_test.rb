@@ -47,7 +47,7 @@ class DigestVideoYoutubeIntegrationTest < ActionDispatch::IntegrationTest
 
     def create(payload)
       token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
-      session.post "/api/v1/music_videos", params: { music_video: payload }, as: :json,
+      session.post "/api/v1/videos", params: { video: payload }, as: :json,
                                            headers: { "Authorization" => "Bearer #{token}" }
       JSON.parse(session.response.body).fetch("data")
     end
@@ -65,10 +65,10 @@ class DigestVideoYoutubeIntegrationTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert_equal [true, false], shell.ytdlp_calls.map { |c| c.include?("--write-subs") }
 
-    video = MusicVideo.find_by!(platform: "youtube", source_id: ID)
+    video = Video.find_by!(platform: "youtube", source_id: ID)
     assert_equal ["#{KEY}", 200_000, { "cues" => [], "sections" => [] }],
                  [video.source_object_key, video.duration_ms, video.caption_timing]
-    assert_equal [%w[test-artist primary]], video.music_video_artists.map { |c| [c.artist_slug, c.role] }
+    assert_equal [%w[test-artist primary]], video.video_artists.map { |c| [c.artist_slug, c.role] }
     assert_includes storage.puts.keys, KEY
   end
 end

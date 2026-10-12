@@ -1,13 +1,13 @@
-<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; Draft to TikTok with its attempts (alt_videos/_clip_tiktok); and the regenerate flag. frames_missing (MusicVideos::MissingReferences): people are sighted in this window and it has no lettered frames, so the card says "No A/B/C frames". The header carries the clip's slug with a copy control, the name the tiktok-draft SOP takes. %>
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview, or once the clip has a primary version the two side by side with Play both (alt_videos/_clip_compare), each showing its first frame; its window; whom the alt video's swaps replace here, by letter (Person 2 is B in every clip); the hand-off (a one-zip download of all of it, the 25 s source clip, the lettered reference frames, the swapped people's character sheets numbered as the prompt numbers them, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; Draft to TikTok with its attempts (alt_videos/_clip_tiktok); and the regenerate flag. frames_missing (Videos::MissingReferences): people are sighted in this window and it has no lettered frames, so the card says "No A/B/C frames". The header carries the clip's slug with a copy control, the name the tiktok-draft SOP takes. %>
 <% url = chunk && urls[chunk.object_key] %>
 <% versions = clip.versions.to_a %>
 <% primary = clip.primary_version %>
 <% target = chunk&.swap_target(swaps) %>
 <% swap = target && swaps[target.ordinal] %>
 <% swapped = chunk ? chunk.swapped_present(swaps) : [] %>
-<% lettered = chunk ? MusicVideos::ClipPrompts.lettered(chunk, swaps: swaps, numbers: numbers) : [] %>
+<% lettered = chunk ? Videos::ClipPrompts.lettered(chunk, swaps: swaps, numbers: numbers) : [] %>
 <% frames = chunk ? chunk.reference_frame_list : [] %>
-<% prompt = chunk && MusicVideos::ClipPrompts.for(chunk, swaps: swaps, numbers: numbers) %>
+<% prompt = chunk && Videos::ClipPrompts.for(chunk, swaps: swaps, numbers: numbers) %>
 <% version_url = primary && urls[primary.object_key] %>
 <% compare = url.present? && version_url.present? %>
 <article id="clip-<%= clip.chunk_ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
@@ -174,7 +174,7 @@
         <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5 min-w-0">
           <p class="label-upper min-w-0">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's sheets in the prompt's order, and the prompt</span></p>
           <% if chunk %>
-            <%= link_to music_video_alt_video_clip_download_path(video, alt_video, clip.chunk_ordinal), download: "",
+            <%= link_to video_alt_video_clip_download_path(video, alt_video, clip.chunk_ordinal), download: "",
                         class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5",
                         title: "This clip's source clip, prompt, A/B/C frames and sheets in one zip",
                         data: { test: "clip-download-assets", turbo: false } do %>
@@ -214,9 +214,9 @@
 
       <div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-versions" data-count="<%= versions.size %>">
         <p class="label-upper mb-1.5">Generated versions</p>
-        <%= form_with url: music_video_alt_video_clip_versions_path(video, alt_video, clip.chunk_ordinal), method: :post, multipart: true, local: true,
+        <%= form_with url: video_alt_video_clip_versions_path(video, alt_video, clip.chunk_ordinal), method: :post, multipart: true, local: true,
                       html: { "x-data": "clipDrop()", "@submit": "busy = true",
-                              data: { test: "clip-drop-form", max_bytes: MusicVideos::StoreClipVersion::MAX_BYTES } } do %>
+                              data: { test: "clip-drop-form", max_bytes: Videos::StoreClipVersion::MAX_BYTES } } do %>
           <label for="clip-file-<%= clip.chunk_ordinal %>"
                  class="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-3 py-5 text-center cursor-pointer transition-colors min-w-0"
                  :class="over ? 'border-primary bg-primary/10' : 'border-subtle bg-surface-alt hover:border-primary/60'"
@@ -224,7 +224,7 @@
                  data-test="clip-drop">
             <span class="text-sm font-semibold text-heading" x-show="!busy">Drop the generated MP4 here</span>
             <span class="text-sm font-semibold text-heading" x-show="busy" x-cloak>Uploading, keep this tab open…</span>
-            <span class="text-xs text-muted" x-show="!busy">or click to choose it · MP4 up to <%= MusicVideos::StoreClipVersion::MAX_BYTES / 1024 / 1024 %> MB · it becomes the primary version</span>
+            <span class="text-xs text-muted" x-show="!busy">or click to choose it · MP4 up to <%= Videos::StoreClipVersion::MAX_BYTES / 1024 / 1024 %> MB · it becomes the primary version</span>
           </label>
           <input id="clip-file-<%= clip.chunk_ordinal %>" x-ref="file" type="file" name="file" accept="video/mp4,.mp4" required
                  class="sr-only" @change="chosen()" data-test="clip-file">
@@ -249,7 +249,7 @@
                   <% if version == primary %>
                     <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">Primary</span>
                   <% else %>
-                    <%= button_to "Make primary", primary_music_video_alt_video_clip_version_path(video, alt_video, clip.chunk_ordinal, version.number),
+                    <%= button_to "Make primary", primary_video_alt_video_clip_version_path(video, alt_video, clip.chunk_ordinal, version.number),
                                   method: :post, class: "btn btn-outline btn-sm", form: { class: "contents", data: { test: "clip-make-primary" } } %>
                   <% end %>
                 </span>
@@ -268,11 +268,11 @@
               <span class="font-semibold">Regenerate requested</span><% if clip.regenerate_note.present? %>: <%= clip.regenerate_note %><% end %>
               <span class="block text-muted">The next uploaded version clears it.</span>
             </p>
-            <%= button_to "Clear", music_video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :delete,
+            <%= button_to "Clear", video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :delete,
                           class: "btn btn-outline btn-sm shrink-0", form: { data: { test: "clip-regenerate-clear" } } %>
           </div>
         <% else %>
-          <%= form_with url: music_video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :post, local: true,
+          <%= form_with url: video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :post, local: true,
                         class: "flex flex-col sm:flex-row gap-2 min-w-0", data: { test: "clip-regenerate-form" } do %>
             <label class="sr-only" for="clip-regenerate-note-<%= clip.chunk_ordinal %>">What is wrong with <%= clip.name.downcase %> (optional)</label>
             <input id="clip-regenerate-note-<%= clip.chunk_ordinal %>" type="text" name="note" maxlength="<%= AltVideoClip::REGENERATE_NOTE_MAX %>"
