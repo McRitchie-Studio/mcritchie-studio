@@ -9,8 +9,7 @@ module MusicVideos
     TEMPLATE = "Replace {target_description} in this {video} with {athlete}, the football player. " \
                "The player should have his normal hair, athletic build and be in uniform, full pads with " \
                "no helmet (like the {look}model provided). He should also be mouthing all the mouth movements of " \
-               "{target_description}. Give him a diamond encrusted watch, necklace, rings, and some designer " \
-               "sunglasses. Please keep {keep_others} the same. Please give the video the same cinematic " \
+               "{target_description}. Please keep {keep_others} the same. Please give the video the same cinematic " \
                "lighting as the {source}."
     ATHLETE = "{athlete}"
     NO_TARGET = "the singer"
@@ -99,7 +98,6 @@ module MusicVideos
       list.select(&:lead).each do |s|
         lines << "#{s.player} should also be mouthing all the mouth movements of Person #{s.letter}."
       end
-      lines << "Give #{one ? 'him' : 'each of them'} a diamond encrusted watch, necklace, rings, and some designer sunglasses."
       lines << KEEP_REST
       lines << LETTERED_LIGHTING.gsub("{source}", SOURCE_WORDS.fetch(kind, SOURCE_WORDS["music_video"]))
       lines.join("\n")
