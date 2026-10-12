@@ -24,7 +24,7 @@ disagree.
 | 10&5 Hospitality | 4200 | 4200-4299 | Showcase |
 | Search Position | 4300 | 4300-4399 | Showcase |
 | Moms App | 4400 | 4400-4499 | Active |
-| Commercial Welding | 4500 | 4500-4599 | Active (planned satellite, not deployed) |
+| Commercial Welding | 4500 | 4500-4599 | Active (reserved satellite; Heroku apps provisioned 2026-10-12) |
 
 Archived apps keep their blocks; do not reuse `3200-4599`. Which apps are
 managed satellites, release-managed standalones or neither is in

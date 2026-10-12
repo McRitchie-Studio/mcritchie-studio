@@ -44,7 +44,7 @@ class AppCatalogTest < Minitest::Test
       assert_equal ["basic", "showcase"], tiers.fetch(slug), slug
     end
     %w[rolio chain-ops tax-studio acquisition-studio].each { |slug| assert_equal [nil, "archived"], tiers.fetch(slug), slug }
-    assert_equal false, AppCatalog.app("commercial-welding").hosted
+    assert_equal true, AppCatalog.app("commercial-welding").hosted
     assert_nil AppCatalog.app("tax-studio").repo
   end
 
@@ -130,7 +130,7 @@ class AppCatalogTest < Minitest::Test
     assert_equal AppCatalog.apps.select { |app| app.archived? || app.repo.nil? || app.heroku_app.nil? }.map(&:slug), hidden,
                  "only an archived, repo-less or undeployed app's group hides when empty"
     assert_includes hidden, "acquisition-studio"
-    assert_includes hidden, "commercial-welding", "a repo with no deploy target cannot ship, so its group hides"
+    refute_includes hidden, "commercial-welding", "a repo with a Heroku app to ship to draws its group, like any deployed app"
     refute_includes hidden, "cyvasse"
 
     rows = AppCatalog.seed_rows

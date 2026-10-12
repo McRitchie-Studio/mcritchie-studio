@@ -100,7 +100,8 @@ class AppRegistryTest < Minitest::Test
       ladder = row["ladder"]
       # A live app with no Heroku app has nothing to ship to, so it may be parked
       # `dormant` until it gets one: the same condition the satellites rule reads
-      # for `planned` (commercial-welding, held private until its acquisition closes).
+      # for `planned`. No app uses it today; commercial-welding did until its
+      # Heroku apps were provisioned on 2026-10-12.
       undeployed_park = app.heroku_app.nil? && ladder == "dormant"
       if app.live? && ladder != "three-rung" && !undeployed_park
         errors << "#{slug}: #{app.status} in apps.yml but ladder #{ladder} in release_repos.yml"
@@ -238,9 +239,9 @@ class AppRegistryTest < Minitest::Test
     shipping_archived = with_release_app("rolio", apps.fetch("rolio").merge("ladder" => "three-rung"))
     assert_includes release_repo_disagreements(CATALOG, shipping_archived),
                     "rolio: archived in apps.yml but ladder three-rung in release_repos.yml (park it: dormant, planned, blocked)"
-    undeployed_blocked = with_release_app("commercial-welding",
-                                          apps.fetch("commercial-welding").merge("ladder" => "blocked"))
-    assert_includes release_repo_disagreements(CATALOG, undeployed_blocked),
+    live_blocked = with_release_app("commercial-welding",
+                                    apps.fetch("commercial-welding").merge("ladder" => "blocked"))
+    assert_includes release_repo_disagreements(CATALOG, live_blocked),
                     "commercial-welding: active in apps.yml but ladder blocked in release_repos.yml"
     no_repo = with_release_app("tax-studio", apps.fetch("tax-studio").merge("ladder" => "blocked"))
     assert_includes release_repo_disagreements(CATALOG, no_repo),

@@ -73,8 +73,8 @@ module AppCatalog
   # One release-notes group per app, then per library, in catalog order. An
   # archived app, a repo-less one, or one with no Heroku app to deploy to cannot
   # ship code, so its group is `hide_when_empty`: the notes draw it only when a
-  # task in the release names it. (commercial-welding has a repo but no deploy
-  # target, and must not appear in posted notes before its acquisition closes.)
+  # task in the release names it. (commercial-welding hid this way until its
+  # Heroku apps were provisioned on 2026-10-12; it now draws like any deployed app.)
   def release_groups
     @release_groups ||= (apps.map { |entry| group(entry.slug, entry.name, entry.emoji, [entry.slug], hide_when_empty: unshippable?(entry)) } +
                          libraries.map { |lib| group(lib.slug, lib.name, lib.emoji, [lib.slug] + lib.aliases) }).freeze

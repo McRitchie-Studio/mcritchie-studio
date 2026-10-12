@@ -822,7 +822,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     "tax-studio" => "repo_script",
     "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
-    "commercial-welding" => nil
+    "commercial-welding" => "git_push_heroku"
   }.freeze
 
   test "every app keeps its production deploy strategy" do

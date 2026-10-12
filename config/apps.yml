@@ -109,13 +109,13 @@ apps:
     status: active
     port: 4500
     repo: McRitchie-Studio/commercial-welding
-    heroku_app: null
+    heroku_app: commercial-welding
     production_url: https://www.commercialwelding.llc
-    qa_url: null
+    qa_url: https://qa.commercialwelding.llc
     engine: true
-    hosted: false
+    hosted: true
     workspace: commercial-welding
-    description: Commercial Welding LLC's company site on studio-engine; a Google Workspace client, not yet deployed
+    description: Commercial Welding LLC's company site on studio-engine; a Google Workspace client, on Heroku with a QA copy
 
   - slug: moms-app
     name: Moms App
