@@ -1,11 +1,11 @@
 require "test_helper"
 require Rails.root.join("db/migrate/20261012200000_split_growth_tier")
 
-# [integration] SplitGrowthTier — Growth left the config on 2026-10-12 (CTO and
-# Team replaced it) in the same deploy as this migration, so every stored
-# `growth` row must move or it could no longer be saved. Runs the migration's
-# own up and down against rows written with the retired key (validation
-# bypassed, as production holds them).
+# [integration] SplitGrowthTier — on 2026-10-12 Growth split into Pro and Team
+# and the old $100 Pro was renamed Builder, so `pro` now names a different tier.
+# Runs the migration's own up and down against rows written with the old keys
+# (validation bypassed, as production holds them), and pins the ORDER: an old
+# pro row must end on builder, never on the new pro.
 class SplitGrowthTierTest < ActiveSupport::TestCase
   def migration = SplitGrowthTier.new.tap { |m| m.verbose = false }
 
@@ -22,39 +22,60 @@ class SplitGrowthTierTest < ActiveSupport::TestCase
 
   test "the migration lands only on current keys, and growth is gone from the config" do
     refute_includes WorkspacePackage.keys, SplitGrowthTier::RETIRED
-    assert_empty (SplitGrowthTier::CLIENT_TIERS.values + [ SplitGrowthTier::DEFAULT ]) - WorkspacePackage.keys
+    targets = SplitGrowthTier::CLIENT_TIERS.values + SplitGrowthTier::RENAMED.values + [ SplitGrowthTier::DEFAULT ]
+    assert_empty targets - WorkspacePackage.keys
+    assert_equal %w[vibe builder pro team enterprise], WorkspacePackage.keys
   end
 
-  test "Commercial Welding moves to CTO, Turf Monster and any other growth row to Team; others stay" do
+  test "production's rows: old Pro becomes Builder FIRST, then Commercial Welding takes the new Pro and Turf Monster Team" do
     clients = {
-      "commercial-welding" => "growth", "turf-monster" => "growth", "10and5" => "growth",
-      "cyvasse" => "pro", "industries" => "internal", "studio" => "enterprise"
+      "commercial-welding" => "growth", "turf-monster" => "growth", "cyvasse" => "pro",
+      "10and5" => "vibe", "industries" => "internal", "studio" => "internal"
     }.to_h { |slug, tier| [ slug, client(slug, tier) ] }
-    growth_request = request("growth", "split-growth-1")
-    vibe_request = request("vibe", "split-growth-2")
 
     migration.up
 
-    assert_equal({ "commercial-welding" => "cto", "turf-monster" => "team", "10and5" => "team",
-                   "cyvasse" => "pro", "industries" => "internal", "studio" => "enterprise" },
+    assert_equal({ "commercial-welding" => "pro", "turf-monster" => "team", "cyvasse" => "builder",
+                   "10and5" => "vibe", "industries" => "internal", "studio" => "internal" },
                  clients.transform_values { |row| row.reload.tier })
-    assert_equal "team", growth_request.reload.tier
-    assert_equal "vibe", vibe_request.reload.tier
-    assert_equal 0, StackClient.where(tier: "growth").count + AppRequest.where(tier: "growth").count
-    %w[commercial-welding turf-monster].each do |slug|
-      row = clients.fetch(slug)
+    assert_equal "builder", clients.fetch("cyvasse").tier, "an old pro row ends on builder, not on the new pro"
+    clients.slice("commercial-welding", "turf-monster", "cyvasse").each do |slug, row|
       assert row.valid?, "#{slug}: #{row.errors.full_messages.to_sentence}"
     end
   end
 
-  test "down folds CTO and Team back into growth and touches nothing else" do
-    cw = client("commercial-welding", "cto")
+  test "any other growth row takes Team; app requests move too; enterprise stays" do
+    other = client("family", "growth")
+    enterprise = client("industries", "enterprise")
+    rows = { "growth" => request("growth", "split-1"), "pro" => request("pro", "split-2"), "vibe" => request("vibe", "split-3") }
+
+    migration.up
+
+    assert_equal "team", other.reload.tier
+    assert_equal "enterprise", enterprise.reload.tier
+    assert_equal({ "growth" => "team", "pro" => "builder", "vibe" => "vibe" }, rows.transform_values { |row| row.reload.tier })
+    assert_equal 0, StackClient.where(tier: "growth").count + AppRequest.where(tier: "growth").count
+  end
+
+  test "down reverses in a safe order: new Pro and Team fold into growth before Builder takes pro back" do
+    cw = client("commercial-welding", "pro")
     turf = client("turf-monster", "team")
-    cyvasse = client("cyvasse", "pro")
-    team_request = request("team", "split-growth-3")
+    cyvasse = client("cyvasse", "builder")
+    vibe = client("10and5", "vibe")
 
     migration.down
 
-    assert_equal %w[growth growth pro growth], [ cw, turf, cyvasse, team_request ].map { |row| row.reload.tier }
+    assert_equal %w[growth growth pro vibe], [ cw, turf, cyvasse, vibe ].map { |row| row.reload.tier },
+                 "Builder's row returns to pro and is NOT folded into growth"
+  end
+
+  test "up then down returns production's rows to where they started" do
+    start = { "commercial-welding" => "growth", "turf-monster" => "growth", "cyvasse" => "pro", "10and5" => "vibe" }
+    rows = start.to_h { |slug, tier| [ slug, client(slug, tier) ] }
+
+    migration.up
+    migration.down
+
+    assert_equal start, rows.transform_values { |row| row.reload.tier }
   end
 end

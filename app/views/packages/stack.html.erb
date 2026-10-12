@@ -68,6 +68,9 @@
             <th scope="colgroup" colspan="<%= @packages.size + 1 %>"
                 class="border-b border-subtle bg-surface-alt px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-primary">
               <%= heading %>
+              <% if (from = WorkspacePackage.category_from(category)) %>
+                <span class="ml-2 font-medium normal-case tracking-normal text-muted" data-test="stack-category-from">From <%= from.name %></span>
+              <% end %>
             </th>
           </tr>
           <% rows.each do |feature| %>
@@ -107,7 +110,12 @@
                   <% elsif value == true %>
                     <span class="font-semibold text-primary" aria-label="Included">✓</span>
                   <% else %>
-                    <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>
+                    <% segments = package_cell_segments(value) %>
+                    <% if segments.any?(&:last) %>
+                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(package_hostname(text), data: { test: "stack-hostname" }) : text }, " + ") %></span>
+                    <% else %>
+                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>
+                    <% end %>
                   <% end %>
                 </td>
               <% end %>

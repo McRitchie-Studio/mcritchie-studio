@@ -1,4 +1,4 @@
-# A McRitchie Studio package tier (Vibe, Pro, CTO, Team, Enterprise) and the
+# A McRitchie Studio package tier (Vibe, Builder, Pro, Team, Enterprise) and the
 # features it includes, read from config/workspace_packages.yml — the one place
 # package contents live.
 #
@@ -148,6 +148,12 @@ class WorkspacePackage
   # category key => heading, in page order.
   def self.categories = config.fetch("categories")
 
+  # The tier a /packages/stack group starts at ("From Builder"), or nil.
+  def self.category_from(category)
+    key = config.fetch("category_from", {})[category.to_s]
+    key && find(key)
+  end
+
   def self.features
     package_keys = keys
     config.fetch("features").map do |attrs|
@@ -178,7 +184,7 @@ class WorkspacePackage
   # false for the tier drawn as the "Talk to us" line instead of a card.
   def card? = @card
 
-  # The rows this tier's card calls out, logo first (Cloudflare DNS from CTO).
+  # The rows this tier's card calls out, logo first (Cloudflare DNS from Pro).
   def spotlight_features = features.select(&:spotlight?)
 
   def priced? = price_monthly.present?

@@ -24,6 +24,23 @@ module PackagesHelper
     end
   end
 
+  HOSTNAME = /\A[a-z0-9-]+(\.[a-z0-9-]+)+\z/i
+
+  # A matrix value as the pieces it may break between: a value that lists
+  # hostnames ("yourname.com + www.yourname.com") breaks only at its " + ",
+  # never inside a hostname. Each piece is [text, hostname?].
+  def package_cell_segments(value)
+    value.to_s.split(" + ").map { |part| [ part, part.match?(HOSTNAME) ] }
+  end
+
+  # A hostname that may wrap only at its first label, and only while a dot
+  # remains after it ("yourname." / "mcritchie.studio", "www." / "yourname.com"),
+  # so a narrow phone column never splits a word and "yourname.com" never wraps.
+  def package_hostname(text)
+    first, rest = text.split(".", 2)
+    rest&.include?(".") ? safe_join([ "#{first}.", tag.wbr, rest ]) : text
+  end
+
   # "✓", the row's value, or "—" — one cell of the full-stack matrix.
   def package_cell_text(value)
     return "—" if value.nil?

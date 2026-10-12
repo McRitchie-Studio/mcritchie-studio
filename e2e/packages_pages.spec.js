@@ -5,7 +5,7 @@ const { VISITOR } = require("./helpers");
 test.use({ storageState: VISITOR });
 
 // /packages and /packages/stack (task tiered-packages-and-full-stack; the
-// 2026-10-12 ladder from task cto-and-team-tiers: Vibe, Pro, CTO and Team cards,
+// 2026-10-12 ladder from task cto-and-team-tiers: Vibe, Builder, Pro and Team cards,
 // Enterprise as a Talk to us line under them).
 //
 // WHY A BROWSER TIER EARNS ITS PLACE HERE. The integration tier proves the
@@ -29,7 +29,7 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
 
   const cards = page.locator("[data-test='package-card']");
   await expect(cards).toHaveCount(4);
-  await expect(cards.locator("h2")).toHaveText(["Vibe", "Pro", "CTO", "Team"]);
+  await expect(cards.locator("h2")).toHaveText(["Vibe", "Builder", "Pro", "Team"]);
   await expect(page.locator("[data-test='package-card'][data-package='team'] [data-test='price-monthly']")).toContainText("$1,500");
 
   // Each card names its brands in full-color logos that actually load.
@@ -45,14 +45,14 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await expect(page.locator("[data-package='vibe'] [data-test='package-cta']")).toHaveAttribute("href", "/build");
 
   // The annual toggle swaps the monthly price for its discounted equivalent.
-  const cto = page.locator("[data-test='package-card'][data-package='cto']");
-  await expect(cto.locator("[data-test='price-monthly']")).toBeVisible();
+  const pro = page.locator("[data-test='package-card'][data-package='pro']");
+  await expect(pro.locator("[data-test='price-monthly']")).toBeVisible();
   await page.locator("[data-test='billing-annual']").click();
-  await expect(cto.locator("[data-test='price-annual']")).toContainText("$450");
-  await expect(cto.locator("[data-test='price-monthly']")).toBeHidden();
+  await expect(pro.locator("[data-test='price-annual']")).toContainText("$450");
+  await expect(pro.locator("[data-test='price-monthly']")).toBeHidden();
 
-  // CTO's CTA opens the booking dialog on this page, not /schedule.
-  await cto.locator("[data-test='package-cta']").click();
+  // Pro's CTA opens the booking dialog on this page, not /schedule.
+  await pro.locator("[data-test='package-cta']").click();
   const dialog = page.locator("dialog[data-booking-dialog]");
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(/\/packages$/);
@@ -97,7 +97,7 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   // The narrow feature column leaves two tiers in view, row descriptions hide,
   // and a one-brand row leads with that brand's logo.
   const boxRight = await box.evaluate((el) => el.getBoundingClientRect().right);
-  const proRight = await page.locator("[data-test='stack-tier-header'][data-package='pro']")
+  const proRight = await page.locator("[data-test='stack-tier-header'][data-package='builder']")
     .evaluate((el) => el.getBoundingClientRect().right);
   expect(proRight).toBeLessThanOrEqual(boxRight);
   await expect(page.locator("[data-test='stack-blurb']").first()).toBeHidden();
@@ -132,17 +132,17 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   expect(packagesOverflow).toBeLessThanOrEqual(0);
 });
 
-test("CTO and Team show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
+test("Pro and Team show Cloudflare DNS, and the full stack draws it in action on a phone", async ({ page }) => {
   await page.goto("/packages");
 
-  for (const key of ["cto", "team"]) {
+  for (const key of ["pro", "team"]) {
     const spot = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-spotlight'][data-feature='cloudflare-dns']`);
     await expect(spot).toContainText("Cloudflare DNS");
     const logo = spot.locator("[data-brand='cloudflare'] img");
     await expect(logo).toBeVisible();
     expect(await logo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
   }
-  await expect(page.locator("[data-package='pro'] [data-test='package-spotlight']")).toHaveCount(0);
+  await expect(page.locator("[data-package='builder'] [data-test='package-spotlight']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/packages/stack");

@@ -6,7 +6,7 @@ class StackControllerTest < ActionDispatch::IntegrationTest
   setup do
     vault = CredentialVault.create!(slug: "studio-agents", name: "Studio agents", entity: "studio", lane: "agents")
     CredentialRecord.create!(credential_vault: vault, title: "turf.stripe", service: "stripe", entity: "turf-monster")
-    StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "pro")
+    StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "builder")
   end
 
   test "a visitor who is not signed in is sent to log in" do
@@ -27,10 +27,10 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     get stack_path
 
     assert_response :success
-    assert_select "[data-client='turf-monster'] [data-test='stack-tier']", text: /Pro/
-    assert_select "[data-client='turf-monster'] [data-software='heroku'][data-hosting='ms']", 1, "Pro tier provisions Heroku"
+    assert_select "[data-client='turf-monster'] [data-test='stack-tier']", text: /Builder/
+    assert_select "[data-client='turf-monster'] [data-software='heroku'][data-hosting='ms']", 1, "Builder tier provisions Heroku"
     assert_select "[data-client='turf-monster'] [data-software='stripe'][data-hosting='own']", 1, "the record brings Stripe"
-    assert_select "[data-client='turf-monster'] [data-software='google']", 0, "Pro does not include Google"
+    assert_select "[data-client='turf-monster'] [data-software='google']", 0, "Builder does not include Google"
   end
 
   test "[integration] each client shows its app tier and status from config/apps.yml" do
@@ -129,9 +129,9 @@ class StackControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] each client shows its live DNS host against its tier's promise" do
     StackClient.find_by!(slug: "turf-monster").update!(tier: "team")
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "pro", position: 30)
     StackClient.create!(slug: "industries", name: "McRitchie Industries", tier: StackClient::INTERNAL, position: 20)
-    StackClient.create!(slug: "cyvasse", name: "Cyvasse", tier: "pro", position: 50)
+    StackClient.create!(slug: "cyvasse", name: "Cyvasse", tier: "builder", position: 50)
     stub_dns("turfmonster.media" => %w[howard.ns.cloudflare.com.],
              "commercialwelding.llc" => %w[nsa1.squarespacedns.com.],
              "mcritchie.industries" => %w[nsa2.squarespacedns.com.],
@@ -151,13 +151,13 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "#{dns.call('commercial-welding')}", text: /Squarespace\s+commercialwelding\.llc/
     assert_select "#{dns.call('cyvasse')}[data-dns-host='squarespace'][data-dns-standing='not_in_tier']", 1
-    assert_select "#{dns.call('cyvasse')} [data-test='stack-dns-standing']", 0, "Pro promises no Cloudflare DNS"
+    assert_select "#{dns.call('cyvasse')} [data-test='stack-dns-standing']", 0, "Builder promises no Cloudflare DNS"
   ensure
     DnsHost.reset_resolver!
   end
 
-  test "[integration] a CTO client flips to On Cloudflare when its nameservers move" do
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
+  test "[integration] a Pro client flips to On Cloudflare when its nameservers move" do
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "pro", position: 30)
     stub_dns("commercialwelding.llc" => %w[ada.ns.cloudflare.com. bob.ns.cloudflare.com.])
     log_in_as users(:alex)
     get stack_path
@@ -168,7 +168,7 @@ class StackControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] a DNS failure never 500s the page: the host reads Unknown" do
-    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "cto", position: 30)
+    StackClient.create!(slug: "commercial-welding", name: "Commercial Welding", tier: "pro", position: 30)
     StackClient.create!(slug: "family", name: "McRitchie Family", tier: StackClient::INTERNAL, position: 95)
     DnsHost.resolver = ->(_name) { raise Resolv::ResolvTimeout }
     log_in_as users(:alex)

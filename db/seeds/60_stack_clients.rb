@@ -13,10 +13,10 @@
 # published in config/workspace_icons.yml); a contact, an email address or a
 # price agreement does not.
 #
-# Tiers follow the ladder Mr. McRitchie set on 2026-10-12 (Vibe, Pro, CTO,
+# Tiers follow the ladder Mr. McRitchie set on 2026-10-12 (Vibe, Builder, Pro,
 # Team, with Enterprise as a Talk-to-us line), whose comps are these clients:
-# Turf Monster on Team, Commercial Welding on CTO (both were on Growth, which
-# the two replaced; migration SplitGrowthTier moved them), Cyvasse on Pro,
+# Turf Monster on Team, Commercial Welding on Pro (both were on Growth, which
+# the two replaced; migration SplitGrowthTier moved them), Cyvasse on Builder,
 # 10and5 on Vibe. McRitchie Industries is the Enterprise comp but is ours, so it
 # stays internal. Google user counts are unknown and left blank rather than guessed.
 #
@@ -24,7 +24,7 @@
 puts "\n--- Stack clients ---"
 
 CONFIRMED_TIER = "Tier confirmed by Mr. McRitchie 2026-09-30 (pricing tiers v2).".freeze
-LADDER_TIER = "Tier set by Mr. McRitchie 2026-10-12 (CTO and Team replaced Growth).".freeze
+LADDER_TIER = "Tier set by Mr. McRitchie 2026-10-12 (Pro and Team replaced Growth).".freeze
 
 [
   { slug: "studio", name: "McRitchie Studio", tier: StackClient::INTERNAL, domain: "mcritchie.studio", position: 10,
@@ -36,14 +36,14 @@ LADDER_TIER = "Tier set by Mr. McRitchie 2026-10-12 (CTO and Team replaced Growt
     # Google is its live Workspace. Its Slack pull exists in code but has no
     # production key (inventory 2026-09-30), so Slack is left off until it runs.
     extra_software: %w[google resend heroku github postgres cloudflare aws 1password] },
-  { slug: "commercial-welding", name: "Commercial Welding", tier: "cto", domain: "commercialwelding.llc",
+  { slug: "commercial-welding", name: "Commercial Welding", tier: "pro", domain: "commercialwelding.llc",
     # Workspace only today: no app yet.
     position: 30, notes: LADDER_TIER },
   { slug: "turf-monster", name: "Turf Monster", tier: "team", domain: "turfmonster.media", position: 40,
     # Sends from turfmonster.media through Resend on the Studio account (the key
     # is agent.resend in studio-agents).
     resend_mode: "ms", notes: LADDER_TIER },
-  { slug: "cyvasse", name: "Cyvasse", tier: "pro", domain: "cyvasse.xyz", position: 50, notes: CONFIRMED_TIER },
+  { slug: "cyvasse", name: "Cyvasse", tier: "builder", domain: "cyvasse.xyz", position: 50, notes: CONFIRMED_TIER },
   # 10and5 lives at a mcritchie.studio subdomain, so it has no domain of its own.
   { slug: "10and5", name: "10&5 Hospitality", tier: "vibe", position: 60, notes: CONFIRMED_TIER }
 ].each do |attrs|

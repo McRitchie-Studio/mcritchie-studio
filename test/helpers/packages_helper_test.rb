@@ -22,8 +22,8 @@ class PackagesHelperTest < ActionView::TestCase
     assert_nil link["data-booking-popup"]
   end
 
-  test "Pro, CTO and Team open the booking popup, with /schedule as the no-script fallback" do
-    %i[pro cto team].each do |key|
+  test "Builder, Pro and Team open the booking popup, with /schedule as the no-script fallback" do
+    %i[builder pro team].each do |key|
       link = link_for(key)
       assert_equal "/schedule", link["href"], key
       assert_equal "true", link["data-booking-popup"], key
@@ -58,6 +58,19 @@ class PackagesHelperTest < ActionView::TestCase
     link = Nokogiri::HTML.fragment(package_cta_link(package)).at("a")
 
     assert_equal "/schedule", link["href"]
+  end
+
+  test "[unit] a hostname value breaks only at its plus, never inside a hostname" do
+    assert_equal [ [ "yourname.mcritchie.studio", true ] ], package_cell_segments("yourname.mcritchie.studio")
+    assert_equal [ [ "yourname.com", true ], [ "www.yourname.com", true ] ], package_cell_segments("yourname.com + www.yourname.com")
+    assert_equal [ [ "Basic web", false ], [ "worker", false ] ], package_cell_segments("Basic web + worker")
+    assert_equal [ [ "Multiple domains", false ] ], package_cell_segments("Multiple domains")
+  end
+
+  test "[unit] a hostname wraps only after its first label, and only while a dot remains" do
+    assert_equal "yourname.<wbr>mcritchie.studio", package_hostname("yourname.mcritchie.studio").to_s
+    assert_equal "www.<wbr>yourname.com", package_hostname("www.yourname.com").to_s
+    assert_equal "yourname.com", package_hostname("yourname.com").to_s
   end
 
   test "a matrix cell reads a check, a dash or the value" do
