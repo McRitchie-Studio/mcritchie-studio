@@ -29,6 +29,29 @@ module LogosHelper
       .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
   end
 
+  # The compare page's params (task logo-compare-and-original-edits): the two brands, the type (less the Navbar Logo),
+  # the watermark context, and the shared controls in force (each absent: every side's kit default), with `changes`
+  # on top; a change to nil drops a param.
+  def logo_compare_params(**changes)
+    { left: @left, right: @right, type: (@type unless @type == :navbar), context: (@context if @context == :watermark),
+      colouring: @colouring_param, rule: @rule_param, form: @form_param }.merge(changes).compact
+  end
+
+  # The compare page a brand page's Compare button opens: this brand on the left, its other version (or the next
+  # brand) on the right, on the tab's type, in the page's context and colouring.
+  def logo_compare_path_for(brand, type: nil)
+    logos_compare_path({ left: brand, right: LogoComparison.partner(brand), type: (type unless type == :navbar) }
+                         .merge(logo_page_keeps).compact)
+  end
+
+  # What a compare side draws, in a line: "Kit default: …" (its saved choice) or "Brand style: …" (nothing saved), as
+  # moved by the page's controls ("rule and colouring from the controls above").
+  def logo_compare_source(side)
+    source = side.saved ? "Kit default" : "Brand style (no #{Logos::Variant::TYPES.fetch(side.variant.type)} saved)"
+    moved = (" · #{side.changed.map(&:to_s).to_sentence} from the controls above" if side.changed.any?)
+    "#{source}: #{logo_choice_summary(side.variant)}#{moved}"
+  end
+
   # The bare tab: what it opens on, its kit default where it has one. Only the context and guides are kept.
   def logo_tab_default_path = logo_brand_path(@logo.brand, { type: (@type unless @type == :navbar) }.merge(logo_page_params.slice(:context, :guides)).compact)
 

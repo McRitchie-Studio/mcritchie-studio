@@ -24,6 +24,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   def requests
     { index: -> { get logos_path }, show: -> { get logo_brand_path("industries") },
+      compare: -> { get logos_compare_path(left: "welding", right: "welding_v2") },
       icon: -> { get icon_logo_path("industries", tone: "dark") },
       navbar: -> { get navbar_logo_path("industries", rule: 4, text: "second") },
       stacked: -> { get stacked_logo_path("industries", text: "first") } }
@@ -323,7 +324,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option edit-jump guides-toggle kit-save-default] +
+    assert_equal %w[colouring-option colouring-option compare-link logo-tab logo-tab logo-tab rule-option rule-option rule-option edit-jump guides-toggle kit-save-default] +
                  %w[logo-download logo-copy] * 6 + %w[kit-save] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./

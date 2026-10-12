@@ -39,6 +39,8 @@
       <h1 class="text-xl sm:text-2xl font-bold text-heading break-words min-w-0 mr-auto"><%= name %></h1>
       <%= render "logos/context_form", url: logo_brand_path(@logo.brand) %>
       <%= render "logos/colouring_control", path: ->(page) { logo_brand_path(@logo.brand, page) }, chosen: @colouring, default: @default_colouring, logo: @logo %>
+      <%# This brand's kit beside another's (task logo-compare-and-original-edits): its other version, else the next brand. %>
+      <%= link_to "Compare", logo_compare_path_for(@logo.brand, type: @type), class: chosen.(false), data: { test: "compare-link" } %>
     </div>
     <p class="text-2xs text-muted -mt-2" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
 

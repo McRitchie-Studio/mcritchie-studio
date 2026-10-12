@@ -30,13 +30,16 @@
 # Navbar and Stacked choices and the original artwork: the table draws the
 # saved choices, and the brand page shows them and saves them
 # (BrandKitsController does the writing).
+# COMPARE (task logo-compare-and-original-edits): /logos/compare?left=welding&right=welding_v2 draws two brands' kits
+# side by side (LogoComparison), each in its kit default unless the page's shared controls change it.
+#
 # ADMIN ONLY, like the email brand kits: the drawings are unreleased brand work.
 class LogosController < ApplicationController
   include LogoBrandPage
 
   before_action :require_admin
-  before_action :set_logo, except: :index
-  before_action :set_context, only: %i[index show]
+  before_action :set_logo, except: %i[index compare]
+  before_action :set_context, only: %i[index show compare]
 
   # A param the library or the parser refuses: say why in plain text, no page and no trace.
   rescue_from Logos::NavbarLogo::Error do |error|
@@ -69,6 +72,22 @@ class LogosController < ApplicationController
     load_brand_page
   end
 
+  # Two brands' kits side by side: ?left= and ?right= (Commercial Welding v1 and v2 unless asked; an unknown brand is a
+  # 404, as on a brand page), ?type= (the Navbar Logo unless asked), and the controls both sides share: ?rule=, ?form=
+  # and ?colouring= (absent: each side's kit default).
+  def compare
+    brands = Logos::NavbarLogo.brands
+    pair = LogoComparison.default_pair(brands)
+    @left, @right = [[:left, pair.first], [:right, pair.last]].map { |key, fallback| compare_brand(params[key], fallback, brands) }
+    @type = Logos::Variant.type(params[:type])
+    @rule_param = (Logos::Variant.rule(params[:rule]) if params.key?(:rule))
+    @form_param = (Logos::Variant.form(params[:form]) if params.key?(:form))
+    kits = BrandKit.by_brand([@left, @right])
+    @savers = BrandKit.saver_names(kits.values)
+    @comparison = LogoComparison.new(left: @left, right: @right, type: @type, tones: @tones, rule: @rule_param, form: @form_param,
+                                     colouring: @colouring_param, kits:)
+  end
+
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.
   def asset
     variant = Logos::Variant.parse(@logo, params, type: @type)
@@ -77,6 +96,13 @@ class LogosController < ApplicationController
   end
 
   private
+
+  def compare_brand(value, fallback, brands)
+    return fallback if value.nil?
+    raise ActiveRecord::RecordNotFound, "No logo brand #{value.to_s.inspect[0, 40]}" unless brands.include?(value.to_s)
+
+    value.to_s
+  end
 
   # A sample is the kit's saved choice or the brand's default, by tone; or the library's refusal, which the cell
   # shows in its place: a brand that cannot be stacked, or a saved choice the brand's data can no longer draw.
