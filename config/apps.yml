@@ -110,7 +110,7 @@ apps:
     port: 4500
     repo: McRitchie-Studio/commercial-welding
     heroku_app: null
-    production_url: null
+    production_url: https://www.commercialwelding.llc
     qa_url: null
     engine: true
     hosted: false

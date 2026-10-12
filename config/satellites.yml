@@ -204,10 +204,14 @@ satellites:
     display_name: "Commercial Welding"
     emoji: "🔥"
     port: 4500
-    # No Heroku app or public URL until the acquisition closes (~2026-10-30):
-    # nothing pairing Commercial Welding with McRitchie goes public before then.
+    # The production host is Commercial Welding's own domain, chosen by Alex: its DNS is on
+    # Squarespace (a Coming Soon page today) and its mail on Google Workspace, so the launch
+    # repoints the web records only. No Heroku app until the acquisition closes: nothing
+    # pairing Commercial Welding with McRitchie goes public before then. A `planned` row
+    # draws no navbar or link-tree entry (Satellite.active), so naming the host here shows
+    # it nowhere public.
     heroku_app: null
-    production_url: null
+    production_url: "https://www.commercialwelding.llc"
     role: "viewer"
     description: "Commercial Welding LLC company site; studio-engine satellite, not yet deployed"
     deploy_provider: "heroku"
