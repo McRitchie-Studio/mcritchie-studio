@@ -113,8 +113,8 @@ class LogosWeldingV2Test < Minitest::Test
     from = source("welding_v2_original")
     blue, white, accent = v2("welding_v2_original").fetch("layers")
     assert_equal %w[blue white accent], [blue, white, accent].map { |layer| layer["role"] }
-    assert_equal 1, V2.subpaths(blue.fetch("d")).size, "the silhouette"
-    assert_equal 2, V2.subpaths(white.fetch("d")).size, "the white half and the window"
+    assert_equal 2, V2.subpaths(blue.fetch("d")).size, "the silhouette, with the window cut out of it"
+    assert_equal 1, V2.subpaths(white.fetch("d")).size, "the white half alone: the window is no longer white"
     assert from.split.between?(400, 420), "the midline is where the blue half meets the white, near the square logo's centre (#{from.split})"
     assert_in_delta 47.42, from.dy, 0.01, "about twice v1's Alt move (23.42): the Original is traced at about twice the scale"
   end
@@ -129,14 +129,43 @@ class LogosWeldingV2Test < Minitest::Test
     assert_match(/only absolute M, L, C and Z/, refusal { V2.subpaths("M0,0 l10,10Z") })
     assert_match(/only absolute M, L, C and Z/, refusal { V2.subpaths("M0,0 Q5,5 10,0Z") })
     two = v1("welding_v2").merge("layers" => [{ "role" => "primary", "fill_rule" => "evenodd", "d" => "M0,0L10,0L10,10ZM2,2L4,2L4,4Z" }])
-    assert_match(/expected the white half and the window in the primary layer \(with the outer helmet if it is the primary\), got 2 sub-paths/,
+    assert_match(/expected the white half and the window in the primary layer \(the window may be a hole in the outer helmet's\), got 1 shapes besides/,
                  refusal { V2.new(two, "x") })
     assert_match(/no primary or white layer/, refusal { V2.new(v1("welding_v2").merge("layers" => []), "x") })
     original = Navbar.icons.fetch("welding_original")
     mixed = original.merge("layers" => original.fetch("layers").map do |layer|
       layer["role"] == "blue" ? layer.merge("d" => layer["d"] + "M1,1L2,1L2,2Z") : layer
     end)
-    assert_match(/the blue layer mixes the helmet's halves with other shapes/, refusal { V2.new(mixed, "x").icon })
+    assert_match(/expected the white half and the window in the white layer .*got 3 shapes besides the outer helmet/, refusal { V2.new(mixed, "x") })
     assert_match(/cannot hold the helmet centred/, refusal { source("welding_v2").icon(400) })
+  end
+
+  # Task kit-export-and-clear-lens (Alex 2026-10-12 00:55: "remove the white of the lens so I can see it clear"): v2's
+  # Original window is a hole in the blue silhouette (even-odd), not an opaque white shape, so the page shows through.
+  def test_v2s_original_lens_is_see_through
+    blue, white = v2("welding_v2_original").fetch("layers").first(2).map { |layer| V2.subpaths(layer.fetch("d")) }
+    window = helmet("welding_v2_original").window
+    assert_equal "evenodd", v2("welding_v2_original").fetch("layers").first.fetch("fill_rule"), "even-odd: the second sub-path is a hole"
+    assert_equal window, V2.bbox(blue.last), "the silhouette's second sub-path is the window: a hole in the blue"
+    refute white.any? { |sub| V2.bbox(sub) == window }, "the white layer no longer paints the window"
+    assert_equal 1, white.size, "the opaque white right half stays: it holds the helmet on a dark page"
+    assert_includes v2("welding_v2_original").fetch("source"), "see-through"
+  end
+
+  def test_v1s_original_and_v2s_alt_are_untouched
+    assert_equal 2, V2.subpaths(v1("welding_v2_original").fetch("layers")[1].fetch("d")).size, "v1's Original keeps its white window: Alex asked for the new logo only"
+    ALT.each do |key|
+      layers = v2(key).fetch("layers")
+      assert_equal 3, V2.subpaths(layers.first.fetch("d")).size, "#{key}: its primary already held the window as a hole"
+      refute_includes v2(key).fetch("source"), "see-through", "#{key}: its note is unchanged"
+    end
+  end
+
+  # The derivation reads its own output back: v2's Original, window and all, is found exactly as v1's is.
+  def test_the_cleared_original_reads_back
+    from = source("welding_v2_original")
+    again = helmet("welding_v2_original")
+    assert_in_delta from.split + from.dx(v2("welding_v2_original").fetch("w")), again.split, 0.01
+    assert_equal from.window.zip([from.dx(892.3), from.dy] * 2).map { |v, d| (v + d).round(2) }, again.window.map { |v| v.round(2) }
   end
 end
