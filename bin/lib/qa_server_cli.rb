@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "qa_idl_pair"
+
 # QaServerCli — the argument DICTIONARY bin/qa-server's `--help`/unknown-argument
 # guard is built from. Pure, IO-free and Rails-free (bin/qa-server
 # `require_relative`s it directly, so it must load standalone), which is what lets
@@ -167,10 +169,18 @@ module QaServerCli
   MISSING = "declared but MISSING on the app"
   DIFFERS = "declared value DIFFERS from live"
 
-  def self.config_drift(declared, live)
+  #
+  # `sets:` names ALLOW-LIST keys (EXPECTED_IDL_HASH): a comma list compared as a
+  # set, where a live list that already COVERS every declared member is not drift.
+  # Comparing those as raw strings is how the heal called turf-monster-qa's
+  # working {v025,v026} pin "drift" and PATCHed a lone hash over it
+  # (/tasks/qa-server-idl-pair-heal).
+  def self.config_drift(declared, live, sets: [])
     declared.each_with_object([]) do |(key, value), drift|
       if !live.key?(key)
         drift << [key, MISSING]
+      elsif sets.include?(key)
+        drift << [key, DIFFERS] unless QaIdlPair.covers?(live[key], value)
       elsif live[key].to_s != value.to_s
         drift << [key, DIFFERS]
       end
@@ -183,8 +193,54 @@ module QaServerCli
   # rolio-qa ran without its declared QA_ENV for weeks precisely because the
   # detector reported what nothing applied. Secrets never appear here: the
   # input is registry-declared config only.
-  def self.heal_plan(declared, live)
-    config_drift(declared, live).map { |key, _why| [key, declared.fetch(key)] }.to_h
+  #
+  # An allow-list key heals by WIDENING (live + declared), never by replacing:
+  # the PATCH runs before the push and restarts the slug still running, which
+  # must keep booting (turf bin/deploy's widen step). tighten_plan narrows it
+  # once the new release is verified.
+  def self.heal_plan(declared, live, sets: [])
+    config_drift(declared, live, sets: sets).to_h do |key, _why|
+      sets.include?(key) ? [key, QaIdlPair.widen(live[key], declared.fetch(key))] : [key, declared.fetch(key)]
+    end
+  end
+
+  # Post-release TIGHTEN (turf bin/deploy's step 2): an allow-list key whose live
+  # set is not exactly the declared set is narrowed to the declared pair. Run only
+  # after the release phase SUCCEEDED, so a failed deploy stays widened and a
+  # rollback still boots.
+  def self.tighten_plan(declared, live, sets: [])
+    sets.each_with_object({}) do |key, plan|
+      next unless declared.key?(key) && live.key?(key)
+
+      plan[key] = declared[key] unless QaIdlPair.same_set?(live[key], declared[key])
+    end
+  end
+
+  # ---- the release phase -------------------------------------------------------
+  #
+  # `git push` to Heroku exits 0 once the BUILD is accepted; the release phase
+  # runs after it, and when it fails Heroku keeps the OLD slug serving, so /up
+  # answers 200 and the deploy looked green (rel-20261012-db4d68: v281-v283 all
+  # failed while the sweep reported success). This reads `heroku releases --json`
+  # and answers what the deploy must not guess:
+  #
+  #   :succeeded / :failed / :pending — the status of the release this deploy
+  #     made (the newest one above `since_version`), or, when the push made none
+  #     (the sha was already there), of the newest release overall, because a
+  #     no-op push onto a failed release is still a broken app;
+  #   :unknown — no release to read.
+  def self.release_verdict(releases, since_version: nil)
+    rows = Array(releases).select { |r| r.is_a?(Hash) && r["version"] }.sort_by { |r| -r["version"].to_i }
+    target = rows.find { |r| since_version && r["version"].to_i > since_version.to_i } || rows.first
+    return [:unknown, nil] unless target
+
+    state = case target["status"].to_s
+            when "succeeded" then :succeeded
+            when "failed" then :failed
+            when "pending" then :pending
+            else :unknown
+            end
+    [state, target]
   end
 
   # ---- the QA marker -----------------------------------------------------------

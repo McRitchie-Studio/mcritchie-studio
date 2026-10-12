@@ -155,12 +155,50 @@ def health_code(url)
 end
 
 def latest_release(app)
+  heroku_releases(app)&.first
+end
+
+# `heroku releases --json`, newest first; nil when the read fails, so "could not
+# read" never reads as "no releases".
+def heroku_releases(app)
   ok, out, = capture_status("heroku", "releases", "--json", "--app", app)
   return nil unless ok
 
-  JSON.parse(out).first
+  JSON.parse(out)
 rescue JSON::ParserError
   nil
+end
+
+RELEASE_POLL_ATTEMPTS = Integer(ENV.fetch("QA_SERVER_RELEASE_POLLS", "60"))
+RELEASE_POLL_DELAY = Float(ENV.fetch("QA_SERVER_RELEASE_POLL_DELAY", "10"))
+
+# Wait for the release phase this deploy started to SETTLE, then fail the deploy
+# unless it succeeded. A failed release leaves Heroku serving the OLD slug, so
+# /up answers 200 and only this read tells the truth (QaServerCli.release_verdict
+# has the rule). A release that never settles, or a release list we never read,
+# also fails: "could not confirm" is not green.
+def verify_release_phase!(app, since_version:, attempts: RELEASE_POLL_ATTEMPTS, delay: RELEASE_POLL_DELAY)
+  verdict = :unknown
+  release = nil
+  attempts.times do |i|
+    releases = heroku_releases(app)
+    verdict, release = releases ? QaServerCli.release_verdict(releases, since_version: since_version) : [:unknown, nil]
+    break unless %i[pending unknown].include?(verdict)
+
+    sleep(delay) if i < attempts - 1
+  end
+
+  label = release ? "v#{release["version"]} (#{release["description"]})" : "no readable release"
+  case verdict
+  when :succeeded
+    puts "Release phase: #{label} succeeded"
+  when :failed
+    abort "QA deploy FAILED: Heroku release #{label} failed its release phase — the app is still serving " \
+          "the previous slug, so /up 200 proves nothing. Read: heroku releases:output #{release["version"]} --app #{app}"
+  else
+    abort "QA deploy NOT CONFIRMED: release phase for #{app} is #{verdict} (#{label}) after #{attempts} read(s) — " \
+          "check `heroku releases --app #{app}` before calling QA green"
+  end
 end
 
 def load_env_file(path)
@@ -187,10 +225,23 @@ def normalize_env_value(value)
   end
 end
 
-def config_vars_from_registry(config)
-  config.fetch("required_config", {}).each_with_object({}) do |(key, value), vars|
+# `live` is the target's current config vars when the caller has read them: an
+# `idl_pair:` derivation selects its files by the target's SOLANA_VAULT_GOVERNANCE,
+# which only the live app carries (the declared required_config wins for the keys
+# it declares, since the heal is about to write those). `ref` is the commit being
+# deployed: derived sources are read from THAT tree, not the primary's working
+# tree, which can sit on any branch.
+def config_vars_from_registry(config, live: nil, ref: nil)
+  required = config.fetch("required_config", {}).each_with_object({}) do |(key, value), vars|
     vars[key] = render_config_value(config, value)
-  end.merge(derived_config_vars(config))
+  end
+  required.merge(derived_config_vars(config, env: (live || {}).merge(required), ref: ref))
+end
+
+# The registry keys whose value is a comma ALLOW-LIST, compared and healed as a
+# set (QaServerCli.config_drift / heal_plan / tighten_plan).
+def allow_list_keys(config)
+  config.fetch("derived_config", {}).select { |_key, spec| QaIdlPair.spec?(spec) }.keys
 end
 
 # Placeholder expansion is LAZY on purpose: heroku_host reaches the Heroku API
@@ -206,19 +257,42 @@ def render_config_value(config, value)
   rendered
 end
 
-def derived_config_vars(config)
+def derived_config_vars(config, env: {}, ref: nil)
   config.fetch("derived_config", {}).each_with_object({}) do |(key, spec), vars|
-    vars[key] = derive_config_value(config, spec)
+    vars[key] = derive_config_value(config, spec, env: env, ref: ref)
   end
 end
 
-def derive_config_value(config, spec)
+# A repo-relative file's bytes from the tree being deployed (`git show ref:path`)
+# or, with no ref, the checkout's working tree. nil when the tree lacks it.
+def repo_file_reader(config, ref)
+  repo = repo_path(config)
+  lambda do |relative|
+    if ref
+      ok, out, = capture_status("git", "show", "#{ref}:#{relative}", chdir: repo)
+      ok ? out : nil
+    else
+      path = File.join(repo, relative)
+      File.exist?(path) ? File.binread(path) : nil
+    end
+  end
+end
+
+def derive_config_value(config, spec, env: {}, ref: nil)
+  read = repo_file_reader(config, ref)
   case spec.to_s
   when /\Asha256:(.+)\z/
-    path = File.join(repo_path(config), Regexp.last_match(1))
-    abort "derived config source missing: #{path}" unless File.exist?(path)
+    relative = Regexp.last_match(1)
+    bytes = read.call(relative)
+    abort "derived config source missing: #{File.join(repo_path(config), relative)}#{" at #{ref}" if ref}" if bytes.nil?
 
-    Digest::SHA256.file(path).hexdigest
+    Digest::SHA256.hexdigest(bytes)
+  when QaIdlPair::SPEC
+    begin
+      QaIdlPair.value(env, stem: QaIdlPair.stem(spec), read: read)
+    rescue QaIdlPair::Refused => e
+      abort "derived config #{spec} refused for #{config.fetch("slug", config["heroku_app"])}: #{e.message}"
+    end
   else
     abort "unsupported derived config spec for #{config.fetch("slug")}: #{spec.inspect}"
   end
@@ -428,7 +502,7 @@ def run_provision(app_name, assume_yes:)
     abort "Provisioning writes Heroku apps/addons/domains/config. Re-run with --yes after reviewing: #{app_name}"
   end
 
-  derived_config_vars(config)
+  config_vars_from_registry(config)
   secret_vars = secret_values_from_local_env(config)
   missing_secrets = config.fetch("required_secrets", []) - secret_vars.keys
   abort "missing required local secret values for #{app_name}: #{missing_secrets.join(", ")}" unless missing_secrets.empty?
@@ -496,9 +570,15 @@ def report_config_drift(config, app)
     return
   end
 
-  drift = QaServerCli.config_drift(config_vars_from_registry(config), live)
+  declared = begin
+    config_vars_from_registry(config, live: live)
+  rescue StandardError, SystemExit => e
+    puts "  config: COULD NOT DERIVE the declared side (#{e.message.to_s.lines.first&.strip}) — no drift verdict"
+    return
+  end
+  drift = QaServerCli.config_drift(declared, live, sets: allow_list_keys(config))
   if drift.empty?
-    puts "  config: #{config_vars_from_registry(config).size} declared var(s) match the live app"
+    puts "  config: #{declared.size} declared var(s) match the live app"
     return
   end
 
@@ -549,23 +629,48 @@ end
 #     in heroku_patch_config_vars stops the deploy pre-push, because pushing
 #     new code onto drift we could see and could not fix is the incident this
 #     heal exists to prevent.
-def heal_registry_config(app, config)
-  declared = begin
-    config_vars_from_registry(config)
-  rescue StandardError, SystemExit => e
-    puts "config heal skipped: declared side unreadable (#{e.message.to_s.lines.first&.strip})"
-    return
-  end
+#   * the LIVE side is read first: an `idl_pair:` derivation selects its files by
+#     the target's SOLANA_VAULT_GOVERNANCE (/tasks/qa-server-idl-pair-heal), and
+#     an allow-list key heals by widening, so the slug still running keeps
+#     booting when the PATCH restarts it.
+# Returns the declared vars it healed toward (for tighten_registry_config after
+# the release is verified), or nil when it skipped.
+def heal_registry_config(app, config, ref: nil)
   live = heroku_get_config_vars(app)
   if live.nil?
     puts "config heal skipped: could not read live vars (no verdict is not 'no drift')"
     return
   end
-  plan = QaServerCli.heal_plan(declared, live)
+  declared = begin
+    config_vars_from_registry(config, live: live, ref: ref)
+  rescue StandardError, SystemExit => e
+    puts "config heal skipped: declared side unreadable (#{e.message.to_s.lines.first&.strip})"
+    return
+  end
+  plan = QaServerCli.heal_plan(declared, live, sets: allow_list_keys(config))
+  unless plan.empty?
+    puts "config heal: PATCHing #{plan.size} drifted declared var(s): #{plan.keys.sort.join(", ")}"
+    heroku_patch_config_vars(app, plan)
+  end
+  declared
+end
+
+# Step 2 of the allow-list dance, run only after the release phase SUCCEEDED:
+# narrow each allow-list key to exactly the deployed tree's pair, dropping the
+# outgoing slug's stale hash. A failure here leaves QA on the new, verified slug
+# with a wider pin — say so, do not fail the deploy.
+def tighten_registry_config(app, config, declared)
+  return if declared.nil?
+
+  live = heroku_get_config_vars(app)
+  return puts("config tighten skipped: could not read live vars") if live.nil?
+
+  plan = QaServerCli.tighten_plan(declared, live, sets: allow_list_keys(config))
   return if plan.empty?
 
-  puts "config heal: PATCHing #{plan.size} drifted declared var(s): #{plan.keys.sort.join(", ")}"
+  puts "config tighten: narrowing #{plan.keys.sort.join(", ")} to the deployed tree's allow-list"
   heroku_patch_config_vars(app, plan)
+  plan
 end
 
 def run_deploy(app_name, ref, assume_yes:)
@@ -584,12 +689,20 @@ def run_deploy(app_name, ref, assume_yes:)
     abort "QA deploy is an external write. Re-run with --yes after reviewing: #{app_name} #{sha}"
   end
 
-  heal_registry_config(app, config)
+  # The newest release BEFORE this deploy writes anything, so the verdict reads
+  # the release this deploy made rather than an older one.
+  since_version = latest_release(app)&.fetch("version", nil)
+  declared = heal_registry_config(app, config, ref: sha)
   puts "Deploying #{app_name} #{sha} to #{app}"
   sh("git", "push", "https://git.heroku.com/#{app}.git", "+#{sha}:refs/heads/main", chdir: repo)
+  verify_release_phase!(app, since_version: since_version)
   config.fetch("dynos", {}).each do |process, count|
     sh("heroku", "ps:scale", "#{process}=#{count}", "--app", app)
   end
+  # The tighten PATCH is a release of its own (it restarts the dynos through the
+  # release phase), so it is verified the same way.
+  before_tighten = latest_release(app)&.fetch("version", nil)
+  verify_release_phase!(app, since_version: before_tighten) if tighten_registry_config(app, config, declared)
 
   heroku_url = heroku_web_url(config)
   heroku_code = health_code(heroku_url)
