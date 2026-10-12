@@ -49,6 +49,8 @@ class LogosController < ApplicationController
   # Each sample is a map of the tones it is shown in to its variant (logos/_cluster).
   # The Navbar and Stacked samples are the brand's SAVED kit choices where it has them (BrandKit; task
   # brand-kit-record), else its defaults (BrandKit::DEFAULTS); every saved kit is read in one query.
+  # ONE ICON PER ROW (task kit-icon-atomic-unit): the kit's saved icon, else the brand's icon in the page's colouring,
+  # and the row's Navbar and Stacked samples draw that same icon, so the three tiles never disagree.
   def index
     brands = Logos::NavbarLogo.brands
     @kits = BrandKit.by_brand(brands)
@@ -56,9 +58,9 @@ class LogosController < ApplicationController
     @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)
-      colouring = page_colouring(logo)
-      [logo, { stacked: kit_sample(kit, :stacked), navbar: kit_sample(kit, :navbar),
-               icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:, colouring:)] } }]
+      icon = kit.kit_icon || Logos::Variant.new(logo, type: :icon, colouring: page_colouring(logo))
+      [logo, { stacked: kit_sample(kit, :stacked, icon), navbar: kit_sample(kit, :navbar, icon),
+               icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:, colouring: icon.colouring, edits: icon.edits)] } }]
     end
   end
 
@@ -80,8 +82,9 @@ class LogosController < ApplicationController
   # shows in its place: a brand that cannot be stacked, or a saved choice the brand's data can no longer draw.
   # A saved choice is shown in its saved colouring, and a default in the brand's own (its Original where it has one),
   # unless the page asks for one (?colouring=), which every brand that has it is shown in.
-  def kit_sample(kit, type)
-    @tones.to_h { |tone| [tone, kit.variant(type, tone:, colouring: @colouring_param)] }
+  # Every sample draws the row's one icon.
+  def kit_sample(kit, type, icon)
+    @tones.to_h { |tone| [tone, kit.variant(type, tone:, colouring: @colouring_param, icon:)] }
   rescue Logos::NavbarLogo::Error => e
     e
   end
