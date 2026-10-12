@@ -58,6 +58,9 @@
 #             row's logo strip; /packages draws a delivered row's brands on its
 #             tier's card. A planned row's logos show only on /packages/stack,
 #             beside its Coming soon tag.
+#   spotlight optional — one customer-facing line. The row is called out, with
+#             its lead logo, on every /packages card whose tier includes it, and
+#             /packages/stack draws its worked example (the Cloudflare DNS flow)
 #   shows     software keys drawn beside the row on /packages/stack WITHOUT
 #             provisioning them: an add-on a client takes per contract, recorded
 #             on the client (stack_clients.extra_software), not by its tier
@@ -239,6 +242,21 @@ features:
     status: live
     software: [squarespace]
     brand_from: pro
+  # Cloudflare DNS, from Growth up (Mr. McRitchie, 2026-10-12). Live: mcritchie.studio
+  # and turfmonster.media have run on Cloudflare DNS since 2026-09-30, and
+  # domain-dns carries the move. /stack shows each client's actual DNS host.
+  - name: Cloudflare DNS
+    category: domain
+    icon: cloudflare
+    blurb: Your bare domain is the address. www and old links redirect at Cloudflare's edge, and our agents manage every record by API.
+    spotlight: yourcompany.com is the address; www and old links redirect at the edge.
+    growth: Bare domain + edge redirects
+    enterprise: Every domain, edge redirects
+    sop: domain-dns
+    section: Cloudflare DNS — Growth and above
+    you_do: Add the zone and paste two nameservers, once
+    status: live
+    software: [cloudflare]
   - name: SEO and link previews
     category: domain
     icon: "🔎"
@@ -413,6 +431,14 @@ features:
     enterprise: true
     sop: chrome-profiles
     status: live
+  # Turnstile rides on the Cloudflare zone, but no app wires it yet: planned.
+  - name: Bot check
+    category: security
+    icon: cloudflare
+    blurb: Cloudflare Turnstile on your public forms, so spam bots are stopped without a puzzle for your customers.
+    growth: Turnstile
+    enterprise: Turnstile
+    status: planned
   - name: Credential rotation
     category: security
     icon: "🔄"

@@ -6,6 +6,8 @@ class StackController < ApplicationController
 
   def index
     load_clients
+    # Live nameserver reads, side by side and cached; a failure reads "unknown".
+    @dns_hosts = DnsHost.lookup_many(@clients.filter_map(&:dns_domain))
   end
 
   # /stack/matrix — the top-level view: clients as columns, software as rows.

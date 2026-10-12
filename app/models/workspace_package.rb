@@ -14,6 +14,8 @@ class WorkspacePackage
   # service, nothing to provision. planned: not delivered yet ("Coming soon").
   STATUSES = %w[live builtin planned].freeze
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
+  # The feature row /stack holds each client's live DNS host to.
+  CLOUDFLARE_DNS = "Cloudflare DNS".freeze
 
   # The tier keys of 2026-09-25, and the v2 tier each one became on 2026-09-30.
   # Migration RemapPackageTiers applied it to stored rows; kept here so the
@@ -21,13 +23,17 @@ class WorkspacePackage
   LEGACY_TIERS = { "launch" => "vibe", "host" => "pro", "workspace" => "growth", "agentic" => "growth" }.freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
-                       :brand_from, keyword_init: true) do
+                       :brand_from, :spotlight, keyword_init: true) do
     def live? = status == "live"
 
     def planned? = status == "planned"
 
     # Delivered today, by an SOP or by the platform itself.
     def delivered? = !planned?
+
+    # A delivered row with a `spotlight` line is called out on every card that
+    # includes it. A planned row is a promise, so it is never spotlit.
+    def spotlight? = spotlight.present? && delivered?
 
     # The software keys (config/workspace_icons.yml) this feature puts in a
     # client's stack. A planned feature provisions nothing: it is a promise. A
@@ -157,6 +163,9 @@ class WorkspacePackage
   def features = self.class.features.select { |feature| feature.included_in?(key) }
 
   def featured? = @featured
+
+  # The rows this tier's card calls out, logo first (Cloudflare DNS from Growth).
+  def spotlight_features = features.select(&:spotlight?)
 
   def priced? = price_monthly.present?
 

@@ -70,6 +70,31 @@ class StackClient < ApplicationRecord
   # the record's workspace slug; nil for a client with no app record.
   def catalog_app = AppCatalog.for_workspace(slug)
 
+  # The domain whose DNS host /stack reads: the app's production URL in
+  # config/apps.yml (www. dropped; DnsHost walks up to the zone), else the
+  # client's own domain. nil when it has neither.
+  def dns_domain = DnsHost.domain_for(catalog_app&.production_url.presence || domain)
+
+  # Whether the client's tier promises Cloudflare DNS (Growth and up). Our own
+  # two stacks are internal but run on the top tier, so they are held to it too.
+  def cloudflare_dns_promised?
+    return true if internal?
+
+    Array(package&.features).any? { |feature| feature.name == WorkspacePackage::CLOUDFLARE_DNS }
+  end
+
+  # How the client's live DNS host stands against its tier:
+  #   :on_cloudflare      promised and delivered
+  #   :migration_pending  promised, still on another host
+  #   :not_in_tier        the tier does not promise it; the host is just a fact
+  #   :unknown            the lookup failed or there is no domain
+  def dns_standing(host)
+    return :unknown if host.nil? || host.unknown?
+    return :not_in_tier unless cloudflare_dns_promised?
+
+    host.cloudflare? ? :on_cloudflare : :migration_pending
+  end
+
   private
 
   def slug_is_a_configured_workspace

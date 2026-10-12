@@ -80,6 +80,9 @@
                 </li>
               <% end %>
             </ul>
+            <% package.spotlight_features.each do |feature| %>
+              <%= render "packages/spotlight", feature: feature, package: package %>
+            <% end %>
           </div>
 
           <% brands = package.card_brands(previous) %>
