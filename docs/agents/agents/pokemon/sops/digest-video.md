@@ -435,7 +435,7 @@ The cast cards are the working selection; an alt video keeps a snapshot.
    clip assets**, on each card's hand-off row, downloads one clip's. Inside:
 
    ```text
-   <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, anything missing
+   <video>_alt_<n>/README.txt                          letters A, B, C... with each person and swap, sheet numbering per clip, chunks with no A/B/C frames, anything missing
    <video>_alt_<n>/clip_03_0040-0105/source_clip.mp4   the 25 s source chunk
    .../prompt.txt                                      the card's prompt, byte for byte (built at download from the alt video's swaps and current jersey numbers)
    .../frames/frame_1_ABC_0045.jpg                     lettered frames in card order: number, letters, time

@@ -4,7 +4,7 @@ module MusicVideos
   # The alt video asset zips (recast pipeline, piece 17): everything the
   # Higgsfield hand-off needs, one folder per clip, downloaded in one go.
   #
-  #   <video>_alt_<n>/README.txt                         who A, B, C... are, sheet numbering, what is missing
+  #   <video>_alt_<n>/README.txt                         who A, B, C... are, sheet numbering, chunks with no A/B/C frames, what is missing
   #   <video>_alt_<n>/clip_03_0040-0105/source_clip.mp4  the 25 s source chunk
   #   .../prompt.txt                                     the card's prompt, byte for byte
   #   .../frames/frame_1_B_0045.jpg                      lettered reference frames, card order
