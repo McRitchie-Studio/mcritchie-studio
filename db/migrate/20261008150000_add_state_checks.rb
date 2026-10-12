@@ -76,6 +76,8 @@ class AddStateChecks < ActiveRecord::Migration[8.1]
     db.execute "SET lock_timeout = '#{LOCK_TIMEOUT}'"
     CHECKS.each_key do |name|
       table, column = name.split(".")
+      next unless db.table_exists?(table)
+
       db.execute "ALTER TABLE #{db.quote_table_name(table)} DROP CONSTRAINT IF EXISTS #{db.quote_column_name("#{table}_#{column}_known")}"
     end
   ensure
@@ -90,6 +92,10 @@ class AddStateChecks < ActiveRecord::Migration[8.1]
 
   def add_check(table, column, values)
     constraint = "#{table}_#{column}_known"
+    # A table a later migration renamed (music_videos became videos on
+    # 2026-10-12) is not here when this runs again on today's schema; the
+    # renamed table carries the renamed constraint already.
+    return unless db.table_exists?(table)
     return if check_exists?(table, constraint)
 
     list = values.map { |value| db.quote(value) }.join(", ")
