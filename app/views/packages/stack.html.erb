@@ -11,7 +11,8 @@
 
 <%# The matrix scrolls INSIDE its own box on a phone (both axes, so the tier
     header can stick to the box's top while the page itself never scrolls
-    sideways), and in the page from md up, where it fits: there the header
+    sideways), and in the page from 1100px up, where its five columns fit
+    (at 768-1099px they need ~1004px and pushed the page sideways): there the header
     sticks under the engine's pinned navbar via --pin-stack-bottom. The first
     column sticks left so a row keeps its name while the tiers scroll. %>
 <style>
@@ -20,7 +21,7 @@
   .pkg-matrix thead th { position: sticky; top: 0; z-index: 2; }
   .pkg-matrix .pkg-sticky-col { position: sticky; left: 0; z-index: 1; }
   .pkg-matrix thead th.pkg-sticky-col { z-index: 3; }
-  @media (min-width: 768px) {
+  @media (min-width: 1100px) {
     .pkg-matrix-wrap { overflow: visible; max-height: none; }
     .pkg-matrix thead th { top: var(--pin-stack-bottom, 0px); }
   }

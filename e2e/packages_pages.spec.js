@@ -212,4 +212,10 @@ test("Pro and Team cards mark their lines, tease the next tier, and the full sta
   await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(pageOverflow).toBeLessThanOrEqual(0);
+
+  // A tablet (iPad landscape) neither: the five-column matrix scrolls in its box.
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/packages/stack");
+  const tabletOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(tabletOverflow).toBeLessThanOrEqual(0);
 });
