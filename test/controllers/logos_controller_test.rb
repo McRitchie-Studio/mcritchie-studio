@@ -325,7 +325,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
     assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle kit-save-default] +
                  %w[logo-download logo-copy] * 6 + %w[kit-save] +
-                 %w[kit-pick-open kit-pick-download kit-pick-download] * 2 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
+                 %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./
     assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/
   end
@@ -391,7 +391,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Icon tab shows the icon alone with a download and a copy, and no rule or guides" do
+  test "the Icon tab shows the icon alone with a download and a copy, and no rule or guides: only Save as default" do
     log_in_as(@admin)
     [nil, *CONTEXTS].each do |context|
       get logo_brand_path("welding", { type: "icon", context:, guides: 1, rule: 3 }.compact)
@@ -407,8 +407,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='logo-frame']", 1
       assert_select "[data-test='logo-plate']", 0
       assert_select "[data-test='logo-example'] h2", 0
-      assert_select "[data-test='guides-toggle'], [data-test='rule-control'], [data-test='logo-controls'], [data-test='guides-sentence']", 0
-      assert_select "[data-test='type-sentence']", "The icon alone, as this brand's logos draw it."
+      assert_select "[data-test='guides-toggle'], [data-test='rule-control'], [data-test='guides-sentence']", 0
+      assert_equal %w[kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
+      assert_select "[data-test='type-sentence']", /\AThe icon alone: the kit's atomic unit\./
       assert_select "[data-test='watermark-text-note']", 0, "an icon has no text versions to compare"
     end
   end

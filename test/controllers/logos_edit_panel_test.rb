@@ -17,7 +17,7 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
   # one, so these pages ask for Alt; Studio has only Alt and takes no param.
   def page(brand, **params) = logo_brand_path(brand, **(Logos::NavbarLogo.new(brand).original? ? { colouring: "alt" } : {}), **params)
 
-  test "the Navbar and Stacked tabs have an edit panel naming each part and the brand's own words; the Icon tab has none" do
+  test "the Navbar and Stacked tabs have an edit panel naming each part and the brand's own words; the Icon tab, the icon alone" do
     get page("studio")
     assert_equal %w[icon first ending], row_parts
     assert_equal %w[McRITCHIE STUDIO], css_select("[data-test='edit-word']").map { |w| w.text.strip }
@@ -34,7 +34,7 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     assert_equal %w[Turf Monster], css_select("[data-test='edit-word']").map { |w| w.text.strip }
 
     get page("studio", type: "icon")
-    assert_empty css_select("[data-test='edit-panel']")
+    assert_equal %w[icon], row_parts, "the icon's colour, the kit icon's (task kit-icon-atomic-unit)"
   end
 
   test "each part's colours are the brand's palette, with As styled marked until one is picked" do

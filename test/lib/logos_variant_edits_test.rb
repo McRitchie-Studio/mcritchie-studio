@@ -64,7 +64,7 @@ class LogosVariantEditsTest < Minitest::Test
     assert_equal({ icon: { colour: "#8E82FE" } }, Variant.new(stacked, type: :stacked, form: :two_line, edits:).edits, "no tagline in two lines")
     assert_equal({ icon: { colour: "#8E82FE" } }, Variant.new(navbar, edits:).edits, "a navbar logo has no tagline")
     assert_equal edits, Variant.new(stacked, type: :stacked, form: :tagline, edits:).edits
-    assert_empty Variant.new(navbar, type: :icon, edits:).edits, "the icon tab takes no edits"
+    assert_equal({ icon: { colour: "#8E82FE" } }, Variant.new(navbar, type: :icon, edits:).edits, "the icon tab takes its own colour only (the kit icon)")
     watermark = Variant.new(navbar, rule: 4, tone: :watermark, edits:)
     assert_empty watermark.edits, "a watermark is one colour"
     assert_equal navbar.svg(rule: 4, tone: :watermark), watermark.svg
