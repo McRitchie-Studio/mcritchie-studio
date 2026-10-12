@@ -15,12 +15,12 @@
         <% with_primary, total = alt.progress %>
         <% latest = alt.latest_stitch %>
         <% stale = latest && latest.stale?(alt.clips.to_a) %>
-        <%= link_to music_video_alt_video_path(alt.music_video, alt),
+        <%= link_to video_alt_video_path(alt.video, alt),
                     class: "card p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between min-w-0 hover:border-primary/60 transition-colors",
                     data: { test: "alt-video-row", slug: alt.slug, primary: with_primary, total: total } do %>
           <div class="min-w-0">
             <p class="text-xs font-semibold uppercase tracking-wider text-primary"><%= alt.name %></p>
-            <p class="font-semibold text-heading break-words"><%= alt.music_video.title %></p>
+            <p class="font-semibold text-heading break-words"><%= alt.video.title %></p>
             <p class="text-sm text-muted break-words" data-test="alt-video-row-swaps"><%= alt.swaps_summary %></p>
           </div>
           <div class="flex flex-col sm:items-end gap-1.5 shrink-0 min-w-0">

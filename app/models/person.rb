@@ -122,11 +122,11 @@ class Person < ApplicationRecord
   end
 
   def release_recasts
-    videos = recast_performers.distinct.pluck(:music_video_slug)
+    videos = recast_performers.distinct.pluck(:video_slug)
     return if videos.empty?
 
     recast_performers.update_all(recast_person_slug: nil, recast_appearance_slug: nil, updated_at: Time.current)
-    MusicVideo.where(slug: videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+    Video.where(slug: videos).find_each { |video| Videos::ClipPrompts.refresh!(video) }
   end
 
   # Multi-strategy name lookup: exact slug → normalized slug → alias match

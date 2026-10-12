@@ -4,14 +4,14 @@ require "fileutils"
 require "json"
 require "tmpdir"
 require_relative "digest_video"
-require_relative "../../lib/music_videos/object_keys"
-require_relative "../../lib/music_videos/stitch_plan"
-require_relative "../../lib/music_videos/stitcher"
+require_relative "../../lib/videos/object_keys"
+require_relative "../../lib/videos/stitch_plan"
+require_relative "../../lib/videos/stitcher"
 
 # The agent side of the final stitch (bin/stitch-video): take the stitch an
 # alt video's page asked for (or ask for one), fetch its primary versions and
 # the source from R2,
-# crossfade them over the source audio with ffmpeg (MusicVideos::Stitcher, the
+# crossfade them over the source audio with ffmpeg (Videos::Stitcher, the
 # same code a local hub's job runs), upload the MP4 and report it through the
 # API. Runs on the operator's Mac: production dynos have no ffmpeg.
 module StitchVideo
@@ -22,7 +22,7 @@ module StitchVideo
                    bucket: "mcritchie-studio-dev", alt: 1)
       @api = api
       @storage = storage
-      @stitcher = MusicVideos::Stitcher.new(shell:, out:)
+      @stitcher = Videos::Stitcher.new(shell:, out:)
       @out = out
       @workdir = workdir
       @source = source
@@ -33,7 +33,7 @@ module StitchVideo
     end
 
     def call(slug)
-      base = "/api/v1/music_videos/#{slug}/alt_videos/#{@alt}/stitches"
+      base = "/api/v1/videos/#{slug}/alt_videos/#{@alt}/stitches"
       board = @api.get(base)
       return dry_run(slug, board) if @dry_run
 
@@ -64,7 +64,7 @@ module StitchVideo
 
     def run(slug, stitch)
       in_workdir(slug, stitch) { |dir| @stitcher.call(stitch, store: @storage, dir:, source: @source) }
-    rescue MusicVideos::Stitcher::Failure, Failure => e
+    rescue Videos::Stitcher::Failure, Failure => e
       report_failure(slug, stitch, e.message)
       raise Failure, e.message
     rescue StandardError, Interrupt => e
@@ -73,7 +73,7 @@ module StitchVideo
     end
 
     def report_failure(slug, stitch, reason)
-      @api.post("/api/v1/music_videos/#{slug}/alt_videos/#{@alt}/stitches/#{stitch['number']}/failed", { reason: })
+      @api.post("/api/v1/videos/#{slug}/alt_videos/#{@alt}/stitches/#{stitch['number']}/failed", { reason: })
     rescue Failure => e
       @out.puts "could not report the failure: #{e.message}"
     end
@@ -85,7 +85,7 @@ module StitchVideo
       @out.puts "stitch #{stitch['number']} of #{label(slug)} (dry run: nothing started, encoded, uploaded or reported): " \
                 "versions #{take_list(stitch)}"
       in_workdir(slug, stitch) { |dir| @stitcher.call(stitch, store: @storage, dir:, source: @source, dry_run: true) }
-    rescue MusicVideos::Stitcher::Failure => e
+    rescue Videos::Stitcher::Failure => e
       raise Failure, e.message
     end
 
@@ -96,7 +96,7 @@ module StitchVideo
       number = board["stitches"].map { |s| s["number"] }.max.to_i + 1
       source_key = board["source_object_key"]
       { "number" => number, "source_object_key" => source_key,
-        "object_key" => MusicVideos::ObjectKeys.alt_stitched(source_key:, alt_number: @alt, number:),
+        "object_key" => Videos::ObjectKeys.alt_stitched(source_key:, alt_number: @alt, number:),
         "takes" => board["current_takes"] }
     end
 

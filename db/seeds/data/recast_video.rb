@@ -20,7 +20,7 @@ module RecastVideo
   end
 
   def self.video!
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.kind = "cinematic"
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=recast-demo"
@@ -31,7 +31,7 @@ module RecastVideo
     end
     return video if video.video_performers.exists?
 
-    MusicVideos::ReplacePerformers.new(video, TiledVideo::PERFORMERS).call
+    Videos::ReplacePerformers.new(video, TiledVideo::PERFORMERS).call
     video.video_performers.each { |p| p.update!(recast_keep: true) }
     video.confirm_cast!
     video
@@ -41,18 +41,18 @@ module RecastVideo
   # artist, so no chunk has a labelled target: the recast picks the prompt's.
   def self.chunk_rows(video = video!)
     cast = video.video_performers.map { |p| p.as_json(only: %w[ordinal artist_slug extra sightings]) }
-    MusicVideos::ChunkTiler.windows(DURATION_MS).map do |w|
-      seen = MusicVideos::ClipCast.label(cast, w.start_ms, w.end_ms)
+    Videos::ChunkTiler.windows(DURATION_MS).map do |w|
+      seen = Videos::ClipCast.label(cast, w.start_ms, w.end_ms)
       { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => seen.cast_shape,
         "target_performer" => seen.target, "performer_ordinals" => seen.present,
-        "object_key" => MusicVideos::ObjectKeys.chunk(source_key: SOURCE, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
+        "object_key" => Videos::ObjectKeys.chunk(source_key: SOURCE, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
     end
   end
 
   def self.seed!
     athlete!
     video = video!
-    MusicVideos::ReplaceClips.new(video, chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
+    Videos::ReplaceClips.new(video, chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
     video
   end
 end

@@ -21,7 +21,7 @@ module Appearances
     # when it may not.
     def self.refusal(base)
       return "a look's iced twin cannot have a twin of its own" if base.iced?
-      return "a music-video look is a performer, not a model, so it has no iced twin" if base.music_video_look?
+      return "a video look is a performer, not a model, so it has no iced twin" if base.video_look?
       return "a character's look is one of our cast, not an athlete, so it has no iced twin" if base.character_owned?
       return "a retired look gets no iced twin" if base.retired?
       # The twin copies the base's team, and a new look may not name a team

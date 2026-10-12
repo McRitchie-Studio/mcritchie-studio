@@ -10,7 +10,7 @@ class VideoStitchTest < ActiveSupport::TestCase
     @video = TiledVideo.seed!
     @alt = AltVideo.build_from!(@video)
     @alt.clips.each { |clip| TiledVideo.version!(clip, number: 1, at: 1.hour.ago) }
-    @stitch = MusicVideos::RequestStitch.new(@alt.reload).call.stitch
+    @stitch = Videos::RequestStitch.new(@alt.reload).call.stitch
   end
 
   def clips = @alt.reload.clips.to_a
@@ -28,14 +28,14 @@ class VideoStitchTest < ActiveSupport::TestCase
                  @stitch.takes.map { |t| t.values_at("ordinal", "start_ms", "end_ms", "take") }
     assert_equal "1, 1, 1, 1", @stitch.take_list
     assert_equal [@stitch], @alt.stitches.to_a
-    assert_equal [@video.slug, @alt.slug], [@stitch.music_video_slug, @stitch.alt_video_slug]
+    assert_equal [@video.slug, @alt.slug], [@stitch.video_slug, @stitch.alt_video_slug]
   end
 
   test "the request the stitcher reads resolves every version and the source to its object" do
     request = @stitch.as_request
 
     assert_equal [1, "requested", @stitch.object_key, TiledVideo::SOURCE, 72_000, @video.slug],
-                 request.values_at("number", "state", "object_key", "source_object_key", "source_duration_ms", "music_video_slug")
+                 request.values_at("number", "state", "object_key", "source_object_key", "source_duration_ms", "video_slug")
     assert_equal 1, request["alt_video"]
     assert_equal clips.map { |c| c.primary_version.object_key }, request["takes"].map { |t| t["object_key"] }
     assert(request["takes"].all? { |t| t["object_key"].include?("/alt_videos/01/clips/") })
@@ -138,7 +138,7 @@ class VideoStitchTest < ActiveSupport::TestCase
   test "another alt video of the same source numbers its own stitches from 1" do
     other = AltVideo.build_from!(@video)
     other.clips.each { |clip| TiledVideo.version!(clip, number: 1) }
-    stitch = MusicVideos::RequestStitch.new(other.reload).call.stitch
+    stitch = Videos::RequestStitch.new(other.reload).call.stitch
 
     assert_equal [1, 1], [@stitch.number, stitch.number]
     assert_includes stitch.object_key, "/alt_videos/02/stitched/tiled_demo_alt_02_stitched_01.mp4"

@@ -16,7 +16,7 @@ module NightCallLooks
 
   def self.seed!
     NightCallCast.seed!
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=Sa7GSJJ_lOo"
       v.source_id = "night-call-looks-demo"
@@ -29,7 +29,7 @@ module NightCallLooks
     LINKS.each_value do |name|
       Artist.find_or_create_by!(name:) { |a| a.assign_attributes(slug: Artist.available_slug(name), kind: "person") }
     end
-    MusicVideos::ReplacePerformers.new(video, NightCallCast::PERFORMERS.map do |ordinal, label, still, note, seen|
+    Videos::ReplacePerformers.new(video, NightCallCast::PERFORMERS.map do |ordinal, label, still, note, seen|
       stills = STILLS.fetch(ordinal, [still]).map { |mmss| "#{FOLDER}stills/person_#{format('%02d', ordinal)}_#{mmss}.jpg" }
       { "ordinal" => ordinal, "label" => label, "confidence_note" => note, "sightings" => seen, "still_object_keys" => stills }
     end).call

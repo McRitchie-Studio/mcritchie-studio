@@ -140,11 +140,15 @@ class DbBaselineTest < ActiveSupport::TestCase
   test "every table in db/schema.rb has exactly one migration that creates it" do
     files = Dir[Rails.root.join("db/migrate/*.rb")].to_h { |path| [File.basename(path), File.read(path)] }
     tables = File.read(Rails.root.join("db/schema.rb")).scan(/^  create_table "(\w+)"/).flatten
+    # A renamed table was created under its first name (videos was music_videos).
+    born_as = DbBaseline.renamed_tables(Rails.root.join("db/migrate")).invert
 
     tables.each do |table|
-      creators = files.select { |_, text| text.match?(/create_table\s+[:"]#{table}\b/) && !text.include?("table_exists?(:#{table})") }.keys
+      origin = born_as.fetch(table, table)
+      creators = files.select { |_, text| text.match?(/create_table\s+[:"]#{origin}\b/) && !text.include?("table_exists?(:#{origin})") }.keys
       assert_equal 1, creators.size, "#{table} is created by #{creators.inspect}"
     end
+    assert_equal "music_videos", born_as.fetch("videos"), "control: the rename ledger is read"
     assert_empty files.select { |file, text| DbBaseline.baseline_file?(file) && text.include?("force") }.keys
   end
 
@@ -299,6 +303,33 @@ class DbBaselineTest < ActiveSupport::TestCase
       assert_equal({ "albums" => %w[state] }, DbBaseline.removed_columns(@dir))
       assert_empty marker.report.short
       assert_equal %w[20260101000001 20260101000003], marker.mark!.marked
+    end
+
+    test "a renamed table and column count under either name, since the mark runs before db:migrate" do
+      @connection.pool.schema_migration.create_table
+      write("20260101000001_create_albums.rb", %(create_table "albums" do |t|\n  t.string "title"\n  t.string "album_ref"\nend))
+      write("20260301000000_rename_albums.rb", %(def up\n  rename_table "albums", "records"\n  rename_column "records", "album_ref", "record_ref"\nend\n\n) +
+                                                 %(def down\n  rename_column "records", "record_ref", "album_ref"\n  rename_table "records", "albums"\nend))
+      assert_equal({ "albums" => "records" }, DbBaseline.renamed_tables(@dir), "only the up half is read")
+      assert_equal({ "records" => { "album_ref" => "record_ref" } }, DbBaseline.renamed_columns(@dir))
+
+      @connection.create_table("albums") { |t| t.string "title"; t.string "album_ref" }
+      assert_empty marker.report.short, "before the rename runs: the old names"
+      assert_includes marker.report.marked, "20260101000001"
+
+      @connection.rename_table("albums", "records")
+      @connection.rename_column("records", "album_ref", "record_ref")
+      assert_empty marker.report.short, "after it: the new names"
+      assert_includes marker.mark!.marked, "20260101000001", "the renamed table counts as the baseline's table"
+
+      @connection.remove_column("records", "record_ref")
+      assert_equal ["records lacks record_ref"], marker.report.short, "control: a column held under neither name is short"
+    end
+
+    test "a rename chain lists every name, oldest first, and a cycle stops" do
+      assert_equal %w[a b c], DbBaseline.rename_chain("a", { "a" => "b", "b" => "c" })
+      assert_equal %w[a b], DbBaseline.rename_chain("a", { "a" => "b", "b" => "a" })
+      assert_equal %w[a], DbBaseline.rename_chain("a", {})
     end
 
     test "the report is read-only" do

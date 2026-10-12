@@ -1,10 +1,10 @@
 <% content_for :title, "#{@alt_video.name} · #{@video.title} · McRitchie Studio" %>
 <%= render "components/copy_text_script" %>
-<%= render "music_videos/player_scripts" %>
+<%= render "videos/player_scripts" %>
 
-<%# data-links-*: where the page asks for fresh signed links, how long they last and when these were signed (signedLinks, music_videos/_player_scripts). %>
+<%# data-links-*: where the page asks for fresh signed links, how long they last and when these were signed (signedLinks, videos/_player_scripts). %>
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-video" data-number="<%= @alt_video.number %>"
-         data-links-url="<%= links_music_video_alt_video_path(@video, @alt_video) %>" data-links-ttl="<%= AltVideosController::SIGNED_URL_TTL %>"
+         data-links-url="<%= links_video_alt_video_path(@video, @alt_video) %>" data-links-ttl="<%= AltVideosController::SIGNED_URL_TTL %>"
          data-links-signed-at="<%= (@signed_at.to_f * 1000).round %>">
   <header class="mb-6 min-w-0">
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="alt-video-kicker">
@@ -14,7 +14,7 @@
       <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words min-w-0"><%= @video.title %></h1>
       <% if @clips.any? %>
         <%# The page's primary action: every clip's hand-off in one zip, one folder per clip (AltVideoDownloadsController). %>
-        <%= link_to music_video_alt_video_download_path(@video, @alt_video), download: "",
+        <%= link_to video_alt_video_download_path(@video, @alt_video), download: "",
                     class: "btn btn-primary w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2",
                     title: "The source clips, prompts, A/B/C frames and sheets, one folder per clip",
                     data: { test: "alt-video-download-all", turbo: false } do %>
@@ -26,7 +26,7 @@
     <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
       <span data-test="alt-video-clip-count"><%= pluralize(@clips.size, "clip") %></span>
       <span>built <%= l(@alt_video.created_at, format: :short) %></span>
-      <%= link_to "Source video and cast", music_video_path(@video), class: "text-primary hover:underline", data: { test: "alt-video-source-link" } %>
+      <%= link_to "Source video and cast", video_path(@video), class: "text-primary hover:underline", data: { test: "alt-video-source-link" } %>
       <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline", data: { test: "alt-video-index-link" } %>
     </p>
   </header>
@@ -47,7 +47,7 @@
         <% @swaps.to_a.each do |entry| %>
           <% performer = performers[entry.performer_ordinal] %>
           <li class="min-w-0 break-words" data-test="alt-video-swap" data-ordinal="<%= entry.performer_ordinal %>">
-            <span class="font-semibold text-heading">Person <%= MusicVideos::PersonLetters.for(entry.performer_ordinal) %></span>
+            <span class="font-semibold text-heading">Person <%= Videos::PersonLetters.for(entry.performer_ordinal) %></span>
             <span class="text-muted">· Person <%= entry.performer_ordinal %><% if performer %> (<%= performer.label %>)<% end %></span>
             <span class="text-muted">→</span>
             <% if (number = @numbers[entry.appearance_slug]) %><span class="font-semibold text-heading">#<%= number %></span><% end %>

@@ -5,8 +5,8 @@
 # the clip's primary version to the operator's TikTok inbox. "Check TikTok"
 # reads TikTok's status once more for an attempt still processing.
 #
-#   POST /music_videos/:slug/alt_videos/:n/clips/:ordinal/tiktok_drafts
-#   POST /music_videos/:slug/alt_videos/:n/clips/:ordinal/tiktok_drafts/:id/refresh
+#   POST /videos/:slug/alt_videos/:n/clips/:ordinal/tiktok_drafts
+#   POST /videos/:slug/alt_videos/:n/clips/:ordinal/tiktok_drafts/:id/refresh
 #
 # The same machine as bin/tiktok-draft (Api::V1::TiktokDraftsController).
 class AltVideoClipTiktokDraftsController < ApplicationController

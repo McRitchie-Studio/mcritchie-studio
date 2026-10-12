@@ -17,14 +17,14 @@
         <p class="text-sm text-body mt-1 break-words" data-test="full-video-blocker">Not yet: <%= alt_video.stitch_blocker %>.</p>
       <% end %>
     </div>
-    <%= button_to "Generate full video", music_video_alt_video_stitches_path(video, alt_video), method: :post,
+    <%= button_to "Generate full video", video_alt_video_stitches_path(video, alt_video), method: :post,
                   class: "btn btn-primary w-full sm:w-auto shrink-0", disabled: !ready || waiting_same,
                   data: { test: "full-video-generate" }, form: { class: "shrink-0", data: { test: "full-video-form" } } %>
   </div>
 
   <% if open %>
     <div class="rounded-lg border border-primary/20 bg-primary/10 p-3 text-sm text-body min-w-0 break-words"
-         x-data="stitchProgress()" data-status-url="<%= music_video_alt_video_stitch_path(video, alt_video, open.number) %>" data-state="<%= open.state %>"
+         x-data="stitchProgress()" data-status-url="<%= video_alt_video_stitch_path(video, alt_video, open.number) %>" data-state="<%= open.state %>"
          data-test="full-video-open" data-number="<%= open.number %>">
       <% if open.stuck? %>
         <span class="font-semibold text-heading"><%= open.name %></span> has been running since <%= l(open.started_at, format: :short) %> with no answer.

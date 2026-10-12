@@ -1,7 +1,7 @@
 # The Night Call proof as seed data: the video bin/digest-video recorded, and the
 # seven people the operator-reviewed index found (samples every 3 s, grouped by
 # visible cues). No names are pre-filled; labelling them is the demo.
-# Loaded by db/seeds/62_music_video_night_call.rb, e2e/seed.rb and the cast tests.
+# Loaded by db/seeds/62_video_night_call.rb, e2e/seed.rb and the cast tests.
 module NightCallCast
   SLUG = "steve-aoki-night-call".freeze
   FOLDER = "music_videos/steve_aoki/night_call/".freeze
@@ -54,7 +54,7 @@ module NightCallCast
                                           group_artist_slug: artists[a[:group]].slug)
     end
 
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=Sa7GSJJ_lOo"
       v.source_id = "Sa7GSJJ_lOo"
@@ -65,7 +65,7 @@ module NightCallCast
       v.unresolved_credits = [{ "name" => "Steve Aoki", "role" => "primary", "reason" => "no_match" }]
     end
     [["Lil Yachty", 1], ["Migos", 2]].each do |name, position|
-      MusicVideoArtist.find_or_create_by!(music_video_slug: video.slug, artist_slug: artists[name].slug) do |c|
+      VideoArtist.find_or_create_by!(video_slug: video.slug, artist_slug: artists[name].slug) do |c|
         c.role = "featured"
         c.position = position
       end
@@ -73,7 +73,7 @@ module NightCallCast
 
     return video if video.video_performers.exists?
 
-    MusicVideos::ReplacePerformers.new(video, PERFORMERS.map do |ordinal, label, still, note, seen|
+    Videos::ReplacePerformers.new(video, PERFORMERS.map do |ordinal, label, still, note, seen|
       { "ordinal" => ordinal, "label" => label, "confidence_note" => note, "sightings" => seen,
         "still_object_keys" => ["#{FOLDER}stills/person_#{format('%02d', ordinal)}_#{still}.jpg"] }
     end).call

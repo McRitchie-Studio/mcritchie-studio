@@ -126,7 +126,7 @@ class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
 
   test "an admin's look form still returns to the cast card it came from" do
     log_in_as users(:alex)
-    card = "/music_videos/test-video#person-1"
+    card = "/videos/test-video#person-1"
     post create_appearance_person_path(@person.slug, return_to: card), params: { appearance: { descriptor: "Card Kit" } }
     assert_redirected_to card
   end

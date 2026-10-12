@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -242,13 +242,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
 
   create_table "alt_videos", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.string "music_video_slug", null: false
     t.integer "number", null: false
     t.string "slug", null: false
     t.jsonb "swaps", default: [], null: false
     t.datetime "updated_at", null: false
-    t.index ["music_video_slug", "number"], name: "index_alt_videos_on_music_video_slug_and_number", unique: true
+    t.string "video_slug", null: false
     t.index ["slug"], name: "index_alt_videos_on_slug", unique: true
+    t.index ["video_slug", "number"], name: "index_alt_videos_on_video_slug_and_number", unique: true
   end
 
   create_table "app_requests", force: :cascade do |t|
@@ -336,7 +336,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.datetime "higgsfield_reference_synced_at"
     t.boolean "iced", default: false, null: false
     t.integer "jersey_number"
-    t.string "music_video_slug"
     t.integer "performer_ordinal"
     t.string "person_slug"
     t.integer "position"
@@ -350,14 +349,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.string "stage"
     t.string "team_slug"
     t.datetime "updated_at", null: false
+    t.string "video_slug"
     t.index ["base_appearance_slug"], name: "index_appearances_one_live_twin_per_base", unique: true, where: "((base_appearance_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.index ["character_slug", "descriptor"], name: "index_appearances_live_per_character", unique: true, where: "(retired_at IS NULL)"
     t.index ["character_slug"], name: "index_appearances_on_character_slug"
     t.index ["higgsfield_reference_id"], name: "index_appearances_on_higgsfield_reference_id", unique: true, where: "(higgsfield_reference_id IS NOT NULL)"
-    t.index ["music_video_slug", "performer_ordinal"], name: "index_appearances_one_live_look_per_performer", unique: true, where: "((music_video_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.index ["person_slug", "descriptor"], name: "index_appearances_live_per_person", unique: true, where: "(retired_at IS NULL)"
     t.index ["slug"], name: "index_appearances_on_slug", unique: true
     t.index ["stage", "position"], name: "index_appearances_board_rank", where: "(retired_at IS NULL)"
+    t.index ["video_slug", "performer_ordinal"], name: "index_appearances_one_live_look_per_performer", unique: true, where: "((video_slug IS NOT NULL) AND (retired_at IS NULL))"
     t.check_constraint "num_nonnulls(person_slug, character_slug) = 1", name: "appearances_exactly_one_owner"
     t.check_constraint "stage::text = ANY (ARRAY['designed'::character varying::text, 'defined'::character varying::text, 'source'::character varying::text, 'model'::character varying::text, 'generation'::character varying::text])", name: "appearances_stage_known"
   end
@@ -1363,39 +1363,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.decimal "output_rate", precision: 12, scale: 4, null: false
     t.datetime "updated_at", null: false
     t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
-  end
-
-  create_table "music_video_artists", force: :cascade do |t|
-    t.string "artist_slug", null: false
-    t.datetime "created_at", null: false
-    t.string "music_video_slug", null: false
-    t.integer "position", default: 1, null: false
-    t.string "role", null: false
-    t.datetime "updated_at", null: false
-    t.index ["artist_slug"], name: "index_music_video_artists_on_artist_slug"
-    t.index ["music_video_slug", "artist_slug"], name: "index_music_video_artists_on_music_video_slug_and_artist_slug", unique: true
-  end
-
-  create_table "music_videos", force: :cascade do |t|
-    t.jsonb "caption_timing", default: {"cues"=>[], "sections"=>[]}, null: false
-    t.integer "chunk_ms"
-    t.integer "chunk_overlap_ms"
-    t.datetime "created_at", null: false
-    t.integer "duration_ms"
-    t.string "info_object_key"
-    t.string "kind", default: "music_video", null: false
-    t.string "platform", null: false
-    t.string "slug", null: false
-    t.string "source_id", null: false
-    t.string "source_object_key", null: false
-    t.string "source_url", null: false
-    t.string "stage", default: "digested", null: false
-    t.string "title", null: false
-    t.jsonb "unresolved_credits", default: [], null: false
-    t.datetime "updated_at", null: false
-    t.index ["platform", "source_id"], name: "index_music_videos_on_platform_and_source_id", unique: true
-    t.index ["slug"], name: "index_music_videos_on_slug", unique: true
-    t.check_constraint "stage::text = ANY (ARRAY['digested'::character varying::text, 'cast_confirmed'::character varying::text, 'clips_ready'::character varying::text])", name: "music_videos_stage_known"
   end
 
   create_table "news", force: :cascade do |t|
@@ -2409,20 +2376,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.index ["slug"], name: "index_users_on_slug", unique: true
   end
 
+  create_table "video_artists", force: :cascade do |t|
+    t.string "artist_slug", null: false
+    t.datetime "created_at", null: false
+    t.integer "position", default: 1, null: false
+    t.string "role", null: false
+    t.datetime "updated_at", null: false
+    t.string "video_slug", null: false
+    t.index ["artist_slug"], name: "index_video_artists_on_artist_slug"
+    t.index ["video_slug", "artist_slug"], name: "index_video_artists_on_video_slug_and_artist_slug", unique: true
+  end
+
   create_table "video_chunk_takes", force: :cascade do |t|
     t.bigint "byte_size", null: false
     t.integer "chunk_ordinal", null: false
     t.datetime "created_at", null: false
     t.datetime "current_since", null: false
     t.integer "end_ms", null: false
-    t.string "music_video_slug", null: false
     t.integer "number", null: false
     t.string "object_key", null: false
     t.string "original_filename"
     t.integer "start_ms", null: false
     t.datetime "updated_at", null: false
-    t.index ["music_video_slug", "chunk_ordinal", "number"], name: "index_video_chunk_takes_on_video_chunk_and_number", unique: true
+    t.string "video_slug", null: false
     t.index ["object_key"], name: "index_video_chunk_takes_on_object_key", unique: true
+    t.index ["video_slug", "chunk_ordinal", "number"], name: "index_video_chunk_takes_on_video_chunk_and_number", unique: true
   end
 
   create_table "video_clips", force: :cascade do |t|
@@ -2430,7 +2408,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.datetime "created_at", null: false
     t.integer "end_ms", null: false
     t.string "kind", default: "candidate", null: false
-    t.string "music_video_slug", null: false
     t.string "object_key", null: false
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
@@ -2444,7 +2421,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.string "status", default: "proposed", null: false
     t.integer "target_performer"
     t.datetime "updated_at", null: false
-    t.index ["music_video_slug", "kind", "ordinal"], name: "index_video_clips_on_music_video_slug_and_kind_and_ordinal", unique: true
+    t.string "video_slug", null: false
+    t.index ["video_slug", "kind", "ordinal"], name: "index_video_clips_on_video_slug_and_kind_and_ordinal", unique: true
     t.check_constraint "status::text = ANY (ARRAY['proposed'::character varying::text, 'approved'::character varying::text, 'rejected'::character varying::text])", name: "video_clips_status_known"
   end
 
@@ -2454,7 +2432,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.datetime "created_at", null: false
     t.boolean "extra", default: false, null: false
     t.string "label", null: false
-    t.string "music_video_slug", null: false
     t.integer "ordinal", null: false
     t.string "recast_appearance_slug"
     t.boolean "recast_keep", default: false, null: false
@@ -2462,10 +2439,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.jsonb "sightings", default: [], null: false
     t.jsonb "still_object_keys", default: [], null: false
     t.datetime "updated_at", null: false
+    t.string "video_slug", null: false
     t.index ["artist_slug"], name: "index_video_performers_on_artist_slug"
-    t.index ["music_video_slug", "ordinal"], name: "index_video_performers_on_music_video_slug_and_ordinal", unique: true
     t.index ["recast_appearance_slug"], name: "index_video_performers_on_recast_appearance_slug"
     t.index ["recast_person_slug"], name: "index_video_performers_on_recast_person_slug"
+    t.index ["video_slug", "ordinal"], name: "index_video_performers_on_video_slug_and_ordinal", unique: true
   end
 
   create_table "video_stitches", force: :cascade do |t|
@@ -2477,18 +2455,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
     t.datetime "finished_at"
     t.string "frame_rate"
     t.integer "height"
-    t.string "music_video_slug", null: false
     t.integer "number", null: false
     t.string "object_key", null: false
     t.datetime "started_at"
     t.string "state", default: "requested", null: false
     t.jsonb "takes", default: [], null: false
     t.datetime "updated_at", null: false
+    t.string "video_slug", null: false
     t.jsonb "warnings", default: [], null: false
     t.integer "width"
     t.index ["alt_video_slug", "number"], name: "index_video_stitches_on_alt_video_slug_and_number", unique: true
     t.index ["object_key"], name: "index_video_stitches_on_object_key", unique: true
     t.check_constraint "state::text = ANY (ARRAY['requested'::character varying::text, 'running'::character varying::text, 'done'::character varying::text, 'failed'::character varying::text])", name: "video_stitches_state_known"
+  end
+
+  create_table "videos", force: :cascade do |t|
+    t.jsonb "caption_timing", default: {"cues"=>[], "sections"=>[]}, null: false
+    t.integer "chunk_ms"
+    t.integer "chunk_overlap_ms"
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.string "info_object_key"
+    t.string "kind", default: "music_video", null: false
+    t.string "platform", null: false
+    t.string "slug", null: false
+    t.string "source_id", null: false
+    t.string "source_object_key", null: false
+    t.string "source_url", null: false
+    t.string "stage", default: "digested", null: false
+    t.string "title", null: false
+    t.jsonb "unresolved_credits", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["platform", "source_id"], name: "index_videos_on_platform_and_source_id", unique: true
+    t.index ["slug"], name: "index_videos_on_slug", unique: true
+    t.check_constraint "stage::text = ANY (ARRAY['digested'::character varying::text, 'cast_confirmed'::character varying::text, 'clips_ready'::character varying::text])", name: "videos_stage_known"
   end
 
   create_table "workspace_accounts", force: :cascade do |t|
@@ -2537,7 +2537,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "alt_videos", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "alt_videos", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
@@ -2545,8 +2545,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
   add_foreign_key "appearances", "appearances", column: "base_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "body_archetypes", column: "body_archetype_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "appearances", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "appearances", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "appearances", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "artifact_subjects", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "artifact_subjects", "artifacts", column: "artifact_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "artifact_subjects", "characters", column: "character_slug", primary_key: "slug", on_update: :cascade
@@ -2587,8 +2587,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "knowledge_sources", "workspace_accounts"
   add_foreign_key "mailbox_drafts", "workspace_mailboxes"
-  add_foreign_key "music_video_artists", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "music_video_artists", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "news", "people", column: "primary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "news", "people", column: "secondary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "news", "teams", column: "primary_team_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
@@ -2632,13 +2630,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_010000) do
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "triage_findings", "tasks", column: "promoted_task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "usages", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "video_chunk_takes", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "video_clips", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_artists", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_artists", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_chunk_takes", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_clips", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "video_performers", "appearances", column: "recast_appearance_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "video_performers", "artists", column: "artist_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
-  add_foreign_key "video_performers", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "video_performers", "people", column: "recast_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "video_performers", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "video_stitches", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
-  add_foreign_key "video_stitches", "music_videos", column: "music_video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "video_stitches", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "workspace_mailboxes", "workspace_accounts"
 end

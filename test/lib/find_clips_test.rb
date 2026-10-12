@@ -113,7 +113,7 @@ class FindClipsTest < Minitest::Test
     key = "music_videos/steve_aoki/night_call/clips/night_call_clip_01_chorus_to_verse_solo_0040_0104.mp4"
     assert_equal key, clip[:object_key]
     assert_equal [[key, "clip", "video/mp4"]], storage.puts
-    assert_equal [["/api/v1/music_videos/steve-aoki-night-call/clips", { clips: rows }]], api.posts
+    assert_equal [["/api/v1/videos/steve-aoki-night-call/clips", { clips: rows }]], api.posts
 
     cut = shell.calls.find { |c| c.include?("-ss") }
     assert cut.index("-ss") < cut.index("-i"), "seek before input: an accurate in point"
@@ -164,7 +164,7 @@ class FindClipsTest < Minitest::Test
     keys = %w[01_0000_0025 02_0020_0045 03_0040_0105 04_0100_0112].map { |w| "music_videos/steve_aoki/night_call/chunks/night_call_chunk_#{w}.mp4" }
     assert_equal keys, rows.map { |r| r[:object_key] }
     assert_equal keys.map { |k| [k, "clip", "video/mp4"] }, storage.puts
-    assert_equal [["/api/v1/music_videos/steve-aoki-night-call/clips", { kind: "chunk", chunk_ms: 25_000, chunk_overlap_ms: 5_000, clips: rows }]], api.posts
+    assert_equal [["/api/v1/videos/steve-aoki-night-call/clips", { kind: "chunk", chunk_ms: 25_000, chunk_overlap_ms: 5_000, clips: rows }]], api.posts
 
     cuts = shell.calls.select { |c| c.include?("-ss") }
     assert_equal [%w[0.000 25.000], %w[20.000 25.000], %w[40.000 25.000], %w[60.000 12.000]],

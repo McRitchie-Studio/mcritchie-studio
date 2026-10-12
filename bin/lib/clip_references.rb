@@ -3,8 +3,8 @@
 require "fileutils"
 require "json"
 require_relative "digest_video"
-require_relative "../../lib/music_videos/object_keys"
-require_relative "../../lib/music_videos/person_letters"
+require_relative "../../lib/videos/object_keys"
+require_relative "../../lib/videos/person_letters"
 
 # The Mac side of lettered clip references (recast pipeline, piece 16;
 # bin/clip-references). For each chunk of a source it pulls 2-3 stills where
@@ -22,10 +22,10 @@ require_relative "../../lib/music_videos/person_letters"
 #              A letter is not a name; only the operator maps people to real people.
 #   --apply    draws the tags (ImageMagick `magick`: this ffmpeg has no drawtext),
 #              uploads each lettered JPEG to R2 under .../chunks/refs/ and posts
-#              each chunk's set to POST /api/v1/music_videos/:slug/chunks/:n/references.
+#              each chunk's set to POST /api/v1/videos/:slug/chunks/:n/references.
 module ClipReferences
   Failure = DigestVideo::Failure
-  TOLERANCE_MS = 1_500 # half the sighting spacing (MusicVideos::ClipCast::TOLERANCE_MS)
+  TOLERANCE_MS = 1_500 # half the sighting spacing (Videos::ClipCast::TOLERANCE_MS)
   EDGE_MS = 500        # keep a frame this far inside the window
   MIN_GAP_MS = 4_000   # frames of one chunk at least this far apart
   FRAMES = 3
@@ -91,7 +91,7 @@ module ClipReferences
 
   def seen_at(sighted, t)
     sighted.select { |_o, ss| ss.any? { |s| (s["t_ms"] - t).abs <= TOLERANCE_MS } }.keys.sort
-           .map { |o| MusicVideos::PersonLetters.for(o) }
+           .map { |o| Videos::PersonLetters.for(o) }
   end
 
   # The tags of one frame as the agent filled them, checked: each a known
@@ -215,7 +215,7 @@ module ClipReferences
 
         dest = File.join(dir(slug), "lettered", File.basename(f["file"]))
         draw(src, dest, f["tags"])
-        key = MusicVideos::ObjectKeys.chunk_reference(source_key: video["source_object_key"], ordinal: chunk["ordinal"],
+        key = Videos::ObjectKeys.chunk_reference(source_key: video["source_object_key"], ordinal: chunk["ordinal"],
                                                       start_ms: chunk["start_ms"], end_ms: chunk["end_ms"], number: i + 1)
         { path: dest, row: { "object_key" => key, "t_ms" => f["t_ms"], "letters" => f["tags"].map { |t| t["letter"] } } }
       end
@@ -228,7 +228,7 @@ module ClipReferences
         @out.puts "uploading r2://#{@bucket}/#{r[:row]['object_key']}"
         @storage.put(r[:row]["object_key"], r[:path], "image/jpeg")
       end
-      @api.post("/api/v1/music_videos/#{slug}/chunks/#{chunk['ordinal']}/references", { frames: rows.map { |r| r[:row] } })
+      @api.post("/api/v1/videos/#{slug}/chunks/#{chunk['ordinal']}/references", { frames: rows.map { |r| r[:row] } })
       @out.puts "chunk #{chunk['ordinal']}: posted #{rows.size} lettered frame(s)"
       rows.map { |r| r[:row] }
     end
@@ -278,7 +278,7 @@ module ClipReferences
     def people_of(video)
       swapped = focus_of(video) || []
       (video["performers"] || []).sort_by { |p| p["ordinal"] }.map do |p|
-        row = { "letter" => MusicVideos::PersonLetters.for(p["ordinal"]), "person" => p["ordinal"], "label" => p["label"] }
+        row = { "letter" => Videos::PersonLetters.for(p["ordinal"]), "person" => p["ordinal"], "label" => p["label"] }
         @alt ? row.merge("swapped" => swapped.include?(p["ordinal"])) : row
       end
     end

@@ -1,0 +1,112 @@
+<%# One person on the cast panel, top to bottom: the still and the title; Replace with (the inputs to swap in a new player); the description and sightings, folded behind the title (window.castCardDisclosure); then, pinned to the bottom so cards in a row line up, the Keep Original / Swap back button and who is on screen (the optional artist name, the rolodex). Nothing here has to be pressed before the cast is confirmed. %>
+<% sightings = performer.sightings_by_time %>
+<% clear_sightings, partial_sightings = sightings.partition { |s| s["visibility"] == "clear" } %>
+<% partial_sightings = partial_sightings.select { |s| s["visibility"] == "partial" } %>
+<%# The title is the named artist's name (an extra is not named), else Person N; it follows naming saves without a reload. %>
+<% title_name = performer.artist&.name unless performer.extra? %>
+<article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
+         x-data="castCardDisclosure()" @naming-saved.window="cardOnNamed($event.detail)" @resize.window.debounce.200ms="cardFitRow()"
+         data-card-name="<%= title_name %>" data-clear-count="<%= clear_sightings.size %>" data-partial-count="<%= partial_sightings.size %>"
+         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>"
+         data-level="0" :data-level="cardLevel">
+  <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
+    <% performer.still_object_keys.each do |key| %>
+      <% url = still_urls[key] %>
+      <figure class="relative bg-inset aspect-video" data-test="performer-still" data-key="<%= key %>">
+        <% if url %>
+          <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
+               class="block w-full h-full object-cover" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
+        <% end %>
+        <figcaption class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"
+                    <%= "hidden" if url %> data-test="still-unreachable">
+          Still not reachable: <%= key.split("/").last %>
+        </figcaption>
+      </figure>
+    <% end %>
+    <% if performer.still_object_keys.empty? %>
+      <div class="aspect-video flex items-center justify-center text-xs text-muted" data-test="performer-no-still">No still</div>
+    <% end %>
+  </div>
+
+  <% recast_looks = local_assigns.fetch(:recast_looks, {}) %>
+  <%= render layout: "videos/swap_card", locals: { performer:, video:, looks: recast_looks, rows: local_assigns.fetch(:recast_rows, {}),
+                                                        fresh_look: local_assigns[:fresh_look], css: "p-4 flex flex-col gap-3 flex-1 min-w-0" } do %>
+    <header class="flex items-start justify-between gap-2 min-w-0">
+      <div class="min-w-0">
+        <%# The title is the disclosure: press it for the description and one row of clear sightings, again to fold them. The letter before it is the one clip prompts and lettered frames call this person (Person 2 is B), fixed for the source. %>
+        <h2 class="min-w-0 flex items-baseline gap-2">
+          <span class="badge text-3xs bg-warning/20 text-heading border-warning/40 font-bold shrink-0 self-center" data-test="performer-letter"
+                title="<%= performer.name %> is Person <%= performer.letter %> in clip prompts and A/B/C frames"><%= performer.letter %></span>
+          <button type="button" @click="cardToggle()" aria-expanded="false" :aria-expanded="(cardLevel > 0).toString()"
+                  aria-controls="person-<%= performer.ordinal %>-details"
+                  class="group flex items-baseline gap-2 min-w-0 max-w-full text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  data-test="performer-title">
+            <span class="min-w-0 text-lg font-bold text-heading truncate group-hover:text-primary" x-text="cardName || '<%= performer.name %>'"
+                  data-test="performer-title-name"><%= title_name.presence || performer.name %></span>
+            <span class="text-3xs text-muted shrink-0" x-show="cardName" <%= "x-cloak" if title_name.blank? %>
+                  data-test="performer-title-ordinal"><%= performer.name %></span>
+            <svg class="w-3.5 h-3.5 text-muted shrink-0 self-center transition-transform" :class="cardLevel > 0 && 'rotate-180'"
+                 viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+          </button>
+        </h2>
+        <p class="text-sm text-body break-words" data-test="performer-label"><%= performer.label %></p>
+      </div>
+      <%# Follows the naming search's saves (window.namingCard dispatches naming-saved). %>
+      <% badge = performer.artist ? "named" : (performer.extra? ? "extra" : "none") %>
+      <span x-data="{ b: '<%= badge %>' }" @naming-saved.window="if ($event.detail.ordinal === <%= performer.ordinal %>) b = $event.detail.named ? ($event.detail.named.kind === 'extra' ? 'extra' : 'named') : 'none'"
+            class="badge text-3xs shrink-0" data-state="<%= badge %>" :data-state="b"
+            :class="{ named: 'bg-success/10 text-success-ink border-success/40', extra: 'bg-surface-alt text-secondary border-subtle', none: 'bg-surface-alt text-muted border-subtle' }[b]"
+            x-text="{ named: 'Named', extra: 'Extra', none: 'Not named' }[b]" data-test="performer-badge"><%= { "named" => "Named", "extra" => "Extra", "none" => "Not named" }[badge] %></span>
+    </header>
+
+    <%# Replace with sits at the top, under the still and the heading: it is the card's main job. %>
+    <%= render "videos/recast", performer: performer, video: video, looks: recast_looks,
+               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
+
+    <%# Folded by default. One level: the description and one row of the clearly visible chips, "+N more" for the rest; pressing that row (or +N more) shows every chip in both groups. Chips stay links to their second. %>
+    <% if performer.confidence_note.present? || sightings.any? %>
+      <div id="person-<%= performer.ordinal %>-details" class="space-y-3 min-w-0" x-show="cardLevel > 0" x-cloak data-test="card-details">
+        <% if performer.confidence_note.present? %>
+          <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
+        <% end %>
+
+        <% if clear_sightings.any? || partial_sightings.any? %>
+          <%# With no clear chips the row holds only +N more, the way to the partial ones. %>
+          <div data-test="sightings-clear"
+               :class="cardLevel === 1 && 'cursor-pointer'" @click="if (cardLevel === 1 && !$event.target.closest('a')) cardExpandAll()">
+            <% if clear_sightings.any? %>
+              <p class="label-upper mb-1.5">Clearly visible <span class="normal-case tracking-normal">· <%= clear_sightings.size %></span></p>
+            <% end %>
+            <div id="person-<%= performer.ordinal %>-clear-row" class="flex flex-wrap gap-1.5" data-test="sightings-clear-row">
+              <% clear_sightings.each_with_index do |s, i| %>
+                <%= render "videos/sighting_chip", video:, sighting: s, chip: "bg-primary/10 text-heading border-primary/20",
+                           show: "cardLevel === 2 || #{i} < cardFit" %>
+              <% end %>
+              <button type="button" x-show="cardLevel === 1 && cardMore() > 0" x-cloak @click.stop="cardExpandAll()"
+                      aria-expanded="false" aria-controls="person-<%= performer.ordinal %>-details"
+                      class="text-xs px-2 py-1 rounded-md border border-subtle bg-surface-alt text-secondary hover:border-primary hover:text-primary"
+                      x-text="'+' + cardMore() + ' more'" data-test="sightings-more"></button>
+            </div>
+          </div>
+        <% end %>
+
+        <% if partial_sightings.any? %>
+          <div x-show="cardLevel === 2" x-cloak data-test="sightings-partial">
+            <p class="label-upper mb-1.5">Partly in frame or background <span class="normal-case tracking-normal">· <%= partial_sightings.size %></span></p>
+            <div class="flex flex-wrap gap-1.5">
+              <% partial_sightings.each do |s| %>
+                <%= render "videos/sighting_chip", video:, sighting: s, chip: "bg-surface-alt text-muted border-subtle" %>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# Pinned to the bottom (mt-auto): the swap's on/off, then who is on screen. %>
+    <div class="mt-auto pt-3 border-t border-subtle space-y-3 min-w-0" data-test="card-bottom">
+    <%= render "videos/swap_toggle", performer: %>
+    <%= render "videos/naming", performer:, video:, rows: local_assigns.fetch(:recast_rows, {}) %>
+    </div>
+  <% end %>
+</article>

@@ -73,7 +73,7 @@ module LookPickerVideo
   def self.rookie! = athlete_person!(ROOKIE)
 
   def self.video!
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+    video = Video.find_or_create_by!(slug: SLUG) do |v|
       v.kind = "cinematic"
       v.platform = "youtube"
       v.source_url = "https://www.youtube.com/watch?v=look-picker-demo"
@@ -82,7 +82,7 @@ module LookPickerVideo
       v.duration_ms = TiledVideo::DURATION_MS
       v.source_object_key = SOURCE
     end
-    MusicVideos::ReplacePerformers.new(video, PERFORMERS).call unless video.video_performers.exists?
+    Videos::ReplacePerformers.new(video, PERFORMERS).call unless video.video_performers.exists?
     video
   end
 
@@ -93,7 +93,7 @@ module LookPickerVideo
     saved = video.video_performers.find_by!(ordinal: 2)
     if saved.recast_person_slug.blank? && !saved.recast_keep?
       look = athlete.appearances.live.find_by!(descriptor: FINISHED)
-      MusicVideos::RecastPerformer.new(saved).call(person_slug: athlete.slug, appearance_slug: look.slug)
+      Videos::RecastPerformer.new(saved).call(person_slug: athlete.slug, appearance_slug: look.slug)
     end
     video
   end

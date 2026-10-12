@@ -64,7 +64,7 @@ class DigestVideoCommandTest < Minitest::Test
     out, _err, status = run_script("--help")
     assert status.success?
     assert_includes out, "--kind KIND"
-    assert_includes out, "music_video or cinematic"
+    assert_includes out, "music_video, cinematic, movie_scene"
   end
 
   def test_help_names_the_tiling_flags

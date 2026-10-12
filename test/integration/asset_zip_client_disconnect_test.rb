@@ -50,8 +50,8 @@ class AssetZipClientDisconnectTest < ActionDispatch::IntegrationTest
     @alt = @video.alt_videos.first
     @gate = Thread::Queue.new
     @fetcher = GatedFetcher.new(@gate)
-    @previous_fetcher = MusicVideos::AssetZip.fetcher
-    MusicVideos::AssetZip.fetcher = @fetcher
+    @previous_fetcher = Videos::AssetZip.fetcher
+    Videos::AssetZip.fetcher = @fetcher
     @server = Puma::Server.new(Rails.application, nil, min_threads: 1, max_threads: 1, log_writer: Puma::LogWriter.null)
     @server.add_tcp_listener("127.0.0.1", 0)
     @server.run
@@ -60,7 +60,7 @@ class AssetZipClientDisconnectTest < ActionDispatch::IntegrationTest
 
   teardown do
     @server&.stop(true)
-    MusicVideos::AssetZip.fetcher = @previous_fetcher
+    Videos::AssetZip.fetcher = @previous_fetcher
   end
 
   # The session cookie of an admin, logged in through the server itself.
@@ -84,12 +84,12 @@ class AssetZipClientDisconnectTest < ActionDispatch::IntegrationTest
 
   test "a client that goes away mid-download stops the zip at once, logs nothing, and frees the thread" do
     cookie = admin_cookie
-    files = MusicVideos::AssetZip::Manifest.for(@alt).entries.count { |e| e.kind != :text }
+    files = Videos::AssetZip::Manifest.for(@alt).entries.count { |e| e.kind != :text }
     assert_operator files, :>, 2, "the seed must have several files to fetch, or stopping proves nothing"
     errors_before = ErrorLog.count
 
     socket = TCPSocket.new("127.0.0.1", @port)
-    socket.write("GET #{music_video_alt_video_download_path(@video, @alt)} HTTP/1.1\r\n" \
+    socket.write("GET #{video_alt_video_download_path(@video, @alt)} HTTP/1.1\r\n" \
                  "Host: www.example.com\r\nCookie: #{cookie}\r\nConnection: close\r\n\r\n")
     head = +""
     head << socket.readpartial(16_384) until head.include?("\r\n\r\n")

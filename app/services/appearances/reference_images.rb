@@ -57,8 +57,8 @@ module Appearances
     # with the measured one means the first image in every list is one we can
     # vouch for.
     def call
-      # A music-video look is anchored on its own stills, never a headshot.
-      return VideoStills.urls(@appearance) if @appearance&.music_video_look?
+      # A video look is anchored on its own stills, never a headshot.
+      return VideoStills.urls(@appearance) if @appearance&.video_look?
 
       [headshot_url, operator_reference_url].compact_blank.uniq.select { |url| fetchable?(url) }
     end

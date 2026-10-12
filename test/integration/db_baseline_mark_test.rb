@@ -77,7 +77,9 @@ class DbBaselineMarkTest < ActiveSupport::TestCase
 
     # The same database as the retired ledger left it: every table, no baseline version.
     before = scratch do |connection|
-      assert_equal %w[release_timeline task_timeline], connection.exec("SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY 1").column_values(0)
+      # music_videos and music_video_artists: the rename's compatibility views
+      # (20261012020000), until the later migration that drops them.
+      assert_equal %w[music_video_artists music_videos release_timeline task_timeline], connection.exec("SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY 1").column_values(0)
       connection.exec("INSERT INTO agents (name, slug, created_at, updated_at) VALUES ('Probe', 'probe', now(), now())")
       removed = connection.exec("DELETE FROM schema_migrations WHERE version LIKE '#{DbBaseline::PREFIX}%'").cmd_tuples
       assert_operator removed, :>, 100

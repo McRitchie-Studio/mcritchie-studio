@@ -32,12 +32,12 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
   teardown { ImageGeneration::Registry.reload! }
 
   def generate(ordinal = 1, **params)
-    post music_video_performer_recast_looks_path(@video, ordinal), params: { person_slug: @rookie.slug, descriptor: "Broncos blue" }.merge(params)
+    post video_performer_recast_looks_path(@video, ordinal), params: { person_slug: @rookie.slug, descriptor: "Broncos blue" }.merge(params)
   end
 
   def performer(ordinal) = @video.video_performers.find_by!(ordinal:)
   def base_look(person) = person.appearances.find_by!(iced: false)
-  def card(ordinal = 1, look: nil) = music_video_path(@video, look: look&.slug, anchor: "person-#{ordinal}")
+  def card(ordinal = 1, look: nil) = video_path(@video, look: look&.slug, anchor: "person-#{ordinal}")
 
   def looks_json(person)
     get recast_athlete_looks_path(person.slug, format: :json)
@@ -115,7 +115,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
       assert_includes prompt, "Broncos blue game uniform", "the look's name is the uniform the sheet is asked for"
       assert_not_includes prompt, "ICED-OUT", "the base look builds the standard sheet"
 
-      patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
+      patch video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
       assert_equal "Demo Novice Echo > Broncos blue", performer(1).recast_label
     end
   end
@@ -126,7 +126,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     with_generator { generate }
     look = base_look(@rookie)
     assert look.sheet_building?
-    patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
+    patch video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
 
     assert performer(1).recast?
     assert_match "is replaced by Demo Novice Echo > Broncos blue", flash[:notice]
@@ -195,7 +195,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
       end
       generate(9)
       assert_response :not_found
-      post music_video_performer_recast_looks_path("no-such-video", 1), params: { person_slug: @rookie.slug, descriptor: "X" }
+      post video_performer_recast_looks_path("no-such-video", 1), params: { person_slug: @rookie.slug, descriptor: "X" }
       assert_response :not_found
     end
 

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# One alt video of a source, addressed as /music_videos/:slug/alt_videos/:number,
+# One alt video of a source, addressed as /videos/:slug/alt_videos/:number,
 # and with :clip_ordinal one of its clips. Admin only, like every page of the
 # recast pipeline.
 module AltVideoScoped
@@ -14,9 +14,9 @@ module AltVideoScoped
   private
 
   def set_alt_video
-    @video = MusicVideo.find_by!(slug: params[:music_video_slug])
+    @video = Video.find_by!(slug: params[:video_slug])
     @alt_video = @video.alt_videos.find_by!(number: params[:alt_video_number])
-    @alt_video.association(:music_video).target = @video
+    @alt_video.association(:video).target = @video
   end
 
   def set_clip
@@ -26,6 +26,6 @@ module AltVideoScoped
 
   def back(anchor: nil, **flash)
     anchor ||= @clip ? "clip-#{@clip.chunk_ordinal}" : nil
-    redirect_to music_video_alt_video_path(@video, @alt_video, anchor:), status: :see_other, **flash
+    redirect_to video_alt_video_path(@video, @alt_video, anchor:), status: :see_other, **flash
   end
 end

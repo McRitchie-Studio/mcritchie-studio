@@ -77,7 +77,7 @@ class CharacterLooksTest < ActionDispatch::IntegrationTest
   end
 
   test "the recast pickers never offer a character look" do
-    options = MusicVideos::LookOptions.for([@person.slug])
+    options = Videos::LookOptions.for([@person.slug])
     offered = options.values.flatten.map { |o| o.respond_to?(:slug) ? o.slug : o[:slug] }
     assert_not_includes offered, @look.slug
     assert_not Appearance.recastable.exists?(slug: @look.slug)

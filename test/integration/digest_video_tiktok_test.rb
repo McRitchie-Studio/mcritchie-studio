@@ -43,7 +43,7 @@ class DigestVideoTiktokIntegrationTest < ActionDispatch::IntegrationTest
 
     def create(payload)
       token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
-      session.post "/api/v1/music_videos", params: { music_video: payload }, as: :json,
+      session.post "/api/v1/videos", params: { video: payload }, as: :json,
                                            headers: { "Authorization" => "Bearer #{token}" }
       JSON.parse(session.response.body).fetch("data")
     end
@@ -59,10 +59,10 @@ class DigestVideoTiktokIntegrationTest < ActionDispatch::IntegrationTest
     end
     assert_response :created
 
-    video = MusicVideo.find_by!(platform: "tiktok", source_id: ID)
+    video = Video.find_by!(platform: "tiktok", source_id: ID)
     assert_equal ["test-creator-tiktok-#{ID}", "TikTok #{ID}", PAGE, "#{KEY}.mp4", 18_000],
                  [video.slug, video.title, video.source_url, video.source_object_key, video.duration_ms]
-    assert_equal [%w[test-creator primary]], video.music_video_artists.map { |c| [c.artist_slug, c.role] }
+    assert_equal [%w[test-creator primary]], video.video_artists.map { |c| [c.artist_slug, c.role] }
     assert_equal [{ "name" => "Sample Singer", "role" => "featured", "reason" => "no_match" }], video.unresolved_credits
 
     assert_equal ["#{KEY}.mp4", "#{KEY}.info.json"], storage.puts.keys

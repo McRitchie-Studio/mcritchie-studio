@@ -10,7 +10,7 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
   setup do
     @athlete = RecastVideo.athlete!
     @home, @away = @athlete.appearances.order(:created_at, :id).to_a
-    @video = MusicVideo.create!(slug: "recast-unit", platform: "youtube", source_url: "https://www.youtube.com/watch?v=ru",
+    @video = Video.create!(slug: "recast-unit", platform: "youtube", source_url: "https://www.youtube.com/watch?v=ru",
                                 source_id: "ru", title: "Recast Unit", kind: "music_video",
                                 source_object_key: "music_videos/test_artist/recast_unit/source/a.mp4")
     @performer = @video.video_performers.create!(ordinal: 1, label: "man in the red jacket")
@@ -38,7 +38,7 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     @away.update!(retired_at: Time.current)
     assert_not recast(recast_person_slug: @athlete.slug, recast_appearance_slug: @away.slug).valid?
 
-    capture = @athlete.appearances.create!(descriptor: "Recast Unit look", music_video_slug: @video.slug, performer_ordinal: 1)
+    capture = @athlete.appearances.create!(descriptor: "Recast Unit look", video_slug: @video.slug, performer_ordinal: 1)
     assert_not recast(recast_person_slug: @athlete.slug, recast_appearance_slug: capture.slug).valid?
 
     assert_not recast(recast_person_slug: "nobody-here", recast_appearance_slug: nil).valid?
@@ -139,7 +139,7 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
 
     second.update!(recast_appearance_slug: @home.slug)
     assert @video.reload.recast_assigned?
-    assert_not MusicVideo.new.recast_assigned?
+    assert_not Video.new.recast_assigned?
   end
 
   # The production row this change shipped onto (bigxthaplug-6wa, 2026-10-05),

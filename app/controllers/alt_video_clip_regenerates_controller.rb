@@ -2,7 +2,7 @@
 
 # "Request regenerate" on one clip of an alt video: a flag with an optional
 # short note that says the primary version will not do. The next uploaded
-# version clears it (MusicVideos::StoreClipVersion); the operator can also
+# version clears it (Videos::StoreClipVersion); the operator can also
 # clear it by hand. Piece 3's chunk flag, moved onto the clip.
 class AltVideoClipRegeneratesController < ApplicationController
   include AltVideoScoped

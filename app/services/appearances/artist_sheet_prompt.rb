@@ -1,5 +1,5 @@
 module Appearances
-  # The sheet prompt for a music-video look: CharacterSheetPrompt's 5x2 layout
+  # The sheet prompt for a video look: CharacterSheetPrompt's 5x2 layout
   # and head views, dressed as the performer is in the video's stills instead of
   # in a football uniform. UNMEASURED: no sheet has been generated from this
   # text yet, so the first real one is its test.

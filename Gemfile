@@ -218,7 +218,7 @@ gem "sentry-rails"
 # 0.95 is the floor now: it is the first engine with the URL guard that looks a
 # host name up and hands back the addresses it vetted
 # (Studio::ImageCache.vet_source_url!, .pinned_http and UnresolvedSourceHost),
-# which MusicVideos::AssetZip::Fetcher and Appearances::FetchableUrl call by
+# which Videos::AssetZip::Fetcher and Appearances::FetchableUrl call by
 # name (task url-guard-remaining-fetchers). On 0.92 to 0.94 the asset zip's
 # sheet fetch raises NoMethodError. The lock was already past it; only the
 # floor moved (task recast-wrap-loose-ends).

@@ -1,10 +1,10 @@
 # One cut of a music video, stored in R2 by bin/find-clips, with its filled
-# Higgsfield swap prompt (MusicVideos::ClipPrompt). Two kinds share the table
+# Higgsfield swap prompt (Videos::ClipPrompt). Two kinds share the table
 # and number their own ordinals from 1:
 #
 #   candidate  a ~25 s window that starts on a musical boundary and spans a
 #              seam (stage 5); the operator approves or rejects it.
-#   chunk      one tile of the whole video (MusicVideos::ChunkTiler), cut at
+#   chunk      one tile of the whole video (Videos::ChunkTiler), cut at
 #              the chunk length and overlap its video records (25 s and 5 s
 #              by default), the last one ending at the video's end. No seam.
 #              Cut once per source and shared by every alt video (AltVideo):
@@ -19,21 +19,21 @@
 # video, like the chunk: a letter names a person of the source, never a swap.
 class VideoClip < ApplicationRecord
   KINDS = %w[candidate chunk].freeze
-  SEAMS = MusicVideos::ClipFinder::SEAMS
-  CAST_SHAPES = MusicVideos::ClipCast::SHAPES
+  SEAMS = Videos::ClipFinder::SEAMS
+  CAST_SHAPES = Videos::ClipCast::SHAPES
   STATUSES = %w[proposed approved rejected].freeze
-  LENGTH_MS = (MusicVideos::ClipFinder::MIN_MS..MusicVideos::ClipFinder::MAX_MS)
+  LENGTH_MS = (Videos::ClipFinder::MIN_MS..Videos::ClipFinder::MAX_MS)
   REFERENCE_KEYS = %w[object_key t_ms letters].freeze
   MAX_REFERENCE_FRAMES = 4
 
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :video_clips
+  belongs_to :video, foreign_key: :video_slug, primary_key: :slug, inverse_of: :video_clips
 
   scope :candidates, -> { where(kind: "candidate") }
   scope :chunks, -> { where(kind: "chunk") }
 
   validates :kind, inclusion: { in: KINDS }
   validates :ordinal, numericality: { only_integer: true, greater_than: 0 },
-                      uniqueness: { scope: %i[music_video_slug kind] }
+                      uniqueness: { scope: %i[video_slug kind] }
   validates :start_ms, :end_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :seam, inclusion: { in: SEAMS }, unless: :chunk?
   validates :seam, :seam_ms, absence: { message: "is not for a chunk: a chunk has no seam" }, if: :chunk?
@@ -55,12 +55,12 @@ class VideoClip < ApplicationRecord
 
   def approved? = status == "approved"
 
-  def target = music_video.video_performers.find { |p| p.ordinal == target_performer }
+  def target = video.video_performers.find { |p| p.ordinal == target_performer }
 
   # Who the swap prompt replaces (a swap turned off counts as not recast). The labelled target when the operator recast
   # them; else the first person in the window who is recast (a cinematic video
   # has no labelled target at all); else the labelled target, athlete unnamed.
-  # swaps: a MusicVideos::SwapSet (an alt video's snapshot); by default the
+  # swaps: a Videos::SwapSet (an alt video's snapshot); by default the
   # cast card as it stands.
   def swap_target(swaps = nil)
     swapped = swaps ? ->(p) { swaps.swapped?(p.ordinal) } : :swap?.to_proc
@@ -68,7 +68,7 @@ class VideoClip < ApplicationRecord
     return labelled if labelled && swapped.call(labelled)
 
     present = Array(performer_ordinals)
-    music_video.video_performers.find { |p| present.include?(p.ordinal) && swapped.call(p) } || labelled
+    video.video_performers.find { |p| present.include?(p.ordinal) && swapped.call(p) } || labelled
   end
 
   # The lettered reference frames, in order: [{ "object_key", "t_ms", "letters" }].
@@ -89,7 +89,7 @@ class VideoClip < ApplicationRecord
     unless chunk? || LENGTH_MS.cover?(duration_ms)
       errors.add(:end_ms, "makes a #{duration_ms} ms clip; clips run 24 to 26 s")
     end
-    duration = music_video&.duration_ms
+    duration = video&.duration_ms
     errors.add(:end_ms, "is past the end of the video") if duration && end_ms > duration
   end
 
@@ -97,17 +97,17 @@ class VideoClip < ApplicationRecord
   # longer than a chunk, and starting where its ordinal puts it on the stride.
   # The stitch (recast pipeline) relies on it: neighbours overlap exactly.
   def chunk_fits_the_videos_tiling
-    tiling = music_video&.chunk_tiling
+    tiling = video&.chunk_tiling
     return errors.add(:kind, "chunk needs the video's chunk length and overlap, and it has none") unless tiling
     return unless ordinal.is_a?(Integer) && ordinal.positive? && start_ms.is_a?(Integer) && end_ms.is_a?(Integer)
 
     unless (1..tiling[:chunk_ms]).cover?(duration_ms)
       errors.add(:end_ms, "makes a #{duration_ms} ms chunk; this video's chunks run up to #{tiling[:chunk_ms]} ms")
     end
-    expected = MusicVideos::ChunkTiler.start_of(ordinal, **tiling)
+    expected = Videos::ChunkTiler.start_of(ordinal, **tiling)
     return if start_ms == expected
 
-    errors.add(:start_ms, "must be #{expected} for chunk #{ordinal} (a #{MusicVideos::ChunkTiler.stride(**tiling)} ms stride)")
+    errors.add(:start_ms, "must be #{expected} for chunk #{ordinal} (a #{Videos::ChunkTiler.stride(**tiling)} ms stride)")
   end
 
   def seam_inside_the_window
@@ -121,7 +121,7 @@ class VideoClip < ApplicationRecord
       return errors.add(:performer_ordinals, "must be a list of performer ordinals")
     end
 
-    known = music_video&.video_performers&.map(&:ordinal) || []
+    known = video&.video_performers&.map(&:ordinal) || []
     unknown = (performer_ordinals + [target_performer].compact) - known
     errors.add(:performer_ordinals, "names no such person: #{unknown.join(', ')}") if unknown.any?
   end
@@ -139,7 +139,7 @@ class VideoClip < ApplicationRecord
       return errors.add(:reference_frames, "are at most #{MAX_REFERENCE_FRAMES} per chunk")
     end
 
-    known = music_video&.video_performers&.map(&:letter) || []
+    known = video&.video_performers&.map(&:letter) || []
     frames.each_with_index do |frame, i|
       reference_frame_problem(frame, i + 1, known)&.then { |why| errors.add(:reference_frames, "#{i + 1}: #{why}") }
     end
@@ -156,7 +156,7 @@ class VideoClip < ApplicationRecord
     unknown = letters - known
     return "no such person: #{unknown.join(', ')}" if unknown.any?
 
-    expected = MusicVideos::ObjectKeys.chunk_reference(source_key: music_video&.source_object_key, ordinal:,
+    expected = Videos::ObjectKeys.chunk_reference(source_key: video&.source_object_key, ordinal:,
                                                        start_ms:, end_ms:, number:)
     "object_key must be #{expected}" unless frame["object_key"] == expected
   rescue ArgumentError, TypeError
@@ -170,9 +170,9 @@ class VideoClip < ApplicationRecord
   end
 
   def expected_object_key
-    source_key = music_video&.source_object_key
-    return MusicVideos::ObjectKeys.chunk(source_key:, ordinal:, start_ms:, end_ms:) if chunk?
+    source_key = video&.source_object_key
+    return Videos::ObjectKeys.chunk(source_key:, ordinal:, start_ms:, end_ms:) if chunk?
 
-    MusicVideos::ObjectKeys.clip(source_key:, ordinal:, seam:, cast_shape:, start_ms:, end_ms:)
+    Videos::ObjectKeys.clip(source_key:, ordinal:, seam:, cast_shape:, start_ms:, end_ms:)
   end
 end

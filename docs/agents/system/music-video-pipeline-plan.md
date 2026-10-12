@@ -28,8 +28,9 @@ inputs complete in the UI.
 
 `digest video <url>` (`bin/digest-video`) downloads through a platform sub-SOP
 (YouTube, TikTok and Instagram built; all yt-dlp), stores the source MP4
-in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type
-`music_video` (the default) or `cinematic` (`--kind cinematic`), platform, source
+in R2 and creates a `Video` record through `POST /api/v1/videos`: type
+`music_video` (the default), `cinematic` (`--kind cinematic`) or `movie_scene`
+(`--kind movie_scene`), platform, source
 URL and id, title, duration and stage. It links the credited primary and featured
 artists. Then, still on the Mac (a dyno has no ffmpeg), it cuts the whole video
 into the recast pipeline's chunks (below, under Clips) and posts them, before
@@ -59,18 +60,18 @@ stored.
   API refuses the keys), and can change after the cast is confirmed. Built by
   `recast-picker-on-cast-panel`, piece 2 of the recast pipeline.
 - **Look dropdown.** The athlete's looks are a dropdown of rows
-  (`MusicVideos::LookOptions`): the look's newest character sheet as a
+  (`Videos::LookOptions`): the look's newest character sheet as a
   thumbnail, its name, the default mark and its sheet-build state, with a
   larger preview of the look picked. "Generate a new look" (or "Generate first
-  look") makes a look from the card (`MusicVideos::CreateRecastLook`) and
+  look") makes a look from the card (`Videos::CreateRecastLook`) and
   starts its sheet through `Appearances::SheetBuild`; the card polls
   `/recast_athletes/:slug/looks.json` and repaints when the sheet is ready.
   Admin only, since a sheet spends. Built by
   `recast-look-dropdown-and-generate`, piece 8 of the recast pipeline.
 
 Built by `music-video-cast-panel`: the `video_performers` table,
-`POST /api/v1/music_videos/:slug/performers`, and the panel at
-`/music_videos/:slug`. The agent's steps are in
+`POST /api/v1/videos/:slug/performers`, and the panel at
+`/videos/:slug`. The agent's steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#stage-2-cast).
 
 ### 3. Artist references
@@ -105,12 +106,12 @@ Several 25-second candidates per video. Each one:
 - carries a filled Higgsfield swap prompt. The template is Alex's proven prompt,
   with blanks for the target performer's description, the athlete, and who stays
   the same. The athlete and look come from the target's recast
-  (`MusicVideos::ClipPrompts`); every stored prompt of the video is rewritten
+  (`Videos::ClipPrompts`); every stored prompt of the video is rewritten
   when a recast changes. A `cinematic` video's prompt says "video", not "music
   video".
 
 Built by `music-video-clip-finder`: `bin/find-clips`, the `video_clips` table,
-`POST /api/v1/music_videos/:slug/clips`, and the clips list below the cast panel.
+`POST /api/v1/videos/:slug/clips`, and the clips list below the cast panel.
 One approved clip moves the video to `clips_ready`. The agent's steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#stage-5-clips).
 
@@ -126,12 +127,12 @@ chunk. A chunk has no seam and no approval. Chunks are `video_clips` rows of kin
 and is replaced on its own. Chunks need no confirmed cast (the candidates do):
 cut at digest they are `unknown` with the generic prompt, and the hub relabels
 them from the cast when the vision pass posts it and when the cast is confirmed
-(`MusicVideos::LabelChunks`). Built by `tile-video-into-overlapping-chunks`, the
+(`Videos::LabelChunks`). Built by `tile-video-into-overlapping-chunks`, the
 first piece of the recast pipeline, which swaps every chunk and stitches them
 back; moved into the digest by `digest-cuts-chunks-on-upload`. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
 
-**Alt videos and the clip builder.** A source video (a `music_videos` row,
+**Alt videos and the clip builder.** A source video (a `videos` row,
 "Source video" on screen) yields many alt videos, each one generated version
 with its own swaps. **Build Clips** in the cast summary bar makes the source's
 next `alt_videos` row, numbered per source, with the cast cards' swaps
@@ -139,8 +140,8 @@ snapshotted into its `swaps` jsonb, and one `alt_video_clips` row per chunk.
 The snapshot is jsonb, not a child table, because it is written once, read
 whole and never edited (as `video_stitches.takes`); a later edit of the cast
 cards changes no alt video. The clip card, on
-`/music_videos/<slug>/alt_videos/<n>`, hands off the source chunk, the swapped
-people's character sheets and the prompt (`MusicVideos::ClipPrompts.for(chunk,
+`/videos/<slug>/alt_videos/<n>`, hands off the source chunk, the swapped
+people's character sheets and the prompt (`Videos::ClipPrompts.for(chunk,
 swaps:)` fed the snapshot, who is on screen read from the chunk), and takes the
 generated MP4 by drag and drop. Each upload is a numbered version in
 `alt_video_clip_versions`, kept; the latest `primary_since` is the primary, so
@@ -150,12 +151,12 @@ the card plays it beside the source chunk, both on their first frame, with
 **Play both** (original muted, the version the clock; `clipPair()`, piece 18). A clip can be flagged
 "request regenerate"; the next upload clears it. **Watch full video** opens a
 modal that plays the primaries back to back as if stitched
-(`MusicVideos::StitchTimeline`, handover mid-overlap, source audio, the source
+(`Videos::StitchTimeline`, handover mid-overlap, source audio, the source
 chunk where a clip has no version). Every file on the page is a signed URL
 good for fifteen minutes, and the page is left open far longer, so it keeps
-them fresh: `GET /music_videos/<slug>/alt_videos/<n>/links` answers the page's
+them fresh: `GET /videos/<slug>/alt_videos/<n>/links` answers the page's
 own keys signed again (it reads no key from the request), and `signedLinks`
-(`music_videos/_player_scripts`) swaps them in a minute before they lapse, on
+(`videos/_player_scripts`) swaps them in a minute before they lapse, on
 coming back to the tab, and when a player fails on a lapsed link, keeping each
 player's place. A player says "This link expired: getting a fresh one…" while
 it waits, and reports a missing file only when it fails on a fresh link
@@ -176,20 +177,20 @@ numbered character sheets, with a README that lists anything left out. It
 streams from R2 and never fails for a missing file. A sheet image is fetched
 only from an https public host, at the address the host was vetted against, and
 one entry spends at most five seconds opening connections. Built by piece 17
-(`MusicVideos::AssetZip`, `AltVideoDownloadsController`). The steps and the
+(`Videos::AssetZip`, `AltVideoDownloadsController`). The steps and the
 zip's layout are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).
 
-**Lettered references.** The clip prompt (`MusicVideos::ClipPrompts`, wording
-in `MusicVideos::ClipPrompt.lettered`) names people by a letter fixed per
-source (`MusicVideos::PersonLetters`: Person N is the Nth letter) and players by
+**Lettered references.** The clip prompt (`Videos::ClipPrompts`, wording
+in `Videos::ClipPrompt.lettered`) names people by a letter fixed per
+source (`Videos::PersonLetters`: Person N is the Nth letter) and players by
 the look's `appearances.jersey_number`, read live at render, with one line per
 swapped person in the window: lead (the chunk's target, or two clear sightings
 in the window: lip-synced) or background. Sheets are numbered in the card's
 download order. A window that swaps nobody keeps the single-target prompt. Each
 chunk can carry 2-4 lettered reference frames (`video_clips.reference_frames`,
 jsonb `[{ object_key, t_ms, letters }]`, written whole by `bin/clip-references
---apply` through `POST /api/v1/music_videos/:slug/chunks/:ordinal/references`);
+--apply` through `POST /api/v1/videos/:slug/chunks/:ordinal/references`);
 the agent places the tags by eye, ImageMagick draws them on the Mac. Built by
 `lettered-clip-references`, piece 16. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#lettered-references).
@@ -201,9 +202,9 @@ version each clip has as primary at that moment. ffmpeg crossfades the picture
 of consecutive versions across each overlap, lays the original source audio
 under the whole length untouched, and writes H.264 and AAC in MP4 to the alt
 video's `stitched/` folder. The plan is
-`MusicVideos::StitchPlan` (pure: inputs, the frames each chunk owns, crossfade
+`Videos::StitchPlan` (pure: inputs, the frames each chunk owns, crossfade
 offsets, the filter graph, the ffmpeg arguments), run by
-`MusicVideos::Stitcher`. Takes are normalised to the best any take offers and
+`Videos::Stitcher`. Takes are normalised to the best any take offers and
 never more than the source, in size and in frame rate. A stitch is `requested`,
 `running`, then `done` or `failed` with the reason. The page shows the latest
 with a player and a download, and marks it stale once a clip has a different
@@ -245,21 +246,29 @@ draws them, since the Homebrew ffmpeg has no `drawtext`.
 
 Record slugs stay kebab-case, the app's existing convention.
 
+The tables were `music_videos` and `music_video_artists`, and every child's
+`music_video_slug` was the column now called `video_slug`, until the
+`music-videos-become-videos` task (2026-10-12) made the pipeline general, so a
+movie scene is not filed under music. The pages moved from `/music_videos` to
+`/videos` (every old URL redirects, query kept) and the API from
+`/api/v1/music_videos` to `/api/v1/videos` (the old path stays as an alias, not a
+redirect, so a POST is never bounced). The R2 prefix below did not move.
+
 | Table | Holds |
 |---|---|
-| `music_videos` | type (`kind`: `music_video` or `cinematic`), the chunk tiling (`chunk_ms`, `chunk_overlap_ms`; null until tiled), platform, source URL and id, title, duration, stage, source asset |
+| `videos` | type (`kind`: `music_video`, `cinematic` or `movie_scene`), the chunk tiling (`chunk_ms`, `chunk_overlap_ms`; null until tiled), platform, source URL and id, title, duration, stage, source asset |
 | `artists` | kind `person` or `group`; `person_slug` for individuals; source ids: Wikidata, MusicBrainz, Discogs, Spotify |
 | `artist_aliases` | alternate names per artist |
 | `artist_memberships` | member → group, start and end years |
-| `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
+| `video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
 | `appearances` | gains a nullable music video link, and `jersey_number` (0-99, nullable): the number a look wears, named in clip prompts |
 | `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status. Chunks are cut once per source and shared by every alt video, with their lettered `reference_frames` (jsonb: object key, time, letters). The chunk regenerate columns are piece 3's, now unread |
-| `alt_videos` | one generated version of a source: `slug` (`<source>-alt-<n>`), source (`music_video_slug`), `number` per source, and `swaps` (jsonb snapshot: performer ordinal, person and look slugs and names) |
+| `alt_videos` | one generated version of a source: `slug` (`<source>-alt-<n>`), source (`video_slug`), `number` per source, and `swaps` (jsonb snapshot: performer ordinal, person and look slugs and names) |
 | `alt_video_clips` | alt video (`alt_video_slug`) × chunk: `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
 | `alt_video_clip_versions` | one generated MP4 uploaded back for a clip (`alt_video_clip_id`): version `number`, asset, size, file name, and `primary_since` (the latest is the primary) |
 | `video_chunk_takes` | piece 3's takes, moved onto alt video 1 of their source by `CreateAltVideos`; kept, read by nothing, for a later drop |
-| `video_stitches` | one full-length stitch of an alt video (`alt_video_slug`; `music_video_slug` is its source): stitch `number` per alt video, `state` (`requested`, `running`, `done`, `failed`) with `failure_reason`, the version each clip had (`takes`: ordinal, window, version number), asset, and the result's duration, size, frame size, frame rate and notes |
+| `video_stitches` | one full-length stitch of an alt video (`alt_video_slug`; `video_slug` is its source): stitch `number` per alt video, `state` (`requested`, `running`, `done`, `failed`) with `failure_reason`, the version each clip had (`takes`: ordinal, window, version number), asset, and the result's duration, size, frame size, frame rate and notes |
 
 ## Artist seed
 
@@ -279,6 +288,11 @@ Writes go to the hub's existing R2 buckets, `mcritchie-studio-dev` and
 folders are human-readable **snake_case**. Alex amended the asset library's
 "object keys carry no meaning" rule for this content on 2026-09-29
 ([`asset-library-plan.md`](asset-library-plan.md)).
+
+Every kind of video (music video, cinematic, movie scene) is stored under the
+`music_videos/` prefix: the rename to `Video` moved no object, and new digests
+keep writing here (`Videos::ObjectKeys::PREFIX`). Renaming the prefix is its own
+task, since every stored key column would move with the objects.
 
 ```text
 music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4

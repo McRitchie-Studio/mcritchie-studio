@@ -16,11 +16,11 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     @home, @away = @athlete.appearances.order(:created_at, :id).to_a
   end
 
-  def recast(ordinal, video: @video, **params) = patch music_video_performer_recast_path(video, ordinal), params: params
+  def recast(ordinal, video: @video, **params) = patch video_performer_recast_path(video, ordinal), params: params
 
   # What the Replace with card sends: JSON in, JSON out.
   def save(ordinal, video: @video, **body)
-    patch music_video_performer_recast_path(video, ordinal), params: body.to_json,
+    patch video_performer_recast_path(video, ordinal), params: body.to_json,
                                                               headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
     response.parsed_body
   end
@@ -44,7 +44,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
 
     recast(1, person_slug: @athlete.slug, appearance_slug: @away.slug)
 
-    assert_redirected_to music_video_path(@video, anchor: "person-1")
+    assert_redirected_to video_path(@video, anchor: "person-1")
     assert_equal "Person 1 is replaced by Test Athlete Alpha > Away White.", flash[:notice]
     assert_equal [@athlete.slug, @away.slug], performer(1).values_at(:recast_person_slug, :recast_appearance_slug)
     @video.video_chunks.each do |chunk|
@@ -98,7 +98,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
 
     # The admin wall answers a signed-in non-admin's JSON request with an empty 403.
     log_in_as users(:viewer)
-    patch music_video_performer_recast_path(@video, 1),
+    patch video_performer_recast_path(@video, 1),
           params: { person_slug: @athlete.slug, appearance_slug: @home.slug }.to_json,
           headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
     assert_response :forbidden
@@ -228,7 +228,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
   test "a look-less athlete is saved alone and the card offers to generate the first look, or to add one by hand" do
     log_in_as users(:alex)
     gamma = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
-    card = "/music_videos/#{@video.slug}#person-1"
+    card = "/videos/#{@video.slug}#person-1"
 
     assert_no_difference -> { ErrorLog.count } do
       recast(1, person_slug: gamma.slug)
@@ -242,9 +242,9 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-ordinal='1'] [data-test='performer-recast'][data-state='pending']" do
       assert_select "[data-test='performer-recast'][data-athlete=?]",
                     { slug: gamma.slug, name: "Test Athlete Gamma", avatar_url: nil, vocation: "athlete", team: nil, looks: [] }.to_json
-      assert_select "[data-test='performer-recast'][data-new-look-url=?]", "/people/__slug__?return_to=%2Fmusic_videos%2F#{@video.slug}%23person-1#new-model"
+      assert_select "[data-test='performer-recast'][data-new-look-url=?]", "/people/__slug__?return_to=%2Fvideos%2F#{@video.slug}%23person-1#new-model"
       assert_select "button[data-test='look-generate-first']", "Generate first look"
-      assert_select "[data-test='look-generate-form'][action=?]", music_video_performer_recast_looks_path(@video, 1)
+      assert_select "[data-test='look-generate-form'][action=?]", video_performer_recast_looks_path(@video, 1)
     end
     assert_select "[data-test='recast-waiting']", "1 still needs a look."
 
@@ -259,9 +259,9 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
   test "the by-hand link opens the person's look form, and saving returns to the cast card" do
     log_in_as users(:alex)
     recast(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
-    card = "/music_videos/#{@video.slug}#person-1"
+    card = "/videos/#{@video.slug}#person-1"
 
-    get music_video_path(@video)
+    get video_path(@video)
     assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-new-look-url=?]",
                   person_path("__slug__", return_to: card, anchor: "new-model")
     assert_select "[data-test='performer-card'][data-ordinal='1'] a[data-test='recast-new-look']", /Or add a look by hand/
@@ -275,14 +275,14 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_redirected_to card
 
-    get music_video_path(@video)
+    get video_path(@video)
     assert_includes JSON.parse(css_select("[data-ordinal='1'] [data-test='performer-recast']").first["data-athlete"])["looks"].pluck("descriptor"),
                     "Alternate Black"
   end
 
   test "a return address that is not a cast card is ignored" do
     log_in_as users(:alex)
-    ["https://evil.example/music_videos/x", "//evil.example", "/admin", "/music_videos/x/../../admin"].each do |target|
+    ["https://evil.example/music_videos/x", "//evil.example", "/admin", "/videos/x/../../admin"].each do |target|
       post create_appearance_person_path(@athlete.slug, return_to: target), params: { appearance: { descriptor: "Look #{target.hash}" } }
       assert_redirected_to person_path(@athlete.slug)
     end
@@ -293,12 +293,12 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
   test "a cast with nobody named and nothing swapped confirms with nothing pressed, cinematic or music video" do
     log_in_as users(:alex)
     %w[cinematic music_video].each do |kind|
-      video = MusicVideo.create!(slug: "test-#{kind.dasherize}-open", kind:, platform: "youtube", source_id: "t#{kind}",
+      video = Video.create!(slug: "test-#{kind.dasherize}-open", kind:, platform: "youtube", source_id: "t#{kind}",
                                  source_url: "https://www.youtube.com/watch?v=t#{kind}", title: "Test #{kind} open",
                                  source_object_key: "music_videos/test_artist/#{kind}_open/source/a.mp4")
-      MusicVideos::ReplacePerformers.new(video, TiledVideo::PERFORMERS).call
+      Videos::ReplacePerformers.new(video, TiledVideo::PERFORMERS).call
 
-      get music_video_path(video)
+      get video_path(video)
       assert_select "[data-test='performer-card'][data-resolved='true'][data-named='false']", 2
       assert_select "[data-test='performer-badge']", text: "Not named", count: 2
       assert_select "[data-test='performer-resolution'] [data-test='performer-typeahead'] input[role='combobox']", 2
@@ -306,7 +306,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='cast-named-count']", /Nobody named\. Naming is optional/
       assert_select "[data-test='confirm-cast-form'] button:not([disabled])", "Cast confirmed"
 
-      post confirm_cast_music_video_path(video)
+      post confirm_cast_video_path(video)
       assert_equal "cast_confirmed", video.reload.stage
       assert_equal [nil, nil], video.video_performers.map(&:artist_slug)
     end
@@ -314,7 +314,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
 
   # What the always-open "Who is this on screen?" search sends: JSON in, what the card shows out.
   def save_name(ordinal, **body)
-    patch music_video_performer_path(@video, ordinal), params: body.to_json,
+    patch video_performer_path(@video, ordinal), params: body.to_json,
                                                        headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
     response.body.present? ? response.parsed_body : {} # the admin wall's 403 is empty
   end
@@ -360,9 +360,9 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert @video.cast_confirmed?
     artist = Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
     calls = 0
-    refresh = MusicVideos::ClipPrompts.method(:refresh!)
-    MusicVideos::ClipPrompts.stub(:refresh!, ->(video) { calls += 1; refresh.call(video) }) do
-      patch music_video_performer_path(@video, 2), params: { artist_slug: artist.slug }
+    refresh = Videos::ClipPrompts.method(:refresh!)
+    Videos::ClipPrompts.stub(:refresh!, ->(video) { calls += 1; refresh.call(video) }) do
+      patch video_performer_path(@video, 2), params: { artist_slug: artist.slug }
     end
 
     assert_equal "Person 2 is Test Artist A.", flash[:notice]

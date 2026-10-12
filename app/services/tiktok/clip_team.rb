@@ -7,7 +7,7 @@ module Tiktok
   #   1. the source chunk's labelled target, when the snapshot swaps them
   #      (the person the clip is cut around always leads);
   #   2. otherwise the first LEAD among the swapped people on screen in the
-  #      window (MusicVideos::ClipPrompts.lead?: the target, or two clear
+  #      window (Videos::ClipPrompts.lead?: the target, or two clear
   #      sightings in the window), in cast order (lowest performer ordinal);
   #      a tie between two leads goes to the lower performer ordinal, which is
   #      also the lower letter (A before B);
@@ -36,7 +36,7 @@ module Tiktok
     def initialize(clip)
       @clip = clip
       @alt = clip.alt_video
-      @video = @alt.music_video
+      @video = @alt.video
       @swaps = @alt.swap_set
     end
 
@@ -60,7 +60,7 @@ module Tiktok
         return [target, "the clip's target"] if target
 
         people = @video.video_performers.index_by(&:ordinal)
-        lead = present.find { |e| MusicVideos::ClipPrompts.lead?(chunk, people[e.performer_ordinal]) }
+        lead = present.find { |e| Videos::ClipPrompts.lead?(chunk, people[e.performer_ordinal]) }
         return [lead, "the first lead in the clip"] if lead
         return [present.first, "the first swapped person in the clip"] if present.any?
       end
