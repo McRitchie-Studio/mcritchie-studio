@@ -24,7 +24,9 @@
     Locals: kit (the brand's Logos::BrandKit). %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading disabled:opacity-60" %>
 <% outline = "has-checked:outline-2 has-checked:outline-offset-2 has-checked:outline-solid has-checked:outline-[#4338CA] dark:has-checked:outline-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-dashed has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
-<section class="card p-4 sm:p-5 space-y-3" data-test="edit-panel" aria-labelledby="edit-panel-title">
+<%# id="edit": the page's controls row links here ("Edit parts"), because on the Navbar tab the panel sits under three
+    full-width logos and Alex could not find it (2026-10-11 23:06). scroll-mt leaves room above it on the jump. %>
+<section id="edit" class="card p-4 sm:p-5 space-y-3 scroll-mt-20" data-test="edit-panel" aria-labelledby="edit-panel-title">
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <h2 id="edit-panel-title" class="text-sm font-bold text-heading mr-auto">Edit</h2>
     <% if (@type == :icon ? @edits.slice(:icon) : @edits).any? %>

@@ -68,6 +68,9 @@
           <% end %>
         </div>
       <% end %>
+      <%# The edit panel is below the logos; this takes the reader to it, the same on every tab (task
+          logo-compare-and-original-edits, item 2). %>
+      <%= link_to (@type == :icon ? "Edit colour" : "Edit parts"), "#edit", class: chosen.(false), data: { test: "edit-jump" } %>
       <% unless @type == :icon %>
         <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
                     class: chosen.(@guides), data: { test: "guides-toggle" } %>

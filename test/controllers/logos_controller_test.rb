@@ -323,7 +323,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option guides-toggle kit-save-default] +
+    assert_equal %w[colouring-option colouring-option logo-tab logo-tab logo-tab rule-option rule-option rule-option edit-jump guides-toggle kit-save-default] +
                  %w[logo-download logo-copy] * 6 + %w[kit-save] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./
@@ -408,7 +408,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='logo-plate']", 0
       assert_select "[data-test='logo-example'] h2", 0
       assert_select "[data-test='guides-toggle'], [data-test='rule-control'], [data-test='guides-sentence']", 0
-      assert_equal %w[kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
+      assert_equal %w[edit-jump kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
       assert_select "[data-test='type-sentence']", /\AThe icon alone: the kit's atomic unit\./
       assert_select "[data-test='watermark-text-note']", 0, "an icon has no text versions to compare"
     end

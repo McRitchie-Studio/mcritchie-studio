@@ -248,6 +248,8 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
         stacked = rows.map { |row| [row["data-part"], row.css("[data-test='edit-swatch']").size, row.css("select[data-test='edit-weight']").size] }
         assert_equal navbar, stacked, "#{brand} #{colouring}"
         assert_equal %w[icon first ending], navbar.map(&:first)
+        assert_select "a[data-test='edit-jump'][href='#edit']", "Edit parts"
+        assert_select "section#edit[data-test='edit-panel']", 1
       end
     end
   end
