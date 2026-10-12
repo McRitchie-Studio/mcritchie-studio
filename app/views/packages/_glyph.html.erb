@@ -1,12 +1,19 @@
-<%# A drawn row mark (WorkspacePackage::GLYPHS), sized to sit beside the brand logos in a row's lead. app: a browser window with a spark, read as "your custom app". %>
+<%# A drawn row mark (WorkspacePackage::GLYPHS), the size of a brand logo in a row's lead. app: Mr. McRitchie's custom-app mark (2026-10-12), a browser window with three sparkles on a lavender tile, redrawn as vector so it follows the theme: outline and title bar take the heading color, the window body and dots the surface color, the sparkles the primary purple in both themes. %>
 <% case name %>
 <% when "app" %>
-  <svg class="h-4 w-4 md:h-5 md:w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-       role="img" aria-label="Your custom app" data-test="glyph" data-glyph="app">
-    <rect x="3" y="4" width="18" height="16" rx="3"/>
-    <path d="M3 9h18"/>
-    <circle cx="6.5" cy="6.5" r="0.6" fill="currentColor" stroke="none"/>
-    <circle cx="9" cy="6.5" r="0.6" fill="currentColor" stroke="none"/>
-    <path d="M12 12.2l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="currentColor"/>
-  </svg>
+  <span class="inline-flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-heading"
+        role="img" aria-label="Custom app" title="Custom app" data-test="glyph" data-glyph="app">
+    <svg class="h-6 w-6 md:h-7 md:w-7" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="1" y="8" width="16" height="14" rx="2.6" fill="currentColor"/>
+      <rect x="2.7" y="11.6" width="12.6" height="8.7" rx="1.4" style="fill: var(--color-surface, #fff)"/>
+      <g style="fill: var(--color-surface, #fff)">
+        <circle cx="4.1" cy="9.8" r="0.8"/><circle cx="6.5" cy="9.8" r="0.8"/><circle cx="8.9" cy="9.8" r="0.8"/>
+      </g>
+      <g style="fill: var(--color-primary, #7c6cf0)">
+        <path d="M18.6 0.6Q18.6 5.6 23.6 5.6Q18.6 5.6 18.6 10.6Q18.6 5.6 13.6 5.6Q18.6 5.6 18.6 0.6z"/>
+        <path d="M13.2 0.4Q13.2 2.6 15.4 2.6Q13.2 2.6 13.2 4.8Q13.2 2.6 11 2.6Q13.2 2.6 13.2 0.4z"/>
+        <path d="M21.3 10.4Q21.3 12.6 23.5 12.6Q21.3 12.6 21.3 14.8Q21.3 12.6 19.1 12.6Q21.3 12.6 21.3 10.4z"/>
+      </g>
+    </svg>
+  </span>
 <% end %>

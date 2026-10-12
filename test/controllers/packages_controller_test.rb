@@ -186,7 +186,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='social-posting'] [data-test='stack-software'] [data-brand='x']"
     assert_select "[data-feature='social-posting'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
-    assert_select "[data-feature='custom-app'] [data-test='stack-lead'][data-lead='glyph-app'] svg[data-glyph='app'][aria-label='Your custom app']"
+    assert_select "[data-feature='custom-app'] [data-test='stack-lead'][data-lead='glyph-app'] [data-glyph='app'][aria-label='Custom app'] svg"
     assert_select "[data-feature='custom-app'] [data-test='stack-lead'] [data-brand='github']", 0, "GitHub moves to the strip"
     assert_equal %w[github rails], css_select("[data-feature='custom-app'] [data-test='stack-software'] [data-test='brand-logo']").map { |l| l["data-brand"] }
     assert_select "[data-feature='funnel-generation'][data-status='planned'] [data-test='coming-soon']"
