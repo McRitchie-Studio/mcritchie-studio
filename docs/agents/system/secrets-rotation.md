@@ -508,20 +508,13 @@ The sign-in asks for drafts only. `TIKTOK_SCOPES` widens it; see `docs/topics/co
 
 ---
 
-## AWS S3 credentials (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`)
+## AWS S3 credentials (retired 2026-10-10)
 
-**Store:** Per-app `.env` files + per-app Heroku config + 1Password.
-
-**Procedure:**
-1. https://console.aws.amazon.com → IAM → Users → the `studio` user → Security credentials → Create access key.
-2. Copy both values.
-3. Update 1Password (recommended item name: `aws.studio`).
-4. `heroku config:set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... --app mcritchie-studio` (repeat for `turf-monster-mainnet`).
-5. Update each app-local `.env` that uses S3.
-6. Re-run `bin/ecosystem-build` (writes to per-app `.env` from Heroku).
-7. After 24h of confirmed normal operation, deactivate the old key in IAM.
-
-**Verify:** `bin/rails runner 'puts Studio::S3.list(prefix: "headshots").first(3).inspect'` returns S3 keys without errors.
+Nothing to rotate. The app IAM users and their keys were deleted on 2026-10-10,
+and no app holds `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`. Object storage
+runs on Cloudflare R2 with the `r2.<app>` tokens
+([`../modules/object-storage.md`](../modules/object-storage.md)); what remains
+of AWS is listed there under **What remains of AWS**.
 
 ---
 
@@ -566,7 +559,6 @@ and adding one would re-open the mismatch the pinning closed. Full table:
 | Higgsfield | yearly | Hygiene |
 | TikTok client secret | yearly | Hygiene |
 | TikTok refresh token | on `invalid_grant` (1y default) | Auth error |
-| AWS S3 keys | quarterly | Hygiene |
 | Google OAuth client secret | yearly | Hygiene |
 
 Add a calendar reminder for the quarterly cycle so this doesn't slip.

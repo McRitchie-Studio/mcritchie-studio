@@ -81,5 +81,5 @@ site connection, primary-domain setting, disabled `www` prefix, and
 - Montserrat font (Google Fonts CDN)
 - ERB views, import maps, no JS frameworks
 - Passwordless auth via magic links and Google OAuth. `User` has no `has_secure_password` and stores no password.
-- Email delivery uses `Studio::Email` with SES as the target transport and Resend as rollback. Cross-app operations live in `docs/agents/modules/email-operations.md`; McRitchie-specific wiring lives in `docs/email-delivery.md`.
+- Email delivery uses `Studio::Email` on Resend; the SES transport was removed in studio-engine 0.102.0 when SES was retired (2026-10-10). Cross-app operations live in `docs/agents/modules/email-operations.md`; McRitchie-specific wiring lives in `docs/email-delivery.md`.
 - **Studio engine gem** — `gem "studio-engine", "~> 0.11"` from RubyGems; release/adoption checklist lives in `studio-engine/docs/RELEASE.md`

@@ -1,10 +1,11 @@
 # R2 Cutover Record — the hub and Turf Monster
 
-## Status: Active
+## Status: Completed (2026-10-11)
 
 The record of the two public-object cutovers from AWS S3 to Cloudflare R2
 (asset-library Wave 2, [`asset-library-plan.md`](asset-library-plan.md)): what ran,
-what was measured, and the **step 7 checklist still owed around 2026-10-07**.
+what was measured, and the step 7 checklist that was owed around 2026-10-07
+(done; see **Close-out** below).
 Industries and moms-app followed the plan's recipe earlier; this page covers the
 two apps whose objects are public and which needed the DNS move first.
 
@@ -46,6 +47,29 @@ here:
 The **Step 7** and **Still owed** sections are kept as written; the QA passes
 and the DeskCapture move they list are done.
 
+## Close-out — 2026-10-11
+
+The move is complete as of 2026-10-11 09:20 MDT.
+
+- **Code.** Turf, Industries and moms-app followed the hub to R2-only code on
+  2026-10-10 (tasks `turf-storage-runs-r2-only`,
+  `industries-storage-runs-r2-only`, `moms-app-storage-runs-r2-only`). All four
+  production apps and all three QA apps run R2 only, with deletes going through
+  `StudioTrashS3` to `trash/` (rule `expire-trash-3d`; proven on hub production
+  2026-10-10, a purge left one object in `trash/`).
+- **Backups.** Nightly `r2-backup` covers `mcritchie-studio`, `turf-monster`,
+  `mcritchie-industries`, `moms-app` and `mcritchie-studio-desk`; all five rows
+  succeeded on 2026-10-11 15:56 UTC.
+- **The S3 buckets.** The rule below to keep them "public and intact until the
+  AWS exit" ended this way: every app and dev bucket was deleted on
+  2026-10-10 (the last two production buckets, Industries and moms-app, after
+  every old version's key was verified on R2). Two stay, on purpose, for about
+  a year: `mcritchie-studio-production` (6 `email/` images) and
+  `turf-monster-production` (2 `email_banners/` images), because sent emails
+  embed their URLs.
+- The rest of the AWS exit, and what Alex kept: the plan's
+  [Wave 7 record](asset-library-plan.md#wave-7--the-aws-exit-record).
+
 ## Where each app stood, 2026-09-30
 
 | App | Heroku | Stage | Since | Release |
@@ -76,6 +100,10 @@ QA (`mcritchie-studio-qa`, `turf-monster-qa`) is untouched and still on S3.
   away from `NOTICE`.
 - **Keep the S3 buckets public and intact** until the AWS exit (Wave 7): emails
   already sent embed S3 image URLs, and inboxes cannot be rewritten.
+  *Outcome (2026-10-10):* the buckets were deleted at the exit except the two
+  production buckets' email images (`mcritchie-studio-production`, 6 `email/`
+  objects; `turf-monster-production`, 2 `email_banners/` objects), kept for
+  about a year for that reason. See **Close-out** above.
 
 ## The hub (`mcritchie-studio`)
 
