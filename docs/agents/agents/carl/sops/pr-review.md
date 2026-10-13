@@ -107,11 +107,19 @@ claim it by name instead of popping the queue, then run the same loop (record th
 head, spawn one Carl, release the claim on his verdict):
 
 ```bash
-bin/task review-claim acquire <slug> --agent carl   # exit 10: another session holds it; leave it alone
+bin/task review-claim acquire <slug> --agent carl   # exit 10: held elsewhere, or YOU BUILT THIS
 ```
 
-A claim held elsewhere means a review is already running; that is the outcome you
-wanted, so stop there.
+Exit 10 has two meanings; read the line it prints:
+
+- **Already under review.** Another session holds the claim, so a review is
+  already running. That is the outcome you wanted, so stop there.
+- **YOU BUILT THIS.** The soul you named is the task's recorded builder, so the
+  no-self-review guard refused it; nobody holds the task. Claim again with a
+  different soul that did not build it, or leave the task to the next sweep.
+
+A Carl and his light are two agents toward the five-at-a-time cap (First Rule 6),
+so count both before you spawn them.
 
 ## Preconditions
 
