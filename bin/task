@@ -231,6 +231,12 @@
 #       marks handoff notes as explicitly addressing open QA feedback; it
 #       requires a --handoff note (on other note types it would silently
 #       no-op, so the CLI dies instead of dropping the flag). )
+#   bin/task scout-brief <slug>
+#     ( READ-ONLY. Prints the task's newest intent-scout brief: a comment note
+#       beginning "INTENT SCOUT BRIEF", which Avi posts per
+#       docs/agents/agents/avi/sops/intent-scout.md (bin/lib/intent_scout.rb).
+#       Exit: 0 a brief is on the task · 2 none yet · 1 the board could not be read.
+#       bin/submit asks it at 0/8 and only WARNS on a 2. )
 #   bin/task usage-audit [--dir PATH]
 #     ( READ-ONLY sweep of the usage/cost baseline store (<projects>/.agents/task-usage)
 #       for rows a TEST run left behind — a stub slug, or a cache-read total no single
@@ -304,6 +310,7 @@ require_relative "lib/fast_lane"
 require_relative "lib/remedy"
 require_relative "lib/review_hop"
 require_relative "lib/dream_bank"
+require_relative "lib/intent_scout"
 require_relative "lib/desk_claim"
 require_relative "lib/code_diff"
 # The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
@@ -2494,6 +2501,20 @@ rescue StandardError => e
         "Clear it from the task page's Resume control.")
 end
 
+# Record on the task that an intent scout is owed: one comment note, posted on the
+# claim that moves a task into `building` (a resume of a building task already has
+# one). BEST-EFFORT by contract: a board that refuses costs a warning, never the
+# claim or begin's exit status.
+def record_scout_owed(slug, worktree_dir)
+  body = { "task_slug" => slug, "activity_type" => IntentScout::NOTE_TYPE,
+           "description" => IntentScout.owed_note(slug, worktree_dir) }
+  api(:post, "/api/v1/activities", body)
+rescue StandardError, SystemExit => e
+  # api() dies (SystemExit) on a refused write after printing why; the claim is
+  # already recorded, so that refusal is a warning here and begin finishes.
+  warn!("begin — could not record the owed intent scout (#{e.class}); launch it anyway from the line below.")
+end
+
 # One begin step that shells a tool: narrate, run, die with a RESUME hint on
 # failure — rerunning `bin/task begin <slug>` continues from the failed step.
 def begin_step!(label, slug, *cmd, chdir: nil)
@@ -2955,6 +2976,12 @@ when "begin"
   # `bin/submit <slug>` this replaced was wrong from every desk but the hub's.
   puts "next: build in the worktree, then hand off with:"
   puts "  #{Remedy.handoff(slug, worktree_dir, __dir__)}"
+  # THE INTENT SCOUT HAND-OFF (docs/agents/agents/avi/sops/intent-scout.md). Avi reads
+  # the task's intent in parallel and posts a brief before the CI wait. begin never
+  # launches or waits on it: the claim above is done, and these are printed lines
+  # plus one best-effort note, so the builder's clock does not move.
+  record_scout_owed(slug, worktree_dir) unless stage == "building"
+  IntentScout.begin_lines(slug, worktree_dir).each { |line| puts line }
   DreamBank.announce(builder, io: $stderr, task: slug, facts: task.is_a?(Hash) ? task.merge("stage" => "building") : nil)
 when "update"
   usage = "usage: #{$PROGRAM_NAME} update <slug> [flags]"
@@ -3485,6 +3512,22 @@ when "note"
     activity = api(:post, "/api/v1/activities", body)["data"] || {}
     puts "noted [#{activity_type}] on #{slug} -> #{activity["slug"] || "(created)"}"
   end
+when "scout-brief"
+  # READ-ONLY. The intent scout's brief, read back for the builder and for
+  # bin/submit's 0/8 warning (bin/lib/intent_scout.rb). Exit 2 is "no brief yet",
+  # never a refusal: every caller treats it as information.
+  usage = "usage: #{$PROGRAM_NAME} scout-brief <slug>"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  unknown_flag!(ARGV.first, valid: [], context: "scout-brief") unless ARGV.empty?
+  rows = api(:get, "/api/v1/activities?#{IntentScout.activities_query(slug)}")["data"]
+  brief = IntentScout.find_brief(rows)
+  if brief.nil?
+    warn!("no intent-scout brief on #{slug} yet (a comment beginning #{IntentScout::BRIEF_MARKER}); " \
+          "the SOP: #{IntentScout.sop_path}")
+    exit 2
+  end
+  puts "#{brief["slug"] || "brief"} · by #{brief["agent_slug"] || "unknown"} · #{brief["created_at"] || "undated"}"
+  puts brief["description"].to_s
 when "usage-audit"
   # READ-ONLY. Surfaces baseline rows in the usage/cost store that a test run left
   # behind — a stub slug ("demo-task"), or a cache-read total no single task could
