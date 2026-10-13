@@ -129,9 +129,9 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     %w[pro team].each do |key|
       cto = "#{card(key)} [data-test='package-line'][data-lane='cto'][data-status='included']"
       assert_select "#{cto} [data-test='line-mark'][data-mark='included']"
-      assert_select "#{cto} [data-test='line-sub']", text: "daily report on application health"
+      assert_select "#{cto} [data-test='line-sub']", text: "24-hour access & daily summaries"
     end
-    assert_no_match(/monthly architecture review/, response.body)
+    assert_no_match(/monthly architecture review|daily report on application health/, response.body)
     builder_domain = "#{card('builder')} [data-test='package-line'][data-lane='domain']"
     assert_select "#{builder_domain} [data-test='line-title']", text: "Custom Domain"
     assert_select "#{builder_domain} [data-test='line-sub']", text: "www.your-app.com"

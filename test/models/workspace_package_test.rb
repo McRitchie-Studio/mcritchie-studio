@@ -276,13 +276,14 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
     review = feature("Fractional CTO")
     assert_equal "builtin", review.status
-    daily = "Daily report on application health"
+    daily = "24-hour access & daily summaries"
     assert_equal [ nil, nil, daily, daily, "Monthly architecture and roadmap review" ], TIERS.map { |key| review.value_for(key) }
     assert_match(/monthly architecture and roadmap review/i, review.blurb, "the monthly review stays named in the blurb")
-    assert_match(/daily report on (your )?application('s)? health/i, review.blurb)
+    assert_match(/24-hour access/i, review.blurb)
+    assert_match(/daily summar/i, review.blurb)
     %i[pro team].each do |key|
       cto = WorkspacePackage.find(key).card_lines.find { |l| l.key == "cto" }
-      assert_equal [ "Fractional CTO", "daily report on application health", "included" ], [ cto.title, cto.sub, cto.status ], key
+      assert_equal [ "Fractional CTO", "24-hour access & daily summaries", "included" ], [ cto.title, cto.sub, cto.status ], key
     end
     assert_equal "A monthly demand plan", feature("Fractional CMO").value_for(:team)
   end
