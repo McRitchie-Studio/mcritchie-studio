@@ -64,8 +64,6 @@ class StackClient < ApplicationRecord
     ms_hosted?(software) ? WorkspaceIconConfig.asset(software, "studio") : WorkspaceIconConfig.tile(software)
   end
 
-  def badge_icon = WorkspaceIconConfig.asset("1password", slug)
-
   # The app this client stands for in config/apps.yml (its tier and status), by
   # the record's workspace slug; nil for a client with no app record.
   def catalog_app = AppCatalog.for_workspace(slug)
