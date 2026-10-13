@@ -54,3 +54,10 @@ PATCH /api/v1/agents/mack
 - `data_sync`
 - `system_check`
 - `error`
+
+## Messages to agents (the mailbox)
+
+Inbound chat for an agent (Discord today) lands in the agent mailbox: `GET/POST
+/api/v1/agent_messages` (`claim`, `:id/complete`, `:id/release`), worked by
+`bin/heartbeat <soul>` and read with `bin/agent-inbox`. Design, setup and test
+protocol: [`agent-message-loop.md`](agent-message-loop.md).

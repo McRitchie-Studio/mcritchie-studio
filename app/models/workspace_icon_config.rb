@@ -43,6 +43,9 @@ module WorkspaceIconConfig
     Rails.root.join("app/assets/images", path).file? ? path : nil
   end
 
+  # The workspace's own logo entry ({ "brand" => … } or { "file" => … }), or nil: ClientLogo reads it.
+  def logo(scope) = workspaces.dig(scope.to_s, "logo")
+
   # entity => Google Workspace domain, for the entities that have one.
   def domains = workspaces.filter_map { |scope, ws| [ scope, ws["domain"] ] if ws["domain"].present? }.to_h
 end

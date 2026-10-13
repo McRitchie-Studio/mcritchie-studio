@@ -1,0 +1,67 @@
+<%# /admin/agent_messages/:id — one message, its answer, and its event timeline. %>
+<%= render "admin/agent_messages/styles" %>
+
+<div class="mb-2 text-sm"><%= link_to "← Agent inbox", admin_agent_messages_path, class: "hover:underline" %></div>
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+  <h1 class="text-xl font-semibold">Message <%= @message.id %></h1>
+  <span id="am-status" class="am-chip am-status-<%= @message.status %>"><%= @message.status %></span>
+</div>
+
+<dl class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-sm mb-6">
+  <dt class="opacity-60">Soul</dt><dd><%= @message.soul_slug || "unrouted" %> <span class="opacity-60">(<%= @message.routed_by || "—" %>)</span></dd>
+  <dt class="opacity-60">From</dt><dd><%= @message.author_name.presence || "—" %> <span class="opacity-60 font-mono text-xs"><%= @message.author_ref %></span></dd>
+  <dt class="opacity-60">Channel</dt>
+  <dd>
+    <%= @message.channel %> · <span class="font-mono text-xs break-all"><%= @message.channel_ref %></span>
+    <% if @message.discord_url %> · <%= link_to "original", @message.discord_url, target: "_blank", rel: "noopener", class: "underline" %><% end %>
+  </dd>
+  <dt class="opacity-60">Thread</dt><dd class="font-mono text-xs break-all"><%= @message.thread_key %></dd>
+  <dt class="opacity-60">Sent</dt><dd><%= (@message.sent_at || @message.created_at).strftime("%b %-d %H:%M:%S") %></dd>
+  <dt class="opacity-60">Claim</dt>
+  <dd>
+    <% if @message.claimed_by.present? %>
+      <span class="font-mono text-xs break-all"><%= @message.claimed_by %></span>
+      <span class="opacity-70"><%= agent_message_lease(@message) %></span>
+    <% else %>—<% end %>
+    · attempt <%= @message.attempts %> of <%= AgentMessage::MAX_ATTEMPTS %>
+  </dd>
+  <dt class="opacity-60">Reply</dt>
+  <dd id="am-reply-link">
+    <% if @message.reply_url %>
+      <%= link_to "Open the reply on Discord", @message.reply_url, target: "_blank", rel: "noopener", class: "underline" %>
+    <% elsif @message.reply_status %>
+      <span class="am-chip am-reply-<%= @message.reply_status %>"><%= @message.reply_status %></span>
+    <% else %>—<% end %>
+  </dd>
+</dl>
+
+<h2 class="font-semibold mb-1">Message <span class="text-xs font-normal opacity-60">untrusted: what a stranger in the channel wrote</span></h2>
+<div class="am-untrusted text-sm mb-6"><%= agent_message_display_text(@message) %></div>
+
+<% if @message.response_text.present? %>
+  <h2 class="font-semibold mb-1">Answer</h2>
+  <div class="am-answer text-sm mb-2"><%= @message.response_text %></div>
+  <% if @message.action_summary.present? %>
+    <p class="text-xs opacity-70 mb-6">Action: <%= @message.action_summary %></p>
+  <% end %>
+<% end %>
+
+<h2 class="font-semibold mb-2">Timeline</h2>
+<ol id="am-timeline" class="text-sm border-l border-subtle pl-4 space-y-2">
+  <% @message.events.each do |event| %>
+    <li id="am-event-<%= event.id %>" data-kind="<%= event.kind %>">
+      <span class="font-mono text-xs opacity-60"><%= event.created_at.strftime("%H:%M:%S") %></span>
+      <span class="font-semibold"><%= event.kind.tr("_", " ") %></span>
+      <% if event.actor.present? %><span class="opacity-70">by <%= event.actor %></span><% end %>
+      <% detail = event.detail.except("url") %>
+      <% if detail.present? %>
+        <span class="text-xs opacity-70 break-all"><%= detail.map { |k, v| "#{k}: #{v.is_a?(Array) ? v.join(', ') : v}" }.join(" · ") %></span>
+      <% end %>
+      <% if event.detail["url"].present? %>
+        · <%= link_to "reply on Discord", event.detail["url"], target: "_blank", rel: "noopener", class: "underline text-xs" %>
+      <% end %>
+    </li>
+  <% end %>
+  <% if @message.events.empty? %><li class="opacity-70">No events recorded.</li><% end %>
+</ol>
