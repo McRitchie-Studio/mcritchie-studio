@@ -1,0 +1,90 @@
+<%# /admin/agent_messages — the agent mailbox: every message, its soul, claim and reply. %>
+<%= render "admin/agent_messages/styles" %>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-xl font-semibold">Agent inbox</h1>
+  <div class="text-sm opacity-70">
+    <%= @status_counts.fetch("received", 0) %> waiting ·
+    <%= @status_counts.fetch("claimed", 0) %> claimed ·
+    <%= @status_counts.fetch("dead", 0) %> dead
+  </div>
+</div>
+
+<p class="text-sm opacity-70 mb-4">
+  Messages to the agents from Discord, routed by mention. A heartbeat
+  (<code>bin/heartbeat &lt;soul&gt;</code>) claims one, answers it, and the reply posts back once.
+  Unrouted messages named no agent and wait for nobody.
+</p>
+
+<div id="am-filters" class="flex flex-col gap-2 text-sm mb-4">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Soul</span>
+    <%= link_to "Any", agent_message_filter_path(soul: nil), class: @soul ? "" : "font-semibold underline" %>
+    <% @souls.each do |soul| %>
+      <%= link_to soul, agent_message_filter_path(soul: soul), class: soul == @soul ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Status</span>
+    <%= link_to "Any", agent_message_filter_path(status: nil), class: @status ? "" : "font-semibold underline" %>
+    <% AgentMessage::STATUSES.each do |status| %>
+      <%= link_to "#{status} (#{@status_counts.fetch(status, 0)})", agent_message_filter_path(status: status),
+                  class: status == @status ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Channel</span>
+    <%= link_to "Any", agent_message_filter_path(channel: nil), class: @channel ? "" : "font-semibold underline" %>
+    <% AgentMessage::CHANNELS.each do |channel| %>
+      <%= link_to channel, agent_message_filter_path(channel: channel), class: channel == @channel ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+</div>
+
+<% if @messages.any? %>
+  <div class="overflow-x-auto">
+    <table id="am-rows" class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-2 pr-3">Age</th>
+          <th class="py-2 pr-3">Soul</th>
+          <th class="py-2 pr-3">Status</th>
+          <th class="py-2 pr-3">From</th>
+          <th class="py-2 pr-3">Message</th>
+          <th class="py-2 pr-3">Claim</th>
+          <th class="py-2 pr-3">Tries</th>
+          <th class="py-2 pr-3">Reply</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @messages.each do |message| %>
+          <tr id="am-row-<%= message.id %>" class="border-b align-top" data-soul="<%= message.soul_slug %>" data-status="<%= message.status %>">
+            <td class="py-2 pr-3 whitespace-nowrap" title="<%= message.created_at.iso8601 %>"><%= agent_message_age(message.created_at) %></td>
+            <td class="py-2 pr-3"><%= message.soul_slug || "—" %></td>
+            <td class="py-2 pr-3"><span class="am-chip am-status-<%= message.status %>"><%= message.status %></span></td>
+            <td class="py-2 pr-3 whitespace-nowrap"><%= message.author_name.presence || "—" %> <span class="opacity-60 text-xs"><%= message.channel %></span></td>
+            <td class="py-2 pr-3 max-w-md">
+              <%= link_to truncate(message.content, length: 90), admin_agent_message_path(message), class: "hover:underline" %>
+            </td>
+            <td class="py-2 pr-3 text-xs">
+              <% if message.claimed_by.present? %>
+                <div class="font-mono break-all"><%= message.claimed_by %></div>
+                <div class="opacity-70"><%= agent_message_lease(message) %></div>
+              <% else %>—<% end %>
+            </td>
+            <td class="py-2 pr-3"><%= message.attempts %></td>
+            <td class="py-2 pr-3 text-xs whitespace-nowrap">
+              <% if message.reply_url %>
+                <%= link_to "on Discord", message.reply_url, target: "_blank", rel: "noopener" %>
+              <% elsif message.status == "completed" %>
+                <span class="opacity-70">queued</span>
+              <% else %>—<% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <p id="am-empty" class="text-sm opacity-70">No messages<%= " matching these filters" if @soul || @status || @channel %> yet.</p>
+<% end %>

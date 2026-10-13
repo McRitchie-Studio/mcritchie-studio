@@ -350,6 +350,9 @@ Rails.application.routes.draw do
     get "dashboard", to: "dashboard#show", as: :dashboard
     # The knowledge-capture front door's mail queue (team@mcritchie.studio).
     get "desk", to: "desk#index", as: :desk
+    # The agent mailbox: messages routed to souls, their claims and replies
+    # (docs/agents/system/agent-message-loop.md). Read-only.
+    resources :agent_messages, only: [:index, :show]
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
