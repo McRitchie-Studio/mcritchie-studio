@@ -49,12 +49,15 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
     }
     return byKey;
   });
-  expect(Object.keys(laneTops).length).toBe(17);
+  expect(Object.keys(laneTops).length).toBe(16);
   for (const [key, offsets] of Object.entries(laneTops)) {
     expect(new Set(offsets).size, `${key} at ${offsets}`).toBe(1);
   }
   expect(laneTops["host_storage"].length).toBe(4);
   expect(laneTops["cmo"].length).toBe(2);
+  expect(laneTops["vault"].length).toBe(4);
+  expect(laneTops["social"].length).toBe(3);
+  expect(laneTops["group:Platform"]).toBeUndefined();
   // Every lane's subtext is one line at a 1280px desktop: short copy, never a
   // wrap or an ellipsis, so new copy cannot regress the swim lanes.
   await page.setViewportSize({ width: 1280, height: 900 });

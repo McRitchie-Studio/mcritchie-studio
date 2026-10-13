@@ -110,7 +110,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   end
 
   test "honest status: what is not live in production reads as planned and provisions nothing" do
-    social = feature("Social posting")
+    social = feature("Social Outreach")
     connectors = feature("Custom connectors")
 
     assert social.planned?, "X/TikTok posting has no production keys"
@@ -196,7 +196,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
       "Live updates and jobs" => "redis", "Branded emails" => "resend",
       "Fast, protected domain" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
-    [ "Custom Web App", "Web address", "Hosting mode", "Changes after launch", "Support", "Social posting", "Integrations" ].each do |name|
+    [ "Custom Web App", "Web address", "Hosting mode", "Changes after launch", "Support", "Social Outreach", "Integrations" ].each do |name|
       refute feature(name).brand?, "#{name} is no single brand's product"
     end
   end
@@ -205,7 +205,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[github rails], feature("Custom Web App").strip_brands, "the app leads with its own mark, so both logos strip"
     assert_empty feature("Host").strip_brands
     assert_equal %w[zerobounce], feature("Email marketing").strip_brands
-    assert_equal %w[x tiktok], feature("Social posting").strip_brands
+    assert_equal %w[x tiktok], feature("Social Outreach").strip_brands
     assert_equal %w[egnyte slack], feature("Custom connectors").strip_brands
     assert_equal %w[anthropic openai], feature("AI features").strip_brands
   end
@@ -254,11 +254,16 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
   test "[unit] Pro is Growth's platform; Team adds the marketing rows, funnel generation planned" do
     marketing = WorkspacePackage.features.select { |f| f.category == "marketing" }.map(&:name)
-    assert_equal [ "Fractional CMO", "Content sprints", "Funnel generation", "Email marketing", "Launch warm-up", "Social posting" ], marketing
-    marketing.each do |name|
+    assert_equal [ "Social Outreach", "Email marketing", "Content sprints", "Launch warm-up", "Funnel generation" ], marketing,
+                 "the stack's Marketing rows read in the cards' lane order"
+    (marketing - [ "Social Outreach" ]).each do |name|
       refute feature(name).included_in?(:pro), "#{name} is a Team row"
       assert feature(name).included_in?(:team), name
     end
+    outreach = feature("Social Outreach")
+    assert outreach.planned?, "social posting is not built"
+    assert_equal [ nil, nil, "Posts you approve", "CMO-managed", "CMO-managed" ], TIERS.map { |key| outreach.value_for(key) }
+    assert_empty outreach.software_keys
     [ "Email drafting agent", "Knowledge base" ].each do |name|
       refute feature(name).included_in?(:pro), "#{name} is a Team feature from 2026-10-12"
       assert feature(name).included_in?(:team), name
@@ -304,25 +309,28 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute_match(/credit/i, WorkspacePackage.config.to_s, "build requests, not credits (metering is a separate task)")
   end
 
-  test "[unit] six groups, each paid step unlocking one: Custom app, Web address and Branded emails lead theirs" do
+  test "[unit] seven groups mirror the cards: Security & integrations and Agents replace Platform" do
     groups = WorkspacePackage.features_by_category
 
-    assert_equal %w[application domain platform marketing service add_ons], groups.map(&:first)
-    assert_equal %w[Application Domain Platform Marketing Service], groups.map { |g| g[1] }.first(5)
+    assert_equal %w[application domain platform agents marketing service add_ons], groups.map(&:first)
+    assert_equal [ "Application", "Domain", "Security & integrations", "Agents", "Marketing", "Service" ], groups.map { |g| g[1] }.first(6)
     assert_equal "Talk to us", WorkspacePackage.categories["add_ons"]
     leads = groups.to_h { |key, _, rows| [ key, rows.first.name ] }
     assert_equal({ "application" => "Custom Web App", "domain" => "Web address", "platform" => "Branded emails",
-                   "marketing" => "Fractional CMO", "service" => "Changes after launch", "add_ons" => "Custom connectors" }, leads)
+                   "agents" => "Fractional CTO", "marketing" => "Social Outreach", "service" => "Changes after launch",
+                   "add_ons" => "Custom connectors" }, leads)
+    assert_equal [ "Fractional CTO", "Fractional CMO", "Email drafting agent", "Knowledge base" ], groups.assoc("agents").last.map(&:name),
+                 "the stack's Agents rows read in the cards' lane order, the knowledge base that feeds the drafts last"
+    assert_includes groups.assoc("application").last.map(&:name), "Hosting mode", "where your app runs sits with the app"
     assert_equal [ "Web address", "Fast, protected domain" ], groups.assoc("domain").last.first(2).map(&:name)
-    assert_equal({ "domain" => "builder", "platform" => "pro", "marketing" => "team" },
-                 %w[application domain platform marketing service add_ons].to_h { |k| [ k, WorkspacePackage.category_from(k)&.key ] }.compact)
-    # Marketing is Team's alone. Platform holds Hosting mode, whose lower tiers
-    # read "McRitchie Studio hosted", and Branded emails, which leads Platform
-    # though Builder has it; every other Platform row starts at Pro.
+    assert_equal({ "domain" => "builder", "platform" => "pro", "agents" => "pro", "marketing" => "pro" },
+                 %w[application domain platform agents marketing service add_ons].to_h { |k| [ k, WorkspacePackage.category_from(k)&.key ] }.compact)
+    # Branded emails leads Security & integrations though Builder has it; every
+    # other row there starts at Pro. Marketing starts at Pro with Social Outreach.
     assert_equal "Branded emails", groups.assoc("platform").last.first.name
     assert feature("Branded emails").included_in?(:builder), "Branded emails keeps Builder as its first tier"
-    groups.assoc("platform").last.reject { |row| [ "Hosting mode", "Branded emails" ].include?(row.name) }.each { |row| refute row.included_in?(:builder), row.name }
-    groups.assoc("marketing").last.each { |row| refute row.included_in?(:pro), row.name }
+    groups.assoc("platform").last.reject { |row| row.name == "Branded emails" }.each { |row| refute row.included_in?(:builder), row.name }
+    (groups.assoc("agents").last + groups.assoc("marketing").last).each { |row| refute row.included_in?(:builder), row.name }
     assert_equal "domain", feature("Web address").glyph, "the domain leads with the drawn globe mark"
     assert_equal %w[squarespace], feature("Web address").strip_brands, "the registrar stays in the strip"
     integrations = feature("Integrations")
@@ -413,15 +421,14 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] card lanes: one fixed list per group, the same order on every card, missing lanes name the first tier that has them" do
     lanes = WorkspacePackage.card_lanes
     assert_equal WorkspacePackage::CARD_GROUPS, lanes.map(&:first)
-    assert_equal({ "Application" => [ "Custom Web App", "%{tier} Host & Storage", "Custom Domain" ],
-                   "Platform" => [ "Integrations", "Password vault" ],
-                   "Agents" => [ "Fractional CTO", "Fractional CMO", "Email drafting agent" ],
-                   "Marketing" => [ "Email marketing", "Content sprints", "Launch warm-up", "Funnels built for you",
-                                    "Social posting" ] },
+    assert_equal %w[Application Marketing Agents], WorkspacePackage::CARD_GROUPS
+    assert_equal({ "Application" => [ "Custom Web App", "%{tier} Host & Storage", "Custom Domain", "Integrations", "Password vault" ],
+                   "Marketing" => [ "Social Outreach", "Email marketing", "Content sprints", "Launch warm-up", "Funnels built for you" ],
+                   "Agents" => [ "Fractional CTO", "Fractional CMO", "Email drafting agent" ] },
                  lanes.to_h { |group, list| [ group, list.map(&:title) ] })
 
-    assert_equal({ "vibe" => %w[Application], "builder" => %w[Application Platform],
-                   "pro" => %w[Application Platform Agents], "team" => %w[Application Platform Agents Marketing] },
+    assert_equal({ "vibe" => %w[Application], "builder" => %w[Application Marketing],
+                   "pro" => %w[Application Marketing Agents], "team" => %w[Application Marketing Agents] },
                  WorkspacePackage.cards.to_h { |card| [ card.key, card.card_group_names ] })
     WorkspacePackage.cards.each do |card|
       card.card_groups.each do |group, lines|
@@ -437,9 +444,12 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                  WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
 
     missing = WorkspacePackage.cards.to_h { |c| [ c.key, c.card_lines.select(&:missing?).map { |l| [ l.title, l.in_tier.name ] } ] }
-    assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ] ],
-                   "builder" => [ [ "Integrations", "Pro" ], [ "Password vault", "Pro" ] ],
-                   "pro" => [ [ "Fractional CMO", "Team" ], [ "Email drafting agent", "Team" ] ], "team" => [] }, missing)
+    team_marketing = [ [ "Email marketing", "Team" ], [ "Content sprints", "Team" ], [ "Launch warm-up", "Team" ],
+                       [ "Funnels built for you", "Team" ] ]
+    assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ], [ "Integrations", "Pro" ], [ "Password vault", "Pro" ] ],
+                   "builder" => [ [ "Integrations", "Pro" ], [ "Password vault", "Pro" ], [ "Social Outreach", "Pro" ] ] + team_marketing,
+                   "pro" => team_marketing + [ [ "Fractional CMO", "Team" ], [ "Email drafting agent", "Team" ] ],
+                   "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
     assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
     assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
@@ -451,9 +461,13 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute WorkspacePackage.find(:vibe).card_lines.any? { |l| l.title == "Web address" }, "Web address folded into the Custom Domain lane"
 
     soon = WorkspacePackage.find(:team).card_lines.select(&:soon?).map(&:title)
-    assert_equal [ "Funnels built for you", "Social posting" ], soon
-    assert_equal "X and TikTok", WorkspacePackage.find(:team).card_lines.find { |l| l.key == "social" }.sub
-    assert feature("Funnel generation").planned? && feature("Social posting").planned?, "Coming soon lanes match planned rows"
+    assert_equal [ "CMO-Managed Social", "Funnels built for you" ], soon
+    social = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "social" } }
+    assert_equal [ "Social Outreach", "posts you approve", "soon" ], [ social.call(:pro).title, social.call(:pro).sub, social.call(:pro).status ]
+    assert_equal [ "CMO-Managed Social", "strategy and posting", "soon" ], [ social.call(:team).title, social.call(:team).sub, social.call(:team).status ]
+    assert_equal "Social Outreach", social.call(:pro).lane.feature
+    refute WorkspacePackage.card_lanes.flat_map(&:last).any? { |lane| lane.title == "Social posting" }, "folded into Social Outreach"
+    refute WorkspacePackage.card_lanes.any? { |group, _| group == "Platform" }, "the Platform group left the cards"
   end
 
   test "[unit] lane title varies by tier: Builder Custom Domain, Pro and Team Premium Domain" do

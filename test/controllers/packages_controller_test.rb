@@ -82,22 +82,25 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
                    css_select("#{card(package.key)} [data-test='package-line-group']").map { |g| g["data-group"] }
       assert_equal package.card_lines.map(&:key), css_select("#{card(package.key)} [data-test='package-line']").map { |l| l["data-lane"] }
     end
-    assert_equal %w[Application Platform Agents Marketing],
+    assert_equal %w[Application Marketing Agents],
                  css_select("#{card('team')} [data-test='package-line-group']").map { |p| p.text.strip }
+    assert_select "[data-test='package-line-group'][data-group='Platform']", 0, "Platform left the cards"
     assert_select "[data-test='package-highlight']", 0
     assert_select "[data-test='includes-previous']", 0
     assert_select "[data-test='package-spotlight']", 0, "the Cloudflare callout boxes are gone"
     # Every card spans the same tracks, so lanes share rows across the cards.
     spans = css_select("[data-test='package-card']").map { |c| c["style"] }
     assert_equal 1, spans.uniq.size
-    assert_match(/grid-row: span 22/, spans.first)
+    assert_match(/grid-row: span 21/, spans.first)
 
     # Marks carry their words: never color alone.
     assert_select "#{card('builder')} [data-test='package-line'][data-status='included'] [data-test='line-mark'][data-mark='included'][role='img'][aria-label='Included']", 3
-    { "vibe" => [ %w[domain], "Builder" ], "builder" => [ %w[integrations vault], "Pro" ],
-      "pro" => [ %w[cmo drafting], "Team" ] }.each do |key, (lanes, tier)|
-      assert_equal lanes, css_select("#{card(key)} [data-test='package-line'][data-status='missing']").map { |l| l["data-lane"] }, key
-      lanes.each do |lane|
+    team_marketing = %w[email_marketing content warmup funnels]
+    { "vibe" => { "domain" => "Builder", "integrations" => "Pro", "vault" => "Pro" },
+      "builder" => { "integrations" => "Pro", "vault" => "Pro", "social" => "Pro" }.merge(team_marketing.to_h { |k| [ k, "Team" ] }),
+      "pro" => team_marketing.to_h { |k| [ k, "Team" ] }.merge("cmo" => "Team", "drafting" => "Team") }.each do |key, lanes|
+      assert_equal lanes.keys, css_select("#{card(key)} [data-test='package-line'][data-status='missing']").map { |l| l["data-lane"] }, key
+      lanes.each do |lane, tier|
         row = "#{card(key)} [data-test='package-line'][data-lane='#{lane}']"
         assert_select "#{row} [data-test='line-mark'][data-mark='missing'][aria-label='In #{tier}']", 1
         assert_select "#{row} [data-test='line-in-tier']", text: "(In #{tier})"
@@ -113,8 +116,15 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{soon} [data-test='line-mark'][data-mark='soon'][aria-label='Coming soon']", 2
     assert_select "#{soon} [data-test='line-sub'] [data-test='coming-soon']", 2, "the tag sits on the subtext line"
     assert_select "#{soon} [data-test='line-title'] [data-test='coming-soon']", 0
-    assert_select "#{card('team')} [data-test='package-line'][data-lane='social'] [data-test='line-title']", text: "Social posting"
-    assert_select "#{card('team')} [data-test='package-line'][data-lane='social'] [data-test='line-sub']", text: /X and TikTok\s*Coming soon/
+    { "pro" => [ "Social Outreach", "posts you approve" ], "team" => [ "CMO-Managed Social", "strategy and posting" ] }.each do |key, (title, sub)|
+      social = "#{card(key)} [data-test='package-line'][data-lane='social'][data-status='soon']"
+      assert_select "#{social} [data-test='line-mark'][data-mark='soon']", 1, key
+      assert_select "#{social} [data-test='line-title']", text: title
+      assert_select "#{social} [data-test='line-sub']", text: /#{sub}\s*Coming soon/
+    end
+    assert_equal %w[social email_marketing content warmup funnels],
+                 css_select("#{card('team')} [data-test='package-line']").map { |l| l["data-lane"] }[5, 5], "Social Outreach leads Marketing"
+    assert_select "[data-test='line-title']", text: /Social posting/, count: 0
     assert_equal %w[cto cmo drafting], css_select("#{card('team')} [data-test='package-line-group'][data-group='Agents'] ~ [data-test='package-line']").map { |l| l["data-lane"] }.select { |k| %w[cto cmo drafting].include?(k) }
     assert_select "#{card('pro')} [data-test='package-line'][data-lane='drafting'][data-status='missing'] [data-test='line-in-tier']", text: "(In Team)"
     assert_select "#{soon} [data-mark='included']", 0
@@ -227,17 +237,20 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stack-legend']", text: /Included.*Not included.*Coming soon.*Add-on/m
   end
 
-  test "[component] the matrix groups Application, Domain, Platform, Marketing, Service and Talk to us, with their leads" do
+  test "[component] the matrix groups Application, Domain, Security & integrations, Agents, Marketing, Service and Talk to us, with their leads" do
     get packages_stack_path
 
-    assert_equal %w[application domain platform marketing service add_ons],
+    assert_equal %w[application domain platform agents marketing service add_ons],
                  css_select("[data-test='stack-category']").map { |tbody| tbody["data-category"] }
-    { "application" => "custom-web-app", "domain" => "web-address", "platform" => "branded-emails" }.each do |group, lead|
+    assert_select "[data-test='stack-category'][data-category='platform']", text: /Security & integrations/
+    assert_no_match(/>\s*Platform\s*</, response.body, "no Platform heading is left")
+    { "application" => "custom-web-app", "domain" => "web-address", "platform" => "branded-emails",
+      "agents" => "fractional-cto", "marketing" => "social-outreach" }.each do |group, lead|
       assert_equal lead, css_select("[data-test='stack-category'][data-category='#{group}'] [data-test='stack-row']").first["data-feature"], group
     end
     assert_equal %w[web-address fast-protected-domain],
                  css_select("[data-test='stack-category'][data-category='domain'] [data-test='stack-row']").first(2).map { |tr| tr["data-feature"] }
-    assert_equal [ "From Builder", "From Pro", "From Team" ], css_select("[data-test='stack-category-from']").map { |n| n.text.strip }
+    assert_equal [ "From Builder", "From Pro", "From Pro", "From Pro" ], css_select("[data-test='stack-category-from']").map { |n| n.text.strip }
     assert_select "[data-test='stack-category'][data-category='application'] [data-test='stack-category-from']", 0
     fast = "[data-test='stack-row'][data-feature='fast-protected-domain']"
     assert_select "#{fast} [data-test='stack-lead'][data-lead='cloudflare']"
@@ -298,8 +311,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='storage'] [data-test='stack-software'] [data-brand='cloudflare'][aria-label='Cloudflare']"
     assert_select "[data-feature='email-marketing'] [data-test='stack-lead'][data-lead='emoji']"
     assert_select "[data-feature='email-marketing'] [data-test='stack-software'] [data-brand='zerobounce']"
-    assert_select "[data-feature='social-posting'] [data-test='stack-software'] [data-brand='x']"
-    assert_select "[data-feature='social-posting'][data-status='planned'] [data-test='coming-soon']"
+    assert_select "[data-feature='social-posting']", 0
+    assert_select "[data-feature='social-outreach'] [data-test='stack-software'] [data-brand='x']"
+    assert_select "[data-feature='social-outreach'][data-status='planned'] [data-test='coming-soon']"
+    assert_equal [ "—", "—", "Posts you approve", "CMO-managed", "CMO-managed" ],
+                 css_select("[data-feature='social-outreach'] [data-test='stack-cell']").map { |td| cell_text(td) }
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'][data-lead='glyph-app'] [data-glyph='app'][aria-label='Custom app'] svg"
     assert_select "[data-feature='custom-web-app'] [data-test='stack-lead'] [data-brand='github']", 0, "GitHub moves to the strip"
