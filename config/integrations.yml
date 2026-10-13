@@ -4,11 +4,15 @@
 # integrations-and-add-ons-page): built to look at, not final copy.
 #
 # The core product is the agent-powered backend the tiers on /packages sell
-# (config/workspace_packages.yml). This page is what plugs into it, in two groups:
+# (config/workspace_packages.yml). This page is what plugs into it, in three
+# sections (Mr. McRitchie, 2026-10-13):
 #
 #   integrations  free connections to accounts the CLIENT owns. We do no ongoing
 #                 work and the client pays the vendor directly.
-#   add_ons       services we set up and run, priced (or quoted) on top of a plan.
+#   add_ons       the standard, repeatable services we set up and run, priced
+#                 (or quoted) on top of a plan.
+#   custom        rarer needs scoped one client at a time: no price line, one
+#                 "Talk to us" button.
 #
 # Entry keys:
 #   key       unique across the file
@@ -26,7 +30,7 @@
 #             first tier. Blank: no tier gate.
 #   tier_note optional muted line beside the tier ("Drafting agent from Team")
 #   price     integrations: omitted (they are free). add_ons: a price string, or
-#             omitted for "Quote".
+#             omitted for "Quote". custom: never shown.
 #   price_note optional muted line under the price
 #
 # The button is not configured: it follows from the group and the status, so a
@@ -35,6 +39,7 @@
 #   integrations, live or on_request  "Connect"       intent connect
 #   integrations, soon                "Get notified"  intent notify
 #   add_ons                           "Talk to us"    intent add_on
+#   custom                            "Talk to us"    intent custom
 groups:
   - key: integrations
     title: Integrations
@@ -54,22 +59,17 @@ groups:
         blurb: Your app posts the events you care about, such as sign-ups, orders and errors, into a Discord channel.
         status: on_request
         tier: vibe
-      - key: slack
-        name: Slack
-        icon: slack
-        blurb: The same notifications, and your agent's updates, in your Slack workspace.
-        status: soon
-      - key: stripe_connect
-        name: Stripe
-        icon: stripe
-        blurb: Take card payments into your own Stripe account, so the money lands with you.
-        status: soon
       - key: github_org
         name: GitHub
         icon: github
         blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
         status: on_request
         tier: enterprise
+      - key: slack
+        name: Slack
+        icon: slack
+        blurb: The same notifications, and your agent's updates, in your Slack workspace.
+        status: soon
 
   - key: add_ons
     title: Add-on services
@@ -88,11 +88,34 @@ groups:
         icon: "💳"
         blurb: Card, bank and crypto checkout built into your app.
         status: on_request
+      - key: extra_builds
+        name: Extra build requests
+        icon: "🛠️"
+        blurb: More features or a second app, beyond what your plan includes each month.
+        status: on_request
+
+  - key: custom
+    title: Talk to us
+    kicker: Custom
+    summary: Rarer needs we scope with you, one client at a time.
+    entries:
+      # Stripe moved here from Integrations (Mr. McRitchie, 2026-10-13). Still
+      # Coming soon: the code exists but is switched off.
+      - key: stripe_connect
+        name: Stripe
+        icon: stripe
+        blurb: Card payments into your own Stripe account.
+        status: soon
       - key: crypto
         name: Crypto and wallets
         icon: solana
         blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
         status: live
+      - key: extra_storage
+        name: Extra storage
+        icon: "🗄️"
+        blurb: More database and file storage when your app outgrows its plan.
+        status: on_request
       - key: ai_features
         name: AI features
         icon: "🧠"
@@ -103,16 +126,6 @@ groups:
         icon: "🔌"
         blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
         status: soon
-      - key: extra_builds
-        name: Extra build requests
-        icon: "🛠️"
-        blurb: More features or a second app, beyond what your plan includes each month.
-        status: on_request
-      - key: extra_storage
-        name: Extra storage
-        icon: "🗄️"
-        blurb: More database and file storage when your app outgrows its plan.
-        status: on_request
       - key: enterprise_extras
         name: White label, domains and compliance
         icon: "🛡️"

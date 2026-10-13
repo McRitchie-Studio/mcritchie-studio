@@ -405,6 +405,13 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "page" => "integrations", "item" => "github_org", "intent" => "connect", "ref" => "/integrations" }, hidden)
   end
 
+  test "[component] a custom-need card (intent custom) prefills its talk-to-us line" do
+    get contact_form_path(source: { page: "integrations", item: "crypto", intent: "custom" })
+
+    assert_select "textarea[name='contact_submission[message]']", text: "I'd like to talk about Crypto and wallets."
+    assert_select "[data-test='contact-source'][data-source-key='intent'][value='custom']"
+  end
+
   test "[component] another site's referrer is not stored as ref, and a mismatched intent prefills nothing" do
     get contact_form_path(source: { page: "integrations", item: "slack", intent: "connect" }),
         headers: { "Referer" => "https://evil.example.net/x" }

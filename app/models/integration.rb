@@ -10,12 +10,13 @@ class Integration
   # Every button opens the /contact form prefilled; the intent rides along in
   # the submission's `source`. It follows from the group and the status, never
   # from config, so a Coming soon entry can never say Connect.
-  INTENTS = %w[connect notify add_on].freeze
-  CTA_LABELS = { "connect" => "Connect", "notify" => "Get notified", "add_on" => "Talk to us" }.freeze
+  INTENTS = %w[connect notify add_on custom].freeze
+  CTA_LABELS = { "connect" => "Connect", "notify" => "Get notified", "add_on" => "Talk to us", "custom" => "Talk to us" }.freeze
   PAGE = "integrations".freeze
 
   Group = Struct.new(:key, :title, :kicker, :summary, :entries, keyword_init: true) do
     def add_ons? = key == "add_ons"
+    def custom? = key == "custom"
   end
 
   Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note,
@@ -29,9 +30,11 @@ class Integration
     def brand = WorkspaceIconConfig.software?(icon) ? icon.to_s : nil
 
     # connect: request a connection (an integration, live or on request).
-    # notify: hear when a Coming soon integration ships. add_on: talk about a service.
+    # notify: hear when a Coming soon integration ships. add_on: talk about a
+    # standard service. custom: scope a rarer need.
     def intent
       return "add_on" if group == "add_ons"
+      return "custom" if group == "custom"
 
       soon? ? "notify" : "connect"
     end
@@ -58,8 +61,14 @@ class Integration
       tier == first ? "Every plan" : "From #{WorkspacePackage.find(tier).name}"
     end
 
-    # Integrations are free; an add-on shows its price, or "Quote".
-    def price_label = group == "add_ons" ? (price.presence || "Quote") : "Free"
+    # Integrations are free; an add-on shows its price, or "Quote"; a custom
+    # entry shows no price line at all (nil).
+    def price_label
+      case group
+      when "integrations" then "Free"
+      when "add_ons" then price.presence || "Quote"
+      end
+    end
   end
 
   class << self

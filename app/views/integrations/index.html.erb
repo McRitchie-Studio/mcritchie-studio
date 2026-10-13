@@ -19,7 +19,9 @@
         <p class="max-w-xl text-sm text-muted sm:text-right"><%= group.summary %></p>
       </div>
 
-      <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <%# One rhythm for every section: four across at xl, two at md, one on a
+          phone. Grid rows stretch, so cards in a row end level. %>
+      <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <% group.entries.each do |entry| %>
           <article class="flex flex-col rounded-2xl border border-subtle bg-surface p-5"
                    data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
@@ -57,17 +59,22 @@
             <% end %>
             </div>
 
+            <%# The footer: price line and button side by side when they fit; the
+                button wraps below the price (never squeezes it) on a narrow card.
+                A custom entry has no price line, only its button. %>
             <div class="mt-auto flex flex-wrap items-end justify-between gap-3 border-t border-subtle pt-4">
-              <div class="min-w-0" data-test="entry-price">
-                <p class="font-bold text-heading [overflow-wrap:anywhere]"><%= entry.price_label %></p>
-                <% if entry.price_note.present? %>
-                  <p class="text-xs text-muted" data-test="entry-price-note"><%= entry.price_note %></p>
-                <% elsif group.add_ons? && entry.price.blank? %>
-                  <p class="text-xs text-muted">Scoped on a call</p>
-                <% elsif !group.add_ons? %>
-                  <p class="text-xs text-muted">You pay the vendor directly</p>
-                <% end %>
-              </div>
+              <% if entry.price_label %>
+                <div class="min-w-0 flex-[1_1_9rem]" data-test="entry-price">
+                  <p class="font-bold text-heading [overflow-wrap:anywhere]"><%= entry.price_label %></p>
+                  <% if entry.price_note.present? %>
+                    <p class="text-xs text-muted" data-test="entry-price-note"><%= entry.price_note %></p>
+                  <% elsif group.add_ons? %>
+                    <p class="text-xs text-muted">Scoped on a call</p>
+                  <% else %>
+                    <p class="text-xs text-muted">You pay the vendor directly</p>
+                  <% end %>
+                </div>
+              <% end %>
               <%# Every button opens the contact form prefilled, carrying where it came from. %>
               <%= link_to entry.cta_label, contact_form_path(source: entry.contact_source),
                     class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",

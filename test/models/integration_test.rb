@@ -1,14 +1,14 @@
 require "test_helper"
 
-# [unit] config/integrations.yml: two groups, every entry with a known status
+# [unit] config/integrations.yml: three groups, every entry with a known status
 # and a real tier, and the button each one gets: Connect for an integration
 # live or on request, Get notified for a Coming soon one, Talk to us for an
-# add-on. Never Connect on a Coming soon entry.
+# add-on or a custom need. Never Connect on a Coming soon entry.
 class IntegrationTest < ActiveSupport::TestCase
-  test "[unit] the config loads two groups, integrations then add-ons" do
+  test "[unit] the config loads three groups: integrations, add-ons, then custom" do
     groups = Integration.groups
 
-    assert_equal %w[integrations add_ons], groups.map(&:key)
+    assert_equal %w[integrations add_ons custom], groups.map(&:key)
     groups.each { |group| assert group.entries.any?, "#{group.key} has entries" }
   end
 
@@ -38,12 +38,13 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_nil Integration.find(:slack).availability
   end
 
-  test "[unit] integrations are free; an add-on shows its price or Quote" do
+  test "[unit] integrations are free; an add-on shows its price or Quote; a custom entry no price" do
     Integration.groups.first.entries.each { |entry| assert_equal "Free", entry.price_label, entry.key }
     managed = Integration.find(:google_workspace_managed)
     assert_equal "$25/month + $15/user/month", managed.price_label
     assert_equal "Google Business Starter seat included", managed.price_note
     assert_equal "Quote", Integration.find(:payments).price_label
+    Integration.groups.last.entries.each { |entry| assert_nil entry.price_label, entry.key }
   end
 
   test "[unit] an entry leads with a brand logo only for a known software key" do
@@ -59,8 +60,9 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "Connect", labels["discord"]
     assert_equal "Connect", labels["github_org"]
     assert_equal "Get notified", labels["slack"]
-    assert_equal "Get notified", labels["stripe_connect"]
-    Integration.groups.last.entries.each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
+    assert_equal "Talk to us", labels["stripe_connect"], "Stripe moved to the custom section"
+    Integration.groups.drop(1).flat_map(&:entries).each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
+    Integration.groups.last.entries.each { |entry| assert_equal "custom", entry.intent, entry.key }
     Integration.entries.select(&:soon?).each { |entry| refute_equal "connect", entry.intent, entry.key }
   end
 
@@ -70,6 +72,7 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "I'd like to connect GitHub.", github.contact_message
     assert_equal "Please let me know when Slack is available.", Integration.find(:slack).contact_message
     assert_equal "I'd like to talk about AI features.", Integration.find(:ai_features).contact_message
+    assert_equal({ page: "integrations", item: "ai_features", intent: "custom" }, Integration.find(:ai_features).contact_source)
   end
 
   test "[unit] an unknown status or tier fails the load" do
