@@ -177,6 +177,21 @@ class DomainCutoverIntegrationTest < Minitest::Test
     assert_equal "www.#{DOMAIN}", @world.config["APP_HOST"]
   end
 
+  def test_a_registrar_revert_restarts_the_six_hour_clock
+    planned_and_delegated
+    runner.verify
+    @world.registry_ns = %w[nsa1.squarespacedns.com nsa2.squarespacedns.com]
+    @now = T0 + 21_600
+    assert_match(/no longer shows Cloudflare's/, assert_raises(DomainCutover::Abort) { runner.finalize }.message)
+    runner.verify
+    @world.registry_on_cloudflare!
+    @now = T0 + (8 * 3600)
+    runner.verify
+    @now = T0 + (12 * 3600)
+    assert_match(/REFUSED until #{Regexp.escape((T0 + (14 * 3600)).iso8601)}/,
+                 assert_raises(DomainCutover::Abort) { runner.finalize }.message)
+  end
+
   def test_finalize_refuses_until_the_certificate_issues
     planned_and_delegated
     runner.verify

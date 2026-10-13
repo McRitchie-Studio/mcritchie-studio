@@ -121,7 +121,10 @@ module DomainCutover
       on_cf = same_ns?(info.nameservers, state["nameservers"])
       checks << check("registry NS are Cloudflare's", on_cf, info.nameservers.join(", "))
       checks << check("no DS published", !ds, ds ? "the TLD still serves a DS; wait for it (TTL 3600)" : "clear")
-      if on_cf && state["ns_seen_at"].nil?
+      if !on_cf && state["ns_seen_at"]
+        say "the registry no longer shows Cloudflare's nameservers: the six-hour clock resets"
+        state["ns_seen_at"] = nil
+      elsif on_cf && state["ns_seen_at"].nil?
         state["ns_seen_at"] = now.iso8601
         say "first saw Cloudflare's nameservers at the registry: #{state['ns_seen_at']}"
       end
@@ -176,6 +179,10 @@ module DomainCutover
       if now < allowed
         raise Abort, "finalize REFUSED until #{allowed.iso8601} (registry NS change seen #{seen.iso8601} + 6h): " \
                      "resolvers may still cache the old nameservers, and a redirect now can loop. Nothing was written."
+      end
+
+      unless same_ns?(@rdap.lookup(@domain).nameservers, state["nameservers"])
+        raise Abort, "finalize REFUSED: the registry no longer shows Cloudflare's nameservers. Run verify. Nothing was written."
       end
 
       zone = @cf.zone(state["zone_id"])
