@@ -44,7 +44,8 @@ runs (`gh run list`), the merge time, and the red jobs' logs. Logic and posture:
 `<slug>` is the slug `task begin` will derive from the title (the title,
 lowercased and hyphenated). The task does not exist yet, so the stamp is held on
 disk (`~/.ship-clock/<slug>.json`). If you stamped late, pass the prompt's time
-with `--at <ISO>` and `--estimated`.
+with `--at <ISO>` and `--estimated`. `--at` takes only a full ISO 8601 timestamp
+with a date and a zone (`2026-10-13T08:15:00-06:00`); anything vaguer is refused.
 
 **2. Build.** Run [`building-sop`](../../../modules/building-sop.md): `task begin`,
 build in the desk, then `submit-wait --launch`. Right after `task begin`, put the
@@ -83,7 +84,8 @@ on the clock. If it hangs or refuses, record that in the ledger note.
 ```
 
 `record` prints the report and writes the run's row to
-`docs/agents/ledgers/ship-clock.csv` in the tree you stand in. A re-run replaces
+`docs/agents/ledgers/ship-clock.csv` in the mcritchie-studio tree you stand in;
+outside one it refuses unless `--ledger PATH` names the file. A re-run replaces
 that slug's row; it never adds a second one. Use `report` (read-only) to preview
 the numbers, and `--json` for machine output. The ledger is version-controlled, so
 the row lands through a task: fold it into the next hub task you build, or open a

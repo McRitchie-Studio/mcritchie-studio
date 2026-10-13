@@ -89,4 +89,37 @@ class IntentScoutTest < Minitest::Test
     assert_includes text, "scout-brief demo-task", "the builder is told how to read the brief back"
     refute(lines.any? { |line| line.lstrip.start_with?("cd ") }, "begin's handoff stays the only cd line")
   end
+
+  # --- version skew and bounded reads (bin/submit's 0/8 read) -------------------
+
+  def test_an_older_bin_task_usage_reads_as_a_missing_subcommand
+    assert IntentScout.missing_subcommand?(1, "Usage:\n  bin/task list [--stage S]\n")
+    assert IntentScout.missing_subcommand?(1, "warning: already initialized constant X\nUsage:\n  bin/task list\n"),
+           "a warning line ahead of the usage (bundler under fast-check) still reads as version skew"
+    refute IntentScout.missing_subcommand?(1, "error: GET /api/v1/activities?x -> 500: boom\n"), "a board error"
+    refute IntentScout.missing_subcommand?(1, "Usage:\n  bin/task scout-brief <slug>\n"), "a newer usage names it"
+    refute IntentScout.missing_subcommand?(2, "Usage:\n"), "exit 2 is no brief yet"
+    line = IntentScout.missing_subcommand_line("demo-task", "/x/bin/task")
+    assert_includes line, "/x/bin/task has no scout-brief subcommand"
+    refute_includes line, "could not read"
+  end
+
+  def test_the_bounded_runner_reports_status_timeout_and_raises
+    out, _err, status = IntentScout.run_bounded(["/bin/sh", "-c", "echo hi; exit 3"], 5)
+    assert_equal ["hi\n", 3], [out, status]
+
+    _out, _err, status = IntentScout.run_bounded(["/bin/sh", "-c", "sleep 30"], 0.5)
+    assert_equal :timeout, status
+
+    assert_raises(Errno::ENOENT) { IntentScout.run_bounded(["/no/such/bin/task"], 5) }
+    assert_raises(IntentScout::ChildDied) { IntentScout.run_bounded(["/bin/sh", "-c", "kill -9 $$"], 5) }
+  end
+
+  def test_the_board_deadline_is_short_and_overridable
+    assert_operator IntentScout::BOARD_TIMEOUT, :<=, 10
+    ENV["INTENT_SCOUT_TIMEOUT"] = "2"
+    assert_in_delta 2.0, IntentScout.board_timeout
+  ensure
+    ENV.delete("INTENT_SCOUT_TIMEOUT")
+  end
 end

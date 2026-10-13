@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "csv"
+require "digest"
+require "tmpdir"
 require "json"
 require "open3"
 require "time"
@@ -47,6 +49,14 @@ module ShipClock
   # The release-grain gates: QA candidate (QA deploy + QA) and the production ship.
   RELEASE_GATES = %w[g3_candidate g4_ship].freeze
   PRIORITY = { rework: 2, wait: 1, hands_on: 0 }.freeze
+  # A task slug as the board mints one (Task::DEPENDENCY_SLUG). The slug names a
+  # file under ~/.ship-clock, so anything else (a `../x`) is refused, never joined.
+  SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
+  # A full ISO 8601 timestamp: a date, a time, and a zone (Z or an offset). The
+  # --at and --t0 flags take only this, so a bare `12` can never stamp a guessed day.
+  STRICT_ISO = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\z/
+  # The most activity pages the T0 lookup walks (100 per page).
+  T0_PAGE_LIMIT = 50
 
   class Error < StandardError; end
 
@@ -59,6 +69,19 @@ module ShipClock
     Time.iso8601(value.to_s).utc
   rescue ArgumentError
     Time.parse(value.to_s).utc
+  end
+
+  def valid_slug?(slug) = slug.is_a?(String) && slug.match?(SLUG)
+
+  # Operator input: a full ISO 8601 timestamp or nil. No Time.parse fallback here,
+  # because that fallback reads `12` as the 12th of this month.
+  def parse_strict(value)
+    text = value.to_s.strip
+    return nil unless text.match?(STRICT_ISO)
+
+    Time.iso8601(text).utc
+  rescue ArgumentError
+    nil
   end
 
   # "08:25:14" in Denver time. TZ is swapped for the one conversion and put back.
@@ -322,18 +345,36 @@ module ShipClock
       end
     end
 
+    # The lock lives in the temp dir, keyed by the ledger's full path, so it never
+    # lands in the tree as a stray file beside the version-controlled ledger.
+    def lock_path(path)
+      File.join(Dir.tmpdir, "ship-clock-#{Digest::SHA256.hexdigest(File.expand_path(path))[0, 16]}.lock")
+    end
+
     # Append the run's row, or REPLACE the slug's earlier row (a re-run after a fix
     # must not leave two answers for one run). Returns :appended or :replaced.
+    # Two writers cannot interleave: the read-modify-write runs under an exclusive
+    # lock (lock_path), and the new ledger lands by temp file plus rename, so
+    # a reader never sees half a file.
     def write!(path, row)
-      rows = File.exist?(path) ? CSV.read(path) : []
-      rows = [HEADER] if rows.empty?
-      raise Error, "#{path} does not start with the ship-clock header" unless rows.first == HEADER
+      File.open(lock_path(path), File::RDWR | File::CREAT, 0o644) do |lock|
+        lock.flock(File::LOCK_EX)
+        rows = File.exist?(path) ? CSV.read(path) : []
+        rows = [HEADER] if rows.empty?
+        raise Error, "#{path} does not start with the ship-clock header" unless rows.first == HEADER
 
-      index = rows.index { |r| r[1] == row[1] }
-      outcome = index ? :replaced : :appended
-      index ? rows[index] = row : rows << row
-      File.write(path, rows.map { |r| CSV.generate_line(r) }.join)
-      outcome
+        index = rows.index { |r| r[1] == row[1] }
+        outcome = index ? :replaced : :appended
+        index ? rows[index] = row : rows << row
+        tmp = "#{path}.tmp-#{Process.pid}"
+        begin
+          File.write(tmp, rows.map { |r| CSV.generate_line(r) }.join)
+          File.rename(tmp, path)
+        ensure
+          File.delete(tmp) if File.exist?(tmp)
+        end
+        outcome
+      end
     end
   end
 
@@ -351,8 +392,17 @@ module ShipClock
 
     def gates(type, slug) = Array(data(@board.call("/api/v1/gates/#{type}/#{slug}")))
 
+    # The newest T0 note, from EVERY page of the task's comments: a busy task can
+    # carry more than 100, and the T0 is the oldest of them.
     def t0_note(slug)
-      rows = Array(data(@board.call("/api/v1/activities?task_slug=#{slug}&activity_type=comment&per_page=100")))
+      rows = []
+      (1..T0_PAGE_LIMIT).each do |page|
+        payload = @board.call("/api/v1/activities?task_slug=#{slug}&activity_type=comment&per_page=100&page=#{page}")
+        batch = Array(data(payload))
+        rows.concat(batch)
+        total_pages = payload.is_a?(Hash) ? payload.dig("meta", "total_pages").to_i : 0
+        break if batch.empty? || page >= total_pages
+      end
       rows.select { |a| a.dig("metadata", "kind") == T0_KIND }.max_by { |a| a["created_at"].to_s }
     end
 

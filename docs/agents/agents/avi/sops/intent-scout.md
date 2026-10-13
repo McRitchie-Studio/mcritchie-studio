@@ -11,8 +11,10 @@ decides. The build never waits on the scout.
 
 ## Trigger
 
-The act begins at `bin/task begin`. When `begin` claims a task, it posts an
-`INTENT SCOUT OWED:` note on the task and prints a paste-ready launch:
+The act begins at `bin/task begin`. When `begin` claims a task, it prints a
+paste-ready launch, then posts an `INTENT SCOUT OWED:` note on the task (a
+best-effort post with a few-second deadline, so a slow board never holds the
+launch back):
 
 ```text
 scout: Avi owes this task an intent scout (…/docs/agents/agents/avi/sops/intent-scout.md).
@@ -97,7 +99,8 @@ Aim for about ten minutes, so the brief lands before the builder's submit does.
    ```
 
    That prefix is the whole contract: `bin/task scout-brief <slug>` reads the
-   newest such note back, and `bin/submit` warns at 0/8 when none is on the task.
+   newest such note back (exit 2 when none is there, exit 1 when the board could
+   not be read), and `bin/submit` warns at 0/8 when none is on the task.
 
 6. **Hand it to the builder** through the session that launched you: report the
    brief in your final message. Do not file the follow-up card yourself; the

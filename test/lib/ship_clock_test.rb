@@ -202,6 +202,58 @@ class ShipClockTest < Minitest::Test
     end
   end
 
+  def test_concurrent_writers_lose_no_row_and_leave_no_stray_file
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "ship-clock.csv")
+      row = ShipClock::Ledger.row(ShipClock::Timeline.build(records))
+      pids = 8.times.map do |i|
+        fork { ShipClock::Ledger.write!(path, row.dup.tap { |r| r[1] = "task-#{i}" }) }
+      end
+      pids.each { |pid| Process.wait(pid) }
+
+      slugs = CSV.read(path).drop(1).map { |r| r[1] }
+      assert_equal (0..7).map { |i| "task-#{i}" }.sort, slugs.sort, "every writer's row survives"
+      assert_equal ["ship-clock.csv"], Dir.children(dir), "no lock or temp file lands beside the ledger"
+    end
+  end
+
+  # --- operator input ------------------------------------------------------
+
+  def test_a_slug_must_be_a_task_slug
+    assert ShipClock.valid_slug?("scout-clock-review-hardening")
+    assert ShipClock.valid_slug?("a_b-1")
+    ["../x", "a/b", "", "-a", "A-b", "a--b", "a b", nil].each do |bad|
+      refute ShipClock.valid_slug?(bad), bad.inspect
+    end
+  end
+
+  def test_strict_parse_takes_only_a_full_timestamp_with_a_zone
+    assert_equal t("14:15:00"), ShipClock.parse_strict("2026-10-13T14:15:00Z")
+    assert_equal t("14:15:00"), ShipClock.parse_strict("2026-10-13T08:15:00-06:00")
+    assert_equal t("14:15:00"), ShipClock.parse_strict("2026-10-13T14:15:00.000+00:00")
+    ["12", "2026-10-13T14:15Z", "08:15", "2026-10-13", "2026-10-13T08:15:00", "yesterday", "2026-13-40T99:00:00Z", nil].each do |bad|
+      assert_nil ShipClock.parse_strict(bad), bad.inspect
+    end
+  end
+
+  # --- Sources.t0_note -----------------------------------------------------
+
+  def test_the_t0_lookup_reads_every_page_of_comments
+    note = { "created_at" => "2026-10-13T14:15:02Z", "metadata" => { "kind" => ShipClock::T0_KIND, "t0" => "x" } }
+    filler = ->(n) { Array.new(n) { |i| { "created_at" => "2026-10-13T15:#{format("%02d", i % 60)}:00Z", "metadata" => {} } } }
+    pages = { 1 => filler.call(100), 2 => filler.call(100), 3 => [note] }
+    asked = []
+    board = lambda do |path|
+      page = path[/page=(\d+)\z/, 1].to_i
+      asked << page
+      { "data" => pages.fetch(page, []), "meta" => { "page" => page, "total_pages" => 3 } }
+    end
+    sources = ShipClock::Sources.new(board: board, gh: ->(_) { ["", false] })
+
+    assert_equal note, sources.t0_note("demo"), "the T0 on page 3 is found"
+    assert_equal [1, 2, 3], asked, "it stops at the last page"
+  end
+
   # --- formatting ----------------------------------------------------------
 
   def test_denver_and_duration_render

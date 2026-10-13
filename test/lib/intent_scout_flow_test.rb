@@ -58,9 +58,17 @@ class IntentScoutFlowTest < Minitest::Test
         headers[k.strip.downcase] = v.strip if v
       end
       body = headers["content-length"] ? client.read(headers["content-length"].to_i) : ""
+      board_read = method == "GET" && target.start_with?("/api/v1/activities")
+      (client.close; next) if board_read && @activities_fault == :drop
+      sleep 4 if board_read && @activities_fault == :hang
       status, payload = respond(method, target, body)
-      client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
-                   "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      status, payload = ["500 Internal Server Error", JSON.generate("error" => "boom")] if board_read && @activities_fault == :error
+      begin
+        client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
+                     "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      rescue Errno::EPIPE, Errno::ECONNRESET
+        nil # the caller gave up waiting (a timeout test); keep serving
+      end
       client.close
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
@@ -141,8 +149,8 @@ class IntentScoutFlowTest < Minitest::Test
     }.merge(TaskUsageSandboxEnv.child_env(@root)).merge(extra))
   end
 
-  def task(*args)
-    Open3.capture3(board_env, RbConfig.ruby, TASK_BIN, *args)
+  def task(*args, env: {})
+    Open3.capture3(board_env(env), RbConfig.ruby, TASK_BIN, *args)
   end
 
   # A clean git repo, so submit's 1/8 commit has nothing to do and 2/8 is reached.
@@ -159,15 +167,26 @@ class IntentScoutFlowTest < Minitest::Test
     end
   end
 
-  def submit
-    Open3.capture3(board_env(
+  def submit(task_bin: TASK_BIN, env: {})
+    Open3.capture3(board_env({
       "SHIP_ROOT" => ship_root,
-      "SHIP_TASK_BIN" => TASK_BIN,
+      "SHIP_TASK_BIN" => task_bin,
       "SHIP_DOR_CHECK_BIN" => stub("dor-stub", "exit 0"),
       "SHIP_FAST_CHECK_BIN" => stub("fast-stub", "exit 1"),
       "SHIP_GH_BIN" => stub("gh-stub", "exit 1"),
       "SHIP_ACTIVITY_BIN" => stub("ship-activity-stub", "exit 0")
-    ), RbConfig.ruby, SUBMIT_BIN, SLUG)
+    }.merge(env)), RbConfig.ruby, SUBMIT_BIN, SLUG)
+  end
+
+  # A bin/task that answers `scout-brief` with `body` and passes every other
+  # subcommand to the real bin/task.
+  def task_wrapper(name, body)
+    stub(name, "if ARGV.first == \"scout-brief\"\n#{body}\nend\nexec(#{RbConfig.ruby.inspect}, #{TASK_BIN.inspect}, *ARGV)")
+  end
+
+  def begun_task
+    @task = { "slug" => SLUG, "stage" => "building", "title" => "Price The Team Tier",
+              "metadata" => { "devops" => { "worktree_slug" => SLUG } } }
   end
 
   # --- the flow --------------------------------------------------------------------
@@ -205,5 +224,64 @@ class IntentScoutFlowTest < Minitest::Test
 
     assert_equal 1, without.exitstatus, "the failing pre-flight stub stops both runs at 2/8:\n#{without_err}"
     assert_equal without.exitstatus, with.exitstatus, "the brief must not change submit's exit status"
+  end
+
+  # --- scout-brief on a board error exits 1, never 2 ("no brief yet") ------------
+
+  def test_scout_brief_exits_one_when_the_board_answers_an_error
+    @activities_fault = :error
+    _out, err, status = task("scout-brief", SLUG)
+
+    assert_equal 1, status.exitstatus, "a board error is not 'no brief yet':\n#{err}"
+    refute_includes err, "no intent-scout brief on"
+  end
+
+  def test_scout_brief_exits_one_on_a_network_error
+    @activities_fault = :drop
+    _out, err, status = task("scout-brief", SLUG)
+
+    assert_equal 1, status.exitstatus, err
+    assert_includes err, "could not read #{SLUG}'s notes for an intent-scout brief"
+  end
+
+  def test_scout_brief_exits_one_when_the_board_read_times_out
+    @activities_fault = :hang
+    _out, err, status = task("scout-brief", SLUG, env: { "INTENT_SCOUT_TIMEOUT" => "1" })
+
+    assert_equal 1, status.exitstatus, err
+    assert_includes err, "Net::ReadTimeout"
+  end
+
+  # --- submit's scout read: every failure warns and the ship carries on -----------
+
+  def test_submit_names_an_older_bin_task_with_no_scout_brief_subcommand
+    begun_task
+    old = task_wrapper("old-task", "warn \"Usage:\\n  bin/task list [--stage S]\"\nexit 1")
+    _out, err, = submit(task_bin: old)
+
+    assert_includes err, "has no scout-brief subcommand (it is older than this bin/submit)"
+    refute_includes err, "could not read #{SLUG}'s notes", "the version skew is not a board problem"
+    assert_includes err, "2/8 pre-flight", "the warning never stopped the ship"
+  end
+
+  def test_submit_survives_a_scout_brief_child_that_dies
+    begun_task
+    dying = task_wrapper("dying-task", "Process.kill(\"KILL\", Process.pid)")
+    _out, err, = submit(task_bin: dying)
+
+    assert_includes err, "WARNING: could not read #{SLUG}'s notes for an intent-scout brief"
+    assert_includes err, "2/8 pre-flight"
+  end
+
+  def test_submit_bounds_a_hung_scout_brief_child
+    begun_task
+    hung = task_wrapper("hung-task", "sleep 30")
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    _out, err, = submit(task_bin: hung, env: { "INTENT_SCOUT_SUBMIT_TIMEOUT" => "1" })
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert_includes err, "intent-scout brief read for #{SLUG} passed its 1s deadline"
+    assert_includes err, "2/8 pre-flight"
+    assert elapsed < 25, "the deadline bounds submit (took #{elapsed.round(1)}s)"
   end
 end
