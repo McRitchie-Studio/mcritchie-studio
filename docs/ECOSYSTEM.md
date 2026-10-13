@@ -16,7 +16,7 @@ app on display) and **archived** (nothing deploys it). Every app runs on Heroku.
 |-----|--------|------|------|------------|----|
 | [`mcritchie-studio`](https://github.com/McRitchie-Studio/mcritchie-studio) | live | Flagship hub: task board and DevOps pipeline, agent registry and activity, SSO source for the satellites, NFL data, news and content pipelines, email broadcasts, recovery scripts, agent docs | 3000 | https://mcritchie.studio | https://qa.mcritchie.studio |
 | [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | live | Sports pick'em with on-chain settlement through `turf-vault` | 3100 | https://turfmonster.media | https://qa.turfmonster.media |
-| [`mcritchie-industries`](https://github.com/McRitchie-Studio/mcritchie-industries) | live | Business knowledge base: acquisitions, companies, financials, clients | 3500 | https://www.mcritchie.industries | https://qa.mcritchie.industries |
+| [`mcritchie-industries`](https://github.com/McRitchie-Studio/mcritchie-industries) | live | Business knowledge base: acquisitions, companies, financials, clients | 3500 | https://mcritchie.industries | https://qa.mcritchie.industries |
 | [`cyvasse`](https://github.com/McRitchie-Studio/cyvasse) | live | Hex strategy board game | 3600 | https://cyvasse.mcritchie.studio | none |
 | [`moms-app`](https://github.com/McRitchie-Studio/moms-app) | live, not showcased | Karen McRitchie's family audiobook and slideshow site | 4400 | https://karenmcritchie.com | none |
 | [`dads-app`](https://github.com/McRitchie-Studio/dads-app) | showcase | Photo slideshow of Greig McRitchie | 3700 | https://greigmcritchie.com | none |
