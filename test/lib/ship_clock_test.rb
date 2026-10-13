@@ -3,7 +3,8 @@
 # [unit] ShipClock (bin/lib/ship_clock.rb): the phase splitter that sorts every second
 # from T0 to production into hands-on, fixed wait and rework; the timeline built from
 # board and GitHub records; and the ledger writer. The record fixtures are the shape of
-# team-tier-nine-hundred's real records (2026-10-13), trimmed.
+# team-tier-nine-hundred's real records (2026-10-13), trimmed; the failing test's path is
+# renamed so the citation ratchet does not read it as a path:line citation.
 #
 #   ruby -Itest test/lib/ship_clock_test.rb
 require "minitest/autorun"
@@ -88,7 +89,7 @@ class ShipClockTest < Minitest::Test
   def records(**over)
     {
       task: task, t0: { at: t("14:15:00"), source: "estimated" },
-      ci_runs: ci_runs, ci_causes: { 1 => "ci / rails (2): test/views/stack_view_test.rb:32" },
+      ci_runs: ci_runs, ci_causes: { 1 => "ci / rails (2): test/views/price_card_sample_test.rb:32" },
       pr: { "createdAt" => "2026-10-13T14:26:53Z", "mergedAt" => "2026-10-13T14:44:55Z" },
       task_gates: [gate("dor", 1, "14:32:43", "14:32:44", false,
                         sops: [{ "sop" => "ci", "result" => "fail" }]),
@@ -119,7 +120,7 @@ class ShipClockTest < Minitest::Test
     rows = ShipClock::Timeline.build(records)["rework"]
 
     red = rows.find { |r| r["kind"] == "red CI" }
-    assert_equal "ci / rails (2): test/views/stack_view_test.rb:32", red["cause"]
+    assert_equal "ci / rails (2): test/views/price_card_sample_test.rb:32", red["cause"]
     assert_equal 480, red["seconds"], "a red round runs to the next round's start: the fix rides inside it"
     assert_equal "ci failed", rows.find { |r| r["kind"] == "failed dor #1" }["cause"]
     assert_match(/aborted/, rows.find { |r| r["kind"] == "failed g4_ship #1" }["cause"])

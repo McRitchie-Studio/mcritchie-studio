@@ -63,7 +63,7 @@ class ShipClockCliTest < Minitest::Test
       "run view" => { "jobs" => [{ "databaseId" => 7001, "name" => "ci / rails (2)", "conclusion" => "failure" },
                                  { "databaseId" => 7002, "name" => "ci / lint", "conclusion" => "success" }] }.to_json,
       "api" => "2026-10-13T14:31:10.1Z Failure:\n" \
-               "2026-10-13T14:31:10.2Z StackViewTest#test_team_tier_price [test/views/stack_view_test.rb:32]:\n" \
+               "2026-10-13T14:31:10.2Z StackViewTest#test_team_tier_price [test/views/price_card_sample_test.rb:32]:\n" \
                "2026-10-13T14:31:10.3Z Expected \"$1,500\" to include \"$900\".\n" \
                "2026-10-13T14:31:10.4Z\n"
     }
@@ -152,7 +152,7 @@ class ShipClockCliTest < Minitest::Test
     assert_equal [3789, 1259, 1713, 817], report.values_at("total_s", "hands_on_s", "wait_s", "rework_s")
     assert_equal 1, report["red_ci_rounds"]
     red = report["rework"].find { |r| r["kind"] == "red CI" }
-    assert_equal "ci / rails (2): test/views/stack_view_test.rb:32", red["cause"], "the cause is read from the red job's log"
+    assert_equal "ci / rails (2): test/views/price_card_sample_test.rb:32", red["cause"], "the cause is read from the red job's log"
 
     paths = requests.map { |r| r[:path] }
     assert_includes paths, "/api/v1/gates/release/#{RELEASE}"
