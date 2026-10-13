@@ -137,6 +137,10 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("via" => []) ]) }
     assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("status" => "beta") ]) }
     assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability, ability ]) }
+    assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("name" => "") ]) }
+    # What YAML makes of { name: Post sign-ups, errors and updates }: a stray key.
+    error = assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("errors and updates" => nil) ]) }
+    assert_match(/quote a name with a comma/, error.message)
   end
 
   test "[unit] an entry with no connections has none, and a lone method follows the entry's status" do

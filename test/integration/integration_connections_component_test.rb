@@ -33,6 +33,15 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     assert_equal 1, discord.css("[data-test='entry-method']").size
     assert_equal 2, discord.css("[data-test='entry-ability']").size
     assert_empty discord.css("[data-test='ability-via']")
+    assert_equal "Post sign-ups, errors and agent updates", discord.at_css("[data-ability='post_updates']").text.squish
     assert_empty card("ai_features").css("[data-test='entry-connections']")
+  end
+
+  test "[component] a Coming soon card does not repeat Coming soon on its ways or abilities" do
+    get integrations_path
+    slack = card("slack")
+
+    assert_equal "soon", slack.at_css("[data-ability='post_updates']")["data-status"] # the control: it IS soon
+    assert_not_includes slack.at_css("[data-test='entry-connections']").text, "Coming soon"
   end
 end

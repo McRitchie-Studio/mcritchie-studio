@@ -127,6 +127,11 @@ class Integration
       entry = Entry.new(group: group_key, **attrs.slice(*Entry.members.map(&:to_s).without("group", "connection_methods")).symbolize_keys)
       entry.connects = Array(entry.connects).map(&:to_s)
       entry.abilities = Array(entry.abilities).map do |ability|
+        # An unquoted comma in a flow mapping ({ name: a, b }) splits the name
+        # and leaves a stray key: refuse it rather than render half a name.
+        stray = ability.keys.map(&:to_s) - Ability.members.map(&:to_s)
+        raise ArgumentError, "#{entry.key}: ability #{ability['key']} has unknown fields #{stray.join(', ')} (quote a name with a comma)" if stray.any?
+
         Ability.new(key: ability["key"].to_s, name: ability["name"], via: Array(ability["via"]).map(&:to_s),
                     status: ability["status"] || "live")
       end
@@ -157,6 +162,7 @@ class Integration
 
       entry.abilities.each do |ability|
         raise ArgumentError, "#{entry.key}.#{ability.key}: unknown status #{ability.status.inspect}" unless ABILITY_STATUSES.include?(ability.status)
+        raise ArgumentError, "#{entry.key}.#{ability.key}: has no name" if ability.name.blank?
         raise ArgumentError, "#{entry.key}.#{ability.key}: names no connection method" if ability.via.empty?
 
         missing = ability.via - entry.connects

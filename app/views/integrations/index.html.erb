@@ -68,10 +68,11 @@
                   <p class="font-semibold uppercase tracking-wider text-muted">How it connects</p>
                   <ul class="mt-1 space-y-1.5">
                     <% entry.connection_methods.each do |method| %>
+                      <%# A Coming soon card already says so once; no chip repeats it. %>
                       <% method_soon = entry.method_soon?(method.key) %>
                       <li data-test="entry-method" data-method="<%= method.key %>" data-soon="<%= method_soon %>">
                         <span class="font-medium text-heading"><%= method.label %></span>
-                        <% if method_soon %>
+                        <% if method_soon && !entry.soon? %>
                           <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
                         <% end %>
                         <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
@@ -91,7 +92,7 @@
                             <% if entry.connection_methods.size > 1 %>
                               <span class="text-muted" data-test="ability-via">· <%= ability.via.map { |key| entry.connection_methods.find { _1.key == key }.label }.join(" or ") %></span>
                             <% end %>
-                            <% if ability.soon? %>
+                            <% if ability.soon? && !entry.soon? %>
                               <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
                             <% end %>
                           </span>

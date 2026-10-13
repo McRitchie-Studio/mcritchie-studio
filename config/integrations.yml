@@ -113,7 +113,7 @@ groups:
         guide: discord
         connects: [app_install]
         abilities:
-          - { key: post_updates, name: Post sign-ups, errors and agent updates, via: [app_install] }
+          - { key: post_updates, name: "Post sign-ups, errors and agent updates", via: [app_install] }
           - { key: answer_mentions, name: Answer when you @‑mention it, via: [app_install] }
       - key: github_org
         name: GitHub
