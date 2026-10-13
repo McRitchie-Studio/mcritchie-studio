@@ -333,15 +333,31 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                  "one short line: the cells already show the steps"
     domain = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "domain" } }
     assert_equal "www.your-app.com", domain.call(:builder).sub
-    assert_equal "your-app.com on Cloudflare", domain.call(:pro).sub
+    assert_equal "your-app.com · fast, guarded", domain.call(:pro).sub
     refute_match(/yourname|yourcompany/, WorkspacePackage.config.to_s, "one placeholder, your-app, everywhere")
   end
 
-  test "[unit] Pro sells the Cloudflare move: managed by us from Pro up, an honest free-plan promise" do
+  test "[unit] the domain lane reads Custom Domain up to Builder and Protected Domain from Pro, Cloudflare in no card line" do
+    lines = WorkspacePackage.cards.to_h { |card| [ card.key, card.card_lines.find { |l| l.key == "domain" } ] }
+
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "missing" ], lines["vibe"].to_h.values_at(:title, :sub, :status)
+    assert_equal [ "Custom Domain", "www.your-app.com", "included" ], lines["builder"].to_h.values_at(:title, :sub, :status)
+    %w[pro team].each do |key|
+      assert_equal [ "Protected Domain", "your-app.com · fast, guarded", "included" ], lines[key].to_h.values_at(:title, :sub, :status), key
+    end
+    WorkspacePackage.cards.flat_map(&:card_lines).each { |line| refute_match(/Cloudflare/, "#{line.title} #{line.sub}") }
+    assert_equal "Builder", lines["vibe"].in_tier.name, "a tier's own title never moves the missing lane's pointer"
+  end
+
+  test "[unit] Pro sells the Cloudflare move as Protected Domain from Pro up, an honest free-plan promise" do
     row = feature("Fast, protected domain")
 
     assert_equal "cloudflare", row.brand
-    assert_equal [ nil, nil, "Managed by us", "Managed by us", "Managed by us" ], TIERS.map { |key| row.value_for(key) }
+    assert_equal [ nil, nil ] + [ "Protected Domain · your-app.com · fast, guarded" ] * 3, TIERS.map { |key| row.value_for(key) }
+    assert_equal "DNS on Cloudflare's global network: faster lookups, protection from attacks, email authentication " \
+                 "set up for you, and changes made by our team the same day.", row.blurb,
+                 "Cloudflare is named in the row's detail line, never in a cell"
+    TIERS.each { |key| refute_match(/Cloudflare/, row.value_for(key).to_s, "#{key}: the cell sells the outcome") }
     assert row.live?
     assert_equal [ "domain-dns", "Cloudflare DNS — Pro and above", "Approve the move once" ], [ row.sop, row.section, row.you_do ]
     assert_equal %w[cloudflare], row.software_keys(:pro)
@@ -380,7 +396,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal "domain-dns", dns.sop
     assert_equal "Cloudflare DNS — Pro and above", dns.section
     assert_equal %w[pro team enterprise], TIERS.select { |key| dns.included_in?(key) }
-    assert_equal "Managed by us", dns.value_for(:pro)
+    assert_equal "Protected Domain · your-app.com · fast, guarded", dns.value_for(:pro)
     assert_equal %w[cloudflare], dns.software_keys(:pro)
   end
 
@@ -417,7 +433,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     titles = ->(key, lane) { WorkspacePackage.find(key).card_lines.find { |l| l.key == lane }.title }
     assert_equal [ "Vibe Host & Storage", "Builder Host & Storage", "Pro Host & Storage", "Team Host & Storage" ],
                  WorkspacePackage.cards.map { |c| titles.call(c.key, "host_storage") }
-    assert_equal [ "Custom Domain" ] * 4, WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
+    assert_equal [ "Custom Domain", "Custom Domain", "Protected Domain", "Protected Domain" ],
+                 WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
 
     missing = WorkspacePackage.cards.to_h { |c| [ c.key, c.card_lines.select(&:missing?).map { |l| [ l.title, l.in_tier.name ] } ] }
     assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ] ],
