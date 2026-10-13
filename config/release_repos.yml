@@ -408,9 +408,8 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/commercial-welding.git
       branch: main
-      # The bare domain, the public address since the Cloudflare move of
-      # 2026-10-13 (domain-dns § Cloudflare DNS; bin/domain-cutover finalize
-      # issues its ACM certificate before APP_HOST moves). Ship smokes after the
-      # push, and an unresolvable host aborts a live deploy; until 2026-10-13 this
-      # was the herokuapp host for that reason.
+      # The bare domain, the public address on Cloudflare DNS (domain-dns
+      # § Cloudflare DNS: bin/domain-cutover finalize moves APP_HOST only after
+      # its ACM certificate issues). Ship smokes after the push, and an
+      # unresolvable host aborts a live deploy.
       smoke_url: https://commercialwelding.llc
