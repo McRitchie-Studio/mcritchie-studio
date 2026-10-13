@@ -358,11 +358,13 @@ module ShipClock
 
     def ci_runs(repo, branch)
       gh_json(["run", "list", "--repo", repo, "--branch", branch, "--limit", "100", "--json",
-               "databaseId,headSha,conclusion,status,createdAt,startedAt,updatedAt,workflowName,event"]) || []
+               "databaseId,headSha,conclusion,status,createdAt,startedAt,updatedAt,workflowName,event"]) ||
+        raise(Error, "gh run list failed for #{branch}; refresh gh auth and re-run (a missing CI read would misfile CI time as hands-on)")
     end
 
     def pr(url)
-      gh_json(["pr", "view", url, "--json", "createdAt,mergedAt"]) || {}
+      gh_json(["pr", "view", url, "--json", "createdAt,mergedAt"]) ||
+        raise(Error, "gh pr view failed for #{url}; refresh gh auth and re-run")
     end
 
     # The first failing test (or failing job) of a red run, read from its jobs' logs.

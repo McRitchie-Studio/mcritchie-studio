@@ -187,6 +187,14 @@ class ShipClockCliTest < Minitest::Test
     assert_match(/HTTP 500/, err)
   end
 
+  def test_a_failed_gh_read_refuses_rather_than_filing_ci_time_as_hands_on
+    File.write(File.join(@dir, "gh.json"), JSON.generate(gh_fixture.except("run list")))
+    _out, err, status, = run_clock(["report", SLUG])
+
+    refute status.success?
+    assert_match(/gh run list failed/, err)
+  end
+
   # --- record --------------------------------------------------------------
 
   def test_record_appends_one_ledger_row_and_replaces_it_on_a_rerun
