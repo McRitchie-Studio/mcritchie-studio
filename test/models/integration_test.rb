@@ -91,4 +91,61 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Integration.send(:build_entry, "add_ons", { "key" => "x", "status" => "shipped" }) }
     assert_raises(ArgumentError) { Integration.send(:build_entry, "add_ons", { "key" => "x", "status" => "live", "tier" => "growth" }) }
   end
+
+  test "[unit] the five connection methods, each with who it covers, setup and upkeep" do
+    methods = Integration.connection_methods
+
+    assert_equal %w[sign_in admin_grant app_install api_key managed], methods.keys
+    methods.each_value { |m| assert(m.label.present? && m.covers.present? && m.setup.present? && m.upkeep.present?, m.key) }
+    assert_equal "May ask you to sign in again", methods["sign_in"].upkeep
+    assert_equal "No upkeep", methods["admin_grant"].upkeep
+  end
+
+  test "[unit] Google Workspace connects two ways, and each ability names the ways that unlock it" do
+    google = Integration.find(:google_workspace_connect)
+
+    assert_equal %w[admin_grant sign_in], google.connects
+    assert_equal [ "Admin approval", "Sign in" ], google.connection_methods.map(&:label)
+    abilities = google.abilities.to_h { |a| [ a.key, a ] }
+    assert_equal %w[admin_grant], abilities["draft_email"].via
+    assert_equal %w[sign_in], abilities["read_calendar"].via
+    assert abilities["read_calendar"].soon?, "not a client's self-serve button yet"
+    refute google.method_soon?("admin_grant")
+    assert google.method_soon?("sign_in"), "every ability sign_in unlocks is still Coming soon"
+  end
+
+  test "[unit] every ability in the config names only ways its entry connects" do
+    Integration.entries.each do |entry|
+      entry.abilities.each { |ability| assert_empty ability.via - entry.connects, "#{entry.key}.#{ability.key}" }
+    end
+  end
+
+  test "[unit] the load refuses an ability naming a way the entry does not connect" do
+    attrs = { "key" => "x", "status" => "live", "connects" => [ "sign_in" ],
+              "abilities" => [ { "key" => "a", "name" => "A", "via" => [ "admin_grant" ] } ] }
+    error = assert_raises(ArgumentError) { Integration.send(:build_entry, "integrations", attrs) }
+    assert_match(/admin_grant is not a way x connects/, error.message)
+
+    assert Integration.send(:build_entry, "integrations", attrs.merge("connects" => %w[sign_in admin_grant])) # the control
+  end
+
+  test "[unit] the load refuses an unknown method, an ability with no way, a bad status, and duplicate abilities" do
+    build = ->(attrs) { Integration.send(:build_entry, "integrations", { "key" => "x", "status" => "live" }.merge(attrs)) }
+    ability = { "key" => "a", "name" => "A", "via" => [ "sign_in" ] }
+
+    assert_raises(ArgumentError) { build.("connects" => [ "carrier_pigeon" ]) }
+    assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("via" => []) ]) }
+    assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("status" => "beta") ]) }
+    assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability, ability ]) }
+    assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("name" => "") ]) }
+    # What YAML makes of { name: Post sign-ups, errors and updates }: a stray key.
+    error = assert_raises(ArgumentError) { build.("connects" => [ "sign_in" ], "abilities" => [ ability.merge("errors and updates" => nil) ]) }
+    assert_match(/quote a name with a comma/, error.message)
+  end
+
+  test "[unit] an entry with no connections has none, and a lone method follows the entry's status" do
+    assert_empty Integration.find(:ai_features).connection_methods
+    assert Integration.find(:stripe_connect).method_soon?("sign_in"), "Stripe is Coming soon"
+    refute Integration.find(:google_workspace_managed).method_soon?("managed")
+  end
 end

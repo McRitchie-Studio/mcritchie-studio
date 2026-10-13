@@ -172,6 +172,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # every caller discards its status. The rationale names all six callers, on
     # AgentActivityCli::HELP_EXIT.
     "atomic-event"           => :cli_arg_guard,
+    # The agent mailbox (docs/agents/system/agent-message-loop.md). bin/heartbeat
+    # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
+    "heartbeat"              => :cli_arg_guard,
+    "agent-inbox"            => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
     # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which
     # reach a durable write — measured from the dispatcher, not estimated; the SIX
@@ -628,7 +632,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # Anchored on the INSTALL call rather than on the `case options[:mode]`
     # dispatcher above it, because that dispatcher's other two arms print and exit
     # — this is the one line that writes to disk, and the guard has to precede it.
-    "install-git-credential-helper" => "CredentialHelperInstall.install!"
+    "install-git-credential-helper" => "CredentialHelperInstall.install!",
+    # The claim, the complete and the release all happen inside Heartbeat#run, and
+    # nothing before the Heartbeat is built touches the board.
+    "heartbeat"           => "AgentMailbox::Heartbeat.new"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

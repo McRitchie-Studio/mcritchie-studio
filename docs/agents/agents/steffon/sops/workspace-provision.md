@@ -313,6 +313,44 @@ These run where the key is: on production (`heroku run`), or on a desk that can
 read the 1Password item. A mailbox must be proven on the SAME database the
 draft runs against.
 
+## 8. Calendar by sign-in — the `sign_in` connection method
+
+Calendar does **not** ride the delegation above: the service account holds no
+Calendar scope, and widening `SCOPES` breaks every client domain until each
+re-grants (step 1's table). Calendar is read through a person's own Google
+sign-in instead: one click, one person, and it may ask again (revoked, or
+unused for six months). This is the `sign_in` method in
+`config/integrations.yml`; the admin grant is `admin_grant`.
+
+The hub dogfoods it first, at **`/admin/google_calendar`** (admin only): Connect
+sends the admin to Google, the callback stores `GoogleCalendarConnection` (the
+refresh token encrypted, never shown), and the page lists the next week's
+events as proof the read works. Disconnect deletes the row and asks Google to
+revoke the grant.
+
+What it asks Google for: `openid`, `email` and
+`https://www.googleapis.com/auth/calendar.events.readonly`. It cannot create,
+change or delete an event, or read calendar settings or sharing. A person can
+untick the calendar on Google's screen; the page then says
+"Connected without the calendar".
+
+**Its own OAuth client, never the hub's sign-in client.** Alex creates it once in
+Google Cloud Console (APIs & Services → Credentials → Create OAuth client ID →
+Web application), with the redirect URI the standing page prints
+(`https://mcritchie.studio/admin/google_calendar/callback` in production), and
+sets the consent screen's publishing status to **In production**: a Testing app's
+refresh tokens die after 7 days. Until Google verifies the app, the sign-in
+shows an "unverified app" warning that the person clicks through. File the pair
+under the admin writing lane ([`credential-filing`](credential-filing.md)) and
+set it on the app:
+
+```bash
+heroku config:set -a mcritchie-studio GOOGLE_CONNECT_CLIENT_ID=… GOOGLE_CONNECT_CLIENT_SECRET=…
+```
+
+Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
+(`config/initializers/google_calendar_stand_in.rb`); nothing reaches Google.
+
 ## Switching a workspace off — and back on
 
 ```bash

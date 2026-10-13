@@ -101,6 +101,35 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-field='hosting'] [data-client='turf-monster']", text: "MS-hosted"
   end
 
+  test "[component] the matrix header renders a logo image per client and no 1Password mark" do
+    clients = { "studio" => :brand, "industries" => :brand, "commercial-welding" => :brand, "cyvasse" => :file, "10and5" => :file }
+    clients.each_key.with_index { |slug, i| StackClient.create!(slug:, name: slug.titleize, tier: "vibe", position: i) }
+    log_in_as users(:alex)
+    get stack_matrix_path
+
+    assert_response :success
+    (clients.merge("turf-monster" => :brand)).each do |slug, source|
+      header = "[data-test='matrix-client'][data-client='#{slug}']"
+      assert_select "#{header} [data-test='client-logo'][data-source='#{source}'] img", minimum: 1
+      assert_select "#{header} [data-test='client-logo-missing']", 0, "#{slug} shows its logo, not an empty ring"
+    end
+    brand = ->(slug, name) { "[data-client='#{slug}'] [data-test='logo-themed'] img[src^='/logos/#{name}/icon']" }
+    assert_select brand.("industries", "industries"), 2, "Industries: its own icon, light and dark"
+    assert_select "#{brand.('industries', 'industries')}[src*='colouring=original']", 2, "the real steel icon, not the flat alt"
+    assert_select brand.("turf-monster", "turf"), 2
+    assert_select "[data-client='cyvasse'] img[src*='client_logos/cyvasse']", 1
+    assert_select "[data-client='10and5'] img[src*='client_logos/10and5']", 1
+    assert_select "[data-test='client-matrix'] thead img[src*='1password']", 0, "no vault icon in the header"
+  end
+
+  test "[component] the list view draws the same client logos" do
+    log_in_as users(:alex)
+    get stack_path
+
+    assert_select "[data-test='stack-client'][data-client='turf-monster'] [data-test='client-logo'][data-source='brand'] img[src^='/logos/turf/icon']", 2
+    assert_select "[data-test='stack-client'] img[src*='1password']", 0
+  end
+
   test "the matrix totals MRR over priced clients only" do
     paid = WorkspacePackage.all.select { |package| package.priced? && !package.free? }
     StackClient.find_by!(slug: "turf-monster").update!(tier: paid.last.key)

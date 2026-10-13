@@ -1,0 +1,54 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/heartbeat <soul> --channel discord [--once] [--worker ID] [--dry-run]
+#
+# One soul's pass over the agent mailbox (docs/agents/system/agent-message-loop.md):
+# claim the oldest message routed to <soul>, take the soul's ONE read-only action
+# (avi: bin/release status; xan: bin/task list), answer with a headless Claude run
+# that treats the message as untrusted data, and complete it so the reply posts
+# back to Discord once. Drains what is waiting, or one message with --once.
+# With nothing waiting it prints "nothing for <soul>" and exits 0.
+#
+#   --worker ID     the claim holder's id (default host-pid-random, unique per run)
+#   --dry-run       peek instead of claim, and complete nothing; still runs the
+#                   action and Claude so you can read the answer it would post
+#   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
+#
+# Exit: 0 done (answered or idle) · 1 a message was given back or the board refused · 2 usage.
+require "shellwords"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/agent_mailbox"
+
+USAGE = "Usage: bin/heartbeat <soul> --channel discord [--once] [--worker ID] [--dry-run]"
+
+# Every argument is accounted for BEFORE the first claim: `--help` prints this and
+# exits, and an unknown argument refuses, so a probe never claims a message.
+parsed = CliArgGuard.guard!(ARGV, program: "bin/heartbeat", usage: USAGE,
+                                  consequence: "nothing was claimed or answered.",
+                                  bool: %w[--once --dry-run], value: %w[--channel --worker], allow_positional: true)
+soul = parsed.positionals.first.to_s.strip.downcase
+channel = parsed.values["--channel"].last || "discord"
+worker = parsed.values["--worker"].last
+if soul.empty? || parsed.positionals.size > 1 || worker&.strip&.empty?
+  warn USAGE
+  exit 2
+end
+unless channel == "discord"
+  warn "bin/heartbeat: only --channel discord exists today (got #{channel.inspect}); nothing was claimed."
+  exit 2
+end
+
+cmd = ENV["HEARTBEAT_CLAUDE_CMD"].to_s.strip
+claude_cmd = cmd.empty? ? AgentMailbox::Heartbeat::DEFAULT_CLAUDE_CMD : Shellwords.split(cmd)
+
+heartbeat = AgentMailbox::Heartbeat.new(soul: soul, client: AgentMailbox::Client.new(soul: soul), channel: channel,
+                                        once: parsed.bools.include?("--once"), worker: worker,
+                                        dry_run: parsed.bools.include?("--dry-run"), claude_cmd: claude_cmd)
+begin
+  _answered, failed = heartbeat.run
+  exit(failed ? 1 : 0)
+rescue AgentMailbox::ApiError => e
+  warn "bin/heartbeat: #{e.message}"
+  exit 1
+end

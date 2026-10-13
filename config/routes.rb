@@ -34,8 +34,8 @@ Rails.application.routes.draw do
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
-  # Every client's stack: tier, software (Studio chest when we host it), Google
-  # users, Resend. Admin-only.
+  # Every client's stack: its own logo (ClientLogo), tier, software (Studio chest
+  # when we host it), Google users, Resend. Admin-only.
   get "stack", to: "stack#index", as: :stack
   # The same clients as a matrix: clients across, software down by category,
   # a tier/price/hosting band on top and the total MRR. Admin-only.
@@ -350,6 +350,9 @@ Rails.application.routes.draw do
     get "dashboard", to: "dashboard#show", as: :dashboard
     # The knowledge-capture front door's mail queue (team@mcritchie.studio).
     get "desk", to: "desk#index", as: :desk
+    # The agent mailbox: messages routed to souls, their claims and replies
+    # (docs/agents/system/agent-message-loop.md). Read-only.
+    resources :agent_messages, only: [:index, :show]
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
@@ -374,6 +377,13 @@ Rails.application.routes.draw do
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
     # Deletes the stored connection (the button on the standing page).
     delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
+
+    # The Google Calendar connection (sign_in method, config/integrations.yml):
+    # the standing page, Connect, Google's callback, and Disconnect.
+    get "google_calendar", to: "google_calendar#show", as: :google_calendar
+    get "google_calendar/connect",  to: "google_calendar#connect",  as: :google_calendar_connect
+    get "google_calendar/callback", to: "google_calendar#callback", as: :google_calendar_callback
+    delete "google_calendar/connection", to: "google_calendar#disconnect", as: :google_calendar_disconnect
   end
 
   # HTML
@@ -686,6 +696,18 @@ Rails.application.routes.draw do
       # tears down a worktree desk. It used to be a markdown table in the hub repo, which
       # a teardown run from the PRIMARY checkout wrote onto `main` and could never commit.
       # `sync` folds a whole `snapshot --write` registry in; `create` files one desk.
+      # The agent mailbox (AgentMessagesController): bin/heartbeat claims and
+      # completes, bin/agent-inbox reads. docs/agents/system/agent-message-loop.md.
+      resources :agent_messages, only: [:index, :show] do
+        collection do
+          get :next, action: :next_message
+          post :claim
+        end
+        member do
+          post :complete
+          post :release
+        end
+      end
       resources :desk_records, only: [:index, :create] do
         collection do
           post :sync

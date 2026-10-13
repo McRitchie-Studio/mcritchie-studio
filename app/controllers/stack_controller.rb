@@ -22,5 +22,7 @@ class StackController < ApplicationController
     @clients = StackClient.ordered.includes(:workspace_account).to_a
     # One read of the census, handed to every client, rather than one per client.
     @records_by_entity = CredentialRecord.includes(:credential_vault).to_a.group_by(&:served_entity)
+    # Each client's own logo, from its workspace's logo: (ClientLogo), every brand kit read once.
+    @logos = ClientLogo.for_all(@clients.map(&:slug))
   end
 end

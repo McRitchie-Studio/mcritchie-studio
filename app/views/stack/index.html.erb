@@ -45,11 +45,7 @@
           <tr class="align-middle" data-test="stack-client" data-client="<%= client.slug %>" data-tier="<%= client.tier %>">
             <th scope="row" class="sticky left-0 z-10 bg-surface px-4 py-3 text-left font-normal">
               <div class="flex items-center gap-3">
-                <% if (badge = client.badge_icon) %>
-                  <%= image_tag badge, alt: "", class: "w-10 h-10 shrink-0" %>
-                <% else %>
-                  <span class="w-10 h-10 shrink-0 rounded-full border-2 border-dashed border-subtle" aria-hidden="true"></span>
-                <% end %>
+                <%= client_logo(@logos.to_h[client.slug], px: 40, name: client.name) %>
                 <div class="min-w-0">
                   <p class="font-semibold text-heading"><%= client.name %></p>
                   <% if client.domain %>
