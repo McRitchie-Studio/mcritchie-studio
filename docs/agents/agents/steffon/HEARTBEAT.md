@@ -88,7 +88,9 @@ It prints `PROGRAM DRIFT` for each cluster that runs an older version than its
 source, naming the upgrade card or saying none exists, and `cannot confirm` for any
 cluster it could not read. A behind cluster with no card gets its card filed now,
 per [`program-upgrade`](sops/program-upgrade.md); the upgrade itself runs only when
-Alex names it, because mainnet needs his approvals.
+Alex names it, because mainnet needs his approvals. It also prints the mainnet
+upgrade reserve (the Squad vault `Bk9s…`): an `UPGRADE RESERVE SHORT` or `LOW` line
+goes to Alex as a funding ask, with the balance and the minimum it printed.
 
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
 The heartbeat command makes activities self-attribute to Steffon unless a delegated

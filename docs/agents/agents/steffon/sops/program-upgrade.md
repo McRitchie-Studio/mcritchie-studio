@@ -16,7 +16,7 @@ catch that:
 
 | Seam | What it does |
 |------|--------------|
-| `bin/program-drift` | Prints `PROGRAM DRIFT` per cluster that runs an older version than its source branch, with the upgrade card or "NO upgrade card" |
+| `bin/program-drift` | Prints `PROGRAM DRIFT` per cluster that runs an older version than its source branch, with the upgrade card or "NO upgrade card"; and `UPGRADE RESERVE SHORT`/`LOW` when the reserve below cannot fund the next upgrade |
 | `bin/release status` | Prints the same lines under **Programs**, so `qa-release` and `production-deploy` see them |
 | `bin/dor-check` (merge phase) | Refuses a PR that bumps the program's version until every cluster's upgrade card is on the board |
 
@@ -43,6 +43,48 @@ on `main`.
 
 Exit codes: 0 every cluster current, 1 a cluster behind, 2 a cluster could not be
 confirmed. A complete read is cached ten minutes; `--fresh` reads now.
+
+## The upgrade reserve
+
+**The mainnet Squad vault `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm` is the
+standing upgrade reserve** (Mr. McRitchie, 2026-10-12, activity-17926). It is
+the program's upgrade authority, so it is already on every upgrade. Money moves
+through it in a fixed loop:
+
+1. **The float comes from it.** A Squad vault transfer
+   ([`squad-vault-ops`](squad-vault-ops.md)) sends the buffer's rent, plus a
+   little for fees, to a fresh single-use deploy key. For v0.26 that was mainnet
+   #7, 6.2 SOL to `HwqC…`.
+2. **Refunds go back to it.** The armed upgrade passes `--spill=<vault PDA>`, so
+   the buffer's rent returns to the vault when the upgrade closes it. Then the
+   deploy key's leftover is swept back to the vault, and the key ends with no
+   account. For v0.26 the refund was #8's spill and the sweep was `vLXDwr4t…`
+   (2.600795925 SOL).
+3. **The stated minimum is the next float plus 1 SOL.** The next float is the
+   rent-exempt minimum of a buffer the size of the program deployed now: the
+   program's bytes plus the buffer's 37-byte header, at the rent the cluster
+   quotes. On 2026-10-12, rent read 5,080 lamports per byte and the program was
+   707,600 bytes, so the float was 3.5954 SOL and the minimum 4.5954 SOL. The
+   vault held 10.3045 SOL. The 1 SOL of headroom covers fees, the deploy key's
+   own rent, and a modest `extendProgram` if the next build is larger. A much
+   larger build needs its extend priced separately, from the dry run.
+
+`bin/program-drift` and `bin/release status` read the reserve on every run. The
+reads are `getBalance` on the vault, the ProgramData size, and
+`getMinimumBalanceForRentExemption`. All are read-only and need no key. The
+account, its label and the 1 SOL headroom are the cluster's `upgrade_reserve` in
+`config/onchain_programs.yml`. Logic: `ProgramDrift.reserve_readings`.
+
+| Line | Meaning |
+|------|---------|
+| `upgrade reserve turf-vault mainnet: mainnet Squad vault Bk9s… holds X SOL; next float F SOL, minimum M SOL` | Funded: at or above the minimum |
+| `UPGRADE RESERVE LOW …` | It covers the float but not the minimum. Top it up before the next window |
+| `UPGRADE RESERVE SHORT …` | It holds less than the next float. No upgrade starts until Mr. McRitchie funds it |
+| `UPGRADE RESERVE … cannot confirm — <reason>` | The chain could not be read. Never read this as funded |
+
+A reserve line is a warning. It never changes `bin/program-drift`'s exit code and
+never fails `bin/release status`. Devnet names no reserve: its upgrades float
+from the agent seats under the devnet grant.
 
 ## The upgrade card convention
 
@@ -118,8 +160,9 @@ so two programs' cards cannot collide.
 - **The rule and the chain disagree, and only Mr. McRitchie settles it.** The
   mainnet Squad is 3-of-5, so two approvals of his do not reach quorum; and every
   step before them is itself a signed mainnet transaction: `write-buffer` and
-  `set-buffer-authority` (payer funds about 3.8 SOL of rent), `extendProgram` if
-  the dry run asks, then `vaultTransactionCreate` and `proposalCreate`. The last
+  `set-buffer-authority` (payer funds the buffer rent, about 3.6 SOL at v0.26's 707,600 bytes), `extendProgram` if
+  the dry run asks, then `vaultTransactionCreate` and `proposalCreate`. The
+  rent is the reserve's float (*The upgrade reserve* above). The last
   two, and the two agent approvals after them, are the upgrade proposal, which the
   `squad-vault-ops` exception covers. The rest are not covered: `write-buffer`,
   `set-buffer-authority`, `extendProgram`, and `init-governance.js --cluster
@@ -139,6 +182,8 @@ so two programs' cards cannot collide.
    `RUNBOOK.md` (for v0.26, *v0.26 Upgrade Ordering*) and `CHANGELOG.md`.
 4. For mainnet: the devnet card is done, and Mr. McRitchie is present for a
    quiet window.
+5. For mainnet: `bin/program-drift --fresh` prints no `UPGRADE RESERVE SHORT`
+   line. The reserve must cover the float before any proposal is built.
 
 ## Procedure
 
@@ -164,16 +209,34 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    exception does not cover it. Extend first, separately: with the single-use
    deploy key (as for v0.26, `HwqC…`), or as Mr. McRitchie rules on the card.
    Re-run the dry run, and go on only when it plans no extend. **The agent creates
-   the upgrade proposal.** First confirm that the buffer's SHA256 matches the
-   reviewed build and that the buffer's authority is the vault. Then run `squad-upgrade.js --cluster=mainnet
-   <BUFFER> --spill=<vault PDA> --send`. The `system` seat creates the proposal,
+   the upgrade proposal.** Set the buffer's authority to the vault, hash the
+   reviewed build, and confirm both on a fresh dry run's `BUFFER AUTHORITY:`
+   and `BUFFER SHA256:` lines before the send:
+
+   ```bash
+   solana program set-buffer-authority <BUFFER> --new-buffer-authority <vault PDA> --url mainnet-beta   # step 3, before the send; on mainnet its signer needs his ruling (signing rule)
+   shasum -a 256 target/deploy/turf_vault.so   # the REVIEWED build; the buffer is written without --max-len
+   node scripts/squad-upgrade.js --cluster=mainnet <BUFFER> \
+     --spill=<vault PDA> --expect-buffer-sha256=<the reviewed .so's sha256> --send
+   ```
+
+   **Set the buffer's authority to the vault before the send**, and **take
+   `--expect-buffer-sha256` from the reviewed `.so`, never from the dry run's
+   printed hash.** The dry run prints the buffer's own hash so you can compare
+   the two; copying it into the flag would make the check compare the buffer with
+   itself. A mainnet `--send` refuses before it reads a key unless `--spill` is
+   given and is the Squad vault PDA and `--expect-buffer-sha256` equals the
+   sha256 of the buffer's program bytes (turf-vault PR 61,
+   `squad-tools-hardening`). With turf-vault PR 62 (`squad-upgrade-gate-followups`)
+   it also refuses unless the buffer's authority is the vault PDA. The `system` seat creates the proposal,
    and `system` and `governance` approve it. Hand Mr. McRitchie the proposal as
    [`squad-vault-ops`](squad-vault-ops.md) step 3 does: the Squads
    `/transactions` link on the vault PDA, and one line naming the program, the
    version and the buffer. **Then he approves**, after comparing the Squads UI
    with the block the run printed, from his own seat. He executes it, or tells
-   the agent to execute once his approval is on chain. A SOL float the buffer
-   needs from the vault runs through `squad-vault-ops` first.
+   the agent to execute once his approval is on chain. The buffer's SOL float
+   comes from the upgrade reserve (above) through `squad-vault-ops` first. After
+   the upgrade, sweep the deploy key's leftover back to the vault.
 5. **Init steps, back to back.** Run what the version owes immediately after
    the upgrade lands. For v0.26 that is `scripts/init-governance.js` (dry run,
    then armed), because every vault-authorized instruction needs the account it
@@ -210,7 +273,7 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
 ## Exit Seam
 
 `bin/program-drift --fresh` prints `program <name> <cluster>: current at
-v<version>` for the cluster, the card is `submitted` or later with its turf-vault
+v<version>` for the cluster and no `UPGRADE RESERVE SHORT` line, the card is `submitted` or later with its turf-vault
 and turf-monster PRs, `CURRENT_DEPLOYMENT.md`'s Deployed slot matches the chain,
 the consumer's `EXPECTED_IDL_HASH` matches the built IDL, and the rehearsal is
 recorded on the card. Report: cluster, version, program slot, IDL hash, rehearsal

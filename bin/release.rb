@@ -4409,9 +4409,21 @@ def program_drift_report(readings: nil, lookup: nil)
   say("")
   say("Programs (on-chain; upgrades ride the program-upgrade SOP, not this release):")
   ProgramDrift.lines(readings).each { |line| say("  #{line}") }
+  program_reserve_report
 rescue StandardError => e
   say("")
   say("  PROGRAM DRIFT: cannot confirm any program's deployed version — the check failed (#{e.class}: #{e.message})")
+end
+
+# The upgrade reserve under the same heading: UPGRADE RESERVE SHORT when the account
+# that floats each upgrade (turf-vault mainnet: the Squad vault) holds less than the
+# next upgrade's float, LOW below the SOP's minimum. Display only, like the drift
+# lines, and its own rescue: a reserve read that fails never hides the drift lines.
+def program_reserve_report(reserves: nil)
+  reserves ||= ProgramDrift.reserve_readings(cache: ProgramDrift.default_reserve_cache_path)
+  ProgramDrift.reserve_lines(reserves).each { |line| say("  #{line}") }
+rescue StandardError => e
+  say("  UPGRADE RESERVE: cannot confirm — the check failed (#{e.class}: #{e.message})")
 end
 
 # Gather BOTH clean-ladder signals on BOTH rungs and return the CleanCheck

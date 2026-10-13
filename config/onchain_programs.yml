@@ -19,6 +19,14 @@
 #     program_id    the deployed program's address on that cluster
 #     rpc_url       the JSON-RPC endpoint read for the last-deploy slot
 #     doc_section   the `## <heading>` in deployment_doc that describes this cluster
+#     upgrade_reserve   optional: the account that floats each upgrade's buffer and
+#                       takes the refund back (program-upgrade SOP, "The upgrade
+#                       reserve"). bin/program-drift reads its balance and warns when
+#                       it holds less than the next float, or less than the float
+#                       plus headroom_sol (the SOP's stated minimum).
+#       address       the reserve account (for turf-vault mainnet, the Squad vault)
+#       label         how the warning names it
+#       headroom_sol  the margin above the float that the minimum adds
 programs:
   turf-vault:
     github: McRitchie-Studio/turf-vault
@@ -35,3 +43,7 @@ programs:
         program_id: DaFv83yokwTz8msP9CzJ13eazSGk15NuUTxjkfzJzxMM
         rpc_url: https://api.mainnet-beta.solana.com
         doc_section: Mainnet
+        upgrade_reserve:
+          address: Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm
+          label: mainnet Squad vault
+          headroom_sol: 1

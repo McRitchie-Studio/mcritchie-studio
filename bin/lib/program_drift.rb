@@ -34,12 +34,25 @@ require "rubygems" # Gem::Version, for comparing x.y.z
 # FAIL CLOSED. Every unreadable input (GitHub, the doc's rows, the RPC, a slot that
 # does not match) yields :unconfirmed, which prints under PROGRAM DRIFT as "cannot
 # confirm". Nothing that could not be read is ever reported as current.
+#
+# THE UPGRADE RESERVE. A cluster may name an `upgrade_reserve` account (turf-vault
+# mainnet: its Squad vault). Every upgrade floats the buffer's rent out of it and
+# refunds the buffer back into it, so it has to hold at least the NEXT float when the
+# next upgrade comes. `reserve_readings` measures that: the reserve's balance against
+# the rent-exempt minimum of a buffer the size of the program deployed now (read
+# live, so a rent change moves it), and the SOP's stated minimum, float + headroom.
+# It is a warning line, never an exit code: the version verdict above is the check.
 module ProgramDrift
   CONFIG_PATH = File.expand_path("../../config/onchain_programs.yml", __dir__)
   UPGRADEABLE_LOADER = "BPFLoaderUpgradeab1e11111111111111111111111"
   # The ProgramData header: u32 enum tag (3 = ProgramData), then the u64 slot.
   PROGRAM_DATA_TAG = 3
   HEADER_BYTES = 12
+  # UpgradeableLoaderState metadata ahead of the program bytes: a ProgramData account
+  # carries 45 (tag, slot, optional authority), a Buffer 37 (tag, optional authority).
+  PROGRAM_DATA_METADATA_BYTES = 45
+  BUFFER_METADATA_BYTES = 37
+  LAMPORTS_PER_SOL = 1_000_000_000
   # status must stay fast: each RPC call is time-boxed, clusters read in parallel,
   # and a complete reading is cached for CACHE_TTL seconds.
   OPEN_TIMEOUT = 3
@@ -54,7 +67,18 @@ module ProgramDrift
 
   Program = Struct.new(:name, :github, :source_branch, :version_file, :deployment_doc,
                        :card_slug, :clusters, keyword_init: true)
-  Cluster = Struct.new(:name, :program_id, :rpc_url, :doc_section, keyword_init: true)
+  Cluster = Struct.new(:name, :program_id, :rpc_url, :doc_section, :reserve, keyword_init: true)
+  # The account that floats each upgrade and takes its refund back; headroom in lamports.
+  Reserve = Struct.new(:address, :label, :headroom_lamports, keyword_init: true)
+
+  # One reserve's verdict. state is :ok (at or above the minimum), :low (covers the
+  # float but not the minimum), :short (below the float) or :unconfirmed.
+  ReserveReading = Struct.new(:program, :cluster, :address, :label, :balance, :float, :minimum,
+                              :program_bytes, :state, :reason, keyword_init: true) do
+    def to_h
+      super.merge(state: state.to_s)
+    end
+  end
 
   # One cluster's verdict. state is :current, :behind, :ahead or :unconfirmed.
   # card is the board's answer for card_slug: a Hash ({"slug","stage"}), nil (no
@@ -79,12 +103,19 @@ module ProgramDrift
     (raw["programs"] || {}).map do |name, spec|
       clusters = (spec["clusters"] || {}).map do |cluster, c|
         Cluster.new(name: cluster, program_id: c.fetch("program_id"), rpc_url: c.fetch("rpc_url"),
-                    doc_section: c.fetch("doc_section"))
+                    doc_section: c.fetch("doc_section"), reserve: reserve_from(c["upgrade_reserve"]))
       end
       Program.new(name: name, github: spec.fetch("github"), source_branch: spec.fetch("source_branch"),
                   version_file: spec.fetch("version_file"), deployment_doc: spec.fetch("deployment_doc"),
                   card_slug: spec.fetch("card_slug"), clusters: clusters)
     end
+  end
+
+  def reserve_from(spec)
+    return nil unless spec
+
+    Reserve.new(address: spec.fetch("address"), label: spec.fetch("label"),
+                headroom_lamports: (Float(spec.fetch("headroom_sol")) * LAMPORTS_PER_SOL).round)
   end
 
   # The program whose source lives in `repo` (bare name or owner/name), or nil.
@@ -170,14 +201,7 @@ module ProgramDrift
   # ProgramData account, whose header carries the slot. Raises ReadError on anything
   # that is not exactly that shape.
   def last_deploy_slot(rpc_url, program_id, rpc: method(:rpc_call))
-    account = rpc.call(rpc_url, "getAccountInfo", [program_id, { "encoding" => "jsonParsed" }])
-    value = account && account["value"]
-    raise ReadError, "program account not found" unless value
-    raise ReadError, "not owned by the upgradeable loader" unless value["owner"] == UPGRADEABLE_LOADER
-
-    data_address = value.dig("data", "parsed", "info", "programData")
-    raise ReadError, "program account names no ProgramData" if data_address.to_s.empty?
-
+    data_address = program_data_address(rpc_url, program_id, rpc: rpc)
     header = rpc.call(rpc_url, "getAccountInfo",
                       [data_address, { "encoding" => "base64", "dataSlice" => { "offset" => 0, "length" => 13 } }])
     encoded = header && header.dig("value", "data", 0)
@@ -190,6 +214,98 @@ module ProgramDrift
     raise ReadError, "ProgramData tag #{tag}, expected #{PROGRAM_DATA_TAG}" unless tag == PROGRAM_DATA_TAG
 
     slot
+  end
+
+  # The ProgramData address an upgradeable program account names. Raises ReadError.
+  def program_data_address(rpc_url, program_id, rpc: method(:rpc_call))
+    account = rpc.call(rpc_url, "getAccountInfo", [program_id, { "encoding" => "jsonParsed" }])
+    value = account && account["value"]
+    raise ReadError, "program account not found" unless value
+    raise ReadError, "not owned by the upgradeable loader" unless value["owner"] == UPGRADEABLE_LOADER
+
+    data_address = value.dig("data", "parsed", "info", "programData")
+    raise ReadError, "program account names no ProgramData" if data_address.to_s.empty?
+
+    data_address
+  end
+
+  # What the next upgrade's float is measured from, and what the reserve holds:
+  #   program_bytes  the deployed program's size (ProgramData space less its header)
+  #   float          rent-exempt minimum of a buffer that size, asked of the cluster
+  #   balance        the reserve account's lamports
+  # Read-only: getAccountInfo, getMinimumBalanceForRentExemption, getBalance.
+  def reserve_inputs(rpc_url, program_id, reserve, rpc: method(:rpc_call))
+    data_address = program_data_address(rpc_url, program_id, rpc: rpc)
+    info = rpc.call(rpc_url, "getAccountInfo",
+                    [data_address, { "encoding" => "base64", "dataSlice" => { "offset" => 0, "length" => 0 } }])
+    space = info && info.dig("value", "space")
+    raise ReadError, "ProgramData reports no size" unless space.is_a?(Integer)
+    raise ReadError, "ProgramData is #{space} bytes, no program in it" if space <= PROGRAM_DATA_METADATA_BYTES
+
+    program_bytes = space - PROGRAM_DATA_METADATA_BYTES
+    float = rpc.call(rpc_url, "getMinimumBalanceForRentExemption", [program_bytes + BUFFER_METADATA_BYTES])
+    raise ReadError, "rent answer is not a lamport count" unless float.is_a?(Integer)
+
+    balance = rpc.call(rpc_url, "getBalance", [reserve.address])
+    balance = balance["value"] if balance.is_a?(Hash)
+    raise ReadError, "balance answer is not a lamport count" unless balance.is_a?(Integer)
+
+    { "program_bytes" => program_bytes, "float" => float, "balance" => balance }
+  end
+
+  def classify_reserve(program:, cluster:, inputs:, error: nil)
+    reserve = cluster.reserve
+    base = { program: program.name, cluster: cluster.name, address: reserve.address, label: reserve.label }
+    unless inputs
+      return ReserveReading.new(**base, state: :unconfirmed,
+                                        reason: "cannot read #{reserve.label} on #{cluster.name}" \
+                                                "#{error ? " (#{error})" : ''}")
+    end
+
+    float = inputs["float"]
+    minimum = float + reserve.headroom_lamports
+    balance = inputs["balance"]
+    state = if balance < float then :short
+            elsif balance < minimum then :low
+            else :ok
+            end
+    ReserveReading.new(**base, balance: balance, float: float, minimum: minimum,
+                               program_bytes: inputs["program_bytes"], state: state)
+  end
+
+  # Readings for every cluster that names an upgrade reserve, read in parallel and
+  # cached like `readings` (its own file; only a complete read is stored).
+  def reserve_readings(programs: self.programs, cache: nil, fresh: false, rpc: method(:rpc_call), now: Time.now)
+    stored = cache && !fresh ? read_cache(cache, now) : {}
+    updated = stored.dup
+    out = []
+    programs.each do |program|
+      clusters = program.clusters.select(&:reserve)
+      next if clusters.empty?
+
+      inputs = stored[program.name] || gather_reserves(program, clusters, rpc: rpc)
+      if clusters.all? { |c| inputs.dig("reserves", c.name, "balance") }
+        updated[program.name] = inputs.merge("at" => now.to_i)
+      end
+      clusters.each do |cluster|
+        got = inputs.dig("reserves", cluster.name) || {}
+        out << classify_reserve(program: program, cluster: cluster,
+                                inputs: got["balance"] ? got : nil, error: got["error"])
+      end
+    end
+    write_cache(cache, updated) if cache && updated != stored
+    out
+  end
+
+  def gather_reserves(program, clusters, rpc:)
+    threads = clusters.to_h do |cluster|
+      [cluster.name, Thread.new do
+        reserve_inputs(cluster.rpc_url, cluster.program_id, cluster.reserve, rpc: rpc)
+      rescue ReadError => e
+        { "error" => e.message }
+      end]
+    end
+    { "program" => program.name, "reserves" => threads.transform_values(&:value) }
   end
 
   def rpc_call(url, method, params)
@@ -209,6 +325,12 @@ module ProgramDrift
     body["result"]
   rescue ReadError
     raise
+  rescue SystemCallError, SocketError, Net::OpenTimeout, Net::ReadTimeout => e
+    # A transport failure names the host and timed-out/no-connection, never the OS text:
+    # "Connection refused" printed inside `bin/release status` reads as a lane REFUSAL,
+    # which the status suite forbids a clean ladder to print.
+    why = e.is_a?(Net::OpenTimeout) || e.is_a?(Net::ReadTimeout) ? "timed out" : "no connection"
+    raise ReadError, "#{method}: cannot reach #{uri&.host || 'the RPC'} (#{why})"
   rescue StandardError => e
     raise ReadError, "#{e.class}: #{e.message}"[0, 160]
   end
@@ -360,6 +482,32 @@ module ProgramDrift
     end
   end
 
+  def reserve_lines(readings)
+    readings.map { |r| reserve_line(r) }
+  end
+
+  def reserve_line(reading)
+    where = "#{reading.program} #{reading.cluster}"
+    holder = "#{reading.label} #{reading.address[0, 4]}…"
+    case reading.state
+    when :ok
+      "upgrade reserve #{where}: #{holder} holds #{sol(reading.balance)} SOL; " \
+        "next float #{sol(reading.float)} SOL, minimum #{sol(reading.minimum)} SOL"
+    when :low
+      "UPGRADE RESERVE LOW #{where}: #{holder} holds #{sol(reading.balance)} SOL, below the minimum " \
+        "#{sol(reading.minimum)} SOL (next float #{sol(reading.float)} SOL + headroom) — top it up (#{SOP})"
+    when :short
+      "UPGRADE RESERVE SHORT #{where}: #{holder} holds #{sol(reading.balance)} SOL, less than the next " \
+        "upgrade's float #{sol(reading.float)} SOL — fund it before any upgrade (#{SOP})"
+    else
+      "UPGRADE RESERVE #{where}: cannot confirm — #{reading.reason}"
+    end
+  end
+
+  def sol(lamports)
+    format("%.4f", lamports.to_f / LAMPORTS_PER_SOL)
+  end
+
   def card_phrase(reading)
     case reading.card
     when Hash then "upgrade card #{reading.card['slug']} (#{reading.card['stage']})"
@@ -383,5 +531,9 @@ module ProgramDrift
   # (lib/task_usage_sandbox.rb), and a re-readable cache does not belong in it.
   def default_cache_path
     File.join(Dir.tmpdir, "mcritchie-program-drift.json")
+  end
+
+  def default_reserve_cache_path
+    File.join(Dir.tmpdir, "mcritchie-program-reserve.json")
   end
 end
