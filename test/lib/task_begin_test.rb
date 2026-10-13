@@ -119,9 +119,16 @@ class TaskBeginTest < Minitest::Test
       body = headers["content-length"] ? client.read(headers["content-length"].to_i) : ""
       requests << { method: method, path: path, body: body }
 
+      # A network error on the owed note: the board drops the connection unanswered.
+      (client.close; next) if @fail_activities == :drop && path == "/api/v1/activities"
+
       status, payload = response_for(method, path, body)
-      client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
-                   "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      begin
+        client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
+                     "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      rescue Errno::EPIPE, Errno::ECONNRESET
+        nil # the caller gave up waiting (a timeout test); keep serving
+      end
       client.close
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
@@ -133,7 +140,8 @@ class TaskBeginTest < Minitest::Test
     # Task notes: begin posts the intent-scout OWED note here. Kept apart from the task
     # create below, which would otherwise read any POST as a new task.
     if path == "/api/v1/activities"
-      return ["500 Internal Server Error", JSON.generate("error" => "boom")] if @fail_activities
+      sleep 4 if @fail_activities == :hang # past the scout's deadline, so the caller times out
+      return ["500 Internal Server Error", JSON.generate("error" => "boom")] if @fail_activities == true
 
       return ["201 Created", JSON.generate("data" => JSON.parse(body).merge("slug" => "act-1"))]
     end
@@ -348,6 +356,40 @@ class TaskBeginTest < Minitest::Test
     assert_includes err, "could not record the owed intent scout"
     assert_includes out, "scout: Avi owes this task an intent scout", "the launch line still prints"
     assert(requests.any? { |r| r[:method] == "PATCH" }, "the claim landed before the note was tried")
+  end
+
+  # [integration] A board that drops the owed-note POST (a network error) costs a
+  # warning only; the launch lines still print and begin still succeeds.
+  def test_a_network_error_on_the_owed_note_warns_and_begin_still_succeeds
+    requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: :drop)
+
+    assert status.success?, "a network error on the owed note must not fail begin:\n#{err}"
+    assert_equal 1, owed_notes(requests).size
+    assert_includes err, "could not record the owed intent scout"
+    assert_includes out, "scout: Avi owes this task an intent scout"
+  end
+
+  # [integration] A board that hangs on the owed note is cut off at the scout's own
+  # short deadline (INTENT_SCOUT_TIMEOUT), not the 30-second board default.
+  def test_a_hung_owed_note_times_out_quickly_and_begin_still_succeeds
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    _requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: :hang,
+                                                     env: { "INTENT_SCOUT_TIMEOUT" => "1" })
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert status.success?, "a hung owed note must not fail begin:\n#{err}"
+    assert_match(/could not record the owed intent scout \(Net::ReadTimeout/, err)
+    assert_includes out, "scout: Avi owes this task an intent scout"
+    assert elapsed < 20, "the scout deadline bounds begin (took #{elapsed.round(1)}s)"
+  end
+
+  # [integration] The launch lines print before the owed note is posted.
+  def test_the_launch_lines_print_before_the_owed_note_is_posted
+    _requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: true)
+
+    assert status.success?, err
+    assert_includes out, "scout: Avi owes this task an intent scout"
+    assert_includes err, "launch it anyway from the scout: lines above", "the warning points UP at lines already printed"
   end
 
   # --- guard catalog row 4.4: the shape is decided at create --------------------
