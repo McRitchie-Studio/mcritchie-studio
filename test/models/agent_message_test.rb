@@ -160,6 +160,17 @@ class AgentMessageTest < ActiveSupport::TestCase
     assert_includes dup.errors[:external_id], "has already been taken"
   end
 
+  test "the database refuses a status or reply status outside the lists, even past validations" do
+    message = agent_message!
+    assert_raises(ActiveRecord::CheckViolation) do
+      AgentMessage.transaction(requires_new: true) { AgentMessage.where(id: message.id).update_all(status: "limbo") }
+    end
+    assert_raises(ActiveRecord::CheckViolation) do
+      AgentMessage.transaction(requires_new: true) { AgentMessage.where(id: message.id).update_all(reply_status: "maybe") }
+    end
+    assert_equal 1, AgentMessage.where(id: message.id).update_all(status: "dead", reply_status: nil)
+  end
+
   test "the Discord links name the guild, channel and message" do
     message = agent_message!(reply_external_id: "123")
     assert_equal "https://discord.com/channels/#{GUILD}/#{DESK}/#{message.external_id}", message.discord_url

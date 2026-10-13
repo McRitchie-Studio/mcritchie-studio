@@ -228,6 +228,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_210000) do
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"
     t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
+    t.check_constraint "reply_status::text = ANY (ARRAY['queued'::character varying, 'posted'::character varying, 'skipped'::character varying, 'failed'::character varying]::text[])", name: "agent_messages_reply_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['received'::character varying, 'claimed'::character varying, 'completed'::character varying, 'dead'::character varying, 'unrouted'::character varying]::text[])", name: "agent_messages_status_known"
   end
 
   create_table "agent_sessions", force: :cascade do |t|

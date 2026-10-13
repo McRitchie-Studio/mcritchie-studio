@@ -33,6 +33,13 @@ class CreateAgentMessages < ActiveRecord::Migration[8.1]
       t.datetime :sent_at
       t.timestamps
     end
+    # The database refuses a status outside the model's lists even for a write
+    # that skips validations (the claim's update_all dead-letter, a console fix).
+    # Frozen copies, as AddStateChecks keeps them: a new value needs a migration.
+    add_check_constraint :agent_messages, "status IN ('received', 'claimed', 'completed', 'dead', 'unrouted')",
+                         name: "agent_messages_status_known"
+    add_check_constraint :agent_messages, "reply_status IN ('queued', 'posted', 'skipped', 'failed')",
+                         name: "agent_messages_reply_status_known"
     add_index :agent_messages, [:channel, :external_id], unique: true
     add_index :agent_messages, [:soul_slug, :status, :id]
     add_index :agent_messages, [:thread_key, :id]
