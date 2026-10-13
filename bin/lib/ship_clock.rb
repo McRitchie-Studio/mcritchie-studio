@@ -462,4 +462,3 @@ module ShipClock
     out.join("\n")
   end
 end
-
