@@ -699,7 +699,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "git_push_heroku", adapter["strategy"]
     assert_equal "https://git.heroku.com/mcritchie-industries.git", adapter["remote"]
     assert_equal "main", adapter["branch"]
-    assert_equal "https://www.mcritchie.industries", adapter["smoke_url"]
+    assert_equal "https://mcritchie.industries", adapter["smoke_url"]
   end
 
   test "mcritchie-industries registers CI's full suite at BOTH gates" do

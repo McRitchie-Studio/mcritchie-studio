@@ -312,7 +312,9 @@ features:
   # Leads the Domain group (Mr. McRitchie, 2026-10-12): three domain levels.
   # Builder's address is www because the bare domain forwards to it on Squarespace
   # DNS (website-launch step 3); Pro and up serve the bare domain from
-  # Cloudflare DNS, which points the apex at Heroku (domain-dns).
+  # Cloudflare DNS, which points the apex at Heroku (domain-dns). The client
+  # buys and owns the domain, at any registrar except Cloudflare Registrar
+  # (2026-10-13); domain-purchase is for our own entities' domains.
   - name: Web address
     category: domain
     icon: "glyph:domain"
@@ -323,7 +325,7 @@ features:
     team: your-app.com + www.your-app.com
     enterprise: Multiple domains
     sop: domain-purchase
-    you_do: Approve the domain
+    you_do: Buy your domain, we send one record
     status: live
     software: [squarespace]
     brand_from: builder

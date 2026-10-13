@@ -260,7 +260,7 @@ module DomainCutover
       cmd = "bin/domain-cutover #{@app} #{@domain}"
       lv = state["last_verify"] || {}
       if state["phase"] == "finalized"
-        "next: #{cmd} workspace (if mail moves to Google), then DNSSEC back on from Cloudflare after a day green (domain-dns step 7)"
+        "next: #{cmd} workspace (if mail moves to Google), then DNSSEC back on from Cloudflare after a day green (domain-dns step 6)"
       elsif state["ns_seen_at"]
         at = finalize_at(state)
         now >= at ? "next: #{cmd} finalize (allowed now)" : "next: #{cmd} verify until green; #{cmd} finalize allowed at #{at.iso8601}"

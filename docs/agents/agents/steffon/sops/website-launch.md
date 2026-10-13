@@ -102,9 +102,9 @@ before touching DNS. Then run step 3 and step 4, then the last step.
 **Pro and above:** skip this step and step 4. The domain moves to Cloudflare
 DNS and the **bare domain** is the address, with `www` redirected at the edge:
 run [`domain-dns` § Cloudflare DNS — Pro and
-above](./domain-dns.md#cloudflare-dns--pro-and-above), whose steps 5 and 6
-also add the bare domain to the app, set `APP_HOST`, re-issue the certificate
-and prove it. Then run the last step here.
+above](./domain-dns.md#cloudflare-dns--pro-and-above): `bin/domain-cutover`
+adds the bare domain to the app, its `verify` re-issues the certificate, and
+its `finalize` sets `APP_HOST` and proves it. Then run the last step here.
 
 **Builder and below** stay on Squarespace DNS. Squarespace does offer an ALIAS
 record at `@`, but only with DNSSEC switched off (Squarespace Help, "DNS records

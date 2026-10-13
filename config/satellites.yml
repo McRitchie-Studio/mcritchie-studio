@@ -95,7 +95,7 @@ satellites:
     emoji: "📐"
     port: 3500
     heroku_app: "mcritchie-industries"
-    production_url: "https://www.mcritchie.industries"
+    production_url: "https://mcritchie.industries"
     role: "viewer"
     description: "Central business knowledge base — acquisitions (flagship), companies, financials, clients; version-controlled business-data/ files plus the app DB. Successor to the retired acquisition-studio prototype"
     deploy_provider: "heroku"
@@ -212,7 +212,7 @@ satellites:
     # closes, so the row is `reserved`, not `active`: a reserved row draws no navbar
     # or link-tree entry (Satellite.active), and it still holds the desk ports.
     heroku_app: "commercial-welding"
-    production_url: "https://www.commercialwelding.llc"
+    production_url: "https://commercialwelding.llc"
     role: "viewer"
     description: "Commercial Welding LLC company site; studio-engine satellite on Heroku"
     deploy_provider: "heroku"

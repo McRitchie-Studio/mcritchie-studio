@@ -210,6 +210,10 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[anthropic openai], feature("AI features").strip_brands
   end
 
+  test "[unit] the client buys and owns the domain; domain-purchase is for our own entities" do
+    assert_equal "Buy your domain, we send one record", feature("Web address").you_do
+  end
+
   test "a row names its brand on a card only from its brand_from tier, and a planned row names none" do
     address = feature("Web address")
     assert_empty address.card_brands("vibe"), "Vibe's address is a mcritchie.studio subdomain"
