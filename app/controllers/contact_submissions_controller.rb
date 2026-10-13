@@ -108,9 +108,10 @@ class ContactSubmissionsController < ApplicationController
     nil
   end
 
-  # "I'd like to connect GitHub." for an /integrations card; nothing otherwise.
+  # "I'd like to connect GitHub." for an /integrations card or guide; nothing otherwise.
   def prefill_message(source)
-    return unless source["page"] == Integration::PAGE
+    # "integrations", or one of its guide pages ("integrations/discord").
+    return unless source["page"].to_s.split("/").first == Integration::PAGE
 
     entry = Integration.find(source["item"])
     entry&.contact_message if entry && entry.intent == source["intent"]

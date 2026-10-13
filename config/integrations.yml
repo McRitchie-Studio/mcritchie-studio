@@ -32,6 +32,9 @@
 #   price     integrations: omitted (they are free). add_ons: a price string, or
 #             omitted for "Quote". custom: never shown.
 #   price_note optional muted line under the price
+#   guide     optional: a guide page (/integrations/<guide>) the button opens
+#             instead of the contact form; the guide's own button then goes to
+#             the form. One of Integration::GUIDES.
 #
 # The button is not configured: it follows from the group and the status, so a
 # Coming soon entry can never offer to connect. Every button opens the /contact
@@ -56,9 +59,10 @@ groups:
       - key: discord
         name: Discord notifications
         icon: discord
-        blurb: Your app posts the events you care about, such as sign-ups, orders and errors, into a Discord channel.
+        blurb: "Two-way: our bot posts sign-ups, errors and your agents' updates in your server, and answers when you @-mention it."
         status: on_request
         tier: vibe
+        guide: discord
       - key: github_org
         name: GitHub
         icon: github
@@ -77,9 +81,9 @@ groups:
     summary: We set it up and keep it running, priced on top of your plan.
     entries:
       - key: google_workspace_managed
-        name: Google Workspace, managed
+        name: Managed Workspace
         icon: google
-        blurb: We create and run your Workspace, users and settings. Connecting one you already have stays free.
+        blurb: We create and run your Google Workspace, users and settings. Connecting one you already have stays free.
         status: live
         price: "$25/month + $15/user/month"
         price_note: Google Business Starter seat included

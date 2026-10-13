@@ -1,0 +1,124 @@
+<% content_for :title, "Discord for your agents · McRitchie Studio" %>
+<%# The guide the Discord card's Connect opens (Mr. McRitchie, 2026-10-13, option
+    B: a McRitchie Studio bot the client adds to its own server, two-way). The
+    bot does not exist yet, so the page is honest about it: status On request,
+    examples labelled as examples, and its one button REQUESTS the bot through
+    the contact form. It never links to a Discord authorization URL. %>
+<% messages = [
+     { who: "Studio", role: "app", channel: "#app-events", text: "New sign-up: Riley" },
+     { who: "Studio", role: "app", channel: "#app-events", text: "3 errors in the last hour: Net::ReadTimeout" },
+     { who: "Studio", role: "agent", channel: "#agents", text: "Daily summary: all clear" },
+     { who: "Studio CTO", role: "agent", channel: "#agents", text: "Deploy finished, 2 fixes shipped" }
+   ] %>
+<% exchange = [
+     { who: "You", role: "you", text: "@Studio CTO why is checkout slow?" },
+     { who: "Studio CTO", role: "agent", text: "Two slow queries since this morning's deploy; a fix is queued." }
+   ] %>
+<% avatar = lambda do |role| %>
+  <% if role == "you" %>
+    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-bold text-muted" aria-hidden="true">You</span>
+  <% else %>
+    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm" aria-hidden="true"><%= role == "app" ? "📣" : "🤖" %></span>
+  <% end %>
+<% end %>
+
+<section class="max-w-3xl mx-auto px-4 py-10" data-test="discord-guide">
+  <%= link_to integrations_path, class: "inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline", data: { test: "back-to-integrations" } do %>
+    <span aria-hidden="true">←</span> All integrations
+  <% end %>
+
+  <header class="mt-6 mb-10 text-center">
+    <div class="mb-3 flex items-center justify-center gap-2">
+      <%= render "packages/brand", key: "discord", size: :lead %>
+      <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted" data-test="on-request">On request</span>
+    </div>
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Integrations · Discord</p>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Give your agents a home in Discord</h1>
+    <p class="text-muted max-w-2xl mx-auto">
+      Add our bot to your server and talk to your agents where your team already works: they post what matters
+      and answer when you @-mention them.
+    </p>
+  </header>
+
+  <section aria-labelledby="what-you-see" data-test="discord-examples">
+    <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+      <h2 id="what-you-see" class="text-xl font-semibold text-heading">What you'll see</h2>
+      <span class="rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted" data-test="examples-label">Examples, not real messages</span>
+    </div>
+
+    <div class="space-y-3">
+      <% messages.each do |message| %>
+        <div class="flex gap-3 rounded-xl border border-subtle bg-surface p-4" data-test="example-post">
+          <% avatar.call(message[:role]) %>
+          <div class="min-w-0">
+            <p class="text-sm">
+              <span class="font-semibold text-heading"><%= message[:who] %></span>
+              <span class="ml-1 rounded bg-primary/15 px-1 text-2xs font-semibold uppercase text-primary">Bot</span>
+              <span class="ml-1 text-xs text-muted"><%= message[:channel] %></span>
+            </p>
+            <p class="mt-0.5 text-sm text-body [overflow-wrap:anywhere]"><%= message[:text] %></p>
+          </div>
+        </div>
+      <% end %>
+
+      <div class="rounded-xl border border-subtle bg-surface p-4" data-test="example-exchange">
+        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Two-way, in #agents</p>
+        <div class="space-y-3">
+          <% exchange.each do |message| %>
+            <div class="flex gap-3" data-test="example-exchange-line">
+              <% avatar.call(message[:role]) %>
+              <div class="min-w-0">
+                <p class="text-sm">
+                  <span class="font-semibold text-heading"><%= message[:who] %></span>
+                  <% unless message[:role] == "you" %><span class="ml-1 rounded bg-primary/15 px-1 text-2xs font-semibold uppercase text-primary">Bot</span><% end %>
+                </p>
+                <p class="mt-0.5 text-sm text-body [overflow-wrap:anywhere]"><%= message[:text] %></p>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="setup" data-test="discord-setup">
+    <h2 id="setup" class="text-xl font-semibold text-heading mb-1">Setup</h2>
+    <p class="text-sm text-muted mb-4">How it works once we have set your bot up with you.</p>
+    <ol class="grid gap-4 sm:grid-cols-3">
+      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
+        <p class="font-semibold text-heading mb-1">1. Your server</p>
+        <p class="text-sm text-muted">Create a Discord server for your company, or use the one you have.</p>
+      </li>
+      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
+        <p class="font-semibold text-heading mb-1">2. Your channels</p>
+        <p class="text-sm text-muted">Make a channel for each stream you want, for example #app-events and #agents.</p>
+      </li>
+      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
+        <p class="font-semibold text-heading mb-1">3. Add to Discord</p>
+        <p class="text-sm text-muted">Click "Add to Discord" and approve the permissions on Discord's own screen. No links or passwords change hands.</p>
+      </li>
+    </ol>
+    <p class="mt-4 flex gap-2 rounded-xl border border-subtle bg-surface p-4 text-sm text-body" data-test="permissions-note">
+      <span aria-hidden="true">🔒</span>
+      <span>You approve exactly what the bot can do, and you can remove it any time from your server settings.</span>
+    </p>
+  </section>
+
+  <section class="mt-12 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" data-test="discord-request" aria-labelledby="discord-request-heading">
+    <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary">On request</p>
+        <h2 id="discord-request-heading" class="mt-1 text-xl font-semibold text-heading">Want your agents in Discord?</h2>
+        <p class="mt-2 text-sm text-body">The bot is set up with you on request. Tell us about your server and we will take it from there.</p>
+      </div>
+      <%= link_to "Request the Discord bot", contact_form_path(source: @entry.guide_contact_source),
+            class: "btn btn-primary shrink-0 justify-center md:w-auto w-full", data: { test: "discord-request-cta" } %>
+    </div>
+  </section>
+
+  <div class="mt-8 text-center">
+    <%= link_to integrations_path, class: "text-sm font-semibold text-primary hover:underline", data: { test: "back-to-integrations-footer" } do %>
+      <span aria-hidden="true">←</span> Back to all integrations
+    <% end %>
+  </div>
+</section>

@@ -49,8 +49,54 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     css_select("[data-test='entry-cta']").each do |cta|
       item = cta.ancestors("[data-test='integration-entry']").first["data-entry"]
       intent = Integration.find(item).intent
-      assert_equal contact_form_path(source: { page: "integrations", item: item, intent: intent }), cta["href"], item
+      expected = item == "discord" ? integrations_discord_path : contact_form_path(source: { page: "integrations", item: item, intent: intent })
+      assert_equal expected, cta["href"], item
     end
+  end
+
+  test "[component] the add-on is named Managed Workspace, keeps the Google logo and names Google Workspace" do
+    get integrations_path
+
+    assert_select "#{entry('google_workspace_managed')} [data-test='entry-name']", text: "Managed Workspace"
+    assert_select "#{entry('google_workspace_managed')} [data-test='entry-lead'][data-lead='google']"
+    assert_select "#{entry('google_workspace_managed')} [data-test='entry-blurb']", text: /Google Workspace/
+    assert_no_match(/Google Workspace, managed/, response.body)
+  end
+
+  test "[component] the Discord card says two-way, stays On request, and opens its guide" do
+    get integrations_path
+
+    assert_select "#{entry('discord')} [data-test='entry-blurb']", text: /two-way/i
+    assert_select "#{entry('discord')} [data-test='on-request']"
+    assert_select "#{entry('discord')} [data-test='entry-cta'][href='#{integrations_discord_path}']", text: "Connect"
+  end
+
+  # --- /integrations/discord --------------------------------------------------
+
+  test "[component] the Discord guide renders publicly with examples, setup and the permissions note" do
+    get integrations_discord_path
+
+    assert_response :success
+    assert_select "h1", text: "Give your agents a home in Discord"
+    assert_select "[data-test='discord-guide'] header [data-test='on-request']", text: "On request"
+    assert_select "[data-test='examples-label']", text: /Examples/
+    assert_select "[data-test='example-post']", minimum: 3
+    assert_select "[data-test='example-exchange-line']", 2
+    assert_select "[data-test='example-exchange']", text: /@Studio CTO why is checkout slow\?/
+    assert_select "[data-test='setup-step']", 3
+    assert_select "[data-test='setup-step']", text: /No links or passwords change hands/
+    assert_select "[data-test='permissions-note']", text: /You approve exactly what the bot can do, and you can remove it any time from your server settings\./
+    assert_select "[data-test='back-to-integrations'][href='#{integrations_path}']"
+  end
+
+  test "[component] the guide's button requests the bot through the contact form, never a Discord authorization link" do
+    get integrations_discord_path
+
+    assert_select "[data-test='discord-request-cta']", text: "Request the Discord bot" do |cta|
+      assert_equal contact_form_path(source: { page: "integrations/discord", item: "discord", intent: "connect" }), cta.first["href"]
+    end
+    assert_no_match(%r{discord(app)?\.com/(api/)?oauth2}, response.body)
+    assert_no_match(/webhook/i, response.body, "the webhook version is gone")
   end
 
   test "[component] the Talk to us section: Custom eyebrow, no price line, one Talk to us button each" do

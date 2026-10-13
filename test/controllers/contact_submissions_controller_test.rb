@@ -412,6 +412,15 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='contact-source'][data-source-key='intent'][value='custom']"
   end
 
+  test "[component] the Discord guide's request prefills and carries its guide page as the source" do
+    get contact_form_path(source: { page: "integrations/discord", item: "discord", intent: "connect" }),
+        headers: { "Referer" => "http://www.example.com/integrations/discord" }
+
+    assert_select "textarea[name='contact_submission[message]']", text: "I'd like to connect Discord notifications."
+    hidden = css_select("[data-test='contact-source']").to_h { |input| [ input["data-source-key"], input["value"] ] }
+    assert_equal({ "page" => "integrations/discord", "item" => "discord", "intent" => "connect", "ref" => "/integrations/discord" }, hidden)
+  end
+
   test "[component] another site's referrer is not stored as ref, and a mismatched intent prefills nothing" do
     get contact_form_path(source: { page: "integrations", item: "slack", intent: "connect" }),
         headers: { "Referer" => "https://evil.example.net/x" }

@@ -47,6 +47,7 @@ pages:
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise" }
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
   integrations:   { page: "integrations#index",      audience: public, label: Integrations, emoji: "🔌", hover_emoji: "🧩", desc: "Connect your tools, add services we run" }
+  integrations_discord: { page: "integrations#discord", audience: public, label: Discord for your agents }
   build:          { page: "build#new",               audience: public, label: App Builder, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it }
   build_request:  { page: "build#show",              audience: public, label: Your app request }
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }

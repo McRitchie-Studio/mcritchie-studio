@@ -13,13 +13,15 @@ class Integration
   INTENTS = %w[connect notify add_on custom].freeze
   CTA_LABELS = { "connect" => "Connect", "notify" => "Get notified", "add_on" => "Talk to us", "custom" => "Talk to us" }.freeze
   PAGE = "integrations".freeze
+  # Entries with a guide page at /integrations/<guide> (IntegrationsController).
+  GUIDES = %w[discord].freeze
 
   Group = Struct.new(:key, :title, :kicker, :summary, :entries, keyword_init: true) do
     def add_ons? = key == "add_ons"
     def custom? = key == "custom"
   end
 
-  Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note,
+  Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note, :guide,
                      keyword_init: true) do
     def live? = status == "live"
     def soon? = status == "soon"
@@ -43,6 +45,9 @@ class Integration
 
     # What the card link carries into ContactSubmission#source.
     def contact_source = { page: PAGE, item: key, intent: intent }
+
+    # The source a guide page's own button carries ("integrations/discord").
+    def guide_contact_source = { page: "#{PAGE}/#{guide}", item: key, intent: intent }
 
     # The one line the /contact form's message starts with.
     def contact_message
@@ -95,6 +100,7 @@ class Integration
     # fails the page instead of rendering something it cannot honestly label.
     def validate!(entry)
       raise ArgumentError, "#{entry.key}: unknown status #{entry.status.inspect}" unless STATUSES.include?(entry.status)
+      raise ArgumentError, "#{entry.key}: unknown guide #{entry.guide.inspect}" if entry.guide.present? && !GUIDES.include?(entry.guide)
       raise ArgumentError, "#{entry.key}: unknown tier #{entry.tier.inspect}" if entry.tier.present? && WorkspacePackage.find(entry.tier).nil?
     end
   end

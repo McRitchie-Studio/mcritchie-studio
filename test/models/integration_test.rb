@@ -41,6 +41,8 @@ class IntegrationTest < ActiveSupport::TestCase
   test "[unit] integrations are free; an add-on shows its price or Quote; a custom entry no price" do
     Integration.groups.first.entries.each { |entry| assert_equal "Free", entry.price_label, entry.key }
     managed = Integration.find(:google_workspace_managed)
+    assert_equal "Managed Workspace", managed.name
+    assert_equal "I'd like to talk about Managed Workspace.", managed.contact_message
     assert_equal "$25/month + $15/user/month", managed.price_label
     assert_equal "Google Business Starter seat included", managed.price_note
     assert_equal "Quote", Integration.find(:payments).price_label
@@ -73,6 +75,13 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "Please let me know when Slack is available.", Integration.find(:slack).contact_message
     assert_equal "I'd like to talk about AI features.", Integration.find(:ai_features).contact_message
     assert_equal({ page: "integrations", item: "ai_features", intent: "custom" }, Integration.find(:ai_features).contact_source)
+  end
+
+  test "[unit] Discord has a guide page, whose button carries its own source" do
+    discord = Integration.find(:discord)
+    assert_equal "discord", discord.guide
+    assert_equal({ page: "integrations/discord", item: "discord", intent: "connect" }, discord.guide_contact_source)
+    assert_raises(ArgumentError) { Integration.send(:build_entry, "integrations", { "key" => "x", "status" => "live", "guide" => "teams" }) }
   end
 
   test "[unit] an unknown status or tier fails the load" do

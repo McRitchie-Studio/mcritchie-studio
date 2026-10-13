@@ -65,4 +65,33 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     end
     assert_equal [ [ 4 ] ], [ rows.to_h.fetch("integrations").map(&:size) ], "Integrations is exactly one row of four"
   end
+
+  test "[e2e] Discord's Connect opens its guide, whose request opens the contact form prefilled" do
+    visit integrations_path
+    within("[data-test='integration-entry'][data-entry='discord']") { click_on "Connect" }
+
+    assert_current_path integrations_discord_path
+    assert_text "Give your agents a home in Discord"
+    click_on "Request the Discord bot"
+
+    assert_current_path(/\A\/contact\?/)
+    assert_field "contact_submission[message]", with: "I'd like to connect Discord notifications."
+    hidden = all("[data-test='contact-source']", visible: :all).to_h { |input| [ input["data-source-key"], input.value ] }
+    assert_equal({ "page" => "integrations/discord", "item" => "discord", "intent" => "connect", "ref" => "/integrations/discord" }, hidden)
+  end
+
+  test "[e2e] the Discord guide has no sideways scroll at 375 and 1280, light and dark" do
+    %w[light dark].each do |theme|
+      [ 375, 1280 ].each do |width|
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 1000, deviceScaleFactor: 1, mobile: width < 768)
+        visit integrations_discord_path
+        page.execute_script("localStorage.setItem('theme', '#{theme}')")
+        visit integrations_discord_path
+
+        assert_equal width, page.evaluate_script("window.innerWidth")
+        overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert_operator overflow, :<=, 0, "#{theme} at #{width}px scrolls sideways by #{overflow}px"
+      end
+    end
+  end
 end
