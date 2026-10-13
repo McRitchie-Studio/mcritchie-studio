@@ -110,13 +110,15 @@ class DomainCutoverTest < Minitest::Test
     current = [rec("example.com", "A", "198.185.159.144", proxied: true, id: "a1"),
                rec("example.com", "MX", "smtp.google.com", priority: 1, proxied: false, id: "m1"),
                rec("www.example.com", "CNAME", "example.com", proxied: false, id: "w1"),
+               rec("example.com", "MX", "mx.import.example", priority: 10, proxied: false, id: "m2"),
+               rec("example.com", "TXT", "v=spf1 include:import.example ~all", proxied: false, id: "t1"),
                rec("legacy.example.com", "A", "192.0.2.1", proxied: false, id: "l1")]
     diff = R.reconcile(want, current)
 
     assert_equal ["a1"], diff[:delete].map(&:id), "the apex A conflicts with the apex CNAME"
     assert_equal [["w1", true]], diff[:update].map { |r| [r.id, r.proxied] }
     assert_equal ["example.com CNAME owl.herokudns.com (DNS only)"], diff[:create].map(&:to_s)
-    assert_equal ["l1"], diff[:extra].map(&:id), "a record the snapshot missed is kept, not deleted"
+    assert_equal %w[m2 t1 l1], diff[:extra].map(&:id), "records the snapshot missed (mail at the CNAME apex too) are kept"
     assert_equal ["example.com CNAME owl.herokudns.com (DNS only)", "www.example.com CNAME example.com (proxied)"],
                  R.missing(want, current).map(&:to_s), "absent, and present with the wrong proxy flag"
   end
