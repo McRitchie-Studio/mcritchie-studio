@@ -125,4 +125,12 @@ class Admin::GoogleCalendarControllerTest < ActionDispatch::IntegrationTest
       assert_equal "Google Calendar disconnected: deleted here and revoked at Google.", flash[:notice]
     end
   end
+
+  test "[integration] the auth code is filtered from the callback's logged parameters" do
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    logged = filter.filter("controller" => "admin/google_calendar", "action" => "callback", "code" => "synthetic-code", "state" => "s1")
+
+    assert_equal "[FILTERED]", logged["code"]
+    assert_equal "s1", logged["state"]
+  end
 end
