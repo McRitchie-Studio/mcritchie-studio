@@ -84,10 +84,11 @@ module IntentScout
   end
 
   # An older bin/task with no `scout-brief` answers an unknown subcommand by
-  # printing its usage (beginning "Usage:") and exiting 1. A board error prints an
-  # "error:" line instead, and a newer bin/task's usage names scout-brief.
+  # printing its usage (a line beginning "Usage:") and exiting 1. Ruby or bundler
+  # warnings may come first, so the line is matched anywhere. A board error prints
+  # an "error:" line instead, and a newer bin/task's usage names scout-brief.
   def missing_subcommand?(exit_status, stderr)
-    exit_status == 1 && stderr.to_s.lstrip.start_with?("Usage:") && !stderr.to_s.include?("scout-brief")
+    exit_status == 1 && stderr.to_s.match?(/^Usage:/) && !stderr.to_s.include?("scout-brief")
   end
 
   # The SOP as an absolute path in the hub primary, so the line resolves from any

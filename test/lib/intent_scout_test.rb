@@ -94,6 +94,8 @@ class IntentScoutTest < Minitest::Test
 
   def test_an_older_bin_task_usage_reads_as_a_missing_subcommand
     assert IntentScout.missing_subcommand?(1, "Usage:\n  bin/task list [--stage S]\n")
+    assert IntentScout.missing_subcommand?(1, "warning: already initialized constant X\nUsage:\n  bin/task list\n"),
+           "a warning line ahead of the usage (bundler under fast-check) still reads as version skew"
     refute IntentScout.missing_subcommand?(1, "error: GET /api/v1/activities?x -> 500: boom\n"), "a board error"
     refute IntentScout.missing_subcommand?(1, "Usage:\n  bin/task scout-brief <slug>\n"), "a newer usage names it"
     refute IntentScout.missing_subcommand?(2, "Usage:\n"), "exit 2 is no brief yet"
