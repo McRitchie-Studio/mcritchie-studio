@@ -59,6 +59,51 @@
             <% end %>
             </div>
 
+            <%# How the entry connects (who each way covers, its setup and its
+                upkeep) and what it can do once connected. An ability names
+                the ways that unlock it only when there is more than one way. %>
+            <% if entry.connection_methods.any? %>
+              <div class="mb-4 space-y-3 text-xs" data-test="entry-connections">
+                <div>
+                  <p class="font-semibold uppercase tracking-wider text-muted">How it connects</p>
+                  <ul class="mt-1 space-y-1.5">
+                    <% entry.connection_methods.each do |method| %>
+                      <%# A Coming soon card already says so once; no chip repeats it. %>
+                      <% method_soon = entry.method_soon?(method.key) %>
+                      <li data-test="entry-method" data-method="<%= method.key %>" data-soon="<%= method_soon %>">
+                        <span class="font-medium text-heading"><%= method.label %></span>
+                        <% if method_soon && !entry.soon? %>
+                          <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
+                        <% end %>
+                        <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
+                      </li>
+                    <% end %>
+                  </ul>
+                </div>
+                <% if entry.abilities.any? %>
+                  <div>
+                    <p class="font-semibold uppercase tracking-wider text-muted">What it can do</p>
+                    <ul class="mt-1 space-y-1">
+                      <% entry.abilities.each do |ability| %>
+                        <li class="flex items-start gap-1.5 text-body" data-test="entry-ability" data-ability="<%= ability.key %>" data-status="<%= ability.status %>">
+                          <svg class="mt-0.5 h-3 w-3 shrink-0 <%= ability.soon? ? 'text-muted' : 'text-success-ink' %>" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+                          <span class="min-w-0">
+                            <%= ability.name %>
+                            <% if entry.connection_methods.size > 1 %>
+                              <span class="text-muted" data-test="ability-via">· <%= ability.via.map { |key| entry.connection_methods.find { _1.key == key }.label }.join(" or ") %></span>
+                            <% end %>
+                            <% if ability.soon? && !entry.soon? %>
+                              <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
+                            <% end %>
+                          </span>
+                        </li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+
             <%# The footer: price line and button side by side when they fit; the
                 button wraps below the price (never squeezes it) on a narrow card.
                 A custom entry has no price line, only its button. %>

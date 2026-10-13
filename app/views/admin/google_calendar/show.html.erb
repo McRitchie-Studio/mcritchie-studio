@@ -1,0 +1,126 @@
+<%# The standing Google Calendar connection page (/admin/google_calendar): whether an account is connected, as whom, with what grant, who connected it and when, whether the stored row can be read; whether the OAuth client and encryption keys are set (by NAME only); the next week's events as proof the read works; and Connect and Disconnect. It renders no token and no part of one, and no value of any env var. %>
+<% source = if @connection.nil? then :none
+            elsif !@readable then :unreadable
+            elsif !@connection.can_read_calendar? then :no_calendar
+            elsif @read_error then :read_failed
+            else :connected
+            end %>
+<% badge = {
+     connected: ["Connected", "bg-success/10 text-success-ink border-success/40"],
+     no_calendar: ["Connected without the calendar", "bg-warning/10 text-warning-ink border-warning/40"],
+     read_failed: ["Connected, but the read failed", "bg-warning/10 text-warning-ink border-warning/40"],
+     unreadable: ["Not connected: the stored connection cannot be read", "bg-warning/10 text-warning-ink border-warning/40"],
+     none: ["Not connected", "bg-warning/10 text-warning-ink border-warning/40"]
+   }.fetch(source) %>
+<% can_connect = @configured && @encryption_ready %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="google-calendar-connection" data-source="<%= source %>">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Google Calendar connection</h1>
+    <p class="text-secondary mt-2">
+      The Google account whose calendar this server reads, connected by signing in. It can read events and nothing else:
+      it cannot create, change or delete one. No token is shown here.
+    </p>
+  </div>
+
+  <div class="card p-4 space-y-2" data-test="google-calendar-status">
+    <span class="badge text-xs <%= badge.last %>" data-test="google-calendar-badge"><%= badge.first %></span>
+    <p class="text-body text-sm" data-test="google-calendar-detail">
+      <% if source == :connected %>Reading <span class="font-semibold text-heading"><%= @connection.email %></span>'s primary calendar.
+        Signing in is one click, and Google may ask again if the access is revoked or goes unused for six months.
+      <% elsif source == :no_calendar %>The account is connected, but the calendar permission was unticked on Google's screen. Connect again and leave it ticked.
+      <% elsif source == :read_failed %><%= @read_error %>
+      <% elsif source == :unreadable %>A connection is stored, but it was encrypted with keys this server no longer has. Connect again to replace it.
+      <% else %>Nothing connects this server to a Google calendar. Connect as the account whose meetings the agents should read.
+      <% end %>
+    </p>
+  </div>
+
+  <% if @connection %>
+    <dl class="card p-4 space-y-3 text-sm" data-test="google-calendar-stored">
+      <div>
+        <dt class="text-muted text-xs mb-1">Account</dt>
+        <dd class="text-heading font-semibold break-all" data-field="account"><%= @connection.email %></dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Granted by Google</dt>
+        <dd class="text-body break-words" data-field="scope"><%= @connection.scopes.join(", ").presence || "Google named no scope" %></dd>
+      </div>
+      <div>
+        <dt class="text-muted text-xs mb-1">Connected</dt>
+        <dd class="text-body" data-field="connected"><%= stamp.(@connection.connected_at) %><% if @connection.connected_by.present? %> by <%= @connection.connected_by %><% end %></dd>
+      </div>
+    </dl>
+  <% end %>
+
+  <% if @events %>
+    <div class="card p-4 text-sm" data-test="google-calendar-events" data-count="<%= @events.size %>">
+      <h2 class="font-semibold text-heading">Next 7 days · <%= pluralize(@events.size, "event") %></h2>
+      <% if @events.empty? %>
+        <p class="mt-2 text-muted">No events in the next week.</p>
+      <% else %>
+        <ul class="mt-2 divide-y divide-subtle">
+          <% @events.first(10).each do |event| %>
+            <li class="py-2 flex flex-col sm:flex-row sm:justify-between gap-1" data-test="google-calendar-event">
+              <span class="text-heading break-words min-w-0"><%= event.title %></span>
+              <span class="text-muted text-xs shrink-0">
+                <%= event.all_day ? event.starts_at.strftime("%a %b %-d · all day") : stamp.(event.starts_at) %>
+                <% if event.attendees.positive? %> · <%= pluralize(event.attendees, "guest") %><% end %>
+              </span>
+            </li>
+          <% end %>
+        </ul>
+        <% if @events.size > 10 %><p class="mt-2 text-muted text-xs">and <%= @events.size - 10 %> more</p><% end %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <dl class="card p-4 space-y-3 text-sm" data-test="google-calendar-server">
+    <div>
+      <dt class="text-muted text-xs mb-1">OAuth client</dt>
+      <dd class="text-body break-words" data-field="client" data-set="<%= @configured %>">
+        <span class="font-mono text-xs">GOOGLE_CONNECT_CLIENT_ID</span> and <span class="font-mono text-xs">GOOGLE_CONNECT_CLIENT_SECRET</span>:
+        <span class="font-semibold text-heading"><%= @configured ? "set" : "not set" %></span>.
+        <span class="text-muted">Its redirect URI must be <span class="font-mono text-xs break-all"><%= @callback_url %></span></span>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted text-xs mb-1">Encryption</dt>
+      <dd class="text-body break-words" data-field="encryption" data-ready="<%= @encryption_ready %>">
+        <% if @encryption_ready %>
+          <span class="font-semibold text-heading">Ready.</span> This server can store a connection.
+        <% else %>
+          <span class="font-semibold text-warning-ink">Not ready.</span> Set <span class="font-mono text-xs"><%= GoogleCalendarConnection::ENCRYPTION_ENV.join(", ") %></span> first.
+        <% end %>
+      </dd>
+    </div>
+  </dl>
+
+  <div class="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="google-calendar-connect-card">
+    <p class="text-sm text-body min-w-0">
+      <span class="font-semibold text-heading"><%= @connection ? "Connect again." : "Connect." %></span>
+      <% if can_connect %>
+        Sends you to Google to sign in, then stores the connection here.
+      <% elsif !@encryption_ready %>
+        Off until this server's encryption keys are set: the connection could not be stored.
+      <% else %>
+        Off until the OAuth client's id and secret are set on this server.
+      <% end %>
+    </p>
+    <% if can_connect %>
+      <%= link_to(@connection ? "Connect again" : "Connect Google Calendar", admin_google_calendar_connect_path,
+                  class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 text-center", data: { test: "google-calendar-connect", turbo: false }) %>
+    <% end %>
+  </div>
+
+  <% if @connection %>
+    <div class="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="google-calendar-disconnect-card">
+      <p class="text-sm text-body min-w-0">
+        <span class="font-semibold text-heading">Disconnect.</span>
+        Deletes the stored connection and asks Google to revoke it. Connecting again brings it back.
+      </p>
+      <%= button_to "Disconnect Google Calendar", admin_google_calendar_disconnect_path, method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto shrink-0",
+                    form: { class: "shrink-0", data: { test: "google-calendar-disconnect", turbo_confirm: "Delete the stored Google Calendar connection and revoke it?" } } %>
+    </div>
+  <% end %>
+</section>
