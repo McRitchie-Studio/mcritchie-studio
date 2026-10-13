@@ -392,4 +392,63 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_equal 6, hits, "only the six POSTs were counted"
   end
+
+  # --- source: where a card link sent the visitor (/integrations) ------------
+
+  test "[component] a card link prefills the message and carries its source in hidden fields" do
+    get contact_form_path(source: { page: "integrations", item: "github_org", intent: "connect", evil: "x" }),
+        headers: { "Referer" => "http://www.example.com/integrations?x=1" }
+
+    assert_response :success
+    assert_select "textarea[name='contact_submission[message]']", text: "I'd like to connect GitHub."
+    hidden = css_select("[data-test='contact-source']").to_h { |input| [ input["data-source-key"], input["value"] ] }
+    assert_equal({ "page" => "integrations", "item" => "github_org", "intent" => "connect", "ref" => "/integrations" }, hidden)
+  end
+
+  test "[component] another site's referrer is not stored as ref, and a mismatched intent prefills nothing" do
+    get contact_form_path(source: { page: "integrations", item: "slack", intent: "connect" }),
+        headers: { "Referer" => "https://evil.example.net/x" }
+
+    assert_select "[data-test='contact-source'][data-source-key='ref']", 0
+    assert_select "textarea[name='contact_submission[message]']", text: ""
+  end
+
+  test "[component] the plain form carries no source fields and the same consent boxes" do
+    get contact_form_path
+
+    assert_select "[data-test='contact-source']", 0
+    assert_select "[data-test='contact-consent'] input[type='checkbox']", count: 3
+    assert_select "[data-test='contact-consent'] input[type='checkbox'][checked]", count: 0
+  end
+
+  test "[integration] a submission from a card stores its source, keeping only the known keys" do
+    assert_difference -> { ContactSubmission.count }, 1 do
+      submit(source: { page: "integrations", item: "github_org", intent: "connect", ref: "/integrations",
+                       evil: "x", note: "free text" })
+    end
+
+    row = ContactSubmission.recent.first
+    assert_equal({ "page" => "integrations", "item" => "github_org", "intent" => "connect", "ref" => "/integrations" }, row.source)
+  end
+
+  test "[integration] a source value that is not a short token is dropped" do
+    submit(source: { page: "integrations", item: "<script>alert(1)</script>", intent: "x" * 101 })
+
+    assert_equal({ "page" => "integrations" }, ContactSubmission.recent.first.source)
+  end
+
+  test "[integration] the form still works with no source, and stores an empty one" do
+    assert_difference -> { ContactSubmission.count }, 1 do
+      submit
+    end
+    assert_redirected_to contact_form_path
+    assert_equal({}, ContactSubmission.recent.first.source)
+  end
+
+  test "[integration] a refused submission keeps its source in the re-rendered form" do
+    submit(email: "not-an-email", source: { page: "integrations", item: "slack", intent: "notify" })
+
+    assert_response :unprocessable_entity
+    assert_select "[data-test='contact-source'][data-source-key='item'][value='slack']"
+  end
 end

@@ -7,14 +7,18 @@ class Integration
   # live: delivered today. soon: not delivered ("Coming soon"). on_request:
   # delivered per contract after a call.
   STATUSES = %w[live soon on_request].freeze
-  CTAS = %w[connect talk].freeze
-  CTA_LABELS = { "connect" => "Connect", "talk" => "Talk to us" }.freeze
+  # Every button opens the /contact form prefilled; the intent rides along in
+  # the submission's `source`. It follows from the group and the status, never
+  # from config, so a Coming soon entry can never say Connect.
+  INTENTS = %w[connect notify add_on].freeze
+  CTA_LABELS = { "connect" => "Connect", "notify" => "Get notified", "add_on" => "Talk to us" }.freeze
+  PAGE = "integrations".freeze
 
   Group = Struct.new(:key, :title, :kicker, :summary, :entries, keyword_init: true) do
     def add_ons? = key == "add_ons"
   end
 
-  Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note, :cta,
+  Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note,
                      keyword_init: true) do
     def live? = status == "live"
     def soon? = status == "soon"
@@ -24,7 +28,27 @@ class Integration
     # config/workspace_icons.yml; otherwise the icon is an emoji.
     def brand = WorkspaceIconConfig.software?(icon) ? icon.to_s : nil
 
-    def cta_label = CTA_LABELS.fetch(cta)
+    # connect: request a connection (an integration, live or on request).
+    # notify: hear when a Coming soon integration ships. add_on: talk about a service.
+    def intent
+      return "add_on" if group == "add_ons"
+
+      soon? ? "notify" : "connect"
+    end
+
+    def cta_label = CTA_LABELS.fetch(intent)
+
+    # What the card link carries into ContactSubmission#source.
+    def contact_source = { page: PAGE, item: key, intent: intent }
+
+    # The one line the /contact form's message starts with.
+    def contact_message
+      case intent
+      when "connect" then "I'd like to connect #{name}."
+      when "notify" then "Please let me know when #{name} is available."
+      else "I'd like to talk about #{name}."
+      end
+    end
 
     # "Every plan" from the first tier, "From Pro" above it, nil with no gate.
     def availability
@@ -58,13 +82,10 @@ class Integration
       entry
     end
 
-    # The honesty rule, enforced on load: an unknown status or CTA, a tier that
-    # is not a package, or a Connect button on anything not live, fails the
-    # page instead of rendering a promise as a feature.
+    # Enforced on load: an unknown status, or a tier that is not a package,
+    # fails the page instead of rendering something it cannot honestly label.
     def validate!(entry)
       raise ArgumentError, "#{entry.key}: unknown status #{entry.status.inspect}" unless STATUSES.include?(entry.status)
-      raise ArgumentError, "#{entry.key}: unknown cta #{entry.cta.inspect}" unless CTAS.include?(entry.cta)
-      raise ArgumentError, "#{entry.key}: Connect is for live entries only" if entry.cta == "connect" && !entry.live?
       raise ArgumentError, "#{entry.key}: unknown tier #{entry.tier.inspect}" if entry.tier.present? && WorkspacePackage.find(entry.tier).nil?
     end
   end

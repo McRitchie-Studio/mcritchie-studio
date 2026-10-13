@@ -28,10 +28,13 @@
 #   price     integrations: omitted (they are free). add_ons: a price string, or
 #             omitted for "Quote".
 #   price_note optional muted line under the price
-#   cta       connect  books a call for now (no self-serve connect flow yet).
-#                      Only a live entry may say Connect: a Coming soon entry
-#                      never offers to connect.
-#             talk     "Talk to us", the studio's booking calendar
+#
+# The button is not configured: it follows from the group and the status, so a
+# Coming soon entry can never offer to connect. Every button opens the /contact
+# form prefilled, carrying {page, item, intent} into the submission's `source`.
+#   integrations, live or on_request  "Connect"       intent connect
+#   integrations, soon                "Get notified"  intent notify
+#   add_ons                           "Talk to us"    intent add_on
 groups:
   - key: integrations
     title: Integrations
@@ -45,33 +48,28 @@ groups:
         status: live
         tier: pro
         tier_note: Drafting agent from Team
-        cta: connect
       - key: discord
         name: Discord notifications
         icon: discord
         blurb: Your app posts the events you care about, such as sign-ups, orders and errors, into a Discord channel.
-        status: live
+        status: on_request
         tier: vibe
-        cta: connect
       - key: slack
         name: Slack
         icon: slack
         blurb: The same notifications, and your agent's updates, in your Slack workspace.
         status: soon
-        cta: talk
       - key: stripe_connect
         name: Stripe
         icon: stripe
         blurb: Take card payments into your own Stripe account, so the money lands with you.
         status: soon
-        cta: talk
       - key: github_org
         name: GitHub
         icon: github
         blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
         status: on_request
         tier: enterprise
-        cta: talk
 
   - key: add_ons
     title: Add-on services
@@ -83,49 +81,41 @@ groups:
         icon: google
         blurb: We create and run your Workspace, users and settings. Connecting one you already have stays free.
         status: live
-        price: "Google's seat price + $10/user/month"
-        price_note: "$250 one-time setup for a new Workspace"
-        cta: talk
+        price: "$25/month + $15/user/month"
+        price_note: Google Business Starter seat included
       - key: payments
         name: Payments in your app
         icon: "💳"
         blurb: Card, bank and crypto checkout built into your app.
-        status: live
-        cta: talk
+        status: on_request
       - key: crypto
         name: Crypto and wallets
         icon: solana
         blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
         status: live
-        cta: talk
       - key: ai_features
         name: AI features
         icon: "🧠"
         blurb: Chat, search, summaries and agents built into your app, on the models that fit the job.
         status: on_request
-        cta: talk
       - key: custom_connectors
         name: Custom connectors
-        icon: egnyte
+        icon: "🔌"
         blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
         status: soon
-        cta: talk
       - key: extra_builds
         name: Extra build requests
         icon: "🛠️"
         blurb: More features or a second app, beyond what your plan includes each month.
         status: on_request
-        cta: talk
       - key: extra_storage
         name: Extra storage
         icon: "🗄️"
         blurb: More database and file storage when your app outgrows its plan.
         status: on_request
-        cta: talk
       - key: enterprise_extras
         name: White label, domains and compliance
         icon: "🛡️"
         blurb: Your brand on everything, extra domains, and compliance work such as CMMC and ITAR.
         status: on_request
         tier: enterprise
-        cta: talk

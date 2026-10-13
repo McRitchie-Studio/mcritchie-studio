@@ -74,6 +74,13 @@
              data-proof="<%= form_proof %>" data-min-seconds="<%= ContactSubmissionsController::MIN_FILL_SECONDS %>"
              x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="contact-proof">
 
+      <%# Where the visitor came from, when a card link carried it (an
+          /integrations button): kept as hidden fields so it reaches the stored
+          submission. ContactSubmission keeps only its known keys. %>
+      <% @submission.source.to_h.each do |key, value| %>
+        <input type="hidden" name="contact_submission[source][<%= key %>]" value="<%= value %>" data-test="contact-source" data-source-key="<%= key %>">
+      <% end %>
+
       <fieldset class="space-y-3" data-test="contact-consent">
         <legend class="text-sm font-semibold text-heading mb-2">Text messages</legend>
         <label class="flex items-start gap-3 text-secondary">

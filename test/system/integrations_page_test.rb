@@ -25,4 +25,15 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       end
     end
   end
+
+  test "[e2e] a card's Connect opens the contact form prefilled, carrying where it came from" do
+    visit integrations_path
+    within("[data-test='integration-entry'][data-entry='github_org']") { click_on "Connect" }
+
+    assert_current_path(/\A\/contact\?/)
+    assert_field "contact_submission[message]", with: "I'd like to connect GitHub."
+    hidden = all("[data-test='contact-source']", visible: :all).to_h { |input| [ input["data-source-key"], input.value ] }
+    assert_equal({ "page" => "integrations", "item" => "github_org", "intent" => "connect", "ref" => "/integrations" }, hidden)
+    assert_selector "[data-test='contact-consent'] input[type='checkbox']:checked", count: 0
+  end
 end

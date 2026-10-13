@@ -51,6 +51,14 @@ class ContactSubmission < ApplicationRecord
   # ContactSubmissionsController#spam_reason for how each is measured.
   SPAM_REASONS = %w[no_browser_proof too_fast].freeze
 
+  # Where a submission came from, when a link carried it (an /integrations
+  # card: {page, item, intent}, plus `ref`, the page the visitor came from).
+  # Only these keys are kept, each a short plain token or path; anything else a
+  # visitor writes into the URL is dropped, so the column never grows a free-
+  # text field.
+  SOURCE_KEYS = %w[page item intent ref].freeze
+  SOURCE_VALUE = %r{\A[\w\-/.]{1,100}\z}
+
   # Kept out of #inspect, so a logged or raised record does not carry them. The
   # request log's own filter is in config/initializers/filter_parameter_logging.rb.
   self.filter_attributes += %i[phone message]
@@ -58,6 +66,7 @@ class ContactSubmission < ApplicationRecord
   normalizes :name, :phone, with: ->(value) { value.to_s.squish.presence }
   normalizes :email, with: ->(value) { value.to_s.strip.downcase.presence }
   normalizes :message, with: ->(value) { value.to_s.strip.presence }
+  normalizes :source, with: ->(value) { ContactSubmission.clean_source(value) }
   normalizes :user_agent, with: ->(value) { value.to_s[0, USER_AGENT_LIMIT].presence }
 
   before_validation :stamp_disclosure, on: :create
@@ -81,6 +90,24 @@ class ContactSubmission < ApplicationRecord
   # the paragraphs under the form.
   def self.disclosure_text
     (CONSENT_LABELS.values + DISCLOSURE_PARAGRAPHS).join("\n\n")
+  end
+
+  # A source hash with only the known keys, each a short token or path.
+  def self.clean_source(value)
+    value = value.to_unsafe_h if value.respond_to?(:to_unsafe_h)
+    return {} unless value.is_a?(Hash)
+
+    value.to_h.stringify_keys.slice(*SOURCE_KEYS)
+         .transform_values { |v| v.to_s.strip }
+         .select { |_, v| v.match?(SOURCE_VALUE) }
+  end
+
+  # One line for the notification email, or nil with no source:
+  # "page: integrations · item: github · intent: connect · ref: /integrations".
+  def source_summary
+    return if source.blank?
+
+    SOURCE_KEYS.filter_map { |key| "#{key}: #{source[key]}" if source[key].present? }.join(" · ")
   end
 
   def flagged?

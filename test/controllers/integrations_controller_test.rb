@@ -25,24 +25,31 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
       end
       assert_select "#{entry(item.key)} [data-test='available']", item.live? ? 1 : 0
     end
-    assert_select "[data-test='entry-cta'][data-cta='connect']", count: Integration.entries.count { |e| e.cta == "connect" }
-    css_select("[data-test='entry-cta'][data-cta='connect']").each do |cta|
-      assert_equal "live", cta.ancestors("[data-test='integration-entry']").first["data-status"]
+    css_select("[data-test='entry-cta'][data-intent='connect']").each do |cta|
+      refute_equal "soon", cta.ancestors("[data-test='integration-entry']").first["data-status"]
     end
   end
 
-  test "[component] integrations read Free, add-ons a price or Quote, each with its CTA" do
+  test "[component] integrations read Free, add-ons a price or Quote, each with its button" do
     get integrations_path
 
     assert_select "#{entry('discord')} [data-test='entry-price']", text: /Free/
-    assert_select "#{entry('google_workspace_managed')} [data-test='entry-price']", text: %r{\$10/user/month}
-    assert_select "#{entry('google_workspace_managed')} [data-test='entry-price-note']", text: /\$250 one-time setup/
+    assert_select "#{entry('google_workspace_managed')} [data-test='entry-price']", text: %r{\$25/month \+ \$15/user/month}
+    assert_select "#{entry('google_workspace_managed')} [data-test='entry-price-note']", text: "Google Business Starter seat included"
+    assert_no_match(/\$250/, response.body)
     assert_select "#{entry('payments')} [data-test='entry-price']", text: /Quote/
     assert_select "#{entry('discord')} [data-test='entry-cta']", text: "Connect"
-    assert_select "#{entry('slack')} [data-test='entry-cta']", text: "Talk to us"
+    assert_select "#{entry('github_org')} [data-test='entry-cta']", text: "Connect"
+    assert_select "#{entry('slack')} [data-test='entry-cta']", text: "Get notified"
+    assert_select "#{entry('payments')} [data-test='entry-cta']", text: "Talk to us"
+    assert_select "#{entry('payments')} [data-test='on-request']"
     assert_select "#{entry('google_workspace_connect')} [data-test='entry-tier']", text: "From Pro"
     assert_select "#{entry('google_workspace_connect')} [data-test='entry-lead'][data-lead='google'] [data-test='brand-logo']"
-    css_select("[data-test='entry-cta']").each { |cta| assert_equal schedule_index_path, cta["href"] }
+    css_select("[data-test='entry-cta']").each do |cta|
+      item = cta.ancestors("[data-test='integration-entry']").first["data-entry"]
+      intent = Integration.find(item).intent
+      assert_equal contact_form_path(source: { page: "integrations", item: item, intent: intent }), cta["href"], item
+    end
   end
 
   test "[component] the page closes on Book a call and links back to /packages, and /packages links here" do

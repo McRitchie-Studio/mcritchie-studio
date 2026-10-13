@@ -68,9 +68,10 @@
                   <p class="text-xs text-muted">You pay the vendor directly</p>
                 <% end %>
               </div>
-              <%= studio_booking_link entry.cta_label, schedule_index_path,
-                    class: "btn #{entry.cta == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
-                    data: { test: "entry-cta", cta: entry.cta } %>
+              <%# Every button opens the contact form prefilled, carrying where it came from. %>
+              <%= link_to entry.cta_label, contact_form_path(source: entry.contact_source),
+                    class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
+                    data: { test: "entry-cta", intent: entry.intent } %>
             </div>
           </article>
         <% end %>
