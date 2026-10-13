@@ -98,10 +98,14 @@ enterprise_booking_url:
 # The groups of /packages/stack, in page order (Mr. McRitchie, 2026-10-12): each
 # paid step unlocks one group. `category_from` names the tier a group starts at;
 # its header reads "From <tier>".
+# The `platform` key reads "Security & integrations" since 2026-10-13, when the
+# cards dropped their Platform group (Mr. McRitchie) and the agent rows moved to
+# their own `agents` group to mirror the cards' Agents lanes.
 categories:
   application: Application
   domain: Domain
-  platform: Platform
+  platform: Security & integrations
+  agents: Agents
   marketing: Marketing
   service: Service
   add_ons: Talk to us
@@ -109,7 +113,8 @@ categories:
 category_from:
   domain: builder
   platform: pro
-  marketing: team
+  agents: pro
+  marketing: pro
 
 # The swim lanes every card lists (Mr. McRitchie, 2026-10-12): one fixed lane
 # list per group, in this order on every card that shows the group, each lane
@@ -125,16 +130,16 @@ card_lanes:
   - { group: Application, key: app, title: Custom Web App }
   - { group: Application, key: host_storage, title: "%{tier} Host & Storage" }
   - { group: Application, key: domain, title: Custom Domain }
-  - { group: Platform, key: integrations, title: Integrations, href: /integrations }
-  - { group: Platform, key: vault, title: Password vault }
-  - { group: Agents, key: cto, title: Fractional CTO }
-  - { group: Agents, key: cmo, title: Fractional CMO }
-  - { group: Agents, key: drafting, title: Email drafting agent }
+  - { group: Application, key: integrations, title: Integrations, href: /integrations }
+  - { group: Application, key: vault, title: Password vault }
+  - { group: Marketing, key: social, title: Social Outreach, feature: Social Outreach }
   - { group: Marketing, key: email_marketing, title: Email marketing }
   - { group: Marketing, key: content, title: Content sprints }
   - { group: Marketing, key: warmup, title: Launch warm-up }
   - { group: Marketing, key: funnels, title: Funnels built for you, feature: Funnel generation }
-  - { group: Marketing, key: social, title: Social posting, feature: Social posting }
+  - { group: Agents, key: cto, title: Fractional CTO }
+  - { group: Agents, key: cmo, title: Fractional CMO }
+  - { group: Agents, key: drafting, title: Email drafting agent }
 
 packages:
   - key: vibe
@@ -153,7 +158,7 @@ packages:
     tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
     comp: Cyvasse
-    card_groups: [Application, Platform]
+    card_groups: [Application, Marketing]
     lanes:
       app: { sub: several changes a month }
       host_storage: { sub: "always on, 11 GB" }
@@ -164,7 +169,7 @@ packages:
     tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
     comp: Commercial Welding
-    card_groups: [Application, Platform, Agents]
+    card_groups: [Application, Marketing, Agents]
     lanes:
       app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 60 GB" }
@@ -172,6 +177,7 @@ packages:
       integrations: { sub: "Google Workspace, Slack & more" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
+      social: { sub: posts you approve, status: soon }
     cta: { label: Talk to us about Pro, action: schedule }
   - key: team
     name: Team
@@ -179,7 +185,7 @@ packages:
     price_monthly: 900
     comp: Turf Monster
     featured: true
-    card_groups: [Application, Platform, Agents, Marketing]
+    card_groups: [Application, Marketing, Agents]
     lanes:
       app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 132 GB" }
@@ -193,7 +199,7 @@ packages:
       content: { sub: "short-form, tested at volume" }
       warmup: { sub: new domains ramped safely }
       funnels: { status: soon }
-      social: { sub: X and TikTok, status: soon }
+      social: { title: CMO-Managed Social, sub: strategy and posting, status: soon }
     cta: { label: Talk to us about Team, action: schedule }
   - key: enterprise
     name: Enterprise
@@ -312,6 +318,18 @@ features:
     enterprise: Nightly + restore drill
     sop: r2-backup
     status: live
+  - name: Hosting mode
+    category: application
+    icon: "🏷️"
+    blurb: On McRitchie Studio's accounts, or white label on your own.
+    vibe: McRitchie Studio hosted
+    builder: McRitchie Studio hosted
+    pro: Hosted or white label
+    team: Hosted or white label
+    enterprise: White label
+    sop: website-launch
+    you_do: Approve the hosting costs
+    status: live
 
   # --- domain (Builder and up) ---------------------------------------------
   # Leads the Domain group (Mr. McRitchie, 2026-10-12): three domain levels.
@@ -371,8 +389,8 @@ features:
     enterprise: true
     status: builtin
 
-  # --- platform (Pro and up) -----------------------------------------------
-  # Leads Platform (Mr. McRitchie, 2026-10-12) though Builder already has it.
+  # --- platform: Security & integrations (Pro and up) ---------------------
+  # Leads Security & integrations (Mr. McRitchie, 2026-10-12) though Builder already has it.
   - name: Branded emails
     category: platform
     icon: resend
@@ -400,38 +418,6 @@ features:
     you_do: Sign up and create the users
     status: live
     software: [google]
-  # A Team feature from 2026-10-12 (Mr. McRitchie), with the Knowledge base
-  # that feeds it. Commercial Welding (Pro) keeps its live drafting mailbox:
-  # grandfathering is decided separately, and neither row provisions software,
-  # so its /stack column is unchanged.
-  - name: Email drafting agent
-    category: platform
-    icon: "✍️"
-    blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
-    team: true
-    enterprise: true
-    sop: workspace-provision
-    section: "7. Drafting mailboxes"
-    you_do: Approve our key once
-    status: live
-  - name: Knowledge base
-    category: platform
-    icon: "📚"
-    blurb: Your agent indexes the folders you choose, so drafts use your real documents.
-    team: Google Drive
-    enterprise: Drive + custom connectors
-    sop: workspace-provision
-    section: "4. Attach the folders"
-    you_do: Name the folders
-    status: live
-  - name: Fractional CTO
-    category: platform
-    icon: "🗺️"
-    blurb: 24-hour access to your CTO with daily summaries of your app, and a monthly architecture and roadmap review to agree what comes next.
-    pro: 24-hour access & daily summaries
-    team: 24-hour access & daily summaries
-    enterprise: 24-hour access & daily summaries
-    status: builtin
   - name: Error alerts
     category: platform
     icon: sentry
@@ -479,45 +465,61 @@ features:
     team: Turnstile
     enterprise: Turnstile
     status: planned
-  - name: Hosting mode
-    category: platform
-    icon: "🏷️"
-    blurb: On McRitchie Studio's accounts, or white label on your own.
-    vibe: McRitchie Studio hosted
-    builder: McRitchie Studio hosted
-    pro: Hosted or white label
-    team: Hosted or white label
-    enterprise: White label
-    sop: website-launch
-    you_do: Approve the hosting costs
-    status: live
 
-  # --- marketing (Team) ----------------------------------------------------
+  # --- agents (Pro and up) -------------------------------------------------
+  - name: Fractional CTO
+    category: agents
+    icon: "🗺️"
+    blurb: 24-hour access to your CTO with daily summaries of your app, and a monthly architecture and roadmap review to agree what comes next.
+    pro: 24-hour access & daily summaries
+    team: 24-hour access & daily summaries
+    enterprise: 24-hour access & daily summaries
+    status: builtin
   - name: Fractional CMO
-    category: marketing
+    category: agents
     icon: "🧠"
     blurb: Our CMO agent finds the one thing holding your demand back and sets the plan around it.
     team: A monthly demand plan
     enterprise: true
     sop: constraint-diagnosis
     status: live
-  - name: Content sprints
-    category: marketing
-    icon: "🎬"
-    blurb: Short-form content tested at volume and measured, not just posted.
+  # A Team feature from 2026-10-12 (Mr. McRitchie), with the Knowledge base
+  # that feeds it. Commercial Welding (Pro) keeps its live drafting mailbox:
+  # grandfathering is decided separately, and neither row provisions software,
+  # so its /stack column is unchanged.
+  - name: Email drafting agent
+    category: agents
+    icon: "✍️"
+    blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
     team: true
     enterprise: true
-    sop: content-sprint
-    you_do: Approve the weekly plan
+    sop: workspace-provision
+    section: "7. Drafting mailboxes"
+    you_do: Approve our key once
     status: live
-  # No SOP builds a funnel yet (2026-10-12): planned, a promise.
-  - name: Funnel generation
+  - name: Knowledge base
+    category: agents
+    icon: "📚"
+    blurb: Your agent indexes the folders you choose, so drafts use your real documents.
+    team: Google Drive
+    enterprise: Drive + custom connectors
+    sop: workspace-provision
+    section: "4. Attach the folders"
+    you_do: Name the folders
+    status: live
+
+  # --- marketing (Social Outreach from Pro, the rest Team) -----------------
+  # Was "Social posting" (Mr. McRitchie, 2026-10-13): Pro posts what you approve;
+  # Team's CMO sets the strategy and posts. Not built: planned, a promise.
+  - name: Social Outreach
     category: marketing
-    icon: "🧲"
-    blurb: A landing page, lead capture and an email sequence for one offer, measured so you can read what it earns.
-    team: true
-    enterprise: true
+    icon: "📲"
+    blurb: Posts to X and TikTok for you. On Pro you approve each one; on Team your CMO sets the strategy and posts.
+    pro: Posts you approve
+    team: CMO-managed
+    enterprise: CMO-managed
     status: planned
+    software: [x, tiktok]
   - name: Email marketing
     category: marketing
     icon: "📣"
@@ -528,6 +530,15 @@ features:
     section: Phase 1 — Clean the list before anyone mails it
     status: live
     software: [zerobounce]
+  - name: Content sprints
+    category: marketing
+    icon: "🎬"
+    blurb: Short-form content tested at volume and measured, not just posted.
+    team: true
+    enterprise: true
+    sop: content-sprint
+    you_do: Approve the weekly plan
+    status: live
   - name: Launch warm-up
     category: marketing
     icon: "🔥"
@@ -536,14 +547,14 @@ features:
     enterprise: true
     sop: launch-warmup
     status: live
-  - name: Social posting
+  # No SOP builds a funnel yet (2026-10-12): planned, a promise.
+  - name: Funnel generation
     category: marketing
-    icon: "📲"
-    blurb: Approved posts published to X and TikTok for you.
-    team: X and TikTok
-    enterprise: X and TikTok
+    icon: "🧲"
+    blurb: A landing page, lead capture and an email sequence for one offer, measured so you can read what it earns.
+    team: true
+    enterprise: true
     status: planned
-    software: [x, tiktok]
 
   # --- service -------------------------------------------------------------
   - name: Changes after launch

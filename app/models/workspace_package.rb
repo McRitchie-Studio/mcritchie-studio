@@ -18,7 +18,7 @@ class WorkspacePackage
   # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12).
   CLOUDFLARE_DNS = "Fast, protected domain".freeze
   # A card's lanes are grouped under these headings, in this order.
-  CARD_GROUPS = %w[Application Platform Agents Marketing].freeze
+  CARD_GROUPS = %w[Application Marketing Agents].freeze
   # included: a check. missing: a muted cross, "In <first tier that has it>".
   # soon: not delivered yet (Coming soon).
   CARD_STATUSES = %w[included missing soon].freeze
