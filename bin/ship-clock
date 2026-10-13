@@ -1,0 +1,177 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ship-clock — prompt-to-production speed, from records (/tasks/ship-clock-benchmark).
+#
+#   bin/ship-clock start <slug> [--at ISO] [--estimated] [--restamp]
+#       Stamp T0 (now, unless --at) as a board note on the task. Run it FIRST, at
+#       Alex's prompt. Before `bin/task begin` the task does not exist yet, so the
+#       stamp is kept on disk (~/.ship-clock/<slug>.json, or $SHIP_CLOCK_HOME) and
+#       the second `start` after begin moves THAT time onto the board.
+#   bin/ship-clock report <slug> [--json] [--t0 ISO] [--t0-estimated] [--log PATH ...]
+#       Read-only. Rebuild the timeline from the task row, its gate runs, its
+#       release's gate runs and GitHub, then split T0 → production into hands-on,
+#       fixed wait and rework.
+#   bin/ship-clock record <slug> [report flags] [--note TEXT] [--ledger PATH]
+#       `report`, then append (or replace) the run's row in the ledger:
+#       docs/agents/ledgers/ship-clock.csv in the tree you stand in.
+#
+# The SOP is docs/agents/agents/xan/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
+
+require "optparse"
+require "fileutils"
+require_relative "lib/ship_clock"
+require_relative "lib/task_board"
+require_relative "lib/repo_root"
+
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+LEDGER_RELATIVE = "docs/agents/ledgers/ship-clock.csv"
+USAGE = "usage: bin/ship-clock start <slug> [--at ISO] [--estimated] [--restamp]\n" \
+        "       bin/ship-clock report <slug> [--json] [--t0 ISO] [--t0-estimated] [--log PATH ...]\n" \
+        "       bin/ship-clock record <slug> [report flags] [--note TEXT] [--ledger PATH]"
+
+def die!(msg, code: 1)
+  warn "ship-clock: #{msg}"
+  exit code
+end
+
+options = { json: false, logs: [], estimated: false, t0_estimated: false, restamp: false }
+parser = OptionParser.new do |o|
+  o.banner = USAGE
+  o.on("--at ISO", "start: the T0 to stamp (default: now)") { |v| options[:at] = v }
+  o.on("--estimated", "start: mark the stamped T0 as an estimate") { options[:estimated] = true }
+  o.on("--restamp", "start: replace a T0 already on the board") { options[:restamp] = true }
+  o.on("--json", "report/record: machine output") { options[:json] = true }
+  o.on("--t0 ISO", "report/record: use this T0 instead of the stamped one") { |v| options[:t0] = v }
+  o.on("--t0-estimated", "report/record: mark the --t0 value as an estimate") { options[:t0_estimated] = true }
+  o.on("--log PATH", "report/record: a ship log to read refused pre-checks from (repeatable)") { |v| options[:logs] << v }
+  o.on("--note TEXT", "record: a note for the ledger row") { |v| options[:note] = v }
+  o.on("--ledger PATH", "record: the ledger file (default: #{LEDGER_RELATIVE} in this tree)") { |v| options[:ledger] = v }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    exit 0
+  end
+end
+parser.parse!(ARGV)
+
+command = ARGV.shift
+slug = ARGV.shift
+die!("unexpected argument(s): #{ARGV.join(" ")}\n#{USAGE}", code: 2) unless ARGV.empty?
+die!(USAGE, code: 2) unless %w[start report record].include?(command) && slug && !slug.strip.empty?
+
+def token
+  @token ||= TaskBoard.handed_token ||
+             TaskBoard.mint_token(base_url: BASE_URL, secret: TaskBoard.agent_secret(File.join(__dir__, "..", ".env"))) ||
+             die!("could not mint a board token (AGENT_API_SECRET not found or refused)")
+end
+
+# GET → parsed JSON. 404 → nil. Any other non-2xx refuses: a read that failed must
+# never render as a timeline with a hole in it.
+def board_get(path)
+  res = TaskBoard.request(:get, path, base_url: BASE_URL, token: token)
+  return nil if res.code.to_i == 404
+  die!("GET #{path} -> HTTP #{res.code}") unless res.code.to_i.between?(200, 299)
+
+  TaskBoard.parse_body!(res)
+end
+
+def gh_runner
+  bin = ENV.fetch("SHIP_CLOCK_GH_BIN", "gh")
+  lambda do |args|
+    out, err, status = Open3.capture3(bin, *args)
+    [status.success? ? out : (out.to_s.strip.empty? ? err : out), status.success?]
+  rescue StandardError => e
+    ["#{e.class}: #{e.message}", false]
+  end
+end
+
+def pending_path(slug)
+  File.join(ENV.fetch("SHIP_CLOCK_HOME", File.join(Dir.home, ".ship-clock")), "#{slug}.json")
+end
+
+def read_pending(slug)
+  path = pending_path(slug)
+  return nil unless File.file?(path)
+
+  raw = JSON.parse(File.read(path))
+  at = ShipClock.parse_time(raw["t0"])
+  at && { at: at, source: raw["estimated"] ? "estimated" : "stamped (local, not yet on the board)",
+          estimated: raw["estimated"] ? true : false }
+rescue JSON::ParserError
+  nil
+end
+
+case command
+when "start"
+  at = options[:at] ? ShipClock.parse_time(options[:at]) : nil
+  task = board_get("/api/v1/tasks/#{slug}")
+  if task.nil?
+    existing = read_pending(slug)
+    if existing && !options[:restamp]
+      puts "T0 already held locally for #{slug}: #{existing[:at].iso8601} (#{ShipClock.denver(existing[:at])} MDT). " \
+           "Run `bin/ship-clock start #{slug}` again after `bin/task begin` to put it on the board."
+      exit 0
+    end
+    at ||= Time.now.utc
+    FileUtils.mkdir_p(File.dirname(pending_path(slug)))
+    File.write(pending_path(slug), JSON.generate("slug" => slug, "t0" => at.iso8601, "estimated" => options[:estimated]))
+    puts "T0 #{at.iso8601} (#{ShipClock.denver(at)} MDT) held locally: #{slug} is not on the board yet. " \
+         "After `bin/task begin`, run `bin/ship-clock start #{slug}` to move this T0 onto the task."
+    exit 0
+  end
+
+  sources = ShipClock::Sources.new(board: ->(path) { board_get(path) }, gh: gh_runner)
+  prior = sources.t0_note(slug)
+  if prior && !options[:restamp]
+    die!("#{slug} already has a T0 (#{prior.dig("metadata", "t0")}); pass --restamp to replace it", code: 3)
+  end
+
+  pending = read_pending(slug)
+  at ||= pending && pending[:at]
+  at ||= Time.now.utc
+  estimated = options[:estimated] || (pending && pending[:estimated]) || false
+  body = {
+    "task_slug" => slug, "activity_type" => "comment",
+    "description" => "ship-clock T0 #{at.iso8601} (#{ShipClock.denver(at)} MDT)#{estimated ? ", estimated" : ""}",
+    "metadata" => { "kind" => ShipClock::T0_KIND, "t0" => at.iso8601, "estimated" => estimated }
+  }
+  res = TaskBoard.request(:post, "/api/v1/activities", base_url: BASE_URL, token: token, body: body)
+  die!("POST /api/v1/activities -> HTTP #{res.code}; T0 NOT stamped") unless res.code.to_i.between?(200, 299)
+
+  File.delete(pending_path(slug)) if pending
+  puts "T0 stamped on #{slug}: #{at.iso8601} (#{ShipClock.denver(at)} MDT)#{estimated ? ", estimated" : ""}"
+when "report", "record"
+  t0_override = nil
+  if options[:t0]
+    at = ShipClock.parse_time(options[:t0]) || die!("--t0 is not a time: #{options[:t0]}", code: 2)
+    t0_override = { at: at, source: options[:t0_estimated] ? "estimated" : "given (--t0)" }
+  end
+  log_lines = options[:logs].flat_map do |path|
+    File.file?(path) ? File.readlines(path, chomp: true) : die!("--log #{path}: no such file", code: 2)
+  end
+  sources = ShipClock::Sources.new(board: ->(path) { board_get(path) }, gh: gh_runner)
+  begin
+    report = ShipClock.report(slug, sources: sources, t0_override: t0_override,
+                                    pending: read_pending(slug), log_lines: log_lines)
+  rescue ShipClock::Error => e
+    die!(e.message)
+  end
+
+  if command == "record"
+    ledger = options[:ledger] || begin
+      root = RepoRoot.git_toplevel || die!("not inside a git tree; pass --ledger PATH")
+      File.join(root, LEDGER_RELATIVE)
+    end
+    FileUtils.mkdir_p(File.dirname(ledger))
+    row = ShipClock::Ledger.row(report, note: options[:note])
+    outcome = ShipClock::Ledger.write!(ledger, row)
+    report["ledger"] = { "path" => ledger, "outcome" => outcome.to_s, "row" => row }
+  end
+
+  if options[:json]
+    puts JSON.pretty_generate(report)
+  else
+    puts ShipClock.render(report)
+    puts "\nledger: #{report["ledger"]["outcome"]} #{slug} in #{report["ledger"]["path"]}" if report["ledger"]
+  end
+end
