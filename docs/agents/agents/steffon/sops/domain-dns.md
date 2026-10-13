@@ -142,11 +142,17 @@ zone, reconciles its records, sets SSL and writes the `www` redirect by API.
 DNSSEC back on once the move settles (step 7). The same step, as a launch
 prerequisite, is row 0.2 of Rex's [`launch-warmup`](../../rex/sops/launch-warmup.md).
 
-Read the token once per session: `CF_TOKEN=$(op read
-"op://studio-agents-admin/cloudflare.studio.provision/api-token")` and
-`CF_ACCOUNT=$(op read "op://studio-agents-admin/cloudflare.studio.provision/account-id")`,
-under the admin service account. Every call below sends
-`-H "Authorization: Bearer $CF_TOKEN"`.
+Read the token once per session, under the admin service account (as in
+[`bucket-provision`](./bucket-provision.md)). Every call below sends it as a
+bearer token, so an empty read must stop here:
+
+```bash
+source ~/.zprofile.admin
+export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
+CF_TOKEN=$(op read "op://studio-agents-admin/cloudflare.studio.provision/api-token")
+CF_ACCOUNT=$(op read "op://studio-agents-admin/cloudflare.studio.provision/account-id")
+[ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ] || { echo "cloudflare.studio.provision read empty: stop" >&2; false; }
+```
 
 ### 1. Snapshot the live records — Steffon
 
