@@ -15,7 +15,9 @@ class WorkspacePackage
   STATUSES = %w[live builtin planned].freeze
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
   # The feature row /stack holds each client's live DNS host to: the Cloudflare
-  # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12).
+  # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12). Its cells
+  # read "Protected Domain" since 2026-10-13; the row keeps this name, which
+  # StackClient matches on.
   CLOUDFLARE_DNS = "Fast, protected domain".freeze
   # A card's lanes are grouped under these headings, in this order.
   CARD_GROUPS = %w[Application Marketing Agents].freeze
@@ -237,7 +239,7 @@ class WorkspacePackage
   def card_line(lane)
     status = lane_status(lane.key)
     in_tier = status == "missing" ? self.class.cards.find { |card| card.lane_status(lane.key) != "missing" } : nil
-    title = @lanes.dig(lane.key.to_s, "title") || lane.title
+    title = @lanes.dig(lane.key.to_s, "title").presence || lane.title
     CardLine.new(lane: lane, title: format(title, tier: name), sub: @lanes.dig(lane.key.to_s, "sub"),
                  status: status, in_tier: in_tier)
   end

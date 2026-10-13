@@ -72,8 +72,9 @@ class TaskBeginTest < Minitest::Test
   # Run `bin/task begin` against a one-shot stub board. `existing` seeds a task
   # the GET finds (nil → 404 "task not found" until a create POSTs one).
   # Returns [requests, out, err, status, stub_lines].
-  def run_begin(args, existing: nil, env: {})
+  def run_begin(args, existing: nil, env: {}, fail_activities: false)
     @task = existing
+    @fail_activities = fail_activities
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -118,9 +119,16 @@ class TaskBeginTest < Minitest::Test
       body = headers["content-length"] ? client.read(headers["content-length"].to_i) : ""
       requests << { method: method, path: path, body: body }
 
+      # A network error on the owed note: the board drops the connection unanswered.
+      (client.close; next) if @fail_activities == :drop && path == "/api/v1/activities"
+
       status, payload = response_for(method, path, body)
-      client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
-                   "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      begin
+        client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
+                     "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      rescue Errno::EPIPE, Errno::ECONNRESET
+        nil # the caller gave up waiting (a timeout test); keep serving
+      end
       client.close
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
@@ -129,6 +137,14 @@ class TaskBeginTest < Minitest::Test
 
   def response_for(method, path, body)
     return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
+    # Task notes: begin posts the intent-scout OWED note here. Kept apart from the task
+    # create below, which would otherwise read any POST as a new task.
+    if path == "/api/v1/activities"
+      sleep 4 if @fail_activities == :hang # past the scout's deadline, so the caller times out
+      return ["500 Internal Server Error", JSON.generate("error" => "boom")] if @fail_activities == true
+
+      return ["201 Created", JSON.generate("data" => JSON.parse(body).merge("slug" => "act-1"))]
+    end
 
     case method
     when "GET"
@@ -293,6 +309,87 @@ class TaskBeginTest < Minitest::Test
     refute_match bare, line, "begin printed a bare bin/submit — that is the defect"
     assert_match bare, "hand off with: bin/submit #{SLUG}",
                  "the bare pattern does not match the form it forbids, so this proves nothing"
+  end
+
+  # --- the intent-scout hand-off (docs/agents/agents/avi/sops/intent-scout.md) ----
+  # begin never launches or waits on the scout. It records that one is owed (one
+  # best-effort note, on the claim) and prints a paste-ready background launch.
+
+  def owed_notes(requests)
+    requests.select { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }.map { |r| JSON.parse(r[:body]) }
+  end
+
+  # [integration]
+  def test_begin_records_an_owed_scout_and_prints_the_launch_on_the_claim
+    requests, out, err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP,
+                                              *CREATE_METADATA])
+
+    assert status.success?, "expected green begin, got:\n#{err}\n#{out}"
+    notes = owed_notes(requests)
+    assert_equal 1, notes.size, "one owed note per claim"
+    assert_equal SLUG, notes.first["task_slug"]
+    assert_equal "comment", notes.first["activity_type"]
+    assert notes.first["description"].start_with?("INTENT SCOUT OWED:"), notes.first["description"]
+
+    assert_includes out, "scout: Avi owes this task an intent scout"
+    assert_includes out, 'subagent_type: "avi"'
+    assert_includes out, "run_in_background: true"
+    assert_includes out, "docs/agents/agents/avi/sops/intent-scout.md"
+    assert out.index("scout: ") > out.index("next: build"), "the scout block follows the handoff line"
+  end
+
+  # [integration]
+  def test_begin_resuming_a_building_task_prints_the_launch_and_posts_no_second_owed_note
+    requests, out, err, status, = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, err
+    assert_empty owed_notes(requests), "a resume already carries its owed note"
+    assert_includes out, "scout: Avi owes this task an intent scout"
+  end
+
+  # [integration]
+  def test_a_refused_owed_note_warns_and_begin_still_succeeds
+    requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: true)
+
+    assert status.success?, "the owed note is best-effort; begin must not fail on it:\n#{err}"
+    assert_equal 1, owed_notes(requests).size
+    assert_includes err, "could not record the owed intent scout"
+    assert_includes out, "scout: Avi owes this task an intent scout", "the launch line still prints"
+    assert(requests.any? { |r| r[:method] == "PATCH" }, "the claim landed before the note was tried")
+  end
+
+  # [integration] A board that drops the owed-note POST (a network error) costs a
+  # warning only; the launch lines still print and begin still succeeds.
+  def test_a_network_error_on_the_owed_note_warns_and_begin_still_succeeds
+    requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: :drop)
+
+    assert status.success?, "a network error on the owed note must not fail begin:\n#{err}"
+    assert_equal 1, owed_notes(requests).size
+    assert_includes err, "could not record the owed intent scout"
+    assert_includes out, "scout: Avi owes this task an intent scout"
+  end
+
+  # [integration] A board that hangs on the owed note is cut off at the scout's own
+  # short deadline (INTENT_SCOUT_TIMEOUT), not the 30-second board default.
+  def test_a_hung_owed_note_times_out_quickly_and_begin_still_succeeds
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    _requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: :hang,
+                                                     env: { "INTENT_SCOUT_TIMEOUT" => "1" })
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert status.success?, "a hung owed note must not fail begin:\n#{err}"
+    assert_match(/could not record the owed intent scout \(Net::ReadTimeout/, err)
+    assert_includes out, "scout: Avi owes this task an intent scout"
+    assert elapsed < 20, "the scout deadline bounds begin (took #{elapsed.round(1)}s)"
+  end
+
+  # [integration] The launch lines print before the owed note is posted.
+  def test_the_launch_lines_print_before_the_owed_note_is_posted
+    _requests, out, err, status, = run_begin([SLUG], existing: building_task(stage: "designed"), fail_activities: true)
+
+    assert status.success?, err
+    assert_includes out, "scout: Avi owes this task an intent scout"
+    assert_includes err, "launch it anyway from the scout: lines above", "the warning points UP at lines already printed"
   end
 
   # --- guard catalog row 4.4: the shape is decided at create --------------------

@@ -7,6 +7,7 @@ step-by-step build flow is [`building-sop.md`](building-sop.md); board mechanics
 are [`devops-task-board.md`](devops-task-board.md). The rationale and measurements
 this page no longer carries are frozen verbatim in
 [`../archive/fast-lane-2026-09-25.md`](../archive/fast-lane-2026-09-25.md).
+To time one task from Alex's prompt to production, run Xan's [`ship-clock`](../agents/xan/sops/ship-clock.md) SOP.
 
 ## DevOps Routing — read before writing ANY code
 
@@ -208,8 +209,10 @@ row 3.7).
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
-task URL. `bin/submit` — the HUB's script, run with that worktree as the cwd —
-runs steps 5-6 (`bin/dor-check --precheck` → commit → `bin/fast-check`
+task URL, then a paste-ready background launch of Avi's intent scout
+(`docs/agents/agents/avi/sops/intent-scout.md`). `bin/submit` — the HUB's script, run with that worktree as the cwd —
+runs steps 5-6 (`bin/dor-check --precheck` → the intent-brief read, which only
+warns → commit → `bin/fast-check`
 pre-flight → push → **non-draft** PR into `accepted` led by the task URL → record
 `pr_url` (skipped when the board already derives it) → **wait for CI to settle** →
 `bin/dor-check` → `move submitted`). The pre-check and the pre-flight come BEFORE

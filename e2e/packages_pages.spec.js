@@ -189,7 +189,7 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   expect(packagesOverflow).toBeLessThanOrEqual(0);
 });
 
-test("Pro and Team cards mark their lines, tease the next tier, and the full stack draws the Cloudflare row on a phone", async ({ page }) => {
+test("Pro and Team cards mark their lines, sell the Premium Domain, and the full stack draws the Cloudflare row on a phone", async ({ page }) => {
   await page.goto("/packages");
 
   // A check for included, a muted cross naming the next tier, Coming soon for promises.
@@ -211,12 +211,36 @@ test("Pro and Team cards mark their lines, tease the next tier, and the full sta
   await expect(pro.locator("[data-test='package-line'][data-lane='integrations'] a[href='/integrations']")).toHaveText("Integrations");
   await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
+  // Pro and Team sell the Premium Domain; Builder keeps its Custom Domain. At
+  // desktop and at 375px the line sits inside its card: nothing clipped, no
+  // sideways page scroll.
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const key of ["pro", "team"]) {
+      const line = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-line'][data-lane='domain']`);
+      await line.scrollIntoViewIfNeeded();
+      await expect(line.locator("[data-test='line-title']")).toHaveText("Premium Domain");
+      await expect(line.locator("[data-test='line-sub']")).toHaveText("best-in-class speed & security");
+      const fit = await line.evaluate((el) => {
+        const card = el.closest("[data-test='package-card']").getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        const sub = el.querySelector("[data-test='line-sub']");
+        return { inside: box.right <= card.right + 0.5, clipped: sub.scrollWidth > sub.clientWidth };
+      });
+      expect(fit, `${key} at ${width}px`).toEqual({ inside: true, clipped: false });
+    }
+    await expect(page.locator("[data-test='package-card'][data-package='builder'] [data-test='package-line'][data-lane='domain'] [data-test='line-title']")).toHaveText("Custom Domain");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `page at ${width}px`).toBeLessThanOrEqual(0);
+  }
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/packages/stack");
   await expect(page.locator("[data-test='stack-row'][data-feature='fast-protected-domain']")).toBeVisible();
   const flow = page.locator("[data-test='dns-flow']");
   await flow.scrollIntoViewIfNeeded();
-  await expect(flow.getByRole("heading", { name: "Your domain on Cloudflare, in action" })).toBeVisible();
+  await expect(flow.getByRole("heading", { name: "Protected Domain, on Cloudflare" })).toBeVisible();
+  await expect(flow.locator("[data-test='dns-flow-rollout']")).toContainText("Coming with the CDN rollout");
   await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(pageOverflow).toBeLessThanOrEqual(0);
