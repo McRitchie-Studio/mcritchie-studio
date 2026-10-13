@@ -12,9 +12,10 @@ live in [`../agents/pokemon/role.md`](../agents/pokemon/role.md). A session hold
 an epic runs [`focus-session.md`](focus-session.md), spawns you per task, and
 spawns your reviewer when you report `submitted`.
 
-**Exit.** The task is on `submitted`, with a PR into `accepted` led by the task URL.
-You never merge, deploy, or touch `release`/`main` unless Alex assigns you
-that lane in this session.
+**Exit.** The task is on `submitted`, with a PR into `accepted` led by the task URL,
+and its review launched (Step 7): by you when you are the top-level session, or
+handed to the session that spawned you when you are a subagent. You never merge,
+deploy, or touch `release`/`main` unless Alex assigns you that lane in this session.
 
 The one judgment call is **Step 4**: does the change earn Alex's local
 review? Everything else is sequencing. The command-by-command rules (where each
@@ -83,7 +84,10 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      never writes your desk.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
-every session: `<app-slug> · <feature-slug> · <task URL>`.
+every session: `<app-slug> · <feature-slug> · <task URL>`. Its last block,
+`scout:`, is a paste-ready background launch of Avi's
+[`intent-scout`](../agents/avi/sops/intent-scout.md); the session that ran `begin`
+launches it and keeps building.
 
 To resume a held or blocked task instead:
 
@@ -244,6 +248,10 @@ refuses in a second what step 7/8 would refuse after a CI round trip, so **recor
 your `[unit]`/`[integration]` lines with `bin/task update --checks` before you
 submit**.
 
+**Read Avi's intent brief before you submit** (`bin/task scout-brief <slug>`) and fold
+in its SAME INTENT, DO NOW list ([`intent-scout`](../agents/avi/sops/intent-scout.md)).
+At 0/8 `bin/submit` prints a WARNING when no brief is on the task; it never refuses.
+
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
 A cold ship takes **~12 minutes**, longer than some harnesses allow one foreground
@@ -300,6 +308,22 @@ with `bin/dor-check <slug> --json` (read-only, no gate attempt), and clear the
 Keep the worktree and branch until review confirms the PR merged or was
 abandoned. A pushed branch preserves code; `main` is not a backup.
 
+## Step 7 — Launch the review at once
+
+A task idling on `submitted` until a sweep finds it is dead time. So the moment
+`bin/submit-wait` reports the seam, **review starts in the same turn**:
+
+- **You are a subagent** (a focus session or orchestrator spawned you): report
+  `submitted` with the PR URL and head; the session that spawned you launches the
+  review before it does anything else.
+- **You are the top-level session**: launch it yourself, for this one task, by
+  the single-task entry in [`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit).
+
+Either way the reviewer is a **separate reviewer** subagent, never you: Carl, or
+Xan for a prose-only PR on the focus-session path (tier A in
+[`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
+do it. Review's gate-zero still owns the CI verdict and the merge.
+
 ## Done when
 
 - A production task exists, shaped, with tier-tagged `checks_run` recorded.
@@ -310,3 +334,5 @@ abandoned. A pushed branch preserves code; `main` is not a backup.
 - A non-draft PR into `accepted`, led by the task URL, is open; `bin/dor-check`
   passed; the task is on `submitted`.
 - Owning active docs were updated in the same pass.
+- The review was launched, or handed to the spawning session, the moment the task
+  reached `submitted` (Step 7).

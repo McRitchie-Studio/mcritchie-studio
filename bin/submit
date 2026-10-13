@@ -18,7 +18,8 @@
 # Now:
 #   0/8 pre-check  — bin/dor-check --precheck: every merge-gate rule but the CI read,
 #                    in under a second. It refuses here exactly what 7/8 would refuse
-#                    later, and records nothing.
+#                    later, and records nothing. Then `bin/task scout-brief`: a task with
+#                    no intent-scout brief gets a WARNING line, never a refusal.
 #   2/8 pre-flight — bin/fast-check, BEFORE the push. A red stops the submit: CI is
 #                    still the verdict, but a tree already known to be broken is not
 #                    worth a CI cycle. --skip-preflight (or SHIP_PREFLIGHT=off) pushes
@@ -119,6 +120,7 @@ require_relative "lib/projects_root"
 require_relative "lib/task_board"
 require_relative "lib/ship_wait"
 require_relative "lib/desk_session"
+require_relative "lib/intent_scout"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -447,6 +449,27 @@ else
          "at 7/8, after a CI round trip), then re-run #{SHIP_CMD} #{slug}. Nothing was committed or pushed.")
   end
 end
+
+# --- 0/8 intent-scout brief: a WARNING, never a gate ---------------------------
+# Avi's intent scout (docs/agents/agents/avi/sops/intent-scout.md) reads the task's
+# intent while the builder builds and posts a brief: the surfaces the change must
+# reach before the CI wait. A submit with no brief on the task says so, loudly, and
+# carries on. Every answer here, including an unreadable board or a missing
+# subcommand, leaves the exit status exactly what it would have been.
+def scout_brief_check(slug)
+  limit = IntentScout.submit_timeout
+  _out, err, status = IntentScout.run_bounded([TASK_BIN, "scout-brief", slug], limit)
+  if status == :timeout then say IntentScout.timeout_line(slug, limit)
+  elsif status.zero? then say "0/8 scout — an intent-scout brief is on the task (#{TASK_CMD} scout-brief #{slug})."
+  elsif status == 2 then IntentScout.warning_lines(slug).each { |line| say line }
+  elsif IntentScout.missing_subcommand?(status, err) then say IntentScout.missing_subcommand_line(slug, TASK_BIN)
+  else say IntentScout.unreadable_line(slug)
+  end
+rescue StandardError
+  say IntentScout.unreadable_line(slug)
+end
+
+scout_brief_check(slug)
 
 # --- 1/8 commit --------------------------------------------------------------
 presence!(:commit)

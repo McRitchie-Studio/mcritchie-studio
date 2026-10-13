@@ -169,10 +169,19 @@ Desk: <the path bin/task begin printed> (already created; do not run bin/task be
 Run /Users/alex/projects/.agents/bin/dream pokemon --task <slug> and read your dream sequence.
 Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.md, and follow it.
 Write the test tiers your shape requires. Commit in the desk early and often.
+Before you submit, read Avi's intent brief (bin/task scout-brief <slug>) and fold in its SAME INTENT, DO NOW list.
 Hand off from the desk, in the background, with the fixed-path script: /Users/alex/projects/.agents/bin/submit-wait <slug> --launch -m "<message>" (about 12 minutes; if that path is missing, /Users/alex/projects/mcritchie-studio/bin/submit-wait runs the same script).
 STOP at submitted. Do not merge, deploy, or touch release/main.
 Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result, the CI state, anything undone.
 ```
+
+**Launch the intent scout beside each builder.** `bin/task begin` prints a
+`scout:` block: an `avi` subagent with
+[`../agents/avi/sops/intent-scout.md`](../agents/avi/sops/intent-scout.md), the
+slug and the desk. Launch it in the background as you launch the builder. It reads
+only and runs no suite, but it counts toward the five-agent cap. When its brief
+lands, relay the SAME INTENT, DO NOW list to the builder with `SendMessage`, and
+fold its one follow-up card into the epic plan rather than filing a second task.
 
 **Their reports are testimony.** Before you count a task as submitted, check:
 

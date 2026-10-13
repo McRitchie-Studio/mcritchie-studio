@@ -54,7 +54,7 @@ spam). The domain earns its own history before mail carries it.
 | # | Step | Tag |
 |---|---|---|
 | 0.1 | Buy the domain ([`domain-purchase`](../../steffon/sops/domain-purchase.md)) | **ALEX** — money |
-| 0.2 | **Add the zone in Cloudflare, turn DNSSEC off at the registrar, then paste the nameservers Cloudflare assigns.** Adding the zone is a dashboard click today: the agent token has DNS write but no Zone grant. This one paste makes every later DNS step an API call. With DNSSEC on, Squarespace blocked the apex ALIAS, and a stale DS record broke resolution for hours | **ALEX** — one paste; Squarespace has no API |
+| 0.2 | **Move the domain to Cloudflare** ([`domain-dns` § Cloudflare DNS](../../steffon/sops/domain-dns.md#cloudflare-dns--pro-and-above)). The agent creates the zone, its records and the `www` redirect by API; Alex turns DNSSEC off at the registrar (a scheduled outage of 15 minutes to an hour, up to a day on a .com, in a quiet window, with his OK), then pastes the nameservers Cloudflare assigns. This one paste makes every later DNS step an API call | **AGENT** for the zone · **ALEX** — two Squarespace clicks; Squarespace has no API |
 | 0.3 | Write every record through the Cloudflare DNS API (token `cloudflare.studio.provision`, [credential inventory](../../../modules/credential-inventory.md)): app records, SPF, DKIM, and DMARC with an `rua` address (the ZeroBounce DMARC monitor supplies one). Verify each with `dig` from outside | **AGENT** (Steffon) |
 | 0.4 | Search Console: add the property and write its TXT via the Cloudflare API; submit the sitemap | **AGENT**, after a one-time **ALEX** OAuth consent for the Search Console API |
 | 0.5 | Postmaster Tools: add the domain and write its TXT via the Cloudflare API | **AGENT**, after a one-time **ALEX** click to add the domain in Postmaster's UI |
@@ -226,8 +226,10 @@ batch.
 ## The ALEX steps that remain
 
 1. **Buy the domain**: money, and Squarespace has no purchase API.
-2. **Add the zone, turn DNSSEC off and point the nameservers at Cloudflare**:
-   one click and one paste per domain, and every later DNS record becomes an agent's API call.
+2. **Turn DNSSEC off and point the nameservers at Cloudflare**: two Squarespace
+   clicks per domain, after the agent has created the zone; DNSSEC off is a
+   short scheduled outage, so it waits for his OK. Every later DNS record becomes
+   an agent's API call.
 3. **One-time consents**: the Search Console API OAuth, adding the domain in
    Postmaster Tools, and the Postmaster Tools API OAuth once the heartbeat reads
    it.

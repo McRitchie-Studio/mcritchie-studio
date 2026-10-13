@@ -160,6 +160,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| `intent-scout` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/intent-scout.md` |
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `Carl Heartbeat` | Carl | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | `pr-review-light` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
@@ -211,6 +212,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
 | `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
 | `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
+| `ship-clock` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |

@@ -1,25 +1,58 @@
-<%# Your domain on Cloudflare, in action: the worked example /packages/stack
-    draws under the matrix for the `Fast, protected domain` row. A visitor's www. address and old
-    links are redirected at Cloudflare's edge to the bare domain, which serves
-    the app. The example domain is generic on purpose: this page is public and
-    names no client. %>
+<%# Protected Domain, the Cloudflare spotlight /packages/stack draws under the
+    matrix for the `Fast, protected domain` row (Mr. McRitchie, 2026-10-13): it
+    sells outcomes in the client's terms, then shows the worked example (a
+    visitor's www. address and old links redirected at Cloudflare's edge to the
+    bare domain, which serves the app). The rollout group is the CDN work that is
+    NOT live yet (docs/agents/system/cdn-rollout.md), so it is marked as coming,
+    never as included. Claims stay qualitative: no percentages, no uptime figure.
+    The example domain is generic on purpose: this page is public and names no
+    client. %>
+<% tiers = WorkspacePackage.cards.select { |package| feature.included_in?(package.key) }.map(&:name).to_sentence %>
 <% steps = [
      { label: "Visitor types", value: "www.your-app.com", note: "or an old link, or another domain you own" },
      { label: "Cloudflare edge", value: "301 → your-app.com", note: "a redirect rule, before your app is ever asked", brand: true },
      { label: "Your address", value: "your-app.com", note: "the bare domain, pointed at your app" },
      { label: "Your app", value: "Served over HTTPS", note: "hosted by us, certificate renewed for you" }
    ] %>
+<% benefits = [
+     [ "Faster to load", "your address is answered from Cloudflare's network, close to every visitor." ],
+     [ "Stays up under attack", "Cloudflare absorbs denial-of-service floods, so your domain keeps answering." ],
+     [ "One clean address", "your-app.com, with www and every other domain you own redirected to it." ],
+     [ "Changes the same day", "made by our team through Cloudflare's API; you never log in to a dashboard." ],
+     [ "Email that lands", "SPF, DKIM and DMARC set up for you, so your mail reaches the inbox." ],
+     [ "Yours, not your builder's", "your domain is not tied to a website builder, so the site can move and the address stays put." ]
+   ] %>
+<% rollout = [
+     "Bot protection on your forms (Cloudflare Turnstile), with no puzzle for your customers",
+     "An edge firewall and rate limiting in front of your app",
+     "Global caching, so pages load from near every visitor",
+     "Traffic analytics for your domain"
+   ] %>
 <section class="mt-12 rounded-2xl border border-subtle bg-surface p-5 md:p-6" data-test="dns-flow" aria-labelledby="dns-flow-title">
   <div class="flex items-start gap-3">
     <%= render "packages/brand", key: feature.brand, size: :lead if feature.brand? %>
     <div class="min-w-0">
       <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="dns-flow-tiers"><%= WorkspacePackage.all.select { |package| feature.included_in?(package.key) }.map(&:name).to_sentence %></p>
-      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading">Your domain on Cloudflare, in action</h2>
-      <p class="mt-1 max-w-2xl text-sm text-muted"><%= feature.blurb %></p>
+      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading">Protected Domain, on Cloudflare</h2>
+      <p class="mt-1 max-w-3xl text-sm text-body" data-test="dns-flow-pitch">
+        <%= tiers %> sites run on Cloudflare. Your domain moves onto the network that protects a large share of
+        the internet: faster to load, built to stay up under attack, and managed entirely by our team. One clean
+        address, email that reaches the inbox, changes made the same day — you never log in to a dashboard.
+      </p>
     </div>
   </div>
 
-  <ol class="mt-6 grid gap-3 md:grid-cols-4" data-test="dns-flow-steps">
+  <ul class="mt-5 grid gap-3 text-sm text-body sm:grid-cols-2 lg:grid-cols-3" data-test="dns-flow-benefits">
+    <% benefits.each do |title, text| %>
+      <li class="flex gap-2" data-test="dns-flow-benefit">
+        <span class="text-primary" aria-hidden="true">✓</span>
+        <span class="min-w-0"><span class="font-semibold text-heading"><%= title %>:</span> <%= text %></span>
+      </li>
+    <% end %>
+  </ul>
+
+  <h3 class="mt-6 text-sm font-semibold text-heading">In action</h3>
+  <ol class="mt-3 grid gap-3 md:grid-cols-4" data-test="dns-flow-steps">
     <% steps.each_with_index do |step, index| %>
       <li class="relative rounded-xl border <%= step[:brand] ? 'border-primary/40 bg-primary/5' : 'border-subtle bg-surface-alt' %> p-3" data-test="dns-flow-step">
         <p class="text-2xs font-semibold uppercase tracking-wider text-muted"><%= index + 1 %>. <%= step[:label] %></p>
@@ -34,10 +67,16 @@
     <% end %>
   </ol>
 
-  <ul class="mt-5 grid gap-2 text-sm text-body sm:grid-cols-3" data-test="dns-flow-facts">
-    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Records managed by our agents through Cloudflare's API, not by hand.</li>
-    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> Your email records moved across exactly, so mail never stops.</li>
-    <li class="flex gap-2"><span class="text-primary" aria-hidden="true">✓</span> <span>Cloudflare's Turnstile bot check for your forms, on the same zone <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted">Coming soon</span></span></li>
-  </ul>
+  <div class="mt-6 rounded-xl border border-dashed border-subtle p-4" data-test="dns-flow-rollout">
+    <p id="dns-flow-rollout-title" class="flex flex-wrap items-center gap-2 text-sm font-semibold text-heading">
+      Coming with the CDN rollout
+      <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 text-2xs font-medium text-muted" data-test="coming-soon">Not live yet</span>
+    </p>
+    <ul class="mt-2 grid gap-1.5 text-sm text-muted sm:grid-cols-2">
+      <% rollout.each do |item| %>
+        <li class="flex gap-2" data-test="dns-flow-rollout-item"><span aria-hidden="true">○</span> <span class="min-w-0"><%= item %></span></li>
+      <% end %>
+    </ul>
+  </div>
   <p class="mt-4 text-xs text-muted">On Builder, www.your-app.com is the address and the bare domain forwards to it.</p>
 </section>

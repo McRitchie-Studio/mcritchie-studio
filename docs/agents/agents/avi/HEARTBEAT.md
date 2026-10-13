@@ -19,6 +19,9 @@ heartbeat still belongs on the card when the operator invokes it by name.
   that holds the epic, never on a schedule).
 - [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
   production behind the clean-ladder guard (interactive: it asks "What task?").
+- [`intent-scout`](sops/intent-scout.md) - while a builder builds, read the
+  task's intent and post one two-list brief before submit (launched in the
+  background at `bin/task begin`, never on a schedule).
 
 Use this file when Alex invokes `Avi Heartbeat`. When he invokes a
 single Avi act directly, read that act's SOP file.

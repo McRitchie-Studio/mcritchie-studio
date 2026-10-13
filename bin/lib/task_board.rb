@@ -67,8 +67,10 @@ module TaskBoard
 
   # Perform one JSON request. `path_or_uri` is a path joined onto `base_url`, or
   # a prebuilt URI (bin/devops-cycle builds its own to carry query strings).
-  # `read_timeout: nil` leaves Net::HTTP's default (devops-cycle's posture).
-  def request(method, path_or_uri, base_url: nil, token: nil, body: nil, read_timeout: 30, headers: nil)
+  # `read_timeout: nil` leaves Net::HTTP's default (devops-cycle's posture);
+  # `open_timeout: nil` (the default) leaves the connect deadline Net::HTTP's.
+  def request(method, path_or_uri, base_url: nil, token: nil, body: nil, read_timeout: 30, headers: nil,
+              open_timeout: nil)
     uri = path_or_uri.is_a?(URI::Generic) ? path_or_uri : URI.join(base_url, path_or_uri)
     klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch,
               delete: Net::HTTP::Delete }.fetch(method)
@@ -83,6 +85,10 @@ module TaskBoard
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = (uri.scheme == "https")
     http.read_timeout = read_timeout if read_timeout
+    if open_timeout
+      http.open_timeout = open_timeout
+      http.write_timeout = open_timeout
+    end
     http.request(req)
   end
 

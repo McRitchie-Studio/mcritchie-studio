@@ -83,6 +83,7 @@ its invocation exactly.
 | `Avi Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi `arbitrate-block` SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | Avi `deploy-with-task` SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| Avi `intent-scout` SOP (while a builder builds, Avi reads the task's intent and hands over one two-list brief before submit) | `mcritchie-studio/docs/agents/agents/avi/sops/intent-scout.md` |
 | Avi `qa-release` SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `Carl Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | Carl `pr-review-light` SOP (the light reviewer's own steps) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
@@ -134,6 +135,7 @@ its invocation exactly.
 | Xan `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
 | Xan `grade-events` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
 | Xan `share-insights` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
+| Xan `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` (recontextualize, fix, resubmit) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |

@@ -126,6 +126,9 @@ class SubmitTest < Minitest::Test
         puts ENV.fetch("TASK_REVIEW_CLAIM_JSON", '{"holder":null}')
       end
       exit 1 if "#{marker}" == "TASK" && ARGV.first == "update" && ENV["STUB_FAIL_TASK_UPDATE"] == "1"
+      # The 0/8 intent-scout read: 0 a brief is on the task (the default, so every
+      # older test keeps its quiet path), 2 none yet, 1 the board could not be read.
+      exit Integer(ENV.fetch("TASK_SCOUT_BRIEF_EXIT", "0")) if "#{marker}" == "TASK" && ARGV.first == "scout-brief"
       if "#{marker}" == "TASK" && ARGV.first == "show"
         moved = File.readlines(log).any? { |l| l.split("\\t")[0, 2] == %w[TASK move] }
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
@@ -431,7 +434,8 @@ class SubmitTest < Minitest::Test
       # PR url; this board (the stub) predates the field, so ship writes it itself.
       # The DoR pre-check (PRECHECK) and the pre-flight (FAST) come BEFORE the push and
       # the PR: they stop a push CI would turn red. The verdict (DOR) still follows CI.
-      assert_equal ["TASK show", "PRECHECK #{SLUG}", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
+      # The intent-scout read (TASK scout-brief) rides 0/8 too, and only ever warns.
+      assert_equal ["TASK show", "PRECHECK #{SLUG}", "TASK scout-brief", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
                     "TASK update", "DOR #{SLUG}", "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
@@ -901,6 +905,60 @@ class SubmitTest < Minitest::Test
       refute_includes markers(lines), "FAST #{SLUG}"
       assert_includes markers(lines), "PRECHECK #{SLUG}", "the pre-check still runs: it costs a second"
     end
+  end
+
+  # --- 0/8 intent-scout brief: a WARNING, never a gate --------------------------
+  # Avi's intent scout posts a brief while the builder builds
+  # (docs/agents/agents/avi/sops/intent-scout.md). Submit asks `bin/task scout-brief`
+  # at 0/8 and, with no brief, prints a WARNING naming the SOP. These pin that the
+  # warning speaks and that it never changes where the ship ends.
+
+  def test_a_task_with_no_scout_brief_warns_and_still_reaches_submitted
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: { "TASK_SCOUT_BRIEF_EXIT" => "2" })
+
+      assert status.success?, "a missing brief must never stop the ship:\n#{err}\n#{out}"
+      assert_match(/WARNING: no intent-scout brief on #{SLUG}/, err)
+      assert_includes err, "docs/agents/agents/avi/sops/intent-scout.md", "the warning must name the SOP"
+      assert_includes err, "not a gate"
+      assert_includes markers(lines), "TASK scout-brief", "the brief is read through the board CLI"
+      assert_includes markers(lines), "TASK move", "and the task still moves to submitted"
+      warned = err.index("WARNING: no intent-scout brief")
+      assert warned < err.index("1/8 commit"), "the warning belongs to 0/8, before anything is committed"
+    end
+  end
+
+  def test_a_task_with_a_scout_brief_prints_no_warning
+    with_repo do |dir|
+      out, err, status, = run_ship(dir)
+
+      assert status.success?, "#{err}\n#{out}"
+      refute_match(/WARNING: no intent-scout brief/, err)
+      assert_includes err, "0/8 scout — an intent-scout brief is on the task"
+    end
+  end
+
+  def test_an_unreadable_scout_read_warns_and_never_changes_the_outcome
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: { "TASK_SCOUT_BRIEF_EXIT" => "1" })
+
+      assert status.success?, "an unreadable board at the scout read must not stop the ship:\n#{err}\n#{out}"
+      assert_match(/WARNING: could not read #{SLUG}'s notes for an intent-scout brief/, err)
+      assert_includes markers(lines), "TASK move"
+    end
+  end
+
+  def test_a_refusing_ship_refuses_the_same_with_or_without_a_brief
+    statuses = %w[0 2].map do |brief_exit|
+      with_repo do |dir|
+        _out, _err, status, lines = run_ship(dir, extra_env: { "TASK_SCOUT_BRIEF_EXIT" => brief_exit, "FAIL_DOR" => "1" })
+        refute_includes markers(lines), "TASK move"
+        status.exitstatus
+      end
+    end
+
+    assert_equal 1, statuses.first, "the DoR refusal is the ship's verdict"
+    assert_equal statuses.first, statuses.last, "the scout read must not change the exit status"
   end
 
   # --- one board token per ship ------------------------------------------------
