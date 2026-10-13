@@ -54,7 +54,7 @@ module ShipClock
   SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
   # A full ISO 8601 timestamp: a date, a time, and a zone (Z or an offset). The
   # --at and --t0 flags take only this, so a bare `12` can never stamp a guessed day.
-  STRICT_ISO = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})\z/
+  STRICT_ISO = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\z/
   # The most activity pages the T0 lookup walks (100 per page).
   T0_PAGE_LIMIT = 50
 

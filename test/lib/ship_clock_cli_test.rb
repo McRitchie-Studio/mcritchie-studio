@@ -91,13 +91,14 @@ class ShipClockCliTest < Minitest::Test
 
   def gh_calls = File.exist?(File.join(@dir, "gh-calls.log")) ? File.readlines(File.join(@dir, "gh-calls.log"), chomp: true) : []
 
-  def run_clock(args, task: [200, TASK], notes: [T0_NOTE])
+  def run_clock(args, task: [200, TASK], notes: [T0_NOTE], env: {})
     server = TCPServer.new("127.0.0.1", 0)
     requests = []
     thread = Thread.new { serve(server, requests, task, notes) }
     env = SessionEnv.neutralized(
-      "TASK_API_BASE" => "http://127.0.0.1:#{server.addr[1]}", "AGENT_API_SECRET" => "test-secret",
-      "AGENT_API_TOKEN" => nil, "SHIP_CLOCK_GH_BIN" => @gh, "SHIP_CLOCK_HOME" => File.join(@dir, "home"), "TZ" => "UTC"
+      { "TASK_API_BASE" => "http://127.0.0.1:#{server.addr[1]}", "AGENT_API_SECRET" => "test-secret",
+        "AGENT_API_TOKEN" => nil, "SHIP_CLOCK_GH_BIN" => @gh, "SHIP_CLOCK_HOME" => File.join(@dir, "home"),
+        "TZ" => "UTC" }.merge(env)
     )
     out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, *args, chdir: @dir)
     [out, err, status, requests]
@@ -195,7 +196,26 @@ class ShipClockCliTest < Minitest::Test
     assert_match(/gh run list failed/, err)
   end
 
+  def test_a_gh_that_hangs_is_killed_and_refuses_like_a_failed_read
+    File.write(@gh, "#!/bin/sh\nsleep 30\n")
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    _out, err, status, = run_clock(["report", SLUG], env: { "SHIP_CLOCK_GH_TIMEOUT" => "1" })
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    refute status.success?
+    assert_match(/gh run list failed/, err)
+    assert elapsed < 15, "the deadline bounds the run (took #{elapsed.round(1)}s)"
+  end
+
   # --- record --------------------------------------------------------------
+
+  def test_record_outside_a_hub_tree_refuses_without_ledger
+    _out, err, status, = run_clock(["record", SLUG])
+
+    refute status.success?
+    assert_match(/not inside a mcritchie-studio tree/, err)
+    assert_empty Dir.glob(File.join(@dir, "**", "ship-clock.csv"))
+  end
 
   def test_record_appends_one_ledger_row_and_replaces_it_on_a_rerun
     ledger = File.join(@dir, "ledger.csv")
@@ -250,7 +270,37 @@ class ShipClockCliTest < Minitest::Test
     refute File.exist?(File.join(@dir, "home", "#{SLUG}.json")), "the held stamp is cleared once on the board"
   end
 
+  def test_start_refuses_a_vague_at_before_any_write
+    %w[12 08:15 2026-10-13 2026-10-13T08:15:00].each do |vague|
+      _out, err, status, requests = run_clock(["start", SLUG, "--at", vague], notes: [])
+
+      assert_equal 2, status.exitstatus, vague
+      assert_match(/full ISO 8601 timestamp/, err)
+      assert(requests.none? { |r| r[:method] == "POST" }, "#{vague} posted nothing")
+    end
+  end
+
+  def test_report_refuses_a_vague_t0
+    _out, err, status, requests = run_clock(["report", SLUG, "--t0", "12"])
+
+    assert_equal 2, status.exitstatus
+    assert_match(/--t0 "12" is not a full ISO 8601 timestamp/, err)
+    assert_empty requests
+  end
+
   # --- argv ----------------------------------------------------------------
+
+  def test_a_path_like_slug_is_refused_before_any_write
+    %w[../escape a/b ../../etc/x].each do |bad|
+      _out, err, status, requests = run_clock(["start", bad, "--at", "2026-10-13T14:10:00Z"])
+
+      assert_equal 2, status.exitstatus, bad
+      assert_match(/is not a task slug/, err)
+      assert_empty requests
+    end
+    assert_empty Dir.glob(File.join(@dir, "**", "*.json")).reject { |f| f.end_with?("gh.json") }
+    refute File.exist?(File.join(@dir, "escape.json"))
+  end
 
   def test_help_and_unknown_flags_never_reach_the_board
     out, _err, status, requests = run_clock(["record", SLUG, "--help"])

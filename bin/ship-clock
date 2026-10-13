@@ -91,13 +91,14 @@ end
 def gh_runner
   bin = ENV.fetch("SHIP_CLOCK_GH_BIN", "gh")
   lambda do |args|
-    Open3.popen3(bin, *args) do |stdin, stdout, stderr, wait|
+    Open3.popen3(bin, *args, pgroup: true) do |stdin, stdout, stderr, wait|
       stdin.close
       out_reader = Thread.new { stdout.read }
       err_reader = Thread.new { stderr.read }
+      [out_reader, err_reader].each { |t| t.report_on_exception = false }
       unless wait.join(GH_TIMEOUT)
         begin
-          Process.kill("KILL", wait.pid)
+          Process.kill("KILL", -wait.pid) # the whole group, so no child keeps a pipe open
         rescue StandardError
           nil
         end
