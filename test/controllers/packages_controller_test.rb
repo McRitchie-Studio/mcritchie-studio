@@ -94,7 +94,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     # Marks carry their words: never color alone.
     assert_select "#{card('builder')} [data-test='package-line'][data-status='included'] [data-test='line-mark'][data-mark='included'][role='img'][aria-label='Included']", 3
-    { "vibe" => [ %w[domain], "Builder" ], "builder" => [ %w[workspace vault], "Pro" ],
+    { "vibe" => [ %w[domain], "Builder" ], "builder" => [ %w[integrations vault], "Pro" ],
       "pro" => [ %w[cmo drafting], "Team" ] }.each do |key, (lanes, tier)|
       assert_equal lanes, css_select("#{card(key)} [data-test='package-line'][data-status='missing']").map { |l| l["data-lane"] }, key
       lanes.each do |lane|
@@ -119,8 +119,19 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{card('pro')} [data-test='package-line'][data-lane='drafting'][data-status='missing'] [data-test='line-in-tier']", text: "(In Team)"
     assert_select "#{soon} [data-mark='included']", 0
 
-    assert_select "#{card('pro')} [data-test='line-sub']", text: "4 build requests a month"
-    assert_select "#{card('team')} [data-test='line-sub']", text: "6 build requests a month"
+    %w[pro team].each do |key|
+      app = "#{card(key)} [data-test='package-line'][data-lane='app']"
+      assert_select "#{app} [data-test='line-title']", text: "CTO-Managed Web App"
+      assert_select "#{app} [data-test='line-sub']", text: "Always-on CTO"
+      integrations = "#{card(key)} [data-test='package-line'][data-lane='integrations'][data-status='included']"
+      assert_select "#{integrations} [data-test='line-title'] a[href='/integrations']", text: "Integrations"
+      assert_select "#{integrations} [data-test='line-sub']", text: "Google Workspace, Slack & more"
+    end
+    assert_select "#{card('builder')} [data-test='package-line'][data-lane='app'] [data-test='line-title']", text: "Custom Web App"
+    assert_select "#{card('builder')} [data-test='package-line'][data-lane='app'] [data-test='line-sub']", text: "several changes a month"
+    assert_select "#{card('builder')} [data-test='package-line'][data-lane='integrations'][data-status='missing'] a", 0,
+                  "a lane the tier lacks is not a link"
+    assert_no_match(/build requests? a month|small changes after launch/, response.body)
     %w[pro team].each do |key|
       domain = "#{card(key)} [data-test='package-line'][data-lane='domain'][data-status='included']"
       assert_select "#{domain} [data-test='line-title']", text: "Premium Domain"
@@ -235,9 +246,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='web-address'] [data-test='stack-lead'][data-lead='glyph-domain'] [data-glyph='domain'][aria-label='Your domain'] svg"
     assert_select "[data-feature='web-address'] [data-test='stack-lead'] [data-brand='squarespace']", 0, "Squarespace moves to the strip"
     assert_select "[data-feature='web-address'] [data-test='stack-software'] [data-brand='squarespace']"
-    assert_select "[data-feature='google-workspace'] [data-test='stack-lead'] [data-brand='google']"
-    assert_equal [ "—", "—", "2 users|30 GB each", "2 users|30 GB each", "Custom" ],
-                 css_select("[data-feature='google-workspace'] [data-test='stack-cell']").map { |td| cell_text(td) }
+    assert_select "[data-feature='google-workspace']", 0
+    assert_select "[data-feature='integrations'] [data-test='stack-lead'][data-lead='emoji']"
+    assert_select "[data-feature='integrations'] a[href='/integrations']", text: "Integrations"
+    assert_select "[data-feature='integrations'] [data-test='stack-software'] [data-brand='google']"
+    assert_equal [ "—", "—", "Google Workspace, Slack & more", "Google Workspace, Slack & more", "Custom" ],
+                 css_select("[data-feature='integrations'] [data-test='stack-cell']").map { |td| cell_text(td) }
     assert_equal [ "your-app.mcritchie.studio", "www.your-app.com", "your-app.com + www.your-app.com",
                    "your-app.com + www.your-app.com", "Multiple domains" ],
                  css_select("[data-feature='web-address'] [data-test='stack-cell']").map { |td| td.text.strip }
@@ -267,8 +281,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='live-updates-and-jobs'] [data-test='stack-cell'][data-package='vibe']", text: "—"
     assert_select "[data-feature='cache-and-job-queue']", 0
     assert_select "[data-feature='realtime-updates']", 0
-    assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='pro']", text: "4 build requests a month"
-    assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='team']", text: "6 build requests a month"
+    { "builder" => "Several changes a month", "pro" => "Always-on CTO", "team" => "Always-on CTO",
+      "enterprise" => "Dedicated build team" }.each do |key, text|
+      assert_select "[data-feature='changes-after-launch'] [data-test='stack-cell'][data-package='#{key}']", text: text
+    end
+    assert_no_match(/build requests? a month|Small, queued/, response.body)
     assert_select "[data-feature='credential-rotation'] [data-test='stack-cell'][data-package='enterprise']", text: "CMMC/ITAR review on request"
     assert_select "[data-feature='https-and-deploys'] [data-test='stack-cell'][data-package='vibe']", text: "✓"
     assert_select "[data-feature='customer-sign-in'] [data-test='stack-cell'][data-package='vibe']", text: "—"
