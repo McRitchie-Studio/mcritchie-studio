@@ -333,7 +333,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                  "one short line: the cells already show the steps"
     domain = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "domain" } }
     assert_equal "www.your-app.com", domain.call(:builder).sub
-    assert_equal "your-app.com on Cloudflare", domain.call(:pro).sub
+    assert_equal "best-in-class speed & security", domain.call(:pro).sub
     refute_match(/yourname|yourcompany/, WorkspacePackage.config.to_s, "one placeholder, your-app, everywhere")
   end
 
@@ -417,7 +417,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     titles = ->(key, lane) { WorkspacePackage.find(key).card_lines.find { |l| l.key == lane }.title }
     assert_equal [ "Vibe Host & Storage", "Builder Host & Storage", "Pro Host & Storage", "Team Host & Storage" ],
                  WorkspacePackage.cards.map { |c| titles.call(c.key, "host_storage") }
-    assert_equal [ "Custom Domain" ] * 4, WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
+    assert_equal [ "Custom Domain", "Custom Domain", "Premium Domain", "Premium Domain" ],
+                 WorkspacePackage.cards.map { |c| titles.call(c.key, "domain") }
 
     missing = WorkspacePackage.cards.to_h { |c| [ c.key, c.card_lines.select(&:missing?).map { |l| [ l.title, l.in_tier.name ] } ] }
     assert_equal({ "vibe" => [ [ "Custom Domain", "Builder" ] ],
@@ -437,6 +438,40 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal [ "Funnels built for you", "Social posting" ], soon
     assert_equal "X and TikTok", WorkspacePackage.find(:team).card_lines.find { |l| l.key == "social" }.sub
     assert feature("Funnel generation").planned? && feature("Social posting").planned?, "Coming soon lanes match planned rows"
+  end
+
+  test "[unit] lane title varies by tier: Builder Custom Domain, Pro and Team Premium Domain" do
+    domain = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "domain" } }
+    assert_equal [ "Custom Domain", "www.your-app.com" ], [ domain.call(:builder).title, domain.call(:builder).sub ]
+    %i[pro team].each do |key|
+      assert_equal [ "Premium Domain", "best-in-class speed & security" ], [ domain.call(key).title, domain.call(key).sub ], key
+      assert domain.call(key).included?, key
+    end
+    vibe = domain.call(:vibe)
+    assert vibe.missing?
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "Builder" ], [ vibe.title, vibe.sub, vibe.in_tier.name ],
+                 "a missing lane keeps the lane's own title"
+    assert_equal "Custom Domain", WorkspacePackage.card_lanes.assoc("Application").last.find { |l| l.key == "domain" }.title,
+                 "the override lives on the package, not the lane list"
+  end
+
+  test "[unit] every card lane marked soon maps to a planned feature row" do
+    lanes = WorkspacePackage.card_lanes.flat_map(&:last)
+    soon_keys = WorkspacePackage.cards.flat_map { |card| card.card_lines.select(&:soon?).map(&:key) }.uniq
+    assert_not_empty soon_keys, "the check must see at least one Coming soon lane"
+    soon_keys.each do |key|
+      lane = lanes.find { |l| l.key == key }
+      assert lane.feature.present?, "soon lane #{key} must name its stack row (`feature:` in card_lanes)"
+      assert feature(lane.feature)&.planned?, "soon lane #{key} names #{lane.feature.inspect}, which must be a planned row"
+    end
+    # And back: a lane tied to a planned row is never drawn as included on a card.
+    lanes.select { |l| l.feature.present? }.each do |lane|
+      assert feature(lane.feature), "lane #{lane.key} names a row that does not exist: #{lane.feature.inspect}"
+      next unless feature(lane.feature).planned?
+      WorkspacePackage.cards.each do |card|
+        refute card.card_line(lane).included?, "#{card.key} draws #{lane.key} as included, but #{lane.feature} is planned"
+      end
+    end
   end
 
   test "[unit] the card lines and the stack agree: Google Workspace is your email from Pro, the stack keeps Branded emails" do

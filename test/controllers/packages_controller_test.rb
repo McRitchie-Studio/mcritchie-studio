@@ -121,7 +121,15 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "#{card('pro')} [data-test='line-sub']", text: "4 build requests a month"
     assert_select "#{card('team')} [data-test='line-sub']", text: "6 build requests a month"
-    assert_select "#{card('pro')} [data-test='line-sub']", text: "your-app.com on Cloudflare"
+    %w[pro team].each do |key|
+      domain = "#{card(key)} [data-test='package-line'][data-lane='domain'][data-status='included']"
+      assert_select "#{domain} [data-test='line-title']", text: "Premium Domain"
+      assert_select "#{domain} [data-test='line-sub']", text: "best-in-class speed & security"
+    end
+    builder_domain = "#{card('builder')} [data-test='package-line'][data-lane='domain']"
+    assert_select "#{builder_domain} [data-test='line-title']", text: "Custom Domain"
+    assert_select "#{builder_domain} [data-test='line-sub']", text: "www.your-app.com"
+    assert_select "[data-test='line-title']", text: /Premium Domain/, count: 2
     assert_select "[data-test='package-line'][data-lane='app_email'], [data-test='package-line'][data-lane='custom_email']", 0
     assert_select "#{card('pro')} [data-test='package-line'][data-lane='host_storage'] [data-test='line-title']", text: "Pro Host & Storage"
     assert_select "#{card('pro')} [data-test='line-sub']", text: "you@your-app.com, 2 users"
