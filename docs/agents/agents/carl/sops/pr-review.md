@@ -99,6 +99,20 @@ Keep each session's fan-out to **waves of five or fewer agents** (the board
 database has a hard connection budget). A Carl plus his light is two agents.
 Run a larger queue in successive waves: claim, spawn, collect, release, repeat.
 
+## Single-task entry (on submit)
+
+The building SOP's Step 7 launches review the moment a task reaches `submitted`,
+so a PR does not wait for the next sweep. It is this procedure for ONE named task:
+claim it by name instead of popping the queue, then run the same loop (record the
+head, spawn one Carl, release the claim on his verdict):
+
+```bash
+bin/task review-claim acquire <slug> --agent carl   # exit 10: another session holds it; leave it alone
+```
+
+A claim held elsewhere means a review is already running; that is the outcome you
+wanted, so stop there.
+
 ## Preconditions
 
 At least one task is in `submitted` with green CI. If `bin/task claim-next-review`
