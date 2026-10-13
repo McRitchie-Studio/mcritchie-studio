@@ -176,6 +176,59 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_210000) do
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'granted'::character varying::text, 'refused'::character varying::text])", name: "agent_login_requests_status_known"
   end
 
+  create_table "agent_message_cursors", force: :cascade do |t|
+    t.string "channel", null: false
+    t.datetime "created_at", null: false
+    t.string "cursor"
+    t.text "last_error"
+    t.datetime "polled_at"
+    t.string "source_ref", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel", "source_ref"], name: "index_agent_message_cursors_on_channel_and_source_ref", unique: true
+  end
+
+  create_table "agent_message_events", force: :cascade do |t|
+    t.string "actor"
+    t.bigint "agent_message_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "detail", default: {}, null: false
+    t.string "kind", null: false
+    t.index ["agent_message_id", "id"], name: "index_agent_message_events_on_agent_message_id_and_id"
+    t.index ["agent_message_id"], name: "index_agent_message_events_on_agent_message_id"
+  end
+
+  create_table "agent_messages", force: :cascade do |t|
+    t.text "action_summary"
+    t.integer "attempts", default: 0, null: false
+    t.string "author_name"
+    t.string "author_ref"
+    t.string "channel", null: false
+    t.string "channel_ref", null: false
+    t.datetime "claimed_at"
+    t.string "claimed_by"
+    t.datetime "completed_at"
+    t.text "content", default: "", null: false
+    t.datetime "created_at", null: false
+    t.string "external_id", null: false
+    t.string "guild_id"
+    t.datetime "lease_expires_at"
+    t.jsonb "mentions", default: {}, null: false
+    t.string "reply_external_id"
+    t.string "reply_nonce"
+    t.datetime "reply_posted_at"
+    t.text "response_text"
+    t.string "routed_by"
+    t.datetime "sent_at"
+    t.string "soul_slug"
+    t.string "status", default: "received", null: false
+    t.string "thread_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
+    t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
+    t.index ["status"], name: "index_agent_messages_on_status"
+    t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
+  end
+
   create_table "agent_sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
@@ -2535,6 +2588,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_210000) do
   add_foreign_key "agent_actions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_login_requests", "agent_sessions", column: "agent_session_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "agent_message_events", "agent_messages", on_delete: :cascade
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade

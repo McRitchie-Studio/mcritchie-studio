@@ -1,0 +1,36 @@
+# Which inbound messages reach which agent (docs/agents/system/agent-message-loop.md).
+#
+# Read by AgentMessages::Routes. Ids are Discord snowflakes, written as STRINGS
+# (quoted): an unquoted 19-digit id is a YAML integer and loses nothing today, but
+# every reader compares strings, and one quoted and one bare id never match.
+#
+# Only a guild listed here, and only a channel listed under it, is polled. A
+# message there is routed to a soul by, in order:
+#   1. a mention of a user listed under that soul's `users` (a per-soul bot user),
+#   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Xan roles),
+#   3. the channel's `default_soul`,
+# and otherwise stored `unrouted` (kept, never handed to a worker). When a message
+# addresses two souls, the one mentioned first in the text wins.
+#
+# `bot_user_id` is the shared bot's own user id. Messages written by any bot are
+# not ingested at all, so the agents' own replies never come back as inbound.
+#
+# Empty until Alex creates the bot and sends the ids (the setup checklist in the
+# doc above); with no guild listed the poll does nothing.
+discord:
+  bot_user_id: ""
+  guilds: {}
+  # guilds:
+  #   "111111111111111111":           # the McRitchie server
+  #     name: McRitchie
+  #     channels:
+  #       "222222222222222222":       # #agent-desk
+  #         name: agent-desk
+  #         default_soul: ""          # "" = unmentioned messages are unrouted
+  #     souls:
+  #       avi:
+  #         roles: ["333333333333333333"]   # @Avi
+  #         users: []                       # or a per-soul bot user id
+  #       xan:
+  #         roles: ["444444444444444444"]   # @Xan
+  #         users: []
