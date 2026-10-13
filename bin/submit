@@ -457,10 +457,12 @@ end
 # carries on. Every answer here, including an unreadable board or a missing
 # subcommand, leaves the exit status exactly what it would have been.
 def scout_brief_check(slug)
-  _out, _err, status = Open3.capture3(TASK_BIN, "scout-brief", slug)
-  case status.exitstatus
-  when 0 then say "0/8 scout — an intent-scout brief is on the task (#{TASK_CMD} scout-brief #{slug})."
-  when 2 then IntentScout.warning_lines(slug).each { |line| say line }
+  limit = IntentScout.submit_timeout
+  _out, err, status = IntentScout.run_bounded([TASK_BIN, "scout-brief", slug], limit)
+  if status == :timeout then say IntentScout.timeout_line(slug, limit)
+  elsif status.zero? then say "0/8 scout — an intent-scout brief is on the task (#{TASK_CMD} scout-brief #{slug})."
+  elsif status == 2 then IntentScout.warning_lines(slug).each { |line| say line }
+  elsif IntentScout.missing_subcommand?(status, err) then say IntentScout.missing_subcommand_line(slug, TASK_BIN)
   else say IntentScout.unreadable_line(slug)
   end
 rescue StandardError

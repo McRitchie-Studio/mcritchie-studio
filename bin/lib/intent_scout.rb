@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "open3"
 require "uri"
 require_relative "projects_root"
 require_relative "remedy"
@@ -34,8 +35,60 @@ module IntentScout
   # newest PER_PAGE comments; a task with more than that reads as briefless, which
   # costs a warning, never a refusal.
   PER_PAGE = 100
+  # The scout's board calls are best-effort, so each gets a short deadline of its
+  # own: a degraded board costs begin or submit seconds, never 30 to 60 of them.
+  # INTENT_SCOUT_TIMEOUT overrides it (the tests' seam).
+  BOARD_TIMEOUT = 5
+  # bin/submit's wall-clock bound on the whole `bin/task scout-brief` child: Ruby
+  # start, a token, and one bounded read.
+  SUBMIT_TIMEOUT = 15
 
   module_function
+
+  def board_timeout
+    Float(ENV.fetch("INTENT_SCOUT_TIMEOUT", BOARD_TIMEOUT))
+  rescue ArgumentError
+    BOARD_TIMEOUT
+  end
+
+  def submit_timeout
+    Float(ENV.fetch("INTENT_SCOUT_SUBMIT_TIMEOUT", SUBMIT_TIMEOUT))
+  rescue ArgumentError
+    SUBMIT_TIMEOUT
+  end
+
+  # A child that ended on a signal has no exit status to read.
+  class ChildDied < StandardError; end
+
+  # Run `cmd`, killing it past `timeout` seconds. Returns [stdout, stderr, exit
+  # status], with :timeout in place of the status when the deadline passed. Raises
+  # when the child cannot start (Errno::ENOENT) or ends on a signal (ChildDied).
+  def run_bounded(cmd, timeout)
+    Open3.popen3(*cmd, pgroup: true) do |stdin, stdout, stderr, wait|
+      stdin.close
+      readers = [stdout, stderr].map { |io| Thread.new { io.read }.tap { |t| t.report_on_exception = false } }
+      unless wait.join(timeout)
+        begin
+          Process.kill("KILL", -wait.pid)
+        rescue StandardError
+          nil
+        end
+        wait.join
+        next ["", "", :timeout]
+      end
+      status = wait.value
+      raise ChildDied, "#{File.basename(cmd.first.to_s)} died on signal #{status.termsig}" unless status.exitstatus
+
+      [readers[0].value.to_s, readers[1].value.to_s, status.exitstatus]
+    end
+  end
+
+  # An older bin/task with no `scout-brief` answers an unknown subcommand by
+  # printing its usage (beginning "Usage:") and exiting 1. A board error prints an
+  # "error:" line instead, and a newer bin/task's usage names scout-brief.
+  def missing_subcommand?(exit_status, stderr)
+    exit_status == 1 && stderr.to_s.lstrip.start_with?("Usage:") && !stderr.to_s.include?("scout-brief")
+  end
 
   # The SOP as an absolute path in the hub primary, so the line resolves from any
   # desk and from the fixed-path tooling install alike.
@@ -105,6 +158,18 @@ module IntentScout
   # What `bin/submit` prints at 0/8 when the board could not be read.
   def unreadable_line(slug)
     "WARNING: could not read #{slug}'s notes for an intent-scout brief; submitting anyway (#{sop_path})."
+  end
+
+  # What `bin/submit` prints at 0/8 when its bin/task predates `scout-brief`: the
+  # two scripts come from different versions, which is not a board problem.
+  def missing_subcommand_line(slug, task_bin)
+    "WARNING: #{task_bin} has no scout-brief subcommand (it is older than this bin/submit), so " \
+      "#{slug}'s intent-scout brief was not checked; submitting anyway. Run both from the same tree (#{sop_path})."
+  end
+
+  # What `bin/submit` prints at 0/8 when the read passed its deadline.
+  def timeout_line(slug, seconds)
+    "WARNING: the intent-scout brief read for #{slug} passed its #{seconds.round}s deadline; submitting anyway (#{sop_path})."
   end
 
   # The absolute bin/task a builder pastes (bin/lib/remedy.rb).
