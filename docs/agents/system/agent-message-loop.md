@@ -131,7 +131,9 @@ The automated tests encode the same scenarios with real database concurrency:
   message's page shows the untrusted text, the answer, the action, the link to
   the Discord reply, and the timeline: received, routed or unrouted, claimed,
   lease_expired, released, dead_lettered, completed, and reply_posted,
-  reply_skipped or reply_failed.
+  reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
+  skipped when no bot token is set, failed when the job's five tries are spent)
+  is the Reply column.
 - `bin/agent-inbox list [--soul S] [--status S]`, `bin/agent-inbox show <id>`,
   and `bin/agent-inbox tail [--soul S]` read the same rows through the API.
 - A Discord read error is kept on the channel's cursor
