@@ -34,8 +34,8 @@ Rails.application.routes.draw do
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
-  # Every client's stack: tier, software (Studio chest when we host it), Google
-  # users, Resend. Admin-only.
+  # Every client's stack: its own logo (ClientLogo), tier, software (Studio chest
+  # when we host it), Google users, Resend. Admin-only.
   get "stack", to: "stack#index", as: :stack
   # The same clients as a matrix: clients across, software down by category,
   # a tier/price/hosting band on top and the total MRR. Admin-only.

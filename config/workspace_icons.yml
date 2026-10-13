@@ -74,16 +74,22 @@ workspaces:
     # violet Alex supplied on 2026-09-25.
     badge: lib/workspace_icons/badges/studio.png
     accent: "#8E83FC"
+    # The client's own logo on /stack and /stack/matrix (ClientLogo): a brand in
+    # config/logo_brands.yml, drawn as its kit icon, or a file under
+    # app/assets/images for a client the logo studio has no brand for yet.
+    logo: { brand: studio }
     vaults: [studio-agents, studio-agents-admin, studio-applications]
   industries:
     name: McRitchie Industries
     domain: mcritchie.industries
+    logo: { brand: industries }
     vaults: [industries-agents]
   turf-monster:
     name: Turf Monster
     domain: turfmonster.media
     # The gator from public/turf-monster-logo.png; the ring takes its green.
     badge: lib/workspace_icons/badges/turf-monster.png
+    logo: { brand: turf }
     vaults: []
   commercial-welding:
     name: Commercial Welding
@@ -91,15 +97,21 @@ workspaces:
     # The welding helmet, commercial-welding-llc-icon.png from the brand files.
     badge: lib/workspace_icons/badges/commercial-welding.png
     accent: "#2D5E8E"
+    # v1, the kit's branding; welding_v2 is the redraw under comparison on /logos.
+    logo: { brand: welding }
     vaults: [Commercial Welding]
   # Clients with no Google workspace of ours and no vault yet: here so /stack
   # can show them (a stack_clients slug must be a workspace). Both have no
   # badge, so bin/workspace-icon --all skips them until one is added.
   cyvasse:
     name: Cyvasse
+    # The elephant, cyvasse/public/icon.svg, copied in.
+    logo: { file: client_logos/cyvasse.svg }
     vaults: []
   10and5:
     name: 10&5 Hospitality
+    # The wine-red 10&5 tile, 10and5/public/icon.svg, copied in.
+    logo: { file: client_logos/10and5.svg }
     vaults: []
   family:
     name: McRitchie Family

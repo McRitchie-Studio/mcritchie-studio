@@ -26,6 +26,7 @@ Records only, throughout. Nothing here reads, stores or shows a secret value.
 | The census the page reads | `credential_vaults` and `credential_records`, seeded from `db/seeds/59_credentials.rb` |
 | The pages | `/stack` (clients as rows), `/stack/matrix` (clients as columns, software by category, tier band and MRR) and `/credentials` (software by entity), all admin-only |
 | Clients, tiers, Google users, Resend mode | `stack_clients`, seeded from `db/seeds/60_stack_clients.rb` |
+| A client's own logo on `/stack` and `/stack/matrix` | `logo:` under its workspace in `config/workspace_icons.yml`, read by `ClientLogo` |
 
 **This repo is PUBLIC.** A logo, a vault name and an item title belong here, and
 all of them are already published in the
@@ -141,6 +142,13 @@ category; a new software key lands under Other until it is named in
    such as `{ "heroku" => "own" }`.
 4. Load it the way Act 3 loads the census:
    `bin/rails runner 'load Rails.root.join("db/seeds/60_stack_clients.rb")'`.
+5. **Give it its own logo.** The client's column and row show its logo, never a
+   vault icon. Under its workspace in `config/workspace_icons.yml`, set `logo:`
+   to `{ brand: <key> }` when the logo studio has the brand
+   (`config/logo_brands.yml`; the page draws its kit icon, light and dark, as
+   `/logos` does), else to `{ file: client_logos/<workspace>.svg }`, a mark copied
+   from the client app's `public/` into `app/assets/images/client_logos/`. Never
+   link into another app. `test/models/client_logo_test.rb` checks every entry.
 
 ## Act 5: Put the vault icon into 1Password
 
