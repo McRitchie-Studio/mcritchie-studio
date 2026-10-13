@@ -65,6 +65,8 @@
 #                           metric smaller and muted ("Pro Host · always on")
 #               true      → included, nothing to quantify
 #               omitted   → not included (the cell shows "—")
+#   href      optional — a page the row's name links to on /packages/stack
+#             (Integrations links /integrations)
 #   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md),
 #             or a list when two SOPs deliver one row (Storage: Postgres and the R2 bucket)
 #   section   optional — the part of that SOP that applies
@@ -118,11 +120,12 @@ category_from:
 # lane in its own `lanes` entry (Pro and Team's "Premium Domain"). `feature`
 # names the /packages/stack row a lane stands for; a lane any card marks `soon`
 # must name one, and that row must be `planned` (the model test holds both).
+# `href` links the lane's title on the cards that include it (Integrations).
 card_lanes:
   - { group: Application, key: app, title: Custom Web App }
   - { group: Application, key: host_storage, title: "%{tier} Host & Storage" }
   - { group: Application, key: domain, title: Custom Domain }
-  - { group: Platform, key: workspace, title: Google Workspace }
+  - { group: Platform, key: integrations, title: Integrations, href: /integrations }
   - { group: Platform, key: vault, title: Password vault }
   - { group: Agents, key: cto, title: Fractional CTO }
   - { group: Agents, key: cmo, title: Fractional CMO }
@@ -152,7 +155,7 @@ packages:
     comp: Cyvasse
     card_groups: [Application, Platform]
     lanes:
-      app: { sub: small changes after launch }
+      app: { sub: several changes a month }
       host_storage: { sub: "always on, 11 GB" }
       domain: { sub: www.your-app.com }
     cta: { label: Talk to us about Builder, action: schedule }
@@ -163,10 +166,10 @@ packages:
     comp: Commercial Welding
     card_groups: [Application, Platform, Agents]
     lanes:
-      app: { sub: 4 build requests a month }
+      app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 60 GB" }
       domain: { title: Premium Domain, sub: best-in-class speed & security }
-      workspace: { sub: "you@your-app.com, 2 users" }
+      integrations: { sub: "Google Workspace, Slack & more" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
     cta: { label: Talk to us about Pro, action: schedule }
@@ -178,10 +181,10 @@ packages:
     featured: true
     card_groups: [Application, Platform, Agents, Marketing]
     lanes:
-      app: { sub: 6 build requests a month }
+      app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 132 GB" }
       domain: { title: Premium Domain, sub: best-in-class speed & security }
-      workspace: { sub: "you@your-app.com, 2 users" }
+      integrations: { sub: "Google Workspace, Slack & more" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
       drafting: { sub: replies drafted in your inbox }
@@ -381,12 +384,17 @@ features:
     you_do: Paste the records we give you
     status: builtin
     software: [resend]
-  - name: Google Workspace
+  # Was the Google Workspace row (Mr. McRitchie, 2026-10-13): the tools your app
+  # connects to, Google Workspace first; /integrations lists the rest. Google
+  # Workspace still provisions (software), so the row keeps its SOP. Managed
+  # Workspace is a paid add-on sold on /integrations, not a tier feature.
+  - name: Integrations
     category: platform
-    icon: google
-    blurb: Custom email at team@your-app.com, with Calendar and Drive. Google's Business Starter, 30 GB per user.
-    pro: 2 users · 30 GB each
-    team: 2 users · 30 GB each
+    icon: "🔌"
+    href: /integrations
+    blurb: "Your app wired to the tools you run on: Google Workspace (custom email at team@your-app.com, Calendar and Drive, 2 users at 30 GB each), Slack and more."
+    pro: Google Workspace, Slack & more
+    team: Google Workspace, Slack & more
     enterprise: Custom
     sop: workspace-signup
     you_do: Sign up and create the users
@@ -422,7 +430,7 @@ features:
     blurb: 24-hour access to your CTO with daily summaries of your app, and a monthly architecture and roadmap review to agree what comes next.
     pro: 24-hour access & daily summaries
     team: 24-hour access & daily summaries
-    enterprise: Monthly architecture and roadmap review
+    enterprise: 24-hour access & daily summaries
     status: builtin
   - name: Error alerts
     category: platform
@@ -542,9 +550,9 @@ features:
     category: service
     icon: "🛠️"
     blurb: What happens when you want something new in your app.
-    builder: Small, queued
-    pro: 4 build requests a month
-    team: 6 build requests a month
+    builder: Several changes a month
+    pro: Always-on CTO
+    team: Always-on CTO
     enterprise: Dedicated build team
     status: builtin
   - name: Support

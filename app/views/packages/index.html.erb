@@ -102,7 +102,11 @@
                   <% end %>
                   <div class="min-w-0 text-sm">
                     <p class="font-semibold <%= line.missing? ? 'text-muted' : 'text-heading' %>" data-test="line-title">
-                      <%= line.title %>
+                      <% if line.href %>
+                        <%= link_to line.title, line.href, class: "hover:text-primary hover:underline" %>
+                      <% else %>
+                        <%= line.title %>
+                      <% end %>
                       <% if line.missing? && line.in_tier %>
                         <span class="ml-1 whitespace-nowrap text-2xs font-medium text-muted" data-test="line-in-tier">(In <%= line.in_tier.name %>)</span>
                       <% end %>

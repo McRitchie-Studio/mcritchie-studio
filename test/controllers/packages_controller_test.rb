@@ -149,7 +149,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='line-title']", text: /Premium Domain/, count: 2
     assert_select "[data-test='package-line'][data-lane='app_email'], [data-test='package-line'][data-lane='custom_email']", 0
     assert_select "#{card('pro')} [data-test='package-line'][data-lane='host_storage'] [data-test='line-title']", text: "Pro Host & Storage"
-    assert_select "#{card('pro')} [data-test='line-sub']", text: "you@your-app.com, 2 users"
+    assert_no_match(/you@your-app.com, 2 users/, response.body, "the Workspace lane became Integrations")
     assert_no_match(/yourname|yourcompany/, response.body)
     assert_no_match(/credit/i, css_select("[data-test='package-cards']").text)
     assert_select "#{card('team')}[data-featured='true'] [data-test='featured-badge']", text: /Most popular/
