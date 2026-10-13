@@ -3527,7 +3527,7 @@ when "scout-brief"
     exit 2
   end
   puts "#{brief["slug"] || "brief"} · by #{brief["agent_slug"] || "unknown"} · #{brief["created_at"] || "undated"}"
-  puts brief["description"].to_s
+  puts brief["description"]
 when "usage-audit"
   # READ-ONLY. Surfaces baseline rows in the usage/cost store that a test run left
   # behind — a stub slug ("demo-task"), or a cache-read total no single task could
