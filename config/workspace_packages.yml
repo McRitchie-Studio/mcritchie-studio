@@ -9,7 +9,7 @@
 #
 # The ladder Mr. McRitchie set on 2026-10-12 (task cto-and-team-tiers), where
 # each tier includes the one below: Vibe free, Builder $100/mo, Pro $500/mo
-# ("your fractional CTO"), Team $1,500/mo; 10% off billed annually. Enterprise
+# ("your fractional CTO"), Team $1,500/mo (cut to $900/mo on 2026-10-13); 10% off billed annually. Enterprise
 # is no longer a card: /packages draws it as a "Talk to us" line under the
 # cards, and /packages/stack keeps its column so the Enterprise-only rows stay
 # visible. Pro took Growth's platform features (Growth, $500/mo, of 2026-09-30);
@@ -169,7 +169,7 @@ packages:
   - key: team
     name: Team
     tagline: "Your founding team: a CTO and a CMO."
-    price_monthly: 1500
+    price_monthly: 900
     comp: Turf Monster
     featured: true
     card_groups: [Application, Platform, Agents, Marketing]

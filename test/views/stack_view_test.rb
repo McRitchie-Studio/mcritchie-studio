@@ -29,7 +29,7 @@ class StackViewTest < ActionView::TestCase
     render template: "stack/index"
 
     assert_equal %w[turf-monster studio], css_select("[data-test='stack-client']").map { |tr| tr["data-client"] }
-    assert_select "#{row('turf-monster')} [data-test='stack-tier']", text: %r{Team · \$1,500/mo}
+    assert_select "#{row('turf-monster')} [data-test='stack-tier']", text: %r{Team · \$900/mo}
     assert_select "#{row('studio')} [data-test='stack-tier']", text: /Internal/
   end
 

@@ -34,8 +34,8 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{card('builder')} [data-test='price-monthly']", text: %r{\$100\s*/month}
     assert_select "#{card('pro')} [data-test='price-monthly']", text: %r{\$500\s*/month}
     assert_select "#{card('pro')} [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
-    assert_select "#{card('team')} [data-test='price-monthly']", text: %r{\$1,500\s*/month}
-    assert_select "#{card('team')} [data-test='price-annual']", text: /\$1,350.*\$16,200 billed annually/m
+    assert_select "#{card('team')} [data-test='price-monthly']", text: %r{\$900\s*/month}
+    assert_select "#{card('team')} [data-test='price-annual']", text: /\$810.*\$9,720 billed annually/m
     assert_select card("enterprise"), 0, "Enterprise is a Talk to us line, not a card"
     assert_select "[data-test='price-custom']", 0
     assert_select "[data-test='billing-toggle']", text: /save 10%/
