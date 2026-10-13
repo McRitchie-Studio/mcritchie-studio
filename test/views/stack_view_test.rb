@@ -71,4 +71,16 @@ class StackViewTest < ActionView::TestCase
     dns = "#{row('turf-monster')} [data-test='stack-dns'][data-dns-host='squarespace'][data-dns-standing='migration_pending']"
     assert_select dns, text: /Squarespace\s+turfmonster\.media\s+Migration pending/
   end
+
+  test "[component] each client wears its own logo; rendered without logos, an empty ring" do
+    @logos = ClientLogo.for_all(@clients.map(&:slug))
+    render template: "stack/index"
+
+    assert_select "#{row('turf-monster')} [data-test='client-logo'][data-source='brand'] img[src^='/logos/turf/icon']", 2
+    assert_select "#{row('studio')} [data-test='client-logo'][data-source='brand'] img[src^='/logos/studio/icon']", 2
+
+    @logos = nil
+    render template: "stack/index"
+    assert_select "#{row('turf-monster')} [data-test='client-logo-missing']", 1
+  end
 end
