@@ -1,0 +1,25 @@
+<%= intro %>
+
+<%= verify_note %>
+
+<% if ds_present? -%>
+<%= step("Turn DNSSEC off") %>
+
+<%= outage_warning %>
+
+1. Sign in at https://dcc.godaddy.com/control/portfolio and choose **<%= domain %>**.
+2. Open **DNS** -> **DNSSEC** and delete every DS record shown. Change nothing else.
+3. <%= confirm %>
+4. <%= after_dnssec %>
+
+<% end -%>
+<%= step("Use Cloudflare's nameservers") %>
+
+<%= ns_timing %>
+
+1. Sign in at https://dcc.godaddy.com/control/portfolio and choose **<%= domain %>**.
+2. Open **DNS** -> **Nameservers** -> **Change Nameservers** -> **I'll use my own nameservers**.
+3. Enter exactly these two, replacing any others:
+<%= ns_list %>
+4. <%= confirm %> GoDaddy may ask you to confirm by email or text code.
+5. <%= done %>

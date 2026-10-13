@@ -1,0 +1,108 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/domain-cutover — move a Pro-tier app's domain DNS to Cloudflare, by phase.
+# The runbook is Steffon's domain-dns SOP (§ Cloudflare DNS — Pro and above);
+# the logic and every guard live in bin/lib/domain_cutover/.
+
+require_relative "lib/cli_arg_guard"
+
+USAGE = <<~TXT
+  usage: bin/domain-cutover <app> <domain> plan [--to alex|client] [--name <sub>]... [--dry-run]
+         bin/domain-cutover <app> <domain> verify [--dry-run]
+         bin/domain-cutover <app> <domain> finalize [--dry-run]
+         bin/domain-cutover <app> <domain> workspace [--verification <txt>] [--rua <mailto:...>]
+                                                     [--dkim <value>] [--replace-mail] [--dry-run]
+         bin/domain-cutover <app> <domain> status
+
+  plan      snapshot every record over DoH, read the registrar and DS over RDAP, add
+            the bare domain to Heroku, create the Cloudflare zone, copy every record
+            exactly (DNS only), add the app records (@ CNAME the Heroku target, www
+            proxied), SSL Full (strict), write the www -> bare redirect DISABLED, and
+            print the registrar guide (--to alex, the default, or client).
+            --name adds a subdomain to the snapshot (DoH cannot list a zone).
+  verify    registry nameservers, DS, zone activation, DoH parity, the bare domain
+            resolving publicly, Heroku ACM (refreshed once the domain resolves).
+            Exits 0 only when all green.
+  finalize  REFUSES until 6h after verify first saw Cloudflare's nameservers at the
+            registry, and until ACM has issued; then APP_HOST=<domain>, enables the
+            redirect and re-verifies.
+  workspace Google Workspace mail records: verification TXT, Google's MX, ONE SPF
+            (merged), DMARC p=none (--rua, default mailto:team@<domain>), and DKIM
+            when --dkim is given. Refuses to overwrite differing mail records
+            without --replace-mail.
+  status    the phase, the timestamps, the next action and when it is allowed.
+
+  --dry-run prints every write it would make and makes none (reads still run).
+  DNS is read only over DNS-over-HTTPS and RDAP, never the local resolver.
+  Credentials: cloudflare.studio.provision (admin lane: source ~/.zprofile.admin),
+  and HEROKU_API_KEY or heroku.studio.agents. Nothing secret is printed.
+TXT
+
+COMMANDS = {
+  "plan" => { bool: %w[--dry-run], value: %w[--to --name] },
+  "verify" => { bool: %w[--dry-run], value: [] },
+  "finalize" => { bool: %w[--dry-run], value: [] },
+  "workspace" => { bool: %w[--dry-run --replace-mail], value: %w[--verification --rua --dkim] },
+  "status" => { bool: [], value: [] }
+}.freeze
+
+command = ARGV[2]
+spec = COMMANDS.fetch(command, { bool: [], value: [] })
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "domain-cutover",
+  usage: USAGE,
+  bool: spec[:bool],
+  value: spec[:value],
+  allow_positional: true,
+  consequence: "NOTHING ran — no read, no write, no state change."
+)
+
+app, domain, = args.positionals
+unless args.positionals.length == 3 && COMMANDS.key?(command)
+  warn(USAGE)
+  exit 2
+end
+unless app.match?(/\A[a-z0-9][a-z0-9-]*\z/) && domain.match?(/\A(?!www\.)[a-z0-9-]+(\.[a-z0-9-]+)+\z/)
+  warn("domain-cutover: want an app slug and a bare domain (no www., lowercase) — NOTHING ran.")
+  exit 2
+end
+
+require_relative "lib/domain_cutover"
+
+begin
+  store = DomainCutover::StateStore.new
+  transport = DomainCutover::Transport.new
+  dry = args.bool?("--dry-run")
+
+  if command == "status"
+    DomainCutover::Runner.new(app: app, domain: domain, cloudflare: nil, heroku: nil, doh: nil, rdap: nil,
+                              store: store).status
+    exit 0
+  end
+
+  token, account = DomainCutover::Credentials.cloudflare
+  heroku_key = command == "workspace" ? nil : DomainCutover::Credentials.heroku
+  runner = DomainCutover::Runner.new(
+    app: app, domain: domain, store: store, dry_run: dry,
+    cloudflare: DomainCutover::Cloudflare.new(transport, token: token, account_id: account),
+    heroku: heroku_key && DomainCutover::Heroku.new(transport, key: heroku_key),
+    doh: DomainCutover::Doh.new(transport), rdap: DomainCutover::Rdap.new(transport)
+  )
+
+  case command
+  when "plan"
+    runner.plan(to: args.first("--to") || "alex", names: args.all("--name"))
+  when "verify"
+    exit(runner.verify ? 0 : 1)
+  when "finalize"
+    exit(runner.finalize ? 0 : 1)
+  when "workspace"
+    runner.workspace(verification: args.first("--verification"), rua: args.first("--rua"),
+                     dkim: args.first("--dkim"), replace_mail: args.bool?("--replace-mail"))
+  end
+rescue DomainCutover::Abort => e
+  warn("domain-cutover: #{DomainCutover.redact(e.message, [token, account, heroku_key])}")
+  exit 2
+end
