@@ -25,6 +25,9 @@ class CreateAgentMessages < ActiveRecord::Migration[8.1]
       t.text :action_summary
       t.string :reply_nonce
       t.string :reply_external_id
+      # The outbox state of the answer: queued, posted, skipped (no bot token)
+      # or failed (retries spent). Null until the message is completed.
+      t.string :reply_status
       t.datetime :reply_posted_at
       t.datetime :completed_at
       t.datetime :sent_at

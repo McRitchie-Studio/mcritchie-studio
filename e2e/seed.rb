@@ -1718,7 +1718,8 @@ answered.record!("routed", actor: "router", detail: { "soul" => "avi", "routed_b
 AgentMessage.claim!(soul: "avi", worker: "e2e-laptop-101-abc123")
 answered.reload.update!(status: "completed", completed_at: Time.current, lease_expires_at: nil,
                         response_text: "rel-e2e is green and waiting on QA.", action_summary: "ran `bin/release status` (exit 0)",
-                        reply_nonce: "agentmsg-e2e", reply_external_id: "910000000000000099", reply_posted_at: Time.current)
+                        reply_nonce: "agentmsg-e2e", reply_external_id: "910000000000000099", reply_posted_at: Time.current,
+                        reply_status: "posted")
 answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-101-abc123" })
 answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
 mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",

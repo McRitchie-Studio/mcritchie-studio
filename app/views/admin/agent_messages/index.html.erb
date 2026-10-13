@@ -49,10 +49,10 @@
           <th class="py-2 pr-3">Age</th>
           <th class="py-2 pr-3">Soul</th>
           <th class="py-2 pr-3">Status</th>
-          <th class="py-2 pr-3">From</th>
+          <th class="py-2 pr-3 hidden sm:table-cell">From</th>
           <th class="py-2 pr-3">Message</th>
-          <th class="py-2 pr-3">Claim</th>
-          <th class="py-2 pr-3">Tries</th>
+          <th class="py-2 pr-3 hidden md:table-cell">Claim</th>
+          <th class="py-2 pr-3 hidden sm:table-cell">Tries</th>
           <th class="py-2 pr-3">Reply</th>
         </tr>
       </thead>
@@ -62,22 +62,22 @@
             <td class="py-2 pr-3 whitespace-nowrap" title="<%= message.created_at.iso8601 %>"><%= agent_message_age(message.created_at) %></td>
             <td class="py-2 pr-3"><%= message.soul_slug || "—" %></td>
             <td class="py-2 pr-3"><span class="am-chip am-status-<%= message.status %>"><%= message.status %></span></td>
-            <td class="py-2 pr-3 whitespace-nowrap"><%= message.author_name.presence || "—" %> <span class="opacity-60 text-xs"><%= message.channel %></span></td>
-            <td class="py-2 pr-3 max-w-md">
-              <%= link_to truncate(message.content, length: 90), admin_agent_message_path(message), class: "hover:underline" %>
+            <td class="py-2 pr-3 whitespace-nowrap hidden sm:table-cell"><%= message.author_name.presence || "—" %> <span class="opacity-60 text-xs"><%= message.channel %></span></td>
+            <td class="py-2 pr-3 max-w-md min-w-[10rem]">
+              <%= link_to truncate(agent_message_display_text(message), length: 90), admin_agent_message_path(message), class: "hover:underline" %>
             </td>
-            <td class="py-2 pr-3 text-xs">
+            <td class="py-2 pr-3 text-xs hidden md:table-cell">
               <% if message.claimed_by.present? %>
                 <div class="font-mono break-all"><%= message.claimed_by %></div>
                 <div class="opacity-70"><%= agent_message_lease(message) %></div>
               <% else %>—<% end %>
             </td>
-            <td class="py-2 pr-3"><%= message.attempts %></td>
+            <td class="py-2 pr-3 hidden sm:table-cell"><%= message.attempts %></td>
             <td class="py-2 pr-3 text-xs whitespace-nowrap">
               <% if message.reply_url %>
                 <%= link_to "on Discord", message.reply_url, target: "_blank", rel: "noopener" %>
-              <% elsif message.status == "completed" %>
-                <span class="opacity-70">queued</span>
+              <% elsif message.reply_status %>
+                <span class="am-chip am-reply-<%= message.reply_status %>"><%= message.reply_status %></span>
               <% else %>—<% end %>
             </td>
           </tr>

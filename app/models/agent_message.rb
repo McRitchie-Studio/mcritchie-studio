@@ -24,6 +24,7 @@ class AgentMessage < ApplicationRecord
   # thread's newer messages back, so a conversation is answered in order.
   OPEN_STATUSES = %w[received claimed].freeze
   ROUTED_BY = %w[user role thread default none].freeze
+  REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
   # heartbeat run (one read-only action plus one headless Claude call, capped at
@@ -53,6 +54,7 @@ class AgentMessage < ApplicationRecord
   validates :routed_by, inclusion: { in: ROUTED_BY }, allow_nil: true
   validates :soul_slug, presence: true, unless: :unrouted?
   validates :attempts, numericality: { greater_than_or_equal_to: 0 }
+  validates :reply_status, inclusion: { in: REPLY_STATUSES }, allow_nil: true
 
   scope :newest_first, -> { order(id: :desc) }
   scope :for_soul, ->(soul) { where(soul_slug: soul) }
@@ -151,7 +153,7 @@ class AgentMessage < ApplicationRecord
 
       update!(status: "completed", completed_at: now, lease_expires_at: nil,
               response_text: response_text.to_s, action_summary: action_summary.presence,
-              reply_nonce: reply_nonce.presence || "agentmsg-#{id}")
+              reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued")
       record!("completed", actor: actor || soul_slug,
                            detail: { "worker" => worker, "action_summary" => action_summary.presence }.compact)
       :completed
@@ -200,7 +202,7 @@ class AgentMessage < ApplicationRecord
   def as_api_json(events: false)
     data = slice(:id, :channel, :external_id, :guild_id, :channel_ref, :thread_key, :author_ref, :author_name,
                  :content, :mentions, :soul_slug, :routed_by, :status, :claimed_by, :claimed_at,
-                 :lease_expires_at, :attempts, :response_text, :action_summary, :reply_external_id,
+                 :lease_expires_at, :attempts, :response_text, :action_summary, :reply_external_id, :reply_status,
                  :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at).as_json
     data["url"] = discord_url
     data["reply_url"] = reply_url

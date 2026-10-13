@@ -62,4 +62,21 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "ran bin/release status"
     refute_includes response.body, "<script>alert(1)</script>", "untrusted content is escaped"
   end
+
+  test "mention tokens read as the soul they route to; a completed message shows its reply state" do
+    routes = agent_routes
+    message = agent_message!(soul: "avi", content: "<@&#{AVI_ROLE}> and <@&123> and <@#{SHARED_BOT}> hi")
+    AgentMessage.claim!(soul: "avi", worker: "w1")
+    message.reload.complete!(worker: "w1", response_text: "ok")
+
+    log_in_as(admin)
+    AgentMessages::Routes.stub(:load, routes) do
+      get admin_agent_messages_path
+      assert_select "#am-row-#{message.id}", /@avi and @role and @user hi/
+      assert_select "#am-row-#{message.id} .am-reply-queued", "queued"
+
+      get admin_agent_message_path(message)
+      assert_select ".am-untrusted", "@avi and @role and @user hi"
+    end
+  end
 end

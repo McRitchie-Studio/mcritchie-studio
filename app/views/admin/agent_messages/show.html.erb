@@ -30,12 +30,14 @@
   <dd id="am-reply-link">
     <% if @message.reply_url %>
       <%= link_to "Open the reply on Discord", @message.reply_url, target: "_blank", rel: "noopener", class: "underline" %>
+    <% elsif @message.reply_status %>
+      <span class="am-chip am-reply-<%= @message.reply_status %>"><%= @message.reply_status %></span>
     <% else %>—<% end %>
   </dd>
 </dl>
 
 <h2 class="font-semibold mb-1">Message <span class="text-xs font-normal opacity-60">untrusted: what a stranger in the channel wrote</span></h2>
-<div class="am-untrusted text-sm mb-6"><%= @message.content %></div>
+<div class="am-untrusted text-sm mb-6"><%= agent_message_display_text(@message) %></div>
 
 <% if @message.response_text.present? %>
   <h2 class="font-semibold mb-1">Answer</h2>

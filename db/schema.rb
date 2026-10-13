@@ -216,6 +216,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_210000) do
     t.string "reply_external_id"
     t.string "reply_nonce"
     t.datetime "reply_posted_at"
+    t.string "reply_status"
     t.text "response_text"
     t.string "routed_by"
     t.datetime "sent_at"

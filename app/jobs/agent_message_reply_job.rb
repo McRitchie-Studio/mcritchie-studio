@@ -12,7 +12,10 @@ class AgentMessageReplyJob < ApplicationJob
   queue_as :default
   retry_on AgentMessages::DiscordBot::Error, wait: :polynomially_longer, attempts: 5 do |job, error|
     message = AgentMessage.find_by(id: job.arguments.first)
-    message&.record!("reply_failed", actor: "discord-bot", detail: { "error" => error.message.to_s[0, 300] })
+    next unless message
+
+    message.update_column(:reply_status, "failed")
+    message.record!("reply_failed", actor: "discord-bot", detail: { "error" => error.message.to_s[0, 300] })
   end
 
   def perform(message_id)
@@ -21,6 +24,7 @@ class AgentMessageReplyJob < ApplicationJob
     return if message.channel != "discord"
 
     unless AgentMessages::DiscordBot.configured?
+      message.update_column(:reply_status, "skipped")
       message.record!("reply_skipped", actor: "discord-bot",
                                        detail: { "reason" => "#{AgentMessages::DiscordBot::TOKEN_ENV} is unset" })
       return
@@ -29,7 +33,7 @@ class AgentMessageReplyJob < ApplicationJob
     posted = AgentMessages::DiscordBot.new.post_reply(message.channel_ref, content: self.class.reply_text(message),
                                                       reference_id: message.external_id,
                                                       nonce: message.reply_nonce.presence || "agentmsg-#{message.id}")
-    message.update!(reply_external_id: posted["id"].to_s, reply_posted_at: Time.current)
+    message.update!(reply_external_id: posted["id"].to_s, reply_posted_at: Time.current, reply_status: "posted")
     message.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => posted["id"].to_s, "url" => message.reply_url })
   end
 

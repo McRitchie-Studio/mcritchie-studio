@@ -60,6 +60,7 @@ class AgentMessageReplyJobTest < ActiveJob::TestCase
 
     message.reload
     assert_equal "880000000000000001", message.reply_external_id
+    assert_equal "posted", message.reply_status
     assert message.reply_posted_at
     assert_equal "reply_posted", message.events.last.kind
     assert_equal message.reply_url, message.events.last.detail["url"]
@@ -95,6 +96,7 @@ class AgentMessageReplyJobTest < ActiveJob::TestCase
     assert_nil message.reply_external_id
     assert_equal "Release rel-1 is green.", message.response_text
     assert_equal "reply_skipped", message.events.last.kind
+    assert_equal "skipped", message.reply_status
   end
 
   test "[unit] a message that is not completed is never replied to" do
@@ -105,6 +107,22 @@ class AgentMessageReplyJobTest < ActiveJob::TestCase
       end
     end
     assert_nil message.reload.reply_external_id
+  end
+
+  test "[unit] a completed message is queued for its reply, and spent retries mark it failed" do
+    message = completed_message
+    assert_equal "queued", message.reply_status
+
+    with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
+      with_transport(->(*) { [ 500, "boom" ] }) do
+        perform_enqueued_jobs { AgentMessageReplyJob.perform_later(message.id) }
+      end
+    end
+
+    message.reload
+    assert_equal "failed", message.reply_status
+    assert_equal "reply_failed", message.events.last.kind
+    assert_match(/HTTP 500/, message.events.last.detail["error"])
   end
 
   test "[unit] a long answer is clipped to Discord's limit" do
