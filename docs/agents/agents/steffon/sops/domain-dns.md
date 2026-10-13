@@ -207,7 +207,8 @@ bin/domain-cutover <app> <domain> verify    # exit 0 only when all green
 
 It checks the registry's nameservers and DS (RDAP), triggers Cloudflare's
 activation check once the registry shows its nameservers, and confirms both DoH
-resolvers answer every copied record as the snapshot did. It asks Heroku for the
+resolvers answer every record the zone holds (plan already proved the zone holds
+the snapshot). It asks Heroku for the
 bare domain's certificate only once that domain resolves publicly. The first
 time it sees Cloudflare's nameservers at the registry, it starts finalize's
 six-hour clock.

@@ -22,7 +22,7 @@ class DomainCutoverFakeWorld
   HEROKU_KEY = "HRKU-secret-key-0123456789"
 
   attr_accessor :registrar, :registry_ns, :ds, :servfail, :old_zone, :zones, :config, :domains,
-                :rules, :ssl, :delegated
+                :rules, :ssl, :delegated, :doh_override
   attr_reader :log
 
   def initialize(domain: "example.com", app: "example-app")
@@ -34,6 +34,7 @@ class DomainCutoverFakeWorld
     @ds = true
     @servfail = false
     @delegated = false
+    @doh_override = {} # [name, type] => data: what a lagging or wrong resolver says
     @old_zone = {
       domain => { "A" => %w[198.185.159.144 198.185.159.145], "MX" => ["1 smtp.google.com."],
                   "TXT" => ["google-site-verification=abc", "v=spf1 include:_spf.google.com ~all"] },
@@ -96,7 +97,9 @@ class DomainCutoverFakeWorld
     type = q["type"]
     return ok({ "Status" => 2 }) if @servfail && q["cd"] != "1"
 
-    if type == "DS"
+    if @doh_override.key?([name, type])
+      data = @doh_override[[name, type]]
+    elsif type == "DS"
       data = @ds && name == @domain ? ["12345 13 2 ABCDEF"] : []
     elsif type == "NS" && name == @domain
       data = (@delegated ? CF_NS : %w[nsa1.squarespacedns.com nsa2.squarespacedns.com]).map { |n| "#{n}." }

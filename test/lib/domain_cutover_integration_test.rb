@@ -156,6 +156,14 @@ class DomainCutoverIntegrationTest < Minitest::Test
     assert_equal "verified", state["phase"]
   end
 
+  def test_verify_names_a_record_the_public_resolvers_lack
+    planned_and_delegated
+    @world.doh_override[["in.#{DOMAIN}", "MX"]] = []
+
+    refute runner.verify
+    assert_match(/\[WAIT\] public DNS answers the zone \(DoH\): in\.example\.com MX differs on google\+cloudflare/, @out.string)
+  end
+
   def test_finalize_refuses_inside_six_hours_and_writes_nothing
     planned_and_delegated
     runner.verify

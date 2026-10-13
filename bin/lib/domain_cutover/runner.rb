@@ -140,8 +140,8 @@ module DomainCutover
                       ns_answers.map { |a| "#{a.resolver}: #{a.records.map(&:content).join(' ')}" }.join("; "))
 
       mismatches = parity(state)
-      checks << check("records match the snapshot (DoH)", mismatches.empty?,
-                      mismatches.empty? ? "every copied record answers" : mismatches.first(5).join("; "))
+      checks << check("public DNS answers the zone (DoH)", mismatches.empty?,
+                      mismatches.empty? ? "every zone record answers" : mismatches.first(5).join("; "))
 
       bare = @doh.both(@domain, "A").all? { |a| a.status.zero? && a.records.any? }
       checks << check("#{@domain} resolves publicly", bare, bare ? "A records on both resolvers" : "not yet")
@@ -432,12 +432,15 @@ module DomainCutover
       say "read back:   #{want.keys.join(', ')} settled on #{@app}"
     end
 
-    # Copied records the public resolvers do not yet answer as the snapshot did.
+    # Zone records the public resolvers do not yet answer as the zone holds them.
+    # Read against the zone, not the plan's snapshot, so a later `workspace` change
+    # is not a mismatch; plan already proved the zone holds the snapshot. The app
+    # records and anything proxied are skipped: the edge answers for those.
     def parity(state)
-      snapshot = Array(state["snapshot"]).map { |h| Record.new(**h.transform_keys(&:to_sym)) }
-      desired = Records.desired(@domain, snapshot, state["heroku_target"].to_s)
-      copied = desired.reject { |r| [@domain, "www.#{@domain}"].include?(r.name) && r.type == "CNAME" }
-      copied.group_by(&:group).filter_map do |(name, type), want|
+      zone = @cf.records(state["zone_id"]).reject do |r|
+        r.proxied || ([@domain, "www.#{@domain}"].include?(r.name) && r.type == "CNAME")
+      end
+      zone.group_by(&:group).filter_map do |(name, type), want|
         answers = @doh.both(name, type)
         wrong = answers.reject { |a| a.records.map(&:key).sort == want.map(&:key).sort }
         next if wrong.empty?
