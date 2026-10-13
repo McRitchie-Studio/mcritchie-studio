@@ -83,6 +83,7 @@ its invocation exactly.
 | `Avi Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi `arbitrate-block` SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | Avi `deploy-with-task` SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| Avi `intent-scout` SOP (while a builder builds, Avi reads the task's intent and hands over one two-list brief before submit) | `mcritchie-studio/docs/agents/agents/avi/sops/intent-scout.md` |
 | Avi `qa-release` SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `Carl Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | Carl `pr-review-light` SOP (the light reviewer's own steps) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |

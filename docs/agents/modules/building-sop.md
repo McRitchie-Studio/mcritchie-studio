@@ -83,7 +83,10 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      never writes your desk.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
-every session: `<app-slug> · <feature-slug> · <task URL>`.
+every session: `<app-slug> · <feature-slug> · <task URL>`. Its last block,
+`scout:`, is a paste-ready background launch of Avi's
+[`intent-scout`](../agents/avi/sops/intent-scout.md); the session that ran `begin`
+launches it and keeps building.
 
 To resume a held or blocked task instead:
 
@@ -243,6 +246,10 @@ rule except the CI read (shape, metadata, tagged test tiers in `checks_run`). It
 refuses in a second what step 7/8 would refuse after a CI round trip, so **record
 your `[unit]`/`[integration]` lines with `bin/task update --checks` before you
 submit**.
+
+**Read Avi's intent brief before you submit** (`bin/task scout-brief <slug>`) and fold
+in its SAME INTENT, DO NOW list ([`intent-scout`](../agents/avi/sops/intent-scout.md)).
+At 0/8 `bin/submit` prints a WARNING when no brief is on the task; it never refuses.
 
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
