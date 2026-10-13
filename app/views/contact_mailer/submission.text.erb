@@ -4,7 +4,8 @@ Name: <%= @submission.name %>
 Email: <%= @submission.email %>
 Mobile: <%= @submission.phone.presence || "not given" %>
 Text messages: <%= @submission.consent_summary %>
-
+<% if (source = @submission.source_summary) %>Source: <%= source %>
+<% end %>
 Message:
 <%= @submission.message %>
 

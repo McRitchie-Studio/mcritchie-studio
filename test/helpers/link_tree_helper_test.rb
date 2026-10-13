@@ -168,14 +168,14 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute_includes labels, "People"
   end
 
-  test "the App Builder and the packages page are linked for everyone, signed in or not" do
+  test "the App Builder, the packages page and integrations are linked for everyone, signed in or not" do
     self.admin_enabled = false
     [ false, true ].each do |signed_in|
       self.logged_in_enabled = signed_in
       services = sidebar_link_sections.find { |section| section.fetch(:title) == "Services" }
 
       assert services, "customers must reach /build and /packages without an account (signed_in=#{signed_in})"
-      assert_equal [ "/build", "/packages" ], services.fetch(:links).map { |link| link.fetch(:href) }
+      assert_equal [ "/build", "/packages", "/integrations" ], services.fetch(:links).map { |link| link.fetch(:href) }
       assert_equal "App Builder", services.fetch(:links).first.fetch(:label)
     end
   end
@@ -283,6 +283,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def people_path = "/people"
   def docs_path = "/docs"
   def packages_path = "/packages"
+  def integrations_path = "/integrations"
   def build_path = "/build"
   def build_requests_path = "/build/requests"
   def stack_path = "/stack"

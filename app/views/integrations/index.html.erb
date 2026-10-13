@@ -1,0 +1,108 @@
+<% content_for :title, "Integrations & Add-ons · McRitchie Studio" %>
+
+<section class="max-w-7xl mx-auto px-4 py-10" data-test="integrations-page">
+  <header class="text-center mb-10">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Integrations &amp; Add-ons</p>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Build smarter. Your backend runs itself.</h1>
+    <p class="text-muted max-w-2xl mx-auto">
+      Every plan connects to the tools you already use, and we will run the rest if you want us to.
+    </p>
+  </header>
+
+  <% @groups.each do |group| %>
+    <section class="mt-10 first-of-type:mt-0" data-test="integration-group" data-group="<%= group.key %>" aria-labelledby="group-<%= group.key %>">
+      <div class="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+        <div class="min-w-0">
+          <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="group-kicker"><%= group.kicker %></p>
+          <h2 id="group-<%= group.key %>" class="mt-1 text-2xl font-bold text-heading"><%= group.title %></h2>
+        </div>
+        <p class="max-w-xl text-sm text-muted sm:text-right"><%= group.summary %></p>
+      </div>
+
+      <%# One rhythm for every section: four across at xl, two at md, one on a
+          phone. Grid rows stretch, so cards in a row end level. %>
+      <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <% group.entries.each do |entry| %>
+          <article class="flex flex-col rounded-2xl border border-subtle bg-surface p-5"
+                   data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
+            <div class="flex items-start gap-3">
+              <% if entry.brand %>
+                <span data-test="entry-lead" data-lead="<%= entry.brand %>"><%= render "packages/brand", key: entry.brand, size: :lead %></span>
+              <% else %>
+                <span class="flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-sm md:text-base"
+                      aria-hidden="true" data-test="entry-lead" data-lead="emoji"><%= entry.icon %></span>
+              <% end %>
+              <div class="min-w-0 flex-1">
+                <h3 class="font-semibold text-heading" data-test="entry-name"><%= entry.name %></h3>
+                <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                  <% if entry.soon? %>
+                    <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 font-medium" data-test="coming-soon">Coming soon</span>
+                  <% elsif entry.on_request? %>
+                    <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 font-medium" data-test="on-request">On request</span>
+                  <% else %>
+                    <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-success/15 px-2 py-0.5 font-medium text-success-ink" data-test="available">
+                      <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+                      Available
+                    </span>
+                  <% end %>
+                  <% if entry.availability %>
+                    <span class="whitespace-nowrap font-medium" data-test="entry-tier"><%= entry.availability %></span>
+                  <% end %>
+                </p>
+              </div>
+            </div>
+
+            <div class="mb-4">
+            <p class="mt-3 text-sm text-body" data-test="entry-blurb"><%= entry.blurb %></p>
+            <% if entry.tier_note.present? %>
+              <p class="mt-1 text-xs text-muted" data-test="entry-tier-note"><%= entry.tier_note %></p>
+            <% end %>
+            </div>
+
+            <%# The footer: price line and button side by side when they fit; the
+                button wraps below the price (never squeezes it) on a narrow card.
+                A custom entry has no price line, only its button. %>
+            <div class="mt-auto flex flex-wrap items-end justify-between gap-3 border-t border-subtle pt-4">
+              <% if entry.price_label %>
+                <div class="min-w-0 flex-[1_1_9rem]" data-test="entry-price">
+                  <p class="font-bold text-heading [overflow-wrap:anywhere]"><%= entry.price_label %></p>
+                  <% if entry.price_note.present? %>
+                    <p class="text-xs text-muted" data-test="entry-price-note"><%= entry.price_note %></p>
+                  <% elsif group.add_ons? %>
+                    <p class="text-xs text-muted">Scoped on a call</p>
+                  <% else %>
+                    <p class="text-xs text-muted">You pay the vendor directly</p>
+                  <% end %>
+                </div>
+              <% end %>
+              <%# Every button opens the contact form prefilled, carrying where it
+                  came from, or, for an entry with a guide, the guide page first. %>
+              <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),
+                    class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
+                    data: { test: "entry-cta", intent: entry.intent } %>
+            </div>
+          </article>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <section class="mt-12 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" data-test="not-listed" aria-labelledby="not-listed-heading">
+    <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary">Something else</p>
+        <h2 id="not-listed-heading" class="mt-1 text-xl font-semibold text-heading">Need something not listed?</h2>
+        <p class="mt-2 text-sm text-body">Tell us what you use. If your agent should read it or your app should talk to it, we will scope it with you.</p>
+      </div>
+      <%= studio_booking_link "Book a call", schedule_index_path, class: "btn btn-primary shrink-0 justify-center md:w-auto w-full", data: { test: "not-listed-cta" } %>
+    </div>
+  </section>
+
+  <div class="mt-10 text-center">
+    <%= link_to packages_path, class: "inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors",
+          data: { test: "packages-link" } do %>
+      Compare the plans <span aria-hidden="true">→</span>
+    <% end %>
+    <p class="mt-2 text-sm text-muted">Your agent-powered backend, from a free app to a connected company.</p>
+  </div>
+</section>

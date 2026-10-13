@@ -72,4 +72,18 @@ class ContactMailerTest < ActionMailer::TestCase
     assert_equal ContactMailer::DIGEST_LIMIT, body.scan(/· too_fast/).size
     assert_includes body, "…and 2 more not listed."
   end
+
+  test "both parts name the source when a card link sent the visitor" do
+    mail = ContactMailer.submission(submission(source: { page: "integrations", item: "github_org", intent: "connect", ref: "/integrations" }))
+
+    [mail.html_part.body.to_s, mail.text_part.body.to_s].each do |body|
+      assert_includes body, "page: integrations · item: github_org · intent: connect · ref: /integrations"
+    end
+  end
+
+  test "no source line without a source" do
+    mail = ContactMailer.submission(submission)
+
+    [mail.html_part.body.to_s, mail.text_part.body.to_s].each { |body| refute_includes body, "Source:" }
+  end
 end

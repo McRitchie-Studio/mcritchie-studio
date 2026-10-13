@@ -1,0 +1,141 @@
+# What a McRitchie Studio plan connects to, and what we run for a client on top
+# of it. This is the ONE place /integrations reads from (Integration,
+# app/models/integration.rb). Draft of 2026-10-13 (Mr. McRitchie, task
+# integrations-and-add-ons-page): built to look at, not final copy.
+#
+# The core product is the agent-powered backend the tiers on /packages sell
+# (config/workspace_packages.yml). This page is what plugs into it, in three
+# sections (Mr. McRitchie, 2026-10-13):
+#
+#   integrations  free connections to accounts the CLIENT owns. We do no ongoing
+#                 work and the client pays the vendor directly.
+#   add_ons       the standard, repeatable services we set up and run, priced
+#                 (or quoted) on top of a plan.
+#   custom        rarer needs scoped one client at a time: no price line, one
+#                 "Talk to us" button.
+#
+# Entry keys:
+#   key       unique across the file
+#   name      customer-facing label
+#   icon      a software key (config/workspace_icons.yml) when the entry is about
+#             ONE brand's product: the entry leads with that brand's logo.
+#             Otherwise an emoji, the neutral lead of an entry no brand owns.
+#   blurb     one customer-facing sentence: what they get, not how
+#   status    live        delivered today
+#             soon        not delivered today: renders "Coming soon". Keep this
+#                         honest, the same rule as a `planned` row on /packages.
+#             on_request  delivered per contract after a call, not self-serve
+#   tier      the first package key (workspace_packages.yml) the entry is
+#             available from; it renders "From <tier>", or "Every plan" for the
+#             first tier. Blank: no tier gate.
+#   tier_note optional muted line beside the tier ("Drafting agent from Team")
+#   price     integrations: omitted (they are free). add_ons: a price string, or
+#             omitted for "Quote". custom: never shown.
+#   price_note optional muted line under the price
+#   guide     optional: a guide page (/integrations/<guide>) the button opens
+#             instead of the contact form; the guide's own button then goes to
+#             the form. One of Integration::GUIDES.
+#
+# The button is not configured: it follows from the group and the status, so a
+# Coming soon entry can never offer to connect. Every button opens the /contact
+# form prefilled, carrying {page, item, intent} into the submission's `source`.
+#   integrations, live or on_request  "Connect"       intent connect
+#   integrations, soon                "Get notified"  intent notify
+#   add_ons                           "Talk to us"    intent add_on
+#   custom                            "Talk to us"    intent custom
+groups:
+  - key: integrations
+    title: Integrations
+    kicker: Free
+    summary: Connect accounts you already own. You pay the vendor directly; we wire it in and do no ongoing work.
+    entries:
+      - key: google_workspace_connect
+        name: Google Workspace
+        icon: google
+        blurb: Connect your own Workspace. It powers your email drafting agent and a knowledge base built from the Drive folders you choose.
+        status: live
+        tier: pro
+        tier_note: Drafting agent from Team
+      - key: discord
+        name: Discord
+        icon: discord
+        blurb: "Two-way: our bot posts sign-ups, errors and your agents' updates in your server, and answers when you @‑mention it."
+        status: on_request
+        tier: vibe
+        guide: discord
+      - key: github_org
+        name: GitHub
+        icon: github
+        blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
+        status: on_request
+        tier: enterprise
+      - key: slack
+        name: Slack
+        icon: slack
+        blurb: The same notifications, and your agent's updates, in your Slack workspace.
+        status: soon
+
+  - key: add_ons
+    title: Add-on services
+    kicker: We run it
+    summary: We set it up and keep it running, priced on top of your plan.
+    entries:
+      - key: google_workspace_managed
+        name: Managed Workspace
+        icon: google
+        blurb: We create and run your Google Workspace, users and settings. Connecting one you already have stays free.
+        status: live
+        price: "$25/month + $15/user/month"
+        price_note: Google Business Starter seat included
+      - key: payments
+        name: Payments in your app
+        icon: "💳"
+        blurb: Card, bank and crypto checkout built into your app.
+        status: on_request
+      - key: extra_builds
+        name: Extra build requests
+        icon: "🛠️"
+        # Pro and Team promise an Always-on CTO with no monthly cap, so this
+        # add-on is for Builder (Mr. McRitchie, 2026-10-13).
+        blurb: More changes than Builder's several a month, or a second app.
+        status: on_request
+        tier: builder
+
+  - key: custom
+    title: Talk to us
+    kicker: Custom
+    summary: Rarer needs we scope with you, one client at a time.
+    entries:
+      # Stripe moved here from Integrations (Mr. McRitchie, 2026-10-13). Still
+      # Coming soon: the code exists but is switched off.
+      - key: stripe_connect
+        name: Stripe
+        icon: stripe
+        blurb: Card payments into your own Stripe account.
+        status: soon
+      - key: crypto
+        name: Crypto and wallets
+        icon: solana
+        blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
+        status: live
+      - key: extra_storage
+        name: Extra storage
+        icon: "🗄️"
+        blurb: More database and file storage when your app outgrows its plan.
+        status: on_request
+      - key: ai_features
+        name: AI features
+        icon: "🧠"
+        blurb: Chat, search, summaries and agents built into your app, on the models that fit the job.
+        status: on_request
+      - key: custom_connectors
+        name: Custom connectors
+        icon: "🔌"
+        blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
+        status: soon
+      - key: enterprise_extras
+        name: White label, domains and compliance
+        icon: "🛡️"
+        blurb: Your brand on everything, extra domains, and compliance work such as CMMC and ITAR.
+        status: on_request
+        tier: enterprise

@@ -3,6 +3,9 @@
 <p><strong>Email:</strong> <%= @submission.email %></p>
 <p><strong>Mobile:</strong> <%= @submission.phone.presence || "not given" %></p>
 <p><strong>Text messages:</strong> <%= @submission.consent_summary %></p>
+<% if (source = @submission.source_summary) %>
+<p><strong>Source:</strong> <%= source %></p>
+<% end %>
 <p><strong>Message:</strong></p>
 <%= simple_format(@submission.message) %>
 <hr>

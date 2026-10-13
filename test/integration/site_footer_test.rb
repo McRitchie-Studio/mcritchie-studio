@@ -52,11 +52,11 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Solutions column links Packages and the App Builder" do
+  test "the Solutions column links Packages, Integrations and the App Builder" do
     get root_path
 
     links = css_select("footer[data-site-footer] nav[aria-label='Solutions'] a").map { |link| [ link.text, link["href"] ] }
-    assert_equal [ [ "Packages", packages_path ], [ "Build an app", build_path ] ], links
+    assert_equal [ [ "Packages", packages_path ], [ "Integrations", integrations_path ], [ "Build an app", build_path ] ], links
   end
 
   test "the footer has four columns, in order, and ends on the legal line" do
@@ -193,6 +193,6 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
   end
 
   test "the configured list is exactly the public-site controllers" do
-    assert_equal %w[landing packages build contact_submissions schedule], Studio.site_footer_controllers
+    assert_equal %w[landing packages integrations build contact_submissions schedule], Studio.site_footer_controllers
   end
 end

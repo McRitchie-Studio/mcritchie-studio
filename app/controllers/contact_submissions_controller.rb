@@ -45,8 +45,16 @@ class ContactSubmissionsController < ApplicationController
     Rails.application.message_verifier(PROOF_PURPOSE)
   end
 
+  # A card link (an /integrations button) may carry `source[...]`: where the
+  # visitor came from and what they asked for. The form keeps it in hidden
+  # fields and starts the message with one line saying what they want.
   def new
-    @submission = ContactSubmission.new
+    source = ContactSubmission.clean_source(params[:source])
+    if source.any?
+      ref = referrer_path
+      source["ref"] = ref if ref
+    end
+    @submission = ContactSubmission.new(source: source, message: prefill_message(source))
   end
 
   def create
@@ -88,7 +96,25 @@ class ContactSubmissionsController < ApplicationController
 
   def submission_params
     params.fetch(:contact_submission, {}).permit(:name, :email, :phone, :message,
-                                                 :sms_care_consent, :sms_marketing_consent, :sms_declined)
+                                                 :sms_care_consent, :sms_marketing_consent, :sms_declined,
+                                                 source: ContactSubmission::SOURCE_KEYS)
+  end
+
+  # The referring page's path on this site, or nil (another site, or none).
+  def referrer_path
+    uri = URI.parse(request.referer.to_s)
+    uri.path.presence if uri.host.nil? || uri.host == request.host
+  rescue URI::InvalidURIError
+    nil
+  end
+
+  # "I'd like to connect GitHub." for an /integrations card or guide; nothing otherwise.
+  def prefill_message(source)
+    # "integrations", or one of its guide pages ("integrations/discord").
+    return unless source["page"].to_s.split("/").first == Integration::PAGE
+
+    entry = Integration.find(source["item"])
+    entry&.contact_message if entry && entry.intent == source["intent"]
   end
 
   # The app sends no text itself: the phone provider sends the opt-in

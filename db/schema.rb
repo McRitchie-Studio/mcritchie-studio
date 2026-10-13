@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -764,6 +764,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_200000) do
     t.boolean "sms_care_consent", default: false, null: false
     t.boolean "sms_declined", default: false, null: false
     t.boolean "sms_marketing_consent", default: false, null: false
+    t.jsonb "source", default: {}, null: false
     t.string "spam_reason"
     t.datetime "updated_at", null: false
     t.text "user_agent"
