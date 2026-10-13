@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/agent-inbox list|show <id>|tail — the agent mailbox, read through the board
+# API (docs/agents/system/agent-message-loop.md). The same rows as
+# /admin/agent_messages: soul, status, claim holder, attempts, reply, timeline.
+#
+#   bin/agent-inbox list [--soul avi] [--status claimed] [--channel discord] [--limit 50]
+#   bin/agent-inbox show 42          one message and its event timeline
+#   bin/agent-inbox tail [--soul avi] [--interval 5]   follow changes; Ctrl-C ends it
+require_relative "lib/cli_arg_guard"
+require_relative "lib/agent_mailbox"
+
+# Read-only, but held to the same rule as every bin/ script: --help answers
+# without a board call, and an unknown argument refuses.
+CliArgGuard.guard!(ARGV, program: "bin/agent-inbox", usage: AgentMailbox::InboxCli::USAGE,
+                         consequence: "nothing was read.",
+                         value: %w[--soul --status --channel --limit --interval], allow_positional: true)
+exit AgentMailbox::InboxCli.new(ARGV).run

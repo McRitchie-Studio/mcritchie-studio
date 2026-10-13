@@ -350,6 +350,9 @@ Rails.application.routes.draw do
     get "dashboard", to: "dashboard#show", as: :dashboard
     # The knowledge-capture front door's mail queue (team@mcritchie.studio).
     get "desk", to: "desk#index", as: :desk
+    # The agent mailbox: messages routed to souls, their claims and replies
+    # (docs/agents/system/agent-message-loop.md). Read-only.
+    resources :agent_messages, only: [:index, :show]
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
@@ -686,6 +689,18 @@ Rails.application.routes.draw do
       # tears down a worktree desk. It used to be a markdown table in the hub repo, which
       # a teardown run from the PRIMARY checkout wrote onto `main` and could never commit.
       # `sync` folds a whole `snapshot --write` registry in; `create` files one desk.
+      # The agent mailbox (AgentMessagesController): bin/heartbeat claims and
+      # completes, bin/agent-inbox reads. docs/agents/system/agent-message-loop.md.
+      resources :agent_messages, only: [:index, :show] do
+        collection do
+          get :next, action: :next_message
+          post :claim
+        end
+        member do
+          post :complete
+          post :release
+        end
+      end
       resources :desk_records, only: [:index, :create] do
         collection do
           post :sync

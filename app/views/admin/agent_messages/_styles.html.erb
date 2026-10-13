@@ -1,0 +1,19 @@
+<%# Status chips for the agent mailbox pages, light and dark. %>
+<style>
+  .am-chip { font-size: .7rem; padding: 0 .45rem; border-radius: .25rem; border: 1px solid rgb(148 163 184 / .5); white-space: nowrap; }
+  .am-status-received  { border-color: rgb(245 158 11 / .6); color: rgb(180 83 9); }
+  .am-status-claimed   { border-color: rgb(59 130 246 / .6); color: rgb(37 99 235); font-weight: 600; }
+  .am-status-completed { border-color: rgb(16 185 129 / .5); color: rgb(5 150 105); }
+  .am-status-dead      { border-color: rgb(220 38 38 / .6); color: rgb(220 38 38); }
+  .am-status-unrouted  { opacity: .7; }
+  .dark .am-status-received  { color: rgb(251 191 36); }
+  .dark .am-status-claimed   { color: rgb(147 197 253); }
+  .dark .am-status-completed { color: rgb(52 211 153); }
+  .dark .am-status-dead      { color: rgb(248 113 113); }
+  .am-reply-queued  { opacity: .8; }
+  .am-reply-skipped { border-color: rgb(245 158 11 / .6); }
+  .am-reply-failed  { border-color: rgb(220 38 38 / .6); color: rgb(220 38 38); }
+  .dark .am-reply-failed { color: rgb(248 113 113); }
+  .am-untrusted { border-left: 3px solid rgb(245 158 11 / .6); padding-left: .75rem; white-space: pre-wrap; word-break: break-word; }
+  .am-answer    { border-left: 3px solid rgb(16 185 129 / .5); padding-left: .75rem; white-space: pre-wrap; word-break: break-word; }
+</style>

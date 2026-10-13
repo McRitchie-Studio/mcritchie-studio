@@ -305,4 +305,5 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def duplicates_people_path = "/people/duplicates"
   def alt_videos_path = "/alt_videos"
   def error_logs_path = "/error_logs"
+  def admin_agent_messages_path = "/admin/agent_messages"
 end

@@ -48,7 +48,15 @@ module StringStates
   # Every other string column named stage, status or state, with the reason it
   # carries no CHECK. The census (bin/rails state_checks:census) prints the values
   # each one holds.
+  # The agent mailbox's two columns DO carry a CHECK, created with their table
+  # (db/migrate/20261013120000_create_agent_messages.rb). They sit here rather than
+  # in REGISTRY because REGISTRY must equal AddStateChecks' frozen list, and that
+  # migration ran before the table existed.
+  WITH_TABLE_CHECK = "CHECK <table>_<column>_known is created with the table (20261013120000), not by AddStateChecks, " \
+                     "whose frozen list REGISTRY must equal".freeze
   UNCONSTRAINED = {
+    "agent_messages.reply_status" => WITH_TABLE_CHECK,
+    "agent_messages.status" => WITH_TABLE_CHECK,
     "agent_actions.stage" => "a copy of the task's stage at the time of the action; history keeps retired stages",
     "agent_activities.stage" => "a copy of the task's stage at the time of the activity; history keeps retired stages",
     "agents.status" => NO_LIST,
