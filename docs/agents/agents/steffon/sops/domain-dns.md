@@ -111,7 +111,9 @@ of clean reports — a separate, deliberate change.
   `https://cloudflare-dns.com/dns-query?name=<domain>&type=A` (header
   `accept: application/dns-json`; `Status` 2 is SERVFAIL), and the registry's
   RDAP record (`https://rdap.org/domain/<domain>`, field
-  `secureDNS.delegationSigned`) for whether a DS is still published.
+  `secureDNS.delegationSigned`) for whether a DS is still published. rdap.org
+  answers 302 to the registry's own RDAP server, so follow it (`curl -sL`); a
+  bare `curl -s` hands `jq` an empty body and prints nothing.
 - **Paste the nameservers as soon as the DS clears.** An extra hour's wait buys
   nothing: a resolver still caching the DS fails the same way whichever
   nameservers answer.
@@ -166,7 +168,7 @@ for r in 1.1.1.1 8.8.8.8; do
   dig +short @$r MX <domain>; dig +short @$r TXT <domain>
   dig +short @$r TXT google._domainkey.<domain>; dig +short @$r TXT _dmarc.<domain>
 done
-curl -s https://rdap.org/domain/<domain> | jq '.secureDNS.delegationSigned'   # true: a DS is published
+curl -sL https://rdap.org/domain/<domain> | jq '.secureDNS.delegationSigned'   # true: a DS is published
 ```
 
 The `dig` lines are a record inventory only; health and DS status come from
