@@ -15,6 +15,10 @@ module DomainCutover
   class Guide
     DIR = File.join(__dir__, "guides")
     AUDIENCES = %w[alex client].freeze
+    # The console's name, which reads better than the registry's legal name
+    # ("Squarespace Domains II LLC").
+    LABELS = { "squarespace" => "Squarespace", "godaddy" => "GoDaddy", "namecheap" => "Namecheap",
+               "porkbun" => "Porkbun", "cloudflare" => "Cloudflare" }.freeze
     OUTAGE = "about 15-20 minutes: measured 2026-10-13, validating resolvers failed from " \
              "11:52 to 12:05 MDT and Google's caches flapped until 12:13"
 
@@ -28,7 +32,7 @@ module DomainCutover
       raise Abort, "--to must be one of #{AUDIENCES.join(', ')}" unless AUDIENCES.include?(to)
 
       @key = self.class.key_for(registrar_key)
-      @registrar = registrar.to_s.empty? ? "your registrar" : registrar
+      @registrar = LABELS[@key] || (registrar.to_s.empty? ? "your registrar" : registrar)
       @domain = domain
       @nameservers = nameservers
       @ds_present = ds_present

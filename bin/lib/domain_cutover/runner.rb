@@ -52,6 +52,8 @@ module DomainCutover
 
     # ── plan ─────────────────────────────────────────────────────────────────
     def plan(to: "alex", names: [])
+      raise Abort, "--to must be one of #{Guide::AUDIENCES.join(', ')}. Nothing ran." unless Guide::AUDIENCES.include?(to)
+
       state = @store.load(@domain)
       if state && state["phase"] == "finalized"
         raise Abort, "#{@domain} is already finalized (#{state['finalized_at']}); plan would disable its live redirect. Nothing ran."

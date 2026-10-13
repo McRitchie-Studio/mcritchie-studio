@@ -121,6 +121,11 @@ class DomainCutoverIntegrationTest < Minitest::Test
     assert_empty @world.writes
   end
 
+  def test_plan_refuses_an_unknown_audience_before_any_call
+    assert_raises(DomainCutover::Abort) { runner.plan(to: "bob") }
+    assert_empty @world.log
+  end
+
   def test_dry_run_prints_every_write_and_makes_none
     runner(dry_run: true).plan
 

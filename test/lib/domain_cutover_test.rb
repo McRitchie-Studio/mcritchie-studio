@@ -153,7 +153,8 @@ class DomainCutoverTest < Minitest::Test
 
   def test_guide_addresses_alex_or_the_client
     assert_includes guide("squarespace", ds: false), "YOUR TURN"
-    client = guide("squarespace", ds: true, to: "client", registrar: "Squarespace")
+    assert_includes guide("other", ds: false, registrar: "Gandi SAS"), "Sign in to Gandi SAS"
+    client = guide("squarespace", ds: true, to: "client", registrar: "Squarespace Domains II LLC")
     assert_includes client, "You keep owning example.com at Squarespace"
     assert_includes client, "tell McRitchie Studio"
     assert_raises(DC::Abort) { guide("squarespace", ds: false, to: "bob") }
