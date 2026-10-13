@@ -202,6 +202,7 @@ test("Pro and Team cards mark their lines, tease the next tier, and the full sta
   await expect(team.locator("[data-test='package-line'][data-status='soon'] [data-test='coming-soon']")).toHaveCount(2);
   await expect(pro.locator("[data-test='package-line'][data-lane='domain']")).toContainText("Premium Domain");
   await expect(pro.locator("[data-test='package-line'][data-lane='domain']")).toContainText("best-in-class speed & security");
+  await expect(pro.locator("[data-test='package-line'][data-lane='cto']")).toContainText("daily report on application health");
   await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });

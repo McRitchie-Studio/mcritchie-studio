@@ -126,6 +126,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "#{domain} [data-test='line-title']", text: "Premium Domain"
       assert_select "#{domain} [data-test='line-sub']", text: "best-in-class speed & security"
     end
+    %w[pro team].each do |key|
+      cto = "#{card(key)} [data-test='package-line'][data-lane='cto'][data-status='included']"
+      assert_select "#{cto} [data-test='line-mark'][data-mark='included']"
+      assert_select "#{cto} [data-test='line-sub']", text: "daily report on application health"
+    end
+    assert_no_match(/monthly architecture review/, response.body)
     builder_domain = "#{card('builder')} [data-test='package-line'][data-lane='domain']"
     assert_select "#{builder_domain} [data-test='line-title']", text: "Custom Domain"
     assert_select "#{builder_domain} [data-test='line-sub']", text: "www.your-app.com"
