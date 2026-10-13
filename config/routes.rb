@@ -12,6 +12,8 @@ Rails.application.routes.draw do
   get "packages", to: "packages#index", as: :packages
   # The full stack behind every tier: the software-by-tier matrix /packages links to.
   get "packages/stack", to: "packages#stack", as: :packages_stack
+  # What every plan connects to, and the add-on services we run (config/integrations.yml).
+  get "integrations", to: "integrations#index", as: :integrations
   # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build
