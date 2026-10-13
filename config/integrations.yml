@@ -36,6 +36,16 @@
 #             instead of the contact form; the guide's own button then goes to
 #             the form. One of Integration::GUIDES.
 #
+#   connects  optional: the ways this entry connects (keys of connection_methods
+#             below), in the order the card lists them
+#   abilities optional: what the entry can do once connected, each
+#               key    unique within the entry
+#               name   customer-facing, one short phrase
+#               via    the connection methods that unlock it; every one must be
+#                      in the entry's `connects`, or the load fails
+#               status live (default) or soon: an ability not delivered yet
+#                      says Coming soon, the same honesty rule as an entry
+#
 # The button is not configured: it follows from the group and the status, so a
 # Coming soon entry can never offer to connect. Every button opens the /contact
 # form prefilled, carrying {page, item, intent} into the submission's `source`.
@@ -43,6 +53,37 @@
 #   integrations, soon                "Get notified"  intent notify
 #   add_ons                           "Talk to us"    intent add_on
 #   custom                            "Talk to us"    intent custom
+# The ways an account can be connected (Mr. McRitchie, 2026-10-13): one
+# integration can offer several, and they differ in who they cover, the setup
+# they take and the upkeep they leave. A person's sign-in is one click but may
+# ask again; an admin's grant takes two minutes and then needs nothing.
+connection_methods:
+  sign_in:
+    label: Sign in
+    covers: One person
+    setup: One click
+    upkeep: May ask you to sign in again
+  admin_grant:
+    label: Admin approval
+    covers: Your whole company
+    setup: About 2 minutes in your admin console
+    upkeep: No upkeep
+  app_install:
+    label: Install our app
+    covers: Your workspace
+    setup: One install
+    upkeep: No upkeep
+  api_key:
+    label: API key
+    covers: What the key allows
+    setup: Paste it once
+    upkeep: Replace it when you rotate it
+  managed:
+    label: We run it
+    covers: Everything
+    setup: Nothing to do
+    upkeep: We handle it
+
 groups:
   - key: integrations
     title: Integrations
@@ -56,6 +97,13 @@ groups:
         status: live
         tier: pro
         tier_note: Drafting agent from Team
+        connects: [admin_grant, sign_in]
+        abilities:
+          - { key: draft_email, name: Draft email replies for you to send, via: [admin_grant] }
+          - { key: knowledge_base, name: A knowledge base from the Drive folders you choose, via: [admin_grant] }
+          # Live on our own hub (/admin/google_calendar, 2026-10-13); not yet a
+          # client's self-serve button, so Coming soon here.
+          - { key: read_calendar, name: Read your calendar to prepare for meetings, via: [sign_in], status: soon }
       - key: discord
         name: Discord
         icon: discord
@@ -63,17 +111,27 @@ groups:
         status: on_request
         tier: vibe
         guide: discord
+        connects: [app_install]
+        abilities:
+          - { key: post_updates, name: Post sign-ups, errors and agent updates, via: [app_install] }
+          - { key: answer_mentions, name: Answer when you @‑mention it, via: [app_install] }
       - key: github_org
         name: GitHub
         icon: github
         blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
         status: on_request
         tier: enterprise
+        connects: [app_install]
+        abilities:
+          - { key: host_code, name: Keep your app's code in your organization, via: [app_install] }
       - key: slack
         name: Slack
         icon: slack
         blurb: The same notifications, and your agent's updates, in your Slack workspace.
         status: soon
+        connects: [app_install]
+        abilities:
+          - { key: post_updates, name: Post notifications and agent updates, via: [app_install], status: soon }
 
   - key: add_ons
     title: Add-on services
@@ -87,6 +145,7 @@ groups:
         status: live
         price: "$25/month + $15/user/month"
         price_note: Google Business Starter seat included
+        connects: [managed]
       - key: payments
         name: Payments in your app
         icon: "💳"
@@ -113,6 +172,7 @@ groups:
         icon: stripe
         blurb: Card payments into your own Stripe account.
         status: soon
+        connects: [sign_in]
       - key: crypto
         name: Crypto and wallets
         icon: solana
@@ -133,6 +193,7 @@ groups:
         icon: "🔌"
         blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
         status: soon
+        connects: [sign_in, api_key]
       - key: enterprise_extras
         name: White label, domains and compliance
         icon: "🛡️"

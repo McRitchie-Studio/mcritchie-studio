@@ -374,6 +374,13 @@ Rails.application.routes.draw do
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
     # Deletes the stored connection (the button on the standing page).
     delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
+
+    # The Google Calendar connection (sign_in method, config/integrations.yml):
+    # the standing page, Connect, Google's callback, and Disconnect.
+    get "google_calendar", to: "google_calendar#show", as: :google_calendar
+    get "google_calendar/connect",  to: "google_calendar#connect",  as: :google_calendar_connect
+    get "google_calendar/callback", to: "google_calendar#callback", as: :google_calendar_callback
+    delete "google_calendar/connection", to: "google_calendar#disconnect", as: :google_calendar_disconnect
   end
 
   # HTML

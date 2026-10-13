@@ -15,6 +15,19 @@ class Integration
   PAGE = "integrations".freeze
   # Entries with a guide page at /integrations/<guide> (IntegrationsController).
   GUIDES = %w[discord].freeze
+  # An ability is delivered today (live) or not yet (soon), like an entry.
+  ABILITY_STATUSES = %w[live soon].freeze
+
+  # One way a client's account is connected (config `connection_methods`):
+  # who it covers, the setup it takes, and the upkeep it leaves. Two ways can
+  # unlock the same ability with very different upkeep: a person's sign-in may
+  # ask again, an admin's grant does not.
+  ConnectionMethod = Struct.new(:key, :label, :covers, :setup, :upkeep, keyword_init: true)
+
+  # One thing an entry can do once connected, and the ways that unlock it.
+  Ability = Struct.new(:key, :name, :via, :status, keyword_init: true) do
+    def soon? = status == "soon"
+  end
 
   Group = Struct.new(:key, :title, :kicker, :summary, :entries, keyword_init: true) do
     def add_ons? = key == "add_ons"
@@ -22,8 +35,16 @@ class Integration
   end
 
   Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note, :guide,
-                     keyword_init: true) do
+                     :connects, :abilities, :connection_methods, keyword_init: true) do
     def live? = status == "live"
+
+    # Is every ability this method unlocks still Coming soon? Then the way is
+    # offered but not delivered, and the card says so. A method no ability
+    # names is judged by the entry's own status.
+    def method_soon?(key)
+      using = Array(abilities).select { |ability| ability.via.include?(key) }
+      using.empty? ? soon? : using.all?(&:soon?)
+    end
     def soon? = status == "soon"
     def on_request? = status == "on_request"
 
@@ -78,21 +99,41 @@ class Integration
 
   class << self
     def groups
-      YAML.safe_load_file(CONFIG).fetch("groups").map do |group|
-        entries = group.fetch("entries").map { |attrs| build_entry(group["key"], attrs) }
+      methods = connection_methods
+      config.fetch("groups").map do |group|
+        entries = group.fetch("entries").map { |attrs| build_entry(group["key"], attrs, methods) }
         Group.new(key: group["key"], title: group["title"], kicker: group["kicker"], summary: group["summary"], entries: entries)
       end
     end
 
     def entries = groups.flat_map(&:entries)
 
+    # Every connection method the config defines, keyed by its key.
+    def connection_methods
+      config.fetch("connection_methods").to_h do |key, attrs|
+        [ key, ConnectionMethod.new(key: key, **attrs.slice(*ConnectionMethod.members.map(&:to_s).without("key")).symbolize_keys) ]
+      end
+    end
+
+    def connection_method(key) = connection_methods.fetch(key.to_s)
+
     def find(key) = entries.find { |entry| entry.key == key.to_s }
 
     private
 
-    def build_entry(group_key, attrs)
-      entry = Entry.new(group: group_key, **attrs.slice(*Entry.members.map(&:to_s).without("group")).symbolize_keys)
+    def config = YAML.safe_load_file(CONFIG)
+
+    def build_entry(group_key, attrs, methods = connection_methods)
+      entry = Entry.new(group: group_key, **attrs.slice(*Entry.members.map(&:to_s).without("group", "connection_methods")).symbolize_keys)
+      entry.connects = Array(entry.connects).map(&:to_s)
+      entry.abilities = Array(entry.abilities).map do |ability|
+        Ability.new(key: ability["key"].to_s, name: ability["name"], via: Array(ability["via"]).map(&:to_s),
+                    status: ability["status"] || "live")
+      end
       validate!(entry)
+      validate_connections!(entry, methods)
+      # The ways this entry connects, as ConnectionMethod rows, in the entry's order.
+      entry.connection_methods = entry.connects.map { |key| methods.fetch(key) }
       entry
     end
 
@@ -102,6 +143,25 @@ class Integration
       raise ArgumentError, "#{entry.key}: unknown status #{entry.status.inspect}" unless STATUSES.include?(entry.status)
       raise ArgumentError, "#{entry.key}: unknown guide #{entry.guide.inspect}" if entry.guide.present? && !GUIDES.include?(entry.guide)
       raise ArgumentError, "#{entry.key}: unknown tier #{entry.tier.inspect}" if entry.tier.present? && WorkspacePackage.find(entry.tier).nil?
+    end
+
+    # An ability can never promise a way in the entry does not offer: every
+    # method an entry names is defined, and every ability names at least one
+    # of the entry's own methods and nothing else.
+    def validate_connections!(entry, methods)
+      unknown = entry.connects - methods.keys
+      raise ArgumentError, "#{entry.key}: unknown connection method #{unknown.join(', ')}" if unknown.any?
+
+      keys = entry.abilities.map(&:key)
+      raise ArgumentError, "#{entry.key}: duplicate ability keys" unless keys.uniq.size == keys.size
+
+      entry.abilities.each do |ability|
+        raise ArgumentError, "#{entry.key}.#{ability.key}: unknown status #{ability.status.inspect}" unless ABILITY_STATUSES.include?(ability.status)
+        raise ArgumentError, "#{entry.key}.#{ability.key}: names no connection method" if ability.via.empty?
+
+        missing = ability.via - entry.connects
+        raise ArgumentError, "#{entry.key}.#{ability.key}: #{missing.join(', ')} is not a way #{entry.key} connects" if missing.any?
+      end
     end
   end
 end
