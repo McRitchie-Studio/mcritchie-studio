@@ -78,7 +78,8 @@ class ClientLogoTest < ActiveSupport::TestCase
 
   test "for_all reads every brand kit in one query" do
     queries = 0
-    counter = ->(*, payload) { queries += 1 if payload[:sql].include?("brand_kits") }
+    # Reads of the table only: a cold run also introspects brand_kits' columns (SCHEMA), which is not a read.
+    counter = ->(*, payload) { queries += 1 if payload[:name] != "SCHEMA" && payload[:sql].include?('FROM "brand_kits"') }
     ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { ClientLogo.for_all(CLIENTS) }
 
     assert_equal 1, queries
