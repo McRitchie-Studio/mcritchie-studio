@@ -34,7 +34,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] prices: Vibe free, Builder $100, Pro $500, Team $1,500, Enterprise custom; 10% off billed annually" do
+  test "[unit] prices: Vibe free, Builder $100, Pro $500, Team $900, Enterprise custom; 10% off billed annually" do
     vibe, builder, pro, team, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
 
     assert vibe.free?
@@ -42,7 +42,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal 10, WorkspacePackage.annual_discount_percent
     assert_equal [ 100, 1080, 90 ], [ builder.price_monthly, builder.annual_price, builder.annual_monthly_equivalent ]
     assert_equal [ 500, 5400, 450 ], [ pro.price_monthly, pro.annual_price, pro.annual_monthly_equivalent ]
-    assert_equal [ 1500, 16_200, 1350 ], [ team.price_monthly, team.annual_price, team.annual_monthly_equivalent ]
+    assert_equal [ 900, 9720, 810 ], [ team.price_monthly, team.annual_price, team.annual_monthly_equivalent ]
     refute enterprise.priced?
     assert_equal "Custom", enterprise.price_label
     assert_nil enterprise.annual_price

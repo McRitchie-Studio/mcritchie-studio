@@ -30,7 +30,7 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   const cards = page.locator("[data-test='package-card']");
   await expect(cards).toHaveCount(4);
   await expect(cards.locator("h2")).toHaveText(["Vibe", "Builder", "Pro", "Team"]);
-  await expect(page.locator("[data-test='package-card'][data-package='team'] [data-test='price-monthly']")).toContainText("$1,500");
+  await expect(page.locator("[data-test='package-card'][data-package='team'] [data-test='price-monthly']")).toContainText("$900");
 
   // The cards line up at desktop width: equal heights, and every CTA and
   // first group heading at the same height, however the taglines wrap.
