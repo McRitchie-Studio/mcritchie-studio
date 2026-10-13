@@ -61,7 +61,8 @@ post carries the row's `reply_nonce` with Discord's `enforce_nonce`, so a retrie
 post returns the existing message. Replies reference the original message, lead
 with the soul's name (`**Avi** · …`), and parse no mentions.
 `POST /api/v1/agent_messages/:id/release {worker, reason}` gives a message back;
-the attempt it used still counts.
+the attempt it used still counts, so a give-back on the third attempt
+dead-letters it.
 
 **Auth.** The board's own (`Api::V1::BaseController`): an agent session or the
 shared token, never a new secret. A session acts only for its own soul (an admin
