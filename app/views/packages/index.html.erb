@@ -119,7 +119,7 @@
           <% end %>
 
           <% brands = package.card_brands(previous) %>
-          <%# Always rendered, so every card fills its sixth row track. %>
+          <%# Always rendered, so every card fills its last row track (the logos). %>
           <div class="pt-5">
             <% if brands.any? %>
               <div data-test="package-powered-by" data-package="<%= package.key %>">

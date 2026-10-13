@@ -33,9 +33,10 @@
 #   comp            the real client the tier was worked back from. Internal: the
 #                   cards do not name clients; the admin SOP map does
 #   card_groups     the card_lanes groups this card shows, in order
-#   lanes           lane key => { sub: one muted line, status: included (the
-#                   default) | missing | soon }. A lane in a shown group that is
-#                   not listed is missing. Keep the stack rows below consistent.
+#   lanes           lane key => { title: optional, this tier's own title for the
+#                   lane (may carry %{tier}), sub: one muted line, status: included
+#                   (the default) | missing | soon }. A lane in a shown group that
+#                   is not listed is missing. Keep the stack rows below consistent.
 #   highlights      the Talk to us line's inclusions (Enterprise has no card)
 #   cta             label + action: `build` (/build), `schedule` (the studio's
 #                   booking calendar) or `enterprise_booking` (enterprise_booking_url
@@ -113,7 +114,10 @@ category_from:
 # on a row shared across the cards so it reads like a table. `title` may carry
 # %{tier} ("Pro Host"). A card shows the groups in its `card_groups`; in them, a
 # lane its `lanes` omits (or marks `missing`) renders as a muted cross "(In
-# <first tier that has it>)", computed, never hand-written.
+# <first tier that has it>)", computed, never hand-written. A tier may retitle a
+# lane in its own `lanes` entry (Pro and Team's "Premium Domain"). `feature`
+# names the /packages/stack row a lane stands for; a lane any card marks `soon`
+# must name one, and that row must be `planned` (the model test holds both).
 card_lanes:
   - { group: Application, key: app, title: Custom Web App }
   - { group: Application, key: host_storage, title: "%{tier} Host & Storage" }
@@ -126,8 +130,8 @@ card_lanes:
   - { group: Marketing, key: email_marketing, title: Email marketing }
   - { group: Marketing, key: content, title: Content sprints }
   - { group: Marketing, key: warmup, title: Launch warm-up }
-  - { group: Marketing, key: funnels, title: Funnels built for you }
-  - { group: Marketing, key: social, title: Social posting }
+  - { group: Marketing, key: funnels, title: Funnels built for you, feature: Funnel generation }
+  - { group: Marketing, key: social, title: Social posting, feature: Social posting }
 
 packages:
   - key: vibe
@@ -161,7 +165,7 @@ packages:
     lanes:
       app: { sub: 4 build requests a month }
       host_storage: { sub: "background jobs, 60 GB" }
-      domain: { sub: your-app.com on Cloudflare }
+      domain: { title: Premium Domain, sub: best-in-class speed & security }
       workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: monthly architecture review }
@@ -176,7 +180,7 @@ packages:
     lanes:
       app: { sub: 6 build requests a month }
       host_storage: { sub: "background jobs, 132 GB" }
-      domain: { sub: your-app.com on Cloudflare }
+      domain: { title: Premium Domain, sub: best-in-class speed & security }
       workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: monthly architecture review }

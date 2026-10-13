@@ -23,9 +23,11 @@ class WorkspacePackage
   # soon: not delivered yet (Coming soon).
   CARD_STATUSES = %w[included missing soon].freeze
 
-  # One swim lane every card lists (config `card_lanes`): its group, its key and
-  # its title, which may name the tier ("%{tier} Host").
-  Lane = Struct.new(:group, :key, :title, keyword_init: true)
+  # One swim lane every card lists (config `card_lanes`): its group, its key,
+  # its title, which may name the tier ("%{tier} Host"), and optionally the
+  # /packages/stack row it stands for (`feature`), which a Coming soon lane must
+  # name so the card and the stack cannot drift.
+  Lane = Struct.new(:group, :key, :title, :feature, keyword_init: true)
 
   # One lane as one card draws it: the title for this tier, one muted line,
   # the status, and for a missing lane the tier that has it (`in_tier`).
@@ -206,7 +208,7 @@ class WorkspacePackage
 
   # Every lane, in group then config order: [[group, [Lane, ...]], ...].
   def self.card_lanes
-    lanes = config.fetch("card_lanes", []).map { |attrs| Lane.new(**attrs.slice("group", "key", "title").symbolize_keys) }
+    lanes = config.fetch("card_lanes", []).map { |attrs| Lane.new(**attrs.slice("group", "key", "title", "feature").symbolize_keys) }
     CARD_GROUPS.filter_map do |group|
       in_group = lanes.select { |lane| lane.group == group }
       [ group, in_group ] if in_group.any?
@@ -226,11 +228,14 @@ class WorkspacePackage
   end
 
   # The lane as this card draws it. A missing lane names the first card that
-  # has it (included or Coming soon), computed from the ladder.
+  # has it (included or Coming soon), computed from the ladder. A tier's
+  # `lanes` entry may override the lane's title ("Premium Domain" on Pro and
+  # Team); the row stays the same lane, so it stays aligned across the cards.
   def card_line(lane)
     status = lane_status(lane.key)
     in_tier = status == "missing" ? self.class.cards.find { |card| card.lane_status(lane.key) != "missing" } : nil
-    CardLine.new(lane: lane, title: format(lane.title, tier: name), sub: @lanes.dig(lane.key.to_s, "sub"),
+    title = @lanes.dig(lane.key.to_s, "title") || lane.title
+    CardLine.new(lane: lane, title: format(title, tier: name), sub: @lanes.dig(lane.key.to_s, "sub"),
                  status: status, in_tier: in_tier)
   end
 
