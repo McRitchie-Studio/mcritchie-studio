@@ -75,7 +75,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     click_on "Request the Discord bot"
 
     assert_current_path(/\A\/contact\?/)
-    assert_field "contact_submission[message]", with: "I'd like to connect Discord notifications."
+    assert_field "contact_submission[message]", with: "I'd like to connect Discord."
     hidden = all("[data-test='contact-source']", visible: :all).to_h { |input| [ input["data-source-key"], input.value ] }
     assert_equal({ "page" => "integrations/discord", "item" => "discord", "intent" => "connect", "ref" => "/integrations/discord" }, hidden)
   end

@@ -57,7 +57,7 @@ groups:
         tier: pro
         tier_note: Drafting agent from Team
       - key: discord
-        name: Discord notifications
+        name: Discord
         icon: discord
         blurb: "Two-way: our bot posts sign-ups, errors and your agents' updates in your server, and answers when you @-mention it."
         status: on_request
@@ -95,8 +95,11 @@ groups:
       - key: extra_builds
         name: Extra build requests
         icon: "🛠️"
-        blurb: More features or a second app, beyond what your plan includes each month.
+        # Pro and Team promise an Always-on CTO with no monthly cap, so this
+        # add-on is for Builder (Mr. McRitchie, 2026-10-13).
+        blurb: More changes than Builder's several a month, or a second app.
         status: on_request
+        tier: builder
 
   - key: custom
     title: Talk to us

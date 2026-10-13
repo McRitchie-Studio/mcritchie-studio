@@ -416,7 +416,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     get contact_form_path(source: { page: "integrations/discord", item: "discord", intent: "connect" }),
         headers: { "Referer" => "http://www.example.com/integrations/discord" }
 
-    assert_select "textarea[name='contact_submission[message]']", text: "I'd like to connect Discord notifications."
+    assert_select "textarea[name='contact_submission[message]']", text: "I'd like to connect Discord."
     hidden = css_select("[data-test='contact-source']").to_h { |input| [ input["data-source-key"], input["value"] ] }
     assert_equal({ "page" => "integrations/discord", "item" => "discord", "intent" => "connect", "ref" => "/integrations/discord" }, hidden)
   end

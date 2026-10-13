@@ -54,6 +54,15 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] Extra build requests is a Builder add-on: From Builder, its blurb, Quote and Talk to us" do
+    get integrations_path
+
+    assert_select "#{entry('extra_builds')} [data-test='entry-tier']", text: "From Builder"
+    assert_select "#{entry('extra_builds')} [data-test='entry-blurb']", text: "More changes than Builder's several a month, or a second app."
+    assert_select "#{entry('extra_builds')} [data-test='entry-price']", text: /Quote/
+    assert_select "#{entry('extra_builds')} [data-test='entry-cta']", text: "Talk to us"
+  end
+
   test "[component] the add-on is named Managed Workspace, keeps the Google logo and names Google Workspace" do
     get integrations_path
 
@@ -66,6 +75,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
   test "[component] the Discord card says two-way, stays On request, and opens its guide" do
     get integrations_path
 
+    assert_select "#{entry('discord')} [data-test='entry-name']", text: "Discord"
     assert_select "#{entry('discord')} [data-test='entry-blurb']", text: /two-way/i
     assert_select "#{entry('discord')} [data-test='on-request']"
     assert_select "#{entry('discord')} [data-test='entry-cta'][href='#{integrations_discord_path}']", text: "Connect"

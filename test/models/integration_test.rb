@@ -35,6 +35,7 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "Every plan", Integration.find(:discord).availability
     assert_equal "From Pro", Integration.find(:google_workspace_connect).availability
     assert_equal "From Enterprise", Integration.find(:github_org).availability
+    assert_equal "From Builder", Integration.find(:extra_builds).availability
     assert_nil Integration.find(:slack).availability
   end
 
@@ -79,6 +80,8 @@ class IntegrationTest < ActiveSupport::TestCase
 
   test "[unit] Discord has a guide page, whose button carries its own source" do
     discord = Integration.find(:discord)
+    assert_equal "Discord", discord.name
+    assert_equal "I'd like to connect Discord.", discord.contact_message
     assert_equal "discord", discord.guide
     assert_equal({ page: "integrations/discord", item: "discord", intent: "connect" }, discord.guide_contact_source)
     assert_raises(ArgumentError) { Integration.send(:build_entry, "integrations", { "key" => "x", "status" => "live", "guide" => "teams" }) }
