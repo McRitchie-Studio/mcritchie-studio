@@ -156,7 +156,7 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
 
     out = StringIO.new
     later = agent_message!(soul: "xan", content: "board?")
-    tail = AgentMailbox::InboxCli.new(%w[tail --interval 0], client: @client, out: out, sleeper: ->(_) {}, iterations: 1)
+    tail = AgentMailbox::InboxCli.new(%w[tail --interval 0], client: @client, out: out, sleeper: ->(_) { }, iterations: 1)
     later.update_column(:updated_at, 1.minute.from_now)
     tail.run
     assert_match(/##{later.id} received\s+xan/, out.string)
