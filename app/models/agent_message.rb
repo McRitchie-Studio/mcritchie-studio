@@ -163,7 +163,8 @@ class AgentMessage < ApplicationRecord
   end
 
   # A worker gives the message back: it returns to `received` for the next claim.
-  # The attempt it used still counts toward MAX_ATTEMPTS.
+  # The attempt it used still counts toward MAX_ATTEMPTS: a give-back on the last
+  # attempt dead-letters, since `received` rows are claimable at any attempt count.
   def release!(worker:, reason: nil, actor: nil, now: Time.current)
     worker = worker.to_s.strip
     self.class.transaction do
@@ -172,8 +173,13 @@ class AgentMessage < ApplicationRecord
         raise Refused.new(holder_refusal("release"), code: "NOT_HOLDER")
       end
 
-      update!(status: "received", claimed_by: nil, claimed_at: nil, lease_expires_at: nil)
+      exhausted = attempts >= MAX_ATTEMPTS
+      update!(status: exhausted ? "dead" : "received", claimed_by: nil, claimed_at: nil, lease_expires_at: nil)
       record!("released", actor: actor || soul_slug, detail: { "worker" => worker, "reason" => reason.presence }.compact)
+      if exhausted
+        record!("dead_lettered", actor: "system",
+                                 detail: { "reason" => "given back on attempt #{attempts} of #{MAX_ATTEMPTS}" })
+      end
     end
     self
   end

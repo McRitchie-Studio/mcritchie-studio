@@ -147,6 +147,17 @@ class AgentMessageTest < ActiveSupport::TestCase
     assert_equal 2, AgentMessage.claim!(soul: "avi", worker: "w2").message.attempts
   end
 
+  test "a release on the last attempt dead-letters: give-backs cannot loop past the cap" do
+    message = agent_message!
+    AgentMessage::MAX_ATTEMPTS.times do |i|
+      AgentMessage.claim!(soul: "avi", worker: "w#{i}").message.release!(worker: "w#{i}", reason: "claude failed")
+    end
+
+    assert_equal "dead", message.reload.status
+    assert_equal %w[released dead_lettered], message.events.last(2).map(&:kind)
+    assert_nil AgentMessage.claim!(soul: "avi", worker: "late").message
+  end
+
   test "a claim needs a worker and a soul" do
     assert_equal "WORKER_REQUIRED", assert_raises(AgentMessage::Refused) { AgentMessage.claim!(soul: "avi", worker: " ") }.code
     assert_equal "SOUL_REQUIRED", assert_raises(AgentMessage::Refused) { AgentMessage.claim!(soul: "", worker: "w") }.code
