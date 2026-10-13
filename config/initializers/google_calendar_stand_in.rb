@@ -3,7 +3,9 @@
 # THE STAND-IN FOR GOOGLE when the Calendar connection is walked without a
 # Google OAuth client: the e2e lane (it rides the lane's E2E_FAKE_VIDEO_STORAGE
 # marker, as the TikTok stand-in does) and a local demo
-# (GOOGLE_CALENDAR_STAND_IN=1). NEVER in production.
+# (GOOGLE_CALENDAR_STAND_IN=1, development only: a desk's .env also loads under
+# the test environment, where the flag would hijack the unit tests). NEVER in
+# production.
 #
 # Google's sign-in comes straight back to the callback, the code exchange
 # answers a synthetic grant for stand-in@example.com, and the events read
@@ -45,6 +47,6 @@ module GoogleCalendarStandIn
   end
 end
 
-if !Rails.env.production? && (ENV["GOOGLE_CALENDAR_STAND_IN"] == "1" || (Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"))
+if (Rails.env.development? && ENV["GOOGLE_CALENDAR_STAND_IN"] == "1") || (Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1")
   Rails.application.config.to_prepare { GoogleCalendarStandIn.install! }
 end
