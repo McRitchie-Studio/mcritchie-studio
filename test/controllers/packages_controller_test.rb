@@ -116,7 +116,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{soon} [data-test='line-mark'][data-mark='soon'][aria-label='Coming soon']", 2
     assert_select "#{soon} [data-test='line-sub'] [data-test='coming-soon']", 2, "the tag sits on the subtext line"
     assert_select "#{soon} [data-test='line-title'] [data-test='coming-soon']", 0
-    { "pro" => [ "Social Outreach", "posts you approve" ], "team" => [ "CMO-Managed Social", "strategy and posting" ] }.each do |key, (title, sub)|
+    { "pro" => [ "Social Outreach", "posts you approve" ], "team" => [ "CMO-Managed Social", "strategy & posting" ] }.each do |key, (title, sub)|
       social = "#{card(key)} [data-test='package-line'][data-lane='social'][data-status='soon']"
       assert_select "#{social} [data-test='line-mark'][data-mark='soon']", 1, key
       assert_select "#{social} [data-test='line-title']", text: title

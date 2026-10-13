@@ -199,7 +199,7 @@ packages:
       content: { sub: "short-form, tested at volume" }
       warmup: { sub: new domains ramped safely }
       funnels: { status: soon }
-      social: { title: CMO-Managed Social, sub: strategy and posting, status: soon }
+      social: { title: CMO-Managed Social, sub: strategy & posting, status: soon }
     cta: { label: Talk to us about Team, action: schedule }
   - key: enterprise
     name: Enterprise

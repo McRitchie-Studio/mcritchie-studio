@@ -464,7 +464,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal [ "CMO-Managed Social", "Funnels built for you" ], soon
     social = ->(key) { WorkspacePackage.find(key).card_lines.find { |l| l.key == "social" } }
     assert_equal [ "Social Outreach", "posts you approve", "soon" ], [ social.call(:pro).title, social.call(:pro).sub, social.call(:pro).status ]
-    assert_equal [ "CMO-Managed Social", "strategy and posting", "soon" ], [ social.call(:team).title, social.call(:team).sub, social.call(:team).status ]
+    assert_equal [ "CMO-Managed Social", "strategy & posting", "soon" ], [ social.call(:team).title, social.call(:team).sub, social.call(:team).status ]
     assert_equal "Social Outreach", social.call(:pro).lane.feature
     refute WorkspacePackage.card_lanes.flat_map(&:last).any? { |lane| lane.title == "Social posting" }, "folded into Social Outreach"
     refute WorkspacePackage.card_lanes.any? { |group, _| group == "Platform" }, "the Platform group left the cards"
