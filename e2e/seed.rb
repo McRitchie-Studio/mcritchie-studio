@@ -1698,3 +1698,31 @@ uniform_look = Appearance.create!(person_slug: uniform_person.slug, slug: "look-
                                       hosted_url: "https://assets.example.test/uniform-photos/uniformfixture/#{i}.jpg",
                                       title: "Comets at Rockets, week #{i + 1}", position: i, provider: "fixture")
 end
+
+# The agent mailbox (e2e/agent_messages_admin.spec.js): one message per status
+# the page filters on, for two souls, and one with a full timeline and a posted
+# reply. Ids are fake snowflakes; nothing here talks to Discord.
+AgentMessage.delete_all # its events cascade
+AgentMessageCursor.delete_all
+mailbox_guild = "910000000000000001"
+mailbox_channel = "910000000000000002"
+mailbox = lambda do |ext, soul:, status:, content:, **attrs|
+  AgentMessage.create!({ channel: "discord", external_id: ext, guild_id: mailbox_guild, channel_ref: mailbox_channel,
+                         thread_key: "discord:#{mailbox_channel}:#{ext}", author_ref: "500", author_name: "Alex",
+                         content: content, soul_slug: soul, routed_by: soul ? "role" : "none", status: status,
+                         sent_at: 10.minutes.ago }.merge(attrs))
+end
+answered = mailbox.call("e2e-mail-1", soul: "avi", status: "received", content: "@Avi is the e2e release green?")
+answered.record!("received", actor: "discord-poll")
+answered.record!("routed", actor: "router", detail: { "soul" => "avi", "routed_by" => "role" })
+AgentMessage.claim!(soul: "avi", worker: "e2e-laptop-101-abc123")
+answered.reload.update!(status: "completed", completed_at: Time.current, lease_expires_at: nil,
+                        response_text: "rel-e2e is green and waiting on QA.", action_summary: "ran `bin/release status` (exit 0)",
+                        reply_nonce: "agentmsg-e2e", reply_external_id: "910000000000000099", reply_posted_at: Time.current)
+answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-101-abc123" })
+answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
+mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",
+             claimed_by: "e2e-laptop-202-def456", claimed_at: Time.current, lease_expires_at: 8.minutes.from_now, attempts: 1)
+mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Xan what is building on the board?")
+mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
+puts "Seeded: #{AgentMessage.count} agent messages"
