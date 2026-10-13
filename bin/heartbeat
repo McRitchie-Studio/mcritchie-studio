@@ -17,43 +17,34 @@
 #
 # Exit: 0 done (answered or idle) · 1 a message was given back or the board refused · 2 usage.
 require "shellwords"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_mailbox"
 
-usage = "Usage: bin/heartbeat <soul> --channel discord [--once] [--worker ID] [--dry-run]"
-args = ARGV.dup
-soul = nil
-opts = { channel: "discord", once: false, dry_run: false, worker: nil }
-until args.empty?
-  arg = args.shift
-  case arg
-  when "--channel" then opts[:channel] = args.shift.to_s
-  when "--worker" then opts[:worker] = args.shift.to_s
-  when "--once" then opts[:once] = true
-  when "--dry-run" then opts[:dry_run] = true
-  when "-h", "--help" then puts usage; exit 0
-  else
-    if arg.start_with?("-") || soul
-      warn "bin/heartbeat: unknown argument #{arg}\n#{usage}"
-      exit 2
-    end
-    soul = arg.strip.downcase
-  end
-end
-if soul.nil? || soul.empty? || opts[:worker]&.empty?
-  warn usage
+USAGE = "Usage: bin/heartbeat <soul> --channel discord [--once] [--worker ID] [--dry-run]"
+
+# Every argument is accounted for BEFORE the first claim: `--help` prints this and
+# exits, and an unknown argument refuses, so a probe never claims a message.
+parsed = CliArgGuard.guard!(ARGV, program: "bin/heartbeat", usage: USAGE,
+                                  consequence: "nothing was claimed or answered.",
+                                  bool: %w[--once --dry-run], value: %w[--channel --worker], allow_positional: true)
+soul = parsed.positionals.first.to_s.strip.downcase
+channel = parsed.values["--channel"].last || "discord"
+worker = parsed.values["--worker"].last
+if soul.empty? || parsed.positionals.size > 1 || worker&.strip&.empty?
+  warn USAGE
   exit 2
 end
-unless opts[:channel] == "discord"
-  warn "bin/heartbeat: only --channel discord exists today (got #{opts[:channel].inspect})"
+unless channel == "discord"
+  warn "bin/heartbeat: only --channel discord exists today (got #{channel.inspect}); nothing was claimed."
   exit 2
 end
 
 cmd = ENV["HEARTBEAT_CLAUDE_CMD"].to_s.strip
 claude_cmd = cmd.empty? ? AgentMailbox::Heartbeat::DEFAULT_CLAUDE_CMD : Shellwords.split(cmd)
 
-heartbeat = AgentMailbox::Heartbeat.new(soul: soul, client: AgentMailbox::Client.new(soul: soul),
-                                        channel: opts[:channel], once: opts[:once], worker: opts[:worker],
-                                        dry_run: opts[:dry_run], claude_cmd: claude_cmd)
+heartbeat = AgentMailbox::Heartbeat.new(soul: soul, client: AgentMailbox::Client.new(soul: soul), channel: channel,
+                                        once: parsed.bools.include?("--once"), worker: worker,
+                                        dry_run: parsed.bools.include?("--dry-run"), claude_cmd: claude_cmd)
 begin
   _answered, failed = heartbeat.run
   exit(failed ? 1 : 0)
