@@ -151,7 +151,7 @@ module DomainCutover
 
       row = @heroku.domain(@app, @domain)
       acm = row && row["acm_status"]
-      if bare && acm != Heroku::ISSUED && row
+      if bare && public_cf && acm != Heroku::ISSUED && row
         apply(@heroku.acm_refresh(@app)) { acm = @heroku.domain(@app, @domain)&.dig("acm_status") }
       end
       checks << check("Heroku ACM for #{@domain}", acm == Heroku::ISSUED, acm.to_s.empty? ? "no domain row" : acm)

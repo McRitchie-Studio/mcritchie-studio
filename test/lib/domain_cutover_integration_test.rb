@@ -143,6 +143,7 @@ class DomainCutoverIntegrationTest < Minitest::Test
     runner.plan
     refute runner.verify
     assert_nil state["ns_seen_at"]
+    refute(@world.writes.any? { |_, url| url.end_with?("/acm") }, "no ACM refresh while the old zone answers")
     assert_match(/DNSSEC off/, @out.string)
   end
 
