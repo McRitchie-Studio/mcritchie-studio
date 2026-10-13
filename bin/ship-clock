@@ -14,18 +14,26 @@
 #       fixed wait and rework.
 #   bin/ship-clock record <slug> [report flags] [--note TEXT] [--ledger PATH]
 #       `report`, then append (or replace) the run's row in the ledger:
-#       docs/agents/ledgers/ship-clock.csv in the tree you stand in.
+#       docs/agents/ledgers/ship-clock.csv in the mcritchie-studio tree you stand
+#       in. Outside one it refuses unless --ledger names the file.
+#
+# --at and --t0 take only a full ISO 8601 timestamp with a zone
+# (2026-10-13T08:15:00-06:00 or 2026-10-13T14:15:00Z). Every gh call is bounded by
+# SHIP_CLOCK_GH_TIMEOUT seconds (default 60); a timeout fails like a failed read.
 #
 # The SOP is docs/agents/agents/xan/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
 
 require "optparse"
 require "fileutils"
+require "open3"
 require_relative "lib/ship_clock"
 require_relative "lib/task_board"
 require_relative "lib/repo_root"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 LEDGER_RELATIVE = "docs/agents/ledgers/ship-clock.csv"
+GH_TIMEOUT = Float(ENV.fetch("SHIP_CLOCK_GH_TIMEOUT", "60"))
+ISO_HINT = "a full ISO 8601 timestamp with a date and a zone, e.g. 2026-10-13T08:15:00-06:00"
 USAGE = "usage: bin/ship-clock start <slug> [--at ISO] [--estimated] [--restamp]\n" \
         "       bin/ship-clock report <slug> [--json] [--t0 ISO] [--t0-estimated] [--log PATH ...]\n" \
         "       bin/ship-clock record <slug> [report flags] [--note TEXT] [--ledger PATH]"
@@ -58,6 +66,9 @@ command = ARGV.shift
 slug = ARGV.shift
 die!("unexpected argument(s): #{ARGV.join(" ")}\n#{USAGE}", code: 2) unless ARGV.empty?
 die!(USAGE, code: 2) unless %w[start report record].include?(command) && slug && !slug.strip.empty?
+unless ShipClock.valid_slug?(slug)
+  die!("#{slug.inspect} is not a task slug (lowercase letters, digits, single - or _ separators)", code: 2)
+end
 
 def token
   @token ||= TaskBoard.handed_token ||
@@ -75,11 +86,29 @@ def board_get(path)
   TaskBoard.parse_body!(res)
 end
 
+# Runs gh with a deadline. A gh that hangs past GH_TIMEOUT is killed and answers
+# [message, false], the same as a failed read, so the caller refuses loudly.
 def gh_runner
   bin = ENV.fetch("SHIP_CLOCK_GH_BIN", "gh")
   lambda do |args|
-    out, err, status = Open3.capture3(bin, *args)
-    [status.success? ? out : (out.to_s.strip.empty? ? err : out), status.success?]
+    Open3.popen3(bin, *args) do |stdin, stdout, stderr, wait|
+      stdin.close
+      out_reader = Thread.new { stdout.read }
+      err_reader = Thread.new { stderr.read }
+      unless wait.join(GH_TIMEOUT)
+        begin
+          Process.kill("KILL", wait.pid)
+        rescue StandardError
+          nil
+        end
+        wait.join
+        next ["gh #{args.first(2).join(" ")} timed out after #{GH_TIMEOUT.round}s", false]
+      end
+      out = out_reader.value
+      err = err_reader.value
+      ok = wait.value.success?
+      [ok ? out : (out.to_s.strip.empty? ? err : out), ok]
+    end
   rescue StandardError => e
     ["#{e.class}: #{e.message}", false]
   end
@@ -103,7 +132,10 @@ end
 
 case command
 when "start"
-  at = options[:at] ? ShipClock.parse_time(options[:at]) : nil
+  at = nil
+  if options[:at]
+    at = ShipClock.parse_strict(options[:at]) || die!("--at #{options[:at].inspect} is not #{ISO_HINT}", code: 2)
+  end
   task = board_get("/api/v1/tasks/#{slug}")
   if task.nil?
     existing = read_pending(slug)
@@ -143,7 +175,7 @@ when "start"
 when "report", "record"
   t0_override = nil
   if options[:t0]
-    at = ShipClock.parse_time(options[:t0]) || die!("--t0 is not a time: #{options[:t0]}", code: 2)
+    at = ShipClock.parse_strict(options[:t0]) || die!("--t0 #{options[:t0].inspect} is not #{ISO_HINT}", code: 2)
     t0_override = { at: at, source: options[:t0_estimated] ? "estimated" : "given (--t0)" }
   end
   log_lines = options[:logs].flat_map do |path|
@@ -159,7 +191,10 @@ when "report", "record"
 
   if command == "record"
     ledger = options[:ledger] || begin
-      root = RepoRoot.git_toplevel || die!("not inside a git tree; pass --ledger PATH")
+      root = RepoRoot.git_toplevel
+      hub = root && File.file?(File.join(root, "bin", "ship-clock")) &&
+            File.directory?(File.join(root, "docs", "agents"))
+      die!("not inside a mcritchie-studio tree; run record from a hub desk or pass --ledger PATH") unless hub
       File.join(root, LEDGER_RELATIVE)
     end
     FileUtils.mkdir_p(File.dirname(ledger))
