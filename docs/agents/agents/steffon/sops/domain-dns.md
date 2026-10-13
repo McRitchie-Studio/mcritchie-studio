@@ -224,8 +224,10 @@ curl -s -X PUT https://api.cloudflare.com/client/v4/zones/<zone-id>/rulesets/pha
 
 This is the scheduled outage the [moving rules](#moving-a-domains-nameservers)
 describe. Pick a quiet window and ask first, in these words: "Turning DNSSEC off
-takes `<domain>` down, site and inbound mail, for roughly 15 minutes. OK to do it
-now?" Go only on his explicit yes.
+takes `<domain>` down, site and inbound mail, for 15 minutes to an hour (up to a
+day on a .com). OK to do it now?" Go only on his explicit yes. The 15 minutes is
+the measured best case; the bound is the registry dropping the DS plus the DS TTL
+a validating resolver cached (3600s on .llc and .org, 86400s on .com).
 
 ```not-pasteable
 🙋 YOUR TURN — switch DNSSEC off (the outage starts now)
