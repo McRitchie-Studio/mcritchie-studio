@@ -168,7 +168,7 @@ packages:
       domain: { title: Premium Domain, sub: best-in-class speed & security }
       workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
-      cto: { sub: monthly architecture review }
+      cto: { sub: daily report on application health }
     cta: { label: Talk to us about Pro, action: schedule }
   - key: team
     name: Team
@@ -183,7 +183,7 @@ packages:
       domain: { title: Premium Domain, sub: best-in-class speed & security }
       workspace: { sub: "you@your-app.com, 2 users" }
       vault: { sub: "logins in 1Password, rotated" }
-      cto: { sub: monthly architecture review }
+      cto: { sub: daily report on application health }
       drafting: { sub: replies drafted in your inbox }
       cmo: { sub: a monthly demand plan }
       email_marketing: { sub: broadcasts and list cleaning }
@@ -419,9 +419,9 @@ features:
   - name: Fractional CTO
     category: platform
     icon: "🗺️"
-    blurb: Once a month we review how your app is built and agree what comes next.
-    pro: Monthly architecture and roadmap review
-    team: Monthly architecture and roadmap review
+    blurb: A daily report on your application's health, and a monthly architecture and roadmap review to agree what comes next.
+    pro: Daily report on application health
+    team: Daily report on application health
     enterprise: Monthly architecture and roadmap review
     status: builtin
   - name: Error alerts
