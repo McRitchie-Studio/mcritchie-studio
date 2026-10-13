@@ -211,7 +211,8 @@ resolvers answer every record the zone holds (plan already proved the zone holds
 the snapshot). It asks Heroku for the
 bare domain's certificate only once that domain resolves publicly. The first
 time it sees Cloudflare's nameservers at the registry, it starts finalize's
-six-hour clock.
+six-hour clock; a verify that finds the registry back on other nameservers
+resets it, and finalize re-reads the registry before it writes.
 
 ### 4. Finalize, six hours later — Steffon
 
