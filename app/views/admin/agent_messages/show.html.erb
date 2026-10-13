@@ -48,7 +48,7 @@
 <% end %>
 
 <h2 class="font-semibold mb-2">Timeline</h2>
-<ol id="am-timeline" class="text-sm border-l pl-4 space-y-2">
+<ol id="am-timeline" class="text-sm border-l border-subtle pl-4 space-y-2">
   <% @message.events.each do |event| %>
     <li id="am-event-<%= event.id %>" data-kind="<%= event.kind %>">
       <span class="font-mono text-xs opacity-60"><%= event.created_at.strftime("%H:%M:%S") %></span>

@@ -45,7 +45,7 @@
   <div class="overflow-x-auto">
     <table id="am-rows" class="w-full text-sm">
       <thead>
-        <tr class="text-left border-b">
+        <tr class="text-left border-b border-subtle">
           <th class="py-2 pr-3">Age</th>
           <th class="py-2 pr-3">Soul</th>
           <th class="py-2 pr-3">Status</th>
@@ -58,7 +58,7 @@
       </thead>
       <tbody>
         <% @messages.each do |message| %>
-          <tr id="am-row-<%= message.id %>" class="border-b align-top" data-soul="<%= message.soul_slug %>" data-status="<%= message.status %>">
+          <tr id="am-row-<%= message.id %>" class="border-b border-subtle align-top" data-soul="<%= message.soul_slug %>" data-status="<%= message.status %>">
             <td class="py-2 pr-3 whitespace-nowrap" title="<%= message.created_at.iso8601 %>"><%= agent_message_age(message.created_at) %></td>
             <td class="py-2 pr-3"><%= message.soul_slug || "—" %></td>
             <td class="py-2 pr-3"><span class="am-chip am-status-<%= message.status %>"><%= message.status %></span></td>
