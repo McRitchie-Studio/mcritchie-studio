@@ -134,6 +134,7 @@ class DomainCutoverTest < Minitest::Test
     without = guide("squarespace", ds: false)
 
     assert_includes with, "scheduled outage"
+    assert_includes with, "15 minutes to an hour (up to a day on a .com)", "the bound, not the best case"
     assert_includes with, "DNS** -> **DNSSEC"
     assert_includes with, "Step 2: Use Cloudflare's nameservers"
     refute_includes without, "DNSSEC"

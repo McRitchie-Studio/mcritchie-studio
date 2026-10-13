@@ -19,8 +19,10 @@ module DomainCutover
     # ("Squarespace Domains II LLC").
     LABELS = { "squarespace" => "Squarespace", "godaddy" => "GoDaddy", "namecheap" => "Namecheap",
                "porkbun" => "Porkbun", "cloudflare" => "Cloudflare" }.freeze
-    OUTAGE = "about 15-20 minutes: measured 2026-10-13, validating resolvers failed from " \
-             "11:52 to 12:05 MDT and Google's caches flapped until 12:13"
+    # The bound, not the best case: the registry dropping the DS plus the DS TTL a
+    # validating resolver cached (3600s on .llc and .org, 86400s on .com).
+    OUTAGE = "15 minutes to an hour (up to a day on a .com); the measured best case, " \
+             "2026-10-13, was 11:52 to 12:05 MDT, with Google's caches flapping until 12:13"
 
     def self.key_for(registrar_key)
       File.exist?(File.join(DIR, "#{registrar_key}.md.erb")) ? registrar_key : "other"
