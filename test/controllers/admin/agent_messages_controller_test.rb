@@ -79,4 +79,22 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
       assert_select ".am-untrusted", "@avi and @role and @user hi"
     end
   end
+
+  test "the dispatcher row shows who serves the mailbox, its last ping, and a usage pause" do
+    log_in_as(admin)
+    get admin_agent_messages_path
+    assert_select "#am-dispatchers", /No dispatcher has pinged yet/
+
+    AgentDispatcher.ping!({ "worker" => "dispatcher-alex-mac-1-abc", "souls" => %w[xan], "running" => 2, "capacity" => 5,
+                            "paused_until" => 2.hours.from_now.iso8601, "pause_reason" => "usage_limit",
+                            "version" => "abc1234" })
+    AgentDispatcher.ping!({ "worker" => "dispatcher-old" }, now: 1.hour.ago)
+    get admin_agent_messages_path
+    assert_select "#am-dispatchers .am-dispatcher", 2
+    assert_select ".am-dispatcher[data-live=true]", /dispatcher-alex-mac-1-abc/
+    assert_select ".am-dispatcher[data-live=true]", %r{2/5 running · xan}
+    assert_select ".am-dispatcher[data-live=true] .am-chip", "paused"
+    assert_select ".am-dispatcher[data-live=true]", /paused until .* \(usage_limit\)/
+    assert_select ".am-dispatcher[data-live=false] .am-chip", "silent"
+  end
 end

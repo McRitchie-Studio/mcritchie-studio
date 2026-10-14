@@ -3,7 +3,7 @@
 <!--
   TEMPLATE for bin/dispatcher's launchd service
   (docs/agents/agents/steffon/sops/agent-dispatcher.md). Never copy this file by
-  hand: `bin/dispatcher install` fills the {{...}} placeholders with this Mac's
+  hand: `bin/dispatcher install` fills the double-braced placeholders with this Mac's
   paths (AgentMailbox::LaunchAgent#render) and loads the result from
   ~/Library/LaunchAgents.
 

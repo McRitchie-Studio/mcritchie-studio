@@ -29,7 +29,8 @@ module AgentMailbox
   # Responder, whose Claude is a child process), and EVERY board call is made
   # from the main loop, so the API client is never shared across threads.
   #
-  #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause)
+  #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause
+  #               until the reset; a failed run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
   #               renew leases older than RENEW_EVERY
   #               ping the board every PING_EVERY
   #               claim (long-poll) when not stopping, not paused and under the cap
@@ -46,6 +47,9 @@ module AgentMailbox
     # On SIGTERM, runs get this long to finish before their Claude is stopped and
     # the message released. Under the plist's ExitTimeOut.
     GRACE = 60
+    # After a failed Claude run, claiming pauses this long, so a broken Claude
+    # does not spend every waiting message's attempts in a minute.
+    FAILURE_PAUSE = 5 * 60
 
     Run = Struct.new(:message, :thread, :started_at, :renewed_at, keyword_init: true)
 
@@ -197,8 +201,12 @@ module AgentMailbox
         hit = answer.usage_limit
         give_back(id, "Claude usage limit: #{hit.notice}", code: "usage_limit")
         pause_until(hit.reset_at, hit.parsed ? "usage_limit" : "usage_limit (reset not named; backing off)")
+      elsif answer.signed_out
+        give_back(id, "Claude is not signed in (exit #{answer.status.inspect})")
+        pause_until(@clock.call + ClaudeAuth::PAUSE, "claude_signed_out")
       elsif answer.reply.nil?
         give_back(id, "the Claude run failed or answered nothing (exit #{answer.status.inspect})")
+        pause_until(@clock.call + FAILURE_PAUSE, "claude_failed")
       else
         result = @client.complete(id, worker: @worker, response_text: answer.reply,
                                       action_summary: answer.action&.dig(:summary))
@@ -330,7 +338,7 @@ module AgentMailbox
         @out.puts "#{LABEL}: installed but not loaded (launchctl print failed)"
         return 1
       end
-      state = output[/^\s*state = (\S+)/, 1]
+      state = output[/^\s*state = (.+)$/, 1]&.strip
       pid = output[/^\s*pid = (\d+)/, 1]
       last_exit = output[/last exit code = (.+)$/, 1]
       @out.puts "#{LABEL}: #{state || 'unknown'}#{pid ? " (pid #{pid})" : ''}" \

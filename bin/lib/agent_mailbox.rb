@@ -230,6 +230,19 @@ module AgentMailbox
     private_class_method :zone_for, :build_time
   end
 
+  # Claude saying it is not signed in, read the same deterministic way. Unlike a
+  # usage limit this spends the attempt (only usage_limit refunds), but
+  # bin/dispatcher pauses PAUSE seconds on it, so a signed-out Mac burns at most
+  # one attempt per pause while the floor alert reports the waiting message.
+  module ClaudeAuth
+    PATTERN = %r{not\ logged\ in|please\ run\ /login|invalid\ api\ key|authentication_error|oauth\ token\ (?:has\ )?expired}ix
+    PAUSE = 30 * 60
+
+    def self.signed_out?(text, status)
+      !status&.zero? && text.to_s.match?(PATTERN)
+    end
+  end
+
   # The answer path one message takes, shared by bin/heartbeat and bin/dispatcher:
   # the soul's ONE read-only action, then a headless Claude run on a prompt that
   # fences the message as untrusted data. It talks to no API; the caller claims,
@@ -252,7 +265,8 @@ module AgentMailbox
 
     # reply: the text to post, or nil when the run failed. usage_limit: a
     # UsageLimit::Hit when Claude answered that the account is out of usage.
-    Answer = Struct.new(:reply, :action, :status, :usage_limit, keyword_init: true)
+    # signed_out: Claude answered that it is not logged in.
+    Answer = Struct.new(:reply, :action, :status, :usage_limit, :signed_out, keyword_init: true)
 
     def initialize(soul:, claude_cmd: DEFAULT_CLAUDE_CMD, runner: nil, repo_root: REPO_ROOT, clock: -> { Time.now })
       @soul = soul.to_s
@@ -269,7 +283,8 @@ module AgentMailbox
       limit = UsageLimit.detect("#{output}\n#{error}", status, now: @clock.call)
       text = output.to_s.strip
       reply = status&.zero? && !text.empty? && limit.nil? ? text : nil
-      Answer.new(reply: reply, action: action, status: status, usage_limit: limit)
+      Answer.new(reply: reply, action: action, status: status, usage_limit: limit,
+                 signed_out: limit.nil? && ClaudeAuth.signed_out?("#{output}\n#{error}", status))
     end
 
     def prompt_for(message, action)
