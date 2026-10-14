@@ -99,7 +99,7 @@ Nothing reads Discord until these are done. The code ships inert.
 4. In the server, create a channel such as `#agent-desk` and two **mentionable**
    roles, `@Avi` and `@Xan`. Assign nobody; they exist to be mentioned. If the
    channel is private, add the bot to it.
-5. Reset the bot token and file it in 1Password as `discord.agents.bot`
+5. Reset the bot token and file it in 1Password as `agents.discord.<bot>` (the live test uses `agents.discord.xan`)
    (vault `studio-agents`), field `bot-token`
    ([`credential-inventory.md`](../modules/credential-inventory.md)).
 6. With Developer Mode on (User Settings → Advanced), copy and send us the

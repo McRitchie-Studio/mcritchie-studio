@@ -6,7 +6,7 @@ module AgentMessages
   # messages, post one reply. No gateway connection, no websocket: the poll is
   # the deliberate v1 (docs/agents/system/agent-message-loop.md).
   #
-  # The token is DISCORD_AGENT_BOT_TOKEN (1Password `discord.agents.bot`, field
+  # The token is DISCORD_AGENT_BOT_TOKEN (1Password `agents.discord.xan`, field
   # `bot-token`). It is sent only in the Authorization header and never logged.
   #
   # `transport` is the one seam tests replace: a callable taking
