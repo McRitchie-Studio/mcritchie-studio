@@ -63,8 +63,9 @@ test("usages page loads", async ({ page }) => {
 
 test("login with magic link", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
-  // Username should appear in header
-  await expect(page.locator("body")).toContainText("Alex Test");
+  // The navbar names the signed-in user. Since studio-engine 0.106 it prints the
+  // first name only ("Alex", not "Alex Test"), so assert on the name slot itself.
+  await expect(page.locator("[data-nav-name]").first()).toContainText("Alex");
 });
 
 test("malformed magic link request stays on signin", async ({ page }) => {

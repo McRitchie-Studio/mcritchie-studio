@@ -209,8 +209,9 @@ row 3.7).
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
-task URL, then a paste-ready background launch of Avi's intent scout
-(`docs/agents/agents/avi/sops/intent-scout.md`). `bin/submit` — the HUB's script, run with that worktree as the cwd —
+task URL, launches Avi's intent scout detached in the background
+(`docs/agents/agents/avi/sops/intent-scout.md`), and prints the scout lines last,
+after the dream bank (a paste-ready launch only when it could not launch). `bin/submit` — the HUB's script, run with that worktree as the cwd —
 runs steps 5-6 (`bin/dor-check --precheck` → the intent-brief read, which only
 warns → commit → `bin/fast-check`
 pre-flight → push → **non-draft** PR into `accepted` led by the task URL → record
