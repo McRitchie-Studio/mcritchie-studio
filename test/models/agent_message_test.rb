@@ -187,4 +187,103 @@ class AgentMessageTest < ActiveSupport::TestCase
     assert_equal "https://discord.com/channels/#{GUILD}/#{DESK}/#{message.external_id}", message.discord_url
     assert_equal "https://discord.com/channels/#{GUILD}/#{DESK}/123", message.reply_url
   end
+
+  # --- renewal, the usage-limit refund, and the multi-soul claim (bin/dispatcher) ---
+
+  test "the holder renews its lease by LEASE from now, and the timeline keeps one coalesced renewal event" do
+    message = agent_message!
+    start = Time.current
+    AgentMessage.claim!(soul: "avi", worker: "w1", now: start)
+    later = start + 3.minutes
+
+    message.reload.renew!(worker: "w1", now: later)
+    message.reload.renew!(worker: "w1", now: later + 3.minutes)
+
+    message.reload
+    assert_in_delta later + 3.minutes + AgentMessage::LEASE, message.lease_expires_at, 1
+    renewals = message.events.select { |e| e.kind == "lease_renewed" }
+    assert_equal 1, renewals.size, "renewals coalesce into one event per claim"
+    assert_equal 2, renewals.first.detail["renewals"]
+    assert_equal "w1", renewals.first.detail["worker"]
+  end
+
+  test "a renewal is refused to anyone but the holder, and to a holder whose lapsed lease was taken" do
+    message = agent_message!
+    start = Time.current
+    AgentMessage.claim!(soul: "avi", worker: "w1", now: start)
+
+    error = assert_raises(AgentMessage::Refused) { message.reload.renew!(worker: "w2") }
+    assert_equal "NOT_HOLDER", error.code
+
+    AgentMessage.claim!(soul: "avi", worker: "w2", now: start + AgentMessage::LEASE + 1.second)
+    error = assert_raises(AgentMessage::Refused) { message.reload.renew!(worker: "w1") }
+    assert_equal "NOT_HOLDER", error.code
+    assert_equal "w2", message.reload.claimed_by
+  end
+
+  test "a holder whose lease lapsed but was not taken may still renew it" do
+    message = agent_message!
+    start = Time.current
+    AgentMessage.claim!(soul: "avi", worker: "w1", now: start)
+
+    message.reload.renew!(worker: "w1", now: start + AgentMessage::LEASE + 1.minute)
+
+    assert message.reload.lease_live?(now: start + AgentMessage::LEASE + 2.minutes)
+  end
+
+  test "a usage_limit release hands the attempt back and never dead-letters, even on the last attempt" do
+    message = agent_message!(attempts: AgentMessage::MAX_ATTEMPTS - 1)
+    AgentMessage.claim!(soul: "avi", worker: "w1")
+    assert_equal AgentMessage::MAX_ATTEMPTS, message.reload.attempts
+
+    message.release!(worker: "w1", reason: "Claude usage limit", code: "usage_limit")
+
+    message.reload
+    assert_equal "received", message.status
+    assert_equal AgentMessage::MAX_ATTEMPTS - 1, message.attempts
+    released = message.events.last
+    assert_equal "released", released.kind
+    assert_equal "usage_limit", released.detail["code"]
+    assert_equal true, released.detail["attempt_refunded"]
+    refute message.events.any? { |e| e.kind == "dead_lettered" }
+  end
+
+  test "a plain release on the last attempt still dead-letters (the control for the refund)" do
+    message = agent_message!(attempts: AgentMessage::MAX_ATTEMPTS - 1)
+    AgentMessage.claim!(soul: "avi", worker: "w1")
+
+    message.reload.release!(worker: "w1", reason: "Claude failed")
+
+    assert_equal "dead", message.reload.status
+  end
+
+  test "an unknown release code is refused and changes nothing" do
+    message = agent_message!
+    AgentMessage.claim!(soul: "avi", worker: "w1")
+
+    error = assert_raises(AgentMessage::Refused) { message.reload.release!(worker: "w1", code: "because") }
+    assert_equal "UNKNOWN_CODE", error.code
+    assert_equal "claimed", message.reload.status
+    assert_equal 1, message.attempts
+  end
+
+  test "a multi-soul claim takes the oldest message across the souls, and records that message's soul" do
+    xan = agent_message!(soul: "xan")
+    agent_message!(soul: "avi")
+    agent_message!(soul: "carl")
+
+    first = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
+    second = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
+    third = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
+
+    assert_equal xan.id, first.id
+    assert_equal "xan", first.events.find { |e| e.kind == "claimed" }.actor
+    assert_equal "avi", second.soul_slug
+    assert_nil third, "carl is not served"
+  end
+
+  test "a claim with an empty soul list is refused" do
+    error = assert_raises(AgentMessage::Refused) { AgentMessage.claim!(soul: [ "", " " ], worker: "d1") }
+    assert_equal "SOUL_REQUIRED", error.code
+  end
 end

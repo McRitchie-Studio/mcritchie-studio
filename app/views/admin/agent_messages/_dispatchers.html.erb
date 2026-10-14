@@ -1,0 +1,20 @@
+<%# The bin/dispatcher pings (AgentDispatcher): who serves the mailbox, and when it last checked in. %>
+<div id="am-dispatchers" class="text-sm mb-4">
+  <% if dispatchers.empty? %>
+    <p class="opacity-70">No dispatcher has pinged yet. Steffon installs it: SOP <code>agent-dispatcher</code>.</p>
+  <% else %>
+    <% dispatchers.each do |dispatcher| %>
+      <div class="am-dispatcher flex flex-wrap items-center gap-2" data-live="<%= dispatcher.live? %>">
+        <span class="am-chip <%= dispatcher.live? ? 'am-status-completed' : 'am-status-dead' %>"><%= dispatcher.live? ? (dispatcher.paused? ? "paused" : "live") : "silent" %></span>
+        <span class="font-mono break-all"><%= dispatcher.worker_id %></span>
+        <span class="opacity-70">
+          pinged <%= agent_message_age(dispatcher.last_seen_at) %> ago ·
+          <%= dispatcher.running %><%= "/#{dispatcher.capacity}" if dispatcher.capacity %> running ·
+          <%= Array(dispatcher.souls).join(", ").presence || "no souls" %>
+          <% if dispatcher.paused? %>· paused until <%= dispatcher.paused_until.in_time_zone("America/Denver").strftime("%-l:%M%P %Z") %> (<%= dispatcher.pause_reason %>)<% end %>
+          <% if dispatcher.version.present? %>· <%= dispatcher.version %><% end %>
+        </span>
+      </div>
+    <% end %>
+  <% end %>
+</div>

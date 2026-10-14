@@ -20,6 +20,7 @@ module Admin
       @messages = scope.limit(LIMIT)
       @status_counts = AgentMessage.group(:status).count
       @souls = (AgentMessage.where.not(soul_slug: nil).distinct.pluck(:soul_slug) + routed_souls).uniq.sort
+      @dispatchers = AgentDispatcher.newest_first.limit(3)
     end
 
     def show
