@@ -175,11 +175,13 @@ STOP at submitted. Do not merge, deploy, or touch release/main.
 Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result, the CI state, anything undone.
 ```
 
-**Launch the intent scout beside each builder.** `bin/task begin` prints a
-`scout:` block: an `avi` subagent with
-[`../agents/avi/sops/intent-scout.md`](../agents/avi/sops/intent-scout.md), the
-slug and the desk. Launch it in the background as you launch the builder. It reads
-only and runs no suite, but it counts toward the five-agent cap. When its brief
+**The intent scout launches itself.** `bin/task begin` starts Avi's
+[`../agents/avi/sops/intent-scout.md`](../agents/avi/sops/intent-scout.md) as a
+detached headless run and prints `scout: Avi launched in the background (pid N, log
+PATH)`; do not launch another. Only when it prints `scout: NOT launched (...)` and a
+paste-ready `Agent(...)` block do you launch it yourself, in the background, as you
+launch the builder. It reads only and runs no suite, but it counts toward the
+five-agent cap (begin falls back to the block when five scouts already run). When its brief
 lands, relay the SAME INTENT, DO NOW list to the builder with `SendMessage`, and
 fold its one follow-up card into the epic plan rather than filing a second task.
 

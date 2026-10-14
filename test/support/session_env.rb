@@ -72,6 +72,14 @@
 require_relative "task_usage_sandbox"
 require_relative "outbound_seams"
 
+# THIRD SIBLING: no test child ever launches a real intent scout. `bin/task begin`
+# spawns a detached headless `claude` run (bin/lib/intent_scout.rb), and five test
+# files spawn begin. IntentScout already refuses in CI and under
+# TASK_USAGE_SANDBOX; this arms the explicit opt-out for the whole test process
+# too, so the refusal does not hang on one detector. A test that exercises the
+# launch opts back in with INTENT_SCOUT_AUTO=1 and a stub TASK_BEGIN_SCOUT_BIN.
+ENV["INTENT_SCOUT_AUTO"] = "0"
+
 module SessionEnv
   # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS names
   # them. Add a key HERE and you must add it THERE — SessionEnvTest compares the two

@@ -66,7 +66,8 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 
 | Command | What it does |
 |---------|--------------|
-| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, preflights it, claims it. `--agent <soul>` is optional |
+| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, preflights it, claims it, and launches Avi's intent scout in the background. `--agent <soul>` is optional |
+| `bin/task scout-brief <slug>` | Reads Avi's intent-scout brief; fold its SAME INTENT, DO NOW items in before you submit |
 | `bin/submit-wait <task-slug> --launch -m "Commit message"` | Runs `bin/submit` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
 | `bin/release status` | Where the current release stands |
@@ -88,7 +89,7 @@ Where each command may run, the author set, and the long form:
 ## First Rules
 
 1. **Narrate.** Open a `bin/agent-activity` Explore activity before your first tool call; keep one per unit of work. Detail: `docs/agents/modules/heartbeats.md`.
-2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. Detail: `docs/agents/modules/building-sop.md`.
+2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. begin launches Avi's intent scout itself; read its brief (`bin/task scout-brief <slug>`) before you submit. Detail: `docs/agents/modules/building-sop.md`.
 3. **Desks, not primaries.** Edit only in your task's worktree; primary checkouts are for reading and deploys. Detail: `docs/agents/modules/worktrees.md`.
 4. **GitHub auth is self-service.** On a 401, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`; never ask Alex for `gh auth login`. Detail: `docs/agents/modules/token-session.md`.
 5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/submit` stops at `submitted`. His clearance in chat is the production grant: ship with `bin/release ship --mode cleared --clearance "<his words>"`, never by waiting on the Approve button; `timed` and its button are for a ship nobody cleared.

@@ -51,9 +51,8 @@ async function navbarMetrics(page) {
     const offscreen = controls.filter((control) =>
       control.left < -1 || control.right > viewportWidth + 1
     );
-    const wrappedLogout = controls.filter((control) =>
-      control.name === "logout" && control.height > 16
-    );
+    // Log out lives in the link sidebar; the bar draws none of its own.
+    const navbarLogout = controls.filter((control) => control.name === "logout");
 
     return {
       viewportWidth,
@@ -65,7 +64,7 @@ async function navbarMetrics(page) {
       },
       controls,
       offscreen,
-      wrappedLogout,
+      navbarLogout,
     };
   });
 }
@@ -76,7 +75,7 @@ async function expectNavbarContained(page) {
 
   expect(metrics.documentOverflow, message).toBeLessThanOrEqual(1);
   expect(metrics.offscreen, message).toEqual([]);
-  expect(metrics.wrappedLogout, message).toEqual([]);
+  expect(metrics.navbarLogout, message).toEqual([]);
   expect(metrics.controls.some((control) => control.name === "username"), message).toBe(true);
   expect(metrics.controls.some((control) => control.name === "profile"), message).toBe(true);
 }
@@ -112,23 +111,33 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   await expectNavbarContained(page);
 
   // The name costs the bar no room: without it the header is the same height,
-  // so the brand wraps no sooner. (The height itself depends on the font.)
+  // so the brand wraps no sooner. (The height itself depends on the font, so
+  // measure only once Montserrat has loaded: CI once read 161px with the
+  // fallback face, which wraps the brand, and 129px a moment later.)
+  await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
+  // The column beside the avatar is what the name could widen. Its width is
+  // the font-independent half of the claim, so it bites on any machine.
+  const column = page.locator("header :has(> a[data-nav-account]) > div").first();
   const withName = (await header.boundingBox()).height;
+  const columnWithName = (await column.boundingBox()).width;
   await name.evaluate((element) => { element.style.display = "none"; });
+  expect((await column.boundingBox()).width).toBe(columnWithName);
   expect((await header.boundingBox()).height).toBe(withName);
   await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
   await expect(page.locator(".nav-phone-tools")).toBeHidden();
 });
 
-test("a signed-in phone header is 69px tall once scrolled", async ({ page }) => {
+// 53px: the 2.25rem cog, py-2 and the 1px border. It was 69px while the account
+// column carried a Log out row under the name (task navbar-first-name-only).
+test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await page.goto("/tasks");
   await page.evaluate(() => window.scrollTo(0, 600));
 
   const header = page.locator("header.nav-shell");
   await expect(header).toHaveClass(/is-scrolled/);
-  await expect.poll(async () => (await header.boundingBox()).height).toBe(69);
+  await expect.poll(async () => (await header.boundingBox()).height).toBe(53);
 
   // The row is gone; its cog and theme toggle are in the bar, with the name.
   await expect(page.locator(PHONE_ROW)).toBeHidden();
@@ -141,4 +150,76 @@ test("a signed-in phone header is 69px tall once scrolled", async ({ page }) => 
 
   await page.locator(".nav-phone-tools [data-link-sidebar-trigger]").click();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");
+});
+
+// Desktop: the avatar rides the scroll ramp with the logo and title, 40px at
+// rest to 32px collapsed, and the first name keeps the rule of 3 against it
+// (font size = avatar / 3 / Montserrat's 0.7 cap height).
+test("the desktop avatar shrinks on scroll and the name follows it", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+
+  const sizes = () => page.evaluate(() => ({
+    avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
+    name: parseFloat(getComputedStyle(document.querySelector("header [data-nav-name]")).fontSize),
+  }));
+
+  const rest = await sizes();
+  expect(rest.avatar).toBe(40);
+
+  // The theme toggle and gear sit on the name's line, not the top of the row.
+  const centres = await page.evaluate(() => {
+    const mid = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top + r.height / 2; };
+    return {
+      avatar: mid("header [data-nav-account] [aria-hidden] > *"),
+      name: mid("header [data-nav-name]"),
+      toggle: mid("header [data-nav-theme-toggle='desktop']"),
+    };
+  });
+  expect(Math.abs(centres.toggle - centres.avatar), JSON.stringify(centres)).toBeLessThanOrEqual(1);
+  expect(Math.abs(centres.name - centres.avatar), JSON.stringify(centres)).toBeLessThanOrEqual(1);
+  expect(rest.name).toBeCloseTo(40 / 3 / 0.7, 1);
+
+  await page.evaluate(() => window.scrollTo(0, 1200));
+  await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+  await expect.poll(async () => (await sizes()).avatar).toBe(32);
+  expect((await sizes()).name).toBeCloseTo(32 / 3 / 0.7, 1);
+});
+
+// Desktop: moon to gear, gear to name and name to avatar are one gap, measured
+// ink to ink (the icons' drawn paths, the name's text box), at rest and scrolled.
+test("the desktop controls are evenly spaced", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+  await page.evaluate(() => document.fonts.ready);
+
+  const gaps = () => page.evaluate(() => {
+    const ink = (svg) => {
+      let left = Infinity, right = -Infinity;
+      svg.querySelectorAll("path, circle").forEach((el) => {
+        const box = el.getBBox(), m = el.getScreenCTM();
+        [box.x, box.x + box.width].forEach((x) => {
+          const sx = m.a * x + m.c * box.y + m.e;
+          left = Math.min(left, sx);
+          right = Math.max(right, sx);
+        });
+      });
+      return [left, right];
+    };
+    const shown = (list) => [...list].find((el) => el.getBoundingClientRect().width > 0);
+    const moon = ink(shown(document.querySelectorAll("header [data-nav-theme-toggle='desktop'] .nav-toggle-icon svg")));
+    const gear = ink(shown(document.querySelectorAll("header [data-link-sidebar-trigger] svg")));
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector("header [data-nav-name]"));
+    const name = range.getBoundingClientRect();
+    const avatar = document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect();
+    return [gear[0] - moon[1], name.left - gear[1], avatar.left - name.right];
+  });
+
+  for (const y of [0, 1200]) {
+    await page.evaluate((top) => window.scrollTo(0, top), y);
+    if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+    const measured = await gaps();
+    measured.forEach((gap) => expect(Math.abs(gap - 12), JSON.stringify(measured)).toBeLessThanOrEqual(1));
+  }
 });

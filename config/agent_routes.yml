@@ -15,11 +15,22 @@
 # `bot_user_id` is the shared bot's own user id. Messages written by any bot are
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
-# Empty until Alex creates the bot and sends the ids (the setup checklist in the
-# doc above); with no guild listed the poll does nothing.
 discord:
-  bot_user_id: ""
-  guilds: {}
+  # The shared bot is Xan's own app (1Password `agents.discord.xan`) for the
+  # first live test, 2026-10-14: it reads the channel and posts every reply.
+  bot_user_id: "1481150857809760399"   # Xan (bot user)
+  guilds:
+    "1332466565203103744":             # McRitchie Studio
+      name: McRitchie Studio
+      channels:
+        "1479973077021495478":         # lobster-tank, a quiet channel kept for the test
+          name: lobster-tank
+          default_soul: ""             # unmentioned messages are stored unrouted
+      souls:
+        xan:
+          roles: []
+          users: ["1481150857809760399"]   # @Xan, the bot user itself
+  # A fuller shape, for reference:
   # guilds:
   #   "111111111111111111":           # the McRitchie server
   #     name: McRitchie

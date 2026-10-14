@@ -249,11 +249,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       "agents" => "fractional-cto", "marketing" => "social-outreach" }.each do |group, lead|
       assert_equal lead, css_select("[data-test='stack-category'][data-category='#{group}'] [data-test='stack-row']").first["data-feature"], group
     end
-    assert_equal %w[web-address fast-protected-domain],
+    assert_equal %w[web-address fast-premium-domain],
                  css_select("[data-test='stack-category'][data-category='domain'] [data-test='stack-row']").first(2).map { |tr| tr["data-feature"] }
     assert_equal [ "From Builder", "From Pro", "From Pro", "From Pro" ], css_select("[data-test='stack-category-from']").map { |n| n.text.strip }
     assert_select "[data-test='stack-category'][data-category='application'] [data-test='stack-category-from']", 0
-    fast = "[data-test='stack-row'][data-feature='fast-protected-domain']"
+    fast = "[data-test='stack-row'][data-feature='fast-premium-domain']"
     assert_select "#{fast} [data-test='stack-lead'][data-lead='cloudflare']"
     %w[vibe builder].each { |key| assert_select "#{fast} [data-test='stack-cell'][data-package='#{key}'][data-included='false']", 1, key }
     %w[pro team enterprise].each { |key| assert_select "#{fast} [data-test='stack-cell'][data-package='#{key}'][data-included='true'] [data-test='stack-product-name']", text: "Premium Domain" }
@@ -364,7 +364,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "[component] the full stack draws ONE Cloudflare row as Premium Domain, the planned bot check, and the spotlight" do
     get packages_stack_path
 
-    row = "[data-test='stack-row'][data-feature='fast-protected-domain'][data-status='live']"
+    row = "[data-test='stack-row'][data-feature='fast-premium-domain'][data-status='live']"
     assert_select "#{row} [data-test='stack-lead'] [data-brand='cloudflare']"
     assert_select "#{row} [data-test='coming-soon']", 0
     assert_equal [ "—", "—" ] + [ "Premium Domain|your-app.com · fast, guarded" ] * 3,

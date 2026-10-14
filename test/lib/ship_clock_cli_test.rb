@@ -207,6 +207,14 @@ class ShipClockCliTest < Minitest::Test
     assert elapsed < 15, "the deadline bounds the run (took #{elapsed.round(1)}s)"
   end
 
+  def test_a_non_numeric_gh_timeout_warns_and_uses_the_default_instead_of_crashing
+    _out, err, status, = run_clock(["report", SLUG], env: { "SHIP_CLOCK_GH_TIMEOUT" => "soon" })
+
+    assert_match(/SHIP_CLOCK_GH_TIMEOUT="soon" is not a positive number of seconds; using the default 60/, err)
+    refute_match(/invalid value for Float|ArgumentError/, err, "no crash at load")
+    assert status.success?, err
+  end
+
   # --- record --------------------------------------------------------------
 
   def test_record_outside_a_hub_tree_refuses_without_ledger

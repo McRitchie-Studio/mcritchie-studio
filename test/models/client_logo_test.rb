@@ -48,6 +48,26 @@ class ClientLogoTest < ActiveSupport::TestCase
     assert_equal :alt, ClientLogo.for("industries").variants.fetch(:dark).colouring
   end
 
+  # A stored icon choice the kit can no longer read (a hand-edited row, or one
+  # saved under an older shape) makes BrandKit#variant raise BrandKit::Error.
+  # The client shows the brand's default kit icon instead of taking /stack down.
+  test "[unit] a kit whose saved icon raises falls back to the brand's default icon" do
+    BrandKit.create!(brand: "industries").update_column(:icon_choice, { "bogus" => 1 })
+    assert_raises(BrandKit::Error) { BrandKit.for("industries").variant(:icon) }
+
+    variants = nil
+    assert_difference -> { ErrorLog.count }, 1, "one ErrorLog receipt per logo, so the broken kit is on record" do
+      variants = ClientLogo.for("industries").variants
+    end
+
+    assert_equal %i[light dark], variants.keys
+    variants.each do |tone, variant|
+      assert_equal tone, variant.tone
+      assert_equal :original, variant.colouring, "the default, as with nothing saved"
+      assert_match(/\A<svg/, variant.svg)
+    end
+  end
+
   test "a client with no logo-studio brand shows the mark filed in the hub's brand assets" do
     %w[cyvasse 10and5].each do |slug|
       logo = ClientLogo.for(slug)

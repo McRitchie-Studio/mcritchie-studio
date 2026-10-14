@@ -95,8 +95,25 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='example-exchange']", text: /@Studio CTO why is checkout slow\?/
     assert_select "[data-test='setup-step']", 3
     assert_select "[data-test='setup-step']", text: /No links or passwords change hands/
-    assert_select "[data-test='permissions-note']", text: /You approve exactly what the bot can do, and you can remove it any time from your server settings\./
+    assert_select "[data-test='permissions-note']", text: /You will approve exactly what the bot can do, and you can remove it any time from your server settings\./
     assert_select "[data-test='back-to-integrations'][href='#{integrations_path}']"
+  end
+
+  # The bot is not built yet (Mr. McRitchie, 2026-10-13): the page and the card
+  # promise it, on request, and never claim it already runs.
+  test "[component] the Discord guide and card speak of the bot in the future, never as live" do
+    get integrations_discord_path
+
+    assert_select "[data-test='discord-guide'] header p", text: /not live yet/
+    assert_select "[data-test='discord-guide'] header p", text: /will\s+post what matters/
+    page = css_select("[data-test='discord-guide']").text
+    [ /our bot posts/i, /Add our bot to your server/, /Click "Add to Discord"/, /You approve exactly/, /bot is set up with you/ ].each do |claim|
+      assert_no_match claim, page
+    end
+
+    get integrations_path
+    assert_select "#{entry('discord')} [data-test='entry-blurb']", text: /our bot will post .* and answer when you/
+    assert_no_match(/our bot posts/i, css_select(entry("discord")).text)
   end
 
   test "[component] the guide's button requests the bot through the contact form, never a Discord authorization link" do

@@ -47,6 +47,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 ```
 
+**`begin` launches Avi's [`intent-scout`](../agents/avi/sops/intent-scout.md) itself**,
+detached, in the background, and says so in its top summary and its last line:
+`scout: Avi launched in the background (pid N, log PATH) - do not launch another`.
+Do not launch a second one. Only when that line reads `scout: NOT launched (...)`
+(no `claude` CLI, `INTENT_SCOUT_AUTO=0`, CI, five scouts already running) does the
+last block hand you a paste-ready `Agent(...)` launch to run yourself. Either way,
+read the brief before you submit (Step 5).
+
 - **Title: 3-5 words.** The slug derives from it and seeds `feat/<slug>`. Pass
   `--slug` only to override.
 - **Each `--accept` bullet: 5-12 words.** Put detail in `--agent-context "…"`.
@@ -84,10 +92,9 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      never writes your desk.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
-every session: `<app-slug> · <feature-slug> · <task URL>`. Its last block,
-`scout:`, is a paste-ready background launch of Avi's
-[`intent-scout`](../agents/avi/sops/intent-scout.md); the session that ran `begin`
-launches it and keeps building.
+every session: `<app-slug> · <feature-slug> · <task URL>`. Its last lines,
+`scout:`, say whether it launched Avi's scout (above); they print after the dream
+bank, so `begin | tail` keeps them.
 
 To resume a held or blocked task instead:
 

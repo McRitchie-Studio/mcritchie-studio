@@ -162,10 +162,12 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
     AgentMessageDiscordPollJob.announced_idle = false
   end
 
-  test "[unit] with a token but the shipped (empty) routes, the poll job reads nothing" do
+  test "[unit] with a token but empty routes, the poll job reads nothing" do
     with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
-      AgentMessages::DiscordBot.stub(:new, ->(*) { flunk "no channel is configured, so no request is made" }) do
-        assert_nil AgentMessageDiscordPollJob.perform_now
+      AgentMessages::Routes.stub(:load, AgentMessages::Routes.new({})) do
+        AgentMessages::DiscordBot.stub(:new, ->(*) { flunk "no channel is configured, so no request is made" }) do
+          assert_nil AgentMessageDiscordPollJob.perform_now
+        end
       end
     end
   ensure
