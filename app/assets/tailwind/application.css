@@ -497,6 +497,15 @@
     .nav-shell [data-nav-name] {
       font-size: calc(var(--nav-avatar) / 3 / 0.7);
     }
+    /* The theme toggle leads the gear, and both are a size down from the
+       engine's: the gear's 20px icon in a 36px button becomes 16px in 28px,
+       the 16px moon 14px. Order, not markup, so the engine's rail is untouched. */
+    .nav-shell [data-nav-theme-toggle="desktop"] { order: -1; transform: scale(0.875); }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] {
+      width: 1.75rem;
+      height: 1.75rem;
+    }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] svg { width: 1rem; height: 1rem; }
   }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
      words into a column; this app keeps them on one line where they fit and
