@@ -1,0 +1,22 @@
+{
+  "brand": "studio",
+  "icon": null,
+  "navbar": {
+    "rule": 4,
+    "text": "second",
+    "edits": {
+      "first_weight": "800",
+      "ending_colour": "8E82FE"
+    },
+    "colouring": "alt"
+  },
+  "stacked": {
+    "form": "two_line",
+    "text": "first",
+    "edits": {
+      "ending_colour": "8E82FE",
+      "ending_weight": "800"
+    },
+    "colouring": "alt"
+  }
+}
