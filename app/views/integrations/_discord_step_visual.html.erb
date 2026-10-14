@@ -1,0 +1,117 @@
+<%# One small drawing of the Discord screen a setup step describes. Built from the
+    theme tokens, so it follows light and dark; no Discord screenshots or logos.
+    The figure is one image to a screen reader, named by its label. %>
+<% bot_avatar = capture do %>
+  <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs" aria-hidden="true">🤖</span>
+<% end %>
+<% check = capture do %>
+  <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary text-3xs font-bold text-white" aria-hidden="true">✓</span>
+<% end %>
+<% toggle_on = capture do %>
+  <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-primary" aria-hidden="true"><span class="absolute right-0.5 h-4 w-4 rounded-full bg-white shadow"></span></span>
+<% end %>
+<figure class="min-w-0 rounded-xl border border-subtle bg-inset p-3 text-xs" role="img" aria-label="<%= label %>" data-test="step-visual" data-visual="<%= mock %>">
+  <% case mock %>
+  <% when "server" %>
+    <div class="flex gap-3">
+      <div class="flex shrink-0 flex-col items-center gap-2 rounded-lg bg-surface-alt p-2">
+        <span class="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/15 text-sm font-bold text-primary-ink">Ac</span>
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-sm font-bold text-muted">Go</span>
+        <span class="h-px w-6 bg-[var(--color-border)]"></span>
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/40 ring-offset-2 ring-offset-surface-alt">+</span>
+      </div>
+      <div class="min-w-0 flex-1 rounded-lg bg-surface p-3">
+        <p class="font-semibold text-heading">Create Your Server</p>
+        <p class="mt-1 text-muted">Your server is where you and your team hang out.</p>
+        <p class="mt-3 rounded-md border border-primary/50 bg-primary/10 px-2 py-1.5 font-semibold text-heading">Create My Own <span class="float-right text-muted">›</span></p>
+        <p class="mt-2 rounded-md border border-subtle px-2 py-1.5 text-muted">Start from a template <span class="float-right">›</span></p>
+      </div>
+    </div>
+  <% when "channel" %>
+    <div class="rounded-lg bg-surface p-3">
+      <p class="font-semibold text-heading">Your company</p>
+      <p class="mt-3 text-3xs font-semibold uppercase tracking-wider text-muted">Text channels <span class="float-right text-sm leading-none">+</span></p>
+      <ul class="mt-1 space-y-0.5">
+        <li class="rounded px-2 py-1 text-muted"># general</li>
+        <li class="rounded px-2 py-1 text-muted"># app-events</li>
+        <li class="flex items-center justify-between gap-2 rounded bg-primary/15 px-2 py-1 font-semibold text-heading"><span># agents</span><span aria-hidden="true">🔒</span></li>
+      </ul>
+      <div class="mt-3 rounded-md border border-subtle p-2">
+        <p class="text-3xs font-semibold uppercase tracking-wider text-muted">#agents · Permissions</p>
+        <p class="mt-1 flex items-center justify-between gap-2 text-body"><span>Private Channel</span><%= toggle_on %></p>
+        <p class="mt-1 flex items-center gap-2 text-body"><%= bot_avatar %><span class="min-w-0 [overflow-wrap:anywhere]">Studio <span class="ml-1 rounded bg-primary/15 px-1 text-3xs font-semibold uppercase text-primary-ink">Bot</span> added</span></p>
+      </div>
+    </div>
+  <% when "roles" %>
+    <div class="rounded-lg bg-surface p-3">
+      <p class="text-3xs font-semibold uppercase tracking-wider text-muted">Server Settings · Roles</p>
+      <p class="mt-1 font-semibold text-heading">Edit role: Studio CTO</p>
+      <div class="mt-2 flex gap-3 border-b border-subtle text-muted">
+        <span class="border-b-2 border-primary pb-1 font-semibold text-heading">Display</span>
+        <span class="pb-1">Permissions</span>
+        <span class="pb-1">Members (0)</span>
+      </div>
+      <p class="mt-3 flex items-center justify-between gap-3 text-body"><span>Display role members separately</span><span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-surface-alt" aria-hidden="true"><span class="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow"></span></span></p>
+      <p class="mt-2 flex items-center justify-between gap-3 rounded-md bg-primary/10 p-1.5 font-semibold text-heading"><span>Allow anyone to @mention this role</span><%= toggle_on %></p>
+    </div>
+  <% when "invite" %>
+    <div class="rounded-lg bg-surface p-3">
+      <div class="flex items-center gap-2">
+        <%= bot_avatar %>
+        <p class="min-w-0 text-body"><span class="font-semibold text-heading">Studio</span> wants to access your Discord account</p>
+      </div>
+      <p class="mt-3 text-3xs font-semibold uppercase tracking-wider text-muted">Add to server</p>
+      <p class="mt-1 rounded-md border border-subtle px-2 py-1.5 text-heading">Your company <span class="float-right text-muted">▾</span></p>
+      <p class="mt-3 text-3xs font-semibold uppercase tracking-wider text-muted">This will allow the app to</p>
+      <ul class="mt-1 space-y-1.5" data-test="invite-permissions">
+        <% [ "View Channels", "Read Message History", "Send Messages", "Send Messages in Threads" ].each do |permission| %>
+          <li class="flex items-center gap-2 text-body"><%= check %><span><%= permission %></span></li>
+        <% end %>
+      </ul>
+      <p class="mt-3 flex justify-end gap-2">
+        <span class="rounded-md px-3 py-1.5 text-muted">Back</span>
+        <span class="rounded-md bg-primary px-3 py-1.5 font-semibold text-white">Authorize</span>
+      </p>
+    </div>
+  <% when "ids" %>
+    <div class="space-y-3">
+      <div class="rounded-lg bg-surface p-3">
+        <p class="text-3xs font-semibold uppercase tracking-wider text-muted">User Settings · Advanced</p>
+        <p class="mt-2 flex items-center justify-between gap-3 font-semibold text-heading"><span>Developer Mode</span><%= toggle_on %></p>
+        <p class="mt-1 text-muted">Adds a "Copy ID" item to the right-click menu.</p>
+      </div>
+      <div class="flex items-start gap-2">
+        <p class="min-w-0 flex-1 rounded-lg bg-surface p-2 text-heading"># agents</p>
+        <ul class="w-40 shrink-0 rounded-lg border border-subtle bg-surface p-1 shadow-sm">
+          <li class="rounded px-2 py-1 text-muted">Mark As Read</li>
+          <li class="rounded px-2 py-1 text-muted">Edit Channel</li>
+          <li class="my-1 h-px bg-[var(--color-border)]"></li>
+          <li class="flex items-center justify-between gap-2 rounded bg-primary px-2 py-1 font-semibold text-white"><span>Copy Channel ID</span><span class="text-3xs" aria-hidden="true">ID</span></li>
+        </ul>
+      </div>
+    </div>
+  <% when "send" %>
+    <div class="rounded-lg bg-surface p-3">
+      <p class="font-semibold text-heading">Request the Discord bot</p>
+      <div class="mt-2 rounded-md border border-subtle p-2 font-mono text-body [overflow-wrap:anywhere]">
+        <p>Server ID: 112233445566778899</p>
+        <p>Channel ID (#agents): 223344556677889900</p>
+        <p>Role ID (@Studio CTO): 334455667788990011</p>
+      </div>
+      <p class="mt-2 flex items-center gap-2 text-muted"><span aria-hidden="true">🔒</span><span>IDs only. No passwords, no tokens.</span></p>
+      <p class="mt-2 text-right"><span class="rounded-md bg-primary px-3 py-1.5 font-semibold text-white">Send</span></p>
+    </div>
+  <% when "test" %>
+    <div class="space-y-3 rounded-lg bg-surface p-3">
+      <p class="text-3xs font-semibold uppercase tracking-wider text-muted"># agents</p>
+      <div class="flex gap-2">
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-alt text-3xs font-bold text-muted" aria-hidden="true">You</span>
+        <p class="min-w-0 text-body"><span class="block font-semibold text-heading">You</span><span class="rounded bg-primary/15 px-1 font-semibold text-primary-ink">@Studio CTO</span> hello</p>
+      </div>
+      <div class="flex gap-2">
+        <%= bot_avatar %>
+        <p class="min-w-0 text-body [overflow-wrap:anywhere]"><span class="block font-semibold text-heading">Studio CTO <span class="ml-1 rounded bg-primary/15 px-1 text-3xs font-semibold uppercase text-primary-ink">Bot</span></span>Hello! I'm here. Ask me anything about your app.</p>
+      </div>
+    </div>
+  <% end %>
+</figure>

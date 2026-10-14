@@ -2,8 +2,12 @@
 <%# The guide the Discord card's Connect opens (Mr. McRitchie, 2026-10-13, option
     B: a McRitchie Studio bot the client adds to its own server, two-way). The
     bot does not exist yet, so the page is honest about it: status On request,
-    examples labelled as examples, and its one button REQUESTS the bot through
-    the contact form. It never links to a Discord authorization URL. %>
+    examples labelled as examples, and the invite link comes from us after the
+    request. Its buttons REQUEST the bot through the contact form; the page never
+    links to a Discord authorization URL. Setup is a numbered how-to guide (Mr.
+    McRitchie, 2026-10-13): each step links Discord's own help article and draws
+    the screen it describes. Operator-only bot creation stays off this page:
+    docs/agents/agents/steffon/sops/discord-bot-setup.md. %>
 <% messages = [
      { who: "Studio", role: "app", channel: "#app-events", text: "New sign-up: Riley" },
      { who: "Studio", role: "app", channel: "#app-events", text: "3 errors in the last hour: Net::ReadTimeout" },
@@ -81,22 +85,79 @@
     </div>
   </section>
 
+  <% help = "https://support.discord.com/hc/en-us/articles/" %>
+  <% steps = [
+       { key: "server", title: "Create your server, or use the one you have",
+         body: [ "In Discord, click the + at the bottom of your server list, choose Create My Own and name it for your company. Already have a server? Use it and skip ahead." ],
+         link: { label: "How do I create a server?", url: "#{help}204849977-How-do-I-create-a-server" },
+         visual: "The server list with its + button, opening Create Your Server with Create My Own highlighted" },
+       { key: "channel", title: "Make an #agents channel",
+         body: [ "Click + next to Text Channels and name it agents. Your agents read and answer here.",
+                 "If you make it private, open the channel's settings, then Permissions, and add our bot once it is in your server, or it cannot see the channel." ],
+         link: { label: "Channel Permissions Settings 101", url: "#{help}10543994968087-Channel-Permissions-Settings-101" },
+         visual: "A channel list showing #agents marked private, with the Studio bot added under its permissions" },
+       { key: "roles", title: "Give each agent a mentionable role",
+         body: [ "In Server Settings, then Roles, create one role per agent, for example @Studio CTO. Assign nobody to it: the role is there to be mentioned.",
+                 "On the role's Display tab, turn on Allow anyone to @mention this role." ],
+         link: { label: "Discord Roles and Permissions", url: "#{help}214836687-Discord-Roles-and-Permissions" },
+         visual: "The role editor for Studio CTO with no members and Allow anyone to @mention this role switched on" },
+       { key: "invite", title: "Invite the bot",
+         body: [ "Your invite link comes from us: request the bot with your IDs (steps 5 and 6) and we reply with a link set up for your server. Open it, pick your server and approve exactly four permissions on Discord's own screen: View Channels, Read Message History, Send Messages and Send Messages in Threads.",
+                 "You can remove the bot any time from your server settings." ],
+         link: { label: "Using Apps on Discord", url: "#{help}21334461140375-Using-Apps-on-Discord" },
+         visual: "Discord's authorization screen for the Studio bot, with your server picked and four permissions checked" },
+       { key: "ids", title: "Turn on Developer Mode and copy your IDs",
+         body: [ "In User Settings, then Advanced, turn on Developer Mode. Now right-click to copy an ID: your server's icon for the server ID, #agents for the channel ID, and each agent role (in Server Settings, then Roles) for its role ID." ],
+         link: { label: "Where can I find my User/Server/Message ID?", url: "#{help}206346498-Where-can-I-find-my-User-Server-Message-ID" },
+         visual: "Developer Mode switched on under Advanced, and the right-click menu on #agents with Copy Channel ID highlighted" },
+       { key: "send", title: "Send us those IDs",
+         body: [ "Paste the server ID, the channel ID and the role IDs into the request form below. We connect your agents and tell you when they are listening.",
+                 "Never send a password or a token. We need only these IDs." ],
+         visual: "The request form with a server ID, a channel ID and a role ID filled in, and a reminder to send no passwords or tokens" },
+       { key: "test", title: "Say hello",
+         body: [ "In #agents, post @Studio CTO hello, using your own agent's role. Expect a reply within a few minutes." ],
+         visual: "A chat in #agents: you post @Studio CTO hello and the bot replies" }
+     ] %>
   <section class="mt-12" aria-labelledby="setup" data-test="discord-setup">
-    <h2 id="setup" class="text-xl font-semibold text-heading mb-1">Setup</h2>
-    <p class="text-sm text-muted mb-4">How it will work once we have set your bot up with you.</p>
-    <ol class="grid gap-4 sm:grid-cols-3">
-      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
-        <p class="font-semibold text-heading mb-1">1. Your server</p>
-        <p class="text-sm text-muted">Create a Discord server for your company, or use the one you have.</p>
-      </li>
-      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
-        <p class="font-semibold text-heading mb-1">2. Your channels</p>
-        <p class="text-sm text-muted">Make a channel for each stream you want, for example #app-events and #agents.</p>
-      </li>
-      <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
-        <p class="font-semibold text-heading mb-1">3. Add the bot</p>
-        <p class="text-sm text-muted">When your bot is ready, you will add it and approve its permissions on Discord's own screen. No links or passwords change hands.</p>
-      </li>
+    <h2 id="setup" class="text-xl font-semibold text-heading mb-1">Set it up, step by step</h2>
+    <p class="text-sm text-muted mb-6">Seven steps, about fifteen minutes. Each links Discord's own help article if you want more detail.</p>
+    <ol class="space-y-4" data-test="setup-steps">
+      <% steps.each_with_index do |step, index| %>
+        <li class="rounded-2xl border border-subtle bg-surface p-4 md:p-5" data-test="setup-step" data-step="<%= step[:key] %>">
+          <div class="grid gap-4 md:grid-cols-2 md:items-start">
+            <div class="min-w-0">
+              <div class="flex items-start gap-3">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white" aria-hidden="true"><%= index + 1 %></span>
+                <h3 class="pt-1 font-semibold text-heading"><span class="sr-only">Step <%= index + 1 %>: </span><%= step[:title] %></h3>
+              </div>
+              <div class="mt-2 space-y-2 text-sm text-body">
+                <% step[:body].each do |paragraph| %>
+                  <p><%= paragraph %></p>
+                <% end %>
+              </div>
+              <% if step[:key] == "invite" %>
+                <%# The slot a real Add to Discord button replaces once the bot exists. %>
+                <p class="mt-3 inline-flex items-center gap-2 rounded-lg border border-dashed border-strong px-3 py-2 text-sm text-muted" data-test="invite-slot">
+                  <span aria-hidden="true">✉️</span> Invite link sent after your request
+                  <span class="rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted">On request</span>
+                </p>
+              <% end %>
+              <% if step[:key] == "send" %>
+                <p class="mt-3"><a href="#discord-request" class="text-sm font-semibold text-primary hover:underline" data-test="step-request-link">Go to the request form <span aria-hidden="true">↓</span></a></p>
+              <% end %>
+              <% if step[:link] %>
+                <p class="mt-3">
+                  <%= link_to step[:link][:url], target: "_blank", rel: "noopener",
+                        class: "inline-flex items-start gap-1 text-sm font-semibold text-primary hover:underline [overflow-wrap:anywhere]", data: { test: "step-help-link" } do %>
+                    <span>Discord help: <%= step[:link][:label] %></span><span aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span>
+                  <% end %>
+                </p>
+              <% end %>
+            </div>
+            <%= render "integrations/discord_step_visual", mock: step[:key], label: step[:visual] %>
+          </div>
+        </li>
+      <% end %>
     </ol>
     <p class="mt-4 flex gap-2 rounded-xl border border-subtle bg-surface p-4 text-sm text-body" data-test="permissions-note">
       <span aria-hidden="true">🔒</span>
@@ -104,12 +165,12 @@
     </p>
   </section>
 
-  <section class="mt-12 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" data-test="discord-request" aria-labelledby="discord-request-heading">
+  <section class="mt-12 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" id="discord-request" data-test="discord-request" aria-labelledby="discord-request-heading">
     <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
       <div class="min-w-0">
         <p class="text-xs font-semibold uppercase tracking-wider text-primary">On request</p>
         <h2 id="discord-request-heading" class="mt-1 text-xl font-semibold text-heading">Want your agents in Discord?</h2>
-        <p class="mt-2 text-sm text-body">The bot will be set up with you on request. Tell us about your server and we will take it from there.</p>
+        <p class="mt-2 text-sm text-body">The bot will be set up with you on request. Send us your server, channel and role IDs and we reply with your invite link.</p>
       </div>
       <%= link_to "Request the Discord bot", contact_form_path(source: @entry.guide_contact_source),
             class: "btn btn-primary shrink-0 justify-center md:w-auto w-full", data: { test: "discord-request-cta" } %>
