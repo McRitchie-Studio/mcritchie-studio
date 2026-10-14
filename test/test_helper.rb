@@ -89,6 +89,16 @@ ENV["DNS_HOST_NO_LIVE_CALLS"] = "1"
 # test/services/appearances/live_call_trap_test.rb pins this literal against the
 # constant so a rename cannot disarm the suite in silence.
 ENV["APPEARANCES_NO_LIVE_CALLS"] = "1"
+# LOCAL EMAIL CAPTURE OFF, whatever the shell or a desk's .env says. A desk's .env
+# carries LOCAL_EMAIL_CAPTURE=1 and its stack exports AGENT_WORKTREE=1; the engine
+# reads EITHER as "capture on" (Studio.local_email_capture?), and a captured email
+# never reaches ActionMailer's test deliveries, so the email tests went red on every
+# desk and green in CI. Set to "0" rather than deleted, before boot: dotenv never
+# overwrites a variable that is already set, so the .env line cannot win. A test that
+# needs capture sets Studio.local_email_capture = true itself; resetting it to nil
+# falls back to these. test/lib/test_env_email_capture_test.rb pins it.
+ENV["LOCAL_EMAIL_CAPTURE"] = "0"
+ENV["AGENT_WORKTREE"] = "0"
 require_relative "../config/environment"
 # A test database built before the migration baseline holds every table and none of
 # the baseline's versions. Recording them here lets rails/test_help find nothing pending.
