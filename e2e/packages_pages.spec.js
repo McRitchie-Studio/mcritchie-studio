@@ -209,6 +209,8 @@ test("Pro and Team cards mark their lines, sell the Premium Domain, and the full
   await expect(pro.locator("[data-test='package-line'][data-lane='cto']")).toContainText("24-hour access & daily summaries");
   await expect(pro.locator("[data-test='package-line'][data-lane='app']")).toContainText("CTO-Managed Web App");
   await expect(pro.locator("[data-test='package-line'][data-lane='integrations'] a[href='/integrations']")).toHaveText("Integrations");
+  // The Discord bot is on request, not live, so the lane names only Google Workspace.
+  await expect(pro.locator("[data-test='package-line'][data-lane='integrations'] [data-test='line-sub']")).toHaveText("Google Workspace & more");
   await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
   // Pro and Team sell the Premium Domain; Builder keeps its Custom Domain. At

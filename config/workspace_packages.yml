@@ -175,7 +175,7 @@ packages:
       app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 60 GB" }
       domain: { title: Premium Domain, sub: best-in-class speed & security }
-      integrations: { sub: "Google Workspace, Discord & more" }
+      integrations: { sub: "Google Workspace & more" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
       social: { sub: posts you approve, status: soon }
@@ -191,7 +191,7 @@ packages:
       app: { title: CTO-Managed Web App, sub: Always-on CTO }
       host_storage: { sub: "background jobs, 132 GB" }
       domain: { title: Premium Domain, sub: best-in-class speed & security }
-      integrations: { sub: "Google Workspace, Discord & more" }
+      integrations: { sub: "Google Workspace & more" }
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
       drafting: { sub: replies drafted in your inbox }
@@ -415,9 +415,9 @@ features:
     category: platform
     icon: "🔌"
     href: /integrations
-    blurb: "Your app wired to the tools you run on: Google Workspace (custom email at team@your-app.com, Calendar and Drive, 2 users at 30 GB each), Discord and more."
-    pro: Google Workspace, Discord & more
-    team: Google Workspace, Discord & more
+    blurb: "Your app wired to the tools you run on: Google Workspace (custom email at team@your-app.com, Calendar and Drive, 2 users at 30 GB each) and more."
+    pro: Google Workspace & more
+    team: Google Workspace & more
     enterprise: Custom
     sop: workspace-signup
     you_do: Sign up and create the users
