@@ -103,7 +103,7 @@
                   <div class="min-w-0 text-sm">
                     <p class="font-semibold <%= line.missing? ? 'text-muted' : 'text-heading' %>" data-test="line-title">
                       <% if line.href %>
-                        <%= link_to line.title, line.href, class: "hover:text-primary hover:underline" %>
+                        <%= link_to line.title, line.href, class: "underline underline-offset-2 hover:text-primary" %>
                       <% else %>
                         <%= line.title %>
                       <% end %>

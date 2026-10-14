@@ -134,7 +134,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "#{app} [data-test='line-title']", text: "CTO-Managed Web App"
       assert_select "#{app} [data-test='line-sub']", text: "Always-on CTO"
       integrations = "#{card(key)} [data-test='package-line'][data-lane='integrations'][data-status='included']"
-      assert_select "#{integrations} [data-test='line-title'] a[href='/integrations']", text: "Integrations"
+      assert_select "#{integrations} [data-test='line-title'] a.underline[href='/integrations']", text: "Integrations"
       assert_select "#{integrations} [data-test='line-sub']", text: "Google Workspace, Discord & more"
     end
     assert_select "#{card('builder')} [data-test='package-line'][data-lane='app'] [data-test='line-title']", text: "Custom Web App"
@@ -262,7 +262,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='web-address'] [data-test='stack-software'] [data-brand='squarespace']"
     assert_select "[data-feature='google-workspace']", 0
     assert_select "[data-feature='integrations'] [data-test='stack-lead'][data-lead='emoji']"
-    assert_select "[data-feature='integrations'] a[href='/integrations']", text: "Integrations"
+    assert_select "[data-feature='integrations'] a.underline[href='/integrations']", text: "Integrations"
     assert_select "[data-feature='integrations'] [data-test='stack-software'] [data-brand='google']"
     assert_equal [ "—", "—", "Google Workspace, Discord & more", "Google Workspace, Discord & more", "Custom" ],
                  css_select("[data-feature='integrations'] [data-test='stack-cell']").map { |td| cell_text(td) }
