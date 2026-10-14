@@ -497,6 +497,15 @@
     .nav-shell [data-nav-name] {
       font-size: calc(var(--nav-avatar) / 3 / 0.7);
     }
+    /* The icon column beside the account link is a centred flex column, so
+       the theme toggle and gear sit level with the name rather than at the top
+       of the 40px row. studio-engine does this itself from the release after
+       0.105.0 (its data-nav-tools column); this keeps the hub right on either. */
+    .nav-shell :has(> a[data-nav-account]) > div:first-child {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
     /* The engine dims the whole account link on hover (opacity 80%), which
        turned the name's primary into a duller purple than the brand's. The
        name's own hover colour is the cue. */

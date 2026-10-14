@@ -158,6 +158,18 @@ test("the desktop avatar shrinks on scroll and the name follows it", async ({ pa
 
   const rest = await sizes();
   expect(rest.avatar).toBe(40);
+
+  // The theme toggle and gear sit on the name's line, not the top of the row.
+  const centres = await page.evaluate(() => {
+    const mid = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top + r.height / 2; };
+    return {
+      avatar: mid("header [data-nav-account] [aria-hidden] > *"),
+      name: mid("header [data-nav-name]"),
+      toggle: mid("header [data-nav-theme-toggle='desktop']"),
+    };
+  });
+  expect(Math.abs(centres.toggle - centres.avatar), JSON.stringify(centres)).toBeLessThanOrEqual(1);
+  expect(Math.abs(centres.name - centres.avatar), JSON.stringify(centres)).toBeLessThanOrEqual(1);
   expect(rest.name).toBeCloseTo(40 / 3 / 0.7, 1);
 
   await page.evaluate(() => window.scrollTo(0, 1200));
