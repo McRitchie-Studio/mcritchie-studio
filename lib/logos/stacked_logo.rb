@@ -25,13 +25,13 @@ module Logos
   #                       is as tall as the tagline is wide. The tagline takes the
   #                       tone's `quiet` fill (`text` without one).
   #
-  # Every form draws in either proportion (`proportion:`), which sets only the icon's size and the gaps; the lines
-  # above are the same in both.
+  # Every form draws in either proportion (`proportion:`), which sets only the icon's size; the lines and the 2u
+  # gaps above are the same in both (Alex 2026-10-14 12:07: "space of 2 vertically between").
   #
   #   three_two_one (default)  as above: the icon's height comes from the small line's width; every gap is 2u.
   #   rule_of_three            three copies of the icon side by side span exactly the big line's ink width W, so the
-  #                            icon is W/3 wide (its height follows from its own aspect), centred; every gap is one
-  #                            big-line cap height, 3u. Top to bottom: icon, 3u, big line(, 3u, small line).
+  #                            icon is W/3 wide (its height follows from its own aspect), centred. Top to bottom:
+  #                            icon, 2u, big line(, 2u, small line).
   #
   # The operator's edits (NavbarLogo#checked_edits) also reach the tagline: its
   # colour, its weight (in place of TAGLINE_WEIGHT; still tracked out to 60%,
@@ -50,7 +50,6 @@ module Logos
     FORMS = %w[two_line one_line].freeze       # a style's own form; `tagline` is offered beside it, never named in a style
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     PROPORTIONS = %i[three_two_one rule_of_three].freeze   # the first is the default
-    GAPS = { three_two_one: GAP, rule_of_three: BIG }.freeze   # every gap, in u, per proportion
     THIRDS = 3                                 # rule_of_three: this many icons side by side are as wide as the big line
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
     # between the two, and the small line itself turned on end beside the icon. Distances are in design units.
@@ -111,12 +110,11 @@ module Logos
         big += rest
       end
       icon_width, icon_height = icon_box(look, width, proportion)
-      gap = GAPS.fetch(proportion)
-      edges = [0, icon_height, icon_height + gap * U, icon_height + (gap + BIG) * U]
+      edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
       line = [big, first + second, cap]
       unless form == :one_line
-        edges += [edges.last + gap * U, edges.last + (gap + 1) * U]
+        edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
         weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
         small = form == :tagline ? tagline_line(width, weight) : small_line(second, width)
         placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) } unless form == :tagline && edits.dig(:tagline, :visible) == false
@@ -311,7 +309,7 @@ module Logos
 
     # THE RULE OF THREE'S GUIDE DRAWING, as the reel draws it: two ghost copies of the icon either side of the real one,
     # the three edge to edge across the name's ink; a vertical line at each third, numbered 1 2 3 above; the ruler of
-    # small-line copies beside the logo, which counts each 3u gap; and a line at each band boundary. No turned line:
+    # small-line copies beside the logo, which counts each 2u gap; and a line at each band boundary. No turned line:
     # the icon's height is its own aspect's, not the small line's width.
     def thirds_render(box, height, body, look, icon_look)
       fill = ghost_fill(look)
