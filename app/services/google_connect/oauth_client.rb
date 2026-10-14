@@ -4,22 +4,26 @@ require "uri"
 require "json"
 require "base64"
 
-module GoogleCalendar
-  # OAuth 2.0 for the Google Calendar connection: the `sign_in` method of
-  # config/integrations.yml, dogfooded on the hub's own admin page first.
+module GoogleConnect
+  # OAuth 2.0 for the Google connection (GoogleConnection): the `sign_in`
+  # method of config/integrations.yml, dogfooded on the hub's own admin page
+  # and /integrations cards first.
   #
-  #   1. /admin/google_calendar/connect redirects to Google's sign-in, asking
-  #      for SCOPES with offline access, so Google returns a refresh token
-  #   2. Google redirects to /admin/google_calendar/callback with ?code=
-  #   3. The callback exchanges the code and stores GoogleCalendarConnection
+  #   1. /admin/google/connect?ability=gmail redirects to Google's sign-in,
+  #      asking for who the account is and that ability's one read scope, with
+  #      offline access (a refresh token) and include_granted_scopes (Google
+  #      adds it to what the account already granted: incremental consent)
+  #   2. Google redirects to /admin/google_calendar/callback with ?code= (the
+  #      path the OAuth client registered first, kept so no console change is owed)
+  #   3. The callback exchanges the code and stores GoogleConnection
   #
   # ITS OWN OAUTH CLIENT, never the hub's sign-in client (GOOGLE_CLIENT_ID):
-  # a calendar scope on the sign-in client would tie this grant to the login's
+  # a Google API scope on the sign-in client would tie this grant to the login's
   # secret, so rotating one would break the other.
   #
-  # WHAT IT ASKS FOR: who the account is (openid, email) and a read of calendar
-  # events (calendar.events.readonly). It cannot create, change or delete an
-  # event, and it cannot read calendar settings or sharing.
+  # WHAT IT ASKS FOR: who the account is (openid, email) and one read-only
+  # scope per ability (GoogleConnection::ABILITIES): calendar events, Gmail,
+  # Drive. Nothing it asks for can create, change, send or delete.
   #
   # Env vars (names only; values live in 1Password and Heroku config):
   #   GOOGLE_CONNECT_CLIENT_ID      the connections OAuth client's id
@@ -28,8 +32,6 @@ module GoogleCalendar
     AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth".freeze
     TOKEN_URL = "https://oauth2.googleapis.com/token".freeze
     REVOKE_URL = "https://oauth2.googleapis.com/revoke".freeze
-    CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly".freeze
-    SCOPES = [ "openid", "email", CALENDAR_SCOPE ].freeze
     ENV_NAMES = %w[GOOGLE_CONNECT_CLIENT_ID GOOGLE_CONNECT_CLIENT_SECRET].freeze
 
     # What reaching Google can raise below HTTP: TLS, refused, timed out, DNS.
@@ -51,12 +53,16 @@ module GoogleCalendar
 
       def configured? = ENV_NAMES.all? { |name| ENV[name].present? }
 
-      def authorize_url(redirect_uri:, state:)
-        return sign_in_stand_in.authorize_url(redirect_uri:, state:) if sign_in_stand_in
+      # The scopes a sign-in for `ability` asks for: identity plus its one read.
+      def scopes_for(ability) = GoogleConnection::IDENTITY_SCOPES + [ GoogleConnection.scope_for(ability) ]
+
+      def authorize_url(redirect_uri:, state:, ability:)
+        return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes: scopes_for(ability)) if sign_in_stand_in
 
         ensure_configured!
         params = { client_id: ENV.fetch("GOOGLE_CONNECT_CLIENT_ID"), redirect_uri:, response_type: "code",
-                   scope: SCOPES.join(" "), access_type: "offline", prompt: "consent", state: }
+                   scope: scopes_for(ability).join(" "), access_type: "offline", prompt: "consent",
+                   include_granted_scopes: "true", state: }
         "#{AUTH_URL}?#{URI.encode_www_form(params)}"
       end
 
@@ -89,7 +95,7 @@ module GoogleCalendar
         status, = call(:post, REVOKE_URL, token: connection.refresh_token)
         status == 200
       rescue Error, ActiveRecord::Encryption::Errors::Base, *NETWORK_ERRORS => e
-        Rails.logger.warn("[google_calendar] revoke failed: #{e.class}")
+        Rails.logger.warn("[google_connect] revoke failed: #{e.class}")
         false
       end
 

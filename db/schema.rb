@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1339,7 +1339,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
     t.index ["run_id"], name: "index_github_workflow_runs_on_run_id", unique: true
   end
 
-  create_table "google_calendar_connections", force: :cascade do |t|
+  create_table "google_connections", force: :cascade do |t|
     t.datetime "connected_at", null: false
     t.string "connected_by"
     t.datetime "created_at", null: false
@@ -1347,8 +1347,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
     t.text "refresh_token", null: false
     t.string "scope"
     t.datetime "updated_at", null: false
-    t.index ["connected_at"], name: "index_google_calendar_connections_on_connected_at"
-    t.index ["email"], name: "index_google_calendar_connections_on_email", unique: true
+    t.index ["connected_at"], name: "index_google_connections_on_connected_at"
+    t.index ["email"], name: "index_google_connections_on_email", unique: true
   end
 
   create_table "image_caches", force: :cascade do |t|

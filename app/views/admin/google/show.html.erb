@@ -1,0 +1,133 @@
+<%# The standing Google connection page (/admin/google): one section per ability (Google Calendar, Gmail, Google Drive), each with its status, the account that grants it, a live read proving it (the next week's events, the newest mail, the newest files) or Google's error said plainly, and one button: Connect, or Disconnect once connected. The OAuth client and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
+<% can_connect = @configured && @encryption_ready %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="google-connection-page">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Google connection</h1>
+    <p class="text-secondary mt-2">
+      The Google accounts this server reads, connected by signing in, one permission at a time. Each can read and nothing else. No token is shown here.
+    </p>
+  </div>
+
+  <% if @unreadable.any? %>
+    <p class="card p-4 text-sm text-body" data-test="google-unreadable">
+      <span class="font-semibold text-warning-ink">Stored but unreadable:</span> <%= @unreadable.to_sentence %>. It was encrypted with keys this server no longer has; connecting again replaces it.
+    </p>
+  <% end %>
+
+  <% @sections.each do |section| %>
+    <% connection = section.connection %>
+    <% state = if connection.nil? then "none" elsif section.error then "read_failed" else "connected" end %>
+    <div class="card p-4 space-y-3 text-sm" data-test="google-section" data-ability="<%= section.ability %>" data-state="<%= state %>">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div class="min-w-0 space-y-1">
+          <h2 class="font-semibold text-heading text-base"><%= section.name %></h2>
+          <% if state == "connected" %>
+            <span class="badge text-xs bg-success/10 text-success-ink border-success/40" data-test="google-badge">Connected</span>
+          <% elsif state == "read_failed" %>
+            <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="google-badge">Connected, but the read failed</span>
+          <% else %>
+            <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="google-badge">Not connected</span>
+          <% end %>
+          <% if connection %>
+            <p class="text-body" data-test="google-account">
+              <span class="font-semibold text-heading break-all" data-field="account"><%= connection.email %></span>
+              <span class="block text-muted text-xs" data-field="connected">Connected <%= stamp.(connection.connected_at) %><% if connection.connected_by.present? %> by <%= connection.connected_by %><% end %></span>
+            </p>
+          <% end %>
+        </div>
+        <% if connection %>
+          <%= button_to "Disconnect", admin_google_disconnect_path(ability: section.ability), method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto",
+                        form: { class: "shrink-0", data: { test: "google-disconnect", turbo_confirm: "Disconnect #{section.name} for #{connection.email}?" } } %>
+        <% elsif can_connect %>
+          <%= link_to "Connect #{section.name}", admin_google_connect_path(ability: section.ability),
+                      class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 text-center", data: { test: "google-connect", turbo: false } %>
+        <% end %>
+      </div>
+
+      <% if section.error %>
+        <p class="text-body" data-test="google-read-error"><%= section.error %></p>
+      <% elsif connection.nil? %>
+        <p class="text-muted" data-test="google-detail"><%= can_connect ? "Not connected. Connect signs in with Google and asks for this read only." : "Connect is off until the setup below is done." %></p>
+      <% elsif section.ability == :calendar %>
+        <div data-test="google-read" data-count="<%= section.read.size %>">
+          <p class="font-medium text-heading">Next 7 days · <%= pluralize(section.read.size, "event") %></p>
+          <% if section.read.empty? %>
+            <p class="mt-1 text-muted">No events in the next week.</p>
+          <% else %>
+            <ul class="mt-1 divide-y divide-subtle">
+              <% section.read.first(10).each do |event| %>
+                <li class="py-2 flex flex-col sm:flex-row sm:justify-between gap-1" data-test="google-read-item">
+                  <span class="text-heading break-words min-w-0"><%= event.title %></span>
+                  <span class="text-muted text-xs shrink-0">
+                    <%= event.all_day ? event.starts_at.strftime("%a %b %-d · all day") : stamp.(event.starts_at) %>
+                    <% if event.attendees.positive? %> · <%= pluralize(event.attendees, "guest") %><% end %>
+                  </span>
+                </li>
+              <% end %>
+            </ul>
+            <% if section.read.size > 10 %><p class="mt-1 text-muted text-xs">and <%= section.read.size - 10 %> more</p><% end %>
+          <% end %>
+        </div>
+      <% elsif section.ability == :gmail %>
+        <div data-test="google-read" data-count="<%= section.read.messages.size %>">
+          <p class="font-medium text-heading">Newest mail · about <%= pluralize(section.read.estimate, "message") %></p>
+          <% if section.read.messages.empty? %>
+            <p class="mt-1 text-muted">The mailbox is empty.</p>
+          <% else %>
+            <ul class="mt-1 divide-y divide-subtle">
+              <% section.read.messages.each do |message| %>
+                <li class="py-2 flex flex-col sm:flex-row sm:justify-between gap-1" data-test="google-read-item">
+                  <span class="min-w-0">
+                    <span class="block text-heading break-words"><%= message.subject %></span>
+                    <span class="block text-muted text-xs break-all"><%= message.from %></span>
+                  </span>
+                  <span class="text-muted text-xs shrink-0"><%= message.received_at ? stamp.(message.received_at) : "" %></span>
+                </li>
+              <% end %>
+            </ul>
+          <% end %>
+        </div>
+      <% else %>
+        <div data-test="google-read" data-count="<%= section.read.size %>">
+          <p class="font-medium text-heading">Recently changed files</p>
+          <% if section.read.empty? %>
+            <p class="mt-1 text-muted">The Drive has no files.</p>
+          <% else %>
+            <ul class="mt-1 divide-y divide-subtle">
+              <% section.read.each do |file| %>
+                <li class="py-2 flex flex-col sm:flex-row sm:justify-between gap-1" data-test="google-read-item">
+                  <span class="text-heading break-words min-w-0"><%= file.name %></span>
+                  <span class="text-muted text-xs shrink-0"><%= file.modified_at ? stamp.(file.modified_at) : "" %></span>
+                </li>
+              <% end %>
+            </ul>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% unless @configured && @encryption_ready %>
+    <dl class="card p-4 space-y-3 text-sm border-warning/40" data-test="google-server">
+      <% unless @configured %>
+        <div>
+          <dt class="text-muted text-xs mb-1">OAuth client</dt>
+          <dd class="text-body break-words" data-field="client" data-set="false">
+            <span class="font-semibold text-warning-ink">Not set.</span>
+            Set <span class="font-mono text-xs">GOOGLE_CONNECT_CLIENT_ID</span> and <span class="font-mono text-xs">GOOGLE_CONNECT_CLIENT_SECRET</span>.
+            <span class="text-muted">Its redirect URI must be <span class="font-mono text-xs break-all"><%= @callback_url %></span></span>
+          </dd>
+        </div>
+      <% end %>
+      <% unless @encryption_ready %>
+        <div>
+          <dt class="text-muted text-xs mb-1">Encryption</dt>
+          <dd class="text-body break-words" data-field="encryption" data-ready="false">
+            <span class="font-semibold text-warning-ink">Not ready.</span> Set <span class="font-mono text-xs"><%= GoogleConnection::ENCRYPTION_ENV.join(", ") %></span>: without them no connection can be stored.
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+  <% end %>
+</section>

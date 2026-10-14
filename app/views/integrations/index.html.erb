@@ -76,8 +76,9 @@
                           <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
                         <% end %>
                         <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
-                        <% if @calendar && entry.key == IntegrationsController::CALENDAR_CARD[:entry] && method.key == IntegrationsController::CALENDAR_CARD[:method] %>
-                          <%= render "integrations/calendar_connection", calendar: @calendar %>
+                        <% google_ability = @google && method.key == IntegrationsController::GOOGLE_METHOD && IntegrationsController::GOOGLE_CARDS[entry.key] %>
+                        <% if google_ability %>
+                          <%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable] %>
                         <% end %>
                       </li>
                     <% end %>

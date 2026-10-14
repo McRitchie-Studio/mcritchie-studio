@@ -298,7 +298,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_link_preview_path = "/admin/link_preview"
   def asset_browser_path = "/assets"
   def admin_tiktok_path = "/admin/tiktok"
-  def admin_google_calendar_path = "/admin/google_calendar"
+  def admin_google_path = "/admin/google"
   def activities_agents_path = "/agents/activities"
   def admin_ai_builder_multiple_path = "/admin/ai_builder_multiple"
   def workflow_news_index_path = "/news/workflow"
