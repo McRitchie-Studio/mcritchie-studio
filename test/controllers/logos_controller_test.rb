@@ -898,7 +898,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
     assert_select "img[data-test='logo-image'][alt*=', with tagline, rule of three, ']", 6
     assert_select "[data-test='type-sentence']", /The rule of three: three copies of the icon side by side are exactly as wide as the name/
+    assert_select "[data-test='type-sentence']", /every gap is 2 units, as in 3-2-1\. With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline/
     assert_select "[data-test='guides-sentence']", /two faint copies of the icon either side of the real one, numbered 1 2 3/
+    assert_select "[data-test='guides-sentence']", /every gap is 2 units, as in 3-2-1/
+    refute_match(/3 units, one capital|every gap is 3/, css_select("[data-test='type-sentence'], [data-test='guides-sentence']").map(&:text).join)
     kept = { type: "stacked", form: "tagline", proportion: "rule_of_three", guides: 1 }
     assert_equal logo_brand_path("welding_v2", kept.except(:form)), css_select("a[data-test='form-option'][data-form='two_line']").first["href"], "the form keeps the proportion"
     assert_equal logo_brand_path("welding_v2", kept.except(:type)), css_select("a[data-test='logo-tab'][data-type='navbar']").first["href"], "the other tabs carry it back"

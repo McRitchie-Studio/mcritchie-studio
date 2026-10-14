@@ -957,12 +957,15 @@ navbar, footer and sign-in card draw `icon-light.svg` (application.css swaps in
 that reads on both themes in the 20px slot another app's sign-in card gives
 it), `Studio.navbar_wordmark` is the Navbar Logo pair once the engine has the
 setting, and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
-with `node script/brand_png.cjs <svg> <out.png> <size> [background]`
+with `node script/brand_png.cjs <svg> <out.png> <size> [background] [safe-zone]`
 (Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
 It adds no margin: the icon's box is its ink, so the ink touches two opposite
 edges of the square (`test/lib/brand_favicon_test.rb`; Alex 2026-10-14 12:14
 found the old favicon small, with 32 px empty at the top of 256 and 10 at the
-sides from the script's 4% padding and Studio's 2-unit trace margin).
+sides from the script's 4% padding and Studio's 2-unit trace margin). The PWA
+`icon.png` alone keeps a 0.16 safe zone (`… public/icon.png 512 '#1A1535' 0.16`,
+artwork about 346 of 512): the manifest serves it as maskable, and Android
+crops a maskable icon to a circle.
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex's call). A build fetch needs

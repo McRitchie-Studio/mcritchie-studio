@@ -42,12 +42,12 @@ module Logos
     # The rule of three in plain words (task stacked-rule-of-three), and its forms: the lines are set as in 3-2-1.
     RULE_OF_THREE_SENTENCE = "The rule of three: three copies of the icon side by side are exactly as wide as the name, so the icon is a " \
                              "third of the name's width, centred. Take the small line's capitals as one unit: the name's capitals are 3 " \
-                             "units tall, and every gap is 3 units, one capital of the name."
+                             "units tall, and every gap is 2 units, as in 3-2-1."
     RULE_OF_THREE_FORM_SENTENCES = {
       two_line: "This brand uses the two-line form: the small word, 1 unit tall, is spaced out to 60% of the big word's width.",
       one_line: "This brand uses the one-line form, because its second word is too wide to sit under its first: the whole name is on " \
-                "one line, 3 units tall, 3 units under the icon.",
-      tagline: "With tagline: the whole name on one line, 3 units tall, then 3 units, then the tagline, 1 unit tall, set in Montserrat " \
+                "one line, 3 units tall, 2 units under the icon.",
+      tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in Montserrat " \
                "and spaced out to 60% of the name's width."
     }.freeze
     FORM_SENTENCES = {
