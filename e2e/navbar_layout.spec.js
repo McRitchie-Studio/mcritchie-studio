@@ -116,8 +116,13 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   // fallback face, which wraps the brand, and 129px a moment later.)
   await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
+  // The column beside the avatar is what the name could widen. Its width is
+  // the font-independent half of the claim, so it bites on any machine.
+  const column = page.locator("header :has(> a[data-nav-account]) > div").first();
   const withName = (await header.boundingBox()).height;
+  const columnWithName = (await column.boundingBox()).width;
   await name.evaluate((element) => { element.style.display = "none"; });
+  expect((await column.boundingBox()).width).toBe(columnWithName);
   expect((await header.boundingBox()).height).toBe(withName);
   await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
   await expect(page.locator(".nav-phone-tools")).toBeHidden();

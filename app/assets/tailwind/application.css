@@ -554,6 +554,16 @@
      Whichever pair is out of sight is hidden outright, so it takes no focus.
      The engine writes --nav-p on the header with four decimals, and writes
      nothing until the first scroll. */
+  /* The account column holds the name's width whether or not a name is shown,
+     so the brand's room never depends on the name. Log out used to hold it (at
+     3.5rem); without that row the column was only as wide as the name, and on
+     CI's Linux fonts a name was the difference between the brand on one line
+     and on two. 3.5rem is the name's 2.75rem cap plus the engine's 6px row
+     padding each side, the same width Log out held. Phones only: from 768px
+     the icons size the column. */
+  @media (max-width: 767px) {
+    .nav-shell :has(> a[data-nav-account]) > div:first-child { min-width: 3.5rem; }
+  }
   .nav-phone-name {
     max-width: 2.75rem;
     @apply min-w-0 truncate text-right text-base font-semibold leading-none text-heading;
