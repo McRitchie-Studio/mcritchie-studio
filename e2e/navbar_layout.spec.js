@@ -51,9 +51,8 @@ async function navbarMetrics(page) {
     const offscreen = controls.filter((control) =>
       control.left < -1 || control.right > viewportWidth + 1
     );
-    const wrappedLogout = controls.filter((control) =>
-      control.name === "logout" && control.height > 16
-    );
+    // Log out lives in the link sidebar; the bar draws none of its own.
+    const navbarLogout = controls.filter((control) => control.name === "logout");
 
     return {
       viewportWidth,
@@ -65,7 +64,7 @@ async function navbarMetrics(page) {
       },
       controls,
       offscreen,
-      wrappedLogout,
+      navbarLogout,
     };
   });
 }
@@ -76,7 +75,7 @@ async function expectNavbarContained(page) {
 
   expect(metrics.documentOverflow, message).toBeLessThanOrEqual(1);
   expect(metrics.offscreen, message).toEqual([]);
-  expect(metrics.wrappedLogout, message).toEqual([]);
+  expect(metrics.navbarLogout, message).toEqual([]);
   expect(metrics.controls.some((control) => control.name === "username"), message).toBe(true);
   expect(metrics.controls.some((control) => control.name === "profile"), message).toBe(true);
 }
@@ -121,14 +120,16 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   await expect(page.locator(".nav-phone-tools")).toBeHidden();
 });
 
-test("a signed-in phone header is 69px tall once scrolled", async ({ page }) => {
+// 53px: the 2.25rem cog, py-2 and the 1px border. It was 69px while the account
+// column carried a Log out row under the name (task navbar-first-name-only).
+test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await page.goto("/tasks");
   await page.evaluate(() => window.scrollTo(0, 600));
 
   const header = page.locator("header.nav-shell");
   await expect(header).toHaveClass(/is-scrolled/);
-  await expect.poll(async () => (await header.boundingBox()).height).toBe(69);
+  await expect.poll(async () => (await header.boundingBox()).height).toBe(53);
 
   // The row is gone; its cog and theme toggle are in the bar, with the name.
   await expect(page.locator(PHONE_ROW)).toBeHidden();

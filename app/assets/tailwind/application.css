@@ -467,9 +467,15 @@
      Logo: logo-icon.svg is drawn in white. It is inverted on the light theme,
      and it is a mark, not an avatar, so it takes no circle and no shadow.
 
-     Log out: below 768px the icons leave the account column for the phone row
-     and the column has nothing left to size it, so the bar under the name
-     keeps room for its one link and the link stays on one line. */
+     Name: from 768px the first name sits on the rule of 3 against the avatar,
+     as the Navbar Logo does against its icon (docs/topics/logos.md): its
+     capitals are a third of the avatar's height and centred on it. Montserrat's
+     cap height is 0.7 em, so the size is a third of the avatar over 0.7. The engine's
+     nav avatar is w-8 (2rem). The flex row centres the name's line box, and on
+     the engine's leading-none Montserrat's capitals sit 0.01 em below that
+     box's middle, so no trim is needed (text-box would cut the ink, since the
+     name truncates with overflow hidden). Turf Monster keeps its own navbar:
+     its name sits over a second row. */
   .nav-shell[data-pin="nav"] {
     z-index: var(--z-nav);
     @apply bg-page/95 supports-[backdrop-filter]:backdrop-blur;
@@ -477,8 +483,11 @@
   .nav-shell > .nav-row { max-width: 80rem; margin-inline: auto; }
   .nav-shell .nav-logo { filter: invert(1); border-radius: 0; box-shadow: none; }
   .dark .nav-shell .nav-logo { filter: none; }
-  .nav-shell div:has(> .nav-bar-text) { min-width: 3.5rem; }
-  .nav-shell .nav-bar-text { white-space: nowrap; }
+  @media (min-width: 768px) {
+    .nav-shell [data-nav-name] {
+      font-size: calc(2rem / 3 / 0.7);
+    }
+  }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
      words into a column; this app keeps them on one line where they fit and
      lets them wrap where they do not, which holds the phone header a row
@@ -489,8 +498,8 @@
     .nav-shell .nav-title span:first-child { margin-bottom: 0; }
   }
   /* A SIGNED-IN PHONE (layouts/_navbar_phone_account, in the engine's icon
-     slot). The name sits above Log out, capped so the account column is no
-     wider than Log out alone needs and the brand keeps its one line.
+     slot). The name sits beside the avatar, capped so the account column stays
+     narrow and the brand keeps its one line.
 
      The phone row (cog and theme toggle) rides --nav-p like the rest of the
      band: it is gone once the bar is collapsed, and the slot's own cog and

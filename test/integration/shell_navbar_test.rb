@@ -48,19 +48,24 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar", 1
   end
 
-  test "a member gets the account link, the log out link and the links menu" do
+  test "a member gets the account link by first name and the links menu, with no log out link" do
     log_in_as users(:viewer)
     get about_path
     assert_response :success
+    # The engine's resolver, not a literal: this app's own CI bundles the
+    # released gem, and the engine's consumer lane bundles its checkout. The
+    # engine's unit suite pins "Viewer User" -> "Viewer".
+    first_name = Studio.navbar_user_name_for(users(:viewer))
 
     assert_select "header.nav-shell[data-studio-controller='nav-collapse']", 1 do
-      assert_select "a[data-nav-account][href=?] [data-nav-name]", profile_path, text: users(:viewer).display_name, count: 1
-      assert_select "a[href=?]", logout_path, text: "Log out", minimum: 1
+      assert_select "a[data-nav-account][href=?] [data-nav-name]", profile_path, text: first_name, count: 1
+      # Log out lives in the link sidebar; the navbar drew a second copy.
+      assert_select "a[href=?]", logout_path, count: 0
       assert_select "button[data-link-sidebar-trigger][aria-label='Toggle links menu']", minimum: 1
       assert_select "button[title='Toggle theme']", minimum: 1
       assert_select "a[href=?]", login_path, count: 0
-      # A phone draws the name above Log out; the account link names it for assistive tech.
-      assert_select "[data-nav-phone-name][aria-hidden='true']", text: users(:viewer).display_name, count: 1
+      # A phone draws the name beside the avatar; the account link names it for assistive tech.
+      assert_select "[data-nav-phone-name][aria-hidden='true']", text: first_name, count: 1
       assert_select ".nav-phone-tools button[data-link-sidebar-trigger]", 1
       assert_select ".nav-phone-tools button[title='Toggle theme']", 1
     end
