@@ -198,8 +198,10 @@ module IntentScout
   # which runs the real CLI under this exact argv; an argv assertion cannot see
   # what the CLI adds.
   READ_ONLY_BASH = ["grep *", "ls *", "cd *"].freeze
+  # `dream avi *`, never `dream *`: `dream index --write` rewrites INDEX.md in the
+  # hub primary and `dream propose --materialize` writes into a desk (Carl, 2026-10-14).
   BOARD_SUBCOMMANDS = ["task show *", "task list *", "task note *", "task scout-brief *",
-                       "agent-activity *", "dream *"].freeze
+                       "agent-activity *", "dream avi *"].freeze
 
   # THE CHILD'S ENVIRONMENT IS AN ALLOW-LIST (spawned with unsetenv_others). A
   # deny-list misses the next harness variable: an inherited CLAUDE_CODE_SESSION_ID

@@ -89,6 +89,8 @@ class IntentScoutLaunchTest < Minitest::Test
     refute_includes tools, "Bash", "no unrestricted shell"
     assert_includes argv[2], "headless"
     refute(tools.any? { |t| t.match?(/\ABash\((git|rg)\b/) }, "no git or rg: --output, -O and --pre escape (#{tools})")
+    refute(tools.any? { |t| t.match?(%r{dream \*\)\z}) }, "dream index --write and propose write files (#{tools})")
+    assert_includes tools, "Bash(bin/dream avi *)", "the scout loads its own sequence"
     assert_equal @root, @spawns.first[:opts][:chdir]
     assert @spawns.first[:opts][:pgroup], "detached from begin's process group"
   end
