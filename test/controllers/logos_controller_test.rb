@@ -879,4 +879,52 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_examples themed("welding_v2", :stacked, form: :tagline, guides: true), examples: 3
   end
+
+  # Task stacked-rule-of-three: the Stacked tab's Proportion control, carried in the URL like every other choice.
+  test "the Stacked tab offers 3-2-1 and the rule of three, and the rule of three is drawn, named and carried" do
+    log_in_as(@admin)
+    get logo_brand_path("welding_v2", type: "stacked")
+    assert_response :success
+    assert_select "[data-test='proportion-control'][role='group'][aria-label='Proportion']", 1
+    options = css_select("a[data-test='proportion-option']")
+    assert_equal ["3-2-1", "Rule of three"], options.map { |option| option.text.strip }
+    assert_equal ["three_two_one"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
+    assert_equal [logo_brand_path("welding_v2", type: "stacked"), logo_brand_path("welding_v2", type: "stacked", proportion: "rule_of_three")],
+                 options.map { |option| option["href"] }, "3-2-1 is the default, left out"
+
+    get logo_brand_path("welding_v2", type: "stacked", proportion: "rule_of_three", form: "tagline", guides: 1)
+    assert_response :success
+    assert_examples themed("welding_v2", :stacked, form: :tagline, proportion: :rule_of_three, guides: true), examples: 3
+    assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
+    assert_select "img[data-test='logo-image'][alt*=', with tagline, rule of three, ']", 6
+    assert_select "[data-test='type-sentence']", /The rule of three: three copies of the icon side by side are exactly as wide as the name/
+    assert_select "[data-test='guides-sentence']", /two faint copies of the icon either side of the real one, numbered 1 2 3/
+    kept = { type: "stacked", form: "tagline", proportion: "rule_of_three", guides: 1 }
+    assert_equal logo_brand_path("welding_v2", kept.except(:form)), css_select("a[data-test='form-option'][data-form='two_line']").first["href"], "the form keeps the proportion"
+    assert_equal logo_brand_path("welding_v2", kept.except(:type)), css_select("a[data-test='logo-tab'][data-type='navbar']").first["href"], "the other tabs carry it back"
+    saved = css_select("form[data-test='kit-save-default-form'] input[type='hidden']").to_h { |i| [i["name"], i["value"]] }
+    assert_equal %w[tagline rule_of_three], saved.values_at("form", "proportion"), "Save as default sends the proportion"
+
+    get logo_brand_path("welding_v2", type: "stacked", proportion: "golden")
+    assert_response :unprocessable_content
+    assert_equal 'unknown proportion "golden": expected one of three_two_one, rule_of_three', response.body
+  end
+
+  test "a kit saved in the rule of three opens on it, and 3-2-1 is then the one the URL names" do
+    log_in_as(@admin)
+    patch brand_kit_choice_path("welding_v2"), params: { type: "stacked", form: "two_line", proportion: "rule_of_three", text: "first", colouring: "original" }
+    assert_equal "rule_of_three", BrandKit.find_by!(brand: "welding_v2").stacked_choice["proportion"]
+    get logo_brand_path("welding_v2", type: "stacked")
+    assert_response :success
+    assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
+    assert_select "[data-test='kit-default-state'][data-state='shown']"
+    assert_equal [logo_brand_path("welding_v2", type: "stacked", proportion: "three_two_one"), logo_brand_path("welding_v2", type: "stacked")],
+                 css_select("a[data-test='proportion-option']").map { |option| option["href"] }
+    get logo_brand_path("welding_v2", type: "stacked", proportion: "three_two_one")
+    assert_select "[data-test='kit-default-state'][data-state='changed']"
+
+    get stacked_logo_path("welding_v2", tone: "light")
+    assert_equal "kit", response.headers["X-Logo-Source"]
+    assert_equal Logos::StackedLogo.new("welding_v2").svg(proportion: :rule_of_three, text: :first, colouring: :original), response.body
+  end
 end

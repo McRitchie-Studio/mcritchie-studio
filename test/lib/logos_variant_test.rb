@@ -173,4 +173,24 @@ class LogosVariantTest < Minitest::Test
     assert_equal [nil, :tagline, :one_line], [nil, "tagline", "one_line"].map { |value| Variant.form(value) }, "off the Stacked tab any form name is carried"
     assert_match(/unknown form "sideways"/, refusal { Variant.form("sideways") })
   end
+
+  # Task stacked-rule-of-three: a Stacked Logo's proportion is read from ?proportion=, drawn, and named only when it is
+  # the rule of three, so every 3-2-1 URL, filename and label is the same as before.
+  def test_a_stacked_proportion_is_read_drawn_and_named_only_for_the_rule_of_three
+    three = Variant.parse(stacked, { text: "first", proportion: "rule_of_three" }, type: :stacked)
+    assert_equal [{ form: :two_line, proportion: :rule_of_three, text: :first, tone: :light, guides: 0 }, "industries-stacked-two-line-rule-of-three-first-light.svg",
+                  "McRitchie Industries stacked logo, two lines, rule of three, first word leads, light"],
+                 [three.params, three.filename, three.label]
+    assert_equal stacked.svg(text: :first, proportion: :rule_of_three), three.svg
+    old = Variant.parse(stacked, { text: "first" }, type: :stacked)
+    assert_equal :three_two_one, old.proportion
+    assert_equal Variant.parse(stacked, { text: "first", proportion: "three_two_one" }, type: :stacked).params, old.params, "3-2-1 is never named"
+    assert_equal stacked.svg(text: :first), old.svg
+    assert_nil parse(proportion: "rule_of_three").proportion, "a navbar has no proportion"
+    assert_equal :rule_of_three, Variant.proportion("rule_of_three")
+    assert_equal :three_two_one, Variant.proportion(nil)
+    assert_equal 'unknown proportion "golden": expected one of three_two_one, rule_of_three', refusal { Variant.proportion("golden") }
+    assert_equal "unknown proportion :golden: expected one of three_two_one, rule_of_three", refusal { Variant.new(stacked, type: :stacked, proportion: :golden) }
+    assert_equal %i[rule_of_three] * 3, Variant.all(stacked, type: :stacked, proportion: :rule_of_three).map(&:proportion)
+  end
 end

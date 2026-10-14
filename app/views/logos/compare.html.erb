@@ -78,6 +78,13 @@
                         aria: { current: ("true" if form == @form_param) }, data: { test: "form-option", form: form || "kit" } %>
           <% end %>
         </div>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Proportion" data-test="proportion-control">
+          <span class="<%= label_class %>" aria-hidden="true">Proportion</span>
+          <% [[nil, "Kit default"]].concat(Logos::Variant::PROPORTIONS.to_a).each do |proportion, label| %>
+            <%= link_to label, logos_compare_path(logo_compare_params(proportion:)), class: chosen.(proportion == @proportion_param),
+                        aria: { current: ("true" if proportion == @proportion_param) }, data: { test: "proportion-option", proportion: proportion || "kit" } %>
+          <% end %>
+        </div>
       <% end %>
       <% unless @type == :icon %>
         <%= link_to (@grid ? "Hide grid" : "Show grid"), logos_compare_path(logo_compare_params(grid: (1 unless @grid))),
