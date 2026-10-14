@@ -61,9 +61,10 @@ test("usages page loads", async ({ page }) => {
 // Authentication
 // ---------------------------------------------------------------------------
 
-// playwright.config.js signs every spec in as the seeded admin, so this one test
-// starts signed out: only the magic link can put "Alex" in the navbar.
-test.describe("magic link sign-in", () => {
+// playwright.config.js signs every spec in as the seeded admin, so the sign-in
+// specs start signed out: only the magic link can put "Alex" in the navbar, and
+// /signin is read as a visitor sees it.
+test.describe("signed-out sign-in", () => {
   test.use({ storageState: VISITOR });
 
   test("login with magic link", async ({ page }) => {
@@ -72,50 +73,50 @@ test.describe("magic link sign-in", () => {
     // first name only ("Alex", not "Alex Test"), so assert on the name slot itself.
     await expect(page.locator("[data-nav-name]").first()).toContainText("Alex");
   });
-});
 
-test("malformed magic link request stays on signin", async ({ page }) => {
-  await page.goto("/signin");
-  await page.fill('input[name="email"]', "not-an-email");
-  await page.click('form:has(input[name="email"]) button[type="submit"]');
-  await expect(page).toHaveURL("/signin");
-});
+  test("malformed magic link request stays on signin", async ({ page }) => {
+    await page.goto("/signin");
+    await page.fill('input[name="email"]', "not-an-email");
+    await page.click('form:has(input[name="email"]) button[type="submit"]');
+    await expect(page).toHaveURL("/signin");
+  });
 
-// Wallet auth was dropped from this app (config.auth_methods lost :wallet), which
-// deletes the engine's /auth/solana/* routes AND the base58 + wallet_provider
-// importmap modules. A String assertion cannot prove a module did not LOAD, so
-// this asserts what only a live browser can answer: the globals those modules
-// installed are undefined after the page and its importmap have fully run.
-test("no wallet auth surface is served to the browser", async ({ page }) => {
-  await page.goto("/signin");
+  // Wallet auth was dropped from this app (config.auth_methods lost :wallet), which
+  // deletes the engine's /auth/solana/* routes AND the base58 + wallet_provider
+  // importmap modules. A String assertion cannot prove a module did not LOAD, so
+  // this asserts what only a live browser can answer: the globals those modules
+  // installed are undefined after the page and its importmap have fully run.
+  test("no wallet auth surface is served to the browser", async ({ page }) => {
+    await page.goto("/signin");
 
-  // The importmap modules are deferred; wait until the page's own JS has run so
-  // an undefined global means "never installed", not "not installed yet".
-  await page.waitForFunction(() => typeof window.postMagicLink === "function");
+    // The importmap modules are deferred; wait until the page's own JS has run so
+    // an undefined global means "never installed", not "not installed yet".
+    await page.waitForFunction(() => typeof window.postMagicLink === "function");
 
-  const globals = await page.evaluate(() => ({
-    walletProvider: typeof window.walletProvider,
-    encodeBase58: typeof window.encodeBase58,
-    connectAndVerify: typeof window.solanaConnectAndVerify,
-    verifySuccess: typeof window.handleSolanaVerifySuccess,
-    postMagicLink: typeof window.postMagicLink
-  }));
+    const globals = await page.evaluate(() => ({
+      walletProvider: typeof window.walletProvider,
+      encodeBase58: typeof window.encodeBase58,
+      connectAndVerify: typeof window.solanaConnectAndVerify,
+      verifySuccess: typeof window.handleSolanaVerifySuccess,
+      postMagicLink: typeof window.postMagicLink
+    }));
 
-  expect(globals.walletProvider).toBe("undefined");
-  expect(globals.encodeBase58).toBe("undefined");
-  expect(globals.connectAndVerify).toBe("undefined");
-  expect(globals.verifySuccess).toBe("undefined");
-  // The surviving path must still be wired — this is a removal, not a breakage.
-  expect(globals.postMagicLink).toBe("function");
+    expect(globals.walletProvider).toBe("undefined");
+    expect(globals.encodeBase58).toBe("undefined");
+    expect(globals.connectAndVerify).toBe("undefined");
+    expect(globals.verifySuccess).toBe("undefined");
+    // The surviving path must still be wired — this is a removal, not a breakage.
+    expect(globals.postMagicLink).toBe("function");
 
-  // And no CTA that would open the picker.
-  await expect(page.locator('[x-data] button:has-text("Solana")')).toHaveCount(0);
+    // And no CTA that would open the picker.
+    await expect(page.locator('[x-data] button:has-text("Solana")')).toHaveCount(0);
 
-  // The dropped route is really gone, asked from inside the browser.
-  const status = await page.evaluate(() =>
-    fetch("/auth/solana/nonce").then((r) => r.status).catch(() => 0)
-  );
-  expect(status).toBe(404);
+    // The dropped route is really gone, asked from inside the browser.
+    const status = await page.evaluate(() =>
+      fetch("/auth/solana/nonce").then((r) => r.status).catch(() => 0)
+    );
+    expect(status).toBe(404);
+  });
 });
 
 // ---------------------------------------------------------------------------
