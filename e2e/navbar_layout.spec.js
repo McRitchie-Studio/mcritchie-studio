@@ -111,7 +111,10 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   await expectNavbarContained(page);
 
   // The name costs the bar no room: without it the header is the same height,
-  // so the brand wraps no sooner. (The height itself depends on the font.)
+  // so the brand wraps no sooner. (The height itself depends on the font, so
+  // measure only once Montserrat has loaded: CI once read 161px with the
+  // fallback face, which wraps the brand, and 129px a moment later.)
+  await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
   const withName = (await header.boundingBox()).height;
   await name.evaluate((element) => { element.style.display = "none"; });
