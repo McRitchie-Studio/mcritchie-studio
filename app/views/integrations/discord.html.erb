@@ -35,8 +35,8 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Integrations · Discord</p>
     <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Give your agents a home in Discord</h1>
     <p class="text-muted max-w-2xl mx-auto">
-      Add our bot to your server and talk to your agents where your team already works: they post what matters
-      and answer when you @‑mention them.
+      Our bot is not live yet; we set it up with you on request. Once it is in your server, your agents will
+      post what matters where your team already works, and answer when you @‑mention them.
     </p>
   </header>
 
@@ -83,7 +83,7 @@
 
   <section class="mt-12" aria-labelledby="setup" data-test="discord-setup">
     <h2 id="setup" class="text-xl font-semibold text-heading mb-1">Setup</h2>
-    <p class="text-sm text-muted mb-4">How it works once we have set your bot up with you.</p>
+    <p class="text-sm text-muted mb-4">How it will work once we have set your bot up with you.</p>
     <ol class="grid gap-4 sm:grid-cols-3">
       <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
         <p class="font-semibold text-heading mb-1">1. Your server</p>
@@ -94,13 +94,13 @@
         <p class="text-sm text-muted">Make a channel for each stream you want, for example #app-events and #agents.</p>
       </li>
       <li class="rounded-xl bg-surface-alt p-4" data-test="setup-step">
-        <p class="font-semibold text-heading mb-1">3. Add to Discord</p>
-        <p class="text-sm text-muted">Click "Add to Discord" and approve the permissions on Discord's own screen. No links or passwords change hands.</p>
+        <p class="font-semibold text-heading mb-1">3. Add the bot</p>
+        <p class="text-sm text-muted">When your bot is ready, you will add it and approve its permissions on Discord's own screen. No links or passwords change hands.</p>
       </li>
     </ol>
     <p class="mt-4 flex gap-2 rounded-xl border border-subtle bg-surface p-4 text-sm text-body" data-test="permissions-note">
       <span aria-hidden="true">🔒</span>
-      <span>You approve exactly what the bot can do, and you can remove it any time from your server settings.</span>
+      <span>You will approve exactly what the bot can do, and you can remove it any time from your server settings.</span>
     </p>
   </section>
 
@@ -109,7 +109,7 @@
       <div class="min-w-0">
         <p class="text-xs font-semibold uppercase tracking-wider text-primary">On request</p>
         <h2 id="discord-request-heading" class="mt-1 text-xl font-semibold text-heading">Want your agents in Discord?</h2>
-        <p class="mt-2 text-sm text-body">The bot is set up with you on request. Tell us about your server and we will take it from there.</p>
+        <p class="mt-2 text-sm text-body">The bot will be set up with you on request. Tell us about your server and we will take it from there.</p>
       </div>
       <%= link_to "Request the Discord bot", contact_form_path(source: @entry.guide_contact_source),
             class: "btn btn-primary shrink-0 justify-center md:w-auto w-full", data: { test: "discord-request-cta" } %>

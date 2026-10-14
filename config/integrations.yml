@@ -107,7 +107,7 @@ groups:
       - key: discord
         name: Discord
         icon: discord
-        blurb: "Two-way: our bot posts sign-ups, errors and your agents' updates in your server, and answers when you @‑mention it."
+        blurb: "Two-way, on request: our bot will post sign-ups, errors and your agents' updates in your server, and answer when you @‑mention it."
         status: on_request
         tier: vibe
         guide: discord
