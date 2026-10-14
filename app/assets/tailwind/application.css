@@ -497,6 +497,10 @@
     .nav-shell [data-nav-name] {
       font-size: calc(var(--nav-avatar) / 3 / 0.7);
     }
+    /* The engine dims the whole account link on hover (opacity 80%), which
+       turned the name's primary into a duller purple than the brand's. The
+       name's own hover colour is the cue. */
+    .nav-shell a[data-nav-account]:hover { opacity: 1; }
     /* The theme toggle leads the gear, and both are a size down from the
        engine's: the gear's 20px icon in a 36px button becomes 16px in 28px,
        the 16px moon 14px. Order, not markup, so the engine's rail is untouched. */

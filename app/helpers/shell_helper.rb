@@ -22,6 +22,12 @@ module ShellHelper
       brand_heading: !page_heading?(page_html))
   end
 
+  # The engine's switch (components/_user_nav): the name and avatar open the
+  # link sidebar, as the gear does, rather than going to /profile. The sidebar
+  # opens on "You › Profile", so the account page is one click further, and the
+  # three controls at the bar's right end all do one thing.
+  def studio_account_opens_sidebar? = true
+
   def page_heading?(page_html)
     page_html.to_s.match?(PAGE_HEADING)
   end
