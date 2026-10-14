@@ -12,6 +12,9 @@
 # and otherwise stored `unrouted` (kept, never handed to a worker). When a message
 # addresses two souls, the one mentioned first in the text wins.
 #
+# `ops_channel_id` is where the dispatcher's floor alert posts
+# (docs/agents/agents/steffon/sops/agent-dispatcher.md).
+#
 # `bot_user_id` is the shared bot's own user id. Messages written by any bot are
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
@@ -19,6 +22,10 @@ discord:
   # The shared bot is Xan's own app (1Password `agents.discord.xan`) for the
   # first live test, 2026-10-14: it reads the channel and posts every reply.
   bot_user_id: "1481150857809760399"   # Xan (bot user)
+  # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
+  # silent bin/dispatcher, or a routed message waiting too long. One alert per
+  # incident and one recovery line. lobster-tank until an ops channel exists.
+  ops_channel_id: "1479973077021495478"
   guilds:
     "1332466565203103744":             # McRitchie Studio
       name: McRitchie Studio

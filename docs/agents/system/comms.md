@@ -58,6 +58,8 @@ PATCH /api/v1/agents/mack
 ## Messages to agents (the mailbox)
 
 Inbound chat for an agent (Discord today) lands in the agent mailbox: `GET/POST
-/api/v1/agent_messages` (`claim`, `:id/complete`, `:id/release`), worked by
-`bin/heartbeat <soul>` and read with `bin/agent-inbox`. Design, setup and test
+/api/v1/agent_messages` (`claim`, `:id/complete`, `:id/release`, `:id/renew`),
+worked by `bin/dispatcher` on Alex's Mac (`bin/heartbeat <soul>` by hand) and read
+with `bin/agent-inbox`. Steffon operates the dispatcher:
+[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md). Design, setup and test
 protocol: [`agent-message-loop.md`](agent-message-loop.md).

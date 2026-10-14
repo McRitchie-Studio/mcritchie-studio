@@ -1119,8 +1119,8 @@ module ApplicationHelper
   # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Xan
   # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
-  # deploy-with-task; Steffon: production-deploy + clean-infra + workspace-launch; Xan: grade-events +
-  # share-insights + full-cycle; Turf Monster: live-score-watch +
+  # deploy-with-task + intent-scout; Steffon: production-deploy + clean-infra + workspace-launch; Xan: grade-events +
+  # share-insights + full-cycle + ship-clock; Turf Monster: live-score-watch +
   # contest-rehearsal + post-to-x).
   #
   # +post-to-x+ is on the card because the operator asked for it there
@@ -1160,9 +1160,9 @@ module ApplicationHelper
   def heartbeat_launchers
     [
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task", "intent-scout"], label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
-      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
+      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle", "ship-clock"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
       { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal", "post-to-x"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
       # The general builder has no HEARTBEAT, so its row carries acts only.
       { agent_slug: "pokemon", heartbeat: nil, actions: ["wrap-it-up"], label: "Build + wrap up", title: "Pokémon — hand a stuck session to a fresh one, then clear its board" }
@@ -1188,7 +1188,9 @@ module ApplicationHelper
     "share-insights"    => "Share the banked insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
     "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)",
-    "wrap-it-up"        => "Hand a stuck session to a fresh one, then clear its board"
+    "wrap-it-up"        => "Hand a stuck session to a fresh one, then clear its board",
+    "intent-scout"      => "Brief a builder on a task's intent: intent-scout <slug>",
+    "ship-clock"        => "Benchmark a task from typing to shipping"
   }.freeze
 
   def action_description(act)
@@ -1234,7 +1236,9 @@ module ApplicationHelper
     "share-insights"    => "📡",
     "full-cycle"        => "🌎",
     "deploy-with-task"  => "⚡",
-    "wrap-it-up"        => "🎁"
+    "wrap-it-up"        => "🎁",
+    "intent-scout"      => "🔭",
+    "ship-clock"        => "⏱️"
   }.freeze
 
   def action_icon(act)

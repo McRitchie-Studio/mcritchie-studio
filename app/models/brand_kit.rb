@@ -12,6 +12,8 @@
 #   stacked_choice  the Stacked Logo it uses:       {"form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {...}}
 #                   `colouring` (task logo-original-and-alt) is optional: a choice saved before it has none and is
 #                   read as "alt", which is what it showed when it was saved. No migration: the JSON reads it so.
+#                   `proportion` (task stacked-rule-of-three) is stored only for the rule of three ("rule_of_three"):
+#                   absent is 3-2-1, so every choice saved before it reloads unchanged.
 #   originals       the ORIGINAL artwork, unedited (Active Storage, the hub's R2 service): SVG, PNG, JPEG, PDF or ZIP,
 #                   25 MB each. Alex: every kit keeps its original, so anyone can see where a derivation came from.
 #   notes           the operator's own words on the kit
@@ -33,8 +35,8 @@ class BrandKit < ApplicationRecord
   TYPES = %i[navbar stacked].freeze
   CHOICE_TYPES = %i[icon navbar stacked].freeze
   # The keys a stored choice may carry, per type. `edits` and `colouring` may be absent (no edits; Alt).
-  CHOICE_KEYS = { icon: %w[colouring edits], navbar: %w[rule text colouring edits], stacked: %w[form text colouring edits] }.freeze
-  OPTIONAL_KEYS = %w[colouring edits].freeze
+  CHOICE_KEYS = { icon: %w[colouring edits], navbar: %w[rule text colouring edits], stacked: %w[form proportion text colouring edits] }.freeze
+  OPTIONAL_KEYS = %w[colouring edits proportion].freeze
   # The only edit an icon choice carries: its colour (the edit panel's Icon row).
   ICON_EDITS = %w[icon_colour].freeze
   # The logo a brand shows with nothing saved: the rule-of-4 Navbar Logo with the second word leading, and its Stacked
@@ -95,13 +97,14 @@ class BrandKit < ApplicationRecord
     logo = Logos::Variant.logo(brand, type)
     colouring = (colouring.to_s if colouring && (colouring.to_sym == :alt || logo.original?))   # else the saved one (Alt)
     params = edits.to_h { |name, value| [name.to_sym, value.to_s] }
-                  .merge(text: choice["text"]&.to_s, rule: choice["rule"]&.to_s, form: choice["form"]&.to_s, tone: tone.to_s,
+                  .merge(text: choice["text"]&.to_s, rule: choice["rule"]&.to_s, form: choice["form"]&.to_s,
+                         proportion: choice["proportion"]&.to_s, tone: tone.to_s,
                          colouring: colouring || choice["colouring"]&.to_s).compact
     params = with_icon(params, icon) if icon && type != :icon
     variant = Logos::Variant.parse(logo, params, type:)
     return variant if type == :icon   # an icon's colour moves no geometry, so it has nothing to refuse
 
-    refusal = logo.refusal(variant.edits, **(type == :stacked ? { form: variant.form } : { rule: variant.rule }))
+    refusal = logo.refusal(variant.edits, **(type == :stacked ? { form: variant.form, proportion: variant.proportion } : { rule: variant.rule }))
     raise Error, refusal if refusal
 
     variant
@@ -120,8 +123,8 @@ class BrandKit < ApplicationRecord
     edits = Logos::Variant.edit_params(variant.edits).to_h { |name, value| [name.to_s, value.to_s] }
     return { "colouring" => variant.colouring.to_s, "edits" => edits } if variant.type == :icon
 
-    choice = variant.type == :stacked ? { "form" => variant.form.to_s } : { "rule" => variant.rule }
-    choice.merge("text" => variant.text.to_s, "colouring" => variant.colouring.to_s, "edits" => edits)
+    choice = variant.type == :stacked ? { "form" => variant.form.to_s, "proportion" => (variant.proportion.to_s if variant.rule_of_three?) } : { "rule" => variant.rule }
+    choice.compact.merge("text" => variant.text.to_s, "colouring" => variant.colouring.to_s, "edits" => edits)
   end
 
   def choice(type) = public_send(:"#{type}_choice")
@@ -153,7 +156,7 @@ class BrandKit < ApplicationRecord
   def kit_icon = saved_variant(:icon)
 
   # What a brand page's tab opens on (task logo-original-and-alt, item 9: the saved kit choice is the default): the
-  # Navbar rule and Stacked form (read on every tab, so each carries to its own), and the tab's colouring and edits,
+  # Navbar rule and Stacked form and proportion (read on every tab, so each carries to its own), and the tab's colouring and edits,
   # from the saved choices, else the built-in defaults (the rule of 4, the brand's own form, the brand's own colouring,
   # no edits). `choice` is the tab's saved choice as a Logos::Variant, or nil (nothing saved, or a saved choice the
   # brand can no longer draw). `icon` is the kit's icon (#kit_icon): with one, a Navbar or Stacked tab's edits are its
@@ -163,16 +166,17 @@ class BrandKit < ApplicationRecord
     stacked = saved_variant(:stacked)
     icon = kit_icon
     choice = { icon:, navbar:, stacked: }[type.to_sym]
-    { rule: navbar&.rule || 4, form: stacked&.form || Logos::StackedLogo.new(brand).form, colouring: choice&.colouring,
+    { rule: navbar&.rule || 4, form: stacked&.form || Logos::StackedLogo.new(brand).form,
+      proportion: stacked&.proportion || Logos::Variant::PROPORTIONS.keys.first, colouring: choice&.colouring,
       edits: (choice ? page_edits(type, choice, icon) : Logos::NavbarLogo::NO_EDITS), choice:, icon: }
   end
 
   # True when a tab's settings are exactly its saved choice's (the page then says it shows the kit default).
-  def default_shown?(type, rule:, form:, colouring:, edits:)
+  def default_shown?(type, rule:, form:, colouring:, edits:, proportion: Logos::Variant::PROPORTIONS.keys.first)
     choice = saved_variant(type) or return false
     shape = case type.to_sym
             when :icon then true
-            when :stacked then choice.form == form
+            when :stacked then choice.form == form && choice.proportion == proportion
             else choice.rule == rule
             end
     shape && choice.colouring == colouring && page_edits(type, choice, kit_icon) == edits
@@ -218,7 +222,8 @@ class BrandKit < ApplicationRecord
     edits = edits.slice(*ICON_EDITS) if type == :icon
     edits = edits.except(*ICON_EDITS) if type != :icon && saved?(:icon)
     colouring = params[:colouring].presence
-    variant = self.class.variant(brand, type, choice.merge("edits" => edits, "colouring" => colouring).compact)
+    proportion = (params[:proportion].presence if type == :stacked)
+    variant = self.class.variant(brand, type, choice.merge("edits" => edits, "colouring" => colouring, "proportion" => proportion).compact)
     self[:"#{type}_choice"] = self.class.choice_of(variant)
     self.updated_by = by
     save!

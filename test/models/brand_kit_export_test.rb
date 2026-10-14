@@ -37,6 +37,17 @@ class BrandKitExportTest < ActiveSupport::TestCase
                  files.svg("navbar-dark.svg"), "Alex's saved Navbar: Original, homogeneous, rule of 4"
   end
 
+  # Task stacked-rule-of-three: the export draws the saved proportion.
+  test "a stacked choice saved in the rule of three is exported in it" do
+    kit = BrandKit.for("welding_v2")
+    kit.save_choice(:stacked, { form: "two_line", proportion: "rule_of_three", text: "first", colouring: "original" }, by: "alex@test.com")
+    files = BrandKitExport.new(kit.reload, base_url: BASE)
+    assert_equal Logos::Variant.new(Logos::StackedLogo.new("welding_v2"), type: :stacked, form: :two_line, proportion: :rule_of_three, text: :first,
+                                                                          tone: :dark, colouring: :original).svg,
+                 files.svg("stacked-dark.svg")
+    refute_equal Logos::StackedLogo.new("welding_v2").svg(text: :first, tone: :dark, colouring: :original), files.svg("stacked-dark.svg")
+  end
+
   test "an unsaved brand exports its defaults and says so" do
     readme = export("studio").readme
     assert_includes readme, "# McRitchie Studio: logo kit"

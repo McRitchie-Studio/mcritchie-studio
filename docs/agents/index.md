@@ -179,6 +179,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | `launch-warmup` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| `agent-dispatcher` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
 | `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |

@@ -2,7 +2,7 @@
 # (docs/agents/system/agent-message-loop.md).
 #
 # A poll (AgentMessages::DiscordPoll) writes it, routed to a soul or stored
-# `unrouted`. A worker (`bin/heartbeat <soul>`) claims it under a lease, answers,
+# `unrouted`. A worker (`bin/dispatcher`, or `bin/heartbeat <soul>` by hand) claims it under a lease, answers,
 # and completes it; AgentMessageReplyJob posts the answer back exactly once.
 #
 #   received ──claim──▶ claimed ──complete──▶ completed
@@ -12,8 +12,9 @@
 #
 # THE LEASE LIVES ON THE ROW (claimed_by, lease_expires_at), as lib/claim_lease.rb's
 # leases do: a worker that dies holding a message loses it when the lease lapses,
-# with no sweeper. Unlike those leases nothing renews it: one message is one unit of
-# work, and LEASE is sized to cover a headless Claude run with room to spare.
+# with no sweeper. The holder may RENEW it (renew!): bin/dispatcher renews every
+# few minutes while its run lives, so a long run keeps its claim and a dead one
+# still loses it within LEASE.
 #
 # THE CONTENT IS UNTRUSTED. It came from whoever can post in an allow-listed
 # channel; a worker hands it to a model fenced as data, never as instructions.
@@ -28,11 +29,23 @@ class AgentMessage < ApplicationRecord
 
   # How long a claim holds before another worker may take the message. A
   # heartbeat run (one read-only action plus one headless Claude call, capped at
-  # bin/heartbeat's CLAUDE_TIMEOUT of 5 minutes) fits twice over.
+  # the Responder's CLAUDE_TIMEOUT of 5 minutes) fits twice over, and bin/dispatcher
+  # renews it every 3 minutes while a run lives.
   LEASE = 10.minutes
   # Claims a message may take before it is dead-lettered. Each claim counts, so a
   # message whose worker crashes three times stops being handed out.
   MAX_ATTEMPTS = 3
+  # Release reasons that hand the attempt BACK (attempts - 1) and never
+  # dead-letter: the run never reached the message's own fault. Only
+  # usage_limit, which bin/dispatcher sends when its deterministic matcher
+  # (AgentMailbox::UsageLimit) reads Claude's usage-limit answer. The account
+  # being out of quota says nothing about the message, so it must not burn it.
+  REFUND_CODES = %w[usage_limit].freeze
+  # Refunds a message may take before a refund-code release spends the attempt
+  # like any other. The cap is the board's, not the worker's: a worker that
+  # misreads Claude (or a reply crafted to look like a limit) cannot keep a
+  # message alive forever.
+  MAX_REFUNDS = 3
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -71,6 +84,9 @@ class AgentMessage < ApplicationRecord
   # `received`, find no live claim, and take the NEXT message in the same thread.
   # "No older open message" refuses that, because the locked row is still older
   # and still open. It also yields at most one active claim per thread for free.
+  #
+  # `soul` is one slug or a list (bin/dispatcher serves every routed soul in one
+  # claim); across souls the oldest message still goes first.
   def self.claimable(soul:, now: Time.current, channel: nil)
     scope = where(soul_slug: soul)
             .where("agent_messages.status = 'received' OR " \
@@ -94,9 +110,11 @@ class AgentMessage < ApplicationRecord
   # race gets nothing (an empty claim is a normal answer, the caller idles).
   def self.claim!(soul:, worker:, now: Time.current, channel: nil, actor: nil)
     worker = worker.to_s.strip
-    soul = soul.to_s.strip
+    soul = Array(soul).map { |s| s.to_s.strip }.reject(&:empty?).uniq
     raise Refused.new("worker is required", code: "WORKER_REQUIRED") if worker.empty?
     raise Refused.new("soul is required", code: "SOUL_REQUIRED") if soul.empty?
+
+    soul = soul.first if soul.one?
 
     transaction do
       dead_letter_exhausted!(now: now)
@@ -110,7 +128,7 @@ class AgentMessage < ApplicationRecord
       if reclaim
         message.record!("lease_expired", actor: prior, detail: { "reclaimed_by" => worker })
       end
-      message.record!("claimed", actor: actor || soul,
+      message.record!("claimed", actor: actor || message.soul_slug,
                                  detail: { "worker" => worker, "attempt" => message.attempts,
                                            "lease_expires_at" => message.lease_expires_at.iso8601 })
       ClaimResult.new(message: message, reason: "claimed")
@@ -165,20 +183,63 @@ class AgentMessage < ApplicationRecord
   # A worker gives the message back: it returns to `received` for the next claim.
   # The attempt it used still counts toward MAX_ATTEMPTS: a give-back on the last
   # attempt dead-letters, since `received` rows are claimable at any attempt count.
-  def release!(worker:, reason: nil, actor: nil, now: Time.current)
+  # A `code` in REFUND_CODES (usage_limit) is the exception: the attempt is handed
+  # back and the message does not dead-letter on that release, up to MAX_REFUNDS
+  # refunds per message. Past the cap the release spends the attempt as usual.
+  def release!(worker:, reason: nil, code: nil, actor: nil, now: Time.current)
     worker = worker.to_s.strip
+    code = code.to_s.strip.presence
+    if code && !REFUND_CODES.include?(code)
+      raise Refused.new("unknown release code #{code.inspect} (known: #{REFUND_CODES.join(', ')})", code: "UNKNOWN_CODE")
+    end
+
     self.class.transaction do
       lock!
       unless status == "claimed" && claimed_by == worker && worker.present?
         raise Refused.new(holder_refusal("release"), code: "NOT_HOLDER")
       end
 
-      exhausted = attempts >= MAX_ATTEMPTS
-      update!(status: exhausted ? "dead" : "received", claimed_by: nil, claimed_at: nil, lease_expires_at: nil)
-      record!("released", actor: actor || soul_slug, detail: { "worker" => worker, "reason" => reason.presence }.compact)
+      capped = code.present? && usage_refunds >= MAX_REFUNDS
+      refund = code.present? && !capped
+      exhausted = !refund && attempts >= MAX_ATTEMPTS
+      update!(status: exhausted ? "dead" : "received", claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
+              attempts: refund ? [ attempts - 1, 0 ].max : attempts,
+              usage_refunds: refund ? usage_refunds + 1 : usage_refunds)
+      detail = { "worker" => worker, "reason" => reason.presence, "code" => code,
+                 "attempt_refunded" => (refund || nil),
+                 "refund_cap_reached" => (capped || nil) }.compact
+      record!("released", actor: actor || soul_slug, detail: detail)
       if exhausted
         record!("dead_lettered", actor: "system",
                                  detail: { "reason" => "given back on attempt #{attempts} of #{MAX_ATTEMPTS}" })
+      end
+    end
+    self
+  end
+
+  # The holder extends its lease by LEASE from now. Refused (NOT_HOLDER, 409) to
+  # anyone else, and to a holder whose lapsed lease another worker has since
+  # taken (claimed_by is then the new worker). A holder whose lease lapsed but
+  # was not taken may renew: the message is still its own.
+  #
+  # One `lease_renewed` event per claim, updated in place on each later renewal
+  # (renewals, last lease_expires_at), so a long run does not flood the timeline.
+  def renew!(worker:, actor: nil, now: Time.current)
+    worker = worker.to_s.strip
+    self.class.transaction do
+      lock!
+      unless status == "claimed" && claimed_by == worker && worker.present?
+        raise Refused.new(holder_refusal("renew"), code: "NOT_HOLDER")
+      end
+
+      update!(lease_expires_at: now + LEASE)
+      last = events.reorder(id: :desc).first
+      if last&.kind == "lease_renewed" && last.detail["worker"] == worker
+        last.update!(detail: last.detail.merge("renewals" => last.detail["renewals"].to_i + 1,
+                                               "lease_expires_at" => lease_expires_at.iso8601))
+      else
+        record!("lease_renewed", actor: actor || soul_slug,
+                                 detail: { "worker" => worker, "renewals" => 1, "lease_expires_at" => lease_expires_at.iso8601 })
       end
     end
     self
@@ -208,7 +269,7 @@ class AgentMessage < ApplicationRecord
   def as_api_json(events: false)
     data = slice(:id, :channel, :external_id, :guild_id, :channel_ref, :thread_key, :author_ref, :author_name,
                  :content, :mentions, :soul_slug, :routed_by, :status, :claimed_by, :claimed_at,
-                 :lease_expires_at, :attempts, :response_text, :action_summary, :reply_external_id, :reply_status,
+                 :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
                  :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at).as_json
     data["url"] = discord_url
     data["reply_url"] = reply_url

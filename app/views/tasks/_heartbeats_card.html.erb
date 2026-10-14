@@ -43,7 +43,7 @@
 <% entries = launchers.map do |launcher|
      card_actions = case launcher[:agent_slug]
                     when "carl" then ["pr-review", "pr-review-slow"]
-                    when "avi" then ["qa-release", "deploy-with-task"]
+                    when "avi" then ["qa-release", "deploy-with-task", "intent-scout"]
                     when "steffon" then ["production-deploy", "clean-infra", "workspace-launch"]
                     else launcher[:actions]
                     end

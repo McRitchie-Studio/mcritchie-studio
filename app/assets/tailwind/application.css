@@ -506,7 +506,7 @@
        the theme toggle and gear sit level with the name rather than at the top
        of the 40px row. studio-engine does this itself from the release after
        0.105.0 (its data-nav-tools column); this keeps the hub right on either. */
-    .nav-shell :has(> a[data-nav-account]) > div:first-child {
+    .nav-shell :has(> [data-nav-account]) > div:first-child {
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -514,7 +514,7 @@
     /* The engine dims the whole account link on hover (opacity 80%), which
        turned the name's primary into a duller purple than the brand's. The
        name's own hover colour is the cue. */
-    .nav-shell a[data-nav-account]:hover { opacity: 1; }
+    .nav-shell [data-nav-account]:hover { opacity: 1; }
     /* The theme toggle leads the gear, and both are a size down from the
        engine's: the gear's 20px icon in a 36px button becomes 16px in 24px,
        the 16px moon 14px. Order, not markup, so the engine's rail is untouched. */
@@ -533,9 +533,9 @@
        the row's edge is the gear's. */
     .nav-shell { --nav-gap: 0.75rem; }
     .nav-shell :has(> [data-nav-theme-toggle="desktop"]) { gap: calc(var(--nav-gap) - 8.6px); }
-    .nav-shell :has(> a[data-nav-account]) > div:first-child > div:first-child { padding-inline: 0 !important; }
-    .nav-shell :has(> a[data-nav-account]) { gap: calc(var(--nav-gap) - 6.3px); }
-    .nav-shell a[data-nav-account] { gap: var(--nav-gap); }
+    .nav-shell :has(> [data-nav-account]) > div:first-child > div:first-child { padding-inline: 0 !important; }
+    .nav-shell :has(> [data-nav-account]) { gap: calc(var(--nav-gap) - 6.3px); }
+    .nav-shell [data-nav-account] { gap: var(--nav-gap); }
   }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
      words into a column; this app keeps them on one line where they fit and
@@ -567,7 +567,7 @@
      padding each side, the same width Log out held. Phones only: from 768px
      the icons size the column. */
   @media (max-width: 767px) {
-    .nav-shell :has(> a[data-nav-account]) > div:first-child { min-width: 3.5rem; }
+    .nav-shell :has(> [data-nav-account]) > div:first-child { min-width: 3.5rem; }
   }
   .nav-phone-name {
     max-width: 2.75rem;

@@ -195,11 +195,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='intent-scout']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='workspace-launch']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] button[data-row='action'][data-clip='full-cycle']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] button[data-row='action'][data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'][data-clip='live-score-watch']"
     # archive-shipped left the card when production-deploy took over running it.

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE for bin/dispatcher's launchd service
+  (docs/agents/agents/steffon/sops/agent-dispatcher.md). Never copy this file by
+  hand: `bin/dispatcher install` fills the double-braced placeholders with this Mac's
+  paths (AgentMailbox::LaunchAgent#render) and loads the result from
+  ~/Library/LaunchAgents.
+
+  Awake: bin/dispatcher holds `caffeinate -is -w <its own pid>` itself. It is
+  not wrapped in caffeinate here because a wrapping caffeinate does not forward
+  launchd's SIGTERM, which would orphan the loop and skip its graceful stop.
+  ExitTimeOut covers the dispatcher's 60-second grace for runs in flight.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{LABEL}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{RUBY}}</string>
+    <string>{{REPO_ROOT}}/bin/dispatcher</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{REPO_ROOT}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{PATH}}</string>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>90</integer>
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>StandardOutPath</key>
+  <string>{{LOG}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG}}</string>
+</dict>
+</plist>

@@ -32,6 +32,8 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   // Avi owns qa-release (assemble + QA).
   const avi = card.locator("[data-test='heartbeat-launcher'][data-agent='avi']");
   await expect(avi.locator("button[data-clip='qa-release']")).toBeVisible();
+  // intent-scout: the manual launch for a task begin could not scout.
+  await expect(avi.locator("button[data-clip='intent-scout']")).toBeVisible();
 
   // Steffon owns production-deploy + clean-infra. archive-shipped is NOT a chip:
   // production-deploy runs it as its final step, so the cleaning rides every release
@@ -44,6 +46,8 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   // Xan's third act is visible here — nothing in the sidebar hides behind a toggle.
   const xan = card.locator("[data-test='heartbeat-launcher'][data-agent='xan']");
   await expect(xan.locator("button[data-clip='full-cycle']")).toBeVisible();
+  // ship-clock: the typing-to-shipping benchmark.
+  await expect(xan.locator("button[data-clip='ship-clock']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
   const turf = card.locator("[data-test='heartbeat-launcher'][data-agent='turf-monster']");

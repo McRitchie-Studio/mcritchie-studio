@@ -103,6 +103,7 @@ its invocation exactly.
 | Rex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | Rex `launch-warmup` SOP (gated rollout of a new app, domain or email list) | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `Steffon Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| Steffon `agent-dispatcher` SOP (the agent mailbox's always-on worker on Alex's Mac: install, verify, alerts, unblock) | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
 | Steffon `app-deploy-standard` SOP (single-use apps: profile, contract, `bin/register-app`) | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | Steffon `archive-shipped` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Steffon `bucket-provision` SOP (per-app R2 pair + tokens) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |

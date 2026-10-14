@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 # [unit] Logos::WeldingV2 (task welding-llc-and-v2-helmet): Commercial Welding v2's helmet, derived from v1's traced
-# helmet. Alex's item 5: centre the helmet on the line where its two halves meet, and move the lens down so it sits
-# on the rule of 3's rows. The lens is shorter than one row, so it is centred on the middle row. Task
+# helmet. Alex's item 5: move the lens down so it sits on the rule of 3's rows. (Item 5 also centred the helmet on the
+# line where its two halves meet, in a widened box; task stacked-rule-of-three retired that when every icon's box
+# became its ink, Logos::IconInk.) The lens is shorter than one row, so it is centred on the middle row. Task
 # logo-original-and-alt: the same derivation, run on v1's Original (the traced square logo), gives v2's Original.
 
 require "json"
@@ -35,26 +36,24 @@ class LogosWeldingV2Test < Minitest::Test
     assert_equal File.read(V2::FILE), V2.json, "run `bin/rails logos:welding_v2` after changing Logos::WeldingV2 or v1's helmet"
   end
 
-  def test_each_v2_helmet_is_centred_on_its_own_midline
-    PAIRS.each_key do |key|
+  # Task stacked-rule-of-three (Alex 2026-10-14 12:07: "there's some extra space on the right side" of the hood): each
+  # v2 helmet's box is its ink, the outer helmet flush with it on every side, so its ink margins left and right are
+  # equal (both zero) and the hood is centred on its ink wherever a logo centres its box.
+  def test_each_v2_helmet_is_flush_with_its_box
+    PAIRS.each do |key, from|
       icon = v2(key)
-      assert_in_delta icon.fetch("w") / 2.0, helmet(key).split, 0.01, "#{key}: the midline is the box's centre, so the vertical guide runs through it"
-      assert_in_delta source(key).split + source(key).dx(icon.fetch("w")), helmet(key).split, 0.01, "#{key}: measured again on the moved data"
+      margins = Logos::IconInk.margins(icon)
+      assert_in_delta margins[:left], margins[:right], 0.5, "#{key}: the ink's left and right margins are equal"
+      margins.each { |side, margin| assert_in_delta 0, margin, 0.02, "#{key}: flush #{side}" }
+      left, top, right, bottom = V2.bbox(parts(icon, key).first)
+      assert_in_delta 0, left, 0.02, "#{key}: the left ear is the box's left edge"
+      assert_in_delta icon.fetch("w"), right, 0.02, "#{key}: the right ear is the box's right edge"
+      assert_in_delta 0, top, 0.02
+      assert_in_delta icon.fetch("h"), bottom, 0.02
+      assert_equal [v1(key).fetch("w"), v1(key).fetch("h")], [icon.fetch("w"), icon.fetch("h")], "#{key}: v1's #{from} ink box: the lens moves inside it"
     end
-    assert_equal [443.75, 443.75], ALT.map { |key| v2(key).fetch("w") }, "one box for both Alt tones, as v1 has (426)"
-    assert_equal [483, 483], ALT.map { |key| v2(key).fetch("h") }, "the height is v1's"
-    assert_equal [892.3, 975], [v2("welding_v2_original").fetch("w"), v2("welding_v2_original").fetch("h")],
-                 "the Original's own box, at its own scale: wider than v1's Original (858), as tall (975)"
-  end
-
-  def test_the_box_is_widened_not_cropped
-    PAIRS.each_key do |key|
-      left, top, right, bottom = V2.bbox(parts(v2(key), key).first)
-      assert_operator left, :>=, 0, "#{key}: the left ear is inside the box"
-      assert_operator right, :<=, v2(key).fetch("w"), "#{key}: the right ear is inside the box"
-      assert_operator top, :>=, 0
-      assert_operator bottom, :<=, v2(key).fetch("h")
-    end
+    assert_equal [[425.06, 481], [425.54, 482.74], [857.98, 973.84]], PAIRS.keys.map { |key| [v2(key).fetch("w"), v2(key).fetch("h")] },
+                 "was 443.75 x 483 (both Alt) and 892.3 x 975, widened to centre the midline"
   end
 
   def test_each_v2_lens_is_centred_on_the_rule_of_3s_middle_row
@@ -75,23 +74,23 @@ class LogosWeldingV2Test < Minitest::Test
   def test_the_spark_moves_with_the_window_and_the_frame_follows
     PAIRS.each_key do |key|
       from = source(key)
-      dx = from.dx(v2(key).fetch("w"))
+      dx = 0
       dy = from.dy
       outer, hole, lens = parts(v1(key), PAIRS.fetch(key)).map { |sub| on_curve(sub) }
       new_outer, new_hole, new_lens = parts(v2(key), key).map { |sub| on_curve(sub) }
 
-      assert_equal shifted(outer, dx, 0), new_outer, "#{key}: the outer helmet only moves across"
+      assert_equal shifted(outer, dx, 0), new_outer, "#{key}: the outer helmet does not move"
       assert_equal shifted(lens, dx, dy), new_lens, "#{key}: the window moves across and down"
       frame, rest = hole.zip(new_hole).partition { |(x, y), _| from.frame?(x, y) }
       assert_operator frame.size, :>, ALT.include?(key) ? 30 : 15, "#{key}: the frame's notch in the white half (the Original's cleaner trace has fewer points)"
       assert_equal shifted(frame.map(&:first), dx, dy), frame.map(&:last), "#{key}: the frame moves with the window, so its band keeps its width"
-      assert_equal shifted(rest.map(&:first), dx, 0), rest.map(&:last), "#{key}: the rest of the white half only moves across"
+      assert_equal shifted(rest.map(&:first), dx, 0), rest.map(&:last), "#{key}: the rest of the white half does not move"
     end
     spark = ->(icon) { V2.subpaths(icon.fetch("layers").find { |l| l["role"] == "accent" }.fetch("d")).map { |sub| V2.bbox(sub) } }
     %w[welding_v2 welding_v2_original].each do |key|
       from = source(key)
-      width = v2(key).fetch("w")
-      expected = spark.(v1(key)).map { |l, t, r, b| [l, t, r, b].zip([1, 0, 1, 0]).map { |v, across| v + (across == 1 ? from.dx(width) : from.dy) } }
+      offset = V2.offset(v1(key)["transform"], key)
+      expected = spark.(v1(key)).map { |l, t, r, b| [l + offset[0], t + offset[1] + from.dy, r + offset[0], b + offset[1] + from.dy] }
       spark.(v2(key)).flatten.zip(expected.flatten).each { |got, want| assert_in_delta want, got, 0.011, "#{key}: the orange spark moves with the window" }
     end
   end
@@ -103,7 +102,7 @@ class LogosWeldingV2Test < Minitest::Test
     { light: "welding_v2", dark: "welding_v2_mono", watermark: "welding_v2_mono" }.each do |tone, key|
       assert_includes logo.icon_svg(tone:), v2(key).fetch("layers").first.fetch("d"), tone
     end
-    assert_in_delta 443.75 * Navbar::H / 483, logo.layout(rule: 3).icon_width, 1e-9
+    assert_in_delta 425.06 * Navbar::H / 481, logo.layout(rule: 3).icon_width, 1e-9
     %i[light dark].each { |tone| assert_includes logo.icon_svg(tone:, colouring: :original), v2("welding_v2_original").fetch("layers").last.fetch("d"), tone }
   end
 
@@ -115,8 +114,7 @@ class LogosWeldingV2Test < Minitest::Test
     assert_equal %w[blue white accent], [blue, white, accent].map { |layer| layer["role"] }
     assert_equal 2, V2.subpaths(blue.fetch("d")).size, "the silhouette, with the window cut out of it"
     assert_equal 1, V2.subpaths(white.fetch("d")).size, "the white half alone: the window is no longer white"
-    assert from.split.between?(400, 420), "the midline is where the blue half meets the white, near the square logo's centre (#{from.split})"
-    assert_in_delta 47.42, from.dy, 0.01, "about twice v1's Alt move (23.42): the Original is traced at about twice the scale"
+    assert_in_delta 47.44, from.dy, 0.01, "about twice v1's Alt move (23.42): the Original is traced at about twice the scale"
   end
 
   def test_curve_turning_points_count_in_a_bounding_box
@@ -137,7 +135,7 @@ class LogosWeldingV2Test < Minitest::Test
       layer["role"] == "blue" ? layer.merge("d" => layer["d"] + "M1,1L2,1L2,2Z") : layer
     end)
     assert_match(/expected the white half and the window in the white layer .*got 3 shapes besides the outer helmet/, refusal { V2.new(mixed, "x") })
-    assert_match(/cannot hold the helmet centred/, refusal { source("welding_v2").icon(400) })
+    assert_match(/welding: only a translate can be read, got transform "scale\(2\)"/, refusal { V2.new(v1("welding_v2").merge("transform" => "scale(2)"), "welding") })
   end
 
   # Task kit-export-and-clear-lens (Alex 2026-10-12 00:55: "remove the white of the lens so I can see it clear"): v2's
@@ -165,7 +163,7 @@ class LogosWeldingV2Test < Minitest::Test
   def test_the_cleared_original_reads_back
     from = source("welding_v2_original")
     again = helmet("welding_v2_original")
-    assert_in_delta from.split + from.dx(v2("welding_v2_original").fetch("w")), again.split, 0.01
-    assert_equal from.window.zip([from.dx(892.3), from.dy] * 2).map { |v, d| (v + d).round(2) }, again.window.map { |v| v.round(2) }
+    assert_equal from.window.zip([0, from.dy] * 2).map { |v, d| (v + d).round(2) }, again.window.map { |v| v.round(2) }
+    assert_in_delta 0, again.dy, 0.01, "read back, the lens is already centred on the middle row"
   end
 end

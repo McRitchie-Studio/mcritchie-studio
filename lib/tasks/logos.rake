@@ -35,6 +35,20 @@ namespace :logos do
     result.refused.each { |name, why| warn "refused   #{name}: #{why}" }
   end
 
+  # Task stacked-rule-of-three: an icon's box is its ink (Logos::IconInk), and NavbarLogo refuses one that is not.
+  desc "Trim every icon in the icon data (lib/logos/data/brand_icons*.json) to its ink, then re-derive Commercial Welding v2's helmet"
+  task trim_icons: :environment do
+    files = Logos::NavbarLogo::ICON_FILES.map { |file| File.join(Logos::NavbarLogo::ROOT, "lib/logos/data", file) } - [Logos::WeldingV2::FILE]
+    files.each do |path|
+      json, changed = Logos::IconInk.trim_data(File.read(path))
+      File.write(path, json) if changed.any?
+      puts "#{changed.any? ? 'trimmed  ' : 'unchanged'} #{File.basename(path)}#{" (#{changed.join(', ')})" if changed.any?}"
+    end
+    Logos::NavbarLogo.instance_variable_set(:@icons, nil)   # read the trimmed v1 helmets back before deriving v2's
+    File.write(Logos::WeldingV2::FILE, Logos::WeldingV2.json)
+    puts "derived   #{File.basename(Logos::WeldingV2::FILE)}"
+  end
+
   desc "Write Commercial Welding v2's helmet (welding_v2, welding_v2_mono), derived from v1's, to lib/logos/data/brand_icons_welding_v2.json"
   task welding_v2: :environment do
     File.write(Logos::WeldingV2::FILE, Logos::WeldingV2.json)

@@ -109,4 +109,17 @@ class LogosCompareTest < ActionDispatch::IntegrationTest
     get logos_compare_path(left: "welding", right: "welding_v2", context: "watermark")
     sides.each { |side| side_images(side).each { |img| assert_equal "watermark", query(img["src"])["tone"] } }
   end
+
+  # Task stacked-rule-of-three: the Proportion control draws both sides in it; Kit default leaves each on its own.
+  test "the Proportion control draws both stacked sides in the rule of three" do
+    get logos_compare_path(type: "stacked")
+    assert_equal ["kit"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
+    get logos_compare_path(type: "stacked", proportion: "rule_of_three")
+    assert_response :success
+    assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
+    sides.each { |side| assert side_images(side).all? { |img| query(img["src"])["proportion"] == "rule_of_three" } }
+    assert_equal "rule_of_three", query(css_select("a[data-test='form-option']").first["href"])["proportion"], "the form keeps it"
+    get logos_compare_path(type: "stacked", proportion: "golden")
+    assert_response :unprocessable_content
+  end
 end

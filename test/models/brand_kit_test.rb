@@ -223,7 +223,8 @@ class BrandKitTest < ActiveSupport::TestCase
   # Task logo-original-and-alt, item 9: the saved kit choice is the tab's default.
   test "a tab's defaults are its saved choice, else the built-in style" do
     kit = BrandKit.for("welding")
-    assert_equal({ rule: 4, form: :two_line, colouring: nil, edits: {}, choice: nil, icon: nil }, kit.page_defaults(:stacked), "nothing saved")
+    assert_equal({ rule: 4, form: :two_line, proportion: :three_two_one, colouring: nil, edits: {}, choice: nil, icon: nil }, kit.page_defaults(:stacked),
+                 "nothing saved")
     kit.save_choice(:stacked, params(form: "tagline", text: "first", colouring: "original"), by: BY)
     kit.save_choice(:navbar, params(rule: "3", text: "second", colouring: "alt", ending_colour: "D7602E"), by: BY)
     kit.reload
@@ -249,5 +250,35 @@ class BrandKitTest < ActiveSupport::TestCase
     kit.update_column(:navbar_choice, { "rule" => 5, "text" => "first", "edits" => {} })
     assert_nil kit.saved_variant(:navbar)
     assert_equal [4, nil], kit.page_defaults(:navbar).values_at(:rule, :choice)
+  end
+
+  # Task stacked-rule-of-three: a stacked choice records its proportion, stored only for the rule of three, so a choice
+  # saved before (and a 3-2-1 one now) has none and reads back as 3-2-1.
+  test "a stacked choice round-trips its proportion, and one without a proportion reloads as 3-2-1" do
+    kit = BrandKit.for("welding_v2")
+    kit.save_choice(:stacked, params(form: "tagline", proportion: "rule_of_three", text: "first", colouring: "original"), by: BY)
+    stored = BrandKit.connection.select_value("SELECT stacked_choice FROM brand_kits WHERE brand = 'welding_v2'")
+    assert_equal({ "form" => "tagline", "proportion" => "rule_of_three", "text" => "first", "colouring" => "original", "edits" => {} }, JSON.parse(stored))
+    kit = BrandKit.find_by!(brand: "welding_v2")
+    variant = kit.variant(:stacked, tone: :dark)
+    assert_equal [:tagline, :rule_of_three, :first, :dark], [variant.form, variant.proportion, variant.text, variant.tone]
+    assert_equal Logos::StackedLogo.new("welding_v2").svg(form: :tagline, proportion: :rule_of_three, text: :first, tone: :dark, colouring: :original), variant.svg
+    assert_equal :rule_of_three, kit.page_defaults(:stacked)[:proportion]
+    assert kit.default_shown?(:stacked, rule: 4, form: :tagline, proportion: :rule_of_three, colouring: :original, edits: {})
+    refute kit.default_shown?(:stacked, rule: 4, form: :tagline, proportion: :three_two_one, colouring: :original, edits: {}), "another proportion"
+
+    kit.save_choice(:stacked, params(form: "tagline", proportion: "three_two_one", text: "first", colouring: "original"), by: BY)
+    assert_equal({ "form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {} }, kit.reload.stacked_choice, "3-2-1 is stored as absent")
+
+    kit.update_column(:stacked_choice, { "form" => "two_line", "text" => "second", "edits" => {} })   # a choice saved before the proportion
+    assert_equal :three_two_one, kit.reload.variant(:stacked).proportion
+    assert_equal [:two_line, :three_two_one], kit.page_defaults(:stacked).values_at(:form, :proportion)
+  end
+
+  test "a stacked choice with an unknown proportion is refused, and stores nothing" do
+    kit = BrandKit.for("studio")
+    error = assert_raises(BrandKit::Error) { kit.save_choice(:stacked, params(form: "two_line", proportion: "golden", text: "first"), by: BY) }
+    assert_equal 'unknown proportion "golden": expected one of three_two_one, rule_of_three', error.message
+    refute kit.persisted?
   end
 end

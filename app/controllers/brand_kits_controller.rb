@@ -22,7 +22,7 @@ class BrandKitsController < ApplicationController
   include LogoBrandPage
 
   # The page settings a save or a clear carries back to the brand page, so the operator lands where they were.
-  RETURN_PARAMS = (%i[type rule form guides context colouring] + Logos::Variant::EDIT_PARAMS.keys).freeze
+  RETURN_PARAMS = (%i[type rule form proportion guides context colouring] + Logos::Variant::EDIT_PARAMS.keys).freeze
   # An original is served with no power of its own: an SVG opened by itself draws, but runs no script and loads nothing.
   ORIGINAL_CSP = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
 
