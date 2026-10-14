@@ -16,7 +16,7 @@ class WorkspacePackage
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
   # The feature row /stack holds each client's live DNS host to: the Cloudflare
   # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12). Its cells
-  # read "Protected Domain" since 2026-10-13; the row keeps this name, which
+  # read "Premium Domain" since 2026-10-13; the row keeps this name, which
   # StackClient matches on.
   CLOUDFLARE_DNS = "Fast, protected domain".freeze
   # A card's lanes are grouped under these headings, in this order.

@@ -239,7 +239,7 @@ test("Pro and Team cards mark their lines, sell the Premium Domain, and the full
   await expect(page.locator("[data-test='stack-row'][data-feature='fast-protected-domain']")).toBeVisible();
   const flow = page.locator("[data-test='dns-flow']");
   await flow.scrollIntoViewIfNeeded();
-  await expect(flow.getByRole("heading", { name: "Protected Domain, on Cloudflare" })).toBeVisible();
+  await expect(flow.getByRole("heading", { name: "Premium Domain, on Cloudflare" })).toBeVisible();
   await expect(flow.locator("[data-test='dns-flow-rollout']")).toContainText("Coming with the CDN rollout");
   await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -373,11 +373,12 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal "Builder", lines["vibe"].in_tier.name, "a tier's own title never moves the missing lane's pointer"
   end
 
-  test "[unit] Pro sells the Cloudflare move as Protected Domain from Pro up, an honest free-plan promise" do
+  test "[unit] Pro sells the Cloudflare move as Premium Domain from Pro up, an honest free-plan promise" do
     row = feature("Fast, protected domain")
 
     assert_equal "cloudflare", row.brand
-    assert_equal [ nil, nil ] + [ "Protected Domain · your-app.com · fast, guarded" ] * 3, TIERS.map { |key| row.value_for(key) }
+    assert_equal [ nil, nil ] + [ "Premium Domain · your-app.com · fast, guarded" ] * 3, TIERS.map { |key| row.value_for(key) }
+    refute_match(/Protected Domain/, File.read(WorkspacePackage::CONFIG), "Premium Domain everywhere (Mr. McRitchie, 2026-10-13)")
     assert_equal "DNS on Cloudflare's global network: faster lookups, protection from attacks, email authentication " \
                  "set up for you, and changes made by our team the same day.", row.blurb,
                  "Cloudflare is named in the row's detail line, never in a cell"
@@ -420,7 +421,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal "domain-dns", dns.sop
     assert_equal "Cloudflare DNS — Pro and above", dns.section
     assert_equal %w[pro team enterprise], TIERS.select { |key| dns.included_in?(key) }
-    assert_equal "Protected Domain · your-app.com · fast, guarded", dns.value_for(:pro)
+    assert_equal "Premium Domain · your-app.com · fast, guarded", dns.value_for(:pro)
     assert_equal %w[cloudflare], dns.software_keys(:pro)
   end
 

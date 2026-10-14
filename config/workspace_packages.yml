@@ -355,16 +355,16 @@ features:
   # (WorkspacePackage::CLOUDFLARE_DNS). Claims stay to what Cloudflare's free
   # plan gives: global DNS, DDoS protection, optional caching and SSL. No uptime
   # figure is promised. Live on mcritchie.studio and turfmonster.media since
-  # 2026-09-30; domain-dns carries the move. Sold as "Protected Domain" (Mr.
+  # 2026-09-30; domain-dns carries the move. Sold as "Premium Domain" (Mr.
   # McRitchie, 2026-10-13): the cells and the cards name the outcome, and only
   # this blurb, the row's detail line, names Cloudflare.
   - name: Fast, protected domain
     category: domain
     icon: cloudflare
     blurb: "DNS on Cloudflare's global network: faster lookups, protection from attacks, email authentication set up for you, and changes made by our team the same day."
-    pro: "Protected Domain · your-app.com · fast, guarded"
-    team: "Protected Domain · your-app.com · fast, guarded"
-    enterprise: "Protected Domain · your-app.com · fast, guarded"
+    pro: "Premium Domain · your-app.com · fast, guarded"
+    team: "Premium Domain · your-app.com · fast, guarded"
+    enterprise: "Premium Domain · your-app.com · fast, guarded"
     sop: domain-dns
     section: Cloudflare DNS — Pro and above
     you_do: Approve the move once
