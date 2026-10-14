@@ -1,4 +1,5 @@
 require "net/http"
+require "openssl"
 require "uri"
 require "json"
 require "base64"
@@ -30,6 +31,9 @@ module GoogleCalendar
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly".freeze
     SCOPES = [ "openid", "email", CALENDAR_SCOPE ].freeze
     ENV_NAMES = %w[GOOGLE_CONNECT_CLIENT_ID GOOGLE_CONNECT_CLIENT_SECRET].freeze
+
+    # What reaching Google can raise below HTTP: TLS, refused, timed out, DNS.
+    NETWORK_ERRORS = [ OpenSSL::SSL::SSLError, SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout ].freeze
 
     class Error < StandardError; end
     class NotConfigured < Error; end
@@ -77,12 +81,15 @@ module GoogleCalendar
       end
 
       # Asks Google to drop the grant. Returns whether Google said it did.
+      # Never raises: a TLS or network failure reaching Google is logged (its
+      # class only) and answers false, so a disconnect still deletes the row.
       def revoke(connection)
         return true if sign_in_stand_in
 
         status, = call(:post, REVOKE_URL, token: connection.refresh_token)
         status == 200
-      rescue Error, ActiveRecord::Encryption::Errors::Base
+      rescue Error, ActiveRecord::Encryption::Errors::Base, *NETWORK_ERRORS => e
+        Rails.logger.warn("[google_calendar] revoke failed: #{e.class}")
         false
       end
 
@@ -120,7 +127,7 @@ module GoogleCalendar
         request.set_form_data(form)
         response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 20) { _1.request(request) }
         [ response.code.to_i, response.body ]
-      rescue SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout => e
+      rescue *NETWORK_ERRORS => e
         raise Error, "Google could not be reached: #{e.class}"
       end
     end

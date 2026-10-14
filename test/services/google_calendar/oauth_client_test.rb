@@ -9,6 +9,16 @@ class GoogleCalendar::OAuthClientTest < ActiveSupport::TestCase
 
   teardown { reset_google_calendar }
 
+  def capture_log
+    io = StringIO.new
+    original = Rails.logger
+    Rails.logger = ActiveSupport::Logger.new(io)
+    yield
+    io.string
+  ensure
+    Rails.logger = original
+  end
+
   def connection = GoogleCalendarConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex")
 
   test "[unit] the sign-in asks for offline access to read events, identity, and nothing else" do
@@ -72,6 +82,16 @@ class GoogleCalendar::OAuthClientTest < ActiveSupport::TestCase
 
     google_answers(400, { error: "invalid_token" })
     refute GoogleCalendar::OAuthClient.revoke(conn)
+  end
+
+  test "[unit] revoke rescues SSL/network errors: it logs the class and answers false, never raises" do
+    conn = connection
+    [ OpenSSL::SSL::SSLError, Errno::ECONNREFUSED, Net::OpenTimeout, Net::ReadTimeout, SocketError ].each do |klass|
+      GoogleCalendar::OAuthClient.http = ->(_method, _url, _form) { raise klass, "synthetic" }
+      logged = capture_log { assert_equal false, GoogleCalendar::OAuthClient.revoke(conn), klass.name }
+      assert_match(/revoke failed: GoogleCalendar::OAuthClient::Error|revoke failed: #{klass}/, logged, klass.name)
+      assert_no_match(/synthetic-refresh/, logged, "the token never reaches the log")
+    end
   end
 
   test "[unit] the reader GETs the primary calendar with a bearer token and maps events" do
