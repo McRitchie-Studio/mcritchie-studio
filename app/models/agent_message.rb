@@ -2,7 +2,7 @@
 # (docs/agents/system/agent-message-loop.md).
 #
 # A poll (AgentMessages::DiscordPoll) writes it, routed to a soul or stored
-# `unrouted`. A worker (`bin/heartbeat <soul>`) claims it under a lease, answers,
+# `unrouted`. A worker (`bin/dispatcher`, or `bin/heartbeat <soul>` by hand) claims it under a lease, answers,
 # and completes it; AgentMessageReplyJob posts the answer back exactly once.
 #
 #   received ──claim──▶ claimed ──complete──▶ completed
@@ -29,7 +29,8 @@ class AgentMessage < ApplicationRecord
 
   # How long a claim holds before another worker may take the message. A
   # heartbeat run (one read-only action plus one headless Claude call, capped at
-  # bin/heartbeat's CLAUDE_TIMEOUT of 5 minutes) fits twice over.
+  # the Responder's CLAUDE_TIMEOUT of 5 minutes) fits twice over, and bin/dispatcher
+  # renews it every 3 minutes while a run lives.
   LEASE = 10.minutes
   # Claims a message may take before it is dead-lettered. Each claim counts, so a
   # message whose worker crashes three times stops being handed out.

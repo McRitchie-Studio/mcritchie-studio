@@ -1,7 +1,8 @@
 module Api
   module V1
     # The agent mailbox over the board API (docs/agents/system/agent-message-loop.md):
-    # what `bin/heartbeat` claims and completes, and what `bin/agent-inbox` reads.
+    # what `bin/dispatcher` and `bin/heartbeat` claim, renew and complete, and what
+    # `bin/agent-inbox` reads.
     #
     #   GET  /api/v1/agent_messages            list (soul, status, channel, since, limit)
     #   GET  /api/v1/agent_messages/next       the message a claim would take now; writes nothing

@@ -33,6 +33,10 @@ its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
 [`discord-bot-setup`](sops/discord-bot-setup.md) is not a heartbeat act either: it
 creates the agents' Discord bot once and connects each client who requests it.
 
+[`agent-dispatcher`](sops/agent-dispatcher.md) is not a heartbeat act either: it
+installs the mailbox's worker on Alex's Mac once, and runs again only when its
+floor alert posts in Discord.
+
 Use this file when Alex invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
