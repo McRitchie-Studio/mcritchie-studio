@@ -175,7 +175,9 @@ module IntentScout
   # the test suite the scout launches ONLY through an explicitly named binary (a
   # stub), never through whatever `claude` PATH finds.
   BIN_ENV = "TASK_BEGIN_SCOUT_BIN"
-  # Where the pid and log files live (default <projects>/.agents/intent-scout).
+  # Where the pid and log files live (default ~/.intent-scout, beside ship-clock's
+  # ~/.ship-clock: deliberately OUTSIDE <projects>/.agents, the operator store
+  # test/lib/state_store_containment_test.rb fences to its guarded writers).
   HOME_ENV = "INTENT_SCOUT_HOME"
   OPT_OUT = %w[0 false no off].freeze
   # A detached scout is an agent the launching session cannot see, so it counts
@@ -246,12 +248,12 @@ module IntentScout
   # The per-task state directory, or nil when there is none to trust: in CI and
   # the test suite the operator's real .agents tree is never read or written
   # unless a test names its own (INTENT_SCOUT_HOME).
-  def state_dir(env = ENV, repo_root = ProjectsRoot::REPO_ROOT)
+  def state_dir(env = ENV)
     explicit = env[HOME_ENV].to_s.strip
     return explicit unless explicit.empty?
-    return nil if automation_env?(env)
+    return nil if automation_env?(env) || env["HOME"].to_s.strip.empty?
 
-    File.join(ProjectsRoot.default_projects_dir(repo_root), ".agents", "intent-scout")
+    File.join(env["HOME"], ".intent-scout")
   end
 
   def pid_path(dir, slug) = File.join(dir, "#{slug}.pid")

@@ -21,7 +21,7 @@ claude -p "<IntentScout.headless_prompt>" --agent avi --permission-mode dontAsk 
 ```
 
 started from the hub primary with an allow-listed environment (no session ids, no
-admin token), its output in `<projects>/.agents/intent-scout/<slug>.log` and its pid
+admin token), its output in `~/.intent-scout/<slug>.log` and its pid
 in `<slug>.pid` beside it. `dontAsk` denies anything outside the allow-list rather
 than prompting, so the run can read and post its note, and can never edit. It then
 posts an `INTENT SCOUT OWED:` note carrying the pid, and prints, last:
