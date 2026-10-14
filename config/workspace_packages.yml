@@ -100,21 +100,22 @@ enterprise_booking_url:
 # its header reads "From <tier>".
 # The `platform` key reads "Security & integrations" since 2026-10-13, when the
 # cards dropped their Platform group (Mr. McRitchie) and the agent rows moved to
-# their own `agents` group to mirror the cards' Agents lanes.
+# their own `agents` group to mirror the cards' Agents lanes. Marketing comes
+# before Agents, as on the cards (Mr. McRitchie, 2026-10-13).
 categories:
   application: Application
   domain: Domain
   platform: Security & integrations
-  agents: Agents
   marketing: Marketing
+  agents: Agents
   service: Service
   add_ons: Talk to us
 
 category_from:
   domain: builder
   platform: pro
-  agents: pro
   marketing: pro
+  agents: pro
 
 # The swim lanes every card lists (Mr. McRitchie, 2026-10-12): one fixed lane
 # list per group, in this order on every card that shows the group, each lane

@@ -238,10 +238,10 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stack-legend']", text: /Included.*Not included.*Coming soon.*Add-on/m
   end
 
-  test "[component] the matrix groups Application, Domain, Security & integrations, Agents, Marketing, Service and Talk to us, with their leads" do
+  test "[component] the matrix groups Application, Domain, Security & integrations, Marketing, Agents, Service and Talk to us, with their leads" do
     get packages_stack_path
 
-    assert_equal %w[application domain platform agents marketing service add_ons],
+    assert_equal %w[application domain platform marketing agents service add_ons],
                  css_select("[data-test='stack-category']").map { |tbody| tbody["data-category"] }
     assert_select "[data-test='stack-category'][data-category='platform']", text: /Security & integrations/
     assert_no_match(/>\s*Platform\s*</, response.body, "no Platform heading is left")

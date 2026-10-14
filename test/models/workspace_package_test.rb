@@ -309,11 +309,11 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute_match(/credit/i, WorkspacePackage.config.to_s, "build requests, not credits (metering is a separate task)")
   end
 
-  test "[unit] seven groups mirror the cards: Security & integrations and Agents replace Platform" do
+  test "[unit] seven groups mirror the cards: Security & integrations and Agents replace Platform, Marketing before Agents" do
     groups = WorkspacePackage.features_by_category
 
-    assert_equal %w[application domain platform agents marketing service add_ons], groups.map(&:first)
-    assert_equal [ "Application", "Domain", "Security & integrations", "Agents", "Marketing", "Service" ], groups.map { |g| g[1] }.first(6)
+    assert_equal %w[application domain platform marketing agents service add_ons], groups.map(&:first)
+    assert_equal [ "Application", "Domain", "Security & integrations", "Marketing", "Agents", "Service" ], groups.map { |g| g[1] }.first(6)
     assert_equal "Talk to us", WorkspacePackage.categories["add_ons"]
     leads = groups.to_h { |key, _, rows| [ key, rows.first.name ] }
     assert_equal({ "application" => "Custom Web App", "domain" => "Web address", "platform" => "Branded emails",
