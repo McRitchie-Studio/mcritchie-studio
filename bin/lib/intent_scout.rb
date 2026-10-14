@@ -194,7 +194,7 @@ module IntentScout
   # first draft got three of them wrong (Carl and Steffon, 2026-10-14): `rg --pre
   # <program>` runs any program, `git show/log --output=<file>` writes a file, and
   # `git grep -O<cmd>` runs a pager. So there is no rg and no git at all: the Grep
-  # tool covers both. The live proof is test/lib/intent_scout_cli_smoke_test.rb,
+  # tool covers both. The live proof is script/intent_scout_permission_smoke.rb,
   # which runs the real CLI under this exact argv; an argv assertion cannot see
   # what the CLI adds.
   READ_ONLY_BASH = ["grep *", "ls *", "cd *"].freeze

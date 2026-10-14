@@ -29,8 +29,8 @@ matters as much: without it the operator's `~/.claude/settings.json` allow rules
 (git push, `gh pr merge`, `bin/task:*`) are ADDED under `dontAsk`, so Avi's
 definition rides inline through `--agents`. The allow-list has no `git` and no
 `rg`, whose `--output`, `-O` and `--pre` options write files or run programs; the
-Grep tool searches instead. `test/lib/intent_scout_cli_smoke_test.rb` proves all
-of it against the real CLI (`INTENT_SCOUT_LIVE_SMOKE=1`; never in CI): `git add`,
+Grep tool searches instead. `script/intent_scout_permission_smoke.rb` proves all
+of it against the real CLI (run by hand with `ruby script/intent_scout_permission_smoke.rb`; never in CI): `git add`,
 `git show --output` and `rg --pre` are denied and `bin/task note` is allowed. Run
 it after any change to the launch. It then
 posts an `INTENT SCOUT OWED:` note carrying the pid, and prints, last:
