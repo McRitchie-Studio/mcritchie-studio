@@ -85,22 +85,11 @@ connection_methods:
     upkeep: We handle it
 
 groups:
-  - key: integrations
-    title: Integrations
-    kicker: Free
-    summary: Connect accounts you already own. You pay the vendor directly; we wire it in and do no ongoing work.
+  - key: google_sign_in
+    title: Connect your Google
+    kicker: Sign in
+    summary: One click each. Sign in with Google and choose what your agents may read; nothing they can change, and you can disconnect any time.
     entries:
-      - key: google_workspace_connect
-        name: Google Workspace
-        icon: google
-        blurb: Connect your own Workspace. It powers your email drafting agent and a knowledge base built from the Drive folders you choose.
-        status: live
-        tier: pro
-        tier_note: Drafting agent from Team
-        connects: [admin_grant]
-        abilities:
-          - { key: draft_email, name: Draft email replies for you to send, via: [admin_grant] }
-          - { key: knowledge_base, name: A knowledge base from the Drive folders you choose, via: [admin_grant] }
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
       # Live on our own hub (/admin/google); an admin sees each card's Connect
       # or Disconnect (IntegrationsController::GOOGLE_CARDS).
@@ -131,6 +120,23 @@ groups:
         connects: [sign_in]
         abilities:
           - { key: read_drive, name: Read your Drive files to answer from them, via: [sign_in] }
+
+  - key: integrations
+    title: Integrations
+    kicker: Free
+    summary: Connect accounts you already own. You pay the vendor directly; we wire it in and do no ongoing work.
+    entries:
+      - key: google_workspace_connect
+        name: Google Workspace
+        icon: google
+        blurb: Connect your own Workspace. It powers your email drafting agent and a knowledge base built from the Drive folders you choose.
+        status: live
+        tier: pro
+        tier_note: Drafting agent from Team
+        connects: [admin_grant]
+        abilities:
+          - { key: draft_email, name: Draft email replies for you to send, via: [admin_grant] }
+          - { key: knowledge_base, name: A knowledge base from the Drive folders you choose, via: [admin_grant] }
       - key: discord
         name: Discord
         icon: discord

@@ -42,7 +42,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
   test "[component] an entry with two ways names the ways behind each ability" do
     groups = Integration.groups
-    entry = groups.first.entries.find { _1.key == "google_workspace_connect" }
+    entry = groups.find { _1.key == "integrations" }.entries.find { _1.key == "google_workspace_connect" }
     entry.connects = %w[admin_grant sign_in]
     entry.connection_methods = entry.connects.map { Integration.connection_method(_1) }
     entry.abilities += [ Integration::Ability.new(key: "read_calendar", name: "Read your calendar", via: %w[sign_in], status: "live") ]

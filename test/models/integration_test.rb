@@ -5,10 +5,10 @@ require "test_helper"
 # live or on request, Get notified for a Coming soon one, Talk to us for an
 # add-on or a custom need. Never Connect on a Coming soon entry.
 class IntegrationTest < ActiveSupport::TestCase
-  test "[unit] the config loads three groups: integrations, add-ons, then custom" do
+  test "[unit] the config loads four groups: Google sign-in, integrations, add-ons, then custom" do
     groups = Integration.groups
 
-    assert_equal %w[integrations add_ons custom], groups.map(&:key)
+    assert_equal %w[google_sign_in integrations add_ons custom], groups.map(&:key)
     groups.each { |group| assert group.entries.any?, "#{group.key} has entries" }
   end
 
@@ -64,7 +64,7 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "Connect", labels["github_org"]
     assert_equal "Get notified", labels["slack"]
     assert_equal "Talk to us", labels["stripe_connect"], "Stripe moved to the custom section"
-    Integration.groups.drop(1).flat_map(&:entries).each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
+    Integration.groups.select { %w[add_ons custom].include?(_1.key) }.flat_map(&:entries).each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
     Integration.groups.last.entries.each { |entry| assert_equal "custom", entry.intent, entry.key }
     Integration.entries.select(&:soon?).each { |entry| refute_equal "connect", entry.intent, entry.key }
   end
