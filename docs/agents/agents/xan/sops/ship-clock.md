@@ -11,7 +11,9 @@ clock starts at his prompt and stops when the production ship goes green. The
 report splits that time into three parts:
 
 - **Hands-on:** agents working, reviewing, and handing off.
-- **Fixed wait:** CI on the final push, the QA deploy, and the production deploy.
+- **Fixed wait:** CI on the final push, the release sweep's pre-QA work (from the
+  sweep's start to the QA candidate's open: merge-forward, gem publish, lock
+  bumps), the QA deploy, and the production deploy.
 - **Rework:** every red CI round (from the round's start to the next push's CI),
   every failed QA or ship attempt (from its start to the retry's), and every
   refused pre-check. Each item carries its cause line where a record or a log
@@ -111,8 +113,16 @@ Report to Alex in this order:
   production smoke passed. A release from before gate runs falls back to the
   task's shipped stamp.
 - **Hand-off gaps count as hands-on.** Examples are the time between `submitted`
-  and the reviewer's pickup, or between `reviewed` and the QA sweep. They are
-  pipeline time, not wait, and the stage table shows each one.
+  and the reviewer's pickup, or between `reviewed` and the QA sweep's start. They
+  are pipeline time, not wait, and the stage table shows each one.
+- **The sweep's pre-QA work is wait.** Once `bin/release prepare` starts the sweep
+  (the release's `assemble_release started` event, stamped as `release sweep
+  started` in the stage table), the merge-forward, gem publish and lock bumps up
+  to the QA candidate's open are the pipeline working, so they count as wait. The
+  event is read from `GET /api/v1/gates/release/<rel>` (`meta.release_events`); a
+  board without that read leaves the span hands-on, as before.
+- **`SHIP_CLOCK_GH_TIMEOUT`** that is not a positive number of seconds falls back
+  to the default 60, with a warning.
 - **A refused pre-check** is counted only from `--log` files: `bin/submit`
   records nothing on the board when its 0/8 pre-check refuses.
 

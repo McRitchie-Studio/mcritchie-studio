@@ -72,7 +72,9 @@ class TaskBeginTest < Minitest::Test
   # Run `bin/task begin` against a one-shot stub board. `existing` seeds a task
   # the GET finds (nil → 404 "task not found" until a create POSTs one).
   # Returns [requests, out, err, status, stub_lines].
-  def run_begin(args, existing: nil, env: {}, fail_activities: false)
+  # merged: true reads stdout and stderr as ONE stream (Open3.capture2e), the only
+  # way to prove what prints LAST; `out` is then that stream and `err` is "".
+  def run_begin(args, existing: nil, env: {}, fail_activities: false, merged: false)
     @task = existing
     @fail_activities = fail_activities
     server = TCPServer.new("127.0.0.1", 0)
@@ -94,7 +96,12 @@ class TaskBeginTest < Minitest::Test
       "STUB_LOG" => log
     }.merge(TaskUsageSandboxEnv.child_env(sandbox_root)).merge(env))
 
-    out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, "begin", *args)
+    if merged
+      out, status = Open3.capture2e(base_env, RbConfig.ruby, BIN, "begin", *args)
+      err = ""
+    else
+      out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, "begin", *args)
+    end
     lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
     [requests, out, err, status, lines]
   ensure
@@ -335,7 +342,8 @@ class TaskBeginTest < Minitest::Test
     assert_includes out, 'subagent_type: "avi"'
     assert_includes out, "run_in_background: true"
     assert_includes out, "docs/agents/agents/avi/sops/intent-scout.md"
-    assert out.index("scout: ") > out.index("next: build"), "the scout block follows the handoff line"
+    assert out.index("scout: Avi owes") > out.index("next: build"), "the scout block follows the handoff line"
+    assert_includes out, "Auto-launch did not run (", "the suite never launches; the block says why"
   end
 
   # [integration]
@@ -389,7 +397,96 @@ class TaskBeginTest < Minitest::Test
 
     assert status.success?, err
     assert_includes out, "scout: Avi owes this task an intent scout"
-    assert_includes err, "launch it anyway from the scout: lines above", "the warning points UP at lines already printed"
+    assert_includes err, "the scout: lines at the end of begin's output", "the warning points DOWN at the lines printed last"
+  end
+
+  # --- the auto-launch (scout-launches-itself) ------------------------------------
+  # begin launches the scout itself, detached, once; the scout lines print LAST.
+
+  # A stub `claude` that records its argv and cwd. The scout's env is an allow-list,
+  # so the record path is baked into the script rather than passed in the env.
+  def scout_stub
+    record = File.join(sandbox_root, "scout-calls.log")
+    stub = File.join(sandbox_root, "claude-stub")
+    File.write(stub, <<~RUBY)
+      #!#{RbConfig.ruby}
+      File.open(#{record.inspect}, "a") { |f| f.puts([Dir.pwd, ENV.key?("CLAUDE_CODE_SESSION_ID"), *ARGV.first(9)].join("\t")) }
+      sleep 2 # a real scout runs for minutes; one that exits at once is a failed launch
+    RUBY
+    FileUtils.chmod("+x", stub)
+    [stub, record]
+  end
+
+  def wait_for_lines(path, count)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+    loop do
+      lines = File.exist?(path) ? File.readlines(path, chomp: true) : []
+      return lines if lines.size >= count || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.05
+    end
+  end
+
+  def last_line(stream)
+    stream.lines.map(&:chomp).reject(&:empty?).last
+  end
+
+  # [integration] The default in the suite: no launch, and the paste-ready block is
+  # the LAST thing in the merged stream, after the dream bank and the owed note.
+  def test_the_scout_block_prints_last_in_the_merged_stream
+    # --agent names a builder soul, so the dream bank prints (it is what cut the
+    # block on navbar-first-name-only); without one the order proves nothing.
+    _requests, out, _err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP,
+                                               "--agent", "pokemon", *CREATE_METADATA], merged: true)
+
+    assert status.success?, out
+    assert_includes last_line(out), "scout-brief #{SLUG}", "the block's read-back line ends begin's output:\n#{out}"
+    block_start = out.rindex("scout: Avi owes")
+    dream = out.index("**Q: ")
+    assert block_start, out
+    assert dream, "the dream bank must print in this run, or the order is unproven:\n#{out}"
+    assert_operator dream, :<, block_start, "the dream bank prints BEFORE the scout block"
+    refute_includes out[block_start..], "**Q: ", "nothing from the dream bank prints after the scout block"
+    assert_operator out.index("scout: NOT launched"), :<, out.index("next: build"),
+                    "the top summary names the scout too, so head keeps it"
+  end
+
+  # [integration] Opted in with a stub CLI: begin launches the scout once, the
+  # launched line is last, the child carries no builder session, and a second
+  # begin (the re-claim of a building task) spawns nothing more.
+  def test_begin_launches_the_stubbed_scout_once_and_a_resume_does_not_relaunch
+    stub, record = scout_stub
+    home = File.join(sandbox_root, "scout-home")
+    config = File.join(sandbox_root, "claude-config")
+    FileUtils.mkdir_p(File.join(config, "agents"))
+    File.write(File.join(config, "agents", "avi.md"), "---\nname: avi\ndescription: Avi.\n---\n\nYou are Avi.\n")
+    env = { "INTENT_SCOUT_AUTO" => "1", "TASK_BEGIN_SCOUT_BIN" => stub, "INTENT_SCOUT_HOME" => home,
+            "CLAUDE_CONFIG_DIR" => config,
+            "CLAUDE_CODE_SESSION_ID" => "builder-session-1" }
+    requests, out, _err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP,
+                                              *CREATE_METADATA], merged: true, env: env)
+
+    assert status.success?, out
+    assert_match(/\Ascout: Avi launched in the background \(pid \d+, log .*#{SLUG}\.log\) - do not launch another/,
+                 last_line(out))
+    refute_includes out, "Agent(subagent_type", "never both"
+    calls = wait_for_lines(record, 1)
+    assert_equal 1, calls.size, calls.inspect
+    _cwd, session_inherited, *argv = calls.first.split("\t")
+    assert_equal "false", session_inherited, "the builder's session must not reach the scout"
+    assert_equal "-p", argv[0]
+    assert_equal ["--setting-sources", "project", "--strict-mcp-config", "--agents"], argv[2, 4]
+    pid = File.read(File.join(home, "#{SLUG}.pid")).strip
+    assert_match(/\A\d+\z/, pid)
+    owed = owed_notes(requests)
+    assert_equal 1, owed.size
+    assert_includes owed.first["description"], "pid #{pid}", "the owed note carries the pid"
+
+    _requests, again, _err, status, = run_begin([SLUG], existing: building_task, merged: true, env: env)
+    assert status.success?, again
+    assert_includes last_line(again), "already launched for this task (pid #{pid}"
+    sleep 0.3
+    assert_equal 1, File.readlines(record).size, "a resume must not spawn a second scout"
   end
 
   # --- guard catalog row 4.4: the shape is decided at create --------------------

@@ -48,8 +48,18 @@ module Api
         render_data(run, status: :created)
       end
 
+      # A release's read also carries its stage events in `meta.release_events`
+      # (step, status, occurred_at). bin/ship-clock reads `assemble_release
+      # started` there: the sweep's start, so its pre-QA work (merge-forward, gem
+      # publish, lock bumps) counts as wait rather than hands-on. `data` keeps its
+      # shape, so every existing reader is unchanged.
       def index
-        render_data(GateRun.for_subject(subject_type, subject_slug).chronological)
+        runs = GateRun.for_subject(subject_type, subject_slug).chronological
+        return render_data(runs) unless subject_type == "release"
+
+        events = ReleaseEvent.where(release_slug: subject_slug).chronological
+                             .map { |e| { "step" => e.step, "status" => e.status, "occurred_at" => e.occurred_at } }
+        render_data(runs, meta: { "release_events" => events })
       end
 
       private

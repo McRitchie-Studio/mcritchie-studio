@@ -18,7 +18,9 @@ require_relative "ci_failure_digest"
 #   the task row      created_at · started_at · submitted_at · reviewed_at ·
 #                     assembled_at · completed_at (shipped) · archived_at
 #   gate runs         GET /api/v1/gates/task/<slug> (dor refusals) and
-#                     GET /api/v1/gates/release/<rel> (g3_candidate = QA, g4_ship = prod)
+#                     GET /api/v1/gates/release/<rel> (g3_candidate = QA, g4_ship = prod;
+#                     its meta.release_events carries `assemble_release started`,
+#                     the moment the release sweep began)
 #   GitHub            `gh run list --branch` (every CI round), `gh pr view` (merge time),
 #                     the failing jobs' logs for a red round's cause (CiFailureDigest)
 #   ship logs         optional --log files: `bin/submit` pre-check refusals record
@@ -29,7 +31,10 @@ require_relative "ci_failure_digest"
 #   rework    a red CI round, from its start to the next round's start (the fix rides
 #             inside it); a failed QA or ship attempt, from its start to the retry's
 #             start; a dor refusal, for its own run (its red CI round carries the rest)
-#   wait      the final green CI round, the green QA candidate run, the green ship run
+#   wait      the final green CI round; the release sweep's pre-QA work, from the
+#             sweep's start (assemble_release started) to the QA candidate's open
+#             (merge-forward, gem publish, lock bumps: the pipeline working, not an
+#             agent); the green QA candidate run; the green ship run
 #   hands-on  everything else: the agent working, reviewing, and handing off
 #
 # Overlaps resolve by priority, rework over wait over hands-on, so a dor refusal inside
@@ -58,9 +63,27 @@ module ShipClock
   # The most activity pages the T0 lookup walks (100 per page).
   T0_PAGE_LIMIT = 50
 
+  # The default bound on every gh call, in seconds (SHIP_CLOCK_GH_TIMEOUT).
+  GH_TIMEOUT_DEFAULT = 60.0
+
   class Error < StandardError; end
 
   module_function
+
+  # SHIP_CLOCK_GH_TIMEOUT, read forgivingly: unset is the default; anything that
+  # is not a positive number (`abc`, `0`, `-5`) is the default too, and yields the
+  # bad value to the block so the caller can warn. A zero would kill gh at once.
+  def gh_timeout(raw)
+    return GH_TIMEOUT_DEFAULT if raw.nil? || raw.to_s.strip.empty?
+
+    value = Float(raw.to_s.strip)
+    raise ArgumentError unless value.positive? && value.finite?
+
+    value
+  rescue ArgumentError
+    yield raw if block_given?
+    GH_TIMEOUT_DEFAULT
+  end
 
   def parse_time(value)
     return nil if value.nil? || value.to_s.strip.empty?
@@ -151,6 +174,7 @@ module ShipClock
       task_gates = sort_gates(records.fetch(:task_gates, []))
       release_gates = sort_gates(records.fetch(:release_gates, []))
       prod_at, prod_source = production_time(task, release_gates)
+      sweep_at, pre_qa = pre_qa_span(records.fetch(:release_events, []), release_gates)
       raise Error, "#{task["slug"]} has not reached production: no green g4_ship run and no shipped stamp" unless prod_at
 
       intervals = []
@@ -166,6 +190,7 @@ module ShipClock
                       seconds: (to - round[:from]).round, cause: round[:cause] }
         end
       end
+      intervals << { bucket: :wait, from: pre_qa[:from], to: pre_qa[:to] } if pre_qa
       [task_gates, release_gates].each do |gates|
         gates.group_by { |g| g["key"] }.each_value do |runs|
           runs.each_with_index do |run, i|
@@ -211,11 +236,28 @@ module ShipClock
         "failed_gates" => rework.count { |r| r[:kind].start_with?("failed ") },
         "rework" => (rework.sort_by { |r| r[:from] }.map { |r| stringify(r) } +
                      precheck.map { |line| { "kind" => "refused pre-check", "cause" => line } }),
-        "milestones" => milestones(task, t0, rounds, records.fetch(:pr, {}), task_gates, release_gates, prod_at)
+        "pre_qa_wait_s" => pre_qa ? (pre_qa[:to] - pre_qa[:from]).round : 0,
+        "milestones" => milestones(task, t0, rounds, records.fetch(:pr, {}), task_gates, release_gates, prod_at,
+                                   sweep_at)
       }
     end
 
     def parse_time(value) = ShipClock.parse_time(value)
+
+    # The release sweep's pre-QA span: from the first `assemble_release started`
+    # event (Release::Conductor.sweep!) to the first QA candidate's open. Returns
+    # [sweep_start, { from:, to: }] or [sweep_start_or_nil, nil] when either end
+    # is missing or out of order (a board that predates the events read, or a
+    # release that never reached QA): that span then stays hands-on, as before.
+    def pre_qa_span(events, release_gates)
+      sweep_at = Array(events).select { |e| e["step"] == "assemble_release" && e["status"] == "started" }
+                              .filter_map { |e| parse_time(e["occurred_at"]) }.min
+      qa_open = release_gates.select { |g| g["key"] == "g3_candidate" }
+                             .filter_map { |g| parse_time(g["started_at"]) }.min
+      return [sweep_at, nil] unless sweep_at && qa_open && sweep_at < qa_open
+
+      [sweep_at, { from: sweep_at, to: qa_open }]
+    end
 
     def stringify(row)
       row.to_h { |k, v| [k.to_s, v.is_a?(Time) ? v.iso8601 : v] }
@@ -290,8 +332,9 @@ module ShipClock
       end
     end
 
-    def milestones(task, t0, rounds, pr, task_gates, release_gates, prod_at)
+    def milestones(task, t0, rounds, pr, task_gates, release_gates, prod_at, sweep_at = nil)
       rows = [["T0 (#{t0[:source]})", t0[:at]]]
+      rows << ["release sweep started", sweep_at]
       rows << ["task created (desk cut)", parse_time(task["created_at"])]
       rows << ["building", parse_time(task["started_at"])]
       rows << ["PR opened", parse_time(pr["createdAt"])]
@@ -345,10 +388,19 @@ module ShipClock
       end
     end
 
-    # The lock lives in the temp dir, keyed by the ledger's full path, so it never
-    # lands in the tree as a stray file beside the version-controlled ledger.
+    # The lock lives in the temp dir, keyed by the ledger's REAL path, so it never
+    # lands in the tree as a stray file beside the version-controlled ledger, and
+    # two spellings of one file (a symlinked tree, a relative path) share one lock.
+    # A ledger not yet written resolves through its directory.
     def lock_path(path)
-      File.join(Dir.tmpdir, "ship-clock-#{Digest::SHA256.hexdigest(File.expand_path(path))[0, 16]}.lock")
+      File.join(Dir.tmpdir, "ship-clock-#{Digest::SHA256.hexdigest(real_path(path))[0, 16]}.lock")
+    end
+
+    def real_path(path)
+      File.realpath(path)
+    rescue Errno::ENOENT
+      dir = File.dirname(File.expand_path(path))
+      File.join(File.directory?(dir) ? File.realpath(dir) : dir, File.basename(path))
     end
 
     # Append the run's row, or REPLACE the slug's earlier row (a re-run after a fix
@@ -368,7 +420,13 @@ module ShipClock
         index ? rows[index] = row : rows << row
         tmp = "#{path}.tmp-#{Process.pid}"
         begin
-          File.write(tmp, rows.map { |r| CSV.generate_line(r) }.join)
+          # fsync before the rename: a crash after it must never leave a ledger
+          # that names a row the disk never held.
+          File.open(tmp, "w") do |f|
+            f.write(rows.map { |r| CSV.generate_line(r) }.join)
+            f.flush
+            f.fsync
+          end
           File.rename(tmp, path)
         ensure
           File.delete(tmp) if File.exist?(tmp)
@@ -391,6 +449,13 @@ module ShipClock
     def task(slug) = data(@board.call("/api/v1/tasks/#{slug}"))
 
     def gates(type, slug) = Array(data(@board.call("/api/v1/gates/#{type}/#{slug}")))
+
+    # A release's gate runs AND its stage events (meta.release_events), in one read.
+    def release_gates(slug)
+      payload = @board.call("/api/v1/gates/release/#{slug}")
+      events = payload.is_a?(Hash) ? Array(payload.dig("meta", "release_events")) : []
+      [Array(data(payload)), events]
+    end
 
     # The newest T0 note, from EVERY page of the task's comments: a busy task can
     # carry more than 100, and the T0 is the oldest of them.
@@ -471,11 +536,12 @@ module ShipClock
     runs = repo && task["branch"] ? sources.ci_runs(repo, task["branch"]) : []
     causes = runs.select { |r| RED_CONCLUSIONS.include?(r["conclusion"].to_s) }
                  .to_h { |r| [r["databaseId"], sources.ci_cause(repo, r["databaseId"])] }
+    release_gates, release_events = task["release_slug"] ? sources.release_gates(task["release_slug"]) : [[], []]
     Timeline.build(
       task: task, t0: t0, ci_runs: runs, ci_causes: causes,
       pr: pr_url ? sources.pr(pr_url) : {},
       task_gates: sources.gates("task", slug),
-      release_gates: task["release_slug"] ? sources.gates("release", task["release_slug"]) : [],
+      release_gates: release_gates, release_events: release_events,
       log_lines: log_lines
     )
   end
@@ -504,7 +570,7 @@ module ShipClock
     pct = ->(s) { total.positive? ? format("%3d%%", (s * 100 / total).round) : "  -" }
     out << "  total     #{duration(report["total_s"])}"
     out << "  hands-on  #{duration(report["hands_on_s"])}  #{pct.call(report["hands_on_s"])}"
-    out << "  wait      #{duration(report["wait_s"])}  #{pct.call(report["wait_s"])}  (CI, QA deploy, production deploy)"
+    out << "  wait      #{duration(report["wait_s"])}  #{pct.call(report["wait_s"])}  (CI, the sweep's pre-QA work, QA deploy, production deploy)"
     out << "  rework    #{duration(report["rework_s"])}  #{pct.call(report["rework_s"])}  " \
            "(#{report["red_ci_rounds"]} red CI round(s), #{report["failed_gates"]} failed gate run(s), " \
            "#{report["refused_prechecks"]} refused pre-check(s) from logs)"

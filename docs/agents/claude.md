@@ -35,6 +35,9 @@ path that no `git checkout` can move (the production ship installs it). Until it
 exists, or if it is ever missing, the hub path `/Users/alex/projects/mcritchie-studio/bin/…`
 runs the same scripts.
 
+- `task begin` launches Avi's intent scout itself, in the background (its last
+  output lines say so). Read the brief with `bin/task scout-brief <slug>` before
+  you submit; launch Avi yourself only when those lines say begin could not.
 - Write the test tiers your shape requires as you go, unit-first.
 - Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives
   them from GitHub. `--agent <soul>` is optional.
