@@ -915,7 +915,7 @@ that reads on both themes in the 20px slot another app's sign-in card gives
 it), `Studio.navbar_wordmark` is the Navbar Logo pair once the engine has the
 setting, and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
 with `node script/brand_png.cjs <svg> <out.png> <size> [background] [padding]`
-(Chromium draws it; vips is absent and ImageMagick mis-draws even-odd paths).
+(Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex's call). A build fetch needs

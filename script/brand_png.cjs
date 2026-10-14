@@ -10,8 +10,8 @@
 // The artwork is centred and contained in the square, `padding` (a fraction of
 // the side, default 0.04) clear on every edge. With no background the PNG is
 // transparent; with one (a CSS colour) it is opaque, as an app icon must be.
-// Chromium draws it (vips is absent here and ImageMagick's own SVG reader
-// mis-draws even-odd paths), so an agent runs this locally and commits the PNG.
+// Chromium draws it, the engine a browser shows the SVG with (vips is absent
+// here), so an agent runs this locally and commits the PNG.
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
