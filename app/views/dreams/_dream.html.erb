@@ -6,7 +6,7 @@
          data-test="dream-card" data-dream="<%= dream.slug %>" data-status="<%= dream.status %>"
          x-show="filter === 'all' || filter === $el.dataset.status">
   <summary class="flex cursor-pointer list-none items-start gap-2 p-3 [&::-webkit-details-marker]:hidden">
-    <span aria-hidden="true" class="mt-0.5 text-muted transition group-open:rotate-90">&#9656;</span>
+    <span aria-hidden="true" class="mt-0.5 inline-block text-muted transition group-open:rotate-90">&#9656;</span>
     <span class="min-w-0 flex-1 text-sm font-semibold leading-snug text-heading"><%= dream.question %></span>
     <% if proposed %>
       <span class="badge shrink-0 text-3xs bg-warning/10 text-warning border-warning/40" data-test="dream-proposed-badge">Proposed</span>
@@ -26,7 +26,7 @@
       </div>
     <% end %>
     <% if dream.story.present? %>
-      <div class="prose-themed text-sm" data-test="dream-story"><%= dream_story_html(dream.story) %></div>
+      <div class="prose-themed text-sm [&_h1]:text-base [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-bold [&_h3]:text-sm" data-test="dream-story"><%= dream_story_html(dream.story) %></div>
     <% end %>
     <div class="flex flex-wrap items-center gap-1.5" data-test="dream-tags">
       <span class="badge text-3xs <%= proposed ? "bg-warning/10 text-warning border-warning/40" : "bg-primary/10 text-primary border-primary/40" %>" data-test="dream-status"><%= dream.status.presence || "no status" %></span>

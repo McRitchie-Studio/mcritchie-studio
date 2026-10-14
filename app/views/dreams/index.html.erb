@@ -12,7 +12,7 @@
     <div class="flex rounded-lg border border-subtle bg-surface-alt p-1 text-sm" role="group" aria-label="Filter dreams by status" data-test="dream-filter">
       <% DreamsController::FILTERS.each do |status| %>
         <%= link_to dreams_path(status: (status == "all" ? nil : status)),
-              class: "rounded-md px-3 py-1.5 font-semibold transition",
+              class: "rounded-md px-3 py-1.5 font-semibold",
               ":class": "filter === '#{status}' ? 'bg-primary text-white' : 'text-secondary hover:text-heading'",
               "@click.prevent": "filter = '#{status}'; history.replaceState(null, '', $el.href)",
               data: { test: "dream-filter-#{status}" } do %>

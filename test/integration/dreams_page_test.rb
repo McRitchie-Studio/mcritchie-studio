@@ -85,6 +85,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     get dreams_path
 
     assert_select "[data-test='soul-column'][data-soul='carl'] [data-dream='money-review-reads-the-ledger'] [data-test='dream-story']" do
+      assert_select "h1", 0, "the title repeats the summary, so the story drops it"
       assert_select "h2", text: "Situation"
       assert_select "strong", text: "green"
     end
