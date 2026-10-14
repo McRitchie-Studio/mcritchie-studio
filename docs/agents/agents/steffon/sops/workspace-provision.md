@@ -313,47 +313,68 @@ These run where the key is: on production (`heroku run`), or on a desk that can
 read the 1Password item. A mailbox must be proven on the SAME database the
 draft runs against.
 
-## 8. Calendar by sign-in — the `sign_in` connection method
+## 8. Calendar, Gmail and Drive by sign-in — the `sign_in` connection method
 
-Calendar does **not** ride the delegation above: the service account holds no
-Calendar scope, and widening `SCOPES` breaks every client domain until each
-re-grants (step 1's table). Calendar is read through a person's own Google
-sign-in instead: one click, one person, and it may ask again (revoked, or
-unused for six months). This is the `sign_in` method in
+Calendar, Gmail and Drive do **not** ride the delegation above: the service
+account holds none of their read scopes, and widening `SCOPES` breaks every
+client domain until each re-grants (step 1's table). Each is read through a
+person's own Google sign-in instead: one click, one person, and it may ask
+again (revoked, or unused for six months). This is the `sign_in` method in
 `config/integrations.yml`; the admin grant is `admin_grant`.
 
-The hub dogfoods it first, at **`/admin/google_calendar`** (admin only): Connect
-sends the admin to Google, the callback stores `GoogleCalendarConnection` (the
-refresh token encrypted, never shown), and the page lists the next week's
-events as proof the read works. Disconnect deletes the row and asks Google to
-revoke the grant; a TLS or network failure on the revoke still deletes the row
-and says Google did not confirm. The same Connect and Disconnect sit on the
-`/integrations` Google Workspace card's "Sign in" row for an admin (a visitor
-sees neither), and come back to `/integrations`: `?return_to=` is honoured only
-for `/integrations` and `/admin/google_calendar`.
+One sign-in, three abilities (`GoogleConnection::ABILITIES`), each asked for on
+its own, read only:
 
-What it asks Google for: `openid`, `email` and
-`https://www.googleapis.com/auth/calendar.events.readonly`. It cannot create,
-change or delete an event, or read calendar settings or sharing. A person can
-untick the calendar on Google's screen; the page then says
-"Connected without the calendar".
+| Ability | Scope | Proof on the standing page |
+|---------|-------|----------------------------|
+| `calendar` | `calendar.events.readonly` | the next week's events |
+| `gmail` | `gmail.readonly` | the five newest subjects (headers only) |
+| `drive` | `drive.readonly` | the five most recently changed files |
+
+Every sign-in also asks for `openid` and `email`, with
+`include_granted_scopes=true`, so connecting one ability adds it to what the
+account already granted. One `GoogleConnection` row per Google account holds the
+encrypted refresh token and the granted `scope`; until 2026-10-14 it was
+`GoogleCalendarConnection`, and the rename kept the connected row.
+
+The hub dogfoods it first, at **`/admin/google`** (admin only;
+`/admin/google_calendar` redirects there): a section per ability with its
+account, its live read or Google's error said plainly (a disabled API reads
+"Gmail answered 403: Gmail API has not been used in project … or it is
+disabled"), and one button. The same Connect and Disconnect sit on the
+`/integrations` Google Calendar, Gmail and Drive cards for an admin (a visitor
+sees the cards and their normal CTA only), and come back to `/integrations`:
+`?return_to=` is honoured only for `/integrations` and `/admin/google`. A
+callback whose grant lacks the asked-for scope (unticked on Google's screen)
+stores nothing.
+
+**Disconnect is per ability.** Google cannot revoke a single scope, so an
+account keeping other abilities only forgets this one here; disconnecting its
+last ability revokes the token at Google and deletes the row. A TLS or network
+failure on the revoke still deletes the row and says Google did not confirm.
+
+**Each API must be enabled** in the OAuth client's Google Cloud project
+(APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API),
+or its read answers 403 on the standing page.
 
 **Its own OAuth client, never the hub's sign-in client.** Alex creates it once in
 Google Cloud Console (APIs & Services → Credentials → Create OAuth client ID →
 Web application), with the redirect URI the standing page prints while the client is unset
-(`https://mcritchie.studio/admin/google_calendar/callback` in production), and
-sets the consent screen's publishing status to **In production**: a Testing app's
-refresh tokens die after 7 days. Until Google verifies the app, the sign-in
-shows an "unverified app" warning that the person clicks through. File the pair
-under the admin writing lane ([`credential-filing`](credential-filing.md)) and
-set it on the app:
+(`https://mcritchie.studio/admin/google_calendar/callback` in production: the
+callback keeps the path first registered), and sets the consent screen's
+publishing status to **In production**: a Testing app's refresh tokens die after
+7 days. Gmail and Drive read scopes are restricted: until Google verifies the
+app, the sign-in shows an "unverified app" warning that the person clicks
+through. File the pair under the admin writing lane
+([`credential-filing`](credential-filing.md)) and set it on the app:
 
 ```bash
 heroku config:set -a mcritchie-studio GOOGLE_CONNECT_CLIENT_ID=… GOOGLE_CONNECT_CLIENT_SECRET=…
 ```
 
 Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
-(`config/initializers/google_calendar_stand_in.rb`); nothing reaches Google.
+(`config/initializers/google_connect_stand_in.rb`) that grants whichever scope
+each Connect asked for; nothing reaches Google.
 
 ## Switching a workspace off — and back on
 
