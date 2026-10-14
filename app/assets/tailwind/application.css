@@ -470,8 +470,11 @@
      Name: from 768px the first name sits on the rule of 3 against the avatar,
      as the Navbar Logo does against its icon (docs/topics/logos.md): its
      capitals are a third of the avatar's height and centred on it. Montserrat's
-     cap height is 0.7 em, so the size is a third of the avatar over 0.7. The engine's
-     nav avatar is w-8 (2rem). The flex row centres the name's line box, and on
+     cap height is 0.7 em, so the size is a third of the avatar over 0.7. The avatar is
+     this app's own 2.5rem (--nav-avatar), not the engine's w-8 nav size: Turf
+     Monster's forked user nav renders that same size under its second row, so
+     the engine's size stays 2rem and only this header grows. Below 768px it
+     stays 2rem, which the phone header's height pin (53px) assumes. The flex row centres the name's line box, and on
      the engine's leading-none Montserrat's capitals sit 0.01 em below that
      box's middle, so no trim is needed (text-box would cut the ink, since the
      name truncates with overflow hidden). Turf Monster keeps its own navbar:
@@ -484,8 +487,14 @@
   .nav-shell .nav-logo { filter: invert(1); border-radius: 0; box-shadow: none; }
   .dark .nav-shell .nav-logo { filter: none; }
   @media (min-width: 768px) {
+    .nav-shell { --nav-avatar: 2.5rem; }
+    .nav-shell [data-nav-account] > [aria-hidden] > * {
+      width: var(--nav-avatar);
+      height: var(--nav-avatar);
+      font-size: 0.875rem;
+    }
     .nav-shell [data-nav-name] {
-      font-size: calc(2rem / 3 / 0.7);
+      font-size: calc(var(--nav-avatar) / 3 / 0.7);
     }
   }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
