@@ -51,9 +51,17 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
     assert_nil route("<@#{SHARED_BOT}> hi", users: [ SHARED_BOT ]).soul
   end
 
-  test "the shipped config loads, lists no channel yet, and so polls nothing" do
+  test "the shipped config polls one channel, routes an @Xan bot mention to xan, and leaves the rest unrouted" do
     routes = AgentMessages::Routes.load
-    assert_equal [], routes.channels
+    xan = "1481150857809760399"
+    studio = "1332466565203103744"
+    tank = "1479973077021495478"
+    assert_equal [ [ studio, tank, nil ] ], routes.channels.map { |c| [ c.guild_id, c.channel_id, c.default_soul ] }
+    assert_equal xan, routes.bot_user_id
+
+    mentioned = route("<@#{xan}> what is building?", routes: routes, guild: studio, channel: tank, users: [ xan ])
+    assert_equal [ "xan", "user" ], [ mentioned.soul, mentioned.routed_by ]
+    assert_nil route("anyone around?", routes: routes, guild: studio, channel: tank).soul
   end
 
   test "routes read every id as a string and list the routable souls" do
