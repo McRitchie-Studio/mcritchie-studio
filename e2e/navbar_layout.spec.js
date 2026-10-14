@@ -180,3 +180,41 @@ test("the desktop avatar shrinks on scroll and the name follows it", async ({ pa
   await expect.poll(async () => (await sizes()).avatar).toBe(32);
   expect((await sizes()).name).toBeCloseTo(32 / 3 / 0.7, 1);
 });
+
+// Desktop: moon to gear, gear to name and name to avatar are one gap, measured
+// ink to ink (the icons' drawn paths, the name's text box), at rest and scrolled.
+test("the desktop controls are evenly spaced", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+  await page.evaluate(() => document.fonts.ready);
+
+  const gaps = () => page.evaluate(() => {
+    const ink = (svg) => {
+      let left = Infinity, right = -Infinity;
+      svg.querySelectorAll("path, circle").forEach((el) => {
+        const box = el.getBBox(), m = el.getScreenCTM();
+        [box.x, box.x + box.width].forEach((x) => {
+          const sx = m.a * x + m.c * box.y + m.e;
+          left = Math.min(left, sx);
+          right = Math.max(right, sx);
+        });
+      });
+      return [left, right];
+    };
+    const shown = (list) => [...list].find((el) => el.getBoundingClientRect().width > 0);
+    const moon = ink(shown(document.querySelectorAll("header [data-nav-theme-toggle='desktop'] .nav-toggle-icon svg")));
+    const gear = ink(shown(document.querySelectorAll("header [data-link-sidebar-trigger] svg")));
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector("header [data-nav-name]"));
+    const name = range.getBoundingClientRect();
+    const avatar = document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect();
+    return [gear[0] - moon[1], name.left - gear[1], avatar.left - name.right];
+  });
+
+  for (const y of [0, 1200]) {
+    await page.evaluate((top) => window.scrollTo(0, top), y);
+    if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+    const measured = await gaps();
+    measured.forEach((gap) => expect(Math.abs(gap - 12), JSON.stringify(measured)).toBeLessThanOrEqual(1));
+  }
+});

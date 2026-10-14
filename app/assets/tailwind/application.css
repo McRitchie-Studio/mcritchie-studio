@@ -511,14 +511,26 @@
        name's own hover colour is the cue. */
     .nav-shell a[data-nav-account]:hover { opacity: 1; }
     /* The theme toggle leads the gear, and both are a size down from the
-       engine's: the gear's 20px icon in a 36px button becomes 16px in 28px,
+       engine's: the gear's 20px icon in a 36px button becomes 16px in 24px,
        the 16px moon 14px. Order, not markup, so the engine's rail is untouched. */
     .nav-shell [data-nav-theme-toggle="desktop"] { order: -1; transform: scale(0.875); }
     .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] {
-      width: 1.75rem;
-      height: 1.75rem;
+      width: 1.5rem;
+      height: 1.5rem;
     }
     .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] svg { width: 1rem; height: 1rem; }
+    /* ONE GAP. Moon to gear, gear to name and name to avatar are the same
+       --nav-gap, measured ink to ink. Each box gap gives back what its edges
+       already hold: the moon's and gear's blank margins inside their 24-unit
+       artwork, the gear's 4px button inset, and the name's side bearing
+       (8.6px between moon and gear, 6.3px between gear and name, measured in
+       Chrome). The engine's inline 6px padding on the icon row is zeroed so
+       the row's edge is the gear's. */
+    .nav-shell { --nav-gap: 0.75rem; }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) { gap: calc(var(--nav-gap) - 8.6px); }
+    .nav-shell :has(> a[data-nav-account]) > div:first-child > div:first-child { padding-inline: 0 !important; }
+    .nav-shell :has(> a[data-nav-account]) { gap: calc(var(--nav-gap) - 6.3px); }
+    .nav-shell a[data-nav-account] { gap: var(--nav-gap); }
   }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
      words into a column; this app keeps them on one line where they fit and
