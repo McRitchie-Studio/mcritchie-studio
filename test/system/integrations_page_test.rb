@@ -94,4 +94,33 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       end
     end
   end
+
+  test "[e2e] the numbered setup guide shows every step and its drawing inside its card at 375 and 1280, light and dark" do
+    %w[light dark].each do |theme|
+      [ 375, 1280 ].each do |width|
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 1000, deviceScaleFactor: 1, mobile: width < 768)
+        visit integrations_discord_path
+        page.execute_script("localStorage.setItem('theme', '#{theme}')")
+        visit integrations_discord_path
+
+        assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
+        assert_selector "[data-test='setup-step']", count: 7
+        assert_selector "[data-test='step-visual']", count: 7, visible: true
+        assert_selector "[data-test='step-help-link'][target='_blank']", count: 5
+        assert_text "Allow anyone to @mention this role"
+        # Each drawing sits inside its step's card, side by side at desktop and stacked on a phone.
+        boxes = page.evaluate_script(<<~JS)
+          Array.from(document.querySelectorAll("[data-test='setup-step']")).map((step) => {
+            const card = step.getBoundingClientRect();
+            const visual = step.querySelector("[data-test='step-visual']").getBoundingClientRect();
+            const text = step.querySelector("h3").getBoundingClientRect();
+            return { inside: visual.left >= card.left && visual.right <= card.right + 0.5, beside: visual.top < text.bottom }
+          })
+        JS
+        assert boxes.all? { |box| box["inside"] }, "#{theme} at #{width}: a drawing spills out of its card #{boxes}"
+        expected_beside = width >= 768
+        assert boxes.all? { |box| box["beside"] == expected_beside }, "#{theme} at #{width}: drawings #{expected_beside ? "beside" : "below"} the text #{boxes}"
+      end
+    end
+  end
 end

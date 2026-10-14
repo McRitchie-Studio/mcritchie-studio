@@ -93,8 +93,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='example-post']", minimum: 3
     assert_select "[data-test='example-exchange-line']", 2
     assert_select "[data-test='example-exchange']", text: /@Studio CTO why is checkout slow\?/
-    assert_select "[data-test='setup-step']", 3
-    assert_select "[data-test='setup-step']", text: /No links or passwords change hands/
+    assert_select "[data-test='setup-step']", 7
     assert_select "[data-test='permissions-note']", text: /You will approve exactly what the bot can do, and you can remove it any time from your server settings\./
     assert_select "[data-test='back-to-integrations'][href='#{integrations_path}']"
   end
@@ -114,6 +113,72 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     get integrations_path
     assert_select "#{entry('discord')} [data-test='entry-blurb']", text: /our bot will post .* and answer when you/
     assert_no_match(/our bot posts/i, css_select(entry("discord")).text)
+  end
+
+  test "[component] the setup guide is seven numbered steps, each with Discord's own help article and a drawing of its screen" do
+    get integrations_discord_path
+
+    help = "https://support.discord.com/hc/en-us/articles/"
+    expected = {
+      "server" => "#{help}204849977-How-do-I-create-a-server",
+      "channel" => "#{help}10543994968087-Channel-Permissions-Settings-101",
+      "roles" => "#{help}214836687-Discord-Roles-and-Permissions",
+      "invite" => "#{help}21334461140375-Using-Apps-on-Discord",
+      "ids" => "#{help}206346498-Where-can-I-find-my-User-Server-Message-ID",
+      "send" => nil,
+      "test" => nil
+    }
+    steps = css_select("[data-test='setup-steps'] > [data-test='setup-step']")
+    assert_equal expected.keys, steps.map { |step| step["data-step"] }, "the steps, in order"
+    assert_equal "ol", css_select("[data-test='setup-steps']").first.name, "a numbered list"
+
+    steps.each_with_index do |step, index|
+      key = step["data-step"]
+      assert_match(/Step #{index + 1}:/, step.at_css("h3").text, key)
+      links = step.css("[data-test='step-help-link']")
+      if expected[key]
+        assert_equal [ expected[key] ], links.map { |link| link["href"] }, key
+        assert_equal "_blank", links.first["target"], key
+        assert_includes links.first["rel"].split, "noopener", key
+      else
+        assert_empty links, key
+      end
+      visual = step.css("[data-test='step-visual']")
+      assert_equal [ key ], visual.map { |v| v["data-visual"] }, "#{key} draws its own screen"
+      assert_equal "img", visual.first["role"], key
+      assert visual.first["aria-label"].present?, "#{key}'s drawing is named"
+    end
+
+    # Every outbound link in the guide is an official Discord URL, opened in a new tab.
+    outbound = css_select("[data-test='discord-guide'] a[href^='http']")
+    assert_equal 5, outbound.size, "the five help articles, nothing else leaves the page"
+    outbound.each do |link|
+      assert_match(%r{\Ahttps://(support\.)?discord\.com/}, link["href"])
+      assert_equal "_blank", link["target"], link["href"]
+    end
+  end
+
+  test "[component] each step says what the client does, honestly: the invite comes from us, IDs only, a hello to test" do
+    get integrations_discord_path
+
+    step = ->(key) { "[data-test='setup-step'][data-step='#{key}']" }
+    assert_select step.("channel"), text: /#agents/
+    assert_select step.("roles"), text: /Allow anyone to @mention this role/
+    assert_select step.("roles"), text: /Assign nobody/
+    assert_select step.("invite"), text: /Your invite link comes from us/
+    assert_select "#{step.("invite")} [data-test='invite-slot']", text: /On request/
+    %w[View\ Channels Read\ Message\ History Send\ Messages Send\ Messages\ in\ Threads].each do |permission|
+      assert_select "#{step.("invite")} [data-test='invite-permissions'] li", text: /\A\W*#{permission}\z/
+    end
+    assert_select step.("ids"), text: /Developer Mode/
+    assert_select step.("ids"), text: /Advanced/
+    assert_select step.("send"), text: /Never send a password or a token/
+    assert_select "#{step.("send")} [data-test='step-request-link'][href='#discord-request']"
+    assert_select "#discord-request [data-test='discord-request-cta']"
+    assert_select step.("test"), text: /@Studio CTO hello/
+    assert_select step.("test"), text: /within a few minutes/
+    # Operator-only setup stays off the client page.
+    assert_no_match(/developer portal|Message Content|1Password|bot-token|McRitchie Agents/i, response.body)
   end
 
   test "[component] the guide's button requests the bot through the contact form, never a Discord authorization link" do
