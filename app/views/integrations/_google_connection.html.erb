@@ -1,0 +1,13 @@
+<%# Admin only (IntegrationsController#index sets the Google connections for an admin and nobody else): the hub's own connection for one ability (calendar, gmail or drive), on that card's Sign in row. Connect when no readable connection grants it and the server can take one; otherwise the account and Disconnect. Both come back to this page. No token renders. %>
+<% name = GoogleConnection::ABILITY_NAMES.fetch(ability) %>
+<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-test="google-connection" data-ability="<%= ability %>" data-state="<%= connection ? 'connected' : 'none' %>">
+  <% if connection %>
+    <span class="min-w-0 text-body [overflow-wrap:anywhere]" data-test="google-account">Connected as <span class="font-medium text-heading"><%= connection.email %></span></span>
+    <%= button_to "Disconnect", admin_google_disconnect_path(ability:, return_to: integrations_path), method: :delete,
+                  class: "btn btn-neutral btn-sm",
+                  form: { class: "inline-flex", data: { test: "google-disconnect", turbo_confirm: "Disconnect #{name} for #{connection.email}?" } } %>
+  <% elsif connectable %>
+    <%= link_to "Connect #{name}", admin_google_connect_path(ability:, return_to: integrations_path),
+                class: "btn btn-primary btn-sm", data: { test: "google-connect", turbo: false } %>
+  <% end %>
+</div>

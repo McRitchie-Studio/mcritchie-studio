@@ -416,7 +416,8 @@ turn with `--cosign agent`, so the QA server key and Mack co-sign the settle and
 Phantom tap is owed. At each `── STOP ──` block, check what it names yourself (the
 per-step checks are in the SOP's "unattended" paragraph) and go on; a step that stops
 or answers otherwise ends the run red. Run it watched (`--cosign link`, his Phantom
-co-sign at step 4) only when Alex asks to watch. Budget about 20 minutes for step 3.
+co-sign at step 4) only when Alex asks to watch. Run step 3 as a bare `play` (no
+`--pace`): budget about 9 minutes for the whole gauntlet, about 4 of them step 3.
 
 Record the green close (your own usage on the event, as every agent completion carries):
 

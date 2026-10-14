@@ -31,7 +31,7 @@ Rails.application.config.filter_parameters += [
   lambda do |key, value, params = nil|
     next unless key.to_s == "code" && value.is_a?(String)
 
-    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google_calendar].include?(params["controller"].to_s)
+    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google].include?(params["controller"].to_s)
   end,
   lambda do |key, value, params = nil|
     next unless key.to_s == "value" && value.is_a?(String)

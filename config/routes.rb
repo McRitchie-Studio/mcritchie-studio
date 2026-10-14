@@ -378,12 +378,15 @@ Rails.application.routes.draw do
     # Deletes the stored connection (the button on the standing page).
     delete "tiktok/connection", to: "tiktok#disconnect", as: :tiktok_disconnect
 
-    # The Google Calendar connection (sign_in method, config/integrations.yml):
-    # the standing page, Connect, Google's callback, and Disconnect.
-    get "google_calendar", to: "google_calendar#show", as: :google_calendar
-    get "google_calendar/connect",  to: "google_calendar#connect",  as: :google_calendar_connect
-    get "google_calendar/callback", to: "google_calendar#callback", as: :google_calendar_callback
-    delete "google_calendar/connection", to: "google_calendar#disconnect", as: :google_calendar_disconnect
+    # The Google connection (sign_in method, config/integrations.yml): the
+    # standing page, Connect and Disconnect per ability (?ability=calendar|
+    # gmail|drive), and Google's callback. The callback keeps the path the
+    # OAuth client registered first; the old standing page redirects here.
+    get "google", to: "google#show", as: :google
+    get "google/connect", to: "google#connect", as: :google_connect
+    delete "google/connection", to: "google#disconnect", as: :google_disconnect
+    get "google_calendar/callback", to: "google#callback", as: :google_callback
+    get "google_calendar", to: redirect("/admin/google")
   end
 
   # HTML

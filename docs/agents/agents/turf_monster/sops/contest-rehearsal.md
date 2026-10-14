@@ -92,11 +92,16 @@ in a terminal but the thing being rehearsed is a web app.
 ### Two ways to run it: unattended (the gauntlet) or watched
 
 **Unattended, the default for an agent.** The devnet gauntlet is agent-run
-(Alex, 2026-10-12): run every step in one turn with `--cosign agent`, and at
-each `── STOP ──` block check the thing it names yourself and record it, rather
-than handing back. What to check, per step: `seed` names every parked username;
+(Alex, 2026-10-12): run every step in one turn with `--cosign agent`, step 3 as
+a bare `bin/qa-contest-rehearsal play` (no `--pace`), and at each `── STOP ──`
+block check the thing it names yourself and record it, rather than handing
+back. The whole gauntlet takes about 9 minutes (measured on 2026-10-14, after
+rel-20261014-a49a7f: seed 25 s, create 48 s, enter 16 s, play 4 min, conclude
+2 min 20 s, close 75 s); each step prints its own `elapsed:` line. What to
+check, per step: `seed` names every parked username;
 `create` reads pool $500, on-chain yes; `enter` reports every cast member
-entered; `play` ends "replay: done" with every game FINAL; `conclude` prints
+entered; `play` ends `replay: caught up — 246 plays on the board, 32 games
+final, …` (it exits non-zero on `replay: CATCH-UP FAILED`); `conclude` prints
 `confirmed` with `onchain_settled: true`; then **check the arithmetic** from the
 settle transaction's own token balances (the prize escrow, owned by the
 `VaultState` PDA, falls by exactly the sum paid; each winner's USDC rises by
@@ -199,12 +204,18 @@ count it expects), and each player should appear on the leaderboard at 0.
 ### Step 3 — play the preseason
 
 ```bash
-bin/qa-contest-rehearsal play --pace 4
+bin/qa-contest-rehearsal play              # unattended: every play, back to back
+bin/qa-contest-rehearsal play --pace 4     # watched: the same replay, 4 s apart
 ```
 
 Locks the contest (a contest locks at kickoff, THEN the games play), clears the
 board, zeroes the leaderboard, and replays a real preseason week **one scoring
-play at a time**.
+play at a time**. The pace is only for eyes: both forms re-lay the same plays
+in the same order through the same code, and both end with the catch-up check
+below. `--pace` takes fractions (`0.5`); `--pace 0` is refused, because it used
+to mean poll-only. Poll-only, which writes the week in one burst and skips the
+per-play chain, has to be asked for by name: `--no-replay`. It is a poller
+check, never a gauntlet.
 
 The lock used to be what made the live board reachable at all — `#live`
 redirected unless the contest was locked and unsettled. It no longer does; that
@@ -215,6 +226,20 @@ The plays are real: the ESPN poller has already written them as `Goal` rows, and
 this re-lays them on a clock. Each one fires the same chain the live feed fires —
 score refresh, contest re-score, both broadcasts.
 
+**What the replay keeps, at any pace (the fidelity criteria):**
+
+- every captured play is re-created through `Goal.create!`, so its callbacks,
+  the contest re-score and both live broadcasts run as they do for the feed;
+- plays go in kickoff-then-game-clock order, so simultaneous games interleave;
+- each game concludes (`Game#conclude!`) right after its own last play;
+- **the catch-up check** runs before the step may hand on: every play is back
+  on the slate, every game reads completed, each game's score is the sum of its
+  plays and each matchup carries it, every entry in every open contest on the
+  slate scores what a fresh recompute gives, and nothing was rescued into
+  `ErrorLog` during the replay. Any miss prints `replay: CATCH-UP FAILED — …`
+  and stops the step. The chain is synchronous today, so it never waits; it
+  proves rather than assumes that `conclude` grades a caught-up board.
+
 ```text
 Live Board:   https://qa.turfmonster.media/contests/<slug>/live
 League Board: https://qa.turfmonster.media/live
@@ -222,8 +247,10 @@ League Board: https://qa.turfmonster.media/live
 
 **Watch the live board.** This is the step worth watching: the scores build from
 zero, games flip to FINAL as their last play lands, and the standings reshuffle.
-At `--pace 4` the 246-play week takes about 20 minutes (measured on
-rel-20261012-db4d68).
+Unattended, the 246-play week replays in under 2 minutes and the whole step
+takes about 4 (measured 2026-10-14: 106 s of replay at ~430 ms of work per play,
+on a QA build without the scoring fix that rides with this change). At
+`--pace 4` it takes about 20 minutes (measured on rel-20261012-db4d68).
 
 → **Watched: hand back now** and wait for his go-ahead; unattended: check it and go on to step 4.
 
