@@ -75,7 +75,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     get dashboard_path
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    assert_select "a[data-nav-account][href=?] [data-nav-name]", profile_path, text: users(:alex).display_name
+    assert_select "a[data-nav-account][href=?] [data-nav-name]", profile_path, text: Studio.navbar_user_name_for(users(:alex))
     assert_select "#studio-link-sidebar .studio-emoji-swap-hover"
   end
 end

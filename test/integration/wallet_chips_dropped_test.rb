@@ -12,7 +12,7 @@ require "test_helper"
 # EVERY TEST HERE CARRIES A POSITIVE CONTROL, because "the page does not contain
 # the word wallet" is exactly the assertion that passes when the page failed to
 # render at all. So each one first proves the surrounding region really painted —
-# a google chip, the user's email, the level bar — and only then asserts the
+# a google chip, the user's email, the account link — and only then asserts the
 # absence beside it.
 class WalletChipsDroppedTest < ActionDispatch::IntegrationTest
   setup do
@@ -43,15 +43,17 @@ class WalletChipsDroppedTest < ActionDispatch::IntegrationTest
     refute_includes response.body, "No email or wallet", "the empty-cell copy still offers a wallet"
   end
 
-  # The navbar's bar under the name is studio-engine's (components/_user_nav),
-  # and its left slot prints a wallet address only for a user who has one.
-  # Assert the bar renders, so the refusal below has something to read.
-  test "[component] the navbar renders its level bar with no address in it" do
+  # The navbar's bar under the name was studio-engine's (components/_user_nav);
+  # it printed a wallet address in its left slot. This app's navbar has no such
+  # bar any more (task navbar-first-name-only dropped Log out, its last line),
+  # so the control is the account link the bar sat beside.
+  test "[component] the navbar paints the account link and no address beside it" do
     get root_path
     assert_response :success
 
-    assert_includes response.body, "nav-bar-text",
-      "the nav bar must still render, or the empty left slot proves nothing"
+    assert_includes response.body, "data-nav-account",
+      "the account link must render, or the missing address proves nothing"
+    refute_includes response.body, "nav-bar-text", "the bar under the name is back"
     refute_match(/[1-9A-HJ-NP-Za-km-z]{4}…[1-9A-HJ-NP-Za-km-z]{4}/, response.body,
                  "a truncated base58 address is still painted in the nav")
   end

@@ -467,9 +467,19 @@
      Logo: logo-icon.svg is drawn in white. It is inverted on the light theme,
      and it is a mark, not an avatar, so it takes no circle and no shadow.
 
-     Log out: below 768px the icons leave the account column for the phone row
-     and the column has nothing left to size it, so the bar under the name
-     keeps room for its one link and the link stays on one line. */
+     Name: from 768px the first name sits on the rule of 3 against the avatar,
+     as the Navbar Logo does against its icon (docs/topics/logos.md): its
+     capitals are a third of the avatar's height and centred on it. Montserrat's
+     cap height is 0.7 em, so the size is a third of the avatar over 0.7. The avatar is
+     this app's own --nav-avatar, 2.5rem at rest shrinking to 2rem on the
+     scroll ramp (--nav-p, as the logo and title do), not the engine's w-8: Turf
+     Monster's forked user nav renders that same size under its second row, so
+     the engine's size stays 2rem and only this header grows. Below 768px it
+     stays 2rem, which the phone header's height pin (53px) assumes. The flex row centres the name's line box, and on
+     the engine's leading-none Montserrat's capitals sit 0.01 em below that
+     box's middle, so no trim is needed (text-box would cut the ink, since the
+     name truncates with overflow hidden). Turf Monster keeps its own navbar:
+     its name sits over a second row. */
   .nav-shell[data-pin="nav"] {
     z-index: var(--z-nav);
     @apply bg-page/95 supports-[backdrop-filter]:backdrop-blur;
@@ -477,8 +487,51 @@
   .nav-shell > .nav-row { max-width: 80rem; margin-inline: auto; }
   .nav-shell .nav-logo { filter: invert(1); border-radius: 0; box-shadow: none; }
   .dark .nav-shell .nav-logo { filter: none; }
-  .nav-shell div:has(> .nav-bar-text) { min-width: 3.5rem; }
-  .nav-shell .nav-bar-text { white-space: nowrap; }
+  @media (min-width: 768px) {
+    .nav-shell { --nav-avatar: calc(2.5rem - 0.5rem * var(--nav-p, 0)); } /* 40px -> 32px */
+    .nav-shell [data-nav-account] > [aria-hidden] > * {
+      width: var(--nav-avatar);
+      height: var(--nav-avatar);
+      font-size: 0.875rem;
+    }
+    .nav-shell [data-nav-name] {
+      font-size: calc(var(--nav-avatar) / 3 / 0.7);
+    }
+    /* The icon column beside the account link is a centred flex column, so
+       the theme toggle and gear sit level with the name rather than at the top
+       of the 40px row. studio-engine does this itself from the release after
+       0.105.0 (its data-nav-tools column); this keeps the hub right on either. */
+    .nav-shell :has(> a[data-nav-account]) > div:first-child {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    /* The engine dims the whole account link on hover (opacity 80%), which
+       turned the name's primary into a duller purple than the brand's. The
+       name's own hover colour is the cue. */
+    .nav-shell a[data-nav-account]:hover { opacity: 1; }
+    /* The theme toggle leads the gear, and both are a size down from the
+       engine's: the gear's 20px icon in a 36px button becomes 16px in 24px,
+       the 16px moon 14px. Order, not markup, so the engine's rail is untouched. */
+    .nav-shell [data-nav-theme-toggle="desktop"] { order: -1; transform: scale(0.875); }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] {
+      width: 1.5rem;
+      height: 1.5rem;
+    }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) > [data-link-sidebar-trigger] svg { width: 1rem; height: 1rem; }
+    /* ONE GAP. Moon to gear, gear to name and name to avatar are the same
+       --nav-gap, measured ink to ink. Each box gap gives back what its edges
+       already hold: the moon's and gear's blank margins inside their 24-unit
+       artwork, the gear's 4px button inset, and the name's side bearing
+       (8.6px between moon and gear, 6.3px between gear and name, measured in
+       Chrome). The engine's inline 6px padding on the icon row is zeroed so
+       the row's edge is the gear's. */
+    .nav-shell { --nav-gap: 0.75rem; }
+    .nav-shell :has(> [data-nav-theme-toggle="desktop"]) { gap: calc(var(--nav-gap) - 8.6px); }
+    .nav-shell :has(> a[data-nav-account]) > div:first-child > div:first-child { padding-inline: 0 !important; }
+    .nav-shell :has(> a[data-nav-account]) { gap: calc(var(--nav-gap) - 6.3px); }
+    .nav-shell a[data-nav-account] { gap: var(--nav-gap); }
+  }
   /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks the title's two
      words into a column; this app keeps them on one line where they fit and
      lets them wrap where they do not, which holds the phone header a row
@@ -489,8 +542,8 @@
     .nav-shell .nav-title span:first-child { margin-bottom: 0; }
   }
   /* A SIGNED-IN PHONE (layouts/_navbar_phone_account, in the engine's icon
-     slot). The name sits above Log out, capped so the account column is no
-     wider than Log out alone needs and the brand keeps its one line.
+     slot). The name sits beside the avatar, capped so the account column stays
+     narrow and the brand keeps its one line.
 
      The phone row (cog and theme toggle) rides --nav-p like the rest of the
      band: it is gone once the bar is collapsed, and the slot's own cog and
@@ -501,6 +554,16 @@
      Whichever pair is out of sight is hidden outright, so it takes no focus.
      The engine writes --nav-p on the header with four decimals, and writes
      nothing until the first scroll. */
+  /* The account column holds the name's width whether or not a name is shown,
+     so the brand's room never depends on the name. Log out used to hold it (at
+     3.5rem); without that row the column was only as wide as the name, and on
+     CI's Linux fonts a name was the difference between the brand on one line
+     and on two. 3.5rem is the name's 2.75rem cap plus the engine's 6px row
+     padding each side, the same width Log out held. Phones only: from 768px
+     the icons size the column. */
+  @media (max-width: 767px) {
+    .nav-shell :has(> a[data-nav-account]) > div:first-child { min-width: 3.5rem; }
+  }
   .nav-phone-name {
     max-width: 2.75rem;
     @apply min-w-0 truncate text-right text-base font-semibold leading-none text-heading;
