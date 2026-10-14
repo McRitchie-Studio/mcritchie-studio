@@ -30,6 +30,9 @@ its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
 [`workspace-signup`](sops/workspace-signup.md), [`domain-dns`](sops/domain-dns.md),
 [`website-launch`](sops/website-launch.md) and [`workspace-provision`](sops/workspace-provision.md).
 
+[`discord-bot-setup`](sops/discord-bot-setup.md) is not a heartbeat act either: it
+creates the agents' Discord bot once and connects each client who requests it.
+
 Use this file when Alex invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 

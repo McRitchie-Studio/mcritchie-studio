@@ -10,7 +10,7 @@ row.
 ## How it works
 
 ```text
-Discord #agent-desk ──poll every minute──▶ agent_messages (received | unrouted)
+Discord channel   ──poll every minute──▶ agent_messages (received | unrouted)
                                               │ bin/heartbeat <soul>: claim (lease 10 min)
                                               ▼
                      one read-only action + headless Claude (no tools)
@@ -85,40 +85,37 @@ The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
 agent CLI is (`bin/lib/agent_api.rb`).
 
-## Alex's setup (once)
+## Setup
 
-Nothing reads Discord until these are done. The code ships inert.
+Nothing reads Discord until a bot token is set. The code ships inert.
 
-1. In the Discord developer portal, create an application named
-   `McRitchie Agents` and add a **Bot** to it.
-2. On the Bot page, turn on the **Message Content Intent** (privileged). Without
-   it, the bot reads every message with empty content.
-3. Under OAuth2 → URL Generator, pick scope `bot` and the permissions **View
-   Channels**, **Read Message History**, **Send Messages** and **Send Messages in
-   Threads**. Open the URL and invite the bot to the McRitchie server.
-4. In the server, create a channel such as `#agent-desk` and two **mentionable**
-   roles, `@Avi` and `@Xan`. Assign nobody; they exist to be mentioned. If the
-   channel is private, add the bot to it.
-5. Reset the bot token and file it in 1Password as `agents.discord.<bot>` (the live test uses `agents.discord.xan`)
-   (vault `studio-agents`), field `bot-token`
-   ([`credential-inventory.md`](../modules/credential-inventory.md)).
-6. With Developer Mode on (User Settings → Advanced), copy and send us the
-   **server (guild) id**, the **channel id**, the **@Avi and @Xan role ids**, and
-   the **bot's user id**.
-
-We then fill `config/agent_routes.yml` with those ids (a small PR) and set
-`DISCORD_AGENT_BOT_TOKEN` on Heroku from the 1Password item. The poll starts on
-the next minute.
+- **A bot (once per bot) and each client's invite**: Steffon's
+  [`discord-bot-setup`](../agents/steffon/sops/discord-bot-setup.md). It creates
+  the bot's Discord application, turns on the Message Content Intent, files the
+  token as `agents.discord.<bot>`, and routes each client's IDs into
+  `config/agent_routes.yml`. Two bots are filed today: `agents.discord.xan`
+  (the shared bot for the live test) and `agents.discord.mack` (read by nothing
+  yet).
+- **The client's own half** (server, `#agents` channel, mentionable roles,
+  Developer Mode, the IDs): the public guide at `/integrations/discord`
+  (`app/views/integrations/discord.html.erb`).
+- **Our own live test** (2026-10-14) uses Xan's own bot, not roles: the McRitchie
+  Studio guild, the `lobster-tank` channel (`default_soul: ""`), and the soul
+  `xan` routed by a mention of the Xan bot user (`users`, not `roles`). The ids
+  are in `config/agent_routes.yml`. `DISCORD_AGENT_BOT_TOKEN` is set from
+  `agents.discord.xan` on `mcritchie-studio` only
+  ([`credential-inventory.md`](../modules/credential-inventory.md)).
 
 ## Test protocol
 
-Post in `#agent-desk`, then run the heartbeat from the hub checkout.
+Post in `lobster-tank`, mentioning the Xan bot user (`@Xan`), then run the
+heartbeat from the hub checkout. Only `xan` is routed there today.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Avi is the release green?`. Run `bin/heartbeat avi --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for avi` |
-| Parallel | Post `@Avi one` and `@Avi two` as separate messages. Start two `bin/heartbeat avi --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
-| Two agents | Post `@Avi release?` and `@Xan what is building?`. Run `bin/heartbeat xan --channel discord` | Xan answers only its own message; Avi's stays `received` until `bin/heartbeat avi` |
+| Serial | Post `@Xan what is building?`. Run `bin/heartbeat xan --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for xan` |
+| Parallel | Post `@Xan one` and `@Xan two` as separate messages. Start two `bin/heartbeat xan --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat xan --channel discord` | Xan answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unrouted | Post a message that mentions nobody | It is listed `unrouted` on the admin page; no heartbeat takes it |
 
 The automated tests encode the same scenarios with real database concurrency:
