@@ -226,7 +226,8 @@ colouring then governs the **words** (the name and the tagline) only.
 ## The Stacked Logo
 
 `Logos::StackedLogo` (`lib/logos/stacked_logo.rb`) draws the icon above the
-name on the **3-2-1 method**. It subclasses `Logos::NavbarLogo`, so the style,
+name on the **3-2-1 method**, or in the **rule of three** proportion
+([below](#the-rule-of-three-proportion)). It subclasses `Logos::NavbarLogo`, so the style,
 the icons, the letters, the checks, the three text versions and the three tones
 are the same; only the layout differs. It has no rule.
 
@@ -239,6 +240,7 @@ stacked.form                             # => :two_line (the brand's own form, t
 stacked.forms                            # => [:two_line, :tagline]
 stacked.svg(form: :tagline)              # icon, name, tagline
 stacked.tagline                          # => "BUILD SMARTER"
+stacked.svg(proportion: :rule_of_three)  # the icon a third of the name's width, every gap 3u
 ```
 
 Let **u** be the small word's cap height (40 design units).
@@ -278,6 +280,42 @@ Let **u** be the small word's cap height (40 design units).
   `test/lib/logos_stacked_logo_test.rb`).
   Turf Monster has no tagline, so it has no tagline form.
 
+### The rule of three proportion
+
+Alex, 2026-10-14 11:43, from the reel "How to use the rule of three in logo
+design": Commercial Welding v2's stacked hood is drawn too big, and he wants a
+smaller icon as an option beside the 3-2-1 look (task stacked-rule-of-three).
+
+Every form draws in either **proportion** (`proportion:` on `layout` and
+`svg`; `StackedLogo::PROPORTIONS`). `three_two_one` is the default, and draws
+exactly what it drew before, to the byte. `rule_of_three` changes only the
+icon's size and the gaps; the lines are set exactly as above (the big line at
+3u, the small line at 1u tracked out to 60% of W).
+
+| Proportion | Icon | Every gap | Height (two lines, tagline) | Height (one line) |
+|------------|------|-----------|-----------------------------|-------------------|
+| `three_two_one` (default) | 0.6W tall; its width follows its aspect | 2u | 0.6W + 8u | 0.6W + 5u |
+| `rule_of_three` | W/3 wide, centred; its height `a`·W/3 follows its aspect `a` (h/w) | 3u, one cap height of the name | `a`·W/3 + 10u | `a`·W/3 + 6u |
+
+- **Three icons span the name.** Three copies of the icon side by side are
+  exactly as wide as the big line's ink, so the real icon is the middle one.
+- **The icon's height** comes from its own aspect, so a tall icon is taller
+  than it is wide, and each tone's icon (Commercial Welding v2's dark Alt
+  helmet is its single-colour one) is a third of W wide in its own aspect.
+  Commercial Welding v2's helmet drops from about 575 to 348 design units wide
+  (two lines, light).
+- **Never too wide.** The 3-2-1 refusal of an icon that overhangs the name
+  cannot happen: a third of W never does.
+- **The guide drawing** (`guides: true`) draws two ghost copies of the icon
+  either side of the real one (`<g class="guide-third">`, in the ghost group),
+  a vertical guide line at each third from the name's left ink edge to its
+  right, numbered 1 2 3 above the icons (`data-third`), the ruler of small-line
+  copies beside the logo (now 3, 3, 3, 1, counting each 3u gap), and a line at
+  each band boundary. It draws no turned line and no bracket: the icon's
+  height is not the small line's width here.
+- An unknown proportion is refused: "unknown proportion :golden: expected one
+  of three_two_one, rule_of_three".
+
 `Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
 
 - a two-line brand whose second word is wider than 60% of its first, or has one
@@ -291,9 +329,10 @@ Let **u** be the small word's cap height (40 design units).
   has no tagline)";
 - an icon so wide that, at its height, it would overhang the name;
 - a keyword `svg` or `layout` does not take, `rule:` above all: "a stacked
-  logo takes text, tone, form, guides and edits, not rule: it has no rule".
+  logo takes text, tone, form, proportion, guides, edits, colouring and
+  icon_colouring, not rule: it has no rule".
 
-`guides: true` returns the construction drawing, on the method of the 3-2-1
+In 3-2-1, `guides: true` returns the construction drawing, on the method of the 3-2-1
 reel: every measurement is proved with **ghost copies** of the small line (the
 second word; the tagline; in the one-line form the whole name), each set
 exactly as the logo sets it, tracking and word gap included. The layout keeps
@@ -487,7 +526,7 @@ admin sidebar as **Logos**.
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
-| `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>-<text>-<tone>[-guides].svg`. |
+| `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three]-<text>-<tone>[-guides].svg`. |
 
 On the three SVG routes a param the type does not take is not read, and
 `download=1` sends the file as an attachment. The type is the route's own: a
@@ -585,7 +624,7 @@ is, and that a watermark has none.
 |-----|-------|------------------|
 | Icon | the icon, once | none |
 | Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked) and **Show guides** |
-| Stacked Logo | the three text versions in one form, and a short paragraph stating the 3-2-1 method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line) and **Show guides** |
+| Stacked Logo | the three text versions in one form and proportion, and a short paragraph stating the proportion's method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line), **Proportion** (`?proportion=`: "3-2-1" or "Rule of three"; the kit's saved one is the default, else 3-2-1) and **Show guides** |
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three
@@ -677,7 +716,7 @@ The rules:
   reflows by the same rules (the gaps stay half a cap height; a stacked icon is
   still 60% of the name's width). A heavier tagline is still tracked out to
   60%, so it is as wide as before. **A hidden tagline** leaves every band where
-  it was and is simply not drawn: the logo keeps its 3-2-1 box. A weight that
+  it was and is simply not drawn: the logo keeps its box. A weight that
   cannot be drawn in the current rule or form is offered disabled, and a URL
   that asks for one shows the logos as styled with the reason.
 - **Every logo on the tab changes at once**: the three text versions, in both
@@ -732,7 +771,7 @@ brand, on the right, on the tab's type (`LogoComparison.partner`).
   "Kit default: …" or "Brand style (no … saved): …".
 - **The shared controls** change both sides at once: Context, Colouring, the
   type tabs, and the Rule (Navbar) or Form (Stacked; every form either side
-  draws). Each offers **Kit default**, which drops the param so each side goes
+  draws) and Proportion (Stacked; every brand draws both). Each offers **Kit default**, which drops the param so each side goes
   back to its own. A side that cannot take a control (a form its name does not
   draw, an Original for Studio) keeps its own and says so; saved word edits the
   page's rule cannot draw are left out with the reason.
@@ -762,7 +801,7 @@ YAML and stores nothing; those stay in the YAML for now.
 | `brand` | the style key (`studio`, `welding_v2`), unique |
 | `icon_choice` | `{"colouring" => "original", "edits" => {}}` or `{"colouring" => "alt", "edits" => {"icon_colour" => "D7602E"}}`: the icon every logo draws ([the atomic unit](#the-icon-is-the-atomic-unit)), or null |
 | `navbar_choice` | `{"rule" => 4, "text" => "second", "colouring" => "alt", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
-| `stacked_choice` | `{"form" => "tagline", "text" => "first", "colouring" => "original", "edits" => {}}`, or null |
+| `stacked_choice` | `{"form" => "tagline", "proportion" => "rule_of_three", "text" => "first", "colouring" => "original", "edits" => {}}`, or null. `proportion` is stored only for the rule of three: absent is 3-2-1, so a choice saved before it reloads unchanged |
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
 | `originals` | Active Storage attachments: the original artwork |
