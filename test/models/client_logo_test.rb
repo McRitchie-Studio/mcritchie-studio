@@ -56,7 +56,7 @@ class ClientLogoTest < ActiveSupport::TestCase
     assert_raises(BrandKit::Error) { BrandKit.for("industries").variant(:icon) }
 
     variants = nil
-    assert_difference -> { ErrorLog.count }, 1, "one receipt per logo, so the broken kit reaches the health report" do
+    assert_difference -> { ErrorLog.count }, 1, "one ErrorLog receipt per logo, so the broken kit is on record" do
       variants = ClientLogo.for("industries").variants
     end
 

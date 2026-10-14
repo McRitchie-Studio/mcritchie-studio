@@ -29,14 +29,6 @@ production:
     class: ContactFlaggedDigestJob
     schedule: "0 7 * * * America/Denver"
     args: []
-  # studio-engine's daily health report: the hub's last day of signups, errors
-  # and /contact messages, 07:00 to 07:00 Denver. The recipient is set in
-  # config/initializers/studio.rb (health_report_to); see
-  # studio-engine docs/HEALTH_REPORT.md.
-  studio_health_report:
-    class: Studio::HealthReportJob
-    schedule: "0 7 * * * America/Denver"
-    args: []
   # The agent mailbox's inbound read: each allow-listed Discord channel in
   # config/agent_routes.yml, over the bot's REST API. Inert (one log line) until
   # DISCORD_AGENT_BOT_TOKEN and a channel are set. See AgentMessageDiscordPollJob

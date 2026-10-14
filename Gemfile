@@ -222,11 +222,7 @@ gem "sentry-rails"
 # name (task url-guard-remaining-fetchers). On 0.92 to 0.94 the asset zip's
 # sheet fetch raises NoMethodError. The lock was already past it; only the
 # floor moved (task recast-wrap-loose-ends).
-# 0.105 is the floor now: config/initializers/studio.rb sets
-# health_report_to and health_report_contacts, which first exist in 0.105.0
-# (Studio::HealthReport); on anything older the app fails to boot with a
-# NoMethodError. The lock was already there (task hub-health-report-and-fixes).
-gem "studio-engine", "~> 0.105"
+gem "studio-engine", "~> 0.95"
 
 # The component gallery (Lookbook at /admin/style/components, admins only; the
 # engine's router constraint answers everyone else 404). studio-engine never

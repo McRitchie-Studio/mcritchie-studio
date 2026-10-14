@@ -63,7 +63,7 @@ class ClientLogo
   private
 
   # The ErrorLog receipt is written once per logo, not per tone, so the broken kit
-  # shows up in the daily health report without doubling its count.
+  # is on record without doubling its count.
   def icon(tone)
     @kit.variant(:icon, tone:)
   rescue BrandKit::Error => e
