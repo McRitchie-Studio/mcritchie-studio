@@ -4,7 +4,7 @@
   <% if connection %>
     <span class="min-w-0 text-body [overflow-wrap:anywhere]" data-test="google-account">Connected as <span class="font-medium text-heading"><%= connection.email %></span></span>
     <%= button_to "Disconnect", admin_google_disconnect_path(ability:, return_to: integrations_path), method: :delete,
-                  class: "btn btn-secondary btn-sm",
+                  class: "btn btn-neutral btn-sm",
                   form: { class: "inline-flex", data: { test: "google-disconnect", turbo_confirm: "Disconnect #{name} for #{connection.email}?" } } %>
   <% elsif connectable %>
     <%= link_to "Connect #{name}", admin_google_connect_path(ability:, return_to: integrations_path),
