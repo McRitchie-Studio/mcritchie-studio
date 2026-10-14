@@ -70,12 +70,13 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_no_match "Signing Console", response.body
   end
 
-  test "the cog toggles the admin link sidebar and the identity links to the profile" do
+  test "the cog and the identity both toggle the admin link sidebar" do
     log_in_as users(:alex)
     get dashboard_path
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    assert_select "a[data-nav-account][href=?] [data-nav-name]", profile_path, text: Studio.navbar_user_name_for(users(:alex))
+    assert_select "[data-nav-account][data-profile-image-toggle][aria-controls=?] [data-nav-name]",
+                  "studio-link-sidebar studio-link-sidebar-mobile", text: Studio.navbar_user_name_for(users(:alex))
     assert_select "#studio-link-sidebar .studio-emoji-swap-hover"
   end
 end

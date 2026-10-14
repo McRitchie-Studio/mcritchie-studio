@@ -118,7 +118,7 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   const header = page.locator("header.nav-shell");
   // The column beside the avatar is what the name could widen. Its width is
   // the font-independent half of the claim, so it bites on any machine.
-  const column = page.locator("header :has(> a[data-nav-account]) > div").first();
+  const column = page.locator("header :has(> [data-nav-account]) > div").first();
   const withName = (await header.boundingBox()).height;
   const columnWithName = (await column.boundingBox()).width;
   await name.evaluate((element) => { element.style.display = "none"; });
