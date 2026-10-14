@@ -55,7 +55,10 @@ class ClientLogoTest < ActiveSupport::TestCase
     BrandKit.create!(brand: "industries").update_column(:icon_choice, { "bogus" => 1 })
     assert_raises(BrandKit::Error) { BrandKit.for("industries").variant(:icon) }
 
-    variants = ClientLogo.for("industries").variants
+    variants = nil
+    assert_difference -> { ErrorLog.count }, 1, "one receipt per logo, so the broken kit reaches the health report" do
+      variants = ClientLogo.for("industries").variants
+    end
 
     assert_equal %i[light dark], variants.keys
     variants.each do |tone, variant|

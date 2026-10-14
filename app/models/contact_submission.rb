@@ -114,6 +114,21 @@ class ContactSubmission < ApplicationRecord
     spam_reason.present?
   end
 
+  # The "Contact messages" section of the daily health report (studio-engine's
+  # Studio::HealthReport, wired in config/initializers/studio.rb): every row
+  # created in the window, newest first. Flagged rows count too and say so in
+  # their label, so a real visitor the bot check misjudged is not hidden.
+  def self.health_report(window)
+    where(created_at: window).recent
+  end
+
+  # One line per row in the health report: "Jordan Lee <jordan@example.com>",
+  # with "(flagged: too_fast)" on a row the bot check judged.
+  def health_report_label
+    label = "#{name} <#{email}>"
+    flagged? ? "#{label} (flagged: #{spam_reason})" : label
+  end
+
   def sms_consent?
     sms_care_consent? || sms_marketing_consent?
   end

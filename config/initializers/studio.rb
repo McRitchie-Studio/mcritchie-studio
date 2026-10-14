@@ -51,6 +51,18 @@ Studio.configure do |config|
   config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
 
+  # ---- Daily health report (studio-engine docs/HEALTH_REPORT.md) ----
+  # Studio::HealthReportJob, scheduled in config/recurring.yml (production,
+  # 07:00 America/Denver), sends yesterday's signups, errors and contact
+  # messages. The recipient lives HERE and nowhere else: change who hears about
+  # the hub's health, or move it to another channel, by editing this line.
+  # Blank here falls through to ENV["STUDIO_HEALTH_REPORT_TO"]; blank there too
+  # means no report. QA never sends.
+  config.health_report_to = "alex@mcritchie.studio"
+  # The /contact form's rows, by created_at in the report's window. Lazy: the
+  # model loads when the job runs, never at boot.
+  config.health_report_contacts = ->(window) { ContactSubmission.health_report(window) }
+
   # Transactional sender: RESEND_MAILER_FROM, else the engine's shared
   # McRitchie Studio sender (studio-engine 0.102.0 lib/studio.rb). Setting it
   # here means the engine's MAILER_FROM fallback is never read on the hub.
