@@ -574,10 +574,12 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def test_commercial_welding_v2s_hood_is_smaller_under_the_rule_of_three
-    three = stacked("welding_v2").layout(proportion: :rule_of_three)
-    old = stacked("welding_v2").layout
-    assert_operator three.icon_width, :<, 0.7 * old.icon_width, "the hood Alex found too big is visibly smaller"
-    assert_operator three.icon_height, :<, 0.7 * old.icon_height
+    %i[two_line tagline].product(Navbar::TONES) do |form, tone|
+      three = stacked("welding_v2").layout(form:, tone:, proportion: :rule_of_three)
+      old = stacked("welding_v2").layout(form:, tone:)
+      assert_operator three.icon_width, :<, 0.7 * old.icon_width, "#{form} #{tone}: the hood Alex found too big is visibly smaller"
+      assert_operator three.icon_height, :<, 0.7 * old.icon_height, "#{form} #{tone}"
+    end
   end
 
   def test_the_rule_of_threes_guides_draw_three_icons_across_the_name
