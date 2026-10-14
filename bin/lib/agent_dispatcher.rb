@@ -196,12 +196,16 @@ module AgentMailbox
     end
 
     # A run past RUN_DEADLINE is wedged (its timeouts should have ended it). Give
-    # its message back and free the slot; the thread's late result is ignored.
+    # its message back, free the slot, and pause FAILURE_PAUSE; the thread's late
+    # result is ignored.
     def abandon_overdue(now)
       overdue, @runs = @runs.partition { |run| now - run.started_at > RUN_DEADLINE }
       overdue.each do |run|
         give_back(run.message["id"], "the run passed its #{RUN_DEADLINE}s deadline and was abandoned")
       end
+      # A wedged run is a failed run: pause, so the message is not re-claimed
+      # into the same wedge at once.
+      pause_until(now + FAILURE_PAUSE, "run_overdue") if overdue.any?
     end
 
     def finish(run)

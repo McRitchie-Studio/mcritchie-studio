@@ -95,12 +95,13 @@ module AgentMailbox
   # bills Alex's claude.ai login (keychain, under HOME and USER) and never an
   # exported API key, auth token, base URL or Bedrock/Vertex switch, including
   # names Anthropic adds later, which a deny-list would miss. The agent-board
-  # names are the read-only actions' own (bin/task, bin/release); none of them
-  # routes Claude.
+  # names are the read-only actions' own (bin/task; bin/release reads Heroku with
+  # HEROKU_API_KEY); none of them routes Claude.
   CHILD_ENV_ALLOW = %w[
     PATH HOME USER LOGNAME SHELL TMPDIR LANG LC_ALL LC_CTYPE TERM TZ __CF_USER_TEXT_ENCODING
     GEM_HOME GEM_PATH
     ATOMIC_CAPTURE_URL AGENT_API_SECRET AGENT_LEGACY_TOKEN PROJECTS_DIR CLAUDE_PROJECTS_DIR TASK_API_BASE
+    HEROKU_API_KEY
   ].freeze
 
   def self.child_env(env = ENV)

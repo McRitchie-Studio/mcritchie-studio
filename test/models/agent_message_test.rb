@@ -286,4 +286,26 @@ class AgentMessageTest < ActiveSupport::TestCase
     error = assert_raises(AgentMessage::Refused) { AgentMessage.claim!(soul: [ "", " " ], worker: "d1") }
     assert_equal "SOUL_REQUIRED", error.code
   end
+
+  test "usage_limit refunds stop at MAX_REFUNDS; past the cap the release spends the attempt and can dead-letter" do
+    message = agent_message!
+    AgentMessage::MAX_REFUNDS.times do
+      AgentMessage.claim!(soul: "avi", worker: "w1")
+      message.reload.release!(worker: "w1", code: "usage_limit")
+    end
+    message.reload
+    assert_equal [ "received", 0, AgentMessage::MAX_REFUNDS ], [ message.status, message.attempts, message.usage_refunds ]
+
+    AgentMessage::MAX_ATTEMPTS.times do
+      AgentMessage.claim!(soul: "avi", worker: "w1")
+      message.reload.release!(worker: "w1", code: "usage_limit")
+    end
+
+    message.reload
+    assert_equal "dead", message.status, "a message cannot loop on refunds forever"
+    assert_equal AgentMessage::MAX_REFUNDS, message.usage_refunds
+    capped = message.events.select { |e| e.kind == "released" }.last
+    assert_equal true, capped.detail["refund_cap_reached"]
+    assert_nil capped.detail["attempt_refunded"]
+  end
 end

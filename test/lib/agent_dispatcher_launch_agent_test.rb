@@ -28,8 +28,8 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
   def teardown = FileUtils.rm_rf(@home)
 
   def agent(**opts)
-    AgentMailbox::LaunchAgent.new(home: @home, repo_root: "/repo & co", ruby: "/opt/ruby/bin/ruby", path: "/usr/bin",
-                                  uid: 501, launchctl: @launchctl, out: @out, **opts)
+    AgentMailbox::LaunchAgent.new(**{ home: @home, repo_root: "/repo & co", ruby: "/opt/ruby/bin/ruby", path: "/usr/bin",
+                                      uid: 501, launchctl: @launchctl, out: @out }.merge(opts))
   end
 
   def test_render_fills_every_placeholder_and_escapes_xml
@@ -74,5 +74,14 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     @print = "state = not running\n\tlast exit code = 1\n"
     assert_equal 1, agent.status_report
     assert_match(/not running.*last exit 1/, @out.string)
+  end
+
+  def test_install_refuses_a_task_desk
+    desk = agent(repo_root: "/Users/alex/projects/mcritchie-studio/.worktrees/some-task")
+
+    assert_equal 2, desk.install
+    assert_match(/refused: .* is a task desk under \.worktrees/, @out.string)
+    assert_empty @calls, "launchctl was never called"
+    refute File.exist?(File.join(@home, "Library/LaunchAgents/studio.mcritchie.agent-dispatcher.plist"))
   end
 end

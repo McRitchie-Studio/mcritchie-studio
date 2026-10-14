@@ -249,6 +249,20 @@ module Api
         assert_equal "received", response.parsed_body.dig("data", "status")
         assert_equal 0, response.parsed_body.dig("data", "attempts")
       end
+
+      test "over HTTP, usage_limit refunds stop at the cap and the message dead-letters" do
+        message = agent_message!
+        statuses = (AgentMessage::MAX_REFUNDS + AgentMessage::MAX_ATTEMPTS).times.map do
+          post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
+          post release_api_v1_agent_message_url(message), params: { worker: "d1", code: "usage_limit" },
+                                                          headers: @shared, as: :json
+          assert_response :success
+          response.parsed_body.dig("data", "status")
+        end
+
+        assert_equal "dead", statuses.last
+        assert_equal AgentMessage::MAX_REFUNDS, message.reload.usage_refunds
+      end
     end
   end
 end

@@ -14,8 +14,10 @@
 # spending an attempt and pauses claiming until the reset. SIGTERM stops claiming
 # and lets runs finish (or gives their messages back). It posts nothing itself.
 #
-# Claude bills Alex's claude.ai subscription: ANTHROPIC_API_KEY is removed from
-# this process and every child it starts.
+# Claude bills Alex's claude.ai subscription: every child runs under an
+# allow-listed environment (AgentMailbox::CHILD_ENV_ALLOW), so no API key, auth
+# token, base URL or provider switch reaches it. `install` refuses a task desk
+# under .worktrees/.
 #
 # `install` renders config/launchd/studio.mcritchie.agent-dispatcher.plist into
 # ~/Library/LaunchAgents and loads it (KeepAlive, RunAtLoad, logs in
@@ -69,7 +71,8 @@ when "run"
     exit 2
   end
 
-  # The subscription, never an API key: nothing this process starts sees one.
+  # The subscription, never an API key: children get CHILD_ENV_ALLOW only, and
+  # this process drops the commonest key too.
   ENV.delete("ANTHROPIC_API_KEY")
   cmd = ENV["HEARTBEAT_CLAUDE_CMD"].to_s.strip
   claude_cmd = cmd.empty? ? AgentMailbox::Responder::DEFAULT_CLAUDE_CMD : Shellwords.split(cmd)

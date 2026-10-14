@@ -28,8 +28,9 @@ the mechanics, the schedule sets the floor, and you judge only the anomalies.
 | Long-polling the board for every routed soul (`config/agent_routes.yml`) | Installing it, once per Mac, after the release ships |
 | One claim at a time per thread, oldest first; at most 5 answers at once | Reading an alert and choosing the playbook row below |
 | Renewing each lease every 3 minutes while its answer runs | Signing Claude back in, or waking the Mac |
-| Handing a message back without spending an attempt on a usage limit, and pausing until the reset | Deciding whether a dead letter is re-queued or left dead |
+| Handing a message back without spending an attempt on a usage limit (at most 3 times per message, the board's cap), and pausing until the reset | Deciding whether a dead letter is re-queued or left dead |
 | Pausing 5 minutes after a failed Claude run, 30 after a signed-out one | Escalating to Alex when the fix is his (his login, his Mac) |
+| Stopping a run past its deadline (TERM, then KILL after 10 seconds; no renewal past 8 minutes; the message given back) | |
 | Pinging the board every minute | |
 | One Discord alert per incident, one recovery line (`AgentDispatcherAlertJob`) | |
 
@@ -48,18 +49,28 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
-**Billing.** Claude runs as `claude -p --safe-mode --tools ""` under Alex's
-claude.ai login. The dispatcher removes `ANTHROPIC_API_KEY` from itself and from
-every child, so an exported API key can never be what pays.
+**Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
+under Alex's claude.ai login. Every child gets an allow-listed environment
+(`AgentMailbox::CHILD_ENV_ALLOW`: the basics, the agent board's own names and
+`HEROKU_API_KEY` for `bin/release status`), so no API key, auth token, base URL or
+Bedrock/Vertex switch can reach Claude, including ones Anthropic adds later.
+
+**What it reads from Claude.** Only what the model cannot write: the exit status,
+stderr, and the JSON envelope's `is_error` and `api_error_status`. A usage limit
+or a signed-out CLI is recognised in a failed run's error text, never in an
+answer, so a Discord message that coaxes Claude into replying "usage limit
+reached" is posted as an answer and changes nothing.
 
 **Awake.** The dispatcher holds `caffeinate -is -w <its pid>` while it lives:
 the Mac does not idle-sleep, and does not system-sleep on power. Closing the lid
-on battery still sleeps it; that is the "Mac asleep" row below.
+sleeps it all the same, on power or on battery; that is the "Mac asleep" row
+below.
 
 ## Install (once per Mac, after the release ships)
 
 Run from the hub's primary checkout, which the release has moved to the shipped
-code. The dispatcher runs from the checkout it was installed from.
+code. The dispatcher runs from the checkout it was installed from; `install`
+refuses a task desk under `.worktrees/`, which is torn down after its task.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -73,6 +84,10 @@ The log's first line names the worker, the souls and the version:
 `start dispatcher-<host>-<pid>-<rand> serving xan on discord (cap 5, version <sha>)`.
 
 `bin/dispatcher install` is safe to re-run: it unloads the running copy first.
+If it prints `launchctl bootstrap failed`, run it again: the unload of the old copy
+can still be finishing on the first try. Under launchd, `HEROKU_API_KEY` is not set,
+so a soul whose action is `bin/release status` (avi) reports that action as failed
+and answers from its role; only `xan` is routed today.
 After a release that changes `bin/dispatcher` or its libraries, re-run it so the
 service restarts on the new code.
 
@@ -108,10 +123,11 @@ With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 | **Board auth**: silent alert, the log repeats `claim failed: … HTTP 401` or `no answer from https://mcritchie.studio (unreachable, or no agent token)` | The dispatcher authenticates as the rest of the agent CLI does (`bin/lib/agent_api.rb`): the shared token cache, minted from `AGENT_API_SECRET` (env, then the hub's `.env`, then 1Password) | Make the secret reachable without a prompt (the hub checkout's `.env`), then `bin/dispatcher install`. A single 401 heals itself: the client drops the cached token and mints a new one |
 | **Mac asleep**: silent alert, nothing in the log since | The log's last timestamp | Wake the Mac or ask Alex to; the dispatcher resumes by itself and the recovery line posts |
 | **Signed out**: messages waiting, the row reads `paused … (claude_signed_out)` | `claude auth status` must show `authMethod` `claude.ai` | Ask Alex to run `claude auth login` (his login). The pause lifts within 30 minutes; `bin/dispatcher install` restarts it at once |
-| **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. If waiting until T is wrong, tell Alex; only he can raise the plan |
-| **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools ""`. Fix what it prints |
+| **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. After 3 such refunds a message spends attempts like any other, so a long outage can dead-letter it (re-queue below). If waiting until T is wrong, tell Alex; only he can raise the plan |
+| **Run overdue**: `paused … (run_overdue)`, the log's `the run passed its … deadline` | A Claude run that outlived its timeout and its KILL | Nothing for one; for a pattern, run the Claude command by hand (row below) |
+| **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools "" --output-format json`. Fix what it prints |
 | **Stuck lease**: a message `claimed` with its lease long lapsed | `/admin/agent_messages`, Claim column | Nothing to do by hand: the next claim takes a lapsed lease back (or dead-letters it on attempt 3) |
-| **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, claimed_by: nil, lease_expires_at: nil)` |
+| **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
 | **Unrouted**: a message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. Routing changes go through `discord-bot-setup` |
 
 ## Uninstall

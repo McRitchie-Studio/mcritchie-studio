@@ -75,8 +75,10 @@ with the soul's name (`**Avi** · …`), and parse no mentions.
 `POST /api/v1/agent_messages/:id/release {worker, reason, code?}` gives a message
 back; the attempt it used still counts, so a give-back on the third attempt
 dead-letters it. The one exception is `code: usage_limit`, which hands the
-attempt back and never dead-letters: Claude being out of usage says nothing about
-the message. `POST /api/v1/agent_messages/:id/renew {worker}` extends the
+attempt back and does not dead-letter: Claude being out of usage says nothing about
+the message. The board caps those refunds at 3 per message (`usage_refunds`,
+`AgentMessage::MAX_REFUNDS`); past the cap the release spends the attempt like any
+other, so no message loops on refunds forever. `POST /api/v1/agent_messages/:id/renew {worker}` extends the
 holder's lease by 10 minutes from now; anyone else, or a holder whose lapsed lease
 another worker took, gets 409. The timeline keeps one `lease_renewed` event per
 claim, its count updated in place.
@@ -89,15 +91,22 @@ session for any). A client session or a harness key reaches none of it.
 routes (or `--souls`). It long-polls one claim at a time, answers each message on
 its own thread through the same Responder the heartbeat uses, renews the lease
 every 3 minutes while the answer runs, keeps at most 5 answers at once, and pings
-the board every minute. Every board call is made from its main loop. It reads
-Claude's output deterministically: a usage-limit notice
-(`AgentMailbox::UsageLimit`) releases with `code: usage_limit` and pauses
+the board every minute. Every board call is made from its main loop. Claude runs
+with `--output-format json`, and the dispatcher reads only what the model cannot
+write (`AgentMailbox::ClaudeRun`): the exit status, stderr, and the envelope's
+`is_error` and `api_error_status`. A usage-limit notice in a FAILED run's error
+text (`AgentMailbox::UsageLimit`) releases with `code: usage_limit` and pauses
 claiming until the reset the notice names (else 15 minutes); a signed-out notice
 pauses 30 minutes; any other failed run pauses 5, so a broken Claude cannot spend
-every message's attempts in a minute. SIGTERM stops claiming, gives runs 60
+every message's attempts in a minute. A successful answer is never scanned, so an
+answer that says "usage limit reached" is just an answer. A child that outlives its
+timeout gets TERM, then KILL after 10 seconds (its whole process group); a run is
+never renewed past its deadline (the timeouts plus a margin, about 8 minutes) and
+is then abandoned, its message given back. SIGTERM stops claiming, gives runs 60
 seconds, then stops their Claude and releases their messages. It posts nothing to
-Discord itself. It removes `ANTHROPIC_API_KEY` from itself and every child, so
-Claude bills Alex's claude.ai subscription. Install, alerts and the unblock
+Discord itself. Every child gets an allow-listed environment
+(`AgentMailbox::CHILD_ENV_ALLOW`), so no API key, token, base URL or provider
+switch reaches Claude and it bills Alex's claude.ai subscription. Install, alerts and the unblock
 playbook: [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md).
 
 **The floor alert.** `AgentDispatcherAlertJob` runs every minute on the hub and
