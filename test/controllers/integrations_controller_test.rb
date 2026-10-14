@@ -177,6 +177,9 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#discord-request [data-test='discord-request-cta']"
     assert_select step.("test"), text: /@Studio CTO hello/
     assert_select step.("test"), text: /Replies are not instant/
+    # One shared bot answers for every agent and leads with the agent name (AgentMessageReplyJob).
+    assert_select "#{step.("test")} [data-test='step-visual']", text: /Studio\s*Bot\s*Studio CTO · Hello/
+    assert_select "[data-test='example-exchange-line']", text: /Studio CTO · Two slow queries/
     assert_no_match(/within a few minutes|instantly|right away/i, css_select(step.("test")).text, "a reply waits on the agent, so the page promises no speed")
     # Operator-only setup stays off the client page.
     assert_no_match(/developer portal|Message Content|1Password|bot-token|McRitchie Agents/i, response.body)

@@ -12,11 +12,11 @@
      { who: "Studio", role: "app", channel: "#app-events", text: "New sign-up: Riley" },
      { who: "Studio", role: "app", channel: "#app-events", text: "3 errors in the last hour: Net::ReadTimeout" },
      { who: "Studio", role: "agent", channel: "#agents", text: "Daily summary: all clear" },
-     { who: "Studio CTO", role: "agent", channel: "#agents", text: "Deploy finished, 2 fixes shipped" }
+     { who: "Studio", role: "agent", channel: "#agents", text: "Studio CTO · Deploy finished, 2 fixes shipped" }
    ] %>
 <% exchange = [
      { who: "You", role: "you", text: "@Studio CTO why is checkout slow?" },
-     { who: "Studio CTO", role: "agent", text: "Two slow queries since this morning's deploy; a fix is queued." }
+     { who: "Studio", role: "agent", text: "Studio CTO · Two slow queries since this morning's deploy; a fix is queued." }
    ] %>
 <% avatar = lambda do |role| %>
   <% if role == "you" %>
