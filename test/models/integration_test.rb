@@ -101,17 +101,22 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "No upkeep", methods["admin_grant"].upkeep
   end
 
-  test "[unit] Google Workspace connects two ways, and each ability names the ways that unlock it" do
+  test "[unit] Google Workspace connects by admin grant; Calendar, Gmail and Drive each by one sign-in" do
     google = Integration.find(:google_workspace_connect)
 
-    assert_equal %w[admin_grant sign_in], google.connects
-    assert_equal [ "Admin approval", "Sign in" ], google.connection_methods.map(&:label)
-    abilities = google.abilities.to_h { |a| [ a.key, a ] }
-    assert_equal %w[admin_grant], abilities["draft_email"].via
-    assert_equal %w[sign_in], abilities["read_calendar"].via
-    refute abilities["read_calendar"].soon?, "live: the hub reads its own calendar"
+    assert_equal %w[admin_grant], google.connects
+    assert_equal %w[draft_email knowledge_base], google.abilities.map(&:key)
     refute google.method_soon?("admin_grant")
-    refute google.method_soon?("sign_in"), "reading the calendar is live, so Sign in is"
+
+    { google_calendar: "read_calendar", gmail: "read_email", google_drive: "read_drive" }.each do |key, ability|
+      entry = Integration.find(key)
+      assert entry.live?, key
+      assert_equal %w[sign_in], entry.connects, key
+      assert_equal [ ability ], entry.abilities.map(&:key), key
+      refute entry.abilities.first.soon?, "#{key}: live, the hub reads its own"
+      refute entry.method_soon?("sign_in"), key
+    end
+    assert_equal IntegrationsController::GOOGLE_CARDS.keys.sort, %w[gmail google_calendar google_drive], "every Google card carries the admin buttons"
   end
 
   test "[unit] every ability in the config names only ways its entry connects" do
