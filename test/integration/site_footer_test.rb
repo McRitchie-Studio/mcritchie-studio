@@ -42,7 +42,10 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_select "footer[data-site-footer] .ftr-brand" do
-      assert_select "a[href='#{root_path}'] img[src*='logo-icon']", 1
+      # The saved kit's icon (public/brand), never inverted: a dark page swaps
+      # in icon-dark.svg by CSS (application.css, KIT ICON BY THEME).
+      assert_select "a[href='#{root_path}'] img.ftr-logo[src='/brand/icon-light.svg']", 1
+      assert_select "img.ftr-logo-invert", 0
       assert_select ".ftr-wordmark span", 2 do |parts|
         assert_equal %w[McRitchie Studio], parts.map(&:text)
       end

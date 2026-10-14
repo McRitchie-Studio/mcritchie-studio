@@ -13,6 +13,16 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[type=password]", false                    # passwordless: no password field
   end
 
+  # The card's mark is the saved kit's icon (public/brand, bin/rails logos:install),
+  # the light-page file; application.css swaps in icon-dark.svg on a dark page.
+  test "the sign-in card draws the kit icon" do
+    get signin_path
+    assert_select "img.auth-logo[src='/brand/icon-light.svg'][alt='']", 1
+    assert_select "img[src*='logo-icon']", 0
+    assert Rails.public_path.join("brand/icon-light.svg").file?
+    assert Rails.public_path.join("brand/icon-dark.svg").file?
+  end
+
   test "legacy /login redirects to unified /signin" do
     get login_path
     assert_redirected_to "/signin"

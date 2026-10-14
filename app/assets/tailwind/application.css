@@ -464,8 +464,8 @@
      layouts/application), so the logo sits above the page's left edge and the
      account above its right edge.
 
-     Logo: logo-icon.svg is drawn in white. It is inverted on the light theme,
-     and it is a mark, not an avatar, so it takes no circle and no shadow.
+     Logo: the kit icon (public/brand/icon-light.svg, see KIT ICON BY THEME
+     below). It is a mark, not an avatar, so it takes no circle and no shadow.
 
      Name: from 768px the first name sits on the rule of 3 against the avatar,
      as the Navbar Logo does against its icon (docs/topics/logos.md): its
@@ -485,8 +485,13 @@
     @apply bg-page/95 supports-[backdrop-filter]:backdrop-blur;
   }
   .nav-shell > .nav-row { max-width: 80rem; margin-inline: auto; }
-  .nav-shell .nav-logo { filter: invert(1); border-radius: 0; box-shadow: none; }
-  .dark .nav-shell .nav-logo { filter: none; }
+  .nav-shell .nav-logo { border-radius: 0; box-shadow: none; object-fit: contain; }
+  /* KIT ICON BY THEME (task studio-adopts-its-kit). The navbar, the footer and
+     the sign-in card each draw the saved kit's icon from public/brand/, written
+     by bin/rails logos:install. The engine renders one <img> per logo, so each
+     is given icon-light.svg (ink, for a light page) and a dark page replaces
+     the picture with icon-dark.svg (violet), the kit's own dark-page artwork. */
+  .dark img[src="/brand/icon-light.svg"] { content: url("/brand/icon-dark.svg"); }
   @media (min-width: 768px) {
     .nav-shell { --nav-avatar: calc(2.5rem - 0.5rem * var(--nav-p, 0)); } /* 40px -> 32px */
     .nav-shell [data-nav-account] > [aria-hidden] > * {

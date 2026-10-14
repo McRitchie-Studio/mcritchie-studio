@@ -70,8 +70,10 @@ site connection, primary-domain setting, disabled `www` prefix, and
   full-bleed 5:3 card hero on the public `/agents` index;
   `test/lib/response_payload_budget_test.rb` holds their byte budget and size limits.
 - `public/denver-hero.avif` — Landing page hero background (Denver skyline)
-- `public/studio-logo.svg` — SSO logo (shared with satellite apps)
-- `public/favicon.png`, `public/icon.png`, `public/logo-icon.svg` — App icons
+- `public/brand/` — the saved Studio kit's files (`icon-*`, `navbar-*`, `stacked-*` in light, dark and watermark, plus `kit.json`), written by `bin/rails logos:install BRAND=studio`; the navbar, footer, sign-in card and SSO logo draw from it ([`logos.md`](logos.md#installing-a-kit-into-an-app))
+- `public/favicon.png`, `public/icon.png` — favicon and PWA icon, rasterized from `public/brand/icon-dark.svg` by `script/brand_png.cjs`
+- `public/studio-logo.svg` — the old chest artwork, now only the (stub) video watermark in `Content::Finalize`
+- `public/logo-icon.svg` — the old white chest, no longer drawn by the hub; kept so links to it in sent mail still resolve
 
 ## Tech Stack
 

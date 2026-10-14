@@ -891,6 +891,32 @@ are the same bytes.
 4. **When the kit changes**, download or fetch again. The URLs never change;
    their content follows the saved kit.
 
+### Installing a kit into an app
+
+`bin/rails logos:install BRAND=<brand> [DEST=<dir>]` (`BrandKitInstall`) writes
+the brand's kit, as THIS database holds it, into `DEST` (default this app's
+`public/brand/`): every file `BrandKitExport::FILES` names, byte-equal to what
+`/logos/<brand>/kit/<file>` serves, plus `kit.json`, the brand and the three
+choices the files were drawn from (`null` for a default). A file already right
+is not rewritten, so a second run changes nothing. Point `DEST` at another
+app's `public/brand/` to roll a kit out there.
+
+The kit lives in production's database, so on a desk first save the same
+choices into the desk's row (copy them from production's `/logos/<brand>` or
+its `kit.json`), then install and commit the files.
+`test/models/brand_kit_install_test.rb` redraws the hub's committed files from
+their `kit.json`, so a logo-library change that moves a byte says "run
+logos:install" rather than shipping stale files.
+
+The hub itself runs on the `studio` kit (task studio-adopts-its-kit): the
+navbar, footer and sign-in card draw `icon-light.svg` (application.css swaps in
+`icon-dark.svg` on a dark page), the SSO logo is `icon-dark.svg` (the one tone
+that reads on both themes in the 20px slot another app's sign-in card gives
+it), `Studio.navbar_wordmark` is the Navbar Logo pair once the engine has the
+setting, and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
+with `node script/brand_png.cjs <svg> <out.png> <size> [background] [padding]`
+(Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
+
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex's call). A build fetch needs
 an admin's signed-in hub session cookie (sign in with a magic link, keep the
