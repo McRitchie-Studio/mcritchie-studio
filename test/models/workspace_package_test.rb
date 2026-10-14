@@ -62,7 +62,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute feature("Live updates and jobs").included_in?(:vibe)
     assert_nil feature("Live updates and jobs").value_for(:vibe)
     refute feature("Integrations").included_in?(:builder)
-    assert_equal "Google Workspace, Slack & more", feature("Integrations").value_for(:pro)
+    assert_equal "Google Workspace, Discord & more", feature("Integrations").value_for(:pro)
   end
 
   test "each package carries a tagline, a known CTA and its lines: card lines on a card, highlights on the Talk to us line" do
@@ -335,10 +335,10 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[squarespace], feature("Web address").strip_brands, "the registrar stays in the strip"
     integrations = feature("Integrations")
     refute integrations.brand?, "Integrations is no single brand's row"
-    assert_equal [ nil, nil, "Google Workspace, Slack & more", "Google Workspace, Slack & more", "Custom" ],
+    assert_equal [ nil, nil, "Google Workspace, Discord & more", "Google Workspace, Discord & more", "Custom" ],
                  TIERS.map { |key| integrations.value_for(key) }
     assert_equal "/integrations", integrations.href
-    assert_equal %w[google], integrations.software, "Google Workspace still provisions; Slack is promised on /integrations, not in a stack"
+    assert_equal %w[google], integrations.software, "Google Workspace still provisions; Discord is promised on /integrations, not in a stack"
     refute WorkspacePackage.features.any? { |f| f.name.match?(/Google Workspace|Managed Workspace/) },
            "Managed Workspace is a paid add-on, not a tier feature, and the row is Integrations now"
     app = feature("Custom Web App")
@@ -526,7 +526,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert integrations.call(:builder).missing?
     assert_equal "Pro", integrations.call(:builder).in_tier.name
     %i[pro team].each do |key|
-      assert_equal [ "Integrations", "Google Workspace, Slack & more", "/integrations" ],
+      assert_equal [ "Integrations", "Google Workspace, Discord & more", "/integrations" ],
                    [ integrations.call(key).title, integrations.call(key).sub, integrations.call(key).href ], key
     end
     refute WorkspacePackage.card_lanes.flat_map(&:last).any? { |lane| lane.key == "workspace" }, "the Google Workspace lane became Integrations"
