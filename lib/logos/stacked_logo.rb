@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 module Logos
-  # Draws a brand's Stacked Logo: the icon above the name, on the 3-2-1 method.
+  # Draws a brand's Stacked Logo: the icon above the name, in one of two PROPORTIONS (task stacked-rule-of-three): the
+  # 3-2-1 method (the default) or the rule of three.
   # It is the Navbar Logo's brand (the same style, icons, letters, checks, text
   # versions and tones) on another layout, so it inherits all of those.
   #
@@ -24,6 +25,14 @@ module Logos
   #                       is as tall as the tagline is wide. The tagline takes the
   #                       tone's `quiet` fill (`text` without one).
   #
+  # Every form draws in either proportion (`proportion:`), which sets only the icon's size and the gaps; the lines
+  # above are the same in both.
+  #
+  #   three_two_one (default)  as above: the icon's height comes from the small line's width; every gap is 2u.
+  #   rule_of_three            three copies of the icon side by side span exactly the big line's ink width W, so the
+  #                            icon is W/3 wide (its height follows from its own aspect), centred; every gap is one
+  #                            big-line cap height, 3u. Top to bottom: icon, 3u, big line(, 3u, small line).
+  #
   # The operator's edits (NavbarLogo#checked_edits) also reach the tagline: its
   # colour, its weight (in place of TAGLINE_WEIGHT; still tracked out to 60%,
   # so it is as wide as before), and `visible: false`, which leaves every band
@@ -40,6 +49,9 @@ module Logos
     SPAN = 0.6                                 # the small line's width, and the icon's height, as a share of the big line's width
     FORMS = %w[two_line one_line].freeze       # a style's own form; `tagline` is offered beside it, never named in a style
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
+    PROPORTIONS = %i[three_two_one rule_of_three].freeze   # the first is the default
+    GAPS = { three_two_one: GAP, rule_of_three: BIG }.freeze   # every gap, in u, per proportion
+    THIRDS = 3                                 # rule_of_three: this many icons side by side are as wide as the big line
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
     # between the two, and the small line itself turned on end beside the icon. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
@@ -54,7 +66,9 @@ module Logos
     # small line exactly as the logo sets it (the second word, the tagline, or in the one-line form the whole name),
     # tracking and word gap included, at a cap of 1 with its ink from x = 0, `line_width` wide; each letter carries
     # its glyph's ink edges `l` and `r`. The ruler's ghosts and the icon-height proof are copies of it.
-    Layout = Struct.new(:form, :width, :height, :icon_height, :icon_left, :edges, :letters, :line, :line_width, keyword_init: true)
+    # `icon_width` is the icon's drawn width, and `proportion` the proportion it was laid out in.
+    Layout = Struct.new(:form, :proportion, :width, :height, :icon_width, :icon_height, :icon_left, :edges, :letters, :line, :line_width,
+                        keyword_init: true)
 
     undef_method :examples                     # the Navbar Logo's list: its keys name a rule, which this has none of
 
@@ -81,11 +95,13 @@ module Logos
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, form: self.form, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
-      check_keywords(unknown, "text, tone, form, edits, colouring and icon_colouring")
-      look = look(tone, icon_colouring || colouring)   # the icon's: only the icon's width depends on the look
+    def layout(text: :homogeneous, tone: :light, form: self.form, proportion: PROPORTIONS.first, edits: NO_EDITS, colouring: :alt,
+               icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, proportion, edits, colouring and icon_colouring")
+      look = look(tone, icon_colouring || colouring)   # the icon's: only the icon's size depends on the look
       check_text(text)
       check_form(form)
+      check_proportion(proportion)
       edits = checked_edits(edits)
       first, second = @words.zip(edited_weights(text, edits)).map { |word, weight| letters(word, weight) }
       cap = BIG * U
@@ -94,28 +110,30 @@ module Logos
         rest, width = place(second, cap, width + GAP_CAPS * cap, 1)   # the Navbar Logo's word gap
         big += rest
       end
-      icon_height = SPAN * width
-      edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
+      icon_width, icon_height = icon_box(look, width, proportion)
+      gap = GAPS.fetch(proportion)
+      edges = [0, icon_height, icon_height + gap * U, icon_height + (gap + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
       line = [big, first + second, cap]
       unless form == :one_line
-        edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
+        edges += [edges.last + gap * U, edges.last + (gap + 1) * U]
         weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
         small = form == :tagline ? tagline_line(width, weight) : small_line(second, width)
         placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) } unless form == :tagline && edits.dig(:tagline, :visible) == false
         line = [small, form == :tagline ? tagline_glyphs(weight) : second, U]
       end
       line, line_width = unit_line(*line)
-      Layout.new(form:, width:, height: edges.last, icon_height:, icon_left: (width - icon_width(look, icon_height, width)) / 2,
+      Layout.new(form:, proportion:, width:, height: edges.last, icon_width:, icon_height:, icon_left: (width - icon_width) / 2,
                  edges:, letters: placed, line:, line_width:)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
-      check_keywords(unknown, "text, tone, form, guides, edits, colouring and icon_colouring")
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, proportion: PROPORTIONS.first, edits: NO_EDITS, colouring: :alt,
+            icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, proportion, guides, edits, colouring and icon_colouring")
       look = look(tone, colouring)
       icon_look = look(tone, icon_colouring || colouring)
       edits = edits_in(look, edits, icon_look)
-      box = layout(text:, tone:, form:, edits:, colouring:, icon_colouring:)
+      box = layout(text:, tone:, form:, proportion:, edits:, colouring:, icon_colouring:)
       render(box, box.height, text, look, guides, edits, icon_look)
     end
 
@@ -147,6 +165,12 @@ module Logos
       left = placed.first[:x] + glyphs.first["l"] * cap
       letters = placed.zip(glyphs).map { |letter, g| letter.except(:baseline, :cap).merge(x: (letter[:x] - left) / cap, l: g["l"], r: g["r"]) }
       [letters, letters.last[:x] + letters.last[:r]]
+    end
+
+    def check_proportion(proportion)
+      return if PROPORTIONS.include?(proportion)
+
+      raise Error, "unknown proportion #{proportion.inspect[0, 40]}: expected one of #{PROPORTIONS.join(', ')}"
     end
 
     def check_form(form)
@@ -198,12 +222,20 @@ module Logos
       [icon, colours + [original_look?(look) ? gradient_ref(look, tagline) : tagline]]
     end
 
-    def icon_width(look, height, width)
+    # [the icon's width, its height] over a big line `width` wide. 3-2-1: as tall as the small line is wide (SPAN of the
+    # width), refused when that makes it wider than the name. Rule of three: a third of the width, as tall as its aspect makes it.
+    def icon_box(look, width, proportion)
       icon = @icons.fetch(look)
+      if proportion == :rule_of_three
+        wide = width / THIRDS
+        return [wide, wide * icon.fetch("h") / icon.fetch("w")]
+      end
+
+      height = SPAN * width
       wide = icon.fetch("w") * height / icon.fetch("h")
       raise Error, "brand #{brand}: the icon is too wide to stack (#{f(wide / width)} of the name's width at this height)" if wide > width
 
-      wide
+      [wide, height]
     end
 
     def drawing(box, icon_look, icon_fills, colours)
@@ -214,10 +246,13 @@ module Logos
 
     # The guide drawing: the logo, then the ghosts in one translucent group (all on the plate, beside the logo), then
     # the lines and numbers in their own group. The drawing reaches past the ruler, and left past the turned line's bracket.
+    # The rule of three proves its icon instead (#thirds_render).
     def render(box, height, text, look, guides, edits = NO_EDITS, icon_look = look)
       return super unless guides
 
       body = toned(look, drawing(box, icon_look, *fills(look, text, edits, icon_look)))
+      return thirds_render(box, height, body, look, icon_look) if box.proportion == :rule_of_three
+
       ghosts = ghost_group(look, ruler_markup(box, ghost_fill(look)) + proof_markup(box, ghost_fill(look)))
       left = [GUIDE_PAD[:left], GUIDE_PAD[:left] / 2 - bracket_x(box)].max   # room for the turned line and its bracket
       document(with_defs(def_look(look, icon_look), body + ghosts + line_group(guide_markup(box))), box.width, height, **GUIDE_PAD, left:,
@@ -262,12 +297,41 @@ module Logos
     # A line at each band boundary, across the logo and the ruler; the icon's centre line; the turned line's bracket;
     # each ruler copy's number; and a 1 at the icon's top.
     def guide_markup(box)
-      right = ruler_right(box) + 20
-      lines = box.edges.map { |y| guide_line(-20, y, right, y) } + [guide_line(box.width / 2, -20, box.width / 2, box.height + 20)]
-      numbers = bands(box).flat_map do |top, _, size|
+      lines = edge_lines(box) + [guide_line(box.width / 2, -20, box.width / 2, box.height + 20)]
+      (lines + bracket_markup(box) + ruler_numbers(box) + [guide_label(box.width / 2 + 10, -10, 1)]).join
+    end
+
+    def edge_lines(box) = box.edges.map { |y| guide_line(-20, y, ruler_right(box) + 20, y) }
+
+    def ruler_numbers(box)
+      bands(box).flat_map do |top, _, size|
         (1..size).map { |row| guide_label(box.width + NUMBER_X, top + (row - 0.5) * U + GUIDE_FONT * 0.35, row, %( text-anchor="middle")) }
       end
-      (lines + bracket_markup(box) + numbers + [guide_label(box.width / 2 + 10, -10, 1)]).join
+    end
+
+    # THE RULE OF THREE'S GUIDE DRAWING, as the reel draws it: two ghost copies of the icon either side of the real one,
+    # the three edge to edge across the name's ink; a vertical line at each third, numbered 1 2 3 above; the ruler of
+    # small-line copies beside the logo, which counts each 3u gap; and a line at each band boundary. No turned line:
+    # the icon's height is its own aspect's, not the small line's width.
+    def thirds_render(box, height, body, look, icon_look)
+      fill = ghost_fill(look)
+      ghosts = ghost_group(look, thirds_ghosts(box, icon_look, fill) + ruler_markup(box, fill))
+      document(with_defs(def_look(look, icon_look), body + ghosts + line_group(thirds_guide_markup(box))), box.width, height, **GUIDE_PAD,
+               right: ruler_right(box) - box.width + GUIDE_PAD[:right])
+    end
+
+    # The icon, solid in the ghost fill, in the first and the last third (the real icon is the middle one).
+    def thirds_ghosts(box, icon_look, fill)
+      icon = @icons.fetch(icon_look)
+      [box.icon_left - box.icon_width, box.icon_left + box.icon_width].map do |x|
+        %(<g class="guide-third" transform="translate(#{f(x)},0)">#{icon_markup(icon, Hash.new(fill), box.icon_height)}</g>)
+      end.join
+    end
+
+    def thirds_guide_markup(box)
+      thirds = (0..THIRDS).map { |i| guide_line(i * box.icon_width, -20, i * box.icon_width, box.height + 20) }
+      numbers = (1..THIRDS).map { |i| guide_label((i - 0.5) * box.icon_width, -10, i, %( text-anchor="middle" data-third="#{i}")) }
+      (edge_lines(box) + thirds + ruler_numbers(box) + numbers).join
     end
   end
 end
