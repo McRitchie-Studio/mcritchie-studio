@@ -163,7 +163,7 @@ The automated tests encode the same scenarios with real database concurrency:
 `test/integration/agent_message_claim_race_test.rb`,
 `test/integration/heartbeat_mailbox_test.rb`, `test/models/agent_message_test.rb`.
 The dispatcher's loop (claims, the cap, renewal, the usage-limit refund and
-pause, a graceful stop) is `test/integration/agent_dispatcher_test.rb`; the
+pause, a graceful stop) is `test/integration/agent_dispatcher_loop_test.rb`; the
 long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
 
 ## Observing

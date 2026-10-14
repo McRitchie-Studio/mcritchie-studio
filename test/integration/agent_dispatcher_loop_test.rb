@@ -9,7 +9,7 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # refund and pause; the minute ping; a graceful stop. Every board call is made
 # from the test's thread (the dispatcher's main loop); only the stub Claude runs
 # on the dispatcher's run threads. Nothing reaches Discord, Claude or production.
-class AgentDispatcherTest < ActionDispatch::IntegrationTest
+class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
 
   # The command runner. The soul's action answers at once; each Claude call
