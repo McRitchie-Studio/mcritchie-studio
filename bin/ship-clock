@@ -32,7 +32,10 @@ require_relative "lib/repo_root"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 LEDGER_RELATIVE = "docs/agents/ledgers/ship-clock.csv"
-GH_TIMEOUT = Float(ENV.fetch("SHIP_CLOCK_GH_TIMEOUT", "60"))
+GH_TIMEOUT = ShipClock.gh_timeout(ENV.fetch("SHIP_CLOCK_GH_TIMEOUT", nil)) do |bad|
+  warn "ship-clock: SHIP_CLOCK_GH_TIMEOUT=#{bad.inspect} is not a positive number of seconds; " \
+       "using the default #{ShipClock::GH_TIMEOUT_DEFAULT}"
+end
 ISO_HINT = "a full ISO 8601 timestamp with a date and a zone, e.g. 2026-10-13T08:15:00-06:00"
 USAGE = "usage: bin/ship-clock start <slug> [--at ISO] [--estimated] [--restamp]\n" \
         "       bin/ship-clock report <slug> [--json] [--t0 ISO] [--t0-estimated] [--log PATH ...]\n" \

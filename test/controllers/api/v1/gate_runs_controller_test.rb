@@ -150,6 +150,24 @@ module Api
         assert_equal release.slug, run.subject_slug
       end
 
+      test "[unit] a release read carries its stage events for the ship clock; a task read does not" do
+        release = Release.create!(state: "assembling")
+        ReleaseEvent.create!(release: release, step: "assemble_release", status: "started",
+                             occurred_at: Time.utc(2026, 10, 13, 14, 45))
+        post "/api/v1/gates/release/#{release.slug}/g3_candidate/open", headers: @headers, as: :json
+
+        get "/api/v1/gates/release/#{release.slug}", headers: @headers, as: :json
+
+        assert_response :ok
+        assert_equal %w[g3_candidate], response.parsed_body["data"].map { |r| r["key"] }
+        events = response.parsed_body.dig("meta", "release_events")
+        assert_equal [%w[assemble_release started]], events.map { |e| [e["step"], e["status"]] }
+        assert_equal Time.utc(2026, 10, 13, 14, 45), Time.iso8601(events.first["occurred_at"])
+
+        get "/api/v1/gates/task/#{@task.slug}", headers: @headers, as: :json
+        assert_nil response.parsed_body["meta"], "the task read keeps its shape"
+      end
+
       test "index lists a subject's runs chronologically" do
         post "/api/v1/gates/task/#{@task.slug}/dor/open", headers: @headers, as: :json
         post "/api/v1/gates/task/#{@task.slug}/g2b_light/open", headers: @headers, as: :json

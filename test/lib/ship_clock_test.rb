@@ -10,6 +10,7 @@
 require "minitest/autorun"
 require "tmpdir"
 require "csv"
+require "fileutils"
 require_relative "../../bin/lib/ship_clock"
 
 class ShipClockTest < Minitest::Test
@@ -162,6 +163,61 @@ class ShipClockTest < Minitest::Test
     unshipped = task.merge("stage" => "submitted", "completed_at" => nil)
 
     assert_raises(ShipClock::Error) { ShipClock::Timeline.build(records(task: unshipped, release_gates: [])) }
+  end
+
+  # --- the release sweep's pre-QA span (scout-launches-itself) ----------------
+
+  def sweep_started(clock) = { "step" => "assemble_release", "status" => "started", "occurred_at" => "2026-10-13T#{clock}Z" }
+
+  def test_the_sweeps_pre_qa_span_is_wait_not_hands_on
+    base = ShipClock::Timeline.build(records)
+    report = ShipClock::Timeline.build(records(release_events: [sweep_started("14:45:30"),
+                                                               { "step" => "deploy_qa", "status" => "started",
+                                                                 "occurred_at" => "2026-10-13T14:40:00Z" }]))
+
+    # The sweep started 14:45:30; the QA candidate opened 14:50:25: 295s of gem
+    # publish and merge-forward move from hands-on to wait. Other steps are ignored.
+    assert_equal 295, report["pre_qa_wait_s"]
+    assert_equal base["wait_s"] + 295, report["wait_s"]
+    assert_equal base["hands_on_s"] - 295, report["hands_on_s"]
+    assert_equal base["total_s"], report["total_s"]
+    assert_includes report["milestones"].map { |m| m["label"] }, "release sweep started"
+  end
+
+  def test_no_sweep_event_or_one_after_qa_opened_leaves_the_span_hands_on
+    base = ShipClock::Timeline.build(records)
+
+    [[], [sweep_started("14:55:00")], [{ "step" => "assemble_release", "status" => "completed",
+                                         "occurred_at" => "2026-10-13T14:45:30Z" }]].each do |events|
+      report = ShipClock::Timeline.build(records(release_events: events))
+      assert_equal base["wait_s"], report["wait_s"], events.inspect
+      assert_equal 0, report["pre_qa_wait_s"]
+    end
+  end
+
+  def test_the_gh_timeout_falls_back_on_a_bad_value_and_says_so
+    warned = []
+    assert_in_delta 60.0, ShipClock.gh_timeout(nil)
+    assert_in_delta 60.0, ShipClock.gh_timeout("")
+    assert_in_delta 5.0, ShipClock.gh_timeout(" 5 ")
+    %w[abc 0 -3 NaN].each do |bad|
+      assert_in_delta 60.0, ShipClock.gh_timeout(bad) { |v| warned << v }, 0.001, bad
+    end
+    assert_equal %w[abc 0 -3 NaN], warned
+  end
+
+  def test_the_ledger_lock_is_keyed_by_the_real_path
+    Dir.mktmpdir do |dir|
+      real = File.join(dir, "real")
+      FileUtils.mkdir_p(real)
+      File.symlink(real, File.join(dir, "link"))
+      a = File.join(real, "ledger.csv")
+      b = File.join(dir, "link", "ledger.csv")
+
+      assert_equal ShipClock::Ledger.lock_path(a), ShipClock::Ledger.lock_path(b), "before the file exists"
+      File.write(a, "")
+      assert_equal ShipClock::Ledger.lock_path(a), ShipClock::Ledger.lock_path(b), "after it exists"
+    end
   end
 
   # --- Ledger --------------------------------------------------------------
