@@ -63,10 +63,15 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     end
     assert_select "[data-test='dream-card'][data-dream='untagged-habit'] [data-test='dream-proposed-badge']", 0
     %w[all approved proposed].each { |status| assert_select "[data-test='dream-filter-#{status}']" }
-    assert_select "[data-test='dreams-page'][x-data*=\"'all'\"]"
+    assert_select "[data-test='dreams-page'][data-dreams-filter='all']"
+    assert_select "[data-test='dream-card'][hidden]", 0
 
     get dreams_path(status: "proposed")
-    assert_select "[data-test='dreams-page'][x-data*=\"'proposed'\"]"
+    assert_select "[data-test='dreams-page'][data-dreams-filter='proposed']"
+    assert_select "[data-test='dream-filter-proposed'][aria-pressed='true']"
+    assert_select "[data-dream='proposed-money-idea']:not([hidden])"
+    assert_select "[data-dream='untagged-habit'][hidden]"
+    assert_select "[data-test='platform-row'] [data-test='stage-group'][hidden]", minimum: 1
   end
 
   test "a dream opens to its answer, why, story, tags, status and file" do

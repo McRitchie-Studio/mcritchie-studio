@@ -1,5 +1,6 @@
 <% counts = @chart.counts %>
-<section x-data="{ filter: '<%= @filter %>' }" data-test="dreams-page">
+<%# The status filter is app/javascript/dreams_filter.js (data-dreams-filter). %>
+<section data-dreams-filter="<%= @filter %>" data-test="dreams-page">
   <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div class="min-w-0">
       <%= link_to "← Agents", agents_path, class: "text-sm font-medium text-primary hover:underline" %>
@@ -12,10 +13,9 @@
     <div class="flex rounded-lg border border-subtle bg-surface-alt p-1 text-sm" role="group" aria-label="Filter dreams by status" data-test="dream-filter">
       <% DreamsController::FILTERS.each do |status| %>
         <%= link_to dreams_path(status: (status == "all" ? nil : status)),
-              class: "rounded-md px-3 py-1.5 font-semibold",
-              ":class": "filter === '#{status}' ? 'bg-primary text-white' : 'text-secondary hover:text-heading'",
-              "@click.prevent": "filter = '#{status}'; history.replaceState(null, '', $el.href)",
-              data: { test: "dream-filter-#{status}" } do %>
+              class: "rounded-md px-3 py-1.5 font-semibold #{status == @filter ? "bg-primary text-white" : "text-secondary hover:text-heading"}",
+              aria: { pressed: status == @filter },
+              data: { test: "dream-filter-#{status}", dreams_filter_button: status } do %>
           <%= status.capitalize %> <span class="opacity-70"><%= counts[status] %></span>
         <% end %>
       <% end %>

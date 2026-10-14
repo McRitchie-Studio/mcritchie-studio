@@ -4,8 +4,8 @@
 <% end %>
 <% column.stages.each do |group| %>
   <div class="mb-3" data-test="stage-group" data-stage="<%= group.stage %>"
-       data-statuses="<%= group.dreams.map(&:status).uniq.join(" ") %>"
-       x-show="filter === 'all' || $el.dataset.statuses.split(' ').includes(filter)">
+       data-statuses="<%= statuses = group.dreams.map(&:status).uniq; statuses.join(" ") %>"
+       <%= "hidden" unless @filter.nil? || @filter == "all" || statuses.include?(@filter) %>>
     <p class="mb-1.5 text-2xs font-bold uppercase tracking-wide text-muted"><%= group.stage %></p>
     <div class="<%= local_assigns[:grid] ? "grid grid-cols-1 items-start gap-2 md:grid-cols-2 xl:grid-cols-3" : "space-y-2" %>">
       <% group.dreams.each do |dream| %>

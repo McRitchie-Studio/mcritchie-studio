@@ -1,10 +1,10 @@
 <%# One dream as an expanding card: the question is the summary; opening it shows
     the answer, why, story, tags, status and source. Native <details>, so it opens
-    without JavaScript; the page's Alpine filter hides it by data-status. %>
+    without JavaScript; app/javascript/dreams_filter.js hides it by data-status. %>
 <% proposed = dream.status == DreamOrgChart::PROPOSED %>
 <details class="group rounded-lg border border-subtle bg-surface-alt/60 open:border-primary/40 transition"
          data-test="dream-card" data-dream="<%= dream.slug %>" data-status="<%= dream.status %>"
-         x-show="filter === 'all' || filter === $el.dataset.status">
+         <%= "hidden" unless @filter.nil? || @filter == "all" || @filter == dream.status %>>
   <summary class="flex cursor-pointer list-none items-start gap-2 p-3 [&::-webkit-details-marker]:hidden">
     <span aria-hidden="true" class="mt-0.5 inline-block text-muted transition group-open:rotate-90">&#9656;</span>
     <span class="min-w-0 flex-1 text-sm font-semibold leading-snug text-heading"><%= dream.question %></span>
