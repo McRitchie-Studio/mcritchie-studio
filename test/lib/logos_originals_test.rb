@@ -18,7 +18,7 @@ class LogosOriginalsTest < Minitest::Test
   def test_commercial_weldings_original_keeps_its_white_filled_helmet
     icon = Navbar.icons.fetch("welding_original")
     assert_equal %w[blue white accent], icon.fetch("layers").map { |layer| layer["role"] }, "painter's order: silhouette, white, spark"
-    assert_equal [858, 975], [icon["w"], icon["h"]], "cropped to the helmet"
+    assert_equal [857.98, 973.84], [icon["w"], icon["h"]], "cropped to the helmet's ink (858 x 975 before its box was trimmed, Logos::IconInk)"
     logo = Navbar.new("welding")
     %i[light dark].each do |tone|
       svg = logo.icon_svg(tone:, colouring: :original)
@@ -39,14 +39,15 @@ class LogosOriginalsTest < Minitest::Test
   end
 
   # v2's Original is v1's with the v2 derivation (Logos::WeldingV2): its own icon, v1's Original colours.
-  def test_welding_v2s_original_carries_the_centring_and_the_lens_move
+  def test_welding_v2s_original_carries_the_lens_move_in_its_ink_box
     logo = Navbar.new("welding_v2")
     icon = Navbar.icons.fetch("welding_v2_original")
     assert_match(/derived from 'welding_original' by Logos::WeldingV2/, icon["source"])
     %i[light dark].each do |tone|
       svg = logo.icon_svg(tone:, colouring: :original)
       assert_equal %w[#2E5E8E #FFFFFF #D5752B], fills(svg), tone
-      assert_includes svg, %(viewBox="0 0 892.30 975.00"), "#{tone}: v2's widened box"
+      # Its box is its ink (task stacked-rule-of-three): v2's widened, midline-centred box (892.30 wide) is gone.
+      assert_includes svg, %(viewBox="0 0 857.98 973.84"), "#{tone}: the helmet's ink box"
     end
     assert_equal Navbar.new("welding").svg(rule: 3, text: :first, colouring: :original).scan(/fill="([^"]+)"/).flatten.uniq,
                  logo.svg(rule: 3, text: :first, colouring: :original).scan(/fill="([^"]+)"/).flatten.uniq, "v1's Original colours"
