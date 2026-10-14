@@ -1,0 +1,93 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/dispatcher run [--souls a,b] [--channel discord] [--cap N] [--worker ID]
+# bin/dispatcher install | uninstall | status
+#
+# The agent mailbox as a service on Alex's Mac
+# (docs/agents/agents/steffon/sops/agent-dispatcher.md). `run` long-polls the
+# board for every soul config/agent_routes.yml routes (or --souls), answers each
+# claimed message on the existing heartbeat path (AgentMailbox::Responder: one
+# read-only action, then `claude -p` with no tools on the fenced message), renews
+# the lease while the answer runs, keeps at most 5 runs at once, and pings the
+# board every minute. A Claude usage-limit answer gives the message back without
+# spending an attempt and pauses claiming until the reset. SIGTERM stops claiming
+# and lets runs finish (or gives their messages back). It posts nothing itself.
+#
+# Claude bills Alex's claude.ai subscription: ANTHROPIC_API_KEY is removed from
+# this process and every child it starts.
+#
+# `install` renders config/launchd/studio.mcritchie.agent-dispatcher.plist into
+# ~/Library/LaunchAgents and loads it (KeepAlive, RunAtLoad, logs in
+# ~/Library/Logs/agent-dispatcher.log); `uninstall` unloads and removes it;
+# `status` reports it. Steffon's SOP runs install after the release ships.
+#
+#   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
+#
+# Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
+require "shellwords"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/agent_dispatcher"
+
+USAGE = <<~TEXT
+  Usage:
+    bin/dispatcher run [--souls a,b] [--channel discord] [--cap N] [--worker ID]
+    bin/dispatcher install | uninstall | status
+TEXT
+
+command = ARGV.first
+spec = case command
+       when "run" then { value: %w[--souls --channel --cap --worker] }
+       when "install", "uninstall", "status" then {}
+       end
+if spec.nil?
+  CliArgGuard.guard!(ARGV, program: "bin/dispatcher", usage: USAGE, consequence: "nothing was started or installed.")
+  warn USAGE
+  exit 2
+end
+parsed = CliArgGuard.guard!(ARGV.drop(1), program: "bin/dispatcher #{command}", usage: USAGE,
+                                          consequence: "nothing was started or installed.", **spec)
+
+case command
+when "install" then exit AgentMailbox::LaunchAgent.new.install
+when "uninstall" then exit AgentMailbox::LaunchAgent.new.uninstall
+when "status" then exit AgentMailbox::LaunchAgent.new.status_report
+when "run"
+  channel = parsed.values["--channel"].last || "discord"
+  unless channel == "discord"
+    warn "bin/dispatcher: only --channel discord exists today (got #{channel.inspect}); nothing was started."
+    exit 2
+  end
+  souls = (parsed.values["--souls"].last&.split(",") || AgentMailbox.routed_souls).map(&:strip).reject(&:empty?)
+  if souls.empty?
+    warn "bin/dispatcher: config/agent_routes.yml routes no soul and no --souls was given; nothing was started."
+    exit 2
+  end
+  cap = Integer(parsed.values["--cap"].last || AgentMailbox::Dispatcher::CAP, exception: false)
+  unless cap&.between?(1, AgentMailbox::Dispatcher::CAP)
+    warn "bin/dispatcher: --cap must be 1..#{AgentMailbox::Dispatcher::CAP} (the concurrency cap); nothing was started."
+    exit 2
+  end
+
+  # The subscription, never an API key: nothing this process starts sees one.
+  ENV.delete("ANTHROPIC_API_KEY")
+  cmd = ENV["HEARTBEAT_CLAUDE_CMD"].to_s.strip
+  claude_cmd = cmd.empty? ? AgentMailbox::Responder::DEFAULT_CLAUDE_CMD : Shellwords.split(cmd)
+
+  # Keep the Mac awake while this process lives. caffeinate watches OUR pid
+  # (-w) rather than wrapping us in the plist, because a wrapping caffeinate
+  # does not forward launchd's SIGTERM, which would orphan this loop and skip
+  # the graceful shutdown.
+  if File.executable?("/usr/bin/caffeinate")
+    Process.detach(Process.spawn("/usr/bin/caffeinate", "-is", "-w", Process.pid.to_s))
+  end
+
+  $stdout.sync = true
+  dispatcher = AgentMailbox::Dispatcher.new(
+    client: AgentMailbox::Client.new(api: AgentApi.new(open_timeout: 5, read_timeout: 40)),
+    souls: souls, channel: channel, cap: cap, worker: parsed.values["--worker"].last, claude_cmd: claude_cmd
+  )
+  %w[TERM INT].each { |sig| Signal.trap(sig) { dispatcher.stop! } }
+  dispatcher.run
+  exit 0
+end
