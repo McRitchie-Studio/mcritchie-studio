@@ -189,8 +189,7 @@ module IntentScout
   # brief; `agent-activity` narrates; `dream` loads the sequence). No Edit, no
   # Write, no git that writes: the scout never touches the desk.
   READ_ONLY_BASH = [
-    "git grep *", "git -C * grep *", "git log *", "git -C * log *", "git show *", "git -C * show *",
-    "grep *", "rg *", "ls *", "cat *", "head *", "tail *", "wc *", "cd *"
+    "git grep *", "git log *", "git show *", "grep *", "rg *", "ls *", "cat *", "head *", "tail *", "wc *", "cd *"
   ].freeze
   BOARD_SUBCOMMANDS = ["task show *", "task list *", "task note *", "task scout-brief *",
                        "agent-activity *", "dream *"].freeze
@@ -304,17 +303,18 @@ module IntentScout
   end
 
   # The exact argv of the headless launch (docs/agents/agents/avi/sops/intent-scout.md).
-  #   -p                          headless: run the prompt, print the answer, exit
+  #   -p <prompt>                 headless: run the prompt, print the answer, exit
   #   --agent avi                 Avi's soul as the session's agent
   #   --permission-mode dontAsk   deny anything not allowed below; never prompt
   #   --allowedTools ...          the read-only tools and the board CLIs (allowed_tools)
   #   --add-dir <projects>        read any repo and the builder's desk
   #   --name                      a findable session name
   def launch_command(slug, desk, bin:, projects_dir:, bin_dirs: [])
-    [bin, "-p", "--agent", "avi", "--permission-mode", "dontAsk",
+    # The prompt rides right after -p: --allowedTools and --add-dir are variadic,
+    # so a prompt placed last is swallowed as one more directory.
+    [bin, "-p", headless_prompt(slug, desk), "--agent", "avi", "--permission-mode", "dontAsk",
      "--allowedTools", allowed_tools(bin_dirs).join(","),
-     "--add-dir", projects_dir, "--name", "intent-scout #{slug}",
-     headless_prompt(slug, desk)]
+     "--add-dir", projects_dir, "--name", "intent-scout #{slug}"]
   end
 
   # The child's whole environment (ENV_ALLOW, plus every LC_ locale key).

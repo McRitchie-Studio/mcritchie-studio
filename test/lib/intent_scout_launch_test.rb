@@ -69,14 +69,16 @@ class IntentScoutLaunchTest < Minitest::Test
     launch(laptop)
     argv = @spawns.first[:argv]
 
-    assert_equal [@claude, "-p", "--agent", "avi", "--permission-mode", "dontAsk"], argv.first(6)
+    assert_equal [@claude, "-p"], argv.first(2)
+    assert_includes argv[2], "intent-scout SOP", "the prompt rides right after -p, before the variadic flags"
+    assert_equal ["--agent", "avi", "--permission-mode", "dontAsk"], argv[3, 4]
     tools = argv[argv.index("--allowedTools") + 1].split(",")
     assert_includes tools, "Read"
     assert_includes tools, "Bash(bin/task note *)", "the scout must be able to post its brief"
     refute(tools.any? { |t| t.match?(/\A(Edit|Write|NotebookEdit)\b/) }, "the scout never edits: #{tools}")
     refute_includes tools, "Bash", "no unrestricted shell"
-    assert_includes argv.last, "intent-scout SOP"
-    assert_includes argv.last, "headless"
+    assert_includes argv[2], "headless"
+    refute(tools.any? { |t| t.include?("-C *") }, "no wildcard before a git subcommand")
     assert_equal @root, @spawns.first[:opts][:chdir]
     assert @spawns.first[:opts][:pgroup], "detached from begin's process group"
   end

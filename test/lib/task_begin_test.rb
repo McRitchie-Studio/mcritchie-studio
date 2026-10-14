@@ -469,7 +469,8 @@ class TaskBeginTest < Minitest::Test
     assert_equal 1, calls.size, calls.inspect
     _cwd, session_inherited, *argv = calls.first.split("\t")
     assert_equal "false", session_inherited, "the builder's session must not reach the scout"
-    assert_equal ["-p", "--agent", "avi", "--permission-mode", "dontAsk"], argv.first(5)
+    assert_equal "-p", argv[0]
+    assert_equal ["--agent", "avi", "--permission-mode", "dontAsk"], argv[2, 4]
     pid = File.read(File.join(home, "#{SLUG}.pid")).strip
     assert_match(/\A\d+\z/, pid)
     owed = owed_notes(requests)
