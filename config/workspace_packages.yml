@@ -361,7 +361,7 @@ features:
   # 2026-09-30; domain-dns carries the move. Sold as "Premium Domain" (Mr.
   # McRitchie, 2026-10-13): the cells and the cards name the outcome, and only
   # this blurb, the row's detail line, names Cloudflare.
-  - name: Fast, protected domain
+  - name: Fast, premium domain
     category: domain
     icon: cloudflare
     blurb: "DNS on Cloudflare's global network: faster lookups, protection from attacks, email authentication set up for you, and changes made by our team the same day."

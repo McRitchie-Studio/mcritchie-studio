@@ -130,6 +130,18 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stack-client'] img[src*='1password']", 0
   end
 
+  test "[integration] a brand kit that raises never 500s /stack or the matrix: the client draws its default icon" do
+    BrandKit.create!(brand: "turf").update_column(:icon_choice, { "bogus" => 1 })
+    log_in_as users(:alex)
+
+    [ stack_path, stack_matrix_path ].each do |path|
+      get path
+
+      assert_response :success, path
+      assert_select "[data-client='turf-monster'] [data-test='client-logo'][data-source='brand'] img[src^='/logos/turf/icon']", { minimum: 1 }, path
+    end
+  end
+
   test "the matrix totals MRR over priced clients only" do
     paid = WorkspacePackage.all.select { |package| package.priced? && !package.free? }
     StackClient.find_by!(slug: "turf-monster").update!(tier: paid.last.key)

@@ -194,7 +194,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     {
       "Host" => "heroku", "Error alerts" => "sentry", "Storage" => "postgres",
       "Live updates and jobs" => "redis", "Branded emails" => "resend",
-      "Fast, protected domain" => "cloudflare", "Password vault" => "1password"
+      "Fast, premium domain" => "cloudflare", "Password vault" => "1password"
     }.each { |name, brand| assert_equal brand, feature(name).brand, name }
     [ "Custom Web App", "Web address", "Hosting mode", "Changes after launch", "Support", "Social Outreach", "Integrations" ].each do |name|
       refute feature(name).brand?, "#{name} is no single brand's product"
@@ -274,7 +274,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
     assert_equal [ nil, nil, nil, "Google Drive", "Drive + custom connectors" ], TIERS.map { |key| feature("Knowledge base").value_for(key) }
     [ "Error alerts", "Integrations", "Password vault",
-      "Dedicated browser profile", "Credential rotation", "Fast, protected domain" ].each do |name|
+      "Dedicated browser profile", "Credential rotation", "Fast, premium domain" ].each do |name|
       assert feature(name).included_in?(:pro), "#{name} is a Pro row"
     end
 
@@ -326,7 +326,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal [ "Fractional CTO", "Fractional CMO", "Email drafting agent", "Knowledge base" ], groups.assoc("agents").last.map(&:name),
                  "the stack's Agents rows read in the cards' lane order, the knowledge base that feeds the drafts last"
     assert_includes groups.assoc("application").last.map(&:name), "Hosting mode", "where your app runs sits with the app"
-    assert_equal [ "Web address", "Fast, protected domain" ], groups.assoc("domain").last.first(2).map(&:name)
+    assert_equal [ "Web address", "Fast, premium domain" ], groups.assoc("domain").last.first(2).map(&:name)
     assert_equal({ "domain" => "builder", "platform" => "pro", "agents" => "pro", "marketing" => "pro" },
                  %w[application domain platform agents marketing service add_ons].to_h { |k| [ k, WorkspacePackage.category_from(k)&.key ] }.compact)
     # Branded emails leads Security & integrations though Builder has it; every
@@ -378,11 +378,11 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   end
 
   test "[unit] Pro sells the Cloudflare move as Premium Domain from Pro up, an honest free-plan promise" do
-    row = feature("Fast, protected domain")
+    row = feature("Fast, premium domain")
 
     assert_equal "cloudflare", row.brand
     assert_equal [ nil, nil ] + [ "Premium Domain · your-app.com · fast, guarded" ] * 3, TIERS.map { |key| row.value_for(key) }
-    refute_match(/Protected Domain/, File.read(WorkspacePackage::CONFIG), "Premium Domain everywhere (Mr. McRitchie, 2026-10-13)")
+    refute_match(/protected domain/i, File.read(WorkspacePackage::CONFIG), "Premium Domain everywhere (Mr. McRitchie, 2026-10-13)")
     assert_equal "DNS on Cloudflare's global network: faster lookups, protection from attacks, email authentication " \
                  "set up for you, and changes made by our team the same day.", row.blurb,
                  "Cloudflare is named in the row's detail line, never in a cell"
@@ -416,7 +416,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] the one Cloudflare row is the live Pro-and-up promise /stack holds clients to" do
     dns = feature(WorkspacePackage::CLOUDFLARE_DNS)
 
-    assert_equal "Fast, protected domain", dns.name
+    assert_equal "Fast, premium domain", dns.name
     assert_equal 1, WorkspacePackage.features.count { |f| f.brand == "cloudflare" && f.live? }, "the two Cloudflare rows merged"
 
     assert_equal "domain", dns.category

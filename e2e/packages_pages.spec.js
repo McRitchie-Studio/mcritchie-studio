@@ -236,7 +236,7 @@ test("Pro and Team cards mark their lines, sell the Premium Domain, and the full
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/packages/stack");
-  await expect(page.locator("[data-test='stack-row'][data-feature='fast-protected-domain']")).toBeVisible();
+  await expect(page.locator("[data-test='stack-row'][data-feature='fast-premium-domain']")).toBeVisible();
   const flow = page.locator("[data-test='dns-flow']");
   await flow.scrollIntoViewIfNeeded();
   await expect(flow.getByRole("heading", { name: "Premium Domain, on Cloudflare" })).toBeVisible();

@@ -53,11 +53,24 @@ class ClientLogo
   def source = brand ? :brand : :file
 
   # tone => the brand's kit icon as a Logos::Variant, for LogosHelper#logo_themed_images.
+  # A saved icon choice the kit can no longer draw raises BrandKit::Error; the client
+  # then shows the brand's default icon, as with nothing saved, the way
+  # BrandKit#saved_variant drops an undrawable choice, so one bad kit never 500s /stack.
   def variants
-    @variants ||= TONES.to_h { |tone| [tone, @kit.variant(:icon, tone:)] }
+    @variants ||= TONES.to_h { |tone| [tone, icon(tone)] }
   end
 
   private
+
+  # The ErrorLog receipt is written once per logo, not per tone, so the broken kit
+  # is on record without doubling its count.
+  def icon(tone)
+    @kit.variant(:icon, tone:)
+  rescue BrandKit::Error => e
+    ErrorLog.capture!(e) unless @kit_error_logged
+    @kit_error_logged = true
+    BrandKit.new(brand: @brand).variant(:icon, tone:)
+  end
 
   def check_brand
     return if Logos::NavbarLogo.brands.include?(@brand)
