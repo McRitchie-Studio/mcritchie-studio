@@ -9,3 +9,7 @@ risk: money
 stage: submitted
 topic: payment
 ---
+
+## Situation
+
+A payment PR came in **green**.

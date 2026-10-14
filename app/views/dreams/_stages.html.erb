@@ -1,0 +1,14 @@
+<%# A column's dreams grouped by stage; the no-stage bucket comes last. %>
+<% if column.stages.empty? %>
+  <p class="text-xs text-muted" data-test="no-dreams">No dreams yet.</p>
+<% end %>
+<% column.stages.each do |group| %>
+  <div class="mb-3" data-test="stage-group" data-stage="<%= group.stage %>">
+    <p class="mb-1.5 text-2xs font-bold uppercase tracking-wide text-muted"><%= group.stage %></p>
+    <div class="<%= local_assigns[:grid] ? "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3" : "space-y-2" %>">
+      <% group.dreams.each do |dream| %>
+        <%= render "dreams/dream", dream: dream %>
+      <% end %>
+    </div>
+  </div>
+<% end %>

@@ -1,0 +1,16 @@
+<%# A column's SOPs from the registry, each with the number of dreams tagged to it.
+    A zero is shown on purpose: it marks where the bank is thin. %>
+<% if sops.any? %>
+  <div class="mt-4 border-t border-subtle pt-3" data-test="sop-list">
+    <p class="mb-2 text-2xs font-bold uppercase tracking-wide text-muted"><%= label %></p>
+    <ul class="space-y-1">
+      <% sops.each do |sop| %>
+        <li class="flex items-center justify-between gap-2" data-test="sop-row" data-sop="<%= sop.invocation %>">
+          <%= link_to sop.invocation, doc_path(sop.doc_path), class: "min-w-0 truncate font-mono text-xs text-secondary hover:text-primary", title: sop.summary %>
+          <span class="badge shrink-0 text-3xs <%= sop.dream_count.zero? ? "bg-surface-alt text-muted border-subtle" : "bg-primary/10 text-primary border-primary/40" %>"
+                data-test="sop-dream-count" title="Dreams tagged to this SOP"><%= pluralize(sop.dream_count, "dream") %></span>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
