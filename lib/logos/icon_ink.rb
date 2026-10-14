@@ -178,4 +178,3 @@ module Logos
     end
   end
 end
-
