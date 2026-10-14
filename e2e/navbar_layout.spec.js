@@ -143,3 +143,25 @@ test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => 
   await page.locator(".nav-phone-tools [data-link-sidebar-trigger]").click();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");
 });
+
+// Desktop: the avatar rides the scroll ramp with the logo and title, 40px at
+// rest to 32px collapsed, and the first name keeps the rule of 3 against it
+// (font size = avatar / 3 / Montserrat's 0.7 cap height).
+test("the desktop avatar shrinks on scroll and the name follows it", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+
+  const sizes = () => page.evaluate(() => ({
+    avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
+    name: parseFloat(getComputedStyle(document.querySelector("header [data-nav-name]")).fontSize),
+  }));
+
+  const rest = await sizes();
+  expect(rest.avatar).toBe(40);
+  expect(rest.name).toBeCloseTo(40 / 3 / 0.7, 1);
+
+  await page.evaluate(() => window.scrollTo(0, 1200));
+  await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+  await expect.poll(async () => (await sizes()).avatar).toBe(32);
+  expect((await sizes()).name).toBeCloseTo(32 / 3 / 0.7, 1);
+});
