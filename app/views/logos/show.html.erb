@@ -6,7 +6,7 @@
     logo as shown: the icon, or the three text versions. The Navbar Logo tab
     has a Rule control (3, 4 or 6) and shows one rule at a time; it and the Stacked
     Logo tab has a Form control (the brand's own form, and With tagline where
-    the brand has a tagline); both can swap every logo for its guide drawing, which fits its frame
+    the brand has a tagline) and a Proportion control (3-2-1 or the rule of three); both can swap every logo for its guide drawing, which fits its frame
     until its labels would be too small, then scrolls sideways. Every control is a
     plain link or a GET form built from logo_page_params, so each keeps the
     others' settings, the edit panel's edits among them (logos/_edit_panel, on
@@ -69,6 +69,15 @@
                         class: chosen.(form == @form), aria: { current: ("true" if form == @form) }, data: { test: "form-option", form: form } %>
           <% end %>
         </div>
+        <%# Every form draws in either proportion (task stacked-rule-of-three): it sets only the icon's size. %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Proportion" data-test="proportion-control">
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Proportion</span>
+          <% Logos::Variant::PROPORTIONS.each do |proportion, label| %>
+            <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(proportion: (proportion unless proportion == @defaults[:proportion]))),
+                        class: chosen.(proportion == @proportion), aria: { current: ("true" if proportion == @proportion) },
+                        data: { test: "proportion-option", proportion: proportion } %>
+          <% end %>
+        </div>
       <% end %>
       <%# The edit panel is below the logos; this takes the reader to it, the same on every tab (task
           logo-compare-and-original-edits, item 2). %>
@@ -105,7 +114,7 @@
       <p class="text-2xs text-muted" data-test="kit-icon-note">This tab is exploring an icon other than the kit's. <%= link_to "Back to the kit icon", logo_brand_path(@logo.brand, logo_page_params(icon_colouring: nil).except(:icon_colour)), class: "font-semibold text-primary hover:underline", data: { test: "kit-icon-back" } %></p>
     <% end %>
 
-    <p class="text-sm text-secondary" data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule, (@form if @type == :stacked)) %></p>
+    <p class="text-sm text-secondary" data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule, (@form if @type == :stacked), @proportion) %></p>
     <% if @type == :stacked && @logo.tagline.nil? %>
       <p class="text-sm text-secondary" data-test="no-tagline"><%= name %> has no tagline, so there is no tagline form.</p>
     <% end %>
@@ -113,6 +122,8 @@
       <p class="text-sm text-secondary" data-test="guides-sentence">
         <% if @type == :navbar %>
           The guide drawings: the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height.
+        <% elsif @proportion == :rule_of_three %>
+          The guide drawings prove the rule of three: two faint copies of the icon either side of the real one, numbered 1 2 3, span the name exactly, with a line at each third, so the icon is a third of the name's width. Beside the logo, faint copies of the small line, one per unit, stacked and numbered, count each band: every gap is 2 units, as in 3-2-1. A line marks each boundary.
         <% else %>
           <% small = { two_line: "the small word", one_line: "the name at a third of its size", tagline: "the tagline" }.fetch(@form) %>
           <% turned = @form == :one_line ? "the name at 60% of its size turned on end" : "one copy turned on end" %>

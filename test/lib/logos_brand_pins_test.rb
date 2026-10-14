@@ -15,17 +15,25 @@ class LogosBrandPinsTest < Minitest::Test
   Navbar = Logos::NavbarLogo
   Stacked = Logos::StackedLogo
   DIGESTS = {
-    "studio" => "76cfc2cf8c56af93bbd5334773663f5741bd70b44c1ea298f5f997083c4d1331",
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 76cfc2cf…. Industries did not move.
+    "studio" => "18c873e9593a7a476b4e9377483aa02d9fe77cb1961bfa87efca100c96004e53",
     "industries" => "dcdca12428a65e46d7a821b31f13c9e1337fa57a93d89bfec4c2fa3bd2c3524e",
     # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2b18c47c….
-    "turf" => "0015bbd78dfe945652e610878e246af6bc1d4fedb8e7b17adda0ad34a99d59cc",
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 0015bbd7…. Industries did not move.
+    "turf" => "c1f383a996dea92abb498241d31c68e70839ee1acb563dd999553831dbd98819",
     # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was d1411cdd…. The three
     # others above did not move by a byte.
     # Re-taken by the review fix: the stacked two-line small line keeps its WELDING LLC word gap when tracked (only
     # its two-line drawings changed); was 854451d3….
-    "welding" => "5b868519638df887718aaaf5aeebc0ea1a3d075d593148a4eef7c877f202aa43",
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 5b868519…. Industries did not move.
+    "welding" => "4e2f0a553e4ece27bfc18f813457ab00a3a8264e798f8c18a5b7b0a749a35639",
     # Added by task welding-llc-and-v2-helmet: Commercial Welding v2 as it first shipped.
-    "welding_v2" => "63a49eae4d6d076ccb9498a427f6e4db1dd8e28f20c49cb57989586476215a6a"
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 63a49eae…. Industries did not move.
+    "welding_v2" => "08ebb18f62142df49869867671346a6b18e0bbad1d86d7587e417d539891dd0e"
   }.freeze
 
   def self.drawings(brand)
@@ -51,12 +59,18 @@ class LogosBrandPinsTest < Minitest::Test
   # no colouring), pinned as first shipped. DIGESTS above are the Alt drawings, which that task left as they were.
   ORIGINAL_DIGESTS = {
     "industries" => "164e879afa7dfec2a5336d4113c56234cb40d0742d775479f79d4c1557e61bf3",
-    "turf" => "9ba3b7bf55a7f3b60166f286b875883457c5b8269520672275d0f694858c53ff",
-    "welding" => "0f1083dc461623e7bb84e07049ce8c14e10ad581c1200b74023413279a2a65d4",
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 9ba3b7bf…. Industries did not move.
+    "turf" => "3c80db67bf12f943f0112eebb6b9112c9552901e3c92c0070f882a162fc775fc",
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 0f1083dc…. Industries did not move.
+    "welding" => "18303e01ec58165a44809c855ef481cf98f5504dcdf342c8b77f637b4a5e0b12",
     # Re-taken DELIBERATELY by task kit-export-and-clear-lens, when v2's Original lens window became a hole in the
     # silhouette, not an opaque white shape (Alex 2026-10-12: "remove the white of the lens so I can see it clear"); was
     # 7635ac2b…. Every other pin, Alt and Original, did not move by a byte.
-    "welding_v2" => "da4a25d267b6cb0b599f09c85919de06c1952b9bc2871719deb34f35f5cb5893"
+    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was da4a25d2…. Industries did not move.
+    "welding_v2" => "c7edf77bf74e9c6dcdcc3f25801025826d0ddc9c3deda92ca11e693f94c6d68a"
   }.freeze
 
   def self.original_drawings(brand)

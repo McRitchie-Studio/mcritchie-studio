@@ -120,7 +120,8 @@ class LogosGradientsTest < Minitest::Test
 
   def test_a_stroked_layer_needs_a_width_and_a_filled_one_takes_none
     stroked = ->(layer) { gradient_icon(layers: [{ "role" => "primary", "fill_rule" => "nonzero", "d" => "M0,0L10,10" }.merge(layer)]) }
-    assert_includes logo(stroked.({ "paint" => "stroke", "stroke_width" => 2 }), fill: "#000000").icon_svg(colouring: :original),
+    # The stroke reaches a unit past the path on every side, so the icon's box is trimmed to it (Logos::IconInk).
+    assert_includes logo(Logos::IconInk.trim(stroked.({ "paint" => "stroke", "stroke_width" => 2 })), fill: "#000000").icon_svg(colouring: :original),
                     %(fill="none" stroke="#000000" stroke-width="2"/>)
     assert_match(/needs a stroke_width greater than 0, got nil/, refusal { logo(stroked.({ "paint" => "stroke" })) })
     [0, -1, "2", Float::NAN].each do |width|

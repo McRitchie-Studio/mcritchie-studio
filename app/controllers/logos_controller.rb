@@ -75,7 +75,7 @@ class LogosController < ApplicationController
 
   # Two brands' kits side by side: ?left= and ?right= (Commercial Welding v1 and v2 unless asked; an unknown brand is a
   # 404, as on a brand page), ?type= (the Navbar Logo unless asked), and the controls both sides share: ?rule=, ?form=
-  # and ?colouring= (absent: each side's kit default) and ?grid=1 (the construction guides).
+  # ?proportion= and ?colouring= (absent: each side's kit default) and ?grid=1 (the construction guides).
   def compare
     brands = Logos::NavbarLogo.brands
     pair = LogoComparison.default_pair(brands)
@@ -83,11 +83,12 @@ class LogosController < ApplicationController
     @type = Logos::Variant.type(params[:type])
     @rule_param = (Logos::Variant.rule(params[:rule]) if params.key?(:rule))
     @form_param = (Logos::Variant.form(params[:form]) if params.key?(:form))
+    @proportion_param = (Logos::Variant.proportion(params[:proportion]) if params.key?(:proportion))
     @grid = Logos::Variant.flag(params[:grid], "grid")
     kits = BrandKit.by_brand([@left, @right])
     @savers = BrandKit.saver_names(kits.values)
     @comparison = LogoComparison.new(left: @left, right: @right, type: @type, tones: @tones, rule: @rule_param, form: @form_param,
-                                     colouring: @colouring_param, grid: @grid, kits:)
+                                     proportion: @proportion_param, colouring: @colouring_param, grid: @grid, kits:)
   end
 
   # One logo as SVG. The type comes from the route (/icon, /navbar, /stacked), never from the query string.

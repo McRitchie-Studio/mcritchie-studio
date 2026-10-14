@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "yaml"
+require_relative "icon_ink"
 
 module Logos
   # Draws a brand's Navbar Logo (the main logo) from an ICON and a two-word
@@ -541,7 +542,20 @@ module Logos
         check_paint(key, layer)
       end
       check_defs(key, icon["defs"]) if icon.key?("defs")
+      check_ink(key, icon)
       icon
+    end
+
+    # AN ICON'S BOX IS ITS INK (Logos::IconInk): every logo sizes and centres an icon by its box, so a box with a margin
+    # would draw the icon smaller and off-centre. An icon is trimmed on its way into the data, never compensated here.
+    def check_ink(key, icon)
+      return if IconInk.trimmed?(icon)
+
+      margins = IconInk.margins(icon).map { |side, margin| "#{side} #{format('%g', margin.round(2))}" }.join(", ")
+      raise Error, "brand #{brand}: icon #{key}'s box is not its ink (margins #{margins}): trim it with Logos::IconInk.trim " \
+                   "(bin/rails logos:trim_icons trims the icon data)"
+    rescue IconInk::Error => e
+      raise Error, "brand #{brand}: icon #{key}: #{e.message}"
     end
 
     # A layer is filled, or (paint: stroke) stroked at its stroke_width: a number greater than 0.

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # What the logo gallery's brand page (logos/show) is drawn from, read from the request's params: the brand's logo for
-# the tab's type, the page's context, and the tab's rule, form, guides and edits. LogosController#show draws the page
+# the tab's type, the page's context, and the tab's rule, form, proportion, guides and edits. LogosController#show draws the page
 # with it; BrandKitsController draws the same page again when it refuses an upload, so the refusal is shown in the
 # Kit originals card with every other card as it was (task logo-gallery-polish-pass).
 module LogoBrandPage
@@ -38,7 +38,7 @@ module LogoBrandPage
   # carries it to the next. Needs set_logo and set_context first.
   #
   # THE SAVED KIT CHOICE IS THE TAB'S DEFAULT (task logo-original-and-alt, item 9): a tab whose type the brand's kit
-  # has saved opens on it (its rule or form, colouring and edits; its text version is marked), and the URL's params
+  # has saved opens on it (its rule, or form and proportion, colouring and edits; its text version is marked), and the URL's params
   # override it one by one for exploring. The edits override as one set: any edit param in the URL replaces the
   # saved edits. With nothing saved, the built-in defaults (BrandKit#page_defaults).
   def load_brand_page
@@ -47,6 +47,7 @@ module LogoBrandPage
     @kit_default = @defaults[:choice]
     @rule = params.key?(:rule) ? Logos::Variant.rule(params[:rule]) : @defaults[:rule]
     @form = params.key?(:form) ? Logos::Variant.form(params[:form], (@logo if @type == :stacked)) : (@defaults[:form] if @type == :stacked)
+    @proportion = params.key?(:proportion) ? Logos::Variant.proportion(params[:proportion]) : (@defaults[:proportion] if @type == :stacked)
     @guides = Logos::Variant.flag(params[:guides], "guides")
     url_edits = Logos::Variant::EDIT_PARAMS.keys.any? { |name| params.key?(name) }
     @edits = url_edits ? @logo.checked_edits(Logos::Variant.edits(params)) : @defaults[:edits]
@@ -57,17 +58,17 @@ module LogoBrandPage
     @default_colouring = @logo.original? ? (@defaults[:colouring] || :original) : :alt
     load_icon
     @kit_default_shown = @kit_default && !@icon_overridden &&
-                         @kit_record.default_shown?(@type, rule: @rule, form: @form, colouring: @colouring,
+                         @kit_record.default_shown?(@type, rule: @rule, form: @form, proportion: @proportion, colouring: @colouring,
                                                            edits: @type == :icon ? @edits.slice(:icon) : @edits)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
     # the page, and the logos are drawn as styled, so a change of form never loses the page. The word edits apply in
     # Original as in Alt (task logo-compare-and-original-edits); an original icon draws no colour edit (Logos::Variant).
-    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form } : { rule: @rule })) if @edits.any? && @type != :icon)
+    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form, proportion: @proportion } : { rule: @rule })) if @edits.any? && @type != :icon)
     drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     drawn = drawn.except(:icon).merge(@kit_icon.edits.slice(:icon)) if @icon_from_kit
     # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
     @variants = @tones.map do |tone|
-      Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, tone:, colouring: @colouring, icon_colouring: @icon_colouring,
+      Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, proportion: @proportion, tone:, colouring: @colouring, icon_colouring: @icon_colouring,
                                 guides: @guides, edits: drawn)
     end.transpose.map { |versions| @tones.zip(versions).to_h }
     @kit = Logos::BrandKit.new(@logo.brand)

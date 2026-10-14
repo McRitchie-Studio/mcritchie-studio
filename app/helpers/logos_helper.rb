@@ -8,9 +8,9 @@
 # logos to match; Watermark turns the page dark and shows the watermark logos.
 # A logo file has no background of its own either.
 module LogosHelper
-  # The gallery's page params: the type, context, colouring, rule, form and guides in force, less the defaults (the
-  # Navbar Logo, the theme's own logos, each brand's own colouring, the rule of 4, the brand's own stacked form, guides
-  # off), and the edits in force (task logo-part-editor), with `changes` on top. A change to nil goes back to the
+  # The gallery's page params: the type, context, colouring, rule, form, proportion and guides in force, less the
+  # defaults (the Navbar Logo, the theme's own logos, each brand's own colouring, the rule of 4, the brand's own stacked
+  # form, 3-2-1, guides off), and the edits in force (task logo-part-editor), with `changes` on top. A change to nil goes back to the
   # default. Only the watermark is carried as a context: light and dark are the hub's theme, which every page already
   # keeps. The colouring is the page's own ?colouring= (task logo-original-and-alt), carried as asked even on a brand
   # that shows only Alt, so it comes back on the next brand.
@@ -25,7 +25,9 @@ module LogosHelper
     { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), colouring: @colouring_param,
       icon_colouring: @icon_colouring_param,
       rule: (@rule unless @rule == defaults.fetch(:rule, 4)),
-      form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)), guides: (1 if @guides) }
+      form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)),
+      proportion: (@proportion unless @type == :stacked && @proportion == defaults.fetch(:proportion, Logos::Variant::PROPORTIONS.keys.first)),
+      guides: (1 if @guides) }
       .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
   end
 
@@ -34,7 +36,7 @@ module LogosHelper
   # on top; a change to nil drops a param.
   def logo_compare_params(**changes)
     { left: @left, right: @right, type: (@type unless @type == :navbar), context: (@context if @context == :watermark),
-      colouring: @colouring_param, rule: @rule_param, form: @form_param, grid: (1 if @grid) }.merge(changes).compact
+      colouring: @colouring_param, rule: @rule_param, form: @form_param, proportion: @proportion_param, grid: (1 if @grid) }.merge(changes).compact
   end
 
   # The compare page a brand page's Compare button opens: this brand on the left, its other version (or the next
@@ -89,7 +91,7 @@ module LogosHelper
   # cannot is offered disabled.
   def logo_edit_weight_refusal(part, weight)
     edits = @edits.merge(part => (@edits[part] || {}).merge(weight:))
-    @logo.refusal(edits, **(@type == :stacked ? { form: @form } : { rule: @rule }))
+    @logo.refusal(edits, **(@type == :stacked ? { form: @form, proportion: @proportion } : { rule: @rule }))
   end
 
   # What the icon's colour edit recolours in `tone`, in one line, read from the icon that tone draws: the whole icon,
@@ -126,7 +128,8 @@ module LogosHelper
     return [colouring, edits].compact.join(", ") if variant.type == :icon
 
     shape = variant.type == :stacked ? Logos::Variant::FORMS.fetch(variant.form) : Logos::Variant::RULES.fetch(variant.rule)
-    [shape.downcase, Logos::Variant::TEXTS.fetch(variant.text).downcase, colouring, icon, edits].compact.join(", ")
+    proportion = (Logos::Variant::PROPORTIONS.fetch(variant.proportion).downcase if variant.rule_of_three?)
+    [shape.downcase, proportion, Logos::Variant::TEXTS.fetch(variant.text).downcase, colouring, icon, edits].compact.join(", ")
   end
 
   # Checked edits in words, by part, the colours by their palette names; "as styled" for none.
@@ -177,10 +180,11 @@ module LogosHelper
     "by #{name}#{" (#{email})" if full}"
   end
 
-  # The hidden fields the kit's save form sends: the tab's own choice (rule or form) and its edits, then the page
+  # The hidden fields the kit's save form sends: the tab's own choice (rule, or form and proportion) and its edits, then the page
   # settings the redirect brings back (guides, context). The text version is the form's own select.
   def logo_kit_save_fields
-    choice = { icon: {}, stacked: { form: @form } }.fetch(@type) { { rule: @rule } }
+    # A proportion is sent only for the rule of three: absent is 3-2-1, as the kit stores it (BrandKit.choice_of).
+    choice = { icon: {}, stacked: { form: @form, proportion: (@proportion if @proportion == :rule_of_three) }.compact }.fetch(@type) { { rule: @rule } }
     { type: @type }.merge(choice).merge(Logos::Variant.edit_params(@edits)).merge(logo_page_params.slice(:guides, :context))
                    .merge(colouring: @colouring)
   end
@@ -191,7 +195,8 @@ module LogosHelper
   def logo_kit_tab_params(variant, kit_icon: false)
     shape = case variant.type
             when :icon then { type: :icon }
-            when :stacked then { type: :stacked, form: (variant.form unless variant.form == variant.logo.form) }
+            when :stacked then { type: :stacked, form: (variant.form unless variant.form == variant.logo.form),
+                                 proportion: (variant.proportion if variant.rule_of_three?) }
             else { rule: (variant.rule unless variant.rule == 4) }
             end
     colouring = (variant.colouring unless variant.colouring == logo_default_colouring(variant.logo))
@@ -227,12 +232,17 @@ module LogosHelper
 
   def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
 
-  # A brand page's one-line account of the type being shown (a Stacked Logo's in the form shown).
-  def logo_type_sentence(logo, type, rule, form = nil)
+  # A brand page's one-line account of the type being shown (a Stacked Logo's in the form and proportion shown).
+  def logo_type_sentence(logo, type, rule, form = nil, proportion = nil)
     case type
     when :icon then "The icon alone: the kit's atomic unit. Save it as default here and every Navbar and Stacked Logo draws it."
     when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
-    else "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
+    when :stacked
+      if proportion == :rule_of_three
+        "#{Logos::Variant::RULE_OF_THREE_SENTENCE} #{Logos::Variant::RULE_OF_THREE_FORM_SENTENCES.fetch(form || logo.form)}"
+      else
+        "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
+      end
     end
   end
 

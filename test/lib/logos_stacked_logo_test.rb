@@ -33,12 +33,20 @@ class LogosStackedLogoTest < Minitest::Test
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
   # Re-taken again by the same task's review fix: v1's tracked small line keeps its WELDING LLC word gap (two tracking
   # steps plus the kit's); was 56b61a90…. Studio and Industries still did not move.
-  TWO_LINE_DIGEST = "96644c91ec96d2b94990f20cdc7564607aa085e53b38c15b26e9148c5803f24c"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 96644c91….
+  TWO_LINE_DIGEST = "d1307be40cd3785fd5518ce410b59b01f7029d4ce047c13fb24c69a6623d22d8"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green); was b21a2b80….
-  ONE_LINE_DIGEST = "e2af15cdfefb98cc94bc4053fa5a80e174eff6eb269f523457b82120455e21ed"
-  TAGLINE_DIGEST = "4a47fdc768de8b58bad7efe628c1b2f903bf5b694b1d608a1d90e9c634f2d3cf"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was e2af15cd….
+  ONE_LINE_DIGEST = "c87bf0cd3deff085bb7b191365ddce3fb5080dc54d014d33e5258a198a982563"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 4a47fdc7….
+  TAGLINE_DIGEST = "435ae8ae8953c53c1b64c9ab7e0103fa315df4612d35f301066cc9a44bc5dc9f"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head; was 4196eaad….
-  ICON_DIGEST = "c3b2958606a98a5e98438ccd6461b3617bccb625920438cb1a935d8dcf189b2a"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was c3b29586….
+  ICON_DIGEST = "45621d6abb9fad71a712de856a562052376e6c440a85235b36f34c0b07bd7e29"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
   # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as
@@ -381,12 +389,14 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone, form, guides, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text, tone, form, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone, form, guides, edits, colouring and icon_colouring, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text, tone, form, edits, colouring and icon_colouring, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form, proportion, guides, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone, form, proportion, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form, proportion, guides, edits, colouring and icon_colouring, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone, form, proportion, edits, colouring and icon_colouring, not guides/, refusal { stacked("studio").layout(guides: true) })
 
-    wide = JSON.parse(JSON.generate(Navbar.icons)).tap { |icons| icons.fetch("studio")["w"] = 2000 }
+    # Studio's icon stretched three times as wide, its box trimmed to the stretched ink (an icon's box is its ink).
+    studio = Navbar.icons.fetch("studio")
+    wide = Navbar.icons.merge("studio" => Logos::IconInk.trim(studio.merge("transform" => "scale(3,1) #{studio['transform']}")))
     assert_match(/brand studio: the icon is too wide to stack \(2\.22 of the name's width at this height\)/, refusal { Stacked.new("studio", icons: wide) })
     refute_respond_to stacked("studio"), :examples
     assert_respond_to Navbar.new("studio"), :examples
@@ -407,7 +417,7 @@ class LogosStackedLogoTest < Minitest::Test
   def test_every_stacked_logo_and_icon_without_guides_is_unchanged_to_the_byte
     two_line = own_form(%w[studio industries welding])
     assert_equal 27, two_line.size
-    assert_equal TWO_LINE_DIGEST, Digest::SHA256.hexdigest(two_line.join), "the two-line form, unmoved by the word gap"
+    assert_equal TWO_LINE_DIGEST, Digest::SHA256.hexdigest(two_line.join), "the two-line form"
     assert_equal ONE_LINE_DIGEST, Digest::SHA256.hexdigest(own_form(%w[turf]).join)
     taglines = (TAGLINES.compact.keys & PINNED).flat_map do |brand|
       Navbar::TEXTS.product(Navbar::TONES).map { |text, tone| "#{brand}-stacked-tagline-#{text}-#{tone}\n#{stacked(brand).svg(form: :tagline, text:, tone:)}" }
@@ -536,5 +546,75 @@ class LogosStackedLogoTest < Minitest::Test
                    "welding_v2" => %i[two_line tagline] },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).forms] })
     assert_equal stacked("studio").svg, stacked("studio").svg(form: :two_line), "a brand's own form is the default"
+  end
+
+  # Task stacked-rule-of-three: the RULE OF THREE proportion. Three copies of the icon side by side span the big line's
+  # ink width W, so the icon is W/3 wide, centred, as tall as its own aspect makes it. Every gap stays 2u, as in 3-2-1
+  # (Alex 2026-10-14 12:07: "space of 2 vertically between"), and the lines are set exactly as in 3-2-1.
+  def test_the_rule_of_three_draws_the_icon_a_third_of_the_name_wide_and_keeps_the_2u_gaps
+    Navbar.brands.each do |brand|
+      stacked(brand).forms.product(Navbar::TONES) do |form, tone|
+        three = stacked(brand).layout(form:, tone:, proportion: :rule_of_three)
+        old = stacked(brand).layout(form:, tone:)
+        why = "#{brand} #{form} #{tone}"
+        assert_equal :rule_of_three, three.proportion
+        assert_in_delta three.width / 3, three.icon_width, 1e-9, "#{why}: the icon is a third of the name's width"
+        assert_in_delta three.width / 3, three.icon_left, 1e-9, "#{why}: centred, the middle of three"
+        icon = Navbar.icons.fetch(stacked(brand).send(:icon_key, stacked(brand).send(:look, tone, :alt)))
+        assert_in_delta three.icon_width * icon.fetch("h") / icon.fetch("w"), three.icon_height, 1e-9, "#{why}: the icon keeps its aspect"
+        gaps = three.edges.each_cons(2).map { |top, bottom| ((bottom - top) / U).round(9) }.drop(1)
+        assert_equal(form == :one_line ? [2, 3] : [2, 3, 2, 1], gaps, "#{why}: icon, 2u, big line 3u(, 2u, small line 1u)")
+        assert_equal old.edges.drop(1).map { |y| (y - old.icon_height).round(6) }, three.edges.drop(1).map { |y| (y - three.icon_height).round(6) },
+                     "#{why}: below the icon, the bands are 3-2-1's"
+        assert_equal old.width, three.width, "#{why}: the name is as wide"
+        assert_equal old.letters.map { |l| [l[:x], l[:cap]] }, three.letters.map { |l| [l[:x], l[:cap]] }, "#{why}: the letters keep their setting"
+        assert_equal old.line, three.line
+        assert_equal format("0 0 %.2f %.2f", three.width, three.height), doc(stacked(brand).svg(form:, tone:, proportion: :rule_of_three)).root["viewBox"]
+      end
+    end
+  end
+
+  def test_three_two_one_is_the_default_and_draws_exactly_as_before
+    Navbar.brands.each do |brand|
+      stacked(brand).forms.product(Navbar::TEXTS, [false, true]) do |form, text, guides|
+        assert_equal stacked(brand).svg(form:, text:, guides:), stacked(brand).svg(form:, text:, guides:, proportion: :three_two_one), "#{brand} #{form} #{text} #{guides}"
+      end
+      box = stacked(brand).layout
+      assert_equal :three_two_one, box.proportion
+      assert_in_delta Stacked::SPAN * box.width, box.icon_height, 1e-9
+    end
+  end
+
+  def test_commercial_welding_v2s_hood_is_smaller_under_the_rule_of_three
+    %i[two_line tagline].product(Navbar::TONES) do |form, tone|
+      three = stacked("welding_v2").layout(form:, tone:, proportion: :rule_of_three)
+      old = stacked("welding_v2").layout(form:, tone:)
+      assert_operator three.icon_width, :<, 0.7 * old.icon_width, "#{form} #{tone}: the hood Alex found too big is visibly smaller"
+      assert_operator three.icon_height, :<, 0.7 * old.icon_height, "#{form} #{tone}"
+    end
+  end
+
+  def test_the_rule_of_threes_guides_draw_three_icons_across_the_name
+    Navbar.brands.each do |brand|
+      stacked(brand).forms.each do |form|
+        box = stacked(brand).layout(form:, proportion: :rule_of_three)
+        xml = doc(stacked(brand).svg(form:, guides: true, proportion: :rule_of_three))
+        thirds = xml.css("g.guide-third")
+        assert_equal 2, thirds.size, "#{brand} #{form}: a ghost icon either side of the real one"
+        assert_equal [box.icon_left - box.icon_width, box.icon_left + box.icon_width].map { |x| format("translate(%.2f,0)", x) }, thirds.map { |g| g["transform"] }
+        assert thirds.all? { |g| g.ancestors("g.guide-ghosts").any? }, "the ghosts are translucent"
+        assert_equal %w[1 2 3], xml.css("text[data-third]").map(&:text)
+        verticals = xml.css("g.guide-lines line").select { |l| l["x1"] == l["x2"] }.map { |l| l["x1"].to_f }
+        assert_equal (0..3).map { |i| (i * box.width / 3).round(2) }, verticals, "#{brand} #{form}: a line at each third, the name's edges included"
+        assert_empty xml.css("g.guide-proof"), "no turned line: the icon's height is not the small line's width"
+        ruler = xml.css("g.guide-lines text").reject { |t| t["data-third"] }.map(&:text)
+        assert_equal(form == :one_line ? %w[1 2 1 2 3] : %w[1 2 1 2 3 1 2 1], ruler, "#{brand} #{form}: the ruler counts each band")
+      end
+    end
+  end
+
+  def test_an_unknown_proportion_is_refused
+    assert_equal "unknown proportion :golden: expected one of three_two_one, rule_of_three", refusal { stacked("studio").svg(proportion: :golden) }
+    assert_equal 'unknown proportion "rule_of_three": expected one of three_two_one, rule_of_three', refusal { stacked("studio").layout(proportion: "rule_of_three") }
   end
 end

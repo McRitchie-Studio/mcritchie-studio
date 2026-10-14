@@ -26,7 +26,8 @@ class LogosNavbarLogoTest < Minitest::Test
   }.freeze
   # The same for the two brands added after the prototype (homogeneous text). Before the equal gaps: turf 4.24 and
   # 5.87, welding 5.98 and 8.52.
-  ADDED_RATIOS = { ["turf", 3] => 4.303, ["turf", 4] => 5.965, ["welding", 3] => 6.867, ["welding", 4] => 9.859 }.freeze
+  # Re-measured by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex 2026-10-14 12:16, "the icons need to have the margins cleaned up"): were turf 4.303 and 5.965, welding 6.867 and 9.859.
+  ADDED_RATIOS = { ["turf", 3] => 4.413, ["turf", 4] => 6.075, ["welding", 3] => 6.869, ["welding", 4] => 9.861 }.freeze
   # Commercial Welding v1 was 6.065 and 8.657 as COMMERCIAL WELDING, before it took LLC (task welding-llc-and-v2-helmet).
   # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
   # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
@@ -34,18 +35,24 @@ class LogosNavbarLogoTest < Minitest::Test
   # still passed; guide drawings are construction drawings and are free to change. Re-taken DELIBERATELY by task
   # navbar-spacing-and-rotated-guides, after Alex's item 4c made the icon gap and the word gap each half a cap height
   # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
-  ORIGINAL_BRANDS_DIGEST = "57f95414f8cab2fddd83b5aef42cccbb70e26fe04f70983a1ec15da5c32398f4"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 57f95414…. Studio's icon lost its 2-unit margin; Industries' kit icon
+  # was already its ink and did not move by a byte (INDUSTRIES_DIGEST, taken before and after).
+  ORIGINAL_BRANDS_DIGEST = "bc11bc1639faed52693625dc8269744ca55f410d398366384ab4c48efee9b7b0"
+  INDUSTRIES_DIGEST = "d9798cd297cc06e06b5910ae89fe1cb3628d92eb2efa9439e740c24da6296c6b"
   # The same digest over every Turf Monster and Commercial Welding example without guides.
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 84708d03…. Turf Monster did not move (logos_brand_pins_test.rb).
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 3251e085….
-  ADDED_BRANDS_DIGEST = "4d95d34120593eb66428e7386e63aa25233e336dc057dadf6bb71de386a1031c"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 4d95d341…. Turf Monster's head lost about 54 units of margin top and bottom.
+  ADDED_BRANDS_DIGEST = "8c05ea24de848cdfa02d714a1963e0b6e7d8fdda32fcc562db3f66e75749c65d"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was 69c5428f….
-  WATERMARK_DIGEST = "817c912e0b1ded68805948d7048f9a799baaa9e8c3c1eb403064f1af24916ef2"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 817c912e….
+  WATERMARK_DIGEST = "6d335ca995477a9b2c5b400ce87e9e9d9726a99255cc1494ce77e3a417782576"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); was c16934f5….
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2581fbeb….
-  RULE_6_DIGEST = "cb6f5e7551da6199baf0ca58e7217a68768d2c5ec1f228d772471f4072c0f88d"
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was cb6f5e75….
+  RULE_6_DIGEST = "8a5c41b607afb41f54653893709c7f4a1503d9d4fdccb321ae667670f133205b"
   # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
   # logos_brand_pins_test.rb, so it cannot move these.
   PINNED = %w[studio industries turf welding].freeze
@@ -209,7 +216,7 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_equal "scale(#{format('%.5f', H / 217)})", scale["transform"]
     assert_equal "translate(-190,-166)", scale.element_children.first["transform"]
     assert_equal %w[evenodd nonzero], scale.css("path").map { |p| p["fill-rule"] }
-    assert_nil doc(Logo.new("studio").svg).root.at_css("g g"), "studio's icon has no inner transform"
+    assert_equal "translate(-2,-1.81)", doc(Logo.new("studio").svg).root.at_css("g g")["transform"], "studio's only inner transform is its trim"
   end
 
   def test_every_example_without_guides_is_paths_only_in_the_logos_own_box
@@ -289,6 +296,7 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_studio_and_industries_logos_are_unchanged_to_the_byte
     assert_equal 24, unguided(%w[studio industries]).size
     assert_equal ORIGINAL_BRANDS_DIGEST, Digest::SHA256.hexdigest(unguided(%w[studio industries]).join)
+    assert_equal INDUSTRIES_DIGEST, Digest::SHA256.hexdigest(unguided(%w[industries]).join), "Industries' icon was already its ink"
   end
 
   def test_turf_and_welding_light_and_dark_logos_are_unchanged_to_the_byte
@@ -454,7 +462,8 @@ class LogosNavbarLogoTest < Minitest::Test
     tones = Logo.styles.fetch("studio").fetch("tones")
     dark = tones.fetch("dark").merge("icon_key" => "industries", "icon" => { "primary" => "#FFFFFF", "edge" => "#FFFFFF" })
     logo = Logo.new("x", styles: studio_style(tones: tones.merge("dark" => dark)))
-    assert_in_delta 666.0 * H / 541, logo.layout(tone: :light).icon_width, 1e-9
+    studio = Logo.icons.fetch("studio")
+    assert_in_delta studio.fetch("w") * H / studio.fetch("h"), logo.layout(tone: :light).icon_width, 1e-9
     assert_in_delta 215.0 * H / 217, logo.layout(tone: :dark).icon_width, 1e-9
     assert_equal "translate(-190,-166)", doc(logo.svg(tone: :dark)).root.at_css("g g")["transform"]
     assert_equal Logo.new("studio").svg(tone: :light), logo.svg(tone: :light)
@@ -472,7 +481,13 @@ class LogosNavbarLogoTest < Minitest::Test
     (layers + glyphs + traced).each { |item| assert_match Logo::PATH, item.fetch("d") }
     assert_empty layers.map { |l| l["fill_rule"] }.uniq - Logo::FILL_RULES
     assert_equal ["evenodd"], Logo.letterings.values.map { |l| l["fill_rule"] }
-    assert_equal ["translate(-190,-166)"] * 3, Logo.icons.values.filter_map { |icon| icon["transform"] }, "Industries: Alt and both Originals"
+    # Industries' kit paths carry their own translate; every trimmed trace carries its trim's (Logos::IconInk).
+    assert_equal({ "studio" => "translate(-2,-1.81)", "industries" => "translate(-190,-166)", "welding_original" => "translate(-0.02,-0.6)",
+                   "industries_original_light" => "translate(-190,-166)", "industries_original_dark" => "translate(-190,-166)",
+                   "turf_mono" => "translate(-5.1,-54.35)", "turf" => "translate(-5.1,-54.35)", "welding" => "translate(0.05,-1)",
+                   "welding_mono" => "translate(-0.4,-0.23)" },
+                 Logo.icons.filter_map { |key, icon| [key, icon["transform"]] if icon["transform"] }.to_h)
+    Logo.icons.each { |key, icon| assert Logos::IconInk.trimmed?(icon), "#{key}: its box is its ink" }
     Logo.brands.each { |brand| assert_kind_of Logo, Logo.new(brand) }
   end
 
@@ -498,10 +513,16 @@ class LogosNavbarLogoTest < Minitest::Test
     assert_match(/icon welding_mono layer "primary" has a path/, refusal { Logo.new("welding", icons: icons_with("welding_mono") { |icon| icon["layers"][0]["d"] = HOSTILE }) })
   end
 
+  # Any transform list is drawn as the icon data gives it, once the icon is trimmed to its ink (Logos::IconInk); an
+  # untrimmed one is refused at intake, never drawn with a margin.
   def test_a_plain_list_of_transform_calls_is_drawn
     ["translate(-190,-166)", "translate(1 2) scale(0.5)", "matrix(1,0,0,1,-3.5,4e1) rotate(45)", "scale(-.5,+2)"].each do |transform|
-      svg = Logo.new("studio", icons: icons_with { |icon| icon["transform"] = transform }).svg
-      assert_equal transform, doc(svg).root.at_css("g g")["transform"]
+      icons = icons_with { |icon| icon["transform"] = transform }
+      assert_match(/icon studio's box is not its ink \(margins left .*\): trim it with Logos::IconInk.trim/, refusal { Logo.new("studio", icons:) })
+      trimmed = Logos::IconInk.trim(icons.fetch("studio"))
+      svg = Logo.new("studio", icons: icons.merge("studio" => trimmed)).svg
+      assert_equal trimmed["transform"], doc(svg).root.at_css("g g")["transform"]
+      assert(trimmed["transform"].start_with?("translate(") && trimmed["transform"].include?(transform.sub(/\Atranslate\([^)]*\) ?/, "")), transform)
     end
   end
 
@@ -537,8 +558,10 @@ class LogosNavbarLogoTest < Minitest::Test
         paths = xml.css("path")
         assert_equal ["#FFFFFF"], paths.map { |p| p["fill"] }.uniq, "#{brand} rule #{rule} #{text}: every path takes the one fill"
         assert_equal paths.size, group.first.css("path").size, "#{brand}: every path is inside the group"
-        assert_equal doc(logo.svg(rule:, text:, tone: :light)).root["viewBox"], xml.root["viewBox"], "#{brand} rule #{rule} #{text}: the light logo's box"
-        assert_equal logo.layout(rule:, text:, tone: :light).to_h, logo.layout(rule:, text:, tone: :watermark).to_h
+        # The dark logo's box: both draw the brand's dark icon (Commercial Welding's single-colour helmet, whose ink is
+        # half a unit narrower than its colour helmet's since every icon's box is its ink).
+        assert_equal doc(logo.svg(rule:, text:, tone: :dark)).root["viewBox"], xml.root["viewBox"], "#{brand} rule #{rule} #{text}: the dark logo's box"
+        assert_equal logo.layout(rule:, text:, tone: :dark).to_h, logo.layout(rule:, text:, tone: :watermark).to_h
       end
     end
   end
