@@ -3,12 +3,14 @@
 ## Status: Active
 
 This is Xan's heartbeat launcher. It sets Xan's session attribution and routes
-to two independent act SOPs:
+to three independent act SOPs:
 
 - [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
   agent docs.
 - [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
   deploy with explicit ship authority.
+- [`ship-clock`](sops/ship-clock.md) - benchmark one task from Alex's first
+  message to production, split into hands-on, wait and rework.
 
 Grading is no longer a heartbeat act. Every task is graded once when it ships
 (`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`), and a

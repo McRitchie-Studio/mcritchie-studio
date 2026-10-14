@@ -59,8 +59,9 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-name'] code", text: "Avi Heartbeat"
 
     # All of Avi's acts render as copyable phrases with their captions.
-    assert_select "[data-test='action']", count: 2
+    assert_select "[data-test='action']", count: 3
     assert_select "[data-test='action'][data-action='qa-release'][data-clip='qa-release']"
+    assert_select "[data-test='action'][data-action='intent-scout'][data-clip='intent-scout']"
     assert_select "[data-test='action'][data-action='deploy-with-task'][data-clip='deploy-with-task']"
     assert_match "Prepare + deploy the QA release", response.body
     # deploy-with-task is interactive — its caption carries the "what task?" ask.
@@ -73,8 +74,9 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='xan']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Xan Heartbeat']"
-    assert_select "[data-test='action']", count: 3
+    assert_select "[data-test='action']", count: 4
     assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
+    assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
     assert_select "[data-test='action'][data-action='share-insights'][data-clip='share-insights']"
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
