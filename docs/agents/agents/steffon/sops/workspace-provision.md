@@ -326,7 +326,11 @@ The hub dogfoods it first, at **`/admin/google_calendar`** (admin only): Connect
 sends the admin to Google, the callback stores `GoogleCalendarConnection` (the
 refresh token encrypted, never shown), and the page lists the next week's
 events as proof the read works. Disconnect deletes the row and asks Google to
-revoke the grant.
+revoke the grant; a TLS or network failure on the revoke still deletes the row
+and says Google did not confirm. The same Connect and Disconnect sit on the
+`/integrations` Google Workspace card's "Sign in" row for an admin (a visitor
+sees neither), and come back to `/integrations`: `?return_to=` is honoured only
+for `/integrations` and `/admin/google_calendar`.
 
 What it asks Google for: `openid`, `email` and
 `https://www.googleapis.com/auth/calendar.events.readonly`. It cannot create,
@@ -336,7 +340,7 @@ untick the calendar on Google's screen; the page then says
 
 **Its own OAuth client, never the hub's sign-in client.** Alex creates it once in
 Google Cloud Console (APIs & Services → Credentials → Create OAuth client ID →
-Web application), with the redirect URI the standing page prints
+Web application), with the redirect URI the standing page prints while the client is unset
 (`https://mcritchie.studio/admin/google_calendar/callback` in production), and
 sets the consent screen's publishing status to **In production**: a Testing app's
 refresh tokens die after 7 days. Until Google verifies the app, the sign-in
