@@ -84,7 +84,7 @@
                  data-test="package-line-group" data-group="<%= group %>"><%= group %></p>
               <% lanes.each do |lane| %>
                 <% line = package.card_line(lane) %>
-                <div class="flex gap-2.5 pb-2.5" data-test="package-line" data-lane="<%= lane.key %>" data-status="<%= line.status %>">
+                <div class="flex gap-2 pb-2.5" data-test="package-line" data-lane="<%= lane.key %>" data-status="<%= line.status %>">
                   <% if line.included? %>
                     <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success/15 text-success-ink"
                           role="img" aria-label="Included" data-test="line-mark" data-mark="included">
@@ -102,7 +102,11 @@
                   <% end %>
                   <div class="min-w-0 text-sm">
                     <p class="font-semibold <%= line.missing? ? 'text-muted' : 'text-heading' %>" data-test="line-title">
-                      <%= line.title %>
+                      <% if line.href %>
+                        <%= link_to line.title, line.href, class: "underline underline-offset-2 hover:text-primary" %>
+                      <% else %>
+                        <%= line.title %>
+                      <% end %>
                       <% if line.missing? && line.in_tier %>
                         <span class="ml-1 whitespace-nowrap text-2xs font-medium text-muted" data-test="line-in-tier">(In <%= line.in_tier.name %>)</span>
                       <% end %>
@@ -119,7 +123,7 @@
           <% end %>
 
           <% brands = package.card_brands(previous) %>
-          <%# Always rendered, so every card fills its sixth row track. %>
+          <%# Always rendered, so every card fills its last row track (the logos). %>
           <div class="pt-5">
             <% if brands.any? %>
               <div data-test="package-powered-by" data-package="<%= package.key %>">

@@ -16,18 +16,21 @@ class WorkspacePackage
   CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
   # The feature row /stack holds each client's live DNS host to: the Cloudflare
   # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12). Its cells
-  # read "Protected Domain" since 2026-10-13; the row keeps this name, which
+  # read "Premium Domain" since 2026-10-13; the row keeps this name, which
   # StackClient matches on.
   CLOUDFLARE_DNS = "Fast, protected domain".freeze
   # A card's lanes are grouped under these headings, in this order.
-  CARD_GROUPS = %w[Application Platform Agents Marketing].freeze
+  CARD_GROUPS = %w[Application Marketing Agents].freeze
   # included: a check. missing: a muted cross, "In <first tier that has it>".
   # soon: not delivered yet (Coming soon).
   CARD_STATUSES = %w[included missing soon].freeze
 
-  # One swim lane every card lists (config `card_lanes`): its group, its key and
-  # its title, which may name the tier ("%{tier} Host").
-  Lane = Struct.new(:group, :key, :title, keyword_init: true)
+  # One swim lane every card lists (config `card_lanes`): its group, its key,
+  # its title, which may name the tier ("%{tier} Host"), optionally the
+  # /packages/stack row it stands for (`feature`), which a Coming soon lane must
+  # name so the card and the stack cannot drift, and optionally a page its title
+  # links to (`href`) on the cards that include it.
+  Lane = Struct.new(:group, :key, :title, :feature, :href, keyword_init: true)
 
   # One lane as one card draws it: the title for this tier, one muted line,
   # the status, and for a missing lane the tier that has it (`in_tier`).
@@ -36,6 +39,8 @@ class WorkspacePackage
     def missing? = status == "missing"
     def soon? = status == "soon"
     def key = lane.key
+    # Only a lane the tier has links out; a missing lane points at the next tier.
+    def href = (lane.href unless missing?)
     def group = lane.group
   end
   # The value a row carries for a tier that sells it per contract.
@@ -45,7 +50,7 @@ class WorkspacePackage
   GLYPHS = %w[app domain].freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
-                       :brand_from, keyword_init: true) do
+                       :brand_from, :href, keyword_init: true) do
     def live? = status == "live"
 
     def planned? = status == "planned"
@@ -208,7 +213,7 @@ class WorkspacePackage
 
   # Every lane, in group then config order: [[group, [Lane, ...]], ...].
   def self.card_lanes
-    lanes = config.fetch("card_lanes", []).map { |attrs| Lane.new(**attrs.slice("group", "key", "title").symbolize_keys) }
+    lanes = config.fetch("card_lanes", []).map { |attrs| Lane.new(**attrs.slice("group", "key", "title", "feature", "href").symbolize_keys) }
     CARD_GROUPS.filter_map do |group|
       in_group = lanes.select { |lane| lane.group == group }
       [ group, in_group ] if in_group.any?
@@ -229,8 +234,8 @@ class WorkspacePackage
 
   # The lane as this card draws it. A missing lane names the first card that
   # has it (included or Coming soon), computed from the ladder. A tier's
-  # `lanes` entry may rename the lane for its own card (Pro and Team draw the
-  # domain lane as "Protected Domain"); every other card keeps the lane's title.
+  # `lanes` entry may override the lane's title ("Premium Domain" on Pro and
+  # Team); the row stays the same lane, so it stays aligned across the cards.
   def card_line(lane)
     status = lane_status(lane.key)
     in_tier = status == "missing" ? self.class.cards.find { |card| card.lane_status(lane.key) != "missing" } : nil

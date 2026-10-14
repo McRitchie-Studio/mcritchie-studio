@@ -49,12 +49,15 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
     }
     return byKey;
   });
-  expect(Object.keys(laneTops).length).toBe(17);
+  expect(Object.keys(laneTops).length).toBe(16);
   for (const [key, offsets] of Object.entries(laneTops)) {
     expect(new Set(offsets).size, `${key} at ${offsets}`).toBe(1);
   }
   expect(laneTops["host_storage"].length).toBe(4);
   expect(laneTops["cmo"].length).toBe(2);
+  expect(laneTops["vault"].length).toBe(4);
+  expect(laneTops["social"].length).toBe(3);
+  expect(laneTops["group:Platform"]).toBeUndefined();
   // Every lane's subtext is one line at a 1280px desktop: short copy, never a
   // wrap or an ellipsis, so new copy cannot regress the swim lanes.
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -186,13 +189,14 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   expect(packagesOverflow).toBeLessThanOrEqual(0);
 });
 
-test("Pro and Team cards mark their lines, sell the Protected Domain, and the full stack draws the Cloudflare row on a phone", async ({ page }) => {
+test("Pro and Team cards mark their lines, sell the Premium Domain, and the full stack draws the Cloudflare row on a phone", async ({ page }) => {
   await page.goto("/packages");
 
   // A check for included, a muted cross naming the next tier, Coming soon for promises.
   const pro = page.locator("[data-test='package-card'][data-package='pro']");
   await expect(pro.locator("[data-mark='included']").first()).toHaveAttribute("aria-label", "Included");
-  await expect(pro.locator("[data-test='package-line'][data-status='missing']")).toHaveCount(2);
+  await expect(pro.locator("[data-test='package-line'][data-status='missing']")).toHaveCount(6);
+  await expect(pro.locator("[data-test='package-line'][data-lane='social'][data-status='soon'] [data-test='coming-soon']")).toHaveCount(1);
   await expect(pro.locator("[data-test='package-line'][data-lane='drafting'][data-status='missing']")).toContainText("(In Team)");
   const teaser = pro.locator("[data-test='package-line'][data-lane='cmo'][data-status='missing']");
   await expect(teaser).toContainText("Fractional CMO");
@@ -200,9 +204,14 @@ test("Pro and Team cards mark their lines, sell the Protected Domain, and the fu
   await expect(teaser.locator("[data-mark='missing']")).toHaveAttribute("aria-label", "In Team");
   const team = page.locator("[data-test='package-card'][data-package='team']");
   await expect(team.locator("[data-test='package-line'][data-status='soon'] [data-test='coming-soon']")).toHaveCount(2);
+  await expect(pro.locator("[data-test='package-line'][data-lane='domain']")).toContainText("Premium Domain");
+  await expect(pro.locator("[data-test='package-line'][data-lane='domain']")).toContainText("best-in-class speed & security");
+  await expect(pro.locator("[data-test='package-line'][data-lane='cto']")).toContainText("24-hour access & daily summaries");
+  await expect(pro.locator("[data-test='package-line'][data-lane='app']")).toContainText("CTO-Managed Web App");
+  await expect(pro.locator("[data-test='package-line'][data-lane='integrations'] a[href='/integrations']")).toHaveText("Integrations");
   await expect(page.locator("[data-test='package-spotlight']")).toHaveCount(0);
 
-  // Pro and Team sell the Protected Domain; Builder keeps its Custom Domain. At
+  // Pro and Team sell the Premium Domain; Builder keeps its Custom Domain. At
   // desktop and at 375px the line sits inside its card: nothing clipped, no
   // sideways page scroll.
   for (const width of [1440, 375]) {
@@ -210,8 +219,8 @@ test("Pro and Team cards mark their lines, sell the Protected Domain, and the fu
     for (const key of ["pro", "team"]) {
       const line = page.locator(`[data-test='package-card'][data-package='${key}'] [data-test='package-line'][data-lane='domain']`);
       await line.scrollIntoViewIfNeeded();
-      await expect(line.locator("[data-test='line-title']")).toHaveText("Protected Domain");
-      await expect(line.locator("[data-test='line-sub']")).toHaveText("your-app.com · fast, guarded");
+      await expect(line.locator("[data-test='line-title']")).toHaveText("Premium Domain");
+      await expect(line.locator("[data-test='line-sub']")).toHaveText("best-in-class speed & security");
       const fit = await line.evaluate((el) => {
         const card = el.closest("[data-test='package-card']").getBoundingClientRect();
         const box = el.getBoundingClientRect();
@@ -230,7 +239,7 @@ test("Pro and Team cards mark their lines, sell the Protected Domain, and the fu
   await expect(page.locator("[data-test='stack-row'][data-feature='fast-protected-domain']")).toBeVisible();
   const flow = page.locator("[data-test='dns-flow']");
   await flow.scrollIntoViewIfNeeded();
-  await expect(flow.getByRole("heading", { name: "Protected Domain, on Cloudflare" })).toBeVisible();
+  await expect(flow.getByRole("heading", { name: "Premium Domain, on Cloudflare" })).toBeVisible();
   await expect(flow.locator("[data-test='dns-flow-rollout']")).toContainText("Coming with the CDN rollout");
   await expect(flow.locator("[data-test='dns-flow-step']")).toHaveCount(4);
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

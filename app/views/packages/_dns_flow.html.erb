@@ -1,4 +1,4 @@
-<%# Protected Domain, the Cloudflare spotlight /packages/stack draws under the
+<%# Premium Domain, the Cloudflare spotlight /packages/stack draws under the
     matrix for the `Fast, protected domain` row (Mr. McRitchie, 2026-10-13): it
     sells outcomes in the client's terms, then shows the worked example (a
     visitor's www. address and old links redirected at Cloudflare's edge to the
@@ -33,7 +33,7 @@
     <%= render "packages/brand", key: feature.brand, size: :lead if feature.brand? %>
     <div class="min-w-0">
       <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="dns-flow-tiers"><%= WorkspacePackage.all.select { |package| feature.included_in?(package.key) }.map(&:name).to_sentence %></p>
-      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading">Protected Domain, on Cloudflare</h2>
+      <h2 id="dns-flow-title" class="text-xl font-semibold text-heading">Premium Domain, on Cloudflare</h2>
       <p class="mt-1 max-w-3xl text-sm text-body" data-test="dns-flow-pitch">
         <%= tiers %> sites run on Cloudflare. Your domain moves onto the network that protects a large share of
         the internet: faster to load, built to stay up under attack, and managed entirely by our team. One clean
