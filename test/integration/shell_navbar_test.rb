@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/navbar_brand"
 
 # The page shell is studio-engine's: the header is the engine's navbar
 # (layouts/_navbar) with its nav-collapse Stimulus controller, and the account
@@ -35,8 +36,14 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "header.nav-shell[data-pin='nav'][data-studio-controller='nav-collapse']", 1 do
-      assert_select "a.nav-logo-link[href=?] img.nav-logo[src='/logo-icon.svg']", root_path, 1
-      assert_select ".nav-title", text: "McRitchieStudio", count: 1
+      # The saved kit (public/brand): its icon beside the words, or its lockup
+      # once the engine draws Studio.navbar_wordmark (test/support/navbar_brand.rb).
+      if NavbarBrand.wordmark?
+        assert_select "a.nav-logo-link[href=?] img.nav-wordmark-dark[src='/brand/navbar-dark.svg']", root_path, 1
+      else
+        assert_select "a.nav-logo-link[href=?] img.nav-logo[src='/brand/icon-light.svg']", root_path, 1
+      end
+      NavbarBrand.assert_drawn(self)
       assert_select "a.btn-primary[href=?]", login_path, text: Studio.sign_in_label, count: 1
       assert_select "button[data-link-sidebar-trigger][aria-controls=?][aria-label='Toggle links menu']", SIDEBAR, minimum: 1
       assert_select "button[title='Toggle theme']", minimum: 1

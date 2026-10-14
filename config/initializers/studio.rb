@@ -57,12 +57,34 @@ Studio.configure do |config|
   config.mailer_from = Studio.mailer_from_for_transport
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
-  config.sso_logo = "/studio-logo.svg"
+  # ---- Brand: the saved Studio kit (task studio-adopts-its-kit) ----
+  # Every logo below is a file `bin/rails logos:install BRAND=studio` wrote into
+  # public/brand/ from the kit saved at /logos/studio; favicon.png and icon.png
+  # are rasterized from public/brand/icon-dark.svg by script/brand_png.cjs. Never
+  # hand-edit a copy: change the kit, reinstall, and commit the files.
+  #
+  # The icon files come in two tones: icon-light (ink, for a light page) and
+  # icon-dark (violet, for a dark one). The engine draws one <img> per logo, so
+  # each is given the light-page file and application.css swaps in the dark
+  # one under .dark ("KIT ICON BY THEME").
+  #
+  # The SSO logo is the icon in violet, not a lockup: another app's sign-in card
+  # draws it in a 20px square (studio-engine sessions/_sso_continue), where a
+  # navbar or stacked lockup shrinks to an unreadable smear, and it has no theme
+  # swap there, so it takes the one tone that reads on a light card and a dark.
+  config.sso_logo = "/brand/icon-dark.svg"
   config.theme_logos = [
-    { file: "favicon.png",      title: "Favicon" },
-    { file: "logo-icon.svg",    title: "Navbar Logo" },
-    { file: "studio-logo.svg",  title: "SSO Logo" },
+    { file: "favicon.png",           title: "Favicon" },
+    { file: "brand/icon-light.svg",  title: "Navbar Logo" },
+    { file: "brand/icon-dark.svg",   title: "SSO Logo" },
   ]
+  # The navbar's lockup (studio-engine's navbar-kit-wordmark-option): with it the
+  # navbar draws the kit's Navbar Logo in place of the icon and the app name.
+  # `light` is the artwork for a light page. Guarded so it switches on when the
+  # release relocks an engine that has the setting, and is inert before.
+  if Studio.respond_to?(:navbar_wordmark=)
+    config.navbar_wordmark = { light: "/brand/navbar-light.svg", dark: "/brand/navbar-dark.svg" }
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.
@@ -75,8 +97,8 @@ Studio.configure do |config|
     {
       name: "McRitchie Studio",
       wordmark: %w[McRitchie Studio],
-      logo: "logo-icon.svg",
-      logo_invert: true,
+      # The kit icon for a light page; application.css swaps in the dark one.
+      logo: "/brand/icon-light.svg",
       home_path: view.root_path,
       tagline: "Software & Marketing Solutions",
       address: {

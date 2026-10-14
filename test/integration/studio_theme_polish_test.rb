@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/navbar_brand"
 
 # Component-tier guards for ui-only Studio theme polish. These request renders
 # exercise the ERB components through the normal layout without adding browser
@@ -33,11 +34,17 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
     css = Rails.root.join("app/assets/tailwind/application.css").read
     assert_match(/\.nav-shell\[data-pin="nav"\]\s*\{[^}]*@apply bg-page\/95 supports-\[backdrop-filter\]:backdrop-blur/m, css,
                  "the pinned header is the page colour at 95%, blurred where supported")
-    # THE INVERT PAIR is the theme concern here: the mark is drawn in white, so
-    # it inverts for the light theme and un-inverts in dark mode.
-    assert_match(/^\s*\.nav-shell \.nav-logo\s*\{[^}]*filter:\s*invert\(1\)/m, css, "the mark inverts for the light theme")
-    assert_match(/^\s*\.dark \.nav-shell \.nav-logo\s*\{[^}]*filter:\s*none/m, css, "and un-inverts in dark mode")
-    assert_select "header.nav-shell img.nav-logo", 1
+    # THE KIT PAIR is the theme concern here: the mark is the saved kit's icon,
+    # icon-light.svg on a light page and icon-dark.svg swapped in on a dark one
+    # (no invert: the kit draws each tone in its own colours).
+    assert_match(%r{^\s*\.dark img\[src="/brand/icon-light\.svg"\]\s*\{\s*content:\s*url\("/brand/icon-dark\.svg"\);\s*\}}m, css,
+                 "a dark page swaps in the kit's dark-page icon")
+    assert_no_match(/\.nav-logo\s*\{[^}]*filter:\s*invert/m, css, "the kit icon is never inverted")
+    if NavbarBrand.wordmark?
+      assert_select "header.nav-shell img.nav-wordmark", 2
+    else
+      assert_select "header.nav-shell img.nav-logo[src='/brand/icon-light.svg']", 1
+    end
     assert_includes response.body, "hover:bg-surface-alt"
     assert_includes response.body, "focus-visible:ring-primary/40"
     assert_includes response.body, "inline-flex h-9 w-9 items-center justify-center"
