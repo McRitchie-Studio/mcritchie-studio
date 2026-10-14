@@ -105,6 +105,7 @@ With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 | Symptom | Check | Fix |
 |---------|-------|-----|
 | **Service down**: silent alert, Mac awake | `bin/dispatcher status`; the log's last lines | `bin/dispatcher install` restarts it. A crash loop shows in the log; launchd retries every 30 seconds |
+| **Board auth**: silent alert, the log repeats `claim failed: … HTTP 401` or `no answer from https://mcritchie.studio (unreachable, or no agent token)` | The dispatcher authenticates as the rest of the agent CLI does (`bin/lib/agent_api.rb`): the shared token cache, minted from `AGENT_API_SECRET` (env, then the hub's `.env`, then 1Password) | Make the secret reachable without a prompt (the hub checkout's `.env`), then `bin/dispatcher install`. A single 401 heals itself: the client drops the cached token and mints a new one |
 | **Mac asleep**: silent alert, nothing in the log since | The log's last timestamp | Wake the Mac or ask Alex to; the dispatcher resumes by itself and the recovery line posts |
 | **Signed out**: messages waiting, the row reads `paused … (claude_signed_out)` | `claude auth status` must show `authMethod` `claude.ai` | Ask Alex to run `claude auth login` (his login). The pause lifts within 30 minutes; `bin/dispatcher install` restarts it at once |
 | **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. If waiting until T is wrong, tell Alex; only he can raise the plan |
