@@ -126,6 +126,106 @@ class Admin::GoogleCalendarControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[integration] connect from the integrations card comes back to /integrations after the callback" do
+    with_connect_env do
+      get admin_google_calendar_connect_path(return_to: "/integrations")
+      state = Rack::Utils.parse_query(URI(response.location).query)["state"]
+      google_answers
+      get admin_google_calendar_callback_path(code: "c0de", state:)
+
+      assert_redirected_to "/integrations"
+      assert_equal "Google Calendar connected for alex@mcritchie.studio.", flash[:notice]
+      follow_redirect!
+      assert_select "[data-test='calendar-account']", /alex@mcritchie\.studio/
+    end
+  end
+
+  test "[integration] a refused sign-in from the card also comes back to /integrations" do
+    with_connect_env do
+      get admin_google_calendar_connect_path(return_to: "/integrations")
+      state = Rack::Utils.parse_query(URI(response.location).query)["state"]
+      get admin_google_calendar_callback_path(error: "access_denied", state:)
+
+      assert_redirected_to "/integrations"
+      assert_match(/declined/, flash[:alert])
+    end
+  end
+
+  test "[integration] disconnect from the card comes back to /integrations" do
+    with_connect_env do
+      GoogleCalendarConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex")
+      google_answers(200, {})
+      delete admin_google_calendar_disconnect_path(return_to: "/integrations")
+
+      assert_redirected_to "/integrations"
+      assert_response :see_other
+      assert_equal 0, GoogleCalendarConnection.count
+    end
+  end
+
+  test "[integration] a return_to off the allow-list is ignored: never an open redirect" do
+    with_connect_env do
+      [ "https://evil.example/integrations", "//evil.example", "/integrations/../admin", "/integrations?x=1", "/admin/google_calendar/connect" ].each do |target|
+        get admin_google_calendar_connect_path(return_to: target)
+        state = Rack::Utils.parse_query(URI(response.location).query)["state"]
+        google_answers
+        get admin_google_calendar_callback_path(code: "c0de", state:)
+        assert_redirected_to admin_google_calendar_path, target
+
+        delete admin_google_calendar_disconnect_path(return_to: target)
+        assert_redirected_to admin_google_calendar_path, target
+      end
+    end
+  end
+
+  test "[integration] disconnect survives a TLS error from Google's revoke endpoint" do
+    with_connect_env do
+      GoogleCalendarConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex")
+      GoogleCalendar::OAuthClient.http = ->(_method, _url, _form) { raise OpenSSL::SSL::SSLError, "certificate verify failed" }
+      delete admin_google_calendar_disconnect_path(return_to: "/integrations")
+
+      assert_redirected_to "/integrations"
+      assert_equal 0, GoogleCalendarConnection.count
+      assert_match(/Google did not confirm the revoke/, flash[:notice])
+    end
+  end
+
+  test "[integration] a missing state in the session is refused even when the param is blank-equal" do
+    with_connect_env do
+      google_answers
+      get admin_google_calendar_callback_path(code: "c0de", state: "")
+      assert_response :bad_request
+      assert_empty google_requests
+    end
+  end
+
+  test "[integration] the standing page shows one button and hides the setup while nothing is missing" do
+    with_connect_env do
+      get admin_google_calendar_path
+      assert_select "[data-test='google-calendar-connect']", 1
+      assert_select "[data-test='google-calendar-disconnect']", 0
+      assert_select "[data-test='google-calendar-server']", 0
+      assert_select "[data-test='google-calendar-connect-card']", 0
+
+      GoogleCalendarConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex")
+      GoogleCalendar::Reader.http = ->(_url, _token) { [ 200, { items: [] }.to_json ] }
+      google_answers(200, { access_token: "ya29.page" })
+      get admin_google_calendar_path
+      assert_select "[data-test='google-calendar-connect']", 0
+      assert_select "form[data-test='google-calendar-disconnect']", 1
+      assert_select "[data-test='google-calendar-events'][data-count='0']"
+    end
+  end
+
+  test "[integration] the standing page names the missing OAuth client and offers no Connect" do
+    with_connect_env(creds: false) do
+      get admin_google_calendar_path
+      assert_select "[data-test='google-calendar-server'] [data-field='client'][data-set='false']", /GOOGLE_CONNECT_CLIENT_ID/
+      assert_select "[data-test='google-calendar-server'] [data-field='encryption']", 0, "encryption is ready, so it is not shown"
+      assert_select "[data-test='google-calendar-connect']", 0
+    end
+  end
+
   test "[integration] the auth code is filtered from the callback's logged parameters" do
     filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
     logged = filter.filter("controller" => "admin/google_calendar", "action" => "callback", "code" => "synthetic-code", "state" => "s1")

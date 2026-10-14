@@ -9,8 +9,13 @@ module Admin
   #
   # /connect sends the admin to Google; /callback exchanges the code, stores
   # the connection (GoogleCalendarConnection, the refresh token encrypted) and
-  # comes back to the standing page. No token, and no part of one, is
+  # comes back to where Connect was pressed. No token, and no part of one, is
   # rendered, flashed or logged here.
+  #
+  # WHERE IT COMES BACK. Connect and Disconnect sit on this page and on the
+  # /integrations Google Workspace card. Each takes ?return_to=, honoured only
+  # when it is exactly one of RETURN_PATHS (never an open redirect); Connect
+  # keeps it in the session beside the OAuth state, for the callback.
   class GoogleCalendarController < ApplicationController
     before_action :require_admin
     # The callback's URL carries a single-use code: no cache keeps the page.
@@ -21,7 +26,9 @@ module Admin
     ENCRYPTION_NOT_SET = "This server cannot store a connection: its encryption keys are not set " \
                          "(#{GoogleCalendarConnection::ENCRYPTION_ENV.join(', ')}). Nothing was asked of Google.".freeze
     NO_CALENDAR = "Google connected the account but not its calendar: the calendar permission was unticked. " \
-                  "Connect again and leave it ticked.".freeze
+                  "Disconnect, then connect again and leave it ticked.".freeze
+    # The only places Connect and Disconnect come back to. Exact paths, no prefix match.
+    RETURN_PATHS = %w[/integrations /admin/google_calendar].freeze
 
     def show
       @connection = GoogleCalendarConnection.current
@@ -33,35 +40,38 @@ module Admin
     end
 
     def connect
-      return redirect_to(admin_google_calendar_path, alert: ENCRYPTION_NOT_SET) unless GoogleCalendarConnection.encryption_ready?
+      back = safe_return_to(params[:return_to])
+      return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleCalendarConnection.encryption_ready?
 
+      session[:google_calendar_return_to] = back
       redirect_to GoogleCalendar::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state), allow_other_host: true
     rescue GoogleCalendar::OAuthClient::NotConfigured
-      redirect_to admin_google_calendar_path, alert: KEYS_NOT_SET
+      redirect_to back, alert: KEYS_NOT_SET
     end
 
     def callback
-      expected = session.delete(:google_calendar_oauth_state)
-      return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) if params[:state].blank? || params[:state] != expected
-      return redirect_to(admin_google_calendar_path, alert: refusal(params[:error].to_s)) if params[:error].present?
-      return redirect_to(admin_google_calendar_path, alert: ENCRYPTION_NOT_SET) unless GoogleCalendarConnection.encryption_ready?
+      expected = session.delete(:google_calendar_oauth_state).to_s
+      back = safe_return_to(session.delete(:google_calendar_return_to))
+      return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) unless state_matches?(expected)
+      return redirect_to(back, alert: refusal(params[:error].to_s)) if params[:error].present?
+      return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleCalendarConnection.encryption_ready?
 
       grant = GoogleCalendar::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
       email = GoogleCalendar::OAuthClient.email_from(grant)
-      return redirect_to(admin_google_calendar_path, alert: "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
+      return redirect_to(back, alert: "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
 
       connection = GoogleCalendarConnection.store!(grant, email:, by: current_user.slug)
       if connection.can_read_calendar?
-        redirect_to admin_google_calendar_path, notice: "Google Calendar connected for #{connection.email}."
+        redirect_to back, notice: "Google Calendar connected for #{connection.email}."
       else
-        redirect_to admin_google_calendar_path, alert: NO_CALENDAR
+        redirect_to back, alert: NO_CALENDAR
       end
     rescue ActiveRecord::RecordInvalid => e
-      redirect_to admin_google_calendar_path, alert: "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
+      redirect_to back, alert: "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
     rescue GoogleCalendar::OAuthClient::NotConfigured
-      redirect_to admin_google_calendar_path, alert: KEYS_NOT_SET
+      redirect_to back, alert: KEYS_NOT_SET
     rescue GoogleCalendar::OAuthClient::Error => e
-      redirect_to admin_google_calendar_path, alert: "Google refused to exchange the sign-in code (#{e.message}). Start again: a code works once."
+      redirect_to back, alert: "Google refused to exchange the sign-in code (#{e.message}). Start again: a code works once."
     end
 
     # Deletes every stored connection and asks Google to drop each grant.
@@ -74,7 +84,7 @@ module Admin
                elsif revoked == deleted then "Google Calendar disconnected: deleted here and revoked at Google."
                else "Google Calendar disconnected here. Google did not confirm the revoke; remove access at myaccount.google.com to be sure."
                end
-      redirect_to admin_google_calendar_path, notice:, status: :see_other
+      redirect_to safe_return_to(params[:return_to]), notice:, status: :see_other
     end
 
     private
@@ -82,7 +92,7 @@ module Admin
     def load_events
       @events = GoogleCalendar::Reader.new(@connection).events
     rescue GoogleCalendar::OAuthClient::Revoked
-      @read_error = "Google no longer accepts this connection: it was revoked or went unused. Connect again."
+      @read_error = "Google no longer accepts this connection: it was revoked or went unused. Disconnect, then connect again."
     rescue GoogleCalendar::OAuthClient::Error => e
       @read_error = e.message
     end
@@ -91,6 +101,16 @@ module Admin
       return "The sign-in was declined on Google. Nothing was connected." if code == "access_denied"
 
       "Google refused the sign-in (#{code[0, 100]}). Check the OAuth client's redirect URI, then start again."
+    end
+
+    # A return path only when it is exactly an allowed one; otherwise this page.
+    def safe_return_to(value)
+      RETURN_PATHS.include?(value) ? value : admin_google_calendar_path
+    end
+
+    def state_matches?(expected)
+      params[:state].present? && expected.present? &&
+        ActiveSupport::SecurityUtils.secure_compare(params[:state].to_s, expected)
     end
 
     def new_state

@@ -101,9 +101,9 @@ groups:
         abilities:
           - { key: draft_email, name: Draft email replies for you to send, via: [admin_grant] }
           - { key: knowledge_base, name: A knowledge base from the Drive folders you choose, via: [admin_grant] }
-          # Live on our own hub (/admin/google_calendar, 2026-10-13); not yet a
-          # client's self-serve button, so Coming soon here.
-          - { key: read_calendar, name: Read your calendar to prepare for meetings, via: [sign_in], status: soon }
+          # Live: connected on our own hub since 2026-10-13 (/admin/google_calendar,
+          # and the Connect button an admin sees on this card).
+          - { key: read_calendar, name: Read your calendar to prepare for meetings, via: [sign_in] }
       - key: discord
         name: Discord
         icon: discord

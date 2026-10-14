@@ -109,9 +109,9 @@ class IntegrationTest < ActiveSupport::TestCase
     abilities = google.abilities.to_h { |a| [ a.key, a ] }
     assert_equal %w[admin_grant], abilities["draft_email"].via
     assert_equal %w[sign_in], abilities["read_calendar"].via
-    assert abilities["read_calendar"].soon?, "not a client's self-serve button yet"
+    refute abilities["read_calendar"].soon?, "live: the hub reads its own calendar"
     refute google.method_soon?("admin_grant")
-    assert google.method_soon?("sign_in"), "every ability sign_in unlocks is still Coming soon"
+    refute google.method_soon?("sign_in"), "reading the calendar is live, so Sign in is"
   end
 
   test "[unit] every ability in the config names only ways its entry connects" do
