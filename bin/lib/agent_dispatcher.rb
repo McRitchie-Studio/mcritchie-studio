@@ -31,7 +31,8 @@ module AgentMailbox
   #
   #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause
   #               until the reset; a failed run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
-  #               renew leases older than RENEW_EVERY
+  #               renew leases older than RENEW_EVERY, never past RUN_DEADLINE
+  #               abandon a run past RUN_DEADLINE (release it, free the slot)
   #               ping the board every PING_EVERY
   #               claim (long-poll) when not stopping, not paused and under the cap
   class Dispatcher
@@ -50,6 +51,11 @@ module AgentMailbox
     # After a failed Claude run, claiming pauses this long, so a broken Claude
     # does not spend every waiting message's attempts in a minute.
     FAILURE_PAUSE = 5 * 60
+    # The longest a run can legitimately take: its action and its Claude call,
+    # each with TERM then KILL on timeout, plus a margin. Past it the lease is no
+    # longer renewed and the run is abandoned (its message given back, its slot
+    # freed), so a wedged run cannot hold a message forever.
+    RUN_DEADLINE = Responder::ACTION_TIMEOUT + Responder::CLAUDE_TIMEOUT + (2 * KILL_GRACE) + 60
 
     Run = Struct.new(:message, :thread, :started_at, :renewed_at, keyword_init: true)
 
@@ -186,6 +192,16 @@ module AgentMailbox
     def reap
       done, @runs = @runs.partition { |run| !run.thread.alive? }
       done.each { |run| finish(run) }
+      abandon_overdue(@clock.call)
+    end
+
+    # A run past RUN_DEADLINE is wedged (its timeouts should have ended it). Give
+    # its message back and free the slot; the thread's late result is ignored.
+    def abandon_overdue(now)
+      overdue, @runs = @runs.partition { |run| now - run.started_at > RUN_DEADLINE }
+      overdue.each do |run|
+        give_back(run.message["id"], "the run passed its #{RUN_DEADLINE}s deadline and was abandoned")
+      end
     end
 
     def finish(run)
@@ -227,6 +243,7 @@ module AgentMailbox
     def renew_due(now)
       @runs.each do |run|
         next if now - run.renewed_at < RENEW_EVERY
+        next if now - run.started_at > RUN_DEADLINE # never renew a run past its deadline
 
         @client.renew(run.message["id"], worker: @worker)
         run.renewed_at = now
@@ -306,6 +323,12 @@ module AgentMailbox
     end
 
     def install
+      if @repo_root.include?("/.worktrees/")
+        @out.puts "refused: #{@repo_root} is a task desk under .worktrees/. Install from the hub's primary " \
+                  "checkout (/Users/alex/projects/mcritchie-studio), which the release moves; nothing was installed."
+        return 2
+      end
+
       FileUtils.mkdir_p(File.dirname(plist_path))
       FileUtils.mkdir_p(File.dirname(log_path))
       File.write(plist_path, render)

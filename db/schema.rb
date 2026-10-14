@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -255,6 +255,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_170000) do
     t.string "status", default: "received", null: false
     t.string "thread_key", null: false
     t.datetime "updated_at", null: false
+    t.integer "usage_refunds", default: 0, null: false
     t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"

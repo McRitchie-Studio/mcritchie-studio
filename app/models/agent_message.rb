@@ -41,6 +41,11 @@ class AgentMessage < ApplicationRecord
   # (AgentMailbox::UsageLimit) reads Claude's usage-limit answer. The account
   # being out of quota says nothing about the message, so it must not burn it.
   REFUND_CODES = %w[usage_limit].freeze
+  # Refunds a message may take before a refund-code release spends the attempt
+  # like any other. The cap is the board's, not the worker's: a worker that
+  # misreads Claude (or a reply crafted to look like a limit) cannot keep a
+  # message alive forever.
+  MAX_REFUNDS = 3
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -179,7 +184,8 @@ class AgentMessage < ApplicationRecord
   # The attempt it used still counts toward MAX_ATTEMPTS: a give-back on the last
   # attempt dead-letters, since `received` rows are claimable at any attempt count.
   # A `code` in REFUND_CODES (usage_limit) is the exception: the attempt is handed
-  # back and the message never dead-letters on that release.
+  # back and the message does not dead-letter on that release, up to MAX_REFUNDS
+  # refunds per message. Past the cap the release spends the attempt as usual.
   def release!(worker:, reason: nil, code: nil, actor: nil, now: Time.current)
     worker = worker.to_s.strip
     code = code.to_s.strip.presence
@@ -193,12 +199,15 @@ class AgentMessage < ApplicationRecord
         raise Refused.new(holder_refusal("release"), code: "NOT_HOLDER")
       end
 
-      refund = code.present?
+      capped = code.present? && usage_refunds >= MAX_REFUNDS
+      refund = code.present? && !capped
       exhausted = !refund && attempts >= MAX_ATTEMPTS
       update!(status: exhausted ? "dead" : "received", claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
-              attempts: refund ? [ attempts - 1, 0 ].max : attempts)
+              attempts: refund ? [ attempts - 1, 0 ].max : attempts,
+              usage_refunds: refund ? usage_refunds + 1 : usage_refunds)
       detail = { "worker" => worker, "reason" => reason.presence, "code" => code,
-                 "attempt_refunded" => (refund || nil) }.compact
+                 "attempt_refunded" => (refund || nil),
+                 "refund_cap_reached" => (capped || nil) }.compact
       record!("released", actor: actor || soul_slug, detail: detail)
       if exhausted
         record!("dead_lettered", actor: "system",
@@ -260,7 +269,7 @@ class AgentMessage < ApplicationRecord
   def as_api_json(events: false)
     data = slice(:id, :channel, :external_id, :guild_id, :channel_ref, :thread_key, :author_ref, :author_name,
                  :content, :mentions, :soul_slug, :routed_by, :status, :claimed_by, :claimed_at,
-                 :lease_expires_at, :attempts, :response_text, :action_summary, :reply_external_id, :reply_status,
+                 :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
                  :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at).as_json
     data["url"] = discord_url
     data["reply_url"] = reply_url

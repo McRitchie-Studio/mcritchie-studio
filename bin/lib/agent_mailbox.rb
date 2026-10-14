@@ -90,13 +90,26 @@ module AgentMailbox
     end
   end
 
-  # The environment every child command runs under. ANTHROPIC_API_KEY is
-  # REMOVED so headless Claude bills Alex's claude.ai subscription (its login),
-  # never an API key that happens to be exported in the launching shell.
-  CHILD_ENV = { "ANTHROPIC_API_KEY" => nil }.freeze
+  # The environment every child command runs under: an ALLOW-LIST, applied with
+  # unsetenv_others, so nothing outside it reaches a child. Headless Claude then
+  # bills Alex's claude.ai login (keychain, under HOME and USER) and never an
+  # exported API key, auth token, base URL or Bedrock/Vertex switch, including
+  # names Anthropic adds later, which a deny-list would miss. The agent-board
+  # names are the read-only actions' own (bin/task, bin/release); none of them
+  # routes Claude.
+  CHILD_ENV_ALLOW = %w[
+    PATH HOME USER LOGNAME SHELL TMPDIR LANG LC_ALL LC_CTYPE TERM TZ __CF_USER_TEXT_ENCODING
+    GEM_HOME GEM_PATH
+    ATOMIC_CAPTURE_URL AGENT_API_SECRET AGENT_LEGACY_TOKEN PROJECTS_DIR CLAUDE_PROJECTS_DIR TASK_API_BASE
+  ].freeze
 
-  # The child processes running right now (pids), so bin/dispatcher can stop
-  # them on shutdown. Thread-safe: dispatcher runs answer on threads.
+  def self.child_env(env = ENV)
+    CHILD_ENV_ALLOW.each_with_object({}) { |name, kept| kept[name] = env[name] if env.key?(name) }
+  end
+
+  # The child processes running right now (pids, each its own process group),
+  # so bin/dispatcher can stop them on shutdown. Thread-safe: dispatcher runs
+  # answer on threads.
   module Children
     @pids = []
     @lock = Mutex.new
@@ -105,28 +118,49 @@ module AgentMailbox
     def self.remove(pid) = @lock.synchronize { @pids.delete(pid) }
     def self.pids = @lock.synchronize { @pids.dup }
 
+    # Signals each child's whole group, so a grandchild holding the output pipe
+    # dies with it.
     def self.terminate_all(signal = "TERM")
-      pids.each { |pid| Process.kill(signal, pid) rescue nil }
+      pids.each { |pid| AgentMailbox.signal_group(pid, signal) }
     end
   end
 
+  # A child that outlives its timeout gets TERM, then KILL after this many
+  # seconds: a run that ignores TERM cannot hold its slot.
+  KILL_GRACE = 10
+  # How long the output readers may take to drain once the child is gone.
+  DRAIN_WAIT = 5
+
+  def self.signal_group(pid, signal)
+    Process.kill(signal, -pid)
+  rescue Errno::ESRCH, Errno::EPERM
+    Process.kill(signal, pid) rescue nil
+  end
+
   # [output, exit status or nil on timeout, stderr]. stderr is folded into the
-  # output for an action (an operator reads it) but kept apart for Claude (it is
-  # not the answer, though it is where a usage-limit notice may land).
-  def self.run_command(argv, stdin:, timeout:, chdir:)
-    Open3.popen3(CHILD_ENV, *argv, chdir: chdir) do |i, o, e, wait|
+  # output for an action (an operator reads it) but kept apart for Claude.
+  # The child runs in its own process group under child_env. On timeout the
+  # group gets TERM, then KILL after kill_grace.
+  def self.run_command(argv, stdin:, timeout:, chdir:, kill_grace: KILL_GRACE)
+    Open3.popen3(child_env, *argv, chdir: chdir, unsetenv_others: true, pgroup: true) do |i, o, e, wait|
       Children.add(wait.pid)
       begin
-        i.write(stdin) if stdin
+        begin
+          i.write(stdin) if stdin
+        rescue Errno::EPIPE
+          nil
+        end
         i.close
         reader = Thread.new { o.read }
         err = Thread.new { e.read }
         unless wait.join(timeout)
-          Process.kill("TERM", wait.pid) rescue nil
-          return [ reader.value.to_s, nil, err.value.to_s ]
+          signal_group(wait.pid, "TERM")
+          signal_group(wait.pid, "KILL") unless wait.join(kill_grace)
+          wait.join
+          return [ drained(reader), nil, drained(err) ]
         end
-        output = reader.value.to_s
-        error = err.value.to_s
+        output = drained(reader)
+        error = drained(err)
         output += error if stdin.nil?
         [ output, wait.value.exitstatus, error ]
       ensure
@@ -137,15 +171,67 @@ module AgentMailbox
     [ "could not run #{argv.first}: #{e.message}", 127, "" ]
   end
 
-  # Claude's "you are out of usage" answer, read deterministically from a
-  # headless run's output (stdout and stderr) and exit status. A hit hands the
-  # message back WITHOUT spending an attempt (release code usage_limit) and
-  # pauses bin/dispatcher until the reset the notice names, else for BACKOFF.
+  def self.drained(thread) = (thread.join(DRAIN_WAIT)&.value).to_s
+
+  # What one headless `claude -p --output-format json` run said, read ONLY from
+  # what the model cannot author: the exit status, stderr, and the JSON
+  # envelope's own fields (`type`, `subtype`, `is_error`, `api_error_status`).
+  #
+  #   reply       the envelope's `result` when the run succeeded (exit 0, not
+  #               is_error), else nil. The answer text is never scanned for anything.
+  #   error_text  on a failed run only: the envelope's result/error when is_error,
+  #               and stderr. This is CLI-authored text, the only text the
+  #               usage-limit and signed-out matchers ever read.
+  #   api_status  the envelope's api_error_status (429 on a rate or usage limit).
+  #
+  # Stdout that is not an envelope (a stub, or a CLI crash before it could write
+  # one) is a reply on exit 0 and error text otherwise: in json mode the model's
+  # words only ever arrive inside the envelope.
+  module ClaudeRun
+    Parsed = Struct.new(:reply, :error_text, :api_status, keyword_init: true)
+
+    def self.parse(stdout, status, stderr)
+      env = envelope(stdout)
+      ok = status&.zero? ? true : false
+      if env
+        failed = !ok || env["is_error"] == true || env["subtype"].to_s.start_with?("error")
+        reply = failed ? nil : env["result"].to_s.strip
+        error = failed ? [ (env["result"] if env["is_error"] == true), env["error"], stderr ] : nil
+        return Parsed.new(reply: reply.to_s.empty? ? nil : reply, error_text: join(error),
+                          api_status: env["api_error_status"])
+      end
+
+      text = stdout.to_s.strip
+      return Parsed.new(reply: text.empty? ? nil : text, error_text: nil, api_status: nil) if ok
+
+      Parsed.new(reply: nil, error_text: join([ stdout, stderr ]), api_status: nil)
+    end
+
+    def self.envelope(stdout)
+      data = JSON.parse(stdout.to_s.strip)
+      data.is_a?(Hash) && data["type"] == "result" ? data : nil
+    rescue JSON::ParserError
+      nil
+    end
+
+    def self.join(parts)
+      return nil if parts.nil?
+
+      parts.compact.map { |p| p.is_a?(String) ? p : JSON.generate(p) }.join("\n")
+    end
+    private_class_method :envelope, :join
+  end
+
+  # Claude's "you are out of usage" notice, read deterministically from a FAILED
+  # run's CLI-authored text (ClaudeRun#error_text: the error envelope and stderr)
+  # and the envelope's api_error_status. Never from a successful answer: that is
+  # the model replying to untrusted chat text, which can say anything. A hit hands
+  # the message back WITHOUT spending an attempt (release code usage_limit; the
+  # board caps those refunds) and pauses bin/dispatcher until the reset the notice
+  # names, else for BACKOFF.
   #
   # The PATTERN is the one place these strings live; test/lib/agent_usage_limit_test.rb
-  # pins real-looking samples. A match counts only when the run failed (nonzero
-  # exit) or the whole output is a short notice, so an answer that merely
-  # mentions a usage limit is never mistaken for one.
+  # pins real-looking error envelopes as hits and planted answers as misses.
   module UsageLimit
     PATTERN = /
       claude\ ai\ usage\ limit\ reached
@@ -155,7 +241,6 @@ module AgentMailbox
       | out\ of\ extra\ usage
       | rate_limit_error
     /ix
-    SHORT_NOTICE = 400
     BACKOFF = 15 * 60
     # A parsed reset further out than this is distrusted (BACKOFF instead).
     MAX_PAUSE = 8 * 24 * 3600
@@ -164,15 +249,16 @@ module AgentMailbox
 
     Hit = Struct.new(:reset_at, :parsed, :notice, keyword_init: true)
 
-    # nil, or a Hit whose reset_at is when to resume.
-    def self.detect(text, status, now: Time.now)
-      text = text.to_s
-      return nil unless text.match?(PATTERN)
-      return nil if status&.zero? && text.strip.length > SHORT_NOTICE
+    # nil, or a Hit whose reset_at is when to resume. `run` is a ClaudeRun::Parsed;
+    # a run with no error_text (it succeeded) is never a hit.
+    def self.detect(run, now: Time.now)
+      text = run.error_text.to_s
+      return nil if run.error_text.nil?
+      return nil unless text.match?(PATTERN) || run.api_status.to_i == 429
 
       reset = parse_reset(text, now: now)
       reset = nil if reset && (reset <= now || reset > now + MAX_PAUSE)
-      notice = text.lines.map(&:strip).find { |l| l.match?(PATTERN) }.to_s[0, 200]
+      notice = (text.lines.map(&:strip).find { |l| l.match?(PATTERN) } || "API error #{run.api_status}").to_s[0, 200]
       Hit.new(reset_at: reset ? reset + MARGIN : now + BACKOFF, parsed: !reset.nil?, notice: notice)
     end
 
@@ -230,7 +316,8 @@ module AgentMailbox
     private_class_method :zone_for, :build_time
   end
 
-  # Claude saying it is not signed in, read the same deterministic way. Unlike a
+  # Claude saying it is not signed in, read the same way: only from a failed
+  # run's CLI-authored error text. Unlike a
   # usage limit this spends the attempt (only usage_limit refunds), but
   # bin/dispatcher pauses PAUSE seconds on it, so a signed-out Mac burns at most
   # one attempt per pause while the floor alert reports the waiting message.
@@ -238,8 +325,8 @@ module AgentMailbox
     PATTERN = %r{not\ logged\ in|please\ run\ /login|invalid\ api\ key|authentication_error|oauth\ token\ (?:has\ )?expired}ix
     PAUSE = 30 * 60
 
-    def self.signed_out?(text, status)
-      !status&.zero? && text.to_s.match?(PATTERN)
+    def self.signed_out?(run)
+      !run.error_text.nil? && run.error_text.match?(PATTERN)
     end
   end
 
@@ -260,7 +347,9 @@ module AgentMailbox
     # Headless Claude, with NO tools: the message is untrusted, so the model
     # answering it can read nothing and run nothing beyond the prompt it is given.
     # --safe-mode skips CLAUDE.md, hooks, skills and plugins for the same reason.
-    DEFAULT_CLAUDE_CMD = [ "claude", "-p", "--safe-mode", "--tools", "", "--output-format", "text" ].freeze
+    # json, so the reply and any error arrive in an envelope whose status fields
+    # the model cannot write (ClaudeRun).
+    DEFAULT_CLAUDE_CMD = [ "claude", "-p", "--safe-mode", "--tools", "", "--output-format", "json" ].freeze
     CLAUDE_TIMEOUT = 300
 
     # reply: the text to post, or nil when the run failed. usage_limit: a
@@ -280,11 +369,10 @@ module AgentMailbox
       action = run_action
       output, status, error = @runner.call(@claude_cmd, stdin: prompt_for(message, action), timeout: CLAUDE_TIMEOUT,
                                                          chdir: Dir.tmpdir)
-      limit = UsageLimit.detect("#{output}\n#{error}", status, now: @clock.call)
-      text = output.to_s.strip
-      reply = status&.zero? && !text.empty? && limit.nil? ? text : nil
-      Answer.new(reply: reply, action: action, status: status, usage_limit: limit,
-                 signed_out: limit.nil? && ClaudeAuth.signed_out?("#{output}\n#{error}", status))
+      run = ClaudeRun.parse(output, status, error)
+      limit = UsageLimit.detect(run, now: @clock.call)
+      Answer.new(reply: limit ? nil : run.reply, action: action, status: status, usage_limit: limit,
+                 signed_out: limit.nil? && ClaudeAuth.signed_out?(run))
     end
 
     def prompt_for(message, action)
