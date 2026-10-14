@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -152,6 +152,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
     t.index ["task_slug", "seq"], name: "index_agent_activities_on_task_slug_and_seq"
   end
 
+  create_table "agent_dispatchers", force: :cascade do |t|
+    t.integer "capacity"
+    t.datetime "created_at", null: false
+    t.string "host"
+    t.datetime "last_seen_at", null: false
+    t.string "pause_reason"
+    t.datetime "paused_until"
+    t.integer "running", default: 0, null: false
+    t.jsonb "souls", default: [], null: false
+    t.datetime "started_at"
+    t.string "state"
+    t.datetime "updated_at", null: false
+    t.string "version"
+    t.string "worker_id", null: false
+    t.index ["last_seen_at"], name: "index_agent_dispatchers_on_last_seen_at"
+    t.index ["worker_id"], name: "index_agent_dispatchers_on_worker_id", unique: true
+  end
+
   create_table "agent_login_requests", force: :cascade do |t|
     t.string "agent_session_slug"
     t.integer "code_attempts", default: 0, null: false
@@ -174,6 +192,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_230000) do
     t.index ["slug"], name: "index_agent_login_requests_on_slug", unique: true
     t.index ["status", "requested_at"], name: "index_agent_login_requests_on_status_and_requested_at"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'granted'::character varying::text, 'refused'::character varying::text])", name: "agent_login_requests_status_known"
+  end
+
+  create_table "agent_mailbox_incidents", force: :cascade do |t|
+    t.datetime "alert_posted_at"
+    t.datetime "created_at", null: false
+    t.jsonb "detail", default: {}, null: false
+    t.string "kind", null: false
+    t.datetime "opened_at", null: false
+    t.datetime "recovery_posted_at"
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "(resolved_at IS NULL)"
+    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying, 'message_waiting'::character varying]::text[])", name: "agent_mailbox_incidents_kind_known"
   end
 
   create_table "agent_message_cursors", force: :cascade do |t|

@@ -1,8 +1,9 @@
 # One step in an AgentMessage's life, for the timeline on /admin/agent_messages
 # and `bin/agent-inbox show`: received, routed/unrouted, claimed, lease_expired,
-# released, dead_lettered, completed, reply_posted, reply_failed.
+# released, dead_lettered, completed, reply_posted, reply_failed, and
+# lease_renewed (one per claim, its count updated in place).
 class AgentMessageEvent < ApplicationRecord
-  KINDS = %w[received routed unrouted claimed lease_expired released dead_lettered
+  KINDS = %w[received routed unrouted claimed lease_renewed lease_expired released dead_lettered
              completed reply_posted reply_skipped reply_failed].freeze
 
   belongs_to :agent_message

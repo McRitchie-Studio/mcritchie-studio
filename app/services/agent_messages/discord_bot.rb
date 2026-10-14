@@ -71,6 +71,21 @@ module AgentMessages
       JSON.parse(body)
     end
 
+    # Post a standalone message (no reply reference) into `channel_id`: the floor
+    # alert's ops notice. Same once-guard as a reply (nonce + enforce_nonce), and
+    # it pings nobody: allowed_mentions parses nothing.
+    def post_message(channel_id, content:, nonce:)
+      payload = {
+        content: self.class.clip(content),
+        allowed_mentions: { parse: [] },
+        nonce: nonce.to_s,
+        enforce_nonce: true
+      }
+      status, body = request(:post, "/channels/#{channel_id}/messages", payload)
+      check!(status, body, "post to channel #{channel_id}")
+      JSON.parse(body)
+    end
+
     def self.clip(text)
       text = text.to_s
       return text if ReleaseNotes::DiscordClient.discord_length(text) <= CONTENT_LIMIT

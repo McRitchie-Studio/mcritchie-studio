@@ -710,6 +710,13 @@ Rails.application.routes.draw do
         member do
           post :complete
           post :release
+          post :renew
+        end
+      end
+      # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
+      resources :agent_dispatchers, only: [:index] do
+        collection do
+          post :ping
         end
       end
       resources :desk_records, only: [:index, :create] do
