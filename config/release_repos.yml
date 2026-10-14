@@ -244,7 +244,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcritchie-industries.git
       branch: main
-      smoke_url: https://www.mcritchie.industries
+      smoke_url: https://mcritchie.industries
   cyvasse:
     profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
@@ -408,8 +408,8 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/commercial-welding.git
       branch: main
-      # The herokuapp host until www.commercialwelding.llc resolves to Heroku and
-      # its ACM certificate issues: ship smokes after the push, and an
-      # unresolvable host aborts a live deploy. The app's APP_HOSTS includes this
-      # host, and /up is excluded from host authorization anyway.
-      smoke_url: https://commercial-welding-6d687a33cdea.herokuapp.com
+      # The bare domain, the public address on Cloudflare DNS (domain-dns
+      # § Cloudflare DNS: bin/domain-cutover finalize moves APP_HOST only after
+      # its ACM certificate issues). Ship smokes after the push, and an
+      # unresolvable host aborts a live deploy.
+      smoke_url: https://commercialwelding.llc

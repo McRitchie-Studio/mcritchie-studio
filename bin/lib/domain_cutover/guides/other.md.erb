@@ -1,0 +1,26 @@
+<%= intro %>
+
+<%= verify_note %> The registry names the registrar as "<%= registrar %>"; the labels below
+are the common ones, and the console may word them differently.
+
+<% if ds_present? -%>
+<%= step("Turn DNSSEC off") %>
+
+<%= outage_warning %>
+
+1. Sign in to <%= registrar %> and open **<%= domain %>**.
+2. Find **DNSSEC** (often under DNS or Advanced settings), switch it off or delete every DS record. Change nothing else.
+3. <%= confirm %>
+4. <%= after_dnssec %>
+
+<% end -%>
+<%= step("Use Cloudflare's nameservers") %>
+
+<%= ns_timing %>
+
+1. Sign in to <%= registrar %> and open **<%= domain %>**.
+2. Find **Nameservers** and choose custom (or "your own") nameservers.
+3. Enter exactly these two, replacing any others:
+<%= ns_list %>
+4. <%= confirm %>
+5. <%= done %>

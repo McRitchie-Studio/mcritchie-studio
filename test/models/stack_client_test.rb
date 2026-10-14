@@ -122,7 +122,7 @@ class StackClientTest < ActiveSupport::TestCase
   def dns(key, domain = "example.com") = DnsHost::Result.new(domain: domain, key: key, nameservers: [ "ns.#{key}" ])
 
   test "[unit] dns_domain reads the app's production URL, else the client's own domain" do
-    assert_equal "commercialwelding.llc", client.dns_domain, "https://www.commercialwelding.llc, www dropped"
+    assert_equal "commercialwelding.llc", client.dns_domain, "the bare https://commercialwelding.llc"
     assert_equal "mcritchie.industries", client(slug: "industries", tier: StackClient::INTERNAL).dns_domain
     assert_equal "10and5.mcritchie.studio", client(slug: "10and5", tier: "vibe").dns_domain
     assert_equal "family.example", client(slug: "family", tier: StackClient::INTERNAL, domain: "family.example").dns_domain

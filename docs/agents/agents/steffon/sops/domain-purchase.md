@@ -3,9 +3,19 @@
 
 ## Status: Active
 
-This is Steffon's `domain-purchase` SOP: buy a new domain on Squarespace
-Domains and prove it is ours. Step 1 of
+This is Steffon's `domain-purchase` SOP: buy a new domain for **one of our own
+entities** on Squarespace Domains and prove it is ours. Step 1 of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
+
+**A client buys and owns their own domain**, at any registrar except Cloudflare
+Registrar (the Builder "Web address" row: "Buy your domain, we send one
+record"). Cloudflare Registrar would put the zone in the client's own Cloudflare
+account, where our token cannot reach it, so the Pro-tier move
+([`domain-dns` § Cloudflare DNS](./domain-dns.md#cloudflare-dns--pro-and-above))
+could not run. This SOP is not used for a client's domain.
+
+Our own entities may also buy on Cloudflare Registrar, which skips the
+nameserver move entirely (`bin/domain-cutover`'s no-click variant).
 
 **The purchase is always Alex's click.** It spends money on his card,
 and Squarespace offers no purchase API. Steffon checks availability before and

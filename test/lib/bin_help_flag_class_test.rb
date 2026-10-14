@@ -87,6 +87,10 @@ class BinHelpFlagClassTest < Minitest::Test
     "clean-artifacts"        => :cli_arg_guard,
     "register-app"           => :cli_arg_guard,
     "r2-backup"              => :cli_arg_guard,
+    # The Cloudflare DNS move: creates zones, rewrites records, sets SSL, writes
+    # redirect rules, adds Heroku domains and moves APP_HOST. One guard with a
+    # per-subcommand flag dictionary, ahead of the first credential read.
+    "domain-cutover"         => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
     # It sat in :subcommand looking classified while `provision <app> --yes --help`
     # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
@@ -635,7 +639,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "install-git-credential-helper" => "CredentialHelperInstall.install!",
     # The claim, the complete and the release all happen inside Heartbeat#run, and
     # nothing before the Heartbeat is built touches the board.
-    "heartbeat"           => "AgentMailbox::Heartbeat.new"
+    "heartbeat"           => "AgentMailbox::Heartbeat.new",
+    # The first 1Password read; every Cloudflare and Heroku write follows it.
+    "domain-cutover"      => "DomainCutover::Credentials.cloudflare"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

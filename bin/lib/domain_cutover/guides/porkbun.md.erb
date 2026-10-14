@@ -1,0 +1,25 @@
+<%= intro %>
+
+<%= verify_note %>
+
+<% if ds_present? -%>
+<%= step("Turn DNSSEC off") %>
+
+<%= outage_warning %>
+
+1. Sign in at https://porkbun.com/account/domainsSpeedy and expand **<%= domain %>** (**Details**).
+2. Beside **DNSSEC**, open the editor and delete every DS record. Change nothing else.
+3. <%= confirm %>
+4. <%= after_dnssec %>
+
+<% end -%>
+<%= step("Use Cloudflare's nameservers") %>
+
+<%= ns_timing %>
+
+1. Sign in at https://porkbun.com/account/domainsSpeedy and expand **<%= domain %>** (**Details**).
+2. Beside **Authoritative Nameservers**, choose **Edit**.
+3. Delete the Porkbun nameservers and enter exactly these two:
+<%= ns_list %>
+4. <%= confirm %> Then **Submit**.
+5. <%= done %>

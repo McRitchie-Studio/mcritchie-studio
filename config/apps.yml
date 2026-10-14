@@ -94,7 +94,7 @@ apps:
     port: 3500
     repo: McRitchie-Studio/mcritchie-industries
     heroku_app: mcritchie-industries
-    production_url: https://www.mcritchie.industries
+    production_url: https://mcritchie.industries
     qa_url: https://qa.mcritchie.industries
     engine: true
     hosted: true
@@ -110,7 +110,7 @@ apps:
     port: 4500
     repo: McRitchie-Studio/commercial-welding
     heroku_app: commercial-welding
-    production_url: https://www.commercialwelding.llc
+    production_url: https://commercialwelding.llc
     qa_url: https://qa.commercialwelding.llc
     engine: true
     hosted: true

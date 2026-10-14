@@ -1,0 +1,23 @@
+<%= intro %>
+
+<% if ds_present? -%>
+<%= step("Turn DNSSEC off") %>
+
+<%= outage_warning %>
+
+1. Open https://account.squarespace.com/domains and choose **<%= domain %>**.
+2. Go to **DNS** -> **DNSSEC** and turn DNSSEC off. Change nothing else.
+3. <%= confirm %>
+4. <%= after_dnssec %>
+
+<% end -%>
+<%= step("Use Cloudflare's nameservers") %>
+
+<%= ns_timing %>
+
+1. Open https://account.squarespace.com/domains and choose **<%= domain %>**.
+2. Go to **DNS** -> **Domain Nameservers** and choose **Use custom nameservers**.
+3. Enter exactly these two, replacing any others:
+<%= ns_list %>
+4. <%= confirm %>
+5. <%= done %>

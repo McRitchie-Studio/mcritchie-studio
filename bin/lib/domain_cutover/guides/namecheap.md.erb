@@ -1,0 +1,25 @@
+<%= intro %>
+
+<%= verify_note %>
+
+<% if ds_present? -%>
+<%= step("Turn DNSSEC off") %>
+
+<%= outage_warning %>
+
+1. Sign in at https://ap.www.namecheap.com/domains/list and choose **Manage** beside **<%= domain %>**.
+2. Open **Advanced DNS**, find **DNSSEC**, and switch it off (delete any DS record listed). Change nothing else.
+3. <%= confirm %>
+4. <%= after_dnssec %>
+
+<% end -%>
+<%= step("Use Cloudflare's nameservers") %>
+
+<%= ns_timing %>
+
+1. Sign in at https://ap.www.namecheap.com/domains/list and choose **Manage** beside **<%= domain %>**.
+2. On the **Domain** tab, under **Nameservers**, choose **Custom DNS**.
+3. Enter exactly these two, replacing any others:
+<%= ns_list %>
+4. <%= confirm %> Save with the green check mark.
+5. <%= done %>

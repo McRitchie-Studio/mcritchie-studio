@@ -96,7 +96,7 @@ qa_environments:
     custom_domains:
       - qa.mcritchie.industries
     production_app: mcritchie-industries
-    production_url: https://www.mcritchie.industries
+    production_url: https://mcritchie.industries
     deploy_provider: heroku
     addons:
       - heroku-postgresql:essential-0
@@ -131,7 +131,7 @@ qa_environments:
     custom_domains:
       - qa.commercialwelding.llc
     production_app: commercial-welding
-    production_url: https://www.commercialwelding.llc
+    production_url: https://commercialwelding.llc
     deploy_provider: heroku
     addons:
       - heroku-postgresql:essential-0
