@@ -135,7 +135,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "#{app} [data-test='line-sub']", text: "Always-on CTO"
       integrations = "#{card(key)} [data-test='package-line'][data-lane='integrations'][data-status='included']"
       assert_select "#{integrations} [data-test='line-title'] a.underline[href='/integrations']", text: "Integrations"
-      assert_select "#{integrations} [data-test='line-sub']", text: "Google Workspace, Discord & more"
+      assert_select "#{integrations} [data-test='line-sub']", text: "Google Workspace & more"
     end
     assert_select "#{card('builder')} [data-test='package-line'][data-lane='app'] [data-test='line-title']", text: "Custom Web App"
     assert_select "#{card('builder')} [data-test='package-line'][data-lane='app'] [data-test='line-sub']", text: "several changes a month"
@@ -264,7 +264,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='integrations'] [data-test='stack-lead'][data-lead='emoji']"
     assert_select "[data-feature='integrations'] a.underline[href='/integrations']", text: "Integrations"
     assert_select "[data-feature='integrations'] [data-test='stack-software'] [data-brand='google']"
-    assert_equal [ "—", "—", "Google Workspace, Discord & more", "Google Workspace, Discord & more", "Custom" ],
+    assert_equal [ "—", "—", "Google Workspace & more", "Google Workspace & more", "Custom" ],
                  css_select("[data-feature='integrations'] [data-test='stack-cell']").map { |td| cell_text(td) }
     assert_equal [ "your-app.mcritchie.studio", "www.your-app.com", "your-app.com + www.your-app.com",
                    "your-app.com + www.your-app.com", "Multiple domains" ],

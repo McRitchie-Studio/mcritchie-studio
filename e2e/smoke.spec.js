@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, VISITOR } = require("./helpers");
 
 // ---------------------------------------------------------------------------
 // Page loads
@@ -61,11 +61,17 @@ test("usages page loads", async ({ page }) => {
 // Authentication
 // ---------------------------------------------------------------------------
 
-test("login with magic link", async ({ page }) => {
-  await loginWithMagicLink(page, "alex@test.com");
-  // The navbar names the signed-in user. Since studio-engine 0.106 it prints the
-  // first name only ("Alex", not "Alex Test"), so assert on the name slot itself.
-  await expect(page.locator("[data-nav-name]").first()).toContainText("Alex");
+// playwright.config.js signs every spec in as the seeded admin, so this one test
+// starts signed out: only the magic link can put "Alex" in the navbar.
+test.describe("magic link sign-in", () => {
+  test.use({ storageState: VISITOR });
+
+  test("login with magic link", async ({ page }) => {
+    await loginWithMagicLink(page, "alex@test.com");
+    // The navbar names the signed-in user. Since studio-engine 0.106 it prints the
+    // first name only ("Alex", not "Alex Test"), so assert on the name slot itself.
+    await expect(page.locator("[data-nav-name]").first()).toContainText("Alex");
+  });
 });
 
 test("malformed magic link request stays on signin", async ({ page }) => {
