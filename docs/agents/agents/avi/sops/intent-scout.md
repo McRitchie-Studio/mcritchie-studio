@@ -11,21 +11,37 @@ decides. The build never waits on the scout.
 
 ## Trigger
 
-The act begins at `bin/task begin`. When `begin` claims a task, it prints a
-paste-ready launch, then posts an `INTENT SCOUT OWED:` note on the task (a
-best-effort post with a few-second deadline, so a slow board never holds the
-launch back):
+The act begins at `bin/task begin`. When `begin` first claims a task, it
+**launches the scout itself**: a detached, headless run of this SOP as Avi,
 
-```text
-scout: Avi owes this task an intent scout (…/docs/agents/agents/avi/sops/intent-scout.md).
-  Launch it now in the background and keep building; nothing waits on it:
-  Agent(subagent_type: "avi", run_in_background: true, description: "Intent scout <slug>",
-        prompt: "Run the intent-scout SOP at … for task <slug>. The builder's desk is <desk>: …")
+```bash
+claude -p "<IntentScout.headless_prompt>" --agent avi --permission-mode dontAsk \
+  --allowedTools "Read,Grep,Glob,Bash(git grep *),...,Bash(bin/task note *),..." \
+  --add-dir /Users/alex/projects --name "intent-scout <slug>"
 ```
 
-The session that ran `begin` launches that line: the focus session that holds the
-epic, or the builder itself when it runs alone. The scout counts toward the
-five-agent cap, but it runs no suite, so it never counts as a certifying agent.
+started from the hub primary with an allow-listed environment (no session ids, no
+admin token), its output in `<projects>/.agents/intent-scout/<slug>.log` and its pid
+in `<slug>.pid` beside it. `dontAsk` denies anything outside the allow-list rather
+than prompting, so the run can read and post its note, and can never edit. It then
+posts an `INTENT SCOUT OWED:` note carrying the pid, and prints, last:
+
+```text
+scout: Avi launched in the background (pid N, log PATH) - do not launch another; read the brief before submit: …
+```
+
+**Never both, never twice.** The pid file is created exclusively before the spawn,
+so a second `begin` (a resume of a `building` task, or two racing) reports the
+first launch instead of starting another; a resume never launches. `begin` prints
+the paste-ready `Agent(subagent_type: "avi", …)` block instead, and the session
+that ran it launches the scout, only when it could not launch: no `claude` CLI (a
+Codex session), `INTENT_SCOUT_AUTO=0`, CI or the test suite, a failed spawn, or
+five scouts already running (the cap below).
+
+The scout counts toward the five-agent cap, but it runs no suite, so it never
+counts as a certifying agent. A headless run's Bash allow-list has no `git -C`
+(Claude Code refuses a wildcard before a git subcommand), so it greps another repo
+with the Grep tool or `cd <repo> && git grep …`.
 
 ## Scope
 
@@ -68,7 +84,7 @@ Aim for about ten minutes, so the brief lands before the builder's submit does.
    - docs, copy, and fixtures that quote the value.
 
    ```bash
-   git -C /Users/alex/projects/<repo> grep -n -i "<value or noun>"
+   cd /Users/alex/projects/<repo> && git grep -n -i "<value or noun>"
    ```
 
    A literal value (a price, a label, a route) is the commonest miss: grep the
@@ -151,4 +167,4 @@ proposed, to the session that launched you.
 
 - [`../../../modules/building-sop.md`](../../../modules/building-sop.md): the builder reads the brief before submit.
 - [`../../../modules/focus-session.md`](../../../modules/focus-session.md): the session that launches the scout beside each builder.
-- `bin/lib/intent_scout.rb`: the marker, the begin lines and the submit warning.
+- `bin/lib/intent_scout.rb`: the marker, the auto-launch, the begin lines and the submit warning.

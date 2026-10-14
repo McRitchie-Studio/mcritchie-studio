@@ -17,6 +17,7 @@ its invocation exactly.
 | Agent sessions and capability APIs design (decided; phase two in progress; tiers, grants, capability matrix) | `mcritchie-studio/docs/agents/system/agent-sessions-design.md` |
 | Guard catalog (decided, with deviations awaiting Alex's call; every refusal with delete, by construction or keep, and a mark per row) | `mcritchie-studio/docs/agents/system/guard-catalog.md` |
 | Knowledge layer design (proposed, awaiting Alex's review; five tiers, the Drive shelf, the walker, who reads what) | `mcritchie-studio/docs/agents/system/knowledge-layer-design.md` |
+| Context layers design (proposed; general, situational and specific context, when to re-pull, must-do is mechanical and judgment is a dream, SOP-step moment cards next) | `mcritchie-studio/docs/agents/system/context-layers-design.md` |
 | Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
 | Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
