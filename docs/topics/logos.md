@@ -142,7 +142,9 @@ placing over a photograph.
   style says otherwise.
 - The logo sits in a single `<g opacity="…">`, `0.6` by default. The opacity is
   on the group and never on a path, so overlapping layers do not compound.
-- The box is the light logo's: same width, same height.
+- The box is the dark logo's: same width, same height (both draw the brand's
+  dark icon; Commercial Welding's single-colour helmet is half a unit narrower
+  than its colour one, so its light logo differs from them by that much).
 - The text versions still apply. A brand that leads by weight keeps its two
   weights. A brand that leads by colour has only one colour here, so its three
   text versions are the same drawing.
@@ -240,7 +242,7 @@ stacked.form                             # => :two_line (the brand's own form, t
 stacked.forms                            # => [:two_line, :tagline]
 stacked.svg(form: :tagline)              # icon, name, tagline
 stacked.tagline                          # => "BUILD SMARTER"
-stacked.svg(proportion: :rule_of_three)  # the icon a third of the name's width, every gap 3u
+stacked.svg(proportion: :rule_of_three)  # the icon a third of the name's width
 ```
 
 Let **u** be the small word's cap height (40 design units).
@@ -289,28 +291,30 @@ smaller icon as an option beside the 3-2-1 look (task stacked-rule-of-three).
 Every form draws in either **proportion** (`proportion:` on `layout` and
 `svg`; `StackedLogo::PROPORTIONS`). `three_two_one` is the default, and draws
 exactly what it drew before, to the byte. `rule_of_three` changes only the
-icon's size and the gaps; the lines are set exactly as above (the big line at
-3u, the small line at 1u tracked out to 60% of W).
+icon's size; the lines and the 2u gaps are exactly as above (the big line at
+3u, the small line at 1u tracked out to 60% of W). Alex, 12:07 the same day,
+on the first build's 3u gaps: "space of 2 vertically between".
 
 | Proportion | Icon | Every gap | Height (two lines, tagline) | Height (one line) |
 |------------|------|-----------|-----------------------------|-------------------|
 | `three_two_one` (default) | 0.6W tall; its width follows its aspect | 2u | 0.6W + 8u | 0.6W + 5u |
-| `rule_of_three` | W/3 wide, centred; its height `a`·W/3 follows its aspect `a` (h/w) | 3u, one cap height of the name | `a`·W/3 + 10u | `a`·W/3 + 6u |
+| `rule_of_three` | W/3 wide, centred; its height `a`·W/3 follows its aspect `a` (h/w) | 2u | `a`·W/3 + 8u | `a`·W/3 + 5u |
 
 - **Three icons span the name.** Three copies of the icon side by side are
   exactly as wide as the big line's ink, so the real icon is the middle one.
 - **The icon's height** comes from its own aspect, so a tall icon is taller
   than it is wide, and each tone's icon (Commercial Welding v2's dark Alt
   helmet is its single-colour one) is a third of W wide in its own aspect.
-  Commercial Welding v2's helmet drops from about 575 to 348 design units wide
-  (two lines, light).
+  Commercial Welding v2's helmet drops from about 553 to 348 design units wide
+  (two lines, light). The icon's box is its ink ([below](#an-icons-box-is-its-ink)),
+  so the third is the hood's own width, edge to edge.
 - **Never too wide.** The 3-2-1 refusal of an icon that overhangs the name
   cannot happen: a third of W never does.
 - **The guide drawing** (`guides: true`) draws two ghost copies of the icon
   either side of the real one (`<g class="guide-third">`, in the ghost group),
   a vertical guide line at each third from the name's left ink edge to its
   right, numbered 1 2 3 above the icons (`data-third`), the ruler of small-line
-  copies beside the logo (now 3, 3, 3, 1, counting each 3u gap), and a line at
+  copies beside the logo (2, 3, 2, 1, as in 3-2-1), and a line at
   each band boundary. It draws no turned line and no bracket: the icon's
   height is not the small line's width here.
 - An unknown proportion is refused: "unknown proportion :golden: expected one
@@ -436,19 +440,19 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
    two as opaque shapes over the blue silhouette (`blue`, the outer helmet).
    The orange spark is the `accent` layer; on the single-colour helmet it is
    cut into the window's own contour.
-2. **Centre.** The midline is the white half's straight left edge, the line
-   where the two halves meet: the mean x of its on-curve points within 2 units
-   of the leftmost, away from its corners (x = 204.13 on the colour helmet,
-   205.07 on the single-colour one). Every layer moves right so the midline
-   is the box's centre. The box is widened on the short side, never cropped:
-   426 to 443.75, shared by both tones (as v1's 426 is, so a logo's geometry
-   is the same in every tone), each helmet centred on its own midline in it
-   (right 17.75 and 16.80).
-3. **Move the lens.** In the rule of 3 the icon is three rows, 161 of 483
-   units each. The window is 145.8 tall, shorter than a row, so it cannot sit
-   on both row lines; it is centred on the middle row instead: down 23.42
-   (23.39 single-colour), leaving about 7.6 units of the row above and below
-   it. The spark moves with it. The blue frame around the window is the notch
+2. **Its box is its ink.** Until task stacked-rule-of-three the box was
+   widened (426 to 443.75) so the midline, where the helmet's two halves meet,
+   was the box's centre; that left about 17 units of empty box on one side,
+   and the hood looked off-centre in its box (Alex 2026-10-14 12:07: "there's
+   some extra space on the right side"). That step is gone: each helmet keeps
+   v1's trimmed ink box ([An icon's box is its ink](#an-icons-box-is-its-ink)),
+   425.06 x 481 in colour, 425.54 x 482.74 single-colour, and a v1 source that
+   carries its trim's translate is read in its box.
+3. **Move the lens.** In the rule of 3 the icon is three rows of the ink box,
+   about 160 units each. The window is 145.8 tall, shorter than a row, so it
+   cannot sit on both row lines; it is centred on the middle row instead: down
+   23.42 (23.49 single-colour), leaving about 7 units of the row above and
+   below it. The spark moves with it. The blue frame around the window is the notch
    the white half's contour makes around it; that contour's on-curve points
    within 40 units of the window (the band is 16 to 20 thick) move down with
    it, each curve's control points following their own end, so the band keeps
@@ -467,14 +471,14 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
 **v2's Original** (`welding_v2_original`) is the same derivation run on v1's
 Original (`welding_original`), in its own box: the trace is at about twice
 the scale (975 tall), so the measures above (2, 20 and 40 units) are taken at
-its scale (`WeldingV2#scaled`; v1's own numbers are unchanged). Its midline is
-x = 411.85, its box 858 widened to 892.30 (right 34.30), its lens down 47.42,
+its scale (`WeldingV2#scaled`; v1's own numbers are unchanged). Its box is its
+ink, 857.98 x 973.84 (it was widened to 892.30 before), its lens down 47.44,
 and its window cut clear (step 4): its `blue` layer is the silhouette with the
 window as a hole, its `white` layer the white half alone. Only welding_v2's
 Original pin moved for it (`test/lib/logos_brand_pins_test.rb`).
 
 `test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
-data, for all three helmets: the midline at the box's centre, the ears inside the box, the lens's
+data, for all three helmets: the helmet flush with its box on every side, the lens's
 shape unchanged and centred on the middle row, the spark and frame moved with
 it and nothing else moved down. Its logos are v1's in every other respect
 (palette, tagline, lettering, tones), with the name COMMERCIAL WELDING.
@@ -953,8 +957,12 @@ navbar, footer and sign-in card draw `icon-light.svg` (application.css swaps in
 that reads on both themes in the 20px slot another app's sign-in card gives
 it), `Studio.navbar_wordmark` is the Navbar Logo pair once the engine has the
 setting, and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
-with `node script/brand_png.cjs <svg> <out.png> <size> [background] [padding]`
+with `node script/brand_png.cjs <svg> <out.png> <size> [background]`
 (Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
+It adds no margin: the icon's box is its ink, so the ink touches two opposite
+edges of the square (`test/lib/brand_favicon_test.rb`; Alex 2026-10-14 12:14
+found the old favicon small, with 32 px empty at the top of 256 and 10 at the
+sides from the script's 4% padding and Studio's 2-unit trace margin).
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex's call). A build fetch needs
@@ -985,6 +993,40 @@ character with no glyph each raise
 `Logos::NavbarLogo::Error` with the reason. A fill that is not a `#hex` colour
 is refused too.
 
+### An icon's box is its ink
+
+Alex, 2026-10-14 12:16: "The icons need to have the margins cleaned up so we
+don't have extra variables when building out the logos and themes." (Task
+stacked-rule-of-three.) Every icon's box (`w`, `h`: the viewBox of the icon
+alone, and the size every logo scales and centres it by) is exactly its ink.
+`Logos::IconInk` (`lib/logos/icon_ink.rb`) is the one primitive that measures
+and trims it; nothing downstream (the Navbar and Stacked Logos, the icon alone,
+the kit export, `script/brand_png.cjs`) handles a margin of its own.
+
+- **Measured exactly**: every on-curve point and every cubic's turning points,
+  after the icon's `transform`; a stroked layer reaches half its stroke width
+  past its path. Only absolute `M`, `L`, `C` and `Z` path data can be measured
+  (all the shipped data is); anything else is refused.
+- **Trimmed without touching a path**: `IconInk.trim` sets `w` and `h` to the
+  ink and puts a translate before the icon's `transform` (folded into a leading
+  translate where there is one). Studio's trace now carries
+  `translate(-2,-1.81)`, Turf Monster's `translate(-5.1,-54.35)`, Commercial
+  Welding's `translate(0.05,-1)` and `translate(-0.4,-0.23)`; Industries' kit
+  paths were already their box and did not change.
+- **Enforced at intake**: `Logos::NavbarLogo.new` refuses an icon whose box
+  differs from its ink by more than half a unit on any side ("icon studio's box
+  is not its ink (margins left 5, …): trim it with Logos::IconInk.trim"). Add
+  an icon to the data, then run `bin/rails logos:trim_icons`, which trims every
+  icon data file in place and re-derives Commercial Welding v2's helmets (whose
+  derivation trims its own output).
+- **What moved** when the margins were cleaned: every drawing of Studio, Turf
+  Monster, Commercial Welding v1 and v2 (Navbar, Stacked and icon, Alt and
+  Original); Industries did not move by a byte. The per-brand pins in
+  `test/lib/logos_brand_pins_test.rb` were re-taken with the reason.
+- **No record to migrate**: a saved kit (`BrandKit`) stores choices (rule,
+  form, colouring, edits), never icon geometry, so nothing in a database needs
+  the trim; the committed `public/brand/` files and favicons were redrawn.
+
 ## What the data may contain
 
 Paths, fill rules and transforms are written into the SVG as they stand, so
@@ -997,6 +1039,7 @@ drawn:
 | a path `d` (icon layer, glyph, traced letter) | a string of SVG path characters only: the command letters `MLHVCSQTAZ` in either case, digits, space, comma, dot, minus, plus, and `e`/`E` for exponents |
 | a `fill_rule` (icon layer, lettering) | `nonzero` or `evenodd` |
 | an icon's `transform`, when present | `translate`, `scale`, `rotate` or `matrix` calls with numeric arguments, separated by single spaces |
+| an icon's box (`w`, `h`) | its ink, within half a unit on every side ([above](#an-icons-box-is-its-ink)) |
 | an icon's `defs`, when present | linear gradients only, as [above](#gradients-in-an-original) |
 | an icon layer's `paint`, when present | `fill` or `stroke`; a stroked layer needs a `stroke_width` greater than 0, a filled one takes none |
 | an original's tone | a map of `icon_key`, `text`, `quiet`, `accent` and `icon`, with a `text`, an `icon` filling every layer of its icon, and an `accent` when a word leads by colour; every fill a `#hex` or a declared gradient |
