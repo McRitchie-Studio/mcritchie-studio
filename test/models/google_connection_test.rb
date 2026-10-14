@@ -1,6 +1,6 @@
 require "test_helper"
 require "support/google_connect_fakes"
-require Rails.root.join("db/migrate/20261014190000_rename_google_calendar_connections_to_google_connections")
+require Rails.root.join("db/migrate/20261014203000_rename_google_calendar_connections_to_google_connections")
 
 # [unit] GoogleConnection: the Google account the hub reads, as the sign-in
 # stores it, and the abilities its granted scopes unlock. Every token here is
