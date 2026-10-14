@@ -11,10 +11,13 @@
 </div>
 
 <p class="text-sm opacity-70 mb-4">
-  Messages to the agents from Discord, routed by mention. A heartbeat
-  (<code>bin/heartbeat &lt;soul&gt;</code>) claims one, answers it, and the reply posts back once.
+  Messages to the agents from Discord, routed by mention. The dispatcher
+  (<code>bin/dispatcher</code> on Alex's Mac; <code>bin/heartbeat &lt;soul&gt;</code> by hand) claims one,
+  answers it, renews its lease while it works, and the reply posts back once.
   Unrouted messages named no agent and wait for nobody.
 </p>
+
+<%= render "admin/agent_messages/dispatchers", dispatchers: @dispatchers %>
 
 <div id="am-filters" class="flex flex-col gap-2 text-sm mb-4">
   <div class="flex flex-wrap items-center gap-2">

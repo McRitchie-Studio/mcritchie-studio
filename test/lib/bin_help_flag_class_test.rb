@@ -179,6 +179,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # The agent mailbox (docs/agents/system/agent-message-loop.md). bin/heartbeat
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
     "heartbeat"              => :cli_arg_guard,
+    "dispatcher"             => :cli_arg_guard,
     "agent-inbox"            => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
     # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which
@@ -640,6 +641,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # The claim, the complete and the release all happen inside Heartbeat#run, and
     # nothing before the Heartbeat is built touches the board.
     "heartbeat"           => "AgentMailbox::Heartbeat.new",
+    # Every subcommand is guarded before the dispatch; install (launchctl, a
+    # ~/Library/LaunchAgents write) is the first arm that writes anything, and the
+    # run loop's claims come after it.
+    "dispatcher"          => "AgentMailbox::LaunchAgent.new",
     # The first 1Password read; every Cloudflare and Heroku write follows it.
     "domain-cutover"      => "DomainCutover::Credentials.cloudflare"
   }.freeze

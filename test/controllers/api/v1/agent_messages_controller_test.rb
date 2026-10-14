@@ -131,6 +131,138 @@ module Api
         assert_equal %w[claimed], response.parsed_body.dig("data", "events").map { |e| e["kind"] }
         assert_match %r{\Ahttps://discord.com/channels/}, response.parsed_body.dig("data", "url")
       end
+
+      # --- long poll, renewal, refund (bin/dispatcher) -------------------------
+
+      # Swaps the controller's sleep for a callable, so arrival and timeout are
+      # decided by the test, not by wall-clock luck.
+      def with_sleeper(callable)
+        original = AgentMessagesController.long_poll_sleeper
+        AgentMessagesController.long_poll_sleeper = callable
+        yield
+      ensure
+        AgentMessagesController.long_poll_sleeper = original
+      end
+
+      test "a long-poll claim returns the message that arrives while it waits" do
+        sleeps = []
+        arrived = nil
+        sleeper = lambda do |seconds|
+          sleeps << seconds
+          travel(seconds.seconds, with_usec: true)
+          arrived ||= agent_message!(soul: "xan") if sleeps.size == 3
+        end
+
+        with_sleeper(sleeper) do
+          post claim_api_v1_agent_messages_url, params: { souls: %w[avi xan], worker: "d1", wait: 15 },
+                                                headers: @shared, as: :json
+        end
+
+        assert_response :success
+        assert_equal arrived.id, response.parsed_body.dig("data", "id")
+        assert_equal "d1", response.parsed_body.dig("data", "claimed_by")
+        assert_equal 3, sleeps.size, "it answered on the first tick after the arrival"
+        assert sleeps.all? { |s| s <= AgentMessagesController::POLL_INTERVAL }
+      end
+
+      test "a long-poll claim with nothing arriving answers data null at its deadline, and the wait is capped" do
+        waited = 0.0
+        with_sleeper(->(seconds) { waited += seconds; travel(seconds.seconds, with_usec: true) }) do
+          post claim_api_v1_agent_messages_url, params: { souls: "avi,xan", worker: "d1", wait: 600 },
+                                                headers: @shared, as: :json
+        end
+
+        assert_response :success
+        assert_nil response.parsed_body["data"]
+        assert_equal "nothing_waiting", response.parsed_body.dig("meta", "reason")
+        assert_in_delta AgentMessagesController::WAIT_CAP, waited, 1.0
+        assert_operator AgentMessagesController::WAIT_CAP, :<, 30, "under Heroku's 30-second router timeout"
+      end
+
+      test "a long poll waits in real time and times out empty (no stubbed clock)" do
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1", wait: 1 }, headers: @shared, as: :json
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+        assert_response :success
+        assert_nil response.parsed_body["data"]
+        assert_operator elapsed, :>=, 0.9
+        assert_operator elapsed, :<, 5
+      end
+
+      test "a claim without wait does not sleep at all" do
+        with_sleeper(->(_s) { flunk "a plain claim must not wait" }) do
+          post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
+        end
+        assert_response :success
+        assert_nil response.parsed_body["data"]
+      end
+
+      test "a session may claim for several souls only if it may act for each" do
+        agent_message!(soul: "carl")
+        post claim_api_v1_agent_messages_url, params: { souls: %w[carl avi], worker: "w" },
+                                              headers: bearer(studio_session("carl")), as: :json
+        assert_response :forbidden
+        assert_match(/cannot act for avi/, response.parsed_body["error"])
+
+        admin = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
+        post claim_api_v1_agent_messages_url, params: { souls: %w[carl avi], worker: "w" }, headers: bearer(admin), as: :json
+        assert_response :success
+        assert_equal "carl", response.parsed_body.dig("data", "soul_slug")
+      end
+
+      test "renew extends the holder's lease and is refused (409) to anyone else" do
+        message = agent_message!
+        AgentMessage.claim!(soul: "avi", worker: "d1", now: 4.minutes.ago)
+        before = message.reload.lease_expires_at
+
+        post renew_api_v1_agent_message_url(message), params: { worker: "d2" }, headers: @shared, as: :json
+        assert_response :conflict
+        assert_equal "NOT_HOLDER", response.parsed_body["error_code"]
+
+        post renew_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
+        assert_response :success
+        assert_operator message.reload.lease_expires_at, :>, before
+        assert_equal "lease_renewed", message.events.last.kind
+      end
+
+      test "a non-admin session cannot renew another soul's message" do
+        message = agent_message!(soul: "avi")
+        AgentMessage.claim!(soul: "avi", worker: "d1")
+
+        post renew_api_v1_agent_message_url(message), params: { worker: "d1" },
+                                                      headers: bearer(studio_session("carl")), as: :json
+        assert_response :forbidden
+      end
+
+      test "release with code usage_limit refunds the attempt over HTTP; an unknown code is a 422" do
+        message = agent_message!
+        AgentMessage.claim!(soul: "avi", worker: "d1")
+
+        post release_api_v1_agent_message_url(message), params: { worker: "d1", code: "nope" }, headers: @shared, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "UNKNOWN_CODE", response.parsed_body["error_code"]
+
+        post release_api_v1_agent_message_url(message), params: { worker: "d1", reason: "limit", code: "usage_limit" },
+                                                        headers: @shared, as: :json
+        assert_response :success
+        assert_equal "received", response.parsed_body.dig("data", "status")
+        assert_equal 0, response.parsed_body.dig("data", "attempts")
+      end
+
+      test "over HTTP, usage_limit refunds stop at the cap and the message dead-letters" do
+        message = agent_message!
+        statuses = (AgentMessage::MAX_REFUNDS + AgentMessage::MAX_ATTEMPTS).times.map do
+          post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
+          post release_api_v1_agent_message_url(message), params: { worker: "d1", code: "usage_limit" },
+                                                          headers: @shared, as: :json
+          assert_response :success
+          response.parsed_body.dig("data", "status")
+        end
+
+        assert_equal "dead", statuses.last
+        assert_equal AgentMessage::MAX_REFUNDS, message.reload.usage_refunds
+      end
     end
   end
 end

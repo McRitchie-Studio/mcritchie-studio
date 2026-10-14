@@ -80,10 +80,12 @@ Input: a contact submission from `/integrations/discord`
    `config/agent_routes.yml`: the channel, and each soul's `roles` ID, all quoted
    strings (the file's header explains why). Ship it as its own task.
 4. **Test with the client.** Once it deploys, the client posts
-   `@<agent> hello` in `#agents`. The poll stores it within a minute, but no
-   heartbeat runs on a schedule in phase 1: the soul answers only when
-   `bin/heartbeat <soul> --channel discord` runs. Run it, see the reply land, and
-   only then tell the client it is live, and how quickly to expect answers.
+   `@<agent> hello` in `#agents`. The poll stores it within a minute, and
+   `bin/dispatcher` answers it within about another (Steffon's
+   [`agent-dispatcher`](agent-dispatcher.md) SOP installs and watches it; after a
+   routing change re-run `bin/dispatcher install` so it serves the new soul). See
+   the reply land, and only then tell the client it is live, and how quickly to
+   expect answers.
 
 ## If it does not answer
 

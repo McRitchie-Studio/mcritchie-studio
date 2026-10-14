@@ -57,6 +57,7 @@ module StringStates
   UNCONSTRAINED = {
     "agent_messages.reply_status" => WITH_TABLE_CHECK,
     "agent_messages.status" => WITH_TABLE_CHECK,
+    "agent_dispatchers.state" => "bin/dispatcher's self-report from its ping, nullable; AgentDispatcher.ping! drops an unknown value rather than storing it",
     "agent_actions.stage" => "a copy of the task's stage at the time of the action; history keeps retired stages",
     "agent_activities.stage" => "a copy of the task's stage at the time of the activity; history keeps retired stages",
     "agents.status" => NO_LIST,

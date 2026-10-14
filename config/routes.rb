@@ -700,7 +700,7 @@ Rails.application.routes.draw do
       # tears down a worktree desk. It used to be a markdown table in the hub repo, which
       # a teardown run from the PRIMARY checkout wrote onto `main` and could never commit.
       # `sync` folds a whole `snapshot --write` registry in; `create` files one desk.
-      # The agent mailbox (AgentMessagesController): bin/heartbeat claims and
+      # The agent mailbox (AgentMessagesController): bin/dispatcher (and bin/heartbeat) claims and
       # completes, bin/agent-inbox reads. docs/agents/system/agent-message-loop.md.
       resources :agent_messages, only: [:index, :show] do
         collection do
@@ -710,6 +710,13 @@ Rails.application.routes.draw do
         member do
           post :complete
           post :release
+          post :renew
+        end
+      end
+      # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
+      resources :agent_dispatchers, only: [:index] do
+        collection do
+          post :ping
         end
       end
       resources :desk_records, only: [:index, :create] do

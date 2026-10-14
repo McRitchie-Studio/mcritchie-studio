@@ -6,7 +6,7 @@ module AgentMessages
 
     Channel = Struct.new(:guild_id, :channel_id, :name, :default_soul, keyword_init: true)
 
-    attr_reader :bot_user_id
+    attr_reader :bot_user_id, :ops_channel_id
 
     def self.load(path = PATH)
       new(YAML.safe_load_file(path, aliases: false) || {})
@@ -15,6 +15,9 @@ module AgentMessages
     def initialize(config)
       discord = (config["discord"] || {})
       @bot_user_id = discord["bot_user_id"].to_s.presence
+      # Where the floor alert (AgentDispatcherAlertJob) posts. Never polled for
+      # inbound unless it is also listed under a guild's channels.
+      @ops_channel_id = discord["ops_channel_id"].to_s.presence
       @guilds = (discord["guilds"] || {}).to_h { |id, guild| [ id.to_s, guild || {} ] }
     end
 
