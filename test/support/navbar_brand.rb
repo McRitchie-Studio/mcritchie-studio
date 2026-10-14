@@ -15,6 +15,12 @@ module NavbarBrand
 
   def wordmark? = Studio.respond_to?(:navbar_wordmark) && Studio.navbar_wordmark.present?
 
+  # What the brand heading reads as: its words, or the lockup's alt text (see #heading_text).
+  def brand_name = wordmark? ? Studio.app_name : WORDS
+
+  # A heading's text, or, for a heading that is only a picture (the lockup), its first image's alt text.
+  def heading_text(heading) = heading.text.squish.presence || heading.at_css("img")&.[]("alt").to_s
+
   # The brand tag's class, for `tag` ("h1", "div" or "" for either).
   def selector(tag = "") = "#{tag}#{wordmark? ? '.nav-wordmark-brand' : '.nav-title'}"
 

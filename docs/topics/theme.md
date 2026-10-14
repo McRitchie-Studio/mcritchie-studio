@@ -10,7 +10,7 @@
 - **Primary**: `#8E82FE` Violet — CTAs, buttons, links, hovers, form focus. Views use `text-primary`, `bg-primary`, `bg-primary-700` etc. (dynamic Tailwind palette from CSS vars, not hardcoded violet).
 - **Success accent**: `#4BAF50` Green (default) — flash notices, success toasts, active status dots
 - **Font**: Montserrat (weights 400-900)
-- **Logo**: SVG icon (`app/assets/images/logo-icon.svg`) + "McRitchie **Studio**" (Studio in violet)
+- **Logo**: the saved Studio kit in `public/brand/` (`bin/rails logos:install BRAND=studio`): the kit icon (`icon-light.svg`, with `icon-dark.svg` swapped in on a dark page) + "McRitchie **Studio**", or the kit's Navbar Logo lockup once the engine draws `Studio.navbar_wordmark`. `app/assets/images/logo-icon.svg` is the original the kit's icon was traced from.
 - **Navbar Logo generator**: `Logos::NavbarLogo` draws a brand's logo from an icon and a name as pure vector. See [`logos.md`](logos.md).
 
 ## Navbar

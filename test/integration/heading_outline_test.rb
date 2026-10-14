@@ -6,10 +6,10 @@ require_relative "../support/navbar_brand"
 # brand is the title words or, once the engine draws it, the kit's lockup
 # (test/support/navbar_brand.rb).
 class HeadingOutlineTest < ActionDispatch::IntegrationTest
-  BRAND = NavbarBrand::WORDS
+  BRAND = NavbarBrand.brand_name
 
   def h1_texts
-    css_select("h1").map { |heading| heading.text.squish }
+    css_select("h1").map { |heading| NavbarBrand.heading_text(heading) }
   end
 
   test "each board and guide page has one h1" do
@@ -53,7 +53,7 @@ class HeadingOutlineTest < ActionDispatch::IntegrationTest
     if NavbarBrand.wordmark?
       NavbarBrand.assert_drawn(self, "div")
     else
-      assert_select "div.nav-title.font-extrabold.text-heading.tracking-tight.min-w-0", { text: BRAND, count: 1 }
+      assert_select "div.nav-title.font-extrabold.text-heading.tracking-tight.min-w-0", { text: NavbarBrand::WORDS, count: 1 }
     end
   end
 end
