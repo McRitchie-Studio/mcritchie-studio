@@ -5,10 +5,10 @@ require "test_helper"
 # live or on request, Get notified for a Coming soon one, Talk to us for an
 # add-on or a custom need. Never Connect on a Coming soon entry.
 class IntegrationTest < ActiveSupport::TestCase
-  test "[unit] the config loads three groups: integrations, add-ons, then custom" do
+  test "[unit] the config loads four groups: Google sign-in, integrations, add-ons, then custom" do
     groups = Integration.groups
 
-    assert_equal %w[integrations add_ons custom], groups.map(&:key)
+    assert_equal %w[google_sign_in integrations add_ons custom], groups.map(&:key)
     groups.each { |group| assert group.entries.any?, "#{group.key} has entries" }
   end
 
@@ -64,7 +64,7 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "Connect", labels["github_org"]
     assert_equal "Get notified", labels["slack"]
     assert_equal "Talk to us", labels["stripe_connect"], "Stripe moved to the custom section"
-    Integration.groups.drop(1).flat_map(&:entries).each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
+    Integration.groups.select { %w[add_ons custom].include?(_1.key) }.flat_map(&:entries).each { |entry| assert_equal "Talk to us", entry.cta_label, entry.key }
     Integration.groups.last.entries.each { |entry| assert_equal "custom", entry.intent, entry.key }
     Integration.entries.select(&:soon?).each { |entry| refute_equal "connect", entry.intent, entry.key }
   end
@@ -101,17 +101,22 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal "No upkeep", methods["admin_grant"].upkeep
   end
 
-  test "[unit] Google Workspace connects two ways, and each ability names the ways that unlock it" do
+  test "[unit] Google Workspace connects by admin grant; Calendar, Gmail and Drive each by one sign-in" do
     google = Integration.find(:google_workspace_connect)
 
-    assert_equal %w[admin_grant sign_in], google.connects
-    assert_equal [ "Admin approval", "Sign in" ], google.connection_methods.map(&:label)
-    abilities = google.abilities.to_h { |a| [ a.key, a ] }
-    assert_equal %w[admin_grant], abilities["draft_email"].via
-    assert_equal %w[sign_in], abilities["read_calendar"].via
-    assert abilities["read_calendar"].soon?, "not a client's self-serve button yet"
+    assert_equal %w[admin_grant], google.connects
+    assert_equal %w[draft_email knowledge_base], google.abilities.map(&:key)
     refute google.method_soon?("admin_grant")
-    assert google.method_soon?("sign_in"), "every ability sign_in unlocks is still Coming soon"
+
+    { google_calendar: "read_calendar", gmail: "read_email", google_drive: "read_drive" }.each do |key, ability|
+      entry = Integration.find(key)
+      assert entry.live?, key
+      assert_equal %w[sign_in], entry.connects, key
+      assert_equal [ ability ], entry.abilities.map(&:key), key
+      refute entry.abilities.first.soon?, "#{key}: live, the hub reads its own"
+      refute entry.method_soon?("sign_in"), key
+    end
+    assert_equal IntegrationsController::GOOGLE_CARDS.keys.sort, %w[gmail google_calendar google_drive], "every Google card carries the admin buttons"
   end
 
   test "[unit] every ability in the config names only ways its entry connects" do

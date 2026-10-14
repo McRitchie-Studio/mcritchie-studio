@@ -85,6 +85,42 @@ connection_methods:
     upkeep: We handle it
 
 groups:
+  - key: google_sign_in
+    title: Connect your Google
+    kicker: Sign in
+    summary: One click each. Sign in with Google and choose what your agents may read; nothing they can change, and you can disconnect any time.
+    entries:
+      # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
+      # Live on our own hub (/admin/google); an admin sees each card's Connect
+      # or Disconnect (IntegrationsController::GOOGLE_CARDS).
+      - key: google_calendar
+        name: Google Calendar
+        icon: "📅"
+        blurb: Sign in with Google and your agents read your calendar to prepare you for meetings. Read only, so they cannot add, change or delete an event.
+        status: live
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_calendar, name: Read your calendar to prepare for meetings, via: [sign_in] }
+      - key: gmail
+        name: Gmail
+        icon: "✉️"
+        blurb: Sign in with Google and your agents read your inbox to see what needs an answer. Read only, so they cannot send, change or delete mail.
+        status: live
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_email, name: Read your inbox to see what needs an answer, via: [sign_in] }
+      - key: google_drive
+        name: Google Drive
+        icon: "📁"
+        blurb: Sign in with Google and your agents read your Drive files to answer from them. Read only, so they cannot change, share or delete a file.
+        status: live
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_drive, name: Read your Drive files to answer from them, via: [sign_in] }
+
   - key: integrations
     title: Integrations
     kicker: Free
@@ -97,13 +133,10 @@ groups:
         status: live
         tier: pro
         tier_note: Drafting agent from Team
-        connects: [admin_grant, sign_in]
+        connects: [admin_grant]
         abilities:
           - { key: draft_email, name: Draft email replies for you to send, via: [admin_grant] }
           - { key: knowledge_base, name: A knowledge base from the Drive folders you choose, via: [admin_grant] }
-          # Live on our own hub (/admin/google_calendar, 2026-10-13); not yet a
-          # client's self-serve button, so Coming soon here.
-          - { key: read_calendar, name: Read your calendar to prepare for meetings, via: [sign_in], status: soon }
       - key: discord
         name: Discord
         icon: discord

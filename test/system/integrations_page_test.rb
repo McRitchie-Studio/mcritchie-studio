@@ -17,7 +17,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_path
 
-        assert_selector "[data-test='integration-group']", count: 3
+        assert_selector "[data-test='integration-group']", count: 4
         assert_equal width, page.evaluate_script("window.innerWidth"), "viewport is #{width}px"
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
