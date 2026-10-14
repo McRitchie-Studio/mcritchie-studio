@@ -212,7 +212,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "#{entry('stripe_connect')} [data-test='coming-soon']"
     assert_select "[data-test='integration-group'][data-group='integrations'] #{entry('stripe_connect')}", 0, "Stripe is listed once"
-    assert_equal %w[google_workspace_connect discord github_org slack],
+    assert_equal %w[google_workspace_connect google_calendar gmail google_drive discord github_org slack],
                  css_select("[data-test='integration-group'][data-group='integrations'] [data-test='integration-entry']").map { |e| e["data-entry"] }
     assert_equal %w[google_workspace_managed payments extra_builds],
                  css_select("[data-test='integration-group'][data-group='add_ons'] [data-test='integration-entry']").map { |e| e["data-entry"] }
