@@ -22,6 +22,9 @@ the sequence: a dream with no `soul` tag is platform. A dream tagged for several
 souls loads in each of their sequences and lives under the first. Directories use
 the `config/souls.yml` slugs (`turf-monster`, `xan`).
 [`../dreams/INDEX.md`](../dreams/INDEX.md) lists every dream by sequence.
+The hub's `/dreams` page (admin only, linked from `/agents`) shows the bank as
+an org chart: platform dreams on top, then each soul's dreams by stage, then the
+SOPs it runs with a dream count each.
 
 ## How a dream differs from its neighbours
 

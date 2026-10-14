@@ -34,7 +34,9 @@ module DreamBank
   # The most characters one claim's dream block takes.
   CALL_BUDGET = 6_000
 
-  Dream = Struct.new(:slug, :question, :answer, :why, :status, :tags, :home, keyword_init: true) do
+  # `source` is the front matter's provenance line; `story` is the Markdown body
+  # under the front matter (the /dreams page renders both; no CLI output does).
+  Dream = Struct.new(:slug, :question, :answer, :why, :status, :tags, :home, :source, :story, keyword_init: true) do
     def approved?
       status == APPROVED
     end
@@ -123,7 +125,9 @@ module DreamBank
                       why: field(data, "why"),
                       status: field(data, "status").downcase,
                       tags: tags(data),
-                      home: home.to_s)
+                      home: home.to_s,
+                      source: field(data, "source"),
+                      story: text.to_s[match.end(0)..].to_s.strip)
     dream.complete? ? dream : nil
   rescue StandardError
     nil

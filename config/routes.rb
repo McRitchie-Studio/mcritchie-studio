@@ -600,6 +600,10 @@ Rails.application.routes.draw do
   get "games/:year/week/:week/:slug", to: "games#show", as: :game_show
   resources :usages, only: [:index]
 
+  # The dream bank as an org chart: platform, then each soul with its SOPs. Admin-only
+  # (AdminWall default). Reads docs/agents/dreams live; see DreamOrgChart.
+  get "dreams", to: "dreams#index"
+
   get "docs", to: "docs#index"
   get "docs/*path", to: "docs#show", as: :doc
 

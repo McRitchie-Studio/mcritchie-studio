@@ -1,0 +1,59 @@
+<% counts = @chart.counts %>
+<%# The status filter is app/javascript/dreams_filter.js (data-dreams-filter). %>
+<section data-dreams-filter="<%= @filter %>" data-test="dreams-page">
+  <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <%= link_to "← Agents", agents_path, class: "text-sm font-medium text-primary hover:underline" %>
+      <h2 class="mt-1 text-2xl font-bold text-heading">Dreams</h2>
+      <p class="mt-1 max-w-2xl text-sm text-secondary">
+        Good answers from past sessions, signed off by Alex. Platform dreams load at every session start;
+        a soul's dreams load when it is invoked. Under each soul are the SOPs it runs, with the dreams tagged to each.
+      </p>
+    </div>
+    <div class="flex rounded-lg border border-subtle bg-surface-alt p-1 text-sm" role="group" aria-label="Filter dreams by status" data-test="dream-filter">
+      <% DreamsController::FILTERS.each do |status| %>
+        <%= link_to dreams_path(status: (status == "all" ? nil : status)),
+              class: "rounded-md px-3 py-1.5 font-semibold #{status == @filter ? "bg-primary text-white" : "text-secondary hover:text-heading"}",
+              aria: { pressed: status == @filter },
+              data: { test: "dream-filter-#{status}", dreams_filter_button: status } do %>
+          <%= status.capitalize %> <span class="opacity-70"><%= counts[status] %></span>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <% platform = @chart.platform %>
+  <div class="card p-4 sm:p-5" data-test="platform-row">
+    <div class="mb-3 flex items-baseline justify-between gap-2">
+      <h3 class="text-lg font-bold text-heading">Platform</h3>
+      <span class="text-xs text-muted"><%= platform.title %> · <%= pluralize(platform.dreams.size, "dream") %></span>
+    </div>
+    <%= render "dreams/stages", column: platform, grid: true %>
+    <%= render "dreams/sops", sops: platform.sops, label: "Shared SOPs" %>
+  </div>
+
+  <div aria-hidden="true" class="mx-auto h-6 w-px bg-[var(--color-border)]"></div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" data-test="soul-columns">
+    <% @chart.columns.each do |column| %>
+      <article class="card flex min-w-0 flex-col p-4" data-test="soul-column" data-soul="<%= column.slug %>">
+        <header class="mb-3 flex items-center gap-3">
+          <span class="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-bold text-white"
+                style="background-color: <%= column.color.presence || "#64748b" %>;">
+            <%= column.name.to_s.first %>
+            <% if column.avatar.present? %>
+              <img src="<%= column.avatar %>" alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" onerror="this.remove()">
+            <% end %>
+          </span>
+          <div class="min-w-0">
+            <h3 class="truncate font-bold leading-tight text-heading"><%= column.name %></h3>
+            <p class="truncate text-xs text-secondary"><%= column.title %></p>
+          </div>
+          <span class="ml-auto shrink-0 text-xs text-muted"><%= pluralize(column.dreams.size, "dream") %></span>
+        </header>
+        <%= render "dreams/stages", column: column %>
+        <%= render "dreams/sops", sops: column.sops, label: "SOPs" %>
+      </article>
+    <% end %>
+  </div>
+</section>

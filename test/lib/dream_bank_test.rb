@@ -41,6 +41,14 @@ class DreamBankTest < Minitest::Test
     assert dream.approved?, "status is matched case-insensitively"
   end
 
+  def test_unit_parse_keeps_the_source_and_the_story_body
+    dream = DreamBank.parse(DREAM, slug: "wait-for-it")
+
+    assert_equal "2026-09-23", dream.source
+    assert_equal "# Wait for it\n\n## Situation", dream.story, "the body under the front matter, trimmed"
+    refute_includes DreamBank.dream_block(dream), "Situation", "the story never reaches a CLI block"
+  end
+
   def test_unit_parse_refuses_text_with_nothing_to_teach
     assert_nil DreamBank.parse("# no frontmatter", slug: "x")
     assert_nil DreamBank.parse("---\nquestion: \"only a question\"\nstatus: approved\n---\n", slug: "x")

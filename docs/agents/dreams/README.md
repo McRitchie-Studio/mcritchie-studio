@@ -16,3 +16,5 @@ souls loads in each of their sequences and lives under the first.
 
 [`INDEX.md`](INDEX.md) lists every dream by sequence. `bin/dream index --write`
 regenerates it and a test pins it. The loader skips `README.md` and `INDEX.md`.
+To read the bank as an org chart, with each soul's SOPs under its dreams, open
+`/dreams` on the hub (admin only; linked from `/agents`).

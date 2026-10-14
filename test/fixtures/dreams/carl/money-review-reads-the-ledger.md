@@ -9,3 +9,9 @@ risk: money
 stage: submitted
 topic: payment
 ---
+
+# Money review reads the ledger
+
+## Situation
+
+A payment PR came in **green**.
