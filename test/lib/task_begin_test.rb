@@ -410,7 +410,8 @@ class TaskBeginTest < Minitest::Test
     stub = File.join(sandbox_root, "claude-stub")
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      File.open(#{record.inspect}, "a") { |f| f.puts([Dir.pwd, ENV.key?("CLAUDE_CODE_SESSION_ID"), *ARGV.first(6)].join("\t")) }
+      File.open(#{record.inspect}, "a") { |f| f.puts([Dir.pwd, ENV.key?("CLAUDE_CODE_SESSION_ID"), *ARGV.first(9)].join("\t")) }
+      sleep 2 # a real scout runs for minutes; one that exits at once is a failed launch
     RUBY
     FileUtils.chmod("+x", stub)
     [stub, record]
@@ -456,7 +457,11 @@ class TaskBeginTest < Minitest::Test
   def test_begin_launches_the_stubbed_scout_once_and_a_resume_does_not_relaunch
     stub, record = scout_stub
     home = File.join(sandbox_root, "scout-home")
+    config = File.join(sandbox_root, "claude-config")
+    FileUtils.mkdir_p(File.join(config, "agents"))
+    File.write(File.join(config, "agents", "avi.md"), "---\nname: avi\ndescription: Avi.\n---\n\nYou are Avi.\n")
     env = { "INTENT_SCOUT_AUTO" => "1", "TASK_BEGIN_SCOUT_BIN" => stub, "INTENT_SCOUT_HOME" => home,
+            "CLAUDE_CONFIG_DIR" => config,
             "CLAUDE_CODE_SESSION_ID" => "builder-session-1" }
     requests, out, _err, status, = run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP,
                                               *CREATE_METADATA], merged: true, env: env)
@@ -470,7 +475,7 @@ class TaskBeginTest < Minitest::Test
     _cwd, session_inherited, *argv = calls.first.split("\t")
     assert_equal "false", session_inherited, "the builder's session must not reach the scout"
     assert_equal "-p", argv[0]
-    assert_equal ["--agent", "avi", "--permission-mode", "dontAsk"], argv[2, 4]
+    assert_equal ["--setting-sources", "project", "--strict-mcp-config", "--agents"], argv[2, 4]
     pid = File.read(File.join(home, "#{SLUG}.pid")).strip
     assert_match(/\A\d+\z/, pid)
     owed = owed_notes(requests)

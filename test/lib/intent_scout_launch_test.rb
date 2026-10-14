@@ -3,6 +3,7 @@
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
+require "json"
 require_relative "../support/session_env"
 require_relative "../../bin/lib/intent_scout"
 
@@ -22,6 +23,9 @@ class IntentScoutLaunchTest < Minitest::Test
     FileUtils.mkdir_p(File.dirname(@claude))
     File.write(@claude, "#!/bin/sh\nexit 0\n")
     FileUtils.chmod(0o755, @claude)
+    FileUtils.mkdir_p(File.join(@root, ".claude", "agents"))
+    File.write(File.join(@root, ".claude", "agents", "avi.md"),
+               "---\nname: avi\ndescription: Avi, Product Owner.\ntools: *\n---\n\nYou are Avi.\n")
     @spawns = []
     @next_pid = 4242
   end
@@ -44,7 +48,7 @@ class IntentScoutLaunchTest < Minitest::Test
 
   def launch(env, resume: false, **opts)
     IntentScout.auto_launch(SLUG, DESK, resume: resume, env: env, hub_dir: @root, spawner: spawner,
-                                        detacher: nil, **opts)
+                                        detacher: nil, exited: ->(_pid, _grace) { nil }, **opts)
   end
 
   def test_spawns_once_records_the_pid_and_a_second_begin_reports_the_first
@@ -71,14 +75,20 @@ class IntentScoutLaunchTest < Minitest::Test
 
     assert_equal [@claude, "-p"], argv.first(2)
     assert_includes argv[2], "intent-scout SOP", "the prompt rides right after -p, before the variadic flags"
-    assert_equal ["--agent", "avi", "--permission-mode", "dontAsk"], argv[3, 4]
+    assert_equal ["--setting-sources", "project"], argv[3, 2],
+                 "no user settings: their allow rules would be ADDED under dontAsk"
+    assert_includes argv, "--strict-mcp-config"
+    agents = JSON.parse(argv[argv.index("--agents") + 1])
+    assert_equal "You are Avi.", agents.dig("avi", "prompt"), "Avi inline, since user agents no longer load"
+    refute agents["avi"].key?("tools"), "the allow-list, not the agent file, decides the tools"
+    assert_equal %w[--agent avi --permission-mode dontAsk], argv[argv.index("--agent"), 4]
     tools = argv[argv.index("--allowedTools") + 1].split(",")
     assert_includes tools, "Read"
     assert_includes tools, "Bash(bin/task note *)", "the scout must be able to post its brief"
     refute(tools.any? { |t| t.match?(/\A(Edit|Write|NotebookEdit)\b/) }, "the scout never edits: #{tools}")
     refute_includes tools, "Bash", "no unrestricted shell"
     assert_includes argv[2], "headless"
-    refute(tools.any? { |t| t.include?("-C *") }, "no wildcard before a git subcommand")
+    refute(tools.any? { |t| t.match?(/\ABash\((git|rg)\b/) }, "no git or rg: --output, -O and --pre escape (#{tools})")
     assert_equal @root, @spawns.first[:opts][:chdir]
     assert @spawns.first[:opts][:pgroup], "detached from begin's process group"
   end
@@ -169,6 +179,59 @@ class IntentScoutLaunchTest < Minitest::Test
     assert_includes IntentScout.summary_line(kind: :prior), "already launched"
     assert_includes IntentScout.summary_line(kind: :brief), "brief is already"
     assert_includes IntentScout.summary_line(kind: :manual, reason: "x"), "NOT launched (x)"
+  end
+
+  def test_no_avi_definition_falls_back_to_the_block
+    FileUtils.rm(File.join(@root, ".claude", "agents", "avi.md"))
+    result = launch(laptop)
+
+    assert_equal :manual, result[:kind]
+    assert_includes result[:reason], "no avi agent definition"
+    assert_empty @spawns
+  end
+
+  def test_a_scout_that_dies_at_once_is_not_reported_launched
+    result = IntentScout.auto_launch(SLUG, DESK, resume: false, env: laptop, hub_dir: @root, spawner: spawner,
+                                                 detacher: nil, exited: ->(_pid, _grace) { 1 })
+
+    assert_equal :manual, result[:kind]
+    assert_includes result[:reason], "exited at once (status 1)"
+    refute File.exist?(File.join(@home, "#{SLUG}.pid")), "a dead launch must not block the next begin"
+  end
+
+  def test_the_state_is_private
+    launch(laptop)
+
+    assert_equal 0o700, File.stat(@home).mode & 0o777
+    assert_equal 0o600, File.stat(File.join(@home, "#{SLUG}.pid")).mode & 0o777
+    assert_equal 0o600, File.stat(File.join(@home, "#{SLUG}.log")).mode & 0o777
+  end
+
+  def test_an_empty_pid_file_is_in_flight_when_fresh_and_debris_when_old
+    FileUtils.mkdir_p(@home)
+    pid = File.join(@home, "#{SLUG}.pid")
+    File.write(pid, "")
+    assert_equal :prior, launch(laptop)[:kind], "fresh and empty: a launch in flight"
+
+    old = Time.now - IntentScout::EMPTY_STALE - 5
+    File.utime(old, old, pid)
+    assert_equal :launched, launch(laptop)[:kind], "old and empty: an interrupted claim, not a scout"
+  end
+
+  def test_dead_pid_files_of_other_tasks_are_pruned_once_old
+    FileUtils.mkdir_p(@home)
+    old_dead = File.join(@home, "old-dead.pid")
+    new_dead = File.join(@home, "new-dead.pid")
+    live = File.join(@home, "live.pid")
+    [old_dead, new_dead].each { |f| File.write(f, "999999999") }
+    File.write(live, Process.pid.to_s)
+    ancient = Time.now - IntentScout::DEAD_KEEP - 60
+    [old_dead, live].each { |f| File.utime(ancient, ancient, f) }
+    launch(laptop)
+
+    refute File.exist?(old_dead)
+    assert File.exist?(new_dead), "a recent dead scout still answers a resume"
+    assert File.exist?(live), "a running scout is never pruned"
   end
 
   def test_the_owed_note_carries_the_pid

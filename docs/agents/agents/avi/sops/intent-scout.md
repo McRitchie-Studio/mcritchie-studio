@@ -15,15 +15,24 @@ The act begins at `bin/task begin`. When `begin` first claims a task, it
 **launches the scout itself**: a detached, headless run of this SOP as Avi,
 
 ```bash
-claude -p "<IntentScout.headless_prompt>" --agent avi --permission-mode dontAsk \
-  --allowedTools "Read,Grep,Glob,Bash(git grep *),...,Bash(bin/task note *),..." \
+claude -p "<IntentScout.headless_prompt>" --setting-sources project --strict-mcp-config \
+  --agents '{"avi": <~/.claude/agents/avi.md, inline>}' --agent avi --permission-mode dontAsk \
+  --allowedTools "Read,Grep,Glob,Bash(grep *),Bash(ls *),Bash(cd *),Bash(<bin>/task note *),..." \
   --add-dir /Users/alex/projects --name "intent-scout <slug>"
 ```
 
 started from the hub primary with an allow-listed environment (no session ids, no
 admin token), its output in `~/.intent-scout/<slug>.log` and its pid
-in `<slug>.pid` beside it. `dontAsk` denies anything outside the allow-list rather
-than prompting, so the run can read and post its note, and can never edit. It then
+in `<slug>.pid` beside it (the folder 0700, the files 0600). `dontAsk` denies
+anything outside the allow-list rather than prompting. `--setting-sources project`
+matters as much: without it the operator's `~/.claude/settings.json` allow rules
+(git push, `gh pr merge`, `bin/task:*`) are ADDED under `dontAsk`, so Avi's
+definition rides inline through `--agents`. The allow-list has no `git` and no
+`rg`, whose `--output`, `-O` and `--pre` options write files or run programs; the
+Grep tool searches instead. `test/lib/intent_scout_cli_smoke_test.rb` proves all
+of it against the real CLI (`INTENT_SCOUT_LIVE_SMOKE=1`; never in CI): `git add`,
+`git show --output` and `rg --pre` are denied and `bin/task note` is allowed. Run
+it after any change to the launch. It then
 posts an `INTENT SCOUT OWED:` note carrying the pid, and prints, last:
 
 ```text
@@ -39,9 +48,8 @@ Codex session), `INTENT_SCOUT_AUTO=0`, CI or the test suite, a failed spawn, or
 five scouts already running (the cap below).
 
 The scout counts toward the five-agent cap, but it runs no suite, so it never
-counts as a certifying agent. A headless run's Bash allow-list has no `git -C`
-(Claude Code refuses a wildcard before a git subcommand), so it greps another repo
-with the Grep tool or `cd <repo> && git grep …`.
+counts as a certifying agent. A scout that exits within half a second of its launch
+is a failed launch: begin prints the block instead of "launched".
 
 ## Scope
 
@@ -83,9 +91,8 @@ Aim for about ten minutes, so the brief lands before the builder's submit does.
      `test/lib`, `test/integration`, `test/system`, and `e2e/`;
    - docs, copy, and fixtures that quote the value.
 
-   ```bash
-   cd /Users/alex/projects/<repo> && git grep -n -i "<value or noun>"
-   ```
+   Use the Grep tool over `/Users/alex/projects/<repo>` (case-insensitive, with
+   line numbers). A headless scout has no `git` or `rg` in its shell.
 
    A literal value (a price, a label, a route) is the commonest miss: grep the
    value itself, in every spelling (`1,500`, `1500`, `1_500`).

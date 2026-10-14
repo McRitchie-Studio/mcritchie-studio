@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "open3"
 require "time"
 require "uri"
@@ -184,15 +185,19 @@ module IntentScout
   # toward First Rule 6's cap of five. At the cap begin prints the block instead.
   CAP = 5
 
-  # The tools the headless scout may use, and nothing else: it runs with
-  # --permission-mode dontAsk, so anything outside this list is DENIED rather
-  # than prompted (nobody is there to answer a prompt). Read-only tools, read-only
-  # git and shell reads, and the board CLIs the SOP names (`task note` posts the
-  # brief; `agent-activity` narrates; `dream` loads the sequence). No Edit, no
-  # Write, no git that writes: the scout never touches the desk.
-  READ_ONLY_BASH = [
-    "git grep *", "git log *", "git show *", "grep *", "rg *", "ls *", "cat *", "head *", "tail *", "wc *", "cd *"
-  ].freeze
+  # The tools the headless scout may use, and nothing else. Read, Grep and Glob do
+  # the searching; Bash is allowed ONLY for the board CLIs the SOP names (`task
+  # note` posts the brief; `agent-activity` narrates; `dream` loads the sequence)
+  # plus three shell reads with no option that runs a program or writes a file.
+  #
+  # Each rule here is a claim that the command cannot write or execute, and the
+  # first draft got three of them wrong (Carl and Steffon, 2026-10-14): `rg --pre
+  # <program>` runs any program, `git show/log --output=<file>` writes a file, and
+  # `git grep -O<cmd>` runs a pager. So there is no rg and no git at all: the Grep
+  # tool covers both. The live proof is test/lib/intent_scout_cli_smoke_test.rb,
+  # which runs the real CLI under this exact argv; an argv assertion cannot see
+  # what the CLI adds.
+  READ_ONLY_BASH = ["grep *", "ls *", "cd *"].freeze
   BOARD_SUBCOMMANDS = ["task show *", "task list *", "task note *", "task scout-brief *",
                        "agent-activity *", "dream *"].freeze
 
@@ -237,6 +242,7 @@ module IntentScout
       return "CI or the test suite; auto-launch never fires there"
     end
     return "no claude CLI found" unless claude_bin(env)
+    return "no avi agent definition (~/.claude/agents/avi.md)" unless agent_json(env)
     return "no intent-scout state directory" unless state_dir(env)
 
     live = live_scouts(env)
@@ -256,6 +262,15 @@ module IntentScout
     File.join(env["HOME"], ".intent-scout")
   end
 
+  # Seconds an empty pid file may stand before it reads as debris (prior_launch).
+  EMPTY_STALE = 60
+  # Seconds a DEAD scout's pid file is kept (it answers a resume "finished");
+  # older ones are pruned at the next launch.
+  DEAD_KEEP = 7 * 24 * 3600
+  # Seconds begin watches the child before it says "launched": a scout that dies
+  # at once (a bad flag, no login) is a failed launch, not a running one.
+  GRACE = 0.5
+
   def pid_path(dir, slug) = File.join(dir, "#{slug}.pid")
   def log_path(dir, slug) = File.join(dir, "#{slug}.log")
 
@@ -268,6 +283,34 @@ module IntentScout
     false
   rescue Errno::EPERM
     true
+  end
+
+  # Reap-and-read: the child's exit status if it ended within `grace` seconds,
+  # else nil (still running). A pid that is not our child (ECHILD) reads as running.
+  def exit_status_within(pid, grace)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace
+    loop do
+      done = Process.waitpid(pid, Process::WNOHANG)
+      return $?.exitstatus || $?.termsig if done
+      return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 0.05
+    end
+  rescue Errno::ECHILD
+    nil
+  end
+
+  # Delete other slugs' pid files whose scout is dead and older than DEAD_KEEP.
+  def prune!(dir, keep_slug)
+    Dir.glob(File.join(dir, "*.pid")).each do |path|
+      next if File.basename(path, ".pid") == keep_slug
+      next if alive?(File.read(path).strip.to_i)
+      next if Time.now - File.mtime(path) < DEAD_KEEP
+
+      File.delete(path)
+    end
+  rescue SystemCallError
+    nil
   end
 
   def live_scouts(env = ENV)
@@ -285,7 +328,17 @@ module IntentScout
     dir = state_dir(env)
     return nil unless dir && File.exist?(pid_path(dir, slug))
 
-    pid = File.read(pid_path(dir, slug)).strip.to_i
+    path = pid_path(dir, slug)
+    text = File.read(path).strip
+    # An interrupt between the exclusive create and the pid write leaves an EMPTY
+    # file. Fresh, it is a launch in flight; past EMPTY_STALE seconds it is debris,
+    # and keeping it would silence the scout for this slug forever.
+    if text.empty? && Time.now - File.mtime(path) > EMPTY_STALE
+      File.delete(path)
+      return nil
+    end
+
+    pid = text.to_i
     { pid: pid, alive: alive?(pid), log: log_path(dir, slug) }
   rescue SystemCallError
     nil
@@ -311,12 +364,44 @@ module IntentScout
   #   --allowedTools ...          the read-only tools and the board CLIs (allowed_tools)
   #   --add-dir <projects>        read any repo and the builder's desk
   #   --name                      a findable session name
-  def launch_command(slug, desk, bin:, projects_dir:, bin_dirs: [])
-    # The prompt rides right after -p: --allowedTools and --add-dir are variadic,
-    # so a prompt placed last is swallowed as one more directory.
-    [bin, "-p", headless_prompt(slug, desk), "--agent", "avi", "--permission-mode", "dontAsk",
+  # The prompt rides right after -p: --allowedTools and --add-dir are variadic,
+  # so a prompt placed last is swallowed as one more directory.
+  #   --setting-sources project   load NO user or local settings: under dontAsk the
+  #                               operator's ~/.claude/settings.json allow rules
+  #                               (git push, gh pr merge, bin/task:*) are ADDED to
+  #                               --allowedTools, and Carl reproduced `git add`
+  #                               succeeding through them (2026-10-14)
+  #   --agents <json>             Avi's definition inline: user agents load from the
+  #                               user source, which is now off, so `--agent avi`
+  #                               alone answers "not found"
+  #   --strict-mcp-config         no MCP servers from the operator's config
+  def launch_command(slug, desk, bin:, projects_dir:, agent_json:, bin_dirs: [], prompt: nil)
+    [bin, "-p", prompt || headless_prompt(slug, desk),
+     "--setting-sources", "project", "--strict-mcp-config",
+     "--agents", agent_json, "--agent", "avi", "--permission-mode", "dontAsk",
      "--allowedTools", allowed_tools(bin_dirs).join(","),
      "--add-dir", projects_dir, "--name", "intent-scout #{slug}"]
+  end
+
+  # Avi's agent definition as the --agents JSON, read from the operator's agent
+  # file (~/.claude/agents/avi.md, or under CLAUDE_CONFIG_DIR). Its `tools`
+  # line is dropped: the allow-list above, not the file, decides what the scout
+  # may run. nil when the file is missing or has no front matter.
+  def agent_json(env = ENV)
+    config = env["CLAUDE_CONFIG_DIR"].to_s.strip
+    config = File.join(env["HOME"].to_s, ".claude") if config.empty?
+    path = File.join(config, "agents", "avi.md")
+    return nil unless File.file?(path)
+
+    match = File.read(path).match(/\A---\s*\n(.*?)\n---\s*\n(.*)\z/m)
+    return nil unless match
+
+    front = match[1].lines.to_h { |line| line.split(":", 2).map(&:strip) }.reject { |k, v| k.to_s.empty? || v.nil? }
+    definition = { "description" => front["description"].to_s, "prompt" => match[2].strip }
+    definition["model"] = front["model"] if front["model"] && !front["model"].empty?
+    JSON.generate("avi" => definition)
+  rescue SystemCallError
+    nil
   end
 
   # The child's whole environment (ENV_ALLOW, plus every LC_ locale key).
@@ -328,22 +413,32 @@ module IntentScout
   # launch for `slug` already exists, and raises on a failed spawn (after removing
   # the claim, so the next begin may try again). `spawner` has Process.spawn's shape.
   def launch!(slug, desk, env: ENV, hub_dir: ProjectsRoot.hub_checkout, bin_dirs: [],
-              spawner: Process.method(:spawn), detacher: Process.method(:detach))
+              spawner: Process.method(:spawn), detacher: Process.method(:detach),
+              exited: method(:exit_status_within), grace: GRACE)
     dir = state_dir(env) || raise(ArgumentError, "no intent-scout state directory")
-    FileUtils.mkdir_p(dir)
+    FileUtils.mkdir_p(dir, mode: 0o700)
+    File.chmod(0o700, dir)
+    prune!(dir, slug)
     pid_file = pid_path(dir, slug)
     log = log_path(dir, slug)
     begin
-      claim = File.open(pid_file, File::WRONLY | File::CREAT | File::EXCL, 0o644)
+      claim = File.open(pid_file, File::WRONLY | File::CREAT | File::EXCL, 0o600)
     rescue Errno::EEXIST
       return { prior: prior_launch(slug, env) || { pid: 0, alive: false, log: log } }
     end
     begin
-      argv = launch_command(slug, desk, bin: claude_bin(env), projects_dir: File.dirname(hub_dir), bin_dirs: bin_dirs)
-      File.write(log, "# intent scout for #{slug}, launched #{Time.now.utc.iso8601} by bin/task begin\n", mode: "a")
+      definition = agent_json(env) || raise(ArgumentError, "no avi agent definition")
+      argv = launch_command(slug, desk, bin: claude_bin(env), projects_dir: File.dirname(hub_dir), bin_dirs: bin_dirs,
+                                        agent_json: definition)
+      File.open(log, File::WRONLY | File::APPEND | File::CREAT, 0o600) do |f|
+        f.puts "# intent scout for #{slug}, launched #{Time.now.utc.iso8601} by bin/task begin"
+      end
       pid = spawner.call(child_env(env), *argv, unsetenv_others: true,
                                                 chdir: (File.directory?(hub_dir) ? hub_dir : Dir.pwd),
                                                 pgroup: true, in: File::NULL, out: [log, "a"], err: [:child, :out])
+      status = exited&.call(pid, grace)
+      raise ChildDied, "the scout exited at once (status #{status}); read #{log}" unless status.nil?
+
       detacher&.call(pid)
       claim.write(pid.to_s)
       claim.close
