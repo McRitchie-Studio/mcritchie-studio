@@ -611,6 +611,8 @@ Rails.application.routes.draw do
   # The dream bank as an org chart: platform, then each soul with its SOPs. Admin-only
   # (AdminWall default). Reads docs/agents/dreams live; see DreamOrgChart.
   get "dreams", to: "dreams#index"
+  # Alex's one-click approval of a proposed dream (DreamApproval). Approver-only.
+  post "dreams/approvals", to: "dreams#approve", as: :dream_approvals
 
   get "docs", to: "docs#index"
   get "docs/*path", to: "docs#show", as: :doc
@@ -867,6 +869,8 @@ Rails.application.routes.draw do
       # (ActionGrade.banked) as a capped, newest-first list, so a SessionStart hook
       # can inject past sessions' lessons into a fresh agent's context.
       get "insights", to: "insights#index"
+      # Pending dream approvals (read-only; an approval is made only on /dreams).
+      get "dream_approvals", to: "dream_approvals#index"
     end
   end
 end

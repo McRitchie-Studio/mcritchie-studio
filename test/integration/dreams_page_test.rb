@@ -128,6 +128,97 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # ── one-click approval and the heat map ──────────────────────────────────
+
+  PROPOSED = { dream_home: "pokemon", dream_slug: "proposed-money-idea" }.freeze
+
+  test "[integration] Alex sees Approve on a proposed dream only, and one click records it" do
+    get dreams_path
+    assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve']", 1
+    assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-approve']", 0
+
+    assert_difference -> { DreamApproval.count }, 1 do
+      post dream_approvals_path, params: PROPOSED.merge(status: "proposed")
+    end
+    assert_redirected_to dreams_path(status: "proposed", anchor: "dream-proposed-money-idea")
+    assert_equal 303, response.status
+    approval = DreamApproval.last
+    assert_equal [ "pokemon", "proposed-money-idea" ], [ approval.dream_home, approval.dream_slug ]
+    assert_nil approval.applied_at
+
+    follow_redirect!
+    assert_select "[data-dream='proposed-money-idea'][data-status='proposed']" do
+      assert_select "[data-test='dream-approved-pending-badge']", text: "Approved, loads after the next release"
+      assert_select "[data-test='dream-proposed-badge']", 0
+      assert_select "[data-test='dream-approve']", 0
+      assert_select "[data-test='dream-approval-note']", text: /bin\/dream apply-approvals/
+    end
+
+    assert_no_difference -> { DreamApproval.count } do
+      post dream_approvals_path, params: PROPOSED
+    end
+  end
+
+  test "[integration] an approved, unknown or forged dream is not approved" do
+    [ { dream_home: "carl", dream_slug: "money-review-reads-the-ledger" },
+      { dream_home: "pokemon", dream_slug: "no-such-dream" },
+      { dream_home: "carl", dream_slug: "proposed-money-idea" },
+      {} ].each do |params|
+      assert_no_difference -> { DreamApproval.count }, params.inspect do
+        post dream_approvals_path, params: params
+      end
+      assert_redirected_to dreams_path
+      assert_match(/\ANot approved: /, flash[:alert])
+    end
+  end
+
+  test "[integration] a viewer and a visitor are walled out of approving" do
+    reset!
+    log_in_as(users(:viewer))
+    assert_no_difference -> { DreamApproval.count } do
+      post dream_approvals_path, params: PROPOSED
+    end
+    assert_response :redirect
+    assert_not_equal dreams_path, URI(response.location).path
+
+    reset!
+    assert_no_difference -> { DreamApproval.count } do
+      post dream_approvals_path, params: PROPOSED
+    end
+    assert_response :redirect
+  end
+
+  test "[integration] an admin who is not Alex sees no button and cannot approve" do
+    reset!
+    seat = User.create!(email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin")
+    log_in_as(seat)
+
+    get dreams_path
+    assert_response :success
+    assert_select "[data-test='dream-approve']", 0
+
+    assert_no_difference -> { DreamApproval.count } do
+      post dream_approvals_path, params: PROPOSED
+    end
+    assert_equal "Not approved: only Alex approves dreams.", flash[:alert]
+  end
+
+  test "[integration] a dream shows its fire count and recent decisions" do
+    2.times do |n|
+      AgentAction.create!(session_id: "heat", kind: DreamHeat::KIND, event_slug: "list-the-candidates",
+                          summary: "Listed both forwards first #{n}", occurred_at: n.hours.ago, outcome: "ok")
+    end
+
+    get dreams_path
+
+    assert_select "[data-dream='list-the-candidates']" do
+      assert_select "[data-test='dream-fire-count']", text: "2 fired"
+      assert_select "[data-test='dream-decision']", 2
+      assert_select "[data-test='dream-decision']", text: /Listed both forwards first 0/
+    end
+    assert_select "[data-dream='report-what-you-verified'] [data-test='dream-fire-count']", 0
+  end
+
   test "a visitor is walled out" do
     reset!
     get dreams_path

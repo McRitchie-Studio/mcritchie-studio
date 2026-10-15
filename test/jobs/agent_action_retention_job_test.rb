@@ -160,6 +160,18 @@ class AgentActionRetentionJobTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] a dream-fired action is kept past the window; the heat map counts it all-time" do
+    travel_to(NOW) do
+      fired = action_at(90.days.ago, kind: DreamHeat::KIND, event_slug: "some-dream", summary: "Kept the probe")
+      plain = action_at(90.days.ago, event_slug: "some-dream")
+
+      run_job
+
+      assert exists?(fired), "a dream_fired row is the heat map's source; deleting it cools the dream"
+      assert_not exists?(plain), "control: the same old row under another kind is deleted"
+    end
+  end
+
   test "[unit] a re-run is idempotent and deletes nothing more" do
     travel_to(NOW) do
       3.times { action_at(50.days.ago) }

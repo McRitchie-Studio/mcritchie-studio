@@ -131,6 +131,35 @@ class DreamBankTest < Minitest::Test
     assert_includes DreamBank.context(three_dreams), "A dream never overrides a First Rule or an SOP."
   end
 
+  def test_unit_the_header_tells_a_session_to_record_a_fired_dream
+    assert_includes DreamBank.context(three_dreams), 'run `bin/dream fired <slug> --decision "..."`'
+  end
+
+  PROPOSED_FILE = <<~MD
+    ---
+    question: "Do I merge on one read?"
+    answer: "No."
+    status: "proposed"
+    ---
+
+    The story quotes its old front matter:
+    status: proposed
+  MD
+
+  def test_unit_approve_text_flips_only_the_front_matter_status
+    flipped = DreamBank.approve_text(PROPOSED_FILE)
+
+    assert_equal PROPOSED_FILE.sub('status: "proposed"', "status: approved"), flipped
+    assert_includes flipped, "\nstatus: proposed\n", "the body's line is the story's, not the status"
+    assert DreamBank.parse(flipped, slug: "x").approved?
+  end
+
+  def test_unit_approve_text_refuses_a_file_that_is_not_proposed
+    assert_nil DreamBank.approve_text(DREAM.sub("status: Approved", "status: approved"))
+    assert_nil DreamBank.approve_text("status: proposed\nno front matter")
+    assert_nil DreamBank.approve_text(nil)
+  end
+
   # ── tags and the two sequences ─────────────────────────────────────────────
 
   def tagged(extra, question: "Do I merge on one read?")

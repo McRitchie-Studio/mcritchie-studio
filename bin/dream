@@ -11,13 +11,23 @@
 #   bin/dream propose --materialize <finding>
 #                                      write the proposed dream a dream-proposal-<task> triage finding
 #                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
+#   bin/dream approvals                list the approvals Alex gave on /dreams that no file carries yet
+#   bin/dream apply-approvals          set each pending approval's file to `status: approved` in this
+#                                      desk and rewrite INDEX.md, for one batch task
+#   bin/dream fired <slug> --decision "<what it changed>"
+#                                      record that a dream shaped a decision (the /dreams heat map)
 #
 # Reads tracked files; --task also reads the task from the board, and prints
 # unranked, with the reason on stderr, when it cannot. propose reads the finding
 # from the board, runs only in a task desk, and never overwrites a file.
+# approvals and apply-approvals read GET /api/v1/dream_approvals; apply-approvals
+# runs only in a task desk and flips only a file that reads `status: proposed`.
+# fired posts a `dream_fired` action to the session's open activity
+# (bin/agent-activity action) and refuses an unknown dream.
 # Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
 
 require "fileutils"
+require "open3"
 require "pathname"
 require_relative "lib/dream_bank"
 
@@ -30,16 +40,24 @@ class DreamCli
   TASK_SLUG = /\A[a-z0-9][a-z0-9-]*\z/
   PROPOSAL = /\Adream-proposal-([a-z0-9][a-z0-9-]*)\z/
   BANK = "docs/agents/dreams"
+  FIRED_KIND = "dream_fired"
+  # AgentAction::MAX_SUMMARY_LENGTH: the board keeps this much of a decision.
+  DECISION_LIMIT = 160
 
   # `task_reader` answers a slug with the board's task JSON, or nil;
-  # `finding_reader` answers a finding slug with its board row, or nil.
-  def initialize(env: ENV, out: $stdout, err: $stderr, task_reader: nil, finding_reader: nil, cwd: Dir.pwd)
+  # `finding_reader` answers a finding slug with its board row, or nil;
+  # `approvals_reader` answers the pending approval rows, or nil;
+  # `fire_reporter` takes the action's arguments and answers [recorded?, message].
+  def initialize(env: ENV, out: $stdout, err: $stderr, task_reader: nil, finding_reader: nil,
+                 approvals_reader: nil, fire_reporter: nil, cwd: Dir.pwd)
     @env = env
     @dir = DreamBank.bank_dir(env)
     @out = out
     @err = err
     @task_reader = task_reader || method(:board_task)
     @finding_reader = finding_reader || method(:board_finding)
+    @approvals_reader = approvals_reader || method(:board_approvals)
+    @fire_reporter = fire_reporter || method(:report_fire)
     @cwd = cwd
   end
 
@@ -53,6 +71,9 @@ class DreamCli
     when "platform" then rest.empty? ? platform : usage(@err, USAGE)
     when "list" then list(rest)
     when "propose" then propose(rest)
+    when "approvals" then rest.empty? ? approvals : usage(@err, USAGE)
+    when "apply-approvals" then rest.empty? ? apply_approvals : usage(@err, USAGE)
+    when "fired" then fired(rest)
     else soul(command, rest)
     end
   end
@@ -136,6 +157,103 @@ class DreamCli
 
   def board_finding(slug)
     Array(board_get("/api/v1/triage_findings?slug=#{slug}")).find { |row| row["slug"] == slug }
+  end
+
+  def board_approvals
+    board_get("/api/v1/dream_approvals")
+  end
+
+  # The pending approval rows, or nil with the reason given by the caller.
+  def pending_approvals
+    rows = begin
+      @approvals_reader.call
+    rescue StandardError
+      nil
+    end
+    rows.is_a?(Array) ? rows.select { |row| row.is_a?(Hash) } : nil
+  end
+
+  def approvals
+    rows = pending_approvals
+    return refuse("could not read the pending approvals from the board.") if rows.nil?
+
+    @out.puts("## Pending dream approvals (#{rows.size})")
+    rows.each do |row|
+      @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · approved #{row["approved_at"].to_s[0, 10]} " \
+                "by #{row["approved_by"] || "unknown"} · file reads #{row["file_status"]}")
+    end
+    @out.puts("Write them into the files: bin/dream apply-approvals, in one batch task desk.") unless rows.empty?
+    OK
+  end
+
+  # Flips each pending approval's file in this desk and rewrites the index. A row
+  # whose home or slug is not one token, whose file is absent, or whose file does
+  # not read proposed is reported and left alone.
+  def apply_approvals
+    root = desk
+    return refuse("apply-approvals writes into a task desk; #{@cwd} is not inside one.") if root.nil?
+
+    bank = File.join(root, BANK)
+    return refuse("#{root} has no #{BANK}/.") unless File.directory?(bank)
+
+    rows = pending_approvals
+    return refuse("could not read the pending approvals from the board.") if rows.nil?
+
+    flipped = rows.count { |row| apply_one(bank, row) }
+    File.write(File.join(bank, "INDEX.md"), DreamBank.index(dir: bank)) if flipped.positive?
+    @out.puts("dream: #{flipped} of #{rows.size} pending approval(s) written#{flipped.positive? ? "; INDEX.md rewritten" : ""}.")
+    if flipped.positive?
+      @out.puts("Commit the files and INDEX.md and submit them as one task. /dreams marks each applied once " \
+                "the release ships the file reading approved.")
+    end
+    OK
+  end
+
+  def apply_one(bank, row)
+    home = row["dream_home"].to_s
+    slug = row["dream_slug"].to_s
+    unless TASK_SLUG.match?(home) && TASK_SLUG.match?(slug)
+      @err.puts("dream: skipped approval `#{home}/#{slug}`: not a bank path.")
+      return false
+    end
+
+    path = File.join(bank, home, "#{slug}.md")
+    text = File.exist?(path) ? File.read(path) : nil
+    flipped = text && DreamBank.approve_text(text)
+    unless flipped
+      @err.puts("dream: skipped `#{home}/#{slug}`: #{text ? "the file does not read status: proposed" : "no file at #{path}"}.")
+      return false
+    end
+
+    File.write(path, flipped)
+    @out.puts("dream: approved #{path}")
+    true
+  end
+
+  def fired(rest)
+    slug = rest.first.to_s
+    decision = rest.size == 3 && rest[1] == "--decision" ? rest[2].to_s.strip.gsub(/\s+/, " ") : ""
+    return usage(@err, USAGE) unless TASK_SLUG.match?(slug) && !decision.empty?
+    return refuse("`#{slug}` is not a dream in #{@dir}.") unless DreamBank.all(dir: @dir).any? { |dream| dream.slug == slug }
+
+    @err.puts("dream: the decision is cut to #{DECISION_LIMIT} characters.") if decision.size > DECISION_LIMIT
+    recorded, message = begin
+      @fire_reporter.call([ "action", "--kind", FIRED_KIND, "--event-slug", slug, "--summary", decision[0, DECISION_LIMIT] ])
+    rescue StandardError => e
+      [ false, e.class.name ]
+    end
+    return refuse("`#{slug}` fired, but nothing was recorded: #{message}") unless recorded
+
+    @out.puts("dream: `#{slug}` fired · #{decision[0, DECISION_LIMIT]}")
+    OK
+  end
+
+  # Runs `bin/agent-activity action`, which always exits 0, and reads its stdout:
+  # only an accepted post prints `atomic-event: action · ...`.
+  def report_fire(args)
+    out, err, = Open3.capture3(File.expand_path("agent-activity", __dir__), *args)
+    recorded = out.include?("atomic-event: action ·")
+    [ recorded, (err.strip.empty? ? out : err).strip.lines.last.to_s.strip ]
   end
 
   def board_get(path)
