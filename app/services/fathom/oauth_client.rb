@@ -73,13 +73,15 @@ module Fathom
       # returning, so a racing refresh waits and then spends the NEW token.
       # Raises Revoked when Fathom no longer honours the stored token.
       def access_token(connection, now: Time.current)
-        connection.with_lock do
-          grant = post(grant_type: "refresh_token", refresh_token: connection.refresh_token)
-          raise Error, "Fathom answered a refresh with no new refresh token; connect again" if grant["refresh_token"].blank?
+        grant = connection.with_lock do
+          answer = post(grant_type: "refresh_token", refresh_token: connection.refresh_token)
+          raise Error, "Fathom answered a refresh with no new refresh token; connect again" if answer["refresh_token"].blank?
 
-          connection.rotate!(grant["refresh_token"], now:)
-          grant.fetch("access_token") { raise Error, "Fathom answered a refresh with no access token" }
+          connection.rotate!(answer["refresh_token"], now:)
+          answer
         end
+        # After the lock commits: a raise inside it would roll back the new token Fathom already rotated.
+        grant.fetch("access_token") { raise Error, "Fathom answered a refresh with no access token" }
       end
 
       private

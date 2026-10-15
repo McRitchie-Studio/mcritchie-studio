@@ -107,6 +107,16 @@ class Fathom::OAuthClientTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] a refresh answer without an access token still keeps the new refresh token Fathom already rotated" do
+    with_fathom_env do
+      connection = store_fathom(refresh_token: "r1")
+      fathom_tokens([ 200, { refresh_token: "r2" } ])
+
+      assert_raises(Fathom::OAuthClient::Error) { Fathom::OAuthClient.access_token(connection) }
+      assert_equal "r2", connection.reload.refresh_token, "r1 is spent at Fathom; rolling back to it would strand the account"
+    end
+  end
+
   test "[unit] a TLS or network failure says Fathom could not be reached, naming the class only" do
     with_fathom_env do
       Net::HTTP.stub(:start, ->(*) { raise OpenSSL::SSL::SSLError, "secret detail" }) do
