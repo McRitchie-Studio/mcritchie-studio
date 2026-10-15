@@ -27,7 +27,10 @@ module AgentMessages
   # no model call, and no model-written text that could carry an injected
   # instruction forward. The THREAD layer keeps its newest THREAD_TURNS.
   #
-  # THE USER LAYER is the person's notes (AgentPersonNote), on every channel.
+  # THE USER LAYER is the person's notes (AgentPersonNote), on every channel,
+  # each with its date, source message and that message's place. The notes are
+  # per PERSON and shared by every soul: a fact about a person is true whichever
+  # agent hears it. The PERSON layer, by contrast, is per person PER SOUL.
   #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
@@ -54,7 +57,8 @@ module AgentMessages
       rows = fetched.reject { |row| in_thread.include?(row.id) }
       recent, older = split(rows)
       total = person_scope.count
-      @places = places(thread + rows + [ @message ])
+      @notes = person ? person.notes.includes(:source_message).to_a : []
+      @places = places(thread + rows + [ @message ] + @notes.filter_map(&:source_message))
       thread_total = thread_scope.count
       person_turns = recent.map { |row| turn(row) }
       thread_turns = thread.map { |row| turn(row) }
@@ -109,9 +113,11 @@ module AgentMessages
     def user_json
       return nil unless person
 
-      facts = person.notes.to_a
+      facts = @notes.map do |note|
+        note.as_api_json.merge("place" => note.source_message ? place(note.source_message) : nil)
+      end
       { "person_id" => person.id, "display_name" => person.display_name,
-        "facts" => facts.map(&:as_api_json), "notes" => facts.map(&:body).join("\n") }
+        "facts" => facts, "notes" => @notes.map(&:body).join("\n") }
     end
 
     def split(rows)
