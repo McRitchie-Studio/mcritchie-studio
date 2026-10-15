@@ -18,7 +18,7 @@
             title="Decisions this dream shaped (bin/dream fired)"><%= fires %> fired</span>
     <% end %>
     <% if approval %>
-      <span class="badge shrink-0 text-3xs bg-success/10 text-success-ink border-success/40" data-test="dream-approved-pending-badge">Approved, loads after the next release</span>
+      <span class="badge max-w-[40%] text-3xs bg-success/10 text-success-ink border-success/40" data-test="dream-approved-pending-badge">Approved, loads after the next release</span>
     <% elsif proposed %>
       <span class="badge shrink-0 text-3xs bg-warning/10 text-warning border-warning/40" data-test="dream-proposed-badge">Proposed</span>
     <% elsif dream.status != DreamOrgChart::APPROVED %>
