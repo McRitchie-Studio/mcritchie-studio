@@ -152,6 +152,34 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
                  "a reply in the same channel still joins"
   end
 
+  # --- the person and the thread a stored message joins -----------------------
+
+  test "[unit] a stored message resolves its author to a person, the same one on every channel" do
+    one = ingest(discord_raw(1101, content: "<@&#{AVI_ROLE}> one", roles: [ AVI_ROLE ], author: "536552944271753216"))
+    two = ingest(discord_raw(1102, content: "<@&#{AVI_ROLE}> two", roles: [ AVI_ROLE ], author: "536552944271753216",
+                             channel: QUIET))
+
+    assert one.person_id
+    assert_equal one.person_id, two.person_id
+    assert_equal [ "discord:536552944271753216" ], one.person.as_api_json["identities"]
+  end
+
+  test "[unit] every message in a Discord thread channel shares the thread's key; a plain channel's start their own" do
+    routes = agent_routes(default_soul: "avi")
+    first = ingest(discord_raw(1111, content: "kick-off", channel: DESK_THREAD), routes: routes, parent_id: DESK)
+    second = ingest(discord_raw(1112, content: "what's next?", channel: DESK_THREAD), routes: routes, parent_id: DESK)
+
+    assert_equal "discord:#{DESK_THREAD}:#{DESK_THREAD}", first.thread_key
+    assert_equal first.thread_key, second.thread_key
+
+    DiscordChannel.create!(guild_external_id: GUILD, external_id: "900000000000000066", name: "t", kind: "thread",
+                           parent_external_id: DESK)
+    known = ingest(discord_raw(1113, content: "<@&#{AVI_ROLE}> hi", roles: [ AVI_ROLE ], channel: "900000000000000066"))
+    assert_equal "discord:900000000000000066:900000000000000066", known.thread_key,
+                 "the channel directory names a thread the reader gave no parent for"
+    assert_equal "discord:#{DESK}:1114", ingest(discord_raw(1114, content: "plain", channel: DESK), routes: routes).thread_key
+  end
+
   # --- overrides, ignore, and the guild boundary ------------------------------
 
   test "[unit] a default_soul override stores its channel's unaddressed messages, and its threads'" do
