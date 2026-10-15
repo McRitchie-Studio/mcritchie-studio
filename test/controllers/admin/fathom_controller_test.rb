@@ -97,7 +97,9 @@ class Admin::FathomControllerTest < ActionDispatch::IntegrationTest
 
       state = begin_connect["state"]
       fathom_tokens([ 400, { error: "invalid_request", error_description: "code expired" } ])
-      get admin_fathom_callback_path(code: "c0de", state:)
+      assert_difference -> { ErrorLog.count }, 1, "the refusal is kept in the error log" do
+        get admin_fathom_callback_path(code: "c0de", state:)
+      end
       assert_redirected_to admin_fathom_path
       assert_match(/Fathom refused to exchange the sign-in code \(Fathom answered 400: code expired\)/, flash[:alert])
       assert_equal 0, FathomConnection.count
@@ -162,6 +164,9 @@ class Admin::FathomControllerTest < ActionDispatch::IntegrationTest
 
       assert_select "[data-test='fathom-section'][data-state='read_failed']"
       assert_select "[data-test='fathom-read-error']", text: /no longer accepts this connection/
+      log = ErrorLog.order(:id).last
+      assert_equal "FathomConnection", log.target_type, "kept in the error log against the connection"
+      assert_match(/no longer accepts this connection/, log.message)
     end
   end
 

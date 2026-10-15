@@ -14,7 +14,8 @@ module Admin
   # /connect sends the admin to Fathom; /callback checks the OAuth state,
   # exchanges the code, stores the connection (the refresh token encrypted) and
   # comes back to where Connect was pressed. No token, and no part of one, is
-  # rendered, flashed or logged here. Fathom has no revoke endpoint, so
+  # rendered, flashed or logged here; a refused exchange, refresh or read is
+  # kept in the error log (rescue_and_log) as well as said on the page. Fathom has no revoke endpoint, so
   # /disconnect deletes the stored token and says so.
   #
   # WHERE IT COMES BACK. Connect and Disconnect sit on this page and on the
@@ -63,8 +64,10 @@ module Admin
       return redirect_to(back, alert: refusal(params[:error].to_s)) if params[:error].present?
       return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless FathomConnection.encryption_ready?
 
-      grant = Fathom::OAuthClient.exchange_code(code: params[:code].to_s, redirect_uri: callback_url)
-      connection = FathomConnection.store!(grant, account: account_for(grant), by: current_user.slug)
+      connection = rescue_and_log(target: current_user) do
+        grant = Fathom::OAuthClient.exchange_code(code: params[:code].to_s, redirect_uri: callback_url)
+        FathomConnection.store!(grant, account: account_for(grant), by: current_user.slug)
+      end
       redirect_to back, notice: "Fathom connected for #{connection.account}."
     rescue ActiveRecord::RecordInvalid => e
       redirect_to back, alert: "Fathom answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
@@ -78,7 +81,7 @@ module Admin
     # the grant itself stays until it is removed in Fathom; the page says so.
     def disconnect
       back = safe_return_to(params[:return_to])
-      deleted = FathomConnection.delete_all
+      deleted = rescue_and_log(target: current_user) { FathomConnection.delete_all }
       Rails.logger.info("[fathom_connect] disconnect by=#{current_user.slug} at=#{Time.current.utc.iso8601} deleted=#{deleted}")
       notice = if deleted.zero? then "Fathom was not connected, so nothing changed."
                else "Fathom disconnected: the stored token was deleted here. Fathom has no revoke for us to call, so remove McRitchie Studio's access in Fathom's settings to be sure."
@@ -98,13 +101,16 @@ module Admin
       FathomConnection::LABEL
     end
 
-    # The page's live read, or Fathom's error said plainly. One refresh, then
-    # at most three reads: well under Fathom's 60 a minute.
+    # The page's live read, or Fathom's error said plainly (and kept in the
+    # error log: the refresh is a write). One refresh, then at most three
+    # reads: well under Fathom's 60 a minute.
     def live_read(connection)
-      reader = Fathom::Reader.new(connection)
-      page = reader.meetings
-      newest = reader.newest(page)
-      read = Read.new(page:, newest:, transcript: newest && reader.transcript(newest.recording_id), summary: newest && reader.summary(newest.recording_id))
+      read = rescue_and_log(target: connection) do
+        reader = Fathom::Reader.new(connection)
+        page = reader.meetings
+        newest = reader.newest(page)
+        Read.new(page:, newest:, transcript: newest && reader.transcript(newest.recording_id), summary: newest && reader.summary(newest.recording_id))
+      end
       [ read, nil ]
     rescue Fathom::OAuthClient::Revoked
       [ nil, "Fathom no longer accepts this connection: it was revoked, expired or its token was spent. Disconnect, then connect again." ]
