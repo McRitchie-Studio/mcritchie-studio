@@ -13,7 +13,9 @@
     of the tab's logo, as shown). %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
-<% pill = "inline-flex h-8 items-center rounded-md border border-subtle px-2.5 text-2xs font-semibold text-heading cursor-pointer has-checked:border-transparent has-checked:bg-primary has-checked:text-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
+<%# A chosen option is outlined, as the edit panel's swatches are (logos/_edit_panel): indigo on light, white on dark,
+    solid when chosen and dashed on keyboard focus. %>
+<% pill = "inline-flex h-8 items-center rounded-md border border-subtle px-2.5 text-2xs font-semibold text-heading cursor-pointer has-checked:outline-2 has-checked:outline-offset-2 has-checked:outline-solid has-checked:outline-[#4338CA] dark:has-checked:outline-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-dashed has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
 <% legend = "text-3xs font-semibold uppercase tracking-wide text-muted mb-1.5" %>
 <% first_tone = @tones.first %>
 <% sizes = downloads.transform_values { |variant| Logos::PngSizes.natural(variant.svg) } %>
@@ -82,7 +84,7 @@
       </fieldset>
     </div>
   </form>
-  <p class="text-2xs text-muted break-all" data-test="download-summary" data-download-summary><%= shown.filename %></p>
+  <p class="text-2xs text-muted break-words" data-test="download-summary" data-download-summary><%= shown.filename %></p>
   <div class="flex flex-wrap items-center gap-2">
     <%= link_to "Download SVG", logo_asset_path(shown, download: 1), class: "btn btn-sm btn-primary border border-transparent #{ring}",
                 data: { test: "logo-download", turbo: false, download_link: true }, aria: { label: "Download: #{shown.label}" } %>

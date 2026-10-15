@@ -274,29 +274,40 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", logos_path, text: /Logos/
   end
 
-  # What a brand page's logo images, downloads and copy payloads must be for a list of variants, in page order (per
-  # example, its light version then its dark one; a watermark page has one version per example).
-  def assert_examples(variants, examples: variants.size)
+  # What a brand page's ONE logo (task logo-download-card) must be for its variants in page order (its light version
+  # then its dark one; a watermark page has one): the images, and the Download card, whose Download link and Copy SVG
+  # start on the first tone shown and whose tone radios carry every tone's SVG and download URL.
+  def assert_examples(variants, examples: 1)
     assert_select "[data-test='logo-example']", examples
     assert_equal variants.map(&:label), css_select("img[data-test='logo-image']").map { |img| img["alt"] }, "each image names its type, text and context"
-    assert_equal variants.map { |v| public_send(:"#{v.type}_logo_path", v.logo.brand, v.params) }, css_select("img[data-test='logo-image']").map { |img| img["src"] }
-    assert_equal variants.map { |v| public_send(:"#{v.type}_logo_path", v.logo.brand, v.params.merge(download: 1)) },
-                 css_select("a[data-test='logo-download']").map { |link| link["href"] }
-    assert_equal variants.map { |v| "Download: #{v.label}" }, css_select("a[data-test='logo-download']").map { |link| link["aria-label"] }
+    assert_equal variants.map { |v| logo_route(v) }, css_select("img[data-test='logo-image']").map { |img| img["src"] }
+    first = variants.first
+    assert_equal [logo_route(first, download: 1)], css_select("a[data-test='logo-download']").map { |link| link["href"] }
+    assert_equal ["Download: #{first.label}"], css_select("a[data-test='logo-download']").map { |link| link["aria-label"] }
     # Copy fetches the logo as shown from its own URL (task logo-gallery-polish-pass): the image's, not the download's.
-    assert_equal variants.map { |v| public_send(:"#{v.type}_logo_path", v.logo.brand, v.params) }, css_select("button[data-test='logo-copy']").map { |button| button["data-copy-svg"] },
-                 "copy gives the logo as shown"
-    assert_equal variants.map { |v| "Copy SVG: #{v.label}" }, css_select("button[data-test='logo-copy']").map { |button| button["aria-label"] }
+    assert_equal [logo_route(first)], css_select("button[data-test='logo-copy']").map { |button| button["data-copy-svg"] }, "copy gives the logo as shown"
+    assert_equal ["Copy SVG: #{first.label}"], css_select("button[data-test='logo-copy']").map { |button| button["aria-label"] }
+    variants.each do |v|
+      assert_select "input[data-test='download-tone-option'][value=?][data-svg=?][data-download-url=?][data-filename=?]",
+                    v.tone.to_s, logo_route(v), logo_route(v, download: 1), v.filename
+    end
   end
 
-  # In the brand's own page colouring: its Original where it has one (task logo-original-and-alt).
+  def logo_route(variant, **more) = public_send(:"#{variant.type}_logo_path", variant.logo.brand, variant.params.merge(more))
+
+  # Every tone's download URL on the Download card, light, dark and watermark.
+  def download_urls = css_select("input[data-test='download-tone-option']").map { |input| input["data-download-url"] }
+
+  # In the brand's own page colouring: its Original where it has one (task logo-original-and-alt); in the type's
+  # default text version (BrandKit::DEFAULTS) unless asked. One variant: the tab draws one logo.
   def variants(brand, type, **choices)
     logo = Logos::Variant.logo(brand, type)
-    Logos::Variant.all(logo, type:, colouring: logo.colourings.first, **choices)
+    defaults = type == :icon ? {} : { text: BrandKit::DEFAULTS.fetch(type).fetch(:text), rule: 4 }
+    [Logos::Variant.new(logo, type:, colouring: logo.colourings.first, **defaults.merge(choices))]
   end
 
-  # A page that follows the hub theme: each example's light and dark versions, in page order.
-  def themed(brand, type, **choices) = variants(brand, type, tone: :light, **choices).zip(variants(brand, type, tone: :dark, **choices)).flatten
+  # A page that follows the hub theme: the logo's light and dark versions, in page order.
+  def themed(brand, type, **choices) = variants(brand, type, tone: :light, **choices) + variants(brand, type, tone: :dark, **choices)
 
   # The light and dark versions of an example are wrapped so CSS on html.dark shows one.
   def assert_themed_pairs(count)
