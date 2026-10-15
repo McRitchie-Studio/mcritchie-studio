@@ -4,10 +4,12 @@
 //
 //   node script/brand_png.cjs <svg> <out.png> <size> [background] [safe-zone]
 //
-//   node script/brand_png.cjs public/brand/icon-dark.svg public/favicon.png 256
+//   node script/brand_png.cjs public/favicon-mark.svg public/favicon.png 256
 //   node script/brand_png.cjs public/brand/icon-dark.svg public/icon.png 512 '#1A1535' 0.16
 //
-// The artwork is centred and contained in the square. The kit icon's box is
+// The favicon draws the small-size mark (bin/rails logos:favicon_mark,
+// Logos::SmallMark: the icon without the specks a tab cannot show), the app
+// icon the full kit icon. The artwork is centred and contained in the square. The kit icon's box is
 // its ink (Logos::IconInk, task stacked-rule-of-three), so with no safe zone
 // (the favicon) the ink touches two opposite edges. `safe-zone` is for the PWA
 // app icon only: public/icon.png is served as "purpose": "maskable"
