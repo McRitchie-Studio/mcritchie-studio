@@ -70,7 +70,11 @@ the poll uses, so the unique index dedupes the two.
   a restart's overlap logs `another process holds the connection; standing by` and
   retries every 30 seconds. While connected, the holder checks every 15 seconds
   that its own backend still holds the lock, and stands down the moment it does
-  not. The connection budget in `config/puma.rb` counts this one connection.
+  not. The connection budget in `config/puma.rb` counts this one connection. The
+  lock is per database, so it cannot stop another app holding the same token: that
+  is why the token is never set on `mcritchie-studio-qa`.
+- **Receipts.** A routine reconnect is a log line. A fatal close, a message it
+  could not store, and the thread dying each also write an `ErrorLog` row.
 - **Switches.** Without `DISCORD_AGENT_BOT_TOKEN`, with `DISCORD_GATEWAY=off`, or
   with no guild listed, it stays inert and logs one `discord gateway idle:` line.
   It never logs the token or an IDENTIFY/RESUME payload.

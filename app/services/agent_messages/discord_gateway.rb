@@ -26,6 +26,9 @@ module AgentMessages
   #
   # The token is DISCORD_AGENT_BOT_TOKEN. Without it the listener is inert and
   # says so once. Neither the token nor an IDENTIFY/RESUME payload is ever logged.
+  #
+  # A routine reconnect is a log line. A fatal close, a message it could not
+  # store, and the thread dying also write an ErrorLog receipt.
   class DiscordGateway
     LOG = "[agent-messages] discord gateway".freeze
     # Seconds between attempts to take the leader lock while another holds it.
@@ -39,6 +42,9 @@ module AgentMessages
     # Thread → parent channel ids remembered for overrides; cleared past this.
     THREAD_CACHE_LIMIT = 10_000
     DISABLE_ENV = "DISCORD_GATEWAY".freeze
+
+    # What an ErrorLog receipt names when Discord refuses the connection for good.
+    Fatal = Class.new(StandardError)
 
     class << self
       attr_reader :instance
@@ -157,6 +163,7 @@ module AgentMessages
       end
     rescue StandardError => e
       @logger.error("#{LOG} stopped on #{e.class}: #{e.message.to_s[0, 200]}")
+      receipt(e)
     ensure
       @lock&.release
       ActiveRecord::Base.connection_pool.release_connection if leased
@@ -244,6 +251,7 @@ module AgentMessages
     rescue StandardError => e
       # The backstop poll reads it again later; never log the content.
       @logger.error("#{LOG}: could not store message #{data['id']}: #{e.class}")
+      receipt(e)
     end
 
     def note_guild(data)
@@ -270,12 +278,22 @@ module AgentMessages
     def closed_outcome
       outcome = @session.close_outcome(@socket.close_code)
       if outcome == :fatal
-        @logger.error("#{LOG}: Discord closed the connection with #{@socket.close_code}; not reconnecting " \
-                      "(check the token and the Message Content intent)")
+        line = "#{LOG}: Discord closed the connection with #{@socket.close_code}; not reconnecting " \
+               "(check the token and the Message Content intent)"
+        @logger.error(line)
+        receipt(Fatal.new(line))
       else
         @logger.info("#{LOG}: closed with #{@socket.close_code}; reconnecting (#{outcome})")
       end
       outcome
+    end
+
+    # An ErrorLog row for the triage view. Never raises: the listener outlives a
+    # database blip, and the log line above already said what happened.
+    def receipt(error)
+      ErrorLog.capture!(error)
+    rescue StandardError
+      nil
     end
 
     def finish(code, outcome)

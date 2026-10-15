@@ -211,6 +211,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
     wait_until("the listener to stop") { !gateway_listener.alive? }
     assert_equal 1, @gateways.size, "no reconnect after an authentication failure"
     assert_match(/closed the connection with 4004; not reconnecting/, @log.string)
+    assert ErrorLog.where("message LIKE ?", "%closed the connection with 4004%").exists?, "a fatal close leaves an ErrorLog receipt"
   end
 
   test "RECONNECT and a non-resumable INVALID_SESSION reconnect; the second IDENTIFYs afresh" do
