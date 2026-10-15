@@ -82,7 +82,7 @@ test("welding v2 Stacked in Original takes an orange first word and keeps the Or
   await page.waitForURL(/first_colour=D7602E/);
   await loaded(page);
   const shown = await params(page.locator("[data-test='logo-type'] img[data-test='logo-image']"));
-  expect(shown.length).toBe(6);
+  expect(shown.length).toBe(2);
   for (const p of shown) {
     expect(p.colouring).toBe("original");
     expect(p.first_colour).toBe("D7602E");

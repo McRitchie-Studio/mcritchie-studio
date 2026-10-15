@@ -19,10 +19,15 @@ module LogosHelper
   # form or set of edits equal to the page's default is left out, so a link never pins a setting the next tab would
   # read from its own saved choice. The page's own ?icon_colouring= (task kit-icon-atomic-unit: exploring an icon other
   # than the kit's) is carried as asked.
+  #
+  # The text version (?text=, the Words control) is the tab's own: it is carried while the tab stays, and dropped by a
+  # link to another tab, which opens on its own kit's text version (task logo-download-card).
   def logo_page_params(**changes)
     defaults = @defaults || {}
     edits = (@edits unless @edits.nil? || @edits == defaults.fetch(:edits, Logos::NavbarLogo::NO_EDITS))
+    same_tab = !changes.key?(:type) || (changes[:type] || :navbar).to_sym == @type
     { type: (@type unless @type == :navbar), context: (@context if @context == :watermark), colouring: @colouring_param,
+      text: (@text if same_tab && @text != @default_text),
       icon_colouring: @icon_colouring_param,
       rule: (@rule unless @rule == defaults.fetch(:rule, 4)),
       form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)),
@@ -180,11 +185,12 @@ module LogosHelper
     "by #{name}#{" (#{email})" if full}"
   end
 
-  # The hidden fields the kit's save form sends: the tab's own choice (rule, or form and proportion) and its edits, then the page
-  # settings the redirect brings back (guides, context). The text version is the form's own select.
+  # The hidden fields the kit's save form sends: the tab's own choice (rule, or form and proportion, and the text version
+  # the Words control picked) and its edits, then the page settings the redirect brings back (guides, context).
   def logo_kit_save_fields
     # A proportion is sent only for the rule of three: absent is 3-2-1, as the kit stores it (BrandKit.choice_of).
     choice = { icon: {}, stacked: { form: @form, proportion: (@proportion if @proportion == :rule_of_three) }.compact }.fetch(@type) { { rule: @rule } }
+    choice = choice.merge(text: @text) unless @type == :icon
     { type: @type }.merge(choice).merge(Logos::Variant.edit_params(@edits)).merge(logo_page_params.slice(:guides, :context))
                    .merge(colouring: @colouring)
   end

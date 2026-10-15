@@ -172,8 +172,10 @@ class BrandKit < ApplicationRecord
   end
 
   # True when a tab's settings are exactly its saved choice's (the page then says it shows the kit default).
-  def default_shown?(type, rule:, form:, colouring:, edits:, proportion: Logos::Variant::PROPORTIONS.keys.first)
+  # `text` (the page's text version) is checked only when given; an icon has none.
+  def default_shown?(type, rule:, form:, colouring:, edits:, proportion: Logos::Variant::PROPORTIONS.keys.first, text: nil)
     choice = saved_variant(type) or return false
+    return false if text && choice.text && choice.text != text
     shape = case type.to_sym
             when :icon then true
             when :stacked then choice.form == form && choice.proportion == proportion

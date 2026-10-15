@@ -25,7 +25,7 @@ test("welding tagline guides: every plate fits its drawing at 1280, with no plat
   await expect(page.locator("img[data-test='logo-image']").first()).toHaveAttribute("alt", /Commercial Welding v1 stacked logo, with tagline, .*construction guides/);
 
   const count = await plates(page).count();
-  expect(count).toBe(3);
+  expect(count).toBe(1); // one logo per tab (task logo-download-card)
   for (let i = 0; i < count; i++) {
     const plate = plates(page).nth(i);
     const fits = await plate.evaluate((el) => el.scrollWidth <= el.clientWidth);

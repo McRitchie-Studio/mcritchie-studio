@@ -67,10 +67,11 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='context-form'] ~ [data-test='colouring-control']", 1, "beside Context"
     assert_equal %w[original alt], options.map { |option| option["data-colouring"] }
     assert_equal ["original"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
-    assert_equal 6, srcs.size
+    assert_equal 2, srcs.size, "one logo, light and dark (task logo-download-card)"
     srcs.each { |src| assert_equal "original", query(src)["colouring"], src }
+    css_select("input[data-test='download-tone-option']").each { |input| assert_equal input["value"] == "watermark" ? nil : "original", query(input["data-download-url"])["colouring"] }
     css_select("a[data-test='logo-download']").each { |link| assert_equal "original", query(link["href"])["colouring"] }
-    assert_select "img[data-test='logo-image'][alt$='original colouring']", 6
+    assert_select "img[data-test='logo-image'][alt$='original colouring']", 2
     assert_select "[data-test='colouring-note']", /Original is the brand's own art/
   end
 
@@ -150,7 +151,9 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     srcs.each { |src| assert_equal %w[tagline D7602E], query(src).values_at("form", "ending_colour"), src }
     assert_equal "shown", state["data-state"]
     assert_equal "Showing the kit default.", state.text.squish
-    assert_equal ["first"], css_select("[data-test='kit-default-text']").map { |badge| badge.ancestors("[data-test='logo-example']").first["data-text"] }
+    # The kit's text version is the Words control's choice (task logo-download-card; it was a Kit default badge on one of three).
+    assert_equal ["first"], css_select("a[data-test='text-option'][aria-current='true']").map { |option| option["data-text"] }
+    assert_equal ["first"], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
     assert_select "input[data-test='kit-save-default'][disabled]", 1, "already the default"
     # Links leave the defaults out, so the next tab reads its own saved choice.
     tabs = css_select("[data-test='logo-tab']").map { |a| a["href"] }

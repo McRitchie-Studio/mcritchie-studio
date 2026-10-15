@@ -12,9 +12,8 @@ test("download the kit export and see the saved navbar", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
   // Alex's kit Navbar: Original, homogeneous, rule of 4.
-  await page.goto("/logos/welding_v2?rule=4&colouring=original");
+  await page.goto("/logos/welding_v2?rule=4&colouring=original&text=homogeneous");
   const choice = page.locator("[data-test='kit-choice']");
-  await choice.locator("[data-test='kit-save-text']").selectOption("homogeneous");
   await choice.locator("[data-test='kit-save']").click();
   await page.waitForURL(/\/logos\/welding_v2.*#kit-choice$/);
   await expect(page.locator("[data-test='kit-pick'][data-type='navbar']")).toHaveAttribute("data-saved", "true");

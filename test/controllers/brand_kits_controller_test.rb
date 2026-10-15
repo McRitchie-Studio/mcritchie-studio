@@ -14,23 +14,26 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
   def kit(brand = "studio") = BrandKit.find_by(brand:)
   def form_fields(form) = form.css("input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
 
-  test "the Navbar tab's save form carries the tab's rule and edits, and its text starts on the brand's default" do
+  # Task logo-download-card: the text version is the Words control's, sent as a hidden field (it was the form's select).
+  test "the Navbar tab's save form carries the tab's rule, text version and edits, the text the brand's default" do
     log_in_as(@admin)
     get logo_brand_path("studio", rule: 3, first_colour: "635BB2", guides: 1)
     form = css_select("form[data-test='kit-save-form']").first
     assert_equal brand_kit_choice_path("studio"), form["action"]
     assert_equal "patch", form_fields(form)["_method"]
-    assert_equal({ "type" => "navbar", "rule" => "3", "first_colour" => "635BB2", "guides" => "1", "colouring" => "alt" },
+    assert_equal({ "type" => "navbar", "rule" => "3", "text" => "second", "first_colour" => "635BB2", "guides" => "1", "colouring" => "alt" },
                  form_fields(form).except("_method", "authenticity_token"))
-    assert_equal "second", form.at_css("select[name=text] option[selected]")["value"]
+    assert_select "select[name=text]", 0, "the Words control picks the text version"
     assert_select "[data-test='kit-choice-saved']", /No Navbar Logo saved yet: the brand shows its default, rule of 4, second word leads, as styled/
     assert_select "[data-test='kit-clear']", count: 0
     assert_select "[data-test='kit-status']", "Kit: not saved yet"
 
     get logo_brand_path("studio", type: "stacked", form: "tagline", tagline_visible: 0)
     fields = form_fields(css_select("form[data-test='kit-save-form']").first).except("_method", "authenticity_token")
-    assert_equal({ "type" => "stacked", "form" => "tagline", "tagline_visible" => "0", "colouring" => "alt" }, fields)
-    assert_equal "first", css_select("select[name=text] option[selected]").first["value"]
+    assert_equal({ "type" => "stacked", "form" => "tagline", "text" => "first", "tagline_visible" => "0", "colouring" => "alt" }, fields)
+
+    get logo_brand_path("studio", type: "stacked", text: "second")
+    assert_equal "second", form_fields(css_select("form[data-test='kit-save-form']").first)["text"], "the Words control's pick is what saves"
 
     # The Icon tab saves the kit's icon (task kit-icon-atomic-unit): its colouring and colour, no text version.
     get logo_brand_path("studio", type: "icon", icon_colour: "635BB2", first_colour: "8E82FE")
@@ -57,7 +60,8 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='kit-status']", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie"
     assert_select "[data-test='kit-status'] a[title=?]", "Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')} by Alex McRitchie (#{@admin.email})"
     assert_select "[data-test='kit-choice-saved']", /Saved Navbar Logo: rule of 3, first word leads, first word Deep Violet; ending 300 Light/
-    assert_equal "first", css_select("select[name=text] option[selected]").first["value"], "the select starts on the saved text"
+    assert_equal "first", form_fields(css_select("form[data-test='kit-save-form']").first)["text"], "the form carries the saved text"
+    assert_equal ["first"], css_select("a[data-test='text-option'][aria-current='true']").map { |option| option["data-text"] }, "the tab opens on the saved text"
     assert_select "[data-test='kit-clear']", 1
     assert_select "[data-test='rule-option'][data-rule='3'][aria-current='true']", 1, "the bare tab opens on the saved rule"
     assert_select "[data-test='kit-default-state'][data-state='shown']", "Showing the kit default."

@@ -1,9 +1,9 @@
 <%# SAVE AS KIT CHOICE (task brand-kit-record), on the Navbar Logo and Stacked
-    Logo tabs under the edit panel: saves this tab's rule (or form) and its
-    edits, with the text version picked here, as the brand's kit choice for the
-    type (BrandKitsController#save_choice; BrandKit reads it through the same
-    parser as the page's URL). The select starts on the saved text version, else
-    the brand's default. Clear saved choice puts the brand back on its default.
+    Logo tabs under the edit panel: saves this tab's rule (or form), its text
+    version (the Words control's, task logo-download-card) and its edits as the
+    brand's kit choice for the type (BrandKitsController#save_choice; BrandKit
+    reads it through the same parser as the page's URL). Clear saved choice puts
+    the brand back on its default.
     Plain forms, no JavaScript; a refusal is a plain 422. On the Icon tab it
     saves the icon's colouring and colour as the kit's icon, which every Navbar
     and Stacked Logo then draws (task kit-icon-atomic-unit); an icon has no text
@@ -16,7 +16,6 @@
      e
    end %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
-<% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
 <section class="card p-4 sm:p-5 space-y-3 scroll-mt-28" id="kit-choice" data-test="kit-choice" data-type="<%= @type %>" aria-labelledby="kit-choice-title">
   <h2 id="kit-choice-title" class="text-sm font-bold text-heading">Kit choice</h2>
   <p class="text-sm text-secondary" data-test="kit-choice-saved">
@@ -41,19 +40,12 @@
     <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "flex flex-wrap items-center gap-2",
                   data: { test: "kit-save-form", turbo: false } do %>
       <% logo_kit_save_fields.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
-      <% unless icon %>
-        <label class="inline-flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-muted">
-          Text
-          <%= select_tag :text, options_for_select(Logos::Variant::TEXTS.map { |text, label| [label, text] }, kit_record.default_text(@type)),
-                         id: nil, class: field, autocomplete: "off", data: { test: "kit-save-text" } %>
-        </label>
-      <% end %>
       <%= submit_tag "Save as kit choice", name: nil, class: "btn btn-sm btn-primary #{ring}", data: { test: "kit-save", disable_with: false } %>
     <% end %>
     <% if icon %>
       <p class="text-2xs text-muted">Saves this tab's colouring and icon colour as the brand's Icon: every Navbar and Stacked Logo draws it, in the table and on their tabs.</p>
     <% else %>
-      <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form, proportion" : "rule" %>, colouring and edits, with the text version picked here, as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
+      <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form, proportion" : "rule" %>, words, colouring and edits as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
     <% end %>
   <% end %>
   <% if kit_record.saved?(@type) %>

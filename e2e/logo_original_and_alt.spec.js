@@ -31,7 +31,7 @@ test("switching to Original changes every logo and its download, and Alt changes
   await expect(page.locator("a[data-test='colouring-option'][aria-current='true']")).toHaveText("Original");
   await loaded(page);
   const srcs = await attrs(images(page), "src");
-  expect(srcs.length).toBe(6);
+  expect(srcs.length).toBe(2);
   for (const src of srcs) expect(src).toContain("colouring=original");
   for (const href of await attrs(downloads(page), "href")) expect(href).toContain("colouring=original");
   for (const alt of await attrs(images(page), "alt")) expect(alt).toContain("original colouring");
