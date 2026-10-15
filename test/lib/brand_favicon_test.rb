@@ -83,6 +83,27 @@ class BrandFaviconTest < Minitest::Test
     assert_in_delta top, bottom, 2, "centred down"
   end
 
+  # THE CHEST IS AT LEAST AS LARGE AS ON THE OLD FAVICON (Alex 2026-10-15 08:22: "The goal is to make the favicon large
+  # so it's easy to spot"). Its opaque coverage at 32 px (alpha averaged over each of 32x32 blocks, then the share of
+  # blocks over half opaque) is at least OLD_COVERAGE_32: the same measure of main@577a356b2:public/favicon.png, the
+  # 324x256 chest-only crop he called "the correct size", squeezed to the square a tab draws it in.
+  OLD_COVERAGE_32 = 0.703125 # 720 of 1024 cells
+
+  def test_the_favicon_covers_at_least_as_much_of_a_32_px_tab_as_the_old_one
+    width, height, rows = rgba(FAVICON)
+    assert_operator coverage(width, height, rows, 32), :>=, OLD_COVERAGE_32
+  end
+
+  def coverage(width, height, rows, size)
+    cells = (0...size).to_a.product((0...size).to_a).count do |cx, cy|
+      xs = (cx * width / size)...((cx + 1) * width / size)
+      ys = (cy * height / size)...((cy + 1) * height / size)
+      alpha = ys.sum { |y| xs.sum { |x| rows[y].getbyte(x * 4 + 3) } }
+      alpha > 127.5 * xs.size * ys.size
+    end
+    cells.fdiv(size * size)
+  end
+
   ISLAND_SHARE = 0.02
 
   # THE CHEST FILLS THE TAB: no loose speck sets the favicon's box. Every island of ink (8-connected pixels with alpha

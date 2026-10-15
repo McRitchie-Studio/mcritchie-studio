@@ -59,10 +59,23 @@ class LogosSmallMarkTest < Minitest::Test
     end
   end
 
+  def test_the_favicon_crop_is_a_square_centred_across_the_body_and_standing_on_it
+    mark = Mark.derive(toy)  # body: the 60x60 square at 0..60 in the trimmed box
+    crop = Mark.crop(mark)
+
+    assert_equal [49.2, 49.2], crop.values_at("w", "h"), "CROP_SIDE of the body's width"
+    left, top, right, bottom = Ink.box(crop)
+    assert_in_delta(-5.4, left, 0.01)
+    assert_in_delta 54.6, right, 0.01, "overhangs both sides equally: centred across"
+    assert_in_delta 49.2, bottom, 0.01, "the body's bottom is the tile's"
+    assert_in_delta(-10.8, top, 0.01)
+    assert_equal subpaths(mark), subpaths(crop), "only the box moves"
+  end
+
   def test_the_committed_favicon_mark_is_what_the_studio_icon_derives
     fill = File.read(File.join(ROOT, "public/brand/icon-dark.svg"))[/ fill="(#\h{3,8})"/, 1]
 
-    assert_equal Mark.svg(Mark.derive(studio), fill:), File.read(File.join(ROOT, "public/favicon-mark.svg")),
+    assert_equal Mark.svg(Mark.crop(Mark.derive(studio)), fill:), File.read(File.join(ROOT, "public/favicon-mark.svg")),
                  "public/favicon-mark.svg is stale: run bin/rails logos:favicon_mark BRAND=studio, then script/brand_png.cjs"
   end
 end
