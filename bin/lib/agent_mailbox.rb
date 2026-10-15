@@ -188,7 +188,9 @@ module AgentMailbox
   # envelope's own fields (`type`, `subtype`, `is_error`, `api_error_status`).
   #
   #   reply       the envelope's `result` when the run succeeded (exit 0, not
-  #               is_error), else nil. The answer text is never scanned for anything.
+  #               is_error), else nil. The answer text is never scanned for a run
+  #               STATUS; the Responder only splits a trailing notes section off it
+  #               (NoteBlock), a format the prompt asks for, not a signal it acts on.
   #   error_text  on a failed run only: the envelope's result/error when is_error,
   #               and stderr. This is CLI-authored text, the only text the
   #               usage-limit and signed-out matchers ever read.

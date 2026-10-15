@@ -14,6 +14,9 @@
 class AgentPerson < ApplicationRecord
   class LinkRefused < StandardError; end
 
+  # Alex: his Discord user id, and the hub user his email names.
+  OWNER = { name: "Alex", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
+
   belongs_to :user, optional: true
   has_many :identities, class_name: "AgentPersonIdentity", inverse_of: :person, dependent: :delete_all
   has_many :notes, -> { order(:noted_at, :id) }, class_name: "AgentPersonNote", inverse_of: :person,
@@ -42,6 +45,17 @@ class AgentPerson < ApplicationRecord
     end
   rescue ActiveRecord::RecordNotUnique
     AgentPersonIdentity.find_by!(platform: platform, external_id: external_id).person
+  end
+
+  # Alex's person, his Discord identity, and his hub user when one carries his
+  # email. Idempotent (db/seeds; the migration that made the tables seeds the
+  # same rows): an existing identity keeps its person, and only a missing user
+  # link is filled in.
+  def self.seed_owner!
+    person = resolve!(platform: OWNER[:platform], external_id: OWNER[:external_id], display_name: OWNER[:name])
+    user = User.where("LOWER(email) = ?", OWNER[:email]).first
+    person.update!(user: user) if user && person.user_id.nil? && !exists?(user_id: user.id)
+    person
   end
 
   # The explicit act that says "this id is also this person". Every stored

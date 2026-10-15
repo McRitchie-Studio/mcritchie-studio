@@ -65,4 +65,15 @@ class AgentPersonTest < ActiveSupport::TestCase
     assert_equal alex, identity.person
     assert_equal alex, AgentPerson.resolve!(platform: "email", external_id: "alex@example.com")
   end
+
+  test "seed_owner! maps Alex's Discord id to Alex and his hub user, and is idempotent" do
+    user = User.find_by("LOWER(email) = ?", "alex@mcritchie.studio") ||
+           User.create!(email: "alex@mcritchie.studio", name: "Alex McRitchie")
+    person = AgentPerson.seed_owner!
+
+    assert_equal "Alex", person.display_name
+    assert_equal user.id, person.user_id
+    assert_equal person, AgentPerson.seed_owner!
+    assert_equal person, agent_message!(soul: "xan", author_ref: "536552944271753216").person
+  end
 end
