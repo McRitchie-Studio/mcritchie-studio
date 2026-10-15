@@ -73,7 +73,9 @@ CANNOT: <the acts the scope refuses, one line>
   `ec8a814b`.
 - **`--url` is required.** It is what makes 1Password render the brand
   logo, and the logo is what makes a vault legible at a glance. No generic
-  `</>` icons.
+  `</>` icons. The exception: a **Secure Note has no URL field**, so drop
+  `--url` when the category is `Secure Note` (met minting
+  `solana.turf.governance.v2` on 2026-10-14).
 - **Notes are a permission matrix, not prose.** `scope`, `CAN`, `CANNOT`,
   plus a line for any SOP-only rule (e.g. Heroku cannot separate app-delete
   from write, so "never delete" is policy — say so in the note).

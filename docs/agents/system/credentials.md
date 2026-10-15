@@ -13,7 +13,7 @@ All sensitive credentials are stored as environment variables, never in code.
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
 - `RAILS_MASTER_KEY` — Rails encrypted credentials key
-- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on the Heroku dynos it is Xan (`8K81…`, `agent.xan.solana`); a local `.env` written by `bin/ecosystem-build` holds none since 2026-10-06 (it was `solana.turf.admin`, `BLSBw8fX…`, a mainnet Squads seat). See **Onchain Admin** below
+- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on `turf-monster-mainnet` it is `4S39…` (`solana.turf.server`) since 2026-10-14, replacing the retired Xan `8K81…`, and on `turf-monster-qa` it is `2eGs…` (`solana.turf.system.devnet`); a local `.env` written by `bin/ecosystem-build` holds none since 2026-10-06 (it was `solana.turf.admin`, `BLSBw8fX…`, a mainnet Squads seat). See **Onchain Admin** below
 - `ANTHROPIC_API_KEY` — Claude API key for AI chat (McRitchie Studio)
 - `X_BEARER_TOKEN` — X (Twitter) API bearer token for News intake (McRitchie Studio). See `docs/agents/system/news-pipeline.md` for setup.
 
@@ -73,17 +73,19 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Xan, Alex's Phantom, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. **2026-10-14: Xan (`8K81…`) and Mason (`CytJ…`) are retired** — off the mainnet `VaultState`, swept to 0 SOL, items archived. The mainnet `VaultState` set is now `3LTL…` (`solana.turf.governance.v2`), `7ZDJ…`, `4S39…` (`solana.turf.server`), `9gAC…`, `3Qj4…`. The sentence that follows is the 2026-09-05 history. The three vault-admin identities below (Xan, Alex's Phantom, Mason) were **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
 
 ### Wallet Addresses
 
 | Agent | Address | Role |
 |-------|---------|------|
-| Xan | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
+| Xan (retired 2026-10-14) | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Former server key; swept, item archived |
 | Alex's Phantom | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
-| Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
+| Mason (retired 2026-10-14) | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Former vault signer; swept, item archived |
+| Turf Monster server | `4S39sKHHPV8GPjUif9noN9gdsAFGs9WASuGxs7B9s5CY` | Production `SOLANA_ADMIN_KEY` and mainnet `VaultState` slot 2 (`solana.turf.server`) |
+| Turf Monster governance | `3LTLPG1s952sdNatZWtnfM7r9F3ivWSnPSqfhQLBepJ9` | Agent governance identity: mainnet Squads seat and `VaultState` slot 0 (`solana.turf.governance.v2`) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
-| Turf Monster admin | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent governance identity (`solana.turf.admin`) |
+| Turf Monster admin (retired 2026-10-09) | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Former agent governance identity (`solana.turf.admin`, archived) |
 | Turf Monster system | `7auwTLSvNniSUeAgL6v9RStMXJhWrrUhSJgwFWLpcqC` | Server operational key, MAINNET (`solana.turf.system`) — **read the balance, do not quote one.** 0 SOL at 09:12 on 2026-09-15, funded at 09:20 that morning; `1000000000` lamports (1.0000 SOL) at `finalized` later the same day. The cutover judges whether that is sufficient for **sustained fee payment**, not merely non-zero |
 | Turf Monster system (devnet) | `2eGs8G3wzhEeNQQU2Q86BmmA2xTpDbMMae3Y1bvpZfx9` | Server operational key, devnet/QA (`solana.turf.system.devnet`) |
 
@@ -152,6 +154,8 @@ export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents
 **Item fields**: this is NOT uniform, and assuming it is breaks the read — `op` fails the whole call on one wrong label rather than falling back. The older `agent.*` wallets carry `recovery phrase`, `private key` and `wallet address`, SPACED. The three `solana.turf.*` items above carry `private-key` and `wallet-address`, HYPHENATED, plus `phantom-email` / `phantom-password`, and no recovery phrase (verified 2026-09-15). `phantom.turf` mixes the two spellings on one item. When in doubt read `--format json` and pick whichever spelling is present, which is what `KeyStore#op_read_item` does.
 
 ### Onchain Admin
+
+**Current state, read on chain 2026-10-14 (after the mainnet key rotation).** Mainnet Squad `4H3fP3ot…`: threshold 3 of `7auwTL…`, `3LTL…`, `3Qj4…`, `7ZDJ…`, `9gAC…`, every mask 7 (config transaction #10 replaced `4bKN…` with `3LTL…`). Mainnet `VaultState` (v0.26, five slots): `3LTL…`, `7ZDJ…`, `4S39…`, `9gAC…`, `3Qj4…`, with per-action thresholds in `GovernanceConfig` (most money and governance actions 3). Retired and swept: `8K81…`, `CytJ…`, `4bKN…`, `HwqC…`, `F6f8…`. Everything below in this section is dated history; read the chain before trusting any of it.
 
 **TWO AUTHORITIES, AND SINCE 2026-09-15 THEY DISAGREE.** Both re-measured on-chain at `finalized` on 2026-09-15, through two independent RPC providers:
 

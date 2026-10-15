@@ -40,11 +40,11 @@ hop 2 (swept revenue to his wallet) both run their Squads step here.
 |---|---|
 | Multisig | `4H3fP3otjMtupk1DQDjKXYY1dWjT6LNM4H4ZWZ1XcKSX`, threshold 3 of 5, every member mask 7 |
 | Vault (vault 0) | `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm` |
-| Agent seats | `7auwTL…` (`solana.turf.system`, `studio-agents`); `4bKNSq…` (`solana.turf.governance`, `studio-agents-admin`) |
+| Agent seats | `7auwTL…` (`solana.turf.system`, `studio-agents`); `3LTLPG…` (`solana.turf.governance.v2`, `studio-agents-admin`), which replaced the exposed `4bKN…` by config transaction #10 on 2026-10-14 |
 | Mr. McRitchie's seats | `7ZDJp7FU…` (Phantom), `9gACbz…`, `3Qj4v9…` |
-| No agent-run mainnet signature, barring his ruling for one instance | Xan `8K81…`, Mason `CytJ…`, Mack `foUu…`. The app's own server key (`8K81` today) signing inside the running app is the app, not an agent |
+| No agent-run mainnet signature, barring his ruling for one instance | Mack `foUu…`, and the retired keys Xan `8K81…`, Mason `CytJ…` and `4bKN…` (swept to 0 SOL, items archived 2026-10-14). The app's own server key (`4S39…`, `solana.turf.server`, since 2026-10-14) signing inside the running app is the app, not an agent |
 
-The set was read off chain on 2026-10-12. turf-vault
+The set was read off chain on 2026-10-14, after config transaction #10. turf-vault
 `scripts/lib/squad-clusters.js` holds it, and its test pins it. Read the live set
 before you act (`node scripts/squad-inventory.js`). This table is a snapshot.
 

@@ -1,7 +1,7 @@
 # Collect Vault Revenue
 <!-- registry: sweep entry fees out, then Squads to a wallet -->
 
-## Status: Active — mainnet runs turf-vault v0.25 today, and the signer count rises at v0.26
+## Status: Active — mainnet runs turf-vault v0.26, so hop 1 needs three signatures
 
 This is Turf Monster's `collect-vault-revenue` SOP. It takes accumulated
 **operator revenue — entry fees** — out of the turf-vault `op_rev` ATA and
@@ -40,14 +40,15 @@ or `main`, never promotes, and never deploys.
 
 | Hop | Instruction / action | From → To | Where you run it | Signers | In our codebase? |
 |---|---|---|---|---|---|
-| **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **Squads Treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **2-of-3** VaultState multisig | **Yes** |
+| **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **Squads Treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **3 of the 5** VaultState signers (`GovernanceConfig`) | **Yes** |
 | **2** | Squads vault transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | Steffon's [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) queues it; Alex approves on `app.squads.so` | **3-of-5** Squads multisig: the two agent seats, then one of Alex's | **turf-vault `scripts/squad-vault-transfer.js` only — nothing in turf-monster** |
 
 **Hop 1 ends inside the Squads Treasury, not in a wallet.** The program pins the
 destination to the treasury authority — which IS the Squads vault PDA — so a
 successful sweep moves the money from one account nobody can spend from to
-another account nobody can spend from alone. It is now under 3-of-5 control
-instead of 2-of-3, and that is the point: hop 1 consolidates, hop 2 withdraws.
+another account nobody can spend from alone. It is now under the Squads 3-of-5
+instead of the VaultState set, and that is the point: hop 1 consolidates, hop 2
+withdraws.
 
 **Hop 2 runs through [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md).**
 The agent queues the transfer and casts both agent approvals. Alex approves from
@@ -70,24 +71,30 @@ phrase is what produced the wrong-address claims it now forbids.
 | | **VaultState multisig** (hop 1) | **Squads V4 multisig** (hop 2) |
 |---|---|---|
 | Governs | `sweep_operator_revenue` and every other turf-vault treasury op | The treasury vault's own balance, and the program upgrade authority |
-| Threshold today | **2 of 3** | **3 of 5** |
-| Members | three, named below | **five**; read them from chain, do not assume they are the three below plus two |
+| Threshold today | **3 of 5** for this action, stored per action in `GovernanceConfig` | **3 of 5** |
+| Members | five, named below | **five**; read them from chain. The two sets share Alex's three wallets and differ in the agent keys, so do not assume one from the other |
 | Lives in | `VaultState`, the turf-vault PDA at seeds `[b"vault"]` | the Squads V4 program, multisig account `4H3fP3otjMtupk1DQDjKXYY1dWjT6LNM4H4ZWZ1XcKSX` (mainnet) |
 | Interface | our admin UI — the Link Hub is `/admin/hub` (`/admin` alone is a 404), and the screens are `/admin/currencies` and `/admin/pending_transactions` | `app.squads.so`, linked from the `Squads Treasury` tile |
 | Changed by | `update_signers` | Squads' own config transaction |
 
-The three VaultState signers on mainnet, as `Solana::Config::MULTISIG_SIGNERS`
-declares them:
+The five VaultState signers on mainnet, read from chain on 2026-10-14 after the
+key rotation (`node scripts/check-signer-slots.js --cluster mainnet` in
+turf-vault). Production's `SOLANA_MULTISIG_SIGNERS` lists the same five:
 
 | Slot | Address | Who |
 |---|---|---|
-| server admin | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | the app signs with this one automatically |
-| cosigner | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex's Phantom — the default `MULTISIG_COSIGNER` |
-| third | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Mason |
+| 0 | `3LTLPG1s952sdNatZWtnfM7r9F3ivWSnPSqfhQLBepJ9` | agent governance key (`solana.turf.governance.v2`); no agent signs mainnet with it outside First Rule 10 |
+| 1 | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex's Phantom, the default `MULTISIG_COSIGNER` |
+| 2 | `4S39sKHHPV8GPjUif9noN9gdsAFGs9WASuGxs7B9s5CY` | the server key (`solana.turf.server`, production `SOLANA_ADMIN_KEY`); the app signs with it automatically |
+| 3 | `9gACbzsCLmkYF9Yx1EBGmwMvvyfuTquJ6qs8QsoQvHXf` | Alex's second Phantom account |
+| 4 | `3Qj4v9qjhXgkru6zCRCErRVhy8Q6qU3NrNpvpXLTZboA` | Alex's second wallet |
 
-So hop 1 needs **one human signature**: the server already holds the admin slot,
-and the cosigner slot is Alex's Phantom. Hop 2 needs **three** Squads approvals:
-the two agent seats cast theirs, so it needs **one** of Alex's.
+So hop 1 needs **two human signatures**: `GovernanceConfig` stores 3 for
+`sweep_operator_revenue` (read on chain 2026-10-14), the server supplies one, and
+two of Alex's wallets (`7ZDJ`, `9gAC`, `3Qj4`) supply the rest. Hop 2 needs
+**three** Squads approvals: the two agent seats cast theirs, so it needs **one**
+of Alex's. The retired keys `8K81…` (Xan) and `CytJ…` (Mason) left the set on
+2026-10-14 and can no longer sign.
 
 ## The money model — why sweeping strands no payout
 
@@ -117,7 +124,7 @@ program pins where a sweep can go; Squads pins who may approve the withdrawal.
 | Sweeping the FULL balance (the admin path always sends `amount: 0`) | How much should leave the Squads Treasury on hop 2 |
 | Refusing an empty `op_rev` account, and a wrong-owner treasury ATA | Reading a refusal and choosing its remedy |
 | Deriving both ATAs from the mint and the live `VaultState` | Confirming the destination wallet address with Alex |
-| Enforcing 2-of-3 on hop 1, 3-of-5 on hop 2 | Queuing hop 2 and casting the two agent approvals (`squad-vault-ops`) |
+| Enforcing the `GovernanceConfig` threshold (3) on hop 1, 3-of-5 on hop 2 | Queuing hop 2 and casting the two agent approvals (`squad-vault-ops`) |
 
 If you find yourself reasoning about **which address the sweep should go to**,
 stop. The program owns that, and the first live run lost a round trip to exactly
@@ -131,8 +138,9 @@ that reasoning — see the refusals table.
 - You can reach `/admin/hub` on the target app as an admin — the Link Hub, from
   which `Currencies`, `Treasury` and `Squads Treasury` all hang. `/admin` alone is
   a 404 in turf-monster.
-- **Alex has his Phantom available** — hop 1 needs his cosign, and hop 2 needs
-  one approval from one of his Squads seats (`7ZDJ`, `9gAC` or `3Qj4`).
+- **Alex has two of his wallets available** — hop 1 needs two of his cosigns
+  (`7ZDJ`, `9gAC` or `3Qj4`), and hop 2 needs one approval from one of his Squads
+  seats (the same three).
 - The turf-vault program on that cluster is not paused.
 
 Everything below runs against production:
@@ -260,20 +268,18 @@ The queued row waits at:
 https://turfmonster.media/admin/pending_transactions
 ```
 
-Alex connects Phantom as the cosigner (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
-the `MULTISIG_COSIGNER` default) and signs. The server already holds the admin
-slot, so on v0.25 that is the second of two signatures and the transaction
-broadcasts.
-
-**On v0.26 it will not be enough** — see the timing warning below. **Pick the
-extra wallet on the page BEFORE anyone clicks sign.** The extra signer slots are
-part of the transaction message, so they cannot be added afterwards without
-invalidating the signature already on it; a row built for two and then handed a
-third wallet is short before Phantom even opens. The remedy is the page's
-**Rebuild**, which re-derives the whole transaction with the extra slots reserved
-(`PendingTransactionsController#rebuild` handles `sweep_operator_revenue`
-explicitly, and re-reads the treasury ATA while it is there). Rebuild works only
-while the row is still `pending`.
+**Pick the second wallet on the page BEFORE anyone clicks sign.** The server
+already holds its slot, and the action needs three signatures, so the row must
+reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
+the `MULTISIG_COSIGNER` default) and one more of his wallets (`9gAC` or `3Qj4`).
+The extra signer slots are part of the transaction message, so they cannot be
+added afterwards without invalidating a signature already on it; a row built for
+two and then handed a third wallet is short before Phantom even opens. The remedy
+is the page's **Rebuild**, which re-derives the whole transaction with the extra
+slots reserved (`PendingTransactionsController#rebuild` handles
+`sweep_operator_revenue` explicitly, and re-reads the treasury ATA while it is
+there). Rebuild works only while the row is still `pending`. Once both of his
+wallets have signed, the transaction broadcasts.
 
 Note the row's slug and its transaction signature from the page. The live run
 recorded `ptx-398`, signature `4VETTK6dy3nZhNNFH8WovW6XGf6u…`.
@@ -402,44 +408,40 @@ Report both hops separately, and say which one you got to. Give:
 | `Nothing to sweep — operator revenue ATA balance is 0` | the `sweep` action's preflight | there is no revenue to collect | Nothing. Confirm you are on the right cluster and the right mint before doubting it |
 | `EmptyRevenueAccount` | the program, `handle_sweep_operator_revenue` | same condition, reached on chain — the balance emptied between preflight and broadcast | Re-read both balances (step 4). Someone else's sweep may already have landed |
 | `TreasuryAuthorityMismatch` | the program | the destination ATA is not owned by `vault_state.treasury_authority` | **Do not pick a different address.** The destination is pinned; a mismatch means you built the transaction by hand with the wrong ATA, or `treasury_authority` is not what you assumed. Re-read `VaultState` |
-| `Unauthorized` | the program's multisig constraint | the signers are not two distinct members of the VaultState set | Cosign as a real member; the three addresses are in the table above |
-| `InsufficientSigners` (6046) | the program, on v0.26 | the action's threshold rose to 3 and the transaction carries 2 | Pick the extra wallet on `/admin/pending_transactions` and **Rebuild** the row (only while it is `pending`). See the timing warning |
+| `Unauthorized` | the program's multisig constraint | a signer is not a distinct member of the VaultState set | Cosign as a real member; the five addresses are in the table above |
+| `InsufficientSigners` (6046) | the program | the transaction carries fewer signatures than the action's `GovernanceConfig` threshold (3) | Pick the extra wallet on `/admin/pending_transactions` and **Rebuild** the row (only while it is `pending`). See step 3 |
 | `Solana::Vault::ThresholdUnreachableError` | Rails, locally | a server-signed path cannot reach the threshold, refused before broadcast | The same remedy, caught before a fee was spent — this is the good outcome |
 | a 404 on the Squads link | `Solana::Config.squads_app_url`, on any environment that has not taken turf-monster PR #829 | the deployed helper interpolates the **multisig** address and omits `/home`; Squads keys on the **vault PDA** plus `/home` | Paste the cluster literal from step 5. Once #829 merges and deploys, the tile's own link is correct and this row retires |
 
-## ⚠️ turf-vault v0.26 raises the sweep from 2 signers to 3
+## The threshold is data — read it, do not remember it
 
-**Today mainnet and devnet both run v0.25.0, and `sweep_operator_revenue` is
-2-of-3.** v0.26 makes signature thresholds DATA (`GovernanceConfig`) and raises
-this action to **3**, alongside `settle_contest`, `cancel_contest`,
-`register_currency`, `deactivate_currency` and `unpause`. Three places say so and
-they agree: `turf-monster/docs/SOLANA.md` under *"v0.26 signature thresholds"*;
-`Solana::Vault`'s own section comment above `build_sweep_operator_revenue`
-(*"2 on v0.25, SWEEP_OPERATOR_REVENUE 3 from v0.26"*); and the program itself,
-where `DEFAULT_THRESHOLDS` in `turf-vault`'s `state.rs` sets
-`gov_action::SWEEP_OPERATOR_REVENUE` to `3` and the instruction header reads
-*"Auth: `gov_action::SWEEP_OPERATOR_REVENUE` (default 3)"*.
+**Mainnet runs turf-vault v0.26 (upgraded 2026-10-12), and
+`sweep_operator_revenue` needs 3 signatures.** v0.26 made signature thresholds
+DATA (`GovernanceConfig`, PDA seeds `[b"governance"]`), and the mainnet table
+read on 2026-10-14 stores 3 for this action, as for `settle_contest`,
+`cancel_contest`, `register_currency`, `deactivate_currency`, `unpause` and
+`update_signers`; `pause` is 2. Three places carry the shipped defaults and they
+agree: `turf-monster/docs/SOLANA.md` under *"v0.26 signature thresholds"*;
+`Solana::Governance::DEFAULT_THRESHOLDS`; and `DEFAULT_THRESHOLDS` in
+`turf-vault`'s `state.rs`.
 
-**What does NOT change at v0.26: the pinned destination.** The `accepted` build
-still requires `treasury_ata.owner == vault_state.treasury_authority` and still
-reads `amount == 0` as sweep-all. Only the signer count moves.
+**What v0.26 did NOT change: the pinned destination.** The program still
+requires `treasury_ata.owner == vault_state.treasury_authority` and still reads
+`amount == 0` as sweep-all. Only the signer count moved.
 
-**v0.26 is on `accepted` and NOT deployed.** So the signer count can change under
-a reader of this SOP without a word of this file changing. What that costs you:
+What the count costs you:
 
-- the server still contributes **one** signature; the browser must come back with
-  **two** instead of one;
-- the extra signature rides as a leading `remaining_accounts` meta with
-  `is_signer: true`, and **the slots are part of the message** — they cannot be
-  added once the first wallet has signed, so a 2-signature row must be rebuilt;
+- the server contributes **one** signature; the browser must come back with
+  **two**;
+- each extra signature rides as a leading `remaining_accounts` meta with
+  `is_signer: true`, and **the slots are part of the message**, so they cannot be
+  added once the first wallet has signed;
 - **the threshold is retunable by one `set_action_threshold` transaction**, so
-  after v0.26 the live number is not even pinned to a release.
+  the live number is not pinned to a release.
 
-**Read the count, do not remember it.** Before a sweep on a cluster you have not
-swept on recently, check which build it runs — `turf-vault/docs/CURRENT_DEPLOYMENT.md`
-carries the method (an instruction-set probe against a program dump, cross-checked
-against `EXPECTED_IDL_HASH`) and states plainly that the committed IDL is not
-evidence of what is live.
+**Read the count before a sweep.** `Solana::Vault#required_signatures(:sweep_operator_revenue)`
+reads the stored table (cached one minute) on the target app, and
+`turf-vault/docs/CURRENT_DEPLOYMENT.md` says which build each cluster runs.
 
 ## What this does NOT cover
 
@@ -455,7 +457,7 @@ evidence of what is live.
 - **Changing Squads membership or thresholds.** Squads' own UI, and a decision
   about custody rather than about collection.
 - **A paused program.** `pause` blocks the money-moving paths; unpausing is its own
-  2-of-3 (3 from v0.26) act.
+  3-signature act.
 - **Anything after the money reaches the personal wallet.** Tax and accounting
   treatment of operator revenue is outside this SOP.
 
@@ -475,9 +477,9 @@ For a blocker that stops the run, run
 ## Background — not needed to execute
 
 **Why the destination is pinned at all.** A parameterised destination would make
-the 2-of-3 that guards a sweep the only thing standing between two signers and an
-arbitrary wallet. Pinning it to `vault_state.treasury_authority` means the most a
-compromised pair can do is move revenue into a 3-of-5 Squads Treasury — which is to say,
+the VaultState threshold that guards a sweep the only thing standing between its
+signers and an arbitrary wallet. Pinning it to `vault_state.treasury_authority`
+means the most a compromised quorum can do is move revenue into a 3-of-5 Squads Treasury — which is to say,
 nowhere useful. The two hops are the custody design, not an inconvenience in it.
 
 **Why hop 2 is deliberately absent from the app.** Squads ships its own web UI

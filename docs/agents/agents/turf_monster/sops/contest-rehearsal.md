@@ -49,7 +49,8 @@ two, so the whole run needs **no human tap**. The rehearsal refuses any key it
 loads, player or co-signer, that holds MAINNET authority (a mainnet `VaultState`
 signer, seated or incoming, or a mainnet Squads member), even on devnet
 (turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`). That is
-why Mason (`CytJ…`, a mainnet signer) no longer plays.
+why Mason (`CytJ…`, a mainnet signer until it was retired on 2026-10-14) no
+longer plays.
 `--cosign link` still exists for a run Mr. McRitchie wants to sign himself in
 Phantom (`7ZDJ…` is no longer a devnet signer, so that path needs a wallet the
 devnet `VaultState` seats, such as `9gAC…`).
@@ -79,8 +80,9 @@ Two exclusions, and neither is a preference:
   `solana.turf.system.devnet`, `SOLANA_ADMIN_KEY` on the dyno) is the fee payer
   and contest creator, and when the player is also the fee payer the
   transaction needs one signature slot, not two — `prepare_entry` refuses.
-  Production's key, Xan (`8K81…`), is in no devnet signer set and is not filed
-  for the rehearsal.
+  Production's key (`4S39…`, `solana.turf.server`, since 2026-10-14; the retired
+  Xan `8K81…` before it) is in no devnet signer set and is not filed for the
+  rehearsal.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
   and it has no `UserAccount`, so the program refuses to register it.
 

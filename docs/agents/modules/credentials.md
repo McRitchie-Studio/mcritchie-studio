@@ -83,7 +83,7 @@ left alone.
 
 | Key | Why local dev does without it |
 |---|---|
-| `SOLANA_ADMIN_KEY` | mainnet `VaultState` signer (`8K81…`) and fee payer; turf QA holds the same key |
+| `SOLANA_ADMIN_KEY` | mainnet `VaultState` signer (`4S39…`, `solana.turf.server`, since 2026-10-14) and fee payer; turf QA holds its own devnet key (`2eGs…`, `solana.turf.system.devnet`) |
 | `CDP_API_KEY_*` | the production Coinbase key; only the ramp flows call it |
 | `AWS_*` | retired 2026-10-10 with the IAM users behind it; still stripped by name from an old file. Local storage is the R2 dev pair (`.env.development`) |
 | `RESEND_API_KEY` | production mail; local stacks capture mail (`LOCAL_EMAIL_CAPTURE=1`) |
@@ -97,9 +97,11 @@ from a primary that holds them, and `scan` does not flag them. The rebuild does
 not write either: it names where each comes from and leaves the choice to the
 operator.
 
-⚠ **`fix` removing `SOLANA_ADMIN_KEY` stops turf's local devnet admin signing**:
-the devnet `VaultState` seats only `8K81…`, Alex and Mason, so local dev has no
-devnet-only signer until one is seated (turf-monster
+⚠ **Local turf has no devnet admin signer either way**: the devnet `VaultState`
+seats `2eGs…`, Mack `foUu…`, `BVQH…`, `9gAC…` and `3Qj4…` (read on chain
+2026-10-14), and the retired `8K81…` a local `.env` may still derive holds no
+slot, so `fix` removing `SOLANA_ADMIN_KEY` costs local dev nothing it still had
+until a devnet-only signer is filed for it (turf-monster
 `docs/qa-signing-key-rotation.md`, "What this ceremony does not fix").
 
 ## How a soul logs in to the board

@@ -165,9 +165,15 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 | Where | Item | Vault | Field label |
 |---|---|---|---|
 | Local `.env` | none: `bin/ecosystem-build` stopped writing `solana.turf.admin` (`BLSBw8fX…`) on 2026-10-06, and that key was rotated out and archived on 2026-10-09 (see **Solana governance key** below); `SOLANA_ADMIN_KEY` is production-only | — | — |
-| `turf-monster-mainnet` + `turf-monster-qa` Heroku config | `agent.xan.solana` (`8K81…`) | `studio-agents-admin` | `private key`, SPACED |
+| `turf-monster-mainnet` Heroku config | `solana.turf.server` (`4S39…`), since 2026-10-14 | `studio-agents-admin` | `private key`, SPACED |
+| `turf-monster-qa` Heroku config | `solana.turf.system.devnet` (`2eGs…`) | `studio-agents` | `private-key`, hyphenated |
 
-> **Where it lives is measured, not assumed.** This row said `studio-agents-admin`
+> **2026-10-14: `8K81…` is retired.** The mainnet key rotation put `4S39…`
+> (`solana.turf.server`) in `VaultState` slot 2 and in production's
+> `SOLANA_ADMIN_KEY`, evicted `8K81…`, swept it to 0 SOL and archived
+> `agent.xan.solana`. The two notes below are the history of the `8K81…` era.
+
+> **Where it lived was measured, not assumed.** This row said `studio-agents-admin`
 > from 2026-09-15, but the item stayed in `studio-agents`, which every agent's
 > token opens, until 2026-10-09. That day it was copied into the admin vault
 > (verified to derive to `8K81…`) and the original archived. A 2026-10-09
@@ -305,9 +311,18 @@ new signer set. A test contest settlement completes successfully (admin signs as
 
 ---
 
-## Solana governance key (`solana.turf.governance`)
+## Solana governance key (`solana.turf.governance.v2`)
 
-**What it is:** the agent's governance seat on BOTH turf-vault Squads V4
+**Since 2026-10-14 the mainnet seat is `solana.turf.governance.v2`**
+(`3LTLPG1s952sdNatZWtnfM7r9F3ivWSnPSqfhQLBepJ9`, `studio-agents-admin`, a Secure
+Note), seated by mainnet Squad config transaction #10 in place of `4bKN…`, which
+was printed into a transcript on 2026-10-12. `3LTL…` is also slot 0 of the
+mainnet `VaultState` signer set. `4bKN…` was swept to 0 SOL and its item
+archived; devnet's governance seat is `solana.turf.governance.devnet` (`BVQH…`).
+turf-vault's roster seats whichever governance candidate the chain holds. The
+rest of this section describes the `4bKN…` item as it stood before the swap.
+
+**What it was:** the agent's governance seat on BOTH turf-vault Squads V4
 multisigs (the program upgrade authority): `4bKNSqkrKeggSyrds16Ak7rcB4ibvGJ4ZLsKjvQgC3Vk`,
 mask 7 on mainnet `4H3fP3ot…` and devnet `7nRuVw3V…`. It is in no `VaultState`
 signer set and no Heroku config. `scripts/squad-upgrade.js` signs with it through
@@ -553,7 +568,7 @@ and adding one would re-open the mismatch the pinning closed. Full table:
 | Heroku API key | yearly | Hygiene |
 | `RAILS_MASTER_KEY` | **only on compromise** — disruptive (rotates session signing key) | Compromise only |
 | `SOLANA_ADMIN_KEY` | quarterly + on suspicion | Pre-mainnet |
-| `solana.turf.governance` (Squads seat) | on suspicion; a Squads config transaction per cluster | Exposure |
+| `solana.turf.governance.v2` (Squads seat, `VaultState` slot 0) | on suspicion; a Squads config transaction plus an `update_signers` | Exposure |
 | Anthropic API key | quarterly | Hygiene |
 | X API credentials | yearly | Hygiene |
 | Higgsfield | yearly | Hygiene |

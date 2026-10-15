@@ -123,10 +123,19 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     agent.mason.solana
     agent.turf.solana
     solana.turf.admin
+    solana.turf.deploy.mainnet-v026
     solana.turf.governance
+    solana.turf.governance.v2
+    solana.turf.server
     solana.turf.system
     solana.turf.system.devnet
   ].freeze
+  # 2026-10-14 (mainnet-rotation-follow-ups-sweep): the mainnet key rotation
+  # filed solana.turf.governance.v2 (3LTL…, the agent's governance seat) and
+  # solana.turf.server (4S39…, production's SOLANA_ADMIN_KEY), and the inventory
+  # now also rows the archived single-use deploy key solana.turf.deploy.mainnet-v026
+  # (HwqC…). The tripwire sent us back to the Squads registration row: none of the
+  # three is Mr. McRitchie's 7ZDJ…, so its "no filed item at all" still holds.
   # solana.turf.governance (2026-10-09, rotate-mainnet-admin-key) is the AGENT's
   # governance seat 4bKN…, which replaced the exposed solana.turf.admin on both
   # Squads; it is not Mr. McRitchie's 7ZDJ…, so the "no filed item" row holds.
