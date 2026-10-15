@@ -16,7 +16,7 @@ require_relative "agent_mailbox"
 module AgentMailbox
   # The souls config/agent_routes.yml routes, read without Rails. The board's
   # AgentMessages::Routes#souls is the same rule (every soul a guild lists, plus
-  # each channel's non-empty default_soul); this copy exists because bin/ runs
+  # each channel override's non-empty default_soul); this copy exists because bin/ runs
   # without the app loaded.
   def self.routed_souls(path = File.join(REPO_ROOT, "config/agent_routes.yml"))
     config = YAML.safe_load_file(path, aliases: false) || {}

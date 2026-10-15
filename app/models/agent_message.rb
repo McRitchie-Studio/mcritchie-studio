@@ -1,14 +1,16 @@
 # One inbound message to an agent: the agent mailbox's row
 # (docs/agents/system/agent-message-loop.md).
 #
-# A poll (AgentMessages::DiscordPoll) writes it, routed to a soul or stored
-# `unrouted`. A worker (`bin/dispatcher`, or `bin/heartbeat <soul>` by hand) claims it under a lease, answers,
-# and completes it; AgentMessageReplyJob posts the answer back exactly once.
+# DiscordIngest writes it, from the Gateway listener (AgentMessages::DiscordGateway)
+# or the backstop poll (AgentMessages::DiscordPoll), only when it is addressed:
+# routed to a soul, or kept `unrouted` as a reply to a held message that named none.
+# A worker (`bin/dispatcher`, or `bin/heartbeat <soul>` by hand) claims it under a
+# lease, answers, and completes it; AgentMessageReplyJob posts the answer back exactly once.
 #
 #   received ──claim──▶ claimed ──complete──▶ completed
 #      ▲                  │  └─lease lapses, attempts < cap──▶ claimable again
 #      └────release───────┘  └─lease lapses, attempts = cap──▶ dead
-#   unrouted: stored, never claimable (no soul was addressed)
+#   unrouted: stored, never claimable (a reply to a held message that named no soul)
 #
 # THE LEASE LIVES ON THE ROW (claimed_by, lease_expires_at), as lib/claim_lease.rb's
 # leases do: a worker that dies holding a message loses it when the lease lapses,
@@ -16,8 +18,7 @@
 # few minutes while its run lives, so a long run keeps its claim and a dead one
 # still loses it within LEASE.
 #
-# THE CONTENT IS UNTRUSTED. It came from whoever can post in an allow-listed
-# channel; a worker hands it to a model fenced as data, never as instructions.
+# THE CONTENT IS UNTRUSTED. It came from whoever can post in a listed guild; a worker hands it to a model fenced as data, never as instructions.
 class AgentMessage < ApplicationRecord
   CHANNELS = %w[discord].freeze
   STATUSES = %w[received claimed completed dead unrouted].freeze

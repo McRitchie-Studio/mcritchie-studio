@@ -4,7 +4,9 @@ module AgentMessages
   # and touches nothing.
   #
   # Order (config/agent_routes.yml says the same): a mentioned soul USER, then a
-  # mentioned soul ROLE, then the channel's default soul, else unrouted. Among
+  # mentioned soul ROLE, then the channel override's default soul (a thread takes
+  # its parent channel's), else unrouted. DiscordIngest drops an unrouted
+  # message unless it replies to one the mailbox holds. Among
   # several mentioned souls the one written first in the text wins, because that
   # is who the author addressed; the others are named in the result's detail.
   class Router
@@ -19,7 +21,7 @@ module AgentMessages
       @routes = routes
     end
 
-    def route(guild_id:, channel_id:, content:, mention_users: [], mention_roles: [])
+    def route(guild_id:, channel_id:, content:, mention_users: [], mention_roles: [], parent_id: nil)
       map = @routes.mention_map(guild_id)
       hits = mentions_in_text(content.to_s, map)
       hits += mentions_in_lists(map, mention_users, mention_roles) if hits.empty?
@@ -32,7 +34,7 @@ module AgentMessages
         return Result.new(soul: first[:soul], routed_by: first[:kind], detail: detail)
       end
 
-      default = @routes.channel(guild_id, channel_id)&.default_soul
+      default = @routes.default_soul(guild_id, channel_id, parent_id: parent_id)
       return Result.new(soul: default, routed_by: "default", detail: { "matched" => "channel default" }) if default
 
       Result.new(soul: nil, routed_by: "none", detail: { "reason" => "no routed soul mentioned and no channel default" })

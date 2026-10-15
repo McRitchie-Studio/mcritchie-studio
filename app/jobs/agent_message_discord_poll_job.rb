@@ -1,8 +1,9 @@
-# Every minute in production (config/recurring.yml): read the allow-listed
-# Discord channels and store new messages for the agents
-# (AgentMessages::DiscordPoll, docs/agents/system/agent-message-loop.md).
+# Every 10 minutes in production (config/recurring.yml): the BACKSTOP read of
+# every text channel and active thread in each listed Discord guild, storing the
+# addressed messages the Gateway listener missed (AgentMessages::DiscordPoll,
+# docs/agents/system/agent-message-loop.md).
 #
-# Inert until configured. With no DISCORD_AGENT_BOT_TOKEN, or no channel in
+# Inert until configured. With no DISCORD_AGENT_BOT_TOKEN, or no guild in
 # config/agent_routes.yml, it does nothing and says so ONCE per process, so a
 # dyno without the bot logs one line, not one a minute.
 class AgentMessageDiscordPollJob < ApplicationJob
@@ -27,7 +28,7 @@ class AgentMessageDiscordPollJob < ApplicationJob
 
   def idle_reason(routes)
     return "#{AgentMessages::DiscordBot::TOKEN_ENV} is unset" unless AgentMessages::DiscordBot.configured?
-    return "config/agent_routes.yml lists no Discord channel" if routes.channels.empty?
+    return "config/agent_routes.yml lists no Discord guild" if routes.guild_ids.empty?
 
     nil
   end
