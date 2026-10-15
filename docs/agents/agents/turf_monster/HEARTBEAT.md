@@ -26,7 +26,7 @@ attribution and routes to its act SOPs:
   back.
 - [`collect-vault-revenue`](sops/collect-vault-revenue.md) - collect operator
   revenue out of the vault in TWO hops: sweep the `op_rev` ATA to the treasury
-  (2-of-3, our admin UI), then withdraw from the Squads vault to a personal
+  (3 of the 5 VaultState signers, our admin UI), then withdraw from the Squads vault to a personal
   wallet (3-of-5, app.squads.so, not in our code).
 - [`post-to-x`](sops/post-to-x.md) - turn "this team won" and a video into a
   post on `@turfmonstershow`: the code drafts the copy from the live record and

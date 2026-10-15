@@ -139,7 +139,7 @@ is now `solana.turf.server` (`4S39…`):
 | Squads V4 upgrade multisig, per cluster | one config transaction, `app.squads.so` | `check_squads_rotation` below |
 | `scripts/squad-upgrade.js` devnet seat `xan` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex's key (`7ZDJ…`) is a Phantom export with no filed item |
 
-`update_signers` replaces the whole set (deployed: three slots, 2-of-3) and its cosigners must
+`update_signers` replaces the whole set (v0.26: five slots, 3 signatures) and its cosigners must
 survive it (`SignerContinuityRequired`, 6017), so **the outgoing key never signs**. Fund the new
 key first; it pays fees for `create_contest`, `mint_entry_token` and `enter_contest`. Verify: new
 in, old out, cosigners kept. Squads is a separate authority: land or cancel approved upgrade
