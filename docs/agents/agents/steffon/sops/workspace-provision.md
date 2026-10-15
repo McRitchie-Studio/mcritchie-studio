@@ -388,6 +388,37 @@ Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
 each Connect asked for and echoes past grants as Google does; nothing reaches
 Google.
 
+## 9. Fathom by sign-in — meeting notes and transcripts
+
+The same `sign_in` method for Fathom (`FathomConnection`, `Fathom::OAuthClient`,
+`Fathom::Reader`): one sign-in, one ability (read meetings, their transcripts and
+their summaries; Fathom's only OAuth scope is `public_api`). The hub dogfoods it
+at **`/admin/fathom`** (admin only): the account, a live read (the first page of
+meetings and whether there are more, the newest meeting's title and date, its
+transcript's lines and speakers, its summary's length) or Fathom's error said
+plainly, and one button. The Fathom card in the Meeting notes section of
+`/integrations` carries the same Connect or Disconnect for an admin;
+`?return_to=` is honoured only for `/integrations` and `/admin/fathom`.
+
+**Refresh tokens are single-use.** Every refresh answers a new refresh token and
+spends the old one, so `Fathom::OAuthClient.access_token` refreshes only under
+the row's lock and stores the new token before the access token is used. A
+refresh that loses its answer (a timeout after Fathom rotated) leaves a spent
+token: the standing page then says Fathom no longer accepts the connection, and
+the fix is Disconnect, then Connect.
+
+**No revoke.** Fathom documents no revoke endpoint, so Disconnect deletes the
+stored token here and says so; removing the app's access is done in Fathom.
+
+**The OAuth apps.** Two Fathom OAuth apps, each with its one redirect URI:
+production (`https://mcritchie.studio/admin/fathom/callback`) and development
+(`https://qa.mcritchie.studio/admin/fathom/callback`). Their pairs are set as
+`FATHOM_CLIENT_ID` and `FATHOM_CLIENT_SECRET` on production and on QA; file a
+rotated pair through [`credential-filing`](credential-filing.md). Locally,
+`FATHOM_STAND_IN=1` walks the whole flow against a stand-in
+(`config/initializers/fathom_connect_stand_in.rb`) whose token endpoint honours
+only the last refresh token it issued; nothing reaches Fathom.
+
 ## Switching a workspace off — and back on
 
 ```bash
