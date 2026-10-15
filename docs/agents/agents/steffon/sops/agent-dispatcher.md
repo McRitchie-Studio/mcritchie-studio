@@ -29,6 +29,9 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
    | `running` | [Verify](#verify) |
    | anything else (stopped, crash-looping, `SIGTERMed`) | Read the log's last lines, find the row in the [Unblock playbook](#unblock-playbook), apply it, then [Verify](#verify) |
 
+   Run Verify steps 1 and 3 here. Its step 2 is a post only Alex can make, so it
+   waits for step 3 below.
+
 3. Report a health card:
    - the service status and pid;
    - the version and code digest from the log's last `start` line;
@@ -36,8 +39,8 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
    - messages waiting, and dead letters from the last day (`bin/agent-inbox list`);
    - the time of the last completed answer.
 
-   Then say "post a test message to @Xan and tell me when it's in". When Alex
-   says it is in, show that message with `bin/agent-inbox show <id>`: the ingest
+   Then ask Alex to post `@Xan what is building?` in `lobster-tank` (Verify
+   step 2) and to tell you when it is in. When he says it is in, show that message with `bin/agent-inbox show <id>`: the ingest
    path, claim-to-completion time, reply link and notes saved.
 
 Never start a second copy with `bin/dispatcher run` while the service is
