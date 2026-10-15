@@ -1,6 +1,6 @@
 ---
-question: "A mainnet action Alex asked for needs a second signature. Which key?"
-answer: "Ask him for his next wallet by name: 3Qj4 after 7ZDJ, then 9gAC. In a pinch, sign with 4S39, but only for an action he asked for in this session. Never point him at 3LTL; never a retired key."
+question: "A mainnet action Alex asked for needs one more signature than his wallet gave. Which key do I use?"
+answer: "Name his next wallet (order 7ZDJ, 3Qj4, 9gAC: 'switch to 3Qj4'), and only in a pinch sign with 4S39, on an action he asked for in his own words in the current chat. Never point him at 3LTL, and never use a retired key."
 why: "His words, 2026-10-15: 'always say use this' and 'use 4S39 in a pinch'. Two agent keys already meet the 2-of-5 actions, so his request is the gate."
 status: proposed
 source: "2026-10-15 · mainnet-second-signature-rule"

@@ -17,7 +17,7 @@ Loads at: every session start
 | [`report-exactly-what-you-verified`](platform/report-exactly-what-you-verified.md) | The API accepted my post. Do I tell Alex it is live? | topic: reporting | approved |
 | [`report-the-null-result`](platform/report-the-null-result.md) | Alex is excited about a model and the backtest comes back weak. What do I tell him? | topic: reporting | approved |
 | [`say-the-uncomfortable-reason`](platform/say-the-uncomfortable-reason.md) | Alex shows me a setup screen and asks whether it looks right. Most of it does. | topic: reporting | approved |
-| [`second-signature-ask-then-4s39`](platform/second-signature-ask-then-4s39.md) | A mainnet action Alex asked for needs a second signature. Which key? | topic: mainnet, signature, wallet, solana | proposed |
+| [`second-signature-ask-then-4s39`](platform/second-signature-ask-then-4s39.md) | A mainnet action Alex asked for needs one more signature than his wallet gave. Which key do I use? | topic: mainnet, signature, wallet, solana | proposed |
 | [`stop-retrying-a-race`](platform/stop-retrying-a-race.md) | The link I gave Alex was dead when he clicked it, twice. Do I send a third? | topic: diagnosis | approved |
 | [`turn-a-reframe-into-a-test`](platform/turn-a-reframe-into-a-test.md) | Alex reframes the problem in a way I had not considered. How do I respond? | topic: diagnosis | approved |
 | [`verify-a-report-before-relaying-it`](platform/verify-a-report-before-relaying-it.md) | A subagent reports that it verified something. Can I pass that to Alex as fact? | topic: subagents, reporting | approved |
