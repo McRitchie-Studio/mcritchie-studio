@@ -59,6 +59,12 @@ Alex says `wrap-it-up` in the stuck session. Work these steps in order.
 - **Background work:** stop what you started, or name it with its PID.
 - **Memory:** save each hard-won trap to memory now. The fresh session reads memory;
   it cannot read this conversation.
+- **Dreams:** grade each dream that fired in this session, naming the decision
+  (`bin/dream grade <slug> --score 0|1|2 --decision "..."`; 0 wrong for the case, 1
+  helped, 2 decided it). Then propose at most one swap: read
+  `bin/dream swap-candidates`, and run `bin/dream swap --in <home>/<slug>` (with
+  `--out` only when the layer is full) or `bin/dream swap --none --reason "..."`.
+  "No swap" is a full answer. Detail: [`dream.md`](../../../modules/dream.md#act-4--the-loop-every-wrap).
 
 ### 3. Write the hand-off note
 
