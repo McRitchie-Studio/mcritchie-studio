@@ -1727,3 +1727,20 @@ mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what s
 mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Xan what is building on the board?")
 mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
 puts "Seeded: #{AgentMessage.count} agent messages"
+
+# The report destinations page (e2e/report_destinations_admin.spec.js): a small
+# channel directory, as DiscordChannelSyncJob would leave it, and no destination
+# chosen yet. Ids are fake snowflakes; nothing here talks to Discord.
+ReportDelivery.delete_all
+ReportDestination.delete_all
+DiscordChannel.delete_all
+directory_guild = "930000000000000001"
+[
+  { external_id: "930000000000000010", name: "Ops", kind: "category", postable: false, position: 0 },
+  { external_id: "930000000000000020", name: "cto-reports", kind: "text", postable: true, category_name: "Ops", position: 0 },
+  { external_id: "930000000000000021", name: "announcements", kind: "announcement", postable: true, category_name: "Ops", position: 1 },
+  { external_id: "930000000000000022", name: "read-only", kind: "text", postable: false, category_name: "Ops", position: 2 },
+  { external_id: "930000000000000023", name: "old-reports", kind: "text", postable: true, category_name: "Ops", position: 3, archived_at: 1.day.ago },
+  { external_id: "930000000000000024", name: "general", kind: "text", postable: true, position: 0 }
+].each { |attrs| DiscordChannel.create!(attrs.merge(guild_external_id: directory_guild, synced_at: 5.minutes.ago)) }
+puts "Seeded: #{DiscordChannel.count} discord channels"
