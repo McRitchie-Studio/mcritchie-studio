@@ -17,11 +17,10 @@
 #
 # Exit: 0 done (answered or idle) · 1 a message was given back or the board refused · 2 usage.
 
-# UTF-8 before anything reads a file: a bare environment (launchd, cron) has no
-# LANG, and Ruby would then read every doc as US-ASCII and raise on the first
-# em dash (2026-10-15, messages #67 and #68).
-Encoding.default_external = Encoding::UTF_8
-Encoding.default_internal = nil
+# UTF-8 before anything reads a file (lib/process_encoding.rb): a bare
+# environment such as launchd has no LANG.
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
 
 require "shellwords"
 require_relative "lib/cli_arg_guard"
