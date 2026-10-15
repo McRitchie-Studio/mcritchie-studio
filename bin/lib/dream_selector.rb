@@ -64,8 +64,10 @@ module DreamSelector
     dreams.sort_by { |dream| [ -score(task, dream), dream.slug ] }
   end
 
+  # A step dream (one with `sop:`/`step:` tags) is left out entirely: it prints on its
+  # step's moment card (DreamBank.moment), not at a claim, so it is not "not shown".
   def select(task, dreams, soul:, limit: LIMIT)
-    approved = dreams.select(&:approved?)
+    approved = dreams.select(&:approved?).reject { |dream| dream.respond_to?(:step?) && dream.step? }
     picked = rank(task, approved.select { |dream| dream.souls.include?(soul) }).first(limit)
     universals = approved.select(&:platform?)
     Selection.new(picked: picked, universals: universals, hidden: approved - picked - universals)

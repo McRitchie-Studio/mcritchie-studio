@@ -36,7 +36,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     assert_equal roster, souls.first(roster.size)
 
     assert_select "[data-test='soul-column'][data-soul='carl']" do
-      assert_select "[data-test='sop-row'][data-sop='pr-review']" do
+      assert_select "[data-test='sop-row'][data-sop='pr-review-slow']" do
         assert_select "[data-test='sop-dream-count']", text: "0 dreams"
       end
       assert_select "[data-test='dream-card'][data-dream='wait-for-the-light']"
@@ -44,6 +44,28 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='soul-column'][data-soul='xan'] [data-test='dream-card'][data-dream='wait-for-the-light']",
                   1, "a multi-soul dream shows under each soul"
     assert_select "[data-test='soul-column'][data-soul='turf-monster'] [data-test='sop-row']", minimum: 1
+  end
+
+  test "shows step dreams under their SOP and step, not among the platform or soul dreams" do
+    get dreams_path
+
+    assert_select "[data-test='soul-column'][data-soul='carl'] [data-test='sop-row'][data-sop='pr-review']" do
+      assert_select "[data-test='sop-dream-count']", text: "1 dream"
+      assert_select "[data-test='sop-step'][data-step='claim'][data-statuses='approved']" do
+        assert_select "[data-test='dream-card'][data-dream='read-ci-before-the-diff']"
+      end
+    end
+    assert_select "[data-test='platform-row'] [data-test='sop-row'][data-sop='building-sop'] " \
+                  "[data-test='sop-step'][data-step='begin'] [data-dream='name-the-author-at-begin']"
+    assert_select "[data-test='platform-row'] [data-test='stage-group'] [data-dream='name-the-author-at-begin']", 0,
+                  "a step dream is not a platform dream"
+    assert_select "[data-dream='read-ci-before-the-diff']", 1, "one card, under its SOP only"
+  end
+
+  test "a status filter hides a step group with no dream of that status" do
+    get dreams_path(status: "proposed")
+
+    assert_select "[data-test='sop-step'][data-step='claim'][hidden]"
   end
 
   test "groups a soul's dreams by stage with a no-stage bucket" do

@@ -1,5 +1,5 @@
 # Dream
-<!-- registry: the bank of good answers, in a platform sequence and one per soul; capture and sign-off -->
+<!-- registry: the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off -->
 
 ## Status: Active
 
@@ -10,23 +10,75 @@ situation already knowing how a good session answered it.
 
 Docs say what the rules are. Dreams show judgment being used.
 
-## Two sequences
+## Three layers
 
-| Sequence | Holds | Loads | Lives in |
+| Layer | Holds | Loads | Lives in |
 |---|---|---|---|
-| **Platform** | the universal decisions, then the helper roster: which soul does which work and how to brief one | at every session start | `docs/agents/dreams/platform/` |
-| **A soul's** | that seat's own decisions | when the soul is invoked or launched as a subagent | `docs/agents/dreams/<soul>/` |
+| **Platform** (general: who) | the universal decisions, then the helper roster: which soul does which work and how to brief one | at every session start | `docs/agents/dreams/platform/` |
+| **A soul's** (specific: what) | that seat's own decisions | when the soul is invoked or launched as a subagent; a claim loads the ones that match the task | `docs/agents/dreams/<soul>/` |
+| **An SOP step's** (situational: where) | the judgment calls of one step of one SOP | as a moment card, printed by the command that runs that step | `docs/agents/dreams/sops/<sop>/` |
 
-A soul's skills are its dream sequence plus its role page. The `soul` tag decides
-the sequence: a dream with no `soul` tag is platform. A dream tagged for several
-souls loads in each of their sequences and lives under the first. Directories use
-the `config/souls.yml` slugs (`turf-monster`, `xan`).
-[`../dreams/INDEX.md`](../dreams/INDEX.md) lists every dream by sequence.
+A soul's skills are its dream sequence plus its role page. The tags decide the
+layer: a dream with `sop:` and `step:` tags is a step dream; otherwise a dream with
+no `soul` tag is platform. A dream tagged for several souls loads in each of their
+sequences and lives under the first. Directories use the `config/souls.yml` slugs
+(`turf-monster`, `xan`). The design behind the layers is
+[`../system/context-layers-design.md`](../system/context-layers-design.md).
+[`../dreams/INDEX.md`](../dreams/INDEX.md) lists every dream by sequence and step.
 The hub's `/dreams` page (admin only, linked from `/agents`) shows the bank as
 an org chart: platform dreams on top, then each soul's dreams by stage, then the
-SOPs it runs with a dream count each. Each card carries its fire count
-([Fired](#fired--the-heat-map)), and a proposed one carries Alex's Approve button
-([Act 3](#act-3--sign-off-alex)).
+SOPs it runs with a dream count each and, under each SOP, its step dreams by step.
+Each card carries its fire count ([Fired](#fired--the-heat-map)), and a proposed one
+carries Alex's Approve button ([Act 3](#act-3--sign-off-alex)).
+
+## Budgets: a full layer means a swap, not an add
+
+Every approved dream costs context in each session that loads it, so each layer
+has a cap on **approved** dreams. Proposed dreams do not count until Alex
+approves them.
+
+| Layer | Cap |
+|---|---|
+| Platform | 15 |
+| Each soul | 20 (a dream tagged for several souls counts against each) |
+| Each SOP step | 5 |
+
+`bin/dream index --check` refuses a bank with a layer over its cap and names the
+layer; `test/lib/dream_bank_test.rb` pins the real bank to the caps, so going
+over fails CI. **A full layer means a swap, not an add:** to approve a dream into
+a full layer, retire (delete) or re-tag one already there in the same change.
+
+## Moment cards: step dreams at the step
+
+A **step dream** carries two tags and no `soul`:
+
+```yaml
+sop: building-sop   # a registered SOP: an invocation in the SOP Registry
+step: begin         # one lowercase token, from the table below
+```
+
+The command that runs that step prints the step's approved dreams as a short
+**moment card** (question, answer and slug; no Why) after its own key output, so
+a `tail` keeps the command's result and the card together. The card is read from
+the tracked bank, offline: no token, no board, no network. One helper prints it,
+`DreamBank.moment(sop:, step:)`, and it never raises and never changes the
+command's exit status. A step with no approved dream prints nothing.
+
+| `sop` | `step` | Printed by | Where in the output |
+|---|---|---|---|
+| `building-sop` | `begin` | `bin/task begin` | stderr, after the soul's dream sequence and before the scout lines (they stay last) |
+| `building-sop` | `submit` | `bin/submit-wait` on every outcome; `bin/submit` when it reaches the seam | stderr, after the verdict; `bin/submit` prints none on a refusal, so the log's last line stays the reason |
+| `pr-review` | `claim` | `bin/task review-claim acquire`, `bin/task claim-next-review` | stderr, after the claim line; stdout stays the claim's |
+| `qa-release` | `prepare` | `bin/release prepare` | stderr, after prepare's output, on a return or an abort |
+
+A step dream may name another registered SOP and step (`clean-infra` · `reclaim`
+has one); it shows on `/dreams` and in the index until a command prints that
+step. Add a row here, and to `DreamBank::MOMENTS`, when one does.
+
+A step dream does not load at session start or at a claim, and a claim does not
+count it among the dreams `not shown`. Write one when the judgment belongs to a
+moment in a procedure, not to a seat: "before ejecting a red `accepted` CI, re-run
+the whole run" is `qa-release` · `prepare`, whoever runs the release.
 
 ## How a dream differs from its neighbours
 
@@ -78,7 +130,7 @@ commands and the heartbeat.
 Only `status: approved` dreams load. A dream never overrides a First Rule or an
 SOP: where they disagree, the rule wins and the dream is wrong.
 
-### The ceiling: about 25 platform dreams load by themselves
+### The ceiling: the hook holds about 25 platform dreams
 
 Claude Code caps a hook's context at **10,000 characters**. Over that, the model
 gets a file path and a 2,000-character preview, and nearly everything is lost
@@ -99,9 +151,10 @@ insight feed under the cap, with every dream and the roster present. The dream
 that tips it over fails CI; it does not truncate in production. When that test
 goes red, shorten a dream, retire one, or tag it for the soul it belongs to.
 
-So the platform sequence is a curated set of about 25, and the bank grows in the
-souls' sequences, which load by relevance. Codex's hook limit has not been
-measured.
+The hook could carry about 25; the platform budget (above) holds it to 15, so
+every platform dream keeps its Why beside a full insight feed. The bank grows in
+the souls' sequences, which load by relevance, and in the step dreams, which load
+at their step. Codex's hook limit has not been measured.
 
 ### A claim loads the dreams that match its task
 
@@ -160,8 +213,8 @@ Propose a dream when one of these happens:
   and its story says plainly that the session got it wrong.
 - You chose not to do something tempting, and the reason would transfer.
 
-Write the file in your task's desk, under `docs/agents/dreams/platform/` or the
-soul's directory. Let it ride a change that is already going through the cycle,
+Write the file in your task's desk, under `docs/agents/dreams/platform/`, the
+soul's directory, or `docs/agents/dreams/sops/<sop>/` for a step dream. Let it ride a change that is already going through the cycle,
 or open a `docs` task for it. Run `bin/dream index --write` and commit the index
 with it.
 
@@ -198,12 +251,15 @@ Tags are optional, and each takes one value or a list of lowercase tokens:
 | `risk` | the risk tag it applies to | not checked |
 | `stage` | the task stage it applies at | not checked |
 | `topic` | free words, matched against the task's title and acceptance | not checked |
+| `sop` | the SOP a step dream belongs to; needs `step` and no `soul` | the SOP Registry (`bin/lib/sop_registry.rb`), where the SOP files can be read |
+| `step` | the step within that SOP; one value | one lowercase token |
 
 On a soul's dream the last five tags decide which claims load it. Spell each
 value as the board spells it (`turf-monster`, `payment`, `ui+db`, `submitted`).
 
-A file with an unknown front matter key, an unknown soul, or a tag value that is
-not one token loads nowhere. `test/lib/dream_bank_test.rb` fails on it, on a
+A file with an unknown front matter key, an unknown soul, an unknown SOP, a `sop`
+without one `step` (or the reverse), a step dream with a `soul`, or a tag value
+that is not one token loads nowhere. `test/lib/dream_bank_test.rb` fails on it, on a
 dream filed under the wrong directory, and on a stale index.
 
 Rules for a dream:
@@ -337,6 +393,7 @@ waiting, including the open `dream-proposal-*` findings
 | Generated index | `docs/agents/dreams/INDEX.md` (`bin/dream index --write`) |
 | Parser, sequences and formatter | `bin/lib/dream_bank.rb` |
 | Selector | `bin/lib/dream_selector.rb` |
+| Budgets and moment cards | `bin/lib/dream_bank.rb` (`BUDGETS`, `MOMENTS`, `moment`, `after_moment`) |
 | Session-start loader | `bin/session-insights` |
 | Soul loader, list, materialize, approvals, fired | `bin/dream` |
 | One-click approvals | `app/models/dream_approval.rb`, `DreamsController#approve`, `app/controllers/api/v1/dream_approvals_controller.rb` |
@@ -344,5 +401,5 @@ waiting, including the open `dream-proposal-*` findings
 | Ship-time proposer | `app/services/insights/dream_proposer.rb`, called by `app/services/insights/task_grader.rb` |
 | Signals and phrases | `config/learning_loop.yml` (`dream`) |
 | Installed copy the hook reads | `bin/install-agent-docs` (`TOOLING_PATHS`) |
-| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`, `test/models/dream_approval_test.rb`, `test/models/dream_heat_test.rb`, `test/integration/dreams_page_test.rb`, `test/controllers/api/v1/dream_approvals_controller_test.rb`, `e2e/dream_approve.spec.js` |
+| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`, `test/models/dream_approval_test.rb`, `test/models/dream_heat_test.rb`, `test/integration/dreams_page_test.rb`, `test/controllers/api/v1/dream_approvals_controller_test.rb`, `e2e/dream_approve.spec.js`; the moment cards in `test/commands/task_begin_login_test.rb`, `test/lib/submit_test.rb`, `test/lib/submit_wait_script_test.rb`, `test/lib/review_claim_cli_test.rb`, `test/integration/release_prepare_moment_test.rb`, `e2e/dreams_step_dreams.spec.js` |
 | Fixture bank the selector tests read | `test/fixtures/dreams/` |
