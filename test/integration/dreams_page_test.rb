@@ -93,7 +93,9 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
       assert_select "h1", 0, "the title repeats the summary, so the story drops it"
       assert_select "h2", text: "Situation"
       assert_select "strong", text: "green"
+      assert_select "a", 0, "the fixture's [author note](javascript:…) must not render as a link"
     end
+    assert_includes response.body, "[author note](javascript:alert(1))", "it stays readable as text"
   end
 
   test "/agents links to /dreams" do
