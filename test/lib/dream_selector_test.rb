@@ -185,6 +185,19 @@ class DreamSelectorTest < Minitest::Test
     assert text.end_with?("#{wide.count(&:approved?) - shown} not shown: bin/dream list --task settle-payout-once"), text[-80..]
   end
 
+  def test_unit_a_step_dream_is_neither_selected_universal_nor_counted_hidden
+    text = "---\nquestion: \"At begin?\"\nanswer: \"A.\"\nwhy: \"W.\"\nstatus: approved\n" \
+           "sop: building-sop\nstep: begin\nrepo: turf-monster\nrisk: money\n---\n"
+    step = DreamBank.parse(text, slug: "at-begin")
+    without = DreamSelector.select(payment_task, bank, soul: "pokemon")
+    with = DreamSelector.select(payment_task, bank + [ step ], soul: "pokemon")
+
+    assert step.approved?, "control: the step dream would load if it were not a step dream"
+    refute_includes with.shown, step
+    refute_includes with.hidden, step, "it prints on its step's card, so a claim does not count it as not shown"
+    assert_equal without.hidden.size, with.hidden.size
+  end
+
   def test_unit_a_soul_without_dreams_or_off_the_roster_gets_no_block
     assert_equal "", context("mack")
     assert_equal "", context("nobody")
