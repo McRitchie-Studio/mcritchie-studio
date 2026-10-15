@@ -370,6 +370,22 @@ class DreamCliTest < Minitest::Test
     assert_includes out, "bin/dream apply-approvals"
   end
 
+  def test_unit_approvals_lists_pending_retirements_so_a_retire_alone_still_calls_for_a_batch
+    retirements = [ { "dream_home" => "carl", "dream_slug" => "old-habit", "retired_by" => "alex-mcritchie",
+                      "retired_at" => "2026-10-15T12:00:00Z", "file_status" => "approved" } ]
+    out, _err, code = approvals_cli("approvals", rows: [], retirements: retirements)
+
+    assert_equal 0, code
+    assert_includes out, "## Pending dream approvals (0)"
+    assert_includes out, "## Pending dream retirements (1)"
+    assert_includes out, "`old-habit` · carl · retired 2026-10-15 by alex-mcritchie · file reads approved"
+    assert_includes out, "bin/dream apply-approvals"
+
+    _out, err, code = approvals_cli("approvals", rows: [], retirements: nil)
+    assert_equal 1, code
+    assert_includes err, "could not read the pending retirements"
+  end
+
   def test_unit_approvals_refuses_when_the_board_cannot_be_read
     out, err, code = approvals_cli("approvals", rows: nil)
 

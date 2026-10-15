@@ -13,9 +13,11 @@
 #   bin/dream propose --materialize <finding>
 #                                      write the proposed dream a dream-proposal-<task> triage finding
 #                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
-#   bin/dream approvals                list the approvals Alex gave on /dreams that no file carries yet
-#   bin/dream apply-approvals          set each pending approval's file to `status: approved` in this
-#                                      desk and rewrite INDEX.md, for one batch task
+#   bin/dream approvals                list the approvals and retirements Alex gave on /dreams that
+#                                      no file carries yet
+#   bin/dream apply-approvals          set each pending approval's file to `status: approved`, delete
+#                                      each retired dream's file, in this desk, and rewrite INDEX.md,
+#                                      for one batch task
 #   bin/dream fired <slug> --decision "<what it changed>"
 #                                      record that a dream shaped a decision (the /dreams heat map)
 #   bin/dream grade <slug> --score 0|1|2 --decision "<the decision it judged>"
@@ -206,12 +208,22 @@ class DreamCli
     rows = pending_approvals
     return refuse("could not read the pending approvals from the board.") if rows.nil?
 
+    retirements = pending_rows(@retirements_reader)
+    return refuse("could not read the pending retirements from the board.") if retirements.nil?
+
     @out.puts("## Pending dream approvals (#{rows.size})")
     rows.each do |row|
       @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · approved #{row["approved_at"].to_s[0, 10]} " \
                 "by #{row["approved_by"] || "unknown"} · file reads #{row["file_status"]}")
     end
-    @out.puts("Write them into the files: bin/dream apply-approvals, in one batch task desk.") unless rows.empty?
+    @out.puts("## Pending dream retirements (#{retirements.size})")
+    retirements.each do |row|
+      @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · retired #{row["retired_at"].to_s[0, 10]} " \
+                "by #{row["retired_by"] || "unknown"} · file reads #{row["file_status"]}")
+    end
+    unless (rows + retirements).empty?
+      @out.puts("Write them into the files: bin/dream apply-approvals, in one batch task desk.")
+    end
     OK
   end
 

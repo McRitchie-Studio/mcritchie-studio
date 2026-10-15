@@ -23,6 +23,11 @@ Each layer has a budget of approved dreams (platform 15, a soul 20, an SOP step 
 a full layer means a swap, not an add. The budgets and the steps that print a
 moment card are in [`../modules/dream.md`](../modules/dream.md).
 
+At wrap, a session grades the dreams that fired in it and proposes at most one
+swap; Alex approves a swap, or retires a dream, with one click on `/dreams`, and
+`bin/dream apply-approvals` deletes each retired file. A retired dream keeps no
+file and no status ([Act 4](../modules/dream.md#act-4--the-loop-every-wrap)).
+
 [`INDEX.md`](INDEX.md) lists every dream by sequence. `bin/dream index --write`
 regenerates it and a test pins it. The loader skips `README.md` and `INDEX.md`.
 To read the bank as an org chart, with each soul's SOPs under its dreams, open

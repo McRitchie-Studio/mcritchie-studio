@@ -63,6 +63,11 @@ decision, a project-state change, a stated preference?
   `- [Title](file.md) — <≤130-char hook>`. Detail lives in the topic file, never
   in the index. (See `feedback_memory_index_hygiene.md`.)
 
+**Dreams.** Grade each dream that fired this session, naming the decision
+(`bin/dream grade <slug> --score 0|1|2 --decision "..."`), then propose at most one
+swap (`bin/dream swap-candidates`, then `bin/dream swap --in ...` or
+`bin/dream swap --none --reason "..."`). Detail: `docs/agents/modules/dream.md`, Act 4.
+
 ## 3. Memory index hygiene
 Run this only when a memory dir exists. Keep `MEMORY.md` under its size limit
 (~24KB) so the harness loads the whole index. The job: shorten the one-line
