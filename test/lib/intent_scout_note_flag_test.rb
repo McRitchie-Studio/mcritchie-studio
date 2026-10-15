@@ -6,7 +6,7 @@
 # scout to comments. The refusal comes before any board call, so the child points
 # at a closed port and a sandboxed HOME: a request would fail loudly, not post.
 #
-#   ruby -Itest test/lib/task_note_one_per_call_test.rb
+#   ruby -Itest test/lib/intent_scout_note_flag_test.rb
 
 require "minitest/autorun"
 require "open3"
@@ -16,7 +16,7 @@ require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
 
-class TaskNoteOnePerCallTest < Minitest::Test
+class IntentScoutNoteFlagTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
 
   def setup
