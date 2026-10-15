@@ -24,8 +24,10 @@ test("saving a stacked choice with an edit shows it in the table, marked Saved, 
   // Edits apply to Alt (task logo-original-and-alt): Industries opens on its Original unless asked.
   await open(page, "/logos/industries?type=stacked&form=tagline&ending_colour=C8661F&colouring=alt");
   const choice = page.locator("[data-test='kit-choice']");
-  await expect(choice.locator("[data-test='kit-save-text']")).toHaveValue("first");
-  await choice.locator("[data-test='kit-save-text']").selectOption("second");
+  // The Words control picks the text version (task logo-download-card; it was the Kit choice card's select).
+  await expect(page.locator("a[data-test='text-option'][aria-current='true']")).toHaveAttribute("data-text", "first");
+  await page.locator("a[data-test='text-option'][data-text='second']").click();
+  await page.waitForURL(/text=second/);
   await choice.locator("[data-test='kit-save']").click();
 
   // The saved choice is the tab's default (task logo-original-and-alt): back to the bare tab, which opens on it.

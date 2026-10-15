@@ -9,13 +9,17 @@ class LogosCopyFetchTest < ActionDispatch::IntegrationTest
 
   def copies = css_select("[data-test='logo-copy']")
 
+  # Task logo-download-card: one Copy SVG on the Download card, pointed at the tone picked; each tone's radio carries
+  # the URL Copy SVG fetches (data-svg) and the one Download gives (data-download-url).
   test "each Copy SVG names its logo's URL, which answers the SVG the Download gives, inline" do
     get logo_brand_path("turf", type: "stacked", form: "one_line", first_colour: "4BAF50")
-    assert_equal 6, copies.size, "three text versions, light and dark"
-    downloads = css_select("[data-test='logo-download']").map { |link| link["href"] }
-    copies.zip(downloads).each do |button, download|
-      url = button["data-copy-svg"]
-      refute button.key?("data-clip"), "no SVG inline"
+    assert_equal 1, copies.size, "one logo, one Copy SVG"
+    refute copies.first.key?("data-clip"), "no SVG inline"
+    tones = css_select("input[data-test='download-tone-option']")
+    assert_equal %w[light dark watermark], tones.map { |input| input["value"] }
+    assert_equal tones.first["data-svg"], copies.first["data-copy-svg"], "Copy SVG starts on the first tone"
+    assert_equal [tones.first["data-download-url"]], css_select("[data-test='logo-download']").map { |link| link["href"] }
+    tones.map { |input| [input["data-svg"], input["data-download-url"]] }.each do |url, download|
       assert_equal Rack::Utils.parse_query(URI(download).query).except("download"), Rack::Utils.parse_query(URI(url).query), url
       assert_equal URI(download).path, URI(url).path
 

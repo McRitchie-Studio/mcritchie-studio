@@ -42,7 +42,7 @@ class LogosKitIconTest < ActionDispatch::IntegrationTest
   test "the Navbar and Stacked tabs draw the kit's icon, and their Colouring sets the words" do
     save_icon("welding_v2")   # the brand's own: Original
     get logo_brand_path("welding_v2", colouring: "alt")
-    assert_equal 6, logo_srcs.size
+    assert_equal 2, logo_srcs.size, "one logo, light and dark (task logo-download-card)"
     logo_srcs.each { |src| assert_equal [nil, "original"], query(src).values_at("colouring", "icon_colouring"), src }
     assert_select "[data-test='kit-icon-note']", /The icon is the kit's \(original colouring\), so Colouring here sets the words/
     assert_select "[data-test='kit-icon-tab'][href=?]", logo_brand_path("welding_v2", type: "icon", colouring: "alt")
@@ -102,13 +102,13 @@ class LogosKitIconTest < ActionDispatch::IntegrationTest
   test "the watermark draws the single-colour icon and a dark page the kit icon's dark tone" do
     save_icon("welding_v2")   # Original
     get logo_brand_path("welding_v2", colouring: "alt", context: "watermark")
-    assert_equal 3, logo_srcs.size
+    assert_equal 1, logo_srcs.size
     logo_srcs.each { |src| assert_equal ["watermark", nil, nil], query(src).values_at("tone", "colouring", "icon_colouring"), src }
     assert_equal Logos::NavbarLogo.new("welding_v2").svg(rule: 4, text: :second, tone: :watermark), Logos::Variant.parse(Logos::NavbarLogo.new("welding_v2"), query(logo_srcs.last).symbolize_keys).svg
 
     get logo_brand_path("welding_v2", colouring: "alt")
     dark = logo_srcs.select { |src| query(src)["tone"] == "dark" }
-    assert_equal 3, dark.size
+    assert_equal 1, dark.size
     dark.each { |src| assert_equal "original", query(src)["icon_colouring"] }
     get dark.first
     text = query(dark.first)["text"].to_sym

@@ -114,7 +114,7 @@ class BrandKitOriginalsTest < ActionDispatch::IntegrationTest
                   "Not uploaded: not-a-picture.png is not an SVG, PNG, JPEG, PDF or ZIP (read from its contents, not its name)"
     assert_select "[data-test='kit-originals-empty']", "No originals uploaded yet."
     assert_select "[data-test='logo-type'][data-type='stacked']", 1
-    assert_select "[data-test='logo-example'][data-tones='watermark']", 3
+    assert_select "[data-test='logo-example'][data-tones='watermark']", 1
     assert_select "[data-test='kit-choice'][data-type='stacked']", 1
     assert_select "[data-test='kit-card'] [data-test='kit-pick'][data-type='navbar'][data-saved='true']", 1
     assert_select "[data-test='brand-colours']", 1

@@ -315,21 +315,29 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='logo-themed'][data-tone='dark'].hidden.dark\\:contents img[data-test='logo-image'][src*='tone=dark']", count
   end
 
-  test "a brand page opens on the Navbar Logo tab at the rule of 4: three text versions, each with a download and a copy" do
+  # Task logo-download-card: ONE logo per tab, in the kit's text version (here the default, second word leads), with
+  # one Download card; the Words control picks another. It was three text versions, each with its own download and copy.
+  test "a brand page opens on the Navbar Logo tab at the rule of 4: one logo, in the kit's text version, with a Download card" do
     log_in_as(@admin)
     get logo_brand_path("industries")
     assert_response :success
 
     assert_select "[data-test='logo-type'][data-type='navbar']", 1
     assert_select "[data-test='logo-rule']", 0, "the two rule sections are gone: the Rule control picks one"
-    assert_equal %w[homogeneous first second], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
-    assert_equal ["Homogeneous", "First word leads", "Second word leads"], css_select("[data-test='logo-example'] h2").map { |h| h.text.strip }
-    assert_examples themed("industries", :navbar, rule: 4), examples: 3
-    assert_themed_pairs(3)
+    assert_equal %w[second], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
+    assert_select "[data-test='logo-example'] h2", 0, "one logo needs no version heading"
+    assert_equal [["homogeneous", "Homogeneous"], ["first", "First word leads"], ["second", "Second word leads"]],
+                 css_select("[data-test='text-control'] a[data-test='text-option']").map { |option| [option["data-text"], option.text.strip] }
+    assert_equal ["second"], css_select("a[data-test='text-option'][aria-current='true']").map { |option| option["data-text"] }
+    assert_equal [logo_brand_path("industries", text: "homogeneous"), logo_brand_path("industries", text: "first"), logo_brand_path("industries")],
+                 css_select("a[data-test='text-option']").map { |option| option["href"] }, "the kit's text version is the default, left out"
+    assert_examples themed("industries", :navbar, rule: 4)
+    assert_themed_pairs(1)
+    assert_equal %w[light dark watermark], css_select("input[data-test='download-tone-option']").map { |input| input["value"] }
     assert_select "img[data-test='logo-image'][alt=?][src=?]", "#{LABEL}, original colouring",
                   navbar_logo_path("industries", rule: 4, text: "second", tone: "light", colouring: "original", guides: 0)
-    assert_select "[data-test='logo-plate'], [data-test='logo-type'] [style*='background']", 0, "no plate: each logo sits on the page's own background"
-    assert_select "[data-test='logo-frame']", 3
+    assert_select "[data-test='logo-plate'], [data-test='logo-example'] [style*='background']", 0, "no plate: each logo sits on the page's own background"
+    assert_select "[data-test='logo-frame']", 1
     assert_select "[data-logo-theme]", 0, "with no context the page leaves the hub theme as it is"
     assert_select "[data-test='type-sentence']", { count: 1, text: /\AThe icon is four rows tall.*the middle two rows\.\z/ }
     assert_select "[data-test='guides-sentence']", 0
@@ -338,10 +346,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[colouring-option colouring-option compare-link logo-tab logo-tab logo-tab rule-option rule-option rule-option edit-jump guides-toggle kit-save-default] +
-                 %w[logo-download logo-copy] * 6 + %w[kit-save kit-download] +
+    assert_equal %w[colouring-option colouring-option compare-link logo-tab logo-tab logo-tab rule-option rule-option rule-option] +
+                 %w[text-option] * 3 + %w[edit-jump guides-toggle kit-save-default logo-download logo-copy kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
-    assert_select "[data-test='kit-note']", /pick on their tabs, then Save as default. Each tab then opens on it./
     assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/
   end
 
@@ -373,8 +380,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                    css_select("a[data-test='rule-option']").map { |option| [option["data-rule"], option.text.strip, option["href"]] }
       assert_equal [rule.to_s], css_select("a[data-test='rule-option'][aria-current='true']").map { |option| option["data-rule"] }
       assert_select "a[data-test='rule-option'][aria-current='true'].btn-primary.border.border-transparent", 1
-      assert_examples themed("studio", :navbar, rule:), examples: 3
-      assert_select "img[data-test='logo-image'][alt*='rule of #{rule}']", 6
+      assert_examples themed("studio", :navbar, rule:)
+      assert_select "img[data-test='logo-image'][alt*='rule of #{rule}']", 2
       assert_select "[data-test='type-sentence']", { count: 1, text: Logos::Variant::RULE_SENTENCES.fetch(rule) }
     end
     %w[icon stacked].each do |type|
@@ -383,24 +390,24 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Stacked Logo tab shows the three text versions, states the 3-2-1 method, and names the brand's form" do
+  test "the Stacked Logo tab shows one logo in the kit's text version, states the 3-2-1 method, and names the brand's form" do
     log_in_as(@admin)
     { "industries" => /This brand uses the two-line form\.\z/, "welding" => /two-line form/,
       "turf" => /This brand uses the one-line form, because its second word is too wide to sit under its first/ }.each do |brand, form|
       get logo_brand_path(brand, type: "stacked")
       assert_response :success
-      assert_equal %w[homogeneous first second], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
-      assert_examples themed(brand, :stacked), examples: 3
-      assert_select "img[data-test='logo-image'][alt*=' stacked logo, '][src^=?]", stacked_logo_path(brand), 6
+      assert_equal %w[first], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
+      assert_examples themed(brand, :stacked)
+      assert_select "img[data-test='logo-image'][alt*=' stacked logo, '][src^=?]", stacked_logo_path(brand), 2
       assert_select "[data-test='type-sentence']", { count: 1, text: /\AThe 3-2-1 method: .*3 units tall, every gap is 2 units.*1 unit tall.*60% of the big word's width/ }
       assert_select "[data-test='type-sentence']", form
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked", guides: 1), text: "Show guides"
 
       get logo_brand_path(brand, type: "stacked", guides: 1)
       assert_response :success
-      assert_examples themed(brand, :stacked, guides: true), examples: 3
-      assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 6
-      assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
+      assert_examples themed(brand, :stacked, guides: true)
+      assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 2
+      assert_equal 1, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
       assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size, spaced exactly as the logo spaces it: one copy per unit.*and the name at 60% of its size turned on end beside the icon, bracketed, reading up from its foot to its top/ : /faint copies of the small word, spaced exactly as the logo spaces it: one copy per unit.*and one copy turned on end beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long/
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
     end
@@ -417,7 +424,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         original = { colouring: tone == "watermark" ? "alt" : "original" }
         assert_select "img[data-test='logo-image'][alt=?][src=?]", "Commercial Welding v1 icon, #{tone}#{', original colouring' if tone != 'watermark'}",
                       icon_logo_path("welding", tone:, **original)
-        assert_select "a[data-test='logo-download'][href=?]", icon_logo_path("welding", tone:, **original, download: 1)
+        assert_includes download_urls, icon_logo_path("welding", tone:, **original, download: 1)
       end
       assert_select "[data-test='logo-frame']", 1
       assert_select "[data-test='logo-plate']", 0
@@ -482,7 +489,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "h1", name
       assert_equal [note], css_select("[data-test='brand-note']").map { |p| p.text.strip }
       alts = css_select("[data-test='logo-image']").map { |img| img["alt"] }
-      assert_equal type == "icon" ? 2 : 6, alts.uniq.size, "each version in light and in dark"
+      assert_equal 2, alts.uniq.size, "the one logo in light and in dark"
       assert alts.all? { |alt| alt.start_with?("#{name} #{Logos::Variant::TYPES.fetch(type.to_sym).downcase}, ") }, alts.inspect
     end
   end
@@ -510,14 +517,13 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       pin = { nil => nil, "light" => "light", "dark" => "dark", "watermark" => "dark" }.fetch(context)
       assert_equal [pin].compact, css_select("[data-logo-theme]").map { |page| page["data-logo-theme"] }, where
 
-      count = type == "icon" ? 1 : 3
       assert_select "[data-test='logo-plate']", 0
       if context == "watermark"
-        assert_examples variants("industries", type.to_sym, tone: :watermark), examples: count
+        assert_examples variants("industries", type.to_sym, tone: :watermark)
         assert_select "[data-test='logo-themed']", 0
       else
-        assert_examples themed("industries", type.to_sym), examples: count
-        assert_themed_pairs(count)
+        assert_examples themed("industries", type.to_sym)
+        assert_themed_pairs(1)
         assert_select "img[data-test='logo-image'][src*='tone=watermark']", 0
       end
     end
@@ -531,7 +537,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_response :success
         assert_select "[data-test='watermark-note']", /whole logo in one colour, slightly transparent/
         assert_select "[data-test='watermark-text-note']", same
-        assert_select "[data-test='logo-example']", 3, "no version is hidden"
+        assert_select "[data-test='logo-example']", 1, "one logo per tab (task logo-download-card)"
         assert_select "[data-test='transparent-note']", 1
       end
 
@@ -614,29 +620,30 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logo_brand_path("industries", guides: 1, rule: 3)
     assert_response :success
     assert_select "a[data-test='guides-toggle'].btn-primary[href=?]", logo_brand_path("industries", rule: 3), text: "Hide guides"
-    assert_examples themed("industries", :navbar, rule: 3, guides: true), examples: 3
-    assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 6
-    assert_select "a[data-test='logo-download'][href*='guides=1']", 6
-    assert_equal 6, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
+    assert_examples themed("industries", :navbar, rule: 3, guides: true)
+    assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 2
+    assert_select "a[data-test='logo-download'][href*='guides=1']", 1
+    assert_equal 3, download_urls.count { |url| url.include?("guides=1") }, "every tone's download is the guide drawing as shown"
+    assert_equal 1, css_select("button[data-test='logo-copy']").count { |button| button["data-copy-svg"].include?("guides=1") }
     assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways\./
 
     # A guide drawing fits its frame (max-width) down to a least width of its own, where its frame starts to scroll.
-    # One frame per example holds both tones' drawings; its name is the drawing's, without the tone.
-    assert_select "[data-test='logo-frame'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 3
-    assert_equal ["Guide drawing: McRitchie Industries navbar logo, rule of 3, homogeneous, original colouring, construction guides"],
+    # One frame holds both tones' drawings; its name is the drawing's, without the tone.
+    assert_select "[data-test='logo-frame'].overflow-x-auto[role='group'][aria-label^='Guide drawing: McRitchie Industries navbar logo']", 1
+    assert_equal ["Guide drawing: McRitchie Industries navbar logo, rule of 3, second word leads, original colouring, construction guides"],
                  css_select("[data-test='logo-frame']").first(1).map { |frame| frame["aria-label"] }
     # A tab stop as served (so it works with JavaScript off); scroll_tab_stop.js drops the tabindex wherever the drawing fits.
-    assert_select "[data-test='logo-frame'][tabindex='0'][data-scroll-tab-stop]", 3
+    assert_select "[data-test='logo-frame'][tabindex='0'][data-scroll-tab-stop]", 1
     assert_select "[data-test='logo-frame'][x-data], [data-test='logo-frame'][x-init]", 0
     styles = css_select("[data-test='logo-frame'] img.max-w-full").map { |img| img["style"] }
-    assert_equal 6, styles.size
+    assert_equal 2, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
     get logo_brand_path("industries", type: "stacked", guides: 1)
-    assert_equal ["max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 483px", "max-height: 540px; min-width: 464px"],
+    assert_equal ["max-height: 540px; min-width: 483px"],
                  css_select("[data-test='logo-frame'].overflow-x-auto [data-tone='light'] img.max-w-full").map { |img| img["style"] }
     get logo_brand_path("industries", type: "stacked")
     assert_select "[data-test='logo-frame'].overflow-x-auto, [data-test='logo-frame'][tabindex]", 0
-    assert_select "[data-test='logo-frame'] img[style='max-height: 240px'].max-w-full", 6
+    assert_select "[data-test='logo-frame'] img[style='max-height: 240px'].max-w-full", 2
   end
 
   test "navbar serves the one logo inline, and as a named file with download=1" do
@@ -802,12 +809,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     get logo_brand_path("welding", type: "stacked", form: "tagline", guides: 1)
     assert_response :success
-    assert_examples themed("welding", :stacked, form: :tagline, guides: true), examples: 3
+    assert_examples themed("welding", :stacked, form: :tagline, guides: true)
     assert_equal ["tagline"], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
-    assert_equal %w[welding-stacked-tagline-homogeneous-light-original-guides.svg welding-stacked-tagline-first-light-original-guides.svg
-                    welding-stacked-tagline-second-light-original-guides.svg],
-                 variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the files the Download links above serve"
-    assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 6
+    assert_equal %w[welding-stacked-tagline-first-light-original-guides.svg],
+                 variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the file the Download link above serves"
+    assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 2
     assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
     assert_select "[data-test='guides-sentence']", /faint copies of the tagline, spaced exactly as the logo spaces it: one copy per unit/
 
@@ -885,10 +891,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_examples %i[light dark].flat_map { |tone| variants("welding_v2", :icon, tone:) }, examples: 1
     get logo_brand_path("welding_v2", type: "navbar", rule: 3, guides: 1)
     assert_response :success
-    assert_examples themed("welding_v2", :navbar, rule: 3, guides: true), examples: 3
+    assert_examples themed("welding_v2", :navbar, rule: 3, guides: true)
     get logo_brand_path("welding_v2", type: "stacked", form: "tagline", guides: 1)
     assert_response :success
-    assert_examples themed("welding_v2", :stacked, form: :tagline, guides: true), examples: 3
+    assert_examples themed("welding_v2", :stacked, form: :tagline, guides: true)
   end
 
   # Task stacked-rule-of-three: the Stacked tab's Proportion control, carried in the URL like every other choice.
@@ -905,9 +911,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
     get logo_brand_path("welding_v2", type: "stacked", proportion: "rule_of_three", form: "tagline", guides: 1)
     assert_response :success
-    assert_examples themed("welding_v2", :stacked, form: :tagline, proportion: :rule_of_three, guides: true), examples: 3
+    assert_examples themed("welding_v2", :stacked, form: :tagline, proportion: :rule_of_three, guides: true)
     assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
-    assert_select "img[data-test='logo-image'][alt*=', with tagline, rule of three, ']", 6
+    assert_select "img[data-test='logo-image'][alt*=', with tagline, rule of three, ']", 2
     assert_select "[data-test='type-sentence']", /The rule of three: three copies of the icon side by side are exactly as wide as the name/
     assert_select "[data-test='type-sentence']", /every gap is 2 units, as in 3-2-1\. With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline/
     assert_select "[data-test='guides-sentence']", /two faint copies of the icon either side of the real one, numbered 1 2 3/

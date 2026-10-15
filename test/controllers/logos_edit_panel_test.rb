@@ -99,18 +99,18 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     logo_srcs.each { |src| assert_equal "0", query(src)["tagline_visible"], src }
     # Task logo-gallery-polish-pass, item 3: the pictures' alt text says the tagline is hidden.
     alts = css_select("[data-test='logo-example'] img").map { |img| img["alt"] }
-    assert_equal 6, alts.size
+    assert_equal 2, alts.size, "one logo, light and dark (task logo-download-card)"
     alts.each { |alt| assert_match(/, tagline hidden, /, alt) && refute_match(/with tagline/, alt) }
   end
 
   test "edits reach every logo on the tab, in both tones, and the drawn SVG carries the picked colour" do
     get page("studio", type: "stacked", form: "tagline", first_colour: "635BB2", tagline_visible: 0)
-    assert_equal 6, logo_srcs.size, "three text versions, light and dark"
+    assert_equal 2, logo_srcs.size, "one logo, light and dark (task logo-download-card)"
     logo_srcs.each { |src| assert_equal "635BB2", query(src)["first_colour"], src }
 
     get logo_srcs.first
     assert_includes response.body, %(fill="#635BB2")
-    assert_equal Logos::StackedLogo.new("studio").svg(form: :tagline, text: :homogeneous, edits: { first: { colour: "#635BB2" }, tagline: { visible: false } }), response.body
+    assert_equal Logos::StackedLogo.new("studio").svg(form: :tagline, text: :first, edits: { first: { colour: "#635BB2" }, tagline: { visible: false } }), response.body
   end
 
   test "no edits leaves every logo's address as it was" do
@@ -168,25 +168,27 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Task logo-download-card: the Download card's Download and Copy SVG start on the first tone, and each light and dark
+  # tone radio carries its edited logo's URLs (a watermark is one colour, so it takes no edits).
   test "every download and copy on the tab honours the edits, and an edited file is named -custom" do
     get page("industries", rule: 4, ending_weight: 300, ending_colour: "C8661F")
-    downloads = css_select("a[data-test='logo-download']")
-    copies = css_select("button[data-test='logo-copy']")
-    assert_equal 6, downloads.size
-    assert_equal 6, copies.size
+    tones = css_select("input[data-test='download-tone-option']").select { |input| %w[light dark].include?(input["value"]) }
+    assert_equal 2, tones.size
+    assert_match(/, edited\z/, css_select("button[data-test='logo-copy']").first["aria-label"])
+    assert_equal [tones.first["data-download-url"]], css_select("a[data-test='logo-download']").map { |link| link["href"] }
     logo = Logos::NavbarLogo.new("industries")
     edits = { ending: { weight: 300, colour: "#C8661F" } }
-    expected = Logos::Variant::TEXTS.keys.product(Logos::NavbarLogo::BAKED).map { |text, tone| logo.svg(rule: 4, text:, tone:, edits:) }
-    fetched = copies.map do |button|
-      get button["data-copy-svg"]
+    expected = Logos::NavbarLogo::BAKED.map { |tone| logo.svg(rule: 4, text: :second, tone:, edits:) }
+    fetched = tones.map do |input|
+      get input["data-svg"]
       response.body
     end
-    assert_equal expected.sort, fetched.sort, "each copy fetches the edited logo"
-    copies.each { |b| assert_match(/, edited\z/, b["aria-label"]) }
+    assert_equal expected, fetched, "each copy fetches the edited logo"
+    tones.each { |input| assert_match(/, edited\z/, input["data-label"]) }
 
-    downloads.each do |link|
-      assert_equal %w[300 C8661F 1], query(link["href"]).values_at("ending_weight", "ending_colour", "download")
-      get link["href"]
+    tones.map { |input| input["data-download-url"] }.each do |href|
+      assert_equal %w[300 C8661F 1], query(href).values_at("ending_weight", "ending_colour", "download")
+      get href
       assert_response :success
       assert_match(/attachment; filename="industries-navbar-rule4-\w+-(light|dark)-custom\.svg"/, response.headers["Content-Disposition"])
       assert_includes response.body, %(fill="#C8661F")

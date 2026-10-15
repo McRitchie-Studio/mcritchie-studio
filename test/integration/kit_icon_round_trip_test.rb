@@ -43,7 +43,7 @@ class KitIconRoundTripTest < ActionDispatch::IntegrationTest
 
     get logo_brand_path("welding_v2", type: "stacked")
     srcs = css_select("[data-test='logo-type'] img[data-test='logo-image']").map { |img| img["src"] }
-    assert_equal 6, srcs.size
+    assert_equal 2, srcs.size, "one logo, light and dark (task logo-download-card)"
     srcs.each do |src|
       params = query(src)
       expected = stacked.svg(text: params["text"].to_sym, tone: params["tone"].to_sym, form: stacked.form, colouring: :alt, icon_colouring: :original)
