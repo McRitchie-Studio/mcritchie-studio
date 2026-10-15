@@ -54,8 +54,29 @@ session id and last sequence number at READY's `resume_gateway_url`. An unacked
 heartbeat closes the zombie and resumes; RECONNECT resumes; INVALID_SESSION, or a
 4007/4009 close, starts a fresh IDENTIFY; 4004 and 4010-4014 (bad token, bad
 intents, sharding) stop it for good with one error line. Reconnects back off from
-1 to 60 seconds. Each MESSAGE_CREATE goes through `DiscordIngest`, the same path
-the poll uses, so the unique index dedupes the two.
+1 second to 5 minutes; the ladder resets only after a connection has stayed up 60
+seconds past READY or RESUMED, so a session that drops at once keeps climbing.
+Each MESSAGE_CREATE goes through `DiscordIngest`, the same path the poll uses, so
+the unique index dedupes the two.
+
+- **The IDENTIFY budget.** Discord allows about 1,000 session starts (IDENTIFYs)
+  per token per day and resets the token past that, which takes the mailbox down
+  until a new one is filed. So the listener RESUMEs whenever the session allows
+  (RESUME starts no session), and before every IDENTIFY it checks two counts.
+  First, our own `AgentMessages::GatewayIdentifyBudget`: 200 in a rolling 24
+  hours, kept in the database (an `agent_message_cursors` row,
+  `discord-gateway:identify`) so a crash loop's restarts cannot zero it. Second,
+  Discord's own `session_start_limit` from `GET /gateway/bot`
+  (`AgentMessages::GatewayStartLimit`): below 10 `remaining`, it waits out
+  `reset_after`. Either spent: it stands down, still holding the leader lock,
+  until the window rolls (rechecking every 15 minutes), with one error line and
+  one `ErrorLog` receipt per stand-down. Meanwhile the backstop poll keeps
+  reading. A count it cannot read is a failed attempt: it backs off and never
+  IDENTIFYs blind.
+- **The handshake deadline.** TLS, the websocket upgrade, HELLO and READY (or
+  RESUMED) must all land within 30 seconds, or the socket is closed and the
+  listener backs off (`handshake did not finish within 30s`), so a stalled
+  handshake never holds the leader lock with no live listener behind it.
 
 - **Where it runs: the Solid Queue scheduler process**, as a thread its lifecycle
   hooks start and stop. The worker dyno's `bin/jobs` runs exactly one scheduler
@@ -74,17 +95,25 @@ the poll uses, so the unique index dedupes the two.
   lock is per database, so it cannot stop another app holding the same token: that
   is why the token is never set on `mcritchie-studio-qa`.
 - **Receipts.** A routine reconnect is a log line. A fatal close, a message it
-  could not store, and the thread dying each also write an `ErrorLog` row.
+  could not store, a spent IDENTIFY budget, and the thread dying each also write
+  an `ErrorLog` row.
 - **Switches.** Without `DISCORD_AGENT_BOT_TOKEN`, with `DISCORD_GATEWAY=off`, or
   with no guild listed, it stays inert and logs one `discord gateway idle:` line.
-  It never logs the token or an IDENTIFY/RESUME payload.
+  It never logs the token or an IDENTIFY/RESUME payload. With the gateway off, the
+  backstop poll is the only reader, so a message waits up to 10 minutes to be
+  stored. One-minute latency without the gateway also needs the
+  `agent_message_discord_poll` cadence in `config/recurring.yml` changed (a
+  deploy), and costs a channel listing plus one read per channel every minute.
 
 **Inbound, backstop.** Every 10 minutes the poll lists each guild's channels
 (`GET /guilds/{id}/channels`, keeping text and announcement channels) and active
 threads (`GET /guilds/{id}/threads/active`), drops the muted ones, and reads each
 with `GET /channels/{id}/messages?after=<cursor>`. The cursor advances in the same
 transaction as the rows it covers, past dropped chatter too, and the unique index
-makes a re-read page harmless. A channel's first read stores only messages from
+makes a re-read page harmless. Each insert runs in its own savepoint, so when the
+gateway stores the same message first, the poll's losing insert (the uniqueness
+validation or the unique index) returns the gateway's row and the page, its
+cursor and the pass carry on. A channel's first read stores only messages from
 the last hour, so old history stays out of the queue. A rate limit stops the pass;
 the next run resumes. A channel the bot cannot read keeps its error on its cursor.
 Messages written by any bot are not ingested, so the agents' own replies never
@@ -155,7 +184,9 @@ is then abandoned, its message given back. SIGTERM stops claiming, gives runs 60
 seconds, then stops their Claude and releases their messages. New code restarts it
 by itself: once a minute it re-reads a digest of its own files and
 `config/agent_routes.yml`, and a new digest seen twice in a row stops claiming, lets
-the runs in flight finish, and exits for launchd to start the new code. It posts nothing to
+the runs in flight finish, and exits for launchd to start the new code. It keeps
+the minute ping going (state `stopping`) while it drains, since a restart drain
+can run up to about 8 minutes, past the floor alert's 5. It posts nothing to
 Discord itself. Every child gets an allow-listed environment
 (`AgentMailbox::CHILD_ENV_ALLOW`), so no API key, token, base URL or provider
 switch reaches Claude and it bills Alex's claude.ai subscription. Install, alerts and the unblock
@@ -309,7 +340,9 @@ there today.
 The inbound half (guild scope, the addressed-only filter, overrides, the backstop)
 is `test/services/agent_messages/discord_poll_test.rb` and `router_test.rb`; the
 gateway protocol and leader lock are `gateway_session_test.rb` and
-`gateway_leader_lock_test.rb`; the listener runs end to end over a real websocket
+`gateway_leader_lock_test.rb`; the IDENTIFY budget, `session_start_limit` and the
+TLS deadline are `gateway_identify_budget_test.rb` and
+`discord_gateway_budget_test.rb`; the listener runs end to end over a real websocket
 against a fake gateway in `test/integration/discord_gateway_test.rb`. The claim
 side is encoded with real database concurrency:
 `test/integration/agent_message_claim_race_test.rb`,

@@ -58,6 +58,21 @@ threads threads_count, threads_count
 #   agents ~5 CLI/console sessions (heroku run, bin/release) x 1  =  5
 #   total  19 of 20 — 1 spare for heartbeat and console blips
 #
+# That table is the STEADY state. Three transient consumers ride on the 1 spare
+# and on Active Record opening connections lazily (a pool is a cap, not a
+# reservation), so none of them is free:
+#   - the release-phase migrate: every deploy runs `bin/rails db:migrate`
+#     (Procfile `release:`) in a one-off dyno, 1 connection, while the old
+#     dynos still hold theirs;
+#   - Solid Queue heartbeat threads: every Solid Queue process (supervisor,
+#     worker, dispatcher, scheduler) beats from its own timer thread through
+#     its process pool, so the worker can briefly hold a 5th connection past
+#     its 3 job threads + poller (database.yml's pool of 5 is sized for it);
+#   - the restart overlap: on a deploy or the daily cycle, old dynos drain
+#     after SIGTERM while new ones boot, so for those seconds both sets can
+#     hold connections (the Gateway listener's advisory lock keeps it to one
+#     socket, not one connection).
+#
 # test/lib/puma_config_contract_test.rb re-derives this budget from the parsed
 # configs and fails if it reaches 20. Re-prove the math there before raising
 # WEB_CONCURRENCY, RAILS_MAX_THREADS, or JOB_CONCURRENCY.
