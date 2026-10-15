@@ -64,6 +64,21 @@ class Admin::ReportDestinationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='last-delivery-link'][href='https://discord.com/channels/#{GUILD}/#{REPORTS}/777']"
   end
 
+  test "[component] a saved channel that went unavailable stays selected, and a Save keeps it" do
+    reports = channel!
+    ReportDestination.create!(report_key: "daily_app_report", discord_channel: reports, enabled: true)
+    reports.update!(archived_at: 1.hour.ago)
+    log_in_as(admin)
+
+    get admin_report_destinations_path
+    assert_select "[data-report-key='daily_app_report'][data-state='unavailable'] option[selected][value='#{reports.id}']", "#reports (unavailable)"
+
+    patch admin_report_destination_path(report_key: "daily_app_report"),
+          params: { report_destination: { discord_channel_id: reports.id, enabled: "0" } }
+    destination = ReportDestination.for("daily_app_report")
+    assert_equal [ reports, false ], [ destination.discord_channel, destination.enabled ]
+  end
+
   test "[component] an unpostable channel or an unknown key is refused" do
     locked = channel!(external_id: LOCKED, name: "read-only", postable: false)
     log_in_as(admin)

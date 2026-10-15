@@ -63,8 +63,10 @@
                     class: "flex flex-col sm:flex-row sm:items-end gap-3", data: { test: "destination-form" } do |f| %>
         <label class="flex flex-col gap-1 min-w-0 flex-1">
           <span class="text-muted text-xs">Channel</span>
+          <%# A saved channel that went unavailable stays offered and selected, so a Save (an Off, say) keeps it and delivery resumes if the sync sees it again. %>
+          <% options = channel && !channel.selectable? ? [ [ "Saved, unavailable", [ [ "#{channel.display_name} (unavailable)", channel.id ] ] ] ] + grouped : grouped %>
           <%= f.select :discord_channel_id,
-                       grouped_options_for_select(grouped, channel&.selectable? ? channel.id : nil),
+                       grouped_options_for_select(options, channel&.id),
                        { include_blank: "No channel" },
                        class: "input-field w-full min-w-0 text-sm", data: { test: "destination-channel" } %>
         </label>
