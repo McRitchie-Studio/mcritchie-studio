@@ -1,0 +1,100 @@
+# Daily app report (the morning CTO summary in Discord)
+
+**What it is.** One hub job, at **07:00 America/Denver**, reads every live
+studio-engine app's health for the day and posts **one** Discord message: a
+headline, then one embed per app. Satellites have no production worker of their
+own, so there are no per-app schedules: the hub pulls.
+
+## When and which day
+
+- **Schedule.** `daily_app_report` in `config/recurring.yml` (production) runs
+  `DailyAppReportJob` at `0 7 * * * America/Denver`. QA boots production and
+  skips it.
+- **One window for all.** The job computes one window end, the latest 07:00
+  Denver, and passes it as `ending` to every app. Every app reports the same
+  24 hours (07:00 to 07:00 on the wall clock, 25 or 23 on a DST day). A late run
+  or a retry reports the same day. `DailyAppReportJob.perform_later("2026-10-15T07:00:00-06:00")`
+  pins the window by hand.
+- **Once a day.** The delivery's idempotency key is
+  `daily_app_report:<Denver date of the window end>`. A day that already posted
+  is not fetched or posted again.
+
+## Which apps
+
+Every app in `config/apps.yml` with `engine: true`, a live status (active,
+delinquent or showcase) and a `production_url`, except the slugs in
+`AppCatalog::UNANNOUNCED`, whose names may not reach a post yet
+(`DailyAppReport.apps`).
+
+- **The hub** (`mcritchie-studio`) is read in-process with
+  `Studio::HealthReport.build`. It needs no token.
+- **Every other app** is read over HTTP:
+  `GET <production_url>/_studio/health_report?ending=<iso8601>` with
+  `Authorization: Bearer <token>` (the studio-engine endpoint; 5-second connect
+  and 20-second read timeouts).
+
+## Env vars (hub production)
+
+One token per satellite, named from its slug: upper-case it and turn dashes into
+underscores.
+
+| App | Hub env var |
+|-----|-------------|
+| Turf Monster | `HEALTH_TOKEN_TURF_MONSTER` |
+| Cyvasse | `HEALTH_TOKEN_CYVASSE` |
+| McRitchie Industries | `HEALTH_TOKEN_MCRITCHIE_INDUSTRIES` |
+| Moms App | `HEALTH_TOKEN_MOMS_APP` |
+| Rantly | `HEALTH_TOKEN_RANTLY` |
+
+The same value must be set on the satellite, as the token its
+`/_studio/health_report` endpoint accepts (see studio-engine's health report
+docs). Set both through Steffon's `credential-filing` SOP; never paste a token in
+chat.
+
+## What each app's line says
+
+| State | When | In Discord |
+|-------|------|------------|
+| Not wired | The hub has no `HEALTH_TOKEN_<SLUG>` | Listed in the headline's "Not wired (no token)" line; not fetched, not an error |
+| Unreachable | Timeout, refused connection, 401 (token mismatch), 404 (endpoint not deployed or no token on the app), any other status, bad JSON, an unknown `schema` | A red embed, `Unreachable (<reason>)`, and an `ErrorLog` row with target `daily-app-report <slug>` |
+| With errors | Errors in the window, or a section the app could not read | An amber embed: the counts, then the top three error groups (class, count, a clipped message) and "+N more" |
+| With activity · quiet | Signups or contact messages, no errors · nothing at all | A green embed with the counts |
+
+Embeds are worst first. Counts only: no names or emails, and email addresses in
+error messages are redacted. More than ten fetched apps fold the rest into the
+content's "Also:" list. The message is fitted to Discord's limits as it is built
+(content 2,000, ten embeds, 6,000 across embeds), because `ReportDestinations`
+refuses an over-limit report rather than splitting it.
+
+## Delivery
+
+Through the report-destination contract, key `daily_app_report`
+([`report-destinations.md`](report-destinations.md)): Alex picks the channel at
+`/admin/report_destinations`. The job calls `ReportDestinations.deliver` and logs
+`[daily-app-report] daily_app_report:<date> status=<status> url=<url>`; the
+receipt is the `report_deliveries` row for that key.
+
+- `:not_configured` or `:disabled`: a logged skip. The next run (or a manual
+  `perform_later` for that date) posts once Alex picks a channel.
+- `:failed`: `deliver` writes the ErrorLog; the job hands the same message and key
+  to `ReportDeliveryJob`, which retries with back-off and still posts once.
+
+## Add an app
+
+1. The app runs studio-engine with the health-report endpoint deployed and a
+   token configured on it.
+2. Its `config/apps.yml` record has `engine: true`, a live status and a
+   `production_url`.
+3. Set `HEALTH_TOKEN_<SLUG>` on the hub (`mcritchie-studio`) to the same token.
+
+Tomorrow's report reads it; until step 3 it shows as not wired.
+
+## Where it lives
+
+| Piece | Where |
+|-------|-------|
+| Job · schedule | `app/jobs/daily_app_report_job.rb` · `config/recurring.yml` |
+| Run, app list, normalizing | `app/services/daily_app_report.rb` |
+| HTTP read | `app/services/daily_app_report/fetcher.rb` |
+| The message | `app/services/daily_app_report/message.rb` |
+| Tests | `test/services/daily_app_report_test.rb`, `test/services/daily_app_report/`, `test/jobs/daily_app_report_job_test.rb` |

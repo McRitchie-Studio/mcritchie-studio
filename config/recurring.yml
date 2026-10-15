@@ -23,6 +23,15 @@ production:
     class: DeskHealthJob
     schedule: "0 7 * * * America/Denver"
     args: []
+  # The morning CTO summary: every live studio-engine app's health for the day
+  # ending 07:00 Denver, in ONE Discord message under the report key
+  # daily_app_report (Alex picks the channel at /admin/report_destinations).
+  # Satellites are read over HTTP with HEALTH_TOKEN_<SLUG>; the hub in-process.
+  # See DailyAppReportJob and docs/agents/system/daily-app-report.md.
+  daily_app_report:
+    class: DailyAppReportJob
+    schedule: "0 7 * * * America/Denver"
+    args: []
   # /contact submissions the bot check flagged in the last day, in one email to
   # Alex; nothing on a quiet day. See ContactFlaggedDigestJob.
   contact_flagged_digest:
