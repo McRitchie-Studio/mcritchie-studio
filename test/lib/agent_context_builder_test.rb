@@ -82,6 +82,34 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     assert_includes builder(soul: "unmapped").general_layer, "no role doc found"
   end
 
+  # Regression (2026-10-15): launchd starts bin/dispatcher with no LANG, so Ruby's
+  # default external encoding is US-ASCII, and reading a role doc with an em dash
+  # raised "invalid byte sequence in US-ASCII" on every answer run. The docs must
+  # be read as UTF-8 whatever the process locale says.
+  test "a role and domain doc with non-ASCII text render while the default external encoding is US-ASCII" do
+    File.write(File.join(@root, "docs/agents/agents/xan/role.md"), "Xan orchestrates \u2014 café \u{1F680}.\n<!-- note é -->\n")
+    File.write(File.join(@root, "docs/studio.md"), "The hub \u2014 naïve.")
+    original_external = Encoding.default_external
+    original_internal = Encoding.default_internal
+    silence_warnings do
+      Encoding.default_external = Encoding::US_ASCII
+      Encoding.default_internal = nil
+    end
+
+    prompt = builder.prompt
+
+    assert_includes prompt, "Xan orchestrates \u2014 café \u{1F680}."
+    assert_includes prompt, "The hub \u2014 naïve."
+    refute_includes prompt, "note é"
+    assert_equal Encoding::UTF_8, prompt.encoding
+    assert prompt.valid_encoding?
+  ensure
+    silence_warnings do
+      Encoding.default_external = original_external
+      Encoding.default_internal = original_internal
+    end
+  end
+
   test "general, domain, user and message are each cut to their budget" do
     File.write(File.join(@root, "docs/agents/agents/xan/role.md"), "r" * (B[:general] * 2))
     File.write(File.join(@root, "docs/studio.md"), "d" * (B[:domain] * 2))

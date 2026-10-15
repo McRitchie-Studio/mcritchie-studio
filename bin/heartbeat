@@ -16,6 +16,13 @@
 #   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
 #
 # Exit: 0 done (answered or idle) · 1 a message was given back or the board refused · 2 usage.
+
+# UTF-8 before anything reads a file: a bare environment (launchd, cron) has no
+# LANG, and Ruby would then read every doc as US-ASCII and raise on the first
+# em dash (2026-10-15, messages #67 and #68).
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = nil
+
 require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_mailbox"

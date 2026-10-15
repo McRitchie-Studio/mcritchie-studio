@@ -420,7 +420,7 @@ module AgentMailbox
     def render
       values = { "REPO_ROOT" => @repo_root, "HOME" => @home, "RUBY" => @ruby, "PATH" => service_path,
                  "LOG" => log_path, "LABEL" => LABEL }
-      File.read(TEMPLATE).gsub(/\{\{([A-Z_]+)\}\}/) do
+      File.read(TEMPLATE, encoding: "UTF-8").gsub(/\{\{([A-Z_]+)\}\}/) do
         key = Regexp.last_match(1)
         raise ArgumentError, "template names unknown {{#{key}}}" unless values.key?(key)
 
@@ -470,7 +470,7 @@ module AgentMailbox
         return 0
       end
 
-      installed = File.read(plist_path)
+      installed = File.read(plist_path, encoding: "UTF-8")
       kept = installed_paths(installed)
       agent = kept ? self.class.new(home: @home, repo_root: @repo_root, ruby: kept[:ruby], path: kept[:path],
                                     uid: @uid, launchctl: @launchctl, out: @out) : self

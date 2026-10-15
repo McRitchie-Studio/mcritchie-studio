@@ -34,6 +34,13 @@
 #   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
 #
 # Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
+
+# UTF-8 before anything reads a file: launchd starts this process with only
+# HOME and PATH (no LANG), and Ruby would then read every doc as US-ASCII and
+# raise on the first em dash (2026-10-15, messages #67 and #68).
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = nil
+
 require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_dispatcher"

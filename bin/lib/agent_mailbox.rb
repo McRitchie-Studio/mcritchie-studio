@@ -181,7 +181,10 @@ module AgentMailbox
     [ "could not run #{argv.first}: #{e.message}", 127, "" ]
   end
 
-  def self.drained(thread) = (thread.join(DRAIN_WAIT)&.value).to_s
+  # A child's output, read as UTF-8 whatever the process locale says (launchd
+  # gives the dispatcher no LANG), with any invalid byte scrubbed, so it can be
+  # joined into a UTF-8 prompt.
+  def self.drained(thread) = (thread.join(DRAIN_WAIT)&.value).to_s.b.force_encoding(Encoding::UTF_8).scrub
 
   # What one headless `claude -p --output-format json` run said, read ONLY from
   # what the model cannot author: the exit status, stderr, and the JSON
@@ -271,7 +274,7 @@ module AgentMailbox
       return [ nil, "no_transcript" ] unless path
 
       blocks = []
-      File.foreach(path) do |line|
+      File.foreach(path, encoding: "UTF-8") do |line|
         next unless line.include?("thinking")
 
         entry = JSON.parse(line) rescue next
