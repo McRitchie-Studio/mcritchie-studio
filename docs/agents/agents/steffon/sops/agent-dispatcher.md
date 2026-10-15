@@ -128,7 +128,7 @@ With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 | **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools "" --output-format json`. Fix what it prints |
 | **Stuck lease**: a message `claimed` with its lease long lapsed | `/admin/agent_messages`, Claim column | Nothing to do by hand: the next claim takes a lapsed lease back (or dead-letters it on attempt 3) |
 | **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
-| **Unrouted**: a message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. Routing changes go through `discord-bot-setup` |
+| **Unrouted**: a reply to a held message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
 
 ## Uninstall
 
