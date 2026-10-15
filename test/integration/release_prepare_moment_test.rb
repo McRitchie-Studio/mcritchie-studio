@@ -75,6 +75,23 @@ class ReleasePrepareMomentTest < ActiveSupport::TestCase
     end
   end
 
+  # A dream file nested deep enough overflows the YAML parser's stack. A
+  # SystemStackError is not a StandardError, so it used to escape the moment card
+  # and replace prepare's own exit with 1 (Carl, step-dreams-and-moment-cards).
+  test "[integration] a dream file that overflows the stack cannot change prepare's exit status" do
+    with_bank do |bank|
+      depth = 20_000
+      File.write(File.join(bank, "sops/qa-release/deep.md"),
+                 "---\nquestion: \"Deep?\"\nanswer: \"a\"\nwhy: \"w\"\nstatus: approved\nsop: qa-release\n" \
+                 "step: prepare\ntopic: #{"[" * depth}#{"]" * depth}\n---\n")
+      out, status = run_prepare(bank, "green-stub")
+
+      assert_equal 3, status.exitstatus, "prepare's own exit stands:\n#{out.lines.last(5).join}"
+      assert_includes out, "STUB PREPARE OUTPUT"
+      refute_includes out, "SystemStackError"
+    end
+  end
+
   test "[integration] with no step dream to read, prepare prints no card and its exit is unchanged" do
     Dir.mktmpdir("empty-bank") do |bank|
       out, status = run_prepare(File.join(bank, "missing"), "green-stub")

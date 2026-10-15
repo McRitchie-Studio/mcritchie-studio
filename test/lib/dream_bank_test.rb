@@ -347,6 +347,21 @@ class DreamBankTest < Minitest::Test
     end
   end
 
+  # A deeply nested dream overflows the YAML parser with a SystemStackError, which
+  # is not a StandardError. Neither moment nor announce may let it out.
+  def test_unit_moment_and_announce_survive_a_dream_that_overflows_the_stack
+    Dir.mktmpdir do |dir|
+      depth = 20_000
+      write(dir, "sops/qa-release/deep.md",
+            tagged("sop: qa-release\nstep: prepare\ntopic: #{"[" * depth}#{"]" * depth}", question: "Deep?"))
+      write(dir, "carl/deep.md", tagged("soul: carl\ntopic: #{"[" * depth}#{"]" * depth}", question: "Deep?"))
+
+      assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: StringIO.new, dir: dir)
+      assert_nil DreamBank.announce("carl", io: StringIO.new, dir: dir)
+      assert_equal :ok, DreamBank.after_moment(sop: "qa-release", step: "prepare", io: StringIO.new, dir: dir) { :ok }
+    end
+  end
+
   def test_unit_after_moment_prints_the_card_on_every_way_out_and_keeps_the_result
     Dir.mktmpdir do |dir|
       write(dir, "sops/qa-release/rerun.md", tagged("sop: qa-release\nstep: prepare", question: "Red CI?"))
