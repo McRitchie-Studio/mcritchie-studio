@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_120100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1184,6 +1184,55 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_120100) do
     t.datetime "updated_at", null: false
     t.index ["applied_at"], name: "index_dream_approvals_on_applied_at"
     t.index ["dream_home", "dream_slug"], name: "index_dream_approvals_on_dream_home_and_dream_slug", unique: true
+  end
+
+  create_table "dream_grades", force: :cascade do |t|
+    t.bigint "agent_action_id"
+    t.datetime "created_at", null: false
+    t.string "decision", null: false
+    t.string "dream_slug", null: false
+    t.string "mascot"
+    t.integer "score", null: false
+    t.string "session_id", null: false
+    t.string "task_slug"
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_dream_grades_on_created_at"
+    t.index ["dream_slug", "created_at"], name: "index_dream_grades_on_dream_slug_and_created_at"
+    t.index ["session_id", "dream_slug"], name: "index_dream_grades_on_session_id_and_dream_slug", unique: true
+    t.check_constraint "score >= 0 AND score <= 2", name: "dream_grades_score_range"
+  end
+
+  create_table "dream_retirements", force: :cascade do |t|
+    t.datetime "applied_at"
+    t.datetime "created_at", null: false
+    t.string "dream_home", null: false
+    t.string "dream_slug", null: false
+    t.bigint "dream_swap_id"
+    t.datetime "retired_at", null: false
+    t.string "retired_by_slug"
+    t.datetime "updated_at", null: false
+    t.index ["applied_at"], name: "index_dream_retirements_on_applied_at"
+    t.index ["dream_home", "dream_slug"], name: "index_dream_retirements_on_dream_home_and_dream_slug", unique: true
+    t.index ["dream_swap_id"], name: "index_dream_retirements_on_dream_swap_id"
+  end
+
+  create_table "dream_swaps", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.string "approved_by_slug"
+    t.datetime "created_at", null: false
+    t.string "in_home"
+    t.string "in_slug"
+    t.string "layer"
+    t.string "mascot"
+    t.string "out_home"
+    t.string "out_slug"
+    t.string "reason", null: false
+    t.string "session_id", null: false
+    t.string "task_slug"
+    t.datetime "updated_at", null: false
+    t.index ["approved_at"], name: "index_dream_swaps_on_approved_at"
+    t.index ["created_at"], name: "index_dream_swaps_on_created_at"
+    t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
   end
 
   create_table "email_brand_references", force: :cascade do |t|
@@ -2781,6 +2830,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_120100) do
   add_foreign_key "desk_records", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "dream_approvals", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_retirements", "dream_swaps", on_delete: :nullify
+  add_foreign_key "dream_retirements", "users", column: "retired_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_swaps", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "facts", "agent_sessions", column: "recorded_by_session_slug", primary_key: "slug", on_update: :cascade
