@@ -8,9 +8,10 @@ module Api
     #   GET  /api/v1/agent_messages/next       the message a claim would take now; writes nothing
     #   GET  /api/v1/agent_messages/:id        one message with its event timeline
     #   POST /api/v1/agent_messages/claim      { soul | souls[], worker, channel?, wait? } -> the claimed message or null
-    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::ThreadLedger)
+    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle)
     #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary?,
-    #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta? }
+    #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta?,
+    #                                             notes? }  notes: facts about the sender, filed under the message's author
     #   POST /api/v1/agent_messages/:id/release  { worker, reason?, code? }   code usage_limit refunds the attempt
     #   POST /api/v1/agent_messages/:id/renew    { worker }                   the holder extends its lease
     #
@@ -88,9 +89,9 @@ module Api
         render_data(@message.reload.as_api_json)
       end
 
-      # The memory the holder answers from: the person's ledger with this soul in
-      # this channel, the pin, the summary of older turns and the notes about the
-      # sender. HOLDER-ONLY (409 otherwise): the bundle carries other messages'
+      # The memory the holder answers from: the sender's exchanges with this soul
+      # on every channel, the thread being answered, the summary of older turns and
+      # the notes about the sender. HOLDER-ONLY (409 otherwise): the bundle carries other messages'
       # text, so only the worker answering this one may read it.
       def context
         unless @message.claimed? && @message.claimed_by.present? && @message.claimed_by == params[:worker].to_s.strip
@@ -100,14 +101,14 @@ module Api
           ))
         end
 
-        render_data(AgentMessages::ThreadLedger.new(@message).bundle)
+        render_data(AgentMessages::MemoryBundle.new(@message).bundle)
       end
 
       def complete
         outcome = guarded(target: @message) do
           @message.complete!(worker: params[:worker], response_text: params[:response_text],
                              action_summary: params[:action_summary], actor: session_actor(acting_soul),
-                             run: run_params)
+                             run: run_params, notes: notes_param)
         end
         return if performed?
 
@@ -132,6 +133,15 @@ module Api
         meta = meta.respond_to?(:to_unsafe_h) ? meta.to_unsafe_h : {}
         { claude_session_id: params[:claude_session_id], claude_cwd: params[:claude_cwd],
           reasoning: params[:reasoning], run_meta: meta }
+      end
+
+      # The facts the run returned about the sender: strings only, at most
+      # NOTES_PARAM_CAP of them before the model's own cap and checks.
+      NOTES_PARAM_CAP = 10
+
+      def notes_param
+        raw = params[:notes]
+        raw.is_a?(Array) ? raw.select { |n| n.is_a?(String) }.first(NOTES_PARAM_CAP) : []
       end
 
       def load_message

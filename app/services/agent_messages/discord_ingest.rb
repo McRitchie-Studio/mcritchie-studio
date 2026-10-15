@@ -18,6 +18,10 @@ module AgentMessages
   # without one, the index violation aborts that whole transaction and the
   # re-read, the rest of the page and the cursor advance all fail.
   #
+  # THE PERSON. Every stored row with an author resolves to an AgentPerson
+  # (AgentMessage's create callback, AgentPerson.resolve!): the Discord user id
+  # is the identity, created on first sight, never merged with another platform's.
+  #
   # Returns the stored row, the existing row on a repeat, or nil for a message
   # that is not kept: anything a bot wrote (our own replies included), system
   # messages (joins, pins), a message from an unlisted guild or a muted
@@ -93,7 +97,7 @@ module AgentMessages
       AgentMessage.transaction(requires_new: true) do
         message = AgentMessage.create!(
           channel: "discord", external_id: raw["id"].to_s, guild_id: guild_id, channel_ref: channel_id,
-          thread_key: parent&.thread_key || "discord:#{channel_id}:#{raw['id']}",
+          thread_key: parent&.thread_key || fresh_thread_key(raw, guild_id, channel_id, parent_id),
           author_ref: raw.dig("author", "id").to_s, author_name: author_name(raw),
           content: raw["content"].to_s, mentions: { "users" => users, "roles" => roles },
           soul_slug: result.soul, routed_by: result.routed_by,
@@ -126,6 +130,18 @@ module AgentMessages
 
       AgentMessage.where(channel: "discord", guild_id: guild_id, channel_ref: channel_id)
                   .where("external_id = :ref OR reply_external_id = :ref", ref: ref).first
+    end
+
+    # A message that joins no held row starts its own thread, keyed by its own
+    # id, EXCEPT inside a Discord thread channel: the whole thread channel is one
+    # conversation, keyed by the thread's id (which is its starter message's id),
+    # so every message in it shares the THREAD layer and is answered in order.
+    # A thread channel is one the reader names a parent for, or one the channel
+    # directory (DiscordChannel) lists as a thread.
+    def fresh_thread_key(raw, guild_id, channel_id, parent_id)
+      thread = parent_id.present? ||
+               DiscordChannel.where(guild_external_id: guild_id, external_id: channel_id, kind: "thread").exists?
+      "discord:#{channel_id}:#{thread ? channel_id : raw['id']}"
     end
 
     def inherit_from(parent, result)
