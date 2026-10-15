@@ -204,10 +204,13 @@ module AgentMailbox
     end
 
     # A repo doc's text with HTML comments (authoring notes) removed, or nil.
+    # Read as UTF-8 whatever the process locale says: launchd starts the
+    # dispatcher with no LANG, and a US-ASCII default would raise on an em dash.
+    # A stray invalid byte is scrubbed rather than failing the answer.
     def doc_text(path)
       return nil unless File.file?(path)
 
-      text = File.read(path).gsub(/<!--.*?-->/m, "").gsub(/\n{3,}/, "\n\n").strip
+      text = File.read(path, encoding: "UTF-8").scrub.gsub(/<!--.*?-->/m, "").gsub(/\n{3,}/, "\n\n").strip
       text.empty? ? nil : text
     end
 

@@ -18,9 +18,35 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     @home = Dir.mktmpdir("dispatcher-home")
     @calls = []
     @print = "state = running\n\tpid = 4242\n\tlast exit code = (never exited)\n"
+    # A stateful launchctl: bootout unloads the label at once (or after
+    # @linger more prints), bootstrap loads it unless @bootstrap_failures says
+    # otherwise, and print answers only while it is loaded.
+    @loaded = false
+    @linger = 0
+    @bootstrap_failures = 0
+    @sleeps = []
     @launchctl = lambda do |*args|
       @calls << args
-      args.first == "print" ? [ @print, Status.new(true) ] : [ "", Status.new(true) ]
+      case args.first
+      when "bootout" then @unloading = true
+                          [ "", Status.new(true) ]
+      when "print"
+        if @unloading && @linger.positive?
+          @linger -= 1
+          next [ @print, Status.new(true) ]
+        end
+        @loaded = false if @unloading
+        @unloading = false
+        @loaded ? [ @print, Status.new(true) ] : [ "Could not find service", Status.new(false) ]
+      when "bootstrap"
+        if @bootstrap_failures.positive?
+          @bootstrap_failures -= 1
+          next [ "Bootstrap failed: 5: Input/output error", Status.new(false) ]
+        end
+        @loaded = true
+        [ "", Status.new(true) ]
+      else [ "", Status.new(true) ]
+      end
     end
     @out = StringIO.new
   end
@@ -29,7 +55,8 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
 
   def agent(**opts)
     AgentMailbox::LaunchAgent.new(**{ home: @home, repo_root: "/repo & co", ruby: "/opt/ruby/bin/ruby", path: "/usr/bin",
-                                      uid: 501, launchctl: @launchctl, out: @out }.merge(opts))
+                                      uid: 501, launchctl: @launchctl, out: @out,
+                                      sleeper: ->(sec) { @sleeps << sec } }.merge(opts))
   end
 
   def test_render_fills_every_placeholder_and_escapes_xml
@@ -44,6 +71,63 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     assert_includes xml, "#{@home}/.local/bin", "claude (installed under ~/.local/bin) is on the service PATH"
   end
 
+  # launchd passes no locale; without LANG the dispatcher and its children read
+  # files as US-ASCII (2026-10-15). The keys follow PATH and HOME, LANG first.
+  def test_render_sets_a_utf8_locale_after_path_and_home
+    env = agent.render[%r{<key>EnvironmentVariables</key>\s*<dict>(.*?)</dict>}m, 1]
+
+    assert_equal %w[PATH HOME LANG LC_ALL], env.scan(%r{<key>([^<]+)</key>}).flatten
+    assert_includes env, "<key>LANG</key>\n    <string>en_US.UTF-8</string>"
+    assert_includes env, "<key>LC_ALL</key>\n    <string>en_US.UTF-8</string>"
+  end
+
+  # The Mac's installed plist was fixed by hand on 2026-10-15 with a plist editor,
+  # which rewrites the file (keys sorted, tabs, the comment dropped), so no render
+  # can match it byte for byte: the next ship reinstalls once, keeping that
+  # plist's ruby and PATH, and every ship after it finds the plist current.
+  def test_if_changed_reinstalls_a_rewritten_plist_once_keeping_its_paths_then_rests
+    FileUtils.mkdir_p(File.dirname(plist))
+    File.write(plist, <<~XML)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0">
+      <dict>
+      \t<key>EnvironmentVariables</key>
+      \t<dict>
+      \t\t<key>HOME</key>
+      \t\t<string>#{@home}</string>
+      \t\t<key>LANG</key>
+      \t\t<string>en_US.UTF-8</string>
+      \t\t<key>LC_ALL</key>
+      \t\t<string>en_US.UTF-8</string>
+      \t\t<key>PATH</key>
+      \t\t<string>/installed/bin:/usr/bin</string>
+      \t</dict>
+      \t<key>ProgramArguments</key>
+      \t<array>
+      \t\t<string>/installed/ruby</string>
+      \t\t<string>/repo &amp; co/bin/dispatcher</string>
+      \t\t<string>run</string>
+      \t</array>
+      </dict>
+      </plist>
+    XML
+
+    shipper = agent(ruby: "/ship/ruby", path: "/ship/only/bin")
+    assert_equal 0, shipper.install_if_changed
+    assert_match(/template changed; reinstalling/, @out.string)
+    xml = File.read(plist)
+    assert_includes xml, "<string>/installed/ruby</string>", "the installed ruby is kept"
+    assert_includes xml, "/installed/bin", "the installed PATH is kept"
+    refute_includes xml, "/ship/only/bin", "not the ship's"
+    assert_includes xml, "<key>LC_ALL</key>"
+
+    @calls.clear
+    @out.truncate(0)
+    assert_equal 0, shipper.install_if_changed
+    assert_match(/matches the template; nothing to refresh/, @out.string)
+    assert_empty @calls, "the second ship restarts nothing"
+  end
+
   def test_the_template_names_no_secret
     refute_match(/ANTHROPIC|TOKEN|SECRET|KEY<\/key>/, File.read(AgentMailbox::LaunchAgent::TEMPLATE))
   end
@@ -54,7 +138,8 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     plist = File.join(@home, "Library/LaunchAgents/studio.mcritchie.agent-dispatcher.plist")
     assert File.exist?(plist)
     assert_equal [ "bootout", "gui/501/studio.mcritchie.agent-dispatcher" ], @calls[0]
-    assert_equal [ "bootstrap", "gui/501", plist ], @calls[1]
+    assert_equal [ "print", "gui/501/studio.mcritchie.agent-dispatcher" ], @calls[1], "it waits for the bootout"
+    assert_equal [ "bootstrap", "gui/501", plist ], @calls[2]
     assert_match(/running \(pid 4242\)/, @out.string)
   end
 
@@ -123,7 +208,8 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
 
     assert_match(/template changed; reinstalling/, @out.string)
     assert_equal [ "bootout", "gui/501/studio.mcritchie.agent-dispatcher" ], @calls[0]
-    assert_equal [ "bootstrap", "gui/501", plist ], @calls[1]
+    assert_equal [ "print", "gui/501/studio.mcritchie.agent-dispatcher" ], @calls[1], "it waits for the bootout"
+    assert_equal [ "bootstrap", "gui/501", plist ], @calls[2]
     xml = File.read(plist)
     assert_includes xml, "<integer>30</integer>", "the new template was rendered"
     assert_includes xml, "<string>/opt/ruby/bin/ruby</string>", "the installed ruby is kept, not the ship's"
@@ -137,6 +223,73 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
 
     assert_equal 1, agent.install_if_changed
     assert_match(/launchctl bootstrap failed/, @out.string)
+  end
+
+  # 2026-10-15: a bootstrap sent while the booted-out job was still exiting failed
+  # with "Bootstrap failed: 5: Input/output error". Install waits for the label to
+  # leave the domain first.
+  def test_install_waits_for_the_old_job_to_leave_before_bootstrapping
+    @loaded = true
+    @linger = 4
+
+    assert_equal 0, agent.install
+
+    kinds = @calls.map(&:first)
+    assert_equal %w[bootout print print print print print bootstrap print], kinds
+    assert_equal [ AgentMailbox::LaunchAgent::BOOTOUT_POLL ] * 4, @sleeps
+    assert_match(/running \(pid 4242\)/, @out.string)
+  end
+
+  def test_install_stops_waiting_at_the_bound_and_still_tries
+    @loaded = true
+    @linger = 10_000
+    polls = (AgentMailbox::LaunchAgent::BOOTOUT_WAIT / AgentMailbox::LaunchAgent::BOOTOUT_POLL.to_f).ceil
+
+    agent.install
+
+    before_bootstrap = @calls.take_while { |c| c.first != "bootstrap" }
+    assert_equal polls, before_bootstrap.count { |c| c.first == "print" }, "it polls up to the bound, no further"
+    assert_operator @sleeps.sum, :<=, AgentMailbox::LaunchAgent::BOOTOUT_WAIT + (2 * AgentMailbox::LaunchAgent::BOOTSTRAP_BACKOFF)
+    assert_match(/still loaded #{AgentMailbox::LaunchAgent::BOOTOUT_WAIT}s after bootout/, @out.string)
+    assert_includes @calls.map(&:first), "bootstrap"
+  end
+
+  def test_install_retries_a_failed_bootstrap
+    @bootstrap_failures = 1
+
+    assert_equal 0, agent.install
+
+    assert_equal 2, @calls.count { |c| c.first == "bootstrap" }
+    assert_includes @sleeps, AgentMailbox::LaunchAgent::BOOTSTRAP_BACKOFF
+    assert_match(/bootstrap failed \(try 1 of 3\): Bootstrap failed: 5/, @out.string)
+    assert_match(/running \(pid 4242\)/, @out.string)
+    refute_includes File.read(plist), AgentMailbox::LaunchAgent::FAILED_MARK
+  end
+
+  # A bootstrap that never takes leaves the job booted out (KeepAlive cannot
+  # revive it). The plist stays, marked, so the next ship's --if-changed sees a
+  # difference and reinstalls, instead of "matches the template" forever.
+  def test_a_bootstrap_that_never_takes_leaves_the_next_ship_able_to_retry
+    agent.install
+    File.write(plist, File.read(plist).sub("<integer>30</integer>", "<integer>10</integer>")) # an older template
+    @bootstrap_failures = 3
+    @calls.clear
+
+    assert_equal 1, agent.install_if_changed
+    assert_equal 3, @calls.count { |c| c.first == "bootstrap" }
+    assert_match(/The service is NOT loaded/, @out.string)
+    xml = File.read(plist)
+    assert_includes xml, AgentMailbox::LaunchAgent::FAILED_MARK
+    assert_match(%r{</plist>\n<!-- bootstrap failed [^\n]*Input/output error[^\n]*-->\n\z}, xml)
+    mark = xml[/<!-- bootstrap failed(.*)-->\n\z/, 1]
+    refute_includes mark, "--", "the mark is a well-formed XML comment"
+
+    @out.truncate(0)
+    @calls.clear
+    assert_equal 0, agent.install_if_changed, "the next ship retries, and this time it takes"
+    assert_match(/template changed; reinstalling/, @out.string)
+    refute_includes File.read(plist), AgentMailbox::LaunchAgent::FAILED_MARK
+    assert_equal agent.render, File.read(plist)
   end
 
   def test_if_changed_falls_back_to_this_process_paths_for_a_hand_edited_plist

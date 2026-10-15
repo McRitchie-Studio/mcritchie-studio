@@ -16,6 +16,12 @@
 #   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
 #
 # Exit: 0 done (answered or idle) · 1 a message was given back or the board refused · 2 usage.
+
+# UTF-8 before anything reads a file (lib/process_encoding.rb): a bare
+# environment such as launchd has no LANG.
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+
 require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_mailbox"

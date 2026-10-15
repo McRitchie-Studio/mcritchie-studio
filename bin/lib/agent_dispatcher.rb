@@ -65,7 +65,7 @@ module AgentMailbox
   # from the main loop, so the API client is never shared across threads.
   #
   #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause
-  #               until the reset; a failed run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
+  #               until the reset; a failed or raised run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
   #               renew leases older than RENEW_EVERY, never past RUN_DEADLINE
   #               abandon a run past RUN_DEADLINE (release it, free the slot)
   #               ping the board every PING_EVERY, and on the same beat re-read the
@@ -89,6 +89,8 @@ module AgentMailbox
     # After a failed Claude run, claiming pauses this long, so a broken Claude
     # does not spend every waiting message's attempts in a minute.
     FAILURE_PAUSE = 5 * 60
+    # The most of a raised error's message a give-back reason carries.
+    RAISE_DETAIL_LIMIT = 200
     # The longest a run can legitimately take: its action and its Claude call,
     # each with TERM then KILL on timeout, plus a margin. Past it the lease is no
     # longer renewed and the run is abandoned (its message given back, its slot
@@ -322,7 +324,7 @@ module AgentMailbox
       answer = begin
         run.thread.value
       rescue StandardError => e
-        give_back(id, "the answer run raised #{e.class}")
+        answer_raised(id, e)
         return
       end
 
@@ -344,6 +346,30 @@ module AgentMailbox
     rescue ApiError => e
       log "complete ##{id} failed: #{e.message}"
       give_back(id, e.message)
+    end
+
+    # A run that raised is a failed run: give the message back naming the error
+    # (#raise_detail), log where it was raised (the log only, never the board),
+    # and pause FAILURE_PAUSE so the next tick does not reclaim it into the same
+    # raise and spend all its attempts in seconds (#67 and #68 on 2026-10-15).
+    def answer_raised(id, error)
+      detail = self.class.raise_detail(error)
+      log "##{id} raised #{error.class} at #{error.backtrace&.first || 'unknown'}"
+      give_back(id, "the answer run raised #{error.class}#{detail.empty? ? '' : ": #{detail}"}")
+      pause_until(@clock.call + FAILURE_PAUSE, "answer_raised")
+    end
+
+    # A raised error's message, safe for the log and the board: its first line,
+    # scrubbed to valid UTF-8, every quoted span replaced by `…` (a parser or
+    # encoding error quotes the input it choked on, which can be message or answer
+    # text), an unclosed quote redacted to the end of the line, and capped at
+    # RAISE_DETAIL_LIMIT characters.
+    def self.raise_detail(error)
+      text = error.message.to_s.b.force_encoding(Encoding::UTF_8).scrub
+      text = text.lines.first.to_s.gsub(/"(?:[^"\\]|\\.)*"|'[^']*'|`[^`]*`/, "…")
+      # A quote left open (the error cut the input off mid-quote) runs to the end.
+      text = text.sub(/["'`].*\z/, "…").strip
+      text.length > RAISE_DETAIL_LIMIT ? "#{text[0, RAISE_DETAIL_LIMIT - 1]}…" : text
     end
 
     def pause_until(time, reason)
@@ -401,9 +427,21 @@ module AgentMailbox
     LABEL = "studio.mcritchie.agent-dispatcher"
     TEMPLATE = File.join(REPO_ROOT, "config/launchd/#{LABEL}.plist")
     LOG_NAME = "agent-dispatcher.log"
+    # After `bootout`, launchd stops the old job (SIGTERM, then up to the plist's
+    # ExitTimeOut of 90s) before the label is free; a `bootstrap` sent sooner fails
+    # with "Bootstrap failed: 5: Input/output error". So install waits for the
+    # label to leave the domain, polling `launchctl print`, for up to BOOTOUT_WAIT.
+    BOOTOUT_WAIT = 100
+    BOOTOUT_POLL = 1
+    # A bootstrap that still fails is tried this many times in all, BOOTSTRAP_BACKOFF apart.
+    BOOTSTRAP_TRIES = 3
+    BOOTSTRAP_BACKOFF = 3
+    # Appended to the plist when install could not load it: the file then matches
+    # no render, so the next ship's install --if-changed tries again.
+    FAILED_MARK = "<!-- bootstrap failed"
 
     def initialize(home: Dir.home, repo_root: REPO_ROOT, ruby: RbConfig.ruby, path: ENV.fetch("PATH", ""),
-                   uid: Process.uid, launchctl: nil, out: $stdout)
+                   uid: Process.uid, launchctl: nil, out: $stdout, sleeper: ->(s) { sleep(s) })
       @home = home
       @repo_root = repo_root
       @ruby = ruby
@@ -411,6 +449,7 @@ module AgentMailbox
       @uid = uid
       @launchctl = launchctl || ->(*args) { Open3.capture2e("launchctl", *args) }
       @out = out
+      @sleeper = sleeper
     end
 
     def plist_path = File.join(@home, "Library/LaunchAgents/#{LABEL}.plist")
@@ -420,7 +459,7 @@ module AgentMailbox
     def render
       values = { "REPO_ROOT" => @repo_root, "HOME" => @home, "RUBY" => @ruby, "PATH" => service_path,
                  "LOG" => log_path, "LABEL" => LABEL }
-      File.read(TEMPLATE).gsub(/\{\{([A-Z_]+)\}\}/) do
+      File.read(TEMPLATE, encoding: "UTF-8").gsub(/\{\{([A-Z_]+)\}\}/) do
         key = Regexp.last_match(1)
         raise ArgumentError, "template names unknown {{#{key}}}" unless values.key?(key)
 
@@ -444,15 +483,58 @@ module AgentMailbox
 
       FileUtils.mkdir_p(File.dirname(plist_path))
       FileUtils.mkdir_p(File.dirname(log_path))
-      File.write(plist_path, render)
-      @launchctl.call("bootout", "#{domain}/#{LABEL}") # a reinstall replaces the running copy
-      output, status = @launchctl.call("bootstrap", domain, plist_path)
-      unless status.success?
-        @out.puts "launchctl bootstrap failed: #{output.strip}"
+      rendered = render
+      File.write(plist_path, rendered)
+      @launchctl.call("bootout", target) # a reinstall replaces the running copy
+      wait_for_bootout
+      output = bootstrap
+      if output
+        mark_failed(rendered, output)
         return 1
       end
       @out.puts "installed #{plist_path}; logs at #{log_path}"
       status_report
+    end
+
+    def target = "#{domain}/#{LABEL}"
+
+    # True once `launchctl print` no longer finds the label (the old job has
+    # exited); false when it is still listed after BOOTOUT_WAIT.
+    def wait_for_bootout
+      polls = (BOOTOUT_WAIT / BOOTOUT_POLL.to_f).ceil
+      polls.times do
+        _, status = @launchctl.call("print", target)
+        return true unless status.success?
+
+        @sleeper.call(BOOTOUT_POLL)
+      end
+      @out.puts "#{LABEL}: still loaded #{BOOTOUT_WAIT}s after bootout; trying the bootstrap anyway"
+      false
+    end
+
+    # nil on success, else the last failure's output.
+    def bootstrap
+      output = nil
+      BOOTSTRAP_TRIES.times do |i|
+        @sleeper.call(BOOTSTRAP_BACKOFF) if i.positive?
+        output, status = @launchctl.call("bootstrap", domain, plist_path)
+        return nil if status.success?
+
+        @out.puts "launchctl bootstrap failed (try #{i + 1} of #{BOOTSTRAP_TRIES}): #{output.to_s.strip}"
+      end
+      output.to_s.strip
+    end
+
+    # The bootstrap never took: the job is booted out and KeepAlive cannot revive
+    # it. Leave the plist on disk (launchd's bootstrap reads it from this path, so
+    # it cannot be written only after a success, and removing it would read as
+    # "not installed", which the ship never retries), but mark it, so it matches
+    # no render and the next ship's install --if-changed reinstalls.
+    def mark_failed(rendered, output)
+      File.write(plist_path, "#{rendered}#{FAILED_MARK} #{Time.now.utc.iso8601}: " \
+                             "#{output.gsub(/\s+/, ' ').gsub('--', '- -')}; the next ship reinstalls -->\n")
+      @out.puts "launchctl bootstrap failed: #{output}. The service is NOT loaded; run `bin/dispatcher install` " \
+                "from the hub checkout (the next production ship also retries)."
     end
 
     # The ship's step (bin/release.rb#refresh_dispatcher_service): reinstall only
@@ -470,10 +552,10 @@ module AgentMailbox
         return 0
       end
 
-      installed = File.read(plist_path)
+      installed = File.read(plist_path, encoding: "UTF-8")
       kept = installed_paths(installed)
       agent = kept ? self.class.new(home: @home, repo_root: @repo_root, ruby: kept[:ruby], path: kept[:path],
-                                    uid: @uid, launchctl: @launchctl, out: @out) : self
+                                    uid: @uid, launchctl: @launchctl, out: @out, sleeper: @sleeper) : self
       if agent.render == installed
         @out.puts "#{LABEL}: installed plist matches the template; nothing to refresh"
         return 0
