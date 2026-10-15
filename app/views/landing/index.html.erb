@@ -6,6 +6,10 @@
     0%   { transform: scale(1.3) translateX(-10%); }
     100% { transform: scale(1.3) translateX(10%); }
   }
+  /* Scrim strength by theme: dark keeps its navy weight; light runs a lighter
+     tint so the photo still shows through behind the dark headline. */
+  .hero-scrim { --hero-scrim-edge: 75%; --hero-scrim-mid: 58%; }
+  .dark .hero-scrim { --hero-scrim-edge: 85%; --hero-scrim-mid: 70%; }
 </style>
 
 <!-- Hero -->
@@ -16,7 +20,7 @@
   <%# The scrim takes the page colour, so it shades the photo in dark mode
       (--color-page is the dark base, #1A1535) and tints it pale in light mode,
       where the headline is dark text. %>
-  <div class="absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) 85%, transparent) 0%, color-mix(in srgb, var(--color-page) 70%, transparent) 50%, color-mix(in srgb, var(--color-page) 85%, transparent) 100%);"></div>
+  <div class="hero-scrim absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 0%, color-mix(in srgb, var(--color-page) var(--hero-scrim-mid), transparent) 50%, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 100%);"></div>
   <div class="relative z-10 max-w-4xl mx-auto px-4 text-center section-padding-lg">
     <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; gap: 0.3em;">
       Solutions For
