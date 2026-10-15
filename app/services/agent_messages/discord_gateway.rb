@@ -27,16 +27,42 @@ module AgentMessages
   # The token is DISCORD_AGENT_BOT_TOKEN. Without it the listener is inert and
   # says so once. Neither the token nor an IDENTIFY/RESUME payload is ever logged.
   #
+  # THE IDENTIFY BUDGET. Discord allows about 1,000 session starts (IDENTIFYs)
+  # per token per day and resets the token past that. So the listener RESUMEs
+  # whenever the session allows it, and before every IDENTIFY it checks two
+  # counts: our own rolling, persisted GatewayIdentifyBudget (200 a day), and
+  # Discord's session_start_limit (GatewayStartLimit, GET /gateway/bot), keeping
+  # START_RESERVE starts in hand. Either spent: it stands down until the window
+  # rolls (rechecking every BUDGET_RECHECK), with one ErrorLog receipt.
+  #
+  # THE HANDSHAKE DEADLINE. TCP and TLS must finish within HANDSHAKE_TIMEOUT,
+  # then the websocket upgrade, HELLO and READY (or RESUMED) within another
+  # HANDSHAKE_TIMEOUT (at most twice that in all), or the socket is closed
+  # and the listener backs off: a stalled handshake never holds the leader lock
+  # with no live listener behind it.
+  #
   # A routine reconnect is a log line. A fatal close, a message it could not
-  # store, and the thread dying also write an ErrorLog receipt.
+  # store, a spent IDENTIFY budget, and the thread dying also write an ErrorLog
+  # receipt.
   class DiscordGateway
     LOG = "[agent-messages] discord gateway".freeze
     # Seconds between attempts to take the leader lock while another holds it.
     LOCK_RETRY = 30
     # Seconds between leader-lock checks while connected.
     LOCK_CHECK_EVERY = 15
-    # Reconnect backoff in seconds, by consecutive failure; reset by READY/RESUMED.
-    BACKOFF = [ 1, 2, 5, 10, 30, 60 ].freeze
+    # Reconnect backoff in seconds, by consecutive failure. The count resets only
+    # after a connection has stayed up STABLE_AFTER seconds past READY/RESUMED,
+    # so a session that drops right after READY still climbs the ladder.
+    BACKOFF = [ 1, 2, 5, 10, 30, 60, 120, 300 ].freeze
+    STABLE_AFTER = 60
+    # Seconds for TCP and TLS, then again from the upgrade to READY or RESUMED,
+    # before the attempt is abandoned.
+    HANDSHAKE_TIMEOUT = 30
+    # Discord session starts kept in hand: below this many `remaining`, the
+    # listener waits for Discord's reset_after instead of IDENTIFYing.
+    START_RESERVE = 10
+    # While standing down for a spent budget, recheck at least this often.
+    BUDGET_RECHECK = 15 * 60
     # Seconds the stop hook waits for the thread to close the socket and unlock.
     STOP_JOIN = 5
     # Thread → parent channel ids remembered for overrides; cleared past this.
@@ -45,6 +71,10 @@ module AgentMessages
 
     # What an ErrorLog receipt names when Discord refuses the connection for good.
     Fatal = Class.new(StandardError)
+    # What an ErrorLog receipt names when the listener stands down to save IDENTIFYs.
+    BudgetSpent = Class.new(StandardError)
+    # TLS or the websocket handshake did not finish in time.
+    HandshakeTimeout = Class.new(Timeout::Error)
 
     class << self
       attr_reader :instance
@@ -76,17 +106,36 @@ module AgentMessages
         nil
       end
 
-      # The production connector: TLS to the gateway host, verified.
-      def tls_connect(url)
+      # The production connector: TLS to the gateway host, verified, with the
+      # whole TCP connect and TLS handshake bounded by `timeout` seconds.
+      def tls_connect(url, timeout: HANDSHAKE_TIMEOUT)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
         uri = URI(url)
-        tcp = ::Socket.tcp(uri.host, uri.port || 443, connect_timeout: 10)
+        tcp = ::Socket.tcp(uri.host, uri.port || 443, connect_timeout: [ timeout, 10 ].min)
         context = OpenSSL::SSL::SSLContext.new
         context.set_params(verify_mode: OpenSSL::SSL::VERIFY_PEER)
         ssl = OpenSSL::SSL::SSLSocket.new(tcp, context)
         ssl.hostname = uri.host
         ssl.sync_close = true
-        ssl.connect
+        tls_handshake(ssl, tcp, deadline, timeout)
         ssl
+      rescue StandardError
+        ssl ? ssl.close : tcp&.close
+        raise
+      end
+
+      private
+
+      def tls_handshake(ssl, io, deadline, timeout)
+        loop do
+          state = ssl.connect_nonblock(exception: false)
+          return unless state == :wait_readable || state == :wait_writable
+
+          left = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          ready = left.positive? &&
+                  (state == :wait_readable ? IO.select([ io ], nil, nil, left) : IO.select(nil, [ io ], nil, left))
+          raise HandshakeTimeout, "TLS handshake did not finish within #{timeout}s" unless ready
+        end
       end
     end
 
@@ -96,7 +145,8 @@ module AgentMessages
     # tests replace with one end of a socket pair). `lock` is built on the
     # thread's leased connection unless a test hands one in.
     def initialize(token:, routes: Routes.load, logger: Rails.logger, connector: self.class.method(:tls_connect),
-                   lock: nil, ingest: nil, lock_retry: LOCK_RETRY, lock_check_every: LOCK_CHECK_EVERY, backoff: BACKOFF)
+                   lock: nil, ingest: nil, lock_retry: LOCK_RETRY, lock_check_every: LOCK_CHECK_EVERY, backoff: BACKOFF,
+                   budget: nil, start_limit: nil, handshake_timeout: HANDSHAKE_TIMEOUT)
       raise ArgumentError, "a bot token is required" if token.to_s.strip.empty?
 
       @token = token
@@ -108,6 +158,11 @@ module AgentMessages
       @lock_retry = lock_retry
       @lock_check_every = lock_check_every
       @backoff = backoff
+      @budget = budget || GatewayIdentifyBudget.new
+      @start_limit = start_limit || GatewayStartLimit.new(token: token)
+      @handshake_timeout = handshake_timeout
+      @budget_receipted = false
+      @ready_at = nil
       @session = GatewaySession.new
       @thread_parents = {}
       @failures = 0
@@ -147,6 +202,15 @@ module AgentMessages
         end
         announced_wait = false
 
+        # RESUME costs no session start; only an IDENTIFY is budgeted.
+        unless @session.resumable?
+          wait = identify_wait
+          if wait
+            pause(wait)
+            next
+          end
+        end
+
         outcome = connect_once
         case outcome
         when :stopped then break
@@ -157,6 +221,7 @@ module AgentMessages
           @lock.release
           pause(@lock_retry)
         else
+          @failures = 0 if @ready_at && now - @ready_at >= STABLE_AFTER
           @failures += 1
           pause(backoff)
         end
@@ -170,7 +235,7 @@ module AgentMessages
     end
 
     # One connection, from the socket opening to its close. Returns :stopped,
-    # :fatal, :lost_lock, :resume or :identify.
+    # :fatal, :lost_lock, :handshake_timeout, :resume or :identify.
     def connect_once
       url = @session.connect_url
       @socket = WebSocketClient.new(@connector.call(url), url, wake: @wake_r)
@@ -178,11 +243,14 @@ module AgentMessages
       @session.connection_opened!
       @pending = nil
       @next_heartbeat = nil
+      @ready_at = nil
+      @handshake_by = now + @handshake_timeout
       next_lock_check = now + @lock_check_every
       @socket.start
 
       loop do
         return finish(1000, :stopped) if stopping?
+        return handshake_expired if @ready_at.nil? && now >= @handshake_by
 
         if now >= next_lock_check
           next_lock_check = now + @lock_check_every
@@ -225,16 +293,20 @@ module AgentMessages
     def on_event(event, value)
       case event
       when :hello
-        transmit(@session.opening_payload(@token))
+        opening = @session.opening_payload(@token)
+        # Recorded BEFORE it is sent: a budget that cannot be written raises
+        # here, and the attempt fails closed (no IDENTIFY, a backoff).
+        @budget.spend!(Time.current) if opening[:op] == GatewaySession::IDENTIFY
+        transmit(opening)
         interval = value.to_i.positive? ? value / 1000.0 : 41.25
         @next_heartbeat = now + (interval * rand) # Discord's jitter for the first beat
       when :heartbeat_now then transmit(@session.heartbeat_payload)
       when :reconnect then @pending ||= value
       when :ready
-        @failures = 0
+        @ready_at = now
         @logger.info("#{LOG}: connected")
       when :resumed
-        @failures = 0
+        @ready_at = now
         @logger.info("#{LOG}: resumed")
       when :message then ingest(value)
       when :guild then note_guild(value)
@@ -296,6 +368,55 @@ module AgentMessages
       nil
     end
 
+    # nil when an IDENTIFY may go now; else the seconds to stand down first.
+    # Our budget first (no network), then Discord's own count. A failure to read
+    # either is a failed attempt: back off, never IDENTIFY blind.
+    def identify_wait
+      at = Time.current
+      unless @budget.available?(at)
+        resume_at = @budget.next_at(at)
+        stand_down("IDENTIFY budget spent (#{@budget.limit} in #{@budget.window.inspect}); " \
+                   "standing down until #{resume_at.utc.iso8601}")
+        return (resume_at - at).clamp(1, BUDGET_RECHECK)
+      end
+
+      limit = @start_limit.call
+      if limit.remaining < START_RESERVE
+        stand_down("Discord session_start_limit has #{limit.remaining} of #{limit.total} left; " \
+                   "standing down #{limit.reset_after.round}s for its reset")
+        return (limit.reset_after + 1).clamp(1, BUDGET_RECHECK)
+      end
+
+      @budget_receipted = false
+      @check_receipted = false
+      nil
+    rescue StandardError => e
+      @logger.info("#{LOG}: could not check the IDENTIFY budget (#{e.class}); backing off")
+      # One receipt per outage: a revoked token (401 here) never reaches the
+      # IDENTIFY whose fatal close would otherwise be its only ErrorLog row.
+      receipt(e) unless @check_receipted
+      @check_receipted = true
+      @failures += 1
+      backoff
+    end
+
+    # One log line and one ErrorLog receipt per stand-down, however many
+    # rechecks it takes for the window to roll.
+    def stand_down(reason)
+      return if @budget_receipted
+
+      @budget_receipted = true
+      line = "#{LOG}: #{reason}"
+      @logger.error(line)
+      receipt(BudgetSpent.new(line))
+    end
+
+    def handshake_expired
+      @logger.info("#{LOG}: handshake did not finish within #{@handshake_timeout}s; closing and backing off")
+      @socket.close(nil)
+      :handshake_timeout
+    end
+
     def finish(code, outcome)
       @socket.close(code)
       @session.reset! if code == 1000
@@ -303,7 +424,7 @@ module AgentMessages
     end
 
     def wait_for(next_lock_check)
-      deadlines = [ next_lock_check, @next_heartbeat ].compact
+      deadlines = [ next_lock_check, @next_heartbeat, (@handshake_by if @ready_at.nil?) ].compact
       [ deadlines.min - now, 0.05 ].max
     end
 

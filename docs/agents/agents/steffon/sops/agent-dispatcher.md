@@ -106,7 +106,9 @@ A release needs no step from anyone, two mechanisms between them:
   digest seen on two checks in a row (so a checkout read half-way through a move
   cannot start a restart loop) logs one line,
   `code changed (<old> -> <new>); restarting on the new code: …`, stops claiming,
-  lets the runs in flight finish up to their deadline, and exits 0. launchd's
+  lets the runs in flight finish up to their deadline, and exits 0. It keeps
+  pinging every minute (state `stopping`) while it drains, so a drain longer than
+  5 minutes raises no silent alert. launchd's
   `KeepAlive` (plain `true`; `SuccessfulExit=false` would leave a clean exit dead)
   starts it on the new code. A release that touches none of those files does not
   restart it, and a routing change in `agent_routes.yml` does.
@@ -146,6 +148,15 @@ The incident history is the `agent_mailbox_incidents` table.
 
 With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 `[agent-dispatcher] floor alert not posted (...)`.
+
+The inbound Gateway listener is not on this floor alert. When it stands down to
+protect the bot token (its IDENTIFY budget or Discord's `session_start_limit` is
+spent), it writes one `ErrorLog` row, `discord gateway: IDENTIFY budget spent …`
+or `… session_start_limit has N of M left …`, and the backstop poll keeps storing
+messages every 10 minutes. Nothing to do unless it recurs: a recurrence means the
+gateway is failing before READY, so read the worker log's
+`[agent-messages] discord gateway` lines
+([`agent-message-loop.md`](../../../system/agent-message-loop.md)).
 
 ## Unblock playbook
 

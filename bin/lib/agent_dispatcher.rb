@@ -209,14 +209,19 @@ module AgentMailbox
 
     # Stop claiming; give runs GRACE to finish (a restart for new code: until
     # their RUN_DEADLINE, unless a signal cuts it to GRACE); then stop their
-    # Claude and give their messages back. A final ping says it stopped.
+    # Claude and give their messages back. The drain keeps the minute ping going
+    # (state stopping): a restart drain can outlast AgentDispatcher::SILENT_AFTER,
+    # and a quiet drain would raise a false "dispatcher silent" alert. A final
+    # ping says it stopped.
     def shutdown(grace: GRACE)
       started = @clock.call
       window = @restarting ? RUN_DEADLINE : grace
       log "stopping#{' for new code' if @restarting}: #{@runs.size} run(s) in flight, waiting up to #{window}s"
       until @runs.empty? || @clock.call >= drain_deadline(started, window, grace)
         reap
-        renew_due(@clock.call)
+        now = @clock.call
+        renew_due(now)
+        ping(now, state: "stopping") if @last_ping.nil? || now - @last_ping >= PING_EVERY
         @sleeper.call(1) unless @runs.empty?
       end
       unless @runs.empty?

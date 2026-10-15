@@ -260,6 +260,61 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     assert_match(/code changed \(v1 -> v2\); restarting on the new code/, @out.string)
   end
 
+  # A client that records each ping's payload and the fake clock it went out at,
+  # then sends it on to the real in-process API.
+  class PingSpy < SimpleDelegator
+    attr_reader :pings
+
+    def initialize(client, clock)
+      super(client)
+      @clock = clock
+      @pings = []
+    end
+
+    def ping(payload)
+      @pings << [ @clock.call, payload["state"] ]
+      __getobj__.ping(payload)
+    end
+  end
+
+  test "[unit] a restart drain longer than SILENT_AFTER keeps pinging every minute, so the floor alert stays quiet" do
+    message = agent_message!(soul: "xan")
+    gate = Queue.new
+    spy = PingSpy.new(@client, -> { @now })
+    disp = AgentMailbox::Dispatcher.new(client: spy, souls: %w[xan], worker: "disp-test-1", cap: 1,
+                                        runner: GatedRunner.new(gate: gate), claude_cmd: %w[fake-claude], out: @out,
+                                        clock: -> { @now }, sleeper: ->(_s) { }, idle_wait: 0, busy_wait: 0,
+                                        version: "test", fingerprint: nil)
+    disp.tick
+    assert_equal "claimed", message.reload.status
+    disp.restart_for_new_code!
+
+    # The answer lands 400 drain seconds in: past SILENT_AFTER (300s), inside
+    # RUN_DEADLINE. Each drain second advances the fake clock by 5.
+    drain_started = @now
+    released = false
+    disp.instance_variable_set(:@sleeper, lambda do |_s|
+      @now += 5
+      if !released && @now - drain_started >= 400
+        released = true
+        gate << :go
+      end
+      sleep 0.002
+    end)
+    spy.pings.clear
+    disp.shutdown
+
+    assert_equal "completed", message.reload.status
+    assert_operator 400, :>, AgentDispatcher::SILENT_AFTER.to_i, "the drain must outlast the silence threshold"
+    times = [ drain_started, *spy.pings.map(&:first) ]
+    gaps = times.each_cons(2).map { |a, b| b - a }
+    assert_operator spy.pings.size, :>=, 6, "a minute ping through the drain, then the final one"
+    assert_operator gaps.max, :<=, AgentMailbox::Dispatcher::PING_EVERY + 5,
+                    "no gap between pings reaches the floor alert's silence window"
+    assert_equal [ "stopping" ], spy.pings.map(&:last).uniq, "every drain ping says it is stopping"
+    assert_equal "stopping", AgentDispatcher.find_by!(worker_id: "disp-test-1").state
+  end
+
   test "the routed souls come from config/agent_routes.yml" do
     assert_equal AgentMessages::Routes.load.souls.sort, AgentMailbox.routed_souls.sort
   end
