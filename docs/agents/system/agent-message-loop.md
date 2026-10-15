@@ -137,8 +137,9 @@ runs one transaction. It first dead-letters exhausted leases, then selects the o
 claimable message `FOR UPDATE SKIP LOCKED` and stamps `claimed_by`,
 `lease_expires_at` (10 minutes) and `attempts + 1`. A message is claimable when
 it is routed to that soul, is `received` (or `claimed` under a lapsed lease with
-fewer than 3 attempts), and is the oldest open message in its thread. That last
-rule keeps a conversation in order and allows one active claim per thread. A
+fewer than 3 attempts), and is the oldest open message in its thread and the
+oldest open message from its person to that soul (below, "Memory"). Those rules
+keep a conversation in order and allow one active claim per thread. A
 claim with nothing waiting answers 200 with `data: null`. Several souls in one
 claim (`souls`) take the oldest message across them. With `wait` (seconds,
 capped at 20, well under Heroku's 30-second router timeout) the board retries
@@ -147,7 +148,8 @@ the deadline. The cost is one puma thread held per waiting dispatcher, of the 6
 production runs (2 workers x 3 threads).
 
 **Complete.** `POST /api/v1/agent_messages/:id/complete {worker, response_text,
-action_summary}` succeeds only for the worker holding the claim. A second
+action_summary, notes?}` succeeds only for the worker holding the claim. `notes`
+are the facts the answer returned about the sender (below, "Notes"). A second
 complete by that worker answers `already_completed` and queues nothing. The reply
 job posts once: a row with a `reply_external_id` is never posted again, and the
 post carries the row's `reply_nonce` with Discord's `enforce_nonce`, so a retried
@@ -210,7 +212,7 @@ every 15 minutes. The contract other sessions build against,
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and runs the soul's one read-only action (avi:
 `bin/release status`; xan: `bin/task list`). It then reads the message's context
-bundle and builds the prompt from the four layers (below, "Memory"), the action
+bundle and builds the prompt from the five layers (below, "Memory"), the action
 output and the message. Claude runs headless with
 **no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
 the message with the answer. The message sits between random-named
@@ -225,64 +227,149 @@ The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
 agent CLI is (`bin/lib/agent_api.rb`).
 
-## Memory: the four context layers
+## Memory: the five context layers
 
-An answer remembers the person it answers. The memory is rebuilt from the hub's
-rows on every answer, never from a resumed Claude session, so any dispatcher on
-any machine builds the same context for the same rows (Alex's decision of
-2026-10-14, option A). Two pieces build it:
+An answer remembers the person it answers, on every channel they use. The
+memory is rebuilt from the hub's rows on every answer, never from a resumed
+Claude session, so any dispatcher on any machine builds the same context for the
+same rows (Alex's decision of 2026-10-14, option A). On 2026-10-15 Alex dropped
+the per-channel silo: "Let's give continuity for our people over omnichannel."
+The channel still matters in one way. The thread a message continues is the focus
+of its answer. Two pieces build the memory:
 
 - **The board chooses what.** `GET /api/v1/agent_messages/:id/context?worker=W`
   answers only the worker holding the claim (409 `NOT_HOLDER` otherwise, since
-  the bundle carries other messages' text). `AgentMessages::ThreadLedger` builds it.
+  the bundle carries other messages' text). `AgentMessages::MemoryBundle` builds it.
 - **The worker lays it out.** `AgentMailbox::ContextBuilder`
-  (`bin/lib/agent_context_builder.rb`) renders four labeled layers, each held to a
+  (`bin/lib/agent_context_builder.rb`) renders five labeled layers, each held to a
   character budget in `ContextBuilder::BUDGETS` (the one place they live).
 
 | Layer | What | Source | Budget |
 |-------|------|--------|--------|
 | GENERAL | Who the soul is | `docs/agents/agents/<soul>/role.md` | 6,000 |
 | DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping or a missing doc is an empty layer | 4,000 |
-| USER | Notes about the sender | `agent_user_notes`, keyed by `(channel, author_ref)`, with a display name. Read only for now; writing notes is the `agent-respond-sop` task | 2,000 |
-| THREAD | The ledger | `agent_messages`: the pin, the summary, the recent turns | 12,000 (pin 3,000, summary 3,000) |
+| USER | The notes about the sender, from every channel | `agent_person_notes` for the message's person | 2,000 |
+| PERSON | The sender's earlier exchanges with this soul on every channel, each labeled with its place | `agent_messages` by `(soul_slug, person_id)`: the summary, then the recent turns | 9,000 (summary 3,000) |
+| THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
 
-**The ledger** is one person's exchanges with one soul in one Discord channel:
-every earlier row with the same `(soul_slug, channel, channel_ref, author_ref)`,
-oldest first, read through `index_agent_messages_on_ledger` and capped at 200
-rows. A different person's messages in the same channel are never in it.
-Claims serialize per ledger as well as per thread (`AgentMessage.claimable`):
-a person's second message waits until their first is answered, even when the two
-are not a reply chain. The second answer's context therefore always carries the
-first exchange. Another person's message, or the same person's message to another
-soul or in another channel, is not held back. A row with no `author_ref` has no
-ledger.
+**The person.** A person is one identity across platforms. `agent_people` holds
+the display name and, optionally, the hub `User`. `agent_person_identities` holds
+each place the person speaks, as `(platform, external_id)`: a Discord user id
+today, an email address later. The pair is unique, so one id is always one person.
+Every stored message with an author is stamped with its `person_id` when it is
+created (`AgentMessage` calls `AgentPerson.resolve!`), and the first message from an
+unknown id makes a new person. The migration backfilled every existing row from
+`(channel, author_ref)` and seeded Alex's Discord id (`536552944271753216`) as
+"Alex", linked to the hub user whose email is `alex@mcritchie.studio` when one
+exists.
 
-**The pin.** A message that is an explicit reply joins the thread of the message
-it answers (its `thread_key` names an earlier root). The latest earlier row of
-that thread is pinned: always included, marked `PINNED … the one being answered`,
-and taken out of the turn list. It is included even when another person wrote
-it, because the reply chose it. `DiscordIngest` does not yet store the replied-to
-message id, so a reply to an OLDER message in a long thread pins the thread's
-latest row; storing the reference id is a follow-up.
+**No auto-merging.** Nothing joins two identities into one person on its own. An
+email that shares a name with a Discord user stays a separate person until an
+operator links it, because a wrong merge would hand one person's memory to
+another. Linking is an explicit act, done from the console or with the rake task.
+It restamps every stored message from that id, so their history joins the PERSON
+layer at once:
 
-**Pruning.** The last 10 turns that are no older than 7 days come back
+```bash
+bin/rails agent_people:list
+bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=alex@mcritchie.studio
+```
+
+An id that already belongs to another person is refused unless `REASSIGN=1` is
+passed. A reassign moves the identity and its messages, and leaves the old
+person's notes where they are. There is no admin button for linking yet.
+
+**The PERSON layer** is every earlier row with the same `(soul_slug, person_id)`,
+oldest first, read through `index_agent_messages_on_person_ledger` and capped at
+200 rows. Each turn carries its place, for example `[discord #release-notes]`.
+Another person's messages are never in it. Claims serialize per person per
+soul (`AgentMessage.claimable`): a person's second message waits until their first
+is answered, on any channel, so the second answer's context always carries the
+first exchange. A message to another soul is not held back, and neither is a
+row with no person (no author id).
+
+**Place labels** are printed outside the untrusted fence, so they are
+code-shaped and carry nothing a member chose. A channel is named from the channel
+directory (`DiscordChannel`; its name is set by the guild's admins) and kept to
+`[a-z0-9_-]`. A thread is named by its parent channel (`[discord thread in
+#desk]`), because anyone can name a thread. A channel the directory does not know
+is labeled by its id. The worker replaces any label that does not match its
+pattern.
+
+**The THREAD layer is the focus.** It holds every earlier turn of the message's
+`thread_key`, whoever wrote it, newest 20, oldest first. The prompt marks it "the
+conversation you are answering" and tells the model to read a short or vague
+message ("what's next?") inside it first. A Discord reply joins the thread of the
+message it answers. Every message in a Discord thread channel shares one key,
+`discord:<thread id>:<thread id>`. `DiscordIngest` knows a thread channel by the
+parent the reader gives it, or from the channel directory. An email thread will
+key the same way. The layer comes only from this channel and guild: a Discord
+forward, or any reference into another channel, brings nothing from there.
+**A turn shown in the THREAD layer is not repeated in the PERSON layer.** Over
+budget, the oldest thread turns fold first and the newest is cut rather than
+dropped.
+
+**Pruning** (PERSON). The last 10 turns that are no older than 7 days come back
 verbatim. The 7 days are counted back from the message's own sent time, not from
-the clock, so a rebuild next month is identical. Every older turn folds into
-the **summary**: one extractive line per turn (its date, the first line of the
-message, and the first line of the answer, each cut to 140 characters), keeping
-the newest 40. The builder then fits the layer to its budget, dropping the oldest
-turns first. A dropped turn is counted into the summary's header and its line
-is not added. The summary's own oldest lines go next.
+the clock, so a rebuild next month is identical. Every older turn folds into the
+**summary**: one extractive line per turn (its date and place, the first line of
+the message, and the first line of the answer, each cut to 140 characters),
+keeping the newest 40. The builder then fits the layer to its budget, dropping
+the oldest turns first. A dropped turn is counted into the summary's header and
+its line is not added. The summary's own oldest lines go next.
 
 **Why extractive.** It is a pure function of the rows: deterministic, free (no
 model call), and it stores no model-written text. A model-written summary saved
 on a row would carry anything a message had injected into it forward into every
 later answer to that person.
 
+**Notes.** The USER layer has a writer: the answer itself. The prompt lets the
+model end its reply with a line reading exactly `===NOTES===`, then a JSON array
+of up to 3 short facts about the sender, which may sit inside a ```` ```json ````
+fence:
+
+```text
+Purple it is.
+===NOTES===
+["Favorite color is purple."]
+```
+
+The format is a delimiter because `claude -p --output-format json` puts the model's
+whole text in the envelope's single `result` field. A split line keeps the answer
+path unchanged, and an answer with no notes is untouched. The split is a pure
+function the tests pin (`AgentMailbox::NoteBlock`). The worker cuts the section
+off before it completes, even when its JSON is broken, and sends the facts as
+`notes`. The board cuts at the same line again (`AgentMessage.without_notes`), so
+a fact never reaches the channel. `AgentPersonNote.record_from!` then decides
+what is kept:
+
+- **Only the message's author.** The facts are filed under the person who wrote
+  the message being completed, and under nobody else. A fact about Alex returned
+  from Bea's run is Bea's note.
+- **Plain short text.** A fact is 3 to 200 characters, whitespace folded, and is
+  refused if it carries a link, an `@` (mentions and addresses), markup, a code
+  fence, a control character or the fence marker.
+- **Caps.** At most 3 per answer, deduplicated against the person's notes and
+  against each other (lowercased words), and at most 30 per person, with the
+  oldest pruned.
+- **Provenance.** Each note keeps its source message, the soul and the time.
+
+The notes are untrusted: they are rendered only inside the fence, in the USER
+layer, never into GENERAL or DOMAIN. They are written only on the completing
+call, so a repeated complete stores nothing. `/admin/agent_messages/:id` and
+`bin/agent-inbox show <id>` show the person, their identities and their notes.
+The old `agent_user_notes` table, which had no writer, was carried over line by
+line and dropped.
+
 **Trust.** Labels, rules and budgets are code. Every byte a person wrote sits
 inside the prompt's random `<untrusted-…>` fence: the message, their earlier
 messages, the soul's earlier answers to them, the notes, and every name they
 chose. A planted copy of the fence marker is defused before it is fenced.
+
+**An older worker.** The bundle still carries the pre-omnichannel `ledger`
+(the person turns, plus the thread's newest turn as `pin`) and `user.notes` as one
+string, so a dispatcher running the earlier code keeps its memory until it
+restarts onto this release. Drop both once every dispatcher runs it.
 
 ## Viewing a run
 

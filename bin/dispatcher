@@ -24,6 +24,9 @@
 # token, base URL or provider switch reaches it. `install` refuses a task desk
 # under .worktrees/.
 #
+# launchd passes no locale, so the process forces UTF-8 before it reads a file
+# (lib/process_encoding.rb) and the plist sets LANG and LC_ALL for the children.
+#
 # `install` renders config/launchd/studio.mcritchie.agent-dispatcher.plist into
 # ~/Library/LaunchAgents and loads it (KeepAlive, RunAtLoad, logs in
 # ~/Library/Logs/agent-dispatcher.log); `uninstall` unloads and removes it;
@@ -34,6 +37,12 @@
 #   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
 #
 # Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
+
+# UTF-8 before anything reads a file (lib/process_encoding.rb): a bare
+# environment such as launchd has no LANG.
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+
 require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_dispatcher"

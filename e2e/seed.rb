@@ -1704,6 +1704,7 @@ end
 # the page filters on, for two souls, and one with a full timeline and a posted
 # reply. Ids are fake snowflakes; nothing here talks to Discord.
 AgentMessage.delete_all # its events cascade
+AgentPerson.delete_all # its identities and notes cascade
 AgentMessageCursor.delete_all
 mailbox_guild = "910000000000000001"
 mailbox_channel = "910000000000000002"

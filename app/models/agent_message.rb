@@ -64,6 +64,12 @@ class AgentMessage < ApplicationRecord
   end
 
   has_many :events, -> { order(:id) }, class_name: "AgentMessageEvent", dependent: :delete_all
+  # Who wrote it, across platforms (AgentPerson): stamped at create from
+  # (channel, author_ref), so every stored message with an author resolves to a
+  # person. A row with no author_ref has none.
+  belongs_to :person, class_name: "AgentPerson", optional: true, inverse_of: :messages
+
+  before_create :resolve_person
 
   validates :channel, inclusion: { in: CHANNELS }
   validates :external_id, :channel_ref, :thread_key, presence: true
@@ -90,11 +96,11 @@ class AgentMessage < ApplicationRecord
   # "No older open message" refuses that, because the locked row is still older
   # and still open. It also yields at most one active claim per thread for free.
   #
-  # The same rule holds per LEDGER (one person, one channel, one soul; see
-  # AgentMessages::ThreadLedger): a person's second message waits for their first
-  # to be answered, even when the two are not a reply chain, so the second answer's
-  # context always carries the first exchange. A row with no author_ref has no
-  # ledger and is not held back by this rule.
+  # The same rule holds per PERSON per soul (AgentMessages::MemoryBundle): a
+  # person's second message to a soul waits for their first to be answered, on
+  # any channel and even when the two are not a reply chain, so the second
+  # answer's context always carries the first exchange. A row with no person (no
+  # author_ref) is not held back by this rule.
   #
   # `soul` is one slug or a list (bin/dispatcher serves every routed soul in one
   # claim); across souls the oldest message still goes first.
@@ -110,12 +116,10 @@ class AgentMessage < ApplicationRecord
                             AND older.status IN ('received', 'claimed'))
             SQL
             .where(<<~SQL.squish)
-              (COALESCE(agent_messages.author_ref, '') = '' OR NOT EXISTS (
+              (agent_messages.person_id IS NULL OR NOT EXISTS (
                 SELECT 1 FROM agent_messages earlier
                 WHERE earlier.soul_slug = agent_messages.soul_slug
-                  AND earlier.channel = agent_messages.channel
-                  AND earlier.channel_ref = agent_messages.channel_ref
-                  AND earlier.author_ref = agent_messages.author_ref
+                  AND earlier.person_id = agent_messages.person_id
                   AND earlier.id < agent_messages.id
                   AND earlier.status IN ('received', 'claimed')))
             SQL
@@ -181,8 +185,18 @@ class AgentMessage < ApplicationRecord
   # `run` carries what the answering Claude run reported (claude_session_id,
   # claude_cwd, reasoning, run_meta), stored for /admin/agent_messages/:id and
   # bin/agent-inbox show; RUN_LIMITS caps each field, so a worker cannot flood the row.
-  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {})
+  #
+  # `notes` are the facts the run returned about the sender (the worker split them
+  # off the reply). They are filed under THIS message's person and nobody else's
+  # (AgentPersonNote.record_from! validates, dedupes and caps them), and only on
+  # the completing call, never on a repeat.
+  #
+  # The posted reply never carries a notes section: response_text is cut at the
+  # NOTES_DELIMITER line here too, so a worker that failed to split it still
+  # cannot post the facts to the channel.
+  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil)
     worker = worker.to_s.strip
+    response_text = self.class.without_notes(response_text)
     raise Refused.new("response_text is required", code: "RESPONSE_REQUIRED") if response_text.to_s.strip.empty?
 
     outcome = self.class.transaction do
@@ -198,8 +212,10 @@ class AgentMessage < ApplicationRecord
               response_text: response_text.to_s, action_summary: action_summary.presence,
               reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
               **self.class.run_record(run))
+      stored = Array(notes).any? ? AgentPersonNote.record_from!(self, notes, now: now) : []
       record!("completed", actor: actor || soul_slug,
-                           detail: { "worker" => worker, "action_summary" => action_summary.presence }.compact)
+                           detail: { "worker" => worker, "action_summary" => action_summary.presence,
+                                     "notes" => (stored.size if stored.any?) }.compact)
       :completed
     end
     AgentMessageReplyJob.perform_later(id) if outcome == :completed
@@ -271,6 +287,17 @@ class AgentMessage < ApplicationRecord
     self
   end
 
+  # The line a run's notes section starts with (the worker's AgentMailbox::NoteBlock
+  # writes the same constant; the prompt asks for it).
+  NOTES_DELIMITER = "===NOTES==="
+
+  # `text` up to (not including) a NOTES_DELIMITER line, stripped.
+  def self.without_notes(text)
+    text = text.to_s
+    cut = text.index(/^[ \t]*#{Regexp.escape(NOTES_DELIMITER)}[ \t]*$/)
+    cut ? text[0, cut].strip : text
+  end
+
   # complete!'s run report, cut to RUN_LIMITS and RUN_META_KEYS (scalars only).
   def self.run_record(run)
     run = (run || {}).to_h.transform_keys(&:to_sym)
@@ -319,11 +346,24 @@ class AgentMessage < ApplicationRecord
     data["resume_command"] = resume_command
     data["url"] = discord_url
     data["reply_url"] = reply_url
-    data["events"] = self.events.map(&:as_api_json) if events
+    data["person_id"] = person_id
+    if events
+      data["events"] = self.events.map(&:as_api_json)
+      data["person"] = person&.as_api_json
+    end
     data
   end
 
+  # The platform a person speaks on here (an AgentPersonIdentity's): the channel.
+  def platform = channel
+
   private
+
+  def resolve_person
+    return if person_id.present? || author_ref.blank?
+
+    self.person = AgentPerson.resolve!(platform: platform, external_id: author_ref, display_name: author_name)
+  end
 
   def holder_refusal(verb)
     holder = claimed_by.present? ? "held by #{claimed_by}" : "not claimed"

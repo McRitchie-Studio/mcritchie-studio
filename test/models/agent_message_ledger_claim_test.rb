@@ -1,9 +1,9 @@
 require "test_helper"
 require_relative "../support/agent_message_fixtures"
 
-# [unit] Claims serialize per ledger (person + channel + soul) as well as per
-# thread, so a person's second message is answered only after their first, with
-# the first exchange in its context (AgentMessages::ThreadLedger).
+# [unit] Claims serialize per PERSON per soul, on every channel, as well as per
+# thread, so a person's second message to a soul is answered only after their
+# first, with the first exchange in its context (AgentMessages::MemoryBundle).
 class AgentMessageLedgerClaimTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
@@ -13,14 +13,14 @@ class AgentMessageLedgerClaimTest < ActiveSupport::TestCase
     bea = agent_message!(soul: "xan", author_ref: "501", content: "bea")
 
     assert_equal first, AgentMessage.claim!(soul: "xan", worker: "w1").message
-    assert_equal bea, AgentMessage.claim!(soul: "xan", worker: "w2").message, "a different ledger is not held back"
+    assert_equal bea, AgentMessage.claim!(soul: "xan", worker: "w2").message, "a different person is not held back"
     assert_nil AgentMessage.claim!(soul: "xan", worker: "w3").message, "the same person's second waits"
 
     first.reload.complete!(worker: "w1", response_text: "done")
     assert_equal second, AgentMessage.claim!(soul: "xan", worker: "w3").message
   end
 
-  test "the hold is per soul and per channel, and rows with no author id are not held" do
+  test "the hold spans channels but not souls, and rows with no author are not held" do
     agent_message!(soul: "xan", author_ref: "500")
     to_avi = agent_message!(soul: "avi", author_ref: "500")
     elsewhere = agent_message!(soul: "xan", author_ref: "500", channel_ref: QUIET)
@@ -29,7 +29,7 @@ class AgentMessageLedgerClaimTest < ActiveSupport::TestCase
 
     claimable = AgentMessage.claimable(soul: %w[xan avi]).to_a
     assert_includes claimable, to_avi
-    assert_includes claimable, elsewhere
+    refute_includes claimable, elsewhere, "the same person in another channel waits, so its answer remembers the first"
     assert_includes claimable, anon
   end
 end

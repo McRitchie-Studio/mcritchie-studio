@@ -11,6 +11,10 @@
   not wrapped in caffeinate here because a wrapping caffeinate does not forward
   launchd's SIGTERM, which would orphan the loop and skip its graceful stop.
   ExitTimeOut covers the dispatcher's 60-second grace for runs in flight.
+
+  LANG and LC_ALL: launchd passes no locale, and without one Ruby (and every
+  child: claude, bin/task) reads files as US-ASCII. bin/dispatcher also forces
+  UTF-8 itself; these keys carry it to the children (CHILD_ENV_ALLOW).
 -->
 <plist version="1.0">
 <dict>
@@ -30,6 +34,10 @@
     <string>{{PATH}}</string>
     <key>HOME</key>
     <string>{{HOME}}</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
