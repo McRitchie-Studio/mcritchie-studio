@@ -1,15 +1,21 @@
 require "test_helper"
 require "support/google_connect_fakes"
+require "support/fathom_connect_fakes"
 
 # [component] /integrations: each card with connections says how it connects
 # (who each way covers, its setup and its upkeep) and what it can do, and
 # names the ways behind an ability only when there is more than one. The
 # Google Calendar, Gmail and Drive cards carry the hub's own connection for an
-# admin: Connect, or the account and Disconnect; a visitor sees neither.
+# admin: Connect, or the account and Disconnect; a visitor sees neither. The
+# Fathom card, in its own Meeting notes section, does the same.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
+  include FathomConnectFakes
 
-  teardown { reset_google_connect }
+  teardown do
+    reset_google_connect
+    reset_fathom_connect
+  end
 
   CARDS = { "google_calendar" => "calendar", "gmail" => "gmail", "google_drive" => "drive" }.freeze
 
@@ -189,6 +195,65 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_empty css_select("[data-test='google-connect-all']"), "non-admin"
       CARDS.each_key { |key| assert card(key).at_css("[data-test='entry-cta']"), "non-admin keeps #{key}'s CTA" }
       assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
+    end
+  end
+
+  def fathom_slot = card("fathom").at_css("[data-test='entry-method'][data-method='sign_in'] [data-test='fathom-connection']")
+
+  test "[component] Fathom card shows Connect for admin only" do
+    with_fathom_env do
+      get integrations_path
+      section = css_select("[data-test='integration-group'][data-group='meeting_notes']").first
+      assert section.at_css("[data-test='integration-entry'][data-entry='fathom']"), "the card sits in Meeting notes"
+      assert_equal "Sign in", section.at_css("[data-test='group-kicker']").text.strip
+      assert_equal %w[sign_in], card("fathom").css("[data-test='entry-method']").map { _1["data-method"] }
+      assert_equal %w[read_meeting_notes], card("fathom").css("[data-test='entry-ability']").map { _1["data-ability"] }
+      assert_equal "emoji", card("fathom").at_css("[data-test='entry-lead']")["data-lead"]
+      assert_empty css_select("[data-test='fathom-connection']"), "visitor"
+      assert_equal "Connect", card("fathom").at_css("[data-test='entry-cta']").text.strip, "a visitor's CTA is the normal one"
+      assert_no_match(/Connect Fathom/, response.body)
+
+      log_in_as users(:viewer)
+      get integrations_path
+      assert_empty css_select("[data-test='fathom-connection']"), "non-admin"
+      assert card("fathom").at_css("[data-test='entry-cta']"), "non-admin keeps the CTA"
+
+      log_in_as users(:alex)
+      get integrations_path
+      assert_equal "none", fathom_slot["data-state"]
+      link = fathom_slot.at_css("a[data-test='fathom-connect']")
+      assert_equal "Connect Fathom", link.text.strip
+      assert_equal admin_fathom_connect_path(return_to: "/integrations"), link["href"]
+      assert_nil card("fathom").at_css("[data-test='entry-cta']"), "the admin's real Connect replaces the contact-form one"
+      assert_equal "Free", card("fathom").at_css("[data-test='entry-price'] p").text.strip, "the footer keeps its price"
+      assert_equal 1, css_select("[data-test='fathom-connection']").size, "only the Fathom card"
+    end
+  end
+
+  test "[component] an admin sees the Fathom account and a confirmed Disconnect once connected" do
+    log_in_as users(:alex)
+    store_fathom(account: "alex@mcritchie.studio", refresh_token: "fathom-synthetic-refresh")
+    with_fathom_env do
+      get integrations_path
+
+      assert_equal "connected", fathom_slot["data-state"]
+      assert_equal "Connected as alex@mcritchie.studio", fathom_slot.at_css("[data-test='fathom-account']").text.squish
+      form = fathom_slot.at_css("form[data-test='fathom-disconnect']")
+      assert_equal admin_fathom_disconnect_path(return_to: "/integrations"), form["action"]
+      assert_equal "delete", form.at_css("input[name='_method']")["value"]
+      assert form["data-turbo-confirm"].present?
+      assert_nil fathom_slot.at_css("[data-test='fathom-connect']")
+      assert_no_match(/fathom-synthetic-refresh/, response.body)
+    end
+  end
+
+  test "[component] an admin sees no Connect Fathom when the OAuth app is not set" do
+    log_in_as users(:alex)
+    with_fathom_env(creds: false) do
+      get integrations_path
+
+      assert_equal "none", fathom_slot["data-state"]
+      assert_nil fathom_slot.at_css("[data-test='fathom-connect']")
     end
   end
 end

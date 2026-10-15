@@ -1,14 +1,19 @@
 require "application_system_test_case"
 require "support/google_connect_fakes"
+require "support/fathom_connect_fakes"
 
 # [e2e] /integrations at phone, tablet and desktop width, light and dark: the page
 # renders both groups and never scrolls sideways. Every system test signs in as
 # the admin, so the Google section carries Connect Google (the OAuth client set
-# here) and its three cards carry no contact-form Connect.
+# here) and its three cards carry no contact-form Connect, nor does the Fathom
+# card (its OAuth app set here too), which carries Connect Fathom instead.
 class IntegrationsPageTest < ApplicationSystemTestCase
   include GoogleConnectFakes
+  include FathomConnectFakes
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
+  # The admin's cards whose real Connect replaces the contact-form one, in page order.
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -16,7 +21,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
 
   test "[e2e] /integrations loads light and dark at 375, 768 and 1280 with no horizontal scroll" do
-    with_connect_env { assert_no_sideways_scroll }
+    with_connect_env { with_fathom_env { assert_no_sideways_scroll } }
   end
 
   def assert_no_sideways_scroll
@@ -27,17 +32,17 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_path
 
-        assert_selector "[data-test='integration-group']", count: 4
+        assert_selector "[data-test='integration-group']", count: 5
         assert_equal width, page.evaluate_script("window.innerWidth"), "viewport is #{width}px"
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert_operator overflow, :<=, 0, "#{theme} at #{width}px scrolls sideways by #{overflow}px"
         # Every card's button sits inside its card, wrapped below the price if it
-        # must. The admin's three Google cards have none: their Connect is above.
+        # must. The admin's Google and Fathom cards have none: their Connect is above.
         without = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => !card.querySelector("[data-test='entry-cta']")).map(card => card.dataset.entry)
         JS
-        assert_equal GOOGLE_CARDS, without, "#{theme} at #{width}px: only the admin's Google cards drop their CTA"
+        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google and Fathom cards drop their CTA"
         clipped = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => {
             const cta = card.querySelector("[data-test='entry-cta']");

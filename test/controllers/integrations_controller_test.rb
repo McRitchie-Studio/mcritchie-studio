@@ -10,7 +10,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1", text: "Build smarter. Your backend runs itself."
-    assert_equal %w[google_sign_in integrations add_ons custom], css_select("[data-test='integration-group']").map { |g| g["data-group"] }
+    assert_equal %w[google_sign_in meeting_notes integrations add_ons custom], css_select("[data-test='integration-group']").map { |g| g["data-group"] }
     assert_equal Integration.entries.map(&:key), css_select("[data-test='integration-entry']").map { |e| e["data-entry"] }
   end
 
