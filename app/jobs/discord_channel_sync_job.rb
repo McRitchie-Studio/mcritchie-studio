@@ -22,7 +22,7 @@ class DiscordChannelSyncJob < ApplicationJob
 
     summary = DiscordDirectory::Sync.new.call
     Rails.logger.info("[discord-channels] sync: #{summary}") if summary.archived.positive? || !summary.ok? || summary.notes.any?
-    ErrorLog.capture!(SyncFailed.new("Discord channel sync: #{summary.errors.join('; ')[0, 900]}")) unless summary.ok?
+    receipt_failure(summary) unless summary.ok?
     summary
   end
 
@@ -36,6 +36,15 @@ class DiscordChannelSyncJob < ApplicationJob
   private
 
   def idle_reason = self.class.idle_reason
+
+  # One ErrorLog row per outage (a dead token's 401 repeats every run); a good sync's synced_at re-arms it.
+  def receipt_failure(summary)
+    message = "Discord channel sync: #{summary.errors.join('; ')[0, 900]}"
+    since = DiscordChannel.maximum(:synced_at)
+    seen = ErrorLog.where(message: message)
+    return if (since ? seen.where("created_at > ?", since) : seen).exists?
+    ErrorLog.capture!(SyncFailed.new(message))
+  end
 
   def announce_idle(reason)
     return if self.class.announced_idle
