@@ -1006,16 +1006,14 @@ found the old favicon small, with 32 px empty at the top of 256 and 10 at the
 sides from the script's 4% padding and Studio's 2-unit trace margin). The favicon draws the SMALL-SIZE MARK instead
 (task footer-stacked-logo): `public/favicon-mark.svg`, written by `bin/rails logos:favicon_mark BRAND=studio`
 from `Logos::SmallMark`, which derives it from the traced icon by dropping every island smaller than 2% of the
-icon's box (the sparkles, side dashes and loose coins) and trimming it to its ink, then framing it as a CROP,
-not a fit: a square 0.82 of the chest body's width, centred across the body and standing on its bottom, so the
-chest overfills the tile and its sides, the lid's top edge and the sword's tip are clipped, as on the old chest-only
-favicon (Alex 08:22: "The goal is to make the favicon large so it's easy to spot"). Its colour is `icon-dark.svg`'s.
+icon's box (the sparkles, side dashes and loose coins) and trimming it to its ink. It is FIT in the square, never
+cropped: the long side touches two edges, centred, transparent elsewhere (Alex 08:22: "The goal is to make the
+favicon large so it's easy to spot"; 09:05 rejected a crop that clipped the chest as "cut off"). Its colour is `icon-dark.svg`'s.
 A mark is checked at 64, 32 and 16 px, the submark convention: at tab size those details draw as specks, and since
 they set the full icon's box, the chest filled only about 70% of the tab. Alex 2026-10-15 08:10, of the old
 chest-only favicon: "That is the correct size". Then `node script/brand_png.cjs public/favicon-mark.svg
 public/favicon.png 256`. `test/lib/logos_small_mark_test.rb` fails when the committed mark drifts from the data,
-and `test/lib/brand_favicon_test.rb` when a loose speck sets the favicon's box or its 32 px coverage falls below
-the old favicon's (0.70). Everything else (the kit icon, the
+and `test/lib/brand_favicon_test.rb` when a loose speck sets the favicon's box or the mark is clipped. Everything else (the kit icon, the
 navbar, the footer, the sign-in card, `icon.png`) keeps the full icon. The PWA
 `icon.png` alone keeps a 0.16 safe zone (`… public/icon.png 512 '#1A1535' 0.16`,
 artwork about 346 of 512): the manifest serves it as maskable, and Android

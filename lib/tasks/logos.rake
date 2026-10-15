@@ -60,7 +60,7 @@ namespace :logos do
     fill = File.exist?(kit_icon) && File.read(kit_icon)[/ fill="(#\h{3,8})"/, 1]
     abort "logos:favicon_mark: no fill colour in #{kit_icon}; run logos:install BRAND=#{brand} first" unless fill
     out = Pathname(ENV["OUT"].presence || Rails.public_path.join("favicon-mark.svg"))
-    File.write(out, Logos::SmallMark.svg(Logos::SmallMark.crop(Logos::SmallMark.derive(icon)), fill:))
+    File.write(out, Logos::SmallMark.svg(Logos::SmallMark.derive(icon), fill:))
     puts "wrote #{out}"
     puts "then: node script/brand_png.cjs #{out.relative_path_from(Rails.root)} public/favicon.png 256"
   end

@@ -7,7 +7,7 @@
 # "purpose": "maskable", and Android crops a maskable icon to a circle, so its artwork keeps a 0.16 safe zone on every
 # edge (review of PR 2101). The favicon draws the SMALL-SIZE MARK (Logos::SmallMark, public/favicon-mark.svg; task
 # footer-stacked-logo): the icon without the sparkles, side dashes and loose coins that a 16-32 px tab shows only as
-# specks, and that set the full icon's box, so the chest filled about 70% of the tab. Alex 2026-10-15 08:10, of the
+# specks, and that set the full icon's box, so the chest filled about 70% of the tab. It is fit, never cropped. Alex 2026-10-15 08:10, of the
 # old chest-only favicon: "That is the correct size". Read with Zlib alone: the PNG is 8-bit RGBA, not interlaced, as Chromium writes it.
 
 require "minitest/autorun"
@@ -83,25 +83,22 @@ class BrandFaviconTest < Minitest::Test
     assert_in_delta top, bottom, 2, "centred down"
   end
 
-  # THE CHEST IS AT LEAST AS LARGE AS ON THE OLD FAVICON (Alex 2026-10-15 08:22: "The goal is to make the favicon large
-  # so it's easy to spot"). Its opaque coverage at 32 px (alpha averaged over each of 32x32 blocks, then the share of
-  # blocks over half opaque) is at least OLD_COVERAGE_32: the same measure of main@577a356b2:public/favicon.png, the
-  # 324x256 chest-only crop he called "the correct size", squeezed to the square a tab draws it in.
-  OLD_COVERAGE_32 = 0.703125 # 720 of 1024 cells
+  # NOTHING IS CUT (Alex 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"). The favicon is the small-
+  # size mark FIT in its square: its ink box has the mark's own proportions (public/favicon-mark.svg's viewBox, whose
+  # box is its ink), the long side spanning the tile and the short side centred, so no edge the ink touches is one it
+  # was clipped at.
+  MARK = File.expand_path("../../public/favicon-mark.svg", __dir__)
 
-  def test_the_favicon_covers_at_least_as_much_of_a_32_px_tab_as_the_old_one
+  def test_the_favicon_is_the_whole_mark_fit_never_cropped
     width, height, rows = rgba(FAVICON)
-    assert_operator coverage(width, height, rows, 32), :>=, OLD_COVERAGE_32
-  end
+    mark_w, mark_h = File.read(MARK)[/viewBox="0 0 ([\d.]+ [\d.]+)"/, 1].split.map(&:to_f)
+    scale = width / [mark_w, mark_h].max
+    inked = rows.each_with_index.flat_map { |row, y| (0...width).filter_map { |x| [x, y] if row.getbyte(x * 4 + 3) > 16 } }
+    ink_w = inked.map(&:first).max - inked.map(&:first).min + 1
+    ink_h = inked.map(&:last).max - inked.map(&:last).min + 1
 
-  def coverage(width, height, rows, size)
-    cells = (0...size).to_a.product((0...size).to_a).count do |cx, cy|
-      xs = (cx * width / size)...((cx + 1) * width / size)
-      ys = (cy * height / size)...((cy + 1) * height / size)
-      alpha = ys.sum { |y| xs.sum { |x| rows[y].getbyte(x * 4 + 3) } }
-      alpha > 127.5 * xs.size * ys.size
-    end
-    cells.fdiv(size * size)
+    assert_in_delta mark_w * scale, ink_w, 2, "the ink is as wide as the whole mark at this scale: nothing clipped across"
+    assert_in_delta mark_h * scale, ink_h, 2, "the ink is as tall as the whole mark at this scale: nothing clipped down"
   end
 
   ISLAND_SHARE = 0.02

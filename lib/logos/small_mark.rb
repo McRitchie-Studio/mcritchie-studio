@@ -16,10 +16,11 @@ module Logos
   # and the result is trimmed to its ink, so its box is its ink like every other icon.
   #
   #   Logos::SmallMark.derive(icon)            # => the icon without its specks, trimmed
-  #   Logos::SmallMark.crop(mark)              # => that mark framed as the favicon: a square on its body
   #   Logos::SmallMark.svg(icon, fill: "#8E82FE")  # => an icon as an SVG document
   #
-  # Only the favicon draws from it (bin/rails logos:favicon_mark, then script/brand_png.cjs). The kit icon, the
+  # Only the favicon draws from it (bin/rails logos:favicon_mark, then script/brand_png.cjs), FIT in its square, never
+  # cropped (Alex 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"): the long side touches two
+  # edges, centred, transparent elsewhere, which is as large as the whole chest can be in a square. The kit icon, the
   # navbar, the footer, the sign-in card and the PWA app icon keep the full icon.
   module SmallMark
     class Error < ArgumentError; end
@@ -43,29 +44,6 @@ module Logos
       IconInk.trim(icon.merge("layers" => layers))
     end
 
-    # THE FAVICON IS A CROP, NOT A FIT (Alex 2026-10-15 08:22: "The goal is to make the favicon large so it's easy to
-    # spot"). The mark's BODY is every island at least BODY_SHARE of its box (for the studio chest, its front and side:
-    # not the lid or the sword). The favicon is a square CROP_SIDE of the body's width, centred across the body and
-    # standing on its bottom edge, so the chest overfills the tile as the old chest-only favicon did: the body's two
-    # sides, the lid's top edge and the sword's tip are clipped, the keyhole plate and the lid's curve stay. At 0.82
-    # its opaque coverage (0.72) beats the old favicon's (0.67); a square as wide as the body covers only 0.58, since
-    # a stacked chest is wider than it is tall. Only the box moves: the paths are untouched.
-    BODY_SHARE = 0.2
-    CROP_SIDE = 0.82
-
-    def crop(mark, body_share: BODY_SHARE, side_share: CROP_SIDE)
-      box_area = area(IconInk.box(mark))
-      body = mark.fetch("layers").flat_map { |layer| islands(subpath_boxes(mark, layer)).map(&:last) }
-                 .select { |box| area(box) >= body_share * box_area }
-      raise Error, "no island of the mark is at least #{body_share} of its area" if body.empty?
-
-      left, _top, right, bottom = body.transpose.each_with_index.map { |values, i| i < 2 ? values.min : values.max }
-      side = (right - left) * side_share
-      x0 = (left + right - side) / 2
-      y0 = bottom - side
-      mark.merge("w" => number(side), "h" => number(side), "transform" => ["translate(#{number(-x0)},#{number(-y0)})", mark["transform"]].compact.join(" "))
-    end
-
     # [[subpath, its ink box]] for one layer, in the icon's box.
     def subpath_boxes(icon, layer) = layer.fetch("d").scan(SUBPATH).map { |subpath| [subpath, IconInk.box(bare(icon, subpath))] }
 
@@ -74,11 +52,6 @@ module Logos
       boxes.each_with_index.reject do |(_, box), i|
         boxes.each_with_index.any? { |(_, other), j| j != i && holds?(other, box) && (other != box || j < i) }
       end.map(&:first)
-    end
-
-    def number(value)
-      rounded = value.round(2)
-      rounded == rounded.round ? rounded.round : rounded
     end
 
     # The mark as a standalone SVG: its box, its transform, every layer filled with `fill`.
