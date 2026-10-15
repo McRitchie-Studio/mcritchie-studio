@@ -98,6 +98,8 @@ class DailyAppReportTest < ActiveSupport::TestCase
       assert_equal [ "Unreachable (timeout)", "Unreachable (HTTP 401 token mismatch)" ], call[:embeds].first(2).map { |e| e[:description] }
       assert_equal [ "daily-app-report turf-monster", "daily-app-report rantly" ], ErrorLog.order(:id).last(2).map(&:target_name)
       assert_includes ErrorLog.order(:id).last.message, "rantly health report unreachable: HTTP 401 token mismatch"
+      turf_app = App.find_by!(slug: "turf-monster")
+      assert_equal turf_app, ErrorLog.order(:id).last(2).first.target
     end
   end
 

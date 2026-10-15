@@ -143,7 +143,7 @@ module DailyAppReport
     wrapped = Fetcher::Error.new("#{app.slug} health report unreachable: #{reason}")
     wrapped.set_backtrace(error.backtrace || caller)
     log = ErrorLog.capture!(wrapped)
-    log.update(target_name: "daily-app-report #{app.slug}")
+    log.update(target: App.find_by(slug: app.slug), target_name: "daily-app-report #{app.slug}")
   rescue StandardError => e
     Rails.logger.warn("[daily-app-report] could not write ErrorLog: #{e.class}")
   end
