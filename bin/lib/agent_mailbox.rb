@@ -423,13 +423,6 @@ module AgentMailbox
     # the model cannot write (ClaudeRun).
     DEFAULT_CLAUDE_CMD = [ "claude", "-p", "--safe-mode", "--tools", "", "--output-format", "json" ].freeze
     CLAUDE_TIMEOUT = 300
-    # Where each soul's folder lives: ~/.agents/mailbox, or AGENT_MAILBOX_HOME
-    # (the tests point it at a temporary folder).
-    def self.mailbox_home(env = ENV)
-      home = env["AGENT_MAILBOX_HOME"].to_s
-      home.empty? ? File.join(Dir.home, ".agents", "mailbox") : home
-    end
-
     # reply: the text to post, or nil when the run failed. usage_limit: a
     # UsageLimit::Hit when Claude answered that the account is out of usage.
     # signed_out: Claude answered that it is not logged in. session_id, cwd,
@@ -444,7 +437,7 @@ module AgentMailbox
     end
 
     def initialize(soul:, claude_cmd: DEFAULT_CLAUDE_CMD, runner: nil, repo_root: REPO_ROOT, clock: -> { Time.now },
-                   mailbox_home: Responder.mailbox_home, claude_home: File.join(Dir.home, ".claude"))
+                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
       @soul = soul.to_s
       @claude_cmd = claude_cmd
       @runner = runner || AgentMailbox.method(:run_command)
@@ -474,12 +467,16 @@ module AgentMailbox
                          action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root).prompt
     end
 
-    # mailbox_home/<soul>, made on demand. A soul slug is the board's; anything
-    # outside [a-z0-9_-] is refused rather than joined into a path.
+    # The soul's folder, <mailbox root>/<soul>, made on demand: the ONE seam that
+    # hands the folder out, laundered through TaskUsageSandbox.enforce! (the root
+    # is ~/.agents/mailbox, not the <projects>/.agents state store, but the guard
+    # keeps a sandboxed run out of that store whatever HOME says). A soul slug is
+    # the board's; anything outside [a-z0-9_-] is refused, not joined into a path.
     def soul_folder
       raise ArgumentError, "unsafe soul slug #{@soul.inspect}" unless @soul.match?(/\A[a-z0-9_-]+\z/)
 
-      File.join(@mailbox_home, @soul).tap { |dir| FileUtils.mkdir_p(dir) }
+      TaskUsageSandbox.enforce!(File.join(mailbox_root, @soul), store: "agent-mailbox")
+                      .tap { |dir| FileUtils.mkdir_p(dir) }
     end
 
     def run_action
@@ -489,6 +486,16 @@ module AgentMailbox
       output, status = @runner.call(spec[:argv], stdin: nil, timeout: ACTION_TIMEOUT, chdir: @repo_root)
       exit_text = status.nil? ? "timed out" : "exit #{status}"
       { summary: "ran `#{spec[:argv].join(' ')}` (#{exit_text})", output: output.to_s[0, ACTION_OUTPUT_LIMIT] }
+    end
+
+    private
+
+    # Where the soul folders live: the mailbox_home given, else AGENT_MAILBOX_HOME
+    # (the tests point it at a temporary folder), else ~/.agents/mailbox. Private:
+    # only soul_folder hands a path out, and it launders it.
+    def mailbox_root
+      given = (@mailbox_home || ENV["AGENT_MAILBOX_HOME"]).to_s
+      given.empty? ? File.join(Dir.home, ".agents", "mailbox") : given
     end
   end
 
@@ -508,7 +515,7 @@ module AgentMailbox
 
     def initialize(soul:, client:, channel: "discord", once: false, worker: nil, dry_run: false,
                    claude_cmd: DEFAULT_CLAUDE_CMD, runner: nil, out: $stdout, repo_root: REPO_ROOT,
-                   mailbox_home: Responder.mailbox_home, claude_home: File.join(Dir.home, ".claude"))
+                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
       @soul = soul
       @client = client
       @channel = channel
