@@ -26,6 +26,8 @@ class CreateDreamLoopTables < ActiveRecord::Migration[8.1]
     add_index :dream_grades, [ :dream_slug, :created_at ]
     add_index :dream_grades, :created_at
     add_check_constraint :dream_grades, "score BETWEEN 0 AND 2", name: "dream_grades_score_range"
+    add_foreign_key :dream_grades, :tasks, column: :task_slug, primary_key: :slug,
+                                           on_update: :cascade, on_delete: :nullify
 
     create_table :dream_swaps do |t|
       t.string :session_id, null: false
@@ -45,6 +47,8 @@ class CreateDreamLoopTables < ActiveRecord::Migration[8.1]
     add_index :dream_swaps, :approved_at
     add_index :dream_swaps, :created_at
     add_foreign_key :dream_swaps, :users, column: :approved_by_slug, primary_key: :slug,
+                                          on_update: :cascade, on_delete: :nullify
+    add_foreign_key :dream_swaps, :tasks, column: :task_slug, primary_key: :slug,
                                           on_update: :cascade, on_delete: :nullify
 
     create_table :dream_retirements do |t|

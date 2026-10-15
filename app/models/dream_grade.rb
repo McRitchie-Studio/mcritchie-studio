@@ -21,6 +21,9 @@ class DreamGrade < ApplicationRecord
   class NotGradable < StandardError; end
 
   belongs_to :agent_action, optional: true
+  belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true, inverse_of: :dream_grades
+  include ClearsUnknownSlug
+  clears_unknown_slug :task_slug, "Task"
 
   validates :dream_slug, :session_id, :decision, presence: true
   validates :score, inclusion: { in: SCORES }

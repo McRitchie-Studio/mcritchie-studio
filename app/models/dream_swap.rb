@@ -30,6 +30,9 @@ class DreamSwap < ApplicationRecord
   belongs_to :approved_by, class_name: "User", foreign_key: :approved_by_slug, primary_key: :slug,
                            optional: true, inverse_of: false
   has_many :dream_retirements, dependent: :nullify
+  belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true, inverse_of: :dream_swaps
+  include ClearsUnknownSlug
+  clears_unknown_slug :task_slug, "Task"
 
   validates :session_id, presence: true, uniqueness: true
   validates :reason, presence: true, length: { maximum: REASON_LIMIT }

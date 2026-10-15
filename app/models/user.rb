@@ -4,8 +4,10 @@ class User < ApplicationRecord
   # any letter a name does; a rename refuses only whitespace and URL delimiters.
   self.slug_format = %r{\A[^\s/?#]+\z}
 
-  # A dream approval names its approver by slug (DreamApproval#approved_by).
-  has_slug_children "dream_approvals" => :approved_by_slug
+  # A dream approval names its approver by slug (DreamApproval#approved_by), as do
+  # a dream retirement and a swap's approval (the dream loop).
+  has_slug_children "dream_approvals" => :approved_by_slug, "dream_retirements" => :retired_by_slug,
+                    "dream_swaps" => :approved_by_slug
 
   # Stable operator identities whose roles and email links should survive fresh
   # DBs, first-login races, QA resets, and new-app clones of this pattern.

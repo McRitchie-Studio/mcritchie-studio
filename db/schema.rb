@@ -2830,8 +2830,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_140000) do
   add_foreign_key "desk_records", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "dream_approvals", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_grades", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "dream_retirements", "dream_swaps", on_delete: :nullify
   add_foreign_key "dream_retirements", "users", column: "retired_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_swaps", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "dream_swaps", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
