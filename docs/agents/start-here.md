@@ -37,6 +37,7 @@ its invocation exactly.
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Agent mailbox (Discord messages to agents, bin/heartbeat, bin/agent-inbox) | `mcritchie-studio/docs/agents/system/agent-message-loop.md` |
 | Report destinations (deliver a report to a Discord channel Alex picks: `ReportDestinations.deliver`) | `mcritchie-studio/docs/agents/system/report-destinations.md` |
+| Daily app report (the 07:00 Denver CTO summary of every app's health, in Discord; `HEALTH_TOKEN_<SLUG>`) | `mcritchie-studio/docs/agents/system/daily-app-report.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Pokémon builder soul (the general builder every task is built by) | `mcritchie-studio/docs/agents/agents/pokemon/role.md` |
