@@ -1,0 +1,19 @@
+<%# The loop's KPI strip (DreamKpis): each tile's title says how it is measured. %>
+<div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-test="dream-kpis">
+  <% [
+       [ "fire-rate", "Fire rate", dream_kpi(kpis.fire_rate), "#{kpis.fires} fires over #{kpis.sessions} sessions, last 30 days",
+         "Dream fires per session that opened an activity in the last 30 days" ],
+       [ "mean-grade", "Mean grade", dream_kpi(kpis.mean_grade, " / 2"), "#{pluralize(kpis.grades, "grade")}, last 30 days",
+         "Mean of the grades sessions gave the dreams that fired in them (0 wrong, 1 helped, 2 decided)" ],
+       [ "swaps-per-week", "Swaps per week", dream_kpi(kpis.swaps_per_week), "#{kpis.no_swaps} no-swap answers, last 4 weeks",
+         "Swaps and adds Alex approved over the last 4 weeks, per week" ],
+       [ "approval-latency", "Approval latency", dream_kpi(kpis.latency_days, " d"), "median of #{pluralize(kpis.latency_count, "approval")}",
+         "Median days from a dream's proposal (its source date) to Alex's click" ]
+     ].each do |key, label, value, note, title| %>
+    <div class="rounded-lg border border-subtle bg-surface-alt/60 p-3" data-test="dream-kpi-<%= key %>" title="<%= title %>">
+      <p class="text-2xs font-bold uppercase tracking-wide text-muted"><%= label %></p>
+      <p class="mt-0.5 text-xl font-bold text-heading" data-test="dream-kpi-value"><%= value %></p>
+      <p class="truncate text-2xs text-secondary"><%= note %></p>
+    </div>
+  <% end %>
+</div>
