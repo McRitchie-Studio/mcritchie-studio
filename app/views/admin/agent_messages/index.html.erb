@@ -14,7 +14,8 @@
   Messages to the agents from Discord, routed by mention. The dispatcher
   (<code>bin/dispatcher</code> on Alex's Mac; <code>bin/heartbeat &lt;soul&gt;</code> by hand) claims one,
   answers it, renews its lease while it works, and the reply posts back once.
-  Unrouted messages named no agent and wait for nobody.
+  Only messages that address an agent are kept; an unrouted one replied to a kept
+  message without naming an agent, and waits for nobody.
 </p>
 
 <%= render "admin/agent_messages/dispatchers", dispatchers: @dispatchers %>

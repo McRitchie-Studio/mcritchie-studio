@@ -53,8 +53,10 @@ threads threads_count, threads_count
 #   jobs   Solid Queue dyno (bin/jobs, config/queue.yml):
 #            1 worker process x (3 job threads + 1 poller)        =  4
 #            1 dispatcher + 1 scheduler (recurring.yml) + supervisor = 3
+#            Discord Gateway listener (a thread in the scheduler;
+#            holds its leader lock's connection for life)          =  1
 #   agents ~5 CLI/console sessions (heroku run, bin/release) x 1  =  5
-#   total  18 of 20 — 2 spare for heartbeat and console blips
+#   total  19 of 20 — 1 spare for heartbeat and console blips
 #
 # test/lib/puma_config_contract_test.rb re-derives this budget from the parsed
 # configs and fails if it reaches 20. Re-prove the math there before raising

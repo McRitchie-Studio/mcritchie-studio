@@ -4,13 +4,24 @@
 # (quoted): an unquoted 19-digit id is a YAML integer and loses nothing today, but
 # every reader compares strings, and one quoted and one bare id never match.
 #
-# Only a guild listed here, and only a channel listed under it, is polled. A
-# message there is routed to a soul by, in order:
+# THE GUILD IS THE BOUNDARY. Every text channel, thread and forum post in a guild
+# listed here is read, with no per-channel entry: the Gateway listener as messages
+# are posted, the backstop poll every 10 minutes. A guild the bot sits in that is
+# NOT listed is ignored, and the log names it once.
+#
+# ONLY ADDRESSED MESSAGES ARE STORED. A message is kept, and routed to a soul, by:
 #   1. a mention of a user listed under that soul's `users` (a per-soul bot user),
 #   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Xan roles),
-#   3. the channel's `default_soul`,
-# and otherwise stored `unrouted` (kept, never handed to a worker). When a message
-# addresses two souls, the one mentioned first in the text wins.
+#   3. a reply to a message the mailbox holds, or to an agent's reply (same thread,
+#      same soul unless the reply names another),
+#   4. the channel override's `default_soul`.
+# Anything else is dropped without being stored. When a message addresses two
+# souls, the one mentioned first in the text wins.
+#
+# `channels` under a guild are OPTIONAL OVERRIDES, never an allow-list:
+#   default_soul: avi   route this channel's unaddressed messages to avi
+#   ignore: true        mute the channel: nothing in it is stored, mentions included
+# A thread or forum post takes its parent channel's override unless it has its own.
 #
 # `ops_channel_id` is where the dispatcher's floor alert posts
 # (docs/agents/agents/steffon/sops/agent-dispatcher.md).
@@ -19,20 +30,16 @@
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
 discord:
-  # The shared bot is Xan's own app (1Password `agents.discord.xan`) for the
-  # first live test, 2026-10-14: it reads the channel and posts every reply.
+  # The shared bot is Xan's own app (1Password `agents.discord.xan`): it reads the
+  # guild and posts every reply.
   bot_user_id: "1481150857809760399"   # Xan (bot user)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
   # silent bin/dispatcher, or a routed message waiting too long. One alert per
   # incident and one recovery line. lobster-tank until an ops channel exists.
   ops_channel_id: "1479973077021495478"
   guilds:
-    "1332466565203103744":             # McRitchie Studio
+    "1332466565203103744":             # McRitchie Studio: every channel and thread
       name: McRitchie Studio
-      channels:
-        "1479973077021495478":         # lobster-tank, a quiet channel kept for the test
-          name: lobster-tank
-          default_soul: ""             # unmentioned messages are stored unrouted
       souls:
         xan:
           roles: []
@@ -41,10 +48,13 @@ discord:
   # guilds:
   #   "111111111111111111":           # the McRitchie server
   #     name: McRitchie
-  #     channels:
+  #     channels:                     # optional overrides only
   #       "222222222222222222":       # #agent-desk
   #         name: agent-desk
-  #         default_soul: ""          # "" = unmentioned messages are unrouted
+  #         default_soul: avi         # unaddressed messages here go to avi
+  #       "555555555555555555":       # #random
+  #         name: random
+  #         ignore: true              # muted, mentions included
   #     souls:
   #       avi:
   #         roles: ["333333333333333333"]   # @Avi
