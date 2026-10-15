@@ -68,6 +68,13 @@ class AgentMessages::GatewayLeaderLockTest < ActiveSupport::TestCase
 
     holder_connection.disconnect! # a dyno that died: its backend goes, and the lock with it
 
-    assert second.acquire
+    # Postgres frees a closed session's locks once its backend exits, which is
+    # asynchronous to the client's close; the listener retries, and so does this.
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+    acquired = false
+    until (acquired = second.acquire) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.05
+    end
+    assert acquired, "the dead holder's lock was never freed"
   end
 end
