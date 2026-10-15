@@ -991,8 +991,11 @@ The hub itself runs on the `studio` kit (task studio-adopts-its-kit; last
 reinstalled from production's kit saved 2026-10-15 06:42Z, task
 studio-kit-reinstall): the navbar draws the kit's Navbar Logo lockup
 (`Studio.navbar_wordmark`, `navbar-light.svg` / `navbar-dark.svg`), the footer
-and sign-in card draw `icon-light.svg` (application.css swaps in
-`icon-dark.svg` on a dark page) beside the name in HTML text, the SSO logo is
+draws the kit's Stacked Logo (the site footer's `lockup` fact,
+`stacked-light.svg` / `stacked-dark.svg`, task footer-stacked-logo; an engine
+without the fact draws the icon and the name instead), the sign-in card draws
+`icon-light.svg` (application.css swaps in `icon-dark.svg` on a dark page)
+beside the name in HTML text, the SSO logo is
 `icon-dark.svg` (the one tone that reads on both themes in the 20px slot
 another app's sign-in card gives it), and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
 with `node script/brand_png.cjs <svg> <out.png> <size> [background] [safe-zone]`
