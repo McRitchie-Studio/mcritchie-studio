@@ -1,13 +1,14 @@
 # A Google account the hub reads with a person's own sign-in: the `sign_in`
 # connection method of config/integrations.yml. One sign-in, many abilities:
 # each of ABILITIES is one read scope (Calendar, Gmail, Drive), asked for on
-# its own from its /integrations card or the /admin/google page, and Google
-# adds it to the account's grant (incremental consent). Nothing is copied by
-# hand and no token is ever shown.
+# its own from its /integrations card or the /admin/google page, or all three
+# at once from Connect Google (ALL), and Google adds it to the account's grant
+# (incremental consent). Nothing is copied by hand and no token is ever shown.
 #
 # One row per Google account (email, unique). Signing the same account in
-# again replaces its token and adds the newly granted scopes to the ones it
-# already had; `scope` is Google's own space-separated grant. The refresh
+# again replaces its token and adds the scopes THAT sign-in asked for and
+# Google granted to the ones it already had (#store!); `scope` is the
+# space-separated grant as this hub counts it. The refresh
 # token is encrypted at rest (Active Record Encryption, as TiktokConnection's
 # is) and masked in every inspect.
 #
@@ -30,6 +31,8 @@ class GoogleConnection < ApplicationRecord
     drive: "https://www.googleapis.com/auth/drive.readonly"
   }.freeze
   ABILITY_NAMES = { calendar: "Google Calendar", gmail: "Gmail", drive: "Google Drive" }.freeze
+  # The `ability` param of Connect Google: every ability in one consent.
+  ALL = "all".freeze
 
   encrypts :refresh_token
   self.filter_attributes += %i[refresh_token]
@@ -43,6 +46,14 @@ class GoogleConnection < ApplicationRecord
     # The ability named by a param or a symbol, or nil when it is not one.
     def ability(value) = ABILITIES.key?(value.to_s.to_sym) ? value.to_s.to_sym : nil
 
+    # The abilities a Connect asks for: every one for ALL, else the one it
+    # names; nil when the param is neither.
+    def abilities_for(value)
+      return ABILITIES.keys if value.to_s == ALL
+
+      ability(value)&.then { [ _1 ] }
+    end
+
     def scope_for(ability) = ABILITIES.fetch(ability.to_sym)
 
     # The most recently connected account.
@@ -54,10 +65,14 @@ class GoogleConnection < ApplicationRecord
     end
 
     # Stores the account a sign-in connected. `grant` is the token endpoint's
-    # JSON; `email` is the account it names. Its scopes are added to the ones
-    # the row already had. Raises RecordInvalid when the answer lacks the
-    # refresh token; the message names the field, never a value.
-    def store!(grant, email:, by:, now: Time.current)
+    # JSON; `email` is the account it names; `abilities` are the ones THIS
+    # sign-in asked for. The row keeps the scopes it already had and adds the
+    # granted scopes of the asked-for abilities, and no other ability's:
+    # include_granted_scopes makes Google echo every scope the account ever
+    # granted, so an ability disconnected here (#drop!) would otherwise come
+    # back when another one connects. Raises RecordInvalid when the answer
+    # lacks the refresh token; the message names the field, never a value.
+    def store!(grant, email:, by:, abilities:, now: Time.current)
       transaction(requires_new: true) do
         connection = find_or_initialize_by(email: email.to_s.downcase)
         # A row whose token can no longer be read is replaced, not updated.
@@ -65,11 +80,25 @@ class GoogleConnection < ApplicationRecord
           where(id: connection.id).delete_all
           connection = new(email: connection.email)
         end
-        granted = (connection.scopes | grant["scope"].to_s.split).join(" ").presence
+        granted = (connection.scopes | granted_scopes(grant, abilities)).join(" ").presence
         connection.assign_attributes(refresh_token: grant["refresh_token"].to_s, scope: granted, connected_by: by, connected_at: now)
         connection.save!
         connection
       end
+    end
+
+    # The abilities among `abilities` whose scope the grant carries.
+    def granted_abilities(grant, abilities)
+      scopes = grant["scope"].to_s.split
+      abilities.map(&:to_sym).select { scopes.include?(scope_for(_1)) }
+    end
+
+    private
+
+    # The grant's scopes, less every ability scope this sign-in did not ask for.
+    def granted_scopes(grant, abilities)
+      unasked = ABILITIES.values - abilities.map { scope_for(_1) }
+      grant["scope"].to_s.split - unasked
     end
   end
 

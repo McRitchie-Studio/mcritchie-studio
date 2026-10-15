@@ -114,11 +114,62 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     with_connect_env(creds: false) do
       get integrations_path
+      assert_empty css_select("[data-test='google-connect-all']"), "no Connect Google either"
 
       CARDS.each_key do |key|
         assert_equal "none", slot(key)["data-state"]
         assert_nil slot(key).at_css("[data-test='google-connect']")
       end
+    end
+  end
+
+  def connect_all = css_select("[data-test='google-connect-all']").first
+
+  test "[component] Connect Google sits above the three Google cards for an admin, outside their grid" do
+    log_in_as users(:alex)
+    with_connect_env do
+      get integrations_path
+
+      section = css_select("[data-test='integration-group'][data-group='google_sign_in']").first
+      assert_equal 1, css_select("[data-test='google-connect-all']").size, "one Connect Google on the page"
+      assert section.at_css("[data-test='google-connect-all']"), "in the Google section"
+      assert_nil connect_all.at_css("[data-test='integration-entry']")
+      assert_nil connect_all.ancestors(".grid").first, "not a cell of the card grid"
+      assert_equal "none", connect_all["data-state"]
+      link = connect_all.at_css("a[data-test='google-connect-all-button']")
+      assert_equal "Connect Google", link.text.strip
+      assert_equal admin_google_connect_path(ability: "all", return_to: "/integrations"), link["href"]
+    end
+  end
+
+  test "[component] Connect Google becomes Connect the rest, then the account once all three are connected" do
+    log_in_as users(:alex)
+    with_connect_env do
+      store_google(scope: "openid #{GMAIL}")
+      get integrations_path
+      assert_equal "some", connect_all["data-state"]
+      assert_equal "Connect the rest", connect_all.at_css("[data-test='google-connect-all-button']").text.strip
+
+      store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      get integrations_path
+      assert_equal "all", connect_all["data-state"]
+      assert_equal "Google connected as alex@mcritchie.studio", connect_all.at_css("[data-test='google-connect-all-status']").text.squish
+      assert_nil connect_all.at_css("[data-test='google-connect-all-button']")
+    end
+  end
+
+  test "[component] an admin sees no contact-form Connect on the three Google cards, and keeps it elsewhere" do
+    log_in_as users(:alex)
+    store_google(scope: "openid #{CALENDAR}")
+    with_connect_env do
+      get integrations_path
+
+      CARDS.each_key do |key|
+        assert_nil card(key).at_css("[data-test='entry-cta']"), key
+        assert_equal "Free", card(key).at_css("[data-test='entry-price'] p").text.strip, "#{key}: the footer keeps its price"
+      end
+      assert card("github_org").at_css("[data-test='entry-cta']"), "a non-Google card keeps its CTA"
+      assert card("google_workspace_connect").at_css("[data-test='entry-cta']"), "the Workspace admin-grant card keeps its CTA"
     end
   end
 
@@ -128,11 +179,15 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       get integrations_path
       assert_equal 3, CARDS.keys.count { card(_1) }, "the cards themselves show"
       assert_empty css_select("[data-test='google-connection']"), "visitor"
+      assert_empty css_select("[data-test='google-connect-all']"), "visitor"
+      CARDS.each_key { |key| assert_equal "Connect", card(key).at_css("[data-test='entry-cta']").text.strip, "visitor keeps #{key}'s CTA" }
       assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
 
       log_in_as users(:viewer)
       get integrations_path
       assert_empty css_select("[data-test='google-connection']"), "non-admin"
+      assert_empty css_select("[data-test='google-connect-all']"), "non-admin"
+      CARDS.each_key { |key| assert card(key).at_css("[data-test='entry-cta']"), "non-admin keeps #{key}'s CTA" }
       assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
     end
   end

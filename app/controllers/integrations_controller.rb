@@ -3,10 +3,15 @@
 class IntegrationsController < ApplicationController
   # The Google Calendar, Gmail and Drive cards carry the hub's own Google
   # connection for an admin (Admin::GoogleController's require_admin check),
-  # each on its "Sign in" row: Connect, or the account and Disconnect. Nothing
-  # is read, and nothing renders, for anyone else.
+  # each on its "Sign in" row: Connect, or the account and Disconnect, under one
+  # Connect Google for all three (GOOGLE_GROUP). Nothing is read, and nothing
+  # renders, for anyone else.
   GOOGLE_CARDS = { "google_calendar" => :calendar, "gmail" => :gmail, "google_drive" => :drive }.freeze
   GOOGLE_METHOD = "sign_in".freeze
+  # The section whose top carries Connect Google (all three at once) for an
+  # admin; an admin's Google cards drop the contact-form Connect, since the
+  # real Connect and Disconnect sit on them.
+  GOOGLE_GROUP = "google_sign_in".freeze
 
   def index
     @groups = Integration.groups

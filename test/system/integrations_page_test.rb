@@ -1,8 +1,14 @@
 require "application_system_test_case"
+require "support/google_connect_fakes"
 
 # [e2e] /integrations at phone, tablet and desktop width, light and dark: the page
-# renders both groups and never scrolls sideways.
+# renders both groups and never scrolls sideways. Every system test signs in as
+# the admin, so the Google section carries Connect Google (the OAuth client set
+# here) and its three cards carry no contact-form Connect.
 class IntegrationsPageTest < ApplicationSystemTestCase
+  include GoogleConnectFakes
+
+  GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -10,6 +16,10 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
 
   test "[e2e] /integrations loads light and dark at 375, 768 and 1280 with no horizontal scroll" do
+    with_connect_env { assert_no_sideways_scroll }
+  end
+
+  def assert_no_sideways_scroll
     %w[light dark].each do |theme|
       WIDTHS.each do |width|
         page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 1000, deviceScaleFactor: 1, mobile: width < 768)
@@ -22,14 +32,27 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert_operator overflow, :<=, 0, "#{theme} at #{width}px scrolls sideways by #{overflow}px"
-        # Every card's button sits inside its card, wrapped below the price if it must.
+        # Every card's button sits inside its card, wrapped below the price if it
+        # must. The admin's three Google cards have none: their Connect is above.
+        without = page.evaluate_script(<<~JS)
+          [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => !card.querySelector("[data-test='entry-cta']")).map(card => card.dataset.entry)
+        JS
+        assert_equal GOOGLE_CARDS, without, "#{theme} at #{width}px: only the admin's Google cards drop their CTA"
         clipped = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => {
-            const c = card.getBoundingClientRect(), b = card.querySelector("[data-test='entry-cta']").getBoundingClientRect();
+            const cta = card.querySelector("[data-test='entry-cta']");
+            if (!cta) return false;
+            const c = card.getBoundingClientRect(), b = cta.getBoundingClientRect();
             return b.right > c.right + 0.5 || b.left < c.left - 0.5;
           }).map(card => card.dataset.entry)
         JS
         assert_empty clipped, "#{theme} at #{width}px: buttons overflow their cards"
+        row = page.evaluate_script(<<~JS)
+          (() => { const r = document.querySelector("[data-test='google-connect-all']").getBoundingClientRect(),
+                   b = document.querySelector("[data-test='google-connect-all-button']").getBoundingClientRect();
+                   return b.left >= r.left - 0.5 && b.right <= r.right + 0.5; })()
+        JS
+        assert row, "#{theme} at #{width}px: Connect Google spills out of its row"
       end
     end
   end
@@ -47,7 +70,8 @@ class IntegrationsPageTest < ApplicationSystemTestCase
 
   test "[e2e] at 1280 Integrations is one row of four and every section's cards in a row end level" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false)
-    visit integrations_path
+    with_connect_env { visit integrations_path }
+    assert_selector "[data-test='integration-group'][data-group='google_sign_in'] [data-test='google-connect-all']", count: 1 # the control: the row is there
 
     rows = page.evaluate_script(<<~JS)
       [...document.querySelectorAll("[data-test='integration-group']")].map(group => {
@@ -64,6 +88,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       assert_operator heights.first.size, :<=, 4, group
     end
     assert_equal [ [ 4 ] ], [ rows.to_h.fetch("integrations").map(&:size) ], "Integrations is exactly one row of four"
+    assert_equal [ 3 ], rows.to_h.fetch("google_sign_in").map(&:size), "Connect Google sits above the Google cards, not in their row"
   end
 
   test "[e2e] Discord's Connect opens its guide, whose request opens the contact form prefilled" do

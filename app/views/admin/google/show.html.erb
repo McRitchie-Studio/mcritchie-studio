@@ -1,13 +1,15 @@
-<%# The standing Google connection page (/admin/google): one section per ability (Google Calendar, Gmail, Google Drive), each with its status, the account that grants it, a live read proving it (the next week's events, the newest mail, the newest files) or Google's error said plainly, and one button: Connect, or Disconnect once connected. The OAuth client and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
+<%# The standing Google connection page (/admin/google): one section per ability (Google Calendar, Gmail, Google Drive), each with its status, the account that grants it, a live read proving it (the next week's events, the newest mail, the newest files) or Google's error said plainly, and one button: Connect, or Disconnect once connected. Above them, Connect Google asks for all three in one sign-in (integrations/_google_connect_all). The OAuth client and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="google-connection-page">
   <div>
     <h1 class="text-3xl font-bold text-heading">Google connection</h1>
     <p class="text-secondary mt-2">
-      The Google accounts this server reads, connected by signing in, one permission at a time. Each can read and nothing else. No token is shown here.
+      The Google accounts this server reads, connected by signing in: all three at once with Connect Google, or one permission at a time below. Each can read and nothing else. No token is shown here.
     </p>
   </div>
+
+  <%= render "integrations/google_connect_all", connections: @sections.to_h { [ _1.ability, _1.connection ] }, connectable: can_connect, return_to: nil %>
 
   <% if @unreadable.any? %>
     <p class="card p-4 text-sm text-body" data-test="google-unreadable">

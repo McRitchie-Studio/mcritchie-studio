@@ -1,0 +1,26 @@
+<%# Admin only: Connect Google, one sign-in asking for Calendar, Gmail and Drive together (GoogleConnection::ALL), at the top of the /integrations Google section and of /admin/google. Locals: connections (each ability to its connection or nil), connectable (the server can take one) and return_to (nil comes back to /admin/google). Every ability connected: the account, no button. Some: Connect the rest. None: Connect Google. Not connectable and not all connected: nothing renders. No token renders. %>
+<% connected = GoogleConnection::ABILITIES.keys.select { connections[_1] } %>
+<% missing = GoogleConnection::ABILITIES.keys - connected %>
+<% state = if missing.empty? then "all" elsif connected.any? then "some" else "none" end %>
+<% names = ->(abilities) { abilities.map { GoogleConnection::ABILITY_NAMES.fetch(_1) }.to_sentence } %>
+<% if state == "all" || connectable %>
+  <div class="flex flex-col gap-3 rounded-2xl border border-subtle bg-surface p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+       data-test="google-connect-all" data-state="<%= state %>">
+    <div class="min-w-0">
+      <% if state == "all" %>
+        <p class="text-body [overflow-wrap:anywhere]" data-test="google-connect-all-status">Google connected as <span class="font-medium text-heading"><%= connected.map { connections[_1].email }.uniq.to_sentence %></span></p>
+        <p class="text-xs text-muted">Calendar, Gmail and Drive, read only. Disconnect any one on its own.</p>
+      <% elsif state == "some" %>
+        <p class="text-body" data-test="google-connect-all-status"><%= names.(connected) %> connected. Add <%= names.(missing) %> in one sign-in.</p>
+        <p class="text-xs text-muted">Google lists each permission with a checkbox; leave ticked what to connect.</p>
+      <% else %>
+        <p class="text-body" data-test="google-connect-all-status">Connect Calendar, Gmail and Drive in one Google sign-in.</p>
+        <p class="text-xs text-muted">Read only. Google lists each permission with a checkbox; untick any you would rather not connect.</p>
+      <% end %>
+    </div>
+    <% unless state == "all" %>
+      <%= link_to (state == "some" ? "Connect the rest" : "Connect Google"), admin_google_connect_path(ability: GoogleConnection::ALL, return_to:),
+                  class: "btn btn-primary btn-sm w-full shrink-0 justify-center text-center sm:w-auto", data: { test: "google-connect-all-button", turbo: false } %>
+    <% end %>
+  </div>
+<% end %>
