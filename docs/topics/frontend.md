@@ -169,6 +169,6 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 - **Alpine.js component** — `alexChat()` in `alex_chat.js` handles message state, fetch to `/chat`, loading indicators, auto-scroll, basic markdown rendering.
 
 ### Landing Page
-- **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), dark overlay for text contrast.
+- **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), page-colour tint overlay for text contrast (navy in dark mode, pale in light).
 - **Get in Touch section** — the booking frame (`schedule/_booking_frame`): Google Calendar's inline appointment page, also the whole of `/schedule`.
 - **Booking frame** — an iframe whose URL waits in `data-src`; an inline script assigns `src` only after the window's `load` event and once the frame is near the viewport, so Google never holds a page's `load` open. It fills its column. From 640px up it is cropped at rest to Google's slot-picker box, and opens to the full frame when focus moves into it, because the booking dialog centres in the frame's full height.

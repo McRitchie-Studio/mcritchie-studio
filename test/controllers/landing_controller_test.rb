@@ -28,6 +28,20 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Technical Strategy"
   end
 
+  # The hero scrim follows the theme: --color-page shades the photo dark in
+  # dark mode and tints it pale in light mode, where the headline is dark text
+  # (/tasks/hero-light-mode-tint).
+  test "hero scrim takes the page colour token, not a fixed navy" do
+    get root_path
+
+    assert_response :success
+    assert_select "[data-hero-scrim]", 1 do |scrims|
+      style = scrims.first["style"]
+      assert_includes style, "var(--color-page)"
+      assert_not_includes style, "rgba(26, 21, 53"
+    end
+  end
+
   # Was "shows only the full-width video chat card", pinning the "Chat Over
   # Video" heading. That card held the Sprintful widget; the section now holds
   # the Google booking frame and no card heading (/tasks/professional-site-footer).
