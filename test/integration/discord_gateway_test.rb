@@ -198,7 +198,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
   end
 
   test "an acknowledged heartbeat keeps the connection; a fatal close code stops the listener for good" do
-    gateway_listener = listener(heartbeat_interval: 100).start
+    gateway_listener = listener(heartbeat_interval: 400).start
     wait_until("a connection") { @gateways.any? }
     gateway = @gateways.first
     identified(gateway)
