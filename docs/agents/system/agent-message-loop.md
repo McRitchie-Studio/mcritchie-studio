@@ -161,6 +161,12 @@ any machine builds the same context for the same rows (Alex's decision of
 every earlier row with the same `(soul_slug, channel, channel_ref, author_ref)`,
 oldest first, read through `index_agent_messages_on_ledger` and capped at 200
 rows. A different person's messages in the same channel are never in it.
+Claims serialize per ledger as well as per thread (`AgentMessage.claimable`):
+a person's second message waits until their first is answered, even when the two
+are not a reply chain. The second answer's context therefore always carries the
+first exchange. Another person's message, or the same person's message to another
+soul or in another channel, is not held back. A row with no `author_ref` has no
+ledger.
 
 **The pin.** A message that is an explicit reply joins the thread of the message
 it answers (its `thread_key` names an earlier root). The latest earlier row of

@@ -89,6 +89,12 @@ class AgentMessage < ApplicationRecord
   # "No older open message" refuses that, because the locked row is still older
   # and still open. It also yields at most one active claim per thread for free.
   #
+  # The same rule holds per LEDGER (one person, one channel, one soul; see
+  # AgentMessages::ThreadLedger): a person's second message waits for their first
+  # to be answered, even when the two are not a reply chain, so the second answer's
+  # context always carries the first exchange. A row with no author_ref has no
+  # ledger and is not held back by this rule.
+  #
   # `soul` is one slug or a list (bin/dispatcher serves every routed soul in one
   # claim); across souls the oldest message still goes first.
   def self.claimable(soul:, now: Time.current, channel: nil)
@@ -101,6 +107,16 @@ class AgentMessage < ApplicationRecord
                           WHERE older.thread_key = agent_messages.thread_key
                             AND older.id < agent_messages.id
                             AND older.status IN ('received', 'claimed'))
+            SQL
+            .where(<<~SQL.squish)
+              (COALESCE(agent_messages.author_ref, '') = '' OR NOT EXISTS (
+                SELECT 1 FROM agent_messages earlier
+                WHERE earlier.soul_slug = agent_messages.soul_slug
+                  AND earlier.channel = agent_messages.channel
+                  AND earlier.channel_ref = agent_messages.channel_ref
+                  AND earlier.author_ref = agent_messages.author_ref
+                  AND earlier.id < agent_messages.id
+                  AND earlier.status IN ('received', 'claimed')))
             SQL
     scope = scope.where(channel: channel) if channel.present?
     scope.order(:id)

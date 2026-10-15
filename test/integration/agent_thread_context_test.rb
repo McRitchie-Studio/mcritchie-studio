@@ -168,7 +168,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     previous = ENV["AGENT_MAILBOX_HOME"]
     ENV["AGENT_MAILBOX_HOME"] = @mailbox
     disp = AgentMailbox::Dispatcher.new(client: @client, souls: %w[xan], worker: "disp-ctx", runner: runner,
-                                        claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) {}, idle_wait: 0,
+                                        claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     200.times do
       disp.tick
@@ -192,7 +192,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     end.new(@client)
     runner = EnvelopeRunner.new("never")
     disp = AgentMailbox::Dispatcher.new(client: client, souls: %w[xan], worker: "disp-ctx", runner: runner,
-                                        claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) {}, idle_wait: 0,
+                                        claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     disp.tick
 
