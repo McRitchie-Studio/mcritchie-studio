@@ -8,33 +8,57 @@
 # production.
 #
 # Google's sign-in comes straight back to the callback with a code that
-# carries the scopes the sign-in asked for; the code exchange grants exactly
-# those, for stand-in@example.com, so connecting Calendar and then Drive adds
-# Drive to the stored grant as Google's incremental consent does. The reads
+# carries the scopes the sign-in asked for (.code_for); the code exchange
+# grants those, for stand-in@example.com, and, as Google's
+# include_granted_scopes does, echoes every scope it granted the account
+# before, until a revoke forgets them. So connecting Calendar and then Drive
+# answers both, and a Gmail disconnected here comes back in the echo, which
+# the hub must ignore (GoogleConnection.store!).
+#
+# UNTICKING A PERMISSION. Google lists each scope with a checkbox. A test
+# unticks one the way the browser carries it: it swaps the code on the way
+# back to the callback for .code_for(the subset it grants), and the exchange
+# grants that subset only (e2e/google_connect.spec.js builds the same code).
+#
+# The memory is this process's own (the e2e server runs one). The reads
 # answer two synthetic meetings, three synthetic messages and three synthetic
 # files. The callback, the stored GoogleConnection and the pages are real. The
 # real exchange and reads are pinned by test/services/google_connect/.
 module GoogleConnectStandIn
   EMAIL = "stand-in@example.com"
 
+  # The code a sign-in granting `scopes` comes back with.
+  def self.code_for(scopes) = SignIn::PREFIX + Base64.urlsafe_encode64(Array(scopes).join(" "), padding: false)
+
   class SignIn
     PREFIX = "stand-in-code."
 
+    def initialize
+      @granted = []
+      @lock = Mutex.new
+    end
+
     def authorize_url(redirect_uri:, state:, scopes:)
-      code = PREFIX + Base64.urlsafe_encode64(scopes.join(" "), padding: false)
-      "#{redirect_uri}?#{URI.encode_www_form(code:, state:)}"
+      "#{redirect_uri}?#{URI.encode_www_form(code: GoogleConnectStandIn.code_for(scopes), state:)}"
     end
 
     def exchange_code(code:, redirect_uri:) # rubocop:disable Lint/UnusedMethodArgument
       raise GoogleConnect::OAuthClient::Error, "the stand-in takes only its own code" unless code.to_s.start_with?(PREFIX)
 
-      scope = Base64.urlsafe_decode64(code.delete_prefix(PREFIX))
+      granted = Base64.urlsafe_decode64(code.delete_prefix(PREFIX)).split
+      scope = @lock.synchronize { @granted |= granted }.join(" ")
       claims = Base64.urlsafe_encode64({ email: EMAIL }.to_json, padding: false)
       { "access_token" => "stand-in-access-#{SecureRandom.hex(8)}", "refresh_token" => "stand-in-refresh-#{SecureRandom.hex(8)}",
         "scope" => scope, "id_token" => "stand-in.#{claims}.stand-in" }
     end
 
     def access_token(_connection) = "stand-in-access"
+
+    # Google drops the whole grant; the next sign-in echoes nothing before it.
+    def revoke(_connection)
+      @lock.synchronize { @granted = [] }
+      true
+    end
   end
 
   READS = lambda do |url, _token|

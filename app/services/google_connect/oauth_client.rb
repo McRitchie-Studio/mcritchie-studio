@@ -12,7 +12,9 @@ module GoogleConnect
   #   1. /admin/google/connect?ability=gmail redirects to Google's sign-in,
   #      asking for who the account is and that ability's one read scope, with
   #      offline access (a refresh token) and include_granted_scopes (Google
-  #      adds it to what the account already granted: incremental consent)
+  #      adds it to what the account already granted: incremental consent).
+  #      ?ability=all (Connect Google) asks for every ability's scope at once;
+  #      Google shows a checkbox per scope, so the person may untick some.
   #   2. Google redirects to /admin/google_calendar/callback with ?code= (the
   #      path the OAuth client registered first, kept so no console change is owed)
   #   3. The callback exchanges the code and stores GoogleConnection
@@ -53,15 +55,15 @@ module GoogleConnect
 
       def configured? = ENV_NAMES.all? { |name| ENV[name].present? }
 
-      # The scopes a sign-in for `ability` asks for: identity plus its one read.
-      def scopes_for(ability) = GoogleConnection::IDENTITY_SCOPES + [ GoogleConnection.scope_for(ability) ]
+      # The scopes a sign-in for `abilities` asks for: identity plus each one's read.
+      def scopes_for(abilities) = GoogleConnection::IDENTITY_SCOPES + Array(abilities).map { GoogleConnection.scope_for(_1) }
 
-      def authorize_url(redirect_uri:, state:, ability:)
-        return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes: scopes_for(ability)) if sign_in_stand_in
+      def authorize_url(redirect_uri:, state:, abilities:)
+        return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes: scopes_for(abilities)) if sign_in_stand_in
 
         ensure_configured!
         params = { client_id: ENV.fetch("GOOGLE_CONNECT_CLIENT_ID"), redirect_uri:, response_type: "code",
-                   scope: scopes_for(ability).join(" "), access_type: "offline", prompt: "consent",
+                   scope: scopes_for(abilities).join(" "), access_type: "offline", prompt: "consent",
                    include_granted_scopes: "true", state: }
         "#{AUTH_URL}?#{URI.encode_www_form(params)}"
       end
@@ -90,7 +92,7 @@ module GoogleConnect
       # Never raises: a TLS or network failure reaching Google is logged (its
       # class only) and answers false, so a disconnect still deletes the row.
       def revoke(connection)
-        return true if sign_in_stand_in
+        return sign_in_stand_in.revoke(connection) if sign_in_stand_in
 
         status, = call(:post, REVOKE_URL, token: connection.refresh_token)
         status == 200

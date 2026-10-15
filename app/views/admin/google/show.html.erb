@@ -5,9 +5,11 @@
   <div>
     <h1 class="text-3xl font-bold text-heading">Google connection</h1>
     <p class="text-secondary mt-2">
-      The Google accounts this server reads, connected by signing in, one permission at a time. Each can read and nothing else. No token is shown here.
+      The Google accounts this server reads, connected by signing in: all three at once with Connect Google, or one permission at a time below. Each can read and nothing else. No token is shown here.
     </p>
   </div>
+
+  <%= render "integrations/google_connect_all", connections: @sections.to_h { [ _1.ability, _1.connection ] }, connectable: can_connect, return_to: nil %>
 
   <% if @unreadable.any? %>
     <p class="card p-4 text-sm text-body" data-test="google-unreadable">

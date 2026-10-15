@@ -19,6 +19,14 @@
         <p class="max-w-xl text-sm text-muted sm:text-right"><%= group.summary %></p>
       </div>
 
+      <%# Connect Google, for an admin: one full-width row above the Google
+          cards, outside their grid, so the card rows stay as they are. %>
+      <% if @google && group.key == IntegrationsController::GOOGLE_GROUP %>
+        <div class="mb-5">
+          <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], return_to: integrations_path %>
+        </div>
+      <% end %>
+
       <%# One rhythm for every section: four across at xl, two at md, one on a
           phone. Grid rows stretch, so cards in a row end level. %>
       <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -125,10 +133,14 @@
                 </div>
               <% end %>
               <%# Every button opens the contact form prefilled, carrying where it
-                  came from, or, for an entry with a guide, the guide page first. %>
+                  came from, or, for an entry with a guide, the guide page first.
+                  An admin on a Google card has the real Connect and Disconnect
+                  above instead, so no contact-form Connect shows there. %>
+              <% unless @google && IntegrationsController::GOOGLE_CARDS.key?(entry.key) %>
               <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),
                     class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
                     data: { test: "entry-cta", intent: entry.intent } %>
+              <% end %>
             </div>
           </article>
         <% end %>

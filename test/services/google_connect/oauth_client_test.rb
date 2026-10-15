@@ -19,12 +19,12 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
     Rails.logger = original
   end
 
-  def connection = GoogleConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex")
+  def connection = GoogleConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex", abilities: [ :calendar ])
 
   test "[unit] each ability's sign-in asks for identity and its one read scope, offline, adding to past grants" do
     with_connect_env do
       GoogleConnection::ABILITIES.each do |ability, scope|
-        url = URI(GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", ability:))
+        url = URI(GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", abilities: [ ability ]))
         query = Rack::Utils.parse_query(url.query)
 
         assert_equal "accounts.google.com", url.host
@@ -39,16 +39,26 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] Connect Google's sign-in asks for identity and all three read scopes in one consent" do
+    with_connect_env do
+      url = URI(GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", abilities: GoogleConnection::ABILITIES.keys))
+      query = Rack::Utils.parse_query(url.query)
+
+      assert_equal [ "openid", "email", CALENDAR, GMAIL, DRIVE ], query["scope"].split
+      assert_equal "true", query["include_granted_scopes"]
+    end
+  end
+
   test "[unit] an unknown ability builds no sign-in" do
     with_connect_env do
-      assert_raises(KeyError) { GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", ability: :contacts) }
+      assert_raises(KeyError) { GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", abilities: [ :contacts ]) }
     end
   end
 
   test "[unit] it refuses to build a sign-in without its own OAuth client" do
     with_connect_env(creds: false) do
       assert_raises(GoogleConnect::OAuthClient::NotConfigured) do
-        GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", ability: :calendar)
+        GoogleConnect::OAuthClient.authorize_url(redirect_uri: "https://hub.test/cb", state: "st", abilities: [ :calendar ])
       end
     end
   end

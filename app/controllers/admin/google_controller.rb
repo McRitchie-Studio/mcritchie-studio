@@ -14,6 +14,13 @@ module Admin
   # where Connect was pressed. No token, and no part of one, is rendered,
   # flashed or logged here.
   #
+  # CONNECT GOOGLE (?ability=all, GoogleConnection::ALL) asks for all three in
+  # one consent, from the top of this page and of the /integrations Google
+  # section. Google shows a checkbox per scope, so a partial grant is not a
+  # refusal: the callback stores what was granted and says what was left
+  # unticked. Only a grant of none of them stores nothing. Either way the row
+  # keeps only scopes this sign-in asked for (GoogleConnection.store!).
+  #
   # WHERE IT COMES BACK. Connect and Disconnect sit on this page and on the
   # /integrations Calendar, Gmail and Drive cards. Each takes ?return_to=,
   # honoured only when it is exactly one of RETURN_PATHS (never an open
@@ -41,13 +48,13 @@ module Admin
 
     def connect
       back = safe_return_to(params[:return_to])
-      ability = GoogleConnection.ability(params[:ability])
-      return redirect_to(back, alert: UNKNOWN_ABILITY) if ability.nil?
+      abilities = GoogleConnection.abilities_for(params[:ability])
+      return redirect_to(back, alert: UNKNOWN_ABILITY) if abilities.nil?
       return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleConnection.encryption_ready?
 
       session[:google_connect_return_to] = back
-      session[:google_connect_ability] = ability.to_s
-      redirect_to GoogleConnect::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state, ability:), allow_other_host: true
+      session[:google_connect_ability] = params[:ability].to_s
+      redirect_to GoogleConnect::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state, abilities:), allow_other_host: true
     rescue GoogleConnect::OAuthClient::NotConfigured
       redirect_to back, alert: KEYS_NOT_SET
     end
@@ -55,23 +62,20 @@ module Admin
     def callback
       expected = session.delete(:google_connect_oauth_state).to_s
       back = safe_return_to(session.delete(:google_connect_return_to))
-      ability = GoogleConnection.ability(session.delete(:google_connect_ability))
-      return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) unless state_matches?(expected) && ability
+      requested = GoogleConnection.abilities_for(session.delete(:google_connect_ability))
+      return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) unless state_matches?(expected) && requested
 
-      name = GoogleConnection::ABILITY_NAMES.fetch(ability)
       return redirect_to(back, alert: refusal(params[:error].to_s)) if params[:error].present?
       return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleConnection.encryption_ready?
 
       grant = GoogleConnect::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
       email = GoogleConnect::OAuthClient.email_from(grant)
       return redirect_to(back, alert: "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
-      unless grant["scope"].to_s.split.include?(GoogleConnection.scope_for(ability))
-        return redirect_to(back, alert: "Google signed in #{email} but did not grant #{name}: its permission was unticked. " \
-                                        "Nothing was saved. Connect again and leave it ticked.")
-      end
+      granted = GoogleConnection.granted_abilities(grant, requested)
+      return redirect_to(back, alert: nothing_granted(email, requested)) if granted.empty?
 
-      connection = GoogleConnection.store!(grant, email:, by: current_user.slug)
-      redirect_to back, notice: "#{name} connected for #{connection.email}."
+      connection = GoogleConnection.store!(grant, email:, by: current_user.slug, abilities: requested)
+      redirect_to back, notice: connected_notice(connection.email, requested, granted)
     rescue ActiveRecord::RecordInvalid => e
       redirect_to back, alert: "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
     rescue GoogleConnect::OAuthClient::NotConfigured
@@ -140,6 +144,27 @@ module Admin
       [ nil, "Google no longer accepts this connection: it was revoked or went unused. Disconnect, then connect again." ]
     rescue GoogleConnect::OAuthClient::Error => e
       [ nil, e.message ]
+    end
+
+    def names(abilities) = abilities.map { GoogleConnection::ABILITY_NAMES.fetch(_1) }
+
+    def nothing_granted(email, requested)
+      if requested.one?
+        "Google signed in #{email} but did not grant #{names(requested).first}: its permission was unticked. " \
+          "Nothing was saved. Connect again and leave it ticked."
+      else
+        "Google signed in #{email} but granted none of #{names(requested).to_sentence(two_words_connector: ' or ', last_word_connector: ' or ')}: " \
+          "every permission was unticked. Nothing was saved. Connect again and leave them ticked."
+      end
+    end
+
+    # What connected, and for Connect Google what was left unticked.
+    def connected_notice(email, requested, granted)
+      notice = "#{names(granted).to_sentence} connected for #{email}."
+      unticked = requested - granted
+      return notice if unticked.empty?
+
+      "#{notice} #{names(unticked).to_sentence} #{unticked.one? ? 'was' : 'were'} left unticked, so #{unticked.one? ? 'it stays' : 'they stay'} off."
     end
 
     def refusal(code)
