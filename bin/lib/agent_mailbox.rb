@@ -192,7 +192,7 @@ module AgentMailbox
   #
   #   reply       the envelope's `result` when the run succeeded (exit 0, not
   #               is_error), else nil. The answer text is never scanned for a run
-  #               STATUS; the Responder only splits a trailing notes section off it
+  #               STATUS; the Responder only splits a notes section off it
   #               (NoteBlock), a format the prompt asks for, not a signal it acts on.
   #   error_text  on a failed run only: the envelope's result/error when is_error,
   #               and stderr. This is CLI-authored text, the only text the

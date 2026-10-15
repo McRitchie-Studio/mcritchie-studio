@@ -1,3 +1,5 @@
+require Rails.root.join("bin/lib/agent_note_block").to_s
+
 # One inbound message to an agent: the agent mailbox's row
 # (docs/agents/system/agent-message-loop.md).
 #
@@ -191,12 +193,15 @@ class AgentMessage < ApplicationRecord
   # (AgentPersonNote.record_from! validates, dedupes and caps them), and only on
   # the completing call, never on a repeat.
   #
-  # The posted reply never carries a notes section: response_text is cut at the
-  # NOTES_DELIMITER line here too, so a worker that failed to split it still
-  # cannot post the facts to the channel.
+  # The posted reply never carries a notes section: response_text is cut again
+  # here with the worker's own pattern (AgentMailbox::NoteBlock), so a worker
+  # that failed to split it (an older dispatcher, a mangled delimiter) cannot
+  # post the facts. When the worker sent no notes, the facts the board found in
+  # that section are the ones recorded.
   def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil)
     worker = worker.to_s.strip
-    response_text = self.class.without_notes(response_text)
+    response_text, found = AgentMailbox::NoteBlock.split(response_text)
+    notes = found if Array(notes).empty?
     raise Refused.new("response_text is required", code: "RESPONSE_REQUIRED") if response_text.to_s.strip.empty?
 
     outcome = self.class.transaction do
@@ -287,16 +292,13 @@ class AgentMessage < ApplicationRecord
     self
   end
 
-  # The line a run's notes section starts with (the worker's AgentMailbox::NoteBlock
-  # writes the same constant; the prompt asks for it).
-  NOTES_DELIMITER = "===NOTES==="
+  # The notes section's marker, as the prompt asks for it. Where a section
+  # starts is AgentMailbox::NoteBlock's one loose pattern, shared with the worker.
+  NOTES_DELIMITER = AgentMailbox::NoteBlock::DELIMITER
 
-  # `text` up to (not including) a NOTES_DELIMITER line, stripped.
-  def self.without_notes(text)
-    text = text.to_s
-    cut = text.index(/^[ \t]*#{Regexp.escape(NOTES_DELIMITER)}[ \t]*$/)
-    cut ? text[0, cut].strip : text
-  end
+  # `text` without its notes section (NoteBlock.split: the first loose
+  # delimiter, or a headed JSON tail), stripped.
+  def self.without_notes(text) = AgentMailbox::NoteBlock.reply(text)
 
   # complete!'s run report, cut to RUN_LIMITS and RUN_META_KEYS (scalars only).
   def self.run_record(run)

@@ -61,8 +61,17 @@ class AgentPerson < ApplicationRecord
   # The explicit act that says "this id is also this person". Every stored
   # message from the id is restamped to this person, so its history joins the
   # PERSON layer at once. Refused when the id already belongs to someone else,
-  # unless `reassign: true`; a reassign moves the identity and its messages, and
-  # leaves the old person's notes where they are.
+  # unless `reassign: true`; a reassign moves the identity, its messages, and the
+  # notes those messages produced.
+  #
+  # WHY THE NOTES MOVE. A note is filed from the words of the message it came
+  # from (source_message), so it is a fact about whoever wrote that message. Once
+  # the id is someone else's, the facts it said belong with them too: left
+  # behind, the old person would keep "facts" that were never about them, and
+  # every soul would keep telling them so. A note the new person already has (same
+  # fingerprint) is dropped from the old person instead of duplicated; the new
+  # person is then pruned to MAX_PER_PERSON. Notes with no source message (carried
+  # over from the old table) cannot be attributed and stay where they are.
   def link_identity!(platform:, external_id:, display_name: nil, reassign: false)
     platform = platform.to_s.strip
     external_id = external_id.to_s.strip
@@ -79,10 +88,26 @@ class AgentPerson < ApplicationRecord
         end
         identity.update!(agent_person_id: id)
       end
-      AgentMessage.where(channel: platform, author_ref: external_id).update_all(person_id: id)
+      spoken = AgentMessage.where(channel: platform, author_ref: external_id)
+      move_notes_from!(spoken)
+      spoken.update_all(person_id: id)
       identity
     end
   end
+
+  # Notes held by OTHER people whose source message is in `messages` come here.
+  def move_notes_from!(messages)
+    moving = AgentPersonNote.where(source_message_id: messages.select(:id)).where.not(agent_person_id: id)
+                            .order(:id).pluck(:id, :fingerprint)
+    return if moving.empty?
+
+    seen = notes.pluck(:fingerprint).to_set
+    keep, drop = moving.partition { |_, print| seen.add?(print) }
+    AgentPersonNote.where(id: drop.map(&:first)).delete_all if drop.any?
+    AgentPersonNote.where(id: keep.map(&:first)).update_all(agent_person_id: id, updated_at: Time.current)
+    AgentPersonNote.prune!(self)
+  end
+  private :move_notes_from!
 
   def as_api_json(notes: true)
     data = { "id" => id, "display_name" => display_name, "user_id" => user_id,
