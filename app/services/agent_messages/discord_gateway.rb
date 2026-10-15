@@ -35,8 +35,9 @@ module AgentMessages
   # START_RESERVE starts in hand. Either spent: it stands down until the window
   # rolls (rechecking every BUDGET_RECHECK), with one ErrorLog receipt.
   #
-  # THE HANDSHAKE DEADLINE. TLS, the websocket upgrade, HELLO and READY (or
-  # RESUMED) must all land within HANDSHAKE_TIMEOUT, or the socket is closed
+  # THE HANDSHAKE DEADLINE. TCP and TLS must finish within HANDSHAKE_TIMEOUT,
+  # then the websocket upgrade, HELLO and READY (or RESUMED) within another
+  # HANDSHAKE_TIMEOUT (at most twice that in all), or the socket is closed
   # and the listener backs off: a stalled handshake never holds the leader lock
   # with no live listener behind it.
   #
@@ -54,8 +55,8 @@ module AgentMessages
     # so a session that drops right after READY still climbs the ladder.
     BACKOFF = [ 1, 2, 5, 10, 30, 60, 120, 300 ].freeze
     STABLE_AFTER = 60
-    # Seconds from opening the socket to READY or RESUMED (TLS and the upgrade
-    # included) before the attempt is abandoned.
+    # Seconds for TCP and TLS, then again from the upgrade to READY or RESUMED,
+    # before the attempt is abandoned.
     HANDSHAKE_TIMEOUT = 30
     # Discord session starts kept in hand: below this many `remaining`, the
     # listener waits for Discord's reset_after instead of IDENTIFYing.

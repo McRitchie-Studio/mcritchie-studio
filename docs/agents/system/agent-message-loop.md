@@ -73,8 +73,9 @@ the unique index dedupes the two.
   one `ErrorLog` receipt per stand-down. Meanwhile the backstop poll keeps
   reading. A count it cannot read is a failed attempt: it backs off and never
   IDENTIFYs blind.
-- **The handshake deadline.** TLS, the websocket upgrade, HELLO and READY (or
-  RESUMED) must all land within 30 seconds, or the socket is closed and the
+- **The handshake deadline.** TCP and TLS must finish within 30 seconds, then
+  the websocket upgrade, HELLO and READY (or RESUMED) within another 30 (a
+  minute at most in all), or the socket is closed and the
   listener backs off (`handshake did not finish within 30s`), so a stalled
   handshake never holds the leader lock with no live listener behind it.
 
