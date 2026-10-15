@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -246,6 +246,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.string "guild_id"
     t.datetime "lease_expires_at"
     t.jsonb "mentions", default: {}, null: false
+    t.bigint "person_id"
     t.text "reasoning"
     t.string "reply_external_id"
     t.string "reply_nonce"
@@ -261,12 +262,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.datetime "updated_at", null: false
     t.integer "usage_refunds", default: 0, null: false
     t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
-    t.index ["soul_slug", "channel", "channel_ref", "author_ref", "created_at"], name: "index_agent_messages_on_ledger"
+    t.index ["soul_slug", "person_id", "created_at"], name: "index_agent_messages_on_person_ledger"
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"
     t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
     t.check_constraint "reply_status::text = ANY (ARRAY['queued'::character varying::text, 'posted'::character varying::text, 'skipped'::character varying::text, 'failed'::character varying::text])", name: "agent_messages_reply_status_known"
     t.check_constraint "status::text = ANY (ARRAY['received'::character varying::text, 'claimed'::character varying::text, 'completed'::character varying::text, 'dead'::character varying::text, 'unrouted'::character varying::text])", name: "agent_messages_status_known"
+  end
+
+  create_table "agent_people", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["user_id"], name: "index_agent_people_on_user_id", unique: true
+  end
+
+  create_table "agent_person_identities", force: :cascade do |t|
+    t.bigint "agent_person_id", null: false
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "external_id", null: false
+    t.string "platform", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_person_id"], name: "index_agent_person_identities_on_agent_person_id"
+    t.index ["platform", "external_id"], name: "index_agent_person_identities_on_platform_and_external_id", unique: true
+  end
+
+  create_table "agent_person_notes", force: :cascade do |t|
+    t.bigint "agent_person_id", null: false
+    t.string "body", null: false
+    t.datetime "created_at", null: false
+    t.string "fingerprint", null: false
+    t.datetime "noted_at", null: false
+    t.string "soul_slug"
+    t.bigint "source_message_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_person_id", "fingerprint"], name: "index_agent_person_notes_on_agent_person_id_and_fingerprint", unique: true
+    t.index ["agent_person_id", "noted_at"], name: "index_agent_person_notes_on_agent_person_id_and_noted_at"
   end
 
   create_table "agent_sessions", force: :cascade do |t|
@@ -286,16 +319,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.index ["slug"], name: "index_agent_sessions_on_slug", unique: true
     t.index ["soul", "tier"], name: "index_agent_sessions_on_soul_and_tier"
     t.index ["task_slug", "revoked_at"], name: "index_agent_sessions_on_task_slug_and_revoked_at"
-  end
-
-  create_table "agent_user_notes", force: :cascade do |t|
-    t.string "author_ref", null: false
-    t.string "channel", null: false
-    t.datetime "created_at", null: false
-    t.string "display_name"
-    t.text "notes", default: "", null: false
-    t.datetime "updated_at", null: false
-    t.index ["channel", "author_ref"], name: "index_agent_user_notes_on_channel_and_author_ref", unique: true
   end
 
   create_table "agents", force: :cascade do |t|
@@ -2697,6 +2720,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
   add_foreign_key "agent_activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_login_requests", "agent_sessions", column: "agent_session_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "agent_message_events", "agent_messages", on_delete: :cascade
+  add_foreign_key "agent_messages", "agent_people", column: "person_id", on_delete: :nullify
+  add_foreign_key "agent_people", "users", on_delete: :nullify
+  add_foreign_key "agent_person_identities", "agent_people", on_delete: :cascade
+  add_foreign_key "agent_person_notes", "agent_messages", column: "source_message_id", on_delete: :nullify
+  add_foreign_key "agent_person_notes", "agent_people", on_delete: :cascade
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade

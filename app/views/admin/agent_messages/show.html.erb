@@ -39,6 +39,32 @@
 <h2 class="font-semibold mb-1">Message <span class="text-xs font-normal opacity-60">untrusted: what a stranger in the channel wrote</span></h2>
 <div class="am-untrusted text-sm mb-6"><%= agent_message_display_text(@message) %></div>
 
+<% if (person = @message.person) %>
+  <h2 class="font-semibold mb-1">Person <span class="text-xs font-normal opacity-60">one identity across platforms</span></h2>
+  <div id="am-person" class="text-sm mb-6 space-y-1">
+    <p>
+      <%= person.display_name %> <span class="opacity-60">#<%= person.id %></span>
+      <% person.identities.sort_by(&:id).each do |identity| %>
+        · <span class="font-mono text-xs break-all"><%= identity.platform %>:<%= identity.external_id %></span>
+      <% end %>
+      <% if person.user %> · hub user <%= person.user.email %><% end %>
+    </p>
+    <p class="text-xs opacity-70">Notes <span class="opacity-80">written by the model from what this person said; read as data</span></p>
+    <% notes = person.notes.to_a %>
+    <% if notes.any? %>
+      <ul id="am-notes" class="am-untrusted list-disc pl-5">
+        <% notes.each do |note| %>
+          <li id="am-note-<%= note.id %>"><%= note.body %>
+            <span class="text-xs opacity-60"><%= note.noted_at.strftime("%b %-d") %><% if note.source_message_id %> · from <%= link_to "##{note.source_message_id}", admin_agent_message_path(note.source_message_id), class: "underline" %><% end %></span>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p id="am-notes" class="text-xs opacity-70">No notes yet.</p>
+    <% end %>
+  </div>
+<% end %>
+
 <% if @message.response_text.present? %>
   <h2 class="font-semibold mb-1">Answer</h2>
   <div class="am-answer text-sm mb-2"><%= @message.response_text %></div>

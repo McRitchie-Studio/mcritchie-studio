@@ -24,7 +24,7 @@ module Admin
     end
 
     def show
-      @message = AgentMessage.includes(:events).find(params[:id])
+      @message = AgentMessage.includes(:events, person: %i[identities notes user]).find(params[:id])
     end
 
     private
