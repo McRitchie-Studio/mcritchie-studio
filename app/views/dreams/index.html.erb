@@ -14,7 +14,7 @@
       <% DreamsController::FILTERS.each do |status| %>
         <%= link_to dreams_path(status: (status == "all" ? nil : status)),
               class: "rounded-md px-3 py-1.5 font-semibold #{status == @filter ? "bg-primary text-white" : "text-secondary hover:text-heading"}",
-              aria: { pressed: status == @filter },
+              aria: { current: (status == @filter ? "page" : nil) },
               data: { test: "dream-filter-#{status}", dreams_filter_button: status } do %>
           <%= status.capitalize %> <span class="opacity-70"><%= counts[status] %></span>
         <% end %>
@@ -26,7 +26,7 @@
   <div class="card p-4 sm:p-5" data-test="platform-row">
     <div class="mb-3 flex items-baseline justify-between gap-2">
       <h3 class="text-lg font-bold text-heading">Platform</h3>
-      <span class="text-xs text-muted"><%= platform.title %> · <%= pluralize(platform.dreams.size, "dream") %></span>
+      <span class="text-xs text-muted"><%= platform.title %> · <%= dream_count_tag(platform.dreams.map(&:status), @filter) %></span>
     </div>
     <%= render "dreams/stages", column: platform, grid: true %>
     <%= render "dreams/sops", sops: platform.sops, label: "Shared SOPs" %>
@@ -49,7 +49,8 @@
             <h3 class="truncate font-bold leading-tight text-heading"><%= column.name %></h3>
             <p class="truncate text-xs text-secondary"><%= column.title %></p>
           </div>
-          <span class="ml-auto shrink-0 text-xs text-muted"><%= pluralize(column.dreams.size, "dream") %></span>
+          <%= dream_count_tag(column.dreams.map(&:status), @filter, class: "ml-auto shrink-0 text-xs text-muted",
+                                                                data: { test: "column-dream-count" }) %>
         </header>
         <%= render "dreams/stages", column: column %>
         <%= render "dreams/sops", sops: column.sops, label: "SOPs" %>

@@ -82,8 +82,10 @@ The per-soul cheat sheet:
 |---|---|---|
 | **Carl** | `pr-review` → `pr-review-slow` | per `submitted` PR (waves ≤5): `bin/task claim-next-review` → spin one Carl → the [review-one primitive](pr-review-sop.md) → on a merge-ready verdict `gh pr merge` into `accepted` + `bin/task move <task> reviewed` |
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
+| **Avi** | `intent-scout` (begin launches it; the chip is the manual launch) | read the task (`bin/task show <slug> -v`) and the builder's desk, read only → post ONE brief: `bin/task note <slug> --comment "INTENT SCOUT BRIEF: …" --agent avi` ([`intent-scout`](../agents/avi/sops/intent-scout.md)) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
 | **Xan** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Xan** | `ship-clock` (only when named, with Alex's production clearance) | `bin/ship-clock start <slug>` (T0, before anything) → `building-sop` (`bin/task begin`, then `ship-clock start <slug>` again to move T0 onto the task) → `pr-review` → `bin/release prepare --yes` → `bin/release ship --mode cleared --clearance "<his words>" --yes` → `bin/release archive --yes` → `bin/ship-clock record <slug> --log … --note …` ([`ship-clock`](../agents/xan/sops/ship-clock.md)) |
 
 > **Script-assisted review.** `bin/pr-review` is a codex-based, **review-only**
 > loop (composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewers
@@ -248,7 +250,7 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
 SOP: [`../agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md).
 Archive shipped work and reclaim completed worktrees.
 
-## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
+## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle` / `ship-clock`
 
 Launcher: [`../agents/xan/HEARTBEAT.md`](../agents/xan/HEARTBEAT.md). The
 operator view is [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline).
@@ -293,6 +295,14 @@ release; nothing anywhere → report and stop. **Exit seam:** the release `shipp
 > or granted ship authority in-session. It uses the SAME deterministic gates as
 > `production-deploy`. To expedite ONE task on a clean ladder, use Avi's
 > [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
+
+### Act 4 — `ship-clock` (only when named)
+
+SOP: [`../agents/xan/sops/ship-clock.md`](../agents/xan/sops/ship-clock.md).
+Benchmark one easy task from Alex's prompt to production: stamp T0 first, run the
+whole pipeline under his clearance, then `bin/ship-clock record` writes the report
+and the ledger row. **Precondition:** his prompt grants production. **Exit seam:**
+the task `shipped` and its row in `docs/agents/ledgers/ship-clock.csv`.
 
 ---
 

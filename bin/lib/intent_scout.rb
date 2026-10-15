@@ -200,8 +200,34 @@ module IntentScout
   READ_ONLY_BASH = ["grep *", "ls *", "cd *"].freeze
   # `dream avi *`, never `dream *`: `dream index --write` rewrites INDEX.md in the
   # hub primary and `dream propose --materialize` writes into a desk (Carl, 2026-10-14).
-  BOARD_SUBCOMMANDS = ["task show *", "task list *", "task note *", "task scout-brief *",
+  # `task note` is not here: the scout may note ONLY the task it scouts, so its rule
+  # names the slug (note_rule), and a note on any other task is denied (Carl, 2026-10-15).
+  BOARD_SUBCOMMANDS = ["task show *", "task list *", "task scout-brief *",
                        "agent-activity *", "dream avi *"].freeze
+
+  # A slug the note rule may carry: kebab case only, so no `*`, space or shell
+  # character can widen the rule it is pasted into.
+  SLUG_RULE = /\A[a-z0-9][a-z0-9-]*\z/
+
+  # The scout runs with `--setting-sources project`, so the hub's own
+  # .claude/settings.json IS loaded, and under dontAsk its allow rules are ADDED to
+  # --allowedTools. A later commit there could re-open the read-only hole the user
+  # source was dropped to close. So the file is held to an ALLOW-LIST, checked at
+  # every launch (project_settings_violations) and pinned on the tracked file by
+  # test/lib/intent_scout_project_settings_test.rb:
+  #   - only these top-level keys: anything else (hooks, env, apiKeyHelper, a
+  #     statusLine, the next key the CLI adds) can run a program or reshape one;
+  #   - allow rules only for the read-only tools;
+  #   - no defaultMode that loosens a prompt.
+  # A violation stops the auto-launch; begin prints the manual block with the reason.
+  # Only `settings.json` is the project source: `settings.local.json` is the `local`
+  # source, which the argv does not load (so the projects root's large
+  # settings.local.json never reaches the scout). launch! checks the hub and the
+  # --add-dir root both.
+  PROJECT_SETTINGS_KEYS = %w[$schema permissions].freeze
+  PROJECT_PERMISSION_KEYS = %w[allow deny ask additionalDirectories defaultMode].freeze
+  PROJECT_READ_ONLY_TOOLS = %w[Read Grep Glob].freeze
+  PROJECT_SAFE_MODES = %w[default plan dontAsk].freeze
 
   # THE CHILD'S ENVIRONMENT IS AN ALLOW-LIST (spawned with unsetenv_others). A
   # deny-list misses the next harness variable: an inherited CLAUDE_CODE_SESSION_ID
@@ -346,10 +372,46 @@ module IntentScout
     nil
   end
 
-  def allowed_tools(bin_dirs = [])
+  def allowed_tools(slug, bin_dirs = [])
     task_prefixes = (["bin/"] + bin_dirs.map { |d| "#{d.to_s.chomp("/")}/" }).uniq
-    board = task_prefixes.flat_map { |prefix| BOARD_SUBCOMMANDS.map { |cmd| "Bash(#{prefix}#{cmd})" } }
+    board = task_prefixes.flat_map do |prefix|
+      (BOARD_SUBCOMMANDS + [note_rule(slug)]).map { |cmd| "Bash(#{prefix}#{cmd})" }
+    end
     %w[Read Grep Glob] + READ_ONLY_BASH.map { |cmd| "Bash(#{cmd})" } + board
+  end
+
+  # `task note <slug> *`: the brief goes on the scouted task and nowhere else. The
+  # space before `*` keeps `demo-task` from matching `demo-task-two`.
+  def note_rule(slug)
+    raise ArgumentError, "not a task slug: #{slug.inspect}" unless slug.to_s.match?(SLUG_RULE)
+
+    "task note #{slug} *"
+  end
+
+  # Why the hub's project settings (dir/.claude/settings.json) could widen the
+  # scout's allow-list; [] when the file is absent or within PROJECT_SETTINGS_KEYS.
+  # An unreadable or malformed file is a violation: fail closed.
+  def project_settings_violations(dir)
+    path = File.join(dir.to_s, ".claude", "settings.json")
+    return [] unless File.exist?(path)
+
+    settings = JSON.parse(File.read(path))
+    return ["#{path} is not a JSON object"] unless settings.is_a?(Hash)
+
+    violations = (settings.keys - PROJECT_SETTINGS_KEYS).map { |key| "#{path} sets #{key}" }
+    permissions = settings.fetch("permissions", {})
+    return violations + ["#{path} permissions is not an object"] unless permissions.is_a?(Hash)
+
+    violations += (permissions.keys - PROJECT_PERMISSION_KEYS).map { |key| "#{path} sets permissions.#{key}" }
+    Array(permissions["allow"]).each do |rule|
+      tool = rule.to_s[/\A[^(]*/].strip
+      violations << "#{path} allows #{rule}" unless PROJECT_READ_ONLY_TOOLS.include?(tool)
+    end
+    mode = permissions["defaultMode"]
+    violations << "#{path} sets defaultMode #{mode}" if mode && !PROJECT_SAFE_MODES.include?(mode)
+    violations
+  rescue JSON::ParserError, SystemCallError => e
+    ["#{path} could not be read (#{e.class})"]
   end
 
   # The prompt a HEADLESS scout gets: the subagent prompt plus the one thing a
@@ -381,7 +443,7 @@ module IntentScout
     [bin, "-p", prompt || headless_prompt(slug, desk),
      "--setting-sources", "project", "--strict-mcp-config",
      "--agents", agent_json, "--agent", "avi", "--permission-mode", "dontAsk",
-     "--allowedTools", allowed_tools(bin_dirs).join(","),
+     "--allowedTools", allowed_tools(slug, bin_dirs).join(","),
      "--add-dir", projects_dir, "--name", "intent-scout #{slug}"]
   end
 
@@ -429,6 +491,12 @@ module IntentScout
       return { prior: prior_launch(slug, env) || { pid: 0, alive: false, log: log } }
     end
     begin
+      chdir = File.directory?(hub_dir) ? hub_dir : Dir.pwd
+      # The hub (the cwd, the project source) and the --add-dir root, in case a CLI
+      # release starts reading an added directory's project settings too.
+      widened = [chdir, File.dirname(hub_dir)].uniq.flat_map { |dir| project_settings_violations(dir) }
+      raise ArgumentError, "the project settings could widen the read-only scout: #{widened.join("; ")}" if widened.any?
+
       definition = agent_json(env) || raise(ArgumentError, "no avi agent definition")
       argv = launch_command(slug, desk, bin: claude_bin(env), projects_dir: File.dirname(hub_dir), bin_dirs: bin_dirs,
                                         agent_json: definition)
@@ -436,7 +504,7 @@ module IntentScout
         f.puts "# intent scout for #{slug}, launched #{Time.now.utc.iso8601} by bin/task begin"
       end
       pid = spawner.call(child_env(env), *argv, unsetenv_others: true,
-                                                chdir: (File.directory?(hub_dir) ? hub_dir : Dir.pwd),
+                                                chdir: chdir,
                                                 pgroup: true, in: File::NULL, out: [log, "a"], err: [:child, :out])
       status = exited&.call(pid, grace)
       raise ChildDied, "the scout exited at once (status #{status}); read #{log}" unless status.nil?

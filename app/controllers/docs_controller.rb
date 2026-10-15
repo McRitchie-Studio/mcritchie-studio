@@ -42,15 +42,8 @@ class DocsController < ApplicationController
     end
   end
 
+  # SafeMarkdown: raw HTML filtered, and a javascript: or other unsafe link left as text.
   def render_markdown(text)
-    renderer = Redcarpet::Render::HTML.new(hard_wrap: true, filter_html: true)
-    markdown = Redcarpet::Markdown.new(renderer,
-      fenced_code_blocks: true,
-      tables: true,
-      autolink: true,
-      strikethrough: true,
-      no_intra_emphasis: true
-    )
-    markdown.render(text).html_safe
+    SafeMarkdown.render(text)
   end
 end

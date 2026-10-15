@@ -68,10 +68,25 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
 
     get dreams_path(status: "proposed")
     assert_select "[data-test='dreams-page'][data-dreams-filter='proposed']"
-    assert_select "[data-test='dream-filter-proposed'][aria-pressed='true']"
+    assert_select "[data-test='dream-filter-proposed'][aria-current='page']"
+    assert_select "[data-test='dream-filter-all'][aria-current]", 0
     assert_select "[data-dream='proposed-money-idea']:not([hidden])"
     assert_select "[data-dream='untagged-habit'][hidden]"
     assert_select "[data-test='platform-row'] [data-test='stage-group'][hidden]", minimum: 1
+  end
+
+  test "the dream counts follow the status filter" do
+    pokemon = "[data-test='soul-column'][data-soul='pokemon'] [data-test='column-dream-count']"
+
+    get dreams_path
+    tokens = css_select(pokemon).first["data-dream-count"].split
+    assert_operator tokens.size, :>, 1
+    assert_select pokemon, text: "#{tokens.size} dreams"
+    assert_select "[data-test='dream-filter-all'][aria-current='page']"
+
+    get dreams_path(status: "proposed")
+    assert_select pokemon, text: "1 dream"
+    assert_select "[data-test='soul-column'][data-soul='carl'] [data-test='column-dream-count']", text: "0 dreams"
   end
 
   test "a dream opens to its answer, why, story, tags, status and file" do
@@ -93,13 +108,24 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
       assert_select "h1", 0, "the title repeats the summary, so the story drops it"
       assert_select "h2", text: "Situation"
       assert_select "strong", text: "green"
+      assert_select "a", 0, "the fixture's [author note](javascript:…) must not render as a link"
     end
+    assert_includes response.body, "[author note](javascript:alert(1))", "it stays readable as text"
   end
 
   test "/agents links to /dreams" do
     get agents_path
 
     assert_select "[data-test='agents-dreams-link'][href=?]", dreams_path
+
+    # A white-alpha pill vanishes on the light theme's page; the links sit on theme
+    # tokens (text-body on surface-alt, border-strong) that read in both themes.
+    %w[agents-dreams-link agents-activities-link].each do |link|
+      classes = css_select("[data-test='#{link}']").first["class"].split
+      assert_includes classes, "text-body", link
+      assert_includes classes, "bg-surface-alt", link
+      assert_empty classes.grep(%r{white/}), "#{link} still uses a white-alpha class"
+    end
   end
 
   test "a visitor is walled out" do

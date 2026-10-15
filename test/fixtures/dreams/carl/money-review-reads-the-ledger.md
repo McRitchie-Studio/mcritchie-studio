@@ -15,3 +15,5 @@ topic: payment
 ## Situation
 
 A payment PR came in **green**.
+
+The [author note](javascript:alert(1)) is not a link to follow.
