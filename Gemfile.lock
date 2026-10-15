@@ -557,6 +557,7 @@ DEPENDENCIES
   turbo-rails
   tzinfo-data
   web-console
+  websocket-driver (~> 0.8)
   zip_kit (~> 6.3, >= 6.3.6)
 
 RUBY VERSION
