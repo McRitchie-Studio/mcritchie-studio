@@ -83,6 +83,26 @@ class IntentScoutProjectSettingsTest < Minitest::Test
     refute File.exist?(File.join(@dir, "state", "demo-task.pid")), "the claim is released for the next begin"
   end
 
+  def test_the_add_dir_root_settings_are_checked_too
+    hub = File.join(@dir, "hub")
+    FileUtils.mkdir_p(hub)
+    settings("permissions" => { "allow" => ["Write"] }) # @dir is the hub's parent: the --add-dir root
+    claude = File.join(@dir, "bin", "claude")
+    FileUtils.mkdir_p(File.dirname(claude))
+    File.write(claude, "#!/bin/sh\nexit 0\n")
+    FileUtils.chmod(0o755, claude)
+    env = { "PATH" => File.dirname(claude), "HOME" => @dir, "INTENT_SCOUT_HOME" => File.join(@dir, "state") }
+    FileUtils.mkdir_p(File.join(@dir, ".claude", "agents"))
+    File.write(File.join(@dir, ".claude", "agents", "avi.md"), "---\nname: avi\ndescription: Avi.\n---\n\nYou are Avi.\n")
+
+    outcome = IntentScout.auto_launch("demo-task", "/desk", resume: false, env: env, hub_dir: hub,
+                                                            spawner: ->(*_args, **) { flunk "spawned" },
+                                                            detacher: nil, exited: ->(_pid, _grace) { nil })
+
+    assert_equal :manual, outcome[:kind]
+    assert_includes outcome[:reason], "allows Write"
+  end
+
   def test_the_note_rule_names_only_the_scouted_task
     tools = IntentScout.allowed_tools("demo-task", ["/hub/bin"])
 

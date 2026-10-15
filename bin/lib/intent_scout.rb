@@ -221,7 +221,9 @@ module IntentScout
   #   - no defaultMode that loosens a prompt.
   # A violation stops the auto-launch; begin prints the manual block with the reason.
   # Only `settings.json` is the project source: `settings.local.json` is the `local`
-  # source, which the argv does not load.
+  # source, which the argv does not load (so the projects root's large
+  # settings.local.json never reaches the scout). launch! checks the hub and the
+  # --add-dir root both.
   PROJECT_SETTINGS_KEYS = %w[$schema permissions].freeze
   PROJECT_PERMISSION_KEYS = %w[allow deny ask additionalDirectories defaultMode].freeze
   PROJECT_READ_ONLY_TOOLS = %w[Read Grep Glob].freeze
@@ -490,7 +492,9 @@ module IntentScout
     end
     begin
       chdir = File.directory?(hub_dir) ? hub_dir : Dir.pwd
-      widened = project_settings_violations(chdir)
+      # The hub (the cwd, the project source) and the --add-dir root, in case a CLI
+      # release starts reading an added directory's project settings too.
+      widened = [chdir, File.dirname(hub_dir)].uniq.flat_map { |dir| project_settings_violations(dir) }
       raise ArgumentError, "the project settings could widen the read-only scout: #{widened.join("; ")}" if widened.any?
 
       definition = agent_json(env) || raise(ArgumentError, "no avi agent definition")
