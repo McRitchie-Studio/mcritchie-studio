@@ -800,10 +800,56 @@ class ReviewClaimCliTest < Minitest::Test
       refute_includes @out.string, "dream sequence"
 
       assert_equal ReviewClaimCli::OK, cli(projects_dir: proj, data: { "acquired" => true }).run(["acquire", SLUG])
-      assert_equal "", @err.string, "no soul, no sequence"
+      refute_includes @err.string, "dream sequence", "no soul, no sequence"
 
       assert_equal ReviewClaimCli::SKIPPED, cli(projects_dir: proj, data: { "acquired" => false }).run(["acquire", SLUG, "--agent", "carl"])
       refute_includes @err.string, "dream sequence", "a refused claim loads nothing"
+    end
+  end
+
+  def with_step_bank
+    Dir.mktmpdir("step-bank") do |bank|
+      { "claim" => "At claim, what?", "verdict" => "At verdict, what?" }.each do |step, question|
+        path = File.join(bank, "sops/pr-review/at-#{step}.md")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "---\nquestion: \"#{question}\"\nanswer: \"An answer.\"\nwhy: \"A reason.\"\n" \
+                         "status: approved\nsop: pr-review\nstep: #{step}\n---\n")
+      end
+      kept = ENV["DREAM_BANK_DIR"]
+      ENV["DREAM_BANK_DIR"] = bank
+      yield
+    ensure
+      ENV["DREAM_BANK_DIR"] = kept
+    end
+  end
+
+  def test_unit_a_review_claim_prints_the_pr_review_claim_moment_card_to_stderr
+    with_step_bank do
+      Dir.mktmpdir do |proj|
+        assert_equal ReviewClaimCli::OK, cli(projects_dir: proj, data: { "acquired" => true }).run(["acquire", SLUG])
+        assert_includes @err.string, "## Moment: pr-review · claim\n"
+        assert_includes @err.string, "(`at-claim`)"
+        refute_includes @err.string, "at-verdict", "another step's dream waits for its own command"
+        refute_includes @out.string, "## Moment", "stdout stays the claim's line"
+
+        assert_equal ReviewClaimCli::SKIPPED, cli(projects_dir: proj, data: { "acquired" => false }).run(["acquire", SLUG])
+        refute_includes @err.string, "## Moment", "a refused claim prints no card"
+      end
+    end
+  end
+
+  def test_unit_claim_next_prints_the_card_to_stderr_and_stdout_stays_the_slug
+    with_step_bank do
+      Dir.mktmpdir do |proj|
+        with_tree do
+          c = cli(projects_dir: proj, env: { "CLAUDE_CODE_SESSION_ID" => HARNESS },
+                  data: { "claimed" => { "slug" => "popped-task" }, "agent_session" => login_for("popped-task") })
+
+          assert_equal ReviewClaimCli::OK, c.run(["claim-next"])
+          assert_equal "popped-task\n", @out.string
+          assert_includes @err.string, "## Moment: pr-review · claim"
+        end
+      end
     end
   end
 
@@ -861,7 +907,7 @@ class ReviewClaimCliTest < Minitest::Test
 
         assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG])
         assert_empty task_reads(c)
-        assert_equal "", @err.string
+        refute_includes @err.string, "dream sequence", "no soul, no sequence; only the step's moment card"
       end
     end
   end

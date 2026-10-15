@@ -1,9 +1,10 @@
 # Context layers — design
 
-**Status: proposed.** Written with `scout-launches-itself` (2026-10-13). The split
-between mechanical must-dos and judgment dreams is built in that task, for the
-intent scout; the SOP-step dream tags in section 5 are the next build, not done
-here.
+**Status: situational layer built.** Written with `scout-launches-itself`
+(2026-10-13), which built the split between mechanical must-dos and judgment
+dreams for the intent scout. `step-dreams-and-moment-cards` (2026-10-15) built
+section 5: SOP-step dreams, their moment cards and the per-layer budgets. The
+procedure is [`../modules/dream.md`](../modules/dream.md).
 
 The idea in one paragraph: an agent's context comes in three layers. The
 **general** layer says who it is and loads at session start. The **situational**
@@ -79,32 +80,39 @@ when there is no `claude` CLI), the fallback output goes where it cannot be cut:
 **last**, after every other block, and named once more in the summary at the top,
 so both `head` and `tail` keep it.
 
-## 5. Next build: SOP-step dreams as moment cards
+## 5. Built: SOP-step dreams as moment cards
 
 Today a dream is matched by its tags (`soul`, `repo`, `shape`, `risk`, `stage`,
 `topic`; `DreamBank::TAGS`) and shown at session start or at claim. A judgment that
 belongs to one step of one SOP (say, "before submit: fold the brief or decline it,
 and say why") is shown far from the moment it applies.
 
-**Proposal.** Two new front-matter tags:
+**Built (2026-10-15).** Two front-matter tags:
 
 ```yaml
 sop: building-sop        # the SOP the dream belongs to (its registry name)
 step: submit             # the step within it
 ```
 
-and each command that runs a step prints the matching dreams as a short **moment
-card** at the **end** of its output (for the same reason the scout lines print
-last): `bin/task begin` for `step: claim`, `bin/submit` for `step: submit`,
-`bin/release prepare` for `qa-release` steps. A card is two or three Q-and-A lines,
-not the full sequence.
+and each command that runs a step prints the matching approved dreams as a short
+**moment card** after its own key output: `bin/task begin` for `building-sop` ·
+`begin`, `bin/submit` and `bin/submit-wait` for `building-sop` · `submit`,
+`bin/task review-claim acquire` and `claim-next-review` for `pr-review` · `claim`,
+and `bin/release prepare` for `qa-release` · `prepare`. A card is question and
+answer with the slug, no Why, from the tracked bank, offline, through one helper
+(`DreamBank.moment`) that never raises. At `begin` the card prints before the
+scout lines, which stay last. The step names and where each card prints are in
+[`../modules/dream.md`](../modules/dream.md#moment-cards-step-dreams-at-the-step).
 
-**Not done here, on purpose.** `DreamBank.errors` rejects any front-matter key
-outside `TAGS`, so a dream file tagged `sop:` or `step:` today fails lint and drops
-out of every sequence. No dream file is tagged in this task. The build is one
-follow-up card ("Dreams Under SOP Steps" / "Moment Cards From Step Dreams"): add
-the two keys to `TAGS` and the lint, teach the selector to match a step, and have
-`begin`, `submit` and `release prepare` print the card.
+What was decided in the build:
+
+- **A step dream is its own layer.** It names one registered SOP and one step and
+  carries no `soul`; it lives under `docs/agents/dreams/sops/<sop>/`, never loads
+  at session start or at a claim, and the selector does not match on it.
+- **Budgets per layer.** Platform 15, each soul 20, each SOP step 5 approved
+  dreams; proposed dreams do not count. `bin/dream index --check` and a test on
+  the real bank fail over a cap. A full layer means a swap, not an add.
+- **`/dreams`** shows each step dream under its SOP and step.
 
 ## 6. Related
 

@@ -7,7 +7,9 @@
 #   bin/dream <soul> --task <slug>     the dreams a claim of that task loads for the soul
 #   bin/dream list [--task <slug>]     every approved dream with its file, ranked for the task
 #   bin/dream platform                 the sequence every session start loads
-#   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md
+#   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md;
+#                                      --check also refuses a layer over its budget
+#                                      (platform 15, a soul 20, an SOP step 5 approved dreams)
 #   bin/dream propose --materialize <finding>
 #                                      write the proposed dream a dream-proposal-<task> triage finding
 #                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
@@ -202,6 +204,7 @@ class DreamCli
     flipped = rows.count { |row| apply_one(bank, row) }
     File.write(File.join(bank, "INDEX.md"), DreamBank.index(dir: bank)) if flipped.positive?
     @out.puts("dream: #{flipped} of #{rows.size} pending approval(s) written#{flipped.positive? ? "; INDEX.md rewritten" : ""}.")
+    DreamBank.budget_errors(DreamBank.all(dir: bank)).each { |line| @err.puts("dream: over budget: #{line}") }
     if flipped.positive?
       @out.puts("Commit the files and INDEX.md and submit them as one task. /dreams marks each applied once " \
                 "the release ships the file reading approved.")
@@ -209,10 +212,19 @@ class DreamCli
     OK
   end
 
+  # A dream's home inside the bank: `platform`, a soul, or `sops/<sop>` for a step
+  # dream. Nothing else, so an approval row can never name a path outside the bank.
+  def bank_home?(home)
+    parts = home.split("/", -1)
+    return TASK_SLUG.match?(home) if parts.size == 1
+
+    parts.size == 2 && parts.first == DreamBank::STEP_HOME && TASK_SLUG.match?(parts.last)
+  end
+
   def apply_one(bank, row)
     home = row["dream_home"].to_s
     slug = row["dream_slug"].to_s
-    unless TASK_SLUG.match?(home) && TASK_SLUG.match?(slug)
+    unless bank_home?(home) && TASK_SLUG.match?(slug)
       @err.puts("dream: skipped approval `#{home}/#{slug}`: not a bank path.")
       return false
     end
@@ -318,7 +330,10 @@ class DreamCli
       current = File.exist?(path) ? File.read(path) : nil
       return refuse("#{path} is stale. Run `bin/dream index --write`.") unless current == text
 
-      @out.puts("dream: #{path} is current")
+      over = DreamBank.budget_errors(DreamBank.all(dir: @dir))
+      return refuse("over budget:\n  #{over.join("\n  ")}") unless over.empty?
+
+      @out.puts("dream: #{path} is current; every layer is within its budget")
     else
       @out.puts(text)
     end
