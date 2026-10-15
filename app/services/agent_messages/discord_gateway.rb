@@ -90,7 +90,7 @@ module AgentMessages
     # tests replace with one end of a socket pair). `lock` is built on the
     # thread's leased connection unless a test hands one in.
     def initialize(token:, routes: Routes.load, logger: Rails.logger, connector: self.class.method(:tls_connect),
-                   lock: nil, ingest: nil)
+                   lock: nil, ingest: nil, lock_retry: LOCK_RETRY, lock_check_every: LOCK_CHECK_EVERY, backoff: BACKOFF)
       raise ArgumentError, "a bot token is required" if token.to_s.strip.empty?
 
       @token = token
@@ -99,6 +99,9 @@ module AgentMessages
       @connector = connector
       @lock = lock
       @ingest = ingest || DiscordIngest.new(routes: routes)
+      @lock_retry = lock_retry
+      @lock_check_every = lock_check_every
+      @backoff = backoff
       @session = GatewaySession.new
       @thread_parents = {}
       @failures = 0
@@ -133,7 +136,7 @@ module AgentMessages
         unless @lock.held? || @lock.acquire
           @logger.info("#{LOG}: another process holds the connection; standing by") unless announced_wait
           announced_wait = true
-          pause(LOCK_RETRY)
+          pause(@lock_retry)
           next
         end
         announced_wait = false
@@ -146,7 +149,7 @@ module AgentMessages
           @logger.info("#{LOG}: leader lock lost; standing down")
           @session.reset!
           @lock.release
-          pause(LOCK_RETRY)
+          pause(@lock_retry)
         else
           @failures += 1
           pause(backoff)
@@ -168,14 +171,14 @@ module AgentMessages
       @session.connection_opened!
       @pending = nil
       @next_heartbeat = nil
-      next_lock_check = now + LOCK_CHECK_EVERY
+      next_lock_check = now + @lock_check_every
       @socket.start
 
       loop do
         return finish(1000, :stopped) if stopping?
 
         if now >= next_lock_check
-          next_lock_check = now + LOCK_CHECK_EVERY
+          next_lock_check = now + @lock_check_every
           return finish(1000, :lost_lock) unless @lock.held?
         end
         return finish(GatewaySession::RESUME_CLOSE, @pending) if @pending
@@ -287,7 +290,7 @@ module AgentMessages
     end
 
     def backoff
-      base = BACKOFF[[ @failures - 1, 0 ].max] || BACKOFF.last
+      base = @backoff[[ @failures - 1, 0 ].max] || @backoff.last
       base * (0.5 + (rand / 2))
     end
 
