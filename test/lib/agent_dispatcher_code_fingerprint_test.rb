@@ -84,7 +84,7 @@ class AgentDispatcherCodeFingerprintTest < Minitest::Test
 
   def dispatcher(fp)
     AgentMailbox::Dispatcher.new(client: IdleClient.new, souls: %w[xan], worker: "fp-test", out: @out,
-                                 clock: -> { @now }, sleeper: ->(_) {}, repo_root: @root, idle_wait: 0,
+                                 clock: -> { @now }, sleeper: ->(_) { }, repo_root: @root, idle_wait: 0,
                                  version: "test", fingerprint: fp)
   end
 
