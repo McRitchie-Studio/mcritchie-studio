@@ -70,14 +70,25 @@ class FathomConnectionTest < ActiveSupport::TestCase
     assert_equal TOKEN, connection.reload.refresh_token
   end
 
-  test "[unit] a row this server cannot decrypt is unreadable, skipped, and replaced by the next sign-in" do
-    connection = FathomConnection.store!(grant, account: "alex@mcritchie.studio", by: "alex", now: NOW)
-    FathomConnection.where(id: connection.id).update_all(refresh_token: "not ciphertext")
+  def with_other_encryption_key
+    other = ActiveRecord::Encryption::DerivedSecretKeyProvider.new("another-synthetic-primary-key-987654321")
+    ActiveRecord::Encryption.with_encryption_context(key_provider: other) { yield }
+  end
 
-    assert_not FathomConnection.find(connection.id).readable?
-    assert_nil FathomConnection.readable
-    replaced = FathomConnection.store!(grant(refresh_token: "fresh"), account: "alex@mcritchie.studio", by: "alex", now: NOW + 1.hour)
-    assert_equal 1, FathomConnection.count
-    assert_equal "fresh", replaced.reload.refresh_token
+  test "[unit] a row stored under another key is unreadable, skipped, and replaced by the next sign-in" do
+    old = FathomConnection.store!(grant, account: "alex@mcritchie.studio", by: "alex", now: NOW)
+    assert old.readable? # the control
+    assert_equal old, FathomConnection.readable
+
+    with_other_encryption_key do
+      assert_not FathomConnection.find(old.id).readable?
+      assert_nil FathomConnection.readable
+      assert_no_difference -> { FathomConnection.count } do
+        FathomConnection.store!(grant(refresh_token: "fresh"), account: "alex@mcritchie.studio", by: "alex", now: NOW + 1.hour)
+      end
+      row = FathomConnection.current
+      assert_not_equal old.id, row.id
+      assert_equal "fresh", row.refresh_token
+    end
   end
 end
