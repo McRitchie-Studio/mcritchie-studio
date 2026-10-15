@@ -30,6 +30,9 @@ module NoteBlockFixtures
     # Not notes: prose that mentions notes, and an array that is the answer.
     [ "The release notes are out.", "The release notes are out.", [] ],
     [ "Here are the tasks:\n[\"a\", \"b\"]", "Here are the tasks:\n[\"a\", \"b\"]", [] ],
-    [ "Notes: see the doc.", "Notes: see the doc.", [] ]
+    [ "Notes: see the doc.", "Notes: see the doc.", [] ],
+    # Code in an answer is not a marker: an operand before the "=".
+    [ "Check `if count == notes.size` first.", "Check `if count == notes.size` first.", [] ],
+    [ "In JS, a === notes.length is false.", "In JS, a === notes.length is false.", [] ]
   ].freeze
 end

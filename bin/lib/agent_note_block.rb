@@ -38,8 +38,10 @@ module AgentMailbox
     DELIMITER = "===NOTES==="
     MAX = 3
     # Optional markdown (* _ ` ~ # >) and spaces, two or more "=", the word
-    # NOTES in any case, then optional ":" "=" and markdown. Anywhere in the text.
-    DELIMITER_PATTERN = /[*_`~#> \t]*={2,}[ \t*_]*notes\b[ \t*_:]*=*[*_`~ \t]*/i
+    # NOTES in any case, then optional ":" "=" and markdown, starting a line or
+    # right after a sentence's end (. ! ? :). Not after a word, so code such as
+    # `count == notes.size` in an answer is never mistaken for the marker.
+    DELIMITER_PATTERN = /(?:^|(?<=[.!?:]))[*_`~#> \t]*={2,}[ \t*_]*notes\b[ \t*_:]*=*[*_`~ \t]*/i
     # No delimiter, but the text ends in a line that is only a "notes" heading
     # (decorated or not) and then a JSON array, fenced or bare.
     HEADED_TAIL = /^[*_`~#> \t]*notes[ \t*_:=-]*\n+[ \t]*(?:```(?:json)?[ \t]*\n)?[ \t]*\[.*\][ \t]*(?:\n[ \t]*```)?\s*\z/im
