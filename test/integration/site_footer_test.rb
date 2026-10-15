@@ -58,8 +58,9 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the brand is the kit's stacked logo, swapping with the theme, above its tagline" do
+  test "the brand is the kit's stacked logo, swapping with the theme, centred, with no tagline" do
     get root_path
+    assert_select "footer[data-site-footer] .ftr-brand.ftr-brand-lockup", lockup_engine? ? 1 : 0
 
     assert_select "footer[data-site-footer] .ftr-brand" do
       if lockup_engine?
@@ -77,7 +78,8 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
           assert_equal %w[McRitchie Studio], parts.map(&:text)
         end
       end
-      assert_select "p", text: "Software & Marketing Solutions", count: 1
+      # Alex 2026-10-15 08:21: no tagline under the stacked logo.
+      assert_select ".ftr-tagline", 0
       assert_select ".ftr-socials a", 3
       # The email is a Contact column link, not a line under the tagline.
       assert_select "a[href^='mailto:']", 0

@@ -101,13 +101,21 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 900 }], ["ph
       await expect(brand.locator("img.ftr-logo, .ftr-wordmark")).toHaveCount(0);
 
       // Sized like the icon-and-name block it replaced, inside its column, and
-      // the tagline and the social row still follow it.
+      // centred in it with the social row (Alex 2026-10-15 08:21: no tagline,
+      // centre justified).
       const box = await shown.boundingBox();
       expect(box.height).toBeGreaterThan(96);
       expect(box.height).toBeLessThan(128);
       expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-      await expect(brand.getByText("Software & Marketing Solutions")).toBeVisible();
-      await expect(brand.locator(".ftr-socials a")).toHaveCount(3);
+      const column = await brand.boundingBox();
+      const centre = (b) => b.x + b.width / 2;
+      expect(Math.abs(centre(box) - centre(column))).toBeLessThanOrEqual(2);
+      const socials = brand.locator(".ftr-socials a");
+      await expect(socials).toHaveCount(3);
+      const first = await socials.first().boundingBox();
+      const last = await socials.last().boundingBox();
+      expect(Math.abs((first.x + last.x + last.width) / 2 - centre(column))).toBeLessThanOrEqual(2);
+      await expect(brand.locator(".ftr-tagline")).toHaveCount(0);
     });
   }
 }

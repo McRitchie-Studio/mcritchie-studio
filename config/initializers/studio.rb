@@ -106,7 +106,8 @@ Studio.configure do |config|
       # reinstall that changes the shape fails test/integration/site_footer_test.rb.
       lockup: { light: "/brand/stacked-light.svg", dark: "/brand/stacked-dark.svg", width: 942, height: 885 },
       home_path: view.root_path,
-      tagline: "Software & Marketing Solutions",
+      # No tagline: Alex 2026-10-15 08:21 dropped "Software & Marketing
+      # Solutions" with the stacked logo (task footer-stacked-logo).
       address: {
         street: "3000 Lawrence St", city_line: "Denver, CO 80205",
         lat: 39.7614786, lng: -104.978957,
