@@ -201,6 +201,12 @@ incident when no dispatcher has pinged for 5 minutes (never before the first
 ping) or a routed message has waited `received` for 10, and once more when it
 clears. Without the bot token it logs a line and posts nothing.
 
+**Reports.** The same bot also posts scheduled reports (the CTO daily
+application report first) into a channel Alex picks per report at
+`/admin/report_destinations`, from a directory of the guild's channels synced
+every 15 minutes. The contract other sessions build against,
+`ReportDestinations.deliver`, is [`report-destinations.md`](report-destinations.md).
+
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and runs the soul's one read-only action (avi:
 `bin/release status`; xan: `bin/task list`). It then reads the message's context

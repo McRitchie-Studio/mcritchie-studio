@@ -1,0 +1,93 @@
+<%# /admin/report_destinations: one card per registered report (config/report_destinations.yml) with its Discord channel, an on/off toggle and the last delivery; the channel directory's freshness and a Refresh channels button. No token is rendered. %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<% label_for = lambda do |channel|
+     parent = channel.kind == "thread" && @parent_names[channel.parent_external_id]
+     parent ? "#{channel.display_name} (in ##{parent})" : channel.display_name
+   end %>
+<% grouped = @channels.group_by { |c| c.category_name.presence || "No category" }.map { |category, channels| [ category, channels.map { |c| [ label_for.(c), c.id ] } ] } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="report-destinations-page">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Report destinations</h1>
+    <p class="text-secondary mt-2">
+      Where each report posts in Discord, as the agents' bot. Pick a channel and turn it on; the report posts there once per run and pings nobody.
+    </p>
+  </div>
+
+  <div class="card p-4 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="channel-directory">
+    <div class="min-w-0 space-y-1">
+      <h2 class="font-semibold text-heading text-base">Channel directory</h2>
+      <p class="text-body" data-test="channel-directory-status">
+        <%= pluralize(@channels.size, "postable channel") %>
+        <% if @last_synced_at %>
+          · synced <%= stamp.(@last_synced_at) %>
+        <% else %>
+          · never synced
+        <% end %>
+      </p>
+      <% if @sync_idle %>
+        <p class="text-warning-ink" data-test="channel-directory-idle">Not syncing: <%= @sync_idle %>.</p>
+      <% else %>
+        <p class="text-muted text-xs">Synced from Discord every 15 minutes. A channel the bot can no longer see is archived and leaves this list.</p>
+      <% end %>
+    </div>
+    <%= button_to "Refresh channels", admin_refresh_report_destinations_path, method: :post,
+                  class: "btn btn-secondary btn-sm w-full sm:w-auto",
+                  form: { class: "shrink-0", data: { test: "refresh-channels" } } %>
+  </div>
+
+  <% @registrations.each do |registration| %>
+    <% destination = @destinations[registration.key] %>
+    <% channel = destination&.discord_channel %>
+    <% delivery = @last_deliveries[registration.key] %>
+    <% state = if channel.nil? then "not_configured" elsif !destination.enabled? then "disabled" elsif !channel.selectable? then "unavailable" else "on" end %>
+    <div class="card p-4 space-y-3 text-sm" data-test="report-destination" data-report-key="<%= registration.key %>" data-state="<%= state %>">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+        <div class="min-w-0 space-y-1">
+          <h2 class="font-semibold text-heading text-base"><%= registration.label %></h2>
+          <p class="text-secondary"><%= registration.description %></p>
+          <p class="text-muted text-xs font-mono break-all"><%= registration.key %></p>
+        </div>
+        <% case state %>
+        <% when "on" %>
+          <span class="badge text-xs bg-success/10 text-success-ink border-success/40 shrink-0 self-start" data-test="destination-badge">Posting to <%= channel.display_name %></span>
+        <% when "disabled" %>
+          <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 shrink-0 self-start" data-test="destination-badge">Off</span>
+        <% when "unavailable" %>
+          <span class="badge text-xs bg-danger/10 text-danger-ink border-danger/40 shrink-0 self-start" data-test="destination-badge"><%= channel.display_name %> is gone or not postable</span>
+        <% else %>
+          <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 shrink-0 self-start" data-test="destination-badge">No channel</span>
+        <% end %>
+      </div>
+
+      <%= form_with url: admin_report_destination_path(report_key: registration.key), method: :patch, scope: :report_destination,
+                    class: "flex flex-col sm:flex-row sm:items-end gap-3", data: { test: "destination-form" } do |f| %>
+        <label class="flex flex-col gap-1 min-w-0 flex-1">
+          <span class="text-muted text-xs">Channel</span>
+          <%# A saved channel that went unavailable stays offered and selected, so a Save (an Off, say) keeps it and delivery resumes if the sync sees it again. %>
+          <% options = channel && !channel.selectable? ? [ [ "Saved, unavailable", [ [ "#{channel.display_name} (unavailable)", channel.id ] ] ] ] + grouped : grouped %>
+          <%= f.select :discord_channel_id,
+                       grouped_options_for_select(options, channel&.id),
+                       { include_blank: "No channel" },
+                       class: "input-field w-full min-w-0 text-sm", data: { test: "destination-channel" } %>
+        </label>
+        <label class="flex items-center gap-2 shrink-0 sm:pb-2">
+          <%= f.check_box :enabled, { checked: destination.nil? || destination.enabled?, data: { test: "destination-enabled" } } %>
+          <span class="text-body">On</span>
+        </label>
+        <%= f.submit "Save", class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "destination-save" } %>
+      <% end %>
+
+      <div class="text-xs text-muted border-t border-subtle pt-2" data-test="last-delivery">
+        <% if delivery.nil? %>
+          No delivery yet.
+        <% elsif delivery.posted? %>
+          Last posted <%= stamp.(delivery.posted_at || delivery.updated_at) %>
+          <% if delivery.url %>· <%= link_to "open in Discord", delivery.url, target: "_blank", rel: "noopener", class: "underline", data: { test: "last-delivery-link" } %><% end %>
+        <% else %>
+          Last try <%= stamp.(delivery.updated_at) %>: <span class="font-semibold"><%= delivery.status.humanize(capitalize: false) %></span><% if delivery.error.present? %> (<%= delivery.error %>)<% end %>
+        <% end %>
+        <% if destination&.updated_by.present? %><span class="block">Channel set by <%= destination.updated_by %>, <%= stamp.(destination.updated_at) %></span><% end %>
+      </div>
+    </div>
+  <% end %>
+</section>
