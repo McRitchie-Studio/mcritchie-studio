@@ -99,6 +99,10 @@ ENV["APPEARANCES_NO_LIVE_CALLS"] = "1"
 # falls back to these. test/lib/test_env_email_capture_test.rb pins it.
 ENV["LOCAL_EMAIL_CAPTURE"] = "0"
 ENV["AGENT_WORKTREE"] = "0"
+# The agent mailbox's per-soul Claude folders (AgentMailbox::Responder) go to a
+# throwaway directory, never the laptop's ~/.agents/mailbox.
+require "tmpdir"
+ENV["AGENT_MAILBOX_HOME"] = Dir.mktmpdir("agent-mailbox-test")
 require_relative "../config/environment"
 # A test database built before the migration baseline holds every table and none of
 # the baseline's versions. Recording them here lets rails/test_help find nothing pending.

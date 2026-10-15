@@ -1,0 +1,30 @@
+# The DOMAIN layer of an agent mailbox answer (docs/agents/system/agent-message-loop.md,
+# "Memory"): which business a soul answers for, and the doc that describes it.
+# AgentMailbox::ContextBuilder reads this file from the dispatcher's checkout.
+#
+# A soul with no entry, or a domain whose doc is missing, gets an empty domain
+# layer; nothing fails. Paths are relative to the hub checkout.
+domains:
+  mcritchie_studio:
+    name: McRitchie Studio
+    doc: docs/agents/domains/mcritchie-studio.md
+  turf_monster:
+    name: Turf Monster
+    doc: docs/agents/domains/turf-monster.md
+  commercial_welding:
+    name: Commercial Welding
+    doc: docs/agents/domains/commercial-welding.md
+
+souls:
+  avi: mcritchie_studio
+  xan: mcritchie_studio
+  carl: mcritchie_studio
+  steffon: mcritchie_studio
+  shannon: mcritchie_studio
+  jasper: mcritchie_studio
+  pokemon: mcritchie_studio
+  rex: mcritchie_studio
+  mason: mcritchie_studio
+  mack: mcritchie_studio
+  turf_monster: turf_monster
+  # commercial_welding: no soul answers for it yet.

@@ -169,8 +169,9 @@ clears. Without the bot token it logs a line and posts nothing.
 
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and runs the soul's one read-only action (avi:
-`bin/release status`; xan: `bin/task list`). It then builds a prompt from the
-soul's role doc, the action output and the message. Claude runs headless with
+`bin/release status`; xan: `bin/task list`). It then reads the message's context
+bundle and builds the prompt from the four layers (below, "Memory"), the action
+output and the message. Claude runs headless with
 **no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
 the message with the answer. The message sits between random-named
 `<untrusted-…>` markers, and the model is told to treat it as data to answer,
@@ -183,6 +184,90 @@ command. `--dry-run` peeks instead of claiming and writes nothing.
 The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
 agent CLI is (`bin/lib/agent_api.rb`).
+
+## Memory: the four context layers
+
+An answer remembers the person it answers. The memory is rebuilt from the hub's
+rows on every answer, never from a resumed Claude session, so any dispatcher on
+any machine builds the same context for the same rows (Alex's decision of
+2026-10-14, option A). Two pieces build it:
+
+- **The board chooses what.** `GET /api/v1/agent_messages/:id/context?worker=W`
+  answers only the worker holding the claim (409 `NOT_HOLDER` otherwise, since
+  the bundle carries other messages' text). `AgentMessages::ThreadLedger` builds it.
+- **The worker lays it out.** `AgentMailbox::ContextBuilder`
+  (`bin/lib/agent_context_builder.rb`) renders four labeled layers, each held to a
+  character budget in `ContextBuilder::BUDGETS` (the one place they live).
+
+| Layer | What | Source | Budget |
+|-------|------|--------|--------|
+| GENERAL | Who the soul is | `docs/agents/agents/<soul>/role.md` | 6,000 |
+| DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping or a missing doc is an empty layer | 4,000 |
+| USER | Notes about the sender | `agent_user_notes`, keyed by `(channel, author_ref)`, with a display name. Read only for now; writing notes is the `agent-respond-sop` task | 2,000 |
+| THREAD | The ledger | `agent_messages`: the pin, the summary, the recent turns | 12,000 (pin 3,000, summary 3,000) |
+
+**The ledger** is one person's exchanges with one soul in one Discord channel:
+every earlier row with the same `(soul_slug, channel, channel_ref, author_ref)`,
+oldest first, read through `index_agent_messages_on_ledger` and capped at 200
+rows. A different person's messages in the same channel are never in it.
+Claims serialize per ledger as well as per thread (`AgentMessage.claimable`):
+a person's second message waits until their first is answered, even when the two
+are not a reply chain. The second answer's context therefore always carries the
+first exchange. Another person's message, or the same person's message to another
+soul or in another channel, is not held back. A row with no `author_ref` has no
+ledger.
+
+**The pin.** A message that is an explicit reply joins the thread of the message
+it answers (its `thread_key` names an earlier root). The latest earlier row of
+that thread is pinned: always included, marked `PINNED … the one being answered`,
+and taken out of the turn list. It is included even when another person wrote
+it, because the reply chose it. `DiscordIngest` does not yet store the replied-to
+message id, so a reply to an OLDER message in a long thread pins the thread's
+latest row; storing the reference id is a follow-up.
+
+**Pruning.** The last 10 turns that are no older than 7 days come back
+verbatim. The 7 days are counted back from the message's own sent time, not from
+the clock, so a rebuild next month is identical. Every older turn folds into
+the **summary**: one extractive line per turn (its date, the first line of the
+message, and the first line of the answer, each cut to 140 characters), keeping
+the newest 40. The builder then fits the layer to its budget, dropping the oldest
+turns first. A dropped turn is counted into the summary's header and its line
+is not added. The summary's own oldest lines go next.
+
+**Why extractive.** It is a pure function of the rows: deterministic, free (no
+model call), and it stores no model-written text. A model-written summary saved
+on a row would carry anything a message had injected into it forward into every
+later answer to that person.
+
+**Trust.** Labels, rules and budgets are code. Every byte a person wrote sits
+inside the prompt's random `<untrusted-…>` fence: the message, their earlier
+messages, the soul's earlier answers to them, the notes, and every name they
+chose. A planted copy of the fence marker is defused before it is fenced.
+
+## Viewing a run
+
+Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
+(`AGENT_MAILBOX_HOME` overrides the root), created on demand, so a soul's
+transcripts sit together. What `claude -p --output-format json` returns was
+checked on 2026-10-14. The envelope has `session_id`, `num_turns`,
+`duration_ms`, `usage.output_tokens`, `usage.output_tokens_details.thinking_tokens`
+and `modelUsage` (keyed by model). It has no reasoning text. The reasoning
+is read from the session transcript (`~/.claude/projects/<cwd slug>/<session_id>.jsonl`),
+from its assistant `thinking` blocks. Thinking is often redacted (a block with a
+signature and no text), so `run_meta.reasoning_source` says which case applies:
+`transcript`, `redacted`, `none` or `no_transcript`.
+
+The worker sends `claude_session_id`, `claude_cwd`, `reasoning` (capped at 20,000)
+and `run_meta` with complete. They are stored on the row
+(`AgentMessage.run_record` caps each). `/admin/agent_messages/:id` and
+`bin/agent-inbox show <id>` show them with a ready line to reopen the session on
+the machine that ran it:
+
+```bash
+cd ~/.agents/mailbox/xan && claude --resume <session_id>
+```
+
+Resuming is for an operator reading a run. The answer path never resumes.
 
 ## Setup
 
@@ -245,6 +330,9 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
   reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
   skipped when no bot token is set, failed when the job's five tries are spent)
   is the Reply column.
+- A completed message's page also shows its Claude run: the resume line, the
+  envelope numbers and the reasoning when the transcript carried any ("Viewing a
+  run" above).
 - `bin/agent-inbox list [--soul S] [--status S]`, `bin/agent-inbox show <id>`,
   and `bin/agent-inbox tail [--soul S]` read the same rows through the API.
 - A Discord read error is kept on the channel's cursor

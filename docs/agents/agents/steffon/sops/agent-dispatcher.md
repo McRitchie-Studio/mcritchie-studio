@@ -160,6 +160,8 @@ With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 | **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools "" --output-format json`. Fix what it prints |
 | **Stuck lease**: a message `claimed` with its lease long lapsed | `/admin/agent_messages`, Claim column | Nothing to do by hand: the next claim takes a lapsed lease back (or dead-letters it on attempt 3) |
 | **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
+| **Context failing**: the log repeats `releasing #N: could not read the message's context` | The board's `GET /api/v1/agent_messages/:id/context` (holder-only) | Treat it as **Board auth** or a hub outage. The dispatcher gives the message back rather than answer without the person's memory |
+| **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only; the answer path never resumes |
 | **Unrouted**: a reply to a held message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
 
 ## Uninstall

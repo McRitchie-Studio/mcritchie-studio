@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -237,6 +237,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.string "channel_ref", null: false
     t.datetime "claimed_at"
     t.string "claimed_by"
+    t.string "claude_cwd"
+    t.string "claude_session_id"
     t.datetime "completed_at"
     t.text "content", default: "", null: false
     t.datetime "created_at", null: false
@@ -244,12 +246,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.string "guild_id"
     t.datetime "lease_expires_at"
     t.jsonb "mentions", default: {}, null: false
+    t.text "reasoning"
     t.string "reply_external_id"
     t.string "reply_nonce"
     t.datetime "reply_posted_at"
     t.string "reply_status"
     t.text "response_text"
     t.string "routed_by"
+    t.jsonb "run_meta", default: {}, null: false
     t.datetime "sent_at"
     t.string "soul_slug"
     t.string "status", default: "received", null: false
@@ -257,6 +261,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.datetime "updated_at", null: false
     t.integer "usage_refunds", default: 0, null: false
     t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
+    t.index ["soul_slug", "channel", "channel_ref", "author_ref", "created_at"], name: "index_agent_messages_on_ledger"
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"
     t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
@@ -281,6 +286,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.index ["slug"], name: "index_agent_sessions_on_slug", unique: true
     t.index ["soul", "tier"], name: "index_agent_sessions_on_soul_and_tier"
     t.index ["task_slug", "revoked_at"], name: "index_agent_sessions_on_task_slug_and_revoked_at"
+  end
+
+  create_table "agent_user_notes", force: :cascade do |t|
+    t.string "author_ref", null: false
+    t.string "channel", null: false
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.text "notes", default: "", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel", "author_ref"], name: "index_agent_user_notes_on_channel_and_author_ref", unique: true
   end
 
   create_table "agents", force: :cascade do |t|

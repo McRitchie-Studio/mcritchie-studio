@@ -128,6 +128,9 @@ class StateStoreContainmentTest < Minitest::Test
     "lib/task_usage_sandbox.rb" => [:guard, "the guard itself — it names .agents to DEFINE the forbidden root"],
     "bin/lib/session_markers.rb" => [:ruby, "narration-marker choke point: marker_path is PRIVATE; write/delete enforce"],
     "bin/lib/agent_api.rb" => [:ruby, "agent-token cache: every mutation goes through guarded_token_cache_path"],
+    "bin/lib/agent_mailbox.rb" => [:ruby, "each soul's Claude folder under ~/.agents/mailbox (HOME's .agents, " \
+                                          "not <projects>/.agents, but the scan cannot tell them apart): " \
+                                          "mailbox_root is PRIVATE and soul_folder, the one seam, enforce!s"],
     "bin/lib/harness_key.rb" => [:ruby, "this machine's harness key: path is PRIVATE; write/clear go through " \
                                         "guarded_path, and a sandboxed read answers nothing"],
     "bin/task" => [:ruby, "active-feature marker + cost store: enforce! at each write seam"],
@@ -182,6 +185,9 @@ class StateStoreContainmentTest < Minitest::Test
   # full. Anything not on it is refused, whatever verb it reaches for, in whatever
   # language it shells out to. There is no list left that can be incomplete.
   UNGUARDED_PATH_METHODS = {
+    "bin/lib/agent_mailbox.rb" => {
+      "mailbox_root" => "BUILDER — private; soul_folder, the only method that hands a folder out, launders it"
+    },
     "bin/lib/session_markers.rb" => {
       "marker_path" => "BUILDER — private; the exported mutations (write/delete) launder it",
       "read" => "READ — returns the marker's contents",

@@ -8,7 +8,9 @@ module Api
     #   GET  /api/v1/agent_messages/next       the message a claim would take now; writes nothing
     #   GET  /api/v1/agent_messages/:id        one message with its event timeline
     #   POST /api/v1/agent_messages/claim      { soul | souls[], worker, channel?, wait? } -> the claimed message or null
-    #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary? }
+    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::ThreadLedger)
+    #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary?,
+    #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta? }
     #   POST /api/v1/agent_messages/:id/release  { worker, reason?, code? }   code usage_limit refunds the attempt
     #   POST /api/v1/agent_messages/:id/renew    { worker }                   the holder extends its lease
     #
@@ -29,8 +31,8 @@ module Api
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
     class AgentMessagesController < BaseController
-      before_action :load_message, only: [ :show, :complete, :release, :renew ]
-      before_action :require_soul_scope!, only: [ :next_message, :claim, :complete, :release, :renew ]
+      before_action :load_message, only: [ :show, :context, :complete, :release, :renew ]
+      before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew ]
 
       LIST_LIMIT = 200
       WAIT_CAP = 20
@@ -86,10 +88,26 @@ module Api
         render_data(@message.reload.as_api_json)
       end
 
+      # The memory the holder answers from: the person's ledger with this soul in
+      # this channel, the pin, the summary of older turns and the notes about the
+      # sender. HOLDER-ONLY (409 otherwise): the bundle carries other messages'
+      # text, so only the worker answering this one may read it.
+      def context
+        unless @message.claimed? && @message.claimed_by.present? && @message.claimed_by == params[:worker].to_s.strip
+          return render_refusal(AgentMessage::Refused.new(
+            "message #{@message.id} is #{@message.status}; only the worker holding the claim may read its context",
+            code: "NOT_HOLDER"
+          ))
+        end
+
+        render_data(AgentMessages::ThreadLedger.new(@message).bundle)
+      end
+
       def complete
         outcome = guarded(target: @message) do
           @message.complete!(worker: params[:worker], response_text: params[:response_text],
-                             action_summary: params[:action_summary], actor: session_actor(acting_soul))
+                             action_summary: params[:action_summary], actor: session_actor(acting_soul),
+                             run: run_params)
         end
         return if performed?
 
@@ -107,6 +125,14 @@ module Api
       end
 
       private
+
+      # What the answering Claude run reported (AgentMailbox::ClaudeRun): all optional.
+      def run_params
+        meta = params[:run_meta]
+        meta = meta.respond_to?(:to_unsafe_h) ? meta.to_unsafe_h : {}
+        { claude_session_id: params[:claude_session_id], claude_cwd: params[:claude_cwd],
+          reasoning: params[:reasoning], run_meta: meta }
+      end
 
       def load_message
         @message = AgentMessage.find(params[:id])

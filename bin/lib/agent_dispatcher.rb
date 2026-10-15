@@ -275,11 +275,20 @@ module AgentMailbox
     def start(message)
       now = @clock.call
       log "claimed ##{message['id']} for #{message['soul_slug']} (attempt #{message['attempts']})"
+      # The memory, fetched here on the main loop (every board call is): the
+      # holder's context bundle. Without it the answer would forget the person,
+      # so a failed fetch gives the message back instead of answering blind.
+      context = begin
+        @client.context(message["id"], worker: @worker)["data"]
+      rescue ApiError => e
+        give_back(message["id"], "could not read the message's context: #{e.message}")
+        return
+      end
       responder = Responder.new(soul: message["soul_slug"], claude_cmd: @claude_cmd, runner: @runner,
                                 repo_root: @repo_root, clock: @clock)
       thread = Thread.new do
         Thread.current.report_on_exception = false
-        responder.respond(message)
+        responder.respond(message, context: context)
       end
       @runs << Run.new(message: message, thread: thread, started_at: now, renewed_at: now)
     end
@@ -324,7 +333,7 @@ module AgentMailbox
         pause_until(@clock.call + FAILURE_PAUSE, "claude_failed")
       else
         result = @client.complete(id, worker: @worker, response_text: answer.reply,
-                                      action_summary: answer.action&.dig(:summary))
+                                      action_summary: answer.action&.dig(:summary), run: answer.run_record)
         log "completed ##{id} (#{result.dig('meta', 'outcome')})"
       end
     rescue ApiError => e

@@ -47,6 +47,23 @@
   <% end %>
 <% end %>
 
+<% if @message.claude_session_id.present? %>
+  <h2 class="font-semibold mb-1">Claude run</h2>
+  <div id="am-run" class="text-sm mb-6 space-y-1">
+    <% if @message.resume_command %>
+      <p class="text-xs opacity-70">Reopen this answer's session on the machine that ran it:</p>
+      <code class="block font-mono text-xs break-all"><%= @message.resume_command %></code>
+    <% end %>
+    <% if @message.run_meta.present? %>
+      <p class="text-xs opacity-70 break-all"><%= @message.run_meta.map { |k, v| "#{k}: #{v}" }.join(" · ") %></p>
+    <% end %>
+  </div>
+  <% if @message.reasoning.present? %>
+    <h2 class="font-semibold mb-1">Reasoning <span class="text-xs font-normal opacity-60">from the run's transcript; written by the model, read as data</span></h2>
+    <div id="am-reasoning" class="am-untrusted text-sm mb-6"><%= @message.reasoning %></div>
+  <% end %>
+<% end %>
+
 <h2 class="font-semibold mb-2">Timeline</h2>
 <ol id="am-timeline" class="text-sm border-l border-subtle pl-4 space-y-2">
   <% @message.events.each do |event| %>
