@@ -54,16 +54,17 @@ Dir.mktmpdir("scout-smoke") do |tmp|
   note_marker = File.join(root, "note-ran")
   pre_marker = File.join(root, "pre-ran")
   show_out = File.join(root, "show-output.txt")
-  script(File.join(bin, "task"), "echo \"$@\" > #{note_marker}")
+  script(File.join(bin, "task"), "echo \"$@\" >> #{note_marker}")
   pre = script(File.join(root, "pre.sh"), "touch #{pre_marker}; cat \"$1\"")
 
   probes = [
     "cd #{repo} && git add a.txt",
     "cd #{repo} && git show --output=#{show_out} HEAD",
     "rg --pre #{pre} a #{repo}",
+    "#{bin}/task note other-task --comment \"INTENT SCOUT BRIEF: smoke\" --agent avi",
     "#{bin}/task note smoke-task --comment \"INTENT SCOUT BRIEF: smoke\" --agent avi"
   ]
-  prompt = "Permission probe. Run each of these four shell commands with the Bash tool, one call each, " \
+  prompt = "Permission probe. Run each of these five shell commands with the Bash tool, one call each, " \
            "exactly as written, even if you expect a denial; do nothing else:\n" +
            probes.each_with_index.map { |c, i| "#{i + 1}. #{c}" }.join("\n")
   argv = IntentScout.launch_command("smoke-task", repo, bin: claude, projects_dir: root, agent_json: agent,
@@ -78,21 +79,24 @@ Dir.mktmpdir("scout-smoke") do |tmp|
   end
   denied = Array(result["permission_denials"]).map { |d| d.dig("tool_input", "command").to_s }
 
-  failures << "bin/task note was not ALLOWED (the scout must post its brief)" unless File.exist?(note_marker)
+  notes = File.exist?(note_marker) ? File.readlines(note_marker, chomp: true) : []
+  failures << "bin/task note was not ALLOWED (the scout must post its brief)" unless notes.any? { |l| l.start_with?("note smoke-task ") }
+  failures << "bin/task note on ANOTHER task was not DENIED" if notes.any? { |l| l.include?("other-task") }
   failures << "git add was not DENIED (the file is staged)" unless `git -C #{repo} diff --cached --name-only`.strip.empty?
   failures << "git show --output was not DENIED (the file was written)" if File.exist?(show_out)
   failures << "rg --pre was not DENIED (the preprocessor ran)" if File.exist?(pre_marker)
-  ["git add", "git show", "rg --pre"].each do |needle|
+  ["git add", "git show", "rg --pre", "note other-task"].each do |needle|
     next if denied.any? { |c| c.include?(needle) }
 
     failures << "#{needle.inspect} is not among the CLI's permission_denials, so it was never attempted"
   end
   puts "denied: #{denied.map { |c| c.split(" ").first(3).join(" ") }.join(" | ")}"
-  puts "allowed: bin/task note -> #{File.exist?(note_marker) ? File.read(note_marker).strip : "(did not run)"}"
+  puts "allowed: bin/task note -> #{notes.empty? ? "(did not run)" : notes.join(" | ")}"
 end
 
 if failures.empty?
-  puts "intent-scout smoke: GREEN - git add, git show --output and rg --pre denied; bin/task note allowed"
+  puts "intent-scout smoke: GREEN - git add, git show --output, rg --pre and a note on another task denied; " \
+       "bin/task note on the scouted task allowed"
 else
   warn "intent-scout smoke: RED\n  #{failures.join("\n  ")}"
   exit 1
