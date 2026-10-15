@@ -128,9 +128,10 @@ A COMPROMISED key is an incident (old backups still open with it): rotate, move 
 Registration before config: mint, file in 1Password, update and prove every registration, write
 the runtime stores, migrate, verify every store, then revoke (the point of no return). Where a
 provider allows two live keys (`agent.aws`, IAM user `mcritchie-s3`), add the second, deploy and
-verify everywhere, then delete the first. The signing-key case: `agent.xan.solana`
-(`studio-agents-admin`, field `private key`, `8K81…`), `SOLANA_ADMIN_KEY` on `turf-monster-qa`
-and `turf-monster-mainnet`:
+verify everywhere, then delete the first. The signing-key case, as it stood before the
+2026-10-14 rotation retired it: `agent.xan.solana` (`studio-agents-admin`, field `private key`,
+`8K81…`), `SOLANA_ADMIN_KEY` on `turf-monster-qa` and `turf-monster-mainnet`. Production's key
+is now `solana.turf.server` (`4S39…`):
 
 | Registration | Updated by | Proof |
 |---|---|---|
@@ -138,7 +139,7 @@ and `turf-monster-mainnet`:
 | Squads V4 upgrade multisig, per cluster | one config transaction, `app.squads.so` | `check_squads_rotation` below |
 | `scripts/squad-upgrade.js` devnet seat `xan` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex's key (`7ZDJ…`) is a Phantom export with no filed item |
 
-`update_signers` replaces the whole set (deployed: three slots, 2-of-3) and its cosigners must
+`update_signers` replaces the whole set (v0.26: five slots, 3 signatures) and its cosigners must
 survive it (`SignerContinuityRequired`, 6017), so **the outgoing key never signs**. Fund the new
 key first; it pays fees for `create_contest`, `mint_entry_token` and `enter_contest`. Verify: new
 in, old out, cosigners kept. Squads is a separate authority: land or cancel approved upgrade

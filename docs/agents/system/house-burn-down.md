@@ -13,7 +13,7 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 | [`chain-ops`](https://github.com/McRitchie-Studio/chain-ops) | Planned Solana environment control plane | Rails 8.1 / Postgres | 3400 |
 | [`studio-engine`](https://github.com/McRitchie-Studio/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
 | [`solana-studio`](https://github.com/McRitchie-Studio/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
-| [`turf-vault`](https://github.com/McRitchie-Studio/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by Turf Monster | Anchor / Rust / Solana | — |
+| [`turf-vault`](https://github.com/McRitchie-Studio/turf-vault) | Onchain escrow vault. Five-key multisig, per-action thresholds. Consumed by Turf Monster | Anchor / Rust / Solana | — |
 
 **Dependency graph (build order):**
 

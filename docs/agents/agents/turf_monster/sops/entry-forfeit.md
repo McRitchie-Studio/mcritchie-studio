@@ -286,7 +286,7 @@ Stated so nobody stretches this SOP past its edges:
   closest lever is the account freeze (`User#freeze_for_payment_risk!` /
   `#unfreeze!`), which blocks money-moving actions and is a different decision
   with a different trigger.
-- **Cancelling a whole contest.** That is `cancel_contest`, 2-of-3 multisig,
+- **Cancelling a whole contest.** That is `cancel_contest`, 3 of the 5 VaultState signers,
   and it refunds the pool to the creator — a separate act, not a loop over this
   one.
 - **A settled contest.** Escalate to Alex.

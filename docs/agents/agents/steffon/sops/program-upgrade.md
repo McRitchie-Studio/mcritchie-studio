@@ -144,15 +144,18 @@ so two programs' cards cannot collide.
      only when the program's and the buffer's authority are both the vault, the
      buffer's hash matches the reviewed build, and `--spill` is the vault.
 
-  For either, the agent seats `7auwTL` and `4bKN` create and approve the proposal.
+  For either, the agent seats `7auwTL` and `3LTL` (`solana.turf.governance.v2`,
+  which replaced the exposed `4bKN` on 2026-10-14) create and approve the proposal.
   Mr. McRitchie approves from his own seat. An agent executes only after his
   approval is on chain. Mr. McRitchie set this on 2026-10-12 ("Cool let me know
   when the upgrade URL is ready"), and mainnet Squad #8 was the first upgrade
   done this way: he executed it at about 13:28 MDT, landing v0.26 at slot
   456161810. Config transactions and any other instruction are not covered.
-- **The barred keys.** No agent runs a mainnet signature with `8K81`, `CytJ` or
-  Mack unless Mr. McRitchie rules on that one instance. The app's own server key
-  (`8K81` today) signing inside the running app is the app, not an agent. The
+- **The barred keys.** No agent runs a mainnet signature with Mack, or with a
+  retired key (`8K81`, `CytJ`, `4bKN`; swept to 0 SOL and archived 2026-10-14),
+  unless Mr. McRitchie rules on that one instance. The app's own server key
+  (`4S39`, `solana.turf.server`, since 2026-10-14) signing inside the running app
+  is the app, not an agent. The
   v0.26 mainnet `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
   Outside the exception, an agent runs only reads and dry runs on mainnet:
   `squad-upgrade.js` without `--send`, `squad-inventory.js`,
@@ -207,7 +210,8 @@ Run it once for devnet, then once for mainnet. Work in a turf-vault desk on
    follow the signing rule above. **STOP if the dry run plans an `extendProgram`.**
    `squad-upgrade.js --send` would sign the extend with an agent seat, and the
    exception does not cover it. Extend first, separately: with the single-use
-   deploy key (as for v0.26, `HwqC…`), or as Mr. McRitchie rules on the card.
+   deploy key (as for v0.26, `HwqC…`, since swept and archived), or as Mr.
+   McRitchie rules on the card.
    Re-run the dry run, and go on only when it plans no extend. **The agent creates
    the upgrade proposal.** Set the buffer's authority to the vault, hash the
    reviewed build, and confirm both on a fresh dry run's `BUFFER AUTHORITY:`

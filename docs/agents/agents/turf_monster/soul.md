@@ -103,7 +103,7 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   judge; whether the SENTENCE is ours is Mason's, and he can veto a line
 - [`sops/collect-vault-revenue.md`](sops/collect-vault-revenue.md) — collect
   operator revenue (entry fees) out of the vault: sweep the `op_rev` ATA to the
-  treasury on a 2-of-3, then withdraw from the Squads vault to Alex's wallet on a
+  treasury on 3 of the 5 VaultState signers, then withdraw from the Squads vault to Alex's wallet on a
   3-of-5. TWO hops, and the first one does not reach a wallet. Direct-invocation
   only and off the launcher card — it runs when Alex asks for the money, which
   nothing here can know. Judging whether the balance is finished revenue is mine;

@@ -46,7 +46,7 @@ which way you are arguing and why.
 
 A sports pick'em product. Players build an entry from a slate of matchups with
 multipliers; contests settle against real results, with escrow and prize payout
-running on Solana (`turf-vault`, 2-of-3 multisig). Live at
+running on Solana (`turf-vault`, a five-key multisig). Live at
 **turfmonster.media**, port 3100 locally.
 
 ## Finding on day one: the front door describes last season's game
