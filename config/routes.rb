@@ -353,6 +353,11 @@ Rails.application.routes.draw do
     # The agent mailbox: messages routed to souls, their claims and replies
     # (docs/agents/system/agent-message-loop.md). Read-only.
     resources :agent_messages, only: [:index, :show]
+    # Which Discord channel each registered report posts to
+    # (docs/agents/system/report-destinations.md).
+    get "report_destinations", to: "report_destinations#index", as: :report_destinations
+    post "report_destinations/refresh", to: "report_destinations#refresh", as: :refresh_report_destinations
+    patch "report_destinations/:report_key", to: "report_destinations#update", as: :report_destination
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
