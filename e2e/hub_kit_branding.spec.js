@@ -1,9 +1,10 @@
 // [e2e] The hub's branding is its saved Studio kit (task studio-adopts-its-kit).
 // `bin/rails logos:install BRAND=studio` wrote public/brand/ from the kit saved
 // at /logos/studio; the favicon and the app icon are rasterized from it. The
-// navbar, the footer and the sign-in card draw icon-light.svg, and a dark page
-// swaps in icon-dark.svg by CSS (application.css, KIT ICON BY THEME). Once the
-// engine draws Studio.navbar_wordmark the navbar shows the kit's lockup instead.
+// navbar and the sign-in card draw icon-light.svg, and a dark page swaps in
+// icon-dark.svg by CSS (application.css, KIT ICON BY THEME). Once the engine
+// draws Studio.navbar_wordmark the navbar shows the kit's lockup instead, and
+// once it draws the footer's `lockup` fact the footer shows the Stacked Logo.
 const { test, expect } = require("@playwright/test");
 
 const withTheme = (page, theme) => page.addInitScript((value) => localStorage.setItem("theme", value), theme);
@@ -18,7 +19,9 @@ const painted = (img) => img.evaluate((el) => {
 
 test("the favicon, app icon and kit files are served as images", async ({ page, request }) => {
   await page.goto("/signin");
-  await expect(page.locator("link[rel='icon']")).toHaveAttribute("href", "/favicon.png");
+  // Bare on the released engine; with its content version once studio-engine
+  // links it as /favicon.png?v=<8 hex> (task footer-stacked-logo).
+  await expect(page.locator("link[rel='icon']")).toHaveAttribute("href", /^\/favicon\.png(\?v=[0-9a-f]{8})?$/);
 
   const favicon = await request.get("/favicon.png");
   expect(favicon.status()).toBe(200);
@@ -70,12 +73,56 @@ test("on a dark page the sign-in card and the navbar swap in the kit's dark-page
   expect(["/brand/icon-dark.svg", "/brand/navbar-dark.svg"]).toContain((await painted(brand)).shown);
 });
 
-test("the footer draws the kit icon, never inverted", async ({ page }) => {
-  await withTheme(page, "light");
+// The footer draws the kit's Stacked Logo (task footer-stacked-logo): the
+// engine's `lockup` fact renders stacked-light.svg and stacked-dark.svg and its
+// CSS shows the one that matches the theme. An engine from before the fact
+// draws the kit icon and the wordmark instead, so the check follows whichever
+// is bundled; the hub's CI runs the released engine until the release relocks.
+const DESKTOP = { width: 1280, height: 900 };
+const PHONE = { width: 390, height: 844 };
+
+// One bare test( per case below: the e2e census counts declarations, so no loop.
+async function checkFooterLogo(page, viewport, theme) {
+  await page.setViewportSize(viewport);
+  await withTheme(page, theme);
   await page.goto("/");
-  const logo = page.locator("footer[data-site-footer] img.ftr-logo");
-  await logo.scrollIntoViewIfNeeded();
-  await expect(logo).toBeVisible();
-  await expect(logo).not.toHaveClass(/ftr-logo-invert/);
-  expect(await painted(logo)).toEqual({ src: "/brand/icon-light.svg", shown: "/brand/icon-light.svg", loaded: true });
-});
+  const brand = page.locator("footer[data-site-footer] .ftr-brand");
+  await brand.scrollIntoViewIfNeeded();
+
+  if (await brand.locator("img.ftr-lockup").count() === 0) {
+    const logo = brand.locator("img.ftr-logo");
+    await expect(logo).toBeVisible();
+    await expect(logo).not.toHaveClass(/ftr-logo-invert/);
+    expect((await painted(logo)).shown).toBe(`/brand/icon-${theme}.svg`);
+    return;
+  }
+
+  const shown = brand.locator("img.ftr-lockup:visible");
+  await expect(shown).toHaveCount(1);
+  expect(await painted(shown)).toEqual({ src: `/brand/stacked-${theme}.svg`, shown: `/brand/stacked-${theme}.svg`, loaded: true });
+  await expect(shown).toHaveAttribute("alt", "McRitchie Studio");
+  await expect(brand.locator(`img.ftr-lockup-${theme === "light" ? "dark" : "light"}`)).toBeHidden();
+  await expect(brand.locator("img.ftr-logo, .ftr-wordmark")).toHaveCount(0);
+
+  // Sized like the icon-and-name block it replaced, inside its column, and
+  // centred in it with the social row (Alex 2026-10-15 08:21: no tagline,
+  // centre justified).
+  const box = await shown.boundingBox();
+  expect(box.height).toBeGreaterThan(96);
+  expect(box.height).toBeLessThan(128);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  const column = await brand.boundingBox();
+  const centre = (b) => b.x + b.width / 2;
+  expect(Math.abs(centre(box) - centre(column))).toBeLessThanOrEqual(2);
+  const socials = brand.locator(".ftr-socials a");
+  await expect(socials).toHaveCount(3);
+  const first = await socials.first().boundingBox();
+  const last = await socials.last().boundingBox();
+  expect(Math.abs((first.x + last.x + last.width) / 2 - centre(column))).toBeLessThanOrEqual(2);
+  await expect(brand.locator(".ftr-tagline")).toHaveCount(0);
+}
+
+test("the footer shows the kit's stacked logo on a light page at desktop width", async ({ page }) => checkFooterLogo(page, DESKTOP, "light"));
+test("the footer shows the kit's stacked logo on a dark page at desktop width", async ({ page }) => checkFooterLogo(page, DESKTOP, "dark"));
+test("the footer shows the kit's stacked logo on a light page at phone width", async ({ page }) => checkFooterLogo(page, PHONE, "light"));
+test("the footer shows the kit's stacked logo on a dark page at phone width", async ({ page }) => checkFooterLogo(page, PHONE, "dark"));

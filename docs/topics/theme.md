@@ -10,7 +10,7 @@
 - **Primary**: `#8E82FE` Violet — CTAs, buttons, links, hovers, form focus. Views use `text-primary`, `bg-primary`, `bg-primary-700` etc. (dynamic Tailwind palette from CSS vars, not hardcoded violet).
 - **Success accent**: `#4BAF50` Green (default) — flash notices, success toasts, active status dots
 - **Font**: Montserrat (weights 400-900)
-- **Logo**: the saved Studio kit in `public/brand/` (`bin/rails logos:install BRAND=studio`): the navbar draws the kit's Navbar Logo lockup (`Studio.navbar_wordmark`: `navbar-light.svg`, `navbar-dark.svg` on a dark page); the footer and sign-in card draw the kit icon (`icon-light.svg`, with `icon-dark.svg` swapped in on a dark page) + "McRitchie **Studio**" in HTML text. `app/assets/images/logo-icon.svg` is the original the kit's icon was traced from.
+- **Logo**: the saved Studio kit in `public/brand/` (`bin/rails logos:install BRAND=studio`): the navbar draws the kit's Navbar Logo lockup (`Studio.navbar_wordmark`: `navbar-light.svg`, `navbar-dark.svg` on a dark page); the footer draws the kit's Stacked Logo (the site footer's `lockup` fact: `stacked-light.svg`, `stacked-dark.svg` on a dark page); the sign-in card draws the kit icon (`icon-light.svg`, with `icon-dark.svg` swapped in on a dark page) + "McRitchie **Studio**" in HTML text, as the footer does on an engine without the fact. `app/assets/images/logo-icon.svg` is the original the kit's icon was traced from.
 - **Navbar Logo generator**: `Logos::NavbarLogo` draws a brand's logo from an icon and a name as pure vector. See [`logos.md`](logos.md).
 
 ## Navbar

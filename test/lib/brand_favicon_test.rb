@@ -5,7 +5,10 @@
 # kit icon, whose box is its ink (Logos::IconInk), with no margin of its own, so the ink's alpha bounding box must
 # touch two opposite edges of the PNG. The PWA app icon (public/icon.png) is the exception: the manifest serves it as
 # "purpose": "maskable", and Android crops a maskable icon to a circle, so its artwork keeps a 0.16 safe zone on every
-# edge (review of PR 2101). Read with Zlib alone: the PNG is 8-bit RGBA, not interlaced, as Chromium writes it.
+# edge (review of PR 2101). The favicon draws the SMALL-SIZE MARK (Logos::SmallMark, public/favicon-mark.svg; task
+# footer-stacked-logo): the icon without the sparkles, side dashes and loose coins that a 16-32 px tab shows only as
+# specks, and that set the full icon's box, so the chest filled about 70% of the tab. It is fit, never cropped. Alex 2026-10-15 08:10, of the
+# old chest-only favicon: "That is the correct size". Read with Zlib alone: the PNG is 8-bit RGBA, not interlaced, as Chromium writes it.
 
 require "minitest/autorun"
 require "zlib"
@@ -80,11 +83,77 @@ class BrandFaviconTest < Minitest::Test
     assert_in_delta top, bottom, 2, "centred down"
   end
 
+  # NOTHING IS CUT (Alex 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"). The favicon is the small-
+  # size mark FIT in its square: its ink box has the mark's own proportions (public/favicon-mark.svg's viewBox, whose
+  # box is its ink), the long side spanning the tile and the short side centred, so no edge the ink touches is one it
+  # was clipped at.
+  MARK = File.expand_path("../../public/favicon-mark.svg", __dir__)
+
+  def test_the_favicon_is_the_whole_mark_fit_never_cropped
+    width, height, rows = rgba(FAVICON)
+    mark_w, mark_h = File.read(MARK)[/viewBox="0 0 ([\d.]+ [\d.]+)"/, 1].split.map(&:to_f)
+    scale = width / [mark_w, mark_h].max
+    inked = rows.each_with_index.flat_map { |row, y| (0...width).filter_map { |x| [x, y] if row.getbyte(x * 4 + 3) > 16 } }
+    ink_w = inked.map(&:first).max - inked.map(&:first).min + 1
+    ink_h = inked.map(&:last).max - inked.map(&:last).min + 1
+
+    assert_in_delta mark_w * scale, ink_w, 2, "the ink is as wide as the whole mark at this scale: nothing clipped across"
+    assert_in_delta mark_h * scale, ink_h, 2, "the ink is as tall as the whole mark at this scale: nothing clipped down"
+  end
+
+  ISLAND_SHARE = 0.02
+
+  # THE CHEST FILLS THE TAB: no loose speck sets the favicon's box. Every island of ink (8-connected pixels with alpha
+  # over 16) smaller than ISLAND_SHARE of the tile lies inside the box of an island at least that big: a coin drawn
+  # inside the chest is detail, a sparkle beside it is a speck. The full kit icon fails this (its sparkles, dashes
+  # and loose coins sit outside the chest), which is what the favicon used to draw.
+  def test_the_favicon_has_no_isolated_speck
+    width, height, rows = rgba(FAVICON)
+    islands = ink_islands(width, height, rows)
+    big, small = islands.partition { |island| island[:size] >= ISLAND_SHARE * width * height }
+    refute_empty big
+    loose = small.reject { |speck| big.any? { |island| contains?(island[:box], speck[:box]) } }
+    assert_empty loose, "isolated specks (size, box): #{loose.map { |i| [i[:size], i[:box]] }.first(8)}"
+  end
+
+  def ink_islands(width, height, rows)
+    inked = Array.new(height) { |y| Array.new(width) { |x| rows[y].getbyte(x * 4 + 3) > 16 } }
+    seen = Array.new(height) { Array.new(width, false) }
+    islands = []
+    height.times do |y0|
+      width.times do |x0|
+        next if !inked[y0][x0] || seen[y0][x0]
+
+        seen[y0][x0] = true
+        stack = [[x0, y0]]
+        size = 0
+        box = [x0, y0, x0, y0]
+        until stack.empty?
+          x, y = stack.pop
+          size += 1
+          box = [[box[0], x].min, [box[1], y].min, [box[2], x].max, [box[3], y].max]
+          [-1, 0, 1].product([-1, 0, 1]).each do |dx, dy|
+            nx = x + dx
+            ny = y + dy
+            next if nx.negative? || ny.negative? || nx >= width || ny >= height || seen[ny][nx] || !inked[ny][nx]
+
+            seen[ny][nx] = true
+            stack << [nx, ny]
+          end
+        end
+        islands << { size:, box: }
+      end
+    end
+    islands
+  end
+
+  def contains?(outer, inner) = outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3]
+
   # The maskable app icon: opaque, its artwork (every pixel unlike the corner's background) inside the safe zone on
   # every edge and touching it on two opposite edges, so the art is as large as the zone allows (about 346 of 512).
   def test_the_maskable_app_icon_keeps_its_safe_zone
-    assert_match(%r{"src": "/icon.png",\s*"type": "image/png",\s*"sizes": "512x512",\s*"purpose": "maskable"}, File.read(MANIFEST),
-                 "the manifest still serves icon.png as maskable; drop this test's safe zone only if it stops")
+    assert_match(%r{"src": "<%= icon_src %>",\s*"type": "image/png",\s*"sizes": "512x512",\s*"purpose": "maskable"}, File.read(MANIFEST),
+                 "the manifest still serves icon.png (icon_src) as maskable; drop this test's safe zone only if it stops")
     width, height, rows = rgba(APP_ICON)
     assert_equal [512, 512], [width, height]
     background = rows.first.byteslice(0, 4)

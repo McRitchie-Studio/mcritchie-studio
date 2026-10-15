@@ -1,13 +1,16 @@
+<%# icon.png carries its content version (studio-engine Studio::PublicFileVersion, task
+    footer-stacked-logo), so a redrawn app icon is a new URL; bare on an engine without it. %>
+<% icon_src = defined?(Studio::PublicFileVersion) ? Studio::PublicFileVersion.path("/icon.png") : "/icon.png" %>
 {
   "name": "McRitchie Studio",
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "<%= icon_src %>",
       "type": "image/png",
       "sizes": "512x512"
     },
     {
-      "src": "/icon.png",
+      "src": "<%= icon_src %>",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "maskable"
