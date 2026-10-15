@@ -69,7 +69,9 @@ class DreamOrgChartTest < ActiveSupport::TestCase
                                  tags: { "soul" => [ "carl" ], "sop" => [ "pr-review" ] }, home: "carl")
     chart = DreamOrgChart.new(dreams: [ dream ], entries: SopRegistry.entries(@root), souls: SOULS)
 
-    assert_equal 1, chart.columns.find { |c| c.slug == "carl" }.sops.find { |s| s.invocation == "pr-review" }.dream_count
+    sop = chart.columns.find { |c| c.slug == "carl" }.sops.find { |s| s.invocation == "pr-review" }
+    assert_equal 1, sop.dream_count
+    assert_equal [ "approved" ], sop.dream_statuses, "the page recounts these under its status filter"
   end
 
   test "the doc path of a dream is its file under docs/agents" do

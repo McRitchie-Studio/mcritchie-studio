@@ -9,4 +9,15 @@ module DreamsHelper
     markdown = markdown.to_s.sub(/\A#\s[^\n]*\n*/, "")
     SafeMarkdown.render(markdown)
   end
+
+  # "N dreams" counted under the page's status filter, as a span that
+  # app/javascript/dreams_filter.js recounts when the filter changes. It carries one
+  # status token per dream (a blank status reads "none"), so a dream counts once
+  # per token and "all" counts every token.
+  def dream_count_tag(statuses, filter, **options)
+    tokens = statuses.map { |status| status.presence || "none" }
+    count = filter.nil? || filter == "all" ? tokens.size : tokens.count(filter)
+    data = (options.delete(:data) || {}).merge(dream_count: tokens.join(" "))
+    tag.span(pluralize(count, "dream"), data: data, **options)
+  end
 end

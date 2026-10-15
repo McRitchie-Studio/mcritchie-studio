@@ -68,10 +68,25 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
 
     get dreams_path(status: "proposed")
     assert_select "[data-test='dreams-page'][data-dreams-filter='proposed']"
-    assert_select "[data-test='dream-filter-proposed'][aria-pressed='true']"
+    assert_select "[data-test='dream-filter-proposed'][aria-current='page']"
+    assert_select "[data-test='dream-filter-all'][aria-current]", 0
     assert_select "[data-dream='proposed-money-idea']:not([hidden])"
     assert_select "[data-dream='untagged-habit'][hidden]"
     assert_select "[data-test='platform-row'] [data-test='stage-group'][hidden]", minimum: 1
+  end
+
+  test "the dream counts follow the status filter" do
+    pokemon = "[data-test='soul-column'][data-soul='pokemon'] [data-test='column-dream-count']"
+
+    get dreams_path
+    tokens = css_select(pokemon).first["data-dream-count"].split
+    assert_operator tokens.size, :>, 1
+    assert_select pokemon, text: "#{tokens.size} dreams"
+    assert_select "[data-test='dream-filter-all'][aria-current='page']"
+
+    get dreams_path(status: "proposed")
+    assert_select pokemon, text: "1 dream"
+    assert_select "[data-test='soul-column'][data-soul='carl'] [data-test='column-dream-count']", text: "0 dreams"
   end
 
   test "a dream opens to its answer, why, story, tags, status and file" do

@@ -28,7 +28,8 @@ class DreamOrgChart
   APPROVED = DreamBank::APPROVED
   PROPOSED = "proposed"
 
-  Sop = Struct.new(:invocation, :kind, :doc_path, :summary, :dream_count, keyword_init: true)
+  # dream_statuses: one status per tagged dream, so the page can count under a filter.
+  Sop = Struct.new(:invocation, :kind, :doc_path, :summary, :dream_count, :dream_statuses, keyword_init: true)
   StageGroup = Struct.new(:stage, :dreams, keyword_init: true)
   Column = Struct.new(:slug, :name, :title, :avatar, :color, :stages, :sops, keyword_init: true) do
     def dreams = stages.flat_map(&:dreams)
@@ -102,9 +103,10 @@ class DreamOrgChart
 
   def sops(entries, dreams)
     entries.map do |entry|
+      tagged = dreams.select { |dream| dream.tags.fetch("sop", []).include?(entry.invocation) }
       Sop.new(invocation: entry.invocation, kind: entry.kind, summary: entry.summary,
               doc_path: entry.path.delete_prefix("docs/agents/").delete_suffix(".md"),
-              dream_count: dreams.count { |dream| dream.tags.fetch("sop", []).include?(entry.invocation) })
+              dream_count: tagged.size, dream_statuses: tagged.map(&:status))
     end
   end
 end
