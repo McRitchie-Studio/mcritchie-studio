@@ -25,13 +25,14 @@ the mechanics, the schedule sets the floor, and you judge only the anomalies.
 
 | Deterministic: the code | Agentic: you |
 |---|---|
-| Long-polling the board for every routed soul (`config/agent_routes.yml`) | Installing it, once per Mac, after the release ships |
+| Long-polling the board for every routed soul (`config/agent_routes.yml`) | Installing it, once per Mac |
 | One claim at a time per thread, oldest first; at most 5 answers at once | Reading an alert and choosing the playbook row below |
 | Renewing each lease every 3 minutes while its answer runs | Signing Claude back in, or waking the Mac |
 | Handing a message back without spending an attempt on a usage limit (at most 3 times per message, the board's cap), and pausing until the reset | Deciding whether a dead letter is re-queued or left dead |
 | Pausing 5 minutes after a failed Claude run, 30 after a signed-out one | Escalating to Alex when the fix is his (his login, his Mac) |
 | Stopping a run past its deadline (TERM, then KILL after 10 seconds; no renewal past 8 minutes; the message given back) | |
 | Pinging the board every minute | |
+| Restarting itself on new code, and the ship reinstalling it when its plist template changes ([Updates](#updates-nobody-reinstalls-it)) | |
 | One Discord alert per incident, one recovery line (`AgentDispatcherAlertJob`) | |
 
 If you find yourself claiming or completing a message by hand to "help", stop.
@@ -66,10 +67,14 @@ the Mac does not idle-sleep, and does not system-sleep on power. Closing the lid
 sleeps it all the same, on power or on battery; that is the "Mac asleep" row
 below.
 
-## Install (once per Mac, after the release ships)
+## Install (once per Mac)
 
-Run from the hub's primary checkout, which the release has moved to the shipped
-code. The dispatcher runs from the checkout it was installed from; `install`
+Run from the hub's primary checkout, which the release moves to the shipped
+code. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in Alex's
+`~/.claude/settings.json` (added 2026-10-14), by bare name from the hub and by
+the absolute path `/Users/alex/projects/mcritchie-studio/bin/dispatcher`, so
+Steffon installs and repairs the service with no permission prompt. Nothing
+else is: `install --if-changed` belongs to the ship, and `run` belongs to launchd. The dispatcher runs from the checkout it was installed from; `install`
 refuses a task desk under `.worktrees/`, which is torn down after its task.
 
 ```bash
@@ -81,15 +86,42 @@ tail -n 20 ~/Library/Logs/agent-dispatcher.log
 ```
 
 The log's first line names the worker, the souls and the version:
-`start dispatcher-<host>-<pid>-<rand> serving xan on discord (cap 5, version <sha>)`.
+`start dispatcher-<host>-<pid>-<rand> serving xan on discord (cap 5, version <sha>, code <digest>)`.
 
 `bin/dispatcher install` is safe to re-run: it unloads the running copy first.
 If it prints `launchctl bootstrap failed`, run it again: the unload of the old copy
 can still be finishing on the first try. Under launchd, `HEROKU_API_KEY` is not set,
 so a soul whose action is `bin/release status` (avi) reports that action as failed
 and answers from its role; only `xan` is routed today.
-After a release that changes `bin/dispatcher` or its libraries, re-run it so the
-service restarts on the new code.
+
+## Updates: nobody reinstalls it
+
+A release needs no step from anyone, two mechanisms between them:
+
+- **New code restarts it by itself.** At startup the dispatcher digests its own
+  files: `bin/dispatcher`, every file it required from the repo
+  (`bin/lib/agent_dispatcher.rb`, `agent_mailbox.rb`, `agent_api.rb`,
+  `cli_arg_guard.rb` and what they load) and `config/agent_routes.yml`
+  (`AgentMailbox::CodeFingerprint`). It re-reads the digest on the minute ping. A new
+  digest seen on two checks in a row (so a checkout read half-way through a move
+  cannot start a restart loop) logs one line,
+  `code changed (<old> -> <new>); restarting on the new code: …`, stops claiming,
+  lets the runs in flight finish up to their deadline, and exits 0. launchd's
+  `KeepAlive` (plain `true`; `SuccessfulExit=false` would leave a clean exit dead)
+  starts it on the new code. A release that touches none of those files does not
+  restart it, and a routing change in `agent_routes.yml` does.
+- **The ship reinstalls it when the plist template changes.** After the production
+  ship restores the primaries and syncs the agent docs, it runs the hub primary's
+  `bin/dispatcher install --if-changed` (`bin/release.rb#refresh_dispatcher_service`).
+  With no plist in `~/Library/LaunchAgents` it does nothing. Otherwise it renders
+  the new template with the installed plist's own ruby and PATH (the ship's
+  environment is not the shell that installed it) and reinstalls only when that
+  differs from the installed file. It only warns; it never fails a ship.
+
+A SIGTERM during a restart's drain (a reinstall's `bootout`) still cuts the wait to
+the 60-second grace. The service runs whatever the primary has checked out, so a
+session that checks out a branch in the primary restarts it onto that branch's
+code; leave the primary on `main`.
 
 ## Verify
 

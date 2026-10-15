@@ -152,7 +152,10 @@ answer that says "usage limit reached" is just an answer. A child that outlives 
 timeout gets TERM, then KILL after 10 seconds (its whole process group); a run is
 never renewed past its deadline (the timeouts plus a margin, about 8 minutes) and
 is then abandoned, its message given back. SIGTERM stops claiming, gives runs 60
-seconds, then stops their Claude and releases their messages. It posts nothing to
+seconds, then stops their Claude and releases their messages. New code restarts it
+by itself: once a minute it re-reads a digest of its own files and
+`config/agent_routes.yml`, and a new digest seen twice in a row stops claiming, lets
+the runs in flight finish, and exits for launchd to start the new code. It posts nothing to
 Discord itself. Every child gets an allow-listed environment
 (`AgentMailbox::CHILD_ENV_ALLOW`), so no API key, token, base URL or provider
 switch reaches Claude and it bills Alex's claude.ai subscription. Install, alerts and the unblock

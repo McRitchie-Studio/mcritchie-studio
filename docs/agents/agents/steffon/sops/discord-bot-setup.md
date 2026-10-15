@@ -94,8 +94,9 @@ Input: a contact submission from `/integrations/discord`
    `@<agent> hello` in any channel. The gateway stores it within seconds (the
    backstop poll within 10 minutes if the gateway is down), and
    `bin/dispatcher` answers it within about a minute (Steffon's
-   [`agent-dispatcher`](agent-dispatcher.md) SOP installs and watches it; after a
-   routing change re-run `bin/dispatcher install` so it serves the new soul). See
+   [`agent-dispatcher`](agent-dispatcher.md) SOP installs and watches it; once the
+   routing change ships it restarts itself within about two minutes and serves the
+   new soul). See
    the reply land, and only then tell the client it is live, and how quickly to
    expect answers.
 
