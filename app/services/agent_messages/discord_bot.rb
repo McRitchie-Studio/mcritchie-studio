@@ -2,9 +2,11 @@ require "net/http"
 require "openssl"
 
 module AgentMessages
-  # The agents' Discord bot, over Discord's REST API: read a channel's new
-  # messages, post one reply. No gateway connection, no websocket: the poll is
-  # the deliberate v1 (docs/agents/system/agent-message-loop.md).
+  # The agents' Discord bot, over Discord's REST API: list a guild's channels and
+  # active threads, read a channel's new messages, post one reply. The push half
+  # (the Gateway websocket) is AgentMessages::DiscordGateway; this REST client is
+  # the backstop poll's reader and the only writer
+  # (docs/agents/system/agent-message-loop.md).
   #
   # The token is DISCORD_AGENT_BOT_TOKEN (1Password `agents.discord.xan`, field
   # `bot-token`). It is sent only in the Authorization header and never logged.
@@ -49,6 +51,22 @@ module AgentMessages
       status, body = request(:get, "/channels/#{channel_id}/messages?#{query.to_query}")
       check!(status, body, "read channel #{channel_id}")
       Array(JSON.parse(body)).sort_by { |m| m["id"].to_i }
+    end
+
+    # Every channel of a guild (GET /guilds/{id}/channels): text, voice, forum,
+    # category alike; the caller picks the kinds it reads.
+    def guild_channels(guild_id)
+      status, body = request(:get, "/guilds/#{guild_id}/channels")
+      check!(status, body, "list channels of guild #{guild_id}")
+      Array(JSON.parse(body))
+    end
+
+    # The guild's active (unarchived) threads, forum posts included
+    # (GET /guilds/{id}/threads/active). Each carries its `parent_id`.
+    def active_threads(guild_id)
+      status, body = request(:get, "/guilds/#{guild_id}/threads/active")
+      check!(status, body, "list active threads of guild #{guild_id}")
+      Array(JSON.parse(body)["threads"])
     end
 
     # Post `content` into `channel_id` as a reply to `reference_id`.

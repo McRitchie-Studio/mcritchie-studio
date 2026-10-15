@@ -10,6 +10,10 @@ gem "sprockets-rails"
 gem "pg", "~> 1.1"
 # Durable Active Job backend for production worker dynos.
 gem "solid_queue", "~> 1.4"
+# Websocket framing for the agent mailbox's Discord Gateway client
+# (AgentMessages::DiscordGateway). Already in the bundle through Action Cable;
+# named here because the app now calls it directly.
+gem "websocket-driver", "~> 0.8"
 # Database-backed cache store, used for Rack::Attack's throttle counters
 # (config/initializers/rack_attack.rb) so they are shared by every dyno.
 gem "solid_cache", "~> 1.0"

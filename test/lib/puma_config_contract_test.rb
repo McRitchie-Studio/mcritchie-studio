@@ -28,6 +28,7 @@ class PumaConfigContractTest < Minitest::Test
   DATABASE_YML = File.join(ROOT, "config/database.yml")
   QUEUE_YML = File.join(ROOT, "config/queue.yml")
   RECURRING_YML = File.join(ROOT, "config/recurring.yml")
+  GATEWAY_INITIALIZER = File.join(ROOT, "config/initializers/agent_message_gateway.rb")
 
   # The prod board Postgres (Heroku essential-1) hard connection limit.
   PG_CONNECTION_LIMIT = 20
@@ -132,6 +133,9 @@ class PumaConfigContractTest < Minitest::Test
   # config/queue.yml's production section at default env:
   #   each worker process: job threads + 1 polling thread
   #   + 1 per dispatcher, + 1 scheduler (recurring.yml non-empty), + supervisor
+  #   + 1 for the Discord Gateway listener, a thread in the scheduler process
+  #     that holds its leader lock's connection for life
+  #     (config/initializers/agent_message_gateway.rb)
   def solid_queue_worst_case
     config = queue_production_config
     workers = config.fetch("workers")
@@ -142,8 +146,9 @@ class PumaConfigContractTest < Minitest::Test
     dispatchers = config.fetch("dispatchers").size
     scheduler = recurring_production_tasks.any? ? 1 : 0
     supervisor = 1
+    gateway_listener = File.read(GATEWAY_INITIALIZER).include?("on_scheduler_start") ? scheduler : 0
 
-    worker_conns + dispatchers + scheduler + supervisor
+    worker_conns + dispatchers + scheduler + supervisor + gateway_listener
   end
 
   def queue_worker_threads
