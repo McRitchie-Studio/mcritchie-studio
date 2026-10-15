@@ -207,7 +207,7 @@ module AgentMailbox
     def doc_text(path)
       return nil unless File.file?(path)
 
-      text = File.read(path).gsub(/<!--.*?-->/m, "").strip
+      text = File.read(path).gsub(/<!--.*?-->/m, "").gsub(/\n{3,}/, "\n\n").strip
       text.empty? ? nil : text
     end
 
