@@ -61,10 +61,6 @@ admin = User.create!(
 # specs sharing an account means whichever runs second finds a user who no longer
 # owes a name and waits forever for a modal that will never open. Each spec that
 # consumes the ask gets its own.
-# The one account that may approve a dream (DreamApproval::APPROVER_EMAILS): being
-# an admin is not enough, so e2e/dream_approve.spec.js signs in as this one.
-User.create!(name: "Alex McRitchie", email: "alex@mcritchie.studio", role: "admin")
-
 User.create!(email: "newcomer@test.com", role: "viewer")
 User.create!(email: "newcomer-skip@test.com", role: "viewer")
 User.create!(email: "newcomer-turbo@test.com", role: "viewer")
