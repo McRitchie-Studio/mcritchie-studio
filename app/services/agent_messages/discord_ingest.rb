@@ -24,6 +24,7 @@ module AgentMessages
   # (`ignore: true`) channel, and an unaddressed message.
   class DiscordIngest
     INBOUND_TYPES = [ 0, 19 ].freeze # DEFAULT, REPLY
+    REFERENCE_FORWARD = 1 # message_reference.type of a forward (0 is a reply)
 
     # Unlisted guilds already named in the log, per process: the line is said once.
     @unlisted_guilds = Set.new
@@ -82,7 +83,7 @@ module AgentMessages
       channel_id = raw["channel_id"].to_s
       users = Array(raw["mentions"]).map { |u| u["id"].to_s }
       roles = Array(raw["mention_roles"]).map(&:to_s)
-      parent = referenced_row(raw)
+      parent = referenced_row(raw, guild_id, channel_id)
       result = @router.route(guild_id: guild_id, channel_id: channel_id, parent_id: parent_id, content: raw["content"],
                              mention_users: users, mention_roles: roles)
       result = inherit_from(parent, result) if parent
@@ -107,11 +108,24 @@ module AgentMessages
 
     # A reply to a message we hold (or to an agent's reply to one) continues that
     # conversation: same thread, and the same soul when nothing names another.
-    def referenced_row(raw)
-      ref = raw.dig("message_reference", "message_id").to_s
-      return nil if ref.empty?
+    #
+    # Only a reply IN THE SAME CHANNEL AND GUILD. A Discord forward (a type-0
+    # message whose message_reference has type FORWARD and points into another
+    # channel) and any reference naming another channel or guild are treated as
+    # a fresh, unreferenced message: joining would hand it the referenced row's
+    # thread, soul and ordering. The row lookup is pinned to this channel too,
+    # so a reference that omits channel_id cannot reach across.
+    def referenced_row(raw, guild_id, channel_id)
+      reference = raw["message_reference"]
+      return nil unless reference.is_a?(Hash)
 
-      AgentMessage.where(channel: "discord").where("external_id = :ref OR reply_external_id = :ref", ref: ref).first
+      ref = reference["message_id"].to_s
+      return nil if ref.empty? || reference["type"].to_i == REFERENCE_FORWARD
+      return nil if reference["channel_id"].present? && reference["channel_id"].to_s != channel_id
+      return nil if reference["guild_id"].present? && reference["guild_id"].to_s != guild_id
+
+      AgentMessage.where(channel: "discord", guild_id: guild_id, channel_ref: channel_id)
+                  .where("external_id = :ref OR reply_external_id = :ref", ref: ref).first
     end
 
     def inherit_from(parent, result)

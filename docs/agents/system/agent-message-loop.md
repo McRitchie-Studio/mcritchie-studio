@@ -121,7 +121,9 @@ return as inbound.
 
 **Routing: only addressed messages are stored.** In order: a mention of a soul's
 bot USER, a mention of a soul's ROLE, a reply to a message the mailbox already
-holds or to an agent's reply (it joins that thread and soul), the channel
+holds or to an agent's reply, in the same channel (it joins that thread and soul;
+a forward, or any reference into another channel or guild, counts as a fresh
+message), the channel
 override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
 reply to a held message that itself had no soul is kept `unrouted`, visible and
