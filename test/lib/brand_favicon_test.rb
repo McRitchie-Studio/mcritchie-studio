@@ -155,8 +155,8 @@ class BrandFaviconTest < Minitest::Test
   # The maskable app icon: opaque, its artwork (every pixel unlike the corner's background) inside the safe zone on
   # every edge and touching it on two opposite edges, so the art is as large as the zone allows (about 346 of 512).
   def test_the_maskable_app_icon_keeps_its_safe_zone
-    assert_match(%r{"src": "/icon.png",\s*"type": "image/png",\s*"sizes": "512x512",\s*"purpose": "maskable"}, File.read(MANIFEST),
-                 "the manifest still serves icon.png as maskable; drop this test's safe zone only if it stops")
+    assert_match(%r{"src": "<%= icon_src %>",\s*"type": "image/png",\s*"sizes": "512x512",\s*"purpose": "maskable"}, File.read(MANIFEST),
+                 "the manifest still serves icon.png (icon_src) as maskable; drop this test's safe zone only if it stops")
     width, height, rows = rgba(APP_ICON)
     assert_equal [512, 512], [width, height]
     background = rows.first.byteslice(0, 4)
