@@ -14,6 +14,10 @@ souls loads in each of their sequences and lives under the first.
 - `status: proposed` is a candidate waiting for Alex. It loads nowhere.
 - `status: approved` is signed off by Alex. It loads in its sequences.
 
+Alex approves with one click on `/dreams`. `bin/dream apply-approvals` then
+writes his recorded clicks into the files in one batch task; it carries out his
+approval and is never an agent's own.
+
 [`INDEX.md`](INDEX.md) lists every dream by sequence. `bin/dream index --write`
 regenerates it and a test pins it. The loader skips `README.md` and `INDEX.md`.
 To read the bank as an org chart, with each soul's SOPs under its dreams, open

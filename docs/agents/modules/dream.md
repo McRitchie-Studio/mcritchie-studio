@@ -284,7 +284,8 @@ The file still reads `proposed` until a batch task writes it:
 1. `bin/dream approvals` lists the pending approvals
    (`GET /api/v1/dream_approvals`). `qa-release` checks it before each sweep.
 2. In one hub task desk, `bin/dream apply-approvals` sets each pending file to
-   `status: approved` and rewrites `INDEX.md`. A file that no longer reads
+   `status: approved` and rewrites `INDEX.md`. It carries out Alex's recorded
+   click; it is not an agent approving. A file that no longer reads
    `proposed`, or is gone, is skipped and named.
 3. Commit and submit that one task for every pending approval, never one task per
    dream.
