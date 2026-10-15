@@ -309,6 +309,13 @@ class DreamCli
     path = File.join(root, BANK, soul, "#{match[1]}.md")
     return refuse("#{path} exists; it is not overwritten.") if File.exist?(path)
 
+    # A slug is a dream's identity across the whole bank, not just its home:
+    # `bin/dream fired <slug>` names a dream by slug alone, and /dreams counts its
+    # fires by slug (DreamHeat). test/lib/dream_bank_test.rb holds the tracked bank
+    # to it; this keeps a proposal from breaking it in another home.
+    taken = Dir.glob(File.join(root, BANK, "**", "#{match[1]}.md")).first
+    return refuse("#{taken} already uses the slug `#{match[1]}`; slugs are unique across the bank.") if taken
+
     FileUtils.mkdir_p(File.dirname(path))
     File.open(path, File::WRONLY | File::CREAT | File::EXCL) { |file| file.write(body) }
     @out.puts("dream: wrote #{path} (status proposed)",

@@ -17,7 +17,7 @@ The act begins at `bin/task begin`. When `begin` first claims a task, it
 ```bash
 claude -p "<IntentScout.headless_prompt>" --setting-sources project --strict-mcp-config \
   --agents '{"avi": <~/.claude/agents/avi.md, inline>}' --agent avi --permission-mode dontAsk \
-  --allowedTools "Read,Grep,Glob,Bash(grep *),Bash(ls *),Bash(cd *),Bash(<bin>/task note <slug> *),..." \
+  --allowedTools "Read,Grep,Glob,Bash(grep *),Bash(ls *),Bash(cd *),Bash(<bin>/task note <slug> --comment *),..." \
   --add-dir /Users/alex/projects --name "intent-scout <slug>"
 ```
 
@@ -32,7 +32,9 @@ hub's own `.claude/settings.json`, so `launch!` refuses (and `begin` prints the
 manual block) when that file holds anything but read-only allow rules
 (`IntentScout.project_settings_violations`; the tracked file is pinned by
 `test/lib/intent_scout_project_settings_test.rb`). The note rule names the
-scouted task, so the scout cannot post on any other. The allow-list has no `git` and no
+scouted task and the `--comment` flag, so the scout cannot post on any other task,
+nor post a handoff or qa-feedback note: `bin/task note` takes one note flag per
+call, so a trailing `--handoff` is refused. The allow-list has no `git` and no
 `rg`, whose `--output`, `-O` and `--pre` options write files or run programs; the
 Grep tool searches instead. `script/intent_scout_permission_smoke.rb` proves all
 of it against the real CLI (run by hand with `ruby script/intent_scout_permission_smoke.rb`; never in CI): `git add`,

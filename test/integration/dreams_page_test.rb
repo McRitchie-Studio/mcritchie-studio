@@ -63,9 +63,22 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
   end
 
   test "a status filter hides a step group with no dream of that status" do
+    claim = "[data-test='sop-step'][data-step='claim']"
+    pr_review = "[data-test='soul-column'][data-soul='carl'] [data-test='sop-row'][data-sop='pr-review'] [data-test='sop-dream-count']"
+
+    [ dreams_path, dreams_path(status: "all"), dreams_path(status: "approved") ].each do |path|
+      get path
+      assert_select "#{claim}:not([hidden])", 1, "#{path}: the step group renders without a filter that excludes it"
+      assert_select "#{claim}[hidden]", 0, path
+    end
+    assert_includes css_select(pr_review).first["class"].split, "bg-primary/10", "a 1-dream SOP badge is highlighted"
+
     get dreams_path(status: "proposed")
 
-    assert_select "[data-test='sop-step'][data-step='claim'][hidden]"
+    assert_select "#{claim}[hidden]"
+    assert_select pr_review, text: "0 dreams"
+    assert_not_includes css_select(pr_review).first["class"].split, "bg-primary/10",
+                        "a badge that reads 0 dreams under Proposed is not highlighted"
   end
 
   test "groups a soul's dreams by stage with a no-stage bucket" do
@@ -158,6 +171,10 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     get dreams_path
     assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve']", 1
     assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-approve']", 0
+    assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve'][aria-label=?]",
+                  "Approve dream proposed-money-idea", 1, "a screen reader hears which dream each button approves"
+    assert_select "[data-dream='proposed-money-idea'] form[data-dreams-approve-form] input[name='status'][value='all']", 1,
+                  "the form carries the filter that dreams_filter.js rewrites in place"
 
     assert_difference -> { DreamApproval.count }, 1 do
       post dream_approvals_path, params: PROPOSED.merge(status: "proposed")

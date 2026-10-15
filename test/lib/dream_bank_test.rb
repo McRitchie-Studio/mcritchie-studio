@@ -154,6 +154,19 @@ class DreamBankTest < Minitest::Test
     assert DreamBank.parse(flipped, slug: "x").approved?
   end
 
+  # /dreams reads the status through `parse`, which downcases it, so a `Proposed`
+  # file shows an Approve button; apply-approvals must flip that same file.
+  def test_unit_approve_text_flips_a_proposed_status_in_any_case
+    %w[Proposed PROPOSED "Proposed"].each do |value|
+      text = PROPOSED_FILE.sub('status: "proposed"', "status: #{value}")
+      assert_equal "proposed", DreamBank.parse(text, slug: "x").status, "#{value}: the page reads it as proposed"
+
+      flipped = DreamBank.approve_text(text)
+      refute_nil flipped, "#{value}: apply-approvals skipped a dream the page let Alex approve"
+      assert DreamBank.parse(flipped, slug: "x").approved?, value
+    end
+  end
+
   def test_unit_approve_text_refuses_a_file_that_is_not_proposed
     assert_nil DreamBank.approve_text(DREAM.sub("status: Approved", "status: approved"))
     assert_nil DreamBank.approve_text("status: proposed\nno front matter")
@@ -331,6 +344,21 @@ class DreamBankTest < Minitest::Test
       def broken.puts(*) = raise(IOError, "closed stream")
       assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: broken, dir: dir)
       assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: io, dir: File.join(dir, "missing"))
+    end
+  end
+
+  # A deeply nested dream overflows the YAML parser with a SystemStackError, which
+  # is not a StandardError. Neither moment nor announce may let it out.
+  def test_unit_moment_and_announce_survive_a_dream_that_overflows_the_stack
+    Dir.mktmpdir do |dir|
+      depth = 20_000
+      write(dir, "sops/qa-release/deep.md",
+            tagged("sop: qa-release\nstep: prepare\ntopic: #{"[" * depth}#{"]" * depth}", question: "Deep?"))
+      write(dir, "carl/deep.md", tagged("soul: carl\ntopic: #{"[" * depth}#{"]" * depth}", question: "Deep?"))
+
+      assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: StringIO.new, dir: dir)
+      assert_nil DreamBank.announce("carl", io: StringIO.new, dir: dir)
+      assert_equal :ok, DreamBank.after_moment(sop: "qa-release", step: "prepare", io: StringIO.new, dir: dir) { :ok }
     end
   end
 

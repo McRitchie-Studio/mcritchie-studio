@@ -7,6 +7,11 @@
 # and the decision as its summary. This reads them back in two queries: a count per
 # dream, and the newest few decisions per dream. Those rows are kept past the
 # 45-day action retention (AgentActionRetentionJob), so the count is all-time.
+#
+# Keyed by slug alone, unlike DreamApproval's home + slug: a slug is unique across
+# the whole bank (test/lib/dream_bank_test.rb checks the tracked files, and
+# `bin/dream propose` refuses a slug another home uses), and `bin/dream fired`
+# names a dream by its slug.
 class DreamHeat
   KIND = "dream_fired"
   RECENT = 3

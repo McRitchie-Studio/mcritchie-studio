@@ -39,12 +39,19 @@ class DreamApproval < ApplicationRecord
 
   # Records `user`'s approval of `dream` (a DreamBank::Dream). Raises NotApprovable
   # unless the user is the approver and the dream reads `proposed`. Idempotent: a
-  # second click returns the first row.
+  # second click returns the first row. A double-click race can lose at either
+  # guard: the unique index (RecordNotUnique) or, when the other click commits
+  # between the find and the save, the uniqueness validation (RecordInvalid,
+  # :taken). Both return the winner's row; any other invalid record still raises.
   def self.record!(dream, user)
     check!(dream, user)
     create_with(approved_by_slug: user.slug, approved_at: Time.current)
       .find_or_create_by!(dream_home: dream.home, dream_slug: dream.slug)
   rescue ActiveRecord::RecordNotUnique
+    find_by!(dream_home: dream.home, dream_slug: dream.slug)
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record.errors.of_kind?(:dream_slug, :taken)
+
     find_by!(dream_home: dream.home, dream_slug: dream.slug)
   end
 

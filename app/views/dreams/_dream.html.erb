@@ -71,10 +71,12 @@
         (<code>bin/dream apply-approvals</code>), and it loads once that release ships.
       </p>
     <% elsif proposed && @approver %>
+      <%# status rides along so the redirect keeps the filter; dreams_filter.js
+          rewrites it when the filter changes in place. %>
       <%= button_to "Approve", dream_approvals_path,
-            params: { dream_home: dream.home, dream_slug: dream.slug, status: (@filter == "all" ? nil : @filter) }.compact,
-            class: "btn btn-primary btn-sm", form: { data: { test: "dream-approve-form" } },
-            data: { test: "dream-approve" } %>
+            params: { dream_home: dream.home, dream_slug: dream.slug, status: @filter || "all" },
+            class: "btn btn-primary btn-sm", form: { data: { test: "dream-approve-form", dreams_approve_form: "" } },
+            aria: { label: "Approve dream #{dream.slug}" }, data: { test: "dream-approve" } %>
     <% end %>
   </div>
 </details>

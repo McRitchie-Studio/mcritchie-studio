@@ -84,7 +84,7 @@ class IntentScoutLaunchTest < Minitest::Test
     assert_equal %w[--agent avi --permission-mode dontAsk], argv[argv.index("--agent"), 4]
     tools = argv[argv.index("--allowedTools") + 1].split(",")
     assert_includes tools, "Read"
-    assert_includes tools, "Bash(bin/task note #{SLUG} *)", "the scout must be able to post its brief"
+    assert_includes tools, "Bash(bin/task note #{SLUG} --comment *)", "the scout must be able to post its brief"
     refute(tools.any? { |t| t.match?(/task note \*\)\z/) }, "a note on ANY task is too wide (#{tools})")
     refute(tools.any? { |t| t.match?(/\A(Edit|Write|NotebookEdit)\b/) }, "the scout never edits: #{tools}")
     refute_includes tools, "Bash", "no unrestricted shell"

@@ -24,12 +24,16 @@ function page() {
   const groups = [ element({ "data-statuses": "approved" }), element({ "data-statuses": "approved proposed" }) ];
   const buttons = [ "all", "approved", "proposed" ].map((f) => element({ "data-dreams-filter-button": f }));
   const counts = [ element({ "data-dream-count": "approved proposed approved" }), element({ "data-dream-count": "" }) ];
+  const badge = element({ "data-dream-count": "approved approved", "data-dream-count-active": "bg-primary/10 text-primary",
+                          "data-dream-count-idle": "bg-surface-alt" });
+  const statusInputs = [ element({ name: "status" }), element({ name: "status" }) ];
+  statusInputs.forEach((input) => { input.value = "all"; });
   const root = element({ "data-dreams-filter": "all" });
   root.querySelectorAll = (selector) => ({
     "[data-status]": cards, "[data-statuses]": groups, "[data-dreams-filter-button]": buttons,
-    "[data-dream-count]": counts,
+    "[data-dream-count]": [ ...counts, badge ], "[data-dreams-approve-form] input[name='status']": statusInputs,
   })[selector];
-  return { root, cards, groups, buttons, counts };
+  return { root, cards, groups, buttons, counts, badge, statusInputs };
 }
 
 test("all matches every status; a named filter matches only its own", () => {
@@ -81,4 +85,24 @@ test("the dream counts follow the filter and aria-current moves with it", () => 
   applyFilter(root, "all");
   assert.deepEqual(counts.map((c) => c.textContent), [ "3 dreams", "0 dreams" ]);
   assert.deepEqual(buttons.map((b) => b.getAttribute("aria-current")), [ "page", null, null ]);
+});
+
+test("a count badge is highlighted only while its filtered count is above zero", () => {
+  const { root, badge } = page();
+  applyFilter(root, "approved");
+  assert.equal(badge.textContent, "2 dreams");
+  assert.deepEqual([ "bg-primary/10", "text-primary", "bg-surface-alt" ].map((c) => badge.classList.has(c)), [ true, true, false ]);
+
+  applyFilter(root, "proposed");
+  assert.equal(badge.textContent, "0 dreams");
+  assert.deepEqual([ "bg-primary/10", "text-primary", "bg-surface-alt" ].map((c) => badge.classList.has(c)), [ false, false, true ]);
+});
+
+test("each Approve form's status follows the filter, so the redirect keeps it", () => {
+  const { root, statusInputs } = page();
+  applyFilter(root, "proposed");
+  assert.deepEqual(statusInputs.map((i) => i.value), [ "proposed", "proposed" ]);
+
+  applyFilter(root, "all");
+  assert.deepEqual(statusInputs.map((i) => i.value), [ "all", "all" ]);
 });

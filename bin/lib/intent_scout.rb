@@ -200,8 +200,9 @@ module IntentScout
   READ_ONLY_BASH = ["grep *", "ls *", "cd *"].freeze
   # `dream avi *`, never `dream *`: `dream index --write` rewrites INDEX.md in the
   # hub primary and `dream propose --materialize` writes into a desk (Carl, 2026-10-14).
-  # `task note` is not here: the scout may note ONLY the task it scouts, so its rule
-  # names the slug (note_rule), and a note on any other task is denied (Carl, 2026-10-15).
+  # `task note` is not here: the scout may post ONLY a comment on the task it scouts,
+  # so its rule names the slug and the flag (note_rule); a note on any other task, or
+  # a handoff or qa-feedback note, is denied (Carl, 2026-10-15).
   BOARD_SUBCOMMANDS = ["task show *", "task list *", "task scout-brief *",
                        "agent-activity *", "dream avi *"].freeze
 
@@ -380,12 +381,15 @@ module IntentScout
     %w[Read Grep Glob] + READ_ONLY_BASH.map { |cmd| "Bash(#{cmd})" } + board
   end
 
-  # `task note <slug> *`: the brief goes on the scouted task and nowhere else. The
-  # space before `*` keeps `demo-task` from matching `demo-task-two`.
+  # `task note <slug> --comment *`: the brief goes on the scouted task, as a comment,
+  # and nowhere else. The space after the slug keeps `demo-task` from matching
+  # `demo-task-two`. The rule is a prefix, so a trailing `--handoff "..."` would
+  # still match it; `bin/task note` refuses more than one note flag per call, which
+  # is what keeps the scout from posting a handoff or qa_feedback note.
   def note_rule(slug)
     raise ArgumentError, "not a task slug: #{slug.inspect}" unless slug.to_s.match?(SLUG_RULE)
 
-    "task note #{slug} *"
+    "task note #{slug} --comment *"
   end
 
   # Why the hub's project settings (dir/.claude/settings.json) could widen the

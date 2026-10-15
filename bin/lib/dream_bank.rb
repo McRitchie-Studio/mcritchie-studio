@@ -256,7 +256,9 @@ module DreamBank
 
   # Prints the moment card for one SOP step to `io`, offline. Prints nothing when
   # the step has no approved dream. Never raises, so it can never fail the command
-  # that calls it.
+  # that calls it. SystemStackError is rescued too: a deeply nested dream file
+  # overflows the YAML parser, and it is not a StandardError. Nothing broader
+  # (no bare `rescue Exception`), so an exit or an interrupt still passes through.
   def moment(sop:, step:, io: $stderr, dir: bank_dir)
     text = moment_card(approved(dir: dir), sop: sop, step: step)
     return if text.empty?
@@ -264,7 +266,7 @@ module DreamBank
     io.puts
     io.puts(text)
     io.flush if io.respond_to?(:flush)
-  rescue StandardError
+  rescue StandardError, SystemStackError
     nil
   end
 
@@ -284,7 +286,9 @@ module DreamBank
            "Rule or an SOP. Full story: `docs/agents/dreams/platform/<slug>.md`. When a dream changes what " \
            "you do, run `bin/dream fired <slug> --decision \"...\"`.\n\n"
 
-  STATUS_LINE = /^status:[ \t]*["']?proposed["']?[ \t]*$/
+  # The value matches in any case, as `parse` reads it: a file that /dreams shows as
+  # proposed (`status: Proposed`) is one apply-approvals can flip.
+  STATUS_LINE = /^status:[ \t]*["']?(?i:proposed)["']?[ \t]*$/
 
   # The file's text with its front matter's `status: proposed` set to approved, or
   # nil when the front matter does not read proposed. Nothing else in the file moves.
@@ -391,7 +395,7 @@ module DreamBank
 
   # Prints a soul's dreams to `io`: the set selected for the task when `facts`
   # holds the board's task JSON, else the whole sequence. Prints nothing when the
-  # soul has none. Never raises.
+  # soul has none. Never raises, a stack overflow from a deeply nested file included.
   def announce(name, io: $stderr, task: nil, facts: nil, dir: bank_dir)
     text = if facts.is_a?(Hash) && !facts.empty?
       task_context(name, approved(dir: dir), facts: facts, task: task)
@@ -399,7 +403,7 @@ module DreamBank
       soul_context(name, soul(name, dir: dir), task: task)
     end
     io.puts(text) unless text.empty?
-  rescue StandardError
+  rescue StandardError, SystemStackError
     nil
   end
 
