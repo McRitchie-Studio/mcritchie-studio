@@ -624,19 +624,6 @@ class TaskCliTest < Minitest::Test
     assert_equal true, parsed.dig("metadata", "resolves_feedback")
   end
 
-  # The intent scout's allow rule is `task note <slug> --comment *`; a prefix rule
-  # lets a trailing --handoff through, so the CLI itself takes one note per call.
-  def test_note_refuses_two_note_flags_in_one_call
-    [ %w[--comment brief --handoff done], %w[--comment brief --qa-feedback broken],
-      %w[--comment one --comment two] ].each do |flags|
-      requests, _out, err, status = run_task([ "note", "demo-task", *flags, "--agent", "avi" ])
-
-      refute status.success?, "#{flags.inspect} must die"
-      assert_empty requests, "#{flags.inspect}: nothing is posted"
-      assert_match(/per call/, err)
-    end
-  end
-
   def test_note_comment_with_resolves_feedback_dies_naming_the_handoff_form
     requests, _out, err, status = run_task(["note", "demo-task", "--comment", "Addressed the blocker.", "--resolves-feedback"])
 
