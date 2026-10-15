@@ -10,6 +10,14 @@ module AgentMessages
   # the mailbox holds (or to an agent's reply to one), or sits in a channel whose
   # override sets `default_soul`. Anything else is dropped unstored.
   #
+  # THE GATEWAY AND THE POLL RACE. Both can read "not stored yet" for one
+  # message and both insert. The loser either fails the model's uniqueness
+  # validation (RecordInvalid) or the unique index (RecordNotUnique), and gets
+  # the winner's row back. The insert runs in its own SAVEPOINT
+  # (requires_new), because the poll calls this inside its cursor transaction:
+  # without one, the index violation aborts that whole transaction and the
+  # re-read, the rest of the page and the cursor advance all fail.
+  #
   # Returns the stored row, the existing row on a repeat, or nil for a message
   # that is not kept: anything a bot wrote (our own replies included), system
   # messages (joins, pins), a message from an unlisted guild or a muted
@@ -54,6 +62,10 @@ module AgentMessages
       store(raw, guild_id, parent_id, source)
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by(channel: "discord", external_id: raw["id"].to_s)
+    rescue ActiveRecord::RecordInvalid => e
+      raise unless e.record.is_a?(AgentMessage) && e.record.errors.of_kind?(:external_id, :taken)
+
+      AgentMessage.find_by(channel: "discord", external_id: raw["id"].to_s)
     end
 
     private
@@ -77,7 +89,7 @@ module AgentMessages
       # Addressed-only: a routed soul, or a reply to a message we hold.
       return nil unless result.routed? || parent
 
-      AgentMessage.transaction do
+      AgentMessage.transaction(requires_new: true) do
         message = AgentMessage.create!(
           channel: "discord", external_id: raw["id"].to_s, guild_id: guild_id, channel_ref: channel_id,
           thread_key: parent&.thread_key || "discord:#{channel_id}:#{raw['id']}",

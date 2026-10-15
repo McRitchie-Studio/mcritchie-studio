@@ -235,6 +235,67 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
     assert_match(/retry after 1/, summary.errors.join)
   end
 
+  # The gateway and the poll racing on one message: the poll's find_by misses,
+  # then the gateway's insert COMMITS from another backend. It lands either
+  # before the poll's uniqueness validation (RecordInvalid) or between that
+  # validation and the INSERT (the unique index: RecordNotUnique, inside the
+  # poll's cursor transaction, where only a savepoint keeps the transaction
+  # usable for the rescue's re-read and the cursor advance).
+  def race_gateway_insert(external_id, &poll)
+    config = ActiveRecord::Base.connection_pool.db_config
+    @gateway_db = config.adapter_class.new(config.configuration_hash)
+    @raced = false
+    race = lambda do
+      next if @raced
+
+      @raced = true
+      # The gateway's row, committed on its own connection (autocommit).
+      @gateway_db.exec_insert(<<~SQL.squish, "gateway insert", [ external_id, GUILD, DESK, "discord:gateway:#{external_id}" ])
+        INSERT INTO agent_messages (channel, external_id, guild_id, channel_ref, thread_key, soul_slug, routed_by,
+                                    status, created_at, updated_at)
+        VALUES ('discord', $1, $2, $3, $4, 'avi', 'role', 'received', now(), now())
+      SQL
+    end
+    assert_race_survived(poll.call(race), external_id) # before the cleanup below
+  ensure
+    @gateway_db&.exec_delete("DELETE FROM agent_messages WHERE channel = 'discord' AND external_id = '#{external_id}'")
+    @gateway_db&.disconnect!
+  end
+
+  def assert_race_survived(summary, external_id)
+    assert @raced, "the race hook ran"
+    assert_empty summary.errors, "the pass reports success"
+    assert_equal [ 0, 1 ], [ summary.stored, summary.skipped ], "the gateway's row is the one kept"
+    assert_equal 1, AgentMessage.where(channel: "discord", external_id: external_id).count
+    assert_equal external_id, AgentMessageCursor.find_by!(channel: "discord", source_ref: DESK).cursor,
+                 "the cursor advanced past the raced message in the same transaction"
+  end
+
+  test "[integration] a gateway insert that lands past the poll's validation leaves one row, and the poll pass succeeds" do
+    raw = discord_raw(4242, content: "<@&#{AVI_ROLE}> raced", roles: [ AVI_ROLE ])
+    race_gateway_insert("4242") do |race|
+      hook = ->(_record) { race.call }
+      AgentMessage.set_callback(:create, :before, hook)
+      begin
+        poll(FakeDiscord.new({ DESK => [ raw ] }))
+      ensure
+        AgentMessage.skip_callback(:create, :before, hook)
+      end
+    end
+  end
+
+  test "[integration] a gateway insert that lands before the poll's validation leaves one row, and the poll pass succeeds" do
+    raw = discord_raw(4243, content: "<@&#{AVI_ROLE}> raced", roles: [ AVI_ROLE ])
+    original = AgentMessage.method(:create!)
+    race_gateway_insert("4243") do |race|
+      racing_create = lambda do |*args, **kwargs, &block|
+        race.call
+        original.call(*args, **kwargs, &block)
+      end
+      AgentMessage.stub(:create!, racing_create) { poll(FakeDiscord.new({ DESK => [ raw ] })) }
+    end
+  end
+
   test "[unit] the poll job is inert without a token, and says so once" do
     with_env("DISCORD_AGENT_BOT_TOKEN", nil) do
       AgentMessageDiscordPollJob.announced_idle = false
