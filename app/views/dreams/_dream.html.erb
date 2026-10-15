@@ -90,10 +90,11 @@
         (<code>bin/dream apply-approvals</code>), and it stops loading once that release ships.
       </p>
     <% elsif dream.approved? && @approver %>
+      <%# Posts the filter like Approve, so dreams_filter.js keeps it in step with an in-place filter. %>
       <%= button_to "Retire", dream_retirements_path,
-            params: { dream_home: dream.home, dream_slug: dream.slug, status: (@filter == "all" ? nil : @filter) }.compact,
-            class: "btn btn-outline btn-sm", aria: { label: "Retire dream: #{dream.question}" },
-            form: { data: { test: "dream-retire-form" } }, data: { test: "dream-retire" } %>
+            params: { dream_home: dream.home, dream_slug: dream.slug, status: @filter || "all" },
+            class: "btn btn-outline btn-sm", aria: { label: "Retire dream #{dream.slug}" },
+            form: { data: { test: "dream-retire-form", dreams_approve_form: "" } }, data: { test: "dream-retire" } %>
     <% elsif proposed && @approver %>
       <%= button_to "Approve", dream_approvals_path,
             params: { dream_home: dream.home, dream_slug: dream.slug, status: (@filter == "all" ? nil : @filter) }.compact,

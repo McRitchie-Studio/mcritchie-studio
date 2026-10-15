@@ -57,6 +57,9 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
     get dreams_path
     assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-retire']", 1
     assert_select "[data-dream='proposed-money-idea'] [data-test='dream-retire']", 0
+    # The form posts the filter, and dreams_filter.js keeps it in step (as on Approve).
+    assert_select "[data-dream='money-review-reads-the-ledger'] form[data-dreams-approve-form] input[name='status'][value='all']", 1
+    assert_select "[data-dream='money-review-reads-the-ledger'] [aria-label='Retire dream money-review-reads-the-ledger']", 1
 
     assert_difference -> { DreamRetirement.count }, 1 do
       post dream_retirements_path, params: APPROVED.merge(status: "approved")
