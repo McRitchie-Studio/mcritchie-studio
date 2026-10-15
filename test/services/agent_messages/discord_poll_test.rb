@@ -256,7 +256,7 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
         VALUES ('discord', $1, $2, $3, $4, 'avi', 'role', 'received', now(), now())
       SQL
     end
-    assert_race_survived(poll.call(race), external_id) # before the cleanup below
+    poll.call(race) # the block asserts, before the cleanup below
   ensure
     @gateway_db&.exec_delete("DELETE FROM agent_messages WHERE channel = 'discord' AND external_id = '#{external_id}'")
     @gateway_db&.disconnect!
@@ -277,7 +277,7 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
       hook = ->(_record) { race.call }
       AgentMessage.set_callback(:create, :before, hook)
       begin
-        poll(FakeDiscord.new({ DESK => [ raw ] }))
+        assert_race_survived(poll(FakeDiscord.new({ DESK => [ raw ] })), "4242")
       ensure
         AgentMessage.skip_callback(:create, :before, hook)
       end
@@ -292,7 +292,8 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
         race.call
         original.call(*args, **kwargs, &block)
       end
-      AgentMessage.stub(:create!, racing_create) { poll(FakeDiscord.new({ DESK => [ raw ] })) }
+      summary = AgentMessage.stub(:create!, racing_create) { poll(FakeDiscord.new({ DESK => [ raw ] })) }
+      assert_race_survived(summary, "4243")
     end
   end
 
