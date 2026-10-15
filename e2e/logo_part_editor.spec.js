@@ -47,7 +47,7 @@ test("picking a colour redraws every logo on the tab, and the download carries i
   const href = await download.getAttribute("href");
   expect(href).toContain("first_colour=635BB2");
   const response = await page.request.get(href);
-  expect(response.headers()["content-disposition"]).toMatch(/studio-stacked-tagline-homogeneous-(light|dark)-custom\.svg/);
+  expect(response.headers()["content-disposition"]).toMatch(/studio-stacked-tagline-first-(light|dark)-custom\.svg/);
   expect(await response.text()).toContain('fill="#635BB2"');
 
   await page.waitForFunction(() => [...document.querySelectorAll("img[data-test='logo-image']")].every((img) => img.complete));

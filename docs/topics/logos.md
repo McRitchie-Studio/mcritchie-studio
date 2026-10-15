@@ -527,7 +527,7 @@ admin sidebar as **Logos**.
 |-------|-------|
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (all three drawing the row's one icon: the kit's, else the brand's own), each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
-| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows that type's logos once, with **Download** and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo, with the **Download card** beside it ([below](#the-download-card)): SVG or PNG at preset or custom sizes, any tone, and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three]-<text>-<tone>[-guides].svg`. |
@@ -627,8 +627,20 @@ is, and that a watermark has none.
 | Tab | Shows | Its own controls |
 |-----|-------|------------------|
 | Icon | the icon, once | none |
-| Navbar Logo | the three text versions on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked) and **Show guides** |
-| Stacked Logo | the three text versions in one form and proportion, and a short paragraph stating the proportion's method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line), **Proportion** (`?proportion=`: "3-2-1" or "Rule of three"; the kit's saved one is the default, else 3-2-1) and **Show guides** |
+| Navbar Logo | one logo on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked), **Words** and **Show guides** |
+| Stacked Logo | one logo in one form and proportion, and a short paragraph stating the proportion's method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line), **Proportion** (`?proportion=`: "3-2-1" or "Rule of three"; the kit's saved one is the default, else 3-2-1), **Words** and **Show guides** |
+
+**One logo, not three** (task logo-download-card, Alex 2026-10-14: the three text versions add little now the
+edit panel sets each word's colour and weight). The Navbar and Stacked tabs draw the tab's one logo in one text
+version. **Words** (`?text=homogeneous`, `first` or `second`) picks it; the default is the kit's saved text
+version, else the brand's (`BrandKit::DEFAULTS`). It stays a control because the edit panel's "As styled" colour
+and weight read from it. `?text=` is the tab's own: a link to another tab drops it, so that tab opens on its own
+kit's. **Save as default** and the **Kit choice** card save the Words pick (the card's own Text select is gone).
+
+**Layout: navbar as a row, stacked as a column.** On the Navbar tab the wide logo spans the page and the Download
+card and edit panel sit side by side under it. On the Icon and Stacked tabs the logo is in a left column and the two
+cards stack in a right one. With guides on, every tab is a row, since a guide drawing needs the full width. On a
+phone everything is one column.
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three
@@ -661,13 +673,13 @@ is, and that a watermark has none.
   removes the attribute when the drawing fits and restores it when it does
   not, and checks again when the theme swaps the drawing. With JavaScript off
   it stays a tab stop.
-- Download and Copy SVG give the logo as shown, on every tab: in the watermark
-  context, the watermark SVG, named `…-watermark.svg`.
+- Download and Copy SVG give the logo as shown, in the tone the Download card
+  picks (the page's tone first: the watermark in the watermark context).
 - Every image's accessible name states its type, its text version (and rule)
   and its context (and a Stacked Logo's form): "McRitchie Industries stacked
   logo, with tagline, first word leads, dark".
 - In the watermark context, the Navbar and Stacked tabs of a brand that leads
-  by colour say its three text versions look the same. No version is hidden.
+  by colour say its Words choice makes no difference there.
 - The index table is a table from the `xl` breakpoint up, and a stack of
   labelled cells below it; its wrapper scrolls sideways if a row ever outgrows
   it. On a phone the cluster's right column wraps under the Stacked square.
@@ -692,14 +704,39 @@ is, and that a watermark has none.
   Welding's helmet and lettering are auto-traced from pictures. Each brand's
   `note` says so on its page.
 
+### The Download card
+
+Alex, 2026-10-14: "some integrations have very specific size requirements and don't accept SVGs". Every tab has
+one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`):
+
+- **Format**: SVG or PNG. **Tone**: Light, Dark or Watermark (every tone, on every page; it starts on the
+  page's). **Download** and **Copy SVG** follow both.
+- **PNG sizes** are `Logos::PngSizes`, each named by what it serves. The Icon's presets set its long side
+  (16, 32, 48, 64, 180 Apple touch, 192 Android and PWA, 512, 1024) and keep its **true aspect** by default:
+  Studio's chest at 512 is 512 × 416. **1:1 square** pads it, centred, to N × N for favicons and app icons
+  (Alex, 22:35: "we can have access to both"); an icon within 1% of square (Industries) is square either way and
+  shows no toggle. The Navbar and Stacked Logos offer widths 400, 800, 1200 and 2400, and 1x, 2x and 4x of the
+  height the page draws them at (60 and 240 px); they are never square. **Custom** sets a width or a height,
+  the other side following the aspect (with 1:1 square, one side). The other side rounds to the nearest pixel,
+  halves up, never below 1, in Ruby and JavaScript alike; no side passes 8192.
+- **Background**: transparent, or a solid colour (white behind light, black behind dark and the watermark; a
+  colour picker changes it).
+- **The PNG is drawn in the browser**: the SVG from its own URL, its root sized to the target, loaded as an
+  image, drawn on a canvas of exactly the chosen pixels, saved with `toBlob` as the SVG's name plus
+  `-<w>x<h>.png`. The logo's words are outlined paths, so no font is needed, and the SVG is same-origin, so
+  the canvas is never tainted. No server route and no native dependency.
+- Without JavaScript the card is one Download SVG link and Copy SVG for the page's tone.
+- Every SVG the gallery and the kit export serve is already the icon's true ink box; only this card makes a PNG,
+  so the 1:1 option lives here alone.
+
 ### Editing a logo's parts
 
 Alex's item 4b (task logo-part-editor): the rules give the sizes, spacing and
 shapes; the operator picks the colours and weights. The Navbar Logo and
 Stacked Logo tabs draw ONE **Edit** panel (`logos/_edit_panel`), with the same
 rows in the same order on both, in Original and in Alt; **Edit parts** in the
-controls row jumps to it (`#edit`), since on the Navbar tab it sits under three
-full-width logos. One row per part:
+controls row jumps to it (`#edit`), since on a phone it sits below the logo and
+the Download card. One row per part:
 
 | Part | Row shows | Colour | Weight | Visible |
 |------|-----------|--------|--------|---------|
@@ -723,8 +760,7 @@ The rules:
   it was and is simply not drawn: the logo keeps its box. A weight that
   cannot be drawn in the current rule or form is offered disabled, and a URL
   that asks for one shows the logos as styled with the reason.
-- **Every logo on the tab changes at once**: the three text versions, in both
-  tones, with their downloads and copies. An edited file is named
+- **The logo changes at once**, in every tone, with its downloads and copy. An edited file is named
   `…-custom.svg` and its accessible name ends ", edited".
 - **Watermark**: a watermark is one colour by definition, so edits do not apply
   there; the panel says so, and the edits stay in the URL for Light and Dark.
