@@ -65,7 +65,7 @@ module AgentMailbox
   # from the main loop, so the API client is never shared across threads.
   #
   #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause
-  #               until the reset; a failed run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
+  #               until the reset; a failed or raised run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
   #               renew leases older than RENEW_EVERY, never past RUN_DEADLINE
   #               abandon a run past RUN_DEADLINE (release it, free the slot)
   #               ping the board every PING_EVERY, and on the same beat re-read the
@@ -89,6 +89,8 @@ module AgentMailbox
     # After a failed Claude run, claiming pauses this long, so a broken Claude
     # does not spend every waiting message's attempts in a minute.
     FAILURE_PAUSE = 5 * 60
+    # The most of a raised error's message a give-back reason carries.
+    RAISE_DETAIL_LIMIT = 200
     # The longest a run can legitimately take: its action and its Claude call,
     # each with TERM then KILL on timeout, plus a margin. Past it the lease is no
     # longer renewed and the run is abandoned (its message given back, its slot
@@ -322,7 +324,7 @@ module AgentMailbox
       answer = begin
         run.thread.value
       rescue StandardError => e
-        give_back(id, "the answer run raised #{e.class}")
+        answer_raised(id, e)
         return
       end
 
@@ -344,6 +346,19 @@ module AgentMailbox
     rescue ApiError => e
       log "complete ##{id} failed: #{e.message}"
       give_back(id, e.message)
+    end
+
+    # A run that raised is a failed run: give the message back naming the error
+    # (class and message, capped; both come from code, never from the message's
+    # text), log where it was raised (the log only, never the board), and pause
+    # FAILURE_PAUSE so the next tick does not reclaim it into the same raise and
+    # spend all its attempts in seconds (#67 and #68 on 2026-10-15).
+    def answer_raised(id, error)
+      detail = error.message.to_s.b.force_encoding(Encoding::UTF_8).scrub.gsub(/\s+/, " ").strip
+      detail = "#{detail[0, RAISE_DETAIL_LIMIT - 1]}…" if detail.length > RAISE_DETAIL_LIMIT
+      log "##{id} raised #{error.class} at #{error.backtrace&.first || 'unknown'}"
+      give_back(id, "the answer run raised #{error.class}#{detail.empty? ? '' : ": #{detail}"}")
+      pause_until(@clock.call + FAILURE_PAUSE, "answer_raised")
     end
 
     def pause_until(time, reason)

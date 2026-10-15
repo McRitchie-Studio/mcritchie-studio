@@ -199,6 +199,45 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     assert_in_delta @now + AgentMailbox::Dispatcher::FAILURE_PAUSE, disp.paused_until, 1
   end
 
+  # Regression (2026-10-15): a raising answer run gave its message back with no
+  # pause, so the next tick reclaimed it into the same raise and #67 and #68 spent
+  # all 3 attempts in 6 seconds. It now pauses like a failed Claude run, and its
+  # give-back reason names the error message, capped.
+  test "a raising answer run gives the message back naming the error, logs where, and pauses for FAILURE_PAUSE" do
+    message = agent_message!(soul: "xan")
+    raiser = Class.new do
+      attr_reader :calls
+
+      def initialize = @calls = 0
+
+      def call(argv, stdin:, timeout:, chdir:)
+        @calls += 1
+        raise ArgumentError, "invalid byte sequence in US-ASCII #{'x' * 300}"
+      end
+    end.new
+    disp = dispatcher(runner: raiser)
+
+    drive(disp) { message.reload.events.any? { |e| e.kind == "released" } }
+    5.times { disp.tick }
+
+    assert_equal 1, message.reload.attempts, "no second claim inside the failure pause"
+    assert_equal "received", message.status
+    assert_equal 1, raiser.calls
+    assert disp.paused?
+    assert_equal "answer_raised", disp.pause_reason
+    assert_in_delta @now + AgentMailbox::Dispatcher::FAILURE_PAUSE, disp.paused_until, 1
+    reason = message.events.find { |e| e.kind == "released" }.detail["reason"]
+    assert_match(/\Athe answer run raised ArgumentError: invalid byte sequence in US-ASCII x+…\z/, reason)
+    assert_operator reason.length, :<=, "the answer run raised ArgumentError: ".length + 200
+    assert_match(/##{message.id} raised ArgumentError at \S+:\d+/, @out.string, "the first backtrace line is logged")
+    refute_includes reason, " at /", "the backtrace stays off the board"
+
+    @now += AgentMailbox::Dispatcher::FAILURE_PAUSE + 1
+    disp.instance_variable_set(:@runner, GatedRunner.new)
+    drive(disp) { message.reload.status == "completed" }
+    assert_equal 2, message.attempts
+  end
+
   test "a signed-out Claude pauses for the long auth pause" do
     message = agent_message!(soul: "xan")
     disp = dispatcher(runner: GatedRunner.new(answer: "", status: 1, stderr: "Invalid API key · Please run /login"))
