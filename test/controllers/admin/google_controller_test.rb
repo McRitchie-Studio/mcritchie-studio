@@ -81,6 +81,82 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[integration] connect all requests identity and the three read scopes in one sign-in" do
+    with_connect_env do
+      query = begin_connect("all", return_to: "/integrations")
+
+      assert_match %r{\Ahttps://accounts\.google\.com/o/oauth2/v2/auth\?}, response.location
+      assert_equal [ "openid", "email", CALENDAR, GMAIL, DRIVE ], query["scope"].split
+      assert_equal "true", query["include_granted_scopes"]
+
+      google_answers(200, token_grant(scope: "openid email #{CALENDAR} #{GMAIL} #{DRIVE}"))
+      get admin_google_callback_path(code: "c0de", state: query["state"])
+
+      assert_redirected_to "/integrations"
+      assert_equal "Google Calendar, Gmail, and Google Drive connected for alex@mcritchie.studio.", flash[:notice]
+      assert_equal %i[calendar gmail drive], GoogleConnection.sole.abilities
+    end
+  end
+
+  test "[integration] a partial grant on connect all stores the granted subset and names the unticked one" do
+    with_connect_env do
+      connect!("all", scope: "openid email #{CALENDAR} #{DRIVE}", return_to: "/integrations")
+
+      assert_redirected_to "/integrations"
+      assert_nil flash[:alert], "a partial grant is not a refusal"
+      assert_equal "Google Calendar and Google Drive connected for alex@mcritchie.studio. Gmail was left unticked, so it stays off.", flash[:notice]
+      assert_equal %i[calendar drive], GoogleConnection.sole.abilities
+    end
+  end
+
+  test "[integration] connect all with every permission unticked stores nothing" do
+    with_connect_env do
+      connect!("all", scope: "openid email")
+
+      assert_redirected_to admin_google_path
+      assert_match(/granted none of Google Calendar, Gmail or Google Drive/, flash[:alert])
+      assert_equal 0, GoogleConnection.count
+    end
+  end
+
+  test "[integration] a Gmail disconnected here stays off when Drive connects and Google echoes Gmail" do
+    with_connect_env do
+      connect!("all", scope: "openid email #{CALENDAR} #{GMAIL}")
+      delete admin_google_disconnect_path(ability: "gmail")
+      assert_equal [ :calendar ], GoogleConnection.sole.abilities # the control: Gmail is off here
+
+      connect!("drive", scope: "openid email #{CALENDAR} #{GMAIL} #{DRIVE}") # include_granted_scopes echoes Gmail
+
+      assert_equal "Google Drive connected for alex@mcritchie.studio.", flash[:notice]
+      assert_equal %i[calendar drive], GoogleConnection.sole.abilities
+    end
+  end
+
+  test "[integration] the standing page offers Connect Google, Connect the rest, then the account" do
+    with_connect_env do
+      get admin_google_path
+      assert_select "[data-test='google-connect-all'][data-state='none'] a[data-test='google-connect-all-button'][href='#{admin_google_connect_path(ability: 'all')}']", text: "Connect Google"
+
+      store_google(scope: "openid #{CALENDAR}")
+      reads_answer_everything
+      get admin_google_path
+      assert_select "[data-test='google-connect-all'][data-state='some'] [data-test='google-connect-all-button']", text: "Connect the rest"
+      assert_select "[data-test='google-connect-all-status']", text: /Google Calendar connected\. Add Gmail and Google Drive/
+
+      store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      get admin_google_path
+      assert_select "[data-test='google-connect-all'][data-state='all'] [data-test='google-connect-all-status']", text: "Google connected as alex@mcritchie.studio"
+      assert_select "[data-test='google-connect-all-button']", 0
+    end
+  end
+
+  test "[integration] the standing page offers no Connect Google without the OAuth client" do
+    with_connect_env(creds: false) do
+      get admin_google_path
+      assert_select "[data-test='google-connect-all']", 0
+    end
+  end
+
   test "[integration] a grant without the requested scope is refused and nothing is stored" do
     with_connect_env do
       connect!("gmail", scope: "openid email")
