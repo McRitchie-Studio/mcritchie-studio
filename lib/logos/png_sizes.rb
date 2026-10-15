@@ -29,7 +29,7 @@ module Logos
     ].freeze
 
     WIDTH_PRESETS = {
-      navbar: [[400, "Email signature"], [800, "Website header, retina"], [1200, "Open Graph and social cards"],
+      navbar: [[400, "Email signature"], [800, "Website header, retina"], [1200, "Banners and web heroes"],
                [2400, "Print and slides"]],
       stacked: [[400, "Profile and directory listings"], [800, "Documents and slides"], [1200, "Social posts"],
                 [2400, "Print"]]
@@ -55,12 +55,15 @@ module Logos
       [width, height]
     end
 
-    # Whole pixels for a drawing of `width` × `height` with one side set: `axis` :width or :height to `value`.
+    # Whole pixels for a drawing of `width` × `height` with one side set: `axis` :width or :height to `value`. Refused
+    # (ArgumentError) when either side would be under 1 or past MAX_SIDE, or `value` is not a whole number.
     def fit(axis, value, width, height)
       value = Integer(value)
       raise ArgumentError, "a PNG side is 1 to #{MAX_SIDE} px, not #{value}" unless value.between?(1, MAX_SIDE)
 
       other = axis == :width ? round(value * height / width) : round(value * width / height)
+      raise ArgumentError, "the other side would be #{other} px, past #{MAX_SIDE}" if other > MAX_SIDE
+
       axis == :width ? [value, other] : [other, value]
     end
 
@@ -73,18 +76,23 @@ module Logos
       list = if type.to_sym == :icon
                ICON_PRESETS.map { |side, use| preset(side.to_s, side, side, use, "contain") }
              else
-               widths = WIDTH_PRESETS.fetch(type.to_sym).map do |px, use|
-                 w, h = fit(:width, px, width, height)
-                 preset("w#{px}", w, h, use, "fill")
+               widths = WIDTH_PRESETS.fetch(type.to_sym).filter_map do |px, use|
+                 fitted(:width, px, width, height) { |w, h| preset("w#{px}", w, h, use, "fill") }
                end
                scales = SCALES.filter_map do |scale|
                  target = SCREEN_HEIGHTS.fetch(type.to_sym) * scale
-                 w, h = fit(:height, target, width, height)
-                 preset("#{scale}x", w, h, "#{scale}x the size shown here (#{target} px tall)", "fill")
+                 fitted(:height, target, width, height) { |w, h| preset("#{scale}x", w, h, "#{scale}x the size shown here (#{target} px tall)", "fill") }
                end
                widths + scales
              end
       list.select { |entry| [entry[:width], entry[:height]].max <= MAX_SIDE }
+    end
+
+    # The block's preset for a fitted size, or nil when the size passes MAX_SIDE.
+    def fitted(axis, value, width, height)
+      yield(*fit(axis, value, width, height))
+    rescue ArgumentError
+      nil
     end
 
     def preset(key, width, height, use, fit) = { key:, label: "#{width} × #{height}", use:, width:, height:, fit: }
