@@ -394,6 +394,13 @@ Rails.application.routes.draw do
     delete "google/connection", to: "google#disconnect", as: :google_disconnect
     get "google_calendar/callback", to: "google#callback", as: :google_callback
     get "google_calendar", to: redirect("/admin/google")
+
+    # The Fathom connection (Admin::FathomController). The callback path is the
+    # redirect registered on both Fathom OAuth apps: keep it exactly.
+    get "fathom", to: "fathom#show", as: :fathom
+    get "fathom/connect", to: "fathom#connect", as: :fathom_connect
+    delete "fathom/connection", to: "fathom#disconnect", as: :fathom_disconnect
+    get "fathom/callback", to: "fathom#callback", as: :fathom_callback
   end
 
   # HTML

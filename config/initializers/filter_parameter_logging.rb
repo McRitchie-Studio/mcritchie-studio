@@ -27,11 +27,11 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_login_requests"
   end,
-  # The TikTok and Google Calendar sign-ins' single-use auth code, on their callbacks only.
+  # The TikTok, Google and Fathom sign-ins' single-use auth code, on their callbacks only.
   lambda do |key, value, params = nil|
     next unless key.to_s == "code" && value.is_a?(String)
 
-    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google].include?(params["controller"].to_s)
+    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom].include?(params["controller"].to_s)
   end,
   lambda do |key, value, params = nil|
     next unless key.to_s == "value" && value.is_a?(String)

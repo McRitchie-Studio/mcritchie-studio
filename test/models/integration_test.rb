@@ -5,10 +5,10 @@ require "test_helper"
 # live or on request, Get notified for a Coming soon one, Talk to us for an
 # add-on or a custom need. Never Connect on a Coming soon entry.
 class IntegrationTest < ActiveSupport::TestCase
-  test "[unit] the config loads four groups: Google sign-in, integrations, add-ons, then custom" do
+  test "[unit] the config loads five groups: Google sign-in, meeting notes, integrations, add-ons, then custom" do
     groups = Integration.groups
 
-    assert_equal %w[google_sign_in integrations add_ons custom], groups.map(&:key)
+    assert_equal %w[google_sign_in meeting_notes integrations add_ons custom], groups.map(&:key)
     groups.each { |group| assert group.entries.any?, "#{group.key} has entries" }
   end
 
