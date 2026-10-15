@@ -98,8 +98,11 @@ These still need his ruling on the card
 ## The second signature
 
 First Rule 10's second clause. Some mainnet actions need a signature beyond the
-one the app or Mr. McRitchie's first wallet supplies: a `VaultState` governance
-action at threshold 2 or more, or a `pending_transactions` row in turf-monster.
+one Mr. McRitchie's first wallet supplies: a `VaultState` governance action at
+threshold 2 or more, signed outside the app. A turf-monster
+`pending_transactions` row cannot use `4S39`: the server already signs every row
+as `admin` with it, and a second `4S39` signature is one signer, which the
+program rejects (`Solana::CosignPlan.eligible_cosigners` leaves it out).
 Mr. McRitchie set the answer on 2026-10-15, in chat:
 
 > "I think it's more effective to always say use this (the other address), maybe
@@ -128,8 +131,9 @@ action `GovernanceConfig` holds at 2 of 5: `pause`, `close_contest`,
 `set_contest_lock_time` and `set_contest_conclusion_time` (turf-vault
 `DEFAULT_THRESHOLDS`; mainnet runs the shipped defaults). So two agent keys can
 already reach those actions without him. The rule, not the chain, is what makes
-his request in this session the gate. The 3-of-5 actions (settle, cancel, sweep,
-`update_signers`, unpause) still need one of his wallets.
+his request in the current chat the gate. The 3-of-5 actions (among them settle,
+cancel, sweep, `register_currency`, `create_season`, `update_signers`,
+`set_governance` and unpause) still need one of his wallets.
 
 ## Preconditions
 
