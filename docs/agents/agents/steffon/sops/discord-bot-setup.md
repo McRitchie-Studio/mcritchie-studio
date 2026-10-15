@@ -82,8 +82,9 @@ Input: a contact submission from `/integrations/discord`
 4. **Test with the client.** Once it deploys, the client posts
    `@<agent> hello` in `#agents`. The poll stores it within a minute, and
    `bin/dispatcher` answers it within about another (Steffon's
-   [`agent-dispatcher`](agent-dispatcher.md) SOP installs and watches it; after a
-   routing change re-run `bin/dispatcher install` so it serves the new soul). See
+   [`agent-dispatcher`](agent-dispatcher.md) SOP installs and watches it; once the
+   routing change ships it restarts itself within about two minutes and serves the
+   new soul). See
    the reply land, and only then tell the client it is live, and how quickly to
    expect answers.
 
