@@ -103,7 +103,7 @@ module AgentMessages
     end
 
     # ── The report-destination reads and post (docs/agents/system/report-destinations.md).
-    # DiscordChannels::Sync reads the bot's own user, the guild's roles and the
+    # DiscordDirectory::Sync reads the bot's own user, the guild's roles and the
     # bot's membership to work out where it may post; ReportDestinations posts.
 
     # The bot's own user (GET /users/@me): its id names its guild membership.

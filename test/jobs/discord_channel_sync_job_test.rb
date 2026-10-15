@@ -35,6 +35,15 @@ class DiscordChannelSyncJobTest < ActiveJob::TestCase
     assert fake.requests.any? { |r| r[:path] == "/guilds/1332466565203103744/channels" }
   end
 
+  test "[unit] a refused guild read is written to ErrorLog" do
+    fake = fake_discord
+    fake.overrides = { "/channels" => [ 403, { "message" => "Missing Access" } ] }
+    assert_difference -> { ErrorLog.count }, 1 do
+      with_fake_discord(fake) { DiscordChannelSyncJob.perform_now }
+    end
+    assert_match(/Discord channel sync: guild 1332466565203103744: .*HTTP 403/, ErrorLog.order(:id).last.message)
+  end
+
   test "[unit] it is scheduled every 15 minutes in production" do
     entry = YAML.load_file(Rails.root.join("config/recurring.yml")).dig("production", "discord_channel_sync")
     assert_equal [ "DiscordChannelSyncJob", "every 15 minutes" ], [ entry["class"], entry["schedule"] ]

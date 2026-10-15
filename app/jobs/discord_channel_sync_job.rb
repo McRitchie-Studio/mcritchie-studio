@@ -1,7 +1,7 @@
 # Every 15 minutes in production (config/recurring.yml), and on demand from the
 # Refresh channels button on /admin/report_destinations: mirror each configured
 # guild's channels and active threads into discord_channels
-# (DiscordChannels::Sync, docs/agents/system/report-destinations.md).
+# (DiscordDirectory::Sync, docs/agents/system/report-destinations.md).
 #
 # Inert until configured. With no DISCORD_AGENT_BOT_TOKEN, or no guild in
 # config/agent_routes.yml, it does nothing and says so ONCE per process, so a
@@ -12,18 +12,23 @@ class DiscordChannelSyncJob < ApplicationJob
 
   class_attribute :announced_idle, default: false
 
+  # A guild or thread list Discord refused (a 403 on a guild the bot left, a 429),
+  # written to ErrorLog so a directory that stopped refreshing is visible.
+  SyncFailed = Class.new(StandardError)
+
   def perform
     reason = idle_reason
     return announce_idle(reason) if reason
 
-    summary = DiscordChannels::Sync.new.call
+    summary = DiscordDirectory::Sync.new.call
     Rails.logger.info("[discord-channels] sync: #{summary}") if summary.archived.positive? || !summary.ok? || summary.notes.any?
+    ErrorLog.capture!(SyncFailed.new("Discord channel sync: #{summary.errors.join('; ')[0, 900]}")) unless summary.ok?
     summary
   end
 
   def self.idle_reason
     return "#{AgentMessages::DiscordBot::TOKEN_ENV} is unset" unless AgentMessages::DiscordBot.configured?
-    return "config/agent_routes.yml lists no Discord guild" if DiscordChannels::Sync.guild_ids.empty?
+    return "config/agent_routes.yml lists no Discord guild" if DiscordDirectory::Sync.guild_ids.empty?
 
     nil
   end

@@ -108,7 +108,7 @@ module ReportDestinationFixtures
   end
 
   def sync_fake!(fake)
-    DiscordChannels::Sync.new(bot: AgentMessages::DiscordBot.new(token: "test-token", transport: fake.to_proc),
+    DiscordDirectory::Sync.new(bot: AgentMessages::DiscordBot.new(token: "test-token", transport: fake.to_proc),
                               guild_ids: [ GUILD ]).call
   end
 

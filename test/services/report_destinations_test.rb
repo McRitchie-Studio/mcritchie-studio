@@ -112,6 +112,8 @@ class ReportDestinationsTest < ActiveSupport::TestCase
       assert_equal :failed, result.status
       assert_match(/HTTP 500/, result.reason)
       assert_equal "failed", ReportDelivery.sole.status
+      log = ErrorLog.order(:id).last
+      assert_equal [ ReportDelivery.sole, "report daily_app_report" ], [ log.target, log.target_name ]
 
       assert_raises(AgentMessages::DiscordBot::Error) do
         ReportDestinations.deliver!(KEY, content: "x", idempotency_key: "daily:2026-10-15")

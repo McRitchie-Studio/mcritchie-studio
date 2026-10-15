@@ -173,7 +173,17 @@ module ReportDestinations
       receipt.update!(status: "failed", error: error.message.to_s[0, 500], discord_channel: channel,
                       guild_external_id: channel&.guild_external_id, channel_external_id: channel&.external_id)
       @failure = error
+      log_failure(receipt, error)
       Result.new(status: :failed, reason: receipt.error, delivery: receipt)
+    end
+
+    # Every failed attempt is an ErrorLog row targeting its receipt, so a report
+    # that stopped arriving is visible. Logging never breaks the delivery.
+    def log_failure(receipt, error)
+      log = ErrorLog.capture!(error)
+      log.update(target: receipt, target_name: "report #{@report_key}")
+    rescue StandardError => e
+      Rails.logger.warn("[report-destinations] could not write ErrorLog: #{e.class}")
     end
 
     def finished(receipt)

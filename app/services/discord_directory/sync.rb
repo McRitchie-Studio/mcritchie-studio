@@ -1,4 +1,4 @@
-module DiscordChannels
+module DiscordDirectory
   # Mirrors each configured guild's channels and active threads into
   # discord_channels (docs/agents/system/report-destinations.md). Run by
   # DiscordChannelSyncJob every 15 minutes and by the Refresh channels button.
@@ -12,7 +12,7 @@ module DiscordChannels
   #
   # `postable` is the bot's real VIEW_CHANNEL + SEND_MESSAGES (SEND_MESSAGES_IN_THREADS
   # for a thread) from the guild's roles and the channel's overwrites
-  # (DiscordChannels::Permissions). When the roles or the bot's membership cannot
+  # (DiscordDirectory::Permissions). When the roles or the bot's membership cannot
   # be read, it falls back to true for every message kind (text, announcement,
   # thread), and the summary says so.
   #

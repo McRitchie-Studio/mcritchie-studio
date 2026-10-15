@@ -1,4 +1,4 @@
-module DiscordChannels
+module DiscordDirectory
   # Can the bot view a channel and send to it? Discord's own permission algorithm
   # (https://discord.com/developers/docs/topics/permissions#permission-overwrites),
   # PURE: the guild's roles, the bot's role ids and user id, and the channel's

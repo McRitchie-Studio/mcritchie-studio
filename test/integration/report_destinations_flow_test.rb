@@ -16,7 +16,7 @@ class ReportDestinationsFlowTest < ActionDispatch::IntegrationTest
     log_in_as(admin)
 
     with_fake_discord(fake) do
-      DiscordChannels::Sync.stub(:guild_ids, [ GUILD ]) do
+      DiscordDirectory::Sync.stub(:guild_ids, [ GUILD ]) do
         post admin_refresh_report_destinations_path
       end
       follow_redirect!

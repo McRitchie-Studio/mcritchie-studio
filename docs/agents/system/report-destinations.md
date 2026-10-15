@@ -58,7 +58,7 @@ is archived.
   (`AgentMessages::DiscordBot`).
 - **Postable.** The bot's real VIEW_CHANNEL plus SEND_MESSAGES
   (SEND_MESSAGES_IN_THREADS for a thread), computed from the guild's roles and the
-  channel's overwrites (`DiscordChannels::Permissions`). When the roles cannot be
+  channel's overwrites (`DiscordDirectory::Permissions`). When the roles cannot be
   read, every text, announcement and thread channel counts as postable. Forum,
   voice and category channels, and private and locked threads, are never offered.
 - **Archived.** A channel the sync no longer sees is archived, never deleted. A
@@ -163,10 +163,10 @@ embeds (up to 6,000 characters) and keep `content` to the headline.
 | The contract | `ReportDestinations` (`app/services/report_destinations.rb`), `ReportDeliveryJob` |
 | Registry | `config/report_destinations.yml` |
 | Tables | `discord_channels`, `report_destinations`, `report_deliveries` |
-| Directory sync | `DiscordChannelSyncJob` → `DiscordChannels::Sync` and `DiscordChannels::Permissions` |
+| Directory sync | `DiscordChannelSyncJob` → `DiscordDirectory::Sync` and `DiscordDirectory::Permissions` |
 | Discord REST | `AgentMessages::DiscordBot` (`guild_channels`, `active_threads`, `guild_roles`, `guild_member`, `current_user`, `post_report`) |
 | The page | `Admin::ReportDestinationsController`, `/admin/report_destinations` |
-| Tests | `test/services/report_destinations_test.rb`, `test/services/discord_channels/`, `test/integration/report_destinations_flow_test.rb`, `test/system/report_destinations_test.rb`, `e2e/report_destinations_admin.spec.js` |
+| Tests | `test/services/report_destinations_test.rb`, `test/services/discord_directory/`, `test/integration/report_destinations_flow_test.rb`, `test/system/report_destinations_test.rb`, `e2e/report_destinations_admin.spec.js` |
 
 The bot, its token (`DISCORD_AGENT_BOT_TOKEN`, 1Password `agents.discord.xan`)
 and the guild list are shared with the agent mailbox:

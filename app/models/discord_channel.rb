@@ -2,6 +2,10 @@
 # DiscordChannelSyncJob (docs/agents/system/report-destinations.md). Ids are
 # Discord snowflakes, kept as strings. A channel the sync stops seeing is
 # archived, never deleted, so a ReportDestination pointing at it never dangles.
+#
+# NOT the DiscordChannels module (app/models/discord_channels.rb): that one names
+# the two webhook LANES (external, internal) some posters still use, by ENV. This
+# is the bot's live directory of a guild's real channels, synced from Discord.
 class DiscordChannel < ApplicationRecord
   KINDS = %w[text announcement forum thread voice category].freeze
   # The kinds a plain message can be posted into. A forum takes posts only as
@@ -24,7 +28,7 @@ class DiscordChannel < ApplicationRecord
   def archived? = archived_at.present?
   def selectable? = !archived? && postable? && MESSAGE_KINDS.include?(kind)
 
-  # "#name", with the parent for a thread so two threads called "notes" differ.
+  # "#name" for a channel, "↳ name" for a thread (the page adds its parent).
   def display_name
     prefix = kind == "thread" ? "↳ " : "#"
     "#{prefix}#{name}"

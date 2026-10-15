@@ -1,10 +1,10 @@
 require "test_helper"
 
-# [unit] DiscordChannels::Permissions — Discord's overwrite algorithm: base from
+# [unit] DiscordDirectory::Permissions — Discord's overwrite algorithm: base from
 # @everyone and the bot's roles, ADMINISTRATOR is everything, then @everyone's,
 # the roles' and the member's overwrites in that order.
-class DiscordChannels::PermissionsTest < ActiveSupport::TestCase
-  P = DiscordChannels::Permissions
+class DiscordDirectory::PermissionsTest < ActiveSupport::TestCase
+  P = DiscordDirectory::Permissions
   GUILD = "1"
   ROLE = "2"
   USER = "3"

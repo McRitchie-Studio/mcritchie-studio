@@ -1,11 +1,11 @@
 require "test_helper"
 require_relative "../../support/report_destination_fixtures"
 
-# [unit] DiscordChannels::Sync — every channel and active thread of a guild is
+# [unit] DiscordDirectory::Sync — every channel and active thread of a guild is
 # upserted with its kind, category, position and postable; a channel no longer
 # seen is archived (never deleted) and comes back unarchived; a failed read
 # leaves the guild as it was.
-class DiscordChannels::SyncTest < ActiveSupport::TestCase
+class DiscordDirectory::SyncTest < ActiveSupport::TestCase
   include ReportDestinationFixtures
 
   F = ReportDestinationFixtures
@@ -87,6 +87,6 @@ class DiscordChannels::SyncTest < ActiveSupport::TestCase
   end
 
   test "[unit] the guilds are the ones config/agent_routes.yml lists" do
-    assert_equal [ "1332466565203103744" ], DiscordChannels::Sync.guild_ids
+    assert_equal [ "1332466565203103744" ], DiscordDirectory::Sync.guild_ids
   end
 end
