@@ -118,7 +118,14 @@ A release needs no step from anyone, two mechanisms between them:
   With no plist in `~/Library/LaunchAgents` it does nothing. Otherwise it renders
   the new template with the installed plist's own ruby and PATH (the ship's
   environment is not the shell that installed it) and reinstalls only when that
-  differs from the installed file. It only warns; it never fails a ship.
+  differs from the installed file. It only warns; it never fails a ship. The
+  comparison is byte for byte, so a plist edited by hand or by a plist editor
+  (sorted keys, tabs) reads as changed and is reinstalled once from the template,
+  keeping its ruby and PATH; the ships after that find it current.
+- **Locale.** launchd passes no locale, so the template sets `LANG` and `LC_ALL`
+  to `en_US.UTF-8` (they reach `claude` and `bin/task` through
+  `AgentMailbox::CHILD_ENV_ALLOW`), and `bin/dispatcher` forces UTF-8 itself
+  before it reads a file (`bin/lib/process_encoding.rb`).
 
 A SIGTERM during a restart's drain (a reinstall's `bootout`) still cuts the wait to
 the 60-second grace. The service runs whatever the primary has checked out, so a
@@ -169,6 +176,7 @@ gateway is failing before READY, so read the worker log's
 | **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. After 3 such refunds a message spends attempts like any other, so a long outage can dead-letter it (re-queue below). If waiting until T is wrong, tell Alex; only he can raise the plan |
 | **Run overdue**: `paused … (run_overdue)`, the log's `the run passed its … deadline` | A Claude run that outlived its timeout and its KILL | Nothing for one; for a pattern, run the Claude command by hand (row below) |
 | **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools "" --output-format json`. Fix what it prints |
+| **Answer run raising**: `paused … (answer_raised)`, the log's `#N raised <Class> at <file:line>` and `releasing #N: the answer run raised <Class>: <message>` | The error the release reason names and the line the log names. `invalid byte sequence in US-ASCII` means the process has no UTF-8 locale: the plist must carry `LANG` and `LC_ALL` = `en_US.UTF-8` (the template does; `bin/dispatcher install` from the hub checkout restores it) | Fix the cause; the pause keeps the message's other attempts. A dead-lettered one: re-queue below |
 | **Stuck lease**: a message `claimed` with its lease long lapsed | `/admin/agent_messages`, Claim column | Nothing to do by hand: the next claim takes a lapsed lease back (or dead-letters it on attempt 3) |
 | **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
 | **Context failing**: the log repeats `releasing #N: could not read the message's context` | The board's `GET /api/v1/agent_messages/:id/context` (holder-only) | Treat it as **Board auth** or a hub outage. The dispatcher gives the message back rather than answer without the person's memory |
