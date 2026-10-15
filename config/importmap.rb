@@ -8,6 +8,7 @@ pin "depth_chart"
 pin "scroll_tab_stop"
 pin "logo_gallery"
 pin "logo_editor"
+pin "logo_download"
 pin "dreams_filter"
 # chart.js is the self-contained jsDelivr/esm.sh "auto" bundle (auto-registers
 # controllers + scales, @kurkle/color inlined). chartkick is the ESM build,

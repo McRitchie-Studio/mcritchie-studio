@@ -24,8 +24,8 @@
     Locals: kit (the brand's Logos::BrandKit). %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading disabled:opacity-60" %>
 <% outline = "has-checked:outline-2 has-checked:outline-offset-2 has-checked:outline-solid has-checked:outline-[#4338CA] dark:has-checked:outline-white has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-dashed has-focus-visible:outline-[#4338CA] dark:has-focus-visible:outline-white" %>
-<%# id="edit": the page's controls row links here ("Edit parts"), because on the Navbar tab the panel sits under three
-    full-width logos and Alex could not find it (2026-10-11 23:06). scroll-mt-44 clears the EXPANDED nav (161px at 375), which collapses to 69px after the jump. %>
+<%# id="edit": the page's controls row links here ("Edit parts"), because Alex could not find the panel under the
+    Navbar tab's logos (2026-10-11 23:06); it now sits beside the Download card, still below the fold on a phone. scroll-mt-44 clears the EXPANDED nav (161px at 375), which collapses to 69px after the jump. %>
 <section id="edit" class="card p-4 sm:p-5 space-y-3 scroll-mt-44" data-test="edit-panel" aria-labelledby="edit-panel-title">
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <h2 id="edit-panel-title" class="text-sm font-bold text-heading mr-auto">Edit</h2>
@@ -43,7 +43,7 @@
     <% if @type == :icon %>
     <p class="text-sm text-secondary">Pick the icon's colour from the brand's palette. Save as default to make it the kit's icon: every Navbar and Stacked Logo draws it.</p>
     <% else %>
-    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. Every logo on this tab, and its download and copy, changes at once. To keep them, Save as default. Reset goes back to the kit default, or to the brand's style when none is saved.</p>
+    <p class="text-sm text-secondary">Pick each part's colour from the brand's palette, and each word's weight. The sizes, spacing and shapes stay as the rules set them, except that a heavier word is wider. The logo, its download and its copy change at once. To keep them, Save as default. Reset goes back to the kit default, or to the brand's style when none is saved.</p>
     <% end %>
     <% if @edit_refusal %>
       <p class="text-sm text-heading rounded-lg border border-subtle p-3" role="alert" data-test="edit-refusal">These edits cannot be drawn here, so the logos are shown as styled: <%= @edit_refusal %></p>

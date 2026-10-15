@@ -1,9 +1,14 @@
 <%# ONE BRAND'S LOGOS, TABBED BY TYPE: Icon, Navbar Logo (the default) or
-    Stacked Logo. Each tab shows that type's logos once, on the page's own
+    Stacked Logo. Each tab shows ONE logo (task logo-download-card), on the page's own
     background (no plates), in the hub theme's tone: the Context control sets
     the theme, and Watermark turns the page dark and shows the watermark logos
-    (LogosController#set_context). Each logo has a download and a copy of the
-    logo as shown: the icon, or the three text versions. The Navbar Logo tab
+    (LogosController#set_context). Beside it, the Download card (logos/_download_card)
+    gives that logo as an SVG or a PNG at a preset or custom size, in any tone, with
+    Copy SVG. The Navbar tab lays the logo across the page with the Download card and
+    the edit panel under it; the Icon and Stacked tabs put the logo in a left column and
+    the two cards in a right one (one column on a phone; a guide drawing always takes
+    the full width). The Navbar and Stacked tabs' Words control picks the text version
+    (homogeneous, first or second word leads; ?text=, the kit's by default). The Navbar Logo tab
     has a Rule control (3, 4 or 6) and shows one rule at a time; it and the Stacked
     Logo tab has a Form control (the brand's own form, and With tagline where
     the brand has a tagline) and a Proportion control (3-2-1 or the rule of three); both can swap every logo for its guide drawing, which fits its frame
@@ -79,6 +84,17 @@
           <% end %>
         </div>
       <% end %>
+      <%# The text version (task logo-download-card): one small control in place of the three versions the tab used to
+          draw side by side. The edit panel's "As styled" weight and colour read from it, so it is still a choice. %>
+      <% unless @type == :icon %>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Words" data-test="text-control">
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Words</span>
+          <% Logos::Variant::TEXTS.each do |text, label| %>
+            <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(text: (text unless text == @default_text))),
+                        class: chosen.(text == @text), aria: { current: ("true" if text == @text) }, data: { test: "text-option", text: } %>
+          <% end %>
+        </div>
+      <% end %>
       <%# The edit panel is below the logos; this takes the reader to it, the same on every tab (task
           logo-compare-and-original-edits, item 2). %>
       <%= link_to (@type == :icon ? "Edit colour" : "Edit parts"), "#edit", class: chosen.(false), data: { test: "edit-jump" } %>
@@ -86,13 +102,12 @@
         <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
                     class: chosen.(@guides), data: { test: "guides-toggle" } %>
       <% end %>
-      <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, colouring and edits, with the
-          text version the kit already has (the Kit choice card below picks another, or clears it), become the
+      <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, text version, colouring and edits become the
           brand's kit choice, which this tab then opens on. On the Icon tab, its colouring and colour become the kit's
           icon, which every Navbar and Stacked Logo draws (task kit-icon-atomic-unit). A plain form, no JavaScript. %>
       <% unless @edit_refusal %>
         <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "contents", data: { test: "kit-save-default-form", turbo: false } do %>
-          <% logo_kit_save_fields.merge(text: @kit_record.default_text(@type), return: "top").compact.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
+          <% logo_kit_save_fields.merge(return: "top").compact.each do |name, value| %><%= hidden_field_tag name, value, id: nil %><% end %>
           <%= submit_tag "Save as default", name: nil, class: chosen.(false), disabled: @kit_default_shown,
                          data: { test: "kit-save-default", disable_with: false }, title: ("This is the kit default already" if @kit_default_shown) %>
         <% end %>
@@ -132,62 +147,45 @@
         They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
       </p>
     <% end %>
-    <p class="text-2xs text-muted" data-test="kit-note">The brand's kit saves one Icon, one Navbar Logo and one Stacked Logo: pick on their tabs, then Save as default. Each tab then opens on it, and every logo draws the kit's icon.</p>
     <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
     <% if @logo.note.present? %>
       <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
     <% end %>
   </div>
 
-  <section class="card p-4 sm:p-5" data-test="logo-type" data-type="<%= @type %>" aria-label="<%= Logos::Variant::TYPES.fetch(@type) %>">
-    <div class="grid gap-4 <%= 'md:grid-cols-3' if @type == :stacked && !@guides %>">
-      <% @variants.each do |versions| %>
-        <% variant = versions.values.first %>
-        <div class="min-w-0 space-y-1.5" data-test="logo-example" data-tones="<%= versions.keys.join(' ') %>" data-text="<%= variant.text %>">
-          <% if variant.text %>
-            <h2 class="text-2xs font-semibold uppercase tracking-wide text-muted"><%= Logos::Variant::TEXTS.fetch(variant.text) %>
-              <% if @kit_default_shown && @kit_default.text == variant.text %>
-                <span class="ml-1 rounded-full border border-subtle px-1.5 py-px normal-case tracking-normal text-heading" data-test="kit-default-text">Kit default</span>
-              <% end %>
-            </h2>
-          <% end %>
-          <% if variant.guides %>
-            <%# A guide drawing fits its frame until its labels would be too small to read; from there it keeps its width
-                and the frame scrolls sideways inside itself. The frame is a tab stop only while it scrolls:
-                app/javascript/scroll_tab_stop.js takes the tabindex away when the drawing fits and puts it back when
-                it does not (and checks again when the theme swaps the drawing). With JavaScript off it stays a tab
-                stop, which costs one extra Tab. No plate: the frame has no background of its own. %>
-            <div class="overflow-x-auto rounded-lg border border-subtle p-4 sm:p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                 data-test="logo-frame" tabindex="0" data-scroll-tab-stop role="group" aria-label="Guide drawing: <%= variant.label.sub(", #{variant.tone}", '') %>">
-              <%= logo_themed_images(versions, height: logo_height(variant)) %>
-            </div>
-          <% else %>
-            <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-6 min-w-0" data-test="logo-frame">
-              <%= logo_themed_images(versions, height: logo_height(variant)) %>
-            </div>
-          <% end %>
-          <%# The download and the copy give the logo as shown: one pair per tone, and the theme shows the matching pair. %>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <%= logo_themed(versions.keys) do |tone| %>
-              <% shown = versions.fetch(tone) %>
-              <%= link_to "Download", logo_asset_path(shown, download: 1),
-                          class: "btn btn-sm btn-neutral #{ring}", data: { test: "logo-download", turbo: false },
-                          aria: { label: "Download: #{shown.label}" } %>
-              <%# Copy SVG fetches the logo from its own URL on click (app/javascript/logo_gallery.js), so the page carries
-                  no SVG of its own; it says Copied or Copy failed. %>
-              <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-copy-svg="<%= logo_asset_path(shown) %>"
-                      aria-label="Copy SVG: <%= shown.label %>"><span data-copy-svg-label>Copy SVG</span></button>
-              <span class="sr-only" role="status" data-copy-svg-status></span>
-            <% end %>
-          </div>
+  <%# ONE LOGO, then its Download card and the edit panel (task logo-download-card). "Navbar as a row, stacked as a
+      column": the wide Navbar Logo spans the page, the two cards side by side under it; the Icon and the Stacked
+      Logo sit in a left column beside them. A guide drawing needs the full width, so with guides on every tab is a
+      row. On a phone everything is one column. %>
+  <% column = @type != :navbar && !@guides %>
+  <% variant = @shown.values.first %>
+  <section class="grid gap-5 min-w-0 <%= column ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start' : '' %>"
+           data-test="logo-type" data-type="<%= @type %>" data-layout="<%= column ? 'column' : 'row' %>" aria-label="<%= Logos::Variant::TYPES.fetch(@type) %>">
+    <div class="card p-4 sm:p-5 min-w-0" data-test="logo-example" data-tones="<%= @shown.keys.join(' ') %>" data-text="<%= variant.text %>">
+      <% if variant.guides %>
+        <%# A guide drawing fits its frame until its labels would be too small to read; from there it keeps its width
+            and the frame scrolls sideways inside itself. The frame is a tab stop only while it scrolls:
+            app/javascript/scroll_tab_stop.js takes the tabindex away when the drawing fits and puts it back when
+            it does not (and checks again when the theme swaps the drawing). With JavaScript off it stays a tab
+            stop, which costs one extra Tab. No plate: the frame has no background of its own. %>
+        <div class="overflow-x-auto rounded-lg border border-subtle p-4 sm:p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+             data-test="logo-frame" tabindex="0" data-scroll-tab-stop role="group" aria-label="Guide drawing: <%= variant.label.sub(", #{variant.tone}", '') %>">
+          <%= logo_themed_images(@shown, height: logo_height(variant)) %>
+        </div>
+      <% else %>
+        <div class="flex items-center justify-center rounded-lg border border-subtle p-4 sm:p-8 min-w-0" data-test="logo-frame">
+          <%= logo_themed_images(@shown, height: logo_height(variant)) %>
         </div>
       <% end %>
     </div>
+    <div class="min-w-0 grid gap-5 <%= column ? '' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start' %>" data-test="logo-cards">
+      <%= render "logos/download_card", downloads: @downloads %>
+      <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits; the
+          Icon tab's icon colour. %>
+      <%= render "logos/edit_panel", kit: @kit %>
+    </div>
   </section>
 
-  <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits; the
-      Icon tab's icon colour. %>
-  <%= render "logos/edit_panel", kit: @kit %>
   <%# Save this tab's choice to the brand's kit record (logos/_kit_choice), then the kit as saved (logos/_kit_card). %>
   <%= render "logos/kit_choice", kit_record: @kit_record %>
   <%= render "logos/kit_card", kit_record: @kit_record %>

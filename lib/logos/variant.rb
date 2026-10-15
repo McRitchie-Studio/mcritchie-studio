@@ -135,6 +135,8 @@ module Logos
     def self.context(value) = pick(value, tones_by_name, :light, "context")
     # A ?colouring= as a colouring, or nil when absent (a page then takes the brand's own default; an SVG route, Alt).
     def self.colouring(value) = pick(value, COLOURINGS.keys.to_h { |colouring| [colouring.to_s, colouring] }, nil, "colouring")
+    # A ?text= as a text version, or nil when absent.
+    def self.text(value) = pick(value, TEXTS.keys.to_h { |text| [text.to_s, text] }, nil, "text")
     def self.type(value) = pick(value, TYPES.keys.to_h { |type| [type.to_s, type] }, :navbar, "type")
     def self.rule(value) = pick(value, rules_by_name, 4, "rule")
     def self.tones_by_name = TONES.to_h { |tone| [tone.to_s, tone] }
@@ -151,7 +153,7 @@ module Logos
         rule: -> { pick(params[:rule], rules_by_name, 3, "rule") },
         form: -> { form(params[:form], logo) },
         proportion: -> { proportion(params[:proportion]) },
-        text: -> { pick(params[:text], TEXTS.keys.to_h { |text| [text.to_s, text] }, :homogeneous, "text") },
+        text: -> { text(params[:text]) || :homogeneous },
         tone: -> { pick(params[:tone], tones_by_name, :light, "tone") },
         colouring: -> { colouring(params[:colouring]) || :alt },
         icon_colouring: -> { colouring(params[:icon_colouring]) },

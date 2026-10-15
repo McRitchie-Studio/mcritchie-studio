@@ -49,6 +49,10 @@ module LogoBrandPage
     @form = params.key?(:form) ? Logos::Variant.form(params[:form], (@logo if @type == :stacked)) : (@defaults[:form] if @type == :stacked)
     @proportion = params.key?(:proportion) ? Logos::Variant.proportion(params[:proportion]) : (@defaults[:proportion] if @type == :stacked)
     @guides = Logos::Variant.flag(params[:guides], "guides")
+    # The text version (homogeneous, first or second word leads): the URL's ?text=, else the kit's saved one, else the
+    # brand's default (BrandKit#default_text). The Words control picks it; an icon has none.
+    @default_text = @kit_record.default_text(@type)
+    @text = params.key?(:text) && @type != :icon ? Logos::Variant.text(params[:text]) : @default_text
     url_edits = Logos::Variant::EDIT_PARAMS.keys.any? { |name| params.key?(name) }
     @edits = url_edits ? @logo.checked_edits(Logos::Variant.edits(params)) : @defaults[:edits]
     # The Icon tab's only edit is the icon's colour, so the word edits other tabs carry in its URL (kept for the way
@@ -58,7 +62,7 @@ module LogoBrandPage
     @default_colouring = @logo.original? ? (@defaults[:colouring] || :original) : :alt
     load_icon
     @kit_default_shown = @kit_default && !@icon_overridden &&
-                         @kit_record.default_shown?(@type, rule: @rule, form: @form, proportion: @proportion, colouring: @colouring,
+                         @kit_record.default_shown?(@type, rule: @rule, form: @form, proportion: @proportion, colouring: @colouring, text: @text,
                                                            edits: @type == :icon ? @edits.slice(:icon) : @edits)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
     # the page, and the logos are drawn as styled, so a change of form never loses the page. The word edits apply in
@@ -66,11 +70,12 @@ module LogoBrandPage
     @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form, proportion: @proportion } : { rule: @rule })) if @edits.any? && @type != :icon)
     drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     drawn = drawn.except(:icon).merge(@kit_icon.edits.slice(:icon)) if @icon_from_kit
-    # Per logo shown, its version in each tone the page carries ({ light:, dark: } or { watermark: }).
-    @variants = @tones.map do |tone|
-      Logos::Variant.all(@logo, type: @type, rule: @rule, form: @form, proportion: @proportion, tone:, colouring: @colouring, icon_colouring: @icon_colouring,
-                                guides: @guides, edits: drawn)
-    end.transpose.map { |versions| @tones.zip(versions).to_h }
+    # ONE LOGO PER TAB (task logo-download-card): the tab's logo in each tone the page carries ({ light:, dark: } or
+    # { watermark: }), in the one text version @text, and the same logo in every tone for the Download card.
+    choose = ->(tone) { Logos::Variant.new(@logo, type: @type, rule: @rule, form: @form, proportion: @proportion, text: @text, tone:,
+                                                  colouring: @colouring, icon_colouring: @icon_colouring, guides: @guides, edits: drawn) }
+    @shown = @tones.to_h { |tone| [tone, choose.(tone)] }
+    @downloads = Logos::NavbarLogo::TONES.to_h { |tone| [tone, @shown[tone] || choose.(tone)] }
     @kit = Logos::BrandKit.new(@logo.brand)
     @savers = BrandKit.saver_names([@kit_record])
   end
