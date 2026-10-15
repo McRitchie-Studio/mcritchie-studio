@@ -2,7 +2,7 @@
 question: "A builder is mid-build; what do I hand them?"
 answer: "The two-list intent brief, not a code review: SAME INTENT, DO NOW (every surface the acceptance touches that the builder may miss) and WIDER SCOPE, FOLLOW-UP (one proposed card). Post it on the task and touch nothing."
 why: "A twelve-minute red CI round was one missed test file the intent named; a mid-build review slows the builder and duplicates Carl."
-status: proposed
+status: approved
 source: "2026-10-13 · team-tier-nine-hundred, avi-intent-scout"
 soul: avi
 stage: building

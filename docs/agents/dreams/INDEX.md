@@ -35,7 +35,7 @@ Loads at: `bin/dream avi`
 
 | Dream | Question | Tags | Status |
 |---|---|---|---|
-| [`hand-the-builder-an-intent-brief`](avi/hand-the-builder-an-intent-brief.md) | A builder is mid-build; what do I hand them? | stage: building; topic: intent, scout, brief | proposed |
+| [`hand-the-builder-an-intent-brief`](avi/hand-the-builder-an-intent-brief.md) | A builder is mid-build; what do I hand them? | stage: building; topic: intent, scout, brief | approved |
 
 ## Carl (4)
 
