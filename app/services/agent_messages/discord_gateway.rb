@@ -98,7 +98,7 @@ module AgentMessages
       @logger = logger
       @connector = connector
       @lock = lock
-      @ingest = ingest || DiscordIngest.new(routes: routes)
+      @ingest = ingest || DiscordIngest.new(routes: routes, logger: logger)
       @lock_retry = lock_retry
       @lock_check_every = lock_check_every
       @backoff = backoff

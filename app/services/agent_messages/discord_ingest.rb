@@ -33,9 +33,10 @@ module AgentMessages
       def reset_unlisted_guilds! = @unlisted_lock.synchronize { @unlisted_guilds.clear }
     end
 
-    def initialize(routes:, router: Router.new(routes))
+    def initialize(routes:, router: Router.new(routes), logger: Rails.logger)
       @routes = routes
       @router = router
+      @logger = logger
     end
 
     # `parent_id` is a thread's parent channel (it carries the parent's override);
@@ -44,7 +45,7 @@ module AgentMessages
       return nil unless inbound?(raw)
 
       guild_id = guild_id.to_s
-      return self.class.note_unlisted_guild(guild_id) unless @routes.guild?(guild_id)
+      return self.class.note_unlisted_guild(guild_id, logger: @logger) unless @routes.guild?(guild_id)
       return nil if @routes.ignored?(guild_id, raw["channel_id"], parent_id: parent_id)
 
       existing = AgentMessage.find_by(channel: "discord", external_id: raw["id"].to_s)
