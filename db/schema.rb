@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_120100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -108,6 +108,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.bigint "tokens_out", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_activity_id"], name: "index_agent_actions_on_agent_activity_id"
+    t.index ["event_slug", "occurred_at"], name: "index_agent_actions_on_dream_fired", where: "((kind)::text = 'dream_fired'::text)"
     t.index ["feedback_anchor"], name: "index_agent_actions_on_feedback_anchor"
     t.index ["idempotency_key"], name: "index_agent_actions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["occurred_at"], name: "index_agent_actions_on_occurred_at"
@@ -1148,6 +1149,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.datetime "updated_at", null: false
     t.index ["archived_at"], name: "index_discord_channels_on_archived_at"
     t.index ["guild_external_id", "external_id"], name: "index_discord_channels_on_guild_external_id_and_external_id", unique: true
+  end
+
+  create_table "dream_approvals", force: :cascade do |t|
+    t.datetime "applied_at"
+    t.datetime "approved_at", null: false
+    t.string "approved_by_slug"
+    t.datetime "created_at", null: false
+    t.string "dream_home", null: false
+    t.string "dream_slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["applied_at"], name: "index_dream_approvals_on_applied_at"
+    t.index ["dream_home", "dream_slug"], name: "index_dream_approvals_on_dream_home_and_dream_slug", unique: true
   end
 
   create_table "email_brand_references", force: :cascade do |t|
@@ -2739,6 +2752,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
   add_foreign_key "depth_charts", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "desk_records", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_approvals", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "facts", "agent_sessions", column: "recorded_by_session_slug", primary_key: "slug", on_update: :cascade
