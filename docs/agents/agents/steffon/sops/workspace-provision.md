@@ -322,8 +322,8 @@ person's own Google sign-in instead: one click, one person, and it may ask
 again (revoked, or unused for six months). This is the `sign_in` method in
 `config/integrations.yml`; the admin grant is `admin_grant`.
 
-One sign-in, three abilities (`GoogleConnection::ABILITIES`), each asked for on
-its own, read only:
+One sign-in, three abilities (`GoogleConnection::ABILITIES`), read only, asked
+for all at once with **Connect Google** (`?ability=all`) or each on its own:
 
 | Ability | Scope | Proof on the standing page |
 |---------|-------|----------------------------|
@@ -337,16 +337,27 @@ account already granted. One `GoogleConnection` row per Google account holds the
 encrypted refresh token and the granted `scope`; until 2026-10-14 it was
 `GoogleCalendarConnection`, and the rename kept the connected row.
 
+**The row keeps only what a sign-in asked for and Google granted.** Because of
+`include_granted_scopes`, Google echoes every scope the account ever granted, so
+the callback adds only the scopes of the abilities THAT sign-in requested to the
+ones the row already had. An ability disconnected here stays off when another
+connects. Connect Google's consent screen lists each scope with a checkbox: a
+partial grant stores the ticked ones and says which were left unticked; only a
+grant of none stores nothing.
+
 The hub dogfoods it first, at **`/admin/google`** (admin only;
 `/admin/google_calendar` redirects there): a section per ability with its
 account, its live read or Google's error said plainly (a disabled API reads
 "Gmail answered 403: Gmail API has not been used in project … or it is
-disabled"), and one button. The same Connect and Disconnect sit on the
-`/integrations` Google Calendar, Gmail and Drive cards for an admin (a visitor
-sees the cards and their normal CTA only), and come back to `/integrations`:
+disabled"), and one button, with Connect Google at the top (Connect the rest
+while some are connected; the account once all three are). The same buttons sit
+on `/integrations` for an admin: Connect Google above the Google section's cards,
+and Connect or Disconnect on the Google Calendar, Gmail and Drive cards, which
+then drop their contact-form Connect (a visitor sees the cards and their normal
+CTA only). Each comes back to `/integrations`:
 `?return_to=` is honoured only for `/integrations` and `/admin/google`. A
-callback whose grant lacks the asked-for scope (unticked on Google's screen)
-stores nothing.
+single-ability callback whose grant lacks its scope (unticked on Google's
+screen) stores nothing.
 
 **Disconnect is per ability.** Google cannot revoke a single scope, so an
 account keeping other abilities only forgets this one here; disconnecting its
@@ -373,8 +384,9 @@ heroku config:set -a mcritchie-studio GOOGLE_CONNECT_CLIENT_ID=… GOOGLE_CONNEC
 ```
 
 Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
-(`config/initializers/google_connect_stand_in.rb`) that grants whichever scope
-each Connect asked for; nothing reaches Google.
+(`config/initializers/google_connect_stand_in.rb`) that grants whichever scopes
+each Connect asked for and echoes past grants as Google does; nothing reaches
+Google.
 
 ## Switching a workspace off — and back on
 
