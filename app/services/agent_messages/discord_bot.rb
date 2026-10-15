@@ -2,9 +2,11 @@ require "net/http"
 require "openssl"
 
 module AgentMessages
-  # The agents' Discord bot, over Discord's REST API: read a channel's new
-  # messages, post one reply. No gateway connection, no websocket: the poll is
-  # the deliberate v1 (docs/agents/system/agent-message-loop.md).
+  # The agents' Discord bot, over Discord's REST API: list a guild's channels and
+  # active threads, read a channel's new messages, post one reply. The push half
+  # (the Gateway websocket) is AgentMessages::DiscordGateway; this REST client is
+  # the backstop poll's reader and the only writer
+  # (docs/agents/system/agent-message-loop.md).
   #
   # The token is DISCORD_AGENT_BOT_TOKEN (1Password `agents.discord.xan`, field
   # `bot-token`). It is sent only in the Authorization header and never logged.

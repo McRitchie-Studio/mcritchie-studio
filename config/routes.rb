@@ -716,6 +716,7 @@ Rails.application.routes.draw do
           post :claim
         end
         member do
+          get :context
           post :complete
           post :release
           post :renew

@@ -29,13 +29,15 @@ production:
     class: ContactFlaggedDigestJob
     schedule: "0 7 * * * America/Denver"
     args: []
-  # The agent mailbox's inbound read: each allow-listed Discord channel in
-  # config/agent_routes.yml, over the bot's REST API. Inert (one log line) until
-  # DISCORD_AGENT_BOT_TOKEN and a channel are set. See AgentMessageDiscordPollJob
-  # and docs/agents/system/agent-message-loop.md.
+  # The agent mailbox's BACKSTOP read: every text channel and active thread of
+  # each guild in config/agent_routes.yml, over the bot's REST API, for whatever
+  # the Gateway listener (AgentMessages::DiscordGateway, on this dyno's scheduler
+  # process) missed. Inert (one log line) until DISCORD_AGENT_BOT_TOKEN and a
+  # guild are set. See AgentMessageDiscordPollJob and
+  # docs/agents/system/agent-message-loop.md.
   agent_message_discord_poll:
     class: AgentMessageDiscordPollJob
-    schedule: every minute
+    schedule: every 10 minutes
     args: []
   # The floor under bin/dispatcher (Alex's Mac): one Discord alert per incident
   # when no dispatcher has pinged for 5 minutes or a routed message has waited 10,

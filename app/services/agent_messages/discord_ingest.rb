@@ -1,26 +1,57 @@
 module AgentMessages
   # Stores ONE Discord message as an AgentMessage, once. The unique index on
   # (channel, external_id) is the guard, so a re-read page (a poll that died
-  # before advancing its cursor, two polls overlapping) inserts nothing new.
+  # before advancing its cursor, two polls overlapping) or the gateway and the
+  # backstop poll seeing the same message inserts nothing new.
+  #
+  # ONLY ADDRESSED MESSAGES ARE KEPT. The whole of every listed guild is in
+  # scope, so storing everything would hoard everyone's chatter. A message is
+  # stored when it mentions a routed soul (user or role), replies to a message
+  # the mailbox holds (or to an agent's reply to one), or sits in a channel whose
+  # override sets `default_soul`. Anything else is dropped unstored.
   #
   # Returns the stored row, the existing row on a repeat, or nil for a message
-  # that is not inbound: anything a bot wrote (our own replies included), and
-  # system messages (joins, pins) that carry no text for an agent.
+  # that is not kept: anything a bot wrote (our own replies included), system
+  # messages (joins, pins), a message from an unlisted guild or a muted
+  # (`ignore: true`) channel, and an unaddressed message.
   class DiscordIngest
     INBOUND_TYPES = [ 0, 19 ].freeze # DEFAULT, REPLY
 
-    def initialize(routes:, router: Router.new(routes))
-      @routes = routes
-      @router = router
+    # Unlisted guilds already named in the log, per process: the line is said once.
+    @unlisted_guilds = Set.new
+    @unlisted_lock = Mutex.new
+
+    class << self
+      # Logs once per process that a guild the bot sits in is not in
+      # config/agent_routes.yml, so its messages are ignored. Returns nil.
+      def note_unlisted_guild(guild_id, logger: Rails.logger)
+        first = @unlisted_lock.synchronize { @unlisted_guilds.add?(guild_id.to_s) }
+        logger.info("[agent-messages] ignoring Discord guild #{guild_id}: not listed in config/agent_routes.yml") if first
+        nil
+      end
+
+      def reset_unlisted_guilds! = @unlisted_lock.synchronize { @unlisted_guilds.clear }
     end
 
-    def call(raw, guild_id:)
+    def initialize(routes:, router: Router.new(routes), logger: Rails.logger)
+      @routes = routes
+      @router = router
+      @logger = logger
+    end
+
+    # `parent_id` is a thread's parent channel (it carries the parent's override);
+    # `source` names the reader on the timeline (discord-poll, discord-gateway).
+    def call(raw, guild_id:, parent_id: nil, source: "discord-poll")
       return nil unless inbound?(raw)
+
+      guild_id = guild_id.to_s
+      return self.class.note_unlisted_guild(guild_id, logger: @logger) unless @routes.guild?(guild_id)
+      return nil if @routes.ignored?(guild_id, raw["channel_id"], parent_id: parent_id)
 
       existing = AgentMessage.find_by(channel: "discord", external_id: raw["id"].to_s)
       return existing if existing
 
-      store(raw, guild_id.to_s)
+      store(raw, guild_id, parent_id, source)
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by(channel: "discord", external_id: raw["id"].to_s)
     end
@@ -35,14 +66,16 @@ module AgentMessages
       INBOUND_TYPES.include?(raw["type"].to_i)
     end
 
-    def store(raw, guild_id)
+    def store(raw, guild_id, parent_id, source)
       channel_id = raw["channel_id"].to_s
       users = Array(raw["mentions"]).map { |u| u["id"].to_s }
       roles = Array(raw["mention_roles"]).map(&:to_s)
       parent = referenced_row(raw)
-      result = @router.route(guild_id: guild_id, channel_id: channel_id, content: raw["content"],
+      result = @router.route(guild_id: guild_id, channel_id: channel_id, parent_id: parent_id, content: raw["content"],
                              mention_users: users, mention_roles: roles)
       result = inherit_from(parent, result) if parent
+      # Addressed-only: a routed soul, or a reply to a message we hold.
+      return nil unless result.routed? || parent
 
       AgentMessage.transaction do
         message = AgentMessage.create!(
@@ -53,7 +86,7 @@ module AgentMessages
           soul_slug: result.soul, routed_by: result.routed_by,
           status: result.routed? ? "received" : "unrouted", sent_at: parse_time(raw["timestamp"])
         )
-        message.record!("received", actor: "discord-poll", detail: { "author" => message.author_name })
+        message.record!("received", actor: source, detail: { "author" => message.author_name })
         message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
                         detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
         message

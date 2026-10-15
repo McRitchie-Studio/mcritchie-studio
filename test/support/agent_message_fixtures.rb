@@ -4,11 +4,20 @@ module AgentMessageFixtures
   GUILD = "900000000000000001".freeze
   DESK = "900000000000000002".freeze
   QUIET = "900000000000000003".freeze
+  # A channel with no entry at all: in scope because its guild is listed.
+  LOUNGE = "900000000000000004".freeze
+  # A muted (`ignore: true`) channel, and a thread under DESK.
+  MUTED = "900000000000000005".freeze
+  DESK_THREAD = "900000000000000006".freeze
+  OTHER_GUILD = "900000000000000007".freeze
   AVI_ROLE = "900000000000000010".freeze
   XAN_ROLE = "900000000000000011".freeze
   AVI_BOT = "900000000000000020".freeze
   SHARED_BOT = "900000000000000099".freeze
 
+  # One listed guild. DESK carries a `default_soul` override when one is given,
+  # MUTED is ignored, and every other channel (QUIET, LOUNGE, threads) has no
+  # entry at all.
   def agent_routes(default_soul: nil)
     AgentMessages::Routes.new(
       "discord" => {
@@ -17,7 +26,7 @@ module AgentMessageFixtures
           GUILD => {
             "name" => "McRitchie",
             "channels" => { DESK => { "name" => "agent-desk", "default_soul" => default_soul.to_s },
-                            QUIET => { "name" => "quiet" } },
+                            MUTED => { "name" => "random", "ignore" => true } },
             "souls" => { "avi" => { "roles" => [ AVI_ROLE ], "users" => [ AVI_BOT ] },
                          "xan" => { "roles" => [ XAN_ROLE ], "users" => [] } }
           }
@@ -26,9 +35,10 @@ module AgentMessageFixtures
     )
   end
 
-  # A Discord message object as GET /channels/{id}/messages returns it.
+  # A Discord message object as GET /channels/{id}/messages returns it. Pass
+  # `guild:` for the gateway's MESSAGE_CREATE shape, which carries guild_id.
   def discord_raw(id, content:, channel: DESK, author: "500", bot: false, roles: [], users: [], reply_to: nil,
-                  at: Time.current)
+                  at: Time.current, guild: nil)
     raw = {
       "id" => id.to_s, "type" => reply_to ? 19 : 0, "channel_id" => channel, "content" => content,
       "author" => { "id" => author, "username" => "alex", "global_name" => "Alex", "bot" => bot },
@@ -36,6 +46,7 @@ module AgentMessageFixtures
       "timestamp" => at.iso8601
     }
     raw["message_reference"] = { "message_id" => reply_to.to_s } if reply_to
+    raw["guild_id"] = guild if guild
     raw
   end
 

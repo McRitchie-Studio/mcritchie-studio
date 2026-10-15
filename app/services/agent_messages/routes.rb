@@ -1,10 +1,20 @@
 module AgentMessages
-  # config/agent_routes.yml, read into a shape the poll and the router can ask:
-  # which channels to poll, and which soul a mention names. Every id is a String.
+  # config/agent_routes.yml, read into a shape the poll, the gateway and the
+  # router can ask: which guilds are in scope, which soul a mention names, and
+  # which channels carry an override. Every id is a String.
+  #
+  # THE GUILD IS THE BOUNDARY. Every text channel, thread and forum post in a
+  # listed guild is in scope with no per-channel entry; a guild that is not
+  # listed is ignored even when the bot is a member of it. A channel entry is an
+  # optional OVERRIDE: `default_soul` routes its unaddressed messages, and
+  # `ignore: true` mutes it. A thread takes its parent channel's override unless
+  # it has its own.
   class Routes
     PATH = Rails.root.join("config/agent_routes.yml")
 
-    Channel = Struct.new(:guild_id, :channel_id, :name, :default_soul, keyword_init: true)
+    Override = Struct.new(:guild_id, :channel_id, :name, :default_soul, :ignore, keyword_init: true) do
+      def ignore? = ignore == true
+    end
 
     attr_reader :bot_user_id, :ops_channel_id
 
@@ -15,28 +25,37 @@ module AgentMessages
     def initialize(config)
       discord = (config["discord"] || {})
       @bot_user_id = discord["bot_user_id"].to_s.presence
-      # Where the floor alert (AgentDispatcherAlertJob) posts. Never polled for
-      # inbound unless it is also listed under a guild's channels.
+      # Where the floor alert (AgentDispatcherAlertJob) posts. It is read for
+      # inbound like any channel of its guild; it is not special here.
       @ops_channel_id = discord["ops_channel_id"].to_s.presence
       @guilds = (discord["guilds"] || {}).to_h { |id, guild| [ id.to_s, guild || {} ] }
+      @overrides = build_overrides
     end
 
-    # Every allow-listed Discord channel, in config order.
-    def channels
-      @guilds.flat_map do |guild_id, guild|
-        (guild["channels"] || {}).map do |channel_id, channel|
-          channel ||= {}
-          Channel.new(guild_id: guild_id, channel_id: channel_id.to_s, name: channel["name"].to_s.presence,
-                      default_soul: channel["default_soul"].to_s.presence)
-        end
-      end
-    end
-
-    def channel(guild_id, channel_id)
-      channels.find { |c| c.guild_id == guild_id.to_s && c.channel_id == channel_id.to_s }
-    end
+    # Every listed guild id, in config order.
+    def guild_ids = @guilds.keys
 
     def guild?(guild_id) = @guilds.key?(guild_id.to_s)
+
+    def guild_name(guild_id) = @guilds.dig(guild_id.to_s, "name").to_s.presence
+
+    # Every per-channel override, in config order.
+    def overrides = @overrides.values
+
+    # The override that governs a channel: its own entry, else (for a thread or
+    # forum post) its parent channel's. nil when neither has one.
+    def override(guild_id, channel_id, parent_id: nil)
+      guild_id = guild_id.to_s
+      @overrides[[ guild_id, channel_id.to_s ]] || (parent_id.present? && @overrides[[ guild_id, parent_id.to_s ]]) || nil
+    end
+
+    def ignored?(guild_id, channel_id, parent_id: nil)
+      override(guild_id, channel_id, parent_id: parent_id)&.ignore? || false
+    end
+
+    def default_soul(guild_id, channel_id, parent_id: nil)
+      override(guild_id, channel_id, parent_id: parent_id)&.default_soul
+    end
 
     # { "user" => { id => soul }, "role" => { id => soul } } for one guild.
     def mention_map(guild_id)
@@ -51,7 +70,20 @@ module AgentMessages
     # Every soul this config can route to.
     def souls
       (@guilds.values.flat_map { |g| (g["souls"] || {}).keys.map(&:to_s) } +
-        channels.map(&:default_soul).compact).uniq
+        overrides.map(&:default_soul).compact).uniq
+    end
+
+    private
+
+    def build_overrides
+      @guilds.each_with_object({}) do |(guild_id, guild), map|
+        (guild["channels"] || {}).each do |channel_id, channel|
+          channel ||= {}
+          map[[ guild_id, channel_id.to_s ]] =
+            Override.new(guild_id: guild_id, channel_id: channel_id.to_s, name: channel["name"].to_s.presence,
+                         default_soul: channel["default_soul"].to_s.strip.presence, ignore: channel["ignore"] == true)
+        end
+      end
     end
   end
 end

@@ -116,7 +116,9 @@ module TaskUsageSandbox
     # answers rule 1 itself and returns early; what reaches enforce! is rule 2,
     # which still aborts, because a pin aimed back INSIDE the real store is a
     # misconfiguration and not a routine test condition.
-    "op-reads" => %w[MCR_OP_READS_LOG CLAUDE_PROJECTS_DIR]
+    "op-reads" => %w[MCR_OP_READS_LOG CLAUDE_PROJECTS_DIR],
+    # bin/lib/agent_mailbox.rb — each soul's Claude folder (~/.agents/mailbox/<soul>)
+    "agent-mailbox" => %w[AGENT_MAILBOX_HOME]
   }.freeze
 
   module_function
