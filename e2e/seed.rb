@@ -25,6 +25,7 @@ ActiveRecord::Base.connection.disable_referential_integrity do
   Usage.delete_all
   ErrorLog.delete_all
   AppRequest.delete_all # /build requests reference their user — clear before it
+  DreamApproval.delete_all # e2e/dream_approve.spec.js approves the fixture bank's proposed dream
   ContactSubmission.delete_all # /contact submissions; read-only rows, so delete_all (no callbacks)
   User.delete_all
   CoachRanking.delete_all
@@ -60,6 +61,10 @@ admin = User.create!(
 # specs sharing an account means whichever runs second finds a user who no longer
 # owes a name and waits forever for a modal that will never open. Each spec that
 # consumes the ask gets its own.
+# The one account that may approve a dream (DreamApproval::APPROVER_EMAILS): being
+# an admin is not enough, so e2e/dream_approve.spec.js signs in as this one.
+User.create!(name: "Alex McRitchie", email: "alex@mcritchie.studio", role: "admin")
+
 User.create!(email: "newcomer@test.com", role: "viewer")
 User.create!(email: "newcomer-skip@test.com", role: "viewer")
 User.create!(email: "newcomer-turbo@test.com", role: "viewer")
