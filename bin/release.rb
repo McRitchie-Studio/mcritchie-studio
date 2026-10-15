@@ -9000,6 +9000,10 @@ def ship
   #     with a live session's work (a qa-release-time prepare run would install
   #     main's STALE docs and leave the drift in place). See sync_agent_docs.
   sync_agent_docs
+  # 7c. Re-render the agent dispatcher's launchd plist from the restored primary,
+  #     only when it is installed here and the template changed (code alone needs
+  #     nothing: the service restarts itself). Warn-only. See refresh_dispatcher_service.
+  refresh_dispatcher_service
   # Drop the deployer claim on a clean ship so the release frees immediately. Best-effort.
   release_conductor_claim!
   close_role_span("shipped #{rel_slug} → prod")
@@ -9226,6 +9230,7 @@ def finalize(slug = nil)
     #    the killed ship skipped). Both best-effort + non-fatal.
     restore_primaries(app_groups)
     sync_agent_docs
+    refresh_dispatcher_service
 
     say("")
     say("✓ Finalized #{rel_slug} — recorded #{pending.join(', ')}. The board now reflects the shipped release.")
@@ -9313,6 +9318,36 @@ def sync_agent_docs
   say("  ⚠ agent-docs install failed — run `#{installer}` by hand (the ship already succeeded)") unless ok
 rescue StandardError => e
   say("  ⚠ agent-docs install skipped (#{e.message}) — run `#{installer}` by hand (the ship already succeeded)")
+end
+
+# Post-ship dispatcher refresh. bin/dispatcher runs under launchd from the hub's
+# PRIMARY checkout, which restore_primaries has just moved to the shipped `main`.
+# The service restarts itself when its code changes (AgentMailbox::CodeFingerprint),
+# but a restart reuses the plist launchd already holds, so a change to the plist
+# TEMPLATE (config/launchd/studio.mcritchie.agent-dispatcher.plist) still needs an
+# install. This runs the primary's `bin/dispatcher install --if-changed`, which does
+# nothing on a Mac without the service, nothing when the installed plist matches
+# the new template, and otherwise reinstalls (AgentMailbox::LaunchAgent#install_if_changed).
+#
+# Always the PRIMARY's script, never the ship workspace's or the fixed-path tooling's:
+# the plist bakes in the tree it was installed from, install refuses a .worktrees/
+# tree (the ship workspace is one), and a tooling snapshot would point the service
+# at a frozen copy. NON-FATAL by construction, like sync_agent_docs: a refresh can
+# only warn, never fail the completed ship. Under --dry-run, `sh` prints and skips.
+def refresh_dispatcher_service
+  say("")
+  step("refresh the agent dispatcher service: bin/dispatcher install --if-changed from the hub primary")
+  dispatcher = "the hub primary's bin/dispatcher" # seeded before anything that can raise
+  dispatcher = File.join(repo_path("mcritchie-studio"), "bin", "dispatcher")
+  unless File.exist?(dispatcher)
+    say("  · no #{dispatcher}; nothing to refresh")
+    return
+  end
+  out, ok = sh(dispatcher, "install", "--if-changed", capture: true)
+  print(out)
+  say("  ⚠ dispatcher refresh failed — run `#{dispatcher} install` by hand (the ship already succeeded)") unless ok
+rescue StandardError => e
+  say("  ⚠ dispatcher refresh skipped (#{e.message}) — run `#{dispatcher} install` by hand (the ship already succeeded)")
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------

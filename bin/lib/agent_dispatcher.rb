@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "etc"
 require "fileutils"
 require "open3"
@@ -25,6 +26,40 @@ module AgentMailbox
     (souls + defaults).map(&:strip).reject(&:empty?).uniq
   end
 
+  # A digest of the code the running dispatcher is made of: the entry script,
+  # every file under the repo it has required (bin/lib/agent_dispatcher.rb,
+  # agent_mailbox.rb, agent_api.rb, cli_arg_guard.rb and what they pull in), and
+  # config/agent_routes.yml, whose souls are read only at startup. The file LIST
+  # is fixed when the fingerprint is taken; each #call re-reads those files, so
+  # an edit, a checkout or a deletion changes the digest and an unrelated
+  # release (one that touches none of them) does not. A missing file digests as
+  # missing rather than raising.
+  class CodeFingerprint
+    attr_reader :files
+
+    # The fingerprint of THIS process: what it has loaded from repo_root so far.
+    # Take it after every require has run (bin/dispatcher does, just before run).
+    def self.for_process(repo_root: REPO_ROOT, entry: $PROGRAM_NAME, loaded: $LOADED_FEATURES)
+      roots = [ File.expand_path(repo_root), (File.realpath(repo_root) rescue nil) ].compact.uniq
+                                                                                  .map { |r| File.join(r, "") }
+      required = loaded.select { |path| roots.any? { |root| path.start_with?(root) } }
+      new([ File.expand_path(entry), *required, File.join(repo_root, "config/agent_routes.yml") ])
+    end
+
+    def initialize(files)
+      @files = files.map { |f| File.expand_path(f) }.uniq.sort.freeze
+    end
+
+    def call
+      digest = Digest::SHA256.new
+      @files.each do |path|
+        digest << path << "\0"
+        digest << (File.file?(path) ? Digest::SHA256.file(path).hexdigest : "missing") << "\0"
+      end
+      digest.hexdigest
+    end
+  end
+
   # The loop. One process, one worker id; answers run on threads (each a
   # Responder, whose Claude is a child process), and EVERY board call is made
   # from the main loop, so the API client is never shared across threads.
@@ -33,7 +68,10 @@ module AgentMailbox
   #               until the reset; a failed run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
   #               renew leases older than RENEW_EVERY, never past RUN_DEADLINE
   #               abandon a run past RUN_DEADLINE (release it, free the slot)
-  #               ping the board every PING_EVERY
+  #               ping the board every PING_EVERY, and on the same beat re-read the
+  #               code fingerprint: a new digest seen on two checks in a row stops
+  #               claiming and drains (see #restart_for_new_code!), and launchd's
+  #               KeepAlive starts the new code
   #               claim (long-poll) when not stopping, not paused and under the cap
   class Dispatcher
     CAP = 5
@@ -56,6 +94,10 @@ module AgentMailbox
     # longer renewed and the run is abandoned (its message given back, its slot
     # freed), so a wedged run cannot hold a message forever.
     RUN_DEADLINE = Responder::ACTION_TIMEOUT + Responder::CLAUDE_TIMEOUT + (2 * KILL_GRACE) + 60
+    # The code fingerprint is re-read on the ping beat. A new digest must be seen
+    # on two checks in a row before the dispatcher restarts, so a checkout read
+    # half-way through a branch move cannot start a restart loop.
+    CODE_CHECK_EVERY = PING_EVERY
 
     Run = Struct.new(:message, :thread, :started_at, :renewed_at, keyword_init: true)
 
@@ -63,7 +105,7 @@ module AgentMailbox
 
     def initialize(client:, souls:, channel: "discord", worker: nil, cap: CAP, claude_cmd: Responder::DEFAULT_CLAUDE_CMD,
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
-                   repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil)
+                   repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil)
       raise ArgumentError, "no souls to serve" if souls.empty?
 
       @client = client
@@ -87,6 +129,14 @@ module AgentMailbox
       @last_ping = nil
       @started_at = clock.call
       @host = Socket.gethostname.split(".").first
+      # The baseline: the digest of the code this process started on (nil: no
+      # self-restart, as in the loop tests that pass none).
+      @fingerprint = fingerprint
+      @code_digest = fingerprint&.call
+      @pending_digest = nil
+      @last_code_check = @started_at
+      @restarting = false
+      @term_at = nil
     end
 
     def self.git_version(root)
@@ -96,15 +146,33 @@ module AgentMailbox
       "unknown"
     end
 
-    def stop! = (@stopping = true)
+    # SIGTERM / INT (and a test's stop). launchd SIGKILLs after the plist's
+    # ExitTimeOut, so a signal always caps the drain at GRACE from here, even
+    # mid-way through a longer restart drain.
+    def stop!
+      @stopping = true
+      @term_at ||= @clock.call
+    end
+
+    # New code on disk: stop claiming and let the runs in flight finish, each up
+    # to its own RUN_DEADLINE (nobody will SIGKILL us, so there is no GRACE cap
+    # unless a signal arrives too). bin/dispatcher then exits 0 and launchd's
+    # KeepAlive (plain true, not SuccessfulExit=false) starts the new code.
+    def restart_for_new_code!
+      @restarting = true
+      @stopping = true
+    end
+
     def stopping? = @stopping
+    def restarting? = @restarting
 
     def paused?(now = @clock.call) = !@paused_until.nil? && now < @paused_until
 
     # Loop until stopped (SIGTERM / INT), then shut down gracefully. `ticks`
     # bounds the loop for tests.
     def run(ticks: nil)
-      log "start #{@worker} serving #{@souls.join(', ')} on #{@channel} (cap #{@cap}, version #{@version})"
+      code = @code_digest ? ", code #{@code_digest[0, 12]}" : ""
+      log "start #{@worker} serving #{@souls.join(', ')} on #{@channel} (cap #{@cap}, version #{@version}#{code})"
       count = 0
       until @stopping
         tick
@@ -119,6 +187,7 @@ module AgentMailbox
       reap
       renew_due(now)
       ping(now) if @last_ping.nil? || now - @last_ping >= PING_EVERY
+      check_code(now) if @fingerprint && !@stopping && now - @last_code_check >= CODE_CHECK_EVERY
       return if @stopping
 
       if paused?(now)
@@ -138,12 +207,14 @@ module AgentMailbox
       claim_one
     end
 
-    # Stop claiming; give runs GRACE to finish; then stop their Claude and give
-    # their messages back. A final ping says it stopped.
+    # Stop claiming; give runs GRACE to finish (a restart for new code: until
+    # their RUN_DEADLINE, unless a signal cuts it to GRACE); then stop their
+    # Claude and give their messages back. A final ping says it stopped.
     def shutdown(grace: GRACE)
-      log "stopping: #{@runs.size} run(s) in flight, waiting up to #{grace}s"
-      deadline = @clock.call + grace
-      until @runs.empty? || @clock.call >= deadline
+      started = @clock.call
+      window = @restarting ? RUN_DEADLINE : grace
+      log "stopping#{' for new code' if @restarting}: #{@runs.size} run(s) in flight, waiting up to #{window}s"
+      until @runs.empty? || @clock.call >= drain_deadline(started, window, grace)
         reap
         renew_due(@clock.call)
         @sleeper.call(1) unless @runs.empty?
@@ -161,6 +232,30 @@ module AgentMailbox
     end
 
     private
+
+    def drain_deadline(started, window, grace)
+      limit = started + window
+      @term_at ? [ limit, [ @term_at, started ].max + grace ].min : limit
+    end
+
+    # Re-read the fingerprint. Changed and confirmed (the same new digest on the
+    # previous check too) → one log line and a restart. A read that raises keeps
+    # the running code.
+    def check_code(now)
+      @last_code_check = now
+      current = @fingerprint.call
+      if current == @code_digest
+        @pending_digest = nil
+      elsif current == @pending_digest
+        log "code changed (#{@code_digest.to_s[0, 12]} -> #{current[0, 12]}); restarting on the new code: " \
+            "no new claims, #{@runs.size} run(s) drain, then exit 0 for launchd to start it"
+        restart_for_new_code!
+      else
+        @pending_digest = current
+      end
+    rescue StandardError => e
+      log "code check failed (#{e.class}); keeping the running code"
+    end
 
     def claim_one
       wait = @runs.empty? ? @idle_wait : @busy_wait
@@ -346,6 +441,44 @@ module AgentMailbox
       status_report
     end
 
+    # The ship's step (bin/release.rb#refresh_dispatcher_service): reinstall only
+    # when the service is installed AND the template it was rendered from has
+    # changed. Not installed → nothing, never a bootstrap. The comparison renders
+    # the new template with the INSTALLED plist's own ruby and PATH, because the
+    # ship's environment is not the shell that installed it: comparing a plain
+    # render would differ on every ship and restart the service for nothing. A
+    # reinstall keeps those two values for the same reason. Code changes alone
+    # need nothing here: the running dispatcher restarts itself on them.
+    # 0 not installed / current / reinstalled · install's code on a failure.
+    def install_if_changed
+      unless File.exist?(plist_path)
+        @out.puts "#{LABEL}: not installed; nothing to refresh"
+        return 0
+      end
+
+      installed = File.read(plist_path)
+      kept = installed_paths(installed)
+      agent = kept ? self.class.new(home: @home, repo_root: @repo_root, ruby: kept[:ruby], path: kept[:path],
+                                    uid: @uid, launchctl: @launchctl, out: @out) : self
+      if agent.render == installed
+        @out.puts "#{LABEL}: installed plist matches the template; nothing to refresh"
+        return 0
+      end
+
+      @out.puts "#{LABEL}: the plist template changed; reinstalling"
+      agent.install
+    end
+
+    # The ruby and PATH a plist this class rendered carries, or nil when it does
+    # not read as one (a hand edit): then the refresh renders with this process's.
+    def installed_paths(xml)
+      ruby = xml[%r{<key>ProgramArguments</key>\s*<array>\s*<string>([^<]*)</string>}, 1]
+      path = xml[%r{<key>PATH</key>\s*<string>([^<]*)</string>}, 1]
+      return nil unless ruby && path
+
+      { ruby: xml_unescape(ruby), path: xml_unescape(path) }
+    end
+
     def uninstall
       @launchctl.call("bootout", "#{domain}/#{LABEL}")
       existed = File.exist?(plist_path)
@@ -377,6 +510,10 @@ module AgentMailbox
 
     def xml_escape(value)
       value.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub('"', "&quot;")
+    end
+
+    def xml_unescape(value)
+      value.gsub("&quot;", '"').gsub("&lt;", "<").gsub("&gt;", ">").gsub("&amp;", "&")
     end
   end
 end
