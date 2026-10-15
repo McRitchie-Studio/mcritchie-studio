@@ -1,0 +1,12 @@
+<%# Admin only (IntegrationsController#index sets the Fathom connection for an admin and nobody else): the hub's own Fathom connection, on the Fathom card's Sign in row. Connect when no readable connection exists and the server can take one; otherwise the account and Disconnect. Both come back to this page. No token renders. %>
+<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-test="fathom-connection" data-state="<%= connection ? 'connected' : 'none' %>">
+  <% if connection %>
+    <span class="min-w-0 text-body [overflow-wrap:anywhere]" data-test="fathom-account">Connected as <span class="font-medium text-heading"><%= connection.account %></span></span>
+    <%= button_to "Disconnect", admin_fathom_disconnect_path(return_to: integrations_path), method: :delete,
+                  class: "btn btn-neutral btn-sm",
+                  form: { class: "inline-flex", data: { test: "fathom-disconnect", turbo_confirm: "Disconnect Fathom for #{connection.account}?" } } %>
+  <% elsif connectable %>
+    <%= link_to "Connect Fathom", admin_fathom_connect_path(return_to: integrations_path),
+                class: "btn btn-primary btn-sm", data: { test: "fathom-connect", turbo: false } %>
+  <% end %>
+</div>

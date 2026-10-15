@@ -91,7 +91,7 @@ class Integration
     # entry shows no price line at all (nil).
     def price_label
       case group
-      when "integrations", "google_sign_in" then "Free"
+      when "integrations", "google_sign_in", "meeting_notes" then "Free"
       when "add_ons" then price.presence || "Quote"
       end
     end
