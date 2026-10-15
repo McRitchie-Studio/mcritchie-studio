@@ -283,7 +283,7 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     spy = PingSpy.new(@client, -> { @now })
     disp = AgentMailbox::Dispatcher.new(client: spy, souls: %w[xan], worker: "disp-test-1", cap: 1,
                                         runner: GatedRunner.new(gate: gate), claude_cmd: %w[fake-claude], out: @out,
-                                        clock: -> { @now }, sleeper: ->(_s) {}, idle_wait: 0, busy_wait: 0,
+                                        clock: -> { @now }, sleeper: ->(_s) { }, idle_wait: 0, busy_wait: 0,
                                         version: "test", fingerprint: nil)
     disp.tick
     assert_equal "claimed", message.reload.status

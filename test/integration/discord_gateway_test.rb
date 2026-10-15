@@ -94,10 +94,21 @@ class DiscordGatewayTest < ActiveSupport::TestCase
     end
   end
 
-  def listener(lock: SwitchLock.new, heartbeat_interval: 45_000, **opts)
+  # Discord's session_start_limit as GET /gateway/bot would answer it; the
+  # listener reads it before every IDENTIFY.
+  def start_limit(remaining: 1000, reset_after: 0)
+    @start_limit_reads = 0
+    lambda do
+      @start_limit_reads += 1
+      AgentMessages::GatewayStartLimit::Limit.new(total: 1000, remaining: remaining, reset_after: reset_after)
+    end
+  end
+
+  def listener(lock: SwitchLock.new, heartbeat_interval: 45_000, connector: nil, **opts)
+    opts[:start_limit] ||= start_limit
     AgentMessages::DiscordGateway.new(token: TOKEN, routes: agent_routes, logger: @logger,
-                                      connector: connector(heartbeat_interval: heartbeat_interval), lock: lock,
-                                      lock_retry: 0.1, lock_check_every: 0.1, backoff: [ 0.05 ], **opts)
+                                      connector: connector || connector(heartbeat_interval: heartbeat_interval),
+                                      lock: lock, lock_retry: 0.1, lock_check_every: 0.1, backoff: [ 0.05 ], **opts)
                                  .tap { |l| (@listeners ||= []) << l }
   end
 
@@ -264,6 +275,82 @@ class DiscordGatewayTest < ActiveSupport::TestCase
 
     lock.holding = true
     wait_until("the reconnect") { @gateways.size == 2 }
+    gateway_listener.stop
+  end
+
+  test "a spent IDENTIFY budget stops the listener identifying, with one receipt, and a restart still sees it spent" do
+    budget = AgentMessages::GatewayIdentifyBudget.new(limit: 2)
+    first = listener(budget: budget).start
+    wait_until("a connection") { @gateways.any? }
+    identified(@gateways[0])
+    @gateways[0].push(op: 9, d: false) # session gone: the next connection IDENTIFYs
+    wait_until("the second IDENTIFY") { @gateways.size >= 2 && @gateways[1].ops.include?(2) }
+    @gateways[1].push(op: 9, d: false) # and again: the budget (2) is spent
+
+    wait_until("the stand-down") { @log.string.include?("IDENTIFY budget spent") }
+    sleep 0.3
+    assert_equal 2, @gateways.size, "no third IDENTIFY once the budget is spent"
+    assert_equal 2, budget.spent
+    assert first.alive?, "it stands down; it does not die"
+    assert_equal 1, ErrorLog.where("message LIKE ?", "%IDENTIFY budget spent%").count, "one receipt per stand-down"
+    first.stop
+
+    # A restart (the supervisor re-running the start hook) is a new listener
+    # with a fresh process state: the persisted window still says spent.
+    restarted = listener(budget: AgentMessages::GatewayIdentifyBudget.new(limit: 2)).start
+    wait_until("the restarted stand-down") { @log.string.scan("IDENTIFY budget spent").size >= 2 }
+    sleep 0.3
+    assert_equal 2, @gateways.size, "the restarted listener never connects"
+    restarted.stop
+    refute_includes @log.string, TOKEN, "the token is never logged"
+  end
+
+  test "Discord's session_start_limit below the reserve means no IDENTIFY until its reset" do
+    gateway_listener = listener(start_limit: start_limit(remaining: 3, reset_after: 3_600)).start
+    wait_until("the stand-down") { @log.string.include?("session_start_limit has 3 of 1000 left") }
+    sleep 0.3
+    assert_empty @gateways, "it never opens a connection to IDENTIFY"
+    assert_equal 1, @start_limit_reads, "it waits out reset_after rather than re-reading at once"
+    assert ErrorLog.where("message LIKE ?", "%session_start_limit has 3 of 1000 left%").exists?
+    gateway_listener.stop
+  end
+
+  test "a session that drops right after READY keeps climbing the backoff; READY alone does not reset it" do
+    gateway_listener = listener(backoff: [ 0.02, 0.04, 0.06, 0.08 ]).start
+    3.times do |i|
+      wait_until("connection #{i + 1}") { @gateways.size > i }
+      wait_until("its opening frame") { @gateways[i].frames.any? }
+      @gateways[i].dispatch("READY", { "session_id" => "s-#{i}", "resume_gateway_url" => "wss://resume.example" })
+      wait_until("READY read") { @log.string.scan(/: connected/).size + @log.string.scan(/: resumed/).size > i }
+      @gateways[i].close_with(4000)
+    end
+    wait_until("the fourth connection") { @gateways.size >= 4 }
+    assert_equal 3, gateway_listener.instance_variable_get(:@failures),
+                 "three short-lived sessions are three failures in a row"
+    gateway_listener.stop
+  end
+
+  test "a websocket upgrade that never completes is closed at the handshake deadline and retried" do
+    peers = []
+    silent = lambda do |_url|
+      client, server = UNIXSocket.pair
+      peers << server # never answers the upgrade
+      client
+    end
+    gateway_listener = listener(connector: silent, handshake_timeout: 0.3).start
+    wait_until("a retry after the deadline") { peers.size >= 2 }
+    assert_match(/handshake did not finish within 0.3s; closing and backing off/, @log.string)
+    gateway_listener.stop
+  ensure
+    peers&.each { |p| p.close unless p.closed? }
+  end
+
+  test "a HELLO with no READY after IDENTIFY is abandoned at the handshake deadline" do
+    gateway_listener = listener(handshake_timeout: 0.4).start
+    wait_until("a connection") { @gateways.any? }
+    identified(@gateways[0]) # IDENTIFY sent; READY never comes
+    wait_until("the retry") { @gateways.size >= 2 }
+    assert_match(/handshake did not finish within 0.4s/, @log.string)
     gateway_listener.stop
   end
 
