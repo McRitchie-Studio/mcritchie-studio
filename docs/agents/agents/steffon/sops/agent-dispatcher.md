@@ -27,7 +27,7 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
    |---|---|
    | `not installed` (exit 3) | [Install](#install-once-per-mac), then [Verify](#verify) |
    | `running` | [Verify](#verify) |
-   | anything else (stopped, crash-looping, `SIGTERMed`) | Read the log's last lines, find the row in the [Unblock playbook](#unblock-playbook), apply it, then [Verify](#verify) |
+   | anything else (`not running`, `installed but not loaded`, `unknown`; exit 1) | Read the last lines of `~/Library/Logs/agent-dispatcher.log`, find the row in the [Unblock playbook](#unblock-playbook), apply it, then [Verify](#verify) |
 
    Run Verify steps 1 and 3 here. Its step 2 is a post only Alex can make, so it
    waits for step 3 below.
@@ -35,18 +35,22 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
 3. Report a health card:
    - the service status and pid;
    - the version and code digest from the log's last `start` line;
-   - any pause and its reason;
-   - messages waiting, and dead letters from the last day (`bin/agent-inbox list`);
-   - the time of the last completed answer.
+   - any pause and its reason (the log's last `paused until <T> (<reason>)` line);
+   - messages waiting (`bin/agent-inbox list --status received`) and dead letters
+     (`bin/agent-inbox list --status dead`; its rows carry no time, so date each
+     with `bin/agent-inbox show <id>`);
+   - the time of the last completed answer (the log's last `completed #N` line).
 
    Then ask Alex to post `@Xan what is building?` in `lobster-tank` (Verify
-   step 2) and to tell you when it is in. When he says it is in, show that message with `bin/agent-inbox show <id>`: the ingest
-   path, claim-to-completion time, reply link and notes saved.
+   step 2) and to tell you when it is in. When he says it is in, show that
+   message with `bin/agent-inbox show <id>`: the ingest path, claim-to-completion
+   time, reply link and notes saved.
 
 Never start a second copy with `bin/dispatcher run` while the service is
 installed: two dispatchers split the messages and nobody can tell which one
 answered. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in
-Alex's `~/.claude/settings.json`, so none of this needs a prompt.
+Alex's `~/.claude/settings.json` and need no prompt; `bin/agent-inbox` and the log
+reads are not allow-listed.
 
 ## The split: read this before running anything
 
