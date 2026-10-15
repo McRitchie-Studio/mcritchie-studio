@@ -84,6 +84,7 @@ The per-soul cheat sheet:
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
 | **Xan** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Xan** | `ship-clock` (only when named, with Alex's production clearance) | `bin/ship-clock start <slug>` (T0, before anything) → `building-sop` (`bin/task begin`, then `ship-clock start <slug>` again to move T0 onto the task) → `pr-review` → `bin/release prepare --yes` → `bin/release ship --mode cleared --clearance "<his words>" --yes` → `bin/release archive --yes` → `bin/ship-clock record <slug> --log … --note …` ([`ship-clock`](../agents/xan/sops/ship-clock.md)) |
 
 > **Script-assisted review.** `bin/pr-review` is a codex-based, **review-only**
 > loop (composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewers
