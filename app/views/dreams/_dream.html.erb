@@ -63,6 +63,10 @@
         </ul>
       </div>
     <% end %>
+    <p class="text-2xs text-secondary" data-test="dream-loop-stats">
+      <span class="badge text-3xs <%= dream_heat_classes(fires) %>"><%= dream_heat_level(fires) %></span>
+      Fired <%= pluralize(fires, "time") %> · <%= dream_grade_label(grade) || "not graded yet" %>
+    </p>
     <div class="flex flex-wrap items-center gap-1.5" data-test="dream-tags">
       <span class="badge text-3xs <%= proposed ? "bg-warning/10 text-warning border-warning/40" : "bg-primary/10 text-primary border-primary/40" %>" data-test="dream-status"><%= dream.status.presence || "no status" %></span>
       <% dream.tags.each do |tag, values| %>
@@ -88,7 +92,7 @@
     <% elsif dream.approved? && @approver %>
       <%= button_to "Retire", dream_retirements_path,
             params: { dream_home: dream.home, dream_slug: dream.slug, status: (@filter == "all" ? nil : @filter) }.compact,
-            class: "btn btn-secondary btn-sm", aria: { label: "Retire dream: #{dream.question}" },
+            class: "btn btn-outline btn-sm", aria: { label: "Retire dream: #{dream.question}" },
             form: { data: { test: "dream-retire-form" } }, data: { test: "dream-retire" } %>
     <% elsif proposed && @approver %>
       <%= button_to "Approve", dream_approvals_path,

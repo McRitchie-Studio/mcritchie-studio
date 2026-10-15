@@ -1,11 +1,11 @@
 <%# The loop's KPI strip (DreamKpis): each tile's title says how it is measured. %>
 <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-test="dream-kpis">
   <% [
-       [ "fire-rate", "Fire rate", dream_kpi(kpis.fire_rate), "#{kpis.fires} fires over #{kpis.sessions} sessions, last 30 days",
+       [ "fire-rate", "Fire rate", dream_kpi(kpis.fire_rate), "#{kpis.fires} fires / #{kpis.sessions} sessions · 30 d",
          "Dream fires per session that opened an activity in the last 30 days" ],
-       [ "mean-grade", "Mean grade", dream_kpi(kpis.mean_grade, " / 2"), "#{pluralize(kpis.grades, "grade")}, last 30 days",
+       [ "mean-grade", "Mean grade", dream_kpi(kpis.mean_grade, " / 2"), "#{pluralize(kpis.grades, "grade")} · 30 d",
          "Mean of the grades sessions gave the dreams that fired in them (0 wrong, 1 helped, 2 decided)" ],
-       [ "swaps-per-week", "Swaps per week", dream_kpi(kpis.swaps_per_week), "#{kpis.no_swaps} no-swap answers, last 4 weeks",
+       [ "swaps-per-week", "Swaps per week", dream_kpi(kpis.swaps_per_week), "#{kpis.no_swaps} no-swap · 4 wk",
          "Swaps and adds Alex approved over the last 4 weeks, per week" ],
        [ "approval-latency", "Approval latency", dream_kpi(kpis.latency_days, " d"), "median of #{pluralize(kpis.latency_count, "approval")}",
          "Median days from a dream's proposal (its source date) to Alex's click" ]

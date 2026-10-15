@@ -46,7 +46,10 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='dream-grade']", text: "graded 1.5 (2)"
       assert_select "[data-test='dream-fire-count']", text: "5 fired"
     end
+    assert_select "[data-dream='list-the-candidates'] [data-test='dream-loop-stats']", text: /Fired 5 times · graded 1.5 \(2\)/
     assert_select "[data-dream='report-what-you-verified'][data-heat='cold'] [data-test='dream-grade']", 0
+    assert_select "[data-dream='report-what-you-verified'] [data-test='dream-loop-stats']",
+                  text: /cold\s+Fired 0 times · not graded yet/
     assert_select "[data-test='dream-kpi-mean-grade'] [data-test='dream-kpi-value']", text: "1.5 / 2"
   end
 
