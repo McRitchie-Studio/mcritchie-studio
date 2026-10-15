@@ -281,6 +281,20 @@ class DreamCliTest < Minitest::Test
     assert_equal "mine", File.read(path)
   end
 
+  # Fires are counted by slug alone (DreamHeat), so a slug must be unique across
+  # the bank, not only within its home.
+  def test_unit_materialize_refuses_a_slug_another_home_already_uses
+    root, bank = desk
+    elsewhere = File.join(bank, "platform/guard-nil-reader.md")
+    File.write(elsewhere, "mine")
+
+    out, err, code = materialize("propose", "--materialize", "dream-proposal-guard-nil-reader", cwd: root)
+
+    assert_equal [ 1, "" ], [ code, out ]
+    assert_includes err, "slugs are unique across the bank"
+    refute File.exist?(File.join(bank, "carl/guard-nil-reader.md")), "nothing was written under carl/"
+  end
+
   def test_unit_materialize_refuses_a_finding_that_is_not_a_proposed_dream_for_one_known_soul
     root, bank = desk
     { "approved" => PROPOSAL.sub("status: proposed", "status: approved"),

@@ -183,6 +183,11 @@ topic: [review, merge]
 ## What happened
 ```
 
+The file name is the dream's slug, and it is unique across the whole bank, not
+only its sequence: `bin/dream fired <slug>` and the /dreams fire count name a
+dream by slug alone. `status` is read in any case (`Proposed` is proposed), on the
+page and by `bin/dream apply-approvals` alike.
+
 Tags are optional, and each takes one value or a list of lowercase tokens:
 
 | Tag | Says | Checked against |
