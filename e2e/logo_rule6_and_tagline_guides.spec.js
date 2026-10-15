@@ -21,7 +21,7 @@ async function open(page, path, width) {
 
 async function everyPlateFits(page) {
   const count = await plates(page).count();
-  expect(count).toBe(3);
+  expect(count).toBe(1); // one logo per tab (task logo-download-card)
   for (let i = 0; i < count; i++) {
     const plate = plates(page).nth(i);
     const fits = await plate.evaluate((el) => el.scrollWidth <= el.clientWidth);

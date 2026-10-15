@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise } from "../../app/javascript/logo_download.js";
+import { MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor } from "../../app/javascript/logo_download.js";
 
 const NAVBAR = [2560.42, 300.0];
 
@@ -76,4 +76,14 @@ test("rasterise leaves a transparent PNG unpainted, and refuses an answer that i
   await rasterise("/x", { size: { width: 16, height: 16, fit: "contain" }, naturalWidth: 1, naturalHeight: 1, background: null }, deps);
   assert.ok(!deps.log.some(([step]) => step === "fillRect"));
   await assert.rejects(rasterise("/x", { size: { width: 16, height: 16, fit: "fill" }, naturalWidth: 1, naturalHeight: 1 }, fakeDeps("<html>", { type: "text/html" })), /no SVG/);
+});
+
+test("an icon's presets are its true aspect, or its 1:1 square list when the toggle asks", () => {
+  const data = {
+    presets: JSON.stringify([{ key: "512", width: 512, height: 416, fit: "fill" }]),
+    squarePresets: JSON.stringify([{ key: "512", width: 512, height: 512, fit: "contain" }]),
+  };
+  assert.deepEqual(presetsFor(data, false), [{ key: "512", width: 512, height: 416, fit: "fill" }]);
+  assert.deepEqual(presetsFor(data, true), [{ key: "512", width: 512, height: 512, fit: "contain" }]);
+  assert.deepEqual(presetsFor({ presets: data.presets }, true), presetsFor(data, false), "a wide logo has no square list");
 });

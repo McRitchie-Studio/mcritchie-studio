@@ -20,6 +20,8 @@
 <% first_tone = @tones.first %>
 <% sizes = downloads.transform_values { |variant| Logos::PngSizes.natural(variant.svg) } %>
 <% presets = downloads.to_h { |tone, _| [tone, Logos::PngSizes.presets(@type, *sizes.fetch(tone))] } %>
+<%# The icon's 1:1 square sizes (Alex, 2026-10-14 22:35): true aspect is the default, the square a toggle. %>
+<% square_presets = (downloads.to_h { |tone, _| [tone, Logos::PngSizes.presets(@type, *sizes.fetch(tone), square: true)] } if @type == :icon) %>
 <% default_key = Logos::PngSizes::DEFAULTS.fetch(@type) %>
 <% shown = downloads.fetch(first_tone) %>
 <section class="card p-4 sm:p-5 space-y-4 min-w-0 scroll-mt-28" id="download" data-test="download-card" data-type="<%= @type %>"
@@ -43,7 +45,8 @@
             <%= radio_button_tag :tone, tone, tone == first_tone, id: nil, class: "sr-only",
                                  data: { test: "download-tone-option", svg: logo_asset_path(variant), download_url: logo_asset_path(variant, download: 1),
                                          filename: variant.filename, natural_width: width, natural_height: height,
-                                         presets: presets.fetch(tone).to_json, background: Logos::PngSizes::BACKGROUNDS.fetch(tone),
+                                         presets: presets.fetch(tone).to_json, square_presets: square_presets&.fetch(tone)&.to_json,
+                                         square: (Logos::PngSizes.square?(width, height) if @type == :icon), background: Logos::PngSizes::BACKGROUNDS.fetch(tone),
                                          label: variant.label } %><%= Logos::Variant::CONTEXTS.fetch(tone) %>
           </label>
         <% end %>
@@ -59,6 +62,14 @@
           <option value="custom">Custom size</option>
         </select>
       </div>
+      <% if @type == :icon %>
+        <%# The icon downloads in its true aspect; this pads it, centred, to an N × N canvas. Hidden by logo_download.js
+            for an icon already 1:1, which comes out square either way. %>
+        <label class="flex items-start gap-2 text-xs text-heading cursor-pointer" data-test="download-square-toggle" data-download-square-toggle>
+          <input type="checkbox" name="square" value="1" class="mt-0.5" data-test="download-square">
+          <span><span class="font-semibold">1:1 square</span> <span class="text-muted">· pads the icon, centred, to a square canvas (favicons, app icons)</span></span>
+        </label>
+      <% end %>
       <div class="flex flex-wrap items-end gap-2" data-test="download-custom" data-download-custom hidden>
         <label class="inline-flex flex-col gap-1 <%= legend %> mb-0">
           Set the

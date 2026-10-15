@@ -55,6 +55,11 @@ export function sizedSvg(text, width, height) {
   });
 }
 
+// A tone's presets: its true-aspect list, or its 1:1 square list when `square` (icons only).
+export function presetsFor(data, square) {
+  return JSON.parse(square && data.squarePresets ? data.squarePresets : data.presets);
+}
+
 // What the card is set to: { format, tone (its radio's dataset), size: { width, height, fit } | null, background }.
 export function readCard(card) {
   const form = card.querySelector("[data-download-form]");
@@ -64,17 +69,28 @@ export function readCard(card) {
   const naturalWidth = Number(data.naturalWidth);
   const naturalHeight = Number(data.naturalHeight);
   const key = form.elements.size.value;
+  // The icon's 1:1 square (padded) instead of its true aspect; an icon already square is square either way.
+  const toggle = form.elements.square;
+  const square = Boolean(toggle && toggle.checked && data.squarePresets && data.square !== "true");
+  const presets = presetsFor(data, square);
   let size = null;
   if (key === "custom") {
-    const custom = pngSize(form.elements.custom_axis.value, form.elements.custom_value.value, naturalWidth, naturalHeight);
-    size = custom && { ...custom, fit: "fill" };
+    if (square) {
+      const side = pngSize("width", form.elements.custom_value.value, 1, 1);
+      size = side && { ...side, fit: "contain" };
+    } else {
+      const custom = pngSize(form.elements.custom_axis.value, form.elements.custom_value.value, naturalWidth, naturalHeight);
+      size = custom && { ...custom, fit: "fill" };
+    }
   } else {
-    const preset = JSON.parse(data.presets).find((p) => p.key === key);
+    const preset = presets.find((p) => p.key === key);
     size = preset ? { width: preset.width, height: preset.height, fit: preset.fit } : null;
   }
   return {
     format: value("format") || "svg",
     toneName: tone.value,
+    square,
+    presets,
     tone: data,
     naturalWidth,
     naturalHeight,
@@ -152,6 +168,8 @@ function wireCard(card) {
   const custom = card.querySelector("[data-download-custom]");
   const colour = card.querySelector("[data-download-colour]");
   const pngOnly = card.querySelector("[data-png-only]");
+  const squareToggle = card.querySelector("[data-download-square-toggle]");
+  const axis = form.elements.custom_axis && form.elements.custom_axis.closest("label");
   card.querySelectorAll("[data-download-js]").forEach((el) => { el.hidden = false; });
 
   // The tone the theme shows, unless this is a watermark page.
@@ -159,21 +177,24 @@ function wireCard(card) {
     const dark = form.querySelector('input[name="tone"][value="dark"]');
     if (dark) dark.checked = true;
   }
-  let toneName = null;
+  let listKey = null;
   let tone = null;
 
   const sync = () => {
     const state = readCard(card);
-    if (state.toneName !== toneName) {
-      toneName = state.toneName;
+    if (`${state.toneName}:${state.square}` !== listKey) {
+      const toneChanged = !listKey || !listKey.startsWith(`${state.toneName}:`);
+      listKey = `${state.toneName}:${state.square}`;
       tone = state.tone;
-      setOptions(form.elements.size, JSON.parse(tone.presets));
-      colour.value = tone.background;
+      setOptions(form.elements.size, state.presets);
+      if (toneChanged) colour.value = tone.background;
       return sync();
     }
     const png = state.format === "png";
     pngOnly.hidden = !png;
     custom.hidden = form.elements.size.value !== "custom";
+    if (squareToggle) squareToggle.hidden = tone.square === "true";
+    if (axis) axis.hidden = state.square; // a square has one side
     colour.hidden = state.background === null;
     copy.dataset.copySvg = tone.svg;
     copy.setAttribute("aria-label", `Copy SVG: ${tone.label}`);
@@ -184,7 +205,8 @@ function wireCard(card) {
     if (!png) {
       summary.textContent = tone.filename;
     } else if (state.size) {
-      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${state.background ? `on ${state.background}` : "transparent"}`;
+      const shape = state.square ? "1:1 square, padded" : "true aspect";
+      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, ${state.background ? `on ${state.background}` : "transparent"}`;
     } else {
       summary.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
     }

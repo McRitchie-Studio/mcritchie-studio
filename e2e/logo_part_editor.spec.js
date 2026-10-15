@@ -40,7 +40,7 @@ test("picking a colour redraws every logo on the tab, and the download carries i
   await expect(row(page, "first").locator("input[type=radio][value='635BB2']")).toBeChecked();
 
   const srcs = await page.locator("img[data-test='logo-image']").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("src")));
-  expect(srcs.length).toBe(6);
+  expect(srcs.length).toBe(2);
   for (const src of srcs) expect(src).toContain("first_colour=635BB2");
 
   const download = page.locator("a[data-test='logo-download']:visible").first();

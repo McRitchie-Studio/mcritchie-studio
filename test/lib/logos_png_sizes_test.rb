@@ -22,13 +22,33 @@ class LogosPngSizesTest < Minitest::Test
     assert_raises(ArgumentError) { PngSizes.natural(%(<svg viewBox="0 0 0 10"/>)) }
   end
 
-  def test_the_icon_presets_are_square_and_name_what_they_serve
+  # Alex, 2026-10-14 22:35: an icon downloads in its true aspect by default, and as a padded 1:1 square on request.
+  def test_the_icon_presets_set_the_long_side_and_keep_the_true_aspect_by_default
     presets = PngSizes.presets(:icon, *ICON)
+    assert_equal [16, 32, 48, 64, 180, 192, 512, 1024], presets.map { |preset| preset[:width] }, "the chest is wider than tall"
+    assert_equal [512, 416], presets.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "512 × 538.14 / 662.45 = 415.9"
+    assert(presets.all? { |preset| preset[:fit] == "fill" }, "no padding")
+    assert_equal "512 × 416", presets.find { |preset| preset[:key] == "512" }[:label]
+    tall = PngSizes.presets(:icon, 425.06, 481.0)
+    assert_equal [452, 512], tall.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "a tall icon: the height is the long side"
+  end
+
+  def test_the_square_icon_presets_pad_to_n_by_n_and_name_what_they_serve
+    presets = PngSizes.presets(:icon, *ICON, square: true)
     assert_equal [16, 32, 48, 64, 180, 192, 512, 1024], presets.map { |preset| preset[:width] }
-    assert(presets.all? { |preset| preset[:width] == preset[:height] && preset[:fit] == "contain" }, "an icon PNG is square, the icon fitted inside")
+    assert(presets.all? { |preset| preset[:width] == preset[:height] && preset[:fit] == "contain" }, "the icon fitted inside a square")
     assert_equal "Apple touch icon", presets.find { |preset| preset[:key] == "180" }[:use]
     assert_equal "Android and PWA icon", presets.find { |preset| preset[:key] == "192" }[:use]
-    assert_equal "512 × 512", presets.find { |preset| preset[:key] == "512" }[:label]
+  end
+
+  def test_an_icon_within_one_percent_of_square_is_square_either_way
+    assert PngSizes.square?(215.0, 217.0), "Industries"
+    refute PngSizes.square?(*ICON)
+    assert_equal [[512, 512, "contain"]], PngSizes.presets(:icon, 215.0, 217.0).select { |preset| preset[:key] == "512" }.map { |preset| preset.values_at(:width, :height, :fit) }
+  end
+
+  def test_square_means_nothing_for_the_wide_logos
+    assert_equal PngSizes.presets(:navbar, *NAVBAR), PngSizes.presets(:navbar, *NAVBAR, square: true)
   end
 
   def test_the_navbar_presets_keep_the_aspect_in_whole_pixels

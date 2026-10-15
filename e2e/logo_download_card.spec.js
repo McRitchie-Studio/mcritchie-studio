@@ -31,15 +31,31 @@ async function preset(page, key) {
 }
 
 // Written as literal tests, not a loop: bin/e2e-executed-set-check counts `test(` calls in the source.
-test("the Icon tab's 180 px preset downloads a 180 × 180 PNG with transparency, named after the SVG", async ({ page }) => {
+// Alex, 2026-10-14 22:35: "the default should be to download the true aspect ratio but there should be a button to use
+// 1:1 aspect ratio". Studio's chest is about 662 × 538, so its 512 preset is 512 × 416, or 512 × 512 padded.
+test("the Studio icon at 512 downloads in its true aspect, 512 × 416, with transparency, named after the SVG", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/logos/studio?type=icon");
   await expect(card(page)).toHaveCount(1);
-  const png = await downloadPng(page, "180");
-  expect([png.width, png.height]).toEqual([180, 180]);
+  const png = await downloadPng(page, "512");
+  expect([png.width, png.height]).toEqual([512, 416]);
   expect(png.colourType).toBe(6);
-  expect(png.name).toMatch(/^studio-icon-(light|dark)-180x180\.png$/);
+  expect(png.name).toMatch(/^studio-icon-(light|dark)-512x416\.png$/);
+  await expect(card(page).locator("[data-test='download-summary']")).toContainText("true aspect");
+});
+
+test("the Studio icon at 512 with 1:1 square downloads 512 × 512, padded", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/logos/studio?type=icon");
+  await card(page).locator("label", { hasText: "PNG" }).click();
+  await expect(card(page).locator("[data-test='download-square-toggle']")).toBeVisible();
+  await card(page).locator("[data-test='download-square']").check();
+  await expect(card(page).locator("[data-test='download-summary']")).toContainText("1:1 square, padded");
+  const png = await downloadPng(page, "512");
+  expect([png.width, png.height]).toEqual([512, 512]);
+  expect(png.name).toMatch(/^studio-icon-(light|dark)-512x512\.png$/);
 });
 
 test("the Navbar tab's 800 wide preset downloads a PNG of exactly the preset's pixels", async ({ page }) => {

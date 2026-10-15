@@ -38,7 +38,7 @@ test("save an icon colouring on the Icon tab and see every logo follow", async (
   await page.goto("/logos/welding_v2?type=stacked");
   await loaded(page, "[data-test='logo-type'] img[data-test='logo-image']");
   const stacked = await params(tabImages(page));
-  expect(stacked.length).toBe(6);
+  expect(stacked.length).toBe(2);
   for (const p of stacked) {
     expect(p.colouring).toBe("original");
     expect(p.icon_colouring).toBe("alt");

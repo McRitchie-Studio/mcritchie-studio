@@ -5,10 +5,12 @@ module Logos
   # named by what it serves, in whole pixels. Some integrations take no SVG and want an exact pixel size, so the
   # card rasterises the logo's own SVG in the browser (app/javascript/logo_download.js) at one of these.
   #
-  # Two kinds of preset:
-  #   - SQUARE (the icon): the canvas is N × N and the icon is fitted inside it, centred, with transparent padding
-  #     (`fit: "contain"`), because a favicon or an app icon must be square and the icons are not (Studio's is about
-  #     662 × 538).
+  # The kinds of preset:
+  #   - SIDE (the icon): N is the icon's LONG side and the other follows its true ink aspect (an icon's box is its
+  #     ink), so Studio's chest (about 662 × 538) at 512 is 512 × 416 with no padding (Alex, 2026-10-14 22:35: "the
+  #     default should be to download the true aspect ratio"). With `square: true` (the card's "1:1 square") the canvas
+  #     is N × N and the icon is fitted inside it, centred (`fit: "contain"`), for a favicon or an app icon that must
+  #     be square. An icon within SQUARE_TOLERANCE of 1:1 (Industries, 215 × 217) is square already: N × N either way.
   #   - WIDTH or SCALE (the Navbar and Stacked Logos): the canvas keeps the drawing's aspect (`fit: "fill"`). A width
   #     preset sets the width and the height follows; a scale preset is 1x, 2x or 4x the height the brand page shows
   #     the logo at (SCREEN_HEIGHTS), the width following.
@@ -36,6 +38,9 @@ module Logos
     }.freeze
 
     SCALES = [1, 2, 4].freeze
+
+    # How far from 1:1 an icon may be and still count as square (Industries is 215 × 217, under 1% off).
+    SQUARE_TOLERANCE = 0.01
 
     # The solid background a PNG may take instead of transparency, per tone: white behind the light logo, black behind
     # the dark and the watermark (both drawn for a dark ground). The card's colour picker starts on it.
@@ -67,14 +72,22 @@ module Logos
       axis == :width ? [value, other] : [other, value]
     end
 
+    # True when a drawing of `width` × `height` is 1:1 within SQUARE_TOLERANCE.
+    def square?(width, height) = ((width.to_f / height) - 1).abs <= SQUARE_TOLERANCE
+
     # Halves up, never below 1 (Math.round in logo_download.js rounds the same way for the positive sizes here).
     def round(value) = [(value + 0.5).floor, 1].max
 
     # The presets for a logo of `type` whose drawing is `width` × `height`: each a hash of key, label (the size), use
-    # (what it serves), width, height and fit. A preset whose long side would pass MAX_SIDE is left out.
-    def presets(type, width, height)
+    # (what it serves), width, height and fit. A preset whose long side would pass MAX_SIDE is left out. `square` pads
+    # an icon to N × N; it means nothing for the Navbar and Stacked Logos, which are never square.
+    def presets(type, width, height, square: false)
       list = if type.to_sym == :icon
-               ICON_PRESETS.map { |side, use| preset(side.to_s, side, side, use, "contain") }
+               ICON_PRESETS.filter_map do |side, use|
+                 next preset(side.to_s, side, side, use, "contain") if square || square?(width, height)
+
+                 fitted(width >= height ? :width : :height, side, width, height) { |w, h| preset(side.to_s, w, h, use, "fill") }
+               end
              else
                widths = WIDTH_PRESETS.fetch(type.to_sym).filter_map do |px, use|
                  fitted(:width, px, width, height) { |w, h| preset("w#{px}", w, h, use, "fill") }
