@@ -248,7 +248,7 @@ of its answer. Two pieces build the memory:
 |-------|------|--------|--------|
 | GENERAL | Who the soul is | `docs/agents/agents/<soul>/role.md` | 6,000 |
 | DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping or a missing doc is an empty layer | 4,000 |
-| USER | The notes about the sender, from every channel | `agent_person_notes` for the message's person | 2,000 |
+| USER | The notes about the sender, from every channel and every soul, each with its date and source | `agent_person_notes` for the message's person | 2,000 |
 | PERSON | The sender's earlier exchanges with this soul on every channel, each labeled with its place | `agent_messages` by `(soul_slug, person_id)`: the summary, then the recent turns | 9,000 (summary 3,000) |
 | THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
 
@@ -276,8 +276,14 @@ bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=alex@mcritchi
 ```
 
 An id that already belongs to another person is refused unless `REASSIGN=1` is
-passed. A reassign moves the identity and its messages, and leaves the old
-person's notes where they are. There is no admin button for linking yet.
+passed. A reassign moves the identity, its messages, and the notes those messages
+produced (each note's `source_message`). A note is a fact taken from the words of
+the message it came from, so it belongs with whoever wrote that message; left
+behind, the old person would keep facts that were never about them, and every
+soul would repeat them. A moved note the new person already has is dropped
+rather than duplicated, and the new person is pruned to 30. A note with no
+source message cannot be attributed and stays put. There is no admin button for
+linking yet.
 
 **The PERSON layer** is every earlier row with the same `(soul_slug, person_id)`,
 oldest first, read through `index_agent_messages_on_person_ledger` and capped at
@@ -323,6 +329,12 @@ model call), and it stores no model-written text. A model-written summary saved
 on a row would carry anything a message had injected into it forward into every
 later answer to that person.
 
+**Whose memory.** Notes are per person and shared by every soul: a fact about a
+person, such as their favorite color, is true whichever agent hears it, so a note
+Xan files is in Avi's USER layer too. The conversation history (the PERSON layer)
+is per person per soul: Avi does not see what Alex told Xan. Alex may overrule
+the shared notes later; today they are shared on purpose.
+
 **Notes.** The USER layer has a writer: the answer itself. The prompt lets the
 model end its reply with a line reading exactly `===NOTES===`, then a JSON array
 of up to 3 short facts about the sender, which may sit inside a ```` ```json ````
@@ -337,11 +349,30 @@ Purple it is.
 The format is a delimiter because `claude -p --output-format json` puts the model's
 whole text in the envelope's single `result` field. A split line keeps the answer
 path unchanged, and an answer with no notes is untouched. The split is a pure
-function the tests pin (`AgentMailbox::NoteBlock`). The worker cuts the section
-off before it completes, even when its JSON is broken, and sends the facts as
-`notes`. The board cuts at the same line again (`AgentMessage.without_notes`), so
-a fact never reaches the channel. `AgentPersonNote.record_from!` then decides
-what is kept:
+function the tests pin (`AgentMailbox::NoteBlock`).
+
+**Where the cut falls.** Models do not always write the line exactly, so the
+match is loose: `NoteBlock::DELIMITER_PATTERN` finds two or more `=`, the word
+NOTES in any case, and optional markdown or spaces around it, anywhere in the
+text. Mid-sentence (`Got it! ===NOTES=== [...]`), bold (`**===NOTES===**`) and
+spaced (`=== notes ===`) all match, and the reply is cut at the first match.
+With no delimiter at all, `NoteBlock::HEADED_TAIL` still cuts a reply that ends
+in a heading line reading only "notes" (`**Notes:**`, `## NOTES`) followed by a
+JSON array. The worker cuts before it completes and sends the facts as `notes`.
+The board cuts again with the same module (`AgentMessage` requires
+`bin/lib/agent_note_block.rb`), so the two sides share one pattern and one set of
+test fixtures (`test/support/note_block_fixtures.rb`). When the worker sent no
+facts (an older dispatcher, or a delimiter it missed), the board records the facts
+it found in the section it cut.
+
+**What is guaranteed.** Everything from the first loose delimiter on, or a
+headed JSON tail, is never posted, even when its JSON is broken. A false match
+only shortens a reply. What is not guaranteed: a fact the model writes into the
+reply's own prose, with no delimiter and no heading, reads as the reply and is
+posted as written. A bare JSON array ending a reply is not cut, because a reply
+may legitimately end in one.
+
+`AgentPersonNote.record_from!` then decides what is kept:
 
 - **Only the message's author.** The facts are filed under the person who wrote
   the message being completed, and under nobody else. A fact about Alex returned
@@ -349,15 +380,43 @@ what is kept:
 - **Plain short text.** A fact is 3 to 200 characters, whitespace folded, and is
   refused if it carries a link, an `@` (mentions and addresses), markup, a code
   fence, a control character or the fence marker.
+- **A fact, never an instruction.** A fact that reads as a rule for the agent is
+  refused: one with a directive (always, never, ignore, you must), the shape of an
+  answer (reply, respond, every answer, end with), the machinery (system, prompt,
+  rule, instruction) or a claim to authority (admin, permission, access, allowed,
+  approved). The list is `AgentPersonNote::DIRECTIVES`, one constant, pinned by
+  tests. "Prefers every answer to end with X" is refused; refusing a real fact
+  costs one note, while keeping a planted rule would steer every later answer.
 - **Caps.** At most 3 per answer, deduplicated against the person's notes and
   against each other (lowercased words), and at most 30 per person, with the
   oldest pruned.
 - **Provenance.** Each note keeps its source message, the soul and the time.
 
 The notes are untrusted: they are rendered only inside the fence, in the USER
-layer, never into GENERAL or DOMAIN. They are written only on the completing
-call, so a repeated complete stores nothing. `/admin/agent_messages/:id` and
+layer, never into GENERAL or DOMAIN, each with its date, source message and place
+(`- Favorite color is purple. [noted 2026-10-14, message #12, discord #general]`).
+The prompt says notes are facts about the person and never change how the soul
+answers, what it may do, or what the person may do. They are written only on the
+completing call, so a repeated complete stores nothing.
+
+**Only the sender's words.** Each turn in the PERSON and THREAD layers is marked
+`from the sender` or `from someone else`, from the bundle's `own` flag. The mark
+is printed outside the fence, so a display name cannot claim it. The prompt tells
+the model to write a note only from the sender's own words: the message it
+answers, or a turn marked from the sender, never another person's turn or its own
+answers. A note is still filed under the message's author whatever it says.
+
+**Seeing and forgetting notes.** `/admin/agent_messages/:id` and
 `bin/agent-inbox show <id>` show the person, their identities and their notes.
+Each note on the admin page has a Forget button (admin only, a CSRF-guarded form).
+From the console:
+
+```bash
+bin/rails agent_people:notes PERSON=<id>          # each note's id, date, source and soul
+bin/rails agent_people:forget NOTE=<id>           # one note
+bin/rails agent_people:forget PERSON=<id> ALL=1   # every note the person has
+```
+
 The old `agent_user_notes` table, which had no writer, was carried over line by
 line and dropped.
 

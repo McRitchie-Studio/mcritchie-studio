@@ -3,9 +3,9 @@
 # person, on every channel, reads them.
 #
 # THE WRITER is the answer itself. The prompt lets the model return up to
-# MAX_PER_ANSWER short facts about the sender after its reply (the worker strips
-# them off; they are never posted), and AgentMessage#complete! hands them to
-# record_from! with the message being completed. The facts are always filed under
+# MAX_PER_ANSWER short facts about the sender after its reply (the worker cuts
+# them off at the loose NoteBlock delimiter, and the board cuts again), and
+# AgentMessage#complete! hands them to record_from! with the message being completed. The facts are always filed under
 # THAT message's author (message.person): the run answering Bea's message can only
 # ever write notes about Bea, whatever the facts say.
 #
