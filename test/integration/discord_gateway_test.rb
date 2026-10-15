@@ -174,15 +174,17 @@ class DiscordGatewayTest < ActiveSupport::TestCase
   end
 
   test "an unanswered heartbeat closes the zombie and RESUMEs at the resume URL with session id and seq" do
-    gateway_listener = listener(heartbeat_interval: 100).start
+    gateway_listener = listener(heartbeat_interval: 400).start
     wait_until("a connection") { @gateways.any? }
     first = @gateways.first
     identified(first)
     first.dispatch("READY", { "session_id" => "s-9", "resume_gateway_url" => "wss://resume.example" })
     first.dispatch("MESSAGE_CREATE", discord_raw(8101, content: "chatter", channel: LOUNGE, guild: GUILD))
 
+    # The first beat is jittered anywhere in the interval, so it may carry seq nil,
+    # 1 or 2 (GatewaySessionTest pins the rule); the RESUME below must carry 2.
     wait_until("a heartbeat") { first.ops.include?(1) }
-    assert_equal 2, first.frames.find { |f| f["op"] == 1 }["d"], "the heartbeat carries the last seq"
+    assert_includes [ nil, 1, 2 ], first.frames.find { |f| f["op"] == 1 }["d"]
     # No ACK: the next beat finds the zombie, closes with 4000 (keeping the session) and reconnects.
     wait_until("a second connection") { @gateways.size >= 2 }
     second = @gateways[1]
