@@ -136,6 +136,10 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     get dreams_path
     assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve']", 1
     assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-approve']", 0
+    assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve'][aria-label=?]",
+                  "Approve dream proposed-money-idea", 1, "a screen reader hears which dream each button approves"
+    assert_select "[data-dream='proposed-money-idea'] form[data-dreams-approve-form] input[name='status'][value='all']", 1,
+                  "the form carries the filter that dreams_filter.js rewrites in place"
 
     assert_difference -> { DreamApproval.count }, 1 do
       post dream_approvals_path, params: PROPOSED.merge(status: "proposed")

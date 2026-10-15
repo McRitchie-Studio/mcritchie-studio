@@ -1,5 +1,6 @@
 <%# A column's SOPs from the registry, each with the number of dreams tagged to it.
-    A zero is shown on purpose: it marks where the bank is thin. %>
+    A zero is shown on purpose: it marks where the bank is thin. The badge is
+    highlighted only while the filtered count is above zero. %>
 <% if sops.any? %>
   <div class="mt-4 border-t border-subtle pt-3" data-test="sop-list">
     <p class="mb-2 text-2xs font-bold uppercase tracking-wide text-muted"><%= label %></p>
@@ -7,8 +8,9 @@
       <% sops.each do |sop| %>
         <li class="flex items-center justify-between gap-2" data-test="sop-row" data-sop="<%= sop.invocation %>">
           <%= link_to sop.invocation, doc_path(sop.doc_path), class: "min-w-0 truncate font-mono text-xs text-secondary hover:text-primary", title: sop.summary %>
-          <%= dream_count_tag(sop.dream_statuses, @filter,
-                class: "badge shrink-0 text-3xs #{sop.dream_count.zero? ? "bg-surface-alt text-muted border-subtle" : "bg-primary/10 text-primary border-primary/40"}",
+          <%= dream_count_tag(sop.dream_statuses, @filter, class: "badge shrink-0 text-3xs",
+                active_class: "bg-primary/10 text-primary border-primary/40",
+                idle_class: "bg-surface-alt text-muted border-subtle",
                 data: { test: "sop-dream-count" }, title: "Dreams tagged to this SOP") %>
         </li>
       <% end %>
