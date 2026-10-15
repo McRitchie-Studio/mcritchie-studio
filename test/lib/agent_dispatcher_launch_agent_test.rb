@@ -44,6 +44,63 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     assert_includes xml, "#{@home}/.local/bin", "claude (installed under ~/.local/bin) is on the service PATH"
   end
 
+  # launchd passes no locale; without LANG the dispatcher and its children read
+  # files as US-ASCII (2026-10-15). The keys follow PATH and HOME, LANG first.
+  def test_render_sets_a_utf8_locale_after_path_and_home
+    env = agent.render[%r{<key>EnvironmentVariables</key>\s*<dict>(.*?)</dict>}m, 1]
+
+    assert_equal %w[PATH HOME LANG LC_ALL], env.scan(%r{<key>([^<]+)</key>}).flatten
+    assert_includes env, "<key>LANG</key>\n    <string>en_US.UTF-8</string>"
+    assert_includes env, "<key>LC_ALL</key>\n    <string>en_US.UTF-8</string>"
+  end
+
+  # The Mac's installed plist was fixed by hand on 2026-10-15 with a plist editor,
+  # which rewrites the file (keys sorted, tabs, the comment dropped), so no render
+  # can match it byte for byte: the next ship reinstalls once, keeping that
+  # plist's ruby and PATH, and every ship after it finds the plist current.
+  def test_if_changed_reinstalls_a_rewritten_plist_once_keeping_its_paths_then_rests
+    FileUtils.mkdir_p(File.dirname(plist))
+    File.write(plist, <<~XML)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0">
+      <dict>
+      \t<key>EnvironmentVariables</key>
+      \t<dict>
+      \t\t<key>HOME</key>
+      \t\t<string>#{@home}</string>
+      \t\t<key>LANG</key>
+      \t\t<string>en_US.UTF-8</string>
+      \t\t<key>LC_ALL</key>
+      \t\t<string>en_US.UTF-8</string>
+      \t\t<key>PATH</key>
+      \t\t<string>/installed/bin:/usr/bin</string>
+      \t</dict>
+      \t<key>ProgramArguments</key>
+      \t<array>
+      \t\t<string>/installed/ruby</string>
+      \t\t<string>/repo &amp; co/bin/dispatcher</string>
+      \t\t<string>run</string>
+      \t</array>
+      </dict>
+      </plist>
+    XML
+
+    shipper = agent(ruby: "/ship/ruby", path: "/ship/only/bin")
+    assert_equal 0, shipper.install_if_changed
+    assert_match(/template changed; reinstalling/, @out.string)
+    xml = File.read(plist)
+    assert_includes xml, "<string>/installed/ruby</string>", "the installed ruby is kept"
+    assert_includes xml, "/installed/bin", "the installed PATH is kept"
+    refute_includes xml, "/ship/only/bin", "not the ship's"
+    assert_includes xml, "<key>LC_ALL</key>"
+
+    @calls.clear
+    @out.truncate(0)
+    assert_equal 0, shipper.install_if_changed
+    assert_match(/matches the template; nothing to refresh/, @out.string)
+    assert_empty @calls, "the second ship restarts nothing"
+  end
+
   def test_the_template_names_no_secret
     refute_match(/ANTHROPIC|TOKEN|SECRET|KEY<\/key>/, File.read(AgentMailbox::LaunchAgent::TEMPLATE))
   end
