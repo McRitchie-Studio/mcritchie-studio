@@ -15,6 +15,36 @@ holds admin on the board and can clear each one.
 How the mailbox works end to end:
 [`agent-message-loop.md`](../../../system/agent-message-loop.md).
 
+## Bare invocation: what "agent-dispatcher" alone does
+
+Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
+`/Users/alex/projects/mcritchie-studio`, without asking which mode he wants:
+
+1. `bin/dispatcher status`.
+2. Act on what it says:
+
+   | Status | Do |
+   |---|---|
+   | `not installed` (exit 3) | [Install](#install-once-per-mac), then [Verify](#verify) |
+   | `running` | [Verify](#verify) |
+   | anything else (stopped, crash-looping, `SIGTERMed`) | Read the log's last lines, find the row in the [Unblock playbook](#unblock-playbook), apply it, then [Verify](#verify) |
+
+3. Report a health card:
+   - the service status and pid;
+   - the version and code digest from the log's last `start` line;
+   - any pause and its reason;
+   - messages waiting, and dead letters from the last day (`bin/agent-inbox list`);
+   - the time of the last completed answer.
+
+   Then say "post a test message to @Xan and tell me when it's in". When Alex
+   says it is in, show that message with `bin/agent-inbox show <id>`: the ingest
+   path, claim-to-completion time, reply link and notes saved.
+
+Never start a second copy with `bin/dispatcher run` while the service is
+installed: two dispatchers split the messages and nobody can tell which one
+answered. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in
+Alex's `~/.claude/settings.json`, so none of this needs a prompt.
+
 ## The split: read this before running anything
 
 **You decide nothing about delivery.** Claiming, leases, retries, the cap, the
