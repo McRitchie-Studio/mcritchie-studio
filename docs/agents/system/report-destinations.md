@@ -63,7 +63,8 @@ is archived.
   voice and category channels, and private and locked threads, are never offered.
 - **Archived.** A channel the sync no longer sees is archived, never deleted. A
   destination on an archived or no-longer-postable channel answers
-  `:not_configured` until Alex picks again.
+  `:not_configured` until the sync sees it postable again or Alex picks another.
+  The page keeps it selected, marked unavailable, so a Save does not clear it.
 - **Inert without the token.** With `DISCORD_AGENT_BOT_TOKEN` unset the sync logs
   one line and reads nothing.
 
