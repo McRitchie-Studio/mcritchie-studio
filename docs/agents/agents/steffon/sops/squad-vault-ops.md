@@ -25,8 +25,9 @@ way. `7auwTL` created it, `7auwTL` and `4bKN` approved it, and he approved from
 last deploy is now slot 456161810, with a 707,600-byte program. Its sha256,
 `3dfcb0c4…`, is the hash of the full 707,600-byte `solana program dump` output,
 not of a trimmed binary, so compare like with like. `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
-That `init_governance` is NOT under this SOP: it is the per-instance ruling
-First Rule 10 requires for any agent-run signature with a barred key. The
+That `init_governance` is NOT under this SOP: it ran on the per-instance ruling
+First Rule 10 then required for a barred key; those keys are retired and never
+sign now. The
 proposal status, deploy slot, size and `init_governance` signature were read off
 chain on 2026-10-12; Xan measured the hash.
 
