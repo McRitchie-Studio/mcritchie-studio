@@ -44,7 +44,7 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 |-------|-------|
 | The service | `bin/dispatcher run` (`bin/lib/agent_dispatcher.rb`), launchd label `studio.mcritchie.agent-dispatcher` |
 | Its plist | Rendered from `config/launchd/studio.mcritchie.agent-dispatcher.plist` into `~/Library/LaunchAgents/` by `bin/dispatcher install` |
-| Its log | `~/Library/Logs/agent-dispatcher.log`: ids and states only, never message text |
+| Its log | `~/Library/Logs/agent-dispatcher.log`: ids and states only, never message text. A raised run adds its error class, its first backtrace line, and its error message's first line with every quoted span redacted, capped at 200 characters |
 | The answer path | `AgentMailbox::Responder` in `bin/lib/agent_mailbox.rb`, shared with `bin/heartbeat` |
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
 | Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |

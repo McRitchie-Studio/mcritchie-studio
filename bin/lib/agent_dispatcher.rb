@@ -349,16 +349,24 @@ module AgentMailbox
     end
 
     # A run that raised is a failed run: give the message back naming the error
-    # (class and message, capped; both come from code, never from the message's
-    # text), log where it was raised (the log only, never the board), and pause
-    # FAILURE_PAUSE so the next tick does not reclaim it into the same raise and
-    # spend all its attempts in seconds (#67 and #68 on 2026-10-15).
+    # (#raise_detail), log where it was raised (the log only, never the board),
+    # and pause FAILURE_PAUSE so the next tick does not reclaim it into the same
+    # raise and spend all its attempts in seconds (#67 and #68 on 2026-10-15).
     def answer_raised(id, error)
-      detail = error.message.to_s.b.force_encoding(Encoding::UTF_8).scrub.gsub(/\s+/, " ").strip
-      detail = "#{detail[0, RAISE_DETAIL_LIMIT - 1]}…" if detail.length > RAISE_DETAIL_LIMIT
+      detail = self.class.raise_detail(error)
       log "##{id} raised #{error.class} at #{error.backtrace&.first || 'unknown'}"
       give_back(id, "the answer run raised #{error.class}#{detail.empty? ? '' : ": #{detail}"}")
       pause_until(@clock.call + FAILURE_PAUSE, "answer_raised")
+    end
+
+    # A raised error's message, safe for the log and the board: its first line,
+    # scrubbed to valid UTF-8, every quoted span replaced by `…` (a parser or
+    # encoding error quotes the input it choked on, which can be message or answer
+    # text), and capped at RAISE_DETAIL_LIMIT characters.
+    def self.raise_detail(error)
+      text = error.message.to_s.b.force_encoding(Encoding::UTF_8).scrub
+      text = text.lines.first.to_s.gsub(/"(?:[^"\\]|\\.)*"|'[^']*'|`[^`]*`/, "…").strip
+      text.length > RAISE_DETAIL_LIMIT ? "#{text[0, RAISE_DETAIL_LIMIT - 1]}…" : text
     end
 
     def pause_until(time, reason)
