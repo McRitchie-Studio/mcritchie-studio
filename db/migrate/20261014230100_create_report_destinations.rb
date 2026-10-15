@@ -1,7 +1,8 @@
 # Where each registered report (config/report_destinations.yml) is delivered, and
 # a receipt per delivery (docs/agents/system/report-destinations.md).
 # report_deliveries.idempotency_key is unique: ReportDestinations.deliver posts a
-# key at most once.
+# key at most once. report_deliveries.status carries a CHECK created with the
+# table, holding its own frozen copy of ReportDelivery::STATUSES.
 class CreateReportDestinations < ActiveRecord::Migration[8.1]
   def change
     create_table :report_destinations do |t|
@@ -24,6 +25,8 @@ class CreateReportDestinations < ActiveRecord::Migration[8.1]
       t.text :error
       t.datetime :posted_at
       t.timestamps
+      t.check_constraint "status IN ('pending', 'posted', 'not_configured', 'disabled', 'failed')",
+                         name: "report_deliveries_status_known"
     end
     add_index :report_deliveries, :idempotency_key, unique: true
     add_index :report_deliveries, [ :report_key, :created_at ]

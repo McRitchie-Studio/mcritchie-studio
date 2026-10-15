@@ -1726,6 +1726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_230100) do
     t.index ["discord_channel_id"], name: "index_report_deliveries_on_discord_channel_id"
     t.index ["idempotency_key"], name: "index_report_deliveries_on_idempotency_key", unique: true
     t.index ["report_key", "created_at"], name: "index_report_deliveries_on_report_key_and_created_at"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'posted'::character varying, 'not_configured'::character varying, 'disabled'::character varying, 'failed'::character varying]::text[])", name: "report_deliveries_status_known"
   end
 
   create_table "report_destinations", force: :cascade do |t|
