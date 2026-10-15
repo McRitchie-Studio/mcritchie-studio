@@ -1,0 +1,12 @@
+# The reports that can be delivered to Discord through ReportDestinations.deliver
+# (docs/agents/system/report-destinations.md). One entry per report key; Alex
+# picks each one's channel at /admin/report_destinations (Ops → Report
+# destinations). A key that is not listed here raises ArgumentError on deliver.
+#
+#   <report_key>:            # snake_case, stable: callers pass it verbatim
+#     label: Short name      # the row's title on the page
+#     description: One line  # what the report is and who sends it
+reports:
+  daily_app_report:
+    label: Daily application report
+    description: Morning CTO summary

@@ -46,6 +46,15 @@ production:
     class: AgentDispatcherAlertJob
     schedule: every minute
     args: []
+  # The Discord channel directory behind /admin/report_destinations: every
+  # channel and active thread of each guild in config/agent_routes.yml, upserted
+  # into discord_channels, the unseen ones archived. Inert (one log line) until
+  # DISCORD_AGENT_BOT_TOKEN is set. See DiscordChannelSyncJob and
+  # docs/agents/system/report-destinations.md.
+  discord_channel_sync:
+    class: DiscordChannelSyncJob
+    schedule: every 15 minutes
+    args: []
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12

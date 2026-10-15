@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_230100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1118,6 +1118,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.index ["lane"], name: "index_devops_shifts_on_lane", unique: true
   end
 
+  create_table "discord_channels", force: :cascade do |t|
+    t.datetime "archived_at"
+    t.string "category_name"
+    t.datetime "created_at", null: false
+    t.string "external_id", null: false
+    t.string "guild_external_id", null: false
+    t.string "kind", null: false
+    t.string "name", null: false
+    t.string "parent_external_id"
+    t.integer "position"
+    t.boolean "postable", default: false, null: false
+    t.datetime "synced_at"
+    t.datetime "updated_at", null: false
+    t.index ["archived_at"], name: "index_discord_channels_on_archived_at"
+    t.index ["guild_external_id", "external_id"], name: "index_discord_channels_on_guild_external_id_and_external_id", unique: true
+  end
+
   create_table "email_brand_references", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "brand_kit", null: false
@@ -1692,6 +1709,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
     t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
     t.check_constraint "state::text = ANY (ARRAY['assembling'::character varying::text, 'assembled'::character varying::text, 'shipped'::character varying::text, 'abandoned'::character varying::text])", name: "releases_state_known"
+  end
+
+  create_table "report_deliveries", force: :cascade do |t|
+    t.string "channel_external_id"
+    t.datetime "created_at", null: false
+    t.bigint "discord_channel_id"
+    t.text "error"
+    t.string "guild_external_id"
+    t.string "idempotency_key", null: false
+    t.string "message_external_id"
+    t.datetime "posted_at"
+    t.string "report_key", null: false
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.index ["discord_channel_id"], name: "index_report_deliveries_on_discord_channel_id"
+    t.index ["idempotency_key"], name: "index_report_deliveries_on_idempotency_key", unique: true
+    t.index ["report_key", "created_at"], name: "index_report_deliveries_on_report_key_and_created_at"
+  end
+
+  create_table "report_destinations", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "discord_channel_id"
+    t.boolean "enabled", default: true, null: false
+    t.string "report_key", null: false
+    t.datetime "updated_at", null: false
+    t.string "updated_by"
+    t.index ["discord_channel_id"], name: "index_report_destinations_on_discord_channel_id"
+    t.index ["report_key"], name: "index_report_destinations_on_report_key", unique: true
   end
 
   create_table "review_pending_actions", force: :cascade do |t|
@@ -2700,6 +2745,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_203000) do
   add_foreign_key "pff_team_stats", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "pff_team_stats", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "release_events", "releases", column: "release_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "report_deliveries", "discord_channels", on_delete: :nullify
+  add_foreign_key "report_destinations", "discord_channels", on_delete: :nullify
   add_foreign_key "review_pending_actions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "roster_spots", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "roster_spots", "rosters"

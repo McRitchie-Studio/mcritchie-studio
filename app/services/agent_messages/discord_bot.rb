@@ -51,6 +51,22 @@ module AgentMessages
       Array(JSON.parse(body)).sort_by { |m| m["id"].to_i }
     end
 
+    # Every channel of a guild (GET /guilds/{id}/channels): text, voice, forum,
+    # category alike; the caller picks the kinds it reads.
+    def guild_channels(guild_id)
+      status, body = request(:get, "/guilds/#{guild_id}/channels")
+      check!(status, body, "list channels of guild #{guild_id}")
+      Array(JSON.parse(body))
+    end
+
+    # The guild's active (unarchived) threads, forum posts included
+    # (GET /guilds/{id}/threads/active). Each carries its `parent_id`.
+    def active_threads(guild_id)
+      status, body = request(:get, "/guilds/#{guild_id}/threads/active")
+      check!(status, body, "list active threads of guild #{guild_id}")
+      Array(JSON.parse(body)["threads"])
+    end
+
     # Post `content` into `channel_id` as a reply to `reference_id`.
     #
     # `nonce` + `enforce_nonce` make the post idempotent: Discord answers a repeat
@@ -83,6 +99,44 @@ module AgentMessages
       }
       status, body = request(:post, "/channels/#{channel_id}/messages", payload)
       check!(status, body, "post to channel #{channel_id}")
+      JSON.parse(body)
+    end
+
+    # ── The report-destination reads and post (docs/agents/system/report-destinations.md).
+    # DiscordChannels::Sync reads the bot's own user, the guild's roles and the
+    # bot's membership to work out where it may post; ReportDestinations posts.
+
+    # The bot's own user (GET /users/@me): its id names its guild membership.
+    def current_user
+      status, body = request(:get, "/users/@me")
+      check!(status, body, "read the bot's own user")
+      JSON.parse(body)
+    end
+
+    # The guild's roles with their permission bitsets (GET /guilds/{id}/roles).
+    def guild_roles(guild_id)
+      status, body = request(:get, "/guilds/#{guild_id}/roles")
+      check!(status, body, "list roles of guild #{guild_id}")
+      Array(JSON.parse(body))
+    end
+
+    # One member of the guild, with their role ids (GET /guilds/{id}/members/{user}).
+    def guild_member(guild_id, user_id)
+      status, body = request(:get, "/guilds/#{guild_id}/members/#{user_id}")
+      check!(status, body, "read member #{user_id} of guild #{guild_id}")
+      JSON.parse(body)
+    end
+
+    # A report: `content` and up to ten `embeds`, posted as one standalone
+    # message. The same once-guard as a reply (nonce + enforce_nonce), and it
+    # pings nobody. It does NOT clip: ReportDestinations refuses an over-limit
+    # report before it gets here, so a report is never silently cut.
+    def post_report(channel_id, content:, embeds:, nonce:)
+      payload = { allowed_mentions: { parse: [] }, nonce: nonce.to_s, enforce_nonce: true }
+      payload[:content] = content.to_s if content.present?
+      payload[:embeds] = embeds if embeds.present?
+      status, body = request(:post, "/channels/#{channel_id}/messages", payload)
+      check!(status, body, "post a report to channel #{channel_id}")
       JSON.parse(body)
     end
 
