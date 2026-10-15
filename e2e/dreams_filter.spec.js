@@ -7,8 +7,9 @@ const { loginWithMagicLink, watchPageErrors } = require("./helpers");
 // recounts to the filter, aria-current moves to the active control, the URL
 // carries the choice, and the page was not reloaded. A dream card opens to its detail on click.
 //
-// The page reads the tracked dream bank, so the spec counts by status rather
-// than naming a dream that a later merge could move.
+// The page reads the fixture bank, test/fixtures/dreams (DREAM_BANK_DIR in
+// playwright.config.js), not the tracked one. The spec still counts by status
+// rather than naming dreams, so a fixture added later does not break it.
 test("the dreams status filter hides non-matching cards in place and a card opens", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
 
@@ -49,7 +50,7 @@ test("the dreams status filter hides non-matching cards in place and a card open
   const proposedCounts = await counts("proposed");
   expect(proposedCounts.length).toBeGreaterThan(0);
   for (const label of proposedCounts) expect(label.shown).toBe(label.expected);
-  // The live bank is mostly approved, so at least one label must have dropped.
+  // The fixture bank is mostly approved, so at least one label must have dropped.
   const allCounts = await counts("all");
   expect(allCounts.some((label, i) => label.expected !== proposedCounts[i].shown)).toBe(true);
   const after = await displays();

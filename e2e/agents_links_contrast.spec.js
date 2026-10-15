@@ -1,7 +1,8 @@
 const { test, expect } = require("@playwright/test");
 
-// [component] The /agents header links (Dreams, Activities feed) sit on theme
-// tokens, so they read in BOTH themes. They used white-alpha pills
+// [component] The /agents header links (Dreams, Activities feed) and each agent
+// card's doc-file chips (role, soul, heartbeat: app/views/agents/index.html.erb)
+// sit on theme tokens, so they read in BOTH themes. They used white-alpha pills
 // (border-white/10 bg-white/5 text-secondary) that all but vanished on the light
 // page. Each pass flips the theme on <html> and measures the label against the
 // ground it sits on, and the pill's border against the page, so a faint outline
@@ -10,6 +11,7 @@ const { test, expect } = require("@playwright/test");
 const { CONTRAST, eachTheme, TEXT_ON_SURFACE } = require("./contrast");
 
 const LINKS = "[data-test='agents-dreams-link'], [data-test='agents-activities-link']";
+const CHIPS = "[data-test='agent-file-link']";
 // A visible outline, not text: WCAG's 3:1 is for UI parts that convey state; an
 // outline that only frames a labelled link needs to be SEEN, so 1.3 is the floor.
 const BORDER_FLOOR = 1.3;
@@ -58,6 +60,22 @@ test("the /agents header links read in both themes", async ({ page }) => {
     }
     for (const outline of await page.evaluate(BORDERS, LINKS)) {
       expect(outline.ratio, `${theme}: "${outline.text}" outline against the page`).toBeGreaterThanOrEqual(BORDER_FLOOR);
+    }
+  });
+});
+
+test("the /agents doc-file chips read in both themes", async ({ page }) => {
+  await page.goto("/agents");
+  await expect(page.locator(CHIPS).first()).toBeVisible();
+
+  await eachTheme(page, async (theme) => {
+    const labels = await page.evaluate(CONTRAST, CHIPS);
+    expect(labels.length, `${theme}: the doc-file chips render`).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.ratio, `${theme}: "${label.text}" chip text contrast`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
+    }
+    for (const outline of await page.evaluate(BORDERS, CHIPS)) {
+      expect(outline.ratio, `${theme}: "${outline.text}" chip outline against the card`).toBeGreaterThanOrEqual(BORDER_FLOOR);
     }
   });
 });
