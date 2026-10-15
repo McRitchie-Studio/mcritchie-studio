@@ -121,6 +121,7 @@ require_relative "lib/task_board"
 require_relative "lib/ship_wait"
 require_relative "lib/desk_session"
 require_relative "lib/intent_scout"
+require_relative "lib/dream_bank"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -936,3 +937,8 @@ puts "Task: #{task_url}"
 puts "PR: #{pr_url}"
 puts "branch: #{branch}"
 terminal!(ShipWait::SUCCESS_LINE)
+# The building-sop · submit moment card, after the seam line (docs/agents/modules/
+# dream.md, "Moment cards"). On success only: on a refusal, bin/submit-wait reads
+# the log's last line as the reason, and a card there would replace it. submit-wait
+# prints the card itself on every outcome. Offline; never raises.
+DreamBank.moment(sop: "building-sop", step: "submit", io: $stderr)
