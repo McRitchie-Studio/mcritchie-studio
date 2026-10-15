@@ -103,11 +103,12 @@ class IntentScoutProjectSettingsTest < Minitest::Test
     assert_includes outcome[:reason], "allows Write"
   end
 
-  def test_the_note_rule_names_only_the_scouted_task
+  def test_the_note_rule_names_only_the_scouted_task_and_only_a_comment
     tools = IntentScout.allowed_tools("demo-task", ["/hub/bin"])
 
-    assert_includes tools, "Bash(bin/task note demo-task *)"
-    assert_includes tools, "Bash(/hub/bin/task note demo-task *)"
+    assert_includes tools, "Bash(bin/task note demo-task --comment *)"
+    assert_includes tools, "Bash(/hub/bin/task note demo-task --comment *)"
+    refute(tools.any? { |t| t.match?(/task note demo-task \*\)\z/) }, "any note type is too wide: #{tools}")
     assert_equal 2, tools.count { |t| t.include?("task note") }
     assert_raises(ArgumentError) { IntentScout.note_rule("demo-task *") }
     assert_raises(ArgumentError) { IntentScout.note_rule("") }

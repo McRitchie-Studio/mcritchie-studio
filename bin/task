@@ -3530,6 +3530,14 @@ when "note"
     end
   end
   die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
+  # One note per call, as the usage line reads. The intent scout's allow rule is
+  # `task note <slug> --comment *`, and a prefix rule cannot stop a trailing
+  # `--handoff`; this refusal is what holds the scout to comments
+  # (bin/lib/intent_scout.rb#note_rule).
+  if notes.size > 1
+    die!("note takes one of #{NOTE_FLAGS.keys.join(", ")} per call; got #{notes.map(&:first).join(" and ")}. " \
+         "Post each note with its own #{SELF_CMD} note call.")
+  end
   if resolves_feedback && notes.none? { |activity_type, _| activity_type == "handoff" }
     die!("--resolves-feedback marks handoff notes as explicitly addressing open QA feedback; " \
          "use: #{SELF_CMD} note <slug> --handoff \"...\" --resolves-feedback")
