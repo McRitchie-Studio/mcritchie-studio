@@ -363,12 +363,12 @@ class DreamCliTest < Minitest::Test
   end
   # ── approvals, apply-approvals and fired ─────────────────────────────────
 
-  def approvals_cli(*argv, rows:, cwd: @dir, reports: nil, recorded: true)
+  def approvals_cli(*argv, rows:, cwd: @dir, reports: nil, recorded: true, retirements: [])
     out = StringIO.new
     err = StringIO.new
     reporter = ->(args) { reports << args if reports; [ recorded, recorded ? "ok" : "atomic-event action: no open activity — skipped" ] }
     code = DreamCli.new(env: { "DREAM_BANK_DIR" => @dir }, out: out, err: err, approvals_reader: -> { rows },
-                        fire_reporter: reporter, cwd: cwd).run(argv)
+                        retirements_reader: -> { retirements }, fire_reporter: reporter, cwd: cwd).run(argv)
     [ out.string, err.string, code ]
   end
 
@@ -385,6 +385,22 @@ class DreamCliTest < Minitest::Test
     assert_includes out, "## Pending dream approvals (1)"
     assert_includes out, "`guard-nil-reader` · carl · approved 2026-10-15 by alex-mcritchie · file reads proposed"
     assert_includes out, "bin/dream apply-approvals"
+  end
+
+  def test_unit_approvals_lists_pending_retirements_so_a_retire_alone_still_calls_for_a_batch
+    retirements = [ { "dream_home" => "carl", "dream_slug" => "old-habit", "retired_by" => "alex-mcritchie",
+                      "retired_at" => "2026-10-15T12:00:00Z", "file_status" => "approved" } ]
+    out, _err, code = approvals_cli("approvals", rows: [], retirements: retirements)
+
+    assert_equal 0, code
+    assert_includes out, "## Pending dream approvals (0)"
+    assert_includes out, "## Pending dream retirements (1)"
+    assert_includes out, "`old-habit` · carl · retired 2026-10-15 by alex-mcritchie · file reads approved"
+    assert_includes out, "bin/dream apply-approvals"
+
+    _out, err, code = approvals_cli("approvals", rows: [], retirements: nil)
+    assert_equal 1, code
+    assert_includes err, "could not read the pending retirements"
   end
 
   def test_unit_approvals_refuses_when_the_board_cannot_be_read
@@ -409,7 +425,7 @@ class DreamCliTest < Minitest::Test
     text = File.read(File.join(bank, "carl/guard-nil-reader.md"))
     assert_includes text, "\nstatus: approved\n"
     assert_equal PROPOSAL.sub("status: proposed", "status: approved"), text, "nothing else in the file moves"
-    assert_includes out, "dream: 1 of 4 pending approval(s) written; INDEX.md rewritten."
+    assert_includes out, "dream: 1 of 4 pending approval(s) written, 0 of 0 retirement(s) removed; INDEX.md rewritten."
     assert_includes err, "skipped `platform/already`: the file does not read status: proposed"
     assert_includes err, "skipped `platform/gone`: no file at"
     assert_includes err, "skipped approval `../escape`: not a bank path"
@@ -463,7 +479,7 @@ class DreamCliTest < Minitest::Test
     out, _err, code = approvals_cli("apply-approvals", rows: [], cwd: root)
 
     assert_equal 0, code
-    assert_includes out, "dream: 0 of 0 pending approval(s) written."
+    assert_includes out, "dream: 0 of 0 pending approval(s) written, 0 of 0 retirement(s) removed."
     refute File.exist?(File.join(bank, "INDEX.md"))
   end
 
@@ -527,5 +543,165 @@ class DreamCliTest < Minitest::Test
       assert_includes err, "bin/dream fired <slug>"
     end
     assert_empty reports
+  end
+
+  # ── the loop: retirements, grade, swap-candidates, swap ─────────────────
+
+  def test_integration_apply_approvals_deletes_each_retired_file_and_rewrites_the_index
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "carl"))
+    File.write(File.join(bank, "carl/old-habit.md"), dream("An old habit?", "soul: carl\n"))
+    retirements = [ { "dream_home" => "carl", "dream_slug" => "old-habit" },
+                    { "dream_home" => "carl", "dream_slug" => "gone" },
+                    { "dream_home" => "..", "dream_slug" => "escape" } ]
+
+    out, err, code = approvals_cli("apply-approvals", rows: [], retirements: retirements, cwd: root)
+
+    assert_equal 0, code
+    refute File.exist?(File.join(bank, "carl/old-habit.md"))
+    assert_includes out, "dream: retired #{File.join(bank, "carl/old-habit.md")}"
+    assert_includes out, "dream: 0 of 0 pending approval(s) written, 1 of 3 retirement(s) removed; INDEX.md rewritten."
+    assert_includes err, "skipped retirement `carl/gone`: no file at"
+    assert_includes err, "skipped retirement `../escape`: not a bank path"
+    refute_includes File.read(File.join(bank, "INDEX.md")), "old-habit"
+    assert File.exist?(File.join(bank, "platform/universal.md"))
+  end
+
+  def test_unit_apply_approvals_refuses_when_the_retirements_cannot_be_read
+    root, bank = desk
+    out, err, code = approvals_cli("apply-approvals", rows: [], retirements: nil, cwd: root)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "could not read the pending retirements"
+    refute File.exist?(File.join(bank, "INDEX.md"))
+  end
+
+  # A CLI whose board is a recorder: posts answer `answer`, reads answer `reads`.
+  def loop_cli(*argv, answer: [ 201, { "data" => {} } ], reads: nil, session: "wrap-session", cwd: @dir, posts: [])
+    out = StringIO.new
+    err = StringIO.new
+    env = { "DREAM_BANK_DIR" => @dir, "CLAUDE_CODE_SESSION_ID" => session.to_s }
+    poster = ->(path, body) { posts << [ path, body ] && answer }
+    code = DreamCli.new(env: env, out: out, err: err, board_poster: poster, board_reader: ->(_path) { reads },
+                        cwd: cwd).run(argv)
+    [ out.string, err.string, code ]
+  end
+
+  def test_unit_grade_posts_the_sessions_grade_with_its_decision
+    posts = []
+    out, err, code = loop_cli("grade", "universal", "--score", "2", "--decision", "Kept  the probe read-only", posts: posts)
+
+    assert_equal 0, code
+    assert_equal "", err
+    assert_includes out, "dream: `universal` graded 2 · Kept the probe read-only"
+    assert_equal [ [ "/api/v1/dream_grades", { "session_id" => "wrap-session", "dream_slug" => "universal", "score" => 2,
+                                              "decision" => "Kept the probe read-only" } ] ], posts
+  end
+
+  def test_unit_grade_relays_the_boards_refusal_of_a_dream_that_did_not_fire
+    answer = [ 422, { "error" => "`universal` did not fire in this session; only a dream that fired can be graded" } ]
+    out, err, code = loop_cli("grade", "universal", "--score", "1", "--decision", "x", answer: answer)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "grade not recorded: `universal` did not fire in this session"
+  end
+
+  def test_unit_grade_refuses_an_unknown_dream_or_no_session_and_posts_nothing
+    posts = []
+    _out, err, code = loop_cli("grade", "no-such", "--score", "1", "--decision", "x", posts: posts)
+    assert_equal 1, code
+    assert_includes err, "is not a dream"
+
+    _out, err, code = loop_cli("grade", "universal", "--score", "1", "--decision", "x", session: "", posts: posts)
+    assert_equal 1, code
+    assert_includes err, "no session id"
+    assert_empty posts
+  end
+
+  def test_unit_grade_and_swap_take_exact_arguments
+    posts = []
+    [ %w[grade universal], %w[grade universal --score 3 --decision x], %w[grade universal --score 1],
+      [ "grade", "universal", "--score", "1", "--decision", " " ], %w[grade universal --score 1 --decision x --why y],
+      %w[grade universal --score 1 --score 2], %w[swap], %w[swap --reason], %w[swap --none],
+      %w[swap --none --in carl/x --reason r], %w[swap --out carl/x --reason r], %w[swap --none --none --reason r],
+      %w[swap-candidates --layer], %w[swap-candidates --all x] ].each do |argv|
+      out, err, code = loop_cli(*argv, posts: posts)
+      assert_equal 2, code, argv.inspect
+      assert_equal "", out
+      assert_includes err, "bin/dream grade <slug>"
+    end
+    assert_empty posts
+  end
+
+  def test_unit_swap_none_records_the_answer
+    posts = []
+    out, _err, code = loop_cli("swap", "--none", "--reason", "Nothing earned a place", posts: posts,
+                               answer: [ 201, { "data" => { "kind" => "none" } } ])
+
+    assert_equal 0, code
+    assert_includes out, "dream: swap recorded · none · Nothing earned a place"
+    assert_equal [ [ "/api/v1/dream_swaps", { "reason" => "Nothing earned a place", "session_id" => "wrap-session" } ] ],
+                 posts
+  end
+
+  def test_integration_swap_reads_the_in_from_this_desk_and_sends_its_layer
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "carl"))
+    File.write(File.join(bank, "carl/guard-nil-reader.md"), PROPOSAL)
+    posts = []
+
+    out, err, code = loop_cli("swap", "--in", "carl/guard-nil-reader", "--out", "carl/review", "--reason", "Lowest grade",
+                              cwd: root, posts: posts, answer: [ 201, { "data" => { "kind" => "swap" } } ])
+
+    assert_equal 0, code, err
+    assert_includes out, "dream: swap recorded · swap · in carl/guard-nil-reader · out carl/review · Lowest grade"
+    assert_equal({ "in" => "carl/guard-nil-reader", "out" => "carl/review", "layer" => "soul/carl",
+                   "reason" => "Lowest grade", "session_id" => "wrap-session" }, posts.first.last)
+  end
+
+  def test_unit_swap_refuses_an_in_that_is_not_a_proposed_file_here
+    root, bank = desk
+    posts = []
+    _out, err, code = loop_cli("swap", "--in", "platform/universal", "--reason", "r", cwd: root, posts: posts)
+    assert_equal 1, code
+    assert_includes err, "reads approved"
+
+    _out, err, code = loop_cli("swap", "--in", "carl/missing", "--reason", "r", cwd: root, posts: posts)
+    assert_includes err, "is missing or unreadable"
+    _out, err, code = loop_cli("swap", "--in", "../etc", "--reason", "r", cwd: root, posts: posts)
+    assert_includes err, "is not a bank key"
+    assert_empty posts
+    assert File.exist?(File.join(bank, "platform/universal.md"))
+  end
+
+  def test_unit_swap_candidates_prints_room_and_ranked_outs
+    reads = [ { "label" => "soul carl", "budget" => 20, "approved" => 20, "retiring" => 0, "approving" => 0,
+                "room" => 0, "full" => true,
+                "candidates" => [ { "dream_home" => "carl", "dream_slug" => "panned", "mean_grade" => 0.0, "grades" => 2,
+                                    "fires" => 2, "last_fired_at" => "2026-10-01T00:00:00Z" },
+                                  { "dream_home" => "carl", "dream_slug" => "never", "mean_grade" => nil, "grades" => 0,
+                                    "fires" => 0, "last_fired_at" => nil } ],
+                "ineligible" => [ { "dream_home" => "carl", "dream_slug" => "new", "in_grace" => true,
+                                    "sessions_since_approval" => 3 } ] } ]
+
+    out, _err, code = loop_cli("swap-candidates", "--layer", "soul/carl", reads: reads)
+
+    assert_equal 0, code
+    assert_includes out, "## soul carl · 20 approved of 20 (0 retiring, 0 approving) · FULL: a swap is one in and one out"
+    assert_includes out, "  1. `carl/panned` · mean 0.0 of 2 · 2 fired, last 2026-10-01"
+    assert_includes out, "  2. `carl/never` · ungraded · 0 fired, never"
+    assert_includes out, "  - `carl/new` · not eligible (grace, 3 of 10 sessions)"
+  end
+
+  def test_unit_swap_candidates_refuses_a_bad_layer_and_an_unread_board
+    _out, err, code = loop_cli("swap-candidates", "--layer", "galaxy")
+    assert_equal 1, code
+    assert_includes err, "is not a layer"
+
+    _out, err, code = loop_cli("swap-candidates", reads: nil)
+    assert_equal 1, code
+    assert_includes err, "could not read the swap candidates"
   end
 end

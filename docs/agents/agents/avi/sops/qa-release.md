@@ -69,7 +69,8 @@ flight. Otherwise report "nothing to prepare" and stop.
 
 ## Pre-sweep — batch Alex's dream approvals
 
-Before the sweep, run `bin/dream approvals`. If it lists any, a session batches
+Before the sweep, run `bin/dream approvals`; it lists his approvals and his
+retirements. If it lists any, a session batches
 them into one task: `bin/task begin` a hub `docs` task, run
 `bin/dream apply-approvals` in its desk, and submit it. It rides this release if
 it reaches `reviewed` in time, else the next. Never one task per dream

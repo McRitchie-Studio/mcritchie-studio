@@ -615,6 +615,10 @@ Rails.application.routes.draw do
   get "dreams", to: "dreams#index"
   # Alex's one-click approval of a proposed dream (DreamApproval). Approver-only.
   post "dreams/approvals", to: "dreams#approve", as: :dream_approvals
+  # Alex's one-click retirement of an approved dream, and his one click on a
+  # session's swap proposal (DreamRetirement, DreamSwap). Approver-only.
+  post "dreams/retirements", to: "dreams#retire", as: :dream_retirements
+  post "dreams/swaps/:id/approval", to: "dreams#approve_swap", as: :dream_swap_approval
 
   get "docs", to: "docs#index"
   get "docs/*path", to: "docs#show", as: :doc
@@ -873,6 +877,13 @@ Rails.application.routes.draw do
       get "insights", to: "insights#index"
       # Pending dream approvals (read-only; an approval is made only on /dreams).
       get "dream_approvals", to: "dream_approvals#index"
+      # The dream loop (Act 4): a session's grade of a dream that fired in it, its one
+      # swap proposal, the data-ranked swap candidates, and the pending retirements
+      # (read-only; a retirement is made only on /dreams).
+      post "dream_grades", to: "dream_grades#create"
+      get  "dream_swaps/candidates", to: "dream_swaps#candidates", as: :dream_swap_candidates
+      post "dream_swaps", to: "dream_swaps#create"
+      get  "dream_retirements", to: "dream_retirements#index"
     end
   end
 end
