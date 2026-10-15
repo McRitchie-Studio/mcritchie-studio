@@ -84,4 +84,76 @@ class AgentDispatcherLaunchAgentTest < Minitest::Test
     assert_empty @calls, "launchctl was never called"
     refute File.exist?(File.join(@home, "Library/LaunchAgents/studio.mcritchie.agent-dispatcher.plist"))
   end
+
+  # --- install --if-changed: the production ship's step ---------------------
+
+  def plist = File.join(@home, "Library/LaunchAgents/studio.mcritchie.agent-dispatcher.plist")
+
+  def test_if_changed_does_nothing_when_the_service_is_not_installed
+    assert_equal 0, agent.install_if_changed
+
+    assert_match(/not installed; nothing to refresh/, @out.string)
+    assert_empty @calls, "launchctl was never called: a Mac without the service gets none"
+    refute File.exist?(plist), "nothing was written"
+  end
+
+  def test_if_changed_leaves_a_current_plist_alone_even_from_another_ruby_and_path
+    agent.install
+    installed = File.read(plist)
+    @calls.clear
+
+    # The ship runs with its own ruby and PATH, not the installing shell's.
+    shipper = agent(ruby: "/usr/local/other-ruby/bin/ruby", path: "/ship/only/bin:/usr/bin")
+    refute_equal installed, shipper.render, "sanity: a plain render from the ship's environment differs"
+    assert_equal 0, shipper.install_if_changed
+
+    assert_match(/matches the template; nothing to refresh/, @out.string)
+    assert_empty @calls, "a current plist is not reloaded: no bootout, no restart"
+    assert_equal installed, File.read(plist)
+  end
+
+  def test_if_changed_reinstalls_when_the_template_moved_and_keeps_the_installed_paths
+    agent.install
+    # The installed copy predates a template change (here: an older ThrottleInterval).
+    File.write(plist, File.read(plist).sub("<integer>30</integer>", "<integer>10</integer>"))
+    @calls.clear
+
+    shipper = agent(ruby: "/usr/local/other-ruby/bin/ruby", path: "/ship/only/bin")
+    assert_equal 0, shipper.install_if_changed
+
+    assert_match(/template changed; reinstalling/, @out.string)
+    assert_equal [ "bootout", "gui/501/studio.mcritchie.agent-dispatcher" ], @calls[0]
+    assert_equal [ "bootstrap", "gui/501", plist ], @calls[1]
+    xml = File.read(plist)
+    assert_includes xml, "<integer>30</integer>", "the new template was rendered"
+    assert_includes xml, "<string>/opt/ruby/bin/ruby</string>", "the installed ruby is kept, not the ship's"
+    refute_includes xml, "/ship/only/bin", "the installed PATH is kept, not the ship's"
+  end
+
+  def test_if_changed_reports_a_failed_reinstall
+    agent.install
+    File.write(plist, File.read(plist).sub("<true/>", "<false/>"))
+    @launchctl = ->(*args) { @calls << args; [ "Bootstrap failed: 5", Status.new(args.first == "bootout") ] }
+
+    assert_equal 1, agent.install_if_changed
+    assert_match(/launchctl bootstrap failed/, @out.string)
+  end
+
+  def test_if_changed_falls_back_to_this_process_paths_for_a_hand_edited_plist
+    FileUtils.mkdir_p(File.dirname(plist))
+    File.write(plist, "<plist>hand edited</plist>")
+
+    assert_equal 0, agent.install_if_changed
+    assert_match(/template changed; reinstalling/, @out.string)
+    assert_equal agent.render, File.read(plist)
+  end
+
+  # A code restart is `exit 0`. launchd restarts that only under plain
+  # KeepAlive true; KeepAlive {SuccessfulExit: false} would leave it stopped.
+  def test_keep_alive_restarts_on_a_clean_exit
+    xml = File.read(AgentMailbox::LaunchAgent::TEMPLATE)
+
+    assert_match(%r{<key>KeepAlive</key>\s*<true/>}, xml)
+    refute_match(/SuccessfulExit/, xml)
+  end
 end

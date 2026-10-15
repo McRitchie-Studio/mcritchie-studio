@@ -45,10 +45,11 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     @sleeps = []
   end
 
-  def dispatcher(runner:, souls: %w[xan avi], cap: AgentMailbox::Dispatcher::CAP)
+  def dispatcher(runner:, souls: %w[xan avi], cap: AgentMailbox::Dispatcher::CAP, fingerprint: nil)
     AgentMailbox::Dispatcher.new(client: @client, souls: souls, worker: "disp-test-1", cap: cap, runner: runner,
                                  claude_cmd: %w[fake-claude], out: @out, clock: -> { @now },
-                                 sleeper: ->(s) { @sleeps << s }, idle_wait: 0, busy_wait: 0, version: "test")
+                                 sleeper: ->(s) { @sleeps << s }, idle_wait: 0, busy_wait: 0, version: "test",
+                                 fingerprint: fingerprint)
   end
 
   # Tick until the block holds (run threads finish on their own schedule).
@@ -225,6 +226,38 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     assert_equal "received", later.reload.status
     assert_equal "stopping", AgentDispatcher.find_by!(worker_id: "disp-test-1").state
     assert_match(/dispatcher stopped before the answer finished/, message.events.last.detail["reason"])
+  end
+
+  test "new code on disk: claiming stops, the run in flight finishes and completes, then it stops for launchd" do
+    message = agent_message!(soul: "xan")
+    gate = Queue.new
+    digest = "v1"
+    disp = dispatcher(runner: GatedRunner.new(gate: gate), cap: 2, fingerprint: -> { digest })
+    disp.tick
+    assert_equal "claimed", message.reload.status
+
+    digest = "v2" # the release moved the checkout
+    @now += AgentMailbox::Dispatcher::CODE_CHECK_EVERY
+    disp.tick
+    refute disp.stopping?, "one sighting is not a settled change"
+    @now += AgentMailbox::Dispatcher::CODE_CHECK_EVERY
+    disp.tick
+    assert disp.restarting?, "the same new digest twice in a row restarts it"
+    later = agent_message!(soul: "xan", thread_key: "other-thread")
+    disp.tick # a free slot (cap 2), but a restarting dispatcher claims nothing
+
+    # Each drain second costs 10ms of real time: the answer lands ~100 drain
+    # seconds in, past GRACE (60s, the SIGTERM window) and inside RUN_DEADLINE.
+    @sleeps = nil
+    disp.instance_variable_set(:@sleeper, ->(s) { @now += s; sleep 0.01 })
+    Thread.new { sleep 1.0; gate << :go }
+    disp.shutdown
+
+    assert_equal "completed", message.reload.status, "the run in flight finished its answer; nothing was given back"
+    assert_equal "Two tasks are building.", message.response_text
+    assert_equal "received", later.reload.status, "no new claim once the restart began"
+    assert_equal "stopping", AgentDispatcher.find_by!(worker_id: "disp-test-1").state
+    assert_match(/code changed \(v1 -> v2\); restarting on the new code/, @out.string)
   end
 
   test "the routed souls come from config/agent_routes.yml" do
