@@ -803,6 +803,46 @@ class SubmitTest < Minitest::Test
     end
   end
 
+
+  # A throwaway dream bank holding one approved step dream per [sop, step].
+  def with_step_bank(*steps)
+    Dir.mktmpdir("step-bank") do |bank|
+      steps.each do |sop, step|
+        path = File.join(bank, "sops", sop, "at-#{step}.md")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "---\nquestion: \"At #{step}, what?\"\nanswer: \"An answer.\"\nwhy: \"A reason.\"\n" \
+                         "status: approved\nsop: #{sop}\nstep: #{step}\n---\n")
+      end
+      yield bank
+    end
+  end
+
+  def test_a_submit_that_reaches_the_seam_prints_the_submit_moment_card_after_it
+    with_step_bank(%w[building-sop submit], %w[building-sop begin]) do |bank|
+      with_repo do |dir|
+        out, err, status, _lines = run_ship(dir, extra_env: { "DREAM_BANK_DIR" => bank })
+
+        assert status.success?, err
+        assert_includes out, "stage: submitted (read back verified)"
+        assert_includes err, "## Moment: building-sop · submit"
+        assert_includes err, "(`at-submit`)"
+        refute_includes err, "at-begin", "another step's dream waits for its own command"
+        refute_includes out, "## Moment", "stdout keeps the seam lines submit-wait relays"
+      end
+    end
+  end
+
+  def test_a_refused_submit_prints_no_card_so_the_last_line_stays_the_reason
+    with_step_bank(%w[building-sop submit]) do |bank|
+      with_repo do |dir|
+        _out, err, status, _lines = run_ship(dir, extra_env: { "DREAM_BANK_DIR" => bank, "FAIL_PRECHECK" => "1" })
+
+        refute status.success?
+        refute_includes err, "## Moment"
+      end
+    end
+  end
+
   def test_a_refused_pre_check_stops_before_the_commit_and_the_push
     with_repo do |dir|
       _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_PRECHECK" => "1" })

@@ -81,6 +81,7 @@ require "time"
 require_relative "lib/repo_root"
 require_relative "lib/ship_wait"
 require_relative "lib/remedy"
+require_relative "lib/dream_bank"
 
 PROGRAM = "submit-wait"
 # The script's own repo — the state-dir fallback when cwd is not in a git work tree.
@@ -258,6 +259,15 @@ end
 elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 text = read_log(log_path).to_s
 took = "#{(elapsed / 60).floor}m#{(elapsed % 60).round}s"
+
+# The building-sop · submit moment card (docs/agents/modules/dream.md, "Moment
+# cards"): printed LAST, after the verdict and the relayed summary, on every
+# outcome, so it never displaces them. Offline; DreamBank.moment never raises.
+# This is where a caller sees it: --launch keeps bin/submit's own output in the log.
+at_exit do
+  $stdout.flush
+  DreamBank.moment(sop: "building-sop", step: "submit", io: $stderr)
+end
 
 case result
 when :succeeded

@@ -3005,6 +3005,10 @@ when "begin"
   # waits on the scout itself: the launch is detached.
   record_scout_owed(slug, worktree_dir, scout) unless stage == "building"
   DreamBank.announce(builder, io: $stderr, task: slug, facts: task.is_a?(Hash) ? task.merge("stage" => "building") : nil)
+  # The begin step's moment card (docs/agents/modules/dream.md, "Moment cards"):
+  # the approved step dreams for building-sop · begin, after the soul's sequence and
+  # before the scout lines, so `begin 2>&1 | tail` keeps both. Offline; never raises.
+  DreamBank.moment(sop: "building-sop", step: "begin", io: $stderr)
   $stderr.flush
   scout[:lines].each { |line| puts line }
   $stdout.flush

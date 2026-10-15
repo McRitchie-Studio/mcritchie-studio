@@ -9,36 +9,24 @@
 #                            for several souls counts in each of their layers
 #   "step/<sop>/<step>"      an approved step dream (sop: and step: tags)
 #
-# Only APPROVED dreams fill a layer. A full layer means a swap, not an add.
-#
-# BUDGETS: step-dreams-and-moment-cards (PR 2123) defines DreamBank::BUDGETS, the
-# one source of the numbers, and its `bin/dream index --check` refuses a layer over
-# its cap. Until that lands, FALLBACK_BUDGETS carries the same numbers here and
-# `budgets` prefers DreamBank's constant the moment it exists. Delete the fallback
-# once 2123 is on `accepted`.
+# Only APPROVED dreams fill a layer. A full layer means a swap, not an add. The
+# caps are DreamBank::BUDGETS, the one source `bin/dream index --check` also reads.
 require_relative "dream_bank"
 
 module DreamLayers
   module_function
 
   PLATFORM = "platform"
-  FALLBACK_BUDGETS = { "platform" => 15, "soul" => 20, "step" => 5 }.freeze
   TOKEN = /\A[a-z0-9][a-z0-9+-]*\z/
   # The sessions a newly approved dream loads in before a swap may take it out
   # (app/models/dream_loop.rb counts them).
   GRACE_SESSIONS = 10
 
-  def budgets
-    defined?(DreamBank::BUDGETS) ? DreamBank::BUDGETS : FALLBACK_BUDGETS
-  end
-
-  def step?(dream)
-    dream.respond_to?(:step?) && dream.step?
-  end
+  def budgets = DreamBank::BUDGETS
 
   # Every layer key the dream counts in.
   def keys(dream)
-    return [ "step/#{dream.sop}/#{dream.step}" ] if step?(dream)
+    return [ "step/#{dream.sop}/#{dream.step}" ] if dream.step?
     return [ PLATFORM ] if dream.souls.empty?
 
     dream.souls.map { |soul| "soul/#{DreamBank.canonical_soul(soul)}" }.uniq

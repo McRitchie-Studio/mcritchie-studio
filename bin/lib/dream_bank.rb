@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
-# DreamBank — reads the dream bank (docs/agents/dreams/) and renders its two
-# sequences. The PLATFORM sequence is every approved dream with no `soul` tag;
-# bin/session-insights prints it at session start. A SOUL's sequence is every
+# DreamBank — reads the dream bank (docs/agents/dreams/) and renders its three
+# layers. The PLATFORM sequence is every approved dream with no `soul` and no `sop`
+# tag; bin/session-insights prints it at session start. A SOUL's sequence is every
 # approved dream tagged with that soul; bin/dream prints it when the soul is
 # invoked. A task claim prints the soul's dreams that DreamSelector ranks highest
-# for the task, then the platform sequence.
+# for the task, then the platform sequence. A STEP dream carries `sop:` and `step:`
+# tags and no soul; the command that runs that SOP step prints it as a MOMENT CARD
+# (DreamBank.moment) after its own key output.
 #
 # A dream is one worked decision from a past session: the question the session
 # faced, the good answer it gave, and why that answer was right. The bank is
@@ -18,17 +20,34 @@
 
 require "yaml"
 require_relative "dream_selector"
+require_relative "sop_registry"
 
 module DreamBank
   DEFAULT_DIR = File.expand_path("../../docs/agents/dreams", __dir__)
   SOULS_PATH = File.expand_path("../../config/souls.yml", __dir__)
+  # The checkout whose SOP files name the registered SOPs. The installed tooling
+  # tree has no docs/agents/agents/, so there the registry reads empty and an
+  # unknown `sop` is not judged (the hub's own test judges it).
+  REPO_ROOT = File.expand_path("../..", __dir__)
   APPROVED = "approved"
   PLATFORM = "platform"
   FRONTMATTER = /\A---\s*\n(.*?)\n---\s*\n?/m
   # The bank's own pages; the reader skips them in every directory.
   SKIPPED = %w[README.md INDEX.md].freeze
   FIELDS = %w[question answer why status source].freeze
-  TAGS = %w[soul repo shape risk stage topic].freeze
+  TAGS = %w[soul repo shape risk stage topic sop step].freeze
+  # A step dream's directory: docs/agents/dreams/sops/<sop>/.
+  STEP_HOME = "sops"
+  # The most APPROVED dreams one layer holds (docs/agents/modules/dream.md, "Budgets").
+  # A full layer means a swap, not an add. Proposed dreams do not count.
+  BUDGETS = { "platform" => 15, "soul" => 20, "step" => 5 }.freeze
+  # The SOP steps a command prints a moment card at: [sop, step] => the command.
+  MOMENTS = {
+    %w[building-sop begin] => "bin/task begin",
+    %w[building-sop submit] => "bin/submit, bin/submit-wait",
+    %w[pr-review claim] => "bin/task review-claim acquire, bin/task claim-next-review",
+    %w[qa-release prepare] => "bin/release prepare"
+  }.freeze
   TAG_VALUE = /\A[a-z0-9][a-z0-9+-]*\z/
   SOUL_ALIASES = { "alex" => "xan" }.freeze
   # The most characters one claim's dream block takes.
@@ -49,12 +68,28 @@ module DreamBank
       tags.fetch("soul", [])
     end
 
-    def platform?
-      souls.empty?
+    def sop
+      tags.fetch("sop", []).first
     end
 
-    # The directory the dream belongs in: its first soul, or platform.
+    def step
+      tags.fetch("step", []).first
+    end
+
+    # A step dream belongs to one SOP step, never to a session start.
+    def step?
+      !sop.nil?
+    end
+
+    def platform?
+      souls.empty? && !step?
+    end
+
+    # The directory the dream belongs in: sops/<sop> for a step dream, else its
+    # first soul, or platform.
     def sequence
+      return "#{STEP_HOME}/#{sop}" if step?
+
       souls.first || PLATFORM
     end
   end
@@ -67,14 +102,22 @@ module DreamBank
   end
 
   # Every parseable dream under the directory, in path order. A file that cannot
-  # be read is skipped.
-  def all(dir: DEFAULT_DIR)
+  # be read is skipped. The roster and the registry are read once for the bank.
+  def all(dir: DEFAULT_DIR, souls: roster, sops: sop_names)
     Dir.glob(File.join(dir, "**", "*.md")).sort.filter_map do |path|
       next if SKIPPED.any? { |name| File.basename(path).casecmp?(name) }
 
       home = File.dirname(path).delete_prefix(dir).delete_prefix("/")
-      parse(read(path), slug: File.basename(path, ".md"), home: home)
+      parse(read(path), slug: File.basename(path, ".md"), home: home, souls: souls, sops: sops)
     end
+  rescue StandardError
+    []
+  end
+
+  # The registered SOP invocations (bin/lib/sop_registry.rb); [] when the SOP files
+  # cannot be read, as in the installed tooling tree.
+  def sop_names(root: REPO_ROOT)
+    SopRegistry.entries(root).map(&:invocation)
   rescue StandardError
     []
   end
@@ -112,12 +155,12 @@ module DreamBank
   end
 
   # One dream from a file's text, or nil when its front matter is unusable.
-  def parse(text, slug:, home: "")
+  def parse(text, slug:, home: "", souls: nil, sops: nil)
     match = FRONTMATTER.match(text.to_s)
     return nil unless match
 
     data = YAML.safe_load(match[1])
-    return nil unless data.is_a?(Hash) && errors(data).empty?
+    return nil unless data.is_a?(Hash) && errors(data, souls: souls || roster, sops: sops || sop_names).empty?
 
     dream = Dream.new(slug: slug,
                       question: field(data, "question"),
@@ -139,16 +182,99 @@ module DreamBank
   end
 
   # Why a front matter hash is refused; [] when it is sound. An unknown soul is
-  # judged only while the roster can be read.
-  def errors(data, souls: roster)
+  # judged only while the roster can be read, an unknown SOP only while the registry
+  # can be.
+  def errors(data, souls: roster, sops: sop_names)
     found = (data.keys.map(&:to_s) - FIELDS - TAGS).map { |key| "unknown front matter key `#{key}`" }
-    tags(data).each do |tag, values|
+    tags = tags(data)
+    tags.each do |tag, values|
       values.grep_v(TAG_VALUE).each { |value| found << "#{tag} value `#{value}` is not one lowercase token" }
     end
     unless souls.empty?
-      (tags(data).fetch("soul", []) - souls.keys).each { |name| found << "unknown soul `#{name}`" }
+      (tags.fetch("soul", []) - souls.keys).each { |name| found << "unknown soul `#{name}`" }
     end
+    found + step_errors(tags, sops)
+  end
+
+  # A step dream names one registered SOP and one step, and no soul: it loads at
+  # that step's command, not in a soul's sequence.
+  def step_errors(tags, sops)
+    sop = tags.fetch("sop", [])
+    step = tags.fetch("step", [])
+    return [] if sop.empty? && step.empty?
+
+    found = []
+    found << "a step dream names exactly one `sop` and one `step`" unless sop.size == 1 && step.size == 1
+    found << "a step dream carries no `soul` tag; it loads at its SOP step" if tags.key?("soul")
+    (sop - sops).each { |name| found << "unknown sop `#{name}`; it is not in the SOP registry" } unless sops.empty?
     found
+  end
+
+  # The approved dreams tagged for one SOP step.
+  def step_dreams(dreams, sop:, step:)
+    Array(dreams).select { |dream| dream.approved? && dream.sop == sop.to_s && dream.step == step.to_s }
+  end
+
+  # The layer an approved dream counts against: "platform", "soul" or "step".
+  def layer(dream)
+    return "step" if dream.step?
+
+    dream.platform? ? "platform" : "soul"
+  end
+
+  # One line per layer over its budget, naming the layer, the count, the cap and the
+  # fix; [] when every layer fits. Only approved dreams count. A dream tagged for
+  # several souls counts against each.
+  def budget_errors(dreams)
+    approved = Array(dreams).select(&:approved?)
+    groups = { "platform" => approved.select(&:platform?) }
+    approved.reject(&:step?).flat_map(&:souls).uniq.sort.each do |soul|
+      groups["soul #{soul}"] = approved.select { |dream| !dream.step? && dream.souls.include?(soul) }
+    end
+    approved.select(&:step?).group_by { |dream| [ dream.sop, dream.step ] }.sort.each do |(sop, step), mine|
+      groups["step #{sop} · #{step}"] = mine
+    end
+    groups.filter_map do |name, mine|
+      cap = BUDGETS.fetch(name.split.first)
+      next if mine.size <= cap
+
+      "layer #{name} holds #{mine.size} approved dreams; its budget is #{cap}. " \
+        "A full layer means a swap, not an add: retire one before approving another."
+    end
+  end
+
+  # The moment card for one SOP step: the approved dreams tagged for it, question
+  # and answer with the slug, no Why. "" when none.
+  def moment_card(dreams, sop:, step:)
+    mine = step_dreams(dreams, sop: sop, step: step)
+    return "" if mine.empty?
+
+    "## Moment: #{sop} · #{step}\n" \
+      "Dreams for this step, signed off by Alex. A dream never overrides a First Rule or an SOP.\n\n" +
+      mine.map { |dream| dream_block(dream, why: false) }.join("\n\n")
+  end
+
+  # Prints the moment card for one SOP step to `io`, offline. Prints nothing when
+  # the step has no approved dream. Never raises, so it can never fail the command
+  # that calls it.
+  def moment(sop:, step:, io: $stderr, dir: bank_dir)
+    text = moment_card(approved(dir: dir), sop: sop, step: step)
+    return if text.empty?
+
+    io.puts
+    io.puts(text)
+    io.flush if io.respond_to?(:flush)
+  rescue StandardError
+    nil
+  end
+
+  # Runs the block, then prints the step's moment card on EVERY way out: a normal
+  # return, an abort, an exception. The block's value and exit stand; the card
+  # never raises in their place.
+  def after_moment(sop:, step:, io: $stderr, dir: bank_dir)
+    yield
+  ensure
+    moment(sop: sop, step: step, io: io, dir: dir)
   end
 
   HEADER = "## Dreams: good answers from past sessions\n" \
@@ -343,6 +469,11 @@ module DreamBank
       mine = dreams.select { |dream| dream.souls.include?(slug) }
       sections << index_section(record["name"], "`bin/dream #{slug}`", mine) unless mine.empty?
     end
+    dreams.select(&:step?).group_by { |dream| [ dream.sop, dream.step ] }.sort.each do |(sop, step), mine|
+      command = MOMENTS[[ sop, step ]]
+      loader = command ? "the moment card of `#{command}`" : "no command prints this step yet; read it on /dreams"
+      sections << index_section("Step #{sop} · #{step}", loader, mine)
+    end
     "# Dream index\n\n" \
       "Generated by `bin/dream index --write`; do not edit. #{dreams.size} dreams.\n\n" +
       sections.join("\n")
@@ -350,7 +481,7 @@ module DreamBank
 
   def index_section(name, loader, dreams)
     rows = dreams.map do |dream|
-      labels = dream.tags.except("soul").map { |tag, values| "#{tag}: #{values.join(", ")}" }.join("; ")
+      labels = dream.tags.except("soul", "sop", "step").map { |tag, values| "#{tag}: #{values.join(", ")}" }.join("; ")
       "| [`#{dream.slug}`](#{dream.home}/#{dream.slug}.md) | #{dream.question.gsub("|", "\\|")} | #{labels} | #{dream.status} |"
     end
     "## #{name} (#{dreams.size})\n\nLoads at: #{loader}\n\n" \

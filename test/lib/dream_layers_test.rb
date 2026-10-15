@@ -19,11 +19,18 @@ class DreamLayersTest < Minitest::Test
     assert_equal "soul/carl", DreamLayers.key(dream("b", souls: %w[carl xan]))
   end
 
-  def test_unit_budgets_match_the_design_and_prefer_dream_banks_constant
+  def test_unit_budgets_are_dream_banks
     assert_equal 15, DreamLayers.budget("platform")
     assert_equal 20, DreamLayers.budget("soul/carl")
     assert_equal 5, DreamLayers.budget("step/building-sop/begin")
-    assert_same DreamBank::BUDGETS, DreamLayers.budgets if defined?(DreamBank::BUDGETS)
+    assert_same DreamBank::BUDGETS, DreamLayers.budgets
+  end
+
+  def test_unit_a_step_dream_counts_in_its_step_layer
+    step = DreamBank::Dream.new(slug: "s", home: "sops/building-sop", status: "approved", question: "Q?", answer: "A.",
+                                why: "", tags: { "sop" => [ "building-sop" ], "step" => [ "begin" ] }, source: "", story: "")
+    assert_equal [ "step/building-sop/begin" ], DreamLayers.keys(step)
+    assert_equal [ step ], DreamLayers.members([ step ], "step/building-sop/begin")
   end
 
   def test_unit_valid_keys

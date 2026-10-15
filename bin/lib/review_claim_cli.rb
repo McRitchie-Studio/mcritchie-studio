@@ -276,11 +276,20 @@ class ReviewClaimCli
       keep_login(slug, data["agent_session"])
       DreamBank.announce(reviewer, io: @err, task: slug, facts: dream_facts(slug, reviewer))
       @out.puts("review-claim: ✅ #{slug} review claimed — this task is yours to review.")
+      moment_card
       OK
     else
       report_skip(slug, data["holder"] || {}, data["disposition"].to_s)
       SKIPPED
     end
+  end
+
+  # The pr-review claim step's moment card (docs/agents/modules/dream.md, "Moment
+  # cards"), on stderr after the claim's own line, so stdout stays the claim's.
+  # Offline; DreamBank.moment never raises.
+  def moment_card
+    @err.flush if @err.respond_to?(:flush)
+    DreamBank.moment(sop: "pr-review", step: "claim", io: @err)
   end
 
   # `bin/task claim-next-review` — the ATOMIC server pop. Asks the board for the
@@ -310,6 +319,7 @@ class ReviewClaimCli
       keep_login(slug, data["agent_session"])
       DreamBank.announce(reviewer, io: @err, task: slug, facts: dream_facts(slug, reviewer))
       @out.puts(slug) # JUST the slug, so `slug=$(bin/task claim-next-review)` captures it
+      moment_card
       OK
     else
       reason = data["reason"].to_s

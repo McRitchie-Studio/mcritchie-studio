@@ -195,6 +195,8 @@ require_relative "lib/projects_root"
 require_relative "lib/program_drift"
 # Every command a refusal here hands the operator comes through the one remedy helper.
 require_relative "lib/remedy"
+# The qa-release prepare moment card (docs/agents/modules/dream.md, "Moment cards").
+require_relative "lib/dream_bank"
 RELEASE_SELF_CMD = Remedy.command("release", __dir__).freeze
 RELEASE_TASK_CMD = Remedy.command("task", __dir__).freeze
 # Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
@@ -10427,7 +10429,9 @@ if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge
-  when "prepare"  then exit_after_prepare(prepare)
+  # The step's moment card prints after prepare's own output on every way out
+  # (a return, an abort); DreamBank.after_moment never raises in prepare's place.
+  when "prepare"  then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { prepare })
   when "eject"    then eject
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)

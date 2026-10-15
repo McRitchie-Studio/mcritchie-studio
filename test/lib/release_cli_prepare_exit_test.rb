@@ -40,7 +40,9 @@ class ReleaseCliPrepareExitTest < ReleaseCliHarness
   def test_the_dispatcher_routes_prepare_through_the_exit_helper
     src = File.read(BIN)
 
-    assert_includes src, %(when "prepare"  then exit_after_prepare(prepare)),
+    # The moment card wraps prepare inside the helper (DreamBank.after_moment returns
+    # prepare's outcome; test/integration/release_prepare_moment_test.rb runs it).
+    assert_includes src, %(when "prepare"  then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { prepare })),
                     "the subcommand must exit with prepare's outcome, not return it"
   end
 end

@@ -143,6 +143,45 @@ class SubmitWaitScriptTest < Minitest::Test
     end
   end
 
+
+  # A throwaway dream bank holding one approved step dream per [sop, step].
+  def with_step_bank(*steps)
+    Dir.mktmpdir("step-bank") do |bank|
+      steps.each do |sop, step|
+        path = File.join(bank, "sops", sop, "at-#{step}.md")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "---\nquestion: \"At #{step}, what?\"\nanswer: \"An answer.\"\nwhy: \"A reason.\"\n" \
+                         "status: approved\nsop: #{sop}\nstep: #{step}\n---\n")
+      end
+      yield bank
+    end
+  end
+
+  def test_the_submit_moment_card_prints_last_on_success_and_on_failure
+    with_step_bank(%w[building-sop submit], %w[building-sop begin]) do |bank|
+      with_state do |dir|
+        seed_log(dir, "Task: https://mcritchie.studio/tasks/#{SLUG}", "PR: https://github.com/x/y/pull/1",
+                 SUCCESS, "#{ShipWait::SENTINEL_PREFIX}0")
+        out, err, code, = run_wait(dir, [SLUG, *BOUNDED], extra_env: { "DREAM_BANK_DIR" => bank })
+
+        assert_equal ShipWait::EXIT_SUCCEEDED, code, err
+        assert_match(%r{^PR: https://github.com/x/y/pull/1$}, out, "the relayed summary is untouched")
+        assert_operator err.index("SUCCEEDED"), :<, err.index("## Moment: building-sop · submit"), "the card comes last"
+        assert_includes err, "(`at-submit`)"
+        refute_includes err, "at-begin"
+      end
+
+      with_state do |dir|
+        seed_log(dir, "ship: bin/dor-check refused — fix everything it flagged", "#{ShipWait::SENTINEL_PREFIX}1")
+        _out, err, code, = run_wait(dir, [SLUG, *BOUNDED], extra_env: { "DREAM_BANK_DIR" => bank })
+
+        assert_equal ShipWait::EXIT_FAILED, code, err
+        assert_match(/last line: ship: bin\/dor-check refused/, err, "the failure still names ship's own last line")
+        assert_operator err.index("FAILED"), :<, err.index("## Moment: building-sop · submit")
+      end
+    end
+  end
+
   # --- 2. IT FIRES on a finished FAILED ship, and reads the LOG for the verdict
 
   def test_a_ship_that_exited_zero_without_the_seam_line_is_FAILED

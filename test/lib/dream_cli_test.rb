@@ -105,7 +105,8 @@ class DreamCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", err
     assert_equal "## Approved dreams, ranked for task settle-payout-once\n", out.lines.first
-    assert_equal 18, rows.size, "every approved dream, whoever it belongs to"
+    assert_equal 20, rows.size, "every approved dream, whoever it belongs to, step dreams included"
+    assert_includes out, "`read-ci-before-the-diff` · sops/pr-review · #{FIXTURES}/sops/pr-review/read-ci-before-the-diff.md"
     assert_equal "score 10 · `settle-once-per-entry` · pokemon · #{FIXTURES}/pokemon/settle-once-per-entry.md\n", rows.first
     assert_includes out, "score 0 · `docs-guard-names-its-rule` · pokemon · #{FIXTURES}/pokemon/docs-guard-names-its-rule.md"
     assert_includes out, "score 6 · `money-review-reads-the-ledger` · carl · "
@@ -119,7 +120,7 @@ class DreamCliTest < Minitest::Test
     assert_equal [ 0, "" ], [ code, err ]
     assert_equal "## Approved dreams\n", plain.lines.first
     refute_includes plain, "score "
-    assert_equal 18, plain.lines.grep(/`/).size
+    assert_equal 20, plain.lines.grep(/`/).size
 
     out, err, code = run_bin("list", "--task", "some-task", dir: FIXTURES)
     assert_equal 0, code
@@ -398,6 +399,32 @@ class DreamCliTest < Minitest::Test
     index = File.read(File.join(bank, "INDEX.md"))
     assert_match(/guard-nil-reader.*\| approved \|$/, index)
     assert_equal DreamBank.index(dir: bank), index
+  end
+
+  def test_integration_apply_approvals_reaches_a_step_dream_and_no_other_nested_path
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "sops/qa-release"))
+    step = PROPOSAL.sub("soul: carl\n", "sop: qa-release\nstep: prepare\n")
+    File.write(File.join(bank, "sops/qa-release/rerun-first.md"), step)
+    rows = [ pending("sops/qa-release", "rerun-first"), pending("sops/../carl", "escape"),
+             pending("carl/sops", "escape"), pending("sops/a/b", "escape") ]
+
+    out, err, code = approvals_cli("apply-approvals", rows: rows, cwd: root)
+
+    assert_equal 0, code, err
+    assert_includes step, "status: proposed", "control: the fixture starts proposed"
+    assert_includes File.read(File.join(bank, "sops/qa-release/rerun-first.md")), "\nstatus: approved\n"
+    assert_includes out, "dream: 1 of 4 pending approval(s) written"
+    assert_equal 3, err.scan("not a bank path").size, err
+  end
+
+  def test_unit_apply_approvals_warns_when_a_layer_goes_over_budget
+    root, bank = desk
+    (1..16).each { |n| File.write(File.join(bank, "platform/p#{n}.md"), dream("Platform #{n}?")) }
+    _out, err, code = approvals_cli("apply-approvals", rows: [], cwd: root)
+
+    assert_equal 0, code
+    assert_includes err, "dream: over budget: layer platform holds 17 approved dreams; its budget is 15."
   end
 
   def test_unit_apply_approvals_with_nothing_pending_writes_nothing
