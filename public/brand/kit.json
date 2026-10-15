@@ -5,8 +5,10 @@
     "rule": 4,
     "text": "second",
     "edits": {
-      "first_weight": "800",
-      "ending_colour": "8E82FE"
+      "icon_colour": "8E82FE",
+      "first_weight": "500",
+      "ending_colour": "8E82FE",
+      "ending_weight": "800"
     },
     "colouring": "alt"
   },
@@ -14,6 +16,7 @@
     "form": "two_line",
     "text": "first",
     "edits": {
+      "first_weight": "500",
       "ending_colour": "8E82FE",
       "ending_weight": "800"
     },
