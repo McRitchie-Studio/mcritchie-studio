@@ -13,7 +13,10 @@
   <div class="absolute inset-0">
     <img src="/denver-hero.avif" alt="" class="w-full h-full object-cover" style="animation: hero-pan 15s linear infinite alternate;">
   </div>
-  <div class="absolute inset-0" style="background: linear-gradient(135deg, rgba(26, 21, 53, 0.85) 0%, rgba(26, 21, 53, 0.7) 50%, rgba(26, 21, 53, 0.85) 100%);"></div>
+  <%# The scrim takes the page colour, so it shades the photo in dark mode
+      (--color-page is the dark base, #1A1535) and tints it pale in light mode,
+      where the headline is dark text. %>
+  <div class="absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) 85%, transparent) 0%, color-mix(in srgb, var(--color-page) 70%, transparent) 50%, color-mix(in srgb, var(--color-page) 85%, transparent) 100%);"></div>
   <div class="relative z-10 max-w-4xl mx-auto px-4 text-center section-padding-lg">
     <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; gap: 0.3em;">
       Solutions For
