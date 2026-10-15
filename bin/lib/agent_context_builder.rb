@@ -113,7 +113,7 @@ module AgentMailbox
         == THREAD: the conversation you are answering, #{place_label(thread['place'] || @context['place'])} ==
         #{thread_layer}
 
-        == THE MESSAGE TO ANSWER (#{place_label(@context['place'])}, from the sender) ==
+        == THE MESSAGE TO ANSWER (#{place_label(@context['place'])}) ==
         #{fenced("From: #{@message['author_name']}\n#{cap(@message['content'].to_s, BUDGETS[:message])}")}
       PROMPT
     end

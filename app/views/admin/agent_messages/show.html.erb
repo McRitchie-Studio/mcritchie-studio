@@ -56,6 +56,9 @@
         <% notes.each do |note| %>
           <li id="am-note-<%= note.id %>"><%= note.body %>
             <span class="text-xs opacity-60"><%= note.noted_at.strftime("%b %-d") %><% if note.source_message_id %> · from <%= link_to "##{note.source_message_id}", admin_agent_message_path(note.source_message_id), class: "underline" %><% end %></span>
+            <%= button_to "Forget", admin_agent_person_note_path(note, message_id: @message.id), method: :delete,
+                  form: { class: "inline", data: { turbo_confirm: "Forget this note?" } },
+                  class: "text-xs underline opacity-70 hover:opacity-100 ml-1", id: "am-forget-#{note.id}" %>
           </li>
         <% end %>
       </ul>

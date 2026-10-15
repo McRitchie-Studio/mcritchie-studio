@@ -76,4 +76,24 @@ class AgentPersonTest < ActiveSupport::TestCase
     assert_equal person, AgentPerson.seed_owner!
     assert_equal person, agent_message!(soul: "xan", author_ref: "536552944271753216").person
   end
+
+  test "a reassign moves the notes the identity's messages produced, deduped and pruned; unattributed notes stay" do
+    alex = AgentPerson.resolve!(platform: "discord", external_id: "500", display_name: "Alex")
+    alex_said = agent_message!(soul: "xan", channel: "discord", author_ref: "500")
+    AgentPersonNote.record_from!(alex_said, [ "Favorite color is purple." ])
+
+    held = agent_message!(soul: "xan", channel: "discord", author_ref: "777")
+    other = held.person
+    AgentPersonNote.record_from!(held, [ "Favorite color is PURPLE.", "Runs the hub." ])
+    unattributed = other.notes.create!(body: "Carried over.", fingerprint: "carried over", noted_at: Time.current)
+    elsewhere = agent_message!(soul: "avi", channel: "discord", author_ref: "888")
+    AgentPersonNote.record_from!(elsewhere, [ "Not about 777." ])
+
+    alex.link_identity!(platform: "discord", external_id: "777", reassign: true)
+
+    assert_equal [ "Favorite color is purple.", "Runs the hub." ], alex.notes.reload.map(&:body),
+                 "the identity's facts follow it; one Alex already had is not duplicated"
+    assert_equal [ unattributed ], other.notes.reload.to_a, "a note with no source message stays put"
+    assert_equal [ "Not about 777." ], elsewhere.person.notes.map(&:body), "another identity's notes are untouched"
+  end
 end

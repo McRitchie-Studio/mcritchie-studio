@@ -167,6 +167,7 @@ module AgentMessages
       assert_equal "Alex", user["display_name"]
       assert_equal [ "Favorite color is purple." ], user["facts"].map { |f| f["body"] }
       assert_equal first.id, user["facts"].first["source_message_id"]
+      assert_match(/\A\[discord .+\]\z/, user["facts"].first["place"], "each note names the place it was said")
       assert_equal "Favorite color is purple.", user["notes"], "the string shape an older worker reads"
     end
 

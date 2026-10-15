@@ -353,6 +353,8 @@ Rails.application.routes.draw do
     # The agent mailbox: messages routed to souls, their claims and replies
     # (docs/agents/system/agent-message-loop.md). Read-only.
     resources :agent_messages, only: [:index, :show]
+    # Forget one note about an agent person (the delete button on the message page).
+    resources :agent_person_notes, only: [:destroy]
     # Which Discord channel each registered report posts to
     # (docs/agents/system/report-destinations.md).
     get "report_destinations", to: "report_destinations#index", as: :report_destinations

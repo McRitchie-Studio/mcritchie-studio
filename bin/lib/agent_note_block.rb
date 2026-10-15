@@ -53,7 +53,7 @@ module AgentMailbox
       return [ text.strip, [] ] unless cut
 
       reply = dangling_fence_removed(text[0, cut].strip)
-      json = section[/\A```(?:json)?\s*(.*?)\s*```/m, 1] || section
+      json = section[/\A```(?:json)?\s*(.*?)\s*```/m, 1] || section.sub(/\s*```\s*\z/, "")
       [ reply, facts_from(json) ]
     end
 
