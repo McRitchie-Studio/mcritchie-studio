@@ -10,7 +10,7 @@ Shared code lives in the [studio engine](https://github.com/McRitchie-Studio/stu
 Studio.configure do |config|
   config.app_name = "McRitchie Studio"
   config.session_key = :studio_user_id
-  config.sso_logo = "/studio-logo.svg"
+  config.sso_logo = "/brand/icon-dark.svg"   # the saved kit's icon (public/brand, bin/rails logos:install)
   config.welcome_message = ->(user) { "Welcome to McRitchie Studio, #{user.display_name}!" }
   config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
