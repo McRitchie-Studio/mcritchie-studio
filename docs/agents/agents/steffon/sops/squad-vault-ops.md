@@ -174,7 +174,9 @@ before it reads anything.
    *An expired confirmation* below.
 
 3. **Hand back.** Paste the two lines the tool printed under `HAND-BACK` into
-   chat and onto the card:
+   chat and onto the card. This is the tool's print for mainnet Squad tx #7 on
+   2026-10-12, before `3LTL` replaced `4bKN`; today's prints carry the seated
+   pair:
 
    ```text
    https://app.squads.so/squads/Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm/transactions

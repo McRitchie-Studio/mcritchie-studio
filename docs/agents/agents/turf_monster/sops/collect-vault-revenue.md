@@ -52,7 +52,7 @@ withdraws.
 
 **Hop 2 runs through [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md).**
 The agent queues the transfer and casts both agent approvals. Alex approves from
-one of his seats on the Squads page, and executes it or tells the agent to.
+one of his seats on the Squads page (ask for `7ZDJ`, then `3Qj4`, then `9gAC`), and executes it or tells the agent to.
 turf-monster has no job, rake task or admin button for it, and should not grow
 one.
 
@@ -272,7 +272,8 @@ https://turfmonster.media/admin/pending_transactions
 already holds its slot, and the action needs three signatures, so the row must
 reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
 the `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
-3Qj4", or `9gAC` when `3Qj4` is unavailable.
+3Qj4", or `9gAC` when `3Qj4` is unavailable. The `4S39` pinch of First Rule 10
+does not apply here: `4S39` is the server key, already signing this row.
 The extra signer slots are part of the transaction message, so they cannot be
 added afterwards without invalidating a signature already on it; a row built for
 two and then handed a third wallet is short before Phantom even opens. The remedy

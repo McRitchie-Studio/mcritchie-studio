@@ -146,7 +146,8 @@ so two programs' cards cannot collide.
 
   For either, the agent seats `7auwTL` and `3LTL` (`solana.turf.governance.v2`,
   which replaced the exposed `4bKN` on 2026-10-14) create and approve the proposal.
-  Mr. McRitchie approves from his own seat. An agent executes only after his
+  Mr. McRitchie approves from his own seat: ask for `7ZDJ`, then `3Qj4`, then
+  `9gAC`. An agent executes only after his
   approval is on chain. Mr. McRitchie set this on 2026-10-12 ("Cool let me know
   when the upgrade URL is ready"), and mainnet Squad #8 was the first upgrade
   done this way: he executed it at about 13:28 MDT, landing v0.26 at slot
