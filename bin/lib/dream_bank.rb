@@ -158,7 +158,9 @@ module DreamBank
            "Rule or an SOP. Full story: `docs/agents/dreams/platform/<slug>.md`. When a dream changes what " \
            "you do, run `bin/dream fired <slug> --decision \"...\"`.\n\n"
 
-  STATUS_LINE = /^status:[ \t]*["']?proposed["']?[ \t]*$/
+  # The value matches in any case, as `parse` reads it: a file that /dreams shows as
+  # proposed (`status: Proposed`) is one apply-approvals can flip.
+  STATUS_LINE = /^status:[ \t]*["']?(?i:proposed)["']?[ \t]*$/
 
   # The file's text with its front matter's `status: proposed` set to approved, or
   # nil when the front matter does not read proposed. Nothing else in the file moves.

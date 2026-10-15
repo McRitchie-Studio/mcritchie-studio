@@ -154,6 +154,19 @@ class DreamBankTest < Minitest::Test
     assert DreamBank.parse(flipped, slug: "x").approved?
   end
 
+  # /dreams reads the status through `parse`, which downcases it, so a `Proposed`
+  # file shows an Approve button; apply-approvals must flip that same file.
+  def test_unit_approve_text_flips_a_proposed_status_in_any_case
+    %w[Proposed PROPOSED "Proposed"].each do |value|
+      text = PROPOSED_FILE.sub('status: "proposed"', "status: #{value}")
+      assert_equal "proposed", DreamBank.parse(text, slug: "x").status, "#{value}: the page reads it as proposed"
+
+      flipped = DreamBank.approve_text(text)
+      refute_nil flipped, "#{value}: apply-approvals skipped a dream the page let Alex approve"
+      assert DreamBank.parse(flipped, slug: "x").approved?, value
+    end
+  end
+
   def test_unit_approve_text_refuses_a_file_that_is_not_proposed
     assert_nil DreamBank.approve_text(DREAM.sub("status: Approved", "status: approved"))
     assert_nil DreamBank.approve_text("status: proposed\nno front matter")
