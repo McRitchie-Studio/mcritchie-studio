@@ -33,6 +33,18 @@ class DreamRetirementTest < ActiveSupport::TestCase
     assert_equal "carl/old-dream", first.key
   end
 
+  test "[unit] record! returns the winning row when a double-click loses at the validation" do
+    racer = Object.new
+    racer.define_singleton_method(:find_or_create_by!) do |attrs|
+      DreamRetirement.create!(attrs.merge(retired_by_slug: "alex-mcritchie-test", retired_at: Time.utc(2026, 10, 15)))
+      DreamRetirement.new(attrs.merge(retired_at: Time.current)).save!
+    end
+    row = DreamRetirement.stub(:create_with, racer) { DreamRetirement.record!(dream, users(:alex)) }
+
+    assert_equal Time.utc(2026, 10, 15), row.retired_at
+    assert_equal 1, DreamRetirement.count
+  end
+
   test "[unit] reconcile stamps a row applied once its file is gone, and never on an unread bank" do
     row = DreamRetirement.record!(dream, users(:alex))
     other = dream(slug: "kept")

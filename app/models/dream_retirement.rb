@@ -34,12 +34,17 @@ class DreamRetirement < ApplicationRecord
   end
 
   # Records `user`'s retirement of `dream`. Idempotent: a second click returns the
-  # first row.
+  # first row, and a double-click that loses at the unique index or the uniqueness
+  # validation returns the winner's row, as DreamApproval.record! does.
   def self.record!(dream, user, swap: nil)
     check!(dream, user)
     create_with(retired_by_slug: user.slug, retired_at: Time.current, dream_swap: swap)
       .find_or_create_by!(dream_home: dream.home, dream_slug: dream.slug)
   rescue ActiveRecord::RecordNotUnique
+    find_by!(dream_home: dream.home, dream_slug: dream.slug)
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record.errors.of_kind?(:dream_slug, :taken)
+
     find_by!(dream_home: dream.home, dream_slug: dream.slug)
   end
 
