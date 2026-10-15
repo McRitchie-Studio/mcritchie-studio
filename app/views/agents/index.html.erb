@@ -2,10 +2,10 @@
   <div class="flex items-center justify-between gap-3 mb-6">
     <h2 class="text-2xl font-bold text-heading">Agents</h2>
     <div class="flex flex-wrap items-center gap-2">
-      <%= link_to dreams_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-secondary hover:border-primary/40 hover:text-heading transition", data: { test: "agents-dreams-link" } do %>
+      <%= link_to dreams_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-strong bg-surface-alt px-3 py-2 text-sm font-semibold text-body hover:border-primary/40 hover:text-heading transition", data: { test: "agents-dreams-link" } do %>
         Dreams <span aria-hidden="true">&rarr;</span>
       <% end %>
-      <%= link_to activities_agents_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-secondary hover:border-primary/40 hover:text-heading transition", data: { test: "agents-activities-link" } do %>
+      <%= link_to activities_agents_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-strong bg-surface-alt px-3 py-2 text-sm font-semibold text-body hover:border-primary/40 hover:text-heading transition", data: { test: "agents-activities-link" } do %>
         Activities feed <span aria-hidden="true">&rarr;</span>
       <% end %>
     </div>
@@ -30,7 +30,7 @@
             <% docs.each do |doc| %>
               <%= link_to doc[:label],
                           doc_path(doc[:path]),
-                          class: "inline-flex min-h-7 items-center rounded border border-white/10 bg-white/5 px-2.5 text-2xs font-semibold text-secondary hover:border-primary/40 hover:text-heading transition",
+                          class: "inline-flex min-h-7 items-center rounded border border-primary/30 bg-surface-alt px-2.5 text-2xs font-semibold text-body hover:border-primary/60 hover:text-heading transition",
                           data: { test: "agent-file-link", file: doc[:path] } %>
             <% end %>
           </div>

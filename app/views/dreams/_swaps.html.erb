@@ -1,0 +1,46 @@
+<%# Sessions' open swap proposals (DreamSwap): an add, or one in and one out. Alex's
+    one click approves the in and retires the out (DreamsController#approve_swap). %>
+<% by_key = @chart.dreams.index_by { |dream| DreamApproval.key_for(dream) } %>
+<div class="card mb-4 p-4" id="dream-swaps" data-test="dream-swaps">
+  <h3 class="mb-2 text-lg font-bold text-heading">Proposed swaps</h3>
+  <ul class="space-y-3">
+    <% swaps.each do |swap| %>
+      <% incoming = by_key[swap.in_key] %>
+      <% outgoing = swap.out_key && by_key[swap.out_key] %>
+      <li class="rounded-lg border border-subtle bg-surface-alt/60 p-3 text-sm" data-test="dream-swap" data-swap="<%= swap.id %>" data-kind="<%= swap.kind %>">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <span class="font-semibold text-heading"><%= swap.kind == "swap" ? "Swap" : "Add" %> · <%= DreamLayers.label(swap.layer) %></span>
+          <span class="text-2xs text-muted"><%= swap.created_at.to_date.iso8601 %><%= " · #{swap.task_slug}" if swap.task_slug.present? %></span>
+        </div>
+        <p class="mt-1 text-body" data-test="dream-swap-in">
+          <span class="font-bold text-success-ink">In</span>
+          <% if incoming %>
+            <a href="#dream-<%= incoming.slug %>" class="text-primary hover:underline"><%= incoming.question %></a>
+          <% else %>
+            <code><%= swap.in_key %></code> <span class="text-2xs text-muted">(not shipped yet)</span>
+          <% end %>
+        </p>
+        <% if swap.out_key %>
+          <p class="mt-1 text-body" data-test="dream-swap-out">
+            <span class="font-bold text-danger-ink">Out</span>
+            <% if outgoing %>
+              <a href="#dream-<%= outgoing.slug %>" class="text-primary hover:underline"><%= outgoing.question %></a>
+            <% else %>
+              <code><%= swap.out_key %></code>
+            <% end %>
+          </p>
+        <% end %>
+        <p class="mt-1 text-2xs text-secondary">Why: <%= swap.reason %></p>
+        <% if @approver %>
+          <% if incoming %>
+            <%= button_to "Approve swap", dream_swap_approval_path(swap, status: (@filter == "all" ? nil : @filter)),
+                  class: "btn btn-primary btn-sm mt-2", aria: { label: "Approve swap: #{swap.kind == "swap" ? "in #{swap.in_key}, out #{swap.out_key}" : "add #{swap.in_key}"}" },
+                  data: { test: "dream-swap-approve" } %>
+          <% else %>
+            <p class="mt-2 text-2xs text-muted">Approve once the new dream's file ships.</p>
+          <% end %>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+</div>

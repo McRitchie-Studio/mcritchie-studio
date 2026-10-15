@@ -987,12 +987,14 @@ its `kit.json`), then install and commit the files.
 their `kit.json`, so a logo-library change that moves a byte says "run
 logos:install" rather than shipping stale files.
 
-The hub itself runs on the `studio` kit (task studio-adopts-its-kit): the
-navbar, footer and sign-in card draw `icon-light.svg` (application.css swaps in
-`icon-dark.svg` on a dark page), the SSO logo is `icon-dark.svg` (the one tone
-that reads on both themes in the 20px slot another app's sign-in card gives
-it), `Studio.navbar_wordmark` is the Navbar Logo pair once the engine has the
-setting, and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
+The hub itself runs on the `studio` kit (task studio-adopts-its-kit; last
+reinstalled from production's kit saved 2026-10-15 06:42Z, task
+studio-kit-reinstall): the navbar draws the kit's Navbar Logo lockup
+(`Studio.navbar_wordmark`, `navbar-light.svg` / `navbar-dark.svg`), the footer
+and sign-in card draw `icon-light.svg` (application.css swaps in
+`icon-dark.svg` on a dark page) beside the name in HTML text, the SSO logo is
+`icon-dark.svg` (the one tone that reads on both themes in the 20px slot
+another app's sign-in card gives it), and `favicon.png` / `icon.png` are rasterized from `icon-dark.svg`
 with `node script/brand_png.cjs <svg> <out.png> <size> [background] [safe-zone]`
 (Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
 It adds no margin: the icon's box is its ink, so the ink touches two opposite

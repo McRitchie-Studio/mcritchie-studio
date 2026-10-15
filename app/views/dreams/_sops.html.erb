@@ -1,14 +1,32 @@
 <%# A column's SOPs from the registry, each with the number of dreams tagged to it.
-    A zero is shown on purpose: it marks where the bank is thin. %>
+    A zero is shown on purpose: it marks where the bank is thin. The badge is
+    highlighted only while the filtered count is above zero. Under an SOP, its
+    step dreams group by step: the moment card that step's command prints. %>
 <% if sops.any? %>
   <div class="mt-4 border-t border-subtle pt-3" data-test="sop-list">
     <p class="mb-2 text-2xs font-bold uppercase tracking-wide text-muted"><%= label %></p>
     <ul class="space-y-1">
       <% sops.each do |sop| %>
-        <li class="flex items-center justify-between gap-2" data-test="sop-row" data-sop="<%= sop.invocation %>">
-          <%= link_to sop.invocation, doc_path(sop.doc_path), class: "min-w-0 truncate font-mono text-xs text-secondary hover:text-primary", title: sop.summary %>
-          <span class="badge shrink-0 text-3xs <%= sop.dream_count.zero? ? "bg-surface-alt text-muted border-subtle" : "bg-primary/10 text-primary border-primary/40" %>"
-                data-test="sop-dream-count" title="Dreams tagged to this SOP"><%= pluralize(sop.dream_count, "dream") %></span>
+        <li data-test="sop-row" data-sop="<%= sop.invocation %>">
+          <div class="flex items-center justify-between gap-2">
+            <%= link_to sop.invocation, doc_path(sop.doc_path), class: "min-w-0 truncate font-mono text-xs text-secondary hover:text-primary", title: sop.summary %>
+            <%= dream_count_tag(sop.dream_statuses, @filter, class: "badge shrink-0 text-3xs",
+                  active_class: "bg-primary/10 text-primary border-primary/40",
+                  idle_class: "bg-surface-alt text-muted border-subtle",
+                  data: { test: "sop-dream-count" }, title: "Dreams tagged to this SOP") %>
+          </div>
+          <% Array(sop.steps).each do |group| %>
+            <div class="mb-2 ml-2 mt-1.5 border-l border-subtle pl-2" data-test="sop-step" data-step="<%= group.step %>"
+                 data-statuses="<%= statuses = group.dreams.map(&:status).uniq; statuses.join(" ") %>"
+                 <%= "hidden" unless @filter.nil? || @filter == "all" || statuses.include?(@filter) %>>
+              <p class="mb-1 font-mono text-2xs text-muted">step: <%= group.step %></p>
+              <div class="space-y-2">
+                <% group.dreams.each do |dream| %>
+                  <%= render "dreams/dream", dream: dream %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
         </li>
       <% end %>
     </ul>

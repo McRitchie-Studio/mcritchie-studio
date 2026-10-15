@@ -1,10 +1,11 @@
 // [unit] dreams_filter: the /dreams status filter shows a card when its status
-// matches and a stage group when any of its cards does. Run against stand-in
-// elements: the rule reads attributes and writes `hidden` and two classes.
+// matches and a stage group when any of its cards does, recounts each "N dreams"
+// label, and marks the active control aria-current. Run against stand-in
+// elements: the rule reads attributes and writes `hidden`, text and two classes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { matches, applyFilter } from "../../app/javascript/dreams_filter.js";
+import { matches, countFor, dreamCountLabel, applyFilter } from "../../app/javascript/dreams_filter.js";
 
 function element(attributes) {
   const classes = new Set();
@@ -12,6 +13,8 @@ function element(attributes) {
     attributes: { ...attributes }, hidden: false,
     getAttribute(name) { return this.attributes[name] ?? null; },
     setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; },
+    textContent: "",
     classList: { toggle(name, on) { on ? classes.add(name) : classes.delete(name); }, has: (name) => classes.has(name) },
   };
 }
@@ -20,11 +23,17 @@ function page() {
   const cards = [ element({ "data-status": "approved" }), element({ "data-status": "proposed" }) ];
   const groups = [ element({ "data-statuses": "approved" }), element({ "data-statuses": "approved proposed" }) ];
   const buttons = [ "all", "approved", "proposed" ].map((f) => element({ "data-dreams-filter-button": f }));
+  const counts = [ element({ "data-dream-count": "approved proposed approved" }), element({ "data-dream-count": "" }) ];
+  const badge = element({ "data-dream-count": "approved approved", "data-dream-count-active": "bg-primary/10 text-primary",
+                          "data-dream-count-idle": "bg-surface-alt" });
+  const statusInputs = [ element({ name: "status" }), element({ name: "status" }) ];
+  statusInputs.forEach((input) => { input.value = "all"; });
   const root = element({ "data-dreams-filter": "all" });
   root.querySelectorAll = (selector) => ({
     "[data-status]": cards, "[data-statuses]": groups, "[data-dreams-filter-button]": buttons,
+    "[data-dream-count]": [ ...counts, badge ], "[data-dreams-approve-form] input[name='status']": statusInputs,
   })[selector];
-  return { root, cards, groups, buttons };
+  return { root, cards, groups, buttons, counts, badge, statusInputs };
 }
 
 test("all matches every status; a named filter matches only its own", () => {
@@ -41,7 +50,7 @@ test("the proposed filter hides approved cards and groups with no proposed dream
   assert.deepEqual(cards.map((c) => c.hidden), [ true, false ]);
   assert.deepEqual(groups.map((g) => g.hidden), [ true, false ]);
   assert.equal(root.getAttribute("data-dreams-filter"), "proposed");
-  assert.deepEqual(buttons.map((b) => b.getAttribute("aria-pressed")), [ "false", "false", "true" ]);
+  assert.deepEqual(buttons.map((b) => b.getAttribute("aria-current")), [ null, null, "page" ]);
   assert.equal(buttons[2].classList.has("bg-primary"), true);
   assert.equal(buttons[0].classList.has("bg-primary"), false);
 });
@@ -52,4 +61,48 @@ test("going back to all shows everything again", () => {
   applyFilter(root, "all");
 
   assert.equal([ ...cards, ...groups ].some((e) => e.hidden), false);
+});
+
+test("countFor counts every token under all and only its own status otherwise", () => {
+  assert.equal(countFor("approved proposed approved", "all"), 3);
+  assert.equal(countFor("approved proposed approved", "approved"), 2);
+  assert.equal(countFor("approved proposed approved", "proposed"), 1);
+  assert.equal(countFor("", "all"), 0);
+  assert.equal(countFor(null, "proposed"), 0);
+  assert.equal(dreamCountLabel(1), "1 dream");
+  assert.equal(dreamCountLabel(0), "0 dreams");
+});
+
+test("the dream counts follow the filter and aria-current moves with it", () => {
+  const { root, counts, buttons } = page();
+  applyFilter(root, "approved");
+  assert.deepEqual(counts.map((c) => c.textContent), [ "2 dreams", "0 dreams" ]);
+  assert.deepEqual(buttons.map((b) => b.getAttribute("aria-current")), [ null, "page", null ]);
+
+  applyFilter(root, "proposed");
+  assert.deepEqual(counts.map((c) => c.textContent), [ "1 dream", "0 dreams" ]);
+
+  applyFilter(root, "all");
+  assert.deepEqual(counts.map((c) => c.textContent), [ "3 dreams", "0 dreams" ]);
+  assert.deepEqual(buttons.map((b) => b.getAttribute("aria-current")), [ "page", null, null ]);
+});
+
+test("a count badge is highlighted only while its filtered count is above zero", () => {
+  const { root, badge } = page();
+  applyFilter(root, "approved");
+  assert.equal(badge.textContent, "2 dreams");
+  assert.deepEqual([ "bg-primary/10", "text-primary", "bg-surface-alt" ].map((c) => badge.classList.has(c)), [ true, true, false ]);
+
+  applyFilter(root, "proposed");
+  assert.equal(badge.textContent, "0 dreams");
+  assert.deepEqual([ "bg-primary/10", "text-primary", "bg-surface-alt" ].map((c) => badge.classList.has(c)), [ false, false, true ]);
+});
+
+test("each Approve form's status follows the filter, so the redirect keeps it", () => {
+  const { root, statusInputs } = page();
+  applyFilter(root, "proposed");
+  assert.deepEqual(statusInputs.map((i) => i.value), [ "proposed", "proposed" ]);
+
+  applyFilter(root, "all");
+  assert.deepEqual(statusInputs.map((i) => i.value), [ "all", "all" ]);
 });

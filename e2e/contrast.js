@@ -55,7 +55,11 @@ const TEXT_ON_SURFACE = 4.4;
 // refuses one in the hub's markup.
 const CHIP_ON_TINT = 4.5;
 
+// Colours are read the instant the theme flips, so a `transition` on the measured
+// element (the /agents doc-file chips carry one) would be caught mid-fade. Turn
+// transitions off first, so the check reads the settled theme.
 async function eachTheme(page, check) {
+  await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
   for (const theme of ["light", "dark"]) {
     await page.evaluate((t) => document.documentElement.classList.toggle("dark", t === "dark"), theme);
     await check(theme);

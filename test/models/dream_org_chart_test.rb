@@ -28,7 +28,8 @@ class DreamOrgChartTest < ActiveSupport::TestCase
 
   test "every dream file lands under platform or each soul it is tagged for" do
     files = Dir.glob(File.join(BANK, "**", "*.md")).map { |path| File.basename(path, ".md") }.sort
-    placed = (@chart.platform.dreams + @chart.columns.flat_map(&:dreams)).map(&:slug).uniq.sort
+    under_sops = (@chart.platform.sops + @chart.columns.flat_map(&:sops)).flat_map { |sop| sop.steps.flat_map(&:dreams) }
+    placed = (@chart.platform.dreams + @chart.columns.flat_map(&:dreams) + under_sops).map(&:slug).uniq.sort
 
     assert_equal files, placed, "a dream file went missing from the chart"
     assert_equal %w[list-the-candidates report-what-you-verified], @chart.platform.dreams.map(&:slug).sort
@@ -56,12 +57,26 @@ class DreamOrgChartTest < ActiveSupport::TestCase
     assert_equal @chart.dreams.size, @chart.counts["all"]
   end
 
-  test "SOPs map from the registry to their soul, shared modules to platform, each with a zero count" do
+  test "SOPs map from the registry to their soul, shared modules to platform, each with a count" do
     assert_equal [ "Carl Heartbeat", "pr-review" ], column("carl").sops.map(&:invocation)
     assert_equal [ "market-refresh" ], column("turf-monster").sops.map(&:invocation), "turf_monster joins turf-monster"
     assert_equal [ "building-sop" ], @chart.platform.sops.map(&:invocation), "only marked modules are shared SOPs"
     assert_equal "agents/carl/sops/pr-review", column("carl").sops.last.doc_path
-    assert(@chart.columns.flat_map(&:sops).all? { |sop| sop.dream_count.zero? }, "no dream carries a sop tag yet")
+    assert_equal 0, column("turf-monster").sops.first.dream_count, "a zero count is kept"
+  end
+
+  test "step dreams group under their SOP and step, in the column the registry gives the SOP" do
+    review = column("carl").sops.find { |sop| sop.invocation == "pr-review" }
+    building = @chart.platform.sops.find { |sop| sop.invocation == "building-sop" }
+
+    assert_equal 1, review.dream_count
+    assert_equal [ "claim" ], review.steps.map(&:step)
+    assert_equal [ "read-ci-before-the-diff" ], review.steps.first.dreams.map(&:slug)
+    assert_equal [ "begin" ], building.steps.map(&:step)
+    assert_equal [ "name-the-author-at-begin" ], building.steps.first.dreams.map(&:slug)
+    refute_includes @chart.platform.dreams.map(&:slug), "name-the-author-at-begin", "a step dream is not a platform dream"
+    refute_includes column("carl").dreams.map(&:slug), "read-ci-before-the-diff", "nor one of the soul's own"
+    assert_empty column("carl").sops.first.steps, "an SOP with no step dream has no step groups"
   end
 
   test "a dream tagged with an SOP counts under it" do
@@ -69,7 +84,9 @@ class DreamOrgChartTest < ActiveSupport::TestCase
                                  tags: { "soul" => [ "carl" ], "sop" => [ "pr-review" ] }, home: "carl")
     chart = DreamOrgChart.new(dreams: [ dream ], entries: SopRegistry.entries(@root), souls: SOULS)
 
-    assert_equal 1, chart.columns.find { |c| c.slug == "carl" }.sops.find { |s| s.invocation == "pr-review" }.dream_count
+    sop = chart.columns.find { |c| c.slug == "carl" }.sops.find { |s| s.invocation == "pr-review" }
+    assert_equal 1, sop.dream_count
+    assert_equal [ "approved" ], sop.dream_statuses, "the page recounts these under its status filter"
   end
 
   test "the doc path of a dream is its file under docs/agents" do
@@ -80,10 +97,13 @@ class DreamOrgChartTest < ActiveSupport::TestCase
 
   test "the live bank and registry build without dropping a dream" do
     chart = DreamOrgChart.build
-    files = Dir.glob(File.join(DreamBank::DEFAULT_DIR, "*", "*.md")).size
+    files = Dir.glob(File.join(DreamBank::DEFAULT_DIR, "**", "*.md"))
+              .reject { |path| DreamBank::SKIPPED.include?(File.basename(path)) }.size
 
     assert_equal files, chart.dreams.size, "a tracked dream failed to parse"
     assert chart.columns.flat_map(&:sops).any?, "the registry produced no soul SOPs"
+    qa = chart.columns.flat_map(&:sops).find { |sop| sop.invocation == "qa-release" }
+    assert_includes qa.steps.map(&:step), "prepare", "a live step dream shows under its live SOP"
   end
 
   private

@@ -5,12 +5,16 @@
 //     <a data-dreams-filter-button="proposed" href="/dreams?status=proposed">…</a>
 //     <div data-statuses="approved proposed"> … stage group … </div>
 //     <details data-status="proposed"> … dream card … </details>
+//     <span data-dream-count="approved proposed approved">3 dreams</span>
 //   </section>
 //
 // The page is served whole and the links work with JavaScript off (the server
 // reads ?status= to choose the starting filter). Here a click filters in place:
 // a card shows when its status matches, a stage group when any of its cards does,
-// and the address bar keeps the choice.
+// each "N dreams" count recounts its status tokens under the filter (and swaps
+// its data-dream-count-active / -idle classes on whether that count is above
+// zero), each Approve form's hidden status follows the filter, the active
+// control carries aria-current="page", and the address bar keeps the choice.
 
 const ACTIVE = ["bg-primary", "text-white"];
 const IDLE = ["text-secondary", "hover:text-heading"];
@@ -21,6 +25,21 @@ export function matches(statuses, filter) {
   return String(statuses || "").split(" ").includes(filter);
 }
 
+// How many of these space-separated status tokens (one per dream) count under
+// `filter`. Unlike `matches`, duplicates count: "approved approved" is two dreams.
+export function countFor(statuses, filter) {
+  const tokens = String(statuses || "").split(" ").filter(Boolean);
+  return filter === "all" ? tokens.length : tokens.filter((status) => status === filter).length;
+}
+
+export function dreamCountLabel(count) {
+  return `${count} ${count === 1 ? "dream" : "dreams"}`;
+}
+
+function classesOf(element, attribute) {
+  return String(element.getAttribute(attribute) || "").split(" ").filter(Boolean);
+}
+
 export function applyFilter(root, filter) {
   root.setAttribute("data-dreams-filter", filter);
   root.querySelectorAll("[data-status]").forEach((card) => {
@@ -29,9 +48,20 @@ export function applyFilter(root, filter) {
   root.querySelectorAll("[data-statuses]").forEach((group) => {
     group.hidden = !matches(group.getAttribute("data-statuses"), filter);
   });
+  root.querySelectorAll("[data-dream-count]").forEach((label) => {
+    const count = countFor(label.getAttribute("data-dream-count"), filter);
+    label.textContent = dreamCountLabel(count);
+    classesOf(label, "data-dream-count-active").forEach((name) => label.classList.toggle(name, count > 0));
+    classesOf(label, "data-dream-count-idle").forEach((name) => label.classList.toggle(name, count === 0));
+  });
+  // Each Approve form posts the filter so the redirect lands back on it.
+  root.querySelectorAll("[data-dreams-approve-form] input[name='status']").forEach((input) => {
+    input.value = filter;
+  });
   root.querySelectorAll("[data-dreams-filter-button]").forEach((button) => {
     const on = button.getAttribute("data-dreams-filter-button") === filter;
-    button.setAttribute("aria-pressed", on ? "true" : "false");
+    if (on) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
     ACTIVE.forEach((name) => button.classList.toggle(name, on));
     IDLE.forEach((name) => button.classList.toggle(name, !on));
   });

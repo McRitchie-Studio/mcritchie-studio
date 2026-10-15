@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -108,6 +108,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.bigint "tokens_out", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_activity_id"], name: "index_agent_actions_on_agent_activity_id"
+    t.index ["event_slug", "occurred_at"], name: "index_agent_actions_on_dream_fired", where: "((kind)::text = 'dream_fired'::text)"
     t.index ["feedback_anchor"], name: "index_agent_actions_on_feedback_anchor"
     t.index ["idempotency_key"], name: "index_agent_actions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["occurred_at"], name: "index_agent_actions_on_occurred_at"
@@ -246,6 +247,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.string "guild_id"
     t.datetime "lease_expires_at"
     t.jsonb "mentions", default: {}, null: false
+    t.bigint "person_id"
     t.text "reasoning"
     t.string "reply_external_id"
     t.string "reply_nonce"
@@ -261,12 +263,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.datetime "updated_at", null: false
     t.integer "usage_refunds", default: 0, null: false
     t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
-    t.index ["soul_slug", "channel", "channel_ref", "author_ref", "created_at"], name: "index_agent_messages_on_ledger"
+    t.index ["soul_slug", "person_id", "created_at"], name: "index_agent_messages_on_person_ledger"
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"
     t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
     t.check_constraint "reply_status::text = ANY (ARRAY['queued'::character varying::text, 'posted'::character varying::text, 'skipped'::character varying::text, 'failed'::character varying::text])", name: "agent_messages_reply_status_known"
     t.check_constraint "status::text = ANY (ARRAY['received'::character varying::text, 'claimed'::character varying::text, 'completed'::character varying::text, 'dead'::character varying::text, 'unrouted'::character varying::text])", name: "agent_messages_status_known"
+  end
+
+  create_table "agent_people", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["user_id"], name: "index_agent_people_on_user_id", unique: true
+  end
+
+  create_table "agent_person_identities", force: :cascade do |t|
+    t.bigint "agent_person_id", null: false
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "external_id", null: false
+    t.string "platform", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_person_id"], name: "index_agent_person_identities_on_agent_person_id"
+    t.index ["platform", "external_id"], name: "index_agent_person_identities_on_platform_and_external_id", unique: true
+  end
+
+  create_table "agent_person_notes", force: :cascade do |t|
+    t.bigint "agent_person_id", null: false
+    t.string "body", null: false
+    t.datetime "created_at", null: false
+    t.string "fingerprint", null: false
+    t.datetime "noted_at", null: false
+    t.string "soul_slug"
+    t.bigint "source_message_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_person_id", "fingerprint"], name: "index_agent_person_notes_on_agent_person_id_and_fingerprint", unique: true
+    t.index ["agent_person_id", "noted_at"], name: "index_agent_person_notes_on_agent_person_id_and_noted_at"
   end
 
   create_table "agent_sessions", force: :cascade do |t|
@@ -286,16 +320,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.index ["slug"], name: "index_agent_sessions_on_slug", unique: true
     t.index ["soul", "tier"], name: "index_agent_sessions_on_soul_and_tier"
     t.index ["task_slug", "revoked_at"], name: "index_agent_sessions_on_task_slug_and_revoked_at"
-  end
-
-  create_table "agent_user_notes", force: :cascade do |t|
-    t.string "author_ref", null: false
-    t.string "channel", null: false
-    t.datetime "created_at", null: false
-    t.string "display_name"
-    t.text "notes", default: "", null: false
-    t.datetime "updated_at", null: false
-    t.index ["channel", "author_ref"], name: "index_agent_user_notes_on_channel_and_author_ref", unique: true
   end
 
   create_table "agents", force: :cascade do |t|
@@ -1148,6 +1172,67 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
     t.datetime "updated_at", null: false
     t.index ["archived_at"], name: "index_discord_channels_on_archived_at"
     t.index ["guild_external_id", "external_id"], name: "index_discord_channels_on_guild_external_id_and_external_id", unique: true
+  end
+
+  create_table "dream_approvals", force: :cascade do |t|
+    t.datetime "applied_at"
+    t.datetime "approved_at", null: false
+    t.string "approved_by_slug"
+    t.datetime "created_at", null: false
+    t.string "dream_home", null: false
+    t.string "dream_slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["applied_at"], name: "index_dream_approvals_on_applied_at"
+    t.index ["dream_home", "dream_slug"], name: "index_dream_approvals_on_dream_home_and_dream_slug", unique: true
+  end
+
+  create_table "dream_grades", force: :cascade do |t|
+    t.bigint "agent_action_id"
+    t.datetime "created_at", null: false
+    t.string "decision", null: false
+    t.string "dream_slug", null: false
+    t.string "mascot"
+    t.integer "score", null: false
+    t.string "session_id", null: false
+    t.string "task_slug"
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_dream_grades_on_created_at"
+    t.index ["dream_slug", "created_at"], name: "index_dream_grades_on_dream_slug_and_created_at"
+    t.index ["session_id", "dream_slug"], name: "index_dream_grades_on_session_id_and_dream_slug", unique: true
+    t.check_constraint "score >= 0 AND score <= 2", name: "dream_grades_score_range"
+  end
+
+  create_table "dream_retirements", force: :cascade do |t|
+    t.datetime "applied_at"
+    t.datetime "created_at", null: false
+    t.string "dream_home", null: false
+    t.string "dream_slug", null: false
+    t.bigint "dream_swap_id"
+    t.datetime "retired_at", null: false
+    t.string "retired_by_slug"
+    t.datetime "updated_at", null: false
+    t.index ["applied_at"], name: "index_dream_retirements_on_applied_at"
+    t.index ["dream_home", "dream_slug"], name: "index_dream_retirements_on_dream_home_and_dream_slug", unique: true
+    t.index ["dream_swap_id"], name: "index_dream_retirements_on_dream_swap_id"
+  end
+
+  create_table "dream_swaps", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.string "approved_by_slug"
+    t.datetime "created_at", null: false
+    t.string "in_home"
+    t.string "in_slug"
+    t.string "layer"
+    t.string "mascot"
+    t.string "out_home"
+    t.string "out_slug"
+    t.string "reason", null: false
+    t.string "session_id", null: false
+    t.string "task_slug"
+    t.datetime "updated_at", null: false
+    t.index ["approved_at"], name: "index_dream_swaps_on_approved_at"
+    t.index ["created_at"], name: "index_dream_swaps_on_created_at"
+    t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
   end
 
   create_table "email_brand_references", force: :cascade do |t|
@@ -2697,6 +2782,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
   add_foreign_key "agent_activities", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "agent_login_requests", "agent_sessions", column: "agent_session_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "agent_message_events", "agent_messages", on_delete: :cascade
+  add_foreign_key "agent_messages", "agent_people", column: "person_id", on_delete: :nullify
+  add_foreign_key "agent_people", "users", on_delete: :nullify
+  add_foreign_key "agent_person_identities", "agent_people", on_delete: :cascade
+  add_foreign_key "agent_person_notes", "agent_messages", column: "source_message_id", on_delete: :nullify
+  add_foreign_key "agent_person_notes", "agent_people", on_delete: :cascade
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
@@ -2739,6 +2829,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_233100) do
   add_foreign_key "depth_charts", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "desk_records", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "desk_records", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_approvals", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_grades", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_retirements", "dream_swaps", on_delete: :nullify
+  add_foreign_key "dream_retirements", "users", column: "retired_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_swaps", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "dream_swaps", "users", column: "approved_by_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "email_image_briefs", "artifacts", column: "approved_artifact_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "facts", "agent_sessions", column: "recorded_by_session_slug", primary_key: "slug", on_update: :cascade

@@ -1,0 +1,200 @@
+module AgentMessages
+  # The memory one answer is given: the context bundle for a claimed message,
+  # rebuilt from the hub's rows on every answer (never a resumed Claude session),
+  # so every dispatcher on every machine sees the same context for the same rows.
+  # docs/agents/system/agent-message-loop.md, "Memory".
+  #
+  # THE PERSON LAYER is one person's exchanges with one soul on EVERY channel and
+  # platform: every earlier row with the same (soul_slug, person_id), oldest first,
+  # each labeled with the place it happened (`[discord #release-notes]`). What
+  # Alex told Xan in one channel, Xan knows in the next. Another person's messages
+  # are never in it.
+  #
+  # THE THREAD LAYER is the focus: the conversation this message continues, every
+  # earlier row of its thread_key (a Discord reply chain, a Discord thread
+  # channel, later an email thread), whoever wrote it, because the reply chose it.
+  # A terse follow-up ("what's next?") resolves inside it first. It comes only from
+  # THIS channel and guild: DiscordIngest inherits the thread_key of any referenced
+  # row, and a Discord forward references a message elsewhere, whose audience is
+  # not this one. A thread row is never repeated in the PERSON layer.
+  #
+  # PRUNING (the PERSON layer). The last VERBATIM_TURNS turns no older than
+  # VERBATIM_WINDOW (measured from the message's own sent time, not the clock, so a
+  # rebuild is identical) come back verbatim. Every older turn folds into the
+  # SUMMARY: an EXTRACTIVE summary, one line per turn (its date and place, the
+  # first line of the message and of the answer, each cut to SUMMARY_SIDE), the
+  # newest SUMMARY_LINES kept. Extractive on purpose: a pure function of the rows,
+  # no model call, and no model-written text that could carry an injected
+  # instruction forward. The THREAD layer keeps its newest THREAD_TURNS.
+  #
+  # THE USER LAYER is the person's notes (AgentPersonNote), on every channel,
+  # each with its date, source message and that message's place. The notes are
+  # per PERSON and shared by every soul: a fact about a person is true whichever
+  # agent hears it. The PERSON layer, by contrast, is per person PER SOUL.
+  #
+  # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
+  # worker still running the older ContextBuilder; drop them once every
+  # dispatcher runs this release.
+  class MemoryBundle
+    VERBATIM_TURNS = 10
+    VERBATIM_WINDOW = 7.days
+    # Rows read per layer; the person and thread indexes bound each scan.
+    FETCH_LIMIT = 200
+    THREAD_TURNS = 20
+    SUMMARY_LINES = 40
+    SUMMARY_SIDE = 140
+
+    def initialize(message)
+      @message = message
+    end
+
+    def as_of = @message.sent_at || @message.created_at
+
+    def bundle
+      thread = thread_rows
+      in_thread = thread.map(&:id).to_set
+      fetched = person_rows
+      rows = fetched.reject { |row| in_thread.include?(row.id) }
+      recent, older = split(rows)
+      total = person_scope.count
+      # A note stored before DIRECTIVES existed is held to them here too, so an
+      # instruction-shaped one already on a row never reaches a prompt.
+      @notes = person ? person.notes.includes(:source_message).reject { |n| AgentPersonNote.directive?(n.body) } : []
+      @places = places(thread + rows + [ @message ] + @notes.filter_map(&:source_message))
+      thread_total = thread_scope.count
+      person_turns = recent.map { |row| turn(row) }
+      thread_turns = thread.map { |row| turn(row) }
+      summary = summary(older)
+      {
+        "message_id" => @message.id,
+        "as_of" => as_of.iso8601,
+        "place" => place(@message),
+        "person" => {
+          "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
+          "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
+          "turns" => person_turns, "summary" => summary
+        },
+        "thread" => {
+          "key" => @message.thread_key, "place" => place(@message), "continues" => thread.any?,
+          "total" => thread_total, "omitted" => [ thread_total - thread.size, 0 ].max, "turns" => thread_turns
+        },
+        "user" => user_json,
+        "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
+      }
+    end
+
+    private
+
+    def person = @message.person
+
+    def person_scope
+      return AgentMessage.none if @message.person_id.blank? || @message.soul_slug.blank?
+
+      AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
+                  .where("agent_messages.id < ?", @message.id)
+                  .where.not(status: "unrouted")
+    end
+
+    # Oldest first, the newest FETCH_LIMIT.
+    def person_rows
+      person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).to_a.reverse
+    end
+
+    def thread_scope
+      AgentMessage.where(thread_key: @message.thread_key, channel: @message.channel,
+                         channel_ref: @message.channel_ref, guild_id: @message.guild_id)
+                  .where("agent_messages.id < ?", @message.id)
+                  .where.not(status: "unrouted")
+    end
+
+    # Oldest first, the newest THREAD_TURNS.
+    def thread_rows
+      thread_scope.order(id: :desc).limit(THREAD_TURNS).to_a.reverse
+    end
+
+    def user_json
+      return nil unless person
+
+      facts = @notes.map do |note|
+        note.as_api_json.merge("place" => note.source_message ? place(note.source_message) : nil)
+      end
+      { "person_id" => person.id, "display_name" => person.display_name,
+        "facts" => facts, "notes" => @notes.map(&:body).join("\n") }
+    end
+
+    def split(rows)
+      floor = as_of - VERBATIM_WINDOW
+      fresh_from = [ rows.size - VERBATIM_TURNS, 0 ].max
+      recent = rows.each_with_index.select { |row, i| i >= fresh_from && sent(row) >= floor }.map(&:first)
+      [ recent, rows - recent ]
+    end
+
+    # `turns` counts the older turns this bundle read; `omitted` the ones past
+    # SUMMARY_LINES; the layer's `total` minus what was read is older still.
+    def summary(older)
+      kept = older.last(SUMMARY_LINES)
+      { "turns" => older.size, "omitted" => older.size - kept.size, "lines" => kept.map { |row| summary_line(row) } }
+    end
+
+    def summary_line(row)
+      asked = first_line(row.content)
+      answered = row.response_text.present? ? first_line(row.response_text) : "(no answer)"
+      "#{sent(row).to_date.iso8601} #{place(row)} asked: #{asked} | answered: #{answered}"
+    end
+
+    def first_line(text)
+      line = text.to_s.strip.lines.first.to_s.strip
+      line.length > SUMMARY_SIDE ? "#{line[0, SUMMARY_SIDE - 1]}…" : line
+    end
+
+    def turn(row)
+      { "id" => row.id, "at" => sent(row).iso8601, "place" => place(row), "author_name" => row.author_name,
+        "author_ref" => row.author_ref, "own" => row.person_id.present? && row.person_id == @message.person_id,
+        "content" => row.content.to_s, "answer" => row.response_text, "status" => row.status }
+    end
+
+    # The place label, CODE-SHAPED on purpose: it is printed outside the prompt's
+    # untrusted fence, so it never carries text a member chose. A channel's name
+    # (set by the guild's admins) is kept to [a-z0-9_-]; a thread is named by its
+    # parent channel, since anyone may name a thread.
+    def place(row)
+      key = [ row.guild_id.to_s, row.channel_ref.to_s ]
+      name = (@places || {})[key]
+      return "[#{row.channel}]" unless row.channel == "discord"
+      return "[discord channel #{row.channel_ref.to_s.gsub(/\D/, '')[0, 25]}]" unless name
+
+      "[discord #{name}]"
+    end
+
+    # { [guild, channel] => "#name" | "thread in #parent" } for every channel the
+    # rows name, in two queries at most (the channel directory, DiscordChannel).
+    def places(rows)
+      keys = rows.select { |row| row.channel == "discord" }.map { |row| [ row.guild_id.to_s, row.channel_ref.to_s ] }.uniq
+      return {} if keys.empty?
+
+      found = directory(keys)
+      parents = directory(found.values.select { |c| c.kind == "thread" && c.parent_external_id.present? }
+                                .map { |c| [ c.guild_external_id, c.parent_external_id ] }.uniq)
+      found.each_with_object({}) do |(key, channel), out|
+        if channel.kind == "thread"
+          parent = parents[[ channel.guild_external_id, channel.parent_external_id ]]
+          out[key] = parent ? "thread in ##{safe_name(parent.name)}" : "thread"
+        else
+          out[key] = "##{safe_name(channel.name)}"
+        end
+      end
+    end
+
+    def directory(keys)
+      return {} if keys.empty?
+
+      scope = keys.map { |guild, id| DiscordChannel.where(guild_external_id: guild, external_id: id) }.reduce(:or)
+      scope.to_a.index_by { |c| [ c.guild_external_id, c.external_id ] }
+    end
+
+    def safe_name(name) = name.to_s.downcase.gsub(/[^a-z0-9_-]+/, "-").gsub(/-{2,}/, "-").delete_prefix("-")
+                              .delete_suffix("-")[0, 50].presence || "channel"
+
+    def sent(row) = row.sent_at || row.created_at
+  end
+end

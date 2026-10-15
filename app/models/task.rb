@@ -207,6 +207,9 @@ class Task < ApplicationRecord
                               inverse_of: :task, dependent: :destroy
   # Per-action trajectory (AgentAction.capture); nullified so it outlives the task.
   has_many :agent_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  # The dream loop's grades and swap proposals name the task their session built.
+  has_many :dream_grades, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  has_many :dream_swaps, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
   has_many :atomic_actions, class_name: "AgentAction", foreign_key: :task_slug, primary_key: :slug
   # Narrated activities (AgentActivity); nullified so they outlive the task.
   has_many :agent_activities, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify

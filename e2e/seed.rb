@@ -25,6 +25,7 @@ ActiveRecord::Base.connection.disable_referential_integrity do
   Usage.delete_all
   ErrorLog.delete_all
   AppRequest.delete_all # /build requests reference their user — clear before it
+  DreamApproval.delete_all # e2e/dream_approve.spec.js approves the fixture bank's proposed dream
   ContactSubmission.delete_all # /contact submissions; read-only rows, so delete_all (no callbacks)
   User.delete_all
   CoachRanking.delete_all
@@ -1703,6 +1704,7 @@ end
 # the page filters on, for two souls, and one with a full timeline and a posted
 # reply. Ids are fake snowflakes; nothing here talks to Discord.
 AgentMessage.delete_all # its events cascade
+AgentPerson.delete_all # its identities and notes cascade
 AgentMessageCursor.delete_all
 mailbox_guild = "910000000000000001"
 mailbox_channel = "910000000000000002"

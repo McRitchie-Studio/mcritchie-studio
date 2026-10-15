@@ -5,22 +5,25 @@ require Rails.root.join("bin/lib/sop_registry").to_s
 
 # The dream bank as an org chart, for the /dreams page: the platform dreams on top,
 # then one column per soul with that soul's dreams grouped by stage and, under them,
-# the soul's SOPs from the registry with a dream count each.
+# the soul's SOPs from the registry with a dream count each and the SOP's step
+# dreams grouped by step.
 #
 # It reads the tracked files live through the two parsers the CLI uses
 # (bin/lib/dream_bank.rb and bin/lib/sop_registry.rb). No table, no board.
 #
 # Placement rules:
-#   - a dream with no `soul` tag is a platform dream;
+#   - a dream with no `soul` and no `sop` tag is a platform dream;
+#   - a step dream (`sop:` + `step:`, no soul) shows under its SOP, in whichever
+#     column the registry places that SOP, grouped by step;
 #   - a dream tagged with several souls shows under EACH of them, because each of
 #     those souls' sequences loads it (bin/dream <soul>);
 #   - within a column, dreams group by their first `stage` tag, and a dream with no
 #     stage lands in the NO_STAGE bucket, so no dream is ever dropped;
 #   - every status is shown (proposed included); the page filters by status.
 #
-# SOP counts come from a dream's `sop` tag only. No dream carries one today (the
-# bank tags soul and stage), so every count reads 0, which marks where the bank is
-# thin. There is deliberately no stage-to-SOP guess.
+# SOP counts come from a dream's `sop` tag only, over the whole bank: a step dream
+# carries no soul, so it belongs to no column's own dreams. A zero marks where the
+# bank is thin. There is deliberately no stage-to-SOP guess.
 class DreamOrgChart
   PLATFORM = DreamBank::PLATFORM
   NO_STAGE = "no stage"
@@ -28,8 +31,11 @@ class DreamOrgChart
   APPROVED = DreamBank::APPROVED
   PROPOSED = "proposed"
 
-  Sop = Struct.new(:invocation, :kind, :doc_path, :summary, :dream_count, keyword_init: true)
+  # dream_statuses: one status per tagged dream, so the page can count under a filter.
+  # steps: the SOP's step dreams as StepGroups, in step-name order.
+  Sop = Struct.new(:invocation, :kind, :doc_path, :summary, :dream_count, :dream_statuses, :steps, keyword_init: true)
   StageGroup = Struct.new(:stage, :dreams, keyword_init: true)
+  StepGroup = Struct.new(:step, :dreams, keyword_init: true)
   Column = Struct.new(:slug, :name, :title, :avatar, :color, :stages, :sops, keyword_init: true) do
     def dreams = stages.flat_map(&:dreams)
     def sop_dream_total = sops.sum(&:dream_count)
@@ -91,7 +97,7 @@ class DreamOrgChart
 
   def column(slug, record, dreams, entries)
     Column.new(slug: slug, name: record["name"], title: record["title"], avatar: record["avatar"],
-               color: record["color"], stages: stage_groups(dreams), sops: sops(entries, dreams))
+               color: record["color"], stages: stage_groups(dreams), sops: sops(entries))
   end
 
   def stage_groups(dreams)
@@ -100,11 +106,19 @@ class DreamOrgChart
           .map { |stage, grouped| StageGroup.new(stage: stage, dreams: grouped) }
   end
 
-  def sops(entries, dreams)
+  def sops(entries)
     entries.map do |entry|
+      tagged = @dreams.select { |dream| dream.tags.fetch("sop", []).include?(entry.invocation) }
       Sop.new(invocation: entry.invocation, kind: entry.kind, summary: entry.summary,
               doc_path: entry.path.delete_prefix("docs/agents/").delete_suffix(".md"),
-              dream_count: dreams.count { |dream| dream.tags.fetch("sop", []).include?(entry.invocation) })
+              dream_count: tagged.size, dream_statuses: tagged.map(&:status), steps: step_groups(tagged))
     end
+  end
+
+  def step_groups(dreams)
+    dreams.select { |dream| dream.tags.fetch("step", []).any? }
+          .group_by { |dream| dream.tags["step"].first }
+          .sort_by(&:first)
+          .map { |step, grouped| StepGroup.new(step: step, dreams: grouped) }
   end
 end

@@ -62,8 +62,8 @@ module AgentMailbox
       call(:post, "/api/v1/agent_dispatchers/ping", payload)
     end
 
-    # The holder's context bundle: the sender's ledger with this soul, the pin,
-    # the summary and the notes (AgentMessages::ThreadLedger on the board).
+    # The holder's context bundle: the sender's exchanges with this soul on every channel,
+    # the thread, the summary and the notes (AgentMessages::MemoryBundle on the board).
     def context(id, worker:)
       call(:get, path("/api/v1/agent_messages/#{Integer(id)}/context", worker: worker))
     end
@@ -191,7 +191,9 @@ module AgentMailbox
   # envelope's own fields (`type`, `subtype`, `is_error`, `api_error_status`).
   #
   #   reply       the envelope's `result` when the run succeeded (exit 0, not
-  #               is_error), else nil. The answer text is never scanned for anything.
+  #               is_error), else nil. The answer text is never scanned for a run
+  #               STATUS; the Responder only splits a notes section off it
+  #               (NoteBlock), a format the prompt asks for, not a signal it acts on.
   #   error_text  on a failed run only: the envelope's result/error when is_error,
   #               and stderr. This is CLI-authored text, the only text the
   #               usage-limit and signed-out matchers ever read.
@@ -429,13 +431,17 @@ module AgentMailbox
     # reply: the text to post, or nil when the run failed. usage_limit: a
     # UsageLimit::Hit when Claude answered that the account is out of usage.
     # signed_out: Claude answered that it is not logged in. session_id, cwd,
-    # reasoning, meta: what the run reported, for the board's run record.
+    # reasoning, meta: what the run reported, for the board's run record. notes:
+    # the facts the run returned about the sender (NoteBlock), already cut from
+    # the reply.
     Answer = Struct.new(:reply, :action, :status, :usage_limit, :signed_out, :session_id, :cwd, :reasoning, :meta,
-                        keyword_init: true) do
-      # The complete call's run fields (AgentMessage.run_record on the board).
+                        :notes, keyword_init: true) do
+      # The complete call's run fields (AgentMessage.run_record on the board),
+      # plus `notes`, which the board files under the message's author.
       def run_record
         { "claude_session_id" => session_id, "claude_cwd" => cwd, "reasoning" => reasoning,
-          "run_meta" => meta && !meta.empty? ? meta : nil }
+          "run_meta" => meta && !meta.empty? ? meta : nil,
+          "notes" => notes && !notes.empty? ? notes : nil }
       end
     end
 
@@ -460,7 +466,8 @@ module AgentMailbox
       limit = UsageLimit.detect(run, now: @clock.call)
       reasoning, source = run.session_id ? Transcript.reasoning(run.session_id, claude_home: @claude_home) : [ nil, nil ]
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {})
-      Answer.new(reply: limit ? nil : run.reply, action: action, status: status, usage_limit: limit,
+      reply, notes = run.reply && !limit ? NoteBlock.split(run.reply) : [ nil, [] ]
+      Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta)
     end
@@ -687,6 +694,7 @@ module AgentMailbox
       @out.puts "  from:    #{m['author_name']} (#{m['author_ref']})"
       @out.puts "  message: #{m['content']}"
       @out.puts "  answer:  #{m['response_text']}" if m["response_text"]
+      show_person(m["person"])
       @out.puts "  action:  #{m['action_summary']}" if m["action_summary"]
       @out.puts "  reply:   #{m['reply_url']}" if m["reply_url"]
       show_run(m)
@@ -695,6 +703,17 @@ module AgentMailbox
         detail = (e["detail"] || {}).map { |k, v| "#{k}=#{v}" }.join(" ")
         @out.puts "    #{e['created_at']}  #{e['kind'].ljust(14)} #{e['actor']}  #{detail}".rstrip
       end
+    end
+
+    # Who wrote it across platforms, and the notes the souls keep about them
+    # (model-written from what that person said: data, shown as such).
+    def show_person(person)
+      return unless person.is_a?(Hash)
+
+      @out.puts "  person:  #{person['display_name']} (##{person['id']}) #{Array(person['identities']).join(' ')}".rstrip
+      notes = Array(person["notes"])
+      @out.puts "  notes:   #{notes.empty? ? '(none)' : ''}".rstrip
+      notes.each { |n| @out.puts "    - #{n['body']}  (#{n['noted_at'].to_s[0, 10]}, from ##{n['source_message_id'] || '-'})" }
     end
 
     # The answering Claude run: its session, the ready resume line, its numbers

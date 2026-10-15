@@ -1,7 +1,8 @@
 module Admin
   # /admin/agent_messages — the agent mailbox, watched (docs/agents/system/agent-message-loop.md).
   # Every message the Discord poll stored, who it was routed to, who holds the
-  # claim and for how long, and the reply. Read-only: workers move messages
+  # claim and for how long, and the reply. Read-only (forgetting a note is
+  # Admin::AgentPersonNotesController): workers move messages
   # through the API, not through buttons here.
   class AgentMessagesController < ApplicationController
     before_action :require_admin
@@ -24,7 +25,7 @@ module Admin
     end
 
     def show
-      @message = AgentMessage.includes(:events).find(params[:id])
+      @message = AgentMessage.includes(:events, person: %i[identities notes user]).find(params[:id])
     end
 
     private

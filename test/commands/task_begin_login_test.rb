@@ -196,6 +196,29 @@ class TaskBeginLoginTest < ActiveSupport::TestCase
     end
   end
 
+  test "begin prints the building-sop begin moment card to stderr, and no other step's" do
+    Dir.mktmpdir("step-bank") do |bank|
+      step = lambda do |relative, sop, step_name, question|
+        path = File.join(bank, relative)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "---\nquestion: \"#{question}\"\nanswer: \"An answer.\"\nwhy: \"A reason.\"\n" \
+                         "status: approved\nsop: #{sop}\nstep: #{step_name}\n---\n")
+      end
+      step.call("sops/building-sop/at-begin.md", "building-sop", "begin", "At begin, what?")
+      step.call("sops/building-sop/at-submit.md", "building-sop", "submit", "At submit, what?")
+      with_desk do |dir, _desk, _requests|
+        out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir, "DREAM_BANK_DIR" => bank),
+                                          BIN, "begin", SLUG, "--agent", "pokemon", chdir: dir)
+
+        assert status.success?, err
+        assert_includes err, "## Moment: building-sop · begin"
+        assert_includes err, "**Q: At begin, what?** (`at-begin`)"
+        refute_includes err, "at-submit", "another step's dream waits for its own command"
+        refute_includes out, "## Moment", "stdout keeps begin's own lines"
+      end
+    end
+  end
+
   test "begin with no dream bank to read still claims and prints no sequence" do
     with_desk do |dir, _desk, _requests|
       _out, err, status = Open3.capture3(env(dir).merge("TASK_BEGIN_PROJECTS_DIR" => dir,

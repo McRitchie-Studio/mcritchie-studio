@@ -67,6 +67,15 @@ weight `light`/`suite`/`idle` from `config/devops_test_suites.yml`) for peers'
 `reviewed` tasks waiting, `assembled` stragglers, or an interrupted candidate in
 flight. Otherwise report "nothing to prepare" and stop.
 
+## Pre-sweep — batch Alex's dream approvals
+
+Before the sweep, run `bin/dream approvals`; it lists his approvals and his
+retirements. If it lists any, a session batches
+them into one task: `bin/task begin` a hub `docs` task, run
+`bin/dream apply-approvals` in its desk, and submit it. It rides this release if
+it reaches `reviewed` in time, else the next. Never one task per dream
+([`dream.md`](../../../modules/dream.md#act-3--sign-off-alex)).
+
 ## Disposition — which applications ride this candidate (Avi curates)
 
 **Ship ALL reviewed work by default.** When order matters (a gem before its consumer,

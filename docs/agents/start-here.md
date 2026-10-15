@@ -37,6 +37,7 @@ its invocation exactly.
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Agent mailbox (Discord messages to agents, bin/heartbeat, bin/agent-inbox) | `mcritchie-studio/docs/agents/system/agent-message-loop.md` |
 | Report destinations (deliver a report to a Discord channel Alex picks: `ReportDestinations.deliver`) | `mcritchie-studio/docs/agents/system/report-destinations.md` |
+| Daily app report (the 07:00 Denver CTO summary of every app's health, in Discord; `HEALTH_TOKEN_<SLUG>`) | `mcritchie-studio/docs/agents/system/daily-app-report.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Pokémon builder soul (the general builder every task is built by) | `mcritchie-studio/docs/agents/agents/pokemon/role.md` |
@@ -145,7 +146,7 @@ its invocation exactly.
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `dream` (the bank of good answers, in a platform sequence and one per soul; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
+| `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `focus-session` (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
