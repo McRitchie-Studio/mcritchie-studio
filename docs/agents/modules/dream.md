@@ -28,6 +28,8 @@ sequences and lives under the first. Directories use the `config/souls.yml` slug
 The hub's `/dreams` page (admin only, linked from `/agents`) shows the bank as
 an org chart: platform dreams on top, then each soul's dreams by stage, then the
 SOPs it runs with a dream count each and, under each SOP, its step dreams by step.
+Each card carries its fire count ([Fired](#fired--the-heat-map)), and a proposed one
+carries Alex's Approve button ([Act 3](#act-3--sign-off-alex)).
 
 ## Budgets: a full layer means a swap, not an add
 
@@ -327,13 +329,49 @@ proposed dream for one known soul, and never overwrites a file. Then:
 
 ## Act 3 — Sign-off (Alex)
 
-Alex approves each dream. Present the proposed ones as a numbered table (slug,
-question, answer) and ask which to approve, change or drop.
+Alex approves each dream, in one of two ways.
+
+**One click on `/dreams`.** A proposed dream's card has an **Approve** button for
+Alex. The click records a `DreamApproval` row; the card then reads *Approved,
+loads after the next release*. Only Alex's own signed-in account can make one:
+another admin seat sees no button and is refused, and no API route creates one.
+The file still reads `proposed` until a batch task writes it:
+
+1. `bin/dream approvals` lists the pending approvals
+   (`GET /api/v1/dream_approvals`). `qa-release` checks it before each sweep.
+2. In one hub task desk, `bin/dream apply-approvals` sets each pending file to
+   `status: approved` and rewrites `INDEX.md`. It carries out Alex's recorded
+   click; it is not an agent approving. A file that no longer reads
+   `proposed`, or is gone, is skipped and named.
+3. Commit and submit that one task for every pending approval, never one task per
+   dream.
+4. Once the release ships, the deployed file reads approved, and `/dreams` and
+   the approvals read mark the row applied. Nothing is marked by hand.
+
+**In chat.** Present the proposed ones as a numbered table (slug, question,
+answer) and ask which to approve, change or drop.
 
 - Approved: set `status: approved`. The dream loads once the release that
   carries it ships, because the hook reads the bank installed with the tooling.
 - Dropped: delete the file.
-- An agent never flips a dream to `approved` without Alex's word in that session.
+- An agent never flips a dream to `approved` without Alex's word: his reply in
+  that session, or his click on `/dreams`. An agent never approves.
+
+## Fired — the heat map
+
+When a dream changes what you do, record it:
+
+```bash
+/Users/alex/projects/.agents/bin/dream fired <slug> --decision "<what it changed>"
+```
+
+It posts a `dream_fired` action to your open activity (through
+`bin/agent-activity action`), with the dream's slug and the decision, cut to 160
+characters. It refuses an unknown dream, and says so when nothing was recorded
+(no open activity). The session-start header asks for it.
+
+`/dreams` shows each dream's fire count and its three newest decisions. Those
+rows are kept past the 45-day action retention, so the count is all-time.
 
 ## When Alex says `dream`
 
@@ -352,9 +390,11 @@ waiting, including the open `dream-proposal-*` findings
 | Selector | `bin/lib/dream_selector.rb` |
 | Budgets and moment cards | `bin/lib/dream_bank.rb` (`BUDGETS`, `MOMENTS`, `moment`, `after_moment`) |
 | Session-start loader | `bin/session-insights` |
-| Soul loader, list and materialize | `bin/dream` |
+| Soul loader, list, materialize, approvals, fired | `bin/dream` |
+| One-click approvals | `app/models/dream_approval.rb`, `DreamsController#approve`, `app/controllers/api/v1/dream_approvals_controller.rb` |
+| Heat map | `app/models/dream_heat.rb` (`dream_fired` actions) |
 | Ship-time proposer | `app/services/insights/dream_proposer.rb`, called by `app/services/insights/task_grader.rb` |
 | Signals and phrases | `config/learning_loop.yml` (`dream`) |
 | Installed copy the hook reads | `bin/install-agent-docs` (`TOOLING_PATHS`) |
-| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`; the moment cards in `test/commands/task_begin_login_test.rb`, `test/lib/submit_test.rb`, `test/lib/submit_wait_script_test.rb`, `test/lib/review_claim_cli_test.rb`, `test/integration/release_prepare_moment_test.rb` |
+| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`, `test/models/dream_approval_test.rb`, `test/models/dream_heat_test.rb`, `test/integration/dreams_page_test.rb`, `test/controllers/api/v1/dream_approvals_controller_test.rb`, `e2e/dream_approve.spec.js`; the moment cards in `test/commands/task_begin_login_test.rb`, `test/lib/submit_test.rb`, `test/lib/submit_wait_script_test.rb`, `test/lib/review_claim_cli_test.rb`, `test/integration/release_prepare_moment_test.rb`, `e2e/dreams_step_dreams.spec.js` |
 | Fixture bank the selector tests read | `test/fixtures/dreams/` |

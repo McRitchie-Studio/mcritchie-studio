@@ -11,7 +11,7 @@
 # production 2026-09-17: no row's occurred_at is more than a day from its created_at,
 # so the choice moves no row today; it is the semantically right clock, and the cheap one.
 #
-# TWO KINDS OF OLD ROW ARE KEPT, because something durable still reads them:
+# THREE KINDS OF OLD ROW ARE KEPT, because something durable still reads them:
 #
 #   * A GRADED action — any row an ActionGrade targets (agent_action_id). A banked grade
 #     is the Insight Bank, which the SessionStart feed serves to every fresh session;
@@ -28,6 +28,10 @@
 #     retiring or adding a slug there moves this guard with it. `event_slug IS NULL OR
 #     NOT IN` is spelled out because a bare NOT IN drops every NULL event_slug row, which
 #     is most of the table.
+#
+#   * A dream-fired action — kind DreamHeat::KIND, written by `bin/dream fired`. The
+#     /dreams heat map counts them all-time, so deleting them would quietly cool every
+#     dream older than the window. kind is NOT NULL, so a plain inequality is exact.
 #
 #   Measured on production 2026-09-17: 0 graded actions and 0 CI-scope actions exist, so
 #   today the guard keeps nothing. It exists so a grade or a CI capture written tomorrow
@@ -80,6 +84,7 @@ class AgentActionRetentionJob < ApplicationJob
       .where("agent_actions.occurred_at < ?", cutoff)
       .where("agent_actions.event_slug IS NULL OR agent_actions.event_slug NOT IN (?)",
              Task::TestingPhases::CI_SCOPES)
+      .where.not(kind: DreamHeat::KIND)
       .where("NOT EXISTS (SELECT 1 FROM action_grades WHERE action_grades.agent_action_id = agent_actions.id)")
   end
 

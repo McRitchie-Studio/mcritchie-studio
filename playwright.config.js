@@ -107,6 +107,9 @@ if (!externalBaseURL) {
       RAILS_ENV: "test",
       LOCAL_EMAIL_CAPTURE: "1",
       CABLE_ADAPTER: "async",
+      // /dreams reads the fixture bank, which always holds a proposed dream for
+      // e2e/dream_approve.spec.js to approve; the tracked bank may hold none.
+      DREAM_BANK_DIR: "test/fixtures/dreams",
       // The Last Release fresh-deploy glow window (ApplicationHelper#
       // fresh_deploy_window_ms; production default 8s). 8s turned
       // release_ship.spec.js into a wall-clock race: the spec's own arrival

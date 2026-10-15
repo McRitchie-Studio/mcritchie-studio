@@ -344,4 +344,157 @@ class DreamCliTest < Minitest::Test
       assert_empty read, "#{argv.inspect} reads no task"
     end
   end
+  # ── approvals, apply-approvals and fired ─────────────────────────────────
+
+  def approvals_cli(*argv, rows:, cwd: @dir, reports: nil, recorded: true)
+    out = StringIO.new
+    err = StringIO.new
+    reporter = ->(args) { reports << args if reports; [ recorded, recorded ? "ok" : "atomic-event action: no open activity — skipped" ] }
+    code = DreamCli.new(env: { "DREAM_BANK_DIR" => @dir }, out: out, err: err, approvals_reader: -> { rows },
+                        fire_reporter: reporter, cwd: cwd).run(argv)
+    [ out.string, err.string, code ]
+  end
+
+  def pending(home, slug, status = "proposed")
+    { "dream_home" => home, "dream_slug" => slug, "approved_by" => "alex-mcritchie",
+      "approved_at" => "2026-10-15T12:00:00Z", "file_status" => status }
+  end
+
+  def test_unit_approvals_lists_each_pending_row
+    out, err, code = approvals_cli("approvals", rows: [ pending("carl", "guard-nil-reader") ])
+
+    assert_equal 0, code
+    assert_equal "", err
+    assert_includes out, "## Pending dream approvals (1)"
+    assert_includes out, "`guard-nil-reader` · carl · approved 2026-10-15 by alex-mcritchie · file reads proposed"
+    assert_includes out, "bin/dream apply-approvals"
+  end
+
+  def test_unit_approvals_refuses_when_the_board_cannot_be_read
+    out, err, code = approvals_cli("approvals", rows: nil)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "could not read the pending approvals"
+  end
+
+  def test_integration_apply_approvals_flips_only_proposed_files_and_rewrites_the_index
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "carl"))
+    File.write(File.join(bank, "carl/guard-nil-reader.md"), PROPOSAL)
+    File.write(File.join(bank, "platform/already.md"), dream("Already approved?"))
+    rows = [ pending("carl", "guard-nil-reader"), pending("platform", "already"),
+             pending("platform", "gone", "missing"), pending("..", "escape") ]
+
+    out, err, code = approvals_cli("apply-approvals", rows: rows, cwd: root)
+
+    assert_equal 0, code
+    text = File.read(File.join(bank, "carl/guard-nil-reader.md"))
+    assert_includes text, "\nstatus: approved\n"
+    assert_equal PROPOSAL.sub("status: proposed", "status: approved"), text, "nothing else in the file moves"
+    assert_includes out, "dream: 1 of 4 pending approval(s) written; INDEX.md rewritten."
+    assert_includes err, "skipped `platform/already`: the file does not read status: proposed"
+    assert_includes err, "skipped `platform/gone`: no file at"
+    assert_includes err, "skipped approval `../escape`: not a bank path"
+    index = File.read(File.join(bank, "INDEX.md"))
+    assert_match(/guard-nil-reader.*\| approved \|$/, index)
+    assert_equal DreamBank.index(dir: bank), index
+  end
+
+  def test_integration_apply_approvals_reaches_a_step_dream_and_no_other_nested_path
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "sops/qa-release"))
+    step = PROPOSAL.sub("soul: carl\n", "sop: qa-release\nstep: prepare\n")
+    File.write(File.join(bank, "sops/qa-release/rerun-first.md"), step)
+    rows = [ pending("sops/qa-release", "rerun-first"), pending("sops/../carl", "escape"),
+             pending("carl/sops", "escape"), pending("sops/a/b", "escape") ]
+
+    out, err, code = approvals_cli("apply-approvals", rows: rows, cwd: root)
+
+    assert_equal 0, code, err
+    assert_includes step, "status: proposed", "control: the fixture starts proposed"
+    assert_includes File.read(File.join(bank, "sops/qa-release/rerun-first.md")), "\nstatus: approved\n"
+    assert_includes out, "dream: 1 of 4 pending approval(s) written"
+    assert_equal 3, err.scan("not a bank path").size, err
+  end
+
+  def test_unit_apply_approvals_warns_when_a_layer_goes_over_budget
+    root, bank = desk
+    (1..16).each { |n| File.write(File.join(bank, "platform/p#{n}.md"), dream("Platform #{n}?")) }
+    _out, err, code = approvals_cli("apply-approvals", rows: [], cwd: root)
+
+    assert_equal 0, code
+    assert_includes err, "dream: over budget: layer platform holds 17 approved dreams; its budget is 15."
+  end
+
+  def test_unit_apply_approvals_with_nothing_pending_writes_nothing
+    root, bank = desk
+    out, _err, code = approvals_cli("apply-approvals", rows: [], cwd: root)
+
+    assert_equal 0, code
+    assert_includes out, "dream: 0 of 0 pending approval(s) written."
+    refute File.exist?(File.join(bank, "INDEX.md"))
+  end
+
+  def test_unit_apply_approvals_refuses_outside_a_desk
+    _root, bank = desk
+    File.write(File.join(bank, "platform/proposed.md"), PROPOSAL.sub("soul: carl\n", ""))
+    out, err, code = approvals_cli("apply-approvals", rows: [ pending("platform", "proposed") ], cwd: @dir)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "is not inside one"
+    assert_includes File.read(File.join(bank, "platform/proposed.md")), "status: proposed"
+  end
+
+  def test_unit_fired_reports_a_dream_fired_action
+    reports = []
+    out, err, code = approvals_cli("fired", "universal", "--decision", "Kept  the   read-only probe", rows: [], reports: reports)
+
+    assert_equal 0, code
+    assert_equal "", err
+    assert_includes out, "dream: `universal` fired · Kept the read-only probe"
+    assert_equal [ [ "action", "--kind", "dream_fired", "--event-slug", "universal", "--summary", "Kept the read-only probe" ] ],
+                 reports
+  end
+
+  def test_unit_fired_cuts_a_long_decision_to_what_the_board_keeps
+    reports = []
+    _out, err, code = approvals_cli("fired", "universal", "--decision", "x" * 200, rows: [], reports: reports)
+
+    assert_equal 0, code
+    assert_includes err, "cut to 160 characters"
+    assert_equal 160, reports.first.last.size
+  end
+
+  def test_unit_fired_refuses_an_unknown_dream_and_reports_nothing
+    reports = []
+    out, err, code = approvals_cli("fired", "no-such-dream", "--decision", "Something", rows: [], reports: reports)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "`no-such-dream` is not a dream"
+    assert_empty reports
+  end
+
+  def test_unit_fired_says_so_when_nothing_was_recorded
+    out, err, code = approvals_cli("fired", "universal", "--decision", "Something", rows: [], recorded: false)
+
+    assert_equal 1, code
+    assert_equal "", out
+    assert_includes err, "nothing was recorded: atomic-event action: no open activity"
+  end
+
+  def test_unit_fired_and_approvals_take_exact_arguments
+    reports = []
+    [ %w[fired], %w[fired universal], %w[fired universal --decision], [ "fired", "universal", "--decision", "  " ],
+      [ "fired", "Not A Slug", "--decision", "x" ], %w[fired universal --why x], %w[approvals extra],
+      %w[apply-approvals --mark] ].each do |argv|
+      out, err, code = approvals_cli(*argv, rows: [], reports: reports)
+      assert_equal 2, code, argv.inspect
+      assert_equal "", out
+      assert_includes err, "bin/dream fired <slug>"
+    end
+    assert_empty reports
+  end
 end
