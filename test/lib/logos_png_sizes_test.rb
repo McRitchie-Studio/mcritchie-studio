@@ -25,7 +25,7 @@ class LogosPngSizesTest < Minitest::Test
   # Alex, 2026-10-14 22:35: an icon downloads in its true aspect by default, and as a padded 1:1 square on request.
   def test_the_icon_presets_set_the_long_side_and_keep_the_true_aspect_by_default
     presets = PngSizes.presets(:icon, *ICON)
-    assert_equal [16, 32, 48, 64, 180, 192, 512, 1024], presets.map { |preset| preset[:width] }, "the chest is wider than tall"
+    assert_equal [16, 32, 48, 64, 180, 192, 256, 512, 1024], presets.map { |preset| preset[:width] }, "the chest is wider than tall"
     assert_equal [512, 416], presets.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "512 × 538.14 / 662.45 = 415.9"
     assert(presets.all? { |preset| preset[:fit] == "fill" }, "no padding")
     assert_equal "512 × 416", presets.find { |preset| preset[:key] == "512" }[:label]
@@ -35,7 +35,7 @@ class LogosPngSizesTest < Minitest::Test
 
   def test_the_square_icon_presets_pad_to_n_by_n_and_name_what_they_serve
     presets = PngSizes.presets(:icon, *ICON, square: true)
-    assert_equal [16, 32, 48, 64, 180, 192, 512, 1024], presets.map { |preset| preset[:width] }
+    assert_equal [16, 32, 48, 64, 180, 192, 256, 512, 1024], presets.map { |preset| preset[:width] }
     assert(presets.all? { |preset| preset[:width] == preset[:height] && preset[:fit] == "contain" }, "the icon fitted inside a square")
     assert_equal "Apple touch icon", presets.find { |preset| preset[:key] == "180" }[:use]
     assert_equal "Android and PWA icon", presets.find { |preset| preset[:key] == "192" }[:use]

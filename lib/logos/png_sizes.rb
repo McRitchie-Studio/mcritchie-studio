@@ -26,7 +26,8 @@ module Logos
 
     ICON_PRESETS = [
       [16, "Favicon"], [32, "Favicon, retina"], [48, "Windows site icon"], [64, "Small app icon"],
-      [180, "Apple touch icon"], [192, "Android and PWA icon"], [512, "PWA splash and store listings"],
+      [180, "Apple touch icon"], [192, "Android and PWA icon"], [256, "App favicon (as script/brand_png.cjs installs it)"],
+      [512, "PWA splash and store listings"],
       [1024, "App Store master"]
     ].freeze
 

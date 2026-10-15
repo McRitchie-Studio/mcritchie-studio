@@ -712,7 +712,7 @@ one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`
 - **Format**: SVG or PNG. **Tone**: Light, Dark or Watermark (every tone, on every page; it starts on the
   page's). **Download** and **Copy SVG** follow both.
 - **PNG sizes** are `Logos::PngSizes`, each named by what it serves. The Icon's presets set its long side
-  (16, 32, 48, 64, 180 Apple touch, 192 Android and PWA, 512, 1024) and keep its **true aspect** by default:
+  (16, 32, 48, 64, 180 Apple touch, 192 Android and PWA, 256 the app favicon `script/brand_png.cjs` installs, 512, 1024) and keep its **true aspect** by default:
   Studio's chest at 512 is 512 × 416. **1:1 square** pads it, centred, to N × N for favicons and app icons
   (Alex, 22:35: "we can have access to both"); an icon within 1% of square (Industries) is square either way and
   shows no toggle. The Navbar and Stacked Logos offer widths 400, 800, 1200 and 2400, and 1x, 2x and 4x of the
