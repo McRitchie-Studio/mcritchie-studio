@@ -10,6 +10,10 @@
      tint so the photo still shows through behind the dark headline. */
   .hero-scrim { --hero-scrim-edge: 75%; --hero-scrim-mid: 58%; }
   .dark .hero-scrim { --hero-scrim-edge: 85%; --hero-scrim-mid: 70%; }
+  /* On the pale tint the secondary grey washes into the skyline; light mode
+     takes the darker body ink at semibold. Dark mode keeps its secondary ink. */
+  .hero-subtitle-ink { color: var(--color-text-body); font-weight: 600; }
+  .dark .hero-subtitle-ink { color: var(--color-text-secondary); font-weight: 400; }
 </style>
 
 <!-- Hero -->
@@ -31,7 +35,7 @@
         <span>Families</span>
       </span>
     </h1>
-    <p class="text-secondary max-w-2xl mx-auto mb-10 leading-relaxed hero-subtitle">
+    <p class="hero-subtitle-ink max-w-2xl mx-auto mb-10 leading-relaxed hero-subtitle">
       An acquisition entrepreneur partnering with owners to carry proven
       businesses into their next decade.
     </p>
