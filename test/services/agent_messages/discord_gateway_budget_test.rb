@@ -88,6 +88,20 @@ class AgentMessages::DiscordGatewayBudgetTest < ActiveSupport::TestCase
     refute_includes @log.string, "unit-token"
   end
 
+  test "an unreadable start limit leaves one ErrorLog receipt per outage, not per retry" do
+    status = 401
+    limit = -> { status ? raise(AgentMessages::GatewayStartLimit::Error, "GET /gateway/bot answered HTTP #{status}") : Limit.new(total: 1000, remaining: 900, reset_after: 1) }
+    listener = gateway(start_limit: limit)
+    2.times { identify_wait(listener) }
+    assert_equal 1, ErrorLog.where("message LIKE ?", "%answered HTTP 401%").count
+
+    status = nil
+    assert_nil identify_wait(listener)
+    status = 401
+    identify_wait(listener)
+    assert_equal 2, ErrorLog.where("message LIKE ?", "%answered HTTP 401%").count, "a new outage, a new receipt"
+  end
+
   test "a TLS handshake that never answers is abandoned at the deadline" do
     server = TCPServer.new("127.0.0.1", 0)
     held = []

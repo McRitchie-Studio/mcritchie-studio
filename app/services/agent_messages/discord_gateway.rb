@@ -387,9 +387,14 @@ module AgentMessages
       end
 
       @budget_receipted = false
+      @check_receipted = false
       nil
     rescue StandardError => e
       @logger.info("#{LOG}: could not check the IDENTIFY budget (#{e.class}); backing off")
+      # One receipt per outage: a revoked token (401 here) never reaches the
+      # IDENTIFY whose fatal close would otherwise be its only ErrorLog row.
+      receipt(e) unless @check_receipted
+      @check_receipted = true
       @failures += 1
       backoff
     end
