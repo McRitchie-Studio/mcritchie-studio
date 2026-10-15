@@ -102,6 +102,13 @@ module AgentMessages
       assert_equal [ mine.id ], ledger["turns"].map { |t| t["id"] }, "Bea's other rows stay out; mine stay in"
     end
 
+    test "a reference into another channel's thread (a Discord forward) pins nothing from that channel" do
+      elsewhere = exchange!("said in the quiet channel", at: @t0 - 1.hour, author: BEA, channel_ref: QUIET, answer: "quiet answer")
+      forward = exchange!("", at: @t0, thread_key: elsewhere.thread_key)
+
+      assert_nil bundle(forward).dig("ledger", "pin"), "another channel's audience is not this one"
+    end
+
     test "a pinned exchange from the sender's own ledger is not repeated as a turn" do
       older = exchange!("older", at: @t0 - 3.hours, answer: "a1")
       root = exchange!("root", at: @t0 - 2.hours, answer: "a2")

@@ -12,6 +12,9 @@ module AgentMessages
   # earlier root, DiscordIngest's convention `discord:<channel>:<root id>`) pins
   # the latest earlier row of that thread: the exchange being answered. The pin is
   # always included, even when another person wrote it, and leaves the turn list.
+  # It comes only from THIS channel (channel_ref): DiscordIngest inherits the
+  # thread_key of any referenced row, and a Discord forward references a message
+  # in another channel or guild, whose audience is not this one.
   #
   # PRUNING. The last VERBATIM_TURNS turns no older than VERBATIM_WINDOW (measured
   # from the message's own sent time, not the clock, so a rebuild is identical)
@@ -81,7 +84,8 @@ module AgentMessages
     def pinned_row
       return nil unless reply_root
 
-      AgentMessage.where(thread_key: @message.thread_key).where("id < ?", @message.id).order(id: :desc).first
+      AgentMessage.where(thread_key: @message.thread_key, channel: @message.channel, channel_ref: @message.channel_ref)
+                  .where("id < ?", @message.id).order(id: :desc).first
     end
 
     def split(rows)
