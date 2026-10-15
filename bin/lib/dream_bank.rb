@@ -155,7 +155,20 @@ module DreamBank
            "Each dream is a decision worth repeating, signed off by Alex. Some record what a session got " \
            "right; some record the answer a wrong call taught. Read them all before your first decision; " \
            "when a situation here matches yours, answer it the same way. A dream never overrides a First " \
-           "Rule or an SOP. Full story: `docs/agents/dreams/platform/<slug>.md`.\n\n"
+           "Rule or an SOP. Full story: `docs/agents/dreams/platform/<slug>.md`. When a dream changes what " \
+           "you do, run `bin/dream fired <slug> --decision \"...\"`.\n\n"
+
+  STATUS_LINE = /^status:[ \t]*["']?proposed["']?[ \t]*$/
+
+  # The file's text with its front matter's `status: proposed` set to approved, or
+  # nil when the front matter does not read proposed. Nothing else in the file moves.
+  def approve_text(text)
+    match = FRONTMATTER.match(text.to_s)
+    return nil unless match && match[1].match?(STATUS_LINE)
+
+    front = match[0].sub(STATUS_LINE, "status: #{APPROVED}")
+    front + text.to_s[match.end(0)..].to_s
+  end
 
   # The platform sequence for a session start: the dreams, then the helper roster
   # when both fit the budget. The roster never costs a dream or a Why line.
