@@ -93,6 +93,9 @@ test("the Gmail read shows on the admin page after connecting it there", async (
 const connectAll = (page) => page.locator("[data-test='google-connect-all']");
 
 test("an admin connects Calendar, Gmail and Drive at once with Connect Google", async ({ page }) => {
+  // Every Disconnect asks to confirm. One standing handler accepts each, so a
+  // confirm that never opens cannot leave a stray handler for the next one.
+  page.on("dialog", (dialog) => dialog.accept());
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/integrations");
   const cards = { calendar: slot(page, "google_calendar"), gmail: slot(page, "gmail"), drive: slot(page, "google_drive") };
@@ -119,7 +122,6 @@ test("an admin connects Calendar, Gmail and Drive at once with Connect Google", 
 
   await page.goto("/integrations");
   for (const card of [cards.drive, cards.gmail, cards.calendar]) {
-    page.once("dialog", (dialog) => dialog.accept());
     await card.getByRole("button", { name: "Disconnect" }).click();
     await expect(card).toHaveAttribute("data-state", "none");
   }
@@ -127,6 +129,9 @@ test("an admin connects Calendar, Gmail and Drive at once with Connect Google", 
 });
 
 test("a Connect Google that unticks Gmail connects the other two, and a disconnected Gmail stays off", async ({ page }) => {
+  // Every Disconnect asks to confirm. One standing handler accepts each, so a
+  // confirm that never opens cannot leave a stray handler for the next one.
+  page.on("dialog", (dialog) => dialog.accept());
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/integrations");
   const cards = { calendar: slot(page, "google_calendar"), gmail: slot(page, "gmail"), drive: slot(page, "google_drive") };
@@ -157,7 +162,6 @@ test("a Connect Google that unticks Gmail connects the other two, and a disconne
   // Disconnect Gmail and Drive here; Google still holds both. Connecting Drive
   // again echoes Gmail back, and Gmail stays off.
   for (const card of [cards.gmail, cards.drive]) {
-    page.once("dialog", (dialog) => dialog.accept());
     await card.getByRole("button", { name: "Disconnect" }).click();
     await expect(card).toHaveAttribute("data-state", "none");
   }
@@ -167,7 +171,6 @@ test("a Connect Google that unticks Gmail connects the other two, and a disconne
   await expect(cards.gmail).toHaveAttribute("data-state", "none");
 
   for (const card of [cards.drive, cards.calendar]) {
-    page.once("dialog", (dialog) => dialog.accept());
     await card.getByRole("button", { name: "Disconnect" }).click();
     await expect(card).toHaveAttribute("data-state", "none");
   }
