@@ -91,7 +91,7 @@ turf-vault). Production's `SOLANA_MULTISIG_SIGNERS` lists the same five:
 
 So hop 1 needs **two human signatures**: `GovernanceConfig` stores 3 for
 `sweep_operator_revenue` (read on chain 2026-10-14), the server supplies one, and
-two of Alex's wallets (`7ZDJ`, `9gAC`, `3Qj4`) supply the rest. Hop 2 needs
+two of Alex's wallets supply the rest: `7ZDJ`, then `3Qj4`, then `9gAC`. Hop 2 needs
 **three** Squads approvals: the two agent seats cast theirs, so it needs **one**
 of Alex's. The retired keys `8K81…` (Xan) and `CytJ…` (Mason) left the set on
 2026-10-14 and can no longer sign.
@@ -139,8 +139,8 @@ that reasoning — see the refusals table.
   which `Currencies`, `Treasury` and `Squads Treasury` all hang. `/admin` alone is
   a 404 in turf-monster.
 - **Alex has two of his wallets available** — hop 1 needs two of his cosigns
-  (`7ZDJ`, `9gAC` or `3Qj4`), and hop 2 needs one approval from one of his Squads
-  seats (the same three).
+  (`7ZDJ`, then `3Qj4`, then `9gAC`), and hop 2 needs one approval from one of
+  his Squads seats (the same three, in the same order).
 - The turf-vault program on that cluster is not paused.
 
 Everything below runs against production:
@@ -271,7 +271,8 @@ https://turfmonster.media/admin/pending_transactions
 **Pick the second wallet on the page BEFORE anyone clicks sign.** The server
 already holds its slot, and the action needs three signatures, so the row must
 reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
-the `MULTISIG_COSIGNER` default) and one more of his wallets (`9gAC` or `3Qj4`).
+the `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
+3Qj4", or `9gAC` when `3Qj4` is unavailable.
 The extra signer slots are part of the transaction message, so they cannot be
 added afterwards without invalidating a signature already on it; a row built for
 two and then handed a third wallet is short before Phantom even opens. The remedy

@@ -9,8 +9,8 @@ upgrading a program the vault holds the upgrade authority for. The agent builds
 the proposal and casts both agent votes. Mr. McRitchie gets one link and one
 line, and he approves. The agent executes only after his approval is on chain.
 
-It is the sole exception to First Rule 10 in `AGENTS.md` (no agent signs
-mainnet). Mr. McRitchie set it on 2026-10-12, after mainnet Squad tx #7:
+It is the first of the two ways First Rule 10 in `AGENTS.md` lets an agent sign
+mainnet; the second is [`4S39` as a second signature](#the-second-signature). Mr. McRitchie set it on 2026-10-12, after mainnet Squad tx #7:
 
 > "That was beautiful, that is exactly how we should be using the squad, you make
 > the transaction and double sign and provide me the URL to sign and execute."
@@ -41,8 +41,8 @@ hop 2 (swept revenue to his wallet) both run their Squads step here.
 | Multisig | `4H3fP3otjMtupk1DQDjKXYY1dWjT6LNM4H4ZWZ1XcKSX`, threshold 3 of 5, every member mask 7 |
 | Vault (vault 0) | `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm` |
 | Agent seats | `7auwTL…` (`solana.turf.system`, `studio-agents`); `3LTLPG…` (`solana.turf.governance.v2`, `studio-agents-admin`), which replaced the exposed `4bKN…` by config transaction #10 on 2026-10-14 |
-| Mr. McRitchie's seats | `7ZDJp7FU…` (Phantom), `9gACbz…`, `3Qj4v9…` |
-| No agent-run mainnet signature, barring his ruling for one instance | Mack `foUu…`, and the retired keys Xan `8K81…`, Mason `CytJ…` and `4bKN…` (swept to 0 SOL, items archived 2026-10-14). The app's own server key (`4S39…`, `solana.turf.server`, since 2026-10-14) signing inside the running app is the app, not an agent |
+| Mr. McRitchie's seats, in the order to ask for them | `7ZDJp7FU…` (Phantom), then `3Qj4v9…`, then `9gACbz…` |
+| Never sign | the retired keys Xan `8K81…`, Mason `CytJ…` and `4bKN…` (swept to 0 SOL, items archived 2026-10-14). Mack `foUu…` is devnet-only and holds no mainnet power. The app's own server key (`4S39…`, `solana.turf.server`, since 2026-10-14) signing inside the running app is the app, not an agent; an agent signs with it only as [the second signature](#the-second-signature) |
 
 The set was read off chain on 2026-10-14, after config transaction #10. turf-vault
 `scripts/lib/squad-clusters.js` holds it, and its test pins it. Read the live set
@@ -57,7 +57,8 @@ before you act (`node scripts/squad-inventory.js`). This table is a snapshot.
    It keys on the **vault PDA**, because the multisig address 404s (turf-monster
    `Solana::Config.squads_app_url`). The line says what moves, how much, and to
    whom.
-3. **He approves from `7ZDJ`, `9gAC` or `3Qj4`.** He may execute it himself.
+3. **He approves from `7ZDJ`; failing that `3Qj4`, then `9gAC`.** Name the one
+   seat to use, positively ("approve from 3Qj4"). He may execute it himself.
 4. **Otherwise the agent executes, and only after his approval is on chain.**
    Two agent votes plus any third member reach the threshold, but they never
    suffice. The tool refuses without an operator approval.
@@ -93,6 +94,41 @@ It does **not** cover:
 
 These still need his ruling on the card
 ([`program-upgrade`](program-upgrade.md#signing-rule)).
+
+## The second signature
+
+First Rule 10's second clause. Some mainnet actions need a signature beyond the
+one the app or Mr. McRitchie's first wallet supplies: a `VaultState` governance
+action at threshold 2 or more, or a `pending_transactions` row in turf-monster.
+Mr. McRitchie set the answer on 2026-10-15, in chat:
+
+> "I think it's more effective to always say use this (the other address), maybe
+> we can just add a dream about when a second signature is needed, you can go
+> ahead and use 4S39 in a pinch."
+
+He then said "Yes" to the scope below. The dream is
+[`second-signature-ask-then-4s39`](../../../dreams/platform/second-signature-ask-then-4s39.md).
+
+1. **Ask him for his next wallet first.** His priority is `7ZDJ`, then `3Qj4`,
+   then `9gAC`. Say which one, positively: "switch to 3Qj4".
+2. **In a pinch, sign with `4S39`** (`solana.turf.server`, production's
+   `SOLANA_ADMIN_KEY`, `studio-agents-admin`). A pinch is when he is unavailable
+   for a second Phantom prompt, or the flow cannot take one.
+3. **Only on an action he asked for in this session.** His request is the
+   control; `4S39` only spares him a second Phantom prompt. Never on an agent's
+   own initiative, and never on a request carried over from an earlier session.
+   Record his words on the card or activity.
+4. **Never `3LTL` from his wallet, and never a retired key** (`8K81`, `CytJ`,
+   `4bKN`).
+
+**Why the session condition is load-bearing.** `4S39` (slot 2) and `3LTL`
+(slot 0) are both agent-held `VaultState` signatures. Together they meet every
+action `GovernanceConfig` holds at 2 of 5: `pause`, `close_contest`,
+`set_contest_lock_time` and `set_contest_conclusion_time` (turf-vault
+`DEFAULT_THRESHOLDS`; mainnet runs the shipped defaults). So two agent keys can
+already reach those actions without him. The rule, not the chain, is what makes
+his request in this session the gate. The 3-of-5 actions (settle, cancel, sweep,
+`update_signers`, unpause) still need one of his wallets.
 
 ## Preconditions
 
@@ -145,7 +181,10 @@ before it reads anything.
    Squad tx #7: send 6.2 SOL from the vault Bk9s… to HwqC…. Approved by 7auwTL + 4bKNSq; approve from 7ZDJ, 9gAC, 3Qj4, then execute it or tell me to.
    ```
 
-   Add nothing else. He needs the link, what moves, and how much.
+   The tool lists his seats in its own order. When you add a line, name the one
+   seat to use: `7ZDJ` first, then `3Qj4`, then `9gAC`. Never point him at `3LTL`:
+   it is an agent seat, and his copy of it is break-glass. Add nothing else. He
+   needs the link, what moves, and how much.
 
 4. **Execute, if he asks.** He may execute it himself. If he tells you to, run:
 

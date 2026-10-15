@@ -135,8 +135,8 @@ so two programs' cards cannot collide.
   fenced from the QA rehearsal.
   Load a key only into a process that prints its public half, and never pipe or
   redirect an `op read` of a secret (activity-17894 records why).
-- **Mainnet**: **no agent signs a mainnet transaction** (First Rule 10), except
-  for two kinds of Squad vault transaction under
+- **Mainnet**: an agent signs a mainnet transaction only as First Rule 10 names.
+  The rule's first clause is two kinds of Squad vault transaction under
   [`squad-vault-ops`](squad-vault-ops.md#what-the-exception-covers-and-what-it-does-not):
   1. a SOL or SPL transfer out of vault 0, such as the rent float for the buffer,
      through `squad-vault-transfer.js`;
@@ -151,11 +151,17 @@ so two programs' cards cannot collide.
   when the upgrade URL is ready"), and mainnet Squad #8 was the first upgrade
   done this way: he executed it at about 13:28 MDT, landing v0.26 at slot
   456161810. Config transactions and any other instruction are not covered.
-- **The barred keys.** No agent runs a mainnet signature with Mack, or with a
-  retired key (`8K81`, `CytJ`, `4bKN`; swept to 0 SOL and archived 2026-10-14),
-  unless Mr. McRitchie rules on that one instance. The app's own server key
-  (`4S39`, `solana.turf.server`, since 2026-10-14) signing inside the running app
-  is the app, not an agent. The
+- **The second signature.** An agent may sign with `4S39` (`solana.turf.server`)
+  as the second signature on a mainnet action Mr. McRitchie asked for in this
+  session, never on its own initiative
+  ([`squad-vault-ops`](squad-vault-ops.md#the-second-signature)). An upgrade's
+  buffer, extend and init signatures are not second signatures; they still need
+  his ruling.
+- **The barred keys.** The retired keys (`8K81`, `CytJ`, `4bKN`; swept to 0 SOL
+  and archived 2026-10-14) never sign. Mack is devnet-only. Any other agent-run
+  mainnet signature needs Mr. McRitchie's ruling on that one instance. The app's
+  own server key (`4S39`, `solana.turf.server`, since 2026-10-14) signing inside
+  the running app is the app, not an agent. The
   v0.26 mainnet `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
   Outside the exception, an agent runs only reads and dry runs on mainnet:
   `squad-upgrade.js` without `--send`, `squad-inventory.js`,
