@@ -285,15 +285,18 @@ class DreamCliTest < Minitest::Test
   # Fires are counted by slug alone (DreamHeat), so a slug must be unique across
   # the bank, not only within its home.
   def test_unit_materialize_refuses_a_slug_another_home_already_uses
-    root, bank = desk
-    elsewhere = File.join(bank, "platform/guard-nil-reader.md")
-    File.write(elsewhere, "mine")
+    %w[platform sops/qa-release].each do |home|
+      root, bank = desk("desk-#{home.tr("/", "-")}")
+      elsewhere = File.join(bank, home, "guard-nil-reader.md")
+      FileUtils.mkdir_p(File.dirname(elsewhere))
+      File.write(elsewhere, "mine")
 
-    out, err, code = materialize("propose", "--materialize", "dream-proposal-guard-nil-reader", cwd: root)
+      out, err, code = materialize("propose", "--materialize", "dream-proposal-guard-nil-reader", cwd: root)
 
-    assert_equal [ 1, "" ], [ code, out ]
-    assert_includes err, "slugs are unique across the bank"
-    refute File.exist?(File.join(bank, "carl/guard-nil-reader.md")), "nothing was written under carl/"
+      assert_equal [ 1, "" ], [ code, out ], home
+      assert_includes err, "slugs are unique across the bank", home
+      refute File.exist?(File.join(bank, "carl/guard-nil-reader.md")), "#{home}: nothing was written under carl/"
+    end
   end
 
   def test_unit_materialize_refuses_a_finding_that_is_not_a_proposed_dream_for_one_known_soul
@@ -430,6 +433,20 @@ class DreamCliTest < Minitest::Test
     assert_includes File.read(File.join(bank, "sops/qa-release/rerun-first.md")), "\nstatus: approved\n"
     assert_includes out, "dream: 1 of 4 pending approval(s) written"
     assert_equal 3, err.scan("not a bank path").size, err
+  end
+
+  # The page reads `status: Proposed` as proposed and offers Approve, so
+  # apply-approvals must flip that same file.
+  def test_integration_apply_approvals_flips_a_capitalized_proposed_status
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "carl"))
+    File.write(File.join(bank, "carl/guard-nil-reader.md"), PROPOSAL.sub("status: proposed", "status: Proposed"))
+
+    out, err, code = approvals_cli("apply-approvals", rows: [ pending("carl", "guard-nil-reader") ], cwd: root)
+
+    assert_equal 0, code, err
+    assert_includes File.read(File.join(bank, "carl/guard-nil-reader.md")), "\nstatus: approved\n"
+    assert_includes out, "dream: 1 of 1 pending approval(s) written"
   end
 
   def test_unit_apply_approvals_warns_when_a_layer_goes_over_budget
