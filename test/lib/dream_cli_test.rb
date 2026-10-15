@@ -105,7 +105,8 @@ class DreamCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", err
     assert_equal "## Approved dreams, ranked for task settle-payout-once\n", out.lines.first
-    assert_equal 18, rows.size, "every approved dream, whoever it belongs to"
+    assert_equal 20, rows.size, "every approved dream, whoever it belongs to, step dreams included"
+    assert_includes out, "`read-ci-before-the-diff` · sops/pr-review · #{FIXTURES}/sops/pr-review/read-ci-before-the-diff.md"
     assert_equal "score 10 · `settle-once-per-entry` · pokemon · #{FIXTURES}/pokemon/settle-once-per-entry.md\n", rows.first
     assert_includes out, "score 0 · `docs-guard-names-its-rule` · pokemon · #{FIXTURES}/pokemon/docs-guard-names-its-rule.md"
     assert_includes out, "score 6 · `money-review-reads-the-ledger` · carl · "
@@ -119,7 +120,7 @@ class DreamCliTest < Minitest::Test
     assert_equal [ 0, "" ], [ code, err ]
     assert_equal "## Approved dreams\n", plain.lines.first
     refute_includes plain, "score "
-    assert_equal 18, plain.lines.grep(/`/).size
+    assert_equal 20, plain.lines.grep(/`/).size
 
     out, err, code = run_bin("list", "--task", "some-task", dir: FIXTURES)
     assert_equal 0, code

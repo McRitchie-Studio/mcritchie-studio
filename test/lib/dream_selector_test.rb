@@ -97,7 +97,9 @@ class DreamSelectorTest < Minitest::Test
     assert_includes selection.hidden.map(&:slug), "docs-guard-names-its-rule"
     assert_includes selection.hidden.map(&:slug), "wait-for-the-light", "another soul's dream is not shown"
     refute_includes (selection.shown + selection.hidden).map(&:slug), "proposed-money-idea", "control: a proposed dream is nowhere"
-    assert_equal bank.count(&:approved?), (selection.shown + selection.hidden).size
+    assert_equal bank.count { |dream| dream.approved? && !dream.step? }, (selection.shown + selection.hidden).size,
+                 "every approved dream but the step dreams, which print on their step's card"
+    assert(bank.any? { |dream| dream.approved? && dream.step? }, "control: the fixture bank holds a step dream")
 
     nobody = DreamSelector.select(payment_task, bank, soul: "mack")
     assert_empty nobody.picked
@@ -182,7 +184,8 @@ class DreamSelectorTest < Minitest::Test
     selection.picked.each { |dream| assert_includes text, "(`#{dream.slug}`)\nA: #{dream.answer}\nWhy: #{dream.why}" }
     shown = text.scan("**Q: ").size
     assert_operator shown, :<, 32
-    assert text.end_with?("#{wide.count(&:approved?) - shown} not shown: bin/dream list --task settle-payout-once"), text[-80..]
+    loadable = wide.count { |dream| dream.approved? && !dream.step? }
+    assert text.end_with?("#{loadable - shown} not shown: bin/dream list --task settle-payout-once"), text[-80..]
   end
 
   def test_unit_a_step_dream_is_neither_selected_universal_nor_counted_hidden

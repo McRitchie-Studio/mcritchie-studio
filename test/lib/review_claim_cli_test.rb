@@ -907,7 +907,7 @@ class ReviewClaimCliTest < Minitest::Test
 
         assert_equal ReviewClaimCli::OK, c.run(["acquire", SLUG])
         assert_empty task_reads(c)
-        assert_equal "", @err.string
+        refute_includes @err.string, "dream sequence", "no soul, no sequence; only the step's moment card"
       end
     end
   end
