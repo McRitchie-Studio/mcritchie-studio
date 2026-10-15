@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # bin/dispatcher run [--souls a,b] [--channel discord] [--cap N] [--worker ID]
-# bin/dispatcher install | uninstall | status
+# bin/dispatcher install [--if-changed] | uninstall | status
 #
 # The agent mailbox as a service on Alex's Mac
 # (docs/agents/agents/steffon/sops/agent-dispatcher.md). `run` long-polls the
@@ -14,6 +14,11 @@
 # spending an attempt and pauses claiming until the reset. SIGTERM stops claiming
 # and lets runs finish (or gives their messages back). It posts nothing itself.
 #
+# New code restarts it with nobody's help: on the ping beat it re-reads a digest
+# of its own files (this script, everything it required from the repo, and
+# config/agent_routes.yml). A new digest seen twice in a row stops claiming, lets
+# the runs in flight finish, and exits 0; launchd's KeepAlive starts the new code.
+#
 # Claude bills Alex's claude.ai subscription: every child runs under an
 # allow-listed environment (AgentMailbox::CHILD_ENV_ALLOW), so no API key, auth
 # token, base URL or provider switch reaches it. `install` refuses a task desk
@@ -22,7 +27,9 @@
 # `install` renders config/launchd/studio.mcritchie.agent-dispatcher.plist into
 # ~/Library/LaunchAgents and loads it (KeepAlive, RunAtLoad, logs in
 # ~/Library/Logs/agent-dispatcher.log); `uninstall` unloads and removes it;
-# `status` reports it. Steffon's SOP runs install after the release ships.
+# `status` reports it. `install --if-changed` is the production ship's step: it
+# reinstalls only when the service is installed and the template changed, and
+# does nothing on a Mac without it.
 #
 #   HEARTBEAT_CLAUDE_CMD  the Claude command, as a shell-split string (tests stub it)
 #
@@ -34,13 +41,14 @@ require_relative "lib/agent_dispatcher"
 USAGE = <<~TEXT
   Usage:
     bin/dispatcher run [--souls a,b] [--channel discord] [--cap N] [--worker ID]
-    bin/dispatcher install | uninstall | status
+    bin/dispatcher install [--if-changed] | uninstall | status
 TEXT
 
 command = ARGV.first
 spec = case command
        when "run" then { value: %w[--souls --channel --cap --worker] }
-       when "install", "uninstall", "status" then {}
+       when "install" then { bool: %w[--if-changed] }
+       when "uninstall", "status" then {}
        end
 if spec.nil?
   CliArgGuard.guard!(ARGV, program: "bin/dispatcher", usage: USAGE, consequence: "nothing was started or installed.")
@@ -51,7 +59,9 @@ parsed = CliArgGuard.guard!(ARGV.drop(1), program: "bin/dispatcher #{command}", 
                                           consequence: "nothing was started or installed.", **spec)
 
 case command
-when "install" then exit AgentMailbox::LaunchAgent.new.install
+when "install"
+  agent = AgentMailbox::LaunchAgent.new
+  exit(parsed.bool?("--if-changed") ? agent.install_if_changed : agent.install)
 when "uninstall" then exit AgentMailbox::LaunchAgent.new.uninstall
 when "status" then exit AgentMailbox::LaunchAgent.new.status_report
 when "run"
@@ -88,7 +98,9 @@ when "run"
   $stdout.sync = true
   dispatcher = AgentMailbox::Dispatcher.new(
     client: AgentMailbox::Client.new(api: AgentApi.new(open_timeout: 5, read_timeout: 40)),
-    souls: souls, channel: channel, cap: cap, worker: parsed.values["--worker"].last, claude_cmd: claude_cmd
+    souls: souls, channel: channel, cap: cap, worker: parsed.values["--worker"].last, claude_cmd: claude_cmd,
+    # Taken here, after every require, so the digest covers all the code it runs.
+    fingerprint: AgentMailbox::CodeFingerprint.for_process(entry: __FILE__)
   )
   %w[TERM INT].each { |sig| Signal.trap(sig) { dispatcher.stop! } }
   dispatcher.run
