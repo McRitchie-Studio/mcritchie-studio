@@ -7,7 +7,9 @@
 #   bin/dream <soul> --task <slug>     the dreams a claim of that task loads for the soul
 #   bin/dream list [--task <slug>]     every approved dream with its file, ranked for the task
 #   bin/dream platform                 the sequence every session start loads
-#   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md
+#   bin/dream index [--write|--check]  print, write or verify docs/agents/dreams/INDEX.md;
+#                                      --check also refuses a layer over its budget
+#                                      (platform 15, a soul 20, an SOP step 5 approved dreams)
 #   bin/dream propose --materialize <finding>
 #                                      write the proposed dream a dream-proposal-<task> triage finding
 #                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
@@ -200,7 +202,10 @@ class DreamCli
       current = File.exist?(path) ? File.read(path) : nil
       return refuse("#{path} is stale. Run `bin/dream index --write`.") unless current == text
 
-      @out.puts("dream: #{path} is current")
+      over = DreamBank.budget_errors(DreamBank.all(dir: @dir))
+      return refuse("over budget:\n  #{over.join("\n  ")}") unless over.empty?
+
+      @out.puts("dream: #{path} is current; every layer is within its budget")
     else
       @out.puts(text)
     end

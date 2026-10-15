@@ -218,6 +218,134 @@ class DreamBankTest < Minitest::Test
     assert_equal "", DreamBank.platform_context([]), "no dreams, no block"
   end
 
+  # ── step dreams, budgets and moment cards ──────────────────────────────────
+
+  STEP = "sop: building-sop\nstep: begin"
+
+  def test_unit_a_step_dream_names_one_registered_sop_and_step_and_no_soul
+    dream = DreamBank.parse(tagged(STEP), slug: "s")
+
+    assert dream.step?
+    assert_equal %w[building-sop begin], [ dream.sop, dream.step ]
+    refute dream.platform?, "a step dream never loads at session start"
+    assert_equal "sops/building-sop", dream.sequence
+    assert_includes DreamBank.sop_names, "qa-release", "control: the registry was read"
+
+    assert_equal [ "unknown sop `no-such-sop`; it is not in the SOP registry" ],
+                 DreamBank.errors({ "sop" => "no-such-sop", "step" => "begin" })
+    assert_equal [ "a step dream names exactly one `sop` and one `step`" ],
+                 DreamBank.errors({ "sop" => "building-sop" })
+    assert_equal [ "a step dream names exactly one `sop` and one `step`" ],
+                 DreamBank.errors({ "sop" => "building-sop", "step" => %w[begin submit] })
+    assert_equal [ "a step dream carries no `soul` tag; it loads at its SOP step" ],
+                 DreamBank.errors({ "sop" => "building-sop", "step" => "begin", "soul" => "carl" })
+    assert_equal [ "step value `Two Words` is not one lowercase token" ],
+                 DreamBank.errors({ "sop" => "building-sop", "step" => "Two Words" })
+    assert_empty DreamBank.errors({ "sop" => "building-sop", "step" => "begin" })
+    assert_nil DreamBank.parse(tagged("sop: no-such-sop\nstep: begin"), slug: "x"), "an unknown sop loads nowhere"
+    assert_empty DreamBank.errors({ "sop" => "no-such-sop", "step" => "begin" }, sops: []),
+                 "an unreadable registry (the installed tooling tree) judges no sop"
+  end
+
+  def approved_dreams(count, extra)
+    (1..count).map { |n| DreamBank.parse(tagged(extra, question: "Question #{n}?"), slug: "d#{n}") }
+  end
+
+  def test_unit_budget_errors_name_the_layer_over_its_cap
+    assert_empty DreamBank.budget_errors(approved_dreams(15, "") + approved_dreams(20, "soul: carl") +
+                                         approved_dreams(5, STEP))
+
+    over = DreamBank.budget_errors(approved_dreams(16, "") + approved_dreams(21, "soul: [carl, xan]") +
+                                   approved_dreams(6, STEP) + approved_dreams(5, "sop: building-sop\nstep: submit"))
+    assert_equal 4, over.size, over.inspect
+    assert_includes over, "layer platform holds 16 approved dreams; its budget is 15. " \
+                          "A full layer means a swap, not an add: retire one before approving another."
+    assert(over.any? { |line| line.start_with?("layer soul carl holds 21 approved dreams; its budget is 20.") })
+    assert(over.any? { |line| line.start_with?("layer soul xan holds 21") }, "a dream counts against each soul")
+    assert(over.any? { |line| line.start_with?("layer step building-sop · begin holds 6 approved dreams; its budget is 5.") })
+    refute(over.any? { |line| line.include?("submit") }, "a step at its cap is not over")
+  end
+
+  def test_unit_proposed_dreams_do_not_count_against_a_budget
+    proposed = (1..30).map do |n|
+      DreamBank.parse(tagged("", question: "Q#{n}?").sub("status: approved", "status: proposed"), slug: "p#{n}")
+    end
+    assert_empty DreamBank.budget_errors(proposed)
+  end
+
+  def test_unit_moment_card_prints_the_steps_approved_dreams_short
+    begin_dream = DreamBank.parse(tagged(STEP, question: "At begin, what?"), slug: "at-begin")
+    other = DreamBank.parse(tagged("sop: building-sop\nstep: submit"), slug: "at-submit")
+    proposed = DreamBank.parse(tagged(STEP).sub("status: approved", "status: proposed"), slug: "waiting")
+    card = DreamBank.moment_card([ begin_dream, other, proposed, *three_dreams ], sop: "building-sop", step: "begin")
+
+    assert card.start_with?("## Moment: building-sop · begin\n")
+    assert_includes card, "**Q: At begin, what?** (`at-begin`)\nA: No. Wait for the report."
+    refute_includes card, "Why:", "a card is question and answer only"
+    refute_includes card, "at-submit"
+    refute_includes card, "waiting", "a proposed dream prints nowhere"
+    assert_equal "", DreamBank.moment_card(three_dreams, sop: "building-sop", step: "begin")
+  end
+
+  def test_unit_moment_prints_offline_and_never_raises
+    Dir.mktmpdir do |dir|
+      write(dir, "sops/qa-release/rerun.md", tagged("sop: qa-release\nstep: prepare", question: "Red CI?"))
+      io = StringIO.new
+      DreamBank.moment(sop: "qa-release", step: "prepare", io: io, dir: dir)
+      assert_includes io.string, "## Moment: qa-release · prepare"
+
+      quiet = StringIO.new
+      DreamBank.moment(sop: "qa-release", step: "ship", io: quiet, dir: dir)
+      assert_equal "", quiet.string, "no dream for the step, no card"
+
+      broken = Object.new
+      def broken.puts(*) = raise(IOError, "closed stream")
+      assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: broken, dir: dir)
+      assert_nil DreamBank.moment(sop: "qa-release", step: "prepare", io: io, dir: File.join(dir, "missing"))
+    end
+  end
+
+  def test_unit_after_moment_prints_the_card_on_every_way_out_and_keeps_the_result
+    Dir.mktmpdir do |dir|
+      write(dir, "sops/qa-release/rerun.md", tagged("sop: qa-release\nstep: prepare", question: "Red CI?"))
+      io = StringIO.new
+      assert_equal :qa_not_green, DreamBank.after_moment(sop: "qa-release", step: "prepare", io: io, dir: dir) { :qa_not_green }
+      assert_equal 1, io.string.scan("## Moment").size
+
+      aborted = StringIO.new
+      error = assert_raises(SystemExit) do
+        DreamBank.after_moment(sop: "qa-release", step: "prepare", io: aborted, dir: dir) { exit 2 }
+      end
+      assert_equal 2, error.status, "the command's own exit stands"
+      assert_includes aborted.string, "## Moment: qa-release · prepare"
+
+      broken = Object.new
+      def broken.puts(*) = raise(IOError, "closed stream")
+      assert_equal :ok, DreamBank.after_moment(sop: "qa-release", step: "prepare", io: broken, dir: dir) { :ok },
+                   "a card that cannot print never replaces the command's result"
+    end
+  end
+
+  def test_unit_index_lists_step_dreams_under_their_sop_step
+    Dir.mktmpdir do |dir|
+      write(dir, "sops/building-sop/at-begin.md", tagged("#{STEP}\ntopic: author", question: "At begin?"))
+      write(dir, "sops/clean-infra/reclaim.md", tagged("sop: clean-infra\nstep: reclaim", question: "Reclaim?"))
+      index = DreamBank.index(dir: dir)
+
+      assert_includes index, "## Step building-sop · begin (1)\n\nLoads at: the moment card of `bin/task begin`"
+      assert_includes index, "| [`at-begin`](sops/building-sop/at-begin.md) | At begin? | topic: author | approved |"
+      assert_includes index, "## Step clean-infra · reclaim (1)\n\nLoads at: no command prints this step yet"
+      refute_includes index, "## Platform (1)", "a step dream is not platform"
+    end
+  end
+
+  def test_unit_every_moment_names_a_registered_sop
+    DreamBank::MOMENTS.each_key do |(sop, step)|
+      assert_includes DreamBank.sop_names, sop
+      assert_match DreamBank::TAG_VALUE, step
+    end
+  end
+
   # ── the real bank ──────────────────────────────────────────────────────────
 
   def bank_files
@@ -263,6 +391,20 @@ class DreamBankTest < Minitest::Test
       end
     end
     assert_operator DreamBank.roster.keys.count { |soul| DreamBank.soul(soul).any? }, :>=, 2, "control: souls with dreams were read"
+  end
+
+  # Going over a layer's budget fails CI, naming the layer.
+  def test_unit_every_layer_of_the_real_bank_fits_its_budget
+    dreams = DreamBank.all
+    assert_operator dreams.count(&:approved?), :>=, 12, "control: approved dreams were read"
+    assert_empty DreamBank.budget_errors(dreams)
+  end
+
+  def test_unit_the_real_bank_seeds_step_dreams_proposed
+    steps = DreamBank.all.select(&:step?).to_h { |dream| [ dream.slug, [ dream.sop, dream.step ] ] }
+    assert_equal %w[building-sop begin], steps["pass-the-author-at-begin"]
+    assert_equal %w[clean-infra reclaim], steps["reclaim-desks-held-only-by-test-artifacts"]
+    assert_equal %w[qa-release prepare], steps["rerun-the-whole-run-before-ejecting"]
   end
 
   def test_unit_index_matches_generator
