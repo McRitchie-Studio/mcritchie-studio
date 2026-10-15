@@ -51,4 +51,11 @@ class AgentDispatcherRaiseDetailTest < Minitest::Test
     assert_equal "bad … and … � end", detail(error)
     assert detail(error).valid_encoding?
   end
+
+  def test_an_unclosed_quote_is_redacted_to_the_end_of_the_line
+    error = ArgumentError.new("unexpected token at 'tell nobody the secret plan")
+    assert_equal "unexpected token at …", detail(error)
+    error = ArgumentError.new("bad \"closed\" then 'open text")
+    assert_equal "bad … then …", detail(error)
+  end
 end

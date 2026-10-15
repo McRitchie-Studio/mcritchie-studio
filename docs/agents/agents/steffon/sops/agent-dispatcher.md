@@ -118,7 +118,11 @@ A release needs no step from anyone, two mechanisms between them:
   With no plist in `~/Library/LaunchAgents` it does nothing. Otherwise it renders
   the new template with the installed plist's own ruby and PATH (the ship's
   environment is not the shell that installed it) and reinstalls only when that
-  differs from the installed file. It only warns; it never fails a ship. The
+  differs from the installed file. It only warns; it never fails a ship. A
+  reinstall boots the old job out, waits up to 100 seconds for it to leave (its
+  90-second ExitTimeOut plus a margin), and tries the bootstrap 3 times. If none
+  takes, it marks the plist (`<!-- bootstrap failed … -->` after `</plist>`), so
+  the next ship sees a difference and tries again. The
   comparison is byte for byte, so a plist edited by hand or by a plist editor
   (sorted keys, tabs) reads as changed and is reinstalled once from the template,
   keeping its ruby and PATH; the ships after that find it current.
@@ -174,6 +178,7 @@ gateway is failing before READY, so read the worker log's
 | **Mac asleep**: silent alert, nothing in the log since | The log's last timestamp | Wake the Mac or ask Alex to; the dispatcher resumes by itself and the recovery line posts |
 | **Signed out**: messages waiting, the row reads `paused … (claude_signed_out)` | `claude auth status` must show `authMethod` `claude.ai` | Ask Alex to run `claude auth login` (his login). The pause lifts within 30 minutes; `bin/dispatcher install` restarts it at once |
 | **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. After 3 such refunds a message spends attempts like any other, so a long outage can dead-letter it (re-queue below). If waiting until T is wrong, tell Alex; only he can raise the plan |
+| **Bootstrap failed: 5**: `bin/dispatcher install` (or the ship's refresh) printed `launchctl bootstrap failed: Bootstrap failed: 5: Input/output error`, and `bin/dispatcher status` reads `installed but not loaded` | Install already waited up to 100s for the old job to leave (`launchctl print gui/$(id -u)/studio.mcritchie.agent-dispatcher` fails once it has) and tried the bootstrap 3 times. The plist ends in a `<!-- bootstrap failed … -->` mark | The service is down and KeepAlive cannot revive a booted-out job. Run `bin/dispatcher install` from the hub checkout. The mark makes the next production ship's `install --if-changed` retry by itself, so nothing is stranded if nobody does |
 | **Run overdue**: `paused … (run_overdue)`, the log's `the run passed its … deadline` | A Claude run that outlived its timeout and its KILL | Nothing for one; for a pattern, run the Claude command by hand (row below) |
 | **Claude failing**: `paused … (claude_failed)` | The log's `releasing #N: the Claude run failed …` lines | Run the same command by hand: `echo hi \| claude -p --safe-mode --tools "" --output-format json`. Fix what it prints |
 | **Answer run raising**: `paused … (answer_raised)`, the log's `#N raised <Class> at <file:line>` and `releasing #N: the answer run raised <Class>: <message>` | The error the release reason names and the line the log names. `invalid byte sequence in US-ASCII` means the process has no UTF-8 locale: the plist must carry `LANG` and `LC_ALL` = `en_US.UTF-8` (the template does; `bin/dispatcher install` from the hub checkout restores it) | Fix the cause; the pause keeps the message's other attempts. A dead-lettered one: re-queue below |
