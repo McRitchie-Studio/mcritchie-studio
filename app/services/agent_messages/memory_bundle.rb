@@ -57,7 +57,9 @@ module AgentMessages
       rows = fetched.reject { |row| in_thread.include?(row.id) }
       recent, older = split(rows)
       total = person_scope.count
-      @notes = person ? person.notes.includes(:source_message).to_a : []
+      # A note stored before DIRECTIVES existed is held to them here too, so an
+      # instruction-shaped one already on a row never reaches a prompt.
+      @notes = person ? person.notes.includes(:source_message).reject { |n| AgentPersonNote.directive?(n.body) } : []
       @places = places(thread + rows + [ @message ] + @notes.filter_map(&:source_message))
       thread_total = thread_scope.count
       person_turns = recent.map { |row| turn(row) }

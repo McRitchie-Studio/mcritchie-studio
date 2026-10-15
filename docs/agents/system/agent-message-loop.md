@@ -387,6 +387,8 @@ may legitimately end in one.
   approved). The list is `AgentPersonNote::DIRECTIVES`, one constant, pinned by
   tests. "Prefers every answer to end with X" is refused; refusing a real fact
   costs one note, while keeping a planted rule would steer every later answer.
+  A note stored before this check existed is held to it when the bundle is
+  built, so it never reaches a prompt either.
 - **Caps.** At most 3 per answer, deduplicated against the person's notes and
   against each other (lowercased words), and at most 30 per person, with the
   oldest pruned.
