@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_231500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1339,6 +1339,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_140000) do
     t.index ["slug"], name: "index_facts_on_slug", unique: true
     t.index ["subject_type", "subject_slug", "key"], name: "index_facts_on_subject_type_and_subject_slug_and_key"
     t.index ["superseded_by_slug"], name: "index_facts_on_superseded_by_slug"
+  end
+
+  create_table "fathom_connections", force: :cascade do |t|
+    t.string "account", null: false
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.datetime "last_refreshed_at"
+    t.text "refresh_token", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account"], name: "index_fathom_connections_on_account", unique: true
+    t.index ["connected_at"], name: "index_fathom_connections_on_connected_at"
   end
 
   create_table "games", force: :cascade do |t|
