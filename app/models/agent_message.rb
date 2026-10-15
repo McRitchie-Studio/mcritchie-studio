@@ -47,6 +47,10 @@ class AgentMessage < ApplicationRecord
   # message alive forever.
   MAX_REFUNDS = 3
 
+  # Caps on what a worker reports about its Claude run (complete!'s `run`).
+  RUN_LIMITS = { claude_session_id: 100, claude_cwd: 500, reasoning: 20_000 }.freeze
+  RUN_META_KEYS = %w[thinking_tokens output_tokens num_turns duration_ms model reasoning_source].freeze
+
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
   class Refused < StandardError
@@ -156,7 +160,11 @@ class AgentMessage < ApplicationRecord
   # worker holding the claim completes it, and a second complete by that worker
   # is a no-op that queues nothing, so the reply is posted once however often a
   # worker retries the call. Returns :completed or :already_completed.
-  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current)
+  #
+  # `run` carries what the answering Claude run reported (claude_session_id,
+  # claude_cwd, reasoning, run_meta), stored for /admin/agent_messages/:id and
+  # bin/agent-inbox show; RUN_LIMITS caps each field, so a worker cannot flood the row.
+  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {})
     worker = worker.to_s.strip
     raise Refused.new("response_text is required", code: "RESPONSE_REQUIRED") if response_text.to_s.strip.empty?
 
@@ -171,7 +179,8 @@ class AgentMessage < ApplicationRecord
 
       update!(status: "completed", completed_at: now, lease_expires_at: nil,
               response_text: response_text.to_s, action_summary: action_summary.presence,
-              reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued")
+              reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
+              **self.class.run_record(run))
       record!("completed", actor: actor || soul_slug,
                            detail: { "worker" => worker, "action_summary" => action_summary.presence }.compact)
       :completed
@@ -245,6 +254,24 @@ class AgentMessage < ApplicationRecord
     self
   end
 
+  # complete!'s run report, cut to RUN_LIMITS and RUN_META_KEYS (scalars only).
+  def self.run_record(run)
+    run = (run || {}).to_h.transform_keys(&:to_sym)
+    record = RUN_LIMITS.to_h { |key, cap| [ key, run[key].to_s.strip.presence&.slice(0, cap) ] }
+    meta = (run[:run_meta] || {}).to_h.transform_keys(&:to_s).slice(*RUN_META_KEYS)
+    record[:run_meta] = meta.select { |_, v| v.is_a?(String) || v.is_a?(Numeric) }
+                            .transform_values { |v| v.is_a?(String) ? v[0, 200] : v }
+    record
+  end
+
+  # The ready line that reopens this answer's Claude session, or nil.
+  def resume_command
+    return nil if claude_session_id.blank? || !claude_session_id.match?(/\A[\w-]+\z/)
+
+    cwd = claude_cwd.presence || "~/.agents/mailbox/#{soul_slug}"
+    "cd #{Shellwords.escape(cwd).sub(/\A\\~/, '~')} && claude --resume #{claude_session_id}"
+  end
+
   def record!(kind, actor: nil, detail: {})
     events.create!(kind: kind, actor: actor, detail: detail, created_at: Time.current)
   end
@@ -270,7 +297,9 @@ class AgentMessage < ApplicationRecord
     data = slice(:id, :channel, :external_id, :guild_id, :channel_ref, :thread_key, :author_ref, :author_name,
                  :content, :mentions, :soul_slug, :routed_by, :status, :claimed_by, :claimed_at,
                  :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
-                 :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at).as_json
+                 :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at,
+                 :claude_session_id, :claude_cwd, :reasoning, :run_meta).as_json
+    data["resume_command"] = resume_command
     data["url"] = discord_url
     data["reply_url"] = reply_url
     data["events"] = self.events.map(&:as_api_json) if events
