@@ -45,6 +45,98 @@ class ReleaseTest < ActiveSupport::TestCase
     end
   end
 
+  # --- release trains (release-trains-design.md task A) ------------------------
+  #
+  # The singleton is per train. Every argument-less lookup reads the hub train, so
+  # callers that predate trains behave as before while every release is "hub".
+
+  test "[unit] a release defaults to the hub train with the pre-train slug format" do
+    release = Release.open!
+
+    assert_equal "hub", release.train
+    assert_match(/\Arel-\d{8}-\h{6}\z/, release.slug)
+    assert_equal "hub", Release.new.train, "the column default is hub for writers that never name it"
+  end
+
+  test "[unit] a non-hub train names itself in the slug" do
+    release = Release.open!(train: "turf-monster")
+
+    assert_equal "turf-monster", release.train
+    assert_match(/\Arel-turf-monster-\d{8}-\h{6}\z/, release.slug)
+  end
+
+  test "[unit] open! keeps an explicit slug on any train" do
+    assert_equal "rel-pinned", Release.open!(slug: "rel-pinned").slug
+    assert_equal "rel-pinned-app", Release.open!(slug: "rel-pinned-app", train: "cyvasse").slug
+  end
+
+  test "[unit] two active releases on different trains coexist" do
+    hub  = Release.open!
+    turf = Release.open!(train: "turf-monster")
+    turf.update!(state: "assembled")
+
+    assert_equal 2, Release.active.count
+    assert_equal hub, Release.current
+    assert_equal hub, Release.current("hub")
+    assert_equal turf, Release.current("turf-monster")
+    assert_nil Release.current("cyvasse")
+  end
+
+  test "[unit] a second active release on the same non-hub train is refused with the reason" do
+    Release.open!(train: "turf-monster")
+
+    error = assert_raises(ActiveRecord::RecordInvalid) { Release.open!(train: "turf-monster") }
+    assert_match(/another release is already active/, error.message)
+    assert Release.open!.persisted?, "the hub train is still free"
+  end
+
+  # The control for the index: with the validation skipped, the database refuses
+  # a second active row on the same train, and accepts one on another train.
+  test "[unit] the index is scoped by train when the validation is skipped" do
+    Release.open!(train: "turf-monster")
+
+    Release::ACTIVE_STATES.each do |state|
+      same = Release.new(slug: "rel-same-#{state}", branch: Release::BRANCH, state: state, train: "turf-monster")
+      error = assert_raises(ActiveRecord::RecordNotUnique) do
+        Release.transaction(requires_new: true) { same.save!(validate: false) }
+      end
+      assert_match(/index_releases_single_active/, error.message)
+    end
+
+    other = Release.new(slug: "rel-other", branch: Release::BRANCH, state: "assembling", train: "cyvasse")
+    assert other.save(validate: false), "a different train passes the index"
+  end
+
+  test "[unit] the argument-less lookups ignore other trains" do
+    Release.open!(train: "turf-monster")
+    assert_nil Release.current, "an app train's active release is not the hub's current"
+
+    turf_shipped = Release.open!(train: "cyvasse").tap { |r| r.update!(state: "shipped", shipped_at: 1.minute.ago) }
+    hub_shipped  = Release.open!.tap { |r| r.update!(state: "shipped", shipped_at: 1.hour.ago) }
+
+    assert_equal hub_shipped, Release.last_shipped
+    assert_equal turf_shipped, Release.last_shipped("cyvasse")
+  end
+
+  test "[unit] current_or_open! finds or opens on the named train" do
+    hub = Release.current_or_open!
+    assert_equal "hub", hub.train
+    assert_equal hub, Release.current_or_open!
+
+    turf = Release.current_or_open!("turf-monster")
+    assert_equal "turf-monster", turf.train
+    assert_not_equal hub, turf
+    assert_equal turf, Release.current_or_open!("turf-monster")
+  end
+
+  test "[unit] a train must be a slug" do
+    [ "", "Turf Monster", "turf_monster", "-turf" ].each do |bad|
+      release = Release.new(train: bad, state: "assembling", branch: Release::BRANCH)
+      assert_not release.valid?, "#{bad.inspect} is not a train slug"
+      assert release.errors[:train].any?
+    end
+  end
+
   # --- gem_only? / gem_release_artifacts (gem-only-deployments) ----------------
 
   test "[unit] gem_only? is true only when EVERY member ships as a gem" do
