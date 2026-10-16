@@ -130,6 +130,16 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
                  "the sign-in is numbered first: nothing ranks ahead of it here")
   end
 
+  def test_help_installs_no_service_and_writes_no_settings
+    out, status = Open3.capture2e(env(signed_in: true), "bash", SCRIPT, "--phase", "services", "--help",
+                                  chdir: @tmp, unsetenv_others: true)
+
+    assert status.success?
+    assert_includes out, "--phase services"
+    assert_empty launchctl_calls
+    refute File.exist?(File.join(@home, ".claude")), "--help writes no settings"
+  end
+
   private
 
   def write_exe(name, body)
@@ -139,15 +149,19 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
   end
 
   def build(signed_in:)
-    env = {
+    out, status = Open3.capture2e(env(signed_in: signed_in), "bash", SCRIPT, "--phase", "services",
+                                  chdir: @tmp, unsetenv_others: true)
+    assert status.success?, "the services phase never fails the build\n#{out}"
+    out
+  end
+
+  def env(signed_in:)
+    {
       "HOME" => @home, "PROJECTS_DIR" => @projects, "TMPDIR" => @tmp,
       "PATH" => [ @fakebin, RbConfig::CONFIG["bindir"], "/usr/bin", "/bin" ].join(":"),
       "FAKE_LAUNCHCTL_STATE" => @state, "FAKE_CLAUDE_LOG" => File.join(@tmp, "claude.log"),
       "FAKE_CLAUDE_SIGNED_IN" => signed_in ? "1" : "0"
     }
-    out, status = Open3.capture2e(env, "bash", SCRIPT, "--phase", "services", chdir: @tmp, unsetenv_others: true)
-    assert status.success?, "the services phase never fails the build\n#{out}"
-    out
   end
 
   def launchctl_calls
