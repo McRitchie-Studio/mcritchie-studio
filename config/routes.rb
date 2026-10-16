@@ -416,6 +416,8 @@ Rails.application.routes.draw do
   resources :applications, only: [:index, :show], param: :slug do
     member do
       get :health
+      # The app's tasks by lane, sanitized for its owner (docs/agents/system/client-pipeline.md).
+      get :pipeline
       # CTO usage (docs/agents/system/agent-usage.md): the meter as JSON, and
       # the admin's tier and cap-lift form.
       get :usage

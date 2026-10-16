@@ -11,10 +11,13 @@
 #   usage   JSON: this month's CTO usage meter and today's totals (AgentUsage,
 #           docs/agents/system/agent-usage.md); owner or admin, like the page
 #   usage_cap  admin only: the app's package tier and the per-app cap lift
+#   pipeline  the app's tasks by lane, read-only (ClientPipeline,
+#           docs/agents/system/client-pipeline.md): sanitized for an owner, with
+#           PR links for an admin; an unannounced app is a 404 to all but admins
 class ApplicationsController < ApplicationController
   HEALTH_TTL = 15.minutes
 
-  before_action :load_app, only: %i[show health usage usage_cap]
+  before_action :load_app, only: %i[show health usage usage_cap pipeline]
   before_action :require_admin_for_cap, only: :usage_cap
 
   def index
@@ -31,6 +34,13 @@ class ApplicationsController < ApplicationController
     @owners = @app.memberships.owners.includes(:user).map(&:user) if @admin
     @meter = AgentUsage.meter(@app)
     @today = usage_today(@meter)
+  end
+
+  def pipeline
+    @admin = AppOwnership.admin?(current_user)
+    raise ActiveRecord::RecordNotFound, "no such app" if !@admin && AppCatalog::UNANNOUNCED.include?(@app.slug)
+
+    @pipeline = ClientPipeline.build(@app, admin: @admin)
   end
 
   def usage

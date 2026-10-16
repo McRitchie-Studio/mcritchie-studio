@@ -32,6 +32,11 @@
 #                   ("Custom"), or "Pricing coming soon" without one
 #   cto_monthly_tokens  the app's monthly CTO token allowance; blank = unlimited
 #                   (see `cto_usage` below)
+#   building_lanes  how many of the app's tasks may sit in `building` at once
+#                   (its concurrent task lanes); blank = unlimited. More work
+#                   waits in `designed`, in order. Enforced on the claim to
+#                   building (BuildingLanes, docs/agents/system/client-pipeline.md);
+#                   an app with no tier, and the hub itself, is never capped
 #   comp            the real client the tier was worked back from. Internal: the
 #                   cards do not name clients; the admin SOP map does
 #   card_groups     the card_lanes groups this card shows, in order
@@ -170,6 +175,7 @@ packages:
     tagline: A real app built by our agents, live at your-app.mcritchie.studio.
     price_monthly: 0
     cto_monthly_tokens: ~
+    building_lanes: 1
     comp: 10and5
     card_groups: [Application]
     lanes:
@@ -182,6 +188,7 @@ packages:
     tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
     cto_monthly_tokens: ~
+    building_lanes: 2
     comp: Cyvasse
     card_groups: [Application, Marketing]
     lanes:
@@ -194,6 +201,7 @@ packages:
     tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
     cto_monthly_tokens: ~
+    building_lanes: 3
     comp: Commercial Welding
     card_groups: [Application, Marketing, Agents]
     lanes:
@@ -210,6 +218,7 @@ packages:
     tagline: "Your founding team: a CTO and a CMO."
     price_monthly: 900
     cto_monthly_tokens: ~
+    building_lanes: 4
     comp: Turf Monster
     featured: true
     card_groups: [Application, Marketing, Agents]
@@ -234,6 +243,7 @@ packages:
     tagline: Need more apps, white label or custom connectors? Talk to us.
     price_label: Custom
     cto_monthly_tokens: ~
+    building_lanes: ~
     comp: McRitchie Industries
     highlights:
       - More than one app, and more than one domain
