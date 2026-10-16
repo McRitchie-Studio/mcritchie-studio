@@ -78,4 +78,11 @@ class AgentProposalTest < ActiveSupport::TestCase
     refute proposal.expired?(23.hours.from_now)
     assert proposal.expired?(25.hours.from_now)
   end
+
+  test "the status CHECK holds exactly AgentProposal::STATUSES" do
+    definition = ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+      SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'agent_proposals_status_known'
+    SQL
+    assert_equal AgentProposal::STATUSES.sort, definition.scan(/'([a-z_]+)'/).flatten.sort
+  end
 end
