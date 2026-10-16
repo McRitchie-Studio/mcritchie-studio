@@ -13,43 +13,63 @@ name, the portal, the intent and the token stay internal.
 How the bot reads and answers once it is set up:
 [`agent-message-loop.md`](../../../system/agent-message-loop.md).
 
-**Where it stands (2026-10-14).** Each bot is its own Discord application, filed
-as `agents.discord.<bot>` in the `studio-agents` vault. Two exist:
-`agents.discord.xan` (Xan's app, bot user `1481150857809760399`) and
-`agents.discord.mack` (Mack's, read by nothing yet). The mailbox reads ONE token,
-`DISCORD_AGENT_BOT_TOKEN`, so one bot is the shared bot at a time. Today that is
-Xan's, for the live test across the whole McRitchie Studio guild, where a mention
-of the Xan bot user in any channel or thread routes to `xan`. Run Part 1 only for
-a new bot.
+**Where it stands (2026-10-16).** Each bot is its own Discord application, filed
+as `agents.discord.<bot>` in the `studio-agents` vault
+([`credential-inventory.md`](../../../modules/credential-inventory.md)):
+
+| Item | Bot user | Role |
+|------|----------|------|
+| `agents.discord.xan` | `1481150857809760399` | The SHARED bot, `DISCORD_AGENT_BOT_TOKEN`: the one reader of every listed guild (gateway and backstop poll), and the writer of every reply a soul's own bot does not post. A mention routes to `xan` |
+| `agents.discord.avi` | `1560516264378507334` | Avi, McRitchie Studio's front door: a mention routes to `avi`; replies as this bot once `DISCORD_BOT_TOKEN_AVI` is set |
+| `agents.discord.turf` | `1405042649479647293` | Turf, Turf Monster's front door: a mention routes to `turf_monster`; replies as this bot once `DISCORD_BOT_TOKEN_TURF_MONSTER` is set |
+| `agents.discord.tyrion` | none filed | Token field empty on purpose (his bot answers through OpenClaw); not routed. With no `DISCORD_BOT_TOKEN_TYRION` his replies, once routed, fall back to the shared bot |
+| `agents.discord.mack` | `1479979322461913222` | Read by nothing yet |
+
+Reading stays on the one shared token, so one connection reads each guild.
+Only replies switch: a soul with `DISCORD_BOT_TOKEN_<SOUL>` set (its slug,
+upcased) answers as its own bot, unsigned; without it, the shared bot answers,
+signed `**Soul** ·`. Run Part 1 only for a new bot, and Part 1b to give a soul
+its own replies.
 
 **Routing is per guild, never per channel.** Once a guild is listed, every
 channel, thread and forum post the bot can see in it is read; there is no
 per-channel routing step. A channel entry is only an override (`default_soul`,
 or `ignore: true` to mute one).
 
-## Part 1 — Create a bot (once per bot) — Alex
+## Part 1 — Create a bot (once per bot)
 
-Every click here is Alex's: the developer portal is his account.
+The developer portal is Alex's account, so the portal clicks are his. The
+1Password item is not: Steffon makes it first, and Alex pastes only the token
+([`credential-filing`](./credential-filing.md) section 5).
+
+**Steffon, first:** create the item `agents.discord.<bot>` in `studio-agents`
+with the `bot-token` field present and **empty**, the `application-id` and
+`bot-user-id` fields ready, the Discord logo URL and the permission-matrix note
+(`credential-filing` sections 2 to 4). Then hand Alex his turn:
 
 ```not-pasteable
-🙋 YOUR TURN — create the <bot> bot (<bot> = the soul it speaks as, e.g. xan)
+🙋 YOUR TURN — create the <bot> bot (<bot> = the soul it speaks as, e.g. avi)
    Where:  https://discord.com/developers/applications — New Application
-   1. Name it for the soul, e.g. Xan. Open Bot in the sidebar.
+   1. Name it for the soul, e.g. Avi. Open Bot in the sidebar.
    2. Under Privileged Gateway Intents, turn on Message Content Intent and save.
       Without it the gateway refuses the connection (close 4014) and the
       backstop poll reads every message with empty content.
-   3. Reset Token, copy it once, and file it in 1Password: item
-      agents.discord.<bot>, vault studio-agents, fields bot-token,
-      application-id and bot-user-id.
-   4. Copy the Application ID (General Information) and the bot's user ID
+   3. Reset Token, copy it once, and paste it into the bot-token field of the
+      1Password item agents.discord.<bot> (vault studio-agents) that I made.
+      Save. Paste it nowhere else, this chat included.
+   4. Send me the Application ID (General Information) and the bot's user ID
       (Developer Mode on, right-click the bot in any server, Copy User ID).
-   Done when: the 1Password item reads back and you have sent me both IDs.
-   Then tell me "done".
+      Neither is a secret.
+   Done when: the token is saved in the item. Then tell me "done".
 ```
 
 Then Steffon:
 
-1. Add the item's row to
+1. Fill `application-id` and `bot-user-id` on the item, then **verify the token
+   with Discord** (`credential-filing` section 6): pipe the field straight into
+   `GET https://discord.com/api/v10/users/@me` with an `Authorization: Bot …`
+   header, and print only the answer's `id`. It must equal the bot user ID Alex
+   sent. Add the item's row to
    [`credential-inventory.md`](../../../modules/credential-inventory.md)
    ([`credential-filing`](./credential-filing.md)). If this bot becomes the
    shared bot, read its token back by name (never print it) and set it as Heroku
@@ -70,6 +90,44 @@ Then Steffon:
 
    This URL is not a secret, but it goes to clients by reply, never on the public
    page, until the page's "Add to Discord" slot is built.
+
+## Part 1b — Give a soul its own replies
+
+A soul routed by its own bot user still replies through the shared bot, signed,
+until its token is set. To switch its replies (Steffon; Heroku config is his
+lane, and nobody else sets it):
+
+1. **Invite the soul's bot to every guild it answers in**, with the four
+   Part 1 permissions at least (View Channels, Send Messages, Read Message
+   History, Send Messages in Threads). A bot missing from a guild, or missing a
+   permission in a channel, is refused there.
+2. **Set its config var on `mcritchie-studio` only**, read from the item by name
+   and never printed. The name is `DISCORD_BOT_TOKEN_` plus the soul's slug,
+   upcased, non-alphanumerics as `_`:
+
+   | Soul | Config var | Item |
+   |------|------------|------|
+   | `avi` | `DISCORD_BOT_TOKEN_AVI` | `agents.discord.avi` |
+   | `turf_monster` | `DISCORD_BOT_TOKEN_TURF_MONSTER` | `agents.discord.turf` |
+   | `tyrion` | `DISCORD_BOT_TOKEN_TYRION` | `agents.discord.tyrion` (empty: leave unset) |
+
+   ```bash
+   heroku config:set "DISCORD_BOT_TOKEN_AVI=$(op read 'op://studio-agents/agents.discord.avi/bot-token')" \
+     --app mcritchie-studio >/dev/null 2>&1; echo "exit $?"
+   ```
+
+   `heroku config:set` echoes what it set, so its output goes nowhere
+   ([`credentials.md`](../../../modules/credentials.md)). Never set it on
+   `mcritchie-studio-qa`.
+3. **Test it**: ask the soul something in the guild. The reply comes from the
+   soul's own bot, with no `**Soul** ·` prefix, and its `reply_posted` event
+   reads `via: soul_bot`. A `reply_bot_refused` event and an `ErrorLog` row
+   targeted at the message mean Discord refused the soul's bot (401: a bad
+   token; 403: not in the guild, or a missing channel permission); that reply
+   went out through the shared bot, signed, and so does every later one until
+   the cause is fixed.
+
+To undo it, unset the var: replies fall back to the shared bot at once.
 
 ## Part 2 — Connect a client (each request)
 

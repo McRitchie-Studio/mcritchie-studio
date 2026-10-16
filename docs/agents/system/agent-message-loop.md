@@ -24,7 +24,8 @@ Discord guild ──Gateway push (MESSAGE_CREATE)──┐
                      one read-only action + headless Claude (no tools), at most 5 at once
                                               │ complete
                                               ▼
-                       AgentMessageReplyJob ──▶ one Discord reply, as the bot
+                       AgentMessageReplyJob ──▶ one Discord reply: the soul's own bot
+                                                   if it has one, else the shared bot
 
 bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── AgentDispatcherAlertJob
                                                             (one Discord alert per incident)
@@ -36,7 +37,7 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Routing config | `config/agent_routes.yml`, read by `AgentMessages::Routes` and `AgentMessages::Router` |
 | Inbound, push | `AgentMessages::DiscordGateway` (a thread in the Solid Queue scheduler process on the worker dyno, `config/initializers/agent_message_gateway.rb`), protocol state in `AgentMessages::GatewaySession`, leader lock `AgentMessages::GatewayLeaderLock` → `AgentMessages::DiscordIngest` |
 | Inbound, backstop | `AgentMessageDiscordPollJob` (Solid Queue, `config/recurring.yml`, every 10 minutes) → `AgentMessages::DiscordPoll` → `AgentMessages::DiscordIngest` |
-| Outbound | `AgentMessageReplyJob` → `AgentMessages::DiscordBot#post_reply` |
+| Outbound | `AgentMessageReplyJob` → `AgentMessages::DiscordBot#post_reply`, as the soul's own bot (`DISCORD_BOT_TOKEN_<SOUL>`) or the shared bot (below, "Which bot replies") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
 | Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
 | Dispatcher health | `POST /api/v1/agent_dispatchers/ping` → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents` |
@@ -177,8 +178,28 @@ are the facts the answer returned about the sender (below, "Notes"). A second
 complete by that worker answers `already_completed` and queues nothing. The reply
 job posts once: a row with a `reply_external_id` is never posted again, and the
 post carries the row's `reply_nonce` with Discord's `enforce_nonce`, so a retried
-post returns the existing message. Replies reference the original message, lead
-with the soul's name (`**Avi** · …`), and parse no mentions.
+post returns the existing message. Replies reference the original message and
+parse no mentions; a reply through the shared bot leads with the soul's name
+(`**Avi** · …`).
+
+**Which bot replies.** Reading stays on the one shared bot
+(`DISCORD_AGENT_BOT_TOKEN`). Replies switch per soul: when
+`DISCORD_BOT_TOKEN_<SOUL>` is set (the soul's slug upcased, non-alphanumerics as
+`_`: `DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`,
+`DISCORD_BOT_TOKEN_TYRION`), the reply posts as that soul's own bot, with no
+prefix, since the bot's name already says who answered. Absent or blank, the
+shared bot posts it, prefixed, as before. When Discord refuses the soul's bot
+with a 401 or 403 (a bad token, a bot not in the guild, a missing channel
+permission), the job writes an `ErrorLog` row targeted at the message and a
+`reply_bot_refused` event (the var's name and Discord's answer), then posts once
+through the shared bot, prefixed, with the same nonce. A retried job sees that
+event and goes straight to the shared bot, so a refused bot is never retried in a
+loop; with no shared token either, the reply is `failed`, never dropped silently.
+Any other error retries as before. `reply_posted` records `via: soul_bot` or
+`via: shared_bot`. No token is logged, rendered, or put in an exception message:
+`DiscordBot` redacts its token from everything it raises and from `inspect`.
+Setting a soul's var is Steffon's
+[`discord-bot-setup`](../agents/steffon/sops/discord-bot-setup.md), Part 1b.
 `POST /api/v1/agent_messages/:id/release {worker, reason, code?}` gives a message
 back; the attempt it used still counts, so a give-back on the third attempt
 dead-letters it. The one exception is `code: usage_limit`, which hands the
@@ -599,14 +620,15 @@ the model's summary of it.
 Refused, it is a `proposal_refused` event on the message and is never shown.
 
 **Confirm by reply.** In `DiscordIngest`, before routing and before any model, a
-message in a thread (same `thread_key`, channel, guild and channel ref as the THREAD
-layer) that has a pending proposal, whose text is exactly `go`, `no` or
-`change: …` (trimmed, any case, leading @-mentions ignored), is handled by
-`AgentMessages::ProposalConfirm`. Which proposal it is about
-(`AgentProposal.for_word`): a Discord reply to the message that posted a proposal
-is about THAT proposal; any other word is about the thread's newest pending one.
-A go in another thread, or a top-level go outside a Discord thread (which starts
-a thread of its own), finds no proposal and is routed as usual.
+message whose text is exactly `go`, `no` or `change: …` (trimmed, any case,
+leading @-mentions ignored) is handled by `AgentMessages::ProposalConfirm` when
+it is about a proposal (`AgentProposal.for_word`), within its thread (same
+`thread_key`, channel, guild and channel ref as the THREAD layer). A Discord
+reply to the message that posted a proposal is about THAT proposal, whatever its
+status, open or not; any other word is about the thread's newest pending one,
+and with none pending it is about nothing. A go in another thread, or a
+top-level go outside a Discord thread (which starts a thread of its own), finds
+no proposal and is routed as usual.
 
 | Word | From the owner | From anyone else |
 |------|----------------|------------------|
@@ -614,10 +636,10 @@ a thread of its own), finds no proposal and is routed as usual.
 | `no` | `rejected`; "Dropped. Nothing will run." | `held` / `confirm_refused` |
 | `change: …` | `rejected` (change requested); the message goes to the soul like any other, with the old proposal in its context | `held` / `confirm_refused` |
 | any, after 24 hours | `expired`; the reply says so and nothing runs | `held` / `confirm_refused` |
-| any, replying to a proposal no longer open (superseded, run, dropped) | nothing changes; a `proposal_closed` event, and the reply says nothing ran | `held` / `confirm_refused` |
+| any, replying to a proposal no longer open | nothing changes; a `proposal_closed` event, and the reply is true to its status: still running (`confirmed`), already ran (`executed`), or nothing ran (superseded, dropped, expired) | `held` / `confirm_refused` |
 
 Anything else (`go ahead`, `go!`) is routed as usual. A reply to an answer pings
-the shared bot that posted it; that ping no longer outranks the thread, so a reply
+the bot that posted it; that ping no longer outranks the thread, so a reply
 in a Turf thread stays with Turf.
 
 **Ask results are formatted in code, not by the soul.** The numbers reach the
@@ -635,14 +657,21 @@ through the one reply path (`AgentMessageReplyJob`).
 executor outside any lock (an ask may fetch a satellite's health over HTTP), and
 settles under the lock again only while the claim is still its own. A retried job
 finds the proposal claimed or `executed` and does nothing; a claim older than ten
-minutes (a worker that died) may be taken again.
+minutes (a worker that died) may be taken again. Since a retry inside those ten
+minutes sees the live claim and exits, every claim also schedules a recheck of
+the job for 30 seconds after the claim expires: it does nothing when the run
+settled, and retakes a stranded proposal when it did not. An error while
+settling or queueing the answer writes an `ErrorLog` row (targeted at the go
+message) before it raises.
 
 **A failed run** writes an `ErrorLog` row targeted at the go message, puts the
 proposal back to `proposed` (a later `go` retries it), and posts one line with a
 short reason (an error class, never a message that could carry a secret).
 
-**Replies are signed by the domain's `reply_name`** (`**Turf** · …`) while every
-reply still posts through Xan's shared bot. Avi is routed by a mention of his own
+**Replies come from the front door's own bot** once its token is set
+(`DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`; above, "Which bot
+replies"); until then they post through Xan's shared bot, signed by the domain's
+`reply_name` (`**Turf** · …`). Avi is routed by a mention of his own
 Discord app's bot user (`1560516264378507334`, 1Password `agents.discord.avi`,
 in the McRitchie guild, reply-only permissions); Turf by a mention of the
 existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
@@ -684,9 +713,12 @@ Nothing reads Discord until a bot token is set. The code ships inert.
   token as `agents.discord.<bot>`, and routes each client's IDs into
   `config/agent_routes.yml`. Filed today: `agents.discord.xan` (the shared bot
   that reads the guild and posts every reply), `agents.discord.avi` and
-  `agents.discord.turf` (bot users a mention routes by; their tokens are read by
-  nothing yet), `agents.discord.tyrion` (no token: his lives on the OpenClaw
-  host) and `agents.discord.mack` (read by nothing yet).
+  `agents.discord.turf` (bot users a mention routes by; their tokens, set as
+  `DISCORD_BOT_TOKEN_AVI` and `DISCORD_BOT_TOKEN_TURF_MONSTER`, are read only by
+  the reply job, which posts that soul's replies as its own bot; not set on any
+  app yet, 2026-10-16), `agents.discord.tyrion` (no token: his lives on the
+  OpenClaw host, so his replies fall back to the shared bot) and
+  `agents.discord.mack` (read by nothing yet).
 - **The client's own half** (server, `#agents` channel, mentionable roles,
   Developer Mode, the IDs): the public guide at `/integrations/discord`
   (`app/views/integrations/discord.html.erb`).
@@ -735,8 +767,9 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
   message's page shows the untrusted text, the answer, the action, the link to
   the Discord reply, and the timeline: received, routed or unrouted, claimed,
   lease_renewed, lease_expired, released (with `code` and `attempt_refunded` on
-  a usage-limit give-back), dead_lettered, completed, and reply_posted,
-  reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
+  a usage-limit give-back), dead_lettered, completed, reply_bot_refused (the
+  soul's own bot was refused; an `ErrorLog` row says why), and reply_posted
+  (with `via`), reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
   skipped when no bot token is set, failed when the job's five tries are spent)
   is the Reply column.
 - A completed message's page also shows its Claude run: the resume line, the

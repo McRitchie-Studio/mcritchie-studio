@@ -198,7 +198,9 @@ Fix a mask FAIL now with one more transaction: `removeMember(<new pubkey>)` + `a
 ### 4.1 Mint, and put the value in `$NEW`
 Mint at the provider. An empty `$NEW` empties every store, so each write chains its guard with `&&`
 (an interactive shell prints a bare refusal and runs on). If Alex holds the value as `$T`
-(`credential-filing` §5), he runs Phases 4 and 5 or enters it here; say which.
+(`credential-filing` §5's fallback, used only when the 1Password app is out of
+his reach; normally he pastes it into the item and you read it from there), he
+runs Phases 4 and 5 or enters it here; say which.
 ```bash
 read -rs NEW                   # in the shell that runs Phases 4 and 5
 printf '%s' "$NEW" | digest    # non-EMPTY, matches the provider's copy
