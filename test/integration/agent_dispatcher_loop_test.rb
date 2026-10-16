@@ -1,6 +1,7 @@
 require "test_helper"
 require_relative "../support/agent_message_fixtures"
 require_relative "../support/agent_mailbox_in_process_api"
+require_relative "../support/agent_email_fixtures"
 require Rails.root.join("bin/lib/agent_dispatcher").to_s
 
 # [integration] bin/dispatcher's loop (AgentMailbox::Dispatcher) driving the REAL
@@ -12,6 +13,7 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # on the dispatcher's run threads. Nothing reaches Discord, Claude or production.
 class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
+  include AgentEmailFixtures
 
   # The command runner. The soul's action answers at once; each Claude call
   # waits for a token on `gate` when one is given, then answers `answer`.
@@ -45,8 +47,8 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     @sleeps = []
   end
 
-  def dispatcher(runner:, souls: %w[xan avi], cap: AgentMailbox::Dispatcher::CAP, fingerprint: nil)
-    AgentMailbox::Dispatcher.new(client: @client, souls: souls, worker: "disp-test-1", cap: cap, runner: runner,
+  def dispatcher(runner:, souls: %w[xan avi], cap: AgentMailbox::Dispatcher::CAP, fingerprint: nil, channel: "discord")
+    AgentMailbox::Dispatcher.new(client: @client, souls: souls, worker: "disp-test-1", cap: cap, runner: runner, channel: channel,
                                  claude_cmd: %w[fake-claude], out: @out, clock: -> { @now },
                                  sleeper: ->(s) { @sleeps << s }, idle_wait: 0, busy_wait: 0, version: "test",
                                  fingerprint: fingerprint)
@@ -82,6 +84,26 @@ class AgentDispatcherLoopTest < ActionDispatch::IntegrationTest
     assert_equal 5, ping.capacity
     assert_enqueued_jobs 2, only: AgentMessageReplyJob
     refute_match(/what is building/, @out.string, "message content never reaches the dispatcher log")
+  end
+
+  test "serving every channel (bin/dispatcher's default), it answers an email row and tells Claude it writes an email" do
+    AgentPerson.seed_owner!
+    email = AgentMessages::EmailIngest.new.call(agent_email)
+    discord = agent_message!(soul: "avi")
+    runner = GatedRunner.new
+    disp = dispatcher(runner: runner, channel: nil)
+
+    drive(disp) { [ email, discord ].all? { |m| m.reload.status == "completed" } && disp.runs.empty? }
+
+    prompts = 2.times.map { runner.claude_calls.pop }
+    assert prompts.any? { |p| p.include?("plain-text email") }, "the email answer is told it is a plain-text email"
+    assert prompts.any? { |p| p.include?("posted to you in Discord") }
+    assert_enqueued_jobs 2, only: AgentMessageReplyJob
+
+    discord_only = AgentMessages::EmailIngest.new.call(agent_email(message_id: "second@x", subject: "Avi: again"))
+    disp2 = dispatcher(runner: GatedRunner.new)
+    5.times { disp2.tick }
+    assert_equal "received", discord_only.reload.status, "a Discord-only dispatcher leaves email alone"
   end
 
   test "it never holds more than the cap, and drains the rest as runs finish" do
