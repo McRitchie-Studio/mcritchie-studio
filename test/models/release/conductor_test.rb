@@ -118,6 +118,48 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "conductor", intent.source
   end
 
+  # Regression (2026-10-16, /tasks): two reviewed cards in one release showed a
+  # third "live" avatar that was each card's OWN reviewer (carl on one, shannon on
+  # the other) instead of Avi. The sweep's toward-assembled intent took its actor
+  # from the task's last →reviewed transition, and the board renders the newest
+  # open intent, so the reviewer read as the soul QA-ing the RC.
+  def reviewed_by(label, reviewer)
+    t = submitted_task(label)
+    Current.set(task_event_actor: reviewer) { t.update!(stage: "reviewed") }
+    t.reload
+  end
+
+  test "[unit] sweep! attributes each member's QA intent to Avi, not its reviewer" do
+    by_carl    = reviewed_by("carl reviewed", "carl")
+    by_shannon = reviewed_by("shannon reviewed", "shannon")
+    assert_equal "carl", by_carl.task_events.transitions.where(to_stage: "reviewed").last.actor
+    assert_equal "shannon", by_shannon.task_events.transitions.where(to_stage: "reviewed").last.actor
+
+    # A peer session runs the release (its desk login is the caller), as Heatran did.
+    Current.set(task_event_actor: "heatran") do
+      Release::Conductor.sweep!(by_carl)
+      Release::Conductor.sweep!(by_shannon)
+    end
+
+    [by_carl, by_shannon].each do |t|
+      intent = t.reload.open_intent_for("assembled")
+      assert_not_nil intent, "#{t.slug} carries an open QA intent"
+      assert_equal "avi", intent.actor, "#{t.slug}'s live QA avatar is Avi, not its reviewer"
+    end
+
+    # prepare's own Avi intent then REUSES the sweep's row rather than stacking one.
+    Release::Conductor.record_deploy_intents!(Release.current, to_stage: "assembled")
+    [by_carl, by_shannon].each do |t|
+      assert_equal 1, t.reload.task_events.select { |e| e.intent? && e.to_stage == "assembled" }.size
+    end
+  end
+
+  test "[unit] sweep! keeps an explicitly named deploy-lane actor on the QA intent" do
+    t = reviewed_by("explicit actor", "carl")
+    Release::Conductor.record_assembly_intent!(t, actor: "steffon")
+    assert_equal "steffon", t.reload.open_intent_for("assembled").actor
+  end
+
   test "[unit] sweep! re-attaches an assembled straggler without moving it" do
     straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled",
                              merged: Task::MERGED_RELEASE,
