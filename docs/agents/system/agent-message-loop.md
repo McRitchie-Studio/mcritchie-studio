@@ -636,7 +636,7 @@ no proposal and is routed as usual.
 | `no` | `rejected`; "Dropped. Nothing will run." | `held` / `confirm_refused` |
 | `change: …` | `rejected` (change requested); the message goes to the soul like any other, with the old proposal in its context | `held` / `confirm_refused` |
 | any, after 24 hours | `expired`; the reply says so and nothing runs | `held` / `confirm_refused` |
-| any, replying to a proposal no longer open | nothing changes; a `proposal_closed` event, and the reply is true to its status: still running (`confirmed`), already ran (`executed`), or nothing ran (superseded, dropped, expired) | `held` / `confirm_refused` |
+| any, replying to a proposal no longer open | nothing changes; a `proposal_closed` event, and the reply is true to its status: still running (`confirmed`), already ran (`executed`), or nothing ran (superseded, dropped, expired). A `go` on a `confirmed` proposal neither claimed nor confirmed in the last ten minutes (its run died) queues the run again and says so | `held` / `confirm_refused` |
 
 Anything else (`go ahead`, `go!`) is routed as usual. A reply to an answer pings
 the bot that posted it; that ping no longer outranks the thread, so a reply
