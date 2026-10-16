@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1877,9 +1877,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_210000) do
     t.string "state", default: "assembling", null: false
     t.datetime "tested_at"
     t.datetime "testing_started_at"
+    t.string "train", default: "hub", null: false
     t.datetime "updated_at", null: false
-    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
+    t.index ["train"], name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.check_constraint "state::text = ANY (ARRAY['assembling'::character varying::text, 'assembled'::character varying::text, 'shipped'::character varying::text, 'abandoned'::character varying::text])", name: "releases_state_known"
   end
 
