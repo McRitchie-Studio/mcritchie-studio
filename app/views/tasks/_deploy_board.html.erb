@@ -559,10 +559,17 @@ document.addEventListener('turbo:before-cache', function() {
 
       So the scroller is applied only while the lanes ACTUALLY overflow (measureLanes
       reads scrollWidth vs clientWidth, which reports the same either way). On the wide
-      board that is never — six lanes at their 13.5rem floor plus gaps measure 1376px,
-      and below 1400px the board collapses to three — so the headers pin. It switches
-      itself on for the one case that needs it, All Stages forcing six lanes into a
-      viewport that cannot hold them, and there the headers stop pinning. That is the
+      board that is never — six lanes at their 13rem floor plus gaps measure 1328px,
+      which the board's 1336px at a 1400px window holds, and below 1400px the board
+      collapses to three — so the headers pin. (At 13.5rem the six measured 1376px,
+      which overflowed every window from 1400 to 1439px: the scroller came on there,
+      and the headers' pinned-stack `top` then pushed them DOWN inside it, 123px over
+      their lane's first card at rest and 36px once the navbar had collapsed.) It
+      switches itself on for the one case that needs it, All Stages forcing six lanes
+      into a viewport that cannot hold them, and there the headers stop pinning: they
+      go `position: static` (application.css, keyed on data-lane-scroll), because a sticky header
+      inside the scroller does not ride up harmlessly, it is offset by its `top`
+      from the scroller's own top edge, over the cards. That is the
       honest trade, and it is measured rather than guessed at a breakpoint: a fixed
       `min-[1440px]` override was tried first and LOST to `sm:overflow-x-auto`, because
       Tailwind v4 emits arbitrary `min-[…]` media queries BEFORE its named ones, so the
@@ -581,7 +588,7 @@ document.addEventListener('turbo:before-cache', function() {
           · shipped). Building collapses with them; blocked/needs-attention tasks ride
           the Building lane, so a stalled task stays reachable via "All Stages" at narrow. %>
       <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
-      <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13.5rem]" : "sm:min-w-[190px]" %>"
+      <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13rem]" : "sm:min-w-[190px]" %>"
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
         <%# PINNED, so the lane you are reading keeps its name while you scroll its cards.
