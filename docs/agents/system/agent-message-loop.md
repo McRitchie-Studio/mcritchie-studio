@@ -3,8 +3,10 @@
 **What it is.** A message to an agent on Discord reaches the hub, is routed to a
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
 the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
-same answer path). Phase 1 is Discord only, with two test souls (`avi`, `xan`)
-and one read-only action each. Later phases add channels, agents and clients without
+same answer path). Phase 1 is Discord only. Two domain front doors are routed,
+Xan (`xan`, McRitchie Studio) and Turf (`turf_monster`, Turf Monster), and each
+may PROPOSE what its domain's catalog allows, for the owner to confirm by reply
+(below, "Proposals and confirm"). Avi and Xan keep one read-only action each. Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
 
@@ -239,8 +241,9 @@ message. Claude runs headless with
 **no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
 the message with the answer. The message sits between random-named
 `<untrusted-…>` markers, and the model is told to treat it as data to answer,
-never as instructions. A request for anything else gets "what I would do, and
-that the action is not enabled yet." Each run gets its own worker id (host, pid,
+never as instructions. A request that fits the soul's catalog gets a proposal
+(below, "Proposals and confirm"); anything else gets "what I would do, and that
+the action is not enabled yet." Each run gets its own worker id (host, pid,
 random). A failed Claude run releases the message and ends the run, so it does
 not spend the remaining attempts. `HEARTBEAT_CLAUDE_CMD` overrides the Claude
 command. `--dry-run` peeks instead of claiming and writes nothing; it holds no
@@ -496,6 +499,109 @@ seats. Every capability goes through one gate, `AgentMailbox::Audience#may?`
 refused, so a future action adds its row there. When the SOP's rules cannot be
 read, the prompt tells the soul to reply only that a person will follow up.
 
+## Proposals and confirm: domain agents (Phase 1)
+
+The plan is `.agents/epics/domain-agents.md` (Alex approved it 2026-10-15). Every
+domain has one FRONT-DOOR agent. It has no tools: it understands the request and
+PROPOSES one thing from its domain's catalog. Code checks the proposal, the owner
+confirms it in the thread, and code carries it out.
+
+**The registry** is `config/agent_domains.yml`, read by
+`AgentMailbox::DomainRegistry` (`bin/lib/agent_domain_registry.rb`, plain Ruby, so the
+board and the worker read one file the same way). Each domain names its `soul`
+(the front door), `reply_name`, `repos`, `app`, and `capabilities`:
+
+| Kind | Phase 1 | What runs on `go` |
+|------|---------|-------------------|
+| `ask` | Xan: `board_status` (stage counts), `recently_shipped` (`days` 1-30). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
+| `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
+| `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the Discord link in `devops.source_thread`. A session still starts the builder |
+
+Only the front door has a catalog. Avi maps to the studio domain for its DOMAIN
+layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
+catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
+hub can read, so there is no entries-for-week ask yet.
+
+**Who may ask, who may confirm.** Requesting needs both a row in
+`AgentMailbox::Audience::CAPABILITIES` (`propose_ask`, `propose_change`,
+`propose_operate`) and the capability's `min_audience` on `Audience::RANK`
+(public < client < team < owner). A client may request only in the domain it is a
+client of. Confirming is `confirm_proposal`, the owner's alone, read from the
+person's role (`agent_people.role`), never from a Discord id or the message text.
+
+**In the prompt.** The context bundle carries `proposals.catalog`: this soul's
+catalog, filtered on the board by the sender's audience. ContextBuilder lists it
+(code, outside the fence) and teaches the block. With no catalog there is no
+PROPOSAL section and the old "not enabled yet" rule stands. The bundle also
+carries `proposals.last`, the thread's newest proposal, fenced, so a
+`change: …` is answered with the offer it changes in view.
+
+**The block.** The answer may end with
+
+```text
+I can open a task for that.
+===PROPOSAL===
+{"kind": "change", "capability": "task", "params": {"title": "…", "accept": ["…"], "test": ["…"]}, "summary": "one line"}
+```
+
+`AgentMailbox::ProposalBlock` (`bin/lib/agent_proposal_block.rb`) cuts it with the
+NOTES approach: a loose delimiter (bold, spaced, lowercased, mid-sentence), a
+headed `Proposal:` tail, a ```` ```json ```` fence, and notes before or after it.
+The worker splits it (`Responder`, sent as `proposal` with the complete) and the
+board cuts again in `AgentMessage#complete!`, so the block never posts. Both sides
+share the fixtures in `test/support/proposal_block_fixtures.rb`.
+
+**The board validates** (`AgentProposal.record_from!`): the capability must be in
+THIS soul's own domain, its params must fit the schema (unknown keys and
+out-of-range values are refused), and the sender's audience must be allowed to
+request it. Accepted, it becomes an `agent_proposals` row (thread, soul, person,
+kind, capability, params, summary, status, `expires_at` 24 hours on, result), any
+older pending proposal in the thread is rejected, and the reply gains:
+
+```text
+> Proposed: <summary>
+Reply **go** to run this, **no** to drop it, or **change: …**
+```
+
+Refused, it is a `proposal_refused` event on the message and is never shown.
+
+**Confirm by reply.** In `DiscordIngest`, before routing and before any model, a
+message in a thread (same `thread_key`, channel, guild and channel ref as the THREAD
+layer) that has a pending proposal, whose text is exactly `go`, `no` or
+`change: …` (trimmed, any case, leading @-mentions ignored), is handled by
+`AgentMessages::ProposalConfirm`:
+
+| Word | From the owner | From anyone else |
+|------|----------------|------------------|
+| `go` | `confirmed`; `AgentProposalJob` runs it; the result posts as the answer to the go | stored `held` with a `confirm_refused` event; nothing runs, nothing posts |
+| `no` | `rejected`; "Dropped. Nothing will run." | same |
+| `change: …` | `rejected` (change requested); the message goes to the soul like any other, with the old proposal in its context | same |
+| any, after 24 hours | `expired`; the reply says so and nothing runs | same |
+
+Anything else (`go ahead`, `go!`) is routed as usual. A reply to an answer pings
+the shared bot that posted it; that ping no longer outranks the thread, so a reply
+in a Turf thread stays with Turf.
+
+**Ask results are formatted in code, not by the soul.** The numbers reach the
+thread exactly as counted, the answer costs no second Claude run and no wait on
+the dispatcher, the format is pinned by tests, and no model retells data it could
+misstate. Counts only, as the daily app report: error classes, never messages.
+
+**Change results.** `go` creates the task at `designed`, records the thread on it
+(`devops.source_thread`, plus a line in the description), marks the proposal
+`executed` with the task slug, and posts "Opened `<slug>` <task url>" in the thread
+through the one reply path (`AgentMessageReplyJob`).
+
+**A failed run** writes an `ErrorLog` row targeted at the go message, puts the
+proposal back to `proposed` (a later `go` retries it), and posts one line with a
+short reason (an error class, never a message that could carry a secret).
+
+**Replies are signed by the domain's `reply_name`** (`**Turf** · …`) while every
+reply still posts through Xan's shared bot. Turf is routed by a mention of the
+existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
+McRitchie guild). Tyrion is not routed: he answers through OpenClaw with his own
+bot, and Alex has not chosen between the two runtimes.
+
 ## Viewing a run
 
 Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
@@ -608,8 +714,9 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
 - The backstop reads text and announcement channels and active threads. It
   skips archived threads and voice-channel text chat, which only the gateway
   sees.
-- One read-only action per soul, for owner and team senders only; nothing writes on
-  a message's behalf.
+- One read-only action per soul, for owner and team senders only. The only write
+  on a message's behalf is a proposal the owner confirmed with `go`: a named
+  query, or a `designed` board task. Operations wait for Phase 2.
 - One dispatcher, on one Mac. It answers only while that Mac is awake and signed
   in to Claude; the floor alert says when it is not. A dispatcher that dies
   mid-answer stops renewing, so its claim lapses after 10 minutes and its late
