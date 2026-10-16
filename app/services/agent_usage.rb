@@ -181,6 +181,31 @@ module AgentUsage
       meter.suggestion&.line, "The app's owner can raise it." ].compact.join(" ")
   end
 
+  # "12 answers, 230,400 tokens (in 1,200 · cache read 200,000 · cache write
+  # 20,400 · out 8,800), $1.23, avg 6.2s." Shared by the usage ask, the CTO
+  # morning report and the app page.
+  def totals_line(totals)
+    return "no answers." if totals.empty?
+
+    kinds = [ "in #{fmt(totals.input_tokens)}", "cache read #{fmt(totals.cache_read_tokens)}",
+              "cache write #{fmt(totals.cache_creation_tokens)}", "out #{fmt(totals.output_tokens)}" ].join(" · ")
+    avg = totals.avg_duration_ms ? ", avg #{(totals.avg_duration_ms / 1000.0).round(1)}s" : ""
+    "#{totals.messages} #{'answer'.pluralize(totals.messages)}, #{fmt(totals.tokens)} tokens (#{kinds}), " \
+      "$#{format('%.2f', totals.cost_usd)}#{avg}."
+  end
+
+  # "Allowance: 42% of 1,000,000 tokens used (Builder)." or "Allowance: unlimited (Team)."
+  def allowance_line(meter)
+    tier = meter.tier_name ? " (#{meter.tier_name})" : " (no tier)"
+    return "Allowance: unlimited, cap lifted by an admin#{tier}." if meter.lifted
+    return "Allowance: unlimited#{tier}." if meter.unlimited?
+
+    line = "Allowance: #{meter.percent}% of #{fmt(meter.allowance)} tokens used#{tier}."
+    meter.suggestion ? "#{line} #{meter.suggestion.line}" : line
+  end
+
+  def fmt(number) = number.to_i.to_fs(:delimited)
+
   def capped_count(souls, from, to)
     return 0 if souls.empty?
 

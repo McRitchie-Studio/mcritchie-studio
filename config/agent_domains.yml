@@ -73,6 +73,11 @@ domains:
           min_audience: team
           query: release_status
           params: {}
+        usage:
+          description: This app's agent usage this month and today (answers, tokens by kind, cost, average time) and its monthly allowance.
+          min_audience: team
+          query: usage
+          params: {}
       operate: {}
       change:
         repo: mcritchie-studio
@@ -93,6 +98,11 @@ domains:
           query: app_health
           params:
             days: { type: integer, min: 1, max: 7, default: 1 }
+        usage:
+          description: This app's agent usage this month and today (answers, tokens by kind, cost, average time) and its monthly allowance.
+          min_audience: team
+          query: usage
+          params: {}
       operate: {}
       change:
         repo: turf-monster

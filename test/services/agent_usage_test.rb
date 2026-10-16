@@ -149,6 +149,24 @@ class AgentUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "the usage ask: code-formatted totals, today, and the allowance; team and above only" do
+    answered!(person: @client, tokens: 600, at: NOW - 2.hours, cost: 0.5, duration: 4_000)
+    answered!(person: @owner, tokens: 400, at: NOW - 3.days, cost: 0.25, duration: 2_000)
+    with_allowances do
+      text = AgentProposals::Queries.run("usage", {}, app: "turf-monster", now: NOW)
+      assert_equal "Turf Monster agent usage, October so far: 2 answers, 1,000 tokens (in 1,000 · cache read 0 · " \
+                   "cache write 0 · out 0), $0.75, avg 3.0s. Today: 1 answer, 600 tokens (in 600 · cache read 0 · " \
+                   "cache write 0 · out 0), $0.50, avg 4.0s. Allowance: 60% of 1,000 tokens used (Builder). " \
+                   "Pro ($500/month) raises it.", text
+    end
+    registry = AgentProposal.registry
+    client = AgentMailbox::Audience.new(role: "client", client_domain: "turf_monster")
+    team = AgentMailbox::Audience.new(role: "team")
+    refute_includes registry.catalog("turf_monster", audience: client).map { |c| c["capability"] }, "usage"
+    assert_includes registry.catalog("turf_monster", audience: team).map { |c| c["capability"] }, "usage"
+    assert_includes registry.catalog("avi", audience: team).map { |c| c["capability"] }, "usage"
+  end
+
   test "the cap reply and the warn line are code, with the suggestion's price" do
     answered!(person: @client, tokens: 1_000)
     with_allowances do
