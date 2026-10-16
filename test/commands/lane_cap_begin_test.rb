@@ -10,7 +10,7 @@ require "json"
 # with the board's message, no worktree step and no claim; no refusal, or a board
 # without the endpoint (404), lets begin proceed to the claim, whose validation is
 # the authority. Against a local sink, never a board.
-class TaskBeginLaneCapTest < ActiveSupport::TestCase
+class LaneCapBeginTest < ActiveSupport::TestCase
   BIN = Rails.root.join("bin/task").to_s
   SLUG = "lane-probe".freeze
   REFUSAL = "Turf Monster is on the Vibe tier: 1 of 1 building lane in use (other-task). This task waits in designed " \
