@@ -1706,11 +1706,14 @@ end
 AgentMessage.delete_all # its events cascade
 AgentPerson.delete_all # its identities and notes cascade
 AgentMessageCursor.delete_all
+# The authors are Alex (his seeded person), so the owner-only guard
+# (config/agent_answerers.yml) lets the claim below take the answered message.
+AgentPerson.seed_owner!
 mailbox_guild = "910000000000000001"
 mailbox_channel = "910000000000000002"
 mailbox = lambda do |ext, soul:, status:, content:, **attrs|
   AgentMessage.create!({ channel: "discord", external_id: ext, guild_id: mailbox_guild, channel_ref: mailbox_channel,
-                         thread_key: "discord:#{mailbox_channel}:#{ext}", author_ref: "500", author_name: "Alex",
+                         thread_key: "discord:#{mailbox_channel}:#{ext}", author_ref: AgentPerson::OWNER[:external_id], author_name: "Alex",
                          content: content, soul_slug: soul, routed_by: soul ? "role" : "none", status: status,
                          sent_at: 10.minutes.ago }.merge(attrs))
 end
