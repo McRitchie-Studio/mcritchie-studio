@@ -49,7 +49,12 @@ module AgentMailbox
     def self.eligible?(message, context)
       return false if message.is_a?(Hash) && !message["hold_released_at"].to_s.empty?
 
-      AUDIENCES.include?(Audience.from_context(context).role)
+      return false unless AUDIENCES.include?(Audience.from_context(context).role)
+
+      # THREAD carries every earlier turn, whoever wrote it: one not the sender's
+      # own (a client's, the public's) would persist in the session, so answer cold.
+      thread = context.is_a?(Hash) ? context["thread"] : nil
+      Array(thread.is_a?(Hash) ? thread["turns"] : nil).all? { |turn| turn.is_a?(Hash) && turn["own"] == true }
     end
 
     # The tokens one turn's context held: input + cache read + cache write.
