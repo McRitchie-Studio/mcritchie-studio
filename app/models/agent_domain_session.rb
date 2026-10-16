@@ -77,7 +77,7 @@ class AgentDomainSession < ApplicationRecord
                         code: "NOT_WARM")
     end
 
-    row = create_or_find_by!(domain: domain)
+    row = find_or_create_row(domain)
     transaction do
       row.lock!
       if row.lease_live?(now: now) && row.holder != worker
@@ -96,6 +96,14 @@ class AgentDomainSession < ApplicationRecord
       row.update!(attrs)
       Acquired.new(row: row, taken_over_from: changed ? previous : nil)
     end
+  end
+
+  # The domain's row, made on first use. Two first acquirers racing on the
+  # unique index: the loser reads the winner's row.
+  def self.find_or_create_row(domain)
+    find_by(domain: domain) || create!(domain: domain)
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+    find_by!(domain: domain)
   end
 
   # The holder extends its lease (and its heartbeat). A holder whose lease
