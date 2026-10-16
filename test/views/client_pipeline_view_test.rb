@@ -39,6 +39,8 @@ class ClientPipelineViewTest < ActionView::TestCase
     assert_select "[data-test='pipeline-lanes'][data-cap='3'][data-in-use='2']"
     assert_select "[data-test='pipeline-card-queue']", [ "#1", "#2" ].size
     assert_select "[data-test='pipeline-card-hold']", text: "On hold"
+    assert_select "[data-test='pipeline-lane'][data-lane='building'] [data-test='pipeline-card-age']", text: "about 2 hours building"
+    assert_select "[data-test='pipeline-lane'][data-lane='queued'] [data-test='pipeline-card-age']", text: "1 day in the queue"
     assert_select "[data-test='pipeline-lane'][data-lane='review'] [data-test='pipeline-lane-empty']"
     assert_select "[data-test='pipeline-card-admin']", count: 0
     assert_select "[data-test='pipeline-tonight']", text: /No release is in progress/

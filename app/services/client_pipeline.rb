@@ -17,14 +17,17 @@
 module ClientPipeline
   SHIPPED_WINDOW = 14.days
 
-  Lane = Struct.new(:key, :stage, :label, :role, keyword_init: true)
+  # `age` phrases the card's time in the lane ("3 hours in review").
+  Lane = Struct.new(:key, :stage, :label, :role, :age, keyword_init: true) do
+    def age_line(time) = format(age, time: time)
+  end
   LANES = [
-    Lane.new(key: "queued",   stage: "designed",  label: "Queued"),
-    Lane.new(key: "building", stage: "building",  label: "Building", role: "Builder"),
-    Lane.new(key: "review",   stage: "submitted", label: "In review", role: "Reviewer"),
-    Lane.new(key: "ready",    stage: "reviewed",  label: "Ready for QA"),
-    Lane.new(key: "qa",       stage: "assembled", label: "On QA"),
-    Lane.new(key: "shipped",  stage: "shipped",   label: "Shipped")
+    Lane.new(key: "queued",   stage: "designed",  label: "Queued",       age: "%{time} in the queue"),
+    Lane.new(key: "building", stage: "building",  label: "Building",     age: "%{time} building", role: "Builder"),
+    Lane.new(key: "review",   stage: "submitted", label: "In review",    age: "%{time} in review", role: "Reviewer"),
+    Lane.new(key: "ready",    stage: "reviewed",  label: "Ready for QA", age: "%{time} ready"),
+    Lane.new(key: "qa",       stage: "assembled", label: "On QA",        age: "%{time} on QA"),
+    Lane.new(key: "shipped",  stage: "shipped",   label: "Shipped",      age: "shipped %{time} ago")
   ].freeze
 
   # The stamp a task's current lane started at (Task#set_stage_timestamp).

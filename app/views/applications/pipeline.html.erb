@@ -62,7 +62,7 @@
                 </p>
                 <p class="text-muted text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
                   <% if card.role %><span data-test="pipeline-card-role"><%= card.role %></span><span aria-hidden="true">·</span><% end %>
-                  <span data-test="pipeline-card-age"><%= time_ago_in_words(card.entered_at) %> in <%= card.lane.downcase %></span>
+                  <span data-test="pipeline-card-age"><%= lane_view.lane.age_line(time_ago_in_words(card.entered_at)) %></span>
                   <% if card.on_hold %><span class="px-1.5 rounded <%= status_tone(:warning) %>" data-test="pipeline-card-hold">On hold</span><% end %>
                 </p>
                 <% if @admin %>
