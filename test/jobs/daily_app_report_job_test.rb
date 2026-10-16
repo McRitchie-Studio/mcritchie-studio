@@ -33,7 +33,7 @@ class DailyAppReportJobTest < ActiveJob::TestCase
       with_env("HEALTH_TOKEN_TURF_MONSTER", "turf-token") do
         with_env("HEALTH_TOKEN_RANTLY", "stale-token") do
           DailyAppReport.stub(:apps, apps) do
-            CtoReport.stub(:run, ->(**) {}) do # the per-app reports have their own test below
+            CtoReport.stub(:run, ->(**) { }) do # the per-app reports have their own test below
               DailyAppReportJob.perform_now(ENDING.iso8601)
               DailyAppReportJob.perform_now(ENDING.iso8601) # a retry or late run: same window, nothing re-posted
             end
