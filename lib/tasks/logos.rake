@@ -49,6 +49,22 @@ namespace :logos do
     puts "derived   #{File.basename(Logos::WeldingV2::FILE)}"
   end
 
+  # Task footer-stacked-logo: the favicon draws the small-size mark (Logos::SmallMark), the icon without the specks
+  # a 16-32 px tab cannot show. Its colour is the installed kit's dark-page icon, so a kit colour change carries over.
+  desc "Write the favicon's small-size mark: BRAND=studio [ICON=studio] [OUT=public/favicon-mark.svg]; then rasterize it with script/brand_png.cjs"
+  task favicon_mark: :environment do
+    brand = ENV["BRAND"].presence || "studio"
+    key = ENV["ICON"].presence || brand
+    icon = Logos::NavbarLogo.icons[key] or abort "logos:favicon_mark: no icon #{key.inspect} in the icon data"
+    kit_icon = Rails.public_path.join("brand/icon-dark.svg")
+    fill = File.exist?(kit_icon) && File.read(kit_icon)[/ fill="(#\h{3,8})"/, 1]
+    abort "logos:favicon_mark: no fill colour in #{kit_icon}; run logos:install BRAND=#{brand} first" unless fill
+    out = Pathname(ENV["OUT"].presence || Rails.public_path.join("favicon-mark.svg"))
+    File.write(out, Logos::SmallMark.svg(Logos::SmallMark.derive(icon), fill:))
+    puts "wrote #{out}"
+    puts "then: node script/brand_png.cjs #{out.relative_path_from(Rails.root)} public/favicon.png 256"
+  end
+
   desc "Write Commercial Welding v2's helmet (welding_v2, welding_v2_mono), derived from v1's, to lib/logos/data/brand_icons_welding_v2.json"
   task welding_v2: :environment do
     File.write(Logos::WeldingV2::FILE, Logos::WeldingV2.json)

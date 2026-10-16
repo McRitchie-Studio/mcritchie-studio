@@ -486,11 +486,14 @@
   }
   .nav-shell > .nav-row { max-width: 80rem; margin-inline: auto; }
   .nav-shell .nav-logo { border-radius: 0; box-shadow: none; object-fit: contain; }
-  /* KIT ICON BY THEME (task studio-adopts-its-kit). The navbar, the footer and
-     the sign-in card each draw the saved kit's icon from public/brand/, written
-     by bin/rails logos:install. The engine renders one <img> per logo, so each
-     is given icon-light.svg (ink, for a light page) and a dark page replaces
-     the picture with icon-dark.svg (violet), the kit's own dark-page artwork. */
+  /* KIT ICON BY THEME (task studio-adopts-its-kit). The navbar and the sign-in
+     card each draw the saved kit's icon from public/brand/, written by
+     bin/rails logos:install, and so does the footer on an engine without its
+     `lockup` fact (with it, the footer draws the Stacked Logo and swaps it
+     itself: task footer-stacked-logo). The engine renders one <img> per logo,
+     so each is given icon-light.svg (ink, for a light page) and a dark page
+     replaces the picture with icon-dark.svg (violet), the kit's own dark-page
+     artwork. */
   .dark img[src="/brand/icon-light.svg"] { content: url("/brand/icon-dark.svg"); }
   @media (min-width: 768px) {
     .nav-shell { --nav-avatar: calc(2.5rem - 0.5rem * var(--nav-p, 0)); } /* 40px -> 32px */

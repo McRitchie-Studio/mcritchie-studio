@@ -99,8 +99,15 @@ Studio.configure do |config|
       wordmark: %w[McRitchie Studio],
       # The kit icon for a light page; application.css swaps in the dark one.
       logo: "/brand/icon-light.svg",
+      # The kit's Stacked Logo (task footer-stacked-logo): on an engine that
+      # knows the `lockup` fact it replaces the icon and the wordmark above; an
+      # older engine ignores the key and draws those two, so no respond_to?
+      # guard is needed. width/height are the files' viewBox, rounded; a kit
+      # reinstall that changes the shape fails test/integration/site_footer_test.rb.
+      lockup: { light: "/brand/stacked-light.svg", dark: "/brand/stacked-dark.svg", width: 942, height: 885 },
       home_path: view.root_path,
-      tagline: "Software & Marketing Solutions",
+      # No tagline: Alex 2026-10-15 08:21 dropped "Software & Marketing
+      # Solutions" with the stacked logo (task footer-stacked-logo).
       address: {
         street: "3000 Lawrence St", city_line: "Denver, CO 80205",
         lat: 39.7614786, lng: -104.978957,
