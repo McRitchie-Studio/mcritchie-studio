@@ -97,7 +97,8 @@ class AgentAudienceTest < ActiveSupport::TestCase
     always = rules["always"].join(" ")
     assert_match(/AI agent of McRitchie Studio/, always)
     assert_match(/credentials/, always)
-    assert_match(/Commercial Welding/, always)
+    assert_includes rules["always"], "Never discuss acquisitions, mergers, deals, or legal matters."
+    refute_match(/welding/i, always, "the always-rules print to strangers too, so they name no deal")
     assert_match(/money or time/, always)
     assert_match(/a person will follow up/, always)
     assert_equal AgentPerson::ROLES, A::ROLES, "the model and the worker share one role list"
@@ -188,6 +189,28 @@ class AgentAudienceTest < ActiveSupport::TestCase
     assert_includes owner, "== DOMAIN: Commercial Welding =="
     assert_includes owner, "WELDING DEAL TERMS."
     assert_includes prompt(aud("public")), "The hub and its agents.", "a domain not marked internal stays"
+  end
+
+  # The always-rules reach every prompt, strangers' included, so the deal must not
+  # be named anywhere a client or the public can read: not in the rules, not in a
+  # domain label or doc, not in a public.md, not in the code-written prompt text.
+  # Built against the REAL repo, for every soul the domains config or the
+  # Responder knows. "acquisition" may appear only inside Alex's approved
+  # always-rule ("Never discuss acquisitions, ..."), which names no deal.
+  test "a public or client prompt names no deal: no Commercial Welding, no acquisition outside the approved rule" do
+    root = Rails.root.to_s
+    config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"))
+    souls = (config["souls"].keys + AgentMailbox::Responder::ACTIONS.keys + %w[tyrion tywin]).uniq
+    approved = "Never discuss acquisitions, mergers, deals, or legal matters."
+    souls.each do |soul|
+      [ aud("public"), aud("client", "turf_monster"), aud("client", "commercial_welding") ].each do |a|
+        text = AgentMailbox::ContextBuilder.new(soul: soul, message: @message, action: @action, repo_root: root,
+                                                fence: FENCE, audience: a).prompt
+        refute_match(/welding/i, text, "#{soul} / #{a.label}")
+        assert_includes text, approved, "#{soul} / #{a.label}: the approved rule is printed"
+        refute_match(/acquisition/i, text.sub(approved, ""), "#{soul} / #{a.label}")
+      end
+    end
   end
 
   test "the real config marks Commercial Welding internal" do

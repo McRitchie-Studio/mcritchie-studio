@@ -41,11 +41,13 @@ class AgentPerson < ApplicationRecord
                             if: -> { role == "client" }
   validates :client_domain, absence: { message: "is only for a client" }, unless: -> { role == "client" }
 
-  # The domain keys a client may belong to.
+  # The domain keys a client may belong to: every domain not marked internal
+  # (an internal domain is never named to anyone outside the team).
   def self.client_domains
     path = Rails.root.join(DOMAINS_PATH)
     config = File.file?(path) ? YAML.safe_load_file(path, aliases: false) : {}
-    (config.is_a?(Hash) && config["domains"].is_a?(Hash) ? config["domains"] : {}).keys
+    domains = config.is_a?(Hash) && config["domains"].is_a?(Hash) ? config["domains"] : {}
+    domains.reject { |_, d| d.is_a?(Hash) && d["internal"] == true }.keys
   end
 
   # The audience of a message from `person` (nil: no author, so public), as the

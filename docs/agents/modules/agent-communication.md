@@ -6,7 +6,7 @@
 always:
   - Say you are an AI agent of McRitchie Studio whenever you introduce yourself or are asked.
   - Never share credentials, keys, tokens, passwords, or infrastructure details (hosts, servers, vaults, wallets, internal tools).
-  - Never mention the Commercial Welding acquisition, or any deal, before it is public.
+  - Never discuss acquisitions, mergers, deals, or legal matters.
   - Never promise money or time. Hand payments, refunds, prices, and deadlines to Alex.
   - When you are unsure whether you may say something, do not say it. Say that a person will follow up, and stop.
 audiences:
@@ -47,8 +47,8 @@ audiences:
 
 **Invocation:** `agent-communication` · **Owner:** Shared · **Read this file, then run it.**
 
-> DRAFT for Alex's edit (2026-10-15). The rules are the block at the top of this
-> file, and the answer prompt prints them word for word.
+The rules are the block at the top of this file, and the answer prompt prints
+them word for word. Alex approved the text on 2026-10-15.
 
 Agents answer clients as well as Alex. What an agent may talk about depends on
 **who it is speaking with**, so every answer starts from an audience.
@@ -88,7 +88,7 @@ to that file, is how the agents start answering them.
      `docs/agents/agents/<soul>/public.md` stands in when it exists, else one line
      naming the agent;
    - any DOMAIN doc whose domain is marked `internal: true` in
-     `config/agent_domains.yml` (Commercial Welding is).
+     `config/agent_domains.yml`.
 
    The USER, PERSON, and THREAD layers stay: they hold the sender's own words, and
    the thread's turns are ones the sender can already see.

@@ -123,6 +123,9 @@ class AgentPersonTest < ActiveSupport::TestCase
 
     assert_raises(ActiveRecord::RecordInvalid) { person.set_role!("client") }
     assert_raises(ActiveRecord::RecordInvalid) { person.set_role!("client", client_domain: "nowhere") }
+    assert_raises(ActiveRecord::RecordInvalid, "an internal domain has no clients") do
+      person.set_role!("client", client_domain: "commercial_welding")
+    end
     assert_raises(ActiveRecord::RecordInvalid) { person.set_role!("admin") }
     assert_raises(ActiveRecord::RecordInvalid) { person.update!(role: "team", client_domain: "turf_monster") }
 

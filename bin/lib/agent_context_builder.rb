@@ -169,7 +169,7 @@ module AgentMailbox
       rescue Audience::RulesMissing
         RULES_UNREADABLE
       end
-      cap("You are speaking with: #{@audience.label}\n\nRULES FOR THIS AUDIENCE (the agent-communication SOP):\n#{rules}",
+      cap("You are speaking with: #{audience_label}\n\nRULES FOR THIS AUDIENCE (the agent-communication SOP):\n#{rules}",
           BUDGETS[:rules])
     end
 
@@ -373,10 +373,22 @@ module AgentMailbox
     def domain_label = visible_domain ? visible_domain["name"].to_s : "none"
 
     # A client's domain by its configured name ("Turf Monster"), else its key.
+    # A domain marked internal is never named, not even to its own client: the
+    # rules would print it, and the key would ride in the audience line.
     def client_domain_name
       key = @audience.client_domain
-      key && domains_config.dig("domains", key, "name").to_s.strip.then { |n| n.empty? ? key : n }
+      return nil unless key
+      return "McRitchie Studio" if internal_client_domain?
+
+      domains_config.dig("domains", key, "name").to_s.strip.then { |n| n.empty? ? key : n }
     end
+
+    def internal_client_domain?
+      key = @audience.client_domain
+      key && domains_config.dig("domains", key, "internal") == true
+    end
+
+    def audience_label = internal_client_domain? ? "client" : @audience.label
 
     def display_name = @soul.split("_").map(&:capitalize).join(" ")
   end
