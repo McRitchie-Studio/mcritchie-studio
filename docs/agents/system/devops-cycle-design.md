@@ -1674,7 +1674,7 @@ for each task in {submitted}:
      each: diff-vs-acceptance + standards/smell/scalability     — changes ⇒ ONE complete qa_feedback + block
   4. on a merge-ready verdict → reviewed ✅                       — Discord: approved
 
-# Workflow 2 — the ONE active release (singleton).
+# Workflow 2 — the ONE active release (singleton per train; only "hub" today).
 release.assembling:
   bin/release prepare (Avi, SELF-HEALING): detect reviewed + assembled stragglers, honoring dependencies + lanes (§4.2)
   sweep: overlap planner (warn) → gh pr merge each (base release; SKIP merged: release/main) → sweep! ALL in ONE heroku run (ensure)  — conflict ⇒ leave reviewed, keep the rest

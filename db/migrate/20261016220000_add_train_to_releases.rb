@@ -23,8 +23,14 @@ class AddTrainToReleases < ActiveRecord::Migration[8.1]
   end
 
   def down
-    # Refuses (RecordNotUnique) if two trains are active at once: the global
-    # singleton cannot be restored over that data, and should not be silently.
+    # The global singleton cannot be restored over two active trains, and must not
+    # be by silently abandoning one: refuse, naming them, and change nothing.
+    active = select_values("SELECT slug FROM releases WHERE #{ACTIVE} ORDER BY slug")
+    if active.size > 1
+      raise ActiveRecord::IrreversibleMigration,
+            "releases: #{active.size} active releases (#{active.join(', ')}); finish or abandon all but one before rolling back"
+    end
+
     add_index :releases, "(1)", unique: true, where: ACTIVE, name: "index_releases_single_active_global"
     remove_index :releases, name: "index_releases_single_active"
     rename_index :releases, "index_releases_single_active_global", "index_releases_single_active"
