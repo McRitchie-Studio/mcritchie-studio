@@ -18,8 +18,8 @@ module AgentMessages
   # without one, the index violation aborts that whole transaction and the
   # re-read, the rest of the page and the cursor advance all fail.
   #
-  # THE OWNER-ONLY GUARD. A routed message from a person
-  # config/agent_answerers.yml does not allow (AgentMessages::Answerers) is
+  # THE OWNER-ONLY GUARD. A routed message from a person whose role
+  # config/agent_answerers.yml does not answer (AgentMessages::Answerers) is
   # stored `held`, with a `held` event saying why, instead of `received`: kept
   # for the admin page, never claimed, until an admin releases it. The claim
   # enforces the same rule again on the server (AgentMessage.claimable).
@@ -118,7 +118,7 @@ module AgentMessages
                         detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
         if held
           message.record!("held", actor: "answerers",
-                                  detail: { "reason" => "sender is not on config/agent_answerers.yml",
+                                  detail: { "reason" => @answerers.held_reason(person),
                                             "person_id" => person&.id }.compact)
         end
         message

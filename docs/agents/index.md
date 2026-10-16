@@ -66,7 +66,7 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 
 | Command | What it does |
 |---------|--------------|
-| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, preflights it, claims it, and launches Avi's intent scout in the background. `--agent <soul>` is optional |
+| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, preflights it, claims it, and launches Avi's intent scout in the background. `--agent <soul>` is optional; without it the builder is the session's acting soul, else `pokemon` |
 | `bin/task scout-brief <slug>` | Reads Avi's intent-scout brief; fold its SAME INTENT, DO NOW items in before you submit |
 | `bin/submit-wait <task-slug> --launch -m "Commit message"` | Runs `bin/submit` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
@@ -217,9 +217,11 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
 | `ship-clock` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
+| `agent-communication` | Shared | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| `dream-swap` | Shared | `mcritchie-studio/docs/agents/modules/dream-swap.md` |
 | `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |

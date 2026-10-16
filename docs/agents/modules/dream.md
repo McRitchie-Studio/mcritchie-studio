@@ -337,12 +337,15 @@ proposed dream for one known soul, and never overwrites a file. Then:
 
 ## Act 3 — Sign-off (Alex)
 
-Alex approves each dream, in one of two ways.
+Alex approves each dream, in one of two ways: his click on `/dreams`, or his word
+in chat, which the session records with his quoted words. Either way the row waits
+for a batch task to write it into the files.
 
 **One click on `/dreams`.** A proposed dream's card has an **Approve** button for
 Alex. The click records a `DreamApproval` row; the card then reads *Approved,
-loads after the next release*. Only Alex's own signed-in account can make one:
-another admin seat sees no button and is refused, and no API route creates one.
+loads after the next release*. Only Alex's own signed-in account can click:
+another admin seat sees no button and is refused. The only API route that
+creates an approval is the chat ruling below, and only on his quoted words.
 The file still reads `proposed` until a batch task writes it:
 
 1. `bin/dream approvals` lists the pending approvals
@@ -357,14 +360,93 @@ The file still reads `proposed` until a batch task writes it:
 4. Once the release ships, the deployed file reads approved, and `/dreams` and
    the approvals read mark the row applied. Nothing is marked by hand.
 
-**In chat.** Present the proposed ones as a numbered table (slug, question,
-answer) and ask which to approve, change or drop.
+**In chat.** Put the decisions to him as cards ([The card standard](#the-card-standard)),
+then record each answer he gives with his exact words:
 
-- Approved: set `status: approved`. The dream loads once the release that
-  carries it ships, because the hook reads the bank installed with the tooling.
-- Dropped: delete the file.
-- An agent never flips a dream to `approved` without Alex's word: his reply in
-  that session, or his click on `/dreams`. An agent never approves.
+```bash
+/Users/alex/projects/.agents/bin/dream approve <slug> --clearance "<Alex's exact words>"
+/Users/alex/projects/.agents/bin/dream drop    <slug> --clearance "<Alex's exact words>"
+/Users/alex/projects/.agents/bin/dream retire  <slug> --clearance "<Alex's exact words>"
+```
+
+Each posts `POST /api/v1/dream_rulings` (`DreamRuling`), the chat twin of
+`bin/release ship --mode cleared --clearance`: his clearance in chat is the
+grant, and the words are the audit trail, not a signature.
+
+| Ruling | Takes | Records | `apply-approvals` then |
+|---|---|---|---|
+| `approve` | a proposed dream | a `DreamApproval` | sets `status: approved` |
+| `drop` | a proposed dream | a `DreamRetirement`, ruling `drop` | deletes the file |
+| `retire` | an approved dream | a `DreamRetirement`, ruling `retire` | deletes the file |
+
+- Every row is stamped `via: chat`, with the verbatim clearance and the session
+  id, and names Alex as the approver. `/dreams` shows the quote beside the
+  approval, drop or retirement; a click carries none.
+- The clearance is refused when it is empty, only the dream's slug, or shorter
+  than three words (`bin/lib/dream_clearance.rb`, checked by the CLI and again by
+  the board). A reply in the card grammar stands as it is: `yes`, or per-number
+  answers such as `1 ✓ 2 ✗`.
+- The board holds the ruling to the dream's status, refuses an approval and a
+  drop of the same dream, and answers a second ruling with the first row (his
+  click included).
+- The dream must be in the deployed bank. A dream that exists only in your desk
+  is ruled in its file, on the same words: set `status: approved`, or delete the
+  file, and quote him in the PR.
+- **An agent never approves on its own judgment.** It records only what Alex said
+  in that session, quoted. A grade, a swap proposal, a card's "My call" and his
+  silence are never an approval.
+
+### The card standard
+
+One format puts every dream decision to Alex in chat, at wrap and on demand
+(the [`dream-swap`](dream-swap.md) SOP). `bin/dream cards` renders it
+(`bin/lib/dream_cards.rb`); paste its output, and fill in your call.
+
+```text
+2 dream decisions for you: 1 add, 1 swap.
+
+1 · ADD · step/qa-release/prepare · 0 of 5 used
+   Q: "At `bin/release prepare`, `accepted` CI is red on one e2e spec. Do I eject the PR?"
+   A: "Not yet. Re-run the WHOLE run and eject only if it is red again."
+   Why: "A spec fresh on `accepted` can be flaky; an ejection costs the PR its release."
+   Evidence: source 2026-10-15 · qa-release · sops/qa-release/rerun-the-whole-run-before-ejecting.md
+   My call: approve — a judgment call at a step, and no command can make it
+
+2 · SWAP · soul/carl · 20 of 20 used
+   Q: "…"
+   A: "…"
+   Why: "…"
+   Evidence: source 2026-10-12 · task x · carl/new.md; OUT `carl/old` · mean 0.5 of 2 · 3 fired · last 2026-10-01
+   My call: drop — a must-do: `bin/x` already refuses it
+
+Reply: `yes` takes every call · `1 ✓ 2 ✗ 3 ✎ <edit>` per number · or plain words. …
+```
+
+1. **One idea line** first: how many decisions, and of which kinds.
+2. **Numbered cards.** Each has:
+   - a header `N · ADD|SWAP|RETIRE · <layer> · <used> of <cap> used`. ADD when
+     the layer has room, SWAP when it is full (the in with its out), RETIRE for an
+     approved dream whose grades say it misleads (mean under 0.5 over two or more);
+   - **Q, A and Why** quoted from the file;
+   - **one Evidence line**: the source; for a swap, also the OUT dream's slug,
+     mean grade, fires and last fire;
+   - **My call**: approve, change or drop, with a one-line reason. Before the
+     call, apply the test: **a must-do belongs in a command, not a dream.** If a
+     command could enforce the answer, the call is drop, and the fix is the
+     command. The card flags an answer that opens like a rule (`Always`, `Never`,
+     `Must`).
+3. **The reply grammar**, last:
+   - `yes` takes every call in the message;
+   - per number: `1 ✓ 2 ✗ 3 ✎ <edit>`. ✓ takes that card's call, ✗ refuses it
+     (nothing is recorded unless his words say what instead), ✎ takes it with his
+     edit. Plain words work too;
+   - **silence changes nothing.** Unlike the decisions that stand on silence
+     ([`communication-style.md`](communication-style.md#dream-decisions-the-card-standard)),
+     a dream never defaults: no reply, no ruling.
+
+Record each answer with `bin/dream approve|drop|retire <slug> --clearance` and his
+words: his whole reply, or the grammar token (`yes`, `1 ✓`). A `✎` changes the
+file in your desk first; the changed dream is ruled once it ships.
 
 ## Fired — the heat map
 
@@ -425,6 +507,21 @@ candidates:
 One answer per session; the board refuses a second. `--in` must be a file reading
 `status: proposed` in this desk's bank; its layer is read from the file.
 
+**Then put it to Alex as a card** ([The card standard](#the-card-standard)), the
+last thing the Dreams step does:
+
+```bash
+/Users/alex/projects/.agents/bin/dream cards --in <home>/<slug> [--out <home>/<slug>] --call <slug>=approve:"<reason>"
+/Users/alex/projects/.agents/bin/dream cards --none      # "Dreams: no swap this session."
+```
+
+At most one swap card, or the no-swap line. Record his reply as Act 3 says. While
+the in is still only in your desk, rule it in that desk's files: on his quoted
+`yes`, set the in to `status: approved` and delete the out's file in the same
+change (the budget check holds the layer to its cap), and quote him in the PR.
+Once the in has shipped, `bin/dream approve <in>` and `bin/dream retire <out>`
+record it, or his **Approve swap** click does.
+
 **How the out is chosen.** `swap-candidates` ranks the layer's approved dreams by
 the data: lowest mean grade first (an ungraded dream counts as 1.0), then longest
 since its last fire (never fired first), then slug. A dream already retiring is
@@ -436,11 +533,12 @@ their grace sooner. The approval time is the `/dreams` click, else the date that
 opens the dream's `source:` line; a dream with neither predates the loop and is
 past grace.
 
-**3. Alex approves on `/dreams`.** The open swaps sit above the chart. His
+**3. Alex approves on `/dreams`, or in chat.** The open swaps sit above the chart. His
 **Approve swap** click records the in through the Act 3 approval and the out as a
 retirement, together. A **Retire** button on any approved card retires one on its
 own. Both are his alone, checked exactly as Approve is: another admin seat sees no
-button and is refused, and no API route creates either.
+button and is refused. In chat, his word does the same through
+`bin/dream approve` and `bin/dream retire` ([Act 3](#act-3--sign-off-alex)).
 
 The next batch task's `bin/dream apply-approvals` writes both: it sets each
 approved file to `status: approved` and **deletes** each retired file (Act 3's
@@ -468,7 +566,10 @@ works in and reads its caps from `DreamBank::BUDGETS`, the same constant
 Run Acts 2 and 3 for the current session: list the decisions from this session
 worth keeping, write them as `proposed`, show any other proposed dreams still
 waiting, including the open `dream-proposal-*` findings
-(`bin/triage list --status open`), and ask for sign-off.
+(`bin/triage list --status open`), and ask for sign-off as cards
+([The card standard](#the-card-standard)). When he says `dream-swap`, run the
+[`dream-swap`](dream-swap.md) SOP: the cards for every pending dream and the swaps
+the data calls for.
 
 ## Files
 
@@ -480,13 +581,15 @@ waiting, including the open `dream-proposal-*` findings
 | Selector | `bin/lib/dream_selector.rb` |
 | Budgets and moment cards | `bin/lib/dream_bank.rb` (`BUDGETS`, `MOMENTS`, `moment`, `after_moment`) |
 | Session-start loader | `bin/session-insights` |
-| Soul loader, list, materialize, approvals, fired, grade, swap | `bin/dream` |
+| Soul loader, list, materialize, approvals, fired, grade, swap, cards, chat rulings | `bin/dream` |
 | One-click approvals | `app/models/dream_approval.rb`, `DreamsController#approve`, `app/controllers/api/v1/dream_approvals_controller.rb` |
+| Chat rulings | `app/models/dream_ruling.rb`, `app/controllers/api/v1/dream_rulings_controller.rb`, `bin/lib/dream_clearance.rb`, `app/views/dreams/_clearance.html.erb` |
+| The card standard | `bin/lib/dream_cards.rb` (`bin/dream cards`); the on-demand SOP [`dream-swap.md`](dream-swap.md) |
 | Heat map | `app/models/dream_heat.rb` (`dream_fired` actions) |
 | The loop: grades, swaps, retirements, KPIs | `app/models/dream_grade.rb`, `dream_swap.rb`, `dream_retirement.rb`, `dream_loop.rb` (room, candidates, grace), `dream_kpis.rb`; `bin/lib/dream_layers.rb` (layer keys, budgets) |
 | Loop API | `app/controllers/api/v1/dream_grades_controller.rb`, `dream_swaps_controller.rb`, `dream_retirements_controller.rb`; `DreamsController#retire`, `#approve_swap` |
 | Ship-time proposer | `app/services/insights/dream_proposer.rb`, called by `app/services/insights/task_grader.rb` |
 | Signals and phrases | `config/learning_loop.yml` (`dream`) |
 | Installed copy the hook reads | `bin/install-agent-docs` (`TOOLING_PATHS`) |
-| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`, `test/models/dream_approval_test.rb`, `test/models/dream_heat_test.rb`, `test/integration/dreams_page_test.rb`, `test/controllers/api/v1/dream_approvals_controller_test.rb`, `e2e/dream_approve.spec.js`; the moment cards in `test/commands/task_begin_login_test.rb`, `test/lib/submit_test.rb`, `test/lib/submit_wait_script_test.rb`, `test/lib/review_claim_cli_test.rb`, `test/integration/release_prepare_moment_test.rb`, `e2e/dreams_step_dreams.spec.js`; the loop: `test/lib/dream_layers_test.rb`, `test/models/dream_grade_test.rb`, `test/models/dream_retirement_test.rb`, `test/models/dream_loop_test.rb`, `test/integration/dreams_loop_page_test.rb`, `test/controllers/api/v1/dream_loop_controllers_test.rb`, `e2e/dream_retire.spec.js` |
+| Tests | `test/lib/dream_bank_test.rb`, `test/lib/dream_selector_test.rb`, `test/lib/dream_cli_test.rb`, `test/lib/session_insights_test.rb`, `test/services/insights/dream_proposer_test.rb`, `test/models/dream_approval_test.rb`, `test/models/dream_heat_test.rb`, `test/integration/dreams_page_test.rb`, `test/controllers/api/v1/dream_approvals_controller_test.rb`, `e2e/dream_approve.spec.js`; the moment cards in `test/commands/task_begin_login_test.rb`, `test/lib/submit_test.rb`, `test/lib/submit_wait_script_test.rb`, `test/lib/review_claim_cli_test.rb`, `test/integration/release_prepare_moment_test.rb`, `e2e/dreams_step_dreams.spec.js`; the loop: `test/lib/dream_layers_test.rb`, `test/models/dream_grade_test.rb`, `test/models/dream_retirement_test.rb`, `test/models/dream_loop_test.rb`, `test/integration/dreams_loop_page_test.rb`, `test/controllers/api/v1/dream_loop_controllers_test.rb`, `e2e/dream_retire.spec.js`; the cards and chat rulings: `test/lib/dream_cards_test.rb`, `test/lib/dream_clearance_test.rb`, `test/models/dream_ruling_test.rb`, `test/controllers/api/v1/dream_rulings_controller_test.rb`, `test/integration/dreams_chat_ruling_page_test.rb`, `e2e/dream_chat_ruling.spec.js` |
 | Fixture bank the selector tests read | `test/fixtures/dreams/` |

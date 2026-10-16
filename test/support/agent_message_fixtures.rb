@@ -8,6 +8,8 @@ module AgentMessageFixtures
   # install the real config/agent_answerers.yml, or a list of their own, instead.
   class UnguardedAnswerers
     def person_ids = []
+    def roles = AgentPerson::ROLES
+    def held_reason(_person) = "unguarded"
     def allowed?(_person) = true
     def sql_guard = ->(_table) { "TRUE" }
   end

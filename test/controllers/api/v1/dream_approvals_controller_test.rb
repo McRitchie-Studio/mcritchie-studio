@@ -3,8 +3,9 @@ require "test_helper"
 module Api
   module V1
     # [integration] GET /api/v1/dream_approvals — the pending approvals bin/dream
-    # apply-approvals writes into the files. Bearer-gated and read-only: no API
-    # route creates an approval, so no agent token can.
+    # apply-approvals writes into the files. Bearer-gated and read-only. The one API
+    # route that creates an approval is POST /api/v1/dream_rulings, and only on
+    # Alex's quoted word (dream_rulings_controller_test.rb).
     class DreamApprovalsControllerTest < ActionDispatch::IntegrationTest
       BANK = Rails.root.join("test/fixtures/dreams").to_s
 
@@ -46,7 +47,7 @@ module Api
         assert_not_nil shipped.reload.applied_at
       end
 
-      test "[integration] the read needs a bearer, and no API route creates an approval" do
+      test "[integration] the read needs a bearer, and only the chat-ruling route creates an approval" do
         get api_v1_dream_approvals_path
         assert_response :unauthorized
 
@@ -58,6 +59,13 @@ module Api
           route.path.spec.to_s.start_with?("/api/") && route.defaults[:controller].to_s.include?("dream_approval") &&
             route.verb != "GET"
         }, "every API route to dream approvals is a read"
+        writers = Rails.application.routes.routes.select do |route|
+          route.path.spec.to_s.start_with?("/api/") && route.verb != "GET" &&
+            %w[dream_approval dream_retirement dream_ruling].any? { |name| route.defaults[:controller].to_s.include?(name) }
+        end
+        assert_equal [ "api/v1/dream_rulings#create" ],
+                     writers.map { |route| "#{route.defaults[:controller]}##{route.defaults[:action]}" },
+                     "the only API write that approves or retires is the chat ruling, which needs Alex's words"
       end
     end
   end

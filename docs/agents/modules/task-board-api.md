@@ -150,8 +150,10 @@ never-attempted gate carries the all-nil row. `gate_runs` stays the source of
 truth (`GET /gates/...` above for the full attempt history); show self-heals a
 stale cache, index serves the raw column. Release-grain gates (G3/G4) are not
 projected — read them via `GET /gates/release/<slug>`.
-(There are also `agents`, `activities`, and `usages` resources; out of scope
-here.)
+(There are also `agents`, `activities`, and `usages` resources, and the dream
+bank's `dream_approvals`, `dream_retirements`, `dream_grades`, `dream_swaps` and
+`dream_rulings` (Alex's ruling given in chat, with his quoted words); out of scope
+here. The dream routes are in [`dream.md`](dream.md), Acts 3 and 4.)
 
 ### Release Notes
 

@@ -143,9 +143,11 @@ its invocation exactly.
 | Xan `share-insights` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
 | Xan `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` (recontextualize, fix, resubmit) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
+| `agent-communication` (what an agent may discuss with owner, team, client and public) | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| `dream-swap` (print the dream cards (adds, swaps, retires) for Alex and record his answer with his words) | `mcritchie-studio/docs/agents/modules/dream-swap.md` |
 | `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `focus-session` (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |

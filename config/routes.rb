@@ -885,15 +885,19 @@ Rails.application.routes.draw do
       # (ActionGrade.banked) as a capped, newest-first list, so a SessionStart hook
       # can inject past sessions' lessons into a fresh agent's context.
       get "insights", to: "insights#index"
-      # Pending dream approvals (read-only; an approval is made only on /dreams).
+      # Pending dream approvals (read-only; an approval is Alex's click on /dreams, or
+      # his quoted word in chat through dream_rulings below).
       get "dream_approvals", to: "dream_approvals#index"
       # The dream loop (Act 4): a session's grade of a dream that fired in it, its one
       # swap proposal, the data-ranked swap candidates, and the pending retirements
-      # (read-only; a retirement is made only on /dreams).
+      # (read-only; a retirement is Alex's click on /dreams or his word in chat).
       post "dream_grades", to: "dream_grades#create"
       get  "dream_swaps/candidates", to: "dream_swaps#candidates", as: :dream_swap_candidates
       post "dream_swaps", to: "dream_swaps#create"
       get  "dream_retirements", to: "dream_retirements#index"
+      # Alex's ruling given in chat (approve, drop, retire), recorded with his quoted
+      # words and the session (DreamRuling). The only API route that approves.
+      post "dream_rulings", to: "dream_rulings#create"
     end
   end
 end

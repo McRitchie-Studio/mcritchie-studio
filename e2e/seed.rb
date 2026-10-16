@@ -1706,7 +1706,7 @@ end
 AgentMessage.delete_all # its events cascade
 AgentPerson.delete_all # its identities and notes cascade
 AgentMessageCursor.delete_all
-# The authors are Alex (his seeded person), so the owner-only guard
+# The authors are Alex (his seeded person, the owner role), so the owner-only guard
 # (config/agent_answerers.yml) lets the claim below take the answered message.
 AgentPerson.seed_owner!
 mailbox_guild = "910000000000000001"

@@ -153,6 +153,13 @@ class TaskBeginTest < Minitest::Test
       return ["201 Created", JSON.generate("data" => JSON.parse(body).merge("slug" => "act-1"))]
     end
 
+    # begin logs the builder's desk in (desk_login) once it names a soul, which every
+    # begin now does (the pokemon default). That login is task_begin_login_test.rb's
+    # subject; here it is refused, so its POST is never read as a task create.
+    if path.start_with?("/api/v1/agent_sessions")
+      return ["404 Not Found", JSON.generate("error" => "no agent sessions in this stub")]
+    end
+
     case method
     when "GET"
       return ["404 Not Found", JSON.generate("error" => "task not found")] if @task.nil?
@@ -713,8 +720,68 @@ class TaskBeginTest < Minitest::Test
     assert_equal [["WORKTREE", "identity", APP, SLUG, "shannon"]], identity_calls(lines).map { |l| l[0, 5] }
   end
 
+  def test_begin_without_agent_or_any_builder_defaults_to_pokemon_and_says_so
+    # The 2026-10-14 approve-intent-brief-dream incident: a blank author set made
+    # the docs reviewer's merge permit refuse. begin now names the general builder.
+    requests, _out, err, status, lines = run_begin([SLUG], existing: building_task,
+                                                   env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    assert_equal 1, err.scan("the builder defaults to pokemon").size, "one line names the default:\n#{err}"
+    new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }
+    assert_equal "pokemon", new_call[new_call.index("--soul") + 1], "the desk is cut as the default builder"
+    claim = patches_of(requests).map { |r| JSON.parse(r[:body]) }.find { |b| b["stage"] == "building" }
+    assert_equal "pokemon", claim.dig("event", "actor"), "the claim stamps built_by through rule 1"
+    refute_match(/UNSTAMPED/, err)
+  end
+
+  def test_begin_create_without_agent_defaults_to_pokemon_through_the_child_move
+    _requests, _out, err, status, lines =
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, *CREATE_METADATA])
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    assert_includes err, "no --agent, so the builder defaults to pokemon"
+    new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }
+    assert_equal "pokemon", new_call[new_call.index("--soul") + 1], "the desk is cut as the default builder"
+  end
+
+  def test_the_default_is_the_sessions_acting_soul_when_it_narrates_as_one
+    # The sticky marker `bin/agent-activity --agent <soul>` writes; review-claim reads
+    # the same one. A session acting as jasper builds as jasper, not as the Pokémon.
+    sessions = File.join(sandbox_root, "projects", ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    File.write(File.join(sessions, "#{SESSION}.acting-agent"), "jasper\n")
+
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task,
+                                                    env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
+
+    assert status.success?, err
+    assert_includes err, "the builder defaults to jasper"
+    new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }
+    assert_equal "jasper", new_call[new_call.index("--soul") + 1]
+  end
+
+  def test_an_explicit_agent_or_a_recorded_builder_is_never_replaced_by_the_default
+    _requests, _out, err, = run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP,
+                                       *CREATE_METADATA, "--agent", "carl"])
+    refute_includes err, "defaults to pokemon", "--agent overrides the default"
+
+    existing = building_task
+    existing["metadata"]["devops"]["built_by"] = "shannon"
+    _requests, _out, err, = run_begin([SLUG], existing: existing)
+    refute_includes err, "defaults to pokemon", "a recorded builder is kept on a resume"
+
+    assigned = building_task.merge("agent_slug" => "jasper")
+    _requests, _out, err, = run_begin([SLUG], existing: assigned)
+    refute_includes err, "defaults to pokemon", "a soul assignee is the board's rule 4, not overridden"
+  end
+
   def test_begin_with_no_builder_on_record_says_unstamped_and_stamps_nothing
-    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
+    # A persona that names no soul blocks the default (the task already says who acts)
+    # and stamps nobody, so the read-back is still blank: the UNSTAMPED warning stands.
+    existing = building_task
+    existing["metadata"]["devops"]["persona"] = "ghost"
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: existing)
 
     assert status.success?, "an unstamped desk is still a whole desk — begin must not die:\n#{err}"
     assert_empty identity_calls(lines), "no soul on record means nothing to stamp — never a guess"

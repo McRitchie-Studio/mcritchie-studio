@@ -5,7 +5,7 @@ module Admin
   # Admin::AgentPersonNotesController): workers move messages
   # through the API, not through buttons here. The one exception is
   # release_hold: an admin's explicit act that hands a `held` message (a sender
-  # config/agent_answerers.yml does not allow) to the agent. A form post, so
+  # whose role config/agent_answerers.yml does not answer) to the agent. A form post, so
   # Rails' CSRF check guards it; the console twin is
   # `bin/rails agent_people:release MESSAGE=<id>`.
   class AgentMessagesController < ApplicationController
