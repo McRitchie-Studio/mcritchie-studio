@@ -65,11 +65,19 @@ module Api
       # normal idle answer, so a polling worker never mistakes it for an error.
       def claim
         wait = params[:wait].to_f.clamp(0, WAIT_CAP)
+        # A standby dispatcher claims nothing while a primary is live, and then
+        # only its standby domains' souls (AgentDispatcher.claim_scope). Its
+        # empty answer is immediate: a standby never holds a long poll.
+        souls, standby_reason = AgentDispatcher.claim_scope(params[:worker], acting_souls)
+        if standby_reason
+          return render_data(nil, meta: { reason: standby_reason, waited: false })
+        end
+
         deadline = Time.current + wait
         result = nil
         loop do
           result = guarded do
-            AgentMessage.claim!(soul: acting_souls, worker: params[:worker], channel: params[:channel].presence,
+            AgentMessage.claim!(soul: souls, worker: params[:worker], channel: params[:channel].presence,
                                 actor: claim_actor)
           end
           return if performed?

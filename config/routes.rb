@@ -760,6 +760,18 @@ Rails.application.routes.draw do
           post :typing
         end
       end
+      # The warm-session lease per domain (AgentDomainSessionsController): bin/dispatcher
+      # acquires, renews, checkpoints, restores, consolidates and releases it.
+      resources :agent_domain_sessions, only: [:index], param: :domain do
+        member do
+          post :acquire
+          post :renew
+          post :checkpoint
+          get :checkpoint, action: :download
+          post :release
+          post :consolidate
+        end
+      end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
       resources :agent_dispatchers, only: [:index] do
         collection do
