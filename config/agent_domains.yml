@@ -1,25 +1,98 @@
-# The DOMAIN layer of an agent mailbox answer (docs/agents/system/agent-message-loop.md,
-# "Memory"): which business a soul answers for, and the doc that describes it.
-# AgentMailbox::ContextBuilder reads this file from the dispatcher's checkout.
+# The domain registry (docs/agents/system/agent-message-loop.md, "Memory" and
+# "Proposals and confirm"; the plan is .agents/epics/domain-agents.md).
 #
-# A soul with no entry, or a domain whose doc is missing, gets an empty domain
-# layer; nothing fails. Paths are relative to the hub checkout.
+# Two readers:
+#   - AgentMailbox::ContextBuilder: the DOMAIN layer of an answer (soul → domain
+#     → doc). A soul with no entry, or a domain whose doc is missing, gets an
+#     empty domain layer; nothing fails. Paths are relative to the hub checkout.
+#   - AgentMailbox::DomainRegistry (bin/lib/agent_domain_registry.rb), on the
+#     board and in the worker: the domain's FRONT-DOOR soul and the catalog of
+#     what that soul may propose.
+#
+# A DOMAIN entry holds:
+#   name, doc       the business and the page the DOMAIN layer reads
+#   soul            the front-door agent: the ONE soul that sees and proposes this
+#                   catalog. Other souls mapped to the domain under `souls:` get
+#                   its doc, never its catalog.
+#   reply_name      how the shared bot's replies are signed (`**Turf** · …`)
+#   repos, app      where changes land, and the App slug asks read from
+#   capabilities
+#     ask:          named read-only queries. Each has a description, the lowest
+#                   audience that may request it (min_audience), the query it runs
+#                   (a method in AgentProposals::Queries, never model-written
+#                   SQL), and its params schema (bounded, see below).
+#     operate:      named SOPs. Empty in Phase 1.
+#     change:       the task template a change proposal fills: repo,
+#                   default_shape, min_audience.
+#
+# PARAMS SCHEMA. Each param is { type: integer, min, max, default } or
+# { type: string, max } or { type: enum, values: [...] } or
+# { type: list, max_items, max } (a list of short strings). A proposal naming a
+# param the schema does not list, or a value out of bounds, is refused.
+#
+# AUDIENCES. min_audience is the lowest role (AgentMailbox::Audience::ROLES,
+# bin/lib/agent_audience.rb, which also holds the ranking) that may REQUEST a
+# capability, and the request must also pass Audience#may? (propose_ask,
+# propose_change). A client may request only in the domain it is a client of.
+# Only the owner ever CONFIRMS one (`go`, Audience#may?(:confirm_proposal)),
+# checked by the person's role (agent_people.role), never by a Discord id.
 #
 # `internal: true` marks a domain whose doc (and name) is internal: a client or
 # public audience gets an empty DOMAIN layer for it
 # (docs/agents/modules/agent-communication.md). A domain key is also what a
-# client person's `client_domain` names.
+# client person's `client_domain` names. An internal domain has no catalog, and
+# no prompt names it.
 domains:
   mcritchie_studio:
     name: McRitchie Studio
     doc: docs/agents/domains/mcritchie-studio.md
+    soul: xan
+    reply_name: Xan
+    repos: [mcritchie-studio]
+    app: mcritchie-studio
+    capabilities:
+      ask:
+        board_status:
+          description: How many board tasks sit in each stage right now.
+          min_audience: team
+          query: board_status
+          params: {}
+        recently_shipped:
+          description: The tasks shipped to production in the last N days (1 to 30, default 7).
+          min_audience: team
+          query: recently_shipped
+          params:
+            days: { type: integer, min: 1, max: 30, default: 7 }
+      operate: {}
+      change:
+        repo: mcritchie-studio
+        default_shape: backend
+        min_audience: client
   turf_monster:
     name: Turf Monster
     doc: docs/agents/domains/turf-monster.md
+    soul: turf_monster
+    reply_name: Turf
+    repos: [turf-monster]
+    app: turf-monster
+    capabilities:
+      ask:
+        signups_and_errors:
+          description: Turf Monster's signups and errors over the last N days (1 to 7, default 1), from its health report.
+          min_audience: owner
+          query: app_health
+          params:
+            days: { type: integer, min: 1, max: 7, default: 1 }
+      operate: {}
+      change:
+        repo: turf-monster
+        default_shape: backend
+        min_audience: client
   commercial_welding:
     name: Commercial Welding
     doc: docs/agents/domains/commercial-welding.md
     internal: true
+    # No front-door soul and no catalog yet (Samson is deferred, 2026-10-15).
 
 souls:
   avi: mcritchie_studio

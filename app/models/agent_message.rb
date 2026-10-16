@@ -1,4 +1,5 @@
 require Rails.root.join("bin/lib/agent_note_block").to_s
+require Rails.root.join("bin/lib/agent_proposal_block").to_s
 
 # One inbound message to an agent: the agent mailbox's row
 # (docs/agents/system/agent-message-loop.md).
@@ -234,10 +235,19 @@ class AgentMessage < ApplicationRecord
   # that failed to split it (an older dispatcher, a mangled delimiter) cannot
   # post the facts. When the worker sent no notes, the facts the board found in
   # that section are the ones recorded.
-  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil)
+  #
+  # A PROPOSAL section is cut the same way (AgentMailbox::ProposalBlock, the
+  # same loose pattern and fixtures), whether or not the worker split it. The
+  # worker's parsed `proposal` wins; else the one the board found. It is then
+  # VALIDATED here (AgentProposal.record_from!): accepted, it is stored and the
+  # reply gains the confirm line; refused, it is an event and the reply is
+  # posted without it. The block itself never posts.
+  def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil,
+                proposal: nil)
     worker = worker.to_s.strip
-    response_text, found = AgentMailbox::NoteBlock.split(response_text)
+    response_text, found, found_proposal = AgentMailbox::ProposalBlock.split(response_text)
     notes = found if Array(notes).empty?
+    proposal = found_proposal unless proposal.is_a?(Hash)
     raise Refused.new("response_text is required", code: "RESPONSE_REQUIRED") if response_text.to_s.strip.empty?
 
     outcome = self.class.transaction do
@@ -254,6 +264,9 @@ class AgentMessage < ApplicationRecord
               reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
               **self.class.run_record(run))
       stored = Array(notes).any? ? AgentPersonNote.record_from!(self, notes, now: now) : []
+      if (offered = AgentProposal.record_from!(self, proposal, now: now))
+        update!(response_text: "#{self.response_text}\n\n#{offered.confirm_text}")
+      end
       record!("completed", actor: actor || soul_slug,
                            detail: { "worker" => worker, "action_summary" => action_summary.presence,
                                      "notes" => (stored.size if stored.any?) }.compact)
@@ -335,6 +348,9 @@ class AgentMessage < ApplicationRecord
   # `text` without its notes section (NoteBlock.split: the first loose
   # delimiter, or a headed JSON tail), stripped.
   def self.without_notes(text) = AgentMailbox::NoteBlock.reply(text)
+
+  # `text` without its notes AND proposal sections: what may be posted.
+  def self.without_blocks(text) = AgentMailbox::ProposalBlock.reply(text)
 
   # complete!'s run report, cut to RUN_LIMITS and RUN_META_KEYS (scalars only).
   def self.run_record(run)

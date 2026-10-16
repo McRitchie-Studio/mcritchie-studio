@@ -97,7 +97,12 @@ module AgentMessages
       parent = referenced_row(raw, guild_id, channel_id)
       result = @router.route(guild_id: guild_id, channel_id: channel_id, parent_id: parent_id, content: raw["content"],
                              mention_users: users, mention_roles: roles)
-      result = inherit_from(parent, result) if parent
+      result = inherit_from(parent, result, raw) if parent
+      thread_key = parent&.thread_key || fresh_thread_key(raw, guild_id, channel_id, parent_id)
+      # The owner's go / no / change: on an open proposal is handled in code,
+      # before routing decides anything (AgentMessages::ProposalConfirm).
+      confirmed = confirm(raw, guild_id, channel_id, thread_key, users, roles, source)
+      return confirmed if confirmed
       # Addressed-only: a routed soul, or a reply to a message we hold.
       return nil unless result.routed? || parent
 
@@ -107,7 +112,7 @@ module AgentMessages
         held = result.routed? && !@answerers.allowed?(person)
         message = AgentMessage.create!(
           channel: "discord", external_id: raw["id"].to_s, guild_id: guild_id, channel_ref: channel_id,
-          thread_key: parent&.thread_key || fresh_thread_key(raw, guild_id, channel_id, parent_id),
+          thread_key: thread_key,
           author_ref: author_ref, author_name: author_name(raw), person: person,
           content: raw["content"].to_s, mentions: { "users" => users, "roles" => roles },
           soul_slug: result.soul, routed_by: result.routed_by,
@@ -123,6 +128,30 @@ module AgentMessages
         end
         message
       end
+    end
+
+    # A reply in a thread with a pending proposal whose text is exactly go, no or
+    # change: …: stored by ProposalConfirm, its follow-up job enqueued. nil when
+    # the message is not one (it is then routed as usual).
+    def confirm(raw, guild_id, channel_id, thread_key, users, roles, source)
+      intent = ProposalConfirm.intent(raw["content"])
+      return nil unless intent
+
+      proposal = AgentProposal.latest_pending(thread_key: thread_key, channel: "discord", guild_id: guild_id,
+                                              channel_ref: channel_id)
+      return nil unless proposal
+
+      message, jobs = AgentMessage.transaction(requires_new: true) do
+        author_ref = raw.dig("author", "id").to_s
+        person = AgentPerson.resolve!(platform: "discord", external_id: author_ref, display_name: author_name(raw))
+        attrs = { channel: "discord", external_id: raw["id"].to_s, guild_id: guild_id, channel_ref: channel_id,
+                  thread_key: thread_key, author_ref: author_ref, author_name: author_name(raw), person: person,
+                  content: raw["content"].to_s, mentions: { "users" => users, "roles" => roles },
+                  sent_at: parse_time(raw["timestamp"]) }
+        ProposalConfirm.new(proposal: proposal, intent: intent).store!(attrs, person: person, source: source)
+      end
+      jobs.each { |job, id| job.perform_later(id) }
+      message
     end
 
     def status_for(result, held)
@@ -165,11 +194,22 @@ module AgentMessages
       "discord:#{channel_id}:#{thread ? channel_id : raw['id']}"
     end
 
-    def inherit_from(parent, result)
-      return result if result.routed_by.in?(%w[user role]) || parent.soul_slug.blank?
+    # A user mention that is only in the mention LIST, not written in the text,
+    # is Discord's reply ping: replying to an answer pings the shared bot that
+    # posted it. That names the bot, not a soul, so the thread's soul still wins
+    # (a reply to Turf's answer stays with Turf though Xan's bot posted it).
+    def inherit_from(parent, result, raw = {})
+      return result if parent.soul_slug.blank?
+      return result if result.routed_by == "role"
+      return result if result.routed_by == "user" && !reply_ping_only?(result, raw)
 
       Router::Result.new(soul: parent.soul_slug, routed_by: "thread",
                          detail: { "matched" => "reply to message #{parent.id}" })
+    end
+
+    def reply_ping_only?(result, raw)
+      id = result.detail.to_h["matched"].to_s.delete_prefix("user:")
+      id.present? && !raw["content"].to_s.match?(/<@!?#{Regexp.escape(id)}>/)
     end
 
     def author_name(raw)

@@ -44,6 +44,17 @@ discord:
         xan:
           roles: []
           users: ["1481150857809760399"]   # @Xan, the bot user itself
+        # Turf (the turf_monster soul), the Turf Monster domain's front door: a
+        # mention of the existing "Turf Monster" Discord app's bot user, found
+        # 2026-10-15 as a member of this guild. Its replies still post through
+        # the shared bot above, signed `**Turf** ·` (config/agent_domains.yml
+        # reply_name) until Phase 4 gives each soul its own bot.
+        turf_monster:
+          roles: []
+          users: ["1405042649479647293"]   # @Turf Monster (bot user)
+        # Tyrion is NOT routed: he answers through OpenClaw with his own bot, and
+        # routing him here too would answer every message twice (open decision in
+        # .agents/epics/domain-agents.md).
   # A fuller shape, for reference:
   # guilds:
   #   "111111111111111111":           # the McRitchie server

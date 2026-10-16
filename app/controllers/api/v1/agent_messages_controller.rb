@@ -108,7 +108,7 @@ module Api
         outcome = guarded(target: @message) do
           @message.complete!(worker: params[:worker], response_text: params[:response_text],
                              action_summary: params[:action_summary], actor: session_actor(acting_soul),
-                             run: run_params, notes: notes_param)
+                             run: run_params, notes: notes_param, proposal: proposal_param)
         end
         return if performed?
 
@@ -142,6 +142,13 @@ module Api
       def notes_param
         raw = params[:notes]
         raw.is_a?(Array) ? raw.select { |n| n.is_a?(String) }.first(NOTES_PARAM_CAP) : []
+      end
+
+      # The proposal the worker split off (AgentMailbox::ProposalBlock), a plain
+      # object, or nil. Only parsed here: AgentProposal.record_from! validates it.
+      def proposal_param
+        raw = params[:proposal]
+        raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h.deep_stringify_keys : nil
       end
 
       def load_message

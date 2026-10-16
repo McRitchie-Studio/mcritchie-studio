@@ -89,6 +89,7 @@ module AgentMessages
           "total" => thread_total, "omitted" => [ thread_total - thread.size, 0 ].max, "turns" => thread_turns
         },
         "user" => user_json,
+        "proposals" => proposals_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
       }
     end
@@ -96,6 +97,19 @@ module AgentMessages
     private
 
     def person = @message.person
+
+    # What this soul may propose to THIS sender (config/agent_domains.yml through
+    # AgentMailbox::DomainRegistry, filtered by the sender's audience, which the
+    # board resolves from the person's role), and the thread's newest proposal,
+    # so a `change: …` is answered with the offer it changes in view. A soul
+    # that is no domain's front door gets an empty catalog.
+    def proposals_json
+      audience = AgentProposal.audience_for(person)
+      last = AgentProposal.in_thread(@message).where("agent_proposals.created_at <= ?", @message.created_at)
+                          .order(id: :desc).first
+      { "catalog" => AgentProposal.registry.catalog(@message.soul_slug, audience: audience),
+        "last" => last&.as_context_json }
+    end
 
     def person_scope
       return AgentMessage.none if @message.person_id.blank? || @message.soul_slug.blank?

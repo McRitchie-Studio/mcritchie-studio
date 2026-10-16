@@ -42,7 +42,9 @@ class AgentMessageReplyJob < ApplicationJob
     "**#{display_name(message.soul_slug)}** · #{message.response_text}"
   end
 
+  # A domain's front door signs as its registry `reply_name` (Turf, not
+  # "Turf Monster"), else the Agent's name.
   def self.display_name(soul)
-    Agent.find_by(slug: soul)&.name.presence || soul.to_s.titleize
+    AgentProposal.registry.reply_name(soul) || Agent.find_by(slug: soul)&.name.presence || soul.to_s.titleize
   end
 end

@@ -1,0 +1,116 @@
+require Rails.root.join("bin/lib/agent_domain_registry").to_s
+require Rails.root.join("bin/lib/agent_proposal_block").to_s
+
+# What a domain agent offered to do in one thread, waiting for the owner's word
+# (docs/agents/system/agent-message-loop.md, "Proposals and confirm").
+#
+#   proposed ──go (owner)──▶ confirmed ──ran──▶ executed
+#      │  ▲                      └──failed──▶ proposed (the go can be retried)
+#      │  └ a newer proposal in the thread, `no`, or `change: …` ──▶ rejected
+#      └──24 hours pass──▶ expired
+#
+# THE BOARD DECIDES. The model's PROPOSAL block (AgentMailbox::ProposalBlock) is
+# only parsed by the worker. record_from! checks it against config/agent_domains.yml
+# (AgentMailbox::DomainRegistry#validate): the capability must be in the
+# proposing soul's OWN domain, its params must fit the schema, and the sender's
+# audience (AgentPerson's role, never the message text) must be allowed to
+# request it. A refused proposal is never stored here and never shown: it is a
+# `proposal_refused` event on the message that carried it.
+#
+# ONE OPEN PROPOSAL PER THREAD. A new one rejects the one before it, so `go`
+# always means the newest offer.
+class AgentProposal < ApplicationRecord
+  STATUSES = %w[proposed confirmed rejected expired executed].freeze
+  KINDS = AgentMailbox::DomainRegistry::KINDS
+  TTL = 24.hours
+  # What the owner is told under an accepted proposal.
+  CONFIRM_LINE = "Reply **go** to run this, **no** to drop it, or **change: …**".freeze
+  BOARD_URL = "https://mcritchie.studio".freeze
+
+  belongs_to :person, class_name: "AgentPerson", optional: true
+  belongs_to :source_message, class_name: "AgentMessage", optional: true
+  belongs_to :confirm_message, class_name: "AgentMessage", optional: true
+
+  validates :thread_key, :channel, :channel_ref, :soul_slug, :capability, :expires_at, presence: true
+  validates :status, inclusion: { in: STATUSES }
+  validates :kind, inclusion: { in: KINDS }
+
+  scope :pending, -> { where(status: "proposed") }
+
+  class << self
+    # The registry, read once per process. Tests swap it with `registry=`.
+    def registry = @registry ||= AgentMailbox::DomainRegistry.load
+
+    attr_writer :registry
+
+    def reset_registry! = @registry = nil
+
+    # The sender's audience, as AgentMailbox::Audience: from the person's role
+    # (AgentPerson.audience_for), so nothing a message says can raise it.
+    def audience_for(person)
+      data = AgentPerson.audience_for(person)
+      AgentMailbox::Audience.new(role: data["role"], client_domain: data["client_domain"])
+    end
+
+    # Check the parsed PROPOSAL block a completed answer carried and store it, or
+    # log why not. Returns the new proposal, or nil. Called inside complete!'s
+    # transaction, so the proposal and the answer land together.
+    def record_from!(message, raw, now: Time.current)
+      return nil if raw.nil?
+
+      verdict = registry.validate(soul: message.soul_slug, audience: audience_for(message.person), proposal: raw)
+      unless verdict.ok?
+        message.record!("proposal_refused", actor: "board",
+                                            detail: { "reason" => verdict.reason.to_s[0, 300],
+                                                      "capability" => raw.is_a?(Hash) ? raw["capability"].to_s[0, 60] : nil }.compact)
+        return nil
+      end
+
+      data = verdict.proposal
+      in_thread(message).pending.find_each { |older| older.settle!("rejected", by: "board", now: now, result: { "reason" => "superseded" }) }
+      proposal = create!(thread_key: message.thread_key, channel: message.channel, guild_id: message.guild_id,
+                         channel_ref: message.channel_ref, soul_slug: message.soul_slug, person: message.person,
+                         source_message: message, kind: data["kind"], capability: data["capability"],
+                         params: data["params"], summary: data["summary"], expires_at: now + TTL)
+      message.record!("proposed", actor: "board", detail: { "proposal_id" => proposal.id, "kind" => proposal.kind,
+                                                            "capability" => proposal.capability })
+      proposal
+    end
+
+    # Proposals in the same conversation as `row` (a message or a hash of its
+    # scope), scoped as the THREAD layer is: key, channel, guild and channel ref.
+    def in_thread(row)
+      where(thread_key: row.thread_key, channel: row.channel, guild_id: row.guild_id, channel_ref: row.channel_ref)
+    end
+
+    # The newest still-pending proposal in a thread, or nil (expired ones included:
+    # the caller expires them, so a late `go` is told).
+    def latest_pending(thread_key:, channel:, guild_id:, channel_ref:)
+      where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
+        .pending.order(id: :desc).first
+    end
+  end
+
+  def expired?(now = Time.current) = status == "expired" || (status == "proposed" && expires_at <= now)
+
+  # Move to a terminal or waiting status, stamping who and when.
+  def settle!(new_status, by:, now: Time.current, result: nil)
+    update!(status: new_status, settled_at: now, settled_by: by.to_s[0, 100], result: result || self.result)
+  end
+
+  # The line appended under the answer that carried it.
+  def confirm_text = "> Proposed: #{summary}\n#{CONFIRM_LINE}"
+
+  # The bundle's view of it, for the next answer's context (`change: …`).
+  def as_context_json
+    { "id" => id, "kind" => kind, "capability" => capability, "params" => params, "summary" => summary,
+      "status" => status, "expires_at" => expires_at.iso8601 }
+  end
+
+  def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"
+
+  # The Discord link to the message that carried it: the thread a task records.
+  def thread_url
+    source_message&.discord_url || (guild_id.present? ? "https://discord.com/channels/#{guild_id}/#{channel_ref}" : nil)
+  end
+end

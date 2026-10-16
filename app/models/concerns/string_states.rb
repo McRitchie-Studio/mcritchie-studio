@@ -59,6 +59,8 @@ module StringStates
   UNCONSTRAINED = {
     "agent_messages.reply_status" => WITH_TABLE_CHECK,
     "agent_messages.status" => WITH_TABLE_CHECK,
+    "agent_proposals.status" => "CHECK agent_proposals_status_known is created with the table (20261016120000), " \
+                                "not by AddStateChecks; test/models/agent_proposal_test.rb pins it to AgentProposal::STATUSES",
     "report_deliveries.status" => "CHECK report_deliveries_status_known is created with the table (20261014233100), " \
                                   "not by AddStateChecks, whose frozen list REGISTRY must equal",
     "agent_dispatchers.state" => "bin/dispatcher's self-report from its ping, nullable; AgentDispatcher.ping! drops an unknown value rather than storing it",
