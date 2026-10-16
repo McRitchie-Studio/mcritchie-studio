@@ -85,6 +85,13 @@ Studio.configure do |config|
   if Studio.respond_to?(:navbar_wordmark=)
     config.navbar_wordmark = { light: "/brand/navbar-light.svg", dark: "/brand/navbar-dark.svg" }
   end
+  # The navbar's scroll-driven collapse (studio-engine, THE SCROLL-DRIVEN
+  # COLLAPSE): from 768px the shrink runs on the compositor with no script per
+  # frame. Guarded the same way: inert until the release relocks an engine
+  # that has the setting.
+  if Studio.respond_to?(:navbar_scroll_timeline=)
+    config.navbar_scroll_timeline = true
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.

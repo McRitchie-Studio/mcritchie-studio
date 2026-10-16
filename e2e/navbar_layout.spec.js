@@ -159,10 +159,18 @@ test("the desktop avatar shrinks on scroll and the name follows it", async ({ pa
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tasks");
 
-  const sizes = () => page.evaluate(() => ({
-    avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
-    name: parseFloat(getComputedStyle(document.querySelector("header [data-nav-name]")).fontSize),
-  }));
+  // The name's size as RENDERED: its font size times any transform on the way
+  // up. The scroll-driven navbar (studio-engine) shrinks it by transform, so
+  // its computed font size stays the resting one while what reads on screen
+  // follows the avatar.
+  const sizes = () => page.evaluate(() => {
+    const name = document.querySelector("header [data-nav-name]");
+    const scale = name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).height);
+    return {
+      avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
+      name: parseFloat(getComputedStyle(name).fontSize) * scale,
+    };
+  });
 
   const rest = await sizes();
   expect(rest.avatar).toBe(40);
@@ -222,4 +230,74 @@ test("the desktop controls are evenly spaced", async ({ page }) => {
     const measured = await gaps();
     measured.forEach((gap) => expect(Math.abs(gap - 12), JSON.stringify(measured)).toBeLessThanOrEqual(1));
   }
+});
+
+// THE SCROLL-DRIVEN NAVBAR (studio-engine's navbar_scroll_timeline, which
+// config/initializers/studio.rb turns on). From 768px the collapse is the
+// browser's: the header keeps one height and its top band scrolls away with the
+// page, and its contents shrink by transforms on the page's scroll timeline.
+// Nothing runs per frame, so a busy main thread cannot make it stutter.
+//
+// The hub's own PR runs on the LOCKED engine, which may predate the setting
+// (the header then carries no data-nav-timeline); the release's relock is the
+// run that exercises the timeline. So each spec asserts the contract of the
+// engine it finds: the timeline's when the header opted in, and otherwise the
+// --nav-p collapse's, which must still drive the header.
+const onTimeline = async (header) => (await header.getAttribute("data-nav-timeline")) !== null;
+
+async function expectNavPCollapse(page, header) {
+  await expect(header).not.toHaveAttribute("data-nav-timeline-on", /.*/);
+  await page.evaluate(() => window.scrollTo(0, 600));
+  await expect.poll(() => header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("1.0000");
+}
+
+test("the desktop navbar collapses on the scroll timeline, with no script per frame", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks");
+  await page.evaluate(() => document.fonts.ready);
+  const header = page.locator("header.nav-shell");
+  if (!(await onTimeline(header))) return expectNavPCollapse(page, header);
+  await expect(header).toHaveAttribute("data-nav-timeline-on", "");
+
+  const run = await page.evaluate(async () => {
+    const h = document.querySelector("header.nav-shell");
+    const probe = [...document.querySelectorAll("h1, h2")].find((e) => !h.contains(e));
+    const frame = () => new Promise((r) => requestAnimationFrame(r));
+    const writes = [];
+    new MutationObserver((ms) => ms.forEach((m) => writes.push(m.attributeName))).observe(h, { attributes: true, attributeFilter: ["style"] });
+    const rows = [];
+    const read = () => { const r = h.getBoundingClientRect(); rows.push({ box: r.height, bottom: r.bottom, docH: document.documentElement.scrollHeight, top: probe.getBoundingClientRect().top + window.scrollY }); };
+    read();
+    for (const s of [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 600, -900]) { window.scrollBy(0, s); await frame(); read(); }
+    return { rows, styleWrites: writes.length, navH: getComputedStyle(document.documentElement).getPropertyValue("--nav-h") };
+  });
+
+  const boxes = new Set(run.rows.map((r) => r.box));
+  expect([...boxes], "the header's box never changes height").toHaveLength(1);
+  expect(new Set(run.rows.map((r) => r.docH)).size, "the document never changes height").toBe(1);
+  expect(Math.max(...run.rows.map((r) => r.top)) - Math.min(...run.rows.map((r) => r.top)), "the page never moves by itself").toBeLessThanOrEqual(0.5);
+  // Collapsed, what shows is the 48px compact bar, and --nav-h says so (an
+  // anchor's scroll-margin lands under the bar, not 40px below it).
+  expect(Math.round(run.rows[run.rows.length - 2].bottom)).toBe(48);
+  expect(Math.round(parseFloat(run.navH))).toBe(48);
+  // No script wrote the header's style while it scrolled.
+  expect(run.styleWrites, "inline style writes on the header during the scroll").toBe(0);
+});
+
+// Below 768px the phone keeps the --nav-p collapse, and widening again goes
+// back to the timeline.
+test("narrowing to a phone hands the header back to the --nav-p collapse", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks");
+  const header = page.locator("header.nav-shell");
+  if (!(await onTimeline(header))) return expectNavPCollapse(page, header);
+  await expect(header).toHaveAttribute("data-nav-timeline-on", "");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(header).not.toHaveAttribute("data-nav-timeline-on", /.*/);
+  await page.evaluate(() => window.scrollTo(0, 400));
+  await expect.poll(() => header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("1.0000");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(header).toHaveAttribute("data-nav-timeline-on", "");
+  await expect.poll(() => header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("");
 });

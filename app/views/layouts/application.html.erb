@@ -23,9 +23,10 @@
         header down with no change here. Nothing measures, so there is no
         published height to offset by. %>
     <%= render "studio/banners/stack" %>
-    <%# The header is the engine's navbar (layouts/_navbar): its nav-collapse
-        Stimulus controller writes --nav-p on the header from scrollY once per
-        animation frame, and data-pin publishes --pin-nav-h / --pin-nav-bottom,
+    <%# The header is the engine's navbar (layouts/_navbar): from 768px it
+        collapses on the page's scroll timeline (config.navbar_scroll_timeline),
+        and below it the nav-collapse Stimulus controller writes --nav-p on the
+        header from scrollY once per animation frame. data-pin publishes --pin-nav-h / --pin-nav-bottom,
         which the app strip and the board's lane headers position off (see
         _app_ladder_row and _deploy_board). It renders the link sidebar too,
         because Studio.sidebar_sections is set. ShellHelper#hub_navbar adds the
