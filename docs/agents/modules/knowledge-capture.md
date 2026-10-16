@@ -25,6 +25,14 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 
 Everything converges on the same protocol below. Email specifics:
 
+- **A mail to a CTO is also an agent message.** After the desk captures a
+  team@ arrival, a mail addressed to a CTO (to `avi@mcritchie.studio`, or to
+  team@ opening "Avi, …" / "Turf: …") also becomes an `email` row in the agent
+  mailbox, and the CTO answers by email when the sender is verified as the owner.
+  The desk capture is unchanged either way; every other mail stays a plain desk
+  capture. Rule, trust and loop guards:
+  [`../system/agent-message-loop.md`](../system/agent-message-loop.md), "Email".
+
 - **Allowlist or quarantine.** Only Alex's addresses
   (`DESK_ALLOWED_SENDERS`) are parsed. Anything else lands `quarantined` —
   raw kept sealed in the desk bucket, attachments never extracted. The team

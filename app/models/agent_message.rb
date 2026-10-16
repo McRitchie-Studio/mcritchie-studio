@@ -26,12 +26,17 @@ require Rails.root.join("bin/lib/agent_proposal_block").to_s
 #
 # THE CONTENT IS UNTRUSTED. It came from whoever can post in a listed guild; a worker hands it to a model fenced as data, never as instructions.
 class AgentMessage < ApplicationRecord
-  CHANNELS = %w[discord].freeze
+  # discord: DiscordIngest. email: AgentMessages::EmailIngest, from the team@
+  # Resend inbound after desk capture; its envelope (from, subject, Message-ID,
+  # References, the trust verdict) lives in `envelope`.
+  CHANNELS = %w[discord email].freeze
   STATUSES = %w[received claimed completed dead unrouted held].freeze
   # Statuses a thread waits on: an older message in one of these holds the
   # thread's newer messages back, so a conversation is answered in order.
   OPEN_STATUSES = %w[received claimed].freeze
-  ROUTED_BY = %w[user role thread default none].freeze
+  # alias and name are email's (AgentMessages::EmailRoutes): a CTO's own address,
+  # or a CTO named in a mail to team@.
+  ROUTED_BY = %w[user role thread default none alias name].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
@@ -470,6 +475,8 @@ class AgentMessage < ApplicationRecord
     nil
   end
 
+  def email? = channel == "email"
+
   def unrouted? = status == "unrouted"
   def held? = status == "held"
   def claimed? = status == "claimed"
@@ -494,7 +501,7 @@ class AgentMessage < ApplicationRecord
                  :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
                  :reply_posted_at, :completed_at, :sent_at, :hold_released_at, :hold_released_by,
                  :created_at, :updated_at,
-                 :claude_session_id, :claude_cwd, :reasoning, :run_meta).as_json
+                 :claude_session_id, :claude_cwd, :reasoning, :run_meta, :envelope).as_json
     data["resume_command"] = resume_command
     data["url"] = discord_url
     data["reply_url"] = reply_url

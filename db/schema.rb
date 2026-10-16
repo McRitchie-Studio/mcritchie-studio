@@ -243,6 +243,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
     t.datetime "completed_at"
     t.text "content", default: "", null: false
     t.datetime "created_at", null: false
+    t.jsonb "envelope", default: {}, null: false
     t.string "external_id", null: false
     t.string "guild_id"
     t.datetime "hold_released_at"
