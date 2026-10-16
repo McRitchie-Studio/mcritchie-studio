@@ -738,6 +738,7 @@ Rails.application.routes.draw do
           post :complete
           post :release
           post :renew
+          post :typing
         end
       end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).

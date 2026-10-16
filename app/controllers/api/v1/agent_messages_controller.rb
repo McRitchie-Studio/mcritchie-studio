@@ -14,6 +14,7 @@ module Api
     #                                             notes? }  notes: facts about the sender, filed under the message's author
     #   POST /api/v1/agent_messages/:id/release  { worker, reason?, code? }   code usage_limit refunds the attempt
     #   POST /api/v1/agent_messages/:id/renew    { worker }                   the holder extends its lease
+    #   POST /api/v1/agent_messages/:id/typing   { worker }                   the holder asks for one "typing…" pulse
     #
     # LONG POLL. A claim with `wait` (seconds, capped at WAIT_CAP) holds the
     # request until a claimable message exists, retrying the claim every
@@ -32,8 +33,8 @@ module Api
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
     class AgentMessagesController < BaseController
-      before_action :load_message, only: [ :show, :context, :complete, :release, :renew ]
-      before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew ]
+      before_action :load_message, only: [ :show, :context, :complete, :release, :renew, :typing ]
+      before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew, :typing ]
 
       LIST_LIMIT = 200
       WAIT_CAP = 20
@@ -87,6 +88,25 @@ module Api
         return if performed?
 
         render_data(@message.reload.as_api_json)
+      end
+
+      # One "typing…" pulse in the message's channel, as the bot that will reply
+      # (AgentMessageTypingJob). HOLDER-ONLY (409 NOT_HOLDER). Otherwise always
+      # 200: meta.typing is "queued", or why no pulse was sent ("not_discord",
+      # "not_answered", "capped"), and bin/dispatcher stops pulsing that run on
+      # anything but "queued". The Discord call runs on the job, so a slow
+      # Discord never holds the dispatcher's main loop.
+      def typing
+        refusal = @message.typing_refusal(worker: params[:worker])
+        if refusal == "not_holder"
+          return render_refusal(AgentMessage::Refused.new(
+            "message #{@message.id} is #{@message.status}; only the worker holding the claim may show typing for it",
+            code: "NOT_HOLDER"
+          ))
+        end
+
+        AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip) if refusal.nil?
+        render_data({ "id" => @message.id }, meta: { typing: refusal || "queued" })
       end
 
       # The memory the holder answers from: the sender's exchanges with this soul
