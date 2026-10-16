@@ -261,6 +261,17 @@ risk is zero.
 ship. *Consolidation (decided):* the legacy `release_train` field has become
 **`release_slug`** — one concept, one name.
 
+**Trains (2026-10-16).** A release rides a **train** (`releases.train`, not null,
+default `"hub"`), and the singleton holds per train: at most one active release on
+each train, enforced by `Release#at_most_one_active_release` and the unique partial
+index `index_releases_single_active` on `(train)`. `Release.current`,
+`last_shipped`, `open!` and `current_or_open!` take an optional train that defaults
+to `"hub"`, so every caller that passes none reads exactly what it read before.
+Hub slugs keep `rel-YYYYMMDD-hex`; any other train's are `rel-<train>-YYYYMMDD-hex`.
+Only `"hub"` is used until task B of the release-trains design
+(`/Users/alex/projects/.agents/epics/release-trains-design.md`) routes work to per-app trains. This `train` is not the retired `release_train`
+field above, which named the release a task belonged to.
+
 **The integration branch is PERSISTENT.** Every repo keeps a single `release`
 branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
 PRs target `release`, not `main`; `main` is always an ancestor of `release`.
@@ -1663,7 +1674,7 @@ for each task in {submitted}:
      each: diff-vs-acceptance + standards/smell/scalability     — changes ⇒ ONE complete qa_feedback + block
   4. on a merge-ready verdict → reviewed ✅                       — Discord: approved
 
-# Workflow 2 — the ONE active release (singleton).
+# Workflow 2 — the ONE active release (singleton per train; only "hub" today).
 release.assembling:
   bin/release prepare (Avi, SELF-HEALING): detect reviewed + assembled stragglers, honoring dependencies + lanes (§4.2)
   sweep: overlap planner (warn) → gh pr merge each (base release; SKIP merged: release/main) → sweep! ALL in ONE heroku run (ensure)  — conflict ⇒ leave reviewed, keep the rest

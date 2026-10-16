@@ -80,3 +80,50 @@ discord:
   #       xan:
   #         roles: ["444444444444444444"]   # @Xan
   #         users: []
+
+# EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
+# AgentMessages::EmailRoutes. Mail to team@ reaches the hub through the Resend
+# inbound (DeskCaptureResendIngestJob), is captured on the desk as always, and
+# becomes an agent message only when it is for a CTO:
+#   1. a To/Cc address is a CTO's `addresses` (avi@ is a Google group that
+#      redirects into team@, so the original To survives), else
+#   2. the mail is to team@ and its subject or first new line starts with a CTO's
+#      `names` as an address: "Avi, …", "Avi: …", "Hi Avi, …", "@Avi …", else
+#   3. it replies (In-Reply-To/References) to an email the mailbox holds.
+# `from` is the From line of that CTO's replies, sent through Resend on the
+# verified mcritchie.studio domain with Reply-To team@. Turf has no alias into
+# team@ (turf@mcritchie.studio was deleted; team@turfmonster.media is a real
+# mailbox on another domain), so it is reached by name and replies from team@.
+# `agent_addresses` are the fleet's own: mail FROM any of them, the aliases or
+# team@ is never answered (no CTO answers a CTO, and no reply answers itself).
+email:
+  team_address: team@mcritchie.studio
+  # Mail From these domains is verified only when every DKIM-Signature aligned
+  # with the From domain names one of these selectors. mcritchie.studio also has
+  # a `resend` key (resend._domainkey), so anyone holding RESEND_API_KEY could
+  # send a DKIM-passing `From: alex@mcritchie.studio`; only Alex's Google
+  # Workspace key (`google._domainkey`) proves his mailbox. A pass under any
+  # other selector is the public, held (AgentMessages::EmailTrust).
+  pinned_dkim:
+    mcritchie.studio: [google]
+  souls:
+    avi:
+      addresses: ["avi@mcritchie.studio"]
+      names: ["Avi"]
+      from: "Avi <avi@mcritchie.studio>"
+    turf_monster:
+      addresses: []
+      names: ["Turf"]
+      from: "Turf <team@mcritchie.studio>"
+  agent_addresses:
+    - admin@mcritchie.studio
+    - xan@mcritchie.studio
+    - carl@mcritchie.studio
+    - shannon@mcritchie.studio
+    - jasper@mcritchie.studio
+    - steffon@mcritchie.studio
+    - mack@mcritchie.studio
+    - mason@mcritchie.studio
+    - rex@mcritchie.studio
+    - pokemon@mcritchie.studio
+    - team@turfmonster.media

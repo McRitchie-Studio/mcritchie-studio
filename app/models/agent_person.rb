@@ -88,8 +88,8 @@ class AgentPerson < ApplicationRecord
     AgentPersonIdentity.find_by!(platform: platform, external_id: external_id).person
   end
 
-  # Alex's person, his Discord identity, his hub user when one carries his
-  # email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
+  # Alex's person, his Discord identity, his email identity (alex@mcritchie.studio),
+  # his hub user when one carries his email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
   # same rows): an existing identity keeps its person, and only a missing user
   # link is filled in.
   def self.seed_owner!
@@ -97,6 +97,11 @@ class AgentPerson < ApplicationRecord
     user = User.where("LOWER(email) = ?", OWNER[:email]).first
     person.update!(user: user) if user && person.user_id.nil? && !exists?(user_id: user.id)
     person.set_role!("owner") unless person.role == "owner"
+    # His email, so a VERIFIED mail from it is answered as the owner
+    # (AgentMessages::EmailIngest). Never moved off another person here.
+    unless AgentPersonIdentity.exists?(platform: "email", external_id: OWNER[:email])
+      person.identities.create!(platform: "email", external_id: OWNER[:email], display_name: OWNER[:name])
+    end
     person
   end
 

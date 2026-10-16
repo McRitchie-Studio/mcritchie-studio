@@ -82,7 +82,7 @@ module AgentMailbox
     def prompt
       <<~PROMPT
         You are #{display_name}, an agent in the McRitchie ecosystem, answering one message
-        someone posted to you in #{@message['channel'].to_s.capitalize}.
+        #{arrival}.
 
         == GENERAL: who you are (#{@audience.internal? ? 'your role doc' : 'your public profile'}) ==
         #{general_layer}
@@ -328,6 +328,17 @@ module AgentMailbox
     def thread
       @thread ||= @context["thread"] ||
                   (@context.dig("ledger", "pin") ? { "turns" => [ @context.dig("ledger", "pin") ] } : {})
+    end
+
+    # How the message reached the soul. An email answer is mailed back as plain
+    # text, so the model is told not to write markdown for it.
+    def arrival
+      if @message["channel"].to_s == "email"
+        "someone sent you by email; your reply is mailed back to them as a plain-text email " \
+          "(no markdown, no greeting line needed, no signature: one is added)"
+      else
+        "someone posted to you in #{@message['channel'].to_s.capitalize}"
+      end
     end
 
     # A place label as the board built it, or a neutral one when it does not

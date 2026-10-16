@@ -322,7 +322,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     first = sidebar_link_sections.first
     assert_equal "Your apps", first.fetch(:title)
-    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Turf", "/agents/turf-monster/settings" ] ],
+    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Pipeline", "/applications/turf-monster/pipeline" ],
+                   [ "Turf", "/agents/turf-monster/settings" ] ],
                  first.fetch(:links).map { |link| [ link.fetch(:label), link.fetch(:href) ] }
     assert first.fetch(:links).all? { |link| link[:hover_emoji].present? }
 

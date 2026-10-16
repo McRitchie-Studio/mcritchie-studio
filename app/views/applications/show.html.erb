@@ -8,6 +8,14 @@
     </div>
   </div>
 
+  <div class="card p-4 text-sm flex flex-col sm:flex-row sm:items-center gap-3" data-test="application-pipeline-card">
+    <div class="min-w-0 flex-1">
+      <h2 class="font-semibold text-heading text-base">Pipeline</h2>
+      <p class="text-secondary">Your app's work by lane: queued, building, in review, on QA and shipped.</p>
+    </div>
+    <%= link_to "Open pipeline", pipeline_application_path(@app.slug), class: "btn btn-secondary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-pipeline-link" } %>
+  </div>
+
   <div class="card p-4 space-y-2 text-sm" data-test="application-health-card">
     <h2 class="font-semibold text-heading text-base">Health</h2>
     <%= turbo_frame_tag "application-health", src: health_application_path(@app.slug), loading: :lazy do %>

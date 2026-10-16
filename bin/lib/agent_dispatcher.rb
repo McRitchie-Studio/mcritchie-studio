@@ -226,7 +226,7 @@ module AgentMailbox
     # bounds the loop for tests.
     def run(ticks: nil)
       code = @code_digest ? ", code #{@code_digest[0, 12]}" : ""
-      log "start #{@worker} serving #{@souls.join(', ')} on #{@channel} (cap #{@cap}, version #{@version}#{code})"
+      log "start #{@worker} serving #{@souls.join(', ')} on #{@channel || 'every channel'} (cap #{@cap}, version #{@version}#{code})"
       count = 0
       until @stopping
         tick

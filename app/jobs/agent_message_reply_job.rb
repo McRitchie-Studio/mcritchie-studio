@@ -1,4 +1,5 @@
-# Posts a completed AgentMessage's answer back to Discord, once
+# Posts a completed AgentMessage's answer back to Discord, once (an EMAIL row's
+# answer is mailed instead, by AgentMessages::EmailReply through Resend)
 # (docs/agents/system/agent-message-loop.md). Enqueued by AgentMessage#complete!
 # only on the transition into `completed`, so a repeated complete queues nothing.
 #
@@ -33,6 +34,7 @@ class AgentMessageReplyJob < ApplicationJob
   def perform(message_id)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.status != "completed" || message.reply_external_id.present?
+    return AgentMessages::EmailReply.deliver!(message) if message.channel == "email"
     return if message.channel != "discord"
 
     posted, via = AgentMessages::BotSelector.post(message.soul_slug, skip_soul: message.events.exists?(kind: REFUSED_EVENT),

@@ -132,6 +132,10 @@ class WorkspacePackage
   # The monthly CTO token allowance (config `cto_monthly_tokens`): a positive
   # integer, or nil for unlimited (AgentUsage, docs/agents/system/agent-usage.md).
   attr_reader :cto_monthly_tokens
+  # The app's concurrent task lanes (config `building_lanes`): how many of its
+  # tasks may be in `building` at once, a positive integer, or nil for unlimited
+  # (BuildingLanes, docs/agents/system/client-pipeline.md).
+  attr_reader :building_lanes
 
   def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
@@ -149,6 +153,8 @@ class WorkspacePackage
     @annual_discount_percent = annual_discount_percent.to_i
     tokens = attrs["cto_monthly_tokens"]
     @cto_monthly_tokens = tokens.is_a?(Integer) && tokens.positive? ? tokens : nil
+    lanes = attrs["building_lanes"]
+    @building_lanes = lanes.is_a?(Integer) && lanes.positive? ? lanes : nil
   end
 
   # The CTO usage settings (config `cto_usage`): warn_percent and topup.

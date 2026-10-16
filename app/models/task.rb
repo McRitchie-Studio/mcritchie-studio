@@ -232,6 +232,9 @@ class Task < ApplicationRecord
   # Gated on change: a task must stay saveable after a dependency it named is
   # archived.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
+  # The client app's concurrent task lanes (BuildingLanes): a claim into
+  # `building` past its tier's cap is refused, and the task waits in `designed`.
+  validate :building_lane_available, if: :claims_a_building_lane?
   # Normalized in #normalize_epic_slug before this runs; a bad slug is a 422.
   validates :epic_slug, format: { with: EPIC_SLUG,
                                   message: "must be a slug — lowercase letters, digits and single " \
@@ -376,6 +379,12 @@ class Task < ApplicationRecord
     ))
   }
   scope :requires_migration, -> { where(requires_migration: true) }
+  # Tasks whose devops.repositories names `repo` (an App slug is its repo slug).
+  # Stored lists are arrays (Task.normalize_devops_metadata), so containment finds
+  # them on the jsonb; a multi-repo task matches each of its repos.
+  scope :for_repository, ->(repo) {
+    where("tasks.metadata -> 'devops' -> 'repositories' @> ?::jsonb", [ repo.to_s ].to_json)
+  }
   # Everything but shipped and archived: a live task's mascot is taken, and this is
   # the WIP metric (.wip_count).
   scope :live, -> { where.not(stage: %w[shipped archived]) }
@@ -2038,6 +2047,17 @@ class Task < ApplicationRecord
   rescue StandardError => e
     Rails.logger.warn("[task-event-mascot] recording failed (non-fatal): #{e.class}: #{e.message}")
     {}
+  end
+
+  # A lane is taken by a CLAIM: a create at `building`, or a move from `designed`.
+  # A rework block (submitted back to building) and a re-claim take no new lane.
+  def claims_a_building_lane?
+    stage == "building" && (new_record? || (will_save_change_to_stage? && stage_in_database == "designed"))
+  end
+
+  def building_lane_available
+    refusal = BuildingLanes.refusal_for(self)
+    errors.add(:base, refusal) if refusal
   end
 
   def set_stage_timestamp

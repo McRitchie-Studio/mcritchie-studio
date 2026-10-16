@@ -301,5 +301,9 @@ the stop is deliberate.
 
 This SOP runs the service. It does not change routing (that is
 [`discord-bot-setup`](discord-bot-setup.md)), give a soul more actions, or
-answer messages itself. `bin/heartbeat <soul> --channel discord` stays the manual
-form of the same answer path, for a test or a one-off.
+answer messages itself. The service serves every channel, Discord and email
+(`bin/dispatcher run --channel all`, the default; `--channel discord|email`
+narrows it), so an email to a CTO on team@ is answered by the same loop
+([`agent-message-loop.md`](../../../system/agent-message-loop.md), "Email").
+`bin/heartbeat <soul> --channel discord|email` stays the manual form of the same
+answer path, for a test or a one-off.

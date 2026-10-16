@@ -1,11 +1,13 @@
 require "test_helper"
 require_relative "../../support/agent_message_fixtures"
+require_relative "../../support/agent_email_fixtures"
 
 # [component] /admin/agent_messages — the list renders each message's soul, status
 # chip, claim holder, attempts and reply link, filters narrow it, and the detail
 # page renders the event timeline. Admin only.
 class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
+  include AgentEmailFixtures
 
   def admin
     @admin ||= User.find_by(role: "admin") || User.create!(email: "inbox-admin@example.com", name: "Inbox Admin", role: "admin")
@@ -102,5 +104,19 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     AgentDispatcher.where(worker_id: "dispatcher-alex-mac-1-abc").update_all(role: "standby", standby_domains: %w[mcritchie_studio])
     get admin_agent_messages_path
     assert_select ".am-dispatcher[data-live=true] [data-test='dispatcher-role']", "standby · mcritchie_studio"
+  end
+
+  test "an email row shows its sender and whether the sender was verified" do
+    AgentPerson.seed_owner!
+    verified = AgentMessages::EmailIngest.new.call(agent_email)
+    forged = AgentMessages::EmailIngest.new.call(agent_email(top_result: nil, message_id: "forged-admin@x"))
+
+    log_in_as(admin)
+    get admin_agent_message_path(verified)
+    assert_select "#am-email-trust", /alex@mcritchie\.studio.*verified/m
+    get admin_agent_message_path(forged)
+    assert_select "#am-email-trust", /NOT verified \(treated as the public\)/
+    get admin_agent_messages_path(channel: "email")
+    assert_select "#am-rows tbody tr", 2
   end
 end

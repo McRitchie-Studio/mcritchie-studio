@@ -1,0 +1,82 @@
+<%# /applications/:slug/pipeline: one app's tasks by lane. Owner or admin only, read-only. Cards come from ClientPipeline, which sanitizes them for an owner. docs/agents/system/client-pipeline.md %>
+<% lanes_status = @pipeline.lanes_status %>
+<section class="max-w-5xl mx-auto px-4 py-8 sm:py-10 space-y-6" data-test="pipeline-page" data-app="<%= @app.slug %>" data-admin="<%= @admin %>">
+  <div class="flex items-center gap-4 min-w-0">
+    <%= render "applications/app_badge", app: @app, size: "lg" %>
+    <div class="min-w-0">
+      <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words"><%= @app.name %> pipeline</h1>
+      <p class="text-secondary mt-1 text-sm">Your app's work, from the queue to shipped. Read-only.</p>
+    </div>
+  </div>
+  <%= link_to "← #{@app.name}", application_path(@app.slug), class: "text-sm underline text-secondary hover:text-heading inline-block", data: { test: "pipeline-back" } %>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="card p-4 space-y-2 text-sm" data-test="pipeline-lanes" data-in-use="<%= lanes_status.in_use %>" data-cap="<%= lanes_status.cap %>">
+      <h2 class="font-semibold text-heading text-base">Building lanes</h2>
+      <p class="text-body text-lg font-semibold" data-test="pipeline-lanes-label"><%= lanes_status.label %></p>
+      <% if lanes_status.capped? %>
+        <div class="flex gap-1" aria-hidden="true">
+          <% lanes_status.cap.times do |index| %>
+            <span class="h-2 flex-1 rounded-full <%= index < lanes_status.in_use ? 'bg-primary' : 'bg-surface-alt border border-subtle' %>"></span>
+          <% end %>
+        </div>
+        <p class="text-muted text-xs">Your <%= lanes_status.tier_name %> plan builds <%= pluralize(lanes_status.cap, "task") %> at a time. More work waits in the queue, in order<%= lanes_status.full? ? ", and starts as a lane frees up" : "" %>. <%= link_to "Compare plans", packages_path, class: "underline hover:text-heading" %></p>
+      <% elsif lanes_status.package %>
+        <p class="text-muted text-xs">Your <%= lanes_status.tier_name %> plan has no lane limit.</p>
+      <% elsif @admin %>
+        <p class="text-muted text-xs" data-test="pipeline-lanes-uncapped">No tier, or an internal app: never capped. Only admins see this line.</p>
+      <% end %>
+    </div>
+
+    <div class="card p-4 space-y-2 text-sm" data-test="pipeline-tonight">
+      <div class="flex items-baseline justify-between gap-2">
+        <h2 class="font-semibold text-heading text-base">Tonight's ship</h2>
+        <span class="text-muted text-xs">Preview</span>
+      </div>
+      <% if (release = @pipeline.release) %>
+        <p class="text-body">The current release is <%= release.label %>, carrying <%= pluralize(release.count, "of your tasks", plural: "of your tasks") %>.</p>
+      <% else %>
+        <p class="text-body">No release is in progress right now.</p>
+      <% end %>
+      <p class="text-muted text-xs">Nightly ship times are coming soon. Until then, this reads the release in progress.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <% @pipeline.lanes.each do |lane_view| %>
+      <div class="card p-4 space-y-3 text-sm min-w-0" data-test="pipeline-lane" data-lane="<%= lane_view.key %>">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="font-semibold text-heading text-base"><%= lane_view.label %></h2>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full <%= task_stage_count_classes(lane_view.lane.stage) %>" data-test="pipeline-lane-count"><%= lane_view.cards.size %></span>
+        </div>
+        <% if lane_view.key == "shipped" %><p class="text-muted text-xs">The last <%= ClientPipeline::SHIPPED_WINDOW.inspect %>.</p><% end %>
+        <% if lane_view.cards.empty? %>
+          <p class="text-muted" data-test="pipeline-lane-empty">Nothing here.</p>
+        <% else %>
+          <ol class="space-y-2">
+            <% lane_view.cards.each do |card| %>
+              <li class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-1 min-w-0" data-test="pipeline-card">
+                <p class="text-body font-medium break-words" data-test="pipeline-card-title">
+                  <% if card.queue_position %><span class="text-muted font-normal" data-test="pipeline-card-queue">#<%= card.queue_position %></span><% end %>
+                  <%= card.title %>
+                </p>
+                <p class="text-muted text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <% if card.role %><span data-test="pipeline-card-role"><%= card.role %></span><span aria-hidden="true">·</span><% end %>
+                  <span data-test="pipeline-card-age"><%= lane_view.lane.age_line(time_ago_in_words(card.entered_at)) %></span>
+                  <% if card.on_hold %><span class="px-1.5 rounded <%= status_tone(:warning) %>" data-test="pipeline-card-hold">On hold</span><% end %>
+                </p>
+                <% if @admin %>
+                  <p class="text-xs flex flex-wrap gap-x-3" data-test="pipeline-card-admin">
+                    <%= link_to card.slug, task_path(card.slug), class: "underline text-secondary hover:text-heading break-all" %>
+                    <% if card.pr_url %><%= link_to "PR", card.pr_url, class: "underline text-secondary hover:text-heading", target: "_blank", rel: "noopener", data: { test: "pipeline-card-pr" } %><% end %>
+                  </p>
+                <% end %>
+              </li>
+            <% end %>
+          </ol>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+  <% if @admin %><p class="text-muted text-xs">Only admins see task links and PRs.</p><% end %>
+</section>

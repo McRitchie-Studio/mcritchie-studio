@@ -9,8 +9,9 @@ class Release < ApplicationRecord
     nil
   end
 
-  # Workflow 2 — Deploy. A Release is a singleton: at most one is active
-  # (assembling/assembled) at a time. It carries `reviewed` tasks onto a
+  # Workflow 2 — Deploy. A Release is a singleton per TRAIN: at most one is active
+  # (assembling/assembled) on each train at a time. Every release today rides the
+  # "hub" train (DEFAULT_TRAIN); per-app trains are release-trains-design.md task B. It carries `reviewed` tasks onto a
   # disposable release branch, through QA, and to production.
   #   assembling → assembled → shipped   (+ abandoned)
   # The git/merge-queue mechanics live in the conductor tooling (a later task);
@@ -18,6 +19,13 @@ class Release < ApplicationRecord
   STATES = %w[assembling assembled shipped abandoned].freeze
   ACTIVE_STATES = %w[assembling assembled].freeze
   TERMINAL_STATES = %w[shipped abandoned].freeze
+
+  # The train every release rode before trains existed, and the one every
+  # argument-less lookup (current / last_shipped / open! / current_or_open!) still
+  # reads. Its slugs keep the pre-train format `rel-YYYYMMDD-hex`; any other train
+  # names itself in the slug, `rel-<train>-YYYYMMDD-hex`.
+  DEFAULT_TRAIN = "hub"
+  TRAIN_FORMAT = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
 
   # The pause between per-member board flips in a BATCH ship — purely an
   # operator-facing cadence, and the ONE place the number lives on the record side
@@ -155,6 +163,7 @@ class Release < ApplicationRecord
 
   validates :slug, presence: true, uniqueness: true
   validates :state, inclusion: { in: STATES }
+  validates :train, presence: true, format: { with: TRAIN_FORMAT, allow_blank: true }
   validate :at_most_one_active_release, if: :active?
 
   before_validation :generate_slug, on: :create
@@ -187,27 +196,32 @@ class Release < ApplicationRecord
     STEP_TEST_TIERS.find { |_step, tiers| tiers.include?(tier.to_s) }&.first
   end
 
-  # The current (singleton) active release, if any.
-  def self.current
-    active.order(created_at: :desc).first
+  # The current (singleton) active release on a train, if any. No argument reads
+  # the hub train, which is every release until per-app trains route work.
+  def self.current(train = DEFAULT_TRAIN)
+    active.where(train: train).order(created_at: :desc).first
   end
 
-  # The most recently shipped release (for the board's "Last Release" section).
-  def self.last_shipped
-    where(state: "shipped").order(Arel.sql("COALESCE(shipped_at, created_at) DESC")).first
+  # The most recently shipped release on a train (for the board's "Last Release"
+  # section).
+  def self.last_shipped(train = DEFAULT_TRAIN)
+    where(state: "shipped", train: train).order(Arel.sql("COALESCE(shipped_at, created_at) DESC")).first
   end
 
-  # Open a new release candidate. Raises (singleton validation) if one is active.
-  # Defaults the integration branch to the persistent `release` (overridable).
+  # Open a new release candidate. Raises (singleton validation) if one is active
+  # on the same train. Defaults the integration branch to the persistent `release`
+  # (overridable) and the train to the hub; pass `train:` in attrs for another.
+  # attrs stays a positional hash (not keywords) so `open!(slug: …)`, the string
+  # bin/release sends production, evaluates the same on old and new code.
   def self.open!(attrs = {})
-    create!({ branch: BRANCH }.merge(attrs).merge(state: "assembling"))
+    create!({ branch: BRANCH, train: DEFAULT_TRAIN }.merge(attrs).merge(state: "assembling"))
   end
 
-  # The active release if one exists, else open a fresh one. The find-or-create
-  # the sweep membership path (Conductor#sweep!) leans on so a PR merging
-  # into `release` always lands on an active candidate.
-  def self.current_or_open!
-    current || open!
+  # The active release on a train if one exists, else open a fresh one there. The
+  # find-or-create the sweep membership path (Conductor#sweep!) leans on so a PR
+  # merging into `release` always lands on an active candidate.
+  def self.current_or_open!(train = DEFAULT_TRAIN)
+    current(train) || open!(train: train)
   end
 
   def active?
@@ -1104,7 +1118,7 @@ class Release < ApplicationRecord
   end
 
   def at_most_one_active_release
-    scope = Release.where(state: ACTIVE_STATES)
+    scope = Release.where(state: ACTIVE_STATES, train: train)
     scope = scope.where.not(id: id) if persisted?
     errors.add(:state, "another release is already active") if scope.exists?
   end
@@ -1126,7 +1140,8 @@ class Release < ApplicationRecord
   end
 
   def generate_slug
-    self.slug ||= "rel-#{Time.current.strftime('%Y%m%d')}-#{SecureRandom.hex(3)}"
+    prefix = train.blank? || train == DEFAULT_TRAIN ? "rel" : "rel-#{train}"
+    self.slug ||= "#{prefix}-#{Time.current.strftime('%Y%m%d')}-#{SecureRandom.hex(3)}"
   end
 
   # Push the refreshed release modules to the live /deployments board. Delegates to
