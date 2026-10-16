@@ -98,7 +98,7 @@ class AgentDispatcherWarmTest < ActionDispatch::IntegrationTest
   def machine(name, claude:, registry: @warm, host: name)
     AgentMailbox::Dispatcher.new(client: @client, souls: %w[avi xan], worker: "#{name}-worker", runner: claude,
                                  claude_cmd: %w[fake-claude], out: @out, clock: -> { @now },
-                                 sleeper: ->(_) {}, idle_wait: 0, busy_wait: 0, version: "test", registry: registry,
+                                 sleeper: ->(_) { }, idle_wait: 0, busy_wait: 0, version: "test", registry: registry,
                                  mailbox_home: File.join(@tmp, name, "mailbox"),
                                  claude_home: File.join(@tmp, name, "claude"), host: host)
   end
