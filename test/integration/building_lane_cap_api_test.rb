@@ -41,4 +41,18 @@ class BuildingLaneCapApiTest < ActionDispatch::IntegrationTest
     claim!(task!("Hub two", stage: "designed", repo: "mcritchie-studio"))
     assert_response :success
   end
+
+  test "[integration] the read-only lane check begin asks before it cuts a desk" do
+    apps(:turf_monster).update!(package_tier: "vibe")
+    holder = task!("Holding the lane", stage: "building")
+    waiting = task!("Waiting its turn", stage: "designed")
+
+    get "/api/v1/tasks/#{waiting.slug}/building_lane", headers: { "Authorization" => "Bearer #{token}" }
+    assert_response :success
+    assert_match(/1 of 1 building lane in use \(#{holder.slug}\)/, response.parsed_body.dig("data", "refusal"))
+    assert_equal "designed", waiting.reload.stage, "the check writes nothing"
+
+    get "/api/v1/tasks/#{holder.slug}/building_lane", headers: { "Authorization" => "Bearer #{token}" }
+    assert_nil response.parsed_body.dig("data", "refusal"), "a task already building takes no new lane"
+  end
 end

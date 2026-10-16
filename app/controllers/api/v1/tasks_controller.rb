@@ -22,7 +22,7 @@ module Api
       INDEX_PARAMS = %w[stage agent_slug epic reviewable page per_page full].freeze
 
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
-      before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock]
+      before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock, :building_lane]
       require_task_scope only: [:update, :destroy, :intent, :block, :unblock]
       before_action :require_transition_tier!, only: [:update, :block]
 
@@ -118,6 +118,14 @@ module Api
         end
       rescue StandardError => e
         render_exception(e)
+      end
+
+      # Read-only: the refusal a claim into `building` would meet now (BuildingLanes),
+      # or null. `bin/task begin` asks before it cuts a desk; the claim's own
+      # validation stays the authority. A task already building takes no new lane.
+      def building_lane
+        refusal = @task.stage == "designed" ? BuildingLanes.refusal_for(@task) : nil
+        render_data({ "slug" => @task.slug, "refusal" => refusal })
       end
 
       # Mark the task blocked WITHOUT leaving the pipeline — a `building` attribute

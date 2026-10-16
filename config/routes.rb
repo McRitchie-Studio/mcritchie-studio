@@ -798,6 +798,9 @@ Rails.application.routes.draw do
           patch :block
           # Clears a live block (Task#unblock!); `bin/task begin` on a blocked task calls it.
           patch :unblock
+          # Read-only: would a claim into building fit the app's lane cap? `bin/task begin`
+          # asks before it cuts a desk (BuildingLanes, docs/agents/system/client-pipeline.md).
+          get :building_lane
           post "review_events", to: "review_events#create", as: :review_events
           # Per-task REVIEW claim (per-task-pr-review-claim) — the review LANE's
           # per-task lease, so many pr-review sessions run in parallel and skip a
