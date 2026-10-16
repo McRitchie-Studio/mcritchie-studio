@@ -35,7 +35,9 @@ class AppUsageMeterTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='usage-meter-percent']", text: "85%"
       assert_select "[role='progressbar'][aria-valuenow='85']"
       assert_select "[data-test='usage-suggestion'][data-kind='tier']", text: "Pro ($500/month) raises it."
-      assert_select "[data-test='application-usage-month']", text: /1 answer, 850 tokens .*\$0\.42, avg 3\.0s\./
+      # A non-admin owner reads tokens and the meter, never dollars (Alex, 2026-10-16).
+      assert_select "[data-test='application-usage-month']", text: /1 answer, 850 tokens .*\), avg 3\.0s\./
+      assert_select "[data-test='application-usage-totals']", text: /\$/, count: 0
       assert_select "[data-test='application-usage-admin']", count: 0
 
       get settings_agent_path("turf-monster")
@@ -47,6 +49,48 @@ class AppUsageMeterTest < ActionDispatch::IntegrationTest
       assert_equal [ 850, 1_000, 85, "warn", "pro", 500 ],
                    [ data["used"], data["allowance"], data["percent"], data["state"], data.dig("suggestion", "tier"), data.dig("suggestion", "price") ]
       assert_equal 1, data.dig("today", "messages")
+      refute data["month"].key?("cost_usd"), "the owner's JSON carries no dollar figure"
+      refute data["today"].key?("cost_usd")
+    end
+  end
+
+  test "[integration] an admin sees the dollars the owner does not" do
+    log_in_as(users(:alex))
+    WorkspacePackage.stub(:all, @packages) do
+      get application_path("turf-monster")
+      assert_select "[data-test='application-usage-month']", text: /\$0\.42, avg 3\.0s\./
+      get usage_application_path("turf-monster", format: :json)
+      assert_in_delta 0.42, response.parsed_body.dig("data", "month", "cost_usd"), 0.0001
+    end
+  end
+
+  test "[integration] public answers are metered apart and never use the allowance" do
+    stranger = AgentPerson.create!(display_name: "Visitor", role: "public")
+    row = AgentMessage.create!(channel: "discord", external_id: "usage-page-public", channel_ref: "c", thread_key: "t2",
+                               soul_slug: "turf_monster", status: "completed", completed_at: 1.minute.ago, content: "x",
+                               person: stranger)
+    row.update_columns(run_meta: { "input_tokens" => 5_000, "audience" => "public" })
+    log_in_as(@owner)
+    WorkspacePackage.stub(:all, @packages) do
+      get application_path("turf-monster")
+      assert_select "[data-test='usage-meter-line']", text: /850\s+of 1,000 tokens/
+      assert_select "[data-test='usage-meter'][data-state='warn']", count: 1, message: "5,000 public tokens did not cap it"
+      assert_select "[data-test='usage-meter-public']", text: /5,000 tokens, metered apart/
+      get usage_application_path("turf-monster", format: :json)
+      assert_equal [ 850, 5_000 ], response.parsed_body["data"].values_at("used", "public_used")
+    end
+  end
+
+  test "[integration] an admin's lift without package_tier keeps the tier; a blank one clears it" do
+    log_in_as(users(:alex))
+    WorkspacePackage.stub(:all, @packages) do
+      patch usage_cap_application_path("turf-monster"), params: { usage_cap: { lifted: "1" } }
+      assert_redirected_to application_path("turf-monster")
+      assert_equal "builder", @app.reload.package_tier, "a write that sends no tier leaves it alone"
+      assert @app.cto_cap_lifted_at
+
+      patch usage_cap_application_path("turf-monster"), params: { usage_cap: { package_tier: "", lifted: "0" } }
+      assert_nil @app.reload.package_tier, "an explicit blank is No tier"
     end
   end
 
