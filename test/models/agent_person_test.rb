@@ -97,6 +97,19 @@ class AgentPersonTest < ActiveSupport::TestCase
     assert_equal [ "Not about 777." ], elsewhere.person.notes.map(&:body), "another identity's notes are untouched"
   end
 
+  test "a reassign dedupes moved notes per domain: a fact the person holds in another domain still moves" do
+    alex = AgentPerson.resolve!(platform: "discord", external_id: "510", display_name: "Alex")
+    AgentPersonNote.record_from!(agent_message!(soul: "xan", channel: "discord", author_ref: "510"), [ "Has two dogs." ])
+
+    held = agent_message!(soul: "turf_monster", channel: "discord", author_ref: "778")
+    AgentPersonNote.record_from!(held, [ "Has two dogs." ])
+
+    alex.link_identity!(platform: "discord", external_id: "778", reassign: true)
+
+    assert_equal %w[mcritchie_studio turf_monster], alex.notes.reload.map(&:domain).sort,
+                 "the Turf copy is Turf's note, not a duplicate of the hub's"
+  end
+
   # --- roles: who the agents speak with (the agent-communication SOP) ---------
 
   test "a new person is public; seed_owner! makes Alex the owner, idempotently" do

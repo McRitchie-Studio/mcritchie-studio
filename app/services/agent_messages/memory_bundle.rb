@@ -29,8 +29,12 @@ module AgentMessages
   #
   # THE USER LAYER is the person's notes (AgentPersonNote), on every channel,
   # each with its date, source message and that message's place. The notes are
-  # per PERSON and shared by every soul: a fact about a person is true whichever
-  # agent hears it. The PERSON layer, by contrast, is per person PER SOUL.
+  # per PERSON, and who shares them turns on the sender's role NOW
+  # (AgentPersonNote.visible_for): an owner's or team member's notes are shared
+  # by every soul in every domain; a client's or the public's are read only by
+  # souls of the domain that filed them (config/agent_domains.yml `souls:`). A
+  # fact said twice in two domains is shown once. The PERSON layer, by contrast,
+  # is per person PER SOUL.
   #
   # THE AUDIENCE is who the soul is speaking with (agent-communication SOP): the
   # role of the message's person, resolved here on the board and never from the
@@ -66,9 +70,7 @@ module AgentMessages
       rows = fetched.reject { |row| in_thread.include?(row.id) }
       recent, older = split(rows)
       total = person_scope.count
-      # A note stored before DIRECTIVES existed is held to them here too, so an
-      # instruction-shaped one already on a row never reaches a prompt.
-      @notes = person ? person.notes.includes(:source_message).reject { |n| AgentPersonNote.directive?(n.body) } : []
+      @notes = visible_notes
       @places = places(thread + rows + [ @message ] + @notes.filter_map(&:source_message))
       thread_total = thread_scope.count
       person_turns = recent.map { |row| turn(row) }
@@ -97,6 +99,19 @@ module AgentMessages
     private
 
     def person = @message.person
+
+    # The notes this soul may read about this sender (AgentPersonNote.visible_for,
+    # by the role the board resolves now), oldest first, one per fact. A note
+    # stored under an older filter is held to today's here (admissible?), so a
+    # bracketed or machinery-shaped one already on a row never reaches a prompt.
+    def visible_notes
+      return [] unless person
+
+      role = AgentPerson.audience_for(person)["role"]
+      AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
+                     .includes(:source_message).order(:noted_at, :id).to_a
+                     .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
+    end
 
     # What this soul may propose to THIS sender (config/agent_domains.yml through
     # AgentMailbox::DomainRegistry, filtered by the sender's audience, which the

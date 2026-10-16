@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_150500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -299,12 +299,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_120000) do
     t.bigint "agent_person_id", null: false
     t.string "body", null: false
     t.datetime "created_at", null: false
+    t.string "domain", default: "", null: false
     t.string "fingerprint", null: false
     t.datetime "noted_at", null: false
     t.string "soul_slug"
     t.bigint "source_message_id"
     t.datetime "updated_at", null: false
-    t.index ["agent_person_id", "fingerprint"], name: "index_agent_person_notes_on_agent_person_id_and_fingerprint", unique: true
+    t.index ["agent_person_id", "domain", "fingerprint"], name: "index_agent_person_notes_on_person_domain_fingerprint", unique: true
     t.index ["agent_person_id", "noted_at"], name: "index_agent_person_notes_on_agent_person_id_and_noted_at"
   end
 
