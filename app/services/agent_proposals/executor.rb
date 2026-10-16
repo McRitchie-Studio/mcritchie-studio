@@ -55,7 +55,7 @@ module AgentProposals
       thread = @proposal.thread_url
       task = Task.create!(
         title: params["title"], stage: "designed",
-        description: [ @proposal.summary, ("Requested in Discord: #{thread}" if thread) ].compact.join("\n\n"),
+        description: [ @proposal.summary, ("Requested in #{@proposal.channel == 'email' ? 'email' : 'Discord'}: #{thread}" if thread) ].compact.join("\n\n"),
         metadata: { "devops" => { "kind" => params["kind"] || "feature", "shape" => params["shape"] || spec["default_shape"],
                   "repositories" => [ spec["repo"] ], "acceptance" => Array(params["accept"]),
                   "test_plan" => Array(params["test"]), "risk_tags" => Array(params["risk"]),

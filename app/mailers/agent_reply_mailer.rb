@@ -1,0 +1,55 @@
+# A CTO's answer to an email, sent as that CTO through the hub's Resend path
+# (Studio::Email.deliver, the durable outbox) by AgentMessages::EmailReply
+# (docs/agents/system/agent-message-loop.md, "Email").
+#
+#   From         the soul's configured sender (config/agent_routes.yml `email:`),
+#                e.g. "Avi <avi@mcritchie.studio>", on the verified mcritchie.studio domain
+#   To           the VERIFIED sender of the email it answers (envelope "from"),
+#                never a Reply-To the sender's mail named
+#   Reply-To     team@mcritchie.studio, so the next turn comes back through the inbound
+#   Subject      "Re: <subject>"
+#   In-Reply-To  the answered mail's Message-ID; References its References plus it
+#   Message-ID   reply_message_id(message), so a reply to this answer can name it
+#   Auto-Submitted: auto-replied (RFC 3834), and X-McRitchie-Agent: <soul>, which
+#                AgentMessages::EmailLoopGuard reads so we never answer ourselves
+#
+# Plain text only. The answer's markdown bold is dropped; nothing else is rendered.
+class AgentReplyMailer < ApplicationMailer
+  REFERENCES_KEPT = 20
+
+  def self.reply_message_id(message) = "agentmsg-#{message.id}.#{message.reply_nonce.presence || 'reply'}@mcritchie.studio"
+
+  def self.subject_for(subject)
+    base = subject.to_s.strip
+    return "Re: your message" if base.empty?
+
+    base.match?(/\Are:/i) ? base : "Re: #{base}"
+  end
+
+  def self.body_for(message)
+    text = message.response_text.to_s.gsub(/\*\*(.+?)\*\*/m, '\1').strip
+    "#{text}\n\n-- \n#{AgentMessageReplyJob.display_name(message.soul_slug)}\n"
+  end
+
+  def reply(message_id)
+    message = AgentMessage.find(message_id)
+    envelope = message.envelope.to_h
+    routes = AgentMessages::EmailRoutes.current
+    original = envelope["message_id"].to_s
+    references = (Array(envelope["references"]) + [ original ]).compact_blank.uniq.last(REFERENCES_KEPT)
+
+    headers["In-Reply-To"] = "<#{original}>" if original.present?
+    headers["References"] = references.map { |id| "<#{id}>" }.join(" ") if references.any?
+    headers["Auto-Submitted"] = "auto-replied"
+    headers[AgentMessages::EmailLoopGuard::AGENT_HEADER] = message.soul_slug.to_s
+
+    mail(from: routes.from_for(message.soul_slug) || Studio.mailer_from,
+         to: envelope["from"],
+         reply_to: routes.team_address,
+         subject: self.class.subject_for(envelope["subject"]),
+         message_id: "<#{self.class.reply_message_id(message)}>",
+         options: { idempotency_key: message.reply_nonce.presence || "agentmsg-#{message.id}" }) do |format|
+      format.text { render plain: self.class.body_for(message) }
+    end
+  end
+end
