@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_200100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -410,6 +410,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_180000) do
     t.string "video_slug", null: false
     t.index ["slug"], name: "index_alt_videos_on_slug", unique: true
     t.index ["video_slug", "number"], name: "index_alt_videos_on_video_slug_and_number", unique: true
+  end
+
+  create_table "app_memberships", force: :cascade do |t|
+    t.string "app_slug", null: false
+    t.datetime "created_at", null: false
+    t.string "role", default: "owner", null: false
+    t.datetime "updated_at", null: false
+    t.string "user_slug", null: false
+    t.index ["app_slug", "user_slug"], name: "index_app_memberships_on_app_slug_and_user_slug", unique: true
+    t.index ["user_slug"], name: "index_app_memberships_on_user_slug"
+    t.check_constraint "role::text = 'owner'::text", name: "app_memberships_role_known"
   end
 
   create_table "app_requests", force: :cascade do |t|
@@ -1202,6 +1213,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_180000) do
     t.string "parent_external_id"
     t.integer "position"
     t.boolean "postable", default: false, null: false
+    t.string "postable_souls", default: [], null: false, array: true
     t.datetime "synced_at"
     t.datetime "updated_at", null: false
     t.index ["archived_at"], name: "index_discord_channels_on_archived_at"
@@ -2852,6 +2864,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_180000) do
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "alt_videos", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "app_memberships", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
+  add_foreign_key "app_memberships", "users", column: "user_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade
