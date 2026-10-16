@@ -6,6 +6,7 @@
   <div class="text-sm opacity-70">
     <%= @status_counts.fetch("received", 0) %> waiting ·
     <%= @status_counts.fetch("claimed", 0) %> claimed ·
+    <%= @status_counts.fetch("held", 0) %> held ·
     <%= @status_counts.fetch("dead", 0) %> dead
   </div>
 </div>
@@ -15,7 +16,9 @@
   (<code>bin/dispatcher</code> on Alex's Mac; <code>bin/heartbeat &lt;soul&gt;</code> by hand) claims one,
   answers it, renews its lease while it works, and the reply posts back once.
   Only messages that address an agent are kept; an unrouted one replied to a kept
-  message without naming an agent, and waits for nobody.
+  message without naming an agent, and waits for nobody. A held one came from a
+  sender <code>config/agent_answerers.yml</code> does not allow: it is never answered
+  until an admin releases it from its page.
 </p>
 
 <%= render "admin/agent_messages/dispatchers", dispatchers: @dispatchers %>
