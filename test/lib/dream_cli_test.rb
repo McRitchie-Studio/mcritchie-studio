@@ -704,4 +704,136 @@ class DreamCliTest < Minitest::Test
     assert_equal 1, code
     assert_includes err, "could not read the swap candidates"
   end
+
+  # --- the card standard and the chat ruling (dream.md, "The card standard", Act 3) --
+
+  # A CLI with every board seam injected: no call leaves the process.
+  def card_cli(*argv, reads: [], approvals: [], retirements: [], answer: [ 201, { "data" => {} } ], posts: [],
+               session: "chat-session", cwd: @dir)
+    out = StringIO.new
+    err = StringIO.new
+    env = { "DREAM_BANK_DIR" => @dir, "CLAUDE_CODE_SESSION_ID" => session.to_s }
+    code = DreamCli.new(env: env, out: out, err: err, board_reader: ->(_path) { reads },
+                        approvals_reader: -> { approvals }, retirements_reader: -> { retirements },
+                        board_poster: ->(path, body) { posts << [ path, body ] && answer }, cwd: cwd).run(argv)
+    [ out.string, err.string, code ]
+  end
+
+  def test_unit_cards_prints_every_proposed_dream_no_ruling_has_answered
+    write("carl/guard-nil-reader.md", PROPOSAL)
+    write("carl/already-ruled.md", PROPOSAL)
+
+    out, err, code = card_cli("cards", "--call", "guard-nil-reader=approve:it transfers",
+                              approvals: [ { "dream_home" => "carl", "dream_slug" => "already-ruled" } ])
+
+    assert_equal 0, code, err
+    assert_equal "1 dream decision for you: 1 add.", out.lines.first.chomp
+    assert_includes out, "1 · ADD · soul/carl · 1 of 20 used"
+    assert_includes out, "My call: approve — it transfers"
+    refute_includes out, "already-ruled"
+    assert_includes out, "Silence changes nothing"
+  end
+
+  def test_unit_cards_degrades_to_local_counts_when_the_board_is_silent
+    write("carl/guard-nil-reader.md", PROPOSAL)
+
+    out, err, code = card_cli("cards", reads: nil, approvals: nil, retirements: nil)
+
+    assert_equal 0, code
+    assert_includes out, "1 · ADD · soul/carl · 1 of 20 used"
+    assert_includes err, "could not read the swap candidates"
+    assert_includes err, "could not read the pending rulings"
+  end
+
+  def test_integration_cards_at_wrap_prints_the_one_swap_from_this_desk_or_no_swap
+    root, bank = desk
+    FileUtils.mkdir_p(File.join(bank, "carl"))
+    File.write(File.join(bank, "carl/guard-nil-reader.md"), PROPOSAL)
+    reads = [ { "layer" => "soul/carl", "approved" => 20, "budget" => 20, "full" => true,
+                "candidates" => [ { "dream_home" => "carl", "dream_slug" => "review", "mean_grade" => 0.0, "grades" => 2,
+                                    "fires" => 2, "last_fired_at" => "2026-10-01T00:00:00Z" } ] } ]
+
+    out, err, code = card_cli("cards", "--in", "carl/guard-nil-reader", "--out", "carl/review", reads: reads, cwd: root)
+
+    assert_equal 0, code, err
+    assert_includes out, "1 · SWAP · soul/carl · 20 of 20 used"
+    assert_includes out, "OUT `carl/review` · mean 0.0 of 2 · 2 fired · last 2026-10-01"
+    assert_equal 1, out.scan(/^\d+ · /).size, "the wrap shows one swap at most"
+
+    out, _err, code = card_cli("cards", "--none")
+    assert_equal 0, code
+    assert_equal "Dreams: no swap this session. Nothing to approve.\n", out
+
+    _out, err, code = card_cli("cards", "--in", "platform/universal", cwd: root)
+    assert_equal 1, code
+    assert_includes err, "reads approved"
+  end
+
+  def test_unit_cards_takes_exact_arguments
+    [ %w[cards --out carl/x], %w[cards --call], %w[cards --call x=bless], %w[cards --none --in carl/x], %w[cards extra] ].each do |argv|
+      out, _err, code = card_cli(*argv)
+      assert_equal 2, code, argv.inspect
+      assert_equal "", out
+    end
+  end
+
+  def test_unit_approve_posts_his_words_and_the_session
+    write("carl/guard-nil-reader.md", PROPOSAL)
+    posts = []
+
+    out, err, code = card_cli("approve", "guard-nil-reader", "--clearance", "Yes, approve the contest one", posts: posts)
+
+    assert_equal 0, code, err
+    assert_equal [ [ "/api/v1/dream_rulings", { "ruling" => "approve", "dream_home" => "carl", "dream_slug" => "guard-nil-reader",
+                                                "clearance" => "Yes, approve the contest one", "session_id" => "chat-session" } ] ],
+                 posts
+    assert_includes out, "dream: approved `carl/guard-nil-reader` on Alex's word in chat: \"Yes, approve the contest one\""
+  end
+
+  def test_unit_drop_and_retire_name_their_ruling
+    write("carl/guard-nil-reader.md", PROPOSAL)
+    posts = []
+    card_cli("drop", "carl/guard-nil-reader", "--clearance", "2 ✗", posts: posts)
+    card_cli("retire", "review", "--clearance", "retire the review one", posts: posts)
+
+    assert_equal [ "drop", "retire" ], posts.map { |_, body| body["ruling"] }
+    assert_equal "carl", posts.last.last["dream_home"]
+  end
+
+  def test_unit_a_ruling_without_his_words_or_a_session_posts_nothing
+    write("carl/guard-nil-reader.md", PROPOSAL)
+    posts = []
+    [ [ "ok" ], [ "guard-nil-reader" ], [ " " ] ].each do |(words)|
+      _out, err, code = card_cli("approve", "guard-nil-reader", "--clearance", words, posts: posts)
+      assert_equal 1, code, words
+      assert_includes err, "not recorded:"
+    end
+    _out, err, code = card_cli("approve", "guard-nil-reader", "--clearance", "approve it now please", session: "", posts: posts)
+    assert_equal 1, code
+    assert_includes err, "no session id"
+    _out, err, code = card_cli("approve", "nowhere", "--clearance", "approve it now please", posts: posts)
+    assert_includes err, "is not a dream"
+    assert_empty posts
+  end
+
+  def test_unit_a_ruling_relays_the_boards_refusal_and_its_200
+    write("carl/guard-nil-reader.md", PROPOSAL)
+    _out, err, code = card_cli("approve", "guard-nil-reader", "--clearance", "approve it now please",
+                               answer: [ 422, { "error" => "no such dream in the deployed bank" } ])
+    assert_equal 1, code
+    assert_includes err, "not recorded: no such dream in the deployed bank"
+
+    out, _err, code = card_cli("approve", "guard-nil-reader", "--clearance", "approve it now please",
+                               answer: [ 200, { "data" => { "via" => "click" } } ])
+    assert_equal 0, code
+    assert_includes out, "already carries that ruling (click)"
+  end
+
+  def test_unit_rulings_take_exact_arguments
+    [ %w[approve], %w[approve x], %w[approve x --clearance], %w[drop x --why y], %w[retire ../x --clearance a\ b\ c] ].each do |argv|
+      out, _err, code = card_cli(*argv)
+      assert_equal 2, code, argv.inspect
+      assert_equal "", out
+    end
+  end
 end
