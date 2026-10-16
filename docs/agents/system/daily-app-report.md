@@ -2,7 +2,8 @@
 
 **What it is.** One hub job, at **07:00 America/Denver**, reads every live
 studio-engine app's health for the day and posts **one** Discord message: a
-headline, then one embed per app. Satellites have no production worker of their
+headline, then one embed per app. The same run then posts each app's own
+[CTO report](#per-app-cto-reports), in its CTO's voice. Satellites have no production worker of their
 own, so there are no per-app schedules: the hub pulls.
 
 ## When and which day
@@ -79,6 +80,47 @@ receipt is the `report_deliveries` row for that key.
 - `:failed`: `deliver` writes the ErrorLog; the job hands the same message and key
   to `ReportDeliveryJob`, which retries with back-off and still posts once.
 
+## Per-app CTO reports
+
+The same run then posts **one report per app that has a CTO**, each under its own
+report key, so Alex picks a channel per app at `/admin/report_destinations`.
+
+| App | Report key | CTO (voice) |
+|-----|------------|-------------|
+| McRitchie Studio | `cto_report:mcritchie_studio` | Avi |
+| Turf Monster | `cto_report:turf_monster` | Turf |
+| Cyvasse | `cto_report:cyvasse` | Tyrion |
+
+- **Config.** `config/cto_reports.yml` maps each domain key to its app slug and
+  CTO soul. It is separate from `config/agent_domains.yml` on purpose: that
+  file's `soul:` is the Discord front door, which need not be the CTO who signs
+  the report. Each key must also be registered in `config/report_destinations.yml`
+  (a test holds both lists together).
+- **Voice.** A fixed template per soul (`CtoReport::Voice`): an opener, one line
+  for the day's state (quiet, activity, errors, unreachable) and a signature.
+  Every number is computed in code; there is no model call, so a line cannot
+  invent a fact. Counts only, as above.
+- **What it says.** The app's health counts in the voiced paragraph, and the same
+  per-app embed the combined report shows (counts, top error groups). The hub
+  adds its board: open tasks in build, waiting on review and on the way to
+  production (with the blocked count), tasks shipped in the window, and the
+  release in flight (its stage and task count).
+- **One read per app.** The combined report and the CTO reports share the run's
+  health memo, so each app is read at most once per run.
+- **Once a day.** The idempotency key is `cto_report:<domain>:<Denver date>`.
+- **Skips, each a log line `[cto-report] …`, never an error:** an app with no
+  `HEALTH_TOKEN_<SLUG>` (no delivery at all), a destination with no channel or
+  turned off, a day already posted. An unreachable app still reports, saying
+  why, with no numbers.
+- **Never reports:** an app in `AppCatalog::UNANNOUNCED`, an app off the live
+  list above, and a domain marked `internal: true` in `config/agent_domains.yml`.
+- **Independent.** The job rescues each half on its own: a crash in the combined
+  report still sends the CTO reports, and one app's crash still sends the next.
+
+To add one: an entry in `config/cto_reports.yml`, its key in
+`config/report_destinations.yml`, and a voice in `CtoReport::Voice::VOICES` if the
+soul has none yet.
+
 ## Add an app
 
 1. The app runs studio-engine with the health-report endpoint deployed and a
@@ -97,4 +139,5 @@ Tomorrow's report reads it; until step 3 it shows as not wired.
 | Run, app list, normalizing | `app/services/daily_app_report.rb` |
 | HTTP read | `app/services/daily_app_report/fetcher.rb` |
 | The message | `app/services/daily_app_report/message.rb` |
-| Tests | `test/services/daily_app_report_test.rb`, `test/services/daily_app_report/`, `test/jobs/daily_app_report_job_test.rb` |
+| Per-app CTO reports | `app/services/cto_report.rb`, `app/services/cto_report/` (`voice.rb`, `message.rb`), `config/cto_reports.yml` |
+| Tests | `test/services/daily_app_report_test.rb`, `test/services/daily_app_report/`, `test/services/cto_report_test.rb`, `test/services/cto_report/`, `test/jobs/daily_app_report_job_test.rb` |
