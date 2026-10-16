@@ -4,6 +4,7 @@ module CtoReport
   #
   #   content  "**Turf Monster · CTO report · Thu, Oct 15, 2026**", the voiced
   #            paragraph (opener, the day's state, and the board for the hub),
+  #            one usage line (the CTO's answers in the window, AgentUsage),
   #            then the signature
   #   embeds   the app's health detail, built by DailyAppReport::Message for
   #            this one app (counts, then the top error groups), so the per-app
@@ -18,11 +19,12 @@ module CtoReport
     CONTENT_LIMIT = ReportDestinations::CONTENT_LIMIT
     REASON_LIMIT = 120
 
-    def initialize(entry:, ending:, health:, board: nil)
+    def initialize(entry:, ending:, health:, board: nil, usage: nil)
       @entry = entry
       @ending = ending.in_time_zone(DailyAppReport::ZONE)
       @health = health
       @board = board
+      @usage = usage
       @voice = Voice.for(entry.soul)
     end
 
@@ -32,6 +34,7 @@ module CtoReport
       paragraph = [ say(:open), say(state_line) ]
       lines = [ "**#{@entry.app.name} · CTO report · #{@ending.strftime('%a, %b %-d, %Y')}**", paragraph.join(" ") ]
       lines << say(:board) if @board
+      lines << "Agent usage, the day: #{AgentUsage.totals_line(@usage)}" if @usage
       lines << "— #{@voice.fetch(:signature)}"
       DailyAppReport::Message.clip(lines.join("\n"), CONTENT_LIMIT)
     end
