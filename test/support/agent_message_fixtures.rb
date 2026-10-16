@@ -1,6 +1,24 @@
 # Shared builders for the agent mailbox tests (docs/agents/system/agent-message-loop.md).
 # Ids are fake snowflakes; nothing here reaches Discord.
 module AgentMessageFixtures
+  # The owner-only guard switched OFF: every person may be answered. Most mailbox
+  # tests are about claims, threads and memory, not about who may speak, and
+  # their rows carry made-up authors (or none). The guard's own tests
+  # (test/models/agent_message_held_test.rb, test/integration/agent_owner_only_guard_test.rb)
+  # install the real config/agent_answerers.yml, or a list of their own, instead.
+  class UnguardedAnswerers
+    def person_ids = []
+    def allowed?(_person) = true
+    def sql_guard = ->(_table) { "TRUE" }
+  end
+
+  def self.included(base)
+    return unless base.respond_to?(:setup)
+
+    base.setup { AgentMessages::Answerers.current = UnguardedAnswerers.new }
+    base.teardown { AgentMessages::Answerers.reset! }
+  end
+
   GUILD = "900000000000000001".freeze
   DESK = "900000000000000002".freeze
   QUIET = "900000000000000003".freeze

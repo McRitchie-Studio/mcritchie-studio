@@ -117,18 +117,18 @@ class AgentMessage < ApplicationRecord
   # "open" for the two wait rules either, so a stranger's message that is somehow
   # `received` cannot hold a thread back forever; `held` rows are never open.
   def self.claimable(soul:, now: Time.current, channel: nil, answerers: AgentMessages::Answerers.current)
-    allowed = answerers.person_ids
+    answerable = answerers.sql_guard
     scope = where(soul_slug: soul)
             .where("agent_messages.status = 'received' OR " \
                    "(agent_messages.status = 'claimed' AND agent_messages.lease_expires_at < :now " \
                    "AND agent_messages.attempts < :cap)", now: now, cap: MAX_ATTEMPTS)
-            .where(answerable_sql("agent_messages", allowed))
+            .where(answerable.call("agent_messages"))
             .where(<<~SQL.squish)
               NOT EXISTS (SELECT 1 FROM agent_messages older
                           WHERE older.thread_key = agent_messages.thread_key
                             AND older.id < agent_messages.id
                             AND older.status IN ('received', 'claimed')
-                            AND #{answerable_sql('older', allowed)})
+                            AND #{answerable.call('older')})
             SQL
             .where(<<~SQL.squish)
               (agent_messages.person_id IS NULL OR NOT EXISTS (
@@ -137,7 +137,7 @@ class AgentMessage < ApplicationRecord
                   AND earlier.person_id = agent_messages.person_id
                   AND earlier.id < agent_messages.id
                   AND earlier.status IN ('received', 'claimed')
-                  AND #{answerable_sql('earlier', allowed)}))
+                  AND #{answerable.call('earlier')}))
             SQL
     scope = scope.where(channel: channel) if channel.present?
     scope.order(:id)
@@ -174,13 +174,6 @@ class AgentMessage < ApplicationRecord
                                            "lease_expires_at" => message.lease_expires_at.iso8601 })
       ClaimResult.new(message: message, reason: "claimed")
     end
-  end
-
-  # The guard as SQL on `table`'s row: an admin released its hold, or its person
-  # is allowed. An empty list matches no person (IN (NULL) is never true).
-  def self.answerable_sql(table, person_ids)
-    list = person_ids.any? ? person_ids.map { |id| Integer(id) }.join(", ") : "NULL"
-    "(#{table}.hold_released_at IS NOT NULL OR #{table}.person_id IN (#{list}))"
   end
 
   # An admin's explicit act (the Release button on /admin/agent_messages/:id,

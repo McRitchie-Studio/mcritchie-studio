@@ -52,6 +52,16 @@ module AgentMessages
 
     def allowed?(person) = person.present? && person_ids.include?(person.id)
 
+    # The guard as SQL, for AgentMessage.claimable: a proc from a table alias to
+    # "that row may be answered", with the allowed ids read once. A row passes
+    # when an admin released its hold, or its person is allowed. An empty list
+    # matches no person (IN (NULL) is never true).
+    def sql_guard
+      ids = person_ids
+      list = ids.any? ? ids.map { |id| Integer(id) }.join(", ") : "NULL"
+      ->(table) { "(#{table}.hold_released_at IS NOT NULL OR #{table}.person_id IN (#{list}))" }
+    end
+
     private
 
     def parse(raw)
