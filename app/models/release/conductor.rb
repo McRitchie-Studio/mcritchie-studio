@@ -231,21 +231,18 @@ class Release
     # This gives analytics an explicit start timestamp for the assembly window
     # instead of relying only on the reviewed→assembled transition. Idempotent
     # through Task#record_intent_event.
+    #
+    # The intent is the board's live "who is QA-ing the RC" avatar, so its actor is
+    # the assembled stage's owner, Avi (DEPLOY_LANE_ACTORS), unless the caller names
+    # one. It once defaulted to the task's last REVIEWER, and on 2026-10-16 two
+    # cards in one release each showed their own reviewer (carl, shannon) as the
+    # live QA soul. Never derive it from the reviewer or from the session that ran
+    # the release command.
     def record_assembly_intent!(task, actor: nil)
       return nil unless task&.stage == "reviewed"
 
-      actor ||= assembly_actor(task)
+      actor = actor.to_s.strip.presence || DEPLOY_LANE_ACTORS["assembled"]
       task.record_intent_event(to_stage: "assembled", actor: actor, source: "conductor")
-    end
-
-    def assembly_actor(task)
-      reviewed = task.task_events.transitions.where(to_stage: "reviewed").chronological.last
-      named = TaskEvent.named_actor(reviewed&.actor)
-      return named if named
-
-      reviewers = task.latest_intent_reviewers("reviewed")
-      primary = Array(reviewers).find { |r| %w[primary heavy].include?(r["weight"].to_s) } || Array(reviewers).first
-      primary&.dig("slug")
     end
 
     # Pre-flight REVIEW-GATE screen for the sweep (`bin/release merge`/`prepare`)
