@@ -1,0 +1,6 @@
+<%# locals: (app:, size: "md") %>
+<%# An app's identity mark: its emoji on a circle of its own colour (config/apps.yml via the apps table). %>
+<% box = size == "lg" ? "w-14 h-14 text-3xl" : "w-10 h-10 text-xl" %>
+<span class="<%= box %> rounded-full flex items-center justify-center shrink-0 border border-subtle"
+      style="background-color: <%= app.color.to_s.match?(/\A#\h{6}\z/) ? app.color : "transparent" %>;"
+      data-test="app-badge" aria-hidden="true"><%= app.emoji.presence || "📱" %></span>

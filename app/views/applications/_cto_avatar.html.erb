@@ -1,0 +1,7 @@
+<%# locals: (cto:, size: "md") %>
+<%# A CTO's avatar: the Agent row's (components/agent_avatar) when it has one, else its emoji on a plain circle. %>
+<% if cto.agent %>
+  <%= render "components/agent_avatar", agent: cto.agent, size: size %>
+<% else %>
+  <span class="<%= size == "lg" ? "w-16 h-16 text-3xl" : "w-14 h-14 text-2xl" %> rounded-full flex items-center justify-center bg-inset border border-subtle shrink-0" aria-hidden="true">🤖</span>
+<% end %>

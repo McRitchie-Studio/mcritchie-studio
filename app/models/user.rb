@@ -9,6 +9,9 @@ class User < ApplicationRecord
   has_slug_children "dream_approvals" => :approved_by_slug, "dream_retirements" => :retired_by_slug,
                     "dream_swaps" => :approved_by_slug
 
+  # The apps this user owns (AppMembership, docs/agents/system/app-owners.md).
+  has_many :app_memberships, foreign_key: :user_slug, primary_key: :slug, inverse_of: :user, dependent: :delete_all
+
   # Stable operator identities whose roles and email links should survive fresh
   # DBs, first-login races, QA resets, and new-app clones of this pattern.
   #

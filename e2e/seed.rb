@@ -1749,3 +1749,15 @@ directory_guild = "930000000000000001"
   { external_id: "930000000000000024", name: "general", kind: "text", postable: true, position: 0 }
 ].each { |attrs| DiscordChannel.create!(attrs.merge(guild_external_id: directory_guild, synced_at: 5.minutes.ago)) }
 puts "Seeded: #{DiscordChannel.count} discord channels"
+
+# App owners (e2e/app_owner_settings.spec.js): Turf Monster, its CTO's Agent row,
+# and its owner, a plain viewer whose membership is the only thing that lets them
+# in. The directory above is what the owner's channel picker offers (no
+# DISCORD_BOT_TOKEN_TURF_MONSTER here, so the shared bot's channels).
+AppMembership.delete_all
+turf_app = App.find_or_create_by!(slug: "turf-monster") { |app| app.assign_attributes(name: "Turf Monster", emoji: "🐊", color: "#22C55E", position: 1) }
+App.find_or_create_by!(slug: "cyvasse") { |app| app.assign_attributes(name: "Cyvasse", emoji: "🐉", color: "#DC2626", position: 5) }
+Agent.find_or_create_by!(slug: "turf-monster") { |agent| agent.assign_attributes(name: "Turf Monster", status: "active", agent_type: "specialist", title: "Sports Domain Specialist") }
+turf_owner = User.find_or_create_by!(email: "owner@turf.test") { |user| user.assign_attributes(name: "Turf Owner", role: "viewer") }
+AppMembership.create!(app: turf_app, user: turf_owner)
+puts "Seeded: #{AppMembership.count} app owner(s)"

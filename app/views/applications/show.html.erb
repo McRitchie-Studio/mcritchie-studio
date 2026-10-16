@@ -1,0 +1,49 @@
+<%# /applications/:slug: one app's identity, its health (a lazy frame) and its CTO. Owner or admin only. docs/agents/system/app-owners.md %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="application-page" data-app="<%= @app.slug %>">
+  <div class="flex items-center gap-4 min-w-0">
+    <%= render "applications/app_badge", app: @app, size: "lg" %>
+    <div class="min-w-0">
+      <h1 class="text-3xl font-bold text-heading break-words"><%= @app.name %></h1>
+      <% if @app.description.present? %><p class="text-secondary mt-1"><%= @app.description %></p><% end %>
+    </div>
+  </div>
+
+  <div class="card p-4 space-y-2 text-sm" data-test="application-health-card">
+    <h2 class="font-semibold text-heading text-base">Health</h2>
+    <%= turbo_frame_tag "application-health", src: health_application_path(@app.slug), loading: :lazy do %>
+      <p class="text-muted" data-test="application-health-loading">Reading the latest health report…</p>
+    <% end %>
+  </div>
+
+  <div class="card p-4 space-y-3 text-sm" data-test="application-cto-card">
+    <h2 class="font-semibold text-heading text-base">CTO</h2>
+    <% if @cto %>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <%= render "applications/cto_avatar", cto: @cto %>
+          <div class="min-w-0">
+            <p class="font-semibold text-heading" data-test="application-cto-name"><%= @cto.display_name %></p>
+            <p class="text-secondary"><%= @app.name %>'s CTO. Sends a daily report to the Discord channel you choose.</p>
+          </div>
+        </div>
+        <%= link_to "Settings", settings_agent_path(@cto.slug), class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-cto-settings" } %>
+      </div>
+    <% else %>
+      <p class="text-secondary" data-test="application-no-cto">This app has no CTO yet.</p>
+    <% end %>
+  </div>
+
+  <% if @owners %>
+    <div class="card p-4 space-y-2 text-sm" data-test="application-owners">
+      <h2 class="font-semibold text-heading text-base">Owners</h2>
+      <% if @owners.any? %>
+        <ul class="text-body space-y-1">
+          <% @owners.each do |owner| %><li class="break-all"><%= owner.email %></li><% end %>
+        </ul>
+      <% else %>
+        <p class="text-secondary">No owner yet.</p>
+      <% end %>
+      <p class="text-muted text-xs">Only admins see this list.</p>
+    </div>
+  <% end %>
+</section>

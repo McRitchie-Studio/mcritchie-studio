@@ -10,6 +10,10 @@ class App < ApplicationRecord
   # A desk record names its app by slug (no association here).
   has_slug_children "desk_records" => :app_slug
 
+  # Who owns the app (AppMembership, docs/agents/system/app-owners.md).
+  has_many :memberships, class_name: "AppMembership", foreign_key: :app_slug, primary_key: :slug,
+                         inverse_of: :app, dependent: :delete_all
+
   # The default app a brand-new session adopts before any task exists — the
   # SessionStart hook seeds "<random Pokémon> · mcritchie-studio".
   DEFAULT_SLUG = "mcritchie-studio".freeze

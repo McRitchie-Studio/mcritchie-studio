@@ -14,6 +14,7 @@ module DiscordDirectory
     ADMINISTRATOR = 1 << 3
     VIEW_CHANNEL = 1 << 10
     SEND_MESSAGES = 1 << 11
+    EMBED_LINKS = 1 << 14
     SEND_MESSAGES_IN_THREADS = 1 << 38
     ALL = (1 << 53) - 1
 
@@ -41,10 +42,13 @@ module DiscordDirectory
       apply(perms, overwrites.select { |o| !role_overwrite?(o) && o["id"].to_s == @user_id })
     end
 
-    def can_post?(overwrites, thread: false)
+    # `embeds: true` also needs EMBED_LINKS: a CTO report is an embed, and
+    # Discord drops an embed silently where the bot lacks it.
+    def can_post?(overwrites, thread: false, embeds: false)
       perms = for_channel(overwrites)
-      send = thread ? SEND_MESSAGES_IN_THREADS : SEND_MESSAGES
-      (perms & VIEW_CHANNEL) == VIEW_CHANNEL && (perms & send) == send
+      needed = VIEW_CHANNEL | (thread ? SEND_MESSAGES_IN_THREADS : SEND_MESSAGES)
+      needed |= EMBED_LINKS if embeds
+      (perms & needed) == needed
     end
 
     private
