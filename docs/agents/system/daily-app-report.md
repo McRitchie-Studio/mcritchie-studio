@@ -83,7 +83,9 @@ receipt is the `report_deliveries` row for that key.
 ## Per-app CTO reports
 
 The same run then posts **one report per app that has a CTO**, each under its own
-report key, so Alex picks a channel per app at `/admin/report_destinations`.
+report key, so Alex picks a channel per app at `/admin/report_destinations`, and
+each app's owner can pick their own at `/agents/:slug/settings`
+([`app-owners.md`](app-owners.md)).
 
 | App | Report key | CTO (voice) |
 |-----|------------|-------------|
