@@ -67,7 +67,7 @@ co-signs:
 | Slug | 1Password item | Plays as |
 |---|---|---|
 | `mack` | `solana.mack.agent` | mack-4 |
-| `turf` | `solana.turf.agent` | regal-parsley |
+| `turf` | `solana.turf.alex` | regal-parsley |
 
 > **There is no admin actor.** No agent-readable wallet signs in as an admin
 > account, so `KeyStore::ITEMS` files none: the house account holds no wallet,

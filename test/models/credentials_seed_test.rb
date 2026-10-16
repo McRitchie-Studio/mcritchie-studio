@@ -67,13 +67,13 @@ class CredentialsSeedTest < ActiveSupport::TestCase
   test "a retitled wallet item is renamed in place, never left as an orphan" do
     seed!
     CredentialRecord.where(title: %w[agent.mack.solana solana.mack.agent]).delete_all
-    old =CredentialRecord.create!(credential_vault_slug: "studio-agents", title: "agent.mack.solana",
+    old = CredentialRecord.create!(credential_vault_slug: "studio-agents", title: "agent.mack.solana",
                                    service: "solana", status: "filed")
 
     seed!
 
     assert_equal 0, CredentialRecord.where(title: "agent.mack.solana").count, "the old title is gone"
     assert_equal old.id, record("studio-agents", "solana.mack.agent").id, "renamed in place, not re-created"
-    assert record("studio-agents", "solana.turf.agent"), "the rehearsal player is filed under its new title"
+    assert record("studio-agents", "solana.turf.alex"), "the rehearsal player is filed under its new title"
   end
 end

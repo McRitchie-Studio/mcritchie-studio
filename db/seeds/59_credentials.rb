@@ -61,7 +61,7 @@ records = [
     scope_summary: "Mason's vault signer; no longer a Squads member." },
   { vault: "studio-agents", title: "solana.mack.agent", service: "solana", category: "API Credential",
     scope_summary: "Mack's devnet co-signer: slot 1 of the devnet vault signer set; plays mack-4 in the QA contest rehearsal." },
-  { vault: "studio-agents", title: "solana.turf.agent", service: "solana", entity: "turf-monster", category: "API Credential",
+  { vault: "studio-agents", title: "solana.turf.alex", service: "solana", entity: "turf-monster", category: "API Credential",
     scope_summary: "The QA contest rehearsal's test player (39QT…, regal-parsley). Devnet test USDC only." },
   { vault: "studio-agents", title: "solana.turf.admin", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
     scope_summary: "The agent governance identity." },
@@ -170,7 +170,7 @@ records = [
 # first, or the old title would linger as an orphan record beside the new one.
 retitled = {
   ["studio-agents", "agent.mack.solana"] => "solana.mack.agent", # 2026-10-16, rename-rehearsal-wallet-items
-  ["studio-agents", "phantom.turf"] => "solana.turf.agent"       # 2026-10-16, rename-rehearsal-wallet-items
+  ["studio-agents", "phantom.turf"] => "solana.turf.alex"       # 2026-10-16, rename-rehearsal-wallet-items
 }
 retitled.each do |(vault_slug, old_title), new_title|
   next if CredentialRecord.exists?(credential_vault_slug: vault_slug, title: new_title)

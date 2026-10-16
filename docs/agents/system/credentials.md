@@ -151,7 +151,7 @@ op item get "solana.turf.system.devnet" --vault "studio-agents" --account MWOV5O
 export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key")  # agent token; local/dev value
 ```
 
-**Item fields**: this is NOT uniform, and assuming it is breaks the read — `op` fails the whole call on one wrong label rather than falling back. The older `agent.*` wallets carry `recovery phrase`, `private key` and `wallet address`, SPACED. The three `solana.turf.*` items above carry `private-key` and `wallet-address`, HYPHENATED, plus `phantom-email` / `phantom-password`, and no recovery phrase (verified 2026-09-15). `solana.turf.agent` mixes the two spellings on one item. When in doubt read `--format json` and pick whichever spelling is present, which is what `KeyStore#op_read_item` does.
+**Item fields**: this is NOT uniform, and assuming it is breaks the read — `op` fails the whole call on one wrong label rather than falling back. The older `agent.*` wallets carry `recovery phrase`, `private key` and `wallet address`, SPACED. The three `solana.turf.*` items above carry `private-key` and `wallet-address`, HYPHENATED, plus `phantom-email` / `phantom-password`, and no recovery phrase (verified 2026-09-15). `solana.turf.alex` mixes the two spellings on one item. When in doubt read `--format json` and pick whichever spelling is present, which is what `KeyStore#op_read_item` does.
 
 ### Onchain Admin
 
