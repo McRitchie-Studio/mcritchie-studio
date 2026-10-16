@@ -261,6 +261,17 @@ risk is zero.
 ship. *Consolidation (decided):* the legacy `release_train` field has become
 **`release_slug`** — one concept, one name.
 
+**Trains (2026-10-16).** A release rides a **train** (`releases.train`, not null,
+default `"hub"`), and the singleton holds per train: at most one active release on
+each train, enforced by `Release#at_most_one_active_release` and the unique partial
+index `index_releases_single_active` on `(train)`. `Release.current`,
+`last_shipped`, `open!` and `current_or_open!` take an optional train that defaults
+to `"hub"`, so every caller that passes none reads exactly what it read before.
+Hub slugs keep `rel-YYYYMMDD-hex`; any other train's are `rel-<train>-YYYYMMDD-hex`.
+Only `"hub"` is used until task B of the release-trains design
+(`/Users/alex/projects/.agents/epics/release-trains-design.md`) routes work to per-app trains. This `train` is not the retired `release_train`
+field above, which named the release a task belonged to.
+
 **The integration branch is PERSISTENT.** Every repo keeps a single `release`
 branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
 PRs target `release`, not `main`; `main` is always an ancestor of `release`.
