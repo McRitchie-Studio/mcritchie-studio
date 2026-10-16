@@ -63,7 +63,10 @@ module AgentMailbox
     def domains = (@config["domains"].is_a?(Hash) ? @config["domains"] : {})
 
     # The domain key a soul answers for (its DOMAIN layer), or nil.
-    def domain_key_for(soul) = (@config["souls"] || {})[soul.to_s]
+    def domain_key_for(soul) = soul_domains[soul.to_s]
+
+    # The `souls:` map, soul => domain key.
+    def soul_domains = (@config["souls"].is_a?(Hash) ? @config["souls"] : {})
 
     # The domain whose FRONT DOOR is this soul, or nil.
     def front_door(soul)
