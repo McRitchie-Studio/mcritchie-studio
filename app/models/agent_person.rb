@@ -11,8 +11,20 @@
 # until someone links it (link_identity!, from the console or
 # `bin/rails agent_people:link`). A wrong merge would hand one person's memory to
 # another, which is worse than a soul not recognising someone.
+#
+# A PERSON'S ROLE is who the agents are speaking with
+# (docs/agents/modules/agent-communication.md): owner | team | client | public,
+# default public, and for a client the domain (a key of config/agent_domains.yml)
+# they are a client of. The audience of every answer is read from here, from the
+# verified sender's person, never from what a message says. Only an operator sets
+# it (set_role!, `bin/rails agent_people:role`).
+require Rails.root.join("bin/lib/agent_audience").to_s
+
 class AgentPerson < ApplicationRecord
   class LinkRefused < StandardError; end
+
+  ROLES = AgentMailbox::Audience::ROLES
+  DOMAINS_PATH = "config/agent_domains.yml"
 
   # Alex: his Discord user id, and the hub user his email names.
   OWNER = { name: "Alex", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
@@ -24,6 +36,35 @@ class AgentPerson < ApplicationRecord
   has_many :messages, class_name: "AgentMessage", foreign_key: :person_id, inverse_of: :person, dependent: :nullify
 
   validates :display_name, presence: true
+  validates :role, inclusion: { in: ROLES }
+  validates :client_domain, inclusion: { in: ->(_) { client_domains }, message: "is not a domain in #{DOMAINS_PATH}" },
+                            if: -> { role == "client" }
+  validates :client_domain, absence: { message: "is only for a client" }, unless: -> { role == "client" }
+
+  # The domain keys a client may belong to: every domain not marked internal
+  # (an internal domain is never named to anyone outside the team).
+  def self.client_domains
+    path = Rails.root.join(DOMAINS_PATH)
+    config = File.file?(path) ? YAML.safe_load_file(path, aliases: false) : {}
+    domains = config.is_a?(Hash) && config["domains"].is_a?(Hash) ? config["domains"] : {}
+    domains.reject { |_, d| d.is_a?(Hash) && d["internal"] == true }.keys
+  end
+
+  # The audience of a message from `person` (nil: no author, so public), as the
+  # context bundle carries it.
+  def self.audience_for(person)
+    (person ? AgentMailbox::Audience.new(role: person.role, client_domain: person.client_domain)
+            : AgentMailbox::Audience.new(role: AgentMailbox::Audience::FALLBACK)).to_h
+  end
+
+  def audience = self.class.audience_for(self)
+
+  # The operator's act that changes who this person is to the agents. A role
+  # other than client clears the domain.
+  def set_role!(role, client_domain: nil)
+    role = role.to_s.strip
+    update!(role: role, client_domain: role == "client" ? client_domain.to_s.strip.presence : nil)
+  end
 
   # The person behind (platform, external_id), created with its identity when the
   # id is new. Race-safe: two ingests resolving one new id at once both get the
@@ -47,14 +88,15 @@ class AgentPerson < ApplicationRecord
     AgentPersonIdentity.find_by!(platform: platform, external_id: external_id).person
   end
 
-  # Alex's person, his Discord identity, and his hub user when one carries his
-  # email. Idempotent (db/seeds; the migration that made the tables seeds the
+  # Alex's person, his Discord identity, his hub user when one carries his
+  # email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
   # same rows): an existing identity keeps its person, and only a missing user
   # link is filled in.
   def self.seed_owner!
     person = resolve!(platform: OWNER[:platform], external_id: OWNER[:external_id], display_name: OWNER[:name])
     user = User.where("LOWER(email) = ?", OWNER[:email]).first
     person.update!(user: user) if user && person.user_id.nil? && !exists?(user_id: user.id)
+    person.set_role!("owner") unless person.role == "owner"
     person
   end
 
@@ -110,7 +152,8 @@ class AgentPerson < ApplicationRecord
   private :move_notes_from!
 
   def as_api_json(notes: true)
-    data = { "id" => id, "display_name" => display_name, "user_id" => user_id,
+    data = { "id" => id, "display_name" => display_name, "user_id" => user_id, "role" => role,
+             "client_domain" => client_domain,
              "identities" => identities.order(:id).map { |i| "#{i.platform}:#{i.external_id}" } }
     data["notes"] = self.notes.map(&:as_api_json) if notes
     data

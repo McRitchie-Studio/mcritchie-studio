@@ -4,6 +4,11 @@
 #
 # A soul with no entry, or a domain whose doc is missing, gets an empty domain
 # layer; nothing fails. Paths are relative to the hub checkout.
+#
+# `internal: true` marks a domain whose doc (and name) is internal: a client or
+# public audience gets an empty DOMAIN layer for it
+# (docs/agents/modules/agent-communication.md). A domain key is also what a
+# client person's `client_domain` names.
 domains:
   mcritchie_studio:
     name: McRitchie Studio
@@ -14,6 +19,7 @@ domains:
   commercial_welding:
     name: Commercial Welding
     doc: docs/agents/domains/commercial-welding.md
+    internal: true
 
 souls:
   avi: mcritchie_studio

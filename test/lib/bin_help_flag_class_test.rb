@@ -180,6 +180,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
     "heartbeat"              => :cli_arg_guard,
     "dispatcher"             => :cli_arg_guard,
+    # The services phase of bin/ecosystem-build: `restore` installs launchd
+    # services and `allow-rules` rewrites ~/.claude/settings.json, so the guard
+    # runs (per subcommand) before either.
+    "local-services"         => :cli_arg_guard,
     "agent-inbox"            => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
     # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which

@@ -106,11 +106,23 @@ below.
 
 ## Install (once per Mac)
 
+**A rebuilt Mac needs nobody to remember this.** The dispatcher is the first
+entry in `config/local_services.yml`, and `bin/ecosystem-build` ends with a
+services phase (Phase 10) that installs it from the hub's primary checkout when
+`claude auth status` reads `claude.ai` and it is not already running. Signed
+out, it skips the install and the build's closing checklist says
+`claude auth login`, then `bin/ecosystem-build --phase services`
+([house-burn-down.md § First-run audit](../../../system/house-burn-down.md#first-run-audit)).
+The commands below are for a repair, or for a Mac you are not rebuilding.
+
 Run from the hub's primary checkout, which the release moves to the shipped
 code. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in Alex's
-`~/.claude/settings.json` (added 2026-10-14), by bare name from the hub and by
-the absolute path `/Users/alex/projects/mcritchie-studio/bin/dispatcher`, so
-Steffon installs and repairs the service with no permission prompt. Nothing
+`~/.claude/settings.json`, by bare name from the hub and by the absolute path
+`<projects>/mcritchie-studio/bin/dispatcher`, so Steffon installs and repairs the
+service with no permission prompt. The rules were added by hand on 2026-10-14;
+they are now tracked in `config/claude_allow_rules.json`, and the services phase
+merges them into the user settings on every build (`bin/local-services
+allow-rules`: adds only, keeps every other key and rule). Nothing
 else is: `install --if-changed` belongs to the ship, and `run` belongs to launchd. The dispatcher runs from the checkout it was installed from; `install`
 refuses a task desk under `.worktrees/`, which is torn down after its task.
 
@@ -222,9 +234,10 @@ gateway is failing before READY, so read the worker log's
 | **Stuck lease**: a message `claimed` with its lease long lapsed | `/admin/agent_messages`, Claim column | Nothing to do by hand: the next claim takes a lapsed lease back (or dead-letters it on attempt 3) |
 | **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
 | **Context failing**: the log repeats `releasing #N: could not read the message's context` | The board's `GET /api/v1/agent_messages/:id/context` (holder-only) | Treat it as **Board auth** or a hub outage. The dispatcher gives the message back rather than answer without the person's memory |
+| **Wrong audience**: an agent withheld the board from a team member, or answered a client as the owner would | The answer's prompt prints `You are speaking with: <audience>`; the person's role is in `bin/rails agent_people:list` (`role=`) | Only Alex decides a role. Set it on the hub: `heroku run -a mcritchie-studio --no-tty -- bin/rails agent_people:role PERSON=<id> ROLE=team` (a client adds `DOMAIN=<key from config/agent_domains.yml>`). It applies to the person's next message. The rules: [`agent-communication`](../../../modules/agent-communication.md) |
 | **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only; the answer path never resumes |
 | **Unrouted**: a reply to a kept message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
-| **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's `held` event says why. The owner-only guard: the sender is not on `config/agent_answerers.yml`, so no claim will ever take it ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: add them to the yml and ship it. Never flip the status by hand |
+| **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's `held` event says why. The owner-only guard: the sender's role is not one `config/agent_answerers.yml` answers (owner only today), so no claim will ever take it ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
 
 ## Uninstall
 

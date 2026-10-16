@@ -63,27 +63,35 @@ On a truly fresh machine you run it **twice**:
    local env files, clones the sibling repos, replays the env write for the
    freshly cloned satellites, then seeds the DBs and boots the servers.
 
-Every later run is a single pass. The token boundary at Phase 4 is the **only**
-step that cannot be automated — by design, since the token has to come from your
-clipboard.
+Every later run is a single pass. The token boundary at Phase 4 is the only
+step that **stops** the build — by design, since the token has to come from your
+clipboard. The other operator-only steps (the Claude Code claude.ai sign-in,
+Chrome's Google accounts, the 1Password admin token) block nothing, so the build
+goes on and ends with a numbered checklist, "What only you can do", naming each
+one with its exact command. A step that waits on a sign-in ends with
+`bin/ecosystem-build --phase services`, which re-runs only Phase 10 and the
+checklist. The full audit of every first-run step is
+[house-burn-down.md § First-run audit](house-burn-down.md#first-run-audit).
 
 ## Phases
 
 | Phase | Responsibility |
 |-------|----------------|
-| 1. System tools | Homebrew packages (`ruby@3.3`, `postgresql@14`, `redis`, `mise`, `gh`, `heroku`, `jq`, etc.), starts Postgres + Redis services, verifies the Ruby socket extension |
+| 1. System tools | Xcode Command Line Tools check, Homebrew packages (`ruby@3.3`, `postgresql@14`, `redis`, `mise`, `gh`, `heroku`, `jq`, etc.), Google Chrome (cask, unless already in `/Applications`), starts Postgres + Redis services, verifies the Ruby socket extension |
 | 2. Languages | Node 22 + yarn (mise), Rust 1.89.0 (rustup), Solana CLI (Anza), Anchor 0.32.1 (cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` **and that the agent vault is visible to it** (see [The Phase 4 vault guard](#the-phase-4-vault-guard)); pulls Heroku key from 1Password; writes each active Rails app's local env files (see [What Phase 4 writes](#what-phase-4-writes)). **Bails here on the first pass if the OP token is missing.** |
-| 5. Sibling repos | `gh repo clone` for `studio-engine`, `solana-studio`, `turf-vault`, and any satellites (skips ones already present) |
+| 5. Sibling repos | `gh repo clone` for `studio-engine`, `solana-studio`, `turf-vault`, and any satellites (skips ones already present). With no `gh` login it first mints the agent App token from 1Password (`bin/gh-auth-refresh --export`) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). It mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, configures Codex marker hooks, and keeps `bin/install-agent-docs` as the lower-level copy/drift implementation. |
 | 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their local env files before DB setup |
-| 6. Bundles + DBs | `bundle install` (only when `bundle check` fails) + `db:migrate` (existing DB) or `db:create db:migrate db:seed` (first run) for each Rails app; bundle for `solana-studio` |
+| 6. Bundles + DBs | `bundle install` (only when `bundle check` fails) + `db:migrate` (existing DB) or `db:create db:migrate db:seed` (first run) for each Rails app; bundle for `solana-studio` and `studio-engine` |
 | 6b. NFL data | Always runs: live schedule + ESPN depth-chart scrape + current-week roster snapshot + preseason rankings (~3-5 min, network only). Every task here can now report its own failure — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
 | 6c. NFL headshots | Opt-in via `WITH_NFL_HEADSHOTS=1`: nflverse master CSV + headshot cache (~10-15 min, needs the R2 dev pair in `.env.development`). It references production's copy of each headshot and uploads into the dev bucket only what production lacks: see [`object-storage.md`](../modules/object-storage.md#seed-assets). A credential failure is reported, not logged green — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` + `npx playwright install chromium` for the Rails apps |
 | 8. Servers | **Always** kills + restarts each active Rails app on its registered port, then curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` (raw `.env` contents, gitignored, chmod 600): Phase 4 writes two lines into a new `.env`, so the snapshot is what keeps the operator's own additions |
+| 10. Always-on services | The services in `config/local_services.yml` (first entry: the agent dispatcher): prerequisites met and not running → install, then status again; unmet → skipped and put on the checklist. Also merges `config/claude_allow_rules.json` into the user `~/.claude/settings.json` (adds only), reads `claude auth status` (must be `claude.ai`; never logs in for you), and checks for the 1Password admin token and the Chrome profile launcher. Warns only; never fails the build. Run alone with `bin/ecosystem-build --phase services` |
+| Checklist | The last output, on a finished build and on a stopped one: every operator-only step found on the way, numbered in the order to do them |
 
 ## What Phase 4 writes
 

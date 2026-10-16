@@ -398,6 +398,23 @@ module AgentMailbox
     def self.signed_out?(run)
       !run.error_text.nil? && run.error_text.match?(PATTERN)
     end
+
+    # The sign-in method `claude auth status` reports ("claude.ai" for the
+    # subscription the dispatcher bills), or nil when it reports none: logged
+    # out, or output that is not the CLI's JSON (a PATTERN-style "not logged in"
+    # line included). Unreadable is nil because a sign-in check must fail closed.
+    # Reads only these two keys, so the account's email and org never leave
+    # this method.
+    # (bin/lib/local_services.rb, the services phase of bin/ecosystem-build.)
+    def self.auth_method(status_output)
+      data = JSON.parse(status_output.to_s)
+      return nil unless data.is_a?(Hash) && data["loggedIn"] == true
+
+      method = data["authMethod"].to_s.strip
+      method.empty? ? nil : method
+    rescue JSON::ParserError
+      nil
+    end
   end
 
   # The answer path one message takes, shared by bin/heartbeat and bin/dispatcher:
@@ -413,7 +430,9 @@ module AgentMailbox
   # is rebuilt from the board's rows.
   class Responder
     # The ONE read-only action each soul may take, run from the hub checkout.
-    # A soul with none still answers, from its role alone.
+    # A soul with none still answers, from its role alone. It runs only when the
+    # message's audience may use it (Audience#may?(:read_action): owner and team);
+    # for a client or the public it is never run.
     ACTIONS = {
       "avi" => { argv: %w[bin/release status], what: "the release state" },
       "xan" => { argv: %w[bin/task list], what: "the task board" }
@@ -458,9 +477,10 @@ module AgentMailbox
 
     # `context`: the board's bundle for this message (Client#context), or nil.
     def respond(message, context: nil)
-      action = run_action
+      audience = Audience.from_context(context)
+      action = run_action(audience)
       cwd = soul_folder
-      output, status, error = @runner.call(@claude_cmd, stdin: prompt_for(message, action, context: context),
+      output, status, error = @runner.call(@claude_cmd, stdin: prompt_for(message, action, context: context, audience: audience),
                                                          timeout: CLAUDE_TIMEOUT, chdir: cwd)
       run = ClaudeRun.parse(output, status, error)
       limit = UsageLimit.detect(run, now: @clock.call)
@@ -472,9 +492,9 @@ module AgentMailbox
                  reasoning: reasoning, meta: meta)
     end
 
-    def prompt_for(message, action, context: nil)
+    def prompt_for(message, action, context: nil, audience: nil)
       ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
-                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root).prompt
+                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root, audience: audience).prompt
     end
 
     # The soul's folder, <mailbox root>/<soul>, made on demand: the ONE seam that
@@ -489,9 +509,10 @@ module AgentMailbox
                       .tap { |dir| FileUtils.mkdir_p(dir) }
     end
 
-    def run_action
+    # nil, running nothing, unless the audience may read the soul's action.
+    def run_action(audience)
       spec = ACTIONS[@soul]
-      return nil unless spec
+      return nil unless spec && audience.may?(:read_action)
 
       output, status = @runner.call(spec[:argv], stdin: nil, timeout: ACTION_TIMEOUT, chdir: @repo_root)
       exit_text = status.nil? ? "timed out" : "exit #{status}"

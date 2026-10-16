@@ -12,7 +12,7 @@
   <% hold = @message.events.reverse.find { |e| e.kind == "held" } %>
   <div id="am-hold" class="border border-subtle rounded p-3 mb-4 text-sm">
     <p class="mb-2"><span class="font-semibold">Held, not answered.</span>
-      <%= hold&.detail&.dig("reason") || "The sender is not on config/agent_answerers.yml." %>
+      <%= hold&.detail&.dig("reason") || "The sender's role is not answered (config/agent_answerers.yml)." %>
       Releasing it hands this one message to the agent, which answers it like any other.</p>
     <%= button_to "Release and answer", release_hold_admin_agent_message_path(@message), method: :post,
           form: { data: { turbo_confirm: "Release this held message? The agent will answer it." } },

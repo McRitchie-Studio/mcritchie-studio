@@ -274,11 +274,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
   end
 
   create_table "agent_people", force: :cascade do |t|
+    t.string "client_domain"
     t.datetime "created_at", null: false
     t.string "display_name", null: false
+    t.string "role", default: "public", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.index ["user_id"], name: "index_agent_people_on_user_id", unique: true
+    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying::text, 'team'::character varying::text, 'client'::character varying::text, 'public'::character varying::text])", name: "agent_people_role_known"
   end
 
   create_table "agent_person_identities", force: :cascade do |t|

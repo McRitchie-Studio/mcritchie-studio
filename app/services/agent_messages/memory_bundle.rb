@@ -32,6 +32,11 @@ module AgentMessages
   # per PERSON and shared by every soul: a fact about a person is true whichever
   # agent hears it. The PERSON layer, by contrast, is per person PER SOUL.
   #
+  # THE AUDIENCE is who the soul is speaking with (agent-communication SOP): the
+  # role of the message's person, resolved here on the board and never from the
+  # message text. No person is public. The worker gates the action and the
+  # internal layers on it (AgentMailbox::Audience).
+  #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
   # dispatcher runs this release.
@@ -73,6 +78,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
+        "audience" => AgentPerson.audience_for(person),
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,

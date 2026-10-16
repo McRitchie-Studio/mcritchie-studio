@@ -1,0 +1,11 @@
+{
+  "$comment": "Claude Code permission allow-rules the agents rely on, merged into the operator's USER ~/.claude/settings.json (never the hub's .claude/settings.json) by `bin/local-services allow-rules`, which the services phase of bin/ecosystem-build runs. The merge only adds: every existing key and rule is kept, none is duplicated, and the file is replaced atomically. {{HUB}} is the hub's primary checkout, $PROJECTS_DIR/mcritchie-studio. First added by hand on 2026-10-14 for the agent-dispatcher SOP.",
+  "allow": [
+    "Bash(bin/dispatcher install)",
+    "Bash(bin/dispatcher status)",
+    "Bash(bin/dispatcher uninstall)",
+    "Bash({{HUB}}/bin/dispatcher install)",
+    "Bash({{HUB}}/bin/dispatcher status)",
+    "Bash({{HUB}}/bin/dispatcher uninstall)"
+  ]
+}

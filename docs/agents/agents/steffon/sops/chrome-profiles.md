@@ -65,7 +65,7 @@ shared with every other lane, so never put this in a loop or a poll.
 | Needs | Why | Check |
 |-------|-----|-------|
 | **Ruby 3.x** | `bin/lib/chrome_profiles.rb` uses endless method definitions. Under macOS's own `/usr/bin/ruby` (2.6.10) the file does not parse and you get a bare `SyntaxError`, not a message — nothing can guard it, because it fails before any line runs. | `ruby -v` |
-| **Google Chrome** | Nothing in this repo installs it — not `bin/ecosystem-build`, not the burn-down brew phase. Install with `brew install --cask google-chrome`. | `ls -d "/Applications/Google Chrome.app"` |
+| **Google Chrome** | `bin/ecosystem-build` Phase 1 installs it (since 2026-10-15) unless it is already in `/Applications`; by hand, `brew install --cask google-chrome`. | `ls -d "/Applications/Google Chrome.app"` |
 | **1Password CLI, signed in** | The roster lives there. | `op whoami` |
 | **macOS** | Chrome's `Local State`, the Dock plist and `lsappinfo` are all macOS. | — |
 
