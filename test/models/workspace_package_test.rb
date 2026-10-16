@@ -23,6 +23,19 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute_includes WorkspacePackage.keys, "growth", "Growth split into Pro and Team on 2026-10-12"
   end
 
+  test "[unit] CTO allowances: every tier has the key, blank (unlimited) until priced; a bad value reads as none" do
+    raw = WorkspacePackage.config.fetch("packages")
+    assert raw.all? { |attrs| attrs.key?("cto_monthly_tokens") }, "each tier names its cto_monthly_tokens"
+    assert_equal [ nil ] * 5, WorkspacePackage.all.map(&:cto_monthly_tokens)
+    assert_equal 80, WorkspacePackage.cto_usage["warn_percent"]
+    assert_equal({ "tokens" => nil, "price" => nil }, WorkspacePackage.cto_usage["topup"])
+
+    assert_equal 2_000_000, WorkspacePackage.new({ "key" => "x", "name" => "X", "cto_monthly_tokens" => 2_000_000 }).cto_monthly_tokens
+    [ 0, -1, "lots", 1.5 ].each do |bad|
+      assert_nil WorkspacePackage.new({ "key" => "x", "name" => "X", "cto_monthly_tokens" => bad }).cto_monthly_tokens, bad.inspect
+    end
+  end
+
   test "five tiers load in ladder order, and each includes everything below it" do
     assert_equal TIERS, WorkspacePackage.all.map(&:key)
 

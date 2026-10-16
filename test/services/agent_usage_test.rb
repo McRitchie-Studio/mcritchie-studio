@@ -167,6 +167,19 @@ class AgentUsageTest < ActiveSupport::TestCase
     assert_includes registry.catalog("avi", audience: team).map { |c| c["capability"] }, "usage"
   end
 
+  test "suggestion: a tier with no price (Enterprise) is named without one" do
+    enterprise = WorkspacePackage.new({ "key" => "enterprise", "name" => "Enterprise", "price_label" => "Custom" })
+    @app.update!(package_tier: "team")
+    answered!(person: @client, tokens: 900)
+    ladder = packages(team: 1_000) + [ enterprise ]
+    WorkspacePackage.stub(:all, ladder) do
+      suggestion = AgentUsage.meter(@app, now: NOW).suggestion
+      assert_equal "enterprise", suggestion.tier
+      assert_nil suggestion.price
+      assert_equal "Enterprise raises it.", suggestion.line
+    end
+  end
+
   test "the cap reply and the warn line are code, with the suggestion's price" do
     answered!(person: @client, tokens: 1_000)
     with_allowances do
