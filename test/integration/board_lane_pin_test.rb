@@ -92,4 +92,21 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
     assert_includes header.text, Task::STAGE_LABELS.fetch("shipped")
     assert_select "[data-test='stage-header'][data-stage='shipped'] [data-stage-count='shipped']", 1
   end
+  # board-lane-header-overlap. Where the measured scroller DOES come on, a sticky
+  # header is offset by its top from the scroller's own edge, down over its cards,
+  # so the stylesheet unpins every header while the lane row says it scrolls. And
+  # the six-lane floor is 13rem: at 13.5rem the six overflowed every window from
+  # 1400 to 1439px.
+  test "the stylesheet unpins the lane headers while the lanes scroll sideways" do
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_match(/\[data-test="kanban-lanes"\]\[data-lane-scroll="true"\] \[data-test="stage-header"\] \{\s*position: static;/, css)
+    lanes = css_select("[data-test='kanban-lanes']").first
+    assert_equal "laneScroll", lanes[":data-lane-scroll"], "the lane row publishes its scroller state"
+  end
+
+  test "the six-lane board's lane floor fits six lanes from 1400px" do
+    lanes = css_select("[data-test='kanban-lanes'] > div")
+    assert_equal Task::DEPLOYMENTS_BOARD_STAGES.size, lanes.size
+    lanes.each { |lane| assert_includes lane["class"].split, "sm:min-w-[13rem]" }
+  end
 end

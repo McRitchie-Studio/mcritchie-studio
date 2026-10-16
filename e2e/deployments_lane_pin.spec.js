@@ -221,3 +221,71 @@ test("each lane contains its cards' stacking so their z-indexes stay internal", 
     );
   }
 });
+
+// A LANE HEADER NEVER COVERS ITS LANE'S FIRST CARD (board-lane-header-overlap).
+//
+// From 1400 to 1439px the six lanes, at a 13.5rem floor, measured 1376px against a
+// board 10-40px narrower, so the measured scroller came on. Inside it each sticky
+// header was offset by its pinned-stack `top` from the SCROLLER's top edge, which
+// pushed it down over its own cards: 123px at rest, 36px with the navbar collapsed.
+// So: at those widths the six lanes fit and the headers pin, and wherever the
+// scroller does come on (All Stages on a narrow window) the headers stop pinning.
+async function headerClearance(page) {
+  return page.evaluate(() => {
+    const lanes = document.querySelector("[data-test='kanban-lanes']");
+    const gaps = [...document.querySelectorAll("[data-test='stage-header']")]
+      .filter((h) => h.getBoundingClientRect().width > 0)
+      .map((h) => {
+        // The first card under the header: the first bordered box in the lane, outside the header.
+        const card = [...h.parentElement.querySelectorAll("*")].find((el) =>
+          !h.contains(el) && el.getBoundingClientRect().height > 80 && getComputedStyle(el).borderTopWidth !== "0px");
+        return card ? card.getBoundingClientRect().top - h.getBoundingClientRect().bottom : null;
+      })
+      .filter((gap) => gap !== null);
+    return { gaps, scroller: getComputedStyle(lanes).overflowX };
+  });
+}
+
+for (const width of [1300, 1400, 1430]) {
+  test(`at ${width}px the lanes fit, their headers pin, and none covers its first card`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 650 });
+    await page.goto("/deployments");
+    for (const y of [0, 150]) {
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      await page.waitForTimeout(250);
+      const { gaps, scroller } = await headerClearance(page);
+      expect(scroller, "the lanes fit without the scroller").toBe("visible");
+      expect(gaps.length, "the board must have cards for this to mean anything").toBeGreaterThan(0);
+      gaps.forEach((gap) => expect(gap, `y=${y}: ${JSON.stringify(gaps)}`).toBeGreaterThanOrEqual(0));
+    }
+    // And they really pin: scrolled into the board, each header sits on the
+    // navbar's bottom edge, or the clearance above would pass for nothing.
+    await scrollToBoardBottom(page);
+    await expect.poll(() => page.evaluate(() => {
+      const nav = document.querySelector("header").getBoundingClientRect().bottom;
+      return [...document.querySelectorAll("[data-test='stage-header']")]
+        .filter((h) => h.getBoundingClientRect().width > 0)
+        .map((h) => Math.round(Math.abs(h.getBoundingClientRect().top - nav)));
+    })).toEqual(expect.arrayContaining([0]));
+  });
+}
+
+test("with the lanes scrolling sideways the headers stop pinning, clear of their cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1300, height: 650 });
+  await page.goto("/deployments");
+  // All Stages forces the six lanes into a board that cannot hold them.
+  await page.evaluate(() => {
+    const board = document.querySelector("[data-test='kanban-lanes']").closest("[x-data]");
+    window.Alpine.$data(board).showAllCols = true;
+  });
+  await expect(page.locator("[data-test='kanban-lanes']")).toHaveAttribute("data-lane-scroll", "true");
+  const header = page.locator("[data-test='stage-header']").first();
+  await expect.poll(() => header.evaluate((h) => getComputedStyle(h).position)).toBe("static");
+  for (const y of [0, 150]) {
+    await page.evaluate((top) => window.scrollTo(0, top), y);
+    await page.waitForTimeout(250);
+    const { gaps } = await headerClearance(page);
+    expect(gaps.length).toBeGreaterThan(0);
+    gaps.forEach((gap) => expect(gap, `y=${y}: ${JSON.stringify(gaps)}`).toBeGreaterThanOrEqual(0));
+  }
+});

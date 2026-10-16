@@ -651,3 +651,15 @@ footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
 @media (min-width: 1024px) {
   footer[data-site-footer] .ftr-cols { grid-template-columns: 1.7fr 1.5fr 1fr 1fr 1fr; }
 }
+
+/* THE LANE HEADERS STOP PINNING INSIDE THE LANE SCROLLER (tasks/_deploy_board,
+   board-lane-header-overlap). The lane row turns on its sideways scroller only
+   when the lanes are measured to overflow (data-lane-scroll). Inside it a sticky
+   header does not ride up harmlessly: it is offset by its pinned-stack `top` from
+   the scroller's own top edge, which put it 123px over its lane's first card at
+   rest. So there the headers sit in the flow. CSS, not an Alpine style bind on
+   the header: test/integration/board_lane_pin_test.rb keeps the header's style
+   to the one composed top. Unlayered, so it outranks the `sticky` utility. */
+[data-test="kanban-lanes"][data-lane-scroll="true"] [data-test="stage-header"] {
+  position: static;
+}
