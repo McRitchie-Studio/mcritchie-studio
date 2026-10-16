@@ -166,6 +166,18 @@ class AgentDomainSession < ApplicationRecord
     end
   end
 
+  # An operator's act (`bin/rails agent_dispatchers:reset_session`): drop the
+  # session's head, its checkpoint and the lease, so the next turn starts a
+  # fresh session. Summaries are kept. For a checkpoint that will not restore.
+  def reset!
+    self.class.transaction do
+      lock!
+      checkpoint.purge_later if checkpoint.attached?
+      update!(holder: nil, lease_expires_at: nil, claude_session_id: nil, turns: 0, context_tokens: 0,
+              checkpointed_at: nil, checkpoint_bytes: nil, handback_requested_at: nil, handback_requested_by: nil)
+    end
+  end
+
   # Marks a handback when `worker` is a primary dispatcher and the holder a
   # standby. Returns whether the row now carries a request.
   def request_handback!(worker, now: Time.current)

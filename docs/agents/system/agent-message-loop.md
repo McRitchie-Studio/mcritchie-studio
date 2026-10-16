@@ -293,7 +293,9 @@ agent CLI is (`bin/lib/agent_api.rb`).
 An answer remembers the person it answers, on every channel they use. The
 memory is rebuilt from the hub's rows on every answer, never from a resumed
 Claude session, so any dispatcher on any machine builds the same context for the
-same rows (Alex's decision of 2026-10-14, option A). On 2026-10-15 Alex dropped
+same rows (Alex's decision of 2026-10-14, option A). The one exception is a warm
+domain's owner and team turns, behind a per-domain flag that is off ("Warm
+sessions" below); even those rebuild the audience, rules and thread per message. On 2026-10-15 Alex dropped
 the per-channel silo: "Let's give continuity for our people over omnichannel."
 The channel still matters in one way. The thread a message continues is the focus
 of its answer. Two pieces build the memory:
@@ -715,7 +717,8 @@ the machine that ran it:
 cd ~/.agents/mailbox/xan && claude --resume <session_id>
 ```
 
-Resuming is for an operator reading a run. The answer path never resumes.
+Resuming is for an operator reading a run. The answer path resumes only in a
+warm domain, for owner and team turns ("Warm sessions" below).
 
 ## Typing: the bot shows it is answering
 
@@ -806,95 +809,119 @@ The design, for the step that builds it:
 - **Failure deletes the draft.** A run whose envelope ends `is_error` (a usage
   limit, a signed-out CLI, a failure) deletes the draft and is handled as today.
 
-### Warm sessions (next step, not built)
+### Warm sessions
 
-Phase 7 step 2 shipped the usage half (run summaries, tiers, the allowance and
-the meter; [`agent-usage.md`](agent-usage.md)). The warm session per domain is
-designed here and not built. It changes the dispatcher's loop, adds a board
-table, a checkpoint store and a standby role, and it reverses the memory rule
-above ("never from a resumed Claude session"). That is its own reviewable PR,
-not a rider on the meter. Until it ships, every answer stays one
-`claude -p` run per message.
+Phase 7 step 2 (Alex, 2026-10-16; plan: `.agents/epics/domain-agents.md`). A warm
+domain answers its owner and team messages by resuming ONE Claude session, held
+by a board lease and checkpointed after every turn, so a standby machine can take
+it over. **Off by default**: no domain sets the flag, and with it off the
+dispatcher's path is exactly the one-run-per-message path above
+(`test/lib/agent_warm_session_test.rb` and `agent_dispatcher_warm_test.rb` pin
+this).
 
-**Scope.** Owner and team traffic only. A client's or the public's message stays
-one run per message, so untrusted text never persists in a session. A held
-message an admin released is answered per message too, whoever sent it. Later:
-one session per (domain, user).
+**Scope.** The domain's front-door soul only (`soul:` in
+`config/agent_domains.yml`), for owner and team senders only. A client's or the
+public's message, a released hold, and any helper soul mapped to the domain stay
+one run per message, so untrusted text never persists in a session
+(`WarmSession.eligible?`, from the board's audience in the bundle). Later: one
+session per (domain, user).
 
-**The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`;
-absent or false (the default) is today's path. The flag lives in config so that
-turning it on is a reviewed deploy, not a click.
+**The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`
+(literally `true`; anything else is off), and optionally `consolidate_at` (an
+integer from 10,000 to 1,000,000; default 150,000). The flag lives in config so
+that turning it on is a reviewed deploy, not a click.
 
-**The lease.** A new table, `agent_domain_sessions` (not `agent_sessions`: that
-name belongs to the builder sessions, `app/models/agent_session.rb`), one row per
-domain: `domain`, `holder` (the worker id), `lease_expires_at`, `heartbeat_at`,
-`claude_session_id`, `generation`, `turns`, `context_tokens`, `checkpoint`
-(an Active Storage attachment, the hub's blob convention) and `checkpointed_at`.
-The lease lives on the row, as `AgentMessage`'s and `lib/claim_lease.rb`'s do: a
-holder that dies loses it when the lease lapses, with no sweeper. The dispatcher
-renews it on its minute ping. Lease 5 minutes; a turn in flight renews it like a
-message lease.
+**The lease.** `agent_domain_sessions` (`AgentDomainSession`; not
+`agent_sessions`, which are the builder sessions), one row per domain: `holder`,
+`lease_expires_at` (5 minutes), `heartbeat_at`, `claude_session_id` (the head),
+`generation`, `turns`, `context_tokens`, the `checkpoint` (an Active Storage
+attachment: the gzipped transcript, at most 4 MB) and `checkpointed_at`. The lease
+lives on the row, as `AgentMessage`'s does: a holder that dies loses it when it
+lapses, with no sweeper. The dispatcher renews it on its minute ping. Every write
+is holder-checked (409 `NOT_HOLDER`), and a lapsed holder's late checkpoint or
+consolidation is refused (409 `LEASE_LAPSED`). The endpoints, under
+`/api/v1/agent_domain_sessions/:domain/`: `acquire`, `renew`, `checkpoint` (POST
+uploads, GET restores, holder only), `release`, `consolidate`. They take the
+shared token or an admin session; a soul's own session reaches none of them,
+because a checkpoint is owner and team conversation text.
 
-**A turn.**
+**A turn** (`AgentMailbox::Dispatcher#warm_turn`, all board calls on the main loop):
 
-1. The dispatcher claims an owner or team message in a warm domain, exactly as
-   today (same guard, same thread and person order).
-2. It takes or renews the domain lease (`POST /api/v1/agent_domain_sessions/:domain/acquire`).
-   Another live holder answers 409: the message is answered per message instead,
-   never queued behind the lease.
-3. When its local transcript (`~/.claude/projects/<cwd slug>/<id>.jsonl`) is
-   missing or older than the board's `checkpointed_at`, it downloads the
-   checkpoint first.
-4. It runs `claude -p --resume <claude_session_id> --safe-mode --tools ""
-   --output-format json`, still with no tools and the allow-listed environment.
-5. **Every turn carries the board's rules again.** The bundle is built and read
-   per message as today. The turn prompt holds GENERAL (the audience and its
-   rules), the THREAD focus and the fenced message. USER and PERSON are left out,
-   because the session already holds them. The audience is still resolved on the
-   board from the person's role, so a resumed session cannot skip the
-   audience or owner checks: those are server-side (`claimable`, the bundle's
-   `audience`, `AgentProposal.record_from!`), not remembered.
-6. It completes the message (the run summary as today), then uploads the
-   transcript (`POST …/checkpoint { worker, session_id, turns, context_tokens }`).
-   The envelope's `session_id` becomes the new head each turn, whether or not the
-   CLI kept the id.
-7. A failed run, a failed checkpoint, or a transcript that will not restore
-   drops the lease, and that message is answered per message. The fallback is
-   always today's path.
+1. The dispatcher claims the message exactly as today (same guard, same thread
+   and person order) and reads its bundle.
+2. When the message is eligible and no warm turn is already running on that
+   domain here, it acquires the lease. Another live holder answers 409
+   `LEASE_HELD`: the message is answered per message, never queued.
+3. When this machine's transcript of the head is missing or older than
+   `checkpointed_at` (and is not the checkpoint this process wrote), it downloads
+   the checkpoint and writes it under the soul folder's Claude project folder.
+4. It runs `claude -p --safe-mode --tools "" --output-format json --resume <id>`:
+   the cold command plus `--resume`, the same allow-listed environment, the
+   envelope read by the same status rules (`ClaudeRun`). A domain's first turn,
+   or the first after a consolidation, runs without `--resume`.
+5. **Every turn carries the board's rules again** (`ContextBuilder#warm_prompt`).
+   A resumed turn's prompt is the audience and its rules, HOW TO ANSWER (the
+   fence, the catalog, the action output), USER, THREAD and the fenced message,
+   each cut byte for byte from the cold prompt. The role doc, DOMAIN and PERSON
+   are left out: the session already holds them. The audience is still resolved
+   on the board from the person's role, and `claimable`, the bundle's audience
+   and `AgentProposal.record_from!` are server-side, so a resumed session cannot
+   skip the audience or owner checks.
+6. It completes the message (the run summary as today, plus `run_meta.warm`:
+   `fresh` or `resumed`; the reasoning is the last turn's only), then uploads the
+   transcript of the envelope's `session_id`, which becomes the new head whether
+   or not the CLI kept the id. A superseded transcript in the soul's folder is
+   deleted.
+7. A failed run, a failed checkpoint, or a checkpoint that will not restore drops
+   the lease; the message's own handling is today's. The fallback is always the
+   cold path.
 
 **The standby.** A second dispatcher (Alex's work machine) is registered on the
-board as `standby` for a list of domains (`agent_dispatchers.role`, set at
-`/admin/agent_messages`). It claims nothing while a primary pings. When a
-domain's lease lapses (no heartbeat for 5 minutes), the standby acquires it,
-restores the checkpoint and answers. **Handback is only between turns.** A
-primary that comes back asks for the lease. The board marks it `handback_requested`,
-the standby releases it after its current turn completes and checkpoints, and the
-primary resumes from that checkpoint. Neither side ever resumes a session the
-other is mid-turn in.
+board as `standby` for a list of warm domains: `agent_dispatchers.role` and
+`standby_domains`, set by `bin/rails agent_dispatchers:role` (the
+[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP, "Standby on
+a second machine"). The role belongs to the host, so a restart inherits it. While
+a primary pings (and its last ping is not `stopping`), the board answers a
+standby's claim empty at once (`standby_primary_live`, no long poll), and the
+dispatcher does not ask. When the primary is silent for 5 minutes, the standby
+claims its domains' souls only, takes each lapsed lease, restores the checkpoint
+and answers. **Handback is only between turns.** A primary refused by a standby's
+lease marks the row `handback_requested`; the standby releases after its current
+turn checkpoints (or on its next ping when idle, and whenever a primary is live
+again), and the primary's next turn restores that checkpoint. Neither side ever
+resumes a session the other is mid-turn in. The floor alert reads primaries only,
+so a live standby never hides a silent primary; its alert names the standby that
+is covering.
 
 **Consolidation.** When a turn's `context_tokens` (input + cache read + cache
-write) pass a threshold (`CONSOLIDATE_AT`, 150,000 to start), the holder runs one
-more no-tools turn asking for a domain summary. The board stores it as an
+write) reach the domain's `consolidate_at`, or its transcript passes the 4 MB
+checkpoint limit, the holder runs one more no-tools `--resume` turn asking for its
+own notes (`WarmSession::SUMMARY_PROMPT`). The board stores them as an
 `agent_domain_summaries` row (domain, generation, text, source session, turns
-covered), and the next turn starts a fresh session seeded with that summary
-inside the fence, labelled as the soul's own notes. Only owner and team text ever
-reaches a warm session, so the summary carries no untrusted client text forward.
-That is why this stays off for client and public traffic.
+covered), bumps the generation and clears the session. The next turn starts a
+fresh session from the whole cold prompt with the summary inside the fence,
+labelled as the soul's own notes. Only owner and team text ever reaches a warm
+session, so the summary carries no client or public text forward.
 
 **Usage.** Each turn's run summary is stored as today. A warm turn is mostly
 cache reads, which the meter shows as such. Owner and team turns are never
 metered against an allowance.
 
-**What the build owes.** A migration (the two tables and the dispatcher role)
-and the board endpoints (acquire, renew, checkpoint, release, handback), with
-holder checks. The dispatcher's warm path behind the flag, plus its restore,
-checkpoint and fallback. The standby role and the floor alert's view of it.
-Tests: lease races (two acquirers, a lapsed holder's late checkpoint refused),
-a turn that resumes, a restore from checkpoint on a second machine, a handback
-only between turns, a client message never warm, and consolidation at the
-threshold. The setup steps for the standby machine are in
-[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md), "Standby on a
-second machine".
+**Observing.** `bin/rails agent_dispatchers:sessions` (each domain's lease, head,
+checkpoint size and any handback), `agent_dispatchers:list` (each row's role),
+and `GET /api/v1/agent_domain_sessions`. The dispatcher log says `warm <domain>:`
+for every lease event (took, restored, checkpointed, consolidating, released and
+why); it never logs message text.
+
+**Tests.** `test/models/agent_domain_session_test.rb` (acquire, renew, lapse,
+takeover, handback, the late checkpoint, consolidation),
+`test/integration/agent_domain_session_race_test.rb` (two acquirers on real
+connections), `test/models/agent_dispatcher_standby_test.rb` (the role, the claim
+scope, the floor alert), `test/lib/agent_warm_session_test.rb` (eligibility, the
+trigger, the transcript round trip, the per-turn prompt, the flag-off path) and
+`test/integration/agent_dispatcher_warm_test.rb` (a resumed turn and its
+checkpoint, a standby resuming after a lapse, handback between turns, a client
+kept one-shot, consolidation, flag off).
 
 ## Setup
 
@@ -1000,8 +1027,10 @@ guard and the unanswered audiences).
 - One read-only action per soul, for owner and team senders only. The only write
   on a message's behalf is a proposal the owner confirmed with `go`: a named
   query, or a `designed` board task. Operations wait for Phase 2.
-- One dispatcher, on one Mac. It answers only while that Mac is awake and signed
-  in to Claude; the floor alert says when it is not. A dispatcher that dies
+- One primary dispatcher, on one Mac. It answers only while that Mac is awake and
+  signed in to Claude; the floor alert says when it is not. A standby on a second
+  machine is built but registered nowhere yet ("Warm sessions"); until it is,
+  nothing answers while the Mac sleeps. A dispatcher that dies
   mid-answer stops renewing, so its claim lapses after 10 minutes and its late
   complete is refused (409) when another worker has taken the message.
 - Routing ids (guilds, souls, overrides) live in `config/agent_routes.yml`, so changing them takes a deploy,

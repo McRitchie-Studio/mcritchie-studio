@@ -5,6 +5,7 @@
 #   bin/rails agent_dispatchers:role HOST=<short hostname> ROLE=standby DOMAINS=mcritchie_studio[,turf_monster]
 #   bin/rails agent_dispatchers:role HOST=<short hostname> ROLE=primary
 #   bin/rails agent_dispatchers:sessions          (each warm domain's lease and checkpoint)
+#   bin/rails agent_dispatchers:reset_session DOMAIN=<key>   (start the domain's session fresh)
 #
 # A standby is OFF until someone runs the role task for the work machine's host.
 namespace :agent_dispatchers do
@@ -36,5 +37,14 @@ namespace :agent_dispatchers do
            "checkpoint=#{row.checkpoint_bytes || 0}B@#{row.checkpointed_at&.utc&.iso8601 || '-'}" \
            "#{' handback requested' if row.handback_requested?}"
     end
+  end
+
+  desc "Start a warm domain's session fresh (DOMAIN): drops its head, checkpoint and lease"
+  task reset_session: :environment do
+    row = AgentDomainSession.find_by!(domain: ENV.fetch("DOMAIN"))
+    row.reset!
+    puts "#{row.domain}: session cleared; the next warm turn starts fresh (generation #{row.generation})"
+  rescue KeyError, ActiveRecord::RecordNotFound => e
+    abort "agent_dispatchers:reset_session: #{e.message}"
   end
 end
