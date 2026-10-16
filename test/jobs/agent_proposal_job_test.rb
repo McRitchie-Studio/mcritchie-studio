@@ -76,6 +76,57 @@ class AgentProposalJobTest < ActiveJob::TestCase
     assert_equal [ 1, "executed" ], [ probe.runs, @proposal.reload.status ]
   end
 
+  # Not a StandardError: what a worker killed mid-run looks like to the job.
+  class WorkerKilled < Exception; end # rubocop:disable Lint/InheritException
+
+  test "a worker killed mid-run is retaken by the recheck scheduled at claim expiry" do
+    killer = Object.new
+    def killer.run = raise(WorkerKilled)
+    freeze_time do
+      assert_raises(WorkerKilled) { AgentProposalJob.perform_now(@proposal.id, executor: killer) }
+      assert_equal "confirmed", @proposal.reload.status, "stranded: confirmed, with a live claim"
+      assert_enqueued_with(job: AgentProposalJob, args: [ @proposal.id ],
+                           at: AgentProposalJob::CLAIM_TTL.from_now + AgentProposalJob::RECHECK_MARGIN)
+    end
+
+    # A retry inside the TTL sees the live claim and exits: the old strand.
+    probe = DepthProbe.new
+    AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    assert_equal [ 0, "confirmed" ], [ probe.runs, @proposal.reload.status ]
+
+    # The recheck, at its scheduled time, retakes the expired claim and runs it.
+    travel(AgentProposalJob::CLAIM_TTL + AgentProposalJob::RECHECK_MARGIN + 1.second) do
+      AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    end
+    assert_equal [ 1, "executed", "ran" ], [ probe.runs, @proposal.reload.status, @go.reload.response_text ]
+  end
+
+  test "the recheck after a settled run does nothing" do
+    AgentProposalJob.perform_now(@proposal.id, executor: DepthProbe.new)
+    assert_equal "executed", @proposal.reload.status
+    probe = DepthProbe.new
+    travel(AgentProposalJob::CLAIM_TTL + AgentProposalJob::RECHECK_MARGIN + 1.second) do
+      AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    end
+    assert_equal 0, probe.runs
+  end
+
+  # A result whose to_h raises: the run succeeded, then settling blew up.
+  class BadResult
+    def to_h = raise(RuntimeError, "settle broke")
+    def as_json(*) = {}
+  end
+
+  test "an error while settling writes an ErrorLog targeted at the go, then raises" do
+    breaker = Object.new
+    def breaker.run = [ "ran", BadResult.new ]
+    assert_difference -> { ErrorLog.where(target: @go).count }, 1 do
+      assert_raises(RuntimeError) { AgentProposalJob.new.perform(@proposal.id, executor: breaker) }
+    end
+    assert_equal "settle broke", ErrorLog.where(target: @go).last.message
+    assert_equal "confirmed", @proposal.reload.status, "rolled back: the recheck will retake it"
+  end
+
   test "a run whose claim was taken over meanwhile does not settle" do
     thief = Object.new
     proposal = @proposal

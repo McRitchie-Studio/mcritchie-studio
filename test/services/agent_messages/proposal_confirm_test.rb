@@ -126,6 +126,21 @@ class ProposalConfirmTest < ActiveSupport::TestCase
     assert_no_enqueued_jobs only: AgentProposalJob
   end
 
+  test "a go on a proposal already confirmed says it is running, never that nothing ran" do
+    first = reply(3020, "go", author: ALEX)
+    assert_equal [ "confirmed", first ], [ @proposal.reload.status, @proposal.confirm_message ]
+
+    again = reply(3021, "go", author: ALEX)
+    assert_equal AgentMessages::ProposalConfirm::RUNNING_TEXT, again.response_text
+    refute_match(/nothing ran/i, again.response_text)
+    assert again.events.exists?(kind: "proposal_closed")
+    assert_equal first, @proposal.reload.confirm_message, "the second go confirms nothing"
+
+    @proposal.update!(status: "executed")
+    ran = reply(3022, "go", author: ALEX)
+    assert_equal AgentMessages::ProposalConfirm::RAN_TEXT, ran.response_text
+  end
+
   test "a go replying to some other message in the thread confirms the newest pending one" do
     newer = newer_proposal!
     other = agent_message!(soul: "avi", thread_key: @source.thread_key, status: "completed", response_text: "Hm.",

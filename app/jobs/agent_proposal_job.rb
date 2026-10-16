@@ -13,16 +13,24 @@
 #      `executed`, or back to `proposed` on a failure.
 # ONCE: a retried or duplicate job finds the proposal claimed or `executed` and
 # does nothing. A claim older than CLAIM_TTL (a worker that died mid-run) may be
-# taken again, so a crash never strands a confirmed proposal.
+# taken again. Nothing would come back to take it, though: a retry inside the
+# TTL sees the live claim and exits. So every claim also schedules a RECHECK of
+# this job for just after the claim expires; it does nothing when the run
+# settled, and retakes the proposal when it did not. The one window left is a
+# worker that dies between the claim's commit and that enqueue.
 #
 # A FAILED run writes an ErrorLog row (targeted at the go message), puts the
 # proposal back to `proposed` (a later `go` retries it), and tells the thread in
 # one line with a short reason (an error class, never a message that might
-# carry a secret).
+# carry a secret). An error while SETTLING or queueing the answer writes an
+# ErrorLog row too, then raises; the recheck retakes the proposal.
 class AgentProposalJob < ApplicationJob
   queue_as :default
 
   CLAIM_TTL = 10.minutes
+  # The recheck runs this long after the claim expires, so it never finds the
+  # claim still live by a clock tick.
+  RECHECK_MARGIN = 30.seconds
 
   def perform(proposal_id, executor: nil)
     proposal = AgentProposal.find_by(id: proposal_id)
@@ -31,20 +39,36 @@ class AgentProposalJob < ApplicationJob
     token = claim(proposal)
     return if token.nil?
 
+    schedule_recheck(proposal)
     message = proposal.confirm_message
     outcome = begin
       [ :ok, (executor || AgentProposals::Executor.new(proposal)).run ]
     rescue StandardError => e
       [ :failed, e ]
     end
+    answer(proposal, token, message, outcome)
+  end
+
+  private
+
+  # Settle, then hand the text to the one reply path. Any error here is logged
+  # before it propagates, so a lost answer always leaves a row on /error_logs.
+  def answer(proposal, token, message, outcome)
     text = settle(proposal, token, message, outcome)
     return if text.nil? || message.nil?
 
     message.update!(response_text: text, reply_status: "queued")
     AgentMessageReplyJob.perform_later(message.id)
+  rescue StandardError => e
+    log(e, message)
+    raise
   end
 
-  private
+  def schedule_recheck(proposal)
+    self.class.set(wait: CLAIM_TTL + RECHECK_MARGIN).perform_later(proposal.id)
+  rescue StandardError => e
+    log(e, proposal.confirm_message)
+  end
 
   # The claim token, or nil when the proposal is not ours to run.
   def claim(proposal, now: Time.current)
