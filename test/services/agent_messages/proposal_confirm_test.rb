@@ -28,10 +28,10 @@ class ProposalConfirmTest < ActiveSupport::TestCase
   setup do
     @alex = AgentPerson.resolve!(platform: "discord", external_id: ALEX, display_name: "Alex")
     @alex.set_role!("owner")
-    @source = agent_message!(soul: "xan", person: @alex, author_ref: ALEX, status: "completed",
+    @source = agent_message!(soul: "avi", person: @alex, author_ref: ALEX, status: "completed",
                              response_text: "Sure.", reply_external_id: "880001")
     @proposal = AgentProposal.create!(thread_key: @source.thread_key, channel: "discord", guild_id: GUILD,
-                                      channel_ref: DESK, soul_slug: "xan", person: @alex, source_message: @source,
+                                      channel_ref: DESK, soul_slug: "avi", person: @alex, source_message: @source,
                                       kind: "ask", capability: "board_status", params: {}, summary: "Count",
                                       expires_at: 24.hours.from_now)
   end
@@ -43,11 +43,11 @@ class ProposalConfirmTest < ActiveSupport::TestCase
 
   test "the owner's go confirms and queues the run, never a model" do
     message = reply(3001, "go", author: ALEX)
-    assert_equal [ "completed", "xan" ], [ message.status, message.soul_slug ]
+    assert_equal [ "completed", "avi" ], [ message.status, message.soul_slug ]
     assert_equal "confirmed", @proposal.reload.status
     assert_equal message, @proposal.confirm_message
     assert_enqueued_with(job: AgentProposalJob, args: [ @proposal.id ])
-    assert_nil AgentMessage.claimable(soul: "xan").first, "nothing waits for a model"
+    assert_nil AgentMessage.claimable(soul: "avi").first, "nothing waits for a model"
   end
 
   test "a go from anyone but the owner does nothing" do
@@ -82,7 +82,7 @@ class ProposalConfirmTest < ActiveSupport::TestCase
 
   test "change: goes to the soul with the prior proposal in its context" do
     message = reply(3006, "change: last 3 days", author: ALEX)
-    assert_equal [ "received", "xan" ], [ message.status, message.soul_slug ]
+    assert_equal [ "received", "avi" ], [ message.status, message.soul_slug ]
     assert_equal "rejected", @proposal.reload.status
     bundle = AgentMessages::MemoryBundle.new(message).bundle
     assert_equal @proposal.id, bundle.dig("proposals", "last", "id")
@@ -90,7 +90,62 @@ class ProposalConfirmTest < ActiveSupport::TestCase
 
   test "a go with no open proposal in the thread is routed as usual" do
     @proposal.update!(status: "executed")
-    message = reply(3007, "go", author: ALEX)
+    other = agent_message!(soul: "avi", thread_key: @source.thread_key, status: "completed", response_text: "Hi.",
+                           reply_external_id: "880009")
+    raw = discord_raw(3007, content: "go", author: ALEX, reply_to: other.reply_external_id, guild: GUILD)
+    message = AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD, source: "discord-gateway")
     assert_equal "received", message.status
+  end
+
+  # Two proposals in one thread: the older was superseded when the newer landed.
+  def newer_proposal!
+    newer_source = agent_message!(soul: "avi", person: @alex, author_ref: ALEX, thread_key: @source.thread_key,
+                                  status: "completed", response_text: "Also.", reply_external_id: "880002")
+    @proposal.settle!("rejected", by: "board", result: { "reason" => "superseded" })
+    AgentProposal.create!(thread_key: @source.thread_key, channel: "discord", guild_id: GUILD, channel_ref: DESK,
+                          soul_slug: "avi", person: @alex, source_message: newer_source, kind: "ask",
+                          capability: "recently_shipped", params: { "days" => 7 }, summary: "Shipped",
+                          expires_at: 24.hours.from_now)
+  end
+
+  test "a go replying to a proposal's own message confirms THAT proposal" do
+    newer = newer_proposal!
+    raw = discord_raw(3010, content: "go", author: ALEX, reply_to: "880002", guild: GUILD)
+    message = AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD, source: "discord-gateway")
+    assert_equal [ "confirmed", message ], [ newer.reload.status, newer.confirm_message ]
+    assert_enqueued_with(job: AgentProposalJob, args: [ newer.id ])
+  end
+
+  test "a go replying to a superseded proposal never confirms the newer one" do
+    newer = newer_proposal!
+    message = reply(3011, "go", author: ALEX) # replies to 880001, the older proposal's post
+    assert_equal AgentMessages::ProposalConfirm::CLOSED_TEXT, message.response_text
+    assert message.events.exists?(kind: "proposal_closed")
+    assert_equal "proposed", newer.reload.status, "the newer proposal is untouched"
+    assert_equal "rejected", @proposal.reload.status
+    assert_no_enqueued_jobs only: AgentProposalJob
+  end
+
+  test "a go replying to some other message in the thread confirms the newest pending one" do
+    newer = newer_proposal!
+    other = agent_message!(soul: "avi", thread_key: @source.thread_key, status: "completed", response_text: "Hm.",
+                           reply_external_id: "880003")
+    raw = discord_raw(3012, content: "go", author: ALEX, reply_to: other.reply_external_id, guild: GUILD)
+    AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD, source: "discord-gateway")
+    assert_equal "confirmed", newer.reload.status
+  end
+
+  test "a go in another thread or at top level leaves the pending proposal alone" do
+    elsewhere = agent_message!(soul: "avi", status: "completed", response_text: "Other thread.", reply_external_id: "880004")
+    raw = discord_raw(3013, content: "go", author: ALEX, reply_to: "880004", guild: GUILD)
+    in_other = AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD, source: "discord-gateway")
+    assert_equal elsewhere.thread_key, in_other.thread_key
+    assert_equal "received", in_other.status, "routed as an ordinary message in its own thread"
+
+    top = discord_raw(3014, content: "go", author: ALEX, guild: GUILD)
+    assert_nil AgentMessages::DiscordIngest.new(routes: agent_routes).call(top, guild_id: GUILD, source: "discord-gateway"),
+               "an unaddressed top-level go is not stored"
+    assert_equal "proposed", @proposal.reload.status
+    assert_no_enqueued_jobs only: AgentProposalJob
   end
 end

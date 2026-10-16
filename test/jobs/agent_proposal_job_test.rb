@@ -8,9 +8,9 @@ class AgentProposalJobTest < ActiveJob::TestCase
   include AgentMessageFixtures
 
   setup do
-    @go = agent_message!(soul: "xan", status: "completed", content: "go")
+    @go = agent_message!(soul: "avi", status: "completed", content: "go")
     @proposal = AgentProposal.create!(thread_key: @go.thread_key, channel: "discord", guild_id: GUILD, channel_ref: DESK,
-                                      soul_slug: "xan", kind: "ask", capability: "board_status", params: {},
+                                      soul_slug: "avi", kind: "ask", capability: "board_status", params: {},
                                       summary: "Count", status: "confirmed", confirm_message: @go,
                                       expires_at: 1.day.from_now)
   end
@@ -41,6 +41,62 @@ class AgentProposalJobTest < ActiveJob::TestCase
                  @go.reload.response_text
     refute_includes @go.response_text, "hunter2"
     assert @go.events.exists?(kind: "proposal_failed")
+  end
+
+  # Records how many transactions were open when it ran: the job's own claim
+  # and settle transactions must both be closed while it runs.
+  class DepthProbe
+    attr_reader :depth, :runs
+
+    def initialize = @runs = 0
+
+    def run
+      @runs += 1
+      @depth = AgentProposal.connection.open_transactions
+      [ "ran", { "query" => "probe" } ]
+    end
+  end
+
+  test "the run holds no row lock: claim and settle are separate transactions" do
+    baseline = AgentProposal.connection.open_transactions
+    probe = DepthProbe.new
+    AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    assert_equal baseline, probe.depth, "no transaction (so no FOR UPDATE lock) is open during the run"
+    assert_equal [ "executed", "ran" ], [ @proposal.reload.status, @go.reload.response_text ]
+  end
+
+  test "a live claim makes a duplicate job do nothing; a stale one is taken again" do
+    @proposal.update!(result: { "claim" => "other", "claimed_at" => 1.minute.ago.iso8601 })
+    probe = DepthProbe.new
+    AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    assert_equal [ 0, "confirmed" ], [ probe.runs, @proposal.reload.status ]
+
+    @proposal.update!(result: { "claim" => "other", "claimed_at" => (AgentProposalJob::CLAIM_TTL + 1.minute).ago.iso8601 })
+    AgentProposalJob.perform_now(@proposal.id, executor: probe)
+    assert_equal [ 1, "executed" ], [ probe.runs, @proposal.reload.status ]
+  end
+
+  test "a run whose claim was taken over meanwhile does not settle" do
+    thief = Object.new
+    proposal = @proposal
+    thief.define_singleton_method(:run) do
+      proposal.update_columns(result: { "claim" => "someone-else", "claimed_at" => Time.current.iso8601 })
+      [ "late", {} ]
+    end
+    AgentProposalJob.perform_now(@proposal.id, executor: thief)
+    assert_equal "confirmed", @proposal.reload.status
+    assert_nil @go.reload.response_text, "nothing posts for a lost claim"
+  end
+
+  test "release_status reads the ladder and the active release in process" do
+    Task.create!(title: "Reviewed Task Waits Here", stage: "designed").update_columns(stage: "reviewed")
+    release = Release.open!
+    text = AgentProposals::Queries.run("release_status", {})
+    assert_match(/\ARelease now: `#{Regexp.escape(release.slug)}` assembling(, stage [a-z ]+)?, \d+ tasks? aboard\. /, text)
+    assert_match(/Ladder: submitted \d+ · reviewed [1-9]\d* · assembled \d+\./, text)
+
+    release.update!(state: "abandoned")
+    assert_match(/\ANo release is open\. Ladder: /, AgentProposals::Queries.run("release_status", {}))
   end
 
   test "a proposal that is not confirmed never runs" do

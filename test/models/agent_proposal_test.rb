@@ -14,7 +14,7 @@ class AgentProposalTest < ActiveSupport::TestCase
     @stranger = AgentPerson.resolve!(platform: "discord", external_id: "777000000000000001", display_name: "Bea")
   end
 
-  def claimed!(soul: "xan", person: @owner)
+  def claimed!(soul: "avi", person: @owner)
     agent_message!(soul: soul, person: person, author_ref: person.identities.first.external_id,
                    status: "claimed", claimed_by: "w1", lease_expires_at: 5.minutes.from_now, attempts: 1)
   end
@@ -39,11 +39,27 @@ class AgentProposalTest < ActiveSupport::TestCase
     message = claimed!
     message.complete!(worker: "w1", response_text: "Sure.", proposal: ProposalBlockFixtures::ASK)
     proposal = AgentProposal.sole
-    assert_equal [ message.thread_key, "xan", @owner.id, "ask", "board_status", "proposed" ],
+    assert_equal [ message.thread_key, "avi", @owner.id, "ask", "board_status", "proposed" ],
                  [ proposal.thread_key, proposal.soul_slug, proposal.person_id, proposal.kind, proposal.capability, proposal.status ]
     assert_in_delta 24.hours.from_now, proposal.expires_at, 5
-    assert_equal "Sure.\n\n> Proposed: Count the board\n#{AgentProposal::CONFIRM_LINE}", message.reload.response_text
+    assert_equal "Sure.\n\n> Proposed: Count the board\n> Runs: ask `board_status` (no params)\n#{AgentProposal::CONFIRM_LINE}",
+                 message.reload.response_text
     assert message.events.exists?(kind: "proposed")
+  end
+
+  test "the posted line shows the capability and params the board checked, not only the model's summary" do
+    message = claimed!
+    message.complete!(worker: "w1", response_text: "Sure.",
+                      proposal: { "kind" => "ask", "capability" => "recently_shipped", "params" => { "days" => "3" },
+                                  "summary" => "Everything, forever" })
+    assert_includes message.reload.response_text, "> Runs: ask `recently_shipped` · days 3\n"
+
+    change = AgentProposal.new(kind: "change", capability: "task", summary: "s",
+                               params: { "title" => "Footer `Toggle`", "accept" => [ "Toggles\nlight", "B" ] })
+    assert_equal "change `task` · title Footer Toggle · accept Toggles light; B", change.runs_line,
+                 "lists join with ;, and backticks and newlines cannot break the line"
+    long = AgentProposal.new(kind: "change", capability: "task", params: { "accept" => [ "x" * 500 ] * 6 })
+    assert_operator long.runs_line.length, :<=, AgentProposal::RUNS_LINE_LIMIT
   end
 
   test "a refused proposal is logged and never shown" do
@@ -66,7 +82,7 @@ class AgentProposalTest < ActiveSupport::TestCase
   test "a newer proposal in the thread rejects the older one" do
     first = claimed!
     first.complete!(worker: "w1", response_text: "A.", proposal: ProposalBlockFixtures::ASK)
-    second = claimed!(soul: "xan").tap { |m| m.update!(thread_key: first.thread_key) }
+    second = claimed!(soul: "avi").tap { |m| m.update!(thread_key: first.thread_key) }
     second.complete!(worker: "w1", response_text: "B.", proposal: ProposalBlockFixtures::ASK)
     assert_equal %w[rejected proposed], AgentProposal.order(:id).pluck(:status)
   end

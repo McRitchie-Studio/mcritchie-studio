@@ -679,8 +679,8 @@ Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is t
 quiet one), mentioning the Xan bot user (`@Xan`). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
-(`bin/dispatcher uninstall`) so the two do not compete. Only `xan` is routed
-there today.
+(`bin/dispatcher uninstall`) so the two do not compete. Avi, Xan and Turf are
+routed there; the rows use Xan, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|

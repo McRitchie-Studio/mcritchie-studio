@@ -81,7 +81,7 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     answered, failed = heartbeat("avi", runner: runner, worker: "laptop-1").run
 
     assert_equal [ 1, false ], [ answered, failed ]
-    assert_equal %w[bin/release status], runner.calls.first[:argv], "avi's one action is the release status read"
+    assert_equal %w[bin/task list], runner.calls.first[:argv], "avi's one action is the board read (no Heroku under launchd)"
     prompt = runner.prompts.first
     fence = prompt[/<(untrusted-[0-9a-f]+)>/, 1]
     assert fence, "the message is fenced"
@@ -94,7 +94,7 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     assert_equal "completed", message.status
     assert_equal "laptop-1", message.claimed_by
     assert_equal "Release rel-1 is green.", message.response_text
-    assert_equal "ran `bin/release status` (exit 0)", message.action_summary
+    assert_equal "ran `bin/task list` (exit 0)", message.action_summary
     assert_enqueued_jobs 1, only: AgentMessageReplyJob
     assert_match(/nothing for avi/, @out.string, "the drain ends idle")
   end
