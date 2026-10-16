@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -160,8 +160,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
     t.datetime "last_seen_at", null: false
     t.string "pause_reason"
     t.datetime "paused_until"
+    t.string "role", default: "primary", null: false
     t.integer "running", default: 0, null: false
     t.jsonb "souls", default: [], null: false
+    t.jsonb "standby_domains", default: [], null: false
     t.datetime "started_at"
     t.string "state"
     t.datetime "updated_at", null: false
@@ -169,6 +171,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
     t.string "worker_id", null: false
     t.index ["last_seen_at"], name: "index_agent_dispatchers_on_last_seen_at"
     t.index ["worker_id"], name: "index_agent_dispatchers_on_worker_id", unique: true
+    t.check_constraint "role::text = ANY (ARRAY['primary'::character varying::text, 'standby'::character varying::text])", name: "agent_dispatchers_role_known"
+  end
+
+  create_table "agent_domain_sessions", force: :cascade do |t|
+    t.integer "checkpoint_bytes"
+    t.datetime "checkpointed_at"
+    t.string "claude_session_id"
+    t.bigint "context_tokens", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.string "domain", null: false
+    t.integer "generation", default: 1, null: false
+    t.datetime "handback_requested_at"
+    t.string "handback_requested_by"
+    t.datetime "heartbeat_at"
+    t.string "holder"
+    t.datetime "lease_expires_at"
+    t.integer "turns", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["domain"], name: "index_agent_domain_sessions_on_domain", unique: true
+  end
+
+  create_table "agent_domain_summaries", force: :cascade do |t|
+    t.bigint "context_tokens"
+    t.datetime "created_at", null: false
+    t.string "domain", null: false
+    t.integer "generation", null: false
+    t.string "source_session_id"
+    t.text "text", null: false
+    t.integer "turns_covered", default: 0, null: false
+    t.string "written_by"
+    t.index ["domain", "generation"], name: "index_agent_domain_summaries_on_domain_and_generation", unique: true
   end
 
   create_table "agent_login_requests", force: :cascade do |t|
@@ -227,6 +260,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220000) do
     t.string "kind", null: false
     t.index ["agent_message_id", "id"], name: "index_agent_message_events_on_agent_message_id_and_id"
     t.index ["agent_message_id"], name: "index_agent_message_events_on_agent_message_id"
+    t.index ["kind", "created_at"], name: "index_agent_message_events_on_kind_and_created_at"
   end
 
   create_table "agent_messages", force: :cascade do |t|

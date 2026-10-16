@@ -12,18 +12,26 @@
 # is no rollup table to drift and no job to run. The sums read each key only
 # where it holds a JSON number.
 #
-# WHAT COUNTS AGAINST AN ALLOWANCE: the answers to client and public senders
-# (run_meta.audience, stamped by the board at complete). Owner and team answers
-# are counted in the totals but never metered and never capped. An answer from
-# before this release carries no audience and is not metered (only the owner
-# was answered then).
+# WHAT COUNTS AGAINST AN ALLOWANCE: the answers to client senders
+# (run_meta.audience, stamped by the board at complete). Public answers are
+# metered SEPARATELY (Meter#public_used): they never consume the app's
+# allowance, so a stranger can never exhaust what the client paid for (Alex,
+# 2026-10-16). Owner and team answers are counted in the totals but never
+# metered and never capped. An answer from before this release carries no
+# audience and is not metered (only the owner was answered then).
+#
+# DOLLARS are for admins. Totals#without_cost drops the CLI's cost figure, and
+# totals_line then prints tokens only: a non-admin owner's page and JSON read
+# tokens and the meter, never a price.
 #
 # THE TOKENS an allowance counts are input + cache read + cache write + output
 # (thinking is inside output). No price is computed here: total_cost_usd is the
 # CLI's own figure, shown as reported.
 module AgentUsage
   ZONE = DailyAppReport::ZONE
-  METERED_AUDIENCES = %w[client public].freeze
+  METERED_AUDIENCES = %w[client].freeze
+  # Metered on its own line, never against the allowance.
+  PUBLIC_AUDIENCES = %w[public].freeze
   UNCAPPED_AUDIENCES = %w[owner team].freeze
   TOKEN_KINDS = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens].freeze
   SUMMED = (TOKEN_KINDS + %w[thinking_tokens total_cost_usd duration_ms]).freeze
@@ -41,17 +49,22 @@ module AgentUsage
     def avg_duration_ms = timed.positive? ? (duration_ms.to_f / timed).round : nil
     def empty? = messages.zero?
 
+    # The same totals with no dollar figure, for a viewer who is not an admin.
+    def without_cost = dup.tap { |t| t.cost_usd = nil }
+    def cost? = !cost_usd.nil?
+
     def as_json(*)
       { "messages" => messages, "tokens" => tokens, "input_tokens" => input_tokens,
         "cache_read_tokens" => cache_read_tokens, "cache_creation_tokens" => cache_creation_tokens,
         "output_tokens" => output_tokens, "thinking_tokens" => thinking_tokens,
-        "cost_usd" => cost_usd.round(4), "avg_duration_ms" => avg_duration_ms }
+        "cost_usd" => cost_usd&.round(4), "avg_duration_ms" => avg_duration_ms }.then { |h| cost? ? h : h.except("cost_usd") }
     end
   end
 
   # One app's month. `allowance` nil is unlimited (no tier, a blank
   # cto_monthly_tokens, or an admin's lift). `used` is the metered tokens.
-  Meter = Struct.new(:app_slug, :domain, :tier, :tier_name, :allowance, :used, :totals, :lifted,
+  # `public_used` is the public's tokens this month: shown, never counted in `used`.
+  Meter = Struct.new(:app_slug, :domain, :tier, :tier_name, :allowance, :used, :public_used, :totals, :lifted,
                      :capped_count, :period_start, :period_end, :now, :warn_percent, keyword_init: true) do
     def unlimited? = allowance.nil?
     def percent = unlimited? ? nil : ((used.to_f / allowance) * 100).floor
@@ -68,8 +81,12 @@ module AgentUsage
     def remaining = unlimited? ? nil : [ allowance - used, 0 ].max
     def suggestion = @suggestion ||= Suggestion.for(self)
 
+    # The meter for a viewer who is not an admin: the same numbers, no dollars.
+    def without_cost = dup.tap { |m| m.totals = totals.without_cost }
+
     def as_json(*)
       { "app" => app_slug, "domain" => domain, "tier" => tier, "allowance" => allowance, "used" => used,
+        "public_used" => public_used.to_i,
         "percent" => percent, "state" => state.to_s, "lifted" => lifted, "capped_this_month" => capped_count,
         "period" => { "start" => period_start.iso8601, "end" => period_end.iso8601 },
         "month" => totals.as_json, "suggestion" => suggestion&.as_json }
@@ -114,6 +131,8 @@ module AgentUsage
   end
 
   # Sum the run summaries of completed answers by these souls in [from, to).
+  # metered_only: true (the client answers the allowance counts), :public (the
+  # public's, metered apart), or false (every answer).
   def totals(souls:, from:, to:, metered_only: false)
     rows = sums(scope(souls, from, to, metered_only)).first
     totals_from(rows)
@@ -132,23 +151,33 @@ module AgentUsage
   end
 
   # This month's meter for an App row (owner pages, the usage ask, the gate).
+  # The capped count only matters to the upgrade rule, which an unlimited meter
+  # never runs, so an app with no allowance skips that query.
   def meter(app, now: Time.current, registry: self.registry)
     domain = domain_for_app(app.slug, registry: registry)
     start, finish = month_range(now)
     souls = souls_for(domain, registry: registry)
     package = app.package_tier.present? ? WorkspacePackage.find(app.package_tier) : nil
+    allowance = allowance_for(app)
     Meter.new(app_slug: app.slug, domain: domain, tier: app.package_tier, tier_name: package&.name,
-              allowance: allowance_for(app), lifted: app.cto_cap_lifted_at.present?,
+              allowance: allowance, lifted: app.cto_cap_lifted_at.present?,
               used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: true).tokens,
+              public_used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: :public).tokens,
               totals: souls.empty? ? Totals.zero : totals(souls: souls, from: start, to: now),
-              capped_count: capped_count(souls, start, now),
+              capped_count: allowance.nil? ? 0 : capped_count(souls, start, now),
               period_start: start, period_end: finish, now: now, warn_percent: warn_percent)
   end
 
   # The check before a run is claimed. Owner and team senders are never capped
   # (and never metered, so they cost no query). For anyone else: the app their
   # soul's domain serves, its meter, and :stop at 100%, :warn at warn_percent.
-  def gate(message, now: Time.current, registry: self.registry)
+  # A public sender never adds to `used`, but is still stopped once the
+  # client's allowance is spent: the app's cap holds for everyone it meters.
+  #
+  # `meters` caches each app's meter for the length of one claim
+  # (AgentMessage.claim! passes a Hash), so a claim that skips several capped
+  # candidates of one app reads its meter once.
+  def gate(message, now: Time.current, registry: self.registry, meters: nil)
     return Gate.new(state: :ok) if UNCAPPED_AUDIENCES.include?(message.usage_audience)
 
     domain = registry.domain_key_for(message.soul_slug) || registry.front_door(message.soul_slug)&.dig("key")
@@ -156,7 +185,7 @@ module AgentUsage
     app = app_slug && App.find_by(slug: app_slug)
     return Gate.new(state: :ok) unless app && allowance_for(app)
 
-    meter = meter(app, now: now, registry: registry)
+    meter = meters ? (meters[app.slug] ||= meter(app, now: now, registry: registry)) : meter(app, now: now, registry: registry)
     state = if meter.capped? then :stop
     elsif meter.warn? then :warn
     else :ok
@@ -174,11 +203,17 @@ module AgentUsage
     "_#{[ "#{meter.percent}% of this app's monthly agent allowance is used.", meter.suggestion&.line ].compact.join(' ')}_"
   end
 
-  # The whole reply to a message refused at the cap. Code, never the model.
-  def cap_reply(meter)
+  # The whole reply to a message refused at the cap. Code, never the model. A
+  # public sender reads a plain line: no meter, no price, no upgrade (the meter
+  # is the owner's, never the public's).
+  def cap_reply(meter, audience: nil)
     resets = meter.period_end.in_time_zone(ZONE).to_date.next_day.strftime("%b %-d")
+    if PUBLIC_AUDIENCES.include?(audience.to_s)
+      return "I can't answer right now. Please try again after #{resets}."
+    end
+
     [ "This app has used its monthly agent allowance, so I can't answer this one. It resets #{resets}.",
-      meter.suggestion&.line, "The app's owner can raise it." ].compact.join(" ")
+      meter.suggestion&.line, "Upgrade your plan or contact us." ].compact.join(" ")
   end
 
   # "12 answers, 230,400 tokens (in 1,200 · cache read 200,000 · cache write
@@ -190,8 +225,8 @@ module AgentUsage
     kinds = [ "in #{fmt(totals.input_tokens)}", "cache read #{fmt(totals.cache_read_tokens)}",
               "cache write #{fmt(totals.cache_creation_tokens)}", "out #{fmt(totals.output_tokens)}" ].join(" · ")
     avg = totals.avg_duration_ms ? ", avg #{(totals.avg_duration_ms / 1000.0).round(1)}s" : ""
-    "#{totals.messages} #{'answer'.pluralize(totals.messages)}, #{fmt(totals.tokens)} tokens (#{kinds}), " \
-      "$#{format('%.2f', totals.cost_usd)}#{avg}."
+    cost = totals.cost? ? ", $#{format('%.2f', totals.cost_usd)}" : ""
+    "#{totals.messages} #{'answer'.pluralize(totals.messages)}, #{fmt(totals.tokens)} tokens (#{kinds})#{cost}#{avg}."
   end
 
   # "Allowance: 42% of 1,000,000 tokens used (Builder)." or "Allowance: unlimited (Team)."
@@ -217,7 +252,11 @@ module AgentUsage
   def scope(souls, from, to, metered_only)
     scope = AgentMessage.where(status: "completed", soul_slug: Array(souls), completed_at: from...to)
                         .where("agent_messages.run_meta->>'usage_capped' IS NULL")
-    metered_only ? scope.where("agent_messages.run_meta->>'audience' IN (?)", METERED_AUDIENCES) : scope
+    case metered_only
+    when :public then scope.where("agent_messages.run_meta->>'audience' IN (?)", PUBLIC_AUDIENCES)
+    when true then scope.where("agent_messages.run_meta->>'audience' IN (?)", METERED_AUDIENCES)
+    else scope
+    end
   end
 
   # One SELECT of COUNT(*) and a numeric-only SUM per summed key.

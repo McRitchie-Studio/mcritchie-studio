@@ -20,8 +20,11 @@
   <p class="text-muted text-xs">
     <%= meter.tier_name ? "#{meter.tier_name} tier" : "No tier" %> ·
     resets <%= meter.period_end.to_date.next_day.strftime("%b %-d") %> ·
-    counts answers to clients and the public only
+    counts answers to clients only
   </p>
+  <% if meter.public_used.to_i.positive? %>
+    <p class="text-muted text-xs" data-test="usage-meter-public">Public answers: <%= fmt.(meter.public_used) %> tokens, metered apart; they never use the allowance.</p>
+  <% end %>
   <% if (suggestion = meter.suggestion) %>
     <p class="text-warning-ink text-sm" data-test="usage-suggestion" data-kind="<%= suggestion.kind %>"><%= suggestion.line %></p>
   <% end %>

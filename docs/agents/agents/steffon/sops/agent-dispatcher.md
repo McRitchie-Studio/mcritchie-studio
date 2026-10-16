@@ -245,17 +245,19 @@ gateway is failing before READY, so read the worker log's
 | **Reply from the wrong bot**: a soul with its own bot answered through the shared bot, signed `**Soul** ·` | `bin/agent-inbox show <id>`: a `reply_bot_refused` event names the var (`DISCORD_BOT_TOKEN_<SOUL>`) and Discord's answer, with an `ErrorLog` row targeted at the message; `reply_posted` reads `via: shared_bot`. No `reply_bot_refused` and `via: shared_bot` means the var is unset | 401: the token is wrong or reset; re-file it and set the var again. 403: the bot is not in that guild or lacks a channel permission; invite it with the four permissions. Both are Steffon's [`discord-bot-setup`](discord-bot-setup.md), Part 1b. Nothing was lost: the shared bot posted the reply |
 | **No typing**: an answer posts but nobody saw "typing…" | The log: `typing for #N refused: …` (the board refused the ask; the answer went on) or `typing for #N stopped (<why>)`. The message's timeline: `typing_bot_refused` means the soul's bot could not type and the shared bot did. No log line and no event: the hub's worker log carries `typing pulse for message N dropped: <Class>` (Discord refused or rate-limited it) | Typing is best effort and never holds an answer. A `typing_bot_refused` is the same fix as **Reply from the wrong bot**. An answer over 3 minutes stops typing at the cap by design |
 | **Typing, then no reply**: "typing…" showed and faded, and no answer came | The log after `claimed #N`: `releasing #N: …` (the run failed, raised, hit a usage limit or a signed-out CLI) or `completed #N` (then the reply job: `bin/agent-inbox show <id>`, `reply_failed` or `reply_skipped`) | Typing stops with the run by design and fades within 10 seconds. Fix the cause by its own row: **Claude failing**, **Usage pause**, **Signed out**, **Answer run raising**, or **Reply from the wrong bot** |
-| **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only; the answer path never resumes |
+| **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only. The answer path resumes only a warm domain's session, never an answer's own |
 | **Unrouted**: a reply to a kept message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
 | **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's event says why: `held`, the owner-only guard (the sender's role is not one `config/agent_answerers.yml` answers, owner only today), or `confirm_refused`, a non-owner's `go`, `no` or `change:` on an open proposal (only the owner confirms). No claim will ever take either ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
 
-## Standby on a second machine (designed, not built)
+## Standby on a second machine
 
-Phase 7 plans a standby dispatcher on Alex's work machine that takes over a
-domain's warm session when this Mac's lease lapses
-([loop doc](../../../system/agent-message-loop.md), "Warm sessions (next step,
-not built)"). **None of it runs yet.** Until it ships, the rule above stands:
-one dispatcher, and never a second copy. When it ships, the setup is:
+A standby dispatcher on Alex's work machine takes over a warm domain's session
+when this Mac's lease lapses, and hands it back between turns
+([loop doc](../../../system/agent-message-loop.md), "Warm sessions"). The code
+ships; **nothing is registered**, so today there is one dispatcher and the rule
+above stands: never a second copy unless it is registered as a standby first.
+It needs a domain with `warm_session: true` (a reviewed config change) and Alex's
+OK to install on the work machine. The setup:
 
 1. On the work machine: clone the hub to `/Users/<user>/projects/mcritchie-studio`,
    `bundle install`, and sign the `claude` CLI in to the same claude.ai account
@@ -263,14 +265,28 @@ one dispatcher, and never a second copy. When it ships, the setup is:
    carries no API key.
 2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
    with no new secret.
-3. Register it as `standby` for the warm domains on the board (admin, on
-   `/admin/agent_messages`). A standby claims nothing while the primary pings.
-4. `bin/dispatcher install` there, as on this Mac. Verify with
-   `bin/dispatcher status` on both: the primary `live`, the standby `standby`.
-5. Test a failover: `bin/dispatcher uninstall` on the primary, post `@Avi ping`
-   in `lobster-tank`, and expect the standby to answer within about 5 minutes
-   (the lease's lapse) from the last checkpoint. Reinstall the primary; it
-   takes the session back only after the standby's turn completes.
+3. Let it ping once so the board knows its host: `bin/dispatcher run` in a
+   terminal for a minute, then Ctrl-C. Until step 4 it is a primary, so do this
+   while this Mac's dispatcher is paused or stopped, never alongside it.
+4. Register it on the hub (its short hostname is the `host=` that
+   `bin/rails agent_dispatchers:list` shows):
+   `heroku run -a mcritchie-studio --no-tty -- bin/rails agent_dispatchers:role HOST=<host> ROLE=standby DOMAINS=mcritchie_studio`.
+   Only warm domains are accepted. `ROLE=primary` undoes it.
+5. `bin/dispatcher install` there, as on this Mac. Its log reads `board role:
+   standby`, and it claims nothing while this Mac pings.
+6. Test a failover: `bin/dispatcher uninstall` on the primary (its last ping says
+   `stopping`, so the standby starts at once), post `@Avi ping` in
+   `lobster-tank`, and expect the standby to answer, its log reading
+   `warm mcritchie_studio: restored the checkpoint of …`. Reinstall the primary;
+   the standby releases the lease after its turn (`lease released (the primary is
+   back)`), and the primary's next turn restores the standby's checkpoint.
+   `bin/rails agent_dispatchers:sessions` shows the holder at each step.
+
+| Symptom | Look | Fix |
+|---------|------|-----|
+| The standby answers while the primary is up | `agent_dispatchers:list`: is the primary's row `role=primary` and pinging? | A primary registered as standby by mistake: `ROLE=primary` for its host |
+| Warm answers fell back to one run per message | The log: `warm <domain>: another dispatcher holds the lease` or `lease released (<why>)` | Expected during a handback or a failed turn. A lease stuck on a dead holder lapses in 5 minutes |
+| `the checkpoint would not restore` | `agent_dispatchers:sessions`: checkpoint size and head | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
 
 ## Uninstall
 

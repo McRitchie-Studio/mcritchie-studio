@@ -76,11 +76,11 @@ class AgentMessage < ApplicationRecord
   # usage meter's source (AgentUsage, docs/agents/system/agent-usage.md). The
   # NUMERIC keys keep a number only, so a worker cannot plant text where the
   # rollup sums. `audience` is never the worker's: complete! stamps it from the
-  # sender's role on the board, and the meter counts only client and public
-  # rows against an app's allowance.
+  # sender's role on the board, and the meter counts only client rows against
+  # an app's allowance (public rows are metered apart).
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
-  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source]).freeze
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -192,11 +192,14 @@ class AgentMessage < ApplicationRecord
       # before a run starts: a client or public message whose app is at its
       # monthly allowance is answered here, in code, with the cap reply, and
       # the next candidate is tried. Owner and team are never capped.
+      # Each app's meter is read once per claim, however many of its
+      # candidates the loop meets.
+      meters = {}
       MAX_CAP_SKIPS.times do
         candidate = claimable(soul: soul, now: now, channel: channel).lock("FOR UPDATE SKIP LOCKED").first
         break unless candidate
 
-        gate = AgentUsage.gate(candidate, now: now)
+        gate = AgentUsage.gate(candidate, now: now, meters: meters)
         unless gate.stop?
           message = candidate
           break
@@ -233,7 +236,7 @@ class AgentMessage < ApplicationRecord
   # rollup neither meters nor counts it as an answered message.
   def usage_capped!(meter, now: Time.current)
     update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
-            response_text: AgentUsage.cap_reply(meter), action_summary: "usage cap",
+            response_text: AgentUsage.cap_reply(meter, audience: usage_audience), action_summary: "usage cap",
             reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
             run_meta: { "audience" => usage_audience, "usage_capped" => true })
     record!("usage_capped", actor: "system",
@@ -242,7 +245,10 @@ class AgentMessage < ApplicationRecord
   end
 
   # The notice a warned answer ends with, when its current claim was warned.
+  # Never on an answer to the public: the meter is the owner's.
   def usage_warning_line(now: Time.current)
+    return nil if AgentUsage::PUBLIC_AUDIENCES.include?(usage_audience)
+
     warned = events.reorder(id: :desc).find_by(kind: "usage_warned")
     return nil unless warned && warned.detail["attempt"].to_i == attempts
 

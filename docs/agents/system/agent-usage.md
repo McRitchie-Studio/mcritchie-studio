@@ -4,8 +4,11 @@
 Turf Monster) cost tokens. The hub stores what each answer cost and rolls it up
 per domain. It also holds a client app to a monthly token allowance set by the
 app's package tier. This is step 2 of Phase 7 in `.agents/epics/domain-agents.md`
-(Alex, 2026-10-16). The warm session that step also names is designed, not built:
-[`agent-message-loop.md`](agent-message-loop.md), "Warm sessions (next step, not built)".
+(Alex, 2026-10-16). The warm session that step also names is built behind a
+per-domain flag, off: [`agent-message-loop.md`](agent-message-loop.md), "Warm
+sessions". A warm turn's run summary is stored like any other (`run_meta.warm`
+says `fresh` or `resumed`); it is mostly cache reads, and owner and team turns
+are never metered.
 
 **Alex's default: caps are present but off.** Every tier's allowance in
 `config/workspace_packages.yml` is blank, and blank is unlimited. Nothing is
@@ -64,12 +67,19 @@ A message answered at the cap (below) carries no tokens and is not counted.
 - **The allowance** is the tier's `cto_monthly_tokens`, per calendar month in
   America/Denver. Blank, no tier, or an admin's lift: unlimited.
 - **What counts against it**: input + cache read + cache write + output tokens of
-  the answers to **client and public** senders. Owner and team answers are in
-  the totals but never metered and never capped. An answer from before this
-  release has no `audience` and is not metered (only the owner was answered then).
+  the answers to **client** senders. Answers to the **public** are metered apart
+  (`Meter#public_used`, shown on the meter as its own line) and never consume the
+  allowance, so a stranger cannot exhaust what the client pays for (Alex,
+  2026-10-16). Once the client's allowance is spent, a public message is still
+  refused, with a plain line ("I can't answer right now. Please try again after
+  Nov 1.") that carries no meter, price or upgrade; a public answer never ends
+  with the 80% notice either. The meter is the owner's, never the public's. Owner and team answers are in the totals but never
+  metered and never capped. An answer from before this release has no `audience`
+  and is not metered (only the owner was answered then).
 - **An admin lifts the cap** on the app page (admin only): a tier select and a
   "Lift the cap" box, `PATCH /applications/:slug/usage_cap`. The lift stamps
-  `apps.cto_cap_lifted_at` and `cto_cap_lifted_by` and stands until cleared.
+  `apps.cto_cap_lifted_at` and `cto_cap_lifted_by` and stands until cleared. A
+  PATCH that omits `usage_cap[package_tier]` keeps the tier; a blank one clears it.
 
 ## Enforcement: in the claim, before a run starts
 
@@ -85,16 +95,23 @@ the app that the soul's domain serves (`app:` in `config/agent_domains.yml`):
 
 A capped message is completed, never skipped, so it cannot sit `received` and
 keep a long-poll busy. The cap reply says the allowance is used, when it resets,
-the suggestion (below), and that the owner can raise it.
+the suggestion (below), and "Upgrade your plan or contact us." A claim reads each
+app's meter once, however many of its capped candidates it answers. An app with
+no allowance skips the capped-count query (`agent_message_events` is indexed on
+`(kind, created_at)` for the apps that have one).
 
 ## The meter
 
 - **Web**: `/applications/:slug` and `/agents/:slug/settings` show the meter
   (`applications/_usage_meter`): used of allowance, a bar coloured by state, the
-  tier, the reset date, and the suggestion. Owner or admin only, like the pages;
-  the public never sees it.
+  tier, the reset date, the public's tokens when there are any, and the
+  suggestion. Owner or admin only, like the pages; the public never sees it.
+- **Dollars are an admin's.** A non-admin owner reads tokens and the meter only:
+  the page's totals lines and the JSON drop `cost_usd` (`Totals#without_cost`,
+  `Meter#without_cost`). A tier's price in the suggestion is a list price, shown
+  to both.
 - **JSON**: `GET /applications/:slug/usage` (owner or admin, past `AdminWall::SIGNED_IN`):
-  `{ used, allowance, percent, state, lifted, capped_this_month, period, month, today, suggestion }`.
+  `{ used, public_used, allowance, percent, state, lifted, capped_this_month, period, month, today, suggestion }`.
 - **Discord**: no automatic footer. A team member or the owner asks for it: the
   `usage` ask (no params, `min_audience: team`) is in both domains' catalogs, and
   `AgentProposals::Queries.usage` formats the answer in code once the owner says
@@ -121,4 +138,3 @@ The meter and the cap reply show it. No prompt receives a price.
 - Billing: the allowances mean money only once client CTOs run on an API-billed
   runtime (Phase 6).
 - The MS web chat bar (Phase 7 step 3) and per-(domain, user) sessions.
-- The warm session per domain: designed in [`agent-message-loop.md`](agent-message-loop.md).
