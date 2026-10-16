@@ -152,7 +152,7 @@ class Task < ApplicationRecord
     requires_release_conductor included_in_release agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by gem_bump
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
-    approval_request_dropped_at
+    approval_request_dropped_at source_thread
   ].freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -306,6 +306,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
     t.datetime "updated_at", null: false
     t.index ["agent_person_id", "fingerprint"], name: "index_agent_person_notes_on_agent_person_id_and_fingerprint", unique: true
     t.index ["agent_person_id", "noted_at"], name: "index_agent_person_notes_on_agent_person_id_and_noted_at"
+  end
+
+  create_table "agent_proposals", force: :cascade do |t|
+    t.string "capability", null: false
+    t.string "channel", null: false
+    t.string "channel_ref", null: false
+    t.bigint "confirm_message_id"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.string "guild_id"
+    t.string "kind", null: false
+    t.jsonb "params", default: {}, null: false
+    t.bigint "person_id"
+    t.jsonb "result", default: {}, null: false
+    t.datetime "settled_at"
+    t.string "settled_by"
+    t.string "soul_slug", null: false
+    t.bigint "source_message_id"
+    t.string "status", default: "proposed", null: false
+    t.string "summary"
+    t.string "thread_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["confirm_message_id"], name: "index_agent_proposals_on_confirm_message_id"
+    t.index ["person_id"], name: "index_agent_proposals_on_person_id"
+    t.index ["source_message_id"], name: "index_agent_proposals_on_source_message_id"
+    t.index ["thread_key", "status"], name: "index_agent_proposals_on_thread_and_status"
+    t.check_constraint "kind::text = ANY (ARRAY['ask'::character varying::text, 'operate'::character varying::text, 'change'::character varying::text])", name: "agent_proposals_kind_known"
+    t.check_constraint "status::text = ANY (ARRAY['proposed'::character varying::text, 'confirmed'::character varying::text, 'rejected'::character varying::text, 'expired'::character varying::text, 'executed'::character varying::text])", name: "agent_proposals_status_known"
   end
 
   create_table "agent_sessions", force: :cascade do |t|
@@ -2814,6 +2842,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
   add_foreign_key "agent_person_identities", "agent_people", on_delete: :cascade
   add_foreign_key "agent_person_notes", "agent_messages", column: "source_message_id", on_delete: :nullify
   add_foreign_key "agent_person_notes", "agent_people", on_delete: :cascade
+  add_foreign_key "agent_proposals", "agent_messages", column: "confirm_message_id", on_delete: :nullify
+  add_foreign_key "agent_proposals", "agent_messages", column: "source_message_id", on_delete: :nullify
+  add_foreign_key "agent_proposals", "agent_people", column: "person_id", on_delete: :nullify
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade

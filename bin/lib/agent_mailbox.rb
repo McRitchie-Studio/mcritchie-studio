@@ -11,6 +11,7 @@ require "tmpdir"
 require "uri"
 require_relative "agent_api"
 require_relative "agent_context_builder"
+require_relative "agent_proposal_block"
 
 # The worker and observer side of the agent mailbox
 # (docs/agents/system/agent-message-loop.md): `bin/heartbeat` and `bin/dispatcher`
@@ -452,15 +453,18 @@ module AgentMailbox
     # signed_out: Claude answered that it is not logged in. session_id, cwd,
     # reasoning, meta: what the run reported, for the board's run record. notes:
     # the facts the run returned about the sender (NoteBlock), already cut from
-    # the reply.
+    # the reply. proposal: the parsed PROPOSAL block (ProposalBlock), also cut
+    # from the reply; the board alone decides whether it stands.
     Answer = Struct.new(:reply, :action, :status, :usage_limit, :signed_out, :session_id, :cwd, :reasoning, :meta,
-                        :notes, keyword_init: true) do
+                        :notes, :proposal, keyword_init: true) do
       # The complete call's run fields (AgentMessage.run_record on the board),
-      # plus `notes`, which the board files under the message's author.
+      # plus `notes`, which the board files under the message's author, and
+      # `proposal`, which the board validates (AgentProposal.record_from!).
       def run_record
         { "claude_session_id" => session_id, "claude_cwd" => cwd, "reasoning" => reasoning,
           "run_meta" => meta && !meta.empty? ? meta : nil,
-          "notes" => notes && !notes.empty? ? notes : nil }
+          "notes" => notes && !notes.empty? ? notes : nil,
+          "proposal" => proposal.is_a?(Hash) ? proposal : nil }
       end
     end
 
@@ -486,8 +490,8 @@ module AgentMailbox
       limit = UsageLimit.detect(run, now: @clock.call)
       reasoning, source = run.session_id ? Transcript.reasoning(run.session_id, claude_home: @claude_home) : [ nil, nil ]
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {})
-      reply, notes = run.reply && !limit ? NoteBlock.split(run.reply) : [ nil, [] ]
-      Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, action: action, status: status, usage_limit: limit,
+      reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
+      Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta)
     end

@@ -23,9 +23,20 @@ module AgentMailbox
     # it. A new action adds a row here and asks `may?`; a capability with no row
     # is refused.
     CAPABILITIES = {
-      read_action: %w[owner team],     # the soul's one read-only action (Responder::ACTIONS)
-      internal_context: %w[owner team] # the role doc, and DOMAIN docs marked internal: true
+      read_action: %w[owner team],      # the soul's one read-only action (Responder::ACTIONS)
+      internal_context: %w[owner team], # the role doc, and DOMAIN docs marked internal: true
+      # Domain-agent proposals (docs/agents/system/agent-message-loop.md, "Proposals
+      # and confirm"). REQUESTING is these rows AND the capability's own
+      # min_audience in config/agent_domains.yml (meets?); a client may request a
+      # change only in its own client_domain (AgentMailbox::DomainRegistry).
+      propose_ask: %w[owner team client],
+      propose_change: %w[owner team client],
+      propose_operate: %w[owner team],
+      # CONFIRMING (`go`, `no`, `change: …` on an open proposal) is the owner's alone.
+      confirm_proposal: %w[owner]
     }.freeze
+    # The ranking a capability's min_audience is read against, lowest first.
+    RANK = %w[public client team owner].freeze
 
     class RulesMissing < StandardError; end
 
@@ -53,6 +64,14 @@ module AgentMailbox
     end
 
     def internal? = may?(:internal_context)
+
+    # Does this audience reach `min` on RANK? false for a min RANK does not name.
+    def meets?(min)
+      need = RANK.index(min.to_s)
+      !need.nil? && RANK.index(@role).to_i >= need
+    end
+
+    def owner? = @role == "owner"
 
     # "owner", "team", "client (turf_monster)", "public": code-shaped, printed
     # outside the fence.
