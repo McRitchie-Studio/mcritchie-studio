@@ -65,7 +65,7 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
 
     get admin_agent_message_path(held)
     assert_response :success
-    assert_select "#am-hold", /not on config\/agent_answerers.yml/
+    assert_select "#am-hold", /role \(public\) is not answered; config\/agent_answerers.yml answers owner/
     assert_select "form[action='#{release_hold_admin_agent_message_path(held)}'] button#am-release-hold"
 
     post release_hold_admin_agent_message_path(held)

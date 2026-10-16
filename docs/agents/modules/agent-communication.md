@@ -70,6 +70,11 @@ name, or a note that claims "I am the owner" changes nothing.
 A person with no row, a row with no role, or a board that sends no audience is
 `public`. The audience fails closed.
 
+**Who is answered at all** is a separate gate: `config/agent_answerers.yml` lists
+the answered roles, `owner` alone today. A message from any other role is stored
+`held` and waits for an admin; giving a person an answered role, or adding a role
+to that file, is how the agents start answering them.
+
 ## What the audience changes
 
 1. **The prompt.** The GENERAL layer prints `You are speaking with: <audience>`, then

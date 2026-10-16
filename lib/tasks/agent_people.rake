@@ -11,7 +11,8 @@
 #   bin/rails agent_people:held                      (held messages: the owner-only guard)
 #   bin/rails agent_people:release MESSAGE=<id>      (answer one held message)
 #
-# Allowing a sender for good is an edit to config/agent_answerers.yml (a deploy).
+# Answering a sender for good is giving them an answered role (agent_people:role;
+# config/agent_answerers.yml lists the answered roles, owner only today).
 namespace :agent_people do
   desc "List agent people with their identities and note counts"
   task list: :environment do
@@ -75,7 +76,7 @@ namespace :agent_people do
     abort "agent_people:forget: #{e.message}"
   end
 
-  desc "List held messages: addressed by a sender config/agent_answerers.yml does not allow"
+  desc "List held messages: addressed by a sender whose role config/agent_answerers.yml does not answer"
   task held: :environment do
     held = AgentMessage.with_status("held").order(:id).to_a
     puts "#{held.size} held message(s)"

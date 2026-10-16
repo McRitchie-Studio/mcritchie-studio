@@ -132,14 +132,14 @@ never handed to a worker. Among several mentioned souls, the one written first
 wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
 work; the config lists either.
 
-**Held: the agents answer only the owner.** A stopgap until
-`agent-sender-authority` brings roles: `config/agent_answerers.yml` lists who the
-agents answer (Alex, by his Discord identity, which resolves to his
-`agent_people` row and so to every identity linked to him). A routed message
-from anyone else is stored `held` with a `held` event saying why, never
-`received`. The guard is enforced again on the server in every claim
-(`AgentMessage.claimable`, `AgentMessages::Answerers`): a row is claimable only
-when its person is on the list or an admin released its hold, so even a
+**Held: the agents answer only the owner.** `config/agent_answerers.yml` lists
+the ROLES the agents answer (below, "Audience"); today it is `owner` alone, so
+Alex is answered because his `agent_people` row is the owner, and so is every
+identity linked to him. A routed message from anyone whose role is not listed
+(team, client, public, or no person) is stored `held` with a `held` event naming
+the role, never `received`. The guard is enforced again on the server in every
+claim (`AgentMessage.claimable`, `AgentMessages::Answerers`): a row is claimable
+only when its person's role is answered or an admin released its hold, so even a
 stranger's row that is somehow `received` is never claimed, and a row with no
 person never is. Held rows, and rows that fail the guard, are not open for the
 thread and person wait rules, so they hold nobody back, and no memory layer
@@ -148,7 +148,9 @@ shows a held row. Find them at `/admin/agent_messages?status=held` or with
 answer** on its page (admin only, a form post) or run
 `bin/rails agent_people:release MESSAGE=<id>`: that one message becomes
 `received` and is answered like any other; the sender's next message is held
-again. Allowing a sender for good is an edit to the yml and a deploy.
+again. To answer a sender for good, give them an answered role
+(`bin/rails agent_people:role`); to answer a whole role, add it to the yml and
+deploy. What the agent may then say to them is the audience's rules.
 
 **Claim.** `POST /api/v1/agent_messages/claim {soul | souls[], worker, wait?}`
 runs one transaction. It first dead-letters exhausted leases, then selects the oldest

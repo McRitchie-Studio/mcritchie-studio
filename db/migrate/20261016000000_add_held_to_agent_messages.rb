@@ -6,11 +6,17 @@
 # unrouted rows are left alone.
 #
 # The allow-list is read from the yml AS IT STANDS when this runs, with plain SQL
-# rather than app code, so the migration does not move when the app does.
+# rather than app code, so the migration does not move when the app does. Since
+# agent-communication-sop the yml lists ROLES (`answered_roles`), and the roles
+# column arrives in a LATER migration, so the owner (Alex's Discord identity, the
+# person AddRoleToAgentPeople makes the owner) is always allowed here: a fresh
+# migrate and a deploy that ships both migrations hold exactly what the new
+# guard would.
 class AddHeldToAgentMessages < ActiveRecord::Migration[8.1]
   STATUSES = %w[received claimed completed dead unrouted held].freeze
   PRIOR = %w[received claimed completed dead unrouted].freeze
   ANSWERERS = Rails.root.join("config/agent_answerers.yml")
+  OWNER_DISCORD_ID = "536552944271753216"
 
   def up
     add_column :agent_messages, :hold_released_at, :datetime
@@ -59,9 +65,13 @@ class AddHeldToAgentMessages < ActiveRecord::Migration[8.1]
 
   def allowed_person_ids
     entries = Array((File.exist?(ANSWERERS) && YAML.safe_load_file(ANSWERERS, aliases: false) || {})["answerers"])
-    ids = entries.filter_map { |e| e["person_id"].to_s[/\A\d+\z/]&.to_i }
+    ids = entries.filter_map { |e| e.is_a?(Hash) ? e["person_id"].to_s[/\A\d+\z/]&.to_i : nil }
+    ids += select_values(<<~SQL.squish).map(&:to_i)
+      SELECT agent_person_id FROM agent_person_identities
+      WHERE platform = 'discord' AND external_id = #{quote(OWNER_DISCORD_ID)}
+    SQL
     entries.each do |e|
-      identity = e["identity"]
+      identity = e.is_a?(Hash) ? e["identity"] : nil
       next unless identity.is_a?(Hash) && identity["platform"].present? && identity["external_id"].present?
 
       ids += select_values(<<~SQL.squish).map(&:to_i)
