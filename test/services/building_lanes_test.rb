@@ -16,7 +16,7 @@ class BuildingLanesTest < ActiveSupport::TestCase
 
   test "[unit] each tier caps its app at its own lane count" do
     { "vibe" => 1, "builder" => 2, "pro" => 3, "team" => 4 }.each do |tier, cap|
-      Task.where(stage: "building").delete_all
+      Task.where(stage: "building").update_all(stage: "archived")
       @turf.update!(package_tier: tier)
       cap.times { |n| task!("Lane #{tier} #{n}", stage: "building", started_at: n.minutes.ago) }
 

@@ -21,8 +21,8 @@ class ClientPipelineTest < ActiveSupport::TestCase
     task!("In review one", stage: "submitted")
     task!("Ready one", stage: "reviewed")
     task!("On QA one", stage: "assembled")
-    task!("Shipped recently", stage: "shipped", completed_at: 3.days.ago)
-    task!("Shipped long ago", stage: "shipped", completed_at: 20.days.ago)
+    task!("Shipped recently", stage: "shipped").update_columns(completed_at: 3.days.ago)
+    task!("Shipped long ago", stage: "shipped").update_columns(completed_at: 20.days.ago) # the create stamps now
     task!("Hub only", stage: "building", repos: [ "mcritchie-studio" ])
     task!("Turf and engine", stage: "designed", repos: [ "studio-engine", "turf-monster" ])
 
