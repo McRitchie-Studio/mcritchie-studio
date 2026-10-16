@@ -33,6 +33,40 @@
     <% end %>
   </div>
 
+  <div class="card p-4 space-y-3 text-sm" data-test="application-usage-card">
+    <div class="flex items-baseline justify-between gap-2">
+      <h2 class="font-semibold text-heading text-base">Agent usage</h2>
+      <span class="text-muted text-xs"><%= Time.current.in_time_zone(AgentUsage::ZONE).strftime("%B") %></span>
+    </div>
+    <%= render "applications/usage_meter", meter: @meter %>
+    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 border-t border-subtle pt-3" data-test="application-usage-totals">
+      <div class="min-w-0">
+        <dt class="text-muted text-xs">This month, every answer</dt>
+        <dd class="text-body break-words" data-test="application-usage-month"><%= AgentUsage.totals_line(@meter.totals) %></dd>
+      </div>
+      <div class="min-w-0">
+        <dt class="text-muted text-xs">Today</dt>
+        <dd class="text-body break-words" data-test="application-usage-today"><%= AgentUsage.totals_line(@today) %></dd>
+      </div>
+    </dl>
+    <% if @admin %>
+      <%= form_with scope: :usage_cap, url: usage_cap_application_path(@app.slug), method: :patch,
+                    class: "flex flex-col sm:flex-row sm:items-end gap-3 border-t border-subtle pt-3", data: { test: "application-usage-admin" } do |f| %>
+        <label class="flex-1 min-w-0 space-y-1">
+          <span class="text-muted text-xs block">Tier</span>
+          <%= f.select :package_tier, options_for_select(WorkspacePackage.all.map { |p| [ p.name, p.key ] }, @app.package_tier),
+                       { include_blank: "No tier" }, class: "input-field w-full min-w-0 text-sm", data: { test: "application-usage-tier" } %>
+        </label>
+        <label class="flex items-center gap-2 shrink-0 sm:pb-2">
+          <%= f.check_box :lifted, { checked: @app.cto_cap_lifted_at.present?, data: { test: "application-usage-lift" } } %>
+          <span class="text-body">Lift the cap</span>
+        </label>
+        <%= f.submit "Save", class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-usage-save" } %>
+      <% end %>
+      <p class="text-muted text-xs">Only admins see the tier and the lift.<% if @app.cto_cap_lifted_by.present? %> Lifted by <%= @app.cto_cap_lifted_by %>.<% end %></p>
+    <% end %>
+  </div>
+
   <% if @owners %>
     <div class="card p-4 space-y-2 text-sm" data-test="application-owners">
       <h2 class="font-semibold text-heading text-base">Owners</h2>

@@ -1,0 +1,28 @@
+<%# The CTO usage meter: used against the monthly allowance (AgentUsage::Meter). Rendered only on owner-or-admin pages; the public never sees it. docs/agents/system/agent-usage.md %>
+<% fmt = ->(n) { n.to_i.to_fs(:delimited) } %>
+<% bar = { ok: "bg-success", warn: "bg-warning", capped: "bg-danger" }[meter.state] %>
+<div class="space-y-2" data-test="usage-meter" data-state="<%= meter.state %>">
+  <% if meter.unlimited? %>
+    <p class="text-body" data-test="usage-meter-line">
+      <span class="font-semibold text-heading"><%= fmt.(meter.used) %></span> metered tokens this month ·
+      <%= meter.lifted ? "unlimited, cap lifted by an admin" : "unlimited" %>
+    </p>
+  <% else %>
+    <div class="flex items-baseline justify-between gap-2 text-body" data-test="usage-meter-line">
+      <span><span class="font-semibold text-heading"><%= fmt.(meter.used) %></span> of <%= fmt.(meter.allowance) %> tokens</span>
+      <span class="text-secondary shrink-0" data-test="usage-meter-percent"><%= meter.percent %>&#37;</span>
+    </div>
+    <div class="h-2 w-full overflow-hidden rounded-full bg-inset" role="progressbar" aria-label="Monthly agent allowance used"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= [ meter.percent, 100 ].min %>">
+      <div class="h-full rounded-full <%= bar %>" style="width: <%= [ meter.percent, 100 ].min %>%"></div>
+    </div>
+  <% end %>
+  <p class="text-muted text-xs">
+    <%= meter.tier_name ? "#{meter.tier_name} tier" : "No tier" %> ·
+    resets <%= meter.period_end.to_date.next_day.strftime("%b %-d") %> ·
+    counts answers to clients and the public only
+  </p>
+  <% if (suggestion = meter.suggestion) %>
+    <p class="text-warning-ink text-sm" data-test="usage-suggestion" data-kind="<%= suggestion.kind %>"><%= suggestion.line %></p>
+  <% end %>
+</div>

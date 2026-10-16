@@ -81,5 +81,13 @@
     </div>
   </div>
 
+  <div class="card p-4 space-y-3 text-sm" data-test="agent-usage-card">
+    <div class="flex items-baseline justify-between gap-2">
+      <h2 class="font-semibold text-heading text-base">Usage this month</h2>
+      <%= link_to "Details", application_path(@app.slug), class: "underline text-secondary hover:text-heading text-xs", data: { test: "agent-usage-details" } %>
+    </div>
+    <%= render "applications/usage_meter", meter: @meter %>
+  </div>
+
   <p class="text-muted text-xs">These settings change where <%= @cto.display_name %> posts. They give it no new tools and reach no other app.</p>
 </section>
