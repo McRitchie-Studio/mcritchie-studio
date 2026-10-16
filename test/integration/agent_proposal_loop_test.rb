@@ -13,6 +13,8 @@ require_relative "../support/agent_message_fixtures"
 #   Avi proposes release_status → go → the ladder posts, signed Avi; a go in
 #   another thread and a top-level go leave a pending proposal alone.
 #   Turf proposes an ask → go → the query runs and its answer posts, signed Turf.
+#   With DISCORD_BOT_TOKEN_AVI set, Avi's answer posts once through his own bot,
+#   unsigned; without it, through the shared bot, signed.
 class AgentProposalLoopTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
   include ActiveJob::TestHelper
@@ -48,7 +50,9 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
     @posts = []
     @next_id = 990_000_000_000_000_000
     @previous_transport = AgentMessages::DiscordBot.transport
-    AgentMessages::DiscordBot.transport = lambda do |_method, _url, _headers, body|
+    @auths = []
+    AgentMessages::DiscordBot.transport = lambda do |_method, _url, headers, body|
+      @auths << headers["Authorization"]
       @posts << JSON.parse(body)
       [ 200, JSON.generate("id" => (@next_id += 1).to_s) ]
     end
@@ -151,6 +155,34 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
       assert_equal "executed", proposal.reload.status
       assert_match(/\A\*\*Avi\*\* · (Release now: `[^`]+`|No release is open\.).* Ladder: submitted \d+ · reviewed [1-9]\d* · assembled \d+\./,
                    @posts.last["content"])
+    end
+  end
+
+  test "an owner message to Avi posts once through Avi's own bot, unsigned, when his token is set" do
+    with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
+      with_env("DISCORD_BOT_TOKEN_AVI", "avi-test-token") do
+        asked = ingest(7001, "<@#{AVI_BOT}> what is building?", users: [ AVI_BOT ])
+        assert_equal [ "received", "avi" ], [ asked.status, asked.soul_slug ]
+        message, = perform_enqueued_jobs { answer("avi", "Two tasks are building.") }
+
+        assert_equal [ "Bot avi-test-token" ], @auths, "one post, through Avi's bot"
+        assert_equal "Two tasks are building.", @posts.sole["content"]
+        assert_equal asked.external_id, @posts.sole.dig("message_reference", "message_id")
+        assert_equal "posted", message.reload.reply_status
+      end
+    end
+  end
+
+  test "without Avi's own token the same message posts once through the shared bot, signed" do
+    with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
+      with_env("DISCORD_BOT_TOKEN_AVI", nil) do
+        ingest(7101, "<@#{AVI_BOT}> what is building?", users: [ AVI_BOT ])
+        message, = perform_enqueued_jobs { answer("avi", "Two tasks are building.") }
+
+        assert_equal [ "Bot test-token" ], @auths
+        assert_equal "**Avi** · Two tasks are building.", @posts.sole["content"]
+        assert_equal "posted", message.reload.reply_status
+      end
     end
   end
 
