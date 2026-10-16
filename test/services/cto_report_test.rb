@@ -160,13 +160,15 @@ class CtoReportTest < ActiveSupport::TestCase
     shipped_out = make.("a-seven", "shipped")
     shipped_in.update_columns(completed_at: ENDING - 3.hours)
     shipped_out.update_columns(completed_at: ENDING - 30.hours)
+    # Shipped in the window, then archived when a later release shipped: still counted.
+    make.("a-eight", "archived").update_columns(completed_at: ENDING - 5.hours)
     release = Release.create!(state: "assembled", assembled_at: Time.current)
     Task.where(slug: "a-four").update_all(release_slug: release.slug)
 
     facts = CtoReport.board_facts(ENDING)
 
     assert_equal({ "designed" => 1, "building" => 1, "submitted" => 1, "reviewed" => 0, "assembled" => 1 }, facts.stages)
-    assert_equal [ 2, 1, 1, 1, 1 ], [ facts.building, facts.in_review, facts.deploying, facts.blocked, facts.shipped ]
+    assert_equal [ 2, 1, 1, 1, 2 ], [ facts.building, facts.in_review, facts.deploying, facts.blocked, facts.shipped ]
     assert_equal({ stage: "assembled", tasks: 1 }, facts.release)
   end
 end

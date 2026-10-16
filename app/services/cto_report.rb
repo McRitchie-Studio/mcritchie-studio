@@ -106,14 +106,17 @@ module CtoReport
     e
   end
 
-  # The board as of now, and what shipped in the 24 hours ending `ending`.
+  # The board as of now, and what shipped in the 24 hours ending `ending`. A
+  # shipped task archives when the next release ships, so a second release
+  # inside the window would hide the first one's tasks: count by completed_at
+  # (stamped on the move to shipped) across shipped AND archived.
   def board_facts(ending)
     counts = Task.where(stage: OPEN_STAGES).group(:stage).count
     release = Release.current
     BoardFacts.new(
       stages: OPEN_STAGES.index_with { |s| counts.fetch(s, 0) },
       blocked: Task.where(stage: Task::BUILD_STAGES).where.not(blocked_at: nil).count,
-      shipped: Task.where(stage: "shipped", completed_at: (ending - 1.day)..ending).count,
+      shipped: Task.where(stage: %w[shipped archived], completed_at: (ending - 1.day)..ending).count,
       release: release && { stage: (release.current_stage || release.state).to_s, tasks: release.tasks.count }
     )
   end
