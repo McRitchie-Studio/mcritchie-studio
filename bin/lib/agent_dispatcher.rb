@@ -29,8 +29,10 @@ module AgentMailbox
 
   # A digest of the code the running dispatcher is made of: the entry script,
   # every file under the repo it has required (bin/lib/agent_dispatcher.rb,
-  # agent_mailbox.rb, agent_api.rb, cli_arg_guard.rb and what they pull in), and
-  # config/agent_routes.yml, whose souls are read only at startup. The file LIST
+  # agent_mailbox.rb, agent_api.rb, cli_arg_guard.rb and what they pull in),
+  # config/agent_routes.yml, whose souls are read only at startup, and
+  # config/agent_domains.yml, whose warm_session flags are too (so turning a
+  # domain warm reaches a running dispatcher). The file LIST
   # is fixed when the fingerprint is taken; each #call re-reads those files, so
   # an edit, a checkout or a deletion changes the digest and an unrelated
   # release (one that touches none of them) does not. A missing file digests as
@@ -44,7 +46,8 @@ module AgentMailbox
       roots = [ File.expand_path(repo_root), (File.realpath(repo_root) rescue nil) ].compact.uniq
                                                                                   .map { |r| File.join(r, "") }
       required = loaded.select { |path| roots.any? { |root| path.start_with?(root) } }
-      new([ File.expand_path(entry), *required, File.join(repo_root, "config/agent_routes.yml") ])
+      new([ File.expand_path(entry), *required, File.join(repo_root, "config/agent_routes.yml"),
+            File.join(repo_root, "config/agent_domains.yml") ])
     end
 
     def initialize(files)

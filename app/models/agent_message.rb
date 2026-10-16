@@ -231,7 +231,7 @@ class AgentMessage < ApplicationRecord
   # rollup neither meters nor counts it as an answered message.
   def usage_capped!(meter, now: Time.current)
     update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
-            response_text: AgentUsage.cap_reply(meter), action_summary: "usage cap",
+            response_text: AgentUsage.cap_reply(meter, audience: usage_audience), action_summary: "usage cap",
             reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
             run_meta: { "audience" => usage_audience, "usage_capped" => true })
     record!("usage_capped", actor: "system",
@@ -240,7 +240,10 @@ class AgentMessage < ApplicationRecord
   end
 
   # The notice a warned answer ends with, when its current claim was warned.
+  # Never on an answer to the public: the meter is the owner's.
   def usage_warning_line(now: Time.current)
+    return nil if AgentUsage::PUBLIC_AUDIENCES.include?(usage_audience)
+
     warned = events.reorder(id: :desc).find_by(kind: "usage_warned")
     return nil unless warned && warned.detail["attempt"].to_i == attempts
 

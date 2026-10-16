@@ -40,9 +40,10 @@ class ApplicationsController < ApplicationController
   end
 
   # The admin's two levers: the tier (a config/workspace_packages.yml key, or
-  # none) and the lift, which makes the app unlimited until it is cleared. A
-  # write that does not send `package_tier` at all leaves the tier as it is;
-  # sending it blank clears it ("No tier").
+  # none) and the lift, which makes the app unlimited until it is cleared. Each
+  # lever moves only when its field is sent: a write without `package_tier`
+  # keeps the tier (blank clears it, "No tier"), and one without `lifted` keeps
+  # the lift.
   def usage_cap
     sent_tier = params[:usage_cap].respond_to?(:key?) && params[:usage_cap].key?(:package_tier)
     tier = sent_tier ? params.dig(:usage_cap, :package_tier).presence : @app.package_tier
@@ -50,7 +51,8 @@ class ApplicationsController < ApplicationController
       return redirect_to application_path(@app.slug), alert: "Unknown tier.", status: :see_other
     end
 
-    lift = ActiveModel::Type::Boolean.new.cast(params.dig(:usage_cap, :lifted))
+    sent_lift = params[:usage_cap].respond_to?(:key?) && params[:usage_cap].key?(:lifted)
+    lift = sent_lift ? ActiveModel::Type::Boolean.new.cast(params.dig(:usage_cap, :lifted)) : @app.cto_cap_lifted_at.present?
     attrs = { package_tier: tier }
     attrs.merge!(cto_cap_lifted_at: Time.current, cto_cap_lifted_by: current_user.email) if lift && @app.cto_cap_lifted_at.nil?
     attrs.merge!(cto_cap_lifted_at: nil, cto_cap_lifted_by: nil) unless lift

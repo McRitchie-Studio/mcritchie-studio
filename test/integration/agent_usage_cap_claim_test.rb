@@ -73,4 +73,27 @@ class AgentUsageCapClaimTest < ActiveSupport::TestCase
     message.reload.complete!(worker: "w1", response_text: "Fine.")
     assert_equal "Fine.", message.reload.response_text
   end
+
+  test "the public reads a plain cap reply and never the meter's notice" do
+    spent!(1_000)
+    visitor = AgentPerson.create!(display_name: "Visitor", role: "public")
+    WorkspacePackage.stub(:all, @packages) do
+      capped = agent_message!(soul: "turf_monster", person: visitor, thread_key: "discord:e:1")
+      AgentMessage.claim!(soul: "turf_monster", worker: "w1")
+      capped.reload
+      assert_equal "completed", capped.status
+      assert_match(/\AI can't answer right now\. Please try again after Nov 1\.\z/, capped.response_text)
+      assert_no_match(/\$|allowance|upgrade/i, capped.response_text)
+    end
+
+    spent_more = AgentMessage.where(person: @client).first
+    spent_more.update_columns(run_meta: { "input_tokens" => 850, "audience" => "client" })
+    WorkspacePackage.stub(:all, @packages) do
+      warned = agent_message!(soul: "turf_monster", person: visitor, thread_key: "discord:f:1")
+      AgentMessage.claim!(soul: "turf_monster", worker: "w2")
+      assert warned.events.exists?(kind: "usage_warned")
+      warned.reload.complete!(worker: "w2", response_text: "Hello.")
+      assert_equal "Hello.", warned.reload.response_text, "no meter notice on a public answer"
+    end
+  end
 end

@@ -203,9 +203,15 @@ module AgentUsage
     "_#{[ "#{meter.percent}% of this app's monthly agent allowance is used.", meter.suggestion&.line ].compact.join(' ')}_"
   end
 
-  # The whole reply to a message refused at the cap. Code, never the model.
-  def cap_reply(meter)
+  # The whole reply to a message refused at the cap. Code, never the model. A
+  # public sender reads a plain line: no meter, no price, no upgrade (the meter
+  # is the owner's, never the public's).
+  def cap_reply(meter, audience: nil)
     resets = meter.period_end.in_time_zone(ZONE).to_date.next_day.strftime("%b %-d")
+    if PUBLIC_AUDIENCES.include?(audience.to_s)
+      return "I can't answer right now. Please try again after #{resets}."
+    end
+
     [ "This app has used its monthly agent allowance, so I can't answer this one. It resets #{resets}.",
       meter.suggestion&.line, "Upgrade your plan or contact us." ].compact.join(" ")
   end

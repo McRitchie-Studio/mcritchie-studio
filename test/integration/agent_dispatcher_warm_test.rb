@@ -151,7 +151,7 @@ class AgentDispatcherWarmTest < ActionDispatch::IntegrationTest
                                      "#{head}.jsonl")), "the superseded transcript was pruned"
   end
 
-  test "a client message with the flag on stays one run per message, with no lease" do
+  test "a client message and a released hold, with the flag on, stay one run per message, with no lease" do
     claude = claude_for("mac")
     mac = machine("mac", claude: claude)
     message = agent_message!(soul: "avi", person: @client_person, content: "how is my app?")
@@ -162,6 +162,12 @@ class AgentDispatcherWarmTest < ActionDispatch::IntegrationTest
     assert_includes call[:stdin], "== PERSON:"
     assert_nil session_row, "no lease was ever taken"
     assert_nil message.reload.run_meta["warm"]
+
+    released = agent_message!(soul: "avi", person: AgentPerson.create!(display_name: "Held", role: "team"),
+                              content: "let me in", hold_released_at: Time.current, hold_released_by: "alex")
+    drive(mac) { released.reload.status == "completed" && mac.runs.empty? }
+    assert_equal %w[fake-claude], claude.all_calls.last[:argv], "a released hold is answered per message too"
+    assert_nil session_row
   end
 
   test "with the flag off the dispatcher is today's: no lease, no resume, the full prompt" do

@@ -1,8 +1,10 @@
 module AgentMessages
   # The memory one answer is given: the context bundle for a claimed message,
-  # rebuilt from the hub's rows on every answer (never a resumed Claude session),
-  # so every dispatcher on every machine sees the same context for the same rows.
-  # docs/agents/system/agent-message-loop.md, "Memory".
+  # rebuilt from the hub's rows on every answer, so every dispatcher on every
+  # machine sees the same context for the same rows. A warm domain's owner and
+  # team turns also resume the domain's Claude session, but still read this
+  # bundle per message for the audience, rules and thread.
+  # docs/agents/system/agent-message-loop.md, "Memory" and "Warm sessions".
   #
   # THE PERSON LAYER is one person's exchanges with one soul on EVERY channel and
   # platform: every earlier row with the same (soul_slug, person_id), oldest first,

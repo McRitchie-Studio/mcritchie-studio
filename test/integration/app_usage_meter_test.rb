@@ -81,7 +81,7 @@ class AppUsageMeterTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] an admin's lift without package_tier keeps the tier; a blank one clears it" do
+  test "[integration] each lever moves only when sent: a lift keeps the tier, a tier keeps the lift" do
     log_in_as(users(:alex))
     WorkspacePackage.stub(:all, @packages) do
       patch usage_cap_application_path("turf-monster"), params: { usage_cap: { lifted: "1" } }
@@ -89,8 +89,13 @@ class AppUsageMeterTest < ActionDispatch::IntegrationTest
       assert_equal "builder", @app.reload.package_tier, "a write that sends no tier leaves it alone"
       assert @app.cto_cap_lifted_at
 
+      patch usage_cap_application_path("turf-monster"), params: { usage_cap: { package_tier: "pro" } }
+      assert_equal "pro", @app.reload.package_tier
+      assert @app.cto_cap_lifted_at, "a write that sends no lift keeps the lift"
+
       patch usage_cap_application_path("turf-monster"), params: { usage_cap: { package_tier: "", lifted: "0" } }
       assert_nil @app.reload.package_tier, "an explicit blank is No tier"
+      assert_nil @app.cto_cap_lifted_at
     end
   end
 
