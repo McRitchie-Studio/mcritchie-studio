@@ -64,7 +64,7 @@ class EmailTrustTest < ActiveSupport::TestCase
 
   # Carl's case: SES copies the SMTP envelope-from into its verdict.
   test "a quoted envelope-from local part carrying fake results is not read" do
-    spf = 'spf=none (spfCheck: 203.0.113.5 is neither permitted nor denied) client-ip=203.0.113.5; ' \
+    spf = "spf=none (spfCheck: 203.0.113.5 is neither permitted nor denied) client-ip=203.0.113.5; " \
           'envelope-from="x;dkim=pass header.d=mcritchie.studio;dmarc=pass header.from=mcritchie.studio;"@evil.example; ' \
           "helo=evil.example;"
     v = verdict(agent_email(top_result: ses_result_with_spf(spf)))
