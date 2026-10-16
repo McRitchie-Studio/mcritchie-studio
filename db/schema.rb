@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_200100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -265,6 +265,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_200100) do
     t.datetime "updated_at", null: false
     t.integer "usage_refunds", default: 0, null: false
     t.index ["channel", "external_id"], name: "index_agent_messages_on_channel_and_external_id", unique: true
+    t.index ["soul_slug", "completed_at"], name: "index_agent_messages_on_soul_and_completed_at"
     t.index ["soul_slug", "person_id", "created_at"], name: "index_agent_messages_on_person_ledger"
     t.index ["soul_slug", "status", "id"], name: "index_agent_messages_on_soul_slug_and_status_and_id"
     t.index ["status"], name: "index_agent_messages_on_status"
@@ -537,9 +538,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_200100) do
   create_table "apps", force: :cascade do |t|
     t.string "color"
     t.datetime "created_at", null: false
+    t.datetime "cto_cap_lifted_at"
+    t.string "cto_cap_lifted_by"
     t.text "description"
     t.string "emoji"
     t.string "name", null: false
+    t.string "package_tier"
     t.integer "position", default: 0
     t.string "slug", null: false
     t.string "status", default: "active"
