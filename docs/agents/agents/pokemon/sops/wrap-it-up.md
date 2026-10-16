@@ -64,7 +64,13 @@ Alex says `wrap-it-up` in the stuck session. Work these steps in order.
   helped, 2 decided it). Then propose at most one swap: read
   `bin/dream swap-candidates`, and run `bin/dream swap --in <home>/<slug>` (with
   `--out` only when the layer is full) or `bin/dream swap --none --reason "..."`.
-  "No swap" is a full answer. Detail: [`dream.md`](../../../modules/dream.md#act-4--the-loop-every-wrap).
+  "No swap" is a full answer. End the step by putting it to Alex in the card
+  standard: `bin/dream cards --in <home>/<slug> [--out <home>/<slug>] --call
+  <slug>=<approve|change|drop>:"<reason>"` prints the one swap's card, or
+  `bin/dream cards --none` the no-swap line. At most one swap. Record his answer
+  with his words (`bin/dream approve|drop|retire <slug> --clearance "..."`); his
+  silence records nothing. Detail: [`dream.md`](../../../modules/dream.md#the-card-standard),
+  Acts 3 and 4.
 
 ### 3. Write the hand-off note
 

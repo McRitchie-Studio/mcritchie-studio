@@ -66,7 +66,13 @@ decision, a project-state change, a stated preference?
 **Dreams.** Grade each dream that fired this session, naming the decision
 (`bin/dream grade <slug> --score 0|1|2 --decision "..."`), then propose at most one
 swap (`bin/dream swap-candidates`, then `bin/dream swap --in ...` or
-`bin/dream swap --none --reason "..."`). Detail: `docs/agents/modules/dream.md`, Act 4.
+`bin/dream swap --none --reason "..."`). End by presenting it in the card standard:
+`bin/dream cards --in <home>/<slug> [--out <home>/<slug>] --call <slug>=<approve|change|drop>:"<reason>"`
+prints the one swap's card (apply the test first: a must-do belongs in a command,
+not a dream), or `bin/dream cards --none` prints "no swap". At most one swap.
+Record Alex's answer with his words (`bin/dream approve|drop|retire <slug>
+--clearance "..."`); silence records nothing. Detail:
+`docs/agents/modules/dream.md`, "The card standard" and Acts 3-4.
 
 ## 3. Memory index hygiene
 Run this only when a memory dir exists. Keep `MEMORY.md` under its size limit

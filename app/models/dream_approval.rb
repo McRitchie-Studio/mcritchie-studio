@@ -9,9 +9,11 @@
 # release carrying that batch ships. Once the deployed file reads
 # `status: approved`, `reconcile!` stamps applied_at and the row stops being pending.
 #
-# Only Alex approves. A row is created by DreamsController#approve, behind the admin
-# wall and the APPROVER_EMAILS check; no /api/v1 action creates one, so no agent
-# token can.
+# Only Alex approves, in one of two ways. His click: DreamsController#approve, behind
+# the admin wall and the APPROVER_EMAILS check (via "click"). His word in chat: an
+# agent records it through POST /api/v1/dream_rulings (DreamRuling), which refuses a
+# ruling without his quoted clearance and the session that heard it (via "chat").
+# No API route creates an approval on an agent's own judgment.
 class DreamApproval < ApplicationRecord
   # The human who signs dreams off. admin@ is an agent seat and team@ a shared
   # account, so being an admin is not enough.
@@ -25,6 +27,8 @@ class DreamApproval < ApplicationRecord
 
   validates :dream_slug, :dream_home, :approved_at, presence: true
   validates :dream_slug, uniqueness: { scope: :dream_home }
+  validates :via, inclusion: { in: %w[click chat] }
+  validates :clearance, :session_id, presence: true, if: :chat?
 
   scope :pending, -> { where(applied_at: nil) }
 
@@ -36,6 +40,8 @@ class DreamApproval < ApplicationRecord
   def self.key_for(dream) = "#{dream.home}/#{dream.slug}"
 
   def key = "#{dream_home}/#{dream_slug}"
+
+  def chat? = via == "chat"
 
   # Records `user`'s approval of `dream` (a DreamBank::Dream). Raises NotApprovable
   # unless the user is the approver and the dream reads `proposed`. Idempotent: a
@@ -81,6 +87,7 @@ class DreamApproval < ApplicationRecord
   def as_pending_json(dream)
     { dream_slug: dream_slug, dream_home: dream_home, path: "#{dream_home}/#{dream_slug}.md",
       approved_by: approved_by_slug, approved_at: approved_at&.iso8601,
+      via: via, clearance: clearance, session_id: session_id,
       file_status: dream&.status.presence || "missing" }
   end
 end

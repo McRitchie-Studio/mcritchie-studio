@@ -146,7 +146,11 @@ review-claim backstop exclude the derived authors UNION any stamps.
 
 ### The author set
 
-**`--agent <soul>` is optional.** Review excludes the souls on the PR's commits,
+**`--agent <soul>` is optional.** Without it, `begin` names the session's acting
+soul (its `.acting-agent` marker), else `pokemon`, and prints one line saying so,
+unless the task already carries a builder, a persona or a soul assignee. A blank
+author set fails review closed, which stranded the 2026-10-14
+`approve-intent-brief-dream` PR. Review excludes the souls on the PR's commits,
 so the thing that keeps you off your own review is the desk's commit identity:
 `begin --agent <soul>` sets it, and so does `bin/agent-worktree identity <repo>
 <slug> <soul>`. A desk that commits under no soul yields no derived author, and
@@ -176,6 +180,8 @@ No single write sets both:
 bin/task create --agent avi           → assignee avi     · authors NOT STAMPED
 bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
 bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
+bin/task begin --title …  (no --agent) → assignee unset   · authors ["pokemon"]  (or the acting soul)
+bin/task begin <slug>     (no --agent) → kept if on record, else ["pokemon"]      (or the acting soul)
 ```
 
 Every row above reaches the author set through `--actor` — both `begin` forms

@@ -181,12 +181,18 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
     assert_includes argv, "building", "and it is still the build claim it forwards onto"
   end
 
-  # No builder, no actor — begin must not invent one. A fabricated actor would be
-  # worse than a blank: reviewer-select REFUSES a blank builder (fail-closed) but
-  # would happily exclude a wrong soul, silently, and pick the PR's own author.
-  test "no builder means no actor is invented" do
-    refute_includes captured_move_argv, "--actor",
-                    "a blank built_by fails review CLOSED; a WRONG one fails it open"
+  # No --agent and nothing on record: begin names the GENERAL BUILDER, never an
+  # invented soul. A wrong soul would fail review open (reviewer-select excludes it
+  # and could pick the PR's real author), so the default is not a guess: building is
+  # the Pokémon's seat in the operating model, the desk is cut and commits as it, so
+  # the author set GitHub derives agrees with built_by. A blank, the old answer,
+  # fails review closed and stranded the 2026-10-14 approve-intent-brief-dream PR.
+  # A session that narrates as another soul gets that soul instead (session_acting_soul).
+  test "no builder means the general builder is named, never another soul" do
+    argv = captured_move_argv
+
+    assert_includes argv, "--actor", "the author set must never be blank"
+    assert_equal "pokemon", argv[argv.index("--actor") + 1]
   end
 
 

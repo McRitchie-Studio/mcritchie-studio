@@ -4,7 +4,8 @@ module Api
   module V1
     # [integration] The dream loop's agent API (docs/agents/modules/dream.md, Act 4):
     # POST dream_grades and dream_swaps, GET dream_swaps/candidates and
-    # dream_retirements. Bearer-gated; no route approves or retires.
+    # dream_retirements. Bearer-gated; none of them approves or retires (that is
+    # POST dream_rulings, on Alex's quoted word only).
     class DreamLoopControllersTest < ActionDispatch::IntegrationTest
       BANK = Rails.root.join("test/fixtures/dreams").to_s
 
@@ -90,7 +91,7 @@ module Api
         assert_not_nil gone.reload.applied_at
       end
 
-      test "[integration] every loop route needs a bearer, and none retires or approves" do
+      test "[integration] every loop route needs a bearer, and only the chat ruling retires or approves" do
         post api_v1_dream_grades_path, params: { session_id: "wrap", dream_slug: "x", score: 1, decision: "x" }, as: :json
         assert_response :unauthorized
         post api_v1_dream_swaps_path, params: { session_id: "wrap", reason: "x" }, as: :json
@@ -100,7 +101,8 @@ module Api
 
         routes = Rails.application.routes.routes.map { |route| [ route.verb, route.path.spec.to_s ] }
         api = routes.select { |_, path| path.start_with?("/api/v1/dream") }
-        assert_equal [ [ "POST", "/api/v1/dream_grades(.:format)" ], [ "POST", "/api/v1/dream_swaps(.:format)" ] ],
+        assert_equal [ [ "POST", "/api/v1/dream_grades(.:format)" ], [ "POST", "/api/v1/dream_rulings(.:format)" ],
+                       [ "POST", "/api/v1/dream_swaps(.:format)" ] ],
                      api.select { |verb, _| verb != "GET" }.sort
       end
     end

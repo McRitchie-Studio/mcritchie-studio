@@ -6,8 +6,9 @@ module Api
     # files the deployed bank still holds, for `bin/dream apply-approvals`, which
     # deletes each file (docs/agents/modules/dream.md, Act 4).
     #
-    # Read-only, like dream_approvals: a retirement is Alex's word, given only
-    # through DreamsController#retire or #approve_swap, so no agent token makes one.
+    # Read-only, like dream_approvals: a retirement (or a drop of a proposed dream,
+    # `ruling: drop`) is Alex's word, given by his click (DreamsController#retire,
+    # #approve_swap) or in chat through POST /api/v1/dream_rulings, with his quote.
     # The read reconciles first: a row whose file is gone is stamped applied.
     class DreamRetirementsController < BaseController
       def index

@@ -59,9 +59,12 @@ read the brief before you submit (Step 5).
   `--slug` only to override.
 - **Each `--accept` bullet: 5-12 words.** Put detail in `--agent-context "…"`.
   Outside either range the board saves the task and answers with a warning.
-- **`--agent <soul>` is optional.** Review keeps you off your own PR by the souls
-  on its commits (`<soul>@mcritchie.studio`), which the board derives from GitHub,
-  so what matters is that your desk commits as you. `--agent` sets that identity
+- **`--agent <soul>` is optional.** Without it, `begin` names the session's acting
+  soul (the one it narrates as), else `pokemon`, and prints one line saying so; a
+  builder, persona or assignee already on the task is kept. Review keeps you off
+  your own PR by the souls on its commits (`<soul>@mcritchie.studio`), which the
+  board derives from GitHub, so what matters is that your desk commits as you.
+  `--agent` sets that identity
   (so does `bin/agent-worktree identity <repo> <slug> <soul>`) and also stamps
   `devops.built_by`, which review unions with the derived set. You never stamp
   `merged` or `pr_url`: the board derives both. The exclusion rules and the

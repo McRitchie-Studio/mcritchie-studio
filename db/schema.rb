@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_000500) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1183,12 +1183,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000500) do
     t.datetime "applied_at"
     t.datetime "approved_at", null: false
     t.string "approved_by_slug"
+    t.text "clearance"
     t.datetime "created_at", null: false
     t.string "dream_home", null: false
     t.string "dream_slug", null: false
+    t.string "session_id"
     t.datetime "updated_at", null: false
+    t.string "via", default: "click", null: false
     t.index ["applied_at"], name: "index_dream_approvals_on_applied_at"
     t.index ["dream_home", "dream_slug"], name: "index_dream_approvals_on_dream_home_and_dream_slug", unique: true
+    t.check_constraint "via::text = ANY (ARRAY['click'::character varying::text, 'chat'::character varying::text])", name: "dream_approvals_via"
   end
 
   create_table "dream_grades", force: :cascade do |t|
@@ -1209,16 +1213,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000500) do
 
   create_table "dream_retirements", force: :cascade do |t|
     t.datetime "applied_at"
+    t.text "clearance"
     t.datetime "created_at", null: false
     t.string "dream_home", null: false
     t.string "dream_slug", null: false
     t.bigint "dream_swap_id"
     t.datetime "retired_at", null: false
     t.string "retired_by_slug"
+    t.string "ruling", default: "retire", null: false
+    t.string "session_id"
     t.datetime "updated_at", null: false
+    t.string "via", default: "click", null: false
     t.index ["applied_at"], name: "index_dream_retirements_on_applied_at"
     t.index ["dream_home", "dream_slug"], name: "index_dream_retirements_on_dream_home_and_dream_slug", unique: true
     t.index ["dream_swap_id"], name: "index_dream_retirements_on_dream_swap_id"
+    t.check_constraint "ruling::text = ANY (ARRAY['retire'::character varying::text, 'drop'::character varying::text])", name: "dream_retirements_ruling"
+    t.check_constraint "via::text = ANY (ARRAY['click'::character varying::text, 'chat'::character varying::text])", name: "dream_retirements_via"
   end
 
   create_table "dream_swaps", force: :cascade do |t|
