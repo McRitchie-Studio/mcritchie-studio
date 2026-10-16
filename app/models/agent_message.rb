@@ -75,7 +75,7 @@ class AgentMessage < ApplicationRecord
   # an app's allowance (public rows are metered apart).
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
-  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source]).freeze
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 

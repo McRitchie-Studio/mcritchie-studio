@@ -1,3 +1,6 @@
+require Rails.root.join("bin/lib/agent_warm_session").to_s
+require Rails.root.join("bin/lib/agent_proposal_block").to_s
+
 # One domain's warm Claude session, as the board leases it
 # (docs/agents/system/agent-message-loop.md, "Warm sessions"; plan: Phase 7 of
 # .agents/epics/domain-agents.md).
@@ -31,7 +34,7 @@ class AgentDomainSession < ApplicationRecord
   LEASE = 5.minutes
   # The largest checkpoint the board keeps, compressed. A transcript past it is
   # consolidated by the holder instead of checkpointed.
-  CHECKPOINT_LIMIT = 4 * 1024 * 1024
+  CHECKPOINT_LIMIT = AgentMailbox::WarmSession::CHECKPOINT_LIMIT
   GZIP_MAGIC = "\x1F\x8B".b.freeze
   SUMMARY_LIMIT = 8_000
   SESSION_ID = /\A[0-9A-Za-z-]{8,100}\z/

@@ -7,6 +7,7 @@ require "open3"
 require "rbconfig"
 require "yaml"
 require_relative "agent_mailbox"
+require_relative "agent_domain_registry"
 
 # bin/dispatcher: the agent mailbox served as a set-and-forget service on Alex's
 # Mac (docs/agents/agents/steffon/sops/agent-dispatcher.md). Every mechanic here
@@ -75,6 +76,22 @@ module AgentMailbox
   #               claiming and drains (see #restart_for_new_code!), and launchd's
   #               KeepAlive starts the new code
   #               claim (long-poll) when not stopping, not paused and under the cap
+  #
+  # WARM SESSIONS (docs/agents/system/agent-message-loop.md, "Warm sessions").
+  # Off unless a domain sets `warm_session: true` in config/agent_domains.yml;
+  # with every domain off, nothing below runs and each answer is the cold run.
+  # For a warm domain's front-door soul and an owner or team sender (never a
+  # client, the public, or a released hold) a claim also takes the domain's
+  # board lease, restores the checkpoint when this machine's transcript is
+  # missing or older, and runs `claude -p --resume <id>` (still no tools, the
+  # json envelope read as before). After the complete it uploads the transcript
+  # as the checkpoint; past consolidate_at it runs one more no-tools turn for a
+  # summary, which the board stores before the next turn starts fresh. One warm
+  # turn per domain at a time: a second message meanwhile, a lease another
+  # dispatcher holds, or any failure answers that message per message. Leases
+  # renew on the ping beat; a handback request (a primary asking a standby) is
+  # honoured only between turns. A STANDBY (the board's role for this host)
+  # claims nothing while a primary is live.
   class Dispatcher
     CAP = 5
     RENEW_EVERY = 180
@@ -112,13 +129,20 @@ module AgentMailbox
 
     # typed_at: the last pulse asked for (nil: none yet). typing: false once the
     # board said no (or failed): that run is never pulsed again.
-    Run = Struct.new(:message, :thread, :started_at, :renewed_at, :typed_at, :typing, keyword_init: true)
+    # warm: the WarmSession::Turn the run answers on, or nil (a cold run).
+    Run = Struct.new(:message, :thread, :started_at, :renewed_at, :typed_at, :typing, :warm, keyword_init: true)
+    # A consolidation turn in flight on a warm domain.
+    Chore = Struct.new(:domain, :thread, :started_at, :source_session_id, :turns, :context_tokens, keyword_init: true)
+    # A domain lease this dispatcher holds. busy: a warm turn or a consolidation
+    # is running on the session, so no second turn may resume it.
+    Lease = Struct.new(:domain, :session_id, :turns, :generation, :checkpointed_at, :busy, :handback, keyword_init: true)
 
-    attr_reader :worker, :runs, :paused_until, :pause_reason
+    attr_reader :worker, :runs, :paused_until, :pause_reason, :role, :leases, :chores
 
     def initialize(client:, souls:, channel: "discord", worker: nil, cap: CAP, claude_cmd: Responder::DEFAULT_CLAUDE_CMD,
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
-                   repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil)
+                   repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil,
+                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
       raise ArgumentError, "no souls to serve" if souls.empty?
 
       @client = client
@@ -150,6 +174,20 @@ module AgentMailbox
       @last_code_check = @started_at
       @restarting = false
       @term_at = nil
+      # Warm sessions: the domain registry this checkout ships, the leases held,
+      # the consolidations running, and the checkpoints this process wrote
+      # (domain => [session id, checkpointed_at]), which mark its own transcript
+      # as current without a download.
+      @registry = registry || DomainRegistry.load(File.join(repo_root, "config/agent_domains.yml"))
+      @mailbox_home = mailbox_home
+      @claude_home = claude_home
+      @leases = {}
+      @chores = []
+      @own_checkpoints = {}
+      # The board's answer to each ping: this host's role, and whether a
+      # primary is live. A standby claims nothing while one is.
+      @role = "primary"
+      @primary_live = true
     end
 
     def self.git_version(root)
@@ -213,13 +251,21 @@ module AgentMailbox
         @paused_until = nil
         @pause_reason = nil
       end
-      if @runs.size >= @cap
+      if @runs.size + @chores.size >= @cap
         @sleeper.call(1)
+        return
+      end
+      if standing_by?
+        @sleeper.call([ @idle_wait, 1 ].max)
         return
       end
 
       claim_one
     end
+
+    # A standby while a primary pings: it claims nothing (the board refuses it
+    # too, AgentDispatcher.claim_scope).
+    def standing_by? = @role == "standby" && @primary_live
 
     # Stop claiming; give runs GRACE to finish (a restart for new code: until
     # their RUN_DEADLINE, unless a signal cuts it to GRACE); then stop their
@@ -231,22 +277,28 @@ module AgentMailbox
       started = @clock.call
       window = @restarting ? RUN_DEADLINE : grace
       log "stopping#{' for new code' if @restarting}: #{@runs.size} run(s) in flight, waiting up to #{window}s"
-      until @runs.empty? || @clock.call >= drain_deadline(started, window, grace)
+      until (@runs.empty? && @chores.empty?) || @clock.call >= drain_deadline(started, window, grace)
         reap
         now = @clock.call
         renew_due(now)
         type_due(now)
         ping(now, state: "stopping") if @last_ping.nil? || now - @last_ping >= PING_EVERY
-        @sleeper.call(1) unless @runs.empty?
+        @sleeper.call(1) unless @runs.empty? && @chores.empty?
       end
-      unless @runs.empty?
+      unless @runs.empty? && @chores.empty?
         Children.terminate_all
         @runs.each do |run|
           run.thread.join(5)
           give_back(run.message["id"], "dispatcher stopped before the answer finished")
         end
         @runs.clear
+        @chores.each { |chore| chore.thread.join(5) }
+        @chores.clear
       end
+      # Every warm lease goes back, so a restart (a new worker id) or the
+      # standby takes the session at once instead of after the lease lapses.
+      @leases.each_value { |lease| lease.busy = false }
+      @leases.keys.each { |domain| drop_lease(domain, "dispatcher stopping") }
       ping(@clock.call, state: "stopping")
       log "stopped"
     end
@@ -304,21 +356,28 @@ module AgentMailbox
         give_back(message["id"], "could not read the message's context: #{e.message}")
         return
       end
-      responder = Responder.new(soul: message["soul_slug"], claude_cmd: @claude_cmd, runner: @runner,
-                                repo_root: @repo_root, clock: @clock)
+      responder = responder_for(message["soul_slug"])
+      warm = warm_turn(message, context)
       thread = Thread.new do
         Thread.current.report_on_exception = false
-        responder.respond(message, context: context)
+        warm ? responder.respond(message, context: context, warm: warm) : responder.respond(message, context: context)
       end
       run = Run.new(message: message, thread: thread, started_at: now, renewed_at: now,
-                    typing: message["channel"] == "discord")
+                    typing: message["channel"] == "discord", warm: warm)
       @runs << run
       pulse_typing(run, now)
+    end
+
+    def responder_for(soul)
+      Responder.new(soul: soul, claude_cmd: @claude_cmd, runner: @runner, repo_root: @repo_root, clock: @clock,
+                    mailbox_home: @mailbox_home, claude_home: @claude_home)
     end
 
     def reap
       done, @runs = @runs.partition { |run| !run.thread.alive? }
       done.each { |run| finish(run) }
+      finished, @chores = @chores.partition { |chore| !chore.thread.alive? }
+      finished.each { |chore| finish_chore(chore) }
       abandon_overdue(@clock.call)
     end
 
@@ -329,13 +388,26 @@ module AgentMailbox
       overdue, @runs = @runs.partition { |run| now - run.started_at > RUN_DEADLINE }
       overdue.each do |run|
         give_back(run.message["id"], "the run passed its #{RUN_DEADLINE}s deadline and was abandoned")
+        settle_warm(run, nil) if run.warm
       end
+      stale, @chores = @chores.partition { |chore| now - chore.started_at > RUN_DEADLINE }
+      stale.each { |chore| release_busy(chore.domain, "the consolidation passed its deadline") }
       # A wedged run is a failed run: pause, so the message is not re-claimed
       # into the same wedge at once.
       pause_until(now + FAILURE_PAUSE, "run_overdue") if overdue.any?
     end
 
+    # A warm run settles its lease after the complete, whatever happened
+    # (settle_warm): a completed answer is checkpointed, anything else drops
+    # the lease, and the message's own outcome is exactly the cold run's.
     def finish(run)
+      completed = nil
+      finish_answer(run) { |answer| completed = answer }
+    ensure
+      settle_warm(run, completed) if run.warm
+    end
+
+    def finish_answer(run)
       id = run.message["id"]
       answer = begin
         run.thread.value
@@ -358,10 +430,222 @@ module AgentMailbox
         result = @client.complete(id, worker: @worker, response_text: answer.reply,
                                       action_summary: answer.action&.dig(:summary), run: answer.run_record)
         log "completed ##{id} (#{result.dig('meta', 'outcome')})"
+        yield answer
       end
     rescue ApiError => e
       log "complete ##{id} failed: #{e.message}"
       give_back(id, e.message)
+    end
+
+    # ---- warm sessions -------------------------------------------------------
+
+    # The warm turn for this message, or nil to answer it cold. Every miss is
+    # the cold path: a domain not warm, a sender who is not owner or team, a
+    # released hold, a turn already running on the session, a lease another
+    # dispatcher holds, a handback asked for, or a checkpoint that will not
+    # restore.
+    def warm_turn(message, context)
+      domain = @registry.warm_domain_for(message["soul_slug"])
+      return nil unless domain && WarmSession.eligible?(message, context)
+      return nil if @leases[domain]&.busy
+
+      result = @client.domain_acquire(domain, worker: @worker)
+      state = result["data"] || {}
+      lease = (@leases[domain] ||= Lease.new(domain: domain))
+      lease.session_id = state["claude_session_id"]
+      lease.turns = state["turns"].to_i
+      lease.generation = state["generation"]
+      lease.checkpointed_at = state["checkpointed_at"]
+      lease.handback = state["handback_requested"] == true
+      taken = result.dig("meta", "taken_over_from")
+      log "warm #{domain}: took the lapsed lease of #{taken}" if taken
+      if lease.handback
+        drop_lease(domain, "a handback was requested; between turns")
+        return nil
+      end
+      return nil if lease.session_id && !transcript_ready?(lease, message["soul_slug"])
+
+      lease.busy = true
+      WarmSession::Turn.new(domain: domain, resume_id: lease.session_id, seed: state["seed_summary"],
+                            turns: lease.turns, generation: lease.generation,
+                            consolidate_at: (state["consolidate_at"] || @registry.consolidate_at(domain)).to_i)
+    rescue ApiError => e
+      @leases.delete(domain) if e.code == "LEASE_HELD"
+      reason = e.code == "LEASE_HELD" ? "another dispatcher holds the lease" : "acquire failed (#{e.message})"
+      log "warm #{domain}: #{reason}; answering ##{message['id']} per message"
+      nil
+    end
+
+    # Is this machine's transcript of the session's head current? Its own last
+    # checkpoint, or a file newer than the board's. Else restore the board's
+    # checkpoint; a restore that fails drops the lease (the caller goes cold).
+    def transcript_ready?(lease, soul)
+      cwd = responder_for(soul).soul_folder
+      path = WarmSession.transcript_path(lease.session_id, cwd: cwd, claude_home: @claude_home)
+      return true if path && current?(lease, path)
+
+      session_id, bytes = @client.domain_checkpoint_read(lease.domain, worker: @worker)
+      raise ArgumentError, "the checkpoint is of #{session_id}, not #{lease.session_id}" unless session_id == lease.session_id
+
+      WarmSession.restore!(session_id, bytes, cwd: cwd, claude_home: @claude_home)
+      @own_checkpoints[lease.domain] = [ session_id, lease.checkpointed_at ]
+      log "warm #{lease.domain}: restored the checkpoint of #{session_id} (#{bytes.bytesize} bytes)"
+      true
+    rescue ApiError, ArgumentError, Zlib::Error, SystemCallError, IOError => e
+      drop_lease(lease.domain, "the checkpoint would not restore (#{e.class})")
+      false
+    end
+
+    def current?(lease, path)
+      return true if @own_checkpoints[lease.domain] == [ lease.session_id, lease.checkpointed_at ]
+      return false if lease.checkpointed_at.nil?
+
+      File.mtime(path) > Time.parse(lease.checkpointed_at.to_s)
+    rescue ArgumentError, SystemCallError
+      false
+    end
+
+    # After a warm run: checkpoint a completed answer, or drop the lease. Never
+    # raises into the loop.
+    def settle_warm(run, answer)
+      domain = run.warm.domain
+      lease = @leases[domain]
+      return unless lease
+
+      return release_busy(domain, "the warm turn did not complete") unless answer
+
+      checkpoint_turn(domain, lease, answer, run)
+    rescue StandardError => e
+      release_busy(domain, "settling the warm turn raised #{e.class}")
+    end
+
+    def checkpoint_turn(domain, lease, answer, run)
+      session_id = answer.session_id
+      path = session_id && WarmSession.transcript_path(session_id, cwd: answer.cwd, claude_home: @claude_home)
+      return release_busy(domain, "the turn left no transcript") unless path
+
+      tokens = WarmSession.context_tokens(answer.meta)
+      turns = lease.turns.to_i + 1
+      data = WarmSession.pack(path)
+      previous = lease.session_id
+      if data.bytesize > WarmSession::CHECKPOINT_LIMIT
+        lease.session_id = session_id
+        lease.turns = turns
+        return start_consolidation(domain, run.message["soul_slug"], lease, tokens, "the transcript passed the checkpoint limit")
+      end
+
+      state = @client.domain_checkpoint(domain, worker: @worker, session_id: session_id, data: data, turns: turns,
+                                                context_tokens: tokens)["data"] || {}
+      lease.session_id = session_id
+      lease.turns = turns
+      lease.checkpointed_at = state["checkpointed_at"]
+      lease.handback = state["handback_requested"] == true
+      @own_checkpoints[domain] = [ session_id, lease.checkpointed_at ]
+      prune_superseded(previous, session_id, answer.cwd)
+      log "warm #{domain}: turn #{turns} checkpointed (#{data.bytesize} bytes, context #{tokens} tokens)"
+      return release_busy(domain, "a handback was requested; between turns") if lease.handback
+      if WarmSession.consolidate?(tokens, run.warm.consolidate_at)
+        return start_consolidation(domain, run.message["soul_slug"], lease, tokens, "context passed #{run.warm.consolidate_at} tokens")
+      end
+
+      lease.busy = false
+    rescue ApiError, SystemCallError, IOError, Zlib::Error => e
+      release_busy(domain, "the checkpoint failed (#{e.class}#{e.respond_to?(:code) && e.code ? " #{e.code}" : ''})")
+    end
+
+    # A resumed turn may write its transcript under a new session id that holds
+    # the whole history; the superseded file is then a duplicate. Removed only
+    # inside this soul's own project folder, never anywhere else.
+    def prune_superseded(previous, current, cwd)
+      return if previous.nil? || previous == current
+
+      old = File.join(WarmSession.project_dir(cwd, claude_home: @claude_home), "#{previous}.jsonl")
+      File.delete(old) if previous.match?(WarmSession::SESSION_ID) && File.file?(old)
+    rescue SystemCallError
+      nil
+    end
+
+    def start_consolidation(domain, soul, lease, tokens, why)
+      responder = responder_for(soul)
+      session_id = lease.session_id
+      thread = Thread.new do
+        Thread.current.report_on_exception = false
+        responder.summarize(session_id)
+      end
+      @chores << Chore.new(domain: domain, thread: thread, started_at: @clock.call, source_session_id: session_id,
+                           turns: lease.turns, context_tokens: tokens)
+      log "warm #{domain}: consolidating (#{why})"
+    end
+
+    def finish_chore(chore)
+      domain = chore.domain
+      lease = @leases[domain]
+      return unless lease
+
+      text, = chore.thread.value
+      return release_busy(domain, "the consolidation answered nothing") if text.nil?
+
+      state = @client.domain_consolidate(domain, worker: @worker, text: text, source_session_id: chore.source_session_id,
+                                                 turns_covered: chore.turns, context_tokens: chore.context_tokens)["data"] || {}
+      lease.session_id = nil
+      lease.turns = 0
+      lease.checkpointed_at = nil
+      lease.generation = state["generation"]
+      lease.handback = state["handback_requested"] == true
+      @own_checkpoints.delete(domain)
+      log "warm #{domain}: consolidated #{chore.turns} turn(s); generation #{lease.generation} starts fresh"
+      return release_busy(domain, "a handback was requested; between turns") if lease.handback
+
+      lease.busy = false
+    rescue StandardError => e
+      release_busy(domain, "the consolidation failed (#{e.class})")
+    end
+
+    def release_busy(domain, why)
+      @leases[domain]&.busy = false
+      drop_lease(domain, why)
+    end
+
+    # Give a domain's lease back to the board. The session and its checkpoint
+    # stay for the next holder.
+    def drop_lease(domain, why)
+      return unless @leases.delete(domain)
+
+      @client.domain_release(domain, worker: @worker)
+      log "warm #{domain}: lease released (#{why})"
+    rescue ApiError => e
+      log "warm #{domain}: release failed (#{e.message}); the lease lapses on its own"
+    end
+
+    # On the ping beat: renew every lease held, and give back, between turns,
+    # one a primary asked for, or any a standby holds while a primary is live.
+    def renew_leases
+      @leases.values.each do |lease|
+        if !lease.busy && (lease.handback || standing_by?)
+          drop_lease(lease.domain, lease.handback ? "a handback was requested" : "the primary is back")
+          next
+        end
+
+        state = @client.domain_renew(lease.domain, worker: @worker)["data"] || {}
+        lease.handback = state["handback_requested"] == true
+        drop_lease(lease.domain, "a handback was requested") if lease.handback && !lease.busy
+      rescue ApiError => e
+        # Lost: lapsed and taken. A turn in flight checkpoints into a refusal
+        # and drops it then; an idle lease is simply forgotten.
+        log "warm #{lease.domain}: renew refused (#{e.message})"
+        @leases.delete(lease.domain) unless lease.busy
+      end
+    end
+
+    # The role and the primary's liveness from the ping's answer.
+    def read_role(answer)
+      role = answer.is_a?(Hash) ? answer.dig("data", "role") : nil
+      if %w[primary standby].include?(role) && role != @role
+        log "board role: #{role}"
+        @role = role
+      end
+      live = answer.is_a?(Hash) ? answer.dig("meta", "primary_live") : nil
+      @primary_live = live unless live.nil?
     end
 
     # A run that raised is a failed run: give the message back naming the error
@@ -451,11 +735,13 @@ module AgentMailbox
 
     def ping(now, state: nil)
       @last_ping = now
-      @client.ping({ "worker" => @worker, "host" => @host, "souls" => @souls, "running" => @runs.size,
-                     "capacity" => @cap, "paused_until" => paused?(now) ? @paused_until.utc.iso8601 : nil,
-                     "pause_reason" => paused?(now) ? @pause_reason : nil,
-                     "state" => state || (paused?(now) ? "paused" : "running"),
-                     "version" => @version, "started_at" => @started_at.utc.iso8601 })
+      answer = @client.ping({ "worker" => @worker, "host" => @host, "souls" => @souls, "running" => @runs.size,
+                              "capacity" => @cap, "paused_until" => paused?(now) ? @paused_until.utc.iso8601 : nil,
+                              "pause_reason" => paused?(now) ? @pause_reason : nil,
+                              "state" => state || (paused?(now) ? "paused" : "running"),
+                              "version" => @version, "started_at" => @started_at.utc.iso8601 })
+      read_role(answer)
+      renew_leases unless @leases.empty?
     rescue ApiError => e
       log "ping failed: #{e.message}"
     end

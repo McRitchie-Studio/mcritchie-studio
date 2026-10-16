@@ -12,6 +12,7 @@ require "uri"
 require_relative "agent_api"
 require_relative "agent_context_builder"
 require_relative "agent_proposal_block"
+require_relative "agent_warm_session"
 
 # The worker and observer side of the agent mailbox
 # (docs/agents/system/agent-message-loop.md): `bin/heartbeat` and `bin/dispatcher`
@@ -23,7 +24,17 @@ require_relative "agent_proposal_block"
 module AgentMailbox
   REPO_ROOT = File.expand_path("../..", __dir__)
 
-  class ApiError < StandardError; end
+  # status: the HTTP status (nil when the board never answered). code: the
+  # board's error_code, so a caller can tell a refusal (LEASE_HELD) from a fault.
+  class ApiError < StandardError
+    attr_reader :status, :code
+
+    def initialize(message = nil, status: nil, code: nil)
+      super(message)
+      @status = status
+      @code = code
+    end
+  end
 
   # The mailbox endpoints, over AgentApi. Every call returns the parsed body or
   # raises ApiError naming the status and the board's reason; a mailbox command
@@ -88,7 +99,37 @@ module AgentMailbox
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/release", body)
     end
 
+    # The warm-session lease per domain (AgentDomainSession on the board).
+    def domain_acquire(domain, worker:) = call(:post, domain_path(domain, "acquire"), { "worker" => worker })
+    def domain_renew(domain, worker:) = call(:post, domain_path(domain, "renew"), { "worker" => worker })
+    def domain_release(domain, worker:) = call(:post, domain_path(domain, "release"), { "worker" => worker })
+
+    # `data`: the gzipped transcript (WarmSession.pack), sent base64.
+    def domain_checkpoint(domain, worker:, session_id:, data:, turns:, context_tokens:)
+      call(:post, domain_path(domain, "checkpoint"),
+           { "worker" => worker, "session_id" => session_id, "turns" => turns, "context_tokens" => context_tokens,
+             "data" => [ data ].pack("m0") })
+    end
+
+    # The checkpoint's gzipped bytes and the session it is, for the holder.
+    def domain_checkpoint_read(domain, worker:)
+      data = call(:get, path(domain_path(domain, "checkpoint"), worker: worker))["data"] || {}
+      [ data["session_id"], data["data"].to_s.unpack1("m0") ]
+    end
+
+    def domain_consolidate(domain, worker:, text:, source_session_id:, turns_covered:, context_tokens:)
+      call(:post, domain_path(domain, "consolidate"),
+           { "worker" => worker, "text" => text, "source_session_id" => source_session_id,
+             "turns_covered" => turns_covered, "context_tokens" => context_tokens })
+    end
+
     private
+
+    def domain_path(domain, verb)
+      raise ArgumentError, "unsafe domain #{domain.inspect}" unless domain.to_s.match?(/\A[a-z][a-z0-9_]{0,40}\z/)
+
+      "/api/v1/agent_domain_sessions/#{domain}/#{verb}"
+    end
 
     def path(base, params)
       query = params.reject { |_, v| v.nil? || v.to_s.empty? }
@@ -102,7 +143,8 @@ module AgentMailbox
       parsed = JSON.parse(res.body.to_s) rescue {}
       return parsed if res.code.to_i.between?(200, 299)
 
-      raise ApiError, "#{method.upcase} #{path} -> HTTP #{res.code}: #{parsed['error'] || res.body.to_s[0, 200]}"
+      raise ApiError.new("#{method.upcase} #{path} -> HTTP #{res.code}: #{parsed['error'] || res.body.to_s[0, 200]}",
+                         status: res.code.to_i, code: parsed.is_a?(Hash) ? parsed["error_code"] : nil)
     end
   end
 
@@ -287,7 +329,10 @@ module AgentMailbox
 
     # [text or nil, source]: source is "transcript", "redacted" (thinking blocks
     # with no text), "none" (no thinking blocks), or "no_transcript".
-    def self.reasoning(session_id, claude_home: File.join(Dir.home, ".claude"))
+    # `last_turn_only`: a warm session's transcript holds every earlier turn, so
+    # only the thinking after its last prompt (the last `user` entry) is this
+    # run's. A cold run has one prompt, so it reads the same either way.
+    def self.reasoning(session_id, claude_home: File.join(Dir.home, ".claude"), last_turn_only: false)
       return [ nil, "no_transcript" ] unless session_id.to_s.match?(/\A[0-9A-Za-z-]{8,100}\z/)
 
       path = Dir.glob(File.join(claude_home, "projects", "*", "#{session_id}.jsonl")).first
@@ -295,6 +340,10 @@ module AgentMailbox
 
       blocks = []
       File.foreach(path, encoding: "UTF-8") do |line|
+        if last_turn_only && line.include?('"type":"user"')
+          blocks.clear
+          next
+        end
         next unless line.include?("thinking")
 
         entry = JSON.parse(line) rescue next
@@ -444,8 +493,11 @@ module AgentMailbox
   #
   # Each soul's Claude runs from its OWN folder, mailbox_home/<soul> (created on
   # demand), so its transcripts sit together and `claude --resume <id>` from that
-  # folder reopens a run. Memory never comes from a resumed session: every answer
-  # is rebuilt from the board's rows.
+  # folder reopens a run. Memory is rebuilt from the board's rows for every
+  # answer. The one exception is a WARM turn (`warm:`, a WarmSession::Turn that
+  # bin/dispatcher passes only for a warm domain's owner and team messages): it
+  # resumes the domain's session, and its prompt is still built from this
+  # message's own bundle (ContextBuilder#warm_prompt).
   class Responder
     # The ONE read-only action each soul may take, run from the hub checkout.
     # A soul with none still answers, from its role alone. It runs only when the
@@ -475,8 +527,9 @@ module AgentMailbox
     # the facts the run returned about the sender (NoteBlock), already cut from
     # the reply. proposal: the parsed PROPOSAL block (ProposalBlock), also cut
     # from the reply; the board alone decides whether it stands.
+    # warm: the WarmSession::Turn the answer ran on, or nil for a cold run.
     Answer = Struct.new(:reply, :action, :status, :usage_limit, :signed_out, :session_id, :cwd, :reasoning, :meta,
-                        :notes, :proposal, keyword_init: true) do
+                        :notes, :proposal, :warm, keyword_init: true) do
       # The complete call's run fields (AgentMessage.run_record on the board),
       # plus `notes`, which the board files under the message's author, and
       # `proposal`, which the board validates (AgentProposal.record_from!).
@@ -500,20 +553,54 @@ module AgentMailbox
     end
 
     # `context`: the board's bundle for this message (Client#context), or nil.
-    def respond(message, context: nil)
+    # `warm`: a WarmSession::Turn, or nil (every caller but a warm dispatcher
+    # turn, and then this path is exactly the cold one).
+    def respond(message, context: nil, warm: nil)
       audience = Audience.from_context(context)
       action = run_action(audience)
       cwd = soul_folder
-      output, status, error = @runner.call(@claude_cmd, stdin: prompt_for(message, action, context: context, audience: audience),
-                                                         timeout: CLAUDE_TIMEOUT, chdir: cwd)
+      stdin = if warm
+                ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
+                                   action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root,
+                                   audience: audience).warm_prompt(warm)
+              else
+                prompt_for(message, action, context: context, audience: audience)
+              end
+      output, status, error = @runner.call(warm ? warm_cmd(warm.resume_id) : @claude_cmd, stdin: stdin,
+                                                                                           timeout: CLAUDE_TIMEOUT, chdir: cwd)
       run = ClaudeRun.parse(output, status, error)
       limit = UsageLimit.detect(run, now: @clock.call)
-      reasoning, source = run.session_id ? Transcript.reasoning(run.session_id, claude_home: @claude_home) : [ nil, nil ]
+      reasoning, source = if run.session_id
+                            Transcript.reasoning(run.session_id, claude_home: @claude_home, **(warm ? { last_turn_only: true } : {}))
+                          else
+                            [ nil, nil ]
+                          end
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {})
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
-                 reasoning: reasoning, meta: meta)
+                 reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
+                 warm: warm)
+    end
+
+    # The consolidation turn: the session `resume_id` asked for its own notes
+    # (WarmSession::SUMMARY_PROMPT), no tools, read from the envelope as any run.
+    # Returns [summary text or nil, ClaudeRun::Parsed].
+    def summarize(resume_id)
+      output, status, error = @runner.call(warm_cmd(resume_id), stdin: WarmSession::SUMMARY_PROMPT,
+                                                                 timeout: CLAUDE_TIMEOUT, chdir: soul_folder)
+      run = ClaudeRun.parse(output, status, error)
+      text = run.reply && !UsageLimit.detect(run, now: @clock.call) ? ProposalBlock.reply(run.reply).to_s.strip : ""
+      [ text.empty? ? nil : text[0, WarmSession::SUMMARY_LIMIT], run ]
+    end
+
+    # The Claude command for a warm turn: the cold command, unchanged (still
+    # --safe-mode, no tools, json), plus --resume when a session exists.
+    def warm_cmd(resume_id)
+      return @claude_cmd if resume_id.nil?
+      raise ArgumentError, "not a Claude session id" unless resume_id.to_s.match?(WarmSession::SESSION_ID)
+
+      @claude_cmd + [ "--resume", resume_id.to_s ]
     end
 
     def prompt_for(message, action, context: nil, audience: nil)
