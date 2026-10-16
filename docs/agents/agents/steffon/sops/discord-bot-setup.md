@@ -107,7 +107,10 @@ lane, and nobody else sets it):
    embed) in the channel picked for its `cto_report:<domain>` key at
    `/admin/report_destinations`. That page's directory lists what the SHARED bot
    can post to, not the soul's bot, so check the soul's permissions in that
-   channel yourself.
+   channel yourself. Part 1's invite (`274877975552`) lacks Embed Links; add
+   it (`+16384`, e.g. `274877991936`). A missing Embed Links is NOT refused:
+   Discord accepts the post without its embed, so no 401/403, no ErrorLog, and
+   the delivery reads `soul_bot`. Check that the first report shows its embed.
 2. **Set its config var on `mcritchie-studio` only**, read from the item by name
    and never printed. The name is `DISCORD_BOT_TOKEN_` plus the soul's slug,
    upcased, non-alphanumerics as `_`:
