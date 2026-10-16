@@ -138,7 +138,9 @@ module AgentMessages
     end
 
     # Removes quoted strings (with their backslash pairs) and comments (nested,
-    # with quoted pairs), keeping line breaks so the folded layout survives.
+    # with quoted pairs). nil when one is still open at a line break or at the
+    # end: SES prints sender-chosen values (helo, envelope-from, header.i), and a
+    # lone `(` or `"` there would otherwise swallow SES's next folded line.
     def self.sanitize(text)
       out = +""
       depth = 0
@@ -148,11 +150,13 @@ module AgentMessages
       while i < chars.size
         c = chars[i]
         if c == "\\" && (quoted || depth.positive?)
+          return nil if chars[i + 1] == "\n"
+
           i += 2
           next
         end
         if quoted || depth.positive?
-          out << c if c == "\n" # keep the folded layout
+          return nil if c == "\n"
           if quoted
             quoted = false if c == '"'
           else
@@ -168,7 +172,7 @@ module AgentMessages
         end
         i += 1
       end
-      out
+      quoted || depth.positive? ? nil : out
     end
 
     private
@@ -199,6 +203,7 @@ module AgentMessages
     # carries client-ip, envelope-from and helo that way).
     def parse(folded)
       clean = self.class.sanitize(folded)
+      return [ nil, [], "a quoted string or comment runs across a folded line" ] unless clean
       lines = clean.split(/\r?\n/).map(&:strip).reject(&:empty?)
       first, *rest = lines
       authserv_part, *inline = first.to_s.split(";").map(&:strip)

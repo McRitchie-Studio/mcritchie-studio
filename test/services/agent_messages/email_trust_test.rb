@@ -181,6 +181,17 @@ class EmailTrustTest < ActiveSupport::TestCase
     refute verdict(raw).verified?
   end
 
+  test "a sender's lone ( or \" cannot swallow SES's next line and expose its own pass" do
+    %w[( "].zip(%w[) "]).each do |open, close|
+      top = "Authentication-Results: amazonses.com;\r\n spf=pass client-ip=209.85.218.70;\r\n " \
+            "dkim=fail header.i=@x.mcritchie.studio#{open};\r\n dkim=fail header.i=@a#{close}dkim=pass " \
+            "header.d=mcritchie.studio;\r\n dmarc=pass header.from=mcritchie.studio;\r\n"
+      v = verdict(agent_email(top_result: top))
+      refute v.verified?, "#{open} swallowed a line"
+      assert_match(/runs across a folded line/, v.reason)
+    end
+  end
+
   test "relaxed alignment: a subdomain signature aligns, header.d is read too" do
     assert verdict(agent_email(top_result: ses_result(dkim: "dkim=pass header.d=mail.mcritchie.studio"))).verified?
     raw = agent_email(from: "Bea <bea@team.example.com>",
