@@ -89,4 +89,69 @@ class DiscordDirectory::SyncTest < ActiveSupport::TestCase
   test "[unit] the guilds are the ones config/agent_routes.yml lists" do
     assert_equal [ "1332466565203103744" ], DiscordDirectory::Sync.guild_ids
   end
+  SOUL_USER = "920000000000000098".freeze
+  SOUL_ROLE = "920000000000000051".freeze
+  EMBED = 1 << 14
+
+  # Turf's own bot: a different user in its own role, which carries EMBED_LINKS.
+  def soul_bot_for(member_status: 200)
+    fake = fake_discord
+    fake.overrides["/users/@me"] = [ 200, { "id" => SOUL_USER, "bot" => true } ]
+    fake.overrides["/members/#{SOUL_USER}"] =
+      member_status == 200 ? [ 200, { "user" => { "id" => SOUL_USER }, "roles" => [ SOUL_ROLE ] } ] : [ member_status, { "message" => "Unknown Member" } ]
+    [ AgentMessages::DiscordBot.new(token: "turf-soul-token", transport: fake.to_proc), fake ]
+  end
+
+  def shared_with_soul_role(news_denies_embeds: false)
+    fake = fake_discord
+    roles = discord_roles_payload + [ { "id" => SOUL_ROLE, "name" => "Turf", "permissions" => EMBED.to_s } ]
+    fake.instance_variable_set(:@roles, roles)
+    if news_denies_embeds
+      fake.channels = discord_channels_payload.map do |c|
+        c["id"] == F::NEWS ? c.merge("permission_overwrites" => [ { "id" => SOUL_ROLE, "type" => 0, "allow" => "0", "deny" => EMBED.to_s } ]) : c
+      end
+    end
+    fake
+  end
+
+  test "[unit] postable_souls lists a CTO soul where its own bot can view, send and embed" do
+    soul_bot, = soul_bot_for
+    summary = sync_fake!(shared_with_soul_role(news_denies_embeds: true), soul_bots: { "turf_monster" => soul_bot })
+
+    assert summary.ok?, summary.to_s
+    assert_equal [ "turf_monster" ], row(F::REPORTS).postable_souls
+    assert_equal [], row(F::NEWS).postable_souls, "EMBED_LINKS denied to Turf's role: a report's embed would vanish"
+    assert_equal [ "turf_monster" ], row(F::LOCKED).postable_souls, "SEND is denied only to the shared bot's role"
+    assert_not row(F::LOCKED).postable
+    assert_equal [], row(F::HIDDEN).postable_souls, "@everyone is denied VIEW_CHANNEL"
+    assert_equal [], row(F::VOICE).postable_souls
+    assert_equal [ "turf_monster" ], row(F::THREAD).postable_souls
+  end
+
+  test "[unit] without EMBED_LINKS a soul bot is offered nothing, while the shared bot's postable is unchanged" do
+    soul_bot, = soul_bot_for
+    sync_fake!(fake_discord, soul_bots: { "turf_monster" => soul_bot }) # SOUL_ROLE unknown to the guild: no embeds
+
+    assert row(F::REPORTS).postable
+    assert_equal [], DiscordChannel.where("cardinality(postable_souls) > 0").pluck(:external_id)
+  end
+
+  test "[unit] a soul bot that cannot read its membership is offered no channel, and the summary says so" do
+    soul_bot, = soul_bot_for(member_status: 404)
+    summary = sync_fake!(shared_with_soul_role, soul_bots: { "turf_monster" => soul_bot })
+
+    assert summary.ok?
+    assert_match(/turf_monster's own bot cannot read its membership/, summary.to_s)
+    assert_not_includes summary.to_s, "turf-soul-token"
+    assert_equal [], row(F::REPORTS).postable_souls
+    assert row(F::REPORTS).postable, "the shared bot's directory is unaffected"
+  end
+
+  test "[unit] the soul bots are the CTO souls whose own token is set" do
+    with_env("DISCORD_BOT_TOKEN_TURF_MONSTER", "turf-soul-token") do
+      with_env("DISCORD_BOT_TOKEN_AVI", nil) do
+        assert_equal [ "turf_monster" ], DiscordDirectory::Sync.soul_bots.keys
+      end
+    end
+  end
 end

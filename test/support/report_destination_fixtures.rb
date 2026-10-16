@@ -107,9 +107,11 @@ module ReportDestinationFixtures
     AgentMessages::DiscordBot.transport = previous
   end
 
-  def sync_fake!(fake)
+  # `soul_bots` (soul => DiscordBot) are the CTO bots whose own access the sync
+  # reads; none by default, whatever the environment holds.
+  def sync_fake!(fake, soul_bots: {})
     DiscordDirectory::Sync.new(bot: AgentMessages::DiscordBot.new(token: "test-token", transport: fake.to_proc),
-                              guild_ids: [ GUILD ]).call
+                              guild_ids: [ GUILD ], soul_bots: soul_bots).call
   end
 
   def channel!(external_id: REPORTS, name: "reports", kind: "text", postable: true, archived_at: nil, category_name: "Ops")

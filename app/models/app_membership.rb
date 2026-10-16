@@ -25,13 +25,16 @@ class AppMembership < ApplicationRecord
 
   # Idempotent: creates each OWNERS row whose app and user exist, and says what
   # it did per app ("created", "present", "no app", "no user"). Safe on every run.
+  # The migration's SQL step skips a user with no slug; this one gives it one.
   def self.seed_owners!(owners = OWNERS)
     owners.to_h do |app_slug, email|
       app = App.find_by(slug: app_slug)
       user = User.where("LOWER(email) = ?", email.downcase).first
+      # A row with no slug yet gets one on its next save (Sluggable).
+      user.save! if user && user.slug.blank?
       outcome =
         if app.nil? then "no app"
-        elsif user.nil? || user.slug.blank? then "no user"
+        elsif user.nil? then "no user"
         else
           membership = find_or_create_by!(app_slug: app.slug, user_slug: user.slug) { |m| m.role = "owner" }
           membership.previously_new_record? ? "created" : "present"
