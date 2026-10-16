@@ -119,7 +119,6 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   FILED_SOLANA_ITEMS = %w[
     agent.solana
     agent.xan.solana
-    agent.mack.solana
     agent.mason.solana
     agent.turf.solana
     solana.turf.admin
@@ -129,7 +128,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     solana.turf.server
     solana.turf.system
     solana.turf.system.devnet
+    solana.mack.agent
+    solana.turf.agent
   ].freeze
+  # 2026-10-16 (rename-rehearsal-wallet-items): agent.mack.solana was retitled
+  # solana.mack.agent, and the rehearsal player phantom.turf gained a row as
+  # solana.turf.agent. Both are devnet agent wallets (foUu…, 39QT…), neither is
+  # Mr. McRitchie's 7ZDJ…, so the "no filed item at all" row still holds.
   # 2026-10-14 (mainnet-rotation-follow-ups-sweep): the mainnet key rotation
   # filed solana.turf.governance.v2 (3LTL…, the agent's governance seat) and
   # solana.turf.server (4S39…, production's SOLANA_ADMIN_KEY), and the inventory
