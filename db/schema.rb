@@ -171,7 +171,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_230000) do
     t.string "worker_id", null: false
     t.index ["last_seen_at"], name: "index_agent_dispatchers_on_last_seen_at"
     t.index ["worker_id"], name: "index_agent_dispatchers_on_worker_id", unique: true
-    t.check_constraint "role::text = ANY (ARRAY['primary'::character varying, 'standby'::character varying]::text[])", name: "agent_dispatchers_role_known"
+    t.check_constraint "role::text = ANY (ARRAY['primary'::character varying::text, 'standby'::character varying::text])", name: "agent_dispatchers_role_known"
   end
 
   create_table "agent_domain_sessions", force: :cascade do |t|
