@@ -1761,3 +1761,16 @@ Agent.find_or_create_by!(slug: "turf-monster") { |agent| agent.assign_attributes
 turf_owner = User.find_or_create_by!(email: "owner@turf.test") { |user| user.assign_attributes(name: "Turf Owner", role: "viewer") }
 AppMembership.create!(app: turf_app, user: turf_owner)
 puts "Seeded: #{AppMembership.count} app owner(s)"
+
+# The CTO usage meter (e2e/app_usage_meter.spec.js; docs/agents/system/agent-usage.md):
+# Turf on the Builder tier, and one answered client message this month with its
+# run summary. The shipped allowances are blank, so the meter reads unlimited.
+turf_app.update!(package_tier: "builder", cto_cap_lifted_at: nil, cto_cap_lifted_by: nil)
+usage_client = AgentPerson.find_or_create_by!(display_name: "E2E Turf Client") { |p| p.assign_attributes(role: "client", client_domain: "turf_monster") }
+AgentMessage.where(external_id: "e2e-usage-1").destroy_all
+AgentMessage.create!(channel: "discord", external_id: "e2e-usage-1", channel_ref: "e2e", thread_key: "discord:e2e:usage",
+                     soul_slug: "turf_monster", status: "completed", completed_at: Time.current, content: "how are signups?",
+                     person: usage_client, response_text: "Steady.",
+                     run_meta: { "input_tokens" => 1_200, "cache_read_tokens" => 18_000, "cache_creation_tokens" => 0,
+                                 "output_tokens" => 300, "total_cost_usd" => 0.05, "duration_ms" => 4_000, "audience" => "client" })
+puts "Seeded: one metered Turf answer"
