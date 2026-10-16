@@ -423,8 +423,9 @@ module AgentMailbox
     end
 
     # Best effort: typing never holds up an answer. The board answering anything
-    # but "queued" (capped, not answered, not Discord), or refusing, stops this
-    # run's pulses; the answer goes on. Ids only in the log.
+    # but "queued" (capped, not answered, not Discord), refusing, or the call
+    # raising anything at all stops this run's pulses; the answer goes on. Ids
+    # and error classes only in the log.
     def pulse_typing(run, now)
       return unless run.typing
 
@@ -441,6 +442,11 @@ module AgentMailbox
     rescue ApiError => e
       run.typing = false
       log "typing for ##{run.message['id']} refused: #{e.message}"
+    rescue StandardError => e
+      # Anything else (a dropped connection, a client without #typing) must not
+      # reach the main loop: typing is the one call here that is never needed.
+      run.typing = false
+      log "typing for ##{run.message['id']} failed (#{e.class})"
     end
 
     def ping(now, state: nil)

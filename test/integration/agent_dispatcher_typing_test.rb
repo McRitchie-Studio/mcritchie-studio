@@ -159,6 +159,7 @@ class AgentDispatcherTypingTest < ActionDispatch::IntegrationTest
       @typing_calls += 1
       verdict = @verdicts.shift
       raise AgentMailbox::ApiError, "POST typing -> HTTP 409: NOT_HOLDER" if verdict == :raise
+      raise Errno::ECONNRESET, "board connection reset" if verdict == :boom
 
       { "meta" => { "typing" => verdict } }
     end
@@ -169,7 +170,8 @@ class AgentDispatcherTypingTest < ActionDispatch::IntegrationTest
     def release(*, **) = {}
   end
 
-  [ [ "capped", "stopped (capped)" ], [ "not_answered", "stopped (not_answered)" ], [ :raise, "refused" ] ].each do |verdict, logged|
+  [ [ "capped", "stopped (capped)" ], [ "not_answered", "stopped (not_answered)" ], [ :raise, "refused" ],
+    [ :boom, "failed (Errno::ECONNRESET)" ] ].each do |verdict, logged|
     test "[unit] the board answering #{verdict} stops that run's typing; the answer still completes" do
       client = FakeClient.new([ "queued", verdict ])
       disp = dispatcher(GatedRunner.new(gate: @gate), client: client)

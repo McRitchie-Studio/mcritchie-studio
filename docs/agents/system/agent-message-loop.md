@@ -749,9 +749,10 @@ that will post the reply shows "typing…" in the message's channel or thread.
   posts without it. A pause with runs in flight can stretch one gap to about 12
   seconds (the paused loop sleeps up to 5).
 - **Best effort.** A Discord error on a pulse (a 429, a 5xx, a timeout) is logged
-  by class and dropped, never retried: the next pulse is seconds away. An API
+  by class and dropped, never retried: the next pulse is seconds away. Any
   error on the ask stops that run's typing and logs one id-only line
-  (`typing for #N refused: …`); the answer goes on.
+  (`typing for #N refused: …` from the board, `typing for #N failed (<Class>)`
+  for anything else); the answer goes on.
 - **Rate limits.** Discord does not publish a fixed number for the typing route;
   it buckets per channel and reports the bucket in `X-RateLimit-*` headers, under
   the bot's global 50 requests per second. One pulse per 7 seconds per channel,
