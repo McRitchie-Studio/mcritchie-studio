@@ -111,10 +111,10 @@ only for that case.
 
 **A client app's lane cap.** A task for a client app with a package tier may take
 a building lane only while one is free: Vibe 1, Builder 2, Pro 3, Team 4,
-Enterprise unlimited. Past the cap the claim (begin's step 5/5) is refused with a
+Enterprise unlimited. Past the cap `begin` stops before it cuts a desk, with a
 message naming the tier and the upgrade; the task stays in `designed`, in order,
-and `bin/task begin <slug>` resumes it once a lane frees up. The desk begin cut is
-kept. The hub and any app without a tier are never capped. Detail:
+and `bin/task begin <slug>` resumes it once a lane frees up. The claim itself
+refuses the same way, so `bin/task move <slug> building` cannot bypass it. The hub and any app without a tier are never capped. Detail:
 [`../system/client-pipeline.md`](../system/client-pipeline.md).
 
 **Read the preflight output before writing code.** `begin` runs it on the desk

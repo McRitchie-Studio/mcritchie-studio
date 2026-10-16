@@ -61,6 +61,11 @@ begin` makes (its child `move <slug> building`) and the board's drag. Past the
 cap the board answers 422 with a message naming the app, its tier, the tasks in
 its lanes and the next tier up, and the task stays in `designed`, in order.
 
+`bin/task begin` asks first, before it cuts a desk: `GET
+/api/v1/tasks/:slug/building_lane` returns the refusal a claim would meet now, or
+null, and writes nothing. On a refusal begin stops with that message; on a board
+without the endpoint, or any failure, it falls through to the claim.
+
 Never capped: the hub (`BuildingLanes::INTERNAL_APPS`, `mcritchie-studio`) and
 any app with no tier. A rework bounce (a submitted task blocked back to
 `building`) and a re-claim of a task already building take no new lane.
