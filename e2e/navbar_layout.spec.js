@@ -159,10 +159,18 @@ test("the desktop avatar shrinks on scroll and the name follows it", async ({ pa
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tasks");
 
-  const sizes = () => page.evaluate(() => ({
-    avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
-    name: parseFloat(getComputedStyle(document.querySelector("header [data-nav-name]")).fontSize),
-  }));
+  // The name's size as RENDERED: its font size times any transform on the way
+  // up. The scroll-driven navbar (application.css) shrinks it by transform, so
+  // its computed font size stays the resting one while what reads on screen
+  // follows the avatar.
+  const sizes = () => page.evaluate(() => {
+    const name = document.querySelector("header [data-nav-name]");
+    const scale = name.getBoundingClientRect().height / name.offsetHeight;
+    return {
+      avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
+      name: parseFloat(getComputedStyle(name).fontSize) * scale,
+    };
+  });
 
   const rest = await sizes();
   expect(rest.avatar).toBe(40);
@@ -222,4 +230,55 @@ test("the desktop controls are evenly spaced", async ({ page }) => {
     const measured = await gaps();
     measured.forEach((gap) => expect(Math.abs(gap - 12), JSON.stringify(measured)).toBeLessThanOrEqual(1));
   }
+});
+
+// THE SCROLL-DRIVEN NAVBAR (application.css, task scroll-driven-studio-navbar).
+// From 768px the collapse is the browser's: the header keeps one height and
+// its top band scrolls away with the page, and its contents shrink by
+// transforms on the page's scroll timeline. Nothing runs per frame, so a busy
+// main thread cannot make it stutter.
+test("the desktop navbar collapses on the scroll timeline, off the engine's script", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks");
+  await page.evaluate(() => document.fonts.ready);
+  const header = page.locator("header.nav-shell");
+
+  // Off the engine's per-frame script, and still restorable to it.
+  await expect(header).not.toHaveAttribute("data-studio-controller", /./);
+  await expect(header).toHaveAttribute("data-sd-controller", "nav-collapse");
+
+  const run = await page.evaluate(async () => {
+    const h = document.querySelector("header.nav-shell");
+    const probe = [...document.querySelectorAll("h1, h2")].find((e) => !h.contains(e));
+    const frame = () => new Promise((r) => requestAnimationFrame(r));
+    const writes = [];
+    new MutationObserver((ms) => ms.forEach((m) => writes.push(m.attributeName))).observe(h, { attributes: true, attributeFilter: ["style"] });
+    const rows = [];
+    const read = () => { const r = h.getBoundingClientRect(); rows.push({ box: r.height, bottom: r.bottom, docH: document.documentElement.scrollHeight, top: probe.getBoundingClientRect().top + window.scrollY }); };
+    read();
+    for (const s of [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 600, -900]) { window.scrollBy(0, s); await frame(); read(); }
+    return { rows, styleWrites: writes.length };
+  });
+
+  const boxes = new Set(run.rows.map((r) => r.box));
+  expect([...boxes], "the header's box never changes height").toHaveLength(1);
+  expect(new Set(run.rows.map((r) => r.docH)).size, "the document never changes height").toBe(1);
+  expect(Math.max(...run.rows.map((r) => r.top)) - Math.min(...run.rows.map((r) => r.top)), "the page never moves by itself").toBeLessThanOrEqual(0.5);
+  // Collapsed, what shows is the 48px compact bar.
+  expect(Math.round(run.rows[run.rows.length - 2].bottom)).toBe(48);
+  // No script wrote the header's style while it scrolled.
+  expect(run.styleWrites, "inline style writes on the header during the scroll").toBe(0);
+});
+
+// Below 768px the phone keeps the engine's collapse, and the header goes back
+// to the engine's controller when the window narrows.
+test("narrowing to a phone hands the header back to the engine's collapse", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks");
+  const header = page.locator("header.nav-shell");
+  await expect(header).toHaveAttribute("data-sd-controller", "nav-collapse");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(header).toHaveAttribute("data-studio-controller", "nav-collapse");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(header).not.toHaveAttribute("data-studio-controller", /./);
 });
