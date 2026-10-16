@@ -107,10 +107,10 @@ class AgentPersonNote < ApplicationRecord
   # True when the text reaches for the agent's machinery or authority (DIRECTIVES).
   def self.directive?(body) = DIRECTIVES.any? { |pattern| body.match?(pattern) }
 
-  # True when a stored body still passes clean unchanged: the bundle holds a note
-  # stored under an older rule to today's (a bracket, a directive) before it can
-  # reach a prompt.
-  def self.admissible?(body) = clean(body) == body
+  # True when a stored body still passes clean: the bundle holds a note stored
+  # under an older rule to today's (a bracket, a directive) before it can reach
+  # a prompt.
+  def self.admissible?(body) = !clean(body).nil?
 
   # The domain key a soul files and reads notes under: its entry in the souls
   # map, or "" when the registry names none.
