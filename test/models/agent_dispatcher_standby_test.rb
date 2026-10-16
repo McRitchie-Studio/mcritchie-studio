@@ -8,7 +8,7 @@ require Rails.root.join("bin/lib/agent_domain_registry").to_s
 # primaries only; prune keeps a host's registration.
 class AgentDispatcherStandbyTest < ActiveSupport::TestCase
   setup do
-    config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"), aliases: false)
+    config = YAML.safe_load_file(AgentMailbox::DomainRegistry::PATH, aliases: false)
     config["domains"]["mcritchie_studio"]["warm_session"] = true
     @registry = AgentMailbox::DomainRegistry.new(config)
   end

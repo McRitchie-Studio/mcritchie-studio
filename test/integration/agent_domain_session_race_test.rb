@@ -12,7 +12,7 @@ class AgentDomainSessionRaceTest < ActiveSupport::TestCase
   DOMAIN = "mcritchie_studio".freeze
 
   setup do
-    config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"), aliases: false)
+    config = YAML.safe_load_file(AgentMailbox::DomainRegistry::PATH, aliases: false)
     config["domains"][DOMAIN]["warm_session"] = true
     @registry = AgentMailbox::DomainRegistry.new(config)
     AgentDomainSession.where(domain: DOMAIN).delete_all

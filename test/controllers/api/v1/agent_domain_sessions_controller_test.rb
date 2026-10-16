@@ -14,7 +14,7 @@ module Api
       setup do
         token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
         @shared = { "Authorization" => "Bearer #{token}" }
-        config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"), aliases: false)
+        config = YAML.safe_load_file(AgentMailbox::DomainRegistry::PATH, aliases: false)
         config["domains"][DOMAIN]["warm_session"] = true
         AgentProposal.registry = AgentMailbox::DomainRegistry.new(config)
       end

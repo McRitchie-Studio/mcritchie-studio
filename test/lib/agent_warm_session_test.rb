@@ -20,14 +20,14 @@ class AgentWarmSessionTest < ActiveSupport::TestCase
     FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
     FileUtils.cp(Rails.root.join(AgentMailbox::Audience::SOP_PATH), File.join(@root, AgentMailbox::Audience::SOP_PATH))
     FileUtils.mkdir_p(File.join(@root, "config"))
-    File.write(File.join(@root, "config/agent_domains.yml"), <<~YAML)
+    File.write(File.join(@root, AgentMailbox::ContextBuilder::DOMAINS_PATH), <<~YAML)
       domains:
         studio: { name: McRitchie Studio, doc: docs/studio.md, soul: avi, warm_session: true, consolidate_at: 50000 }
         turf: { name: Turf, doc: docs/turf.md, soul: turf_monster }
         odd: { name: Odd, soul: odd, warm_session: "yes", consolidate_at: 5 }
       souls: { avi: studio, xan: studio, turf_monster: turf }
     YAML
-    @registry = AgentMailbox::DomainRegistry.load(File.join(@root, "config/agent_domains.yml"))
+    @registry = AgentMailbox::DomainRegistry.load(File.join(@root, AgentMailbox::ContextBuilder::DOMAINS_PATH))
     @message = { "id" => 9, "channel" => "discord", "author_name" => "Alex", "content" => "what next?" }
     @context = { "audience" => { "role" => "owner" }, "place" => "[discord #desk]",
                  "user" => { "display_name" => "Alex", "facts" => [ { "body" => "Owner." } ] },

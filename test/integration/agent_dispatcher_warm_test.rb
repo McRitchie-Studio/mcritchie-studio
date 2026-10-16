@@ -79,7 +79,7 @@ class AgentDispatcherWarmTest < ActionDispatch::IntegrationTest
     token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)
     @client = AgentMailbox::Client.new(api: AgentMailboxInProcessApi.new(self, token))
     @tmp = Dir.mktmpdir("warm-int")
-    config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"), aliases: false)
+    config = YAML.safe_load_file(AgentMailbox::DomainRegistry::PATH, aliases: false)
     config["domains"][DOMAIN]["warm_session"] = true
     config["domains"][DOMAIN]["consolidate_at"] = 50_000
     @warm = AgentMailbox::DomainRegistry.new(config)

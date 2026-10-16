@@ -12,7 +12,7 @@ class AgentDispatchersRakeTest < ActiveSupport::TestCase
 
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("agent_dispatchers:role")
-    config = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml"), aliases: false)
+    config = YAML.safe_load_file(AgentMailbox::DomainRegistry::PATH, aliases: false)
     config["domains"][DOMAIN]["warm_session"] = true
     AgentProposal.registry = AgentMailbox::DomainRegistry.new(config)
     AgentDispatcher.ping!({ "worker" => "work-1", "host" => "workmac" })
