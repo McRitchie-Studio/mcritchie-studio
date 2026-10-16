@@ -39,6 +39,7 @@ its invocation exactly.
 | Agent usage (run summaries, tiers, the CTO allowance and meter) | `mcritchie-studio/docs/agents/system/agent-usage.md` |
 | Report destinations (deliver a report to a Discord channel Alex picks: `ReportDestinations.deliver`) | `mcritchie-studio/docs/agents/system/report-destinations.md` |
 | App owners (who owns which app; the owner's app page and CTO settings, 404 for everyone else) | `mcritchie-studio/docs/agents/system/app-owners.md` |
+| Client pipeline (an owner's sanitized view of their app's tasks by lane; building lanes per tier, enforced on the claim) | `mcritchie-studio/docs/agents/system/client-pipeline.md` |
 | Daily app report (the 07:00 Denver CTO summary of every app's health, in Discord; `HEALTH_TOKEN_<SLUG>`) | `mcritchie-studio/docs/agents/system/daily-app-report.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |

@@ -14,7 +14,9 @@
 # (`turf_monster` → `turf-monster`, config/souls.yml).
 #
 # THE SIDEBAR RULE counts the user's OWN memberships, admins included: one owned
-# app reads as that app's name, two or more as "Applications"; one CTO among them
+# app reads as that app's name, followed by its Pipeline (the app's tasks by lane,
+# docs/agents/system/client-pipeline.md), two or more as "Applications" (each app's
+# page links its own pipeline); one CTO among them
 # reads as the CTO's name, two or more as "Agents". A user who owns nothing gets
 # no links, admin or not; an admin reaches every app at /applications anyway.
 #
@@ -80,7 +82,7 @@ module AppOwnership
     ctos.select { |cto| owned.include?(cto.app_slug) }
   end
 
-  # The owner's sidebar links: at most an apps link and an agents link, both
+  # The owner's sidebar links: an apps link (with a pipeline link for one app) and an agents link, both
   # counted from the user's own memberships (see THE SIDEBAR RULE above).
   def sidebar_links(user, routes: Rails.application.routes.url_helpers)
     owned = owned_app_slugs(user)
@@ -91,10 +93,11 @@ module AppOwnership
 
     owned_ctos = ctos.select { |cto| owned.include?(cto.app_slug) }
     links = []
-    links << if apps.one?
-      Link.new(label: apps.first.name, href: routes.application_path(apps.first.slug), emoji: apps.first.emoji.presence || "📱", kind: "app")
+    if apps.one?
+      links << Link.new(label: apps.first.name, href: routes.application_path(apps.first.slug), emoji: apps.first.emoji.presence || "📱", kind: "app")
+      links << Link.new(label: "Pipeline", href: routes.pipeline_application_path(apps.first.slug), emoji: "🛠️", kind: "pipeline")
     else
-      Link.new(label: "Applications", href: routes.applications_path, emoji: "📱", kind: "apps")
+      links << Link.new(label: "Applications", href: routes.applications_path, emoji: "📱", kind: "apps")
     end
     if owned_ctos.one?
       cto = owned_ctos.first

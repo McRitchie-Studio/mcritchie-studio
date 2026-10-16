@@ -2409,6 +2409,22 @@ end
 # board's POSITIVE "task not found" (create it), die on everything else — a
 # failed read must never be read as "no such task" (that is the same contract
 # task_not_found_response? guards for the worktree reclaim path).
+# `begin`'s lane-cap pre-check: dies with the board's refusal when the task's app
+# has no free building lane; returns quietly on anything else.
+def refuse_past_lane_cap!(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/building_lane", base_url: BASE_URL, token: token,
+                                read_timeout: 10, open_timeout: 10)
+  return unless res.code.to_i.between?(200, 299)
+
+  refusal = (TaskBoard.parse_body(res)["data"] || {})["refusal"].to_s.strip
+  return if refusal.empty?
+
+  die!("begin — lane cap: #{refusal} Nothing was claimed and no desk was cut; " \
+       "re-run #{ClaimHolder::TASK_COMMAND} begin #{slug} when a lane frees up.")
+rescue StandardError => e
+  warn!("begin — lane check skipped (#{e.class}); the claim still enforces the cap")
+end
+
 def fetch_task_for_begin(slug)
   res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
   parsed = TaskBoard.parse_body(res)
@@ -2889,6 +2905,14 @@ when "begin"
     die!("#{slug} is [#{stage}] — begin only starts a designed/building task. " \
          "Pick a different title (or --slug) for new work; a #{stage} task is past the build seam.")
   end
+
+  # THE LANE CAP, before a desk is cut. A client app's tier caps how many of its
+  # tasks build at once (BuildingLanes, docs/agents/system/client-pipeline.md); past
+  # the cap the claim below would be refused anyway, so ask first and leave the task
+  # queued in `designed` with no desk. Read-only and best-effort: a board without
+  # the endpoint, or any failure, falls through to the claim, whose validation is
+  # the authority.
+  refuse_past_lane_cap!(slug) if stage == "designed"
 
   dv = task.dig("metadata", "devops") || {}
 

@@ -45,7 +45,8 @@ Owners get a **Your apps** section at the top of the link sidebar
 (`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). The labels
 count the viewer's OWN memberships, admins included:
 
-- one owned app reads as its name (`Cyvasse`), two or more as **Applications**;
+- one owned app reads as its name (`Cyvasse`), followed by its **Pipeline**; two
+  or more as **Applications** (each app's page links its own pipeline);
 - one CTO among them reads as its name (`Turf`), two or more as **Agents**;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`.
@@ -59,6 +60,7 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 |------|---------------|
 | `/applications` | The visible apps, each with its CTO |
 | `/applications/:slug` | Name, emoji and colour, health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
+| `/applications/:slug/pipeline` | The app's tasks by lane, read-only and sanitized for an owner; the building lanes in use. Detail: [`client-pipeline.md`](client-pipeline.md) |
 | `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app |
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |

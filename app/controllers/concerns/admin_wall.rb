@@ -71,7 +71,7 @@ module AdminWall
     # An app owner's own apps and their CTOs' settings (docs/agents/system/app-owners.md).
     # Past the wall, each action answers 404 unless the viewer owns that app or is
     # an admin (ApplicationsController, AgentSettingsController).
-    "applications" => %w[index show health usage],
+    "applications" => %w[index show health usage pipeline],
     "agent_settings" => %w[index show update]
   }.transform_values(&:freeze).freeze
 
