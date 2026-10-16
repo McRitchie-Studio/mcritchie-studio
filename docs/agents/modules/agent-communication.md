@@ -80,8 +80,8 @@ to that file, is how the agents start answering them.
 1. **The prompt.** The GENERAL layer prints `You are speaking with: <audience>`, then
    the `always` rules and that audience's `may` and `never`, outside the untrusted
    fence. Another audience's rules are never printed.
-2. **The action.** The soul's read-only action (`bin/task list` for Xan,
-   `bin/release status` for Avi) runs only for `owner` and `team`. For a client or the
+2. **The action.** The soul's read-only action (`bin/task list`, the board read,
+   for Avi and Xan) runs only for `owner` and `team`. For a client or the
    public it never runs, and the prompt says no action is enabled.
 3. **Internal context.** For a client or the public, the prompt leaves out:
    - the soul's role doc (it names the board, SOPs, and credential seats). The soul's

@@ -17,8 +17,10 @@ require Rails.root.join("bin/lib/agent_proposal_block").to_s
 # request it. A refused proposal is never stored here and never shown: it is a
 # `proposal_refused` event on the message that carried it.
 #
-# ONE OPEN PROPOSAL PER THREAD. A new one rejects the one before it, so `go`
-# always means the newest offer.
+# ONE OPEN PROPOSAL PER THREAD. A new one rejects the one before it, so a bare
+# `go` means the newest offer. A `go` sent as a Discord reply to one proposal's
+# message is about THAT proposal (for_word): if it is no longer open, the owner is
+# told and nothing runs, never the newer offer in its place.
 class AgentProposal < ApplicationRecord
   STATUSES = %w[proposed confirmed rejected expired executed].freeze
   KINDS = AgentMailbox::DomainRegistry::KINDS
