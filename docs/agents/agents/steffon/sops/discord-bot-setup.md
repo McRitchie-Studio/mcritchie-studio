@@ -26,9 +26,10 @@ as `agents.discord.<bot>` in the `studio-agents` vault
 | `agents.discord.mack` | `1479979322461913222` | Read by nothing yet |
 
 Reading stays on the one shared token, so one connection reads each guild.
-Only replies switch: a soul with `DISCORD_BOT_TOKEN_<SOUL>` set (its slug,
-upcased) answers as its own bot, unsigned; without it, the shared bot answers,
-signed `**Soul** ·`. Run Part 1 only for a new bot, and Part 1b to give a soul
+Only replies and CTO reports switch: a soul with `DISCORD_BOT_TOKEN_<SOUL>` set
+(its slug, upcased) answers as its own bot, unsigned, and posts its app's
+`cto_report:<domain>` morning report as that bot; without it, the shared bot
+answers, signed `**Soul** ·`, and posts the report. Run Part 1 only for a new bot, and Part 1b to give a soul
 its own replies.
 
 **Routing is per guild, never per channel.** Once a guild is listed, every
@@ -100,7 +101,13 @@ lane, and nobody else sets it):
 1. **Invite the soul's bot to every guild it answers in**, with the four
    Part 1 permissions at least (View Channels, Send Messages, Read Message
    History, Send Messages in Threads). A bot missing from a guild, or missing a
-   permission in a channel, is refused there.
+   permission in a channel, is refused there. **If the soul is a CTO**
+   (`config/cto_reports.yml`), it also posts that app's morning report, so it
+   needs **View Channel, Send Messages and Embed Links** (the report carries an
+   embed) in the channel picked for its `cto_report:<domain>` key at
+   `/admin/report_destinations`. That page's directory lists what the SHARED bot
+   can post to, not the soul's bot, so check the soul's permissions in that
+   channel yourself.
 2. **Set its config var on `mcritchie-studio` only**, read from the item by name
    and never printed. The name is `DISCORD_BOT_TOKEN_` plus the soul's slug,
    upcased, non-alphanumerics as `_`:
@@ -127,9 +134,13 @@ lane, and nobody else sets it):
    targeted at the message mean Discord refused the soul's bot (401: a bad
    token; 403: not in the guild, or a missing channel permission); that reply
    went out through the shared bot, signed, and so does every later one until
-   the cause is fixed.
+   the cause is fixed. For a CTO report, the card at `/admin/report_destinations`
+   reads "Posts as <Soul>'s own bot" once the var is set, and the next morning's
+   last delivery reads "as <Soul>'s own bot". An `ErrorLog` named
+   `DISCORD_BOT_TOKEN_<SOUL> report cto_report:<domain>` means the soul's bot was
+   refused in that channel and that report went out through the shared bot.
 
-To undo it, unset the var: replies fall back to the shared bot at once.
+To undo it, unset the var: replies and reports fall back to the shared bot at once.
 
 ## Part 2 — Connect a client (each request)
 

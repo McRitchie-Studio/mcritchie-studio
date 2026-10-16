@@ -96,6 +96,12 @@ report key, so Alex picks a channel per app at `/admin/report_destinations`.
   file's `soul:` is the Discord front door, which need not be the CTO who signs
   the report. Each key must also be registered in `config/report_destinations.yml`
   (a test holds both lists together).
+- **Bot.** Each CTO report posts as its CTO's own Discord bot when
+  `DISCORD_BOT_TOKEN_<SOUL>` is set (`DISCORD_BOT_TOKEN_AVI`,
+  `DISCORD_BOT_TOKEN_TURF_MONSTER`, `DISCORD_BOT_TOKEN_TYRION`), else as the
+  agents' shared bot. A refused soul bot falls back to the shared bot once, with
+  an `ErrorLog`; the combined `daily_app_report` always posts as the shared bot.
+  Detail: [`report-destinations.md`](report-destinations.md#which-bot-posts).
 - **Voice.** A fixed template per soul (`CtoReport::Voice`): an opener, one line
   for the day's state (quiet, activity, errors, unreachable) and a signature.
   Every number is computed in code; there is no model call, so a line cannot

@@ -198,6 +198,8 @@ loop; with no shared token either, the reply is `failed`, never dropped silently
 Any other error retries as before. `reply_posted` records `via: soul_bot` or
 `via: shared_bot`. No token is logged, rendered, or put in an exception message:
 `DiscordBot` redacts its token from everything it raises and from `inspect`.
+The pick and the one fallback live in `AgentMessages::BotSelector`, which the
+per-app CTO reports share ([`report-destinations.md`](report-destinations.md#which-bot-posts)).
 Setting a soul's var is Steffon's
 [`discord-bot-setup`](../agents/steffon/sops/discord-bot-setup.md), Part 1b.
 `POST /api/v1/agent_messages/:id/release {worker, reason, code?}` gives a message
@@ -715,7 +717,8 @@ Nothing reads Discord until a bot token is set. The code ships inert.
   that reads the guild and posts every reply), `agents.discord.avi` and
   `agents.discord.turf` (bot users a mention routes by; their tokens, set as
   `DISCORD_BOT_TOKEN_AVI` and `DISCORD_BOT_TOKEN_TURF_MONSTER`, are read only by
-  the reply job, which posts that soul's replies as its own bot; not set on any
+  the reply job and the CTO reports, which post that soul's replies and its
+  app's `cto_report:<domain>` report as its own bot; not set on any
   app yet, 2026-10-16), `agents.discord.tyrion` (no token: his lives on the
   OpenClaw host, so his replies fall back to the shared bot) and
   `agents.discord.mack` (read by nothing yet).

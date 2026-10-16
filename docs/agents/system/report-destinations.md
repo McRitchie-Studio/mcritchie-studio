@@ -1,7 +1,8 @@
 # Report destinations (deliver a report to Discord)
 
 **What it is.** One call that posts a registered report into the Discord channel
-Alex picked for it, as the agents' bot, at most once per run. A session that sends
+Alex picked for it, at most once per run: as the agents' shared bot, or, for a
+CTO report, as that CTO's own bot ([Which bot posts](#which-bot-posts)). A session that sends
 a report (the CTO daily application report is the first) needs only this page.
 
 ```ruby
@@ -98,6 +99,34 @@ idempotency key. A `:not_configured` or `:disabled` answer is recorded and not
 retried, because it waits on Alex. `ReportDestinations.deliver!` is the raising
 form the job uses.
 
+## Which bot posts
+
+| Report key | Posts as |
+|------------|----------|
+| `cto_report:<domain>` | The CTO soul's own bot when `DISCORD_BOT_TOKEN_<SOUL>` is set, else the shared bot |
+| Every other key (`daily_app_report`, …) | The shared bot (`DISCORD_AGENT_BOT_TOKEN`), always |
+
+- **The soul comes from config.** `config/cto_reports.yml` maps each domain to
+  its CTO (`mcritchie_studio` → `avi`, `turf_monster` → `turf_monster`,
+  `cyvasse` → `tyrion`); `ReportDestinations.soul_for` reads it. The token is the
+  same `DISCORD_BOT_TOKEN_<SOUL>` the chat replies use, picked by the same
+  `AgentMessages::BotSelector` ([`agent-message-loop.md`](agent-message-loop.md)).
+- **Same message either way.** The report already signs itself, so the content
+  does not change with the bot.
+- **One fallback.** A 401 or 403 from the soul's bot (a bad token, a bot not in
+  the guild, no View Channel, Send Messages or Embed Links in that channel)
+  writes an `ErrorLog` targeted at the delivery, named for the ENV var and never
+  the token, and posts through the shared bot in the same call. The delivery
+  keeps `soul_bot_refused_at`, so a retry of that key goes straight to the
+  shared bot and the soul's bot can never post it a second time. Any other error
+  (a timeout, a 5xx, a rate limit) retries the same bot with the same nonce.
+- **The record.** `report_deliveries.posted_via` is `soul_bot` or `shared_bot`
+  (nil on rows from before it was recorded). The page shows it on the last
+  delivery, and each card says which bot it posts as now: the soul's bot (its
+  ENV var is set) or the shared bot. No token is rendered, only whether one is set.
+- **Setting a soul's bot up** (invite, permissions, the config var):
+  Steffon's [`discord-bot-setup`](../agents/steffon/sops/discord-bot-setup.md), Part 1b.
+
 ## 4. Return values
 
 `deliver` returns a `ReportDestinations::Result` with `status`, `message_id`, `url`,
@@ -167,13 +196,15 @@ embeds (up to 6,000 characters) and keep `content` to the headline.
 | Piece | Where |
 |-------|-------|
 | The contract | `ReportDestinations` (`app/services/report_destinations.rb`), `ReportDeliveryJob` |
+| Which bot | `AgentMessages::BotSelector` (`app/services/agent_messages/bot_selector.rb`), `CtoReport.soul_for` |
 | Registry | `config/report_destinations.yml` |
 | Tables | `discord_channels`, `report_destinations`, `report_deliveries` |
 | Directory sync | `DiscordChannelSyncJob` → `DiscordDirectory::Sync` and `DiscordDirectory::Permissions` |
 | Discord REST | `AgentMessages::DiscordBot` (`guild_channels`, `active_threads`, `guild_roles`, `guild_member`, `current_user`, `post_report`) |
 | The page | `Admin::ReportDestinationsController`, `/admin/report_destinations` |
-| Tests | `test/services/report_destinations_test.rb`, `test/services/discord_directory/`, `test/integration/report_destinations_flow_test.rb`, `test/system/report_destinations_test.rb`, `e2e/report_destinations_admin.spec.js` |
+| Tests | `test/services/report_destinations_test.rb`, `test/services/report_destinations_bot_test.rb`, `test/services/agent_messages/bot_selector_test.rb`, `test/services/discord_directory/`, `test/integration/report_destinations_flow_test.rb`, `test/system/report_destinations_test.rb`, `e2e/report_destinations_admin.spec.js` |
 
-The bot, its token (`DISCORD_AGENT_BOT_TOKEN`, 1Password `agents.discord.xan`)
-and the guild list are shared with the agent mailbox:
+The shared bot, its token (`DISCORD_AGENT_BOT_TOKEN`, 1Password
+`agents.discord.xan`), the per-soul tokens and the guild list are shared with the
+agent mailbox:
 [`agent-message-loop.md`](agent-message-loop.md).
