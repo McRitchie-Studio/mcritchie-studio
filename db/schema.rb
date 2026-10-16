@@ -1189,7 +1189,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
     t.string "via", default: "click", null: false
     t.index ["applied_at"], name: "index_dream_approvals_on_applied_at"
     t.index ["dream_home", "dream_slug"], name: "index_dream_approvals_on_dream_home_and_dream_slug", unique: true
-    t.check_constraint "via::text = ANY (ARRAY['click'::character varying, 'chat'::character varying]::text[])", name: "dream_approvals_via"
+    t.check_constraint "via::text = ANY (ARRAY['click'::character varying::text, 'chat'::character varying::text])", name: "dream_approvals_via"
   end
 
   create_table "dream_grades", force: :cascade do |t|
@@ -1224,8 +1224,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_090000) do
     t.index ["applied_at"], name: "index_dream_retirements_on_applied_at"
     t.index ["dream_home", "dream_slug"], name: "index_dream_retirements_on_dream_home_and_dream_slug", unique: true
     t.index ["dream_swap_id"], name: "index_dream_retirements_on_dream_swap_id"
-    t.check_constraint "ruling::text = ANY (ARRAY['retire'::character varying, 'drop'::character varying]::text[])", name: "dream_retirements_ruling"
-    t.check_constraint "via::text = ANY (ARRAY['click'::character varying, 'chat'::character varying]::text[])", name: "dream_retirements_via"
+    t.check_constraint "ruling::text = ANY (ARRAY['retire'::character varying::text, 'drop'::character varying::text])", name: "dream_retirements_ruling"
+    t.check_constraint "via::text = ANY (ARRAY['click'::character varying::text, 'chat'::character varying::text])", name: "dream_retirements_via"
   end
 
   create_table "dream_swaps", force: :cascade do |t|
