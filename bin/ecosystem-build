@@ -230,6 +230,66 @@ log_fail()  { local detail="${2:-}"; echo "  ${RED}✗${RESET} $1${detail:+  ${D
 # ─── Helpers ────────────────────────────────────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
 
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ─── The operator's checklist ───────────────────────────────────────────────
+#
+# Every step only the operator can take (a token from his clipboard, his
+# claude.ai sign-in, his Google accounts in Chrome) is appended here as it is
+# found, and render_checklist prints the lot as the build's LAST output, in the
+# order he should do them, so after a fresh-Mac rebuild he remembers nothing
+# (docs/agents/system/house-burn-down.md, "First-run audit"). bin/local-services
+# appends its own items to the same file.
+#
+# The ranks are LocalServices::Checklist::RANKS (bin/lib/local_services.rb);
+# test/lib/local_services_test.rb fails when these numbers drift from it.
+RANK_XCODE=5
+RANK_HOMEBREW=10
+RANK_OP_AGENT=20
+RANK_GITHUB=25
+RANK_CHROME=70
+RANK_OP_ADMIN=80
+CHECKLIST_FILE="${CHECKLIST_FILE:-}"
+
+# Created on first use, so sourcing this file (the tests do) leaves no temp file.
+ensure_checklist_file() {
+  [ -n "$CHECKLIST_FILE" ] || CHECKLIST_FILE="$(mktemp "${TMPDIR:-/tmp}/ecosystem-build-checklist.XXXXXX")"
+}
+
+# checklist_add RANK TEXT COMMAND — tabs and newlines in a field become spaces.
+checklist_add() {
+  ensure_checklist_file
+  local rank="$1" text="${2//[$'\t\n']/ }" cmd="${3:-}"
+  cmd="${cmd//[$'\t\n']/ }"
+  printf '%s\t%s\t%s\n' "$rank" "$text" "$cmd" >> "$CHECKLIST_FILE"
+}
+
+# The numbered list, rank order (a stable sort keeps the order items were found
+# within a rank), each text+command listed once: Phase 4 runs twice. Plain bash,
+# sort and awk, so it renders even when the build stops before Homebrew's Ruby.
+render_checklist() {
+  echo
+  echo "${BOLD}${YELLOW}═══ What only you can do ═══${RESET}"
+  if [ -z "$CHECKLIST_FILE" ] || [ ! -s "$CHECKLIST_FILE" ]; then
+    echo "  Nothing. Every service is running and nothing waits on you."
+  else
+    sort -t $'\t' -k1,1n -s "$CHECKLIST_FILE" | awk -F '\t' -v bold="$BOLD" -v reset="$RESET" '
+      $2 == "" || seen[$2 "\t" $3]++ { next }
+      { n++; printf "  %d. %s\n", n, $2; if ($3 != "") printf "       %s%s%s\n", bold, $3, reset }'
+  fi
+  echo
+  [ -n "$CHECKLIST_FILE" ] && rm -f "$CHECKLIST_FILE"
+  CHECKLIST_FILE=""
+}
+
+# Stop the build at a phase that cannot go on, still ending on the checklist.
+stop_at() {
+  echo
+  echo "${RED}Stopped at Phase $1.${RESET}"
+  render_checklist
+  exit 1
+}
+
 # ── 1Password read attribution ────────────────────────────────────────────────
 # Route every `op` call through op_metered so the read is recorded against THIS
 # script (bin/lib/op-meter.sh; query with bin/op-reads). Sourcing is OPTIONAL by
@@ -318,11 +378,23 @@ fi
 phase_system_tools() {
   log_phase "Phase 1: System tools"
 
+  # Xcode Command Line Tools: git and every compiler below come from them, and
+  # the installer is a macOS dialog only the operator can click through.
+  if xcode-select -p >/dev/null 2>&1; then
+    log_ok "Xcode Command Line Tools"
+  else
+    log_fail "Xcode Command Line Tools not installed"
+    checklist_add "$RANK_XCODE" "Install the Xcode Command Line Tools (a macOS dialog), then re-run the build" \
+      "xcode-select --install   # then: bin/ecosystem-build"
+  fi
+
   if ! have brew; then
     log_fail "Homebrew not installed"
     echo
     echo "  Install Homebrew first:"
     echo '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    checklist_add "$RANK_HOMEBREW" "Install Homebrew (it asks for your Mac password), then re-run the build" \
+      '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"   # then: bin/ecosystem-build'
     return 1
   fi
   log_ok "Homebrew" "$(brew --version | head -1)"
@@ -346,6 +418,20 @@ phase_system_tools() {
       log_fail "$pkg install verification failed"
     fi
   done
+
+  # Google Chrome: the operator's browser, and what the chrome-profiles SOP
+  # restores the avatar menu into. A cask, and one that refuses to install over
+  # a Chrome put in /Applications by hand, so the app itself is the check.
+  if [ -d "/Applications/Google Chrome.app" ]; then
+    log_ok "Google Chrome"
+  else
+    log_act "installing Google Chrome (brew cask)"
+    if brew install --cask google-chrome >/dev/null 2>&1; then
+      log_ok "Google Chrome" "installed"
+    else
+      log_fail "Google Chrome install failed" "try: brew install --cask google-chrome"
+    fi
+  fi
 
   # The Ruby/socket gotcha — verify the brew Ruby has the socket extension
   if "$RUBY_PREFIX/bin/ruby" -e "require 'socket'" 2>/dev/null; then
@@ -464,6 +550,8 @@ phase_secrets() {
   # OP service token is the key to everything else
   if [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
     log_fail "OP_SERVICE_ACCOUNT_TOKEN not set"
+    checklist_add "$RANK_OP_AGENT" "Create the 1Password AGENT service account token (read on studio-agents) at https://start.1password.com (Developer Tools > Service Accounts), copy it, install it, then re-run the build" \
+      "bin/setup-1pass-token && source ~/.zprofile && bin/ecosystem-build"
     echo
     echo "  ${BOLD}The 1Password service token is the key to everything else.${RESET}"
     echo "  To set it up:"
@@ -596,6 +684,25 @@ phase_repos() {
 
   mkdir -p "$PROJECTS_DIR"
 
+  # A fresh Mac's gh has no login. The agent's GitHub App token comes from
+  # 1Password (Phase 4 proved the token works), so mint it instead of sending
+  # the operator to `gh auth login`. Only when a clone is due; the token goes
+  # from gh-auth-refresh's stdout into this shell's GH_TOKEN and nowhere else.
+  local repo need_clone=0
+  for repo in "${SIBLING_REPOS[@]}"; do
+    [ -d "$PROJECTS_DIR/$repo/.git" ] || need_clone=1
+  done
+  if [ "$need_clone" = 1 ] && ! gh auth status >/dev/null 2>&1 && [ -x "$BIN_DIR/gh-auth-refresh" ]; then
+    local gh_export
+    if gh_export="$(ruby "$BIN_DIR/gh-auth-refresh" --export 2>/dev/null)" && [ -n "$gh_export" ]; then
+      eval "$gh_export"
+      log_ok "GitHub auth" "agent App token minted from 1Password (bin/gh-auth-refresh)"
+    else
+      log_fail "GitHub auth" "bin/gh-auth-refresh could not mint the agent token"
+    fi
+    unset gh_export
+  fi
+
   for repo in "${SIBLING_REPOS[@]}"; do
     local path="$PROJECTS_DIR/$repo"
     if [ -d "$path/.git" ]; then
@@ -609,7 +716,9 @@ phase_repos() {
     else
       log_act "cloning $GH_OWNER/$repo"
       if ! gh repo clone "$GH_OWNER/$repo" "$path" >/dev/null 2>&1; then
-        log_fail "gh repo clone failed" "try: gh auth login"
+        log_fail "gh repo clone failed" "try: eval \"\$(bin/gh-auth-refresh --export)\""
+        checklist_add "$RANK_GITHUB" "GitHub could not clone $GH_OWNER/$repo: refresh the agent's GitHub token from 1Password, then re-run the build (gh auth login with your own account is the fallback)" \
+          'eval "$(bin/gh-auth-refresh --export)" && bin/ecosystem-build'
         return 1
       fi
       log_ok "$repo" "cloned"
@@ -679,19 +788,25 @@ phase_bundles_dbs() {
     )
   done
 
-  # solana-studio is a library gem — bundle only, no DB
-  if [ -d "$PROJECTS_DIR/solana-studio" ]; then
+  # solana-studio and studio-engine are library gems — bundle only, no DB.
+  # (studio-engine joined 2026-10-15: the runbook's 6d bundled it by hand.)
+  local gem_repo
+  for gem_repo in solana-studio studio-engine; do
+    [ -d "$PROJECTS_DIR/$gem_repo" ] || continue
     (
-      cd "$PROJECTS_DIR/solana-studio" || exit 1
+      cd "$PROJECTS_DIR/$gem_repo" || exit 1
       if bundle check >/dev/null 2>&1; then
-        log_ok "solana-studio gems" "satisfied"
+        log_ok "$gem_repo gems" "satisfied"
       else
-        log_act "solana-studio: bundle install"
-        bundle install --quiet
-        log_ok "solana-studio gems" "installed"
+        log_act "$gem_repo: bundle install"
+        if bundle install --quiet; then
+          log_ok "$gem_repo gems" "installed"
+        else
+          log_fail "$gem_repo bundle install failed" "try: cd $PROJECTS_DIR/$gem_repo && bundle install"
+        fi
       fi
     )
-  fi
+  done
 }
 
 # ─── Phase 6b: NFL data (default — schedule + depth chart + rosters) ────────
@@ -992,18 +1107,79 @@ phase_env_snapshot() {
   log_ok "env snapshot" "$snapshot_path ($var_count vars across $captured_count apps, ${size}B, chmod 600)"
 }
 
+# ─── Phase 10: Always-on services + what only the operator can do ──────────
+# The always-on local services (config/local_services.yml, first entry the agent
+# dispatcher) and what they need from this Mac, via bin/local-services:
+#   - the Claude Code allow-rules (config/claude_allow_rules.json) merged into
+#     the USER ~/.claude/settings.json: adds only, keeps every other key
+#   - `claude auth status` must read authMethod claude.ai (never logged in for
+#     the operator: a missing sign-in is a checklist item)
+#   - each service: prerequisites met and not running → install, then status
+#     again; unmet → skipped and put on the checklist
+# then the operator-only steps no command can take for him (the 1Password admin
+# token, Chrome's Google accounts). Idempotent, and it NEVER fails the build: a
+# service that will not start is a warning and a checklist item.
+#
+# `bin/ecosystem-build --phase services` runs this phase alone, then the
+# checklist: the re-run every checklist item that waits on a sign-in names.
+phase_services() {
+  log_phase "Phase 10: Always-on services (config/local_services.yml)"
+
+  local hub="$PROJECTS_DIR/mcritchie-studio" tool="$BIN_DIR/local-services" ruby_bin=ruby
+  [ -x "$RUBY_PREFIX/bin/ruby" ] && ruby_bin="$RUBY_PREFIX/bin/ruby"
+  ensure_checklist_file
+
+  # bin/lib/local_services.rb needs Ruby 3 (macOS's own is 2.6, which cannot
+  # parse it). Phase 1 installs it; without it, say so and move on.
+  if ! "$ruby_bin" -e 'exit(Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.0") ? 0 : 1)' >/dev/null 2>&1; then
+    log_fail "services skipped" "needs Homebrew's Ruby 3 (Phase 1 installs it): re-run bin/ecosystem-build"
+  elif [ ! -d "$hub" ]; then
+    log_fail "services skipped" "no hub checkout at $hub"
+  else
+    "$ruby_bin" "$tool" allow-rules --hub "$hub" --checklist "$CHECKLIST_FILE" \
+      || log_fail "Claude Code allow-rules" "bin/local-services allow-rules failed; the build goes on"
+    "$ruby_bin" "$tool" restore --hub "$hub" --checklist "$CHECKLIST_FILE" \
+      || log_fail "services restore" "bin/local-services restore failed; the build goes on"
+  fi
+
+  # The ADMIN token is the ship lane's, read only before a production deploy,
+  # so its absence blocks nothing here; it is owed all the same.
+  if grep -qs '^export OP_ADMIN_SERVICE_ACCOUNT_TOKEN=' "$HOME/.zprofile.admin"; then
+    log_ok "1Password admin token" "in ~/.zprofile.admin (opt-in, not auto-loaded)"
+  else
+    log_act "1Password admin token not installed (needed before any production deploy)"
+    checklist_add "$RANK_OP_ADMIN" "Before any production deploy: create the SECOND 1Password service account token (read on studio-agents-admin only), copy it, install it (house-burn-down.md 5a-ii)" \
+      "bin/setup-1pass-token --admin"
+  fi
+
+  # Chrome's profiles are signed in by hand (Google asks the person); the
+  # avatar-menu order is then restored from 1Password. The launcher app that
+  # `bin/chrome-profiles apply` generates is the sign it has been done.
+  if [ -d "$HOME/Applications/Chrome (Ordered Profiles).app" ]; then
+    log_ok "Chrome profiles" "ordered launcher present"
+  else
+    log_act "Chrome profiles not restored yet"
+    checklist_add "$RANK_CHROME" "Sign each Google account into Chrome, then restore the avatar-menu order from 1Password (SOP chrome-profiles)" \
+      "bin/chrome-profiles status && bin/chrome-profiles apply && bin/chrome-profiles pin-dock"
+  fi
+  return 0
+}
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 usage() {
   cat <<'TXT'
-usage: bin/ecosystem-build
+usage: bin/ecosystem-build [--phase services]
 
   Idempotent McRitchie ecosystem setup + verification. Installs missing system
-  tools and bundles, prepares databases, BOUNCES EVERY RAILS SERVER, and writes
-  an env snapshot.
+  tools and bundles, prepares databases, BOUNCES EVERY RAILS SERVER, writes an
+  env snapshot, restores the always-on local services (config/local_services.yml)
+  and the Claude Code allow-rules, and ends with a numbered checklist of what
+  only you can do.
 
-    --help, -h    this text — BUILDS NOTHING, bounces no server
-
-  This command takes no arguments.
+    --phase services   only the services phase and the checklist: no install,
+                       no database, no server bounce
+    --help, -h         this text — BUILDS NOTHING, bounces no server, installs
+                       no service and writes no settings
 TXT
 }
 
@@ -1022,6 +1198,15 @@ main() {
   case "${1:-}" in
     --help|-h) usage; return 0 ;;
   esac
+  for arg in "$@"; do
+    case "$arg" in --help|-h) usage; return 0 ;; esac
+  done
+  if [ "$#" -eq 2 ] && [ "$1" = "--phase" ] && [ "$2" = "services" ]; then
+    echo "${BOLD}${YELLOW}McRitchie ecosystem build — services phase only${RESET}"
+    phase_services
+    render_checklist
+    return 0
+  fi
   if [ "$#" -gt 0 ]; then
     echo "ecosystem-build: unrecognized argument(s): $* — NOTHING was built, installed, or restarted." >&2
     echo >&2
@@ -1032,19 +1217,20 @@ main() {
   echo "${BOLD}${YELLOW}McRitchie ecosystem build${RESET}"
   echo "${DIM}Detects state, fills gaps, bounces servers. Idempotent.${RESET}"
 
-  phase_system_tools     || { echo; echo "${RED}Stopped at Phase 1.${RESET}"; exit 1; }
-  phase_languages        || { echo; echo "${RED}Stopped at Phase 2.${RESET}"; exit 1; }
+  phase_system_tools     || stop_at 1
+  phase_languages        || stop_at 2
   phase_shell_config
-  phase_secrets          || { echo; echo "${RED}Stopped at Phase 4.${RESET}"; exit 1; }
-  phase_repos            || { echo; echo "${RED}Stopped at Phase 5.${RESET}"; exit 1; }
-  phase_agent_docs       || { echo; echo "${RED}Stopped at Phase 5b.${RESET}"; exit 1; }
-  phase_secrets          || { echo; echo "${RED}Stopped at Phase 5c.${RESET}"; exit 1; }
+  phase_secrets          || stop_at 4
+  phase_repos            || stop_at 5
+  phase_agent_docs       || stop_at 5b
+  phase_secrets          || stop_at 5c
   phase_bundles_dbs
   phase_nfl_data
   phase_nfl_headshots
   phase_anchor
   phase_servers
   phase_env_snapshot
+  phase_services
 
   echo
   echo "${GREEN}${BOLD}═══════════════════════════════════════════════${RESET}"
@@ -1055,7 +1241,8 @@ main() {
     printf "  %-18s http://localhost:%s\n" "${RAILS_APPS[$i]}:" "${RAILS_PORTS[$i]}"
   done
   echo "  Login:             magic link to alex@mcritchie.studio"
-  echo
+  # The LAST output: what only the operator can do, numbered, in order.
+  render_checklist
 }
 
 # Sourcing this file must define its functions and run NOTHING — that is what
