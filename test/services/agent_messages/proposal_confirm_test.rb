@@ -141,6 +141,22 @@ class ProposalConfirmTest < ActiveSupport::TestCase
     assert_equal AgentMessages::ProposalConfirm::RAN_TEXT, ran.response_text
   end
 
+  test "a go on a confirmed proposal whose run went quiet past the claim TTL starts it again" do
+    reply(3030, "go", author: ALEX)
+    stale = (AgentProposalJob::CLAIM_TTL + 1.minute).ago.iso8601
+    @proposal.update!(result: { "claim" => "dead", "claimed_at" => stale })
+    clear_enqueued_jobs
+
+    no = reply(3031, "no", author: ALEX)
+    assert_equal AgentMessages::ProposalConfirm::RUNNING_TEXT, no.response_text, "a no never restarts it"
+    assert_no_enqueued_jobs only: AgentProposalJob
+
+    again = reply(3032, "go", author: ALEX)
+    assert_equal AgentMessages::ProposalConfirm::RETRY_TEXT, again.response_text
+    assert_enqueued_with(job: AgentProposalJob, args: [ @proposal.id ])
+    assert_equal "confirmed", @proposal.reload.status
+  end
+
   test "a go replying to some other message in the thread confirms the newest pending one" do
     newer = newer_proposal!
     other = agent_message!(soul: "avi", thread_key: @source.thread_key, status: "completed", response_text: "Hm.",

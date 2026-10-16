@@ -14,7 +14,9 @@
 #   soul            the front-door agent: the ONE soul that sees and proposes this
 #                   catalog. Other souls mapped to the domain under `souls:` get
 #                   its doc, never its catalog.
-#   reply_name      how the shared bot's replies are signed (`**Turf** · …`)
+#   reply_name      how the SHARED bot's replies are signed (`**Turf** · …`). A
+#                   soul replying as its own bot (DISCORD_BOT_TOKEN_<SOUL>) is
+#                   not signed: the bot's own name says who answered.
 #   repos, app      where changes land, and the App slug asks read from
 #   capabilities
 #     ask:          named read-only queries. Each has a description, the lowest

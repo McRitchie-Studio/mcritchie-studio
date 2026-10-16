@@ -35,6 +35,10 @@ module AgentMessages
     # ran" would be false. The word changes nothing either way.
     RUNNING_TEXT = "That proposal is already confirmed and running. Its result will post in this thread.".freeze
     RAN_TEXT = "That proposal already ran; its result is above. Nothing ran a second time.".freeze
+    # A word on a confirmed proposal whose run went quiet past the claim's TTL: the
+    # word re-queues it (the job's claim guard keeps it to one run).
+    RETRY_TEXT = "That proposal was confirmed but its run went quiet, so I am starting it again. " \
+                 "Its result will post in this thread.".freeze
 
     # [:go] / [:no] / [:change, "the change"] / nil.
     def self.intent(content)
@@ -58,6 +62,7 @@ module AgentMessages
       audience = AgentProposal.audience_for(person)
       return refused!(attrs, person, source, audience) unless audience.may?(:confirm_proposal)
       return expired!(attrs, source) if @proposal.expired?(@now)
+      return stalled!(attrs, source) if @intent.first == :go && stalled?
       return answered!(attrs, source, closed_text, nil, "proposal_closed", @intent.first.to_s) unless @proposal.status == "proposed"
 
       case @intent.first
@@ -119,6 +124,24 @@ module AgentMessages
     end
 
     def settler(message) = "person:#{message.person_id}"
+
+    # Confirmed, and neither claimed nor confirmed within the job's claim TTL: its
+    # run died or its job was lost. (The job's own recheck covers a death after
+    # the claim; this covers anything that recheck missed.)
+    def stalled?
+      return false unless @proposal.status == "confirmed"
+
+      stamp = @proposal.result.to_h["claimed_at"].presence
+      since = stamp ? Time.zone.parse(stamp.to_s) : @proposal.settled_at
+      since.nil? || since <= @now - AgentProposalJob::CLAIM_TTL
+    rescue ArgumentError
+      true
+    end
+
+    def stalled!(attrs, source)
+      message, = answered!(attrs, source, RETRY_TEXT, nil, "proposal_closed", "#{@intent.first}: rerun")
+      [ message, [ [ AgentMessageReplyJob, message.id ], [ AgentProposalJob, @proposal.id ] ] ]
+    end
 
     # The reply to a word on a proposal that is not open, true to its status.
     def closed_text

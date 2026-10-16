@@ -83,8 +83,9 @@ class AgentMessageReplyJob < ApplicationJob
       message.record!("reply_failed", actor: "discord-bot",
                                       detail: { "error" => "the soul's own bot was refused and #{unset} is unset" })
     else
+      soul_env = AgentMessages::DiscordBot.soul_token_env(message.soul_slug)
       message.update_column(:reply_status, "skipped")
-      message.record!("reply_skipped", actor: "discord-bot", detail: { "reason" => "#{unset} is unset" })
+      message.record!("reply_skipped", actor: "discord-bot", detail: { "reason" => "#{soul_env} and #{unset} are unset" })
     end
     nil
   end
