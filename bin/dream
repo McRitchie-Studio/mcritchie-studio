@@ -29,6 +29,16 @@
 #   bin/dream swap --in <home>/<slug> [--out <home>/<slug>] --reason "<why>"
 #   bin/dream swap --none --reason "<why>"
 #                                      at wrap, this session's one swap proposal, or "no swap"
+#   bin/dream cards [--call <slug>=approve|change|drop[:<reason>] ...]
+#                                      the card standard for Alex in chat: every proposed dream awaiting
+#                                      a ruling (ADD, or SWAP when its layer is full) plus the RETIRE
+#                                      cards the grades call for; the `dream-swap` SOP prints this
+#   bin/dream cards --in <home>/<slug> [--out <home>/<slug>] [--call ...]
+#   bin/dream cards --none
+#                                      at wrap, the one swap's card, or the "no swap" line
+#   bin/dream approve|drop|retire <slug> --clearance "<Alex's exact words>"
+#                                      record Alex's ruling given in chat, with his words and this
+#                                      session (approve or drop a proposed dream, retire an approved one)
 #
 # Reads tracked files; --task also reads the task from the board, and prints
 # unranked, with the reason on stderr, when it cannot. propose reads the finding
@@ -41,13 +51,19 @@
 # (GET /api/v1/dream_retirements). grade and swap post to the board under this
 # session's id; the board refuses a grade for a dream that did not fire in the
 # session, and a second swap answer. swap reads the --in file from this desk's bank,
-# which must read `status: proposed`.
+# which must read `status: proposed`. cards reads this bank (the desk's, in a desk),
+# the swap candidates and the pending rulings from the board, and prints the local
+# counts when the board cannot answer. approve, drop and retire post to
+# POST /api/v1/dream_rulings, which refuses a missing or token clearance and a
+# dream the deployed bank does not hold.
 # Exit 0 printed · 1 refused, with the reason on stderr · 2 usage.
 
 require "fileutils"
 require "open3"
 require "pathname"
 require_relative "lib/dream_bank"
+require_relative "lib/dream_cards"
+require_relative "lib/dream_clearance"
 require_relative "lib/dream_layers"
 require_relative "lib/session_identity"
 
@@ -105,6 +121,8 @@ class DreamCli
     when "grade" then grade(rest)
     when "swap-candidates" then swap_candidates(rest)
     when "swap" then swap(rest)
+    when "cards" then cards(rest)
+    when "approve", "drop", "retire" then rule(command, rest)
     else soul(command, rest)
     end
   end
@@ -401,6 +419,122 @@ class DreamCli
       why = row["retiring"] ? "retiring" : "grace, #{row["sessions_since_approval"]} of #{DreamLayers::GRACE_SESSIONS} sessions"
       @out.puts("  - `#{row["dream_home"]}/#{row["dream_slug"]}` · not eligible (#{why})")
     end
+  end
+
+  # bin/dream cards [--in <home>/<slug> [--out <home>/<slug>]] [--call <slug>=<verdict>[:<reason>] ...] | --none
+  def cards(rest)
+    return cards_none if rest == [ "--none" ]
+
+    calls, args = take_calls(rest)
+    flags = calls && pairs(args)
+    return usage(@err, USAGE) unless flags && (flags.keys - %w[--in --out]).empty? && (flags["--out"].nil? || flags["--in"])
+
+    bank = desk ? File.join(desk, BANK) : @dir
+    dreams = DreamBank.all(dir: bank)
+    reports = board_rows("/api/v1/dream_swaps/candidates")
+    @err.puts("dream: could not read the swap candidates; the counts are this bank's and no out is named.") if reports.nil?
+
+    if flags["--in"]
+      proposed = wrap_in(flags["--in"], dreams)
+      return REFUSED if proposed.nil?
+    else
+      proposed = awaiting(dreams)
+    end
+    @out.print(DreamCards.render(DreamCards.build(proposed: proposed, approved: dreams.select(&:approved?),
+                                                  reports: reports || [], out_key: flags["--out"],
+                                                  retire: flags["--in"].nil?, calls: calls)))
+    OK
+  end
+
+  def cards_none
+    @out.puts("#{DreamCards::NO_SWAP}. Nothing to approve.")
+    OK
+  end
+
+  # [calls, the other args], pulling every `--call <value>` out; [nil, _] on a bad one.
+  def take_calls(rest)
+    values = []
+    args = []
+    queue = rest.dup
+    until queue.empty?
+      arg = queue.shift
+      next args << arg unless arg == "--call"
+      return [ nil, rest ] if queue.empty?
+
+      values << queue.shift
+    end
+    calls, bad = DreamCards.parse_calls(values)
+    @err.puts("dream: `--call #{bad}` is not <slug>=approve|change|drop[:<reason>].") if bad
+    [ calls, args ]
+  end
+
+  # The one proposed dream a wrap card asks about, from this bank; nil with the reason.
+  def wrap_in(key, dreams)
+    return refuse("`#{key}` is not a bank key (<home>/<slug>).") && nil unless bank_key?(key)
+
+    dream = dreams.find { |candidate| "#{candidate.home}/#{candidate.slug}" == key }
+    return [ dream ] if dream&.status == "proposed"
+
+    refuse("the in must be a proposed dream in this bank; `#{key}` #{dream ? "reads #{dream.status}" : "is not here"}.")
+    nil
+  end
+
+  # The proposed dreams no recorded ruling (click or chat) has answered yet.
+  def awaiting(dreams)
+    approvals = pending_rows(@approvals_reader)
+    retirements = pending_rows(@retirements_reader)
+    if approvals.nil? || retirements.nil?
+      @err.puts("dream: could not read the pending rulings; a dream Alex already ruled on may show again.")
+    end
+    ruled = Array(approvals).chain(Array(retirements)).to_set { |row| "#{row["dream_home"]}/#{row["dream_slug"]}" }
+    dreams.select { |dream| dream.status == "proposed" && !ruled.include?("#{dream.home}/#{dream.slug}") }
+  end
+
+  def board_rows(path)
+    rows = begin
+      @board_reader.call(path)
+    rescue StandardError
+      nil
+    end
+    rows.is_a?(Array) ? rows : nil
+  end
+
+  RULED = { "approve" => "approved", "drop" => "dropped", "retire" => "retired" }.freeze
+
+  # bin/dream approve|drop|retire <slug> --clearance "<Alex's exact words>"
+  def rule(ruling, rest)
+    target = rest.first.to_s
+    flags = pairs(rest.drop(1))
+    return usage(@err, USAGE) unless flags && flags.keys == %w[--clearance] && (TASK_SLUG.match?(target) || bank_key?(target))
+
+    clearance = flags["--clearance"].to_s.strip
+    bank = desk ? File.join(desk, BANK) : @dir
+    matches = DreamBank.all(dir: bank).select do |dream|
+      target.include?("/") ? "#{dream.home}/#{dream.slug}" == target : dream.slug == target
+    end
+    return refuse("`#{target}` is not a dream in #{bank}.") if matches.empty?
+    return refuse("`#{target}` names #{matches.size} dreams; pass <home>/<slug>.") if matches.size > 1
+
+    dream = matches.first
+    problem = DreamClearance.problem(clearance, slug: dream.slug)
+    return refuse("not recorded: #{problem}.") if problem
+
+    session = SessionIdentity.id(@env)
+    return refuse("no session id in this environment; a chat ruling names the session that heard it.") if session.empty?
+
+    status, response = post_board("/api/v1/dream_rulings", { "ruling" => ruling, "dream_home" => dream.home,
+                                                             "dream_slug" => dream.slug, "clearance" => clearance,
+                                                             "session_id" => session })
+    return refuse("not recorded: #{board_error(status, response)}") unless [ 200, 201 ].include?(status)
+
+    data = response.is_a?(Hash) ? response["data"].to_h : {}
+    if status == 200
+      @out.puts("dream: `#{dream.home}/#{dream.slug}` already carries that ruling (#{data["via"] || "recorded"}); nothing new.")
+    else
+      @out.puts("dream: #{RULED.fetch(ruling)} `#{dream.home}/#{dream.slug}` on Alex's word in chat: #{clearance.inspect}")
+    end
+    @out.puts("The next batch task writes it into the files: bin/dream apply-approvals.")
+    OK
   end
 
   # bin/dream swap --in <home>/<slug> [--out <home>/<slug>] --reason "..." | --none --reason "..."

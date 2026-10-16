@@ -10,8 +10,12 @@
 # the file" rule; a retired dream keeps no file and no `retired` status). Once the
 # deployed bank no longer holds the dream, `reconcile!` stamps applied_at.
 #
-# Only Alex retires: the same DreamApproval.approver? check as an approval, and no
-# /api/v1 action creates a row, so no agent token can.
+# A row's `ruling` is "retire" (an approved dream leaves its layer) or "drop" (a
+# proposed dream is discarded); apply-approvals deletes the file either way.
+#
+# Only Alex retires or drops: his click, behind the same DreamApproval.approver?
+# check as an approval (via "click"), or his word in chat, recorded with the quote
+# and the session through POST /api/v1/dream_rulings (DreamRuling, via "chat").
 class DreamRetirement < ApplicationRecord
   class NotRetirable < StandardError; end
 
@@ -21,10 +25,16 @@ class DreamRetirement < ApplicationRecord
 
   validates :dream_slug, :dream_home, :retired_at, presence: true
   validates :dream_slug, uniqueness: { scope: :dream_home }
+  validates :via, inclusion: { in: %w[click chat] }
+  validates :ruling, inclusion: { in: %w[retire drop] }
+  validates :clearance, :session_id, presence: true, if: :chat?
 
   scope :pending, -> { where(applied_at: nil) }
 
   def key = "#{dream_home}/#{dream_slug}"
+
+  def chat? = via == "chat"
+  def drop? = ruling == "drop"
 
   # Raises NotRetirable, with the reason, unless `user` may retire `dream`.
   def self.check!(dream, user)
@@ -69,6 +79,7 @@ class DreamRetirement < ApplicationRecord
   def as_pending_json(dream)
     { dream_slug: dream_slug, dream_home: dream_home, path: "#{dream_home}/#{dream_slug}.md",
       retired_by: retired_by_slug, retired_at: retired_at&.iso8601,
+      ruling: ruling, via: via, clearance: clearance, session_id: session_id,
       file_status: dream&.status.presence || "missing" }
   end
 end
