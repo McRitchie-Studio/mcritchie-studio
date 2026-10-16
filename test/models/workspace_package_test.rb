@@ -23,6 +23,16 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute_includes WorkspacePackage.keys, "growth", "Growth split into Pro and Team on 2026-10-12"
   end
 
+  test "[unit] building lanes: Vibe 1, Builder 2, Pro 3, Team 4, Enterprise unlimited; a bad value reads as none" do
+    raw = WorkspacePackage.config.fetch("packages")
+    assert raw.all? { |attrs| attrs.key?("building_lanes") }, "each tier names its building_lanes"
+    assert_equal({ "vibe" => 1, "builder" => 2, "pro" => 3, "team" => 4, "enterprise" => nil },
+                 WorkspacePackage.all.to_h { |pkg| [ pkg.key, pkg.building_lanes ] })
+    [ 0, -1, "3", 2.5 ].each do |bad|
+      assert_nil WorkspacePackage.new({ "key" => "x", "name" => "X", "building_lanes" => bad }).building_lanes, bad.inspect
+    end
+  end
+
   test "[unit] CTO allowances: every tier has the key, blank (unlimited) until priced; a bad value reads as none" do
     raw = WorkspacePackage.config.fetch("packages")
     assert raw.all? { |attrs| attrs.key?("cto_monthly_tokens") }, "each tier names its cto_monthly_tokens"
