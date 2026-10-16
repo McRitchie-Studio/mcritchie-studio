@@ -355,11 +355,22 @@ model call), and it stores no model-written text. A model-written summary saved
 on a row would carry anything a message had injected into it forward into every
 later answer to that person.
 
-**Whose memory.** Notes are per person and shared by every soul: a fact about a
-person, such as their favorite color, is true whichever agent hears it, so a note
-Xan files is in Avi's USER layer too. The conversation history (the PERSON layer)
-is per person per soul: Avi does not see what Alex told Xan. Alex may overrule
-the shared notes later; today they are shared on purpose.
+**Whose memory.** Notes are per person and scoped by app DOMAIN (Alex,
+2026-10-15). Each note records the domain of the soul that filed it, read from
+the `souls:` map in `config/agent_domains.yml` (an empty domain for a soul the
+map does not name). Who reads a note turns on the sender's role when the answer
+is built, not when the note was filed (`AgentPersonNote.visible_for`):
+
+- **Owner and team.** Every soul reads every domain's notes: a fact about Alex,
+  such as his favorite color, is true whichever agent hears it, so a note Turf
+  files is in Avi's USER layer too. A fact filed in two domains is shown once.
+- **Client and public.** A soul reads only the notes filed in its own domain.
+  What a Turf client told Turf stays with Turf's souls; Avi, Xan and the other
+  `mcritchie_studio` souls never see it, and Turf never sees what that person told
+  Xan.
+
+The conversation history (the PERSON layer) is per person per soul either way:
+Avi does not see what Alex told Xan.
 
 **Notes.** The USER layer has a writer: the answer itself. The prompt lets the
 model end its reply with a line reading exactly `===NOTES===`, then a JSON array
@@ -405,20 +416,33 @@ may legitimately end in one.
   from Bea's run is Bea's note.
 - **Plain short text.** A fact is 3 to 200 characters, whitespace folded, and is
   refused if it carries a link, an `@` (mentions and addresses), markup, a code
-  fence, a control character or the fence marker.
-- **A fact, never an instruction.** A fact that reads as a rule for the agent is
-  refused: one with a directive (always, never, ignore, you must), the shape of an
-  answer (reply, respond, every answer, end with), the machinery (system, prompt,
-  rule, instruction) or a claim to authority (admin, permission, access, allowed,
-  approved). The list is `AgentPersonNote::DIRECTIVES`, one constant, pinned by
-  tests. "Prefers every answer to end with X" is refused; refusing a real fact
-  costs one note, while keeping a planted rule would steer every later answer.
-  A note stored before this check existed is held to it when the bundle is
-  built, so it never reaches a prompt either.
-- **Caps.** At most 3 per answer, deduplicated against the person's notes and
-  against each other (lowercased words), and at most 30 per person, with the
-  oldest pruned.
-- **Provenance.** Each note keeps its source message, the soul and the time.
+  fence, a control character, the fence marker, or a square bracket (`[` or `]`,
+  with the fullwidth form and the 【】〔〕〘〙⟦⟧ lookalikes). Brackets are refused
+  because the prompt prints a bracketed provenance label beside each note
+  (`[noted 2026-10-14, message #12, discord #general]`), and a note carrying one
+  could imitate it.
+- **Never the machinery or authority.** A fact that reaches for the agent's
+  machinery (system, prompt, instruction, rule, policy, guideline), claims
+  authority (admin, permission, access, allowed, permitted, authorized, approved,
+  privilege, granted, sudo, root), pairs a credential with a right ("deploy
+  access", "token for"), or uses an attack verb (disregard, override, bypass,
+  jailbreak) is refused. The list is `AgentPersonNote::DIRECTIVES`, one constant,
+  pinned by tests.
+- **Plain words are kept.** The directive and answer-shape words (always, never,
+  ignore, forget, pretend, reply, respond, answer, you, must, should, act as, end
+  with, every message, in caps) were refused until 2026-10-15. Alex dropped that
+  rule: they are ordinary English in real facts ("Never drinks coffee", "Prefers
+  short answers"), and a note reaches the prompt only inside the untrusted fence,
+  labeled as data.
+- **Today's rule, on old notes too.** A note stored under an older filter is
+  held to the current one when the bundle is built
+  (`AgentPersonNote.admissible?`), so a bracketed or machinery-shaped note
+  already on a row never reaches a prompt.
+- **Caps.** At most 3 per answer, deduplicated against the person's notes in the
+  same domain and against each other (lowercased words), and at most 30 per
+  person per domain, with the oldest pruned.
+- **Provenance.** Each note keeps its source message, the soul, its domain and
+  the time.
 
 The notes are untrusted: they are rendered only inside the fence, in the USER
 layer, never into GENERAL or DOMAIN, each with its date, source message and place
