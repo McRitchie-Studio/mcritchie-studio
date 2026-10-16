@@ -112,7 +112,11 @@ each app's owner can pick their own at `/agents/:slug/settings`
   per-app embed the combined report shows (counts, top error groups). The hub
   adds its board: open tasks in build, waiting on review and on the way to
   production (with the blocked count), tasks shipped in the window, and the
-  release in flight (its stage and task count).
+  release in flight (its stage and task count). Every report then carries one
+  usage line above the signature: the CTO domain's answers in the window, their
+  tokens by kind, cost and average time (`AgentUsage`,
+  [`agent-usage.md`](agent-usage.md)). A domain no routed soul serves (Cyvasse
+  today) has no usage line.
 - **Internal channels only.** The embed carries error class names and a clipped
   error message (emails redacted, nothing else), so point every `cto_report:*`
   key at an internal channel, never a public community one.

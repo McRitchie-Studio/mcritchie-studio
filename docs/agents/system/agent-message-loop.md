@@ -167,8 +167,14 @@ claimable message `FOR UPDATE SKIP LOCKED` and stamps `claimed_by`,
 it is routed to that soul, is `received` (or `claimed` under a lapsed lease with
 fewer than 3 attempts), and is the oldest open message in its thread and the
 oldest open message from its person to that soul (below, "Memory"). Those rules
-keep a conversation in order and allow one active claim per thread. A
-claim with nothing waiting answers 200 with `data: null`. Several souls in one
+keep a conversation in order and allow one active claim per thread. Before it
+takes the lease, the claim asks the usage gate (`AgentUsage.gate`): a client's
+or the public's message to an app at its monthly allowance is answered in code
+with the cap reply and the next message is tried; past 80% the message is
+claimed and its answer ends with a usage notice. Owner and team are never
+capped, and the shipped allowances are blank, so nothing is capped until Alex
+prices the tiers ([`agent-usage.md`](agent-usage.md)).
+A claim with nothing waiting answers 200 with `data: null`. Several souls in one
 claim (`souls`) take the oldest message across them. With `wait` (seconds,
 capped at 20, well under Heroku's 30-second router timeout) the board retries
 the claim every second and answers the moment one lands, else `data: null` at
@@ -697,8 +703,11 @@ signature and no text), so `run_meta.reasoning_source` says which case applies:
 `transcript`, `redacted`, `none` or `no_transcript`.
 
 The worker sends `claude_session_id`, `claude_cwd`, `reasoning` (capped at 20,000)
-and `run_meta` with complete. They are stored on the row
-(`AgentMessage.run_record` caps each). `/admin/agent_messages/:id` and
+and `run_meta` with complete. `run_meta` is the run's full summary: input, cache
+read and cache write tokens, output and thinking tokens, `total_cost_usd`,
+`duration_ms`, `num_turns` and the model, plus the sender's `audience`, which the
+board stamps itself. It is the usage meter's source ([`agent-usage.md`](agent-usage.md)).
+They are stored on the row (`AgentMessage.run_record` caps each). `/admin/agent_messages/:id` and
 `bin/agent-inbox show <id>` show them with a ready line to reopen the session on
 the machine that ran it:
 
@@ -797,6 +806,96 @@ The design, for the step that builds it:
 - **Failure deletes the draft.** A run whose envelope ends `is_error` (a usage
   limit, a signed-out CLI, a failure) deletes the draft and is handled as today.
 
+### Warm sessions (next step, not built)
+
+Phase 7 step 2 shipped the usage half (run summaries, tiers, the allowance and
+the meter; [`agent-usage.md`](agent-usage.md)). The warm session per domain is
+designed here and not built. It changes the dispatcher's loop, adds a board
+table, a checkpoint store and a standby role, and it reverses the memory rule
+above ("never from a resumed Claude session"). That is its own reviewable PR,
+not a rider on the meter. Until it ships, every answer stays one
+`claude -p` run per message.
+
+**Scope.** Owner and team traffic only. A client's or the public's message stays
+one run per message, so untrusted text never persists in a session. A held
+message an admin released is answered per message too, whoever sent it. Later:
+one session per (domain, user).
+
+**The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`;
+absent or false (the default) is today's path. The flag lives in config so that
+turning it on is a reviewed deploy, not a click.
+
+**The lease.** A new table, `agent_domain_sessions` (not `agent_sessions`: that
+name belongs to the builder sessions, `app/models/agent_session.rb`), one row per
+domain: `domain`, `holder` (the worker id), `lease_expires_at`, `heartbeat_at`,
+`claude_session_id`, `generation`, `turns`, `context_tokens`, `checkpoint`
+(an Active Storage attachment, the hub's blob convention) and `checkpointed_at`.
+The lease lives on the row, as `AgentMessage`'s and `lib/claim_lease.rb`'s do: a
+holder that dies loses it when the lease lapses, with no sweeper. The dispatcher
+renews it on its minute ping. Lease 5 minutes; a turn in flight renews it like a
+message lease.
+
+**A turn.**
+
+1. The dispatcher claims an owner or team message in a warm domain, exactly as
+   today (same guard, same thread and person order).
+2. It takes or renews the domain lease (`POST /api/v1/agent_domain_sessions/:domain/acquire`).
+   Another live holder answers 409: the message is answered per message instead,
+   never queued behind the lease.
+3. When its local transcript (`~/.claude/projects/<cwd slug>/<id>.jsonl`) is
+   missing or older than the board's `checkpointed_at`, it downloads the
+   checkpoint first.
+4. It runs `claude -p --resume <claude_session_id> --safe-mode --tools ""
+   --output-format json`, still with no tools and the allow-listed environment.
+5. **Every turn carries the board's rules again.** The bundle is built and read
+   per message as today. The turn prompt holds GENERAL (the audience and its
+   rules), the THREAD focus and the fenced message. USER and PERSON are left out,
+   because the session already holds them. The audience is still resolved on the
+   board from the person's role, so a resumed session cannot skip the
+   audience or owner checks: those are server-side (`claimable`, the bundle's
+   `audience`, `AgentProposal.record_from!`), not remembered.
+6. It completes the message (the run summary as today), then uploads the
+   transcript (`POST …/checkpoint { worker, session_id, turns, context_tokens }`).
+   The envelope's `session_id` becomes the new head each turn, whether or not the
+   CLI kept the id.
+7. A failed run, a failed checkpoint, or a transcript that will not restore
+   drops the lease, and that message is answered per message. The fallback is
+   always today's path.
+
+**The standby.** A second dispatcher (Alex's work machine) is registered on the
+board as `standby` for a list of domains (`agent_dispatchers.role`, set at
+`/admin/agent_messages`). It claims nothing while a primary pings. When a
+domain's lease lapses (no heartbeat for 5 minutes), the standby acquires it,
+restores the checkpoint and answers. **Handback is only between turns.** A
+primary that comes back asks for the lease. The board marks it `handback_requested`,
+the standby releases it after its current turn completes and checkpoints, and the
+primary resumes from that checkpoint. Neither side ever resumes a session the
+other is mid-turn in.
+
+**Consolidation.** When a turn's `context_tokens` (input + cache read + cache
+write) pass a threshold (`CONSOLIDATE_AT`, 150,000 to start), the holder runs one
+more no-tools turn asking for a domain summary. The board stores it as an
+`agent_domain_summaries` row (domain, generation, text, source session, turns
+covered), and the next turn starts a fresh session seeded with that summary
+inside the fence, labelled as the soul's own notes. Only owner and team text ever
+reaches a warm session, so the summary carries no untrusted client text forward.
+That is why this stays off for client and public traffic.
+
+**Usage.** Each turn's run summary is stored as today. A warm turn is mostly
+cache reads, which the meter shows as such. Owner and team turns are never
+metered against an allowance.
+
+**What the build owes.** A migration (the two tables and the dispatcher role)
+and the board endpoints (acquire, renew, checkpoint, release, handback), with
+holder checks. The dispatcher's warm path behind the flag, plus its restore,
+checkpoint and fallback. The standby role and the floor alert's view of it.
+Tests: lease races (two acquirers, a lapsed holder's late checkpoint refused),
+a turn that resumes, a restore from checkpoint on a second machine, a handback
+only between turns, a client message never warm, and consolidation at the
+threshold. The setup steps for the standby machine are in
+[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md), "Standby on a
+second machine".
+
 ## Setup
 
 Nothing reads Discord until a bot token is set. The code ships inert.
@@ -869,8 +968,10 @@ guard and the unanswered audiences).
   a usage-limit give-back), dead_lettered, completed, reply_bot_refused (the
   soul's own bot was refused; an `ErrorLog` row says why), typing_bot_refused
   (the soul's own bot could not show typing; the shared bot typed), and reply_posted
-  (with `via`), reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
-  skipped when no bot token is set, failed when the job's five tries are spent)
+  (with `via`), reply_skipped or reply_failed, and the usage gate's
+  usage_warned (claimed past 80% of the app's allowance) and usage_capped
+  (answered in code at the cap; [`agent-usage.md`](agent-usage.md)). The row's
+  `reply_status` (queued, posted, skipped when no bot token is set, failed when the job's five tries are spent)
   is the Reply column.
 - A completed message's page also shows its Claude run: the resume line, the
   envelope numbers and the reasoning when the transcript carried any ("Viewing a
