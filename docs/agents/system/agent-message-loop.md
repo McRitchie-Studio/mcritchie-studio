@@ -733,25 +733,46 @@ then that text.
 
 **Trust: who sent it** (`AgentMessages::EmailTrust`). The group hop breaks SPF,
 and any sender can write `Authentication-Results` lines into its own headers, so
-exactly one header decides:
+exactly one header decides, and it is read defensively, because SES copies the
+SMTP envelope-from and HELO (sender-chosen text) into it:
 
-- the TOPMOST `Authentication-Results`, and only when its authserv-id is
-  `amazonses.com` (Resend's receiver, the hop before us);
-- every header above it must be one of SES's own trace headers (`Return-Path`,
-  `Received`, `Received-SPF`, `X-SES-*`), as measured on desk item 762. If SES
-  ever stamped nothing, the topmost one left would sit below the relay's ARC
-  headers and is refused, so a forged `amazonses.com … pass` in the sender's
-  block never becomes the trusted one;
-- it must carry `dkim=pass` whose `header.d` (or `header.i`'s domain) is the From
-  domain or a parent or child of it, AND `dmarc=pass` whose `header.from` is the
-  From domain. Comments in parentheses are dropped before reading. One From
-  address only.
+- **Position.** It is the TOPMOST `Authentication-Results`, its authserv-id is
+  `amazonses.com` (Resend's receiver, the hop before us), every header above it
+  is one of SES's trace headers (`Return-Path`, `Received`, `Received-SPF`,
+  `X-SES-*`), and it sits ABOVE the first `X-SES-RECEIPT`, as measured on desk
+  item 762. No `X-SES-RECEIPT` at all: the public. This refuses every forged
+  verdict that sits below SES's receipt, which is wherever a sender's own lines
+  land while SES stamps its receipt. It cannot help if SES ever wrote neither its
+  verdict nor its receipt: a sender mailing SES directly could then lay out a
+  whole fake trace block.
+- **Parse.** Quoted strings and comments are removed first, so an envelope-from
+  like `"x;dkim=pass …"@evil.example` leaves nothing behind. SES folds one result
+  per line; only a `method=result` that starts a folded line is a result, and a
+  result keyword anywhere else (a HELO of `x;dkim=pass<TAB>header.d=…`) refuses
+  the whole header. Results on the authserv-id line refuse it too. There must be
+  exactly one `dmarc` result, and it must be the last; `dkim` is read only from
+  the run of dkim results just before it.
+- **Pass.** That run holds a `dkim=pass` whose `header.d` (or `header.i`'s
+  domain) is the From domain or a parent or child of it, AND the dmarc result is
+  `pass` with `header.from` equal to the From domain. One From header and one
+  address only (`From :` with a space is still a From).
+- **Pinned selector.** Passing proves the DOMAIN, not the mailbox:
+  `resend._domainkey.mcritchie.studio` exists, so anyone holding `RESEND_API_KEY`
+  could send a DKIM-passing `From: alex@mcritchie.studio`. For a domain under
+  `email.pinned_dkim` in `config/agent_routes.yml` (`mcritchie.studio: [google]`),
+  every `DKIM-Signature` aligned with the From domain must name a pinned
+  selector (`s=`), and one must exist. SES's verdict does not print the selector,
+  so it is read from the signatures: if every aligned one is `s=google`, the
+  aligned pass SES reports is a Google one; a real `s=resend` signature beside a
+  forged `s=google` one still refuses. A pass under any other selector is the
+  public, held.
 
 Every lower `Authentication-Results`, every `ARC-Authentication-Results`, and
 `DeskCapture::Reader.dkim_from_raw` (which greps them all for a human reading
 provenance) are ignored. As of 2026-10-16 13:15 MDT Alex's mail to team@ passes:
 Google DKIM (`google._domainkey`) is published, and SES reads `dkim=pass
-header.i=@mcritchie.studio; dmarc=pass header.from=mcritchie.studio`.
+header.i=@mcritchie.studio; dmarc=pass header.from=mcritchie.studio`, folded one
+result per line.
 
 **The person.** A VERIFIED sender resolves to a person by the `email` identity
 (`AgentPerson.resolve!(platform: "email", external_id: <From>)`): Alex's
@@ -786,8 +807,10 @@ the `Precedence: list` beside it, are not read as one. If the group is ever set
 to rewrite From for DMARC ("via team"), mail would arrive From team@ and be
 dropped as fleet mail: unanswered, never misanswered.
 
-**Rate limit.** Past `EmailIngest::RATE_LIMIT` (10) email rows in one thread
-within an hour, a new row is stored `held` with a `rate_limited` event.
+**Rate limit.** Past `EmailIngest::RATE_LIMIT` (10) email rows from VERIFIED
+senders in one thread within an hour, a new row is stored `held` with a
+`rate_limited` event. Unverified rows never count, so a stranger cannot fill the
+owner's thread.
 
 **Thread.** `thread_key` is `email:<root>`, where the root is the first
 References id, else In-Reply-To, else the mail's own Message-ID. A reply that
@@ -809,7 +832,8 @@ source thread.
 the row is locked and a row with a `reply_external_id` is never sent again; it
 goes through `Studio::Email.deliver`, the hub's durable outbox
 (`studio_email_deliveries`), and Resend's ActionMailer delivery, carrying the
-row's `reply_nonce` as Resend's idempotency key.
+row's `reply_nonce` as Resend's idempotency key, scoped by environment and app
+host (`<Rails.env>:<APP_HOST>:<nonce>`), so QA and production never share a key.
 
 | Header | Value |
 |---|---|

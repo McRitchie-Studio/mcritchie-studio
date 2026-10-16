@@ -107,7 +107,7 @@ class AgentEmailLoopTest < ActiveJob::TestCase
   test "a forged sender is held, never claimed and never answered; its desk capture stands" do
     forged = agent_email(top_result: ses_result(dkim: "dkim=fail header.i=@mcritchie.studio",
                                                 dmarc: "dmarc=fail header.from=mcritchie.studio"),
-                         sender_headers: [ FORGED_PASS ], message_id: "forged-int@evil.example")
+                         sender_headers: [ FORGED_FOLDED ], message_id: "forged-int@evil.example")
     receive(forged, "re_forged_1")
 
     assert DeskCaptureItem.exists?(s3_key: "resend/re_forged_1.eml")

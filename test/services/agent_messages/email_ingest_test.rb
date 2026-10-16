@@ -42,7 +42,7 @@ class EmailIngestTest < ActiveSupport::TestCase
   test "a forged alex@ with a forged lower amazonses.com pass is held as the public, with no person" do
     raw = agent_email(top_result: ses_result(dkim: "dkim=fail header.i=@mcritchie.studio",
                                              dmarc: "dmarc=fail header.from=mcritchie.studio"),
-                      sender_headers: [ FORGED_PASS ], message_id: "forged-1@evil.example")
+                      sender_headers: [ FORGED_FOLDED ], message_id: "forged-1@evil.example")
     message = ingest(raw)
     assert_equal %w[held avi], [ message.status, message.soul_slug ]
     assert_nil message.person
@@ -100,6 +100,26 @@ class EmailIngestTest < ActiveSupport::TestCase
     assert_equal "received", later.status, "the window rolls"
   end
 
+  test "alex@ signed under the resend selector is not the owner: held, no person" do
+    raw = agent_email(message_id: "resend-sel@x")
+          .sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\n")
+    message = ingest(raw)
+    assert_equal "held", message.status
+    assert_nil message.person
+    assert_match(/selector resend/, message.envelope.dig("trust", "reason"))
+  end
+
+  test "unverified rows never count toward the rate limit, so a stranger cannot hold the owner's thread" do
+    first = ingest(agent_email)
+    (AgentMessages::EmailIngest::RATE_LIMIT + 2).times do |i|
+      ingest(agent_email(to: "team@mcritchie.studio", message_id: "flood-#{i}@evil.example", top_result: nil,
+                         references: [ first.external_id ]))
+    end
+    owner = ingest(agent_email(to: "team@mcritchie.studio", message_id: "owner-next@x", references: [ first.external_id ]))
+    assert_equal "received", owner.status
+    refute owner.events.exists?(kind: "rate_limited")
+  end
+
   # --- proposal confirm by email -------------------------------------------------
 
   def proposal_for(message)
@@ -141,7 +161,7 @@ class EmailIngestTest < ActiveSupport::TestCase
     forged = go_reply(source, body: "go", message_id: "go-forged@evil.example",
                               top_result: ses_result(dkim: "dkim=fail header.i=@mcritchie.studio",
                                                      dmarc: "dmarc=fail header.from=mcritchie.studio"),
-                              sender_headers: [ FORGED_PASS ])
+                              sender_headers: [ FORGED_FOLDED ])
     message = ingest(forged)
     assert_equal "held", message.status
     assert message.events.exists?(kind: "confirm_refused")
