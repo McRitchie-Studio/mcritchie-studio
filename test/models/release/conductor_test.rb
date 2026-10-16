@@ -116,6 +116,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     intent = t.reload.task_events.chronological.to_a.find { |e| e.intent? && e.to_stage == "assembled" }
     assert_not_nil intent, "the sweep opens the assembled intent"
     assert_equal "conductor", intent.source
+    assert_equal "avi", intent.actor, "the assembled QA intent names its stage owner"
   end
 
   # Regression (2026-10-16, /tasks): two reviewed cards in one release showed a
