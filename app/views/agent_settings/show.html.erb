@@ -1,0 +1,85 @@
+<%# /agents/:slug/settings: a CTO's identity and the daily report's Discord channel. Owner of the CTO's app or admin only. Writes the same ReportDestination row as /admin/report_destinations; no token is rendered. docs/agents/system/app-owners.md %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<% label_for = lambda do |channel|
+     parent = channel.kind == "thread" && @parent_names[channel.parent_external_id]
+     parent ? "#{channel.display_name} (in ##{parent})" : channel.display_name
+   end %>
+<% grouped = @channels.group_by { |c| c.category_name.presence || "No category" }.map { |category, channels| [ category, channels.map { |c| [ label_for.(c), c.id ] } ] } %>
+<% channel = @destination&.discord_channel %>
+<% state = if channel.nil? then "not_configured" elsif !@destination.enabled? then "disabled" elsif !channel.selectable? then "unavailable" else "on" end %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="agent-settings-page" data-agent="<%= @cto.slug %>">
+  <div class="flex items-center gap-4 min-w-0">
+    <%= render "applications/cto_avatar", cto: @cto, size: "lg" %>
+    <div class="min-w-0">
+      <h1 class="text-3xl font-bold text-heading break-words"><%= @cto.display_name %></h1>
+      <p class="text-secondary mt-1">
+        CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "agent-settings-app-link" } %>
+      </p>
+    </div>
+  </div>
+
+  <div class="card p-4 space-y-3 text-sm" data-test="agent-report-setting" data-state="<%= state %>">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+      <div class="min-w-0 space-y-1">
+        <h2 class="font-semibold text-heading text-base">Daily report</h2>
+        <p class="text-secondary">Each morning at 7:00 Denver time, <%= @cto.display_name %> posts a short health report for <%= @app.name %> in the Discord channel you choose. It pings nobody.</p>
+        <p class="text-muted text-xs" data-test="agent-report-bot" data-via="<%= @bot.via %>">
+          <% if @bot.soul_bot? %>
+            Posts as <%= @cto.display_name %>'s own Discord bot, so the list below holds only the channels that bot can post in.
+          <% else %>
+            Posts as the McRitchie agents' shared Discord bot, so the list below holds the channels that bot can post in.
+          <% end %>
+        </p>
+      </div>
+      <% case state %>
+      <% when "on" %>
+        <span class="badge text-xs bg-success/10 text-success-ink border-success/40 shrink-0 self-start" data-test="agent-report-badge">Posting to <%= channel.display_name %></span>
+      <% when "disabled" %>
+        <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 shrink-0 self-start" data-test="agent-report-badge">Off</span>
+      <% when "unavailable" %>
+        <span class="badge text-xs bg-danger/10 text-danger-ink border-danger/40 shrink-0 self-start" data-test="agent-report-badge"><%= channel.display_name %> is gone or not postable</span>
+      <% else %>
+        <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 shrink-0 self-start" data-test="agent-report-badge">No channel</span>
+      <% end %>
+    </div>
+
+    <% if @channels.empty? && channel.nil? %>
+      <p class="text-warning-ink" data-test="agent-report-no-channels">
+        No channel is available yet. The channel list refreshes from Discord every 15 minutes; if this stays empty, the bot is not in a server with a channel it can post in.
+      </p>
+    <% end %>
+
+    <%= form_with url: settings_agent_path(@cto.slug), method: :patch, scope: :report_destination,
+                  class: "flex flex-col sm:flex-row sm:items-end gap-3", data: { test: "agent-report-form" } do |f| %>
+      <label class="flex flex-col gap-1 min-w-0 flex-1">
+        <span class="text-muted text-xs">Channel</span>
+        <%# A saved channel that left the list stays offered and selected, so turning the report off keeps it. %>
+        <% offered_ids = @channels.map(&:id) %>
+        <% options = channel && !offered_ids.include?(channel.id) ? [ [ "Saved", [ [ "#{channel.display_name} (no longer available)", channel.id ] ] ] ] + grouped : grouped %>
+        <%= f.select :discord_channel_id,
+                     grouped_options_for_select(options, channel&.id),
+                     { include_blank: "No channel" },
+                     class: "input-field w-full min-w-0 text-sm", data: { test: "agent-report-channel" } %>
+      </label>
+      <label class="flex items-center gap-2 shrink-0 sm:pb-2">
+        <%= f.check_box :enabled, { checked: @destination.nil? || @destination.enabled?, data: { test: "agent-report-enabled" } } %>
+        <span class="text-body">On</span>
+      </label>
+      <%= f.submit "Save", class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "agent-report-save" } %>
+    <% end %>
+
+    <div class="text-xs text-muted border-t border-subtle pt-2" data-test="agent-report-last">
+      <% if @last_delivery.nil? %>
+        No report sent yet.
+      <% elsif @last_delivery.posted? %>
+        Last report <%= stamp.(@last_delivery.posted_at || @last_delivery.updated_at) %>
+        <% if @last_delivery.url %>· <%= link_to "open in Discord", @last_delivery.url, target: "_blank", rel: "noopener", class: "underline" %><% end %>
+      <% else %>
+        Last report <%= stamp.(@last_delivery.updated_at) %>: not sent (<%= @last_delivery.status.humanize(capitalize: false) %>).
+      <% end %>
+      <% if @destination %><span class="block">Setting changed <%= stamp.(@destination.updated_at) %>.</span><% end %>
+    </div>
+  </div>
+
+  <p class="text-muted text-xs">These settings change where <%= @cto.display_name %> posts. They give it no new tools and reach no other app.</p>
+</section>

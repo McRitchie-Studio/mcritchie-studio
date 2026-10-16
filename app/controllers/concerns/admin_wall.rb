@@ -57,13 +57,18 @@ module AdminWall
   # controller_path => actions any visitor may reach: the pages plus the actions.
   PUBLIC = PUBLIC_PAGES.merge(PUBLIC_ACTIONS) { |_, pages, actions| (pages + actions).freeze }.freeze
 
-  # controller_path => actions any signed-in user may reach: their own account and
-  # their own /build request.
+  # controller_path => actions any signed-in user may reach: their own account,
+  # their own /build request, and the pages of an app they own.
   SIGNED_IN = {
     # The /build funnel's name step: a customer claims a subdomain for their draft.
     "build" => %w[update],
     "studio/profiles" => %w[show edit update avatar unlink_google subscribe_newsletter unsubscribe_newsletter],
-    "studio/onboarding" => %w[first_name skip_first_name]
+    "studio/onboarding" => %w[first_name skip_first_name],
+    # An app owner's own apps and their CTOs' settings (docs/agents/system/app-owners.md).
+    # Past the wall, each action answers 404 unless the viewer owns that app or is
+    # an admin (ApplicationsController, AgentSettingsController).
+    "applications" => %w[index show health],
+    "agent_settings" => %w[index show update]
   }.transform_values(&:freeze).freeze
 
   def self.public?(controller_path, action)

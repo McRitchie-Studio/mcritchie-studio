@@ -30,7 +30,21 @@ module LinkTreeHelper
 
   def sidebar_link_sections
     sections = public_link_sections
-    admin? ? admin_link_sections.map { |section| section.merge(admin: true) } + sections : sections
+    sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
+    owner_link_sections + sections
+  end
+
+  # An app owner's links, first in the sidebar: their app (or "Applications")
+  # and its CTO (or "Agents"), counted from their own memberships, admins
+  # included (AppOwnership.sidebar_links, docs/agents/system/app-owners.md).
+  # Nothing for a visitor or a user who owns no app.
+  def owner_link_sections
+    return [] unless logged_in? && current_user
+
+    links = AppOwnership.sidebar_links(current_user).map do |link|
+      { label: link.label, href: link.href, emoji: link.emoji, hover_emoji: link.emoji, desc: nil }
+    end
+    links.any? ? [ { title: "Your apps", links: links } ] : []
   end
 
   private
