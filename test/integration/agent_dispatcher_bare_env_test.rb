@@ -3,6 +3,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require Rails.root.join("bin/lib/agent_audience").to_s
 
 # [integration] bin/dispatcher's loop under launchd's bare environment.
 #
@@ -45,7 +46,8 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
       end
 
       def claim(**) = { "data" => @queue.shift }
-      def context(*, **) = { "data" => nil }
+      # The owner, so the action runs and the role doc is in GENERAL.
+      def context(*, **) = { "data" => { "audience" => { "role" => "owner" } } }
       def renew(*, **) = {}
       def ping(*) = {}
 
@@ -84,6 +86,9 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     File.write(File.join(@root, "config/agent_domains.yml"),
                "domains:\n  studio: { name: \"McRitchie Studio — hub\", doc: docs/studio.md }\nsouls: { xan: studio }\n")
     File.write(File.join(@root, "docs/studio.md"), "The hub — résumé of agents.\n")
+    # The real agent-communication SOP (the audience rules), read under the bare env too.
+    FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
+    FileUtils.cp(Rails.root.join(AgentMailbox::Audience::SOP_PATH), File.join(@root, AgentMailbox::Audience::SOP_PATH))
     script(File.join(@root, "bin/task"), "printf 'board \\342\\200\\224 2 building\\n'")
     @prompt = File.join(@dir, "prompt.txt")
     envelope = JSON.generate("type" => "result", "subtype" => "success", "is_error" => false, "result" => REPLY)
@@ -118,6 +123,8 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     assert_includes prompt, "Xan orchestrates — the naïve café crowd \u{1F680}."
     assert_includes prompt, "The hub — résumé of agents."
     assert_includes prompt, "board — 2 building", "the action's non-ASCII output reached the prompt"
+    assert_includes prompt, "You are speaking with: owner"
+    refute_includes prompt, "could not be loaded", "the SOP's rules were read under the bare env"
   end
 
   test "through bin/dispatcher's entry preamble, a message whose role doc has non-ASCII text is answered" do
