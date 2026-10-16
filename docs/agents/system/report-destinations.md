@@ -26,7 +26,8 @@ reports:
     description: Morning CTO summary
 ```
 
-- The key is snake_case and stable: callers pass it verbatim.
+- The key is snake_case and stable: callers pass it verbatim. A family of keys
+  may use a colon (`cto_report:turf_monster`).
 - `label` is the card's title on the page; `description` is one line on what the
   report is.
 - A key that is not registered raises `ArgumentError` on `deliver`.

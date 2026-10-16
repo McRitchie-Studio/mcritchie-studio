@@ -120,4 +120,17 @@ class CtoReport::MessageTest < ActiveSupport::TestCase
     end
     assert_raises(KeyError) { CtoReport::Voice.for("nobody") }
   end
+
+  test "[unit] every voice speaks every state: healthy, activity, errors, unreachable, each with its own line and signature" do
+    [ hub, turf, cyvasse ].each do |e|
+      voice = CtoReport::Voice.for(e.soul)
+      states = { quiet: health(e, health_body), activity: health(e, health_body(signups: 1)),
+                 errors: health(e, health_body(errors: 2, groups: [ [ "Foo", "x", 2 ] ])),
+                 unreachable: health(e, state: :unreachable, reason: "timeout") }
+      texts = states.transform_values { |h| build_message(e, h).content }
+      assert_equal 4, texts.values.uniq.size, e.soul
+      texts.each_value { |t| assert t.end_with?("— #{voice[:signature]}"), "#{e.soul}: #{t}" }
+      assert_includes texts[:errors], "2 errors in 1 kind", e.soul
+    end
+  end
 end
