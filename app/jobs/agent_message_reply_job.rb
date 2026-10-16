@@ -10,6 +10,7 @@
 # DISCORD_BOT_TOKEN_AVI) replies as that bot, unsigned: the bot's name already
 # says who answered. Without one (absent or blank) the shared bot
 # (DISCORD_AGENT_BOT_TOKEN) replies, signed `**Soul** · …`, exactly as before.
+# AgentMessages::BotSelector makes the pick, shared with the CTO reports.
 # If the soul's bot is refused (401/403: a bad token, a bot not in the guild, a
 # missing channel permission), the job writes an ErrorLog and a
 # `reply_bot_refused` event and falls back to the shared bot, once: a later try
@@ -34,13 +35,11 @@ class AgentMessageReplyJob < ApplicationJob
     return if message.nil? || message.status != "completed" || message.reply_external_id.present?
     return if message.channel != "discord"
 
-    via = "soul_bot"
-    posted = post_as_soul(message)
-    if posted.nil?
-      via = "shared_bot"
-      posted = post_as_shared(message)
-      return if posted.nil?
+    posted, via = AgentMessages::BotSelector.post(message.soul_slug, skip_soul: message.events.exists?(kind: REFUSED_EVENT),
+                                                                     on_refused: ->(error, _env) { refused!(message, error) }) do |bot, chosen|
+      post(bot, message, signed: chosen == AgentMessages::BotSelector::SHARED)
     end
+    return no_bot!(message) if posted.nil?
 
     message.update!(reply_external_id: posted["id"].to_s, reply_posted_at: Time.current, reply_status: "posted")
     message.record!("reply_posted", actor: "discord-bot",
@@ -61,22 +60,10 @@ class AgentMessageReplyJob < ApplicationJob
 
   private
 
-  # The soul's own bot, unsigned. nil when the soul has no token, or when its
-  # bot was refused (now, or on an earlier try of this job).
-  def post_as_soul(message)
-    token = AgentMessages::DiscordBot.soul_token(message.soul_slug)
-    return nil if token.nil? || message.events.exists?(kind: REFUSED_EVENT)
-
-    post(AgentMessages::DiscordBot.new(token: token), message, signed: false)
-  rescue AgentMessages::DiscordBot::Unauthorized => e
-    refused!(message, e)
-    nil
-  end
-
-  # The shared bot, signed. nil (and recorded) when it has no token.
-  def post_as_shared(message)
-    return post(AgentMessages::DiscordBot.new, message, signed: true) if AgentMessages::DiscordBot.configured?
-
+  # No bot could post (AgentMessages::BotSelector answered nil): the shared
+  # bot has no token. After a refused soul bot that is a failure; otherwise the
+  # reply is skipped. Either way it is recorded on the timeline.
+  def no_bot!(message)
     unset = AgentMessages::DiscordBot::TOKEN_ENV
     if message.events.exists?(kind: REFUSED_EVENT)
       message.update_column(:reply_status, "failed")

@@ -9,6 +9,10 @@ require "digest"
 #   result.message_id  # the Discord message id (posted only)
 #   result.url         # a link to the message (posted only)
 #
+# Which bot: a `cto_report:<domain>` key posts as its CTO soul's own bot when
+# that bot's token is set, falling back once to the shared agents' bot on a
+# 401/403; every other key posts as the shared bot (`bot_choice`, below).
+#
 # Once per idempotency_key. A key already `posted` returns that delivery and
 # posts nothing; Discord's nonce + enforce_nonce (derived from the key) folds a
 # racing or retried post into the message it already made. Nothing is pinged
@@ -51,6 +55,18 @@ module ReportDestinations
                        description: entry["description"].to_s)
     end
   end
+
+  # WHICH BOT. A CTO report (`cto_report:<domain>`) posts as its CTO soul's own
+  # bot when DISCORD_BOT_TOKEN_<SOUL> is set; the soul comes from
+  # config/cto_reports.yml (CtoReport.soul_for). Every other key, and a CTO key
+  # whose soul has no token, posts as the shared agents' bot
+  # (DISCORD_AGENT_BOT_TOKEN), exactly as before. The content is the same either
+  # way: the report already signs itself.
+  def soul_for(report_key) = CtoReport.soul_for(report_key)
+
+  # The bot `report_key` would post as now (AgentMessages::BotSelector::Choice):
+  # the soul, the ENV name and whether it is set. Never the token.
+  def bot_choice(report_key) = AgentMessages::BotSelector.choice(soul_for(report_key))
 
   def registration(report_key) = registrations.find { |r| r.key == report_key.to_s }
   def registered?(report_key) = !registration(report_key).nil?
@@ -152,16 +168,46 @@ module ReportDestinations
       return skip(receipt, :not_configured, "no channel is chosen for #{@report_key}") if channel.nil?
       return skip(receipt, :disabled, "delivery of #{@report_key} is turned off") unless destination.enabled?
       return skip(receipt, :not_configured, "#{channel.display_name} is archived or not postable") unless channel.selectable?
-      return failure(receipt, channel, AgentMessages::DiscordBot::Error.new("#{AgentMessages::DiscordBot::TOKEN_ENV} is unset")) unless AgentMessages::DiscordBot.configured?
 
-      posted = AgentMessages::DiscordBot.new.post_report(channel.external_id, content: @content, embeds: @embeds,
-                                                                              nonce: ReportDestinations.nonce_for(@idempotency_key))
+      posted, via = post(receipt, channel)
+      return failure(receipt, channel, AgentMessages::DiscordBot::Error.new(no_bot_reason(receipt))) if posted.nil?
+
       receipt.update!(status: "posted", discord_channel: channel, guild_external_id: channel.guild_external_id,
                       channel_external_id: channel.external_id, message_external_id: posted["id"].to_s,
-                      posted_at: Time.current, error: nil)
+                      posted_at: Time.current, posted_via: via, error: nil)
       finished(receipt)
     rescue AgentMessages::DiscordBot::Error => e
       failure(receipt, channel, e)
+    end
+
+    # The CTO soul's own bot first (a non-CTO key has no soul, so the shared bot
+    # alone), then the shared bot once if the soul's bot is refused. A receipt
+    # whose soul bot was refused on an earlier try skips it: the report it may
+    # already have posted through the shared bot is never posted again by
+    # another bot. Returns [message, via] or nil when no bot has a token.
+    def post(receipt, channel)
+      soul = ReportDestinations.soul_for(@report_key)
+      AgentMessages::BotSelector.post(soul, skip_soul: receipt.soul_bot_refused_at.present?,
+                                            on_refused: ->(error, env) { soul_refused!(receipt, error, env) }) do |bot, _via|
+        bot.post_report(channel.external_id, content: @content, embeds: @embeds,
+                                             nonce: ReportDestinations.nonce_for(@idempotency_key))
+      end
+    end
+
+    # Recorded on the receipt (so a retry goes straight to the shared bot) and
+    # as an ErrorLog naming the ENV var and Discord's answer, never the token
+    # (DiscordBot redacts it from everything it raises).
+    def soul_refused!(receipt, error, env)
+      receipt.update!(soul_bot_refused_at: Time.current)
+      log = ErrorLog.capture!(error)
+      log.update(target: receipt, target_name: "#{env} report #{@report_key}")
+    rescue StandardError => e
+      Rails.logger.warn("[report-destinations] could not record a refused soul bot: #{e.class}")
+    end
+
+    def no_bot_reason(receipt)
+      unset = "#{AgentMessages::DiscordBot::TOKEN_ENV} is unset"
+      receipt.soul_bot_refused_at.present? ? "the CTO's own bot was refused and #{unset}" : unset
     end
 
     def skip(receipt, status, reason)

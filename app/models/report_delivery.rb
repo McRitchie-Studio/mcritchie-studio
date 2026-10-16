@@ -4,12 +4,16 @@
 # by the next deliver with that key (docs/agents/system/report-destinations.md).
 class ReportDelivery < ApplicationRecord
   STATUSES = %w[pending posted not_configured disabled failed].freeze
+  # Which bot posted it (AgentMessages::BotSelector): a CTO soul's own bot or
+  # the shared agents' bot. nil before it posts, and on rows from before it was recorded.
+  POSTED_VIA = [ AgentMessages::BotSelector::SOUL, AgentMessages::BotSelector::SHARED ].freeze
 
   belongs_to :discord_channel, optional: true
 
   validates :report_key, :idempotency_key, presence: true
   validates :idempotency_key, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
+  validates :posted_via, inclusion: { in: POSTED_VIA }, allow_nil: true
 
   scope :newest_first, -> { order(created_at: :desc, id: :desc) }
 

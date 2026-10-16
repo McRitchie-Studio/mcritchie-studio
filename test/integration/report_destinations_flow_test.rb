@@ -58,4 +58,44 @@ class ReportDestinationsFlowTest < ActionDispatch::IntegrationTest
     assert_equal [ reports, true ], [ destination.discord_channel, destination.enabled? ]
     assert_nil ReportDestination.find_by(report_key: "cto_report:cyvasse")
   end
+
+  test "[integration] cto_report:turf_monster posts via Turf's bot with its token stubbed, via the shared bot without; the page says which" do
+    fake = fake_discord
+    log_in_as(admin)
+    reports = channel!
+    patch admin_report_destination_path(report_key: "cto_report:turf_monster"),
+          params: { report_destination: { discord_channel_id: reports.id, enabled: "1" } }
+
+    with_fake_discord(fake) do
+      with_env("DISCORD_BOT_TOKEN_TURF_MONSTER", "turf-soul-secret") do
+        get admin_report_destinations_path
+        assert_select "[data-report-key='cto_report:turf_monster'] [data-test='destination-bot'][data-via='soul_bot']",
+                      text: /Posts as Turf Monster's own bot \(DISCORD_BOT_TOKEN_TURF_MONSTER is set\)/
+        assert_select "[data-report-key='daily_app_report'] [data-test='destination-bot'][data-via='shared_bot']",
+                      text: /\APosts as the agents' shared bot\.\z/
+        assert_not_includes response.body, "turf-soul-secret", "the page never renders a token"
+
+        result = ReportDestinations.deliver("cto_report:turf_monster", content: "Turf: all green.",
+                                                                       idempotency_key: "cto_report:turf_monster:2026-10-16")
+        assert_equal :posted, result.status
+        assert_equal "Bot turf-soul-secret", fake.posts.last[:auth]
+
+        get admin_report_destinations_path
+        assert_select "[data-report-key='cto_report:turf_monster'] [data-test='last-delivery-via']", text: "as Turf Monster's own bot"
+      end
+
+      with_env("DISCORD_BOT_TOKEN_TURF_MONSTER", nil) do
+        get admin_report_destinations_path
+        assert_select "[data-report-key='cto_report:turf_monster'] [data-test='destination-bot'][data-via='shared_bot']",
+                      text: /Posts as the agents' shared bot: DISCORD_BOT_TOKEN_TURF_MONSTER is not set\./
+        result = ReportDestinations.deliver("cto_report:turf_monster", content: "Turf: all green.",
+                                                                       idempotency_key: "cto_report:turf_monster:2026-10-17")
+        assert_equal :posted, result.status
+        assert_equal "Bot test-token", fake.posts.last[:auth]
+        get admin_report_destinations_path
+        assert_select "[data-report-key='cto_report:turf_monster'] [data-test='last-delivery-via']", text: "as the agents' shared bot"
+      end
+    end
+    assert_equal 2, fake.posts.size
+  end
 end
