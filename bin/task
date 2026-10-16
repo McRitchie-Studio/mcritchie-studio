@@ -134,7 +134,10 @@
 #       The desk's git identity follows the same soul: --agent reaches
 #       `agent-worktree new --soul`, and after the claim begin reads built_by
 #       back and stamps the desk with it when that differs (or says UNSTAMPED
-#       when no builder is on record). Never fatal. The
+#       when no builder is on record). Without --agent, begin names `pokemon`
+#       and prints one line saying so, unless the task already carries a
+#       builder, a persona or an assignee (then the board's own rule stamps
+#       that one). Never fatal. The
 #       resume form takes no OTHER create flag: one is REFUSED, naming
 #       `bin/task update <slug>`, never dropped in silence. bin/submit is the
 #       handoff twin. )
@@ -2373,6 +2376,35 @@ def forward_create_flags_to_update!(raw_argv, slug)
   die!("the forwarded update of #{slug} failed — see above; nothing else ran.")
 end
 
+# The soul begin names as the builder when --agent is absent, or nil when the task
+# (or this create) already carries one: a recorded built_by, a persona, or a soul
+# assignee, each of which Task#builder_to_stamp would stamp on its own. Otherwise
+# the session's acting soul (the sticky `.acting-agent` marker narration writes,
+# the same one `review-claim acquire` reads), else the Pokémon: building is its
+# seat in the operating model, so naming it is the house rule, not a guess.
+DEFAULT_BUILDER = "pokemon"
+
+def default_builder(task, scalars, top)
+  dv = task.dig("metadata", "devops") || {}
+  named = [dv["built_by"], dv["persona"], scalars["persona"], task["agent_slug"], top["agent"]]
+  return nil if named.any? { |value| !value.to_s.strip.empty? }
+
+  session_acting_soul || DEFAULT_BUILDER
+end
+
+# The session's acting soul when it is a roster soul, else nil. Read-only, through
+# the marker store's one owner.
+def session_acting_soul
+  sid = session_identity.first.to_s.strip
+  return nil if sid.empty?
+
+  require_relative "lib/session_markers"
+  soul = SessionMarkers.read(sid, PROJECTS_DIR, ".acting-agent").to_s.strip
+  DreamBank.roster.key?(soul) ? soul : nil
+rescue StandardError
+  nil
+end
+
 # The task record for `begin`'s resume decision: the data on 2xx, nil on the
 # board's POSITIVE "task not found" (create it), die on everything else — a
 # failed read must never be read as "no such task" (that is the same contract
@@ -2859,6 +2891,18 @@ when "begin"
   end
 
   dv = task.dig("metadata", "devops") || {}
+
+  # THE DEFAULT BUILDER. A begin with no --agent used to leave the author set blank
+  # whenever nothing else named a soul, and review cannot prove a blank set is not
+  # the reviewer: on 2026-10-14 (approve-intent-brief-dream) the docs reviewer's
+  # merge permit refused such a PR. The general builder is the Pokémon, so begin
+  # names it, and says so in one line. Only where the board would otherwise stamp
+  # NOBODY (Task#builder_to_stamp): --agent always wins, and a builder, a persona or
+  # a soul assignee already on record is kept, so a resume never re-points one.
+  if builder.empty? && (default = default_builder(task, scalars, top))
+    builder = default
+    warn!("begin — no --agent, so the builder defaults to #{builder} (pass --agent <soul> to name another)")
+  end
 
   # THE RESUME CLAIM GATE. An already-`building` task skips the child `move
   # building` below — which is where the build-claim gate lives — so run the SAME
