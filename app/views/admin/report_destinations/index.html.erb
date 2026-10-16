@@ -1,4 +1,4 @@
-<%# /admin/report_destinations: one card per registered report (config/report_destinations.yml) with its Discord channel, an on/off toggle and the last delivery; the channel directory's freshness and a Refresh channels button. No token is rendered. %>
+<%# /admin/report_destinations: one card per registered report (config/report_destinations.yml) with its Discord channel, an on/off toggle, the bot it posts as and the last delivery; the channel directory's freshness and a Refresh channels button. No token is rendered. %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <% label_for = lambda do |channel|
      parent = channel.kind == "thread" && @parent_names[channel.parent_external_id]
@@ -9,7 +9,7 @@
   <div>
     <h1 class="text-3xl font-bold text-heading">Report destinations</h1>
     <p class="text-secondary mt-2">
-      Where each report posts in Discord, as the agents' bot. Pick a channel and turn it on; the report posts there once per run and pings nobody.
+      Where each report posts in Discord. A CTO report posts as its CTO's own bot when that bot's token is set, else as the agents' shared bot; every other report posts as the shared bot. Pick a channel and turn it on; the report posts there once per run and pings nobody.
     </p>
   </div>
 
@@ -39,6 +39,8 @@
     <% destination = @destinations[registration.key] %>
     <% channel = destination&.discord_channel %>
     <% delivery = @last_deliveries[registration.key] %>
+    <% bot = @bots[registration.key] %>
+    <% bot_name = ->(via) { via == AgentMessages::BotSelector::SOUL && bot.soul ? "#{bot.soul.titleize}'s own bot" : "the agents' shared bot" } %>
     <% state = if channel.nil? then "not_configured" elsif !destination.enabled? then "disabled" elsif !channel.selectable? then "unavailable" else "on" end %>
     <div class="card p-4 space-y-3 text-sm" data-test="report-destination" data-report-key="<%= registration.key %>" data-state="<%= state %>">
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
@@ -46,6 +48,15 @@
           <h2 class="font-semibold text-heading text-base"><%= registration.label %></h2>
           <p class="text-secondary"><%= registration.description %></p>
           <p class="text-muted text-xs font-mono break-all"><%= registration.key %></p>
+          <p class="text-muted text-xs" data-test="destination-bot" data-via="<%= bot.via %>">
+            <% if bot.soul_bot? %>
+              Posts as <%= bot_name.(bot.via) %> (<span class="font-mono"><%= bot.token_env %></span> is set); falls back to the agents' shared bot if Discord refuses it.
+            <% elsif bot.soul %>
+              Posts as the agents' shared bot: <span class="font-mono"><%= bot.token_env %></span> is not set.
+            <% else %>
+              Posts as the agents' shared bot.
+            <% end %>
+          </p>
         </div>
         <% case state %>
         <% when "on" %>
@@ -82,6 +93,7 @@
           No delivery yet.
         <% elsif delivery.posted? %>
           Last posted <%= stamp.(delivery.posted_at || delivery.updated_at) %>
+          <% if delivery.posted_via %><span data-test="last-delivery-via">as <%= bot_name.(delivery.posted_via) %></span><% end %>
           <% if delivery.url %>· <%= link_to "open in Discord", delivery.url, target: "_blank", rel: "noopener", class: "underline", data: { test: "last-delivery-link" } %><% end %>
         <% else %>
           Last try <%= stamp.(delivery.updated_at) %>: <span class="font-semibold"><%= delivery.status.humanize(capitalize: false) %></span><% if delivery.error.present? %> (<%= delivery.error %>)<% end %>

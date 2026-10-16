@@ -4,7 +4,8 @@ module Admin
   # is on, and its last delivery (docs/agents/system/report-destinations.md).
   #
   # index    one row per registered key, a select of the directory's postable,
-  #          unarchived channels grouped by category, an enable toggle.
+  #          unarchived channels grouped by category, an enable toggle, and
+  #          which bot it posts as (a CTO's own bot when its token is set).
   # update   saves one key's channel and toggle (PATCH /admin/report_destinations/:report_key).
   # refresh  runs DiscordChannelSyncJob now and says what it saw.
   class ReportDestinationsController < ApplicationController
@@ -13,6 +14,8 @@ module Admin
     def index
       @registrations = ReportDestinations.registrations
       @destinations = ReportDestination.includes(:discord_channel).where(report_key: @registrations.map(&:key)).index_by(&:report_key)
+      # Which bot each card posts as: a soul and whether its token is set, never the token.
+      @bots = @registrations.to_h { |r| [ r.key, ReportDestinations.bot_choice(r.key) ] }
       @last_deliveries = @registrations.to_h { |r| [ r.key, ReportDelivery.where(report_key: r.key).newest_first.first ] }
       @channels = DiscordChannel.selectable.directory_order.to_a
       @parent_names = DiscordChannel.where(external_id: @channels.filter_map(&:parent_external_id)).pluck(:external_id, :name).to_h

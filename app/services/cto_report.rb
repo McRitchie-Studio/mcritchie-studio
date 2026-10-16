@@ -45,6 +45,17 @@ module CtoReport
 
   def config(path = CONFIG_PATH) = (YAML.safe_load_file(path) || {}).fetch("ctos", {}) || {}
 
+  # The CTO soul whose own Discord bot posts `report_key` (`cto_report:<domain>`),
+  # read from config/cto_reports.yml; nil for a key that is not a CTO report or
+  # names no configured domain. ReportDestinations asks this to pick the bot.
+  def soul_for(report_key, config: self.config)
+    domain = report_key.to_s.delete_prefix("#{KEY_PREFIX}:")
+    return nil if domain == report_key.to_s
+
+    row = config[domain]
+    row.is_a?(Hash) ? row["soul"].to_s.presence : nil
+  end
+
   # Domain keys marked `internal: true` in config/agent_domains.yml.
   def internal_domains(path = DOMAINS_PATH)
     domains = (YAML.safe_load_file(path) || {}).fetch("domains", {}) || {}

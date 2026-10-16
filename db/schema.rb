@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_150500) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1876,7 +1876,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_150500) do
     t.string "idempotency_key", null: false
     t.string "message_external_id"
     t.datetime "posted_at"
+    t.string "posted_via"
     t.string "report_key", null: false
+    t.datetime "soul_bot_refused_at"
     t.string "status", null: false
     t.datetime "updated_at", null: false
     t.index ["discord_channel_id"], name: "index_report_deliveries_on_discord_channel_id"
