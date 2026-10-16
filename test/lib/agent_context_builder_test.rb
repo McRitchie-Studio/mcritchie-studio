@@ -25,6 +25,8 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
       souls: { xan: studio, mack: welding }
     YAML
     File.write(File.join(@root, "docs/studio.md"), "<!-- authoring note -->\nThe hub and its agents.")
+    FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
+    FileUtils.cp(Rails.root.join(AgentMailbox::Audience::SOP_PATH), File.join(@root, AgentMailbox::Audience::SOP_PATH))
     @message = { "id" => 9, "channel" => "discord", "author_name" => "Alex", "content" => "what next?" }
   end
 
@@ -36,8 +38,13 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
       "content" => content, "answer" => answer, "status" => status }
   end
 
-  def builder(context: nil, soul: "xan", message: @message)
-    AgentMailbox::ContextBuilder.new(soul: soul, message: message, context: context, repo_root: @root, fence: FENCE)
+  # The owner by default: these tests read the layers as Alex's prompt has them.
+  # The audience tests (agent_audience_test.rb) cover the others.
+  OWNER = AgentMailbox::Audience.new(role: "owner")
+
+  def builder(context: nil, soul: "xan", message: @message, audience: OWNER)
+    AgentMailbox::ContextBuilder.new(soul: soul, message: message, context: context, repo_root: @root, fence: FENCE,
+                                     audience: audience)
   end
 
   # The prompt with every fenced block removed: what is left is code-written.

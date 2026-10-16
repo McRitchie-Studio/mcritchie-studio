@@ -1,9 +1,11 @@
 require "test_helper"
+require "tmpdir"
 require_relative "../support/agent_message_fixtures"
 require Rails.root.join("db/migrate/20261016000000_add_held_to_agent_messages")
 
 # [unit] The owner-only guard (docs/agents/system/agent-message-loop.md, "Held"):
-# config/agent_answerers.yml resolves to people by identity and by person id;
+# config/agent_answerers.yml answers ROLES (owner only), so a person is answered by
+# their role, which an operator sets and a message cannot;
 # ingest stores an addressed message from anyone else `held`; the claim never
 # returns a held row, nor a `received` one from a person the list does not allow;
 # held and unallowed rows do not hold back the thread and person wait rules; an
@@ -29,38 +31,58 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
 
   def stranger_person = AgentPerson.resolve!(platform: "discord", external_id: STRANGER, display_name: "Stranger")
 
-  # --- allow-list resolution ---------------------------------------------------
+  # --- answered roles (the allow-list folded into the owner role) ---------------
 
-  test "the shipped file allows Alex's person through his Discord identity, and nobody else" do
+  test "the shipped file answers the owner role only: Alex's person, and nobody else" do
     answerers = AgentMessages::Answerers.load
 
+    assert_equal [ "owner" ], answerers.roles
     assert_equal [ @alex.id ], answerers.person_ids
     assert answerers.allowed?(@alex)
     refute answerers.allowed?(stranger_person)
     refute answerers.allowed?(nil), "a row with no person is never allowed"
   end
 
-  test "an identity matches its person, so an identity later linked to Alex counts too; a person_id entry matches that row" do
+  test "an identity later linked to Alex is answered with him, because the role is on his person" do
     @alex.link_identity!(platform: "email", external_id: "alex@example.com")
-    by_email = AgentMessages::Answerers.new([ { "identity" => { "platform" => "email", "external_id" => "alex@example.com" } } ])
-    assert_equal [ @alex.id ], by_email.person_ids
-
-    by_id = AgentMessages::Answerers.new([ { "name" => "S", "person_id" => stranger_person.id } ])
-    assert by_id.allowed?(stranger_person)
-    refute by_id.allowed?(@alex)
+    linked = AgentPersonIdentity.find_by!(platform: "email", external_id: "alex@example.com").person
+    assert AgentMessages::Answerers.load.allowed?(linked)
   end
 
-  test "an identity nobody holds yet allows nobody, and the claim then hands out nothing (fail closed)" do
-    AgentMessages::Answerers.current = AgentMessages::Answerers.new([ { "identity" => { "platform" => "discord", "external_id" => "1" } } ])
+  test "a role change is seen at once by the claim, with no reload; a role not listed stays held back" do
+    stranger = stranger_person
+    agent_message!(soul: "xan", author_ref: STRANGER)
+    assert_nil claim, "public is not answered"
+
+    stranger.set_role!("team")
+    assert_nil claim, "team is not answered while the list is owner only"
+
+    AgentMessages::Answerers.current = AgentMessages::Answerers.new(%w[owner team])
+    assert_equal stranger.id, claim&.person_id
+    assert AgentMessages::Answerers.current.allowed?(stranger)
+
+    stranger.set_role!("owner")
+    AgentMessages::Answerers.current = AgentMessages::Answerers.load
+    assert AgentMessages::Answerers.current.allowed?(stranger.reload)
+  end
+
+  test "an empty list answers nobody, and the claim then hands out nothing (fail closed)" do
+    AgentMessages::Answerers.current = AgentMessages::Answerers.new([])
     assert_empty AgentMessages::Answerers.current.person_ids
     agent_message!(soul: "xan", author_ref: ALEX)
 
     assert_nil claim
   end
 
-  test "a malformed entry is refused at load, not read as allow-all" do
-    assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ { "name" => "nobody" } ]) }
-    assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "alex" ]) }
+  test "a malformed list or an unknown role is refused at load, not read as allow-all" do
+    assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "admin" ]) }
+    assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new("owner") }
+    assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "owner'); --" ]) }
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "answerers.yml")
+      File.write(path, "answerers:\n  - name: Alex\n")
+      assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.load(path) }
+    end
   end
 
   # --- ingest -----------------------------------------------------------------
@@ -74,7 +96,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
     assert_equal "held", theirs.status
     assert_equal "xan", theirs.soul_slug, "a held row keeps its soul, for the admin page and a release"
     held = theirs.events.find { |e| e.kind == "held" }
-    assert_match(/not on config\/agent_answerers.yml/, held.detail["reason"])
+    assert_equal "sender's role (public) is not answered; config/agent_answerers.yml answers owner", held.detail["reason"]
     assert_equal theirs.person_id, held.detail["person_id"]
     assert_nil mine.events.find { |e| e.kind == "held" }
   end

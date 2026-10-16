@@ -1,29 +1,33 @@
 module AgentMessages
-  # Who the agents answer: config/agent_answerers.yml, read into the set of
-  # AgentPerson ids it allows (docs/agents/system/agent-message-loop.md, "Held").
+  # Who the agents answer: the ROLES config/agent_answerers.yml lists
+  # (docs/agents/modules/agent-communication.md; docs/agents/system/agent-message-loop.md,
+  # "Held"). A person is answered when their role (AgentPerson#role, set by an
+  # operator, never by a message) is one of them. Today the list is owner only,
+  # which is the owner-only allow-list folded into the owner role: Alex is
+  # answered because his person is the owner, and every identity linked to him
+  # with him.
   #
-  # A STOPGAP, owner-only, until agent-sender-authority replaces it with roles.
   # DiscordIngest stores an addressed message from anyone else as `held`, and
-  # AgentMessage.claimable refuses any row whose person is not allowed unless an
-  # admin released its hold, so the guard holds on the server even for a row
-  # that is somehow `received`.
+  # AgentMessage.claimable refuses any row whose person's role is not answered
+  # unless an admin released its hold, so the guard holds on the server even for
+  # a row that is somehow `received`. FAIL CLOSED: a row with no person is never
+  # answered, and an empty list answers nobody.
   #
-  # An entry names a person by `person_id` or by `identity` (platform +
-  # external_id). An identity matches the PERSON that holds it, so every identity
-  # later linked to that person is allowed too. FAIL CLOSED: an identity no
-  # person holds yet allows nobody, and a row with no person is never allowed.
+  # Answering a role is a separate question from what the agent may SAY to it:
+  # once answered, AgentMailbox::Audience holds the answer to that role's rules.
   class Answerers
     PATH = Rails.root.join("config/agent_answerers.yml")
 
     class Invalid < StandardError; end
 
-    Entry = Struct.new(:name, :person_id, :platform, :external_id, keyword_init: true)
-
-    attr_reader :entries
+    attr_reader :roles
 
     class << self
       def load(path = PATH)
-        new(Array((YAML.safe_load_file(path, aliases: false) || {})["answerers"]))
+        config = YAML.safe_load_file(path, aliases: false)
+        raise Invalid, "#{path} must hold answered_roles: [ ... ]" unless config.is_a?(Hash) && config.key?("answered_roles")
+
+        new(config["answered_roles"])
       end
 
       # The process's list, read once. Tests swap it with `current=` and `reset!`.
@@ -34,47 +38,34 @@ module AgentMessages
       def reset! = @current = nil
     end
 
-    def initialize(entries)
-      @entries = entries.map { |raw| parse(raw) }
+    def initialize(roles)
+      raise Invalid, "answered_roles must be a list, got #{roles.inspect}" unless roles.is_a?(Array)
+
+      @roles = roles.map(&:to_s).uniq
+      unknown = @roles - AgentPerson::ROLES
+      raise Invalid, "unknown role(s) #{unknown.join(', ')}; roles are #{AgentPerson::ROLES.join(', ')}" if unknown.any?
     end
 
-    # The allowed AgentPerson ids, read from the identities now: an identity
-    # linked or created since is seen on the next call.
-    def person_ids
-      ids = entries.filter_map(&:person_id)
-      pairs = entries.select(&:platform)
-      if pairs.any?
-        scope = pairs.map { |e| AgentPersonIdentity.where(platform: e.platform, external_id: e.external_id) }.reduce(:or)
-        ids += scope.pluck(:agent_person_id)
-      end
-      ids.uniq.sort
-    end
+    def allowed?(person) = person.present? && roles.include?(person.role)
 
-    def allowed?(person) = person.present? && person_ids.include?(person.id)
+    # The answered AgentPerson ids, read now: a role changed since is seen at once.
+    def person_ids = roles.empty? ? [] : AgentPerson.where(role: roles).order(:id).pluck(:id)
+
+    # Why a message from `person` is held, for its `held` event.
+    def held_reason(person)
+      role = person&.role || "none"
+      "sender's role (#{role}) is not answered; config/agent_answerers.yml answers #{roles.join(', ').presence || 'nobody'}"
+    end
 
     # The guard as SQL, for AgentMessage.claimable: a proc from a table alias to
-    # "that row may be answered", with the allowed ids read once. A row passes
-    # when an admin released its hold, or its person is allowed. An empty list
-    # matches no person (IN (NULL) is never true).
+    # "that row may be answered". A row passes when an admin released its hold, or
+    # its person's role is answered. The roles are checked against
+    # AgentPerson::ROLES at load, and quoted besides; an empty list matches no person.
     def sql_guard
-      ids = person_ids
-      list = ids.any? ? ids.map { |id| Integer(id) }.join(", ") : "NULL"
-      ->(table) { "(#{table}.hold_released_at IS NOT NULL OR #{table}.person_id IN (#{list}))" }
-    end
-
-    private
-
-    def parse(raw)
-      raise Invalid, "an answerer entry must be a mapping, got #{raw.inspect}" unless raw.is_a?(Hash)
-
-      identity = raw["identity"]
-      person_id = raw["person_id"]
-      if identity.is_a?(Hash) && identity["platform"].present? && identity["external_id"].present?
-        Entry.new(name: raw["name"], platform: identity["platform"].to_s, external_id: identity["external_id"].to_s)
-      elsif person_id.to_s.match?(/\A\d+\z/)
-        Entry.new(name: raw["name"], person_id: person_id.to_i)
-      else
-        raise Invalid, "answerer #{raw['name'].inspect} needs person_id or identity: { platform, external_id }"
+      list = roles.any? ? roles.map { |r| ActiveRecord::Base.connection.quote(r) }.join(", ") : "NULL"
+      lambda do |table|
+        "(#{table}.hold_released_at IS NOT NULL OR #{table}.person_id IN " \
+          "(SELECT agent_people.id FROM agent_people WHERE agent_people.role IN (#{list})))"
       end
     end
   end

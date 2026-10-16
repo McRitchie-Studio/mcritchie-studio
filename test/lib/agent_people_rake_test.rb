@@ -10,7 +10,7 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
 
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("agent_people:forget")
-    %w[agent_people:notes agent_people:forget].each { |t| Rake::Task[t].reenable }
+    %w[agent_people:notes agent_people:forget agent_people:role].each { |t| Rake::Task[t].reenable }
     @message = agent_message!(soul: "xan", channel: "discord", author_ref: "500", author_name: "Alex")
     @notes = AgentPersonNote.record_from!(@message, [ "Favorite color is purple.", "Runs the hub." ])
     @person = @message.person
@@ -54,5 +54,21 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
   test "forget with PERSON alone refuses and deletes nothing" do
     assert_raises(SystemExit) { run_task("agent_people:forget", { "PERSON" => @person.id.to_s }) }
     assert_equal 2, @person.notes.count
+  end
+
+  test "role sets a person's role, a client with its DOMAIN, and refuses a bad one" do
+    Rake::Task["agent_people:role"].reenable
+    out = run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "team" })
+    assert_includes out, "##{@person.id} Alex: role public -> team"
+    assert_equal "team", @person.reload.role
+
+    out = run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "client", "DOMAIN" => "turf_monster" })
+    assert_includes out, "role team -> client (turf_monster)"
+
+    assert_raises(SystemExit) { run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "admin" }) }
+    assert_raises(SystemExit) { run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "client" }) }
+    assert_equal "client", @person.reload.role
+  ensure
+    ENV.delete("DOMAIN")
   end
 end

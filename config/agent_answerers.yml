@@ -1,22 +1,15 @@
-# Who the agents answer (docs/agents/system/agent-message-loop.md, "Held").
+# Who the agents answer (docs/agents/modules/agent-communication.md;
+# docs/agents/system/agent-message-loop.md, "Held"): the ROLES of the people whose
+# messages are claimed and answered. A person's role is set by an operator
+# (`bin/rails agent_people:role PERSON=<id> ROLE=team`), never by a message.
 #
-# A STOPGAP, owner-only: an addressed message from anyone not listed here is
-# stored `held` and never claimed until an admin releases it (the Release button
-# on /admin/agent_messages/:id, or `bin/rails agent_people:release MESSAGE=<id>`).
-# The task agent-sender-authority replaces this file with roles.
-#
-# Each entry names one person, by either key:
-#   identity: { platform: discord, external_id: "<user id>" }  # matches that id's
-#                                                              # person, so every
-#                                                              # identity linked to
-#                                                              # them counts too
-#   person_id: <agent_people.id>                               # one environment's row
+# Owner only while answering is restricted: an addressed message from anyone
+# else (team, client, public, or no person) is stored `held` and never claimed
+# until an admin releases it (the Release button on /admin/agent_messages/:id, or
+# `bin/rails agent_people:release MESSAGE=<id>`). Add a role here to answer it;
+# what the agent may then SAY to that role is the agent-communication SOP.
 #
 # The server reads this once per process (AgentMessages::Answerers), so a change
-# takes effect on deploy. An identity no person holds yet allows nobody until
-# that id first speaks.
-answerers:
-  - name: Alex
-    identity:
-      platform: discord
-      external_id: "536552944271753216"
+# takes effect on deploy. Roles: owner, team, client, public.
+answered_roles:
+  - owner
