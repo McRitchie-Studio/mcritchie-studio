@@ -5,7 +5,7 @@
 #
 # One soul's pass over the agent mailbox (docs/agents/system/agent-message-loop.md):
 # claim the oldest message routed to <soul>, take the soul's ONE read-only action
-# (avi: bin/release status; xan: bin/task list), answer with a headless Claude run
+# (bin/task list, the board through the agent API), answer with a headless Claude run
 # that treats the message as untrusted data, and complete it so the reply posts
 # back to Discord once. Drains what is waiting, or one message with --once.
 # With nothing waiting it prints "nothing for <soul>" and exits 0.
