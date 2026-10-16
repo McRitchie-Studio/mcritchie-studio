@@ -270,7 +270,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000000) do
     t.index ["status"], name: "index_agent_messages_on_status"
     t.index ["thread_key", "id"], name: "index_agent_messages_on_thread_key_and_id"
     t.check_constraint "reply_status::text = ANY (ARRAY['queued'::character varying::text, 'posted'::character varying::text, 'skipped'::character varying::text, 'failed'::character varying::text])", name: "agent_messages_reply_status_known"
-    t.check_constraint "status::text = ANY (ARRAY['received'::character varying, 'claimed'::character varying, 'completed'::character varying, 'dead'::character varying, 'unrouted'::character varying, 'held'::character varying]::text[])", name: "agent_messages_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['received'::character varying::text, 'claimed'::character varying::text, 'completed'::character varying::text, 'dead'::character varying::text, 'unrouted'::character varying::text, 'held'::character varying::text])", name: "agent_messages_status_known"
   end
 
   create_table "agent_people", force: :cascade do |t|
