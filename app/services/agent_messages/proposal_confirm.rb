@@ -10,6 +10,9 @@ module AgentMessages
   #   sender may not confirm (Audience#may?(:confirm_proposal), the person's
   #   role) → stored `held` with a `confirm_refused` event. Nothing posts, nothing runs.
   #   proposal past expires_at → `expired`; the reply says so.
+  #   the word replies to a proposal that is no longer open (superseded, run,
+  #   dropped) → nothing changes; the reply says so. A reply to a specific
+  #   proposal's message never confirms a different one.
   #   go      → `confirmed`; AgentProposalJob runs it and posts the result.
   #   no      → `rejected`; the reply says it was dropped.
   #   change: → `rejected` (change requested) and the message goes to the soul
@@ -26,6 +29,7 @@ module AgentMessages
 
     EXPIRED_TEXT = "That proposal expired after 24 hours, so nothing ran. Ask again and I will offer it fresh.".freeze
     DROPPED_TEXT = "Dropped. Nothing will run.".freeze
+    CLOSED_TEXT = "That proposal is no longer open, so nothing ran. Reply to the newest one, or ask again.".freeze
 
     # [:go] / [:no] / [:change, "the change"] / nil.
     def self.intent(content)
@@ -49,6 +53,7 @@ module AgentMessages
       audience = AgentProposal.audience_for(person)
       return refused!(attrs, person, source, audience) unless audience.may?(:confirm_proposal)
       return expired!(attrs, source) if @proposal.expired?(@now)
+      return answered!(attrs, source, CLOSED_TEXT, nil, "proposal_closed", @intent.first.to_s) unless @proposal.status == "proposed"
 
       case @intent.first
       when :go then go!(attrs, source)

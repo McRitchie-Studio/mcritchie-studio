@@ -4,9 +4,11 @@
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
 the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
 same answer path). Phase 1 is Discord only. Two domain front doors are routed,
-Xan (`xan`, McRitchie Studio) and Turf (`turf_monster`, Turf Monster), and each
-may PROPOSE what its domain's catalog allows, for the owner to confirm by reply
-(below, "Proposals and confirm"). Avi and Xan keep one read-only action each. Later phases add channels, agents and clients without
+Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
+Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
+owner to confirm by reply (below, "Proposals and confirm"). Xan stays routed as a
+helper (orchestration, docs review) with no catalog. Avi and Xan keep one
+read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
 
@@ -234,8 +236,9 @@ every 15 minutes. The contract other sessions build against,
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and reads its context
 bundle, which carries the sender's audience (below, "Audience"). For an owner or
-team sender it runs the soul's one read-only action (avi: `bin/release status`;
-xan: `bin/task list`); for anyone else it runs nothing. It builds the prompt from
+team sender it runs the soul's one read-only action (avi and xan: `bin/task list`,
+the board through the agent API; no action reads Heroku, which launchd cannot log
+in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
 message. Claude runs headless with
 **no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
@@ -537,12 +540,12 @@ board and the worker read one file the same way). Each domain names its `soul`
 
 | Kind | Phase 1 | What runs on `go` |
 |------|---------|-------------------|
-| `ask` | Xan: `board_status` (stage counts), `recently_shipped` (`days` 1-30). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
+| `ask` | Avi: `board_status` (stage counts), `recently_shipped` (`days` 1-30), `release_status` (the active release, its stage and member count, the submitted/reviewed/assembled counts, the last ship; read in process, no Heroku). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
 | `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
 | `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the Discord link in `devops.source_thread`. A session still starts the builder |
 
-Only the front door has a catalog. Avi maps to the studio domain for its DOMAIN
-layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
+Only the front door has a catalog. Xan (and every other studio soul) maps to the
+studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
 catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
 hub can read, so there is no entries-for-week ask yet.
 
@@ -584,8 +587,14 @@ older pending proposal in the thread is rejected, and the reply gains:
 
 ```text
 > Proposed: <summary>
+> Runs: ask `recently_shipped` · days 7
 Reply **go** to run this, **no** to drop it, or **change: …**
 ```
+
+The `Runs:` line is rendered in code from the stored kind, capability and params
+(`AgentProposal#runs_line`; lists joined with `;`, each value cut to 120
+characters, backticks removed), so the owner confirms the call itself, not only
+the model's summary of it.
 
 Refused, it is a `proposal_refused` event on the message and is never shown.
 
@@ -593,14 +602,19 @@ Refused, it is a `proposal_refused` event on the message and is never shown.
 message in a thread (same `thread_key`, channel, guild and channel ref as the THREAD
 layer) that has a pending proposal, whose text is exactly `go`, `no` or
 `change: …` (trimmed, any case, leading @-mentions ignored), is handled by
-`AgentMessages::ProposalConfirm`:
+`AgentMessages::ProposalConfirm`. Which proposal it is about
+(`AgentProposal.for_word`): a Discord reply to the message that posted a proposal
+is about THAT proposal; any other word is about the thread's newest pending one.
+A go in another thread, or a top-level go outside a Discord thread (which starts
+a thread of its own), finds no proposal and is routed as usual.
 
 | Word | From the owner | From anyone else |
 |------|----------------|------------------|
-| `go` | `confirmed`; `AgentProposalJob` runs it; the result posts as the answer to the go | stored `held` with a `confirm_refused` event; nothing runs, nothing posts |
-| `no` | `rejected`; "Dropped. Nothing will run." | same |
-| `change: …` | `rejected` (change requested); the message goes to the soul like any other, with the old proposal in its context | same |
-| any, after 24 hours | `expired`; the reply says so and nothing runs | same |
+| `go` | `confirmed`; `AgentProposalJob` runs it; the result posts as the answer to the go | `held`, with a `confirm_refused` event; nothing runs, nothing posts |
+| `no` | `rejected`; "Dropped. Nothing will run." | `held` / `confirm_refused` |
+| `change: …` | `rejected` (change requested); the message goes to the soul like any other, with the old proposal in its context | `held` / `confirm_refused` |
+| any, after 24 hours | `expired`; the reply says so and nothing runs | `held` / `confirm_refused` |
+| any, replying to a proposal no longer open (superseded, run, dropped) | nothing changes; a `proposal_closed` event, and the reply says nothing ran | `held` / `confirm_refused` |
 
 Anything else (`go ahead`, `go!`) is routed as usual. A reply to an answer pings
 the shared bot that posted it; that ping no longer outranks the thread, so a reply
@@ -616,12 +630,21 @@ misstate. Counts only, as the daily app report: error classes, never messages.
 `executed` with the task slug, and posts "Opened `<slug>` <task url>" in the thread
 through the one reply path (`AgentMessageReplyJob`).
 
+**The job holds no lock across the run.** `AgentProposalJob` claims the
+`confirmed` proposal under its row lock (a token and a time in `result`), runs the
+executor outside any lock (an ask may fetch a satellite's health over HTTP), and
+settles under the lock again only while the claim is still its own. A retried job
+finds the proposal claimed or `executed` and does nothing; a claim older than ten
+minutes (a worker that died) may be taken again.
+
 **A failed run** writes an `ErrorLog` row targeted at the go message, puts the
 proposal back to `proposed` (a later `go` retries it), and posts one line with a
 short reason (an error class, never a message that could carry a secret).
 
 **Replies are signed by the domain's `reply_name`** (`**Turf** · …`) while every
-reply still posts through Xan's shared bot. Turf is routed by a mention of the
+reply still posts through Xan's shared bot. Avi is routed by a mention of his own
+Discord app's bot user (`1560516264378507334`, 1Password `agents.discord.avi`,
+in the McRitchie guild, reply-only permissions); Turf by a mention of the
 existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
 McRitchie guild). Tyrion is not routed: he answers through OpenClaw with his own
 bot, and Alex has not chosen between the two runtimes.
@@ -659,9 +682,11 @@ Nothing reads Discord until a bot token is set. The code ships inert.
   [`discord-bot-setup`](../agents/steffon/sops/discord-bot-setup.md). It creates
   the bot's Discord application, turns on the Message Content Intent, files the
   token as `agents.discord.<bot>`, and routes each client's IDs into
-  `config/agent_routes.yml`. Two bots are filed today: `agents.discord.xan`
-  (the shared bot for the live test) and `agents.discord.mack` (read by nothing
-  yet).
+  `config/agent_routes.yml`. Filed today: `agents.discord.xan` (the shared bot
+  that reads the guild and posts every reply), `agents.discord.avi` and
+  `agents.discord.turf` (bot users a mention routes by; their tokens are read by
+  nothing yet), `agents.discord.tyrion` (no token: his lives on the OpenClaw
+  host) and `agents.discord.mack` (read by nothing yet).
 - **The client's own half** (server, `#agents` channel, mentionable roles,
   Developer Mode, the IDs): the public guide at `/integrations/discord`
   (`app/views/integrations/discord.html.erb`).
@@ -678,8 +703,8 @@ Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is t
 quiet one), mentioning the Xan bot user (`@Xan`). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
-(`bin/dispatcher uninstall`) so the two do not compete. Only `xan` is routed
-there today.
+(`bin/dispatcher uninstall`) so the two do not compete. Avi, Xan and Turf are
+routed there; the rows use Xan, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|

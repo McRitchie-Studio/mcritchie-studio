@@ -89,8 +89,8 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
 under Alex's claude.ai login. Every child gets an allow-listed environment
-(`AgentMailbox::CHILD_ENV_ALLOW`: the basics, the agent board's own names and
-`HEROKU_API_KEY` for `bin/release status`), so no API key, auth token, base URL or
+(`AgentMailbox::CHILD_ENV_ALLOW`: the basics and the agent board's own names; no
+Heroku credential, since no action reads Heroku), so no API key, auth token, base URL or
 Bedrock/Vertex switch can reach Claude, including ones Anthropic adds later.
 
 **What it reads from Claude.** Only what the model cannot write: the exit status,
@@ -135,13 +135,15 @@ tail -n 20 ~/Library/Logs/agent-dispatcher.log
 ```
 
 The log's first line names the worker, the souls and the version:
-`start dispatcher-<host>-<pid>-<rand> serving xan on discord (cap 5, version <sha>, code <digest>)`.
+`start dispatcher-<host>-<pid>-<rand> serving avi,xan,turf_monster on discord (cap 5, version <sha>, code <digest>)`.
 
 `bin/dispatcher install` is safe to re-run: it unloads the running copy first.
 If it prints `launchctl bootstrap failed`, run it again: the unload of the old copy
-can still be finishing on the first try. Under launchd, `HEROKU_API_KEY` is not set,
-so a soul whose action is `bin/release status` (avi) reports that action as failed
-and answers from its role; only `xan` is routed today.
+can still be finishing on the first try. Every soul's read-only action is
+`bin/task list`, a board read through the agent API, so it runs under launchd with
+no Heroku login (`bin/release status`, avi's action until 2026-10-15, failed there
+with `HEROKU_NONINTERACTIVE_LOGIN`). Avi's release numbers come from his
+`release_status` ask, read on the board.
 
 ## Updates: nobody reinstalls it
 
@@ -189,9 +191,9 @@ code; leave the primary on `main`.
 
 1. `/admin/agent_messages` shows the dispatcher row **live**, pinged under a
    minute ago, serving the routed souls.
-2. Post `@Xan what is building?` in `lobster-tank`. Within about a minute the
-   reply lands in the channel, and the log shows
-   `claimed #N for xan` then `completed #N (completed)`.
+2. Post `@Avi what is building?` in `lobster-tank`. Within about a minute the
+   reply lands in the channel, signed `**Avi** ·`, and the log shows
+   `claimed #N for avi` then `completed #N (completed)`.
 3. `bin/dispatcher status` exits 0.
 
 ## The alerts and what each means
@@ -235,10 +237,10 @@ gateway is failing before READY, so read the worker log's
 | **Dead letter**: a message `dead` | Its timeline on `/admin/agent_messages/:id` (`dead_lettered` and its reason) | Fix the cause first. Then re-queue it on the hub, in the Heroku console: `AgentMessage.find(ID).update!(status: "received", attempts: 0, usage_refunds: 0, claimed_by: nil, lease_expires_at: nil)` |
 | **Context failing**: the log repeats `releasing #N: could not read the message's context` | The board's `GET /api/v1/agent_messages/:id/context` (holder-only) | Treat it as **Board auth** or a hub outage. The dispatcher gives the message back rather than answer without the person's memory |
 | **Wrong audience**: an agent withheld the board from a team member, or answered a client as the owner would | The answer's prompt prints `You are speaking with: <audience>`; the person's role is in `bin/rails agent_people:list` (`role=`) | Only Alex decides a role. Set it on the hub: `heroku run -a mcritchie-studio --no-tty -- bin/rails agent_people:role PERSON=<id> ROLE=team` (a client adds `DOMAIN=<key from config/agent_domains.yml>`). It applies to the person's next message. The rules: [`agent-communication`](../../../modules/agent-communication.md) |
-| **A `go` did nothing** in a thread with a proposal | `bin/agent-inbox show <id>` on the go message: `confirm_refused` (the sender is not the owner by role), `proposal_expired` (past 24 hours), `proposal_failed` (its reason, plus an `ErrorLog` row targeted at the message), or no proposal event at all (the text was not exactly `go`, or the thread had no pending proposal) | Owner-only is by design. A failed run leaves the proposal `proposed`: fix the cause and reply `go` again. An unwired satellite ask says so in the thread: set `HEALTH_TOKEN_<APP>` on `mcritchie-studio`. The loop: [`agent-message-loop`](../../../system/agent-message-loop.md), "Proposals and confirm" |
+| **A `go` did nothing** in a thread with a proposal | `bin/agent-inbox show <id>` on the go message: `confirm_refused` (the sender is not the owner by role), `proposal_expired` (past 24 hours), `proposal_closed` (the go replied to a proposal no longer open: superseded, run or dropped), `proposal_failed` (its reason, plus an `ErrorLog` row targeted at the message), or no proposal event at all (the text was not exactly `go`, or the thread had no pending proposal: a go in another thread, or a top-level go outside a Discord thread, starts its own) | Owner-only is by design. A failed run leaves the proposal `proposed`: fix the cause and reply `go` again. An unwired satellite ask says so in the thread: set `HEALTH_TOKEN_<APP>` on `mcritchie-studio` (Turf's is `HEALTH_TOKEN_TURF_MONSTER`). The loop: [`agent-message-loop`](../../../system/agent-message-loop.md), "Proposals and confirm" |
 | **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only; the answer path never resumes |
 | **Unrouted**: a reply to a kept message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
-| **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's `held` event says why. The owner-only guard: the sender's role is not one `config/agent_answerers.yml` answers (owner only today), so no claim will ever take it ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
+| **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's event says why: `held`, the owner-only guard (the sender's role is not one `config/agent_answerers.yml` answers, owner only today), or `confirm_refused`, a non-owner's `go`, `no` or `change:` on an open proposal (only the owner confirms). No claim will ever take either ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
 
 ## Uninstall
 

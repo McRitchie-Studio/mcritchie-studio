@@ -41,6 +41,13 @@ discord:
     "1332466565203103744":             # McRitchie Studio: every channel and thread
       name: McRitchie Studio
       souls:
+        # Avi, the McRitchie Studio domain's front door (CTO): a mention of his
+        # own Discord app's bot user (1Password `agents.discord.avi`). His replies
+        # post through the shared bot, signed `**Avi** ·`, until Phase 4.
+        avi:
+          roles: []
+          users: ["1560516264378507334"]   # @Avi (bot user)
+        # Xan stays routed for Alex as a helper; he has no catalog.
         xan:
           roles: []
           users: ["1481150857809760399"]   # @Xan, the bot user itself

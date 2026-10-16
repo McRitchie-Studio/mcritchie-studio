@@ -7,9 +7,11 @@ require_relative "../support/agent_message_fixtures"
 # go over the API with a PROPOSAL block in the answer, the reply posts with the
 # confirm line (the Discord transport recorded, nothing leaves the test), and the
 # owner's `go` in the thread runs it in code:
-#   Xan proposes a change → go → a `designed` task bound to the thread, and the
+#   Avi proposes a change → go → a `designed` task bound to the thread, and the
 #   thread is told "Opened `<slug>` <url>".
 #   A non-owner's go → nothing.
+#   Avi proposes release_status → go → the ladder posts, signed Avi; a go in
+#   another thread and a top-level go leave a pending proposal alone.
 #   Turf proposes an ask → go → the query runs and its answer posts, signed Turf.
 class AgentProposalLoopTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
@@ -20,6 +22,8 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
   GUILD_ID = "1332466565203103744".freeze
   CHANNEL = "1332466565203103999".freeze
   XAN_BOT = "1481150857809760399".freeze
+  AVI_BOT = "1560516264378507334".freeze
+  OTHER_CHANNEL = "1332466565203103998".freeze
   TURF_BOT = "1405042649479647293".freeze
 
   # A satellite's health endpoint, faked at the fetcher seam.
@@ -55,8 +59,8 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
     AgentProposals::Executor.fetcher = nil
   end
 
-  def ingest(id, content, author: ALEX, users: [], reply_to: nil)
-    raw = discord_raw(id, content: content, channel: CHANNEL, author: author, users: users, reply_to: reply_to,
+  def ingest(id, content, author: ALEX, users: [], reply_to: nil, channel: CHANNEL)
+    raw = discord_raw(id, content: content, channel: channel, author: author, users: users, reply_to: reply_to,
                           guild: GUILD_ID)
     AgentMessages::DiscordIngest.new(routes: AgentMessages::Routes.load).call(raw, guild_id: GUILD_ID, source: "discord-gateway")
   end
@@ -81,15 +85,17 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
                 "accept": ["The footer toggles between light and dark"], "test": ["[unit] the toggle renders"]}}
   TEXT
 
-  test "Xan proposes a change, the owner says go, and a designed task is bound to the thread" do
+  test "Avi proposes a change, the owner says go, and a designed task is bound to the thread" do
     with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
-      asked = ingest(4001, "<@#{XAN_BOT}> add a light/dark toggle to the footer", users: [ XAN_BOT ])
-      assert_equal [ "received", "xan" ], [ asked.status, asked.soul_slug ]
+      asked = ingest(4001, "<@#{AVI_BOT}> add a light/dark toggle to the footer", users: [ AVI_BOT ])
+      assert_equal [ "received", "avi" ], [ asked.status, asked.soul_slug ]
 
-      message, catalog = perform_enqueued_jobs { answer("xan", CHANGE) }
+      message, catalog = perform_enqueued_jobs { answer("avi", CHANGE) }
       assert_includes catalog, "task"
-      assert_equal "**Xan** · I can open a task for a footer theme toggle.\n\n> Proposed: Add a light/dark toggle to " \
-                   "the footer\n#{AgentProposal::CONFIRM_LINE}", @posts.last["content"]
+      assert_equal "**Avi** · I can open a task for a footer theme toggle.\n\n> Proposed: Add a light/dark toggle to " \
+                   "the footer\n> Runs: change `task` · title Footer Theme Toggle Added · kind feature · shape ui-only · " \
+                   "accept The footer toggles between light and dark · test [unit] the toggle renders\n" \
+                   "#{AgentProposal::CONFIRM_LINE}", @posts.last["content"]
       refute_match(/PROPOSAL|"capability"/, @posts.last["content"])
       proposal = AgentProposal.sole
       reply_id = message.reload.reply_external_id
@@ -110,8 +116,41 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
       assert_equal message.discord_url, task.metadata["devops"]["source_thread"]
       assert_equal "executed", proposal.reload.status
       assert_equal task.slug, proposal.result["task_slug"]
-      assert_equal "**Xan** · Opened `#{task.slug}` https://mcritchie.studio/tasks/#{task.slug}", @posts.last["content"]
+      assert_equal "**Avi** · Opened `#{task.slug}` https://mcritchie.studio/tasks/#{task.slug}", @posts.last["content"]
       assert_equal go.external_id, @posts.last.dig("message_reference", "message_id"), "posted in reply to the go"
+    end
+  end
+
+  test "Avi proposes release_status, the owner says go, and the ladder posts; a go elsewhere touches nothing" do
+    with_env("DISCORD_AGENT_BOT_TOKEN", "test-token") do
+      Task.create!(title: "Reviewed Work Waits Here", stage: "designed").update_columns(stage: "reviewed")
+      asked = ingest(6001, "<@#{AVI_BOT}> where is the release?", users: [ AVI_BOT ])
+      assert_equal [ "received", "avi", "user" ], [ asked.status, asked.soul_slug, asked.routed_by ]
+
+      text = "I can read the release ladder.\n===PROPOSAL===\n" \
+             '{"kind": "ask", "capability": "release_status", "params": {}, "summary": "The release ladder now"}'
+      message, catalog = perform_enqueued_jobs { answer("avi", text) }
+      assert_equal %w[board_status recently_shipped release_status task], catalog
+      assert_includes @posts.last["content"], "> Runs: ask `release_status` (no params)"
+      proposal = AgentProposal.sole
+
+      # A go in another channel's thread, and a top-level go to Avi: each starts
+      # its own thread, so neither is a word on this proposal.
+      perform_enqueued_jobs do
+        elsewhere = ingest(6002, "<@#{AVI_BOT}> go", users: [ AVI_BOT ], channel: OTHER_CHANNEL)
+        top = ingest(6003, "<@#{AVI_BOT}> go", users: [ AVI_BOT ])
+        [ elsewhere, top ].each do |row|
+          refute_equal message.thread_key, row.thread_key
+          refute row.events.exists?(kind: "confirmed")
+        end
+      end
+      assert_equal "proposed", proposal.reload.status, "a go outside the thread leaves the proposal pending"
+      assert_nil proposal.confirm_message_id
+
+      perform_enqueued_jobs { ingest(6004, "go", users: [ XAN_BOT ], reply_to: message.reload.reply_external_id) }
+      assert_equal "executed", proposal.reload.status
+      assert_match(/\A\*\*Avi\*\* · (Release now: `[^`]+`|No release is open\.).* Ladder: submitted \d+ · reviewed [1-9]\d* · assembled \d+\./,
+                   @posts.last["content"])
     end
   end
 

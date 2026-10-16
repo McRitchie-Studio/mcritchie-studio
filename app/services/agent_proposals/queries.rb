@@ -13,7 +13,9 @@ module AgentProposals
   # Counts only, as the daily app report: no names or emails, and error
   # classes without their messages.
   module Queries
-    NAMES = %w[board_status recently_shipped app_health].freeze
+    NAMES = %w[board_status recently_shipped release_status app_health].freeze
+    # The accepted → release → main ladder, in order (Task::DEPLOY_STAGES before shipped).
+    LADDER_STAGES = %w[submitted reviewed assembled].freeze
     SHIPPED_LISTED = 15
     ERROR_CLASSES_LISTED = 3
 
@@ -30,6 +32,7 @@ module AgentProposals
       case name.to_s
       when "board_status" then board_status
       when "recently_shipped" then recently_shipped(days: params.fetch("days", 7).to_i, now: now)
+      when "release_status" then release_status
       when "app_health" then app_health(app, days: params.fetch("days", 1).to_i, fetcher: fetcher, env: env, now: now)
       end
     end
@@ -52,6 +55,27 @@ module AgentProposals
       end
       more = total > rows.size ? "\n…and #{total - rows.size} more." : ""
       "Shipped in the last #{days} day#{'s' unless days == 1} (#{total}):\n#{rows.join("\n")}#{more}"
+    end
+
+    # The release ladder, read in process (no Heroku, no git): the active release
+    # (Release.current) with its slug, state, stage and member count; the tasks
+    # waiting on each rung; and the last release shipped.
+    def release_status
+      counts = Task.where(stage: LADDER_STAGES).group(:stage).count
+      ladder = LADDER_STAGES.map { |stage| "#{stage} #{counts.fetch(stage, 0)}" }.join(" · ")
+      release = Release.current
+      now_line = if release
+                   stage = release.current_stage
+                   members = release.tasks.count
+                   "Release now: `#{release.slug}` #{release.state}#{", stage #{stage.tr('_', ' ')}" if stage}, " \
+                     "#{members} task#{'s' unless members == 1} aboard."
+                 else
+                   "No release is open."
+                 end
+      last = Release.last_shipped
+      shipped_at = last && (last.shipped_at || last.created_at)
+      last_line = last ? " Last shipped: `#{last.slug}` (#{shipped_at.in_time_zone(DailyAppReport::ZONE).strftime('%b %-d')})." : ""
+      "#{now_line} Ladder: #{ladder}.#{last_line}"
     end
 
     # Signups and errors summed over `days` daily health-report windows (each

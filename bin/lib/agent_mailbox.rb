@@ -105,13 +105,14 @@ module AgentMailbox
   # bills Alex's claude.ai login (keychain, under HOME and USER) and never an
   # exported API key, auth token, base URL or Bedrock/Vertex switch, including
   # names Anthropic adds later, which a deny-list would miss. The agent-board
-  # names are the read-only actions' own (bin/task; bin/release reads Heroku with
-  # HEROKU_API_KEY); none of them routes Claude.
+  # names are the read-only actions' own (bin/task reads the board through the
+  # agent API); none of them routes Claude. No action reads Heroku, so no Heroku
+  # credential is passed: bin/release status needed a Heroku login launchd does
+  # not have (HEROKU_NONINTERACTIVE_LOGIN, measured 2026-10-15).
   CHILD_ENV_ALLOW = %w[
     PATH HOME USER LOGNAME SHELL TMPDIR LANG LC_ALL LC_CTYPE TERM TZ __CF_USER_TEXT_ENCODING
     GEM_HOME GEM_PATH
     ATOMIC_CAPTURE_URL AGENT_API_SECRET AGENT_LEGACY_TOKEN PROJECTS_DIR CLAUDE_PROJECTS_DIR TASK_API_BASE
-    HEROKU_API_KEY
   ].freeze
 
   def self.child_env(env = ENV)
@@ -433,9 +434,12 @@ module AgentMailbox
     # The ONE read-only action each soul may take, run from the hub checkout.
     # A soul with none still answers, from its role alone. It runs only when the
     # message's audience may use it (Audience#may?(:read_action): owner and team);
-    # for a client or the public it is never run.
+    # for a client or the public it is never run. Every action reads the board
+    # through the agent API (bin/task), never Heroku: the dispatcher runs under
+    # launchd with no Heroku login. Avi's release numbers come from his
+    # release_status ask (AgentProposals::Queries), read in process on the board.
     ACTIONS = {
-      "avi" => { argv: %w[bin/release status], what: "the release state" },
+      "avi" => { argv: %w[bin/task list], what: "the task board" },
       "xan" => { argv: %w[bin/task list], what: "the task board" }
     }.freeze
     ACTION_TIMEOUT = 90

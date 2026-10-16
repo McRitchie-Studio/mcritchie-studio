@@ -131,14 +131,16 @@ module AgentMessages
     end
 
     # A reply in a thread with a pending proposal whose text is exactly go, no or
-    # change: …: stored by ProposalConfirm, its follow-up job enqueued. nil when
+    # change: …: stored by ProposalConfirm, its follow-up job enqueued. A Discord
+    # reply to one proposal's message is about that proposal; any other word is
+    # about the thread's newest pending one (AgentProposal.for_word). nil when
     # the message is not one (it is then routed as usual).
     def confirm(raw, guild_id, channel_id, thread_key, users, roles, source)
       intent = ProposalConfirm.intent(raw["content"])
       return nil unless intent
 
-      proposal = AgentProposal.latest_pending(thread_key: thread_key, channel: "discord", guild_id: guild_id,
-                                              channel_ref: channel_id)
+      proposal = AgentProposal.for_word(thread_key: thread_key, channel: "discord", guild_id: guild_id,
+                                        channel_ref: channel_id, reference_id: reply_reference(raw))
       return nil unless proposal
 
       message, jobs = AgentMessage.transaction(requires_new: true) do
@@ -152,6 +154,14 @@ module AgentMessages
       end
       jobs.each { |job, id| job.perform_later(id) }
       message
+    end
+
+    # The message id a Discord reply points at (never a forward's), or nil.
+    def reply_reference(raw)
+      reference = raw["message_reference"]
+      return nil unless reference.is_a?(Hash) && reference["type"].to_i != REFERENCE_FORWARD
+
+      reference["message_id"].to_s.presence
     end
 
     def status_for(result, held)
