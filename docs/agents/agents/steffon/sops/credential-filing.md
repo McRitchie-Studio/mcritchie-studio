@@ -148,29 +148,36 @@ is his — `bin/setup-1pass-token --admin` — but check the file's absence befo
 saying so. Escalate to Alex only when no lane has the grant, naming the
 vault and the missing grant.
 
-## 5. Operator-supplied secrets never touch chat
+## 5. Operator-supplied secrets: you make the item, Alex pastes only the secret
 
-A secret that starts in Alex's hands (a fresh service-account
-token, a console-only key) must not be pasted into a session transcript —
-transcripts are durable. Hand him this two-step for HIS terminal:
+A secret that starts in Alex's hands (a bot token, a fresh service-account
+token, a console-only key) must not be pasted into a session transcript:
+transcripts are durable. Do not hand him a filing script either (Alex,
+2026-10-15: "No, just make it lol"). The agent does the filing; Alex does only
+the one step that needs his hands:
 
-```bash
-read -rs T       # he pastes the secret, screen stays blank (-r: a backslash
-                 # in the token survives; without it read corrupts silently)
-# then the apply command, interpolating $T where the value goes
-```
+1. **You create the item** with sections 2-4 done (vault, name, logo, notes, the
+   admin lane), the secret field present and **empty**, and every non-secret
+   field filled (ids, URLs, scopes).
+2. **Alex pastes only the secret** into that field in the 1Password app and
+   saves. Tell him the item title, the vault, the field label, and where in the
+   provider's console the value is shown. Nothing else is asked of him.
+3. **You verify with the provider** (section 6): read the field and pipe it
+   straight into the provider's identity call (a Discord bot token into
+   `GET /users/@me` must answer with the bot user id the item records), printing
+   only the result's id or status, never the value.
 
-**Keep `T` set until section 6.** The read-back there digests what he pasted
-against what the vault now returns, and a shell that has already forgotten it
-digests the EMPTY STRING — which false-mismatches a credential that was filed
-correctly. Section 6 says where the `unset` belongs.
+Then apply it where it is used from the item itself
+(`op read 'op://<vault>/<item>/<field>' | …`), never from a copy.
 
-The apply command still passes `$T` through argv (see step 3's note); the
-protections here are against the durable copies — transcript and shell
-history hold the literal `$T`, never the value.
+**Fallback, only when the app is out of reach** (the value must go straight into
+a command on his machine): hand him `read -rs T` (`-r` keeps a backslash
+intact; without it `read` corrupts silently) and the apply command with `$T`
+where the value goes, and keep `T` set until section 6's read-back has
+digested it. Transcript and history then hold the literal `$T`, never the value.
 
 For the reverse direction (a value he must paste into a UI), put it on his
-clipboard — `printf '%s' "$VALUE" | pbcopy` — and clear the clipboard after
+clipboard (`printf '%s' "$VALUE" | pbcopy`) and clear the clipboard after
 (`pbcopy < /dev/null`).
 
 ## 6. Verify, then record
@@ -185,9 +192,12 @@ clipboard — `printf '%s' "$VALUE" | pbcopy` — and clear the clipboard after
    printf '%s' "$VALUE" | shasum -a 256    # the two digests must match
    ```
 
-   For an operator-supplied secret the agent never held, Alex runs the
-   pair in HIS terminal against the variable HE has — section 5 had him
-   `read -rs T`, so it is `$T`, not the agent's `$VALUE`:
+   For an operator-supplied secret the agent never held, there is no second
+   side to digest, so the agent verifies it with the provider instead
+   (section 5, step 3): the item's field piped into the provider's identity
+   call answers with the account or bot id the item records. Only on the
+   section 5 fallback does Alex run the pair in HIS terminal against the
+   variable HE has (`$T`, not the agent's `$VALUE`):
 
    ```bash
    op item get <title> --vault <vault> --fields label=credential --reveal \
