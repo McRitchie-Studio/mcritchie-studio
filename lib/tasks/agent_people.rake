@@ -3,6 +3,8 @@
 #
 #   bin/rails agent_people:list
 #   bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=alex@example.com [REASSIGN=1]
+#   bin/rails agent_people:role PERSON=<id> ROLE=team   (owner | team | client | public)
+#   bin/rails agent_people:role PERSON=<id> ROLE=client DOMAIN=turf_monster
 #   bin/rails agent_people:notes PERSON=<id>
 #   bin/rails agent_people:forget NOTE=<id>          (one note)
 #   bin/rails agent_people:forget PERSON=<id> ALL=1  (every note the person has)
@@ -16,6 +18,7 @@ namespace :agent_people do
     AgentPerson.includes(:identities).order(:id).each do |person|
       ids = person.identities.sort_by(&:id).map { |i| "#{i.platform}:#{i.external_id}" }.join(" ")
       puts "##{person.id} #{person.display_name}#{" (user #{person.user_id})" if person.user_id} #{ids} " \
+           "role=#{AgentMailbox::Audience.new(role: person.role, client_domain: person.client_domain).label} " \
            "notes=#{person.notes.count}"
     end
   end
@@ -28,6 +31,17 @@ namespace :agent_people do
     puts "linked #{identity.platform}:#{identity.external_id} to ##{person.id} #{person.display_name}"
   rescue AgentPerson::LinkRefused, KeyError => e
     abort "agent_people:link: #{e.message}"
+  end
+
+  desc "Set a person's role (PERSON, ROLE=owner|team|client|public, DOMAIN for a client): who the agents speak with"
+  task role: :environment do
+    person = AgentPerson.find(ENV.fetch("PERSON"))
+    before = AgentPerson.audience_for(person)
+    person.set_role!(ENV.fetch("ROLE"), client_domain: ENV["DOMAIN"])
+    puts "##{person.id} #{person.display_name}: role #{before['role']}#{" (#{before['client_domain']})" if before['client_domain']}" \
+         " -> #{person.role}#{" (#{person.client_domain})" if person.client_domain}"
+  rescue KeyError, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid => e
+    abort "agent_people:role: #{e.message}"
   end
 
   desc "List one person's notes (PERSON) with id, date, source message and soul"
