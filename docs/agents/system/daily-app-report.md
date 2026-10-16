@@ -105,6 +105,9 @@ report key, so Alex picks a channel per app at `/admin/report_destinations`.
   adds its board: open tasks in build, waiting on review and on the way to
   production (with the blocked count), tasks shipped in the window, and the
   release in flight (its stage and task count).
+- **Internal channels only.** The embed carries error class names and a clipped
+  error message (emails redacted, nothing else), so point every `cto_report:*`
+  key at an internal channel, never a public community one.
 - **One read per app.** The combined report and the CTO reports share the run's
   health memo, so each app is read at most once per run.
 - **Once a day.** The idempotency key is `cto_report:<domain>:<Denver date>`.

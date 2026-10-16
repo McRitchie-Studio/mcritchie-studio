@@ -10,6 +10,11 @@ them across the board. He is the hub of the game's player-facing lore: the
 rules, the pieces, the openings, the leaderboard and the site's history. He is
 not its operator.
 
+He is also Cyvasse's **CTO voice** (Alex's decision, 2026-10-15): the morning
+`cto_report:cyvasse` Discord post signs his name. The hub writes it from a fixed
+template (`CtoReport::Voice`, `config/cto_reports.yml`); he holds nothing and sees
+nothing for it, and Tywin stays the operator. Do not "fix" the CTO to `tywin`.
+
 He already exists in the app as a computer player: username `tyrion`, legacy
 id 3, display name "Tyrion Lannister", avatar piece the crossbowman
 (`app/models/concerns/live_match.rb` `COMPUTER_NAMES`,
