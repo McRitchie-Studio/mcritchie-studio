@@ -72,7 +72,12 @@ module DailyAppReport
   # Read every app, build the message, deliver it. Returns the
   # ReportDestinations::Result (or the existing posted one when this day's
   # report already went out, without fetching anything).
-  def run(ending: window_end, fetcher: Fetcher.new, env: ENV, logger: Rails.logger)
+  #
+  # `healths` (slug => AppHealth) is a memo the caller may share: every app
+  # read here lands in it, and an app already in it is not read again, so the
+  # per-app CTO reports that follow in the same job (CtoReport) reuse this
+  # morning's reads instead of fetching each app twice.
+  def run(ending: window_end, fetcher: Fetcher.new, env: ENV, logger: Rails.logger, healths: {})
     ending = ending.in_time_zone(ZONE)
     key = idempotency_key(ending)
     if (done = ReportDelivery.find_by(idempotency_key: key)) && done.posted?
@@ -80,7 +85,7 @@ module DailyAppReport
       return ReportDestinations::Result.new(status: :posted, message_id: done.message_external_id, url: done.url, delivery: done)
     end
 
-    results = apps.map { |app| health_for(app, ending, fetcher: fetcher, env: env) }
+    results = apps.map { |app| healths[app.slug] ||= health_for(app, ending, fetcher: fetcher, env: env) }
     message = Message.new(ending: ending, results: results).to_h
     result = ReportDestinations.deliver(REPORT_KEY, **message, idempotency_key: key)
     log_result(logger, key, result)

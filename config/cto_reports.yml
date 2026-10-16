@@ -1,0 +1,26 @@
+# The per-app CTO morning reports (CtoReport, docs/agents/system/daily-app-report.md,
+# "Per-app CTO reports"). One entry per app that has a CTO: the soul whose voice
+# the report speaks in. Each entry posts under its own report key,
+# `cto_report:<domain>`, which must also be registered in
+# config/report_destinations.yml so Alex can pick its channel at
+# /admin/report_destinations.
+#
+#   <domain>:        # the domain key (config/agent_domains.yml where it has one)
+#     app: <slug>    # the config/apps.yml slug whose health the report reads
+#     soul: <soul>   # the CTO; its template lives in CtoReport::Voice::VOICES
+#
+# Kept apart from config/agent_domains.yml on purpose: that file's `soul:` is the
+# Discord FRONT-DOOR soul (who answers asks), which need not be the CTO who
+# signs the morning report. An app in AppCatalog::UNANNOUNCED, an app that is
+# not a live studio-engine app (DailyAppReport.apps), and a domain marked
+# `internal: true` in agent_domains.yml never report.
+ctos:
+  mcritchie_studio:
+    app: mcritchie-studio
+    soul: avi
+  turf_monster:
+    app: turf-monster
+    soul: turf_monster
+  cyvasse:
+    app: cyvasse
+    soul: tyrion
