@@ -142,7 +142,7 @@ module AgentMailbox
     def initialize(client:, souls:, channel: "discord", worker: nil, cap: CAP, claude_cmd: Responder::DEFAULT_CLAUDE_CMD,
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
                    repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil,
-                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
+                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil)
       raise ArgumentError, "no souls to serve" if souls.empty?
 
       @client = client
@@ -165,7 +165,7 @@ module AgentMailbox
       @pause_reason = nil
       @last_ping = nil
       @started_at = clock.call
-      @host = Socket.gethostname.split(".").first
+      @host = host || Socket.gethostname.split(".").first
       # The baseline: the digest of the code this process started on (nil: no
       # self-restart, as in the loop tests that pass none).
       @fingerprint = fingerprint
