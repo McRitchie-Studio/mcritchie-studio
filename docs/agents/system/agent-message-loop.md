@@ -228,10 +228,12 @@ every 15 minutes. The contract other sessions build against,
 `ReportDestinations.deliver`, is [`report-destinations.md`](report-destinations.md).
 
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
-[--dry-run]` is the manual form: it claims a message and runs the soul's one read-only action (avi:
-`bin/release status`; xan: `bin/task list`). It then reads the message's context
-bundle and builds the prompt from the five layers (below, "Memory"), the action
-output and the message. Claude runs headless with
+[--dry-run]` is the manual form: it claims a message and reads its context
+bundle, which carries the sender's audience (below, "Audience"). For an owner or
+team sender it runs the soul's one read-only action (avi: `bin/release status`;
+xan: `bin/task list`); for anyone else it runs nothing. It builds the prompt from
+the five layers (below, "Memory"), the audience's rules, the action output and the
+message. Claude runs headless with
 **no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
 the message with the answer. The message sits between random-named
 `<untrusted-…>` markers, and the model is told to treat it as data to answer,
@@ -239,7 +241,8 @@ never as instructions. A request for anything else gets "what I would do, and
 that the action is not enabled yet." Each run gets its own worker id (host, pid,
 random). A failed Claude run releases the message and ends the run, so it does
 not spend the remaining attempts. `HEARTBEAT_CLAUDE_CMD` overrides the Claude
-command. `--dry-run` peeks instead of claiming and writes nothing.
+command. `--dry-run` peeks instead of claiming and writes nothing; it holds no
+claim, so it reads no context and answers as the public, without the action.
 
 The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
@@ -264,8 +267,8 @@ of its answer. Two pieces build the memory:
 
 | Layer | What | Source | Budget |
 |-------|------|--------|--------|
-| GENERAL | Who the soul is | `docs/agents/agents/<soul>/role.md` | 6,000 |
-| DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping or a missing doc is an empty layer | 4,000 |
+| GENERAL | Who the soul is, who it is speaking with, and that audience's rules | `docs/agents/agents/<soul>/role.md` for owner and team (`public.md`, else one line, for anyone else); the rules from the `agent-communication` SOP | 6,000 (rules 3,000) |
+| DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping, a missing doc, or an `internal: true` domain for a client or the public is an empty layer | 4,000 |
 | USER | The notes about the sender, from every channel and every soul, each with its date and source | `agent_person_notes` for the message's person | 2,000 |
 | PERSON | The sender's earlier exchanges with this soul on every channel, each labeled with its place | `agent_messages` by `(soul_slug, person_id)`: the summary, then the recent turns | 9,000 (summary 3,000) |
 | THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
@@ -450,6 +453,47 @@ chose. A planted copy of the fence marker is defused before it is fenced.
 string, so a dispatcher running the earlier code keeps its memory until it
 restarts onto this release. Drop both once every dispatcher runs it.
 
+## Audience: who the soul is speaking with
+
+Agents face clients, so what a soul may say depends on who sent the message
+(Alex's decision of 2026-10-15). The rules are a shared SOP,
+[`../modules/agent-communication.md`](../modules/agent-communication.md); its front
+matter is the machine-read block, and the prompt prints its words exactly.
+
+**Roles.** Every `agent_people` row has a `role`: `owner`, `team`, `client` or
+`public` (the default, held to those four by a check constraint), and a
+`client_domain` for a client (a key of `config/agent_domains.yml`; any other role
+has none). Alex's Discord person is seeded `owner` by the migration and
+`AgentPerson.seed_owner!`. An operator changes a role with
+`bin/rails agent_people:role PERSON=<id> ROLE=team` (a client adds `DOMAIN=<key>`);
+`agent_people:list` prints each person's role.
+
+**Resolution.** The board resolves the audience from the message's person and puts
+it in the context bundle as `audience` (`{"role", "client_domain"}`). A message
+with no person is public. Discord vouches for the author id, so nothing a person
+writes (the message, a display name, a note) can change their audience; a note
+claiming a role is refused as a directive. The worker reads it with
+`AgentMailbox::Audience.from_context`, and anything missing or malformed is public.
+A board older than this release sends no audience, so its answers are public
+until it deploys.
+
+**What the audience changes.**
+
+| | owner, team | client, public |
+|---|---|---|
+| `You are speaking with:` and that audience's rules, outside the fence | yes | yes |
+| The soul's read-only action | run | never run; the prompt says none is enabled |
+| GENERAL | the role doc | `public.md`, else "You are <soul>, an AI agent of McRitchie Studio." |
+| DOMAIN marked `internal: true` (Commercial Welding) | shown | withheld, its name too |
+| USER, PERSON, THREAD | shown | shown: the sender's own words, and a thread they can see |
+| An ask outside the rules | "say what you would do" | "say that a person will follow up" |
+
+The role doc counts as internal because it names the board, SOPs and credential
+seats. Every capability goes through one gate, `AgentMailbox::Audience#may?`
+(`CAPABILITIES`: `read_action`, `internal_context`); a capability with no row is
+refused, so a future action adds its row there. When the SOP's rules cannot be
+read, the prompt tells the soul to reply only that a person will follow up.
+
 ## Viewing a run
 
 Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
@@ -562,7 +606,8 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
 - The backstop reads text and announcement channels and active threads. It
   skips archived threads and voice-channel text chat, which only the gateway
   sees.
-- One read-only action per soul; nothing writes on a message's behalf.
+- One read-only action per soul, for owner and team senders only; nothing writes on
+  a message's behalf.
 - One dispatcher, on one Mac. It answers only while that Mac is awake and signed
   in to Claude; the floor alert says when it is not. A dispatcher that dies
   mid-answer stops renewing, so its claim lapses after 10 minutes and its late
