@@ -106,7 +106,7 @@ class LocalServicesTest < Minitest::Test
   end
 
   def test_an_install_that_does_not_start_the_service_warns_and_owes_a_step
-    items = restorer(fake_runner(status: -> { false }, install: -> {})).run
+    items = restorer(fake_runner(status: -> { false }, install: -> { })).run
 
     assert_equal 1, items.size
     assert_equal LocalServices::Checklist::RANKS[:service], items.first.rank
