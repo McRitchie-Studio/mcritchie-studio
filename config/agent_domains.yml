@@ -46,8 +46,11 @@ domains:
   mcritchie_studio:
     name: McRitchie Studio
     doc: docs/agents/domains/mcritchie-studio.md
-    soul: xan
-    reply_name: Xan
+    # Avi, McRitchie Studio's CTO, is the front door (Alex, 2026-10-15). Xan is a
+    # helper (orchestration, docs review): still routed, answering from his role
+    # and the domain doc, with no catalog.
+    soul: avi
+    reply_name: Avi
     repos: [mcritchie-studio]
     app: mcritchie-studio
     capabilities:
@@ -63,6 +66,11 @@ domains:
           query: recently_shipped
           params:
             days: { type: integer, min: 1, max: 30, default: 7 }
+        release_status:
+          description: The release ladder now - the active release and its stage, and how many tasks sit submitted, reviewed and assembled.
+          min_audience: team
+          query: release_status
+          params: {}
       operate: {}
       change:
         repo: mcritchie-studio

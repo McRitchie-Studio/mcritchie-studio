@@ -26,6 +26,8 @@ class AgentProposal < ApplicationRecord
   # What the owner is told under an accepted proposal.
   CONFIRM_LINE = "Reply **go** to run this, **no** to drop it, or **change: …**".freeze
   BOARD_URL = "https://mcritchie.studio".freeze
+  RUNS_LINE_LIMIT = 600
+  PARAM_VALUE_LIMIT = 120
 
   belongs_to :person, class_name: "AgentPerson", optional: true
   belongs_to :source_message, class_name: "AgentMessage", optional: true
@@ -83,6 +85,23 @@ class AgentProposal < ApplicationRecord
       where(thread_key: row.thread_key, channel: row.channel, guild_id: row.guild_id, channel_ref: row.channel_ref)
     end
 
+    # The proposal an owner's word is about. A word that is a Discord reply to
+    # the message that posted a proposal (its source message's reply, or that
+    # message itself) is about THAT proposal, whatever its status: the caller
+    # tells the owner when it is no longer open rather than running another.
+    # Any other word is about the newest pending proposal in the thread.
+    def for_word(thread_key:, channel:, guild_id:, channel_ref:, reference_id: nil)
+      scope = where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
+      if reference_id.present?
+        named = scope.joins(:source_message)
+                     .where("agent_messages.reply_external_id = :ref OR agent_messages.external_id = :ref",
+                            ref: reference_id.to_s)
+                     .order(id: :desc).first
+        return named if named
+      end
+      scope.pending.order(id: :desc).first
+    end
+
     # The newest still-pending proposal in a thread, or nil (expired ones included:
     # the caller expires them, so a late `go` is told).
     def latest_pending(thread_key:, channel:, guild_id:, channel_ref:)
@@ -98,13 +117,31 @@ class AgentProposal < ApplicationRecord
     update!(status: new_status, settled_at: now, settled_by: by.to_s[0, 100], result: result || self.result)
   end
 
-  # The line appended under the answer that carried it.
-  def confirm_text = "> Proposed: #{summary}\n#{CONFIRM_LINE}"
+  # The lines appended under the answer that carried it: the model's summary,
+  # then what will actually run, rendered HERE from the stored kind, capability
+  # and params (the values the registry checked), so the owner confirms the call
+  # itself and not only the model's description of it.
+  def confirm_text = "> Proposed: #{summary}\n> Runs: #{runs_line}\n#{CONFIRM_LINE}"
+
+  # `ask recently_shipped · days 7`, `change task · title Footer… · accept A; B`.
+  def runs_line
+    parts = params.to_h.map { |key, value| "#{key} #{param_text(value)}" }
+    line = [ "#{kind} `#{capability}`", *parts ].join(" · ")
+    parts.empty? ? "#{line} (no params)" : line.truncate(RUNS_LINE_LIMIT)
+  end
 
   # The bundle's view of it, for the next answer's context (`change: …`).
   def as_context_json
     { "id" => id, "kind" => kind, "capability" => capability, "params" => params, "summary" => summary,
       "status" => status, "expires_at" => expires_at.iso8601 }
+  end
+
+  # One param value as plain text: a list joined with "; ", every piece cut to
+  # PARAM_VALUE_LIMIT, backticks and newlines removed so a value cannot break
+  # out of the line.
+  def param_text(value)
+    pieces = value.is_a?(Array) ? value : [ value ]
+    pieces.map { |v| v.to_s.delete("`").squish.truncate(PARAM_VALUE_LIMIT) }.join("; ")
   end
 
   def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"
