@@ -3,7 +3,8 @@
 **What it is.** A message to an agent on Discord reaches the hub, is routed to a
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
 the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
-same answer path). Phase 1 is Discord only. Two domain front doors are routed,
+same answer path). Discord came first; since Phase 4 an email to a CTO on team@
+is answered by email too (below, "Email"). Two domain front doors are routed,
 Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
 owner to confirm by reply (below, "Proposals and confirm"). Xan stays routed as a
@@ -315,8 +316,8 @@ of its answer. Two pieces build the memory:
 
 **The person.** A person is one identity across platforms. `agent_people` holds
 the display name and, optionally, the hub `User`. `agent_person_identities` holds
-each place the person speaks, as `(platform, external_id)`: a Discord user id
-today, an email address later. The pair is unique, so one id is always one person.
+each place the person speaks, as `(platform, external_id)`: a Discord user id,
+or a verified email address (below, "Email"). The pair is unique, so one id is always one person.
 Every stored message with an author is stamped with its `person_id` when it is
 created (`AgentMessage` calls `AgentPerson.resolve!`), and the first message from an
 unknown id makes a new person. The migration backfilled every existing row from
@@ -369,9 +370,10 @@ conversation you are answering" and tells the model to read a short or vague
 message ("what's next?") inside it first. A Discord reply joins the thread of the
 message it answers. Every message in a Discord thread channel shares one key,
 `discord:<thread id>:<thread id>`. `DiscordIngest` knows a thread channel by the
-parent the reader gives it, or from the channel directory. An email thread will
-key the same way. The layer comes only from this channel and guild: a Discord
-forward, or any reference into another channel, brings nothing from there.
+parent the reader gives it, or from the channel directory. An email thread keys
+by its root Message-ID (below, "Email"). The layer comes only from this channel
+and guild: a Discord forward, or any reference into another channel, brings
+nothing from there.
 **A turn shown in the THREAD layer is not repeated in the PERSON layer.** Over
 budget, the oldest thread turns fold first and the newest is cut rather than
 dropped.
@@ -689,6 +691,154 @@ existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
 McRitchie guild). Tyrion is not routed: he answers through OpenClaw with his own
 bot, and Alex has not chosen between the two runtimes.
 
+## Email: the CTOs answer team@ (Phase 4)
+
+Mail reaches a CTO through the desk's own inbound, never through a mailbox an
+agent reads: `team@mcritchie.studio` (a Google group whose members are alex@ and
+`team@in.mcritchie.studio`) → Resend inbound (Amazon SES) → the svix-signed
+webhook → `DeskCaptureResendIngestJob`. The job captures the mail on the desk
+exactly as before, then hands the raw to `AgentMessages::EmailIngest`. Most mail
+returns nil there and stays a plain desk capture. The Gmail read of alex@'s
+mailbox (`Gmail::MailboxIngest`) never reaches this branch. A failure in the
+branch writes an `ErrorLog` row targeted at the desk item and never undoes or
+retries the capture.
+
+```text
+team@ ─▶ Resend inbound ─▶ DeskCaptureResendIngestJob ─▶ desk item (always)
+                                       └─▶ EmailIngest ─▶ agent_messages (channel email), or nothing
+bin/dispatcher (every channel) ─▶ answer ─▶ AgentMessageReplyJob ─▶ EmailReply
+   ─▶ Studio::Email.deliver (outbox) ─▶ AgentReplyMailer via Resend: From the CTO, Reply-To team@
+```
+
+**Which mail is for a CTO** (`AgentMessages::EmailRoutes`, the `email:` block of
+`config/agent_routes.yml`). The first rule that matches wins:
+
+1. **Alias.** A To or Cc address is a CTO's own: `avi@mcritchie.studio` → Avi.
+   The soul addresses are groups that redirect into team@, so the original To
+   survives the hop.
+2. **Name.** The mail is to team@ and its subject (after any `Re:`/`Fwd:`) or the
+   first non-blank line of its NEW text starts with a CTO's name used as an
+   address: `Avi, …`, `Avi: …`, `Hi Avi, …`, `@Avi …`. A name inside a sentence
+   ("Turf scores look off") is not one. Turf has no alias into team@
+   (`turf@mcritchie.studio` was deleted; `team@turfmonster.media` is a mailbox on
+   another domain), so Turf is reached by name.
+3. **Thread.** A reply whose In-Reply-To or References names an email the mailbox
+   holds continues that thread's soul.
+
+The NEW text (`AgentMessages::EmailBody`) is what the sender wrote this time: it
+stops at the first quoted line (`>`), an `On … wrote:` line (one or two lines),
+an Outlook `From:`/`Sent:` block, a forwarded or original-message marker, a `-- `
+signature, or `Sent from my …`. The row's content is `Subject: …`, a blank line,
+then that text.
+
+**Trust: who sent it** (`AgentMessages::EmailTrust`). The group hop breaks SPF,
+and any sender can write `Authentication-Results` lines into its own headers, so
+exactly one header decides:
+
+- the TOPMOST `Authentication-Results`, and only when its authserv-id is
+  `amazonses.com` (Resend's receiver, the hop before us);
+- every header above it must be one of SES's own trace headers (`Return-Path`,
+  `Received`, `Received-SPF`, `X-SES-*`), as measured on desk item 762. If SES
+  ever stamped nothing, the topmost one left would sit below the relay's ARC
+  headers and is refused, so a forged `amazonses.com … pass` in the sender's
+  block never becomes the trusted one;
+- it must carry `dkim=pass` whose `header.d` (or `header.i`'s domain) is the From
+  domain or a parent or child of it, AND `dmarc=pass` whose `header.from` is the
+  From domain. Comments in parentheses are dropped before reading. One From
+  address only.
+
+Every lower `Authentication-Results`, every `ARC-Authentication-Results`, and
+`DeskCapture::Reader.dkim_from_raw` (which greps them all for a human reading
+provenance) are ignored. As of 2026-10-16 13:15 MDT Alex's mail to team@ passes:
+Google DKIM (`google._domainkey`) is published, and SES reads `dkim=pass
+header.i=@mcritchie.studio; dmarc=pass header.from=mcritchie.studio`.
+
+**The person.** A VERIFIED sender resolves to a person by the `email` identity
+(`AgentPerson.resolve!(platform: "email", external_id: <From>)`): Alex's
+`alex@mcritchie.studio` is an identity of the owner's person (the
+`AddEnvelopeToAgentMessages` migration and `AgentPerson.seed_owner!`). A verified
+stranger becomes their own `public` person; link another of Alex's addresses
+with `bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=<addr>`.
+An UNVERIFIED sender gets no person at all: the row's author is
+`<addr> (unverified)`, its audience is the public, and a row with no person is
+never claimable. The trust verdict is kept in the row's `envelope`
+(`trust.verified`, `trust.reason`) and shown on `/admin/agent_messages/:id`.
+
+**The audience gate is Discord's.** A routed email from a role
+`config/agent_answerers.yml` does not answer (today everyone but the owner) is
+stored `held` with a `held` event; the claim guard holds it again on the server.
+Email has no typing pulse (`typing_refusal` answers `not_discord`).
+
+**Loop safety** (`AgentMessages::EmailLoopGuard`), checked before anything is
+stored; guarded mail stays a desk capture only:
+
+| Mail | How it is known |
+|---|---|
+| Our own outbound | it carries `X-McRitchie-Agent`, which every reply sets |
+| A CTO to a CTO | From is a fleet address: a soul alias, team@, or any `agent_addresses` entry |
+| An auto reply | `Auto-Submitted` other than `no`, `X-Autoreply`, `X-Autorespond` |
+| A list or bulk mail | a `List-Id`, or `Precedence: bulk/list/junk/auto_reply` |
+| A bounce | a mailer-daemon, postmaster or no-reply sender, a null `Return-Path`, or a `multipart/report` |
+
+A header that only suppresses an answer is safe to read from the sender. Our own
+Google groups are not outside lists: a `List-Id` under `mcritchie.studio`, and
+the `Precedence: list` beside it, are not read as one. If the group is ever set
+to rewrite From for DMARC ("via team"), mail would arrive From team@ and be
+dropped as fleet mail: unanswered, never misanswered.
+
+**Rate limit.** Past `EmailIngest::RATE_LIMIT` (10) email rows in one thread
+within an hour, a new row is stored `held` with a `rate_limited` event.
+
+**Thread.** `thread_key` is `email:<root>`, where the root is the first
+References id, else In-Reply-To, else the mail's own Message-ID. A reply that
+names a stored email (its Message-ID in In-Reply-To or References) joins that
+row's thread, soul and `channel_ref`, so the THREAD layer and the proposal scope
+(thread key, channel, `guild_id` nil, `channel_ref`) hold across the hop from
+avi@ to team@. `external_id` is the Message-ID, unique per channel. `channel_ref`
+is the CTO's alias (else team@).
+
+**Proposals by email.** The same words, in code, before any model: when the NEW
+text is exactly `go`, `no` or `change: …` and the thread holds a proposal
+(`AgentProposal.for_word`, with In-Reply-To as the reference), it is handled by
+`AgentMessages::ProposalConfirm`, as on Discord. A forged or unverified `go` has
+no person, so it is the public's: `held` with `confirm_refused`, and nothing runs.
+A task opened from an email thread records the message's admin page as its
+source thread.
+
+**The reply** (`AgentMessages::EmailReply` → `AgentReplyMailer#reply`), sent once:
+the row is locked and a row with a `reply_external_id` is never sent again; it
+goes through `Studio::Email.deliver`, the hub's durable outbox
+(`studio_email_deliveries`), and Resend's ActionMailer delivery, carrying the
+row's `reply_nonce` as Resend's idempotency key.
+
+| Header | Value |
+|---|---|
+| From | the soul's `from` in `config/agent_routes.yml`: `Avi <avi@mcritchie.studio>`; Turf replies as `Turf <team@mcritchie.studio>`. `mcritchie.studio` is the domain verified in the hub's Resend account; no sending domain was added |
+| To | the VERIFIED sender only (the envelope's From), never a Reply-To the mail named. A row whose sender is not verified (an admin may still release one) is `reply_skipped`, never mailed |
+| Reply-To | `team@mcritchie.studio`, so the next turn comes back through the inbound |
+| Subject | `Re: <subject>` |
+| In-Reply-To, References | the answered mail's Message-ID; its References plus that id (20 kept) |
+| Message-ID | `agentmsg-<id>.<nonce>@mcritchie.studio`, stored as `reply_external_id`. If Resend replaces it, the thread still joins through References |
+| Auto-Submitted, X-McRitchie-Agent | `auto-replied` and the soul, so no auto-responder answers us and we never answer ourselves |
+
+The body is plain text: the answer with markdown bold removed, then a `-- `
+signature with the soul's name. The prompt tells the model it is writing a
+plain-text email. The model still runs with no tools.
+
+**Serving email.** `bin/dispatcher run` serves every channel by default
+(`--channel all|discord|email` narrows it); `bin/heartbeat <soul> --channel email`
+answers one by hand. Observe with `/admin/agent_messages?channel=email` or
+`bin/agent-inbox list --channel email`.
+
+**Test protocol (email).** From alex@mcritchie.studio, mail `avi@mcritchie.studio`
+"What is on QA?". Expect: a desk item, an `email` row for Avi `received` with
+`trust.verified` true, Avi's answer from avi@ with Reply-To team@ in the same
+Gmail thread. Reply `go` to a proposal and the ask runs. Before trusting a new
+relay path, read one real raw's header order (`bin/mail desk <id> --save DIR`,
+headers only): the trusted verdict must sit in SES's trace block. Tests:
+`test/services/agent_messages/email_trust_test.rb`, `email_routes_test.rb`,
+`email_ingest_test.rb`, and `test/integration/agent_email_loop_test.rb`.
+
 ## Viewing a run
 
 Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
@@ -989,7 +1139,8 @@ guard and the unanswered audiences).
 
 ## Limits of phase 1
 
-- Discord only. The gateway stores a message within seconds; while it is down
+- Discord and email only. Email reaches a CTO only through the team@ Resend
+  inbound, and is trusted only by the topmost SES verdict ("Email"). The gateway stores a Discord message within seconds; while it is down
   (a deploy, a reconnect, a stood-down leader) the backstop catches up within 10
   minutes, so an answer takes the Claude run plus, at worst, that.
 - One gateway connection, unsharded. That holds below 2,500 guilds; past it
