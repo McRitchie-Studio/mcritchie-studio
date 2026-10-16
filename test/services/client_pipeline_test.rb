@@ -70,6 +70,8 @@ class ClientPipelineTest < ActiveSupport::TestCase
     assert_equal "Fix the [link] preview", scrub.title("Fix the http://localhost:3104/contests preview")
     assert_equal "Clean [link] leftovers", scrub.title("Clean /Users/alex/projects/turf-monster/.worktrees/x leftovers")
     assert_equal "Clean [link] leftovers", scrub.title("Clean .worktrees/foo leftovers")
+    assert_equal "Harden [link] runs", scrub.title("Harden bin/e2e-parallel runs"), "a repo-relative path is a link too"
+    assert_equal "Point [link] DNS", scrub.title("Point qa.commercialwelding.llc DNS"), "so is a bare hostname"
     assert_equal "Security maintenance", scrub.title("Rotate HEALTH_TOKEN_TURF_MONSTER")
     assert_equal "Security maintenance", scrub.title("Move the Stripe API key to 1Password")
     assert_equal "Security maintenance", scrub.title("Refile credentials for payouts")
