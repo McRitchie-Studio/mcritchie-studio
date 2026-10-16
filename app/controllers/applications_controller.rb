@@ -9,7 +9,8 @@
 #   show    name, emoji and colour, a lazy health frame, the CTO card
 #   health  the frame: the app's health for the last morning window, cached
 #   usage   JSON: this month's CTO usage meter and today's totals (AgentUsage,
-#           docs/agents/system/agent-usage.md); owner or admin, like the page
+#           docs/agents/system/agent-usage.md); owner or admin, like the page.
+#           Dollars are an admin's: an owner reads tokens and the meter only
 #   usage_cap  admin only: the app's package tier and the per-app cap lift
 class ApplicationsController < ApplicationController
   HEALTH_TTL = 15.minutes
@@ -29,19 +30,22 @@ class ApplicationsController < ApplicationController
     @cto = AppOwnership.cto_for_app(@app.slug)
     @admin = AppOwnership.admin?(current_user)
     @owners = @app.memberships.owners.includes(:user).map(&:user) if @admin
-    @meter = AgentUsage.meter(@app)
-    @today = usage_today(@meter)
+    @meter = viewer_meter
+    @today = viewer_totals(usage_today(@meter))
   end
 
   def usage
-    meter = AgentUsage.meter(@app)
-    render json: { data: meter.as_json.merge("today" => usage_today(meter).as_json) }
+    meter = viewer_meter
+    render json: { data: meter.as_json.merge("today" => viewer_totals(usage_today(meter)).as_json) }
   end
 
   # The admin's two levers: the tier (a config/workspace_packages.yml key, or
-  # none) and the lift, which makes the app unlimited until it is cleared.
+  # none) and the lift, which makes the app unlimited until it is cleared. A
+  # write that does not send `package_tier` at all leaves the tier as it is;
+  # sending it blank clears it ("No tier").
   def usage_cap
-    tier = params.dig(:usage_cap, :package_tier).presence
+    sent_tier = params[:usage_cap].respond_to?(:key?) && params[:usage_cap].key?(:package_tier)
+    tier = sent_tier ? params.dig(:usage_cap, :package_tier).presence : @app.package_tier
     unless tier.nil? || WorkspacePackage.keys.include?(tier)
       return redirect_to application_path(@app.slug), alert: "Unknown tier.", status: :see_other
     end
@@ -74,13 +78,24 @@ class ApplicationsController < ApplicationController
 
   private
 
+  # This month's meter as this viewer may read it: an admin sees dollars, an
+  # owner sees tokens and the meter only.
+  def viewer_meter
+    meter = AgentUsage.meter(@app)
+    AppOwnership.admin?(current_user) ? meter : meter.without_cost
+  end
+
+  def viewer_totals(totals) = AppOwnership.admin?(current_user) ? totals : totals.without_cost
+
   def usage_today(meter)
     return AgentUsage::Totals.zero unless meter.domain
 
     AgentUsage.daily(meter.domain, days: 1).last&.last || AgentUsage::Totals.zero
   end
 
-  # An owner who is not an admin gets the same 404 as a stranger.
+  # The backstop under the AdminWall, which already turns a non-admin's write
+  # away with a redirect before this runs: anyone who still reaches it without
+  # being an admin gets the same 404 as a stranger.
   def require_admin_for_cap
     raise ActiveRecord::RecordNotFound, "no such app" unless AppOwnership.admin?(current_user)
   end

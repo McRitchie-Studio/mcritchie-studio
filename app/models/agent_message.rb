@@ -71,8 +71,8 @@ class AgentMessage < ApplicationRecord
   # usage meter's source (AgentUsage, docs/agents/system/agent-usage.md). The
   # NUMERIC keys keep a number only, so a worker cannot plant text where the
   # rollup sums. `audience` is never the worker's: complete! stamps it from the
-  # sender's role on the board, and the meter counts only client and public
-  # rows against an app's allowance.
+  # sender's role on the board, and the meter counts only client rows against
+  # an app's allowance (public rows are metered apart).
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
   RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source]).freeze
@@ -187,11 +187,14 @@ class AgentMessage < ApplicationRecord
       # before a run starts: a client or public message whose app is at its
       # monthly allowance is answered here, in code, with the cap reply, and
       # the next candidate is tried. Owner and team are never capped.
+      # Each app's meter is read once per claim, however many of its
+      # candidates the loop meets.
+      meters = {}
       MAX_CAP_SKIPS.times do
         candidate = claimable(soul: soul, now: now, channel: channel).lock("FOR UPDATE SKIP LOCKED").first
         break unless candidate
 
-        gate = AgentUsage.gate(candidate, now: now)
+        gate = AgentUsage.gate(candidate, now: now, meters: meters)
         unless gate.stop?
           message = candidate
           break
