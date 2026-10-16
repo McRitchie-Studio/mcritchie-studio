@@ -112,12 +112,14 @@ lane, and nobody else sets it):
    | `tyrion` | `DISCORD_BOT_TOKEN_TYRION` | `agents.discord.tyrion` (empty: leave unset) |
 
    ```bash
-   heroku config:set "DISCORD_BOT_TOKEN_AVI=$(op read 'op://studio-agents/agents.discord.avi/bot-token')" \
-     --app mcritchie-studio >/dev/null 2>&1; echo "exit $?"
+   T=$(op read 'op://studio-agents/agents.discord.avi/bot-token') && [ -n "$T" ] && \
+     heroku config:set "DISCORD_BOT_TOKEN_AVI=$T" --app mcritchie-studio >/dev/null 2>&1; echo "exit $?"; unset T
    ```
 
    `heroku config:set` echoes what it set, so its output goes nowhere
-   ([`credentials.md`](../../../modules/credentials.md)). Never set it on
+   ([`credentials.md`](../../../modules/credentials.md)). The empty guard
+   matters: a failed or empty `op read` would otherwise set the var blank,
+   which reads as unset, and still print `exit 0`. Never set it on
    `mcritchie-studio-qa`.
 3. **Test it**: ask the soul something in the guild. The reply comes from the
    soul's own bot, with no `**Soul** ·` prefix, and its `reply_posted` event
