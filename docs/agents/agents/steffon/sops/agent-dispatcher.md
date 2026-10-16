@@ -106,11 +106,23 @@ below.
 
 ## Install (once per Mac)
 
+**A rebuilt Mac needs nobody to remember this.** The dispatcher is the first
+entry in `config/local_services.yml`, and `bin/ecosystem-build` ends with a
+services phase (Phase 10) that installs it from the hub's primary checkout when
+`claude auth status` reads `claude.ai` and it is not already running. Signed
+out, it skips the install and the build's closing checklist says
+`claude auth login`, then `bin/ecosystem-build --phase services`
+([house-burn-down.md § First-run audit](../../../system/house-burn-down.md#first-run-audit)).
+The commands below are for a repair, or for a Mac you are not rebuilding.
+
 Run from the hub's primary checkout, which the release moves to the shipped
 code. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in Alex's
-`~/.claude/settings.json` (added 2026-10-14), by bare name from the hub and by
-the absolute path `/Users/alex/projects/mcritchie-studio/bin/dispatcher`, so
-Steffon installs and repairs the service with no permission prompt. Nothing
+`~/.claude/settings.json`, by bare name from the hub and by the absolute path
+`<projects>/mcritchie-studio/bin/dispatcher`, so Steffon installs and repairs the
+service with no permission prompt. The rules were added by hand on 2026-10-14;
+they are now tracked in `config/claude_allow_rules.json`, and the services phase
+merges them into the user settings on every build (`bin/local-services
+allow-rules`: adds only, keeps every other key and rule). Nothing
 else is: `install --if-changed` belongs to the ship, and `run` belongs to launchd. The dispatcher runs from the checkout it was installed from; `install`
 refuses a task desk under `.worktrees/`, which is torn down after its task.
 

@@ -788,19 +788,25 @@ phase_bundles_dbs() {
     )
   done
 
-  # solana-studio is a library gem — bundle only, no DB
-  if [ -d "$PROJECTS_DIR/solana-studio" ]; then
+  # solana-studio and studio-engine are library gems — bundle only, no DB.
+  # (studio-engine joined 2026-10-15: the runbook's 6d bundled it by hand.)
+  local gem_repo
+  for gem_repo in solana-studio studio-engine; do
+    [ -d "$PROJECTS_DIR/$gem_repo" ] || continue
     (
-      cd "$PROJECTS_DIR/solana-studio" || exit 1
+      cd "$PROJECTS_DIR/$gem_repo" || exit 1
       if bundle check >/dev/null 2>&1; then
-        log_ok "solana-studio gems" "satisfied"
+        log_ok "$gem_repo gems" "satisfied"
       else
-        log_act "solana-studio: bundle install"
-        bundle install --quiet
-        log_ok "solana-studio gems" "installed"
+        log_act "$gem_repo: bundle install"
+        if bundle install --quiet; then
+          log_ok "$gem_repo gems" "installed"
+        else
+          log_fail "$gem_repo bundle install failed" "try: cd $PROJECTS_DIR/$gem_repo && bundle install"
+        fi
       fi
     )
-  fi
+  done
 }
 
 # ─── Phase 6b: NFL data (default — schedule + depth chart + rosters) ────────

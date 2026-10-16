@@ -47,12 +47,21 @@ bin/setup-1pass-token
 
 # 4. Second pass — picks up at Phase 4 with the token now set, writes local env
 #    files (a generated dev key, plus the R2 dev pair from 1Password; nothing read
-#    from Heroku config), clones sibling repos, bundles + DBs + Anchor,
-#    installs the root AGENTS.md + shared user-global agent skills, bounces active Rails servers.
+#    from Heroku config), clones sibling repos (GitHub auth comes from 1Password),
+#    bundles + DBs + Anchor, installs the root AGENTS.md + shared user-global agent
+#    skills, bounces active Rails servers, then restores the always-on services
+#    (Phase 10: the agent dispatcher, the Claude Code allow-rules).
 bin/ecosystem-build
+
+# 5. Do the numbered checklist the build printed last ("What only you can do"),
+#    in order. A step that waits on a sign-in ends by re-running only the
+#    services phase:
+bin/ecosystem-build --phase services
 ```
 
-That's it. The only thing you actually do is copy the token and run the commands above. On every later machine a single pass just walks checkmarks and re-bounces the servers.
+That's it. You copy the token, run the commands above, and work down the checklist the build ends on; you do not need to remember any service or SOP name. On every later machine a single pass walks checkmarks, re-bounces the servers, and ends on a checklist that reads "Nothing" once every step is done.
+
+**Always-on services** come from one registry, `config/local_services.yml`; the first (and, as of 2026-10-15, only) entry is the agent dispatcher (SOP [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md)). For each service, Phase 10 checks its prerequisites (the dispatcher needs `launchctl`, `claude`, and Claude Code signed in with `claude.ai`); met and not running, it installs it and checks status again; unmet, it skips it and puts the missing step on the checklist. It also merges `config/claude_allow_rules.json` into your **user** `~/.claude/settings.json` (adds only: every other key and rule stays, nothing is duplicated, the file is replaced atomically). It never logs in for you and never fails the build. `bin/local-services list` prints the registry.
 
 **Re-running anytime:** `bin/ecosystem-build` is fully idempotent. Run it after pulling new commits, switching branches, or anytime you want to confirm "everything still works." It will reset active Rails servers to a clean dev state.
 
@@ -63,6 +72,54 @@ That's it. The only thing you actually do is copy the token and run the commands
 **Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + headshot uploads. Requires the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, which Phase 4 writes from 1Password `r2.<app>`. Each headshot production already holds is referenced at production's asset host; only the ones it lacks are uploaded to the dev bucket. See [`object-storage.md`](../modules/object-storage.md#seed-assets).
 
 The manual phase-by-phase steps below are kept as a fallback for debugging when the script can't complete a phase.
+
+---
+
+## First-run audit
+
+Every step a first run of this runbook asks for, and who does it now (audited 2026-10-15, `/tasks/burn-down-restores-services`). **Automated** means `bin/ecosystem-build` did it before this audit; **automated by this task** means it does now; **Alex-only** means only the operator can, for the reason given, and the build's closing checklist names the exact command or link whenever the step is still owed; **follow-up** means it is manual today and could be automated.
+
+| # | First-run step | Where | Status |
+|---|----------------|-------|--------|
+| 1 | Xcode Command Line Tools | Phase 0 | Alex-only: a macOS installer dialog. Phase 1 now detects it and puts `xcode-select --install` on the checklist |
+| 2 | Homebrew | Phase 0 | Alex-only: its installer asks for the Mac password. On the checklist when missing |
+| 3 | GitHub access for clones (`gh auth login`) | Phase 0, 4 | Automated by this task: Phase 5 mints the agent App token from 1Password (`bin/gh-auth-refresh --export`) when `gh` has no login |
+| 4 | Brew packages (`ruby@3.3`, `postgresql@14`, `redis`, `1password-cli`, `gh`, …) | Phase 1 | Automated |
+| 5 | Google Chrome | Phase 1 | Automated by this task: Phase 1 installs the cask unless `/Applications/Google Chrome.app` exists |
+| 6 | Start Postgres and Redis | Phase 1 | Automated (`brew services start`) |
+| 7 | `~/.zshrc` PATH lines | Phase 2 | Automated (Phase 3) |
+| 8 | Node 22 + yarn | Phase 3 | Automated |
+| 9 | Ruby socket check | Phase 3 | Automated |
+| 10 | Rust, Solana CLI, Anchor | Phase 3 | Automated |
+| 11 | Local Solana dev keypair | Phase 3 | Automated |
+| 12 | Clone the repos | Phase 4 | Automated (Phase 5) |
+| 13 | 1Password AGENT service token | 5a-i | Alex-only: the token is created in his 1Password account and comes from his clipboard (`bin/setup-1pass-token`). The build stops at Phase 4 with it as checklist item |
+| 14 | 1Password ADMIN service token | 5a-ii | Alex-only: a second service account in his 1Password account. Needed only before a production deploy, so it blocks nothing; on the checklist until `~/.zprofile.admin` holds it |
+| 15 | Verify both token lanes | 5a | Agent lane automated (the Phase 4 vault guard). Deployer lane: follow-up; the build does not opt into the ship lane on purpose |
+| 16 | Local `.env` / `.env.development` | 5b | Automated (a generated dev key and the R2 dev pair). Optional per-feature keys (`RAILS_MASTER_KEY`, Google client, API keys) stay on demand: Phase 4 names each source |
+| 17 | Heroku CLI login | 5c | Automated: Phase 4 reads `HEROKU_API_KEY` from 1Password |
+| 18 | Hub bundle, DB, seed | 6a | Automated |
+| 19 | npm install + Playwright Chromium | 6a | Automated (Phase 7) |
+| 20 | Turf Monster bundle, DB, seed | 6b | Automated |
+| 21 | Turf Monster `bin/tm up` (Sidekiq, Tailwind, Stripe listener) | 6b | Follow-up: Phase 8 starts only `rails server -d` |
+| 22 | solana-studio bundle | 6c | Automated |
+| 23 | studio-engine bundle | 6d | Automated by this task (Phase 6) |
+| 24 | turf-vault `yarn install` + `anchor build` | 6e | Automated (Phase 7) |
+| 25 | Smoke: hub and satellite respond | 7 | Automated (Phase 8 curls each port) |
+| 26 | Smoke: a magic-link sign-in in each app | 7 | Alex-only: a person's sign-in in a browser. Optional |
+| 27 | Smoke: `solana address` | 7 | Automated (Phase 2 prints it) |
+| 28 | Smoke: `anchor test` | 7 | Follow-up: slow (a local validator); not run by the build |
+| 29 | Agent runtime (`AGENTS.md`, `CLAUDE.md`, skills, hooks) | Appendix B | Automated (Phase 5b) |
+| 30 | Agent dispatcher service | not in the runbook before | Automated by this task (Phase 10, from `config/local_services.yml`) |
+| 31 | Claude Code allow-rules for the dispatcher | not in the runbook before | Automated by this task (Phase 10, from `config/claude_allow_rules.json`) |
+| 32 | Install Claude Code | not in the runbook before | Alex-only for now: the checklist names the installer when `claude` is missing. Installing it unattended is a follow-up |
+| 33 | Sign Claude Code in with claude.ai | not in the runbook before | Alex-only: his claude.ai login in a browser. Phase 10 reads `claude auth status` and puts `claude auth login` on the checklist; it never logs in for him |
+| 34 | Chrome avatar-menu profiles | Appendix D | Alex-only: Google asks the person to sign each account in. Then `bin/chrome-profiles apply` and `pin-dock` restore the order from 1Password; on the checklist until the ordered launcher exists |
+| 35 | Subagent definitions in `~/.claude/agents/` | soul docs (`claude-agent.md`) | Follow-up: copied by hand today; `bin/agent-runtime install` could mirror them |
+
+Totals, 35 steps: 19 automated, 5 automated by this task, 8 Alex-only, 3 follow-up. Row 15 counts once, as automated; its deployer half is a fourth follow-up.
+
+**Follow-ups, named, not built:** the deployer-lane check (15); `bin/tm up` in Phase 8 (21); `anchor test` as an opt-in smoke (28); an unattended Claude Code install (32); mirroring subagent definitions (35); and the production ship's `bin/release.rb#refresh_dispatcher_service`, which still names the dispatcher alone and should walk `config/local_services.yml`.
 
 ---
 
@@ -96,14 +153,15 @@ brew update && brew install \
   libpq \
   heroku/brew/heroku
 
-brew install --cask google-chrome
+brew install --cask google-chrome   # bin/ecosystem-build does this unless Chrome is already in /Applications
 ```
 
 ~5 min. Installs:
 - **ruby@3.3** — Ruby 3.3.11 with the full stdlib for McRitchie Studio and ecosystem bootstrap
 - **google-chrome** (cask) — the operator's browser. Needed before
   `docs/agents/agents/steffon/sops/chrome-profiles.md` can restore the avatar-menu
-  roster, and nothing else in this protocol installs it.
+  roster. `bin/ecosystem-build` Phase 1 installs it (since 2026-10-15) unless
+  `/Applications/Google Chrome.app` is already there.
 - **mise** — version manager for Node (not Ruby — see above)
 - **postgresql@14** — local DB for Rails apps
 - **redis** — Sidekiq queue for Turf Monster and worktree stacks
@@ -221,7 +279,7 @@ gh repo clone McRitchie-Studio/solana-studio
 gh repo clone McRitchie-Studio/turf-vault
 ```
 
-(`gh auth login` first if not authenticated.)
+(`bin/ecosystem-build` needs no `gh auth login`: with the 1Password token set it mints the agent's GitHub App token itself, `eval "$(bin/gh-auth-refresh --export)"`. By hand, run that line first.)
 
 ---
 
@@ -517,6 +575,8 @@ Season bootstrap and free-entry token operations now live with the app that runs
 3. **Auth**: request magic links in both apps. Turf Monster currently disables cross-app SSO and 404s `/sso_login` by design.
 4. **Solana keypair**: `solana address` returns your pubkey
 5. **Anchor local test**: `cd ~/projects/turf-vault && anchor test` — suite passes
+6. **Agent dispatcher**: `cd ~/projects/mcritchie-studio && bin/dispatcher status` reads `running` (Phase 10 installed it; the SOP's Verify step posts a test message)
+7. **Nothing owed**: `bin/ecosystem-build --phase services` ends with "Nothing. Every service is running and nothing waits on you."
 
 ---
 
@@ -567,16 +627,18 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md), mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, and configures Codex marker hooks. The lower-level `bin/install-agent-docs` remains the implementation, and `bin/agent-runtime doctor` verifies drift plus marker/runtime state. |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
-| 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
+| 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` and `studio-engine` |
 | 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no storage credentials needed. |
 | 6c. NFL headshots (opt-in) | Only runs when `WITH_NFL_HEADSHOTS=1`. Chains `nfl:players_seed` (nflverse master CSV ~24k rows + headshot cache ~1100 athletes) + `nfl:upload_headshots`. ~10-15 min, requires the R2 dev pair in `.env.development`. Without this, `/nfl-rosters` shows position-labeled placeholder circles instead of player photos. |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for active Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
 | 8. Servers | Always kills + restarts active Rails apps on their registered ports, curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully): what the operator added past the two lines Phase 4 writes. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
+| 10. Always-on services | `bin/local-services allow-rules` merges `config/claude_allow_rules.json` into the user `~/.claude/settings.json`; `bin/local-services restore` reads `claude auth status`, then installs each `config/local_services.yml` service whose prerequisites are met and that is not running (the agent dispatcher: `bin/dispatcher install`), from the hub's primary checkout. Then it checks for the 1Password admin token and the Chrome profile launcher. Warns only; never fails the build. `bin/ecosystem-build --phase services` runs it alone |
+| Checklist | The build's last output, "What only you can do": every operator-only step found on the way, numbered in the order to do them, each with its command or link. It prints on a stopped build too |
 
-If any phase fails, the script prints what to do and exits. Re-running picks up where it left off.
+If any phase fails, the script prints what to do, prints the checklist, and exits. Re-running picks up where it left off.
 
-The one secret-input boundary is **Phase 4**: if the OP token isn't set, the script bails with instructions to run `bin/setup-1pass-token` first. That's the only step that can't be automated — by design (the token has to come from your clipboard).
+The one secret-input boundary is **Phase 4**: if the OP token isn't set, the script bails with instructions to run `bin/setup-1pass-token` first (the token has to come from your clipboard). The other operator-only steps (the Claude Code sign-in, Chrome's Google accounts, the admin token) block nothing, so the build goes on and lists them; see [First-run audit](#first-run-audit).
 
 ---
 
@@ -605,7 +667,8 @@ What this protocol installed last successful run:
 ## Appendix D — Cross-references
 
 - `docs/agents/system/ecosystem-build.md` — the `bin/ecosystem-build` script reference (phases, when to run, idempotency, reset semantics)
-- `docs/agents/agents/steffon/sops/chrome-profiles.md` — the operator's Chrome avatar-menu roster. NOT restored by `bin/ecosystem-build`: Chrome's profile state lives outside every backup this repo controls, so it is rebuilt from `config/chrome_profiles.yml` after you sign the accounts back in.
+- `docs/agents/agents/steffon/sops/chrome-profiles.md` — the operator's Chrome avatar-menu roster. NOT restored by `bin/ecosystem-build`: the accounts must be signed back in by hand, after which `bin/chrome-profiles apply` rebuilds the order from the 1Password roster. The build's closing checklist names those commands until the ordered launcher exists.
+- `docs/agents/agents/steffon/sops/agent-dispatcher.md` — the agent dispatcher, the first entry in `config/local_services.yml`, installed by Phase 10.
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
 - `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
 - `docs/agents/modules/credential-inventory.md` — known 1Password item names
