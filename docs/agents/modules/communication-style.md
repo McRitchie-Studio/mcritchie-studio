@@ -176,6 +176,27 @@ truth.
 - **Date what the record can answer.** Evidence older than a claim cannot refute
   it: say what the record shows at its date, and what would settle the rest.
 
+## Dream decisions: the card standard
+
+Every decision Alex owes on a dream (approve, swap, retire) goes to him as cards,
+printed by `bin/dream cards`; at wrap that is at most one swap, and on his word
+`dream-swap` it is everything pending ([`dream-swap.md`](dream-swap.md)).
+
+- **One idea line**, then **numbered cards**: a header
+  `N · ADD|SWAP|RETIRE · <layer> · <used> of <cap> used`; Q, A and Why quoted
+  from the file; one Evidence line (the source, and for a swap the out's slug,
+  mean grade, fires and last fire); **My call** with a one-line reason.
+- **Before each call, apply the test:** a must-do belongs in a command, not a
+  dream.
+- **Close with the reply grammar:** `yes` takes every call; `1 ✓ 2 ✗ 3 ✎ <edit>`
+  per number; or plain words.
+- **Silence changes nothing.** Other decisions can stand on silence when you
+  name the default; a dream never does. No reply records nothing.
+- **Record his answer with his words:** `bin/dream approve|drop|retire <slug>
+  --clearance "<his exact words>"`. Never paraphrase the quote.
+
+Detail: [`dream.md`](dream.md#the-card-standard).
+
 ## Review handoffs — hand a review link
 
 When work waits on Alex's review, never hand him a URL that greets

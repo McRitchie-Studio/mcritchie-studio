@@ -40,7 +40,8 @@ runs the same scripts.
   you submit; launch Avi yourself only when those lines say begin could not.
 - Write the test tiers your shape requires as you go, unit-first.
 - Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives
-  them from GitHub. `--agent <soul>` is optional.
+  them from GitHub. `--agent <soul>` is optional: without it `begin` names
+  the session's acting soul, else `pokemon`, and says so.
 - A cold submit takes about 12 minutes, so run it in the background with
   `bin/submit-wait`; do not hand-roll a pgrep watcher.
 - `bin/ship` and `bin/ship-wait` are one-release aliases that print a rename note.
