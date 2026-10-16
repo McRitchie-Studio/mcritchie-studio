@@ -36,6 +36,27 @@ class DeployLaneIntentsTest < ActionView::TestCase
       .find { |c| c.lane == lane }
   end
 
+  # Regression (2026-10-16, /tasks): two reviewed members of ONE release, swept by
+  # a peer session, each showed its OWN reviewer (carl, shannon) as the live QA
+  # avatar. The swept member's live assembled slot must read Avi on both cards.
+  test "two swept members with different reviewers both show Avi QA-ing live" do
+    @carl    = Agent.create!(name: "Carl", slug: "carl")
+    @shannon = Agent.create!(name: "Shannon", slug: "shannon")
+    @agents  = Agent.all.to_a
+    members = { "carl" => member_task("by carl", stage: "submitted"),
+                "shannon" => member_task("by shannon", stage: "submitted") }
+    members.each { |reviewer, t| Current.set(task_event_actor: reviewer) { t.update!(stage: "reviewed") } }
+
+    Current.set(task_event_actor: "heatran") { members.each_value { |t| Release::Conductor.sweep!(t) } }
+
+    members.each do |reviewer, t|
+      assert_equal "reviewed", t.reload.stage, "guard: the flip waits for QA-green"
+      slot = assembled_slot(t)
+      assert_equal %w[avi], slot.stacked.map { |a| a.agent&.slug }, "#{reviewer}'s card shows Avi, not #{reviewer}"
+      assert slot.live_since.present?, "the QA slot ticks live from the sweep's intent"
+    end
+  end
+
   # An assembled (QA-green) release with one member — what ship/prepare-re-run
   # fire over: sweep records membership, qa_green! flips it assembled.
   def green_release_with(task)
