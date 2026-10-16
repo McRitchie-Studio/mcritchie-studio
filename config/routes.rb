@@ -351,8 +351,11 @@ Rails.application.routes.draw do
     # The knowledge-capture front door's mail queue (team@mcritchie.studio).
     get "desk", to: "desk#index", as: :desk
     # The agent mailbox: messages routed to souls, their claims and replies
-    # (docs/agents/system/agent-message-loop.md). Read-only.
-    resources :agent_messages, only: [:index, :show]
+    # (docs/agents/system/agent-message-loop.md). Read-only but for releasing a
+    # held message (the owner-only guard).
+    resources :agent_messages, only: [:index, :show] do
+      member { post :release_hold }
+    end
     # Forget one note about an agent person (the delete button on the message page).
     resources :agent_person_notes, only: [:destroy]
     # Which Discord channel each registered report posts to

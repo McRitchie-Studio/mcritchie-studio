@@ -127,10 +127,28 @@ a forward, or any reference into another channel or guild, counts as a fresh
 message), the channel
 override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
-reply to a held message that itself had no soul is kept `unrouted`, visible and
+reply to a kept message that itself had no soul is kept `unrouted`, visible and
 never handed to a worker. Among several mentioned souls, the one written first
 wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
 work; the config lists either.
+
+**Held: the agents answer only the owner.** A stopgap until
+`agent-sender-authority` brings roles: `config/agent_answerers.yml` lists who the
+agents answer (Alex, by his Discord identity, which resolves to his
+`agent_people` row and so to every identity linked to him). A routed message
+from anyone else is stored `held` with a `held` event saying why, never
+`received`. The guard is enforced again on the server in every claim
+(`AgentMessage.claimable`, `AgentMessages::Answerers`): a row is claimable only
+when its person is on the list or an admin released its hold, so even a
+stranger's row that is somehow `received` is never claimed, and a row with no
+person never is. Held rows, and rows that fail the guard, are not open for the
+thread and person wait rules, so they hold nobody back, and no memory layer
+shows a held row. Find them at `/admin/agent_messages?status=held` or with
+`bin/agent-inbox list --status held`. To answer one, press **Release and
+answer** on its page (admin only, a form post) or run
+`bin/rails agent_people:release MESSAGE=<id>`: that one message becomes
+`received` and is answered like any other; the sender's next message is held
+again. Allowing a sender for good is an edit to the yml and a deploy.
 
 **Claim.** `POST /api/v1/agent_messages/claim {soul | souls[], worker, wait?}`
 runs one transaction. It first dead-letters exhausted leases, then selects the oldest

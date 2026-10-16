@@ -41,6 +41,10 @@ module AgentMessages
     # Rows read per layer; the person and thread indexes bound each scan.
     FETCH_LIMIT = 200
     THREAD_TURNS = 20
+    # Rows no layer shows: unrouted (no soul was asked) and held (a sender the
+    # owner-only guard does not answer, AgentMessages::Answerers), so a
+    # stranger's words never reach an answer's context.
+    UNSEEN_STATUSES = %w[unrouted held].freeze
     SUMMARY_LINES = 40
     SUMMARY_SIDE = 140
 
@@ -92,7 +96,7 @@ module AgentMessages
 
       AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
                   .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: "unrouted")
+                  .where.not(status: UNSEEN_STATUSES)
     end
 
     # Oldest first, the newest FETCH_LIMIT.
@@ -104,7 +108,7 @@ module AgentMessages
       AgentMessage.where(thread_key: @message.thread_key, channel: @message.channel,
                          channel_ref: @message.channel_ref, guild_id: @message.guild_id)
                   .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: "unrouted")
+                  .where.not(status: UNSEEN_STATUSES)
     end
 
     # Oldest first, the newest THREAD_TURNS.

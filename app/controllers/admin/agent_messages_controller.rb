@@ -3,7 +3,11 @@ module Admin
   # Every message the Discord poll stored, who it was routed to, who holds the
   # claim and for how long, and the reply. Read-only (forgetting a note is
   # Admin::AgentPersonNotesController): workers move messages
-  # through the API, not through buttons here.
+  # through the API, not through buttons here. The one exception is
+  # release_hold: an admin's explicit act that hands a `held` message (a sender
+  # config/agent_answerers.yml does not allow) to the agent. A form post, so
+  # Rails' CSRF check guards it; the console twin is
+  # `bin/rails agent_people:release MESSAGE=<id>`.
   class AgentMessagesController < ApplicationController
     before_action :require_admin
 
@@ -26,6 +30,14 @@ module Admin
 
     def show
       @message = AgentMessage.includes(:events, person: %i[identities notes user]).find(params[:id])
+    end
+
+    def release_hold
+      message = AgentMessage.find(params[:id])
+      message.release_hold!(actor: "admin:#{current_user.slug}")
+      redirect_to admin_agent_message_path(message), notice: "Released message #{message.id}; the agent will answer it."
+    rescue AgentMessage::Refused => e
+      redirect_to admin_agent_message_path(message), alert: e.message
     end
 
     private

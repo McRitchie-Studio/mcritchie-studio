@@ -8,6 +8,21 @@
   <span id="am-status" class="am-chip am-status-<%= @message.status %>"><%= @message.status %></span>
 </div>
 
+<% if @message.held? %>
+  <% hold = @message.events.reverse.find { |e| e.kind == "held" } %>
+  <div id="am-hold" class="border border-subtle rounded p-3 mb-4 text-sm">
+    <p class="mb-2"><span class="font-semibold">Held, not answered.</span>
+      <%= hold&.detail&.dig("reason") || "The sender is not on config/agent_answerers.yml." %>
+      Releasing it hands this one message to the agent, which answers it like any other.</p>
+    <%= button_to "Release and answer", release_hold_admin_agent_message_path(@message), method: :post,
+          form: { data: { turbo_confirm: "Release this held message? The agent will answer it." } },
+          class: "underline font-semibold", id: "am-release-hold" %>
+  </div>
+<% elsif @message.hold_released_at %>
+  <p id="am-hold-released" class="text-sm opacity-70 mb-4">Released from hold by <%= @message.hold_released_by %>
+    on <%= @message.hold_released_at.strftime("%b %-d %H:%M") %>.</p>
+<% end %>
+
 <dl class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-sm mb-6">
   <dt class="opacity-60">Soul</dt><dd><%= @message.soul_slug || "unrouted" %> <span class="opacity-60">(<%= @message.routed_by || "—" %>)</span></dd>
   <dt class="opacity-60">From</dt><dd><%= @message.author_name.presence || "—" %> <span class="opacity-60 font-mono text-xs"><%= @message.author_ref %></span></dd>

@@ -49,7 +49,9 @@ module StringStates
   # carries no CHECK. The census (bin/rails state_checks:census) prints the values
   # each one holds.
   # The agent mailbox's two columns DO carry a CHECK, created with their table
-  # (db/migrate/20261013120000_create_agent_messages.rb). They sit here rather than
+  # (db/migrate/20261013120000_create_agent_messages.rb; 20261016000000 added
+  # `held` to the status list, test/models/agent_message_held_test.rb pins it to
+  # AgentMessage::STATUSES). They sit here rather than
   # in REGISTRY because REGISTRY must equal AddStateChecks' frozen list, and that
   # migration ran before the table existed.
   WITH_TABLE_CHECK = "CHECK <table>_<column>_known is created with the table (20261013120000), not by AddStateChecks, " \
