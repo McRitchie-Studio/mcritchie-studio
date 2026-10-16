@@ -59,7 +59,8 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
   def setup
     PREPENDED.each do |dir|
       %w[launchctl claude].each do |bin|
-        skip "#{dir}/#{bin} would shadow the fake; refusing to run" if File.exist?(File.join(dir, bin))
+        # A hard refusal, not a skip: a skip would hide the lost coverage.
+        flunk "#{dir}/#{bin} would shadow the fake; refusing to run" if File.exist?(File.join(dir, bin))
       end
     end
 
