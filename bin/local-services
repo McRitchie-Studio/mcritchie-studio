@@ -1,0 +1,96 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/local-services list
+# bin/local-services restore [--hub DIR] [--checklist FILE]
+# bin/local-services allow-rules [--hub DIR] [--settings PATH] [--checklist FILE]
+#
+# The always-on local services (config/local_services.yml) and what they need,
+# for the services phase of bin/ecosystem-build (bin/lib/local_services.rb).
+#
+#   list         prints the registry; changes nothing
+#   restore      checks `claude auth status`, then for each service: prerequisites
+#                met and not running → install, then status again; unmet → skipped.
+#                Installs run from the hub's primary checkout (--hub, default
+#                $PROJECTS_DIR/mcritchie-studio). Re-running is safe.
+#   allow-rules  merges config/claude_allow_rules.json into the USER
+#                ~/.claude/settings.json (--settings): adds only, keeps every other
+#                key and rule, no duplicates, written atomically
+#
+# --checklist FILE appends each step the operator owes to FILE, as
+# rank<TAB>text<TAB>command lines; bin/ecosystem-build renders that file last.
+#
+# Exit: 0 done (a service that would not start is a warning and a checklist
+# item, not a failure) · 1 the registry or rules file is malformed · 2 usage.
+
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/local_services"
+
+USAGE = <<~TEXT
+  Usage:
+    bin/local-services list
+    bin/local-services restore [--hub DIR] [--checklist FILE]
+    bin/local-services allow-rules [--hub DIR] [--settings PATH] [--checklist FILE]
+TEXT
+
+command = ARGV.first
+spec = case command
+       when "list" then {}
+       when "restore" then { value: %w[--hub --checklist] }
+       when "allow-rules" then { value: %w[--hub --settings --checklist] }
+       end
+if spec.nil?
+  CliArgGuard.guard!(ARGV, program: "bin/local-services", usage: USAGE,
+                           consequence: "nothing was installed or written.")
+  warn USAGE
+  exit 2
+end
+parsed = CliArgGuard.guard!(ARGV.drop(1), program: "bin/local-services #{command}", usage: USAGE,
+                                          consequence: "nothing was installed or written.", **spec)
+
+def append_items(path, items)
+  return if path.nil? || items.empty?
+
+  File.open(path, "a") { |f| items.each { |item| f.puts LocalServices::Checklist.line(item) } }
+end
+
+hub = File.expand_path(parsed.first("--hub") || LocalServices.default_hub)
+begin
+  case command
+  when "list"
+    LocalServices::Registry.load.each do |s|
+      requires = [ s.claude_auth && "claude_auth: #{s.claude_auth}",
+                   s.commands.any? && "commands: #{s.commands.join(', ')}" ].select { |r| r }
+      puts "#{s.name}\n  install:  #{s.install}\n  status:   #{s.status}\n  sop:      #{s.sop}\n  " \
+           "requires: #{requires.empty? ? 'nothing' : requires.join('; ')}"
+    end
+  when "restore"
+    unless File.directory?(hub)
+      puts "  ✗ services skipped  no hub checkout at #{hub}"
+      exit 0
+    end
+    restorer = LocalServices::Restorer.new(services: LocalServices::Registry.load, hub: hub)
+    append_items(parsed.first("--checklist"), restorer.run)
+  when "allow-rules"
+    settings = parsed.first("--settings") || LocalServices.default_settings
+    state, detail = LocalServices::AllowRules.merge!(settings, LocalServices::AllowRules.rules(hub: hub))
+    case state
+    when :added then puts "  ✓ Claude Code allow-rules  added #{detail.size} to #{settings}"
+    when :current then puts "  ✓ Claude Code allow-rules  all present in #{settings}"
+    else
+      puts "  ✗ Claude Code allow-rules not merged  #{detail}; the file was left as it was"
+      append_items(parsed.first("--checklist"), [
+        LocalServices::Item.new(rank: LocalServices::Checklist::RANKS[:allow_rules],
+                                text: "Repair #{settings} so it is a JSON object (it was left untouched)",
+                                command: "jq . #{settings}   # then: #{LocalServices::RERUN}")
+      ])
+    end
+  end
+rescue LocalServices::Error, JSON::ParserError, Errno::ENOENT => e
+  warn "bin/local-services #{command}: #{e.message}"
+  exit 1
+end
+exit 0

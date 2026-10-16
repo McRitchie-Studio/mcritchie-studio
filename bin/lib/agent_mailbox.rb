@@ -398,6 +398,23 @@ module AgentMailbox
     def self.signed_out?(run)
       !run.error_text.nil? && run.error_text.match?(PATTERN)
     end
+
+    # The sign-in method `claude auth status` reports ("claude.ai" for the
+    # subscription the dispatcher bills), or nil when it reports none: logged
+    # out, or output that is not the CLI's JSON (a PATTERN-style "not logged in"
+    # line included). Unreadable is nil because a sign-in check must fail closed.
+    # Reads only these two keys, so the account's email and org never leave
+    # this method.
+    # (bin/lib/local_services.rb, the services phase of bin/ecosystem-build.)
+    def self.auth_method(status_output)
+      data = JSON.parse(status_output.to_s)
+      return nil unless data.is_a?(Hash) && data["loggedIn"] == true
+
+      method = data["authMethod"].to_s.strip
+      method.empty? ? nil : method
+    rescue JSON::ParserError
+      nil
+    end
   end
 
   # The answer path one message takes, shared by bin/heartbeat and bin/dispatcher:

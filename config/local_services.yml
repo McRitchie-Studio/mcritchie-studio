@@ -1,0 +1,38 @@
+# The always-on local services: the ONE list of what a Mac must be running
+# besides the Rails servers, so that nobody has to remember a service name after
+# a fresh-Mac rebuild (docs/agents/system/house-burn-down.md).
+#
+# Read by bin/local-services (bin/lib/local_services.rb), which the services
+# phase of bin/ecosystem-build runs at the end of every build:
+#
+#   bin/ecosystem-build                    # the whole build, services last
+#   bin/ecosystem-build --phase services   # only this list, the allow-rules and the checklist
+#
+# For each service, in order: check its prerequisites; met and not running →
+# install, then check status again; not met → skip it and put the missing step
+# on the operator's checklist. The phase is idempotent and only warns.
+#
+# Each entry:
+#   name      the service's name, as the operator would say it
+#   sop       the SOP that owns it (docs/agents/agents/<owner>/sops/<sop>.md)
+#   install   run from the hub's PRIMARY checkout ($PROJECTS_DIR/mcritchie-studio);
+#             re-running it must be safe
+#   status    exit 0 means running; anything else means install it
+#   requires  prerequisites, every one checked before install:
+#               claude_auth: claude.ai   `claude auth status` must report this authMethod
+#               commands: [a, b]         each must be on PATH
+#
+# Postgres and Redis are NOT here: they are Homebrew services that Phase 1 of
+# bin/ecosystem-build starts with `brew services start`, before any phase needs
+# them. A service belongs here when the repo owns it (its install command and
+# its SOP live in this repo). As of 2026-10-15 the agent dispatcher is the only
+# one: no other launchd agent, plist template or always-on helper exists in
+# mcritchie-studio.
+services:
+  - name: agent-dispatcher
+    sop: docs/agents/agents/steffon/sops/agent-dispatcher.md
+    install: bin/dispatcher install
+    status: bin/dispatcher status
+    requires:
+      claude_auth: claude.ai
+      commands: [launchctl, claude]
