@@ -87,7 +87,8 @@ class AgentEmailLoopTest < ActiveJob::TestCase
     assert_equal "avi", params[:headers]["X-McRitchie-Agent"]
     assert_nil params[:html], "plain text only"
     assert_includes params[:text], "Two tasks are on QA. Nothing is blocked."
-    assert_equal({ idempotency_key: "agentmsg-#{message.id}" }, sent.first[:options].transform_keys(&:to_sym))
+    assert_equal({ idempotency_key: "test:app:agentmsg-#{message.id}" }, sent.first[:options].transform_keys(&:to_sym),
+                 "the key is scoped to the environment and host, so QA and production never collide")
 
     message.reload
     assert_equal "posted", message.reply_status

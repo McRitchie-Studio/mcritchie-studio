@@ -23,8 +23,9 @@ module AgentMessages
   #      code first (ProposalConfirm, as on Discord).
   #   5. Routing (EmailRoutes): a CTO alias, else a CTO named in a mail to team@,
   #      else the thread's soul. Not routed: nil.
-  #   6. Rate limit: past RATE_LIMIT messages in one thread within RATE_WINDOW the
-  #      row is stored `held` with a `rate_limited` event, never answered.
+  #   6. Rate limit: past RATE_LIMIT messages from verified senders in one thread
+  #      within RATE_WINDOW the row is stored `held` with a `rate_limited` event,
+  #      never answered. Unverified rows never count toward it.
   #   7. The owner-only guard (Answerers), as on Discord: an unanswered role is held.
   #
   # Idempotent on (channel, external_id), the Message-ID.
@@ -129,8 +130,11 @@ module AgentMessages
       message
     end
 
+    # Only rows from VERIFIED senders count, so a stranger (or a forger) cannot
+    # fill a thread and hold the owner's next message.
     def rate_limited?(thread_key)
       AgentMessage.where(channel: "email", thread_key: thread_key).where("created_at > ?", @now - RATE_WINDOW)
+                  .where("agent_messages.envelope -> 'trust' ->> 'verified' = 'true'")
                   .count >= RATE_LIMIT
     end
 

@@ -26,7 +26,7 @@ module AgentMessages
       def routed? = soul.present?
     end
 
-    attr_reader :team_address, :souls, :agent_addresses
+    attr_reader :team_address, :souls, :agent_addresses, :pinned_dkim
 
     def self.load(path = PATH)
       new((YAML.safe_load_file(path, aliases: false) || {})["email"] || {})
@@ -48,6 +48,11 @@ module AgentMessages
         Soul.new(slug: slug.to_s, addresses: Array(spec["addresses"]).map { |a| a.to_s.strip.downcase },
                  names: Array(spec["names"]).map { |n| n.to_s.strip }.reject(&:empty?),
                  from: spec["from"].to_s.strip.presence)
+      end
+      # { domain => [selectors] }: a From in that domain is verified only when
+      # every aligned DKIM-Signature names one of them (EmailTrust, "PINNED SELECTORS").
+      @pinned_dkim = (config["pinned_dkim"] || {}).to_h do |domain, selectors|
+        [ domain.to_s.strip.downcase, Array(selectors).map { |sel| sel.to_s.strip.downcase }.reject(&:empty?) ]
       end
       @agent_addresses = (Array(config["agent_addresses"]).map { |a| a.to_s.strip.downcase } +
                           [ @team_address ].compact + @souls.flat_map(&:addresses)).uniq

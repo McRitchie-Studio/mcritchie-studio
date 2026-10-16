@@ -22,6 +22,13 @@ class AgentReplyMailer < ApplicationMailer
   # and its creation second, so two databases' row 12 do not share one id.
   def self.reply_message_id(message) = "agentmsg-#{message.id}.#{message.created_at.to_i}@mcritchie.studio"
 
+  # Resend's idempotency key, scoped to this environment and app host: QA's row 12
+  # and production's row 12 share a nonce, never a key.
+  def self.idempotency_key(message)
+    host = ENV["APP_HOST"].presence || ENV["HEROKU_APP_NAME"].presence || "app"
+    "#{Rails.env}:#{host}:#{message.reply_nonce.presence || "agentmsg-#{message.id}"}"
+  end
+
   def self.subject_for(subject)
     base = subject.to_s.strip
     return "Re: your message" if base.empty?
@@ -51,7 +58,7 @@ class AgentReplyMailer < ApplicationMailer
          reply_to: routes.team_address,
          subject: self.class.subject_for(envelope["subject"]),
          message_id: "<#{self.class.reply_message_id(message)}>",
-         options: { idempotency_key: message.reply_nonce.presence || "agentmsg-#{message.id}" }) do |format|
+         options: { idempotency_key: self.class.idempotency_key(message) }) do |format|
       format.text { render plain: self.class.body_for(message) }
     end
   end

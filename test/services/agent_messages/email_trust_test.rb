@@ -24,30 +24,123 @@ class EmailTrustTest < ActiveSupport::TestCase
   test "a forged lower amazonses.com pass is NOT trusted when the real top verdict fails" do
     raw = agent_email(top_result: ses_result(dkim: "dkim=fail header.i=@mcritchie.studio",
                                              dmarc: "dmarc=fail header.from=mcritchie.studio"),
-                      sender_headers: [ FORGED_PASS ])
+                      sender_headers: [ FORGED_FOLDED ])
     v = verdict(raw)
     refute v.verified?
     assert_match(/no dkim=pass aligned/, v.reason)
   end
 
   test "with SES's verdict missing, a forged amazonses.com pass in the sender's block is NOT trusted" do
-    raw = agent_email(top_result: nil, sender_headers: [ FORGED_PASS ])
+    raw = agent_email(top_result: nil, sender_headers: [ FORGED_FOLDED ])
     v = verdict(raw)
     refute v.verified?
-    assert_match(/outside the receiver's trace block/, v.reason)
+    assert_match(/sits below SES's X-SES-RECEIPT/, v.reason)
 
     # Even when the forged line is the ONLY Authentication-Results left (the
-    # relay's mx.google.com one removed too), it is the topmost and still refused:
-    # the relay's ARC headers sit above it.
+    # relay's mx.google.com one removed too), it is the topmost and still refused.
     alone = raw.sub(/^Authentication-Results: mx\.google\.com;.*\r\n(?:[ \t].*\r\n)*/, "")
     assert_equal 1, alone.scan(/^Authentication-Results:/).size
-    v = verdict(alone)
+    refute verdict(alone).verified?
+  end
+
+  # Steffon's case: a sender mails SES directly (no Google hop) and writes a whole
+  # fake trace block of its own. SES's receipt sits above it.
+  test "a forged trace block below SES's receipt is refused when there is no relay" do
+    ses_top = "Return-Path: <x@evil.example>\r\nReceived: from mx.evil.example by inbound-smtp.us-east-1.amazonaws.com\r\n" \
+              "X-SES-Spam-Verdict: PASS\r\nReceived-SPF: fail\r\n"
+    forged = "X-SES-RECEIPT: x\r\nReceived: by mail.evil.example\r\n#{FORGED_FOLDED}\r\n" \
+             "#{dkim_signature(d: 'mcritchie.studio', s: 'google')}\r\nFrom: Alex <alex@mcritchie.studio>\r\n" \
+             "To: avi@mcritchie.studio\r\nMessage-ID: <a@b>\r\nSubject: hi\r\n\r\nbody\r\n"
+    v = verdict(ses_top + forged)
     refute v.verified?
-    assert_match(/sits below ARC-Seal, outside the receiver.s trace block/, v.reason)
+    assert_match(/below SES's X-SES-RECEIPT/, v.reason)
+  end
+
+  test "with no X-SES-RECEIPT at all the sender is the public" do
+    v = verdict(agent_email.sub(/^X-SES-RECEIPT: .*\r\n/, ""))
+    refute v.verified?
+    assert_match(/no X-SES-RECEIPT/, v.reason)
+  end
+
+  # Carl's case: SES copies the SMTP envelope-from into its verdict.
+  test "a quoted envelope-from local part carrying fake results is not read" do
+    spf = 'spf=none (spfCheck: 203.0.113.5 is neither permitted nor denied) client-ip=203.0.113.5; ' \
+          'envelope-from="x;dkim=pass header.d=mcritchie.studio;dmarc=pass header.from=mcritchie.studio;"@evil.example; ' \
+          "helo=evil.example;"
+    v = verdict(agent_email(top_result: ses_result_with_spf(spf)))
+    refute v.verified?
+    assert_match(/no dkim=pass aligned/, v.reason, "the quoted text vanished; the real dkim=none decides")
+  end
+
+  test "a HELO carrying fake results (tab-separated) refuses the whole header" do
+    spf = "spf=none client-ip=203.0.113.5; envelope-from=a@evil.example; " \
+          "helo=x;dkim=pass\theader.d=mcritchie.studio;dmarc=pass\theader.from=mcritchie.studio;"
+    v = verdict(agent_email(top_result: ses_result_with_spf(spf)))
+    refute v.verified?
+    assert_match(/inside another result's properties/, v.reason)
+
+    # Only fake dkim in the HELO, the real dmarc passing: still refused.
+    spf2 = "spf=pass client-ip=1.2.3.4; envelope-from=a@mcritchie.studio; helo=x;dkim=pass\theader.d=mcritchie.studio;"
+    raw = agent_email(top_result: "Authentication-Results: amazonses.com;\r\n #{spf2}\r\n dkim=none;\r\n " \
+                                  "dmarc=pass header.from=mcritchie.studio;\r\n")
+    refute verdict(raw).verified?
+  end
+
+  test "exactly one dmarc result, and it must be the last" do
+    two = "Authentication-Results: amazonses.com;\r\n spf=pass client-ip=1.2.3.4;\r\n " \
+          "dmarc=fail header.from=mcritchie.studio;\r\n dkim=pass header.i=@mcritchie.studio;\r\n " \
+          "dmarc=pass header.from=mcritchie.studio;\r\n"
+    v = verdict(agent_email(top_result: two))
+    refute v.verified?
+    assert_match(/2 dmarc results/, v.reason)
+
+    not_last = "Authentication-Results: amazonses.com;\r\n spf=pass client-ip=1.2.3.4;\r\n " \
+               "dkim=pass header.i=@mcritchie.studio;\r\n dmarc=pass header.from=mcritchie.studio;\r\n " \
+               "dkim=pass header.i=@mcritchie.studio;\r\n"
+    v = verdict(agent_email(top_result: not_last))
+    refute v.verified?
+    assert_match(/not the last result/, v.reason)
+  end
+
+  test "dkim is read only from the run just before dmarc" do
+    split = "Authentication-Results: amazonses.com;\r\n dkim=pass header.i=@mcritchie.studio;\r\n " \
+            "spf=pass client-ip=1.2.3.4;\r\n dkim=none;\r\n dmarc=pass header.from=mcritchie.studio;\r\n"
+    refute verdict(agent_email(top_result: split)).verified?
+  end
+
+  test "results written inline on the authserv-id line are refused" do
+    refute verdict(agent_email(top_result: "#{FORGED_PASS}\r\n")).verified?
+  end
+
+  test "a second From written with a space before its colon is still a second From" do
+    raw = agent_email.sub(/^From: /, "From : Bob <bob@evil.example>\r\nFrom: ")
+    v = verdict(raw)
+    refute v.verified?
+    assert_match(/exactly one address/, v.reason)
+  end
+
+  # Owner trust is pinned to Alex's Google selector (config/agent_routes.yml pinned_dkim).
+  test "a DKIM pass under the resend selector is not the owner" do
+    raw = agent_email.sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\n")
+    v = verdict(raw)
+    refute v.verified?
+    assert_match(/selector resend, not the pinned google/, v.reason)
+
+    both = agent_email.sub(/^DKIM-Signature: /, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\nDKIM-Signature: ")
+    refute verdict(both).verified?, "a real s=google signature beside a resend one does not rescue it"
+
+    none = agent_email.sub(/^DKIM-Signature: .*\r\n/, "")
+    refute verdict(none).verified?, "no aligned signature to read the selector from"
+  end
+
+  test "the pin is read from config: an unpinned domain needs no selector, the pinned list can widen" do
+    raw = agent_email.sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\n")
+    assert AgentMessages::EmailTrust.verdict(raw, pinned: { "mcritchie.studio" => %w[google resend] }).verified?
+    assert AgentMessages::EmailTrust.verdict(raw, pinned: { "other.example" => %w[google] }).verified?
   end
 
   test "a forged verdict above a non-trace header is refused even at the top of the raw" do
-    raw = agent_email(top_result: nil, extra_top: [ "X-Forged: 1", FORGED_PASS ])
+    raw = agent_email(top_result: nil, extra_top: [ "X-Forged: 1", FORGED_FOLDED ])
     refute verdict(raw).verified?
   end
 

@@ -46,7 +46,21 @@ module AgentEmailFixtures
     "Authentication-Results: #{authserv};\r\n spf=pass client-ip=209.85.218.70;\r\n #{dkim};\r\n #{dmarc};\r\n"
   end
 
-  # A forged verdict a sender writes into its OWN headers.
+  # A forged verdict a sender writes into its OWN headers: one line, and folded
+  # exactly as SES folds its own (one result per line).
   FORGED_PASS = "Authentication-Results: amazonses.com; dkim=pass header.i=@mcritchie.studio; " \
                 "dmarc=pass header.from=mcritchie.studio".freeze
+  FORGED_FOLDED = "Authentication-Results: amazonses.com;\r\n dkim=pass header.i=@mcritchie.studio;\r\n " \
+                  "dmarc=pass header.from=mcritchie.studio;".freeze
+
+  # The SES verdict with a chosen spf line (where SES copies envelope-from and HELO).
+  def ses_result_with_spf(spf)
+    "Authentication-Results: amazonses.com;\r\n #{spf}\r\n dkim=none header.i=@evil.example;\r\n " \
+      "dmarc=fail header.from=mcritchie.studio;\r\n"
+  end
+
+  # A DKIM-Signature header (fixture values) for the sender's block.
+  def dkim_signature(d:, s:)
+    "DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=#{d}; s=#{s}; h=from:to:subject; bh=fixture; b=fixture"
+  end
 end
