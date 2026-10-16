@@ -127,7 +127,7 @@ a forward, or any reference into another channel or guild, counts as a fresh
 message), the channel
 override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
-reply to a held message that itself had no soul is kept `unrouted`, visible and
+reply to a kept message that itself had no soul is kept `unrouted`, visible and
 never handed to a worker. Among several mentioned souls, the one written first
 wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
 work; the config lists either.
