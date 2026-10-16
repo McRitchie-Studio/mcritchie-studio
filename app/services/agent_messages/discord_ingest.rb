@@ -18,6 +18,12 @@ module AgentMessages
   # without one, the index violation aborts that whole transaction and the
   # re-read, the rest of the page and the cursor advance all fail.
   #
+  # THE OWNER-ONLY GUARD. A routed message from a person
+  # config/agent_answerers.yml does not allow (AgentMessages::Answerers) is
+  # stored `held`, with a `held` event saying why, instead of `received`: kept
+  # for the admin page, never claimed, until an admin releases it. The claim
+  # enforces the same rule again on the server (AgentMessage.claimable).
+  #
   # THE PERSON. Every stored row with an author resolves to an AgentPerson
   # (AgentMessage's create callback, AgentPerson.resolve!): the Discord user id
   # is the identity, created on first sight, never merged with another platform's.
@@ -46,9 +52,10 @@ module AgentMessages
       def reset_unlisted_guilds! = @unlisted_lock.synchronize { @unlisted_guilds.clear }
     end
 
-    def initialize(routes:, router: Router.new(routes), logger: Rails.logger)
+    def initialize(routes:, router: Router.new(routes), answerers: Answerers.current, logger: Rails.logger)
       @routes = routes
       @router = router
+      @answerers = answerers
       @logger = logger
     end
 
@@ -95,19 +102,33 @@ module AgentMessages
       return nil unless result.routed? || parent
 
       AgentMessage.transaction(requires_new: true) do
+        author_ref = raw.dig("author", "id").to_s
+        person = AgentPerson.resolve!(platform: "discord", external_id: author_ref, display_name: author_name(raw))
+        held = result.routed? && !@answerers.allowed?(person)
         message = AgentMessage.create!(
           channel: "discord", external_id: raw["id"].to_s, guild_id: guild_id, channel_ref: channel_id,
           thread_key: parent&.thread_key || fresh_thread_key(raw, guild_id, channel_id, parent_id),
-          author_ref: raw.dig("author", "id").to_s, author_name: author_name(raw),
+          author_ref: author_ref, author_name: author_name(raw), person: person,
           content: raw["content"].to_s, mentions: { "users" => users, "roles" => roles },
           soul_slug: result.soul, routed_by: result.routed_by,
-          status: result.routed? ? "received" : "unrouted", sent_at: parse_time(raw["timestamp"])
+          status: status_for(result, held), sent_at: parse_time(raw["timestamp"])
         )
         message.record!("received", actor: source, detail: { "author" => message.author_name })
         message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
                         detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
+        if held
+          message.record!("held", actor: "answerers",
+                                  detail: { "reason" => "sender is not on config/agent_answerers.yml",
+                                            "person_id" => person&.id }.compact)
+        end
         message
       end
+    end
+
+    def status_for(result, held)
+      return "unrouted" unless result.routed?
+
+      held ? "held" : "received"
     end
 
     # A reply to a message we hold (or to an agent's reply to one) continues that

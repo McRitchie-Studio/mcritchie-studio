@@ -5,14 +5,17 @@ require Rails.root.join("bin/lib/agent_note_block").to_s
 #
 # DiscordIngest writes it, from the Gateway listener (AgentMessages::DiscordGateway)
 # or the backstop poll (AgentMessages::DiscordPoll), only when it is addressed:
-# routed to a soul, or kept `unrouted` as a reply to a held message that named none.
+# routed to a soul, or kept `unrouted` as a reply to a kept message that named none.
 # A worker (`bin/dispatcher`, or `bin/heartbeat <soul>` by hand) claims it under a
 # lease, answers, and completes it; AgentMessageReplyJob posts the answer back exactly once.
 #
 #   received ──claim──▶ claimed ──complete──▶ completed
 #      ▲                  │  └─lease lapses, attempts < cap──▶ claimable again
 #      └────release───────┘  └─lease lapses, attempts = cap──▶ dead
-#   unrouted: stored, never claimable (a reply to a held message that named no soul)
+#   unrouted: stored, never claimable (a reply to a kept message that named no soul)
+#   held ──release_hold! (an admin)──▶ received
+#   held: addressed by someone config/agent_answerers.yml does not allow; never
+#         claimable, and not open for the thread and person wait rules
 #
 # THE LEASE LIVES ON THE ROW (claimed_by, lease_expires_at), as lib/claim_lease.rb's
 # leases do: a worker that dies holding a message loses it when the lease lapses,
@@ -23,7 +26,7 @@ require Rails.root.join("bin/lib/agent_note_block").to_s
 # THE CONTENT IS UNTRUSTED. It came from whoever can post in a listed guild; a worker hands it to a model fenced as data, never as instructions.
 class AgentMessage < ApplicationRecord
   CHANNELS = %w[discord].freeze
-  STATUSES = %w[received claimed completed dead unrouted].freeze
+  STATUSES = %w[received claimed completed dead unrouted held].freeze
   # Statuses a thread waits on: an older message in one of these holds the
   # thread's newer messages back, so a conversation is answered in order.
   OPEN_STATUSES = %w[received claimed].freeze
@@ -106,16 +109,26 @@ class AgentMessage < ApplicationRecord
   #
   # `soul` is one slug or a list (bin/dispatcher serves every routed soul in one
   # claim); across souls the oldest message still goes first.
-  def self.claimable(soul:, now: Time.current, channel: nil)
+  #
+  # THE OWNER-ONLY GUARD (AgentMessages::Answerers) is enforced here, on the
+  # server, not only at ingest: a row is claimable only when its person is on
+  # config/agent_answerers.yml or an admin released its hold (hold_released_at).
+  # A row with no person is never claimable. A row that fails the guard is not
+  # "open" for the two wait rules either, so a stranger's message that is somehow
+  # `received` cannot hold a thread back forever; `held` rows are never open.
+  def self.claimable(soul:, now: Time.current, channel: nil, answerers: AgentMessages::Answerers.current)
+    answerable = answerers.sql_guard
     scope = where(soul_slug: soul)
             .where("agent_messages.status = 'received' OR " \
                    "(agent_messages.status = 'claimed' AND agent_messages.lease_expires_at < :now " \
                    "AND agent_messages.attempts < :cap)", now: now, cap: MAX_ATTEMPTS)
+            .where(answerable.call("agent_messages"))
             .where(<<~SQL.squish)
               NOT EXISTS (SELECT 1 FROM agent_messages older
                           WHERE older.thread_key = agent_messages.thread_key
                             AND older.id < agent_messages.id
-                            AND older.status IN ('received', 'claimed'))
+                            AND older.status IN ('received', 'claimed')
+                            AND #{answerable.call('older')})
             SQL
             .where(<<~SQL.squish)
               (agent_messages.person_id IS NULL OR NOT EXISTS (
@@ -123,7 +136,8 @@ class AgentMessage < ApplicationRecord
                 WHERE earlier.soul_slug = agent_messages.soul_slug
                   AND earlier.person_id = agent_messages.person_id
                   AND earlier.id < agent_messages.id
-                  AND earlier.status IN ('received', 'claimed')))
+                  AND earlier.status IN ('received', 'claimed')
+                  AND #{answerable.call('earlier')}))
             SQL
     scope = scope.where(channel: channel) if channel.present?
     scope.order(:id)
@@ -160,6 +174,27 @@ class AgentMessage < ApplicationRecord
                                            "lease_expires_at" => message.lease_expires_at.iso8601 })
       ClaimResult.new(message: message, reason: "claimed")
     end
+  end
+
+  # An admin's explicit act (the Release button on /admin/agent_messages/:id,
+  # `bin/rails agent_people:release MESSAGE=<id>`): a held message becomes
+  # `received`, and its hold_released_at lets the claim guard pass it, so it is
+  # answered like any other. Only this message: the sender's next one is held
+  # again unless they are added to config/agent_answerers.yml.
+  def release_hold!(actor:, now: Time.current)
+    actor = actor.to_s.strip
+    raise Refused.new("actor is required", code: "ACTOR_REQUIRED") if actor.empty?
+
+    self.class.transaction do
+      lock!
+      unless status == "held"
+        raise Refused.new("message #{id} is #{status}; only a held message can be released", code: "NOT_HELD")
+      end
+
+      update!(status: "received", hold_released_at: now, hold_released_by: actor[0, 100])
+      record!("hold_released", actor: actor, detail: { "person_id" => person_id }.compact)
+    end
+    self
   end
 
   # Claimed rows whose lease lapsed on their last attempt are done being retried.
@@ -323,6 +358,7 @@ class AgentMessage < ApplicationRecord
   end
 
   def unrouted? = status == "unrouted"
+  def held? = status == "held"
   def claimed? = status == "claimed"
 
   def lease_live?(now: Time.current)
@@ -343,7 +379,8 @@ class AgentMessage < ApplicationRecord
     data = slice(:id, :channel, :external_id, :guild_id, :channel_ref, :thread_key, :author_ref, :author_name,
                  :content, :mentions, :soul_slug, :routed_by, :status, :claimed_by, :claimed_at,
                  :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
-                 :reply_posted_at, :completed_at, :sent_at, :created_at, :updated_at,
+                 :reply_posted_at, :completed_at, :sent_at, :hold_released_at, :hold_released_by,
+                 :created_at, :updated_at,
                  :claude_session_id, :claude_cwd, :reasoning, :run_meta).as_json
     data["resume_command"] = resume_command
     data["url"] = discord_url

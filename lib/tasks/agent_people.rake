@@ -6,6 +6,10 @@
 #   bin/rails agent_people:notes PERSON=<id>
 #   bin/rails agent_people:forget NOTE=<id>          (one note)
 #   bin/rails agent_people:forget PERSON=<id> ALL=1  (every note the person has)
+#   bin/rails agent_people:held                      (held messages: the owner-only guard)
+#   bin/rails agent_people:release MESSAGE=<id>      (answer one held message)
+#
+# Allowing a sender for good is an edit to config/agent_answerers.yml (a deploy).
 namespace :agent_people do
   desc "List agent people with their identities and note counts"
   task list: :environment do
@@ -55,5 +59,23 @@ namespace :agent_people do
     end
   rescue ActiveRecord::RecordNotFound => e
     abort "agent_people:forget: #{e.message}"
+  end
+
+  desc "List held messages: addressed by a sender config/agent_answerers.yml does not allow"
+  task held: :environment do
+    held = AgentMessage.with_status("held").order(:id).to_a
+    puts "#{held.size} held message(s)"
+    held.each do |m|
+      puts "  ##{m.id}  #{m.created_at.to_date}  #{m.soul_slug}  person ##{m.person_id || '-'} #{m.author_name}"
+    end
+  end
+
+  desc "Release one held message (MESSAGE=<id>) so its soul answers it"
+  task release: :environment do
+    message = AgentMessage.find(ENV.fetch("MESSAGE"))
+    message.release_hold!(actor: "console:#{ENV.fetch('USER', 'operator')}")
+    puts "released ##{message.id} (#{message.soul_slug}); it is received and will be answered"
+  rescue AgentMessage::Refused, KeyError, ActiveRecord::RecordNotFound => e
+    abort "agent_people:release: #{e.message}"
   end
 end
