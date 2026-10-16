@@ -13,6 +13,10 @@
 #                   the auth, unsubscribe and local-development doors, whose
 #                   screens belong to a flow rather than to the site's navigation.
 #
+# SIGNED_IN passes a signed-in user through the wall; the controller decides the
+# rest. The app-owner pages (docs/agents/system/app-owners.md) are listed there
+# and answer 404, not this wall's redirect, to anyone who does not own the app.
+#
 # A route added tomorrow is walled until someone lists it in one of the two.
 # test/integration/admin_wall_public_set_test.rb pins the whole public set as an
 # explicit list, and test/integration/admin_wall_test.rb walks the route table and
