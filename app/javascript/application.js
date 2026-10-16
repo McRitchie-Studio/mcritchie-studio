@@ -8,7 +8,6 @@ import "logo_gallery"
 import "logo_editor"
 import "logo_download"
 import "dreams_filter"
-import "navbar_scroll_start"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).
 // Installed here, on every page, so it is there before Alpine initialises a board
