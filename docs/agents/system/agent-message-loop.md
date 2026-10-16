@@ -714,7 +714,9 @@ Step 1 of real-time Discord agents (Alex, 2026-10-16; the plan is
 `.agents/epics/domain-agents.md`, "Real-time"). While an answer runs, the bot
 that will post the reply shows "typing…" in the message's channel or thread.
 
-- **Who drives it.** `bin/dispatcher`, because only it knows a run is alive.
+- **Who drives it.** `bin/dispatcher`, because only it knows a run is alive. A
+  hub loop keyed on `status == claimed` would keep typing for a dead
+  dispatcher's message until its 10-minute lease lapsed.
   Discord shows one typing pulse for about ten seconds, or until that bot posts.
   The dispatcher asks the board for a pulse as the run starts (right after the
   claim and the context read), then every `TYPING_EVERY` (7 seconds) while the

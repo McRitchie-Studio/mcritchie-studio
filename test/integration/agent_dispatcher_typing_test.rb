@@ -48,7 +48,7 @@ class AgentDispatcherTypingTest < ActionDispatch::IntegrationTest
   def dispatcher(runner, client: @client)
     AgentMailbox::Dispatcher.new(client: client, souls: %w[avi], worker: "disp-typing-1", runner: runner,
                                  claude_cmd: %w[fake-claude], out: @out, clock: -> { @now },
-                                 sleeper: ->(_s) {}, idle_wait: 0, busy_wait: 0, version: "test")
+                                 sleeper: ->(_s) { }, idle_wait: 0, busy_wait: 0, version: "test")
   end
 
   def drive(disp, ticks: 300)
