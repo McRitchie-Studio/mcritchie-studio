@@ -165,7 +165,7 @@ test("the desktop avatar shrinks on scroll and the name follows it", async ({ pa
   // follows the avatar.
   const sizes = () => page.evaluate(() => {
     const name = document.querySelector("header [data-nav-name]");
-    const scale = name.getBoundingClientRect().height / name.offsetHeight;
+    const scale = name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).height);
     return {
       avatar: document.querySelector("header [data-nav-account] [aria-hidden] > *").getBoundingClientRect().height,
       name: parseFloat(getComputedStyle(name).fontSize) * scale,
@@ -238,11 +238,17 @@ test("the desktop controls are evenly spaced", async ({ page }) => {
 // page, and its contents shrink by transforms on the page's scroll timeline.
 // Nothing runs per frame, so a busy main thread cannot make it stutter.
 //
-// Both specs skip on an engine that predates the setting (the header carries no
-// data-nav-timeline): the hub's own PR runs on the locked engine, and the
-// release's relock is the run that holds them.
-async function skipBeforeTimeline(page, header) {
-  test.skip((await header.getAttribute("data-nav-timeline")) === null, "engine predates navbar_scroll_timeline");
+// The hub's own PR runs on the LOCKED engine, which may predate the setting
+// (the header then carries no data-nav-timeline); the release's relock is the
+// run that exercises the timeline. So each spec asserts the contract of the
+// engine it finds: the timeline's when the header opted in, and otherwise the
+// --nav-p collapse's, which must still drive the header.
+const onTimeline = async (header) => (await header.getAttribute("data-nav-timeline")) !== null;
+
+async function expectNavPCollapse(page, header) {
+  await expect(header).not.toHaveAttribute("data-nav-timeline-on", /.*/);
+  await page.evaluate(() => window.scrollTo(0, 600));
+  await expect.poll(() => header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("1.0000");
 }
 
 test("the desktop navbar collapses on the scroll timeline, with no script per frame", async ({ page }) => {
@@ -250,7 +256,7 @@ test("the desktop navbar collapses on the scroll timeline, with no script per fr
   await page.goto("/tasks");
   await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
-  await skipBeforeTimeline(page, header);
+  if (!(await onTimeline(header))) return expectNavPCollapse(page, header);
   await expect(header).toHaveAttribute("data-nav-timeline-on", "");
 
   const run = await page.evaluate(async () => {
@@ -284,7 +290,7 @@ test("narrowing to a phone hands the header back to the --nav-p collapse", async
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/tasks");
   const header = page.locator("header.nav-shell");
-  await skipBeforeTimeline(page, header);
+  if (!(await onTimeline(header))) return expectNavPCollapse(page, header);
   await expect(header).toHaveAttribute("data-nav-timeline-on", "");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(header).not.toHaveAttribute("data-nav-timeline-on", /.*/);
