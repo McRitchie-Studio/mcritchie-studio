@@ -101,7 +101,9 @@ lane, and nobody else sets it):
 1. **Invite the soul's bot to every guild it answers in**, with the four
    Part 1 permissions at least (View Channels, Send Messages, Read Message
    History, Send Messages in Threads). A bot missing from a guild, or missing a
-   permission in a channel, is refused there. **If the soul is a CTO**
+   permission in a channel, is refused there. The "typing…" it shows while an
+   answer runs (`AgentMessageTypingJob`) needs only Send Messages and the same
+   token: no new permission, no new env var. **If the soul is a CTO**
    (`config/cto_reports.yml`), it also posts that app's morning report, so it
    needs **View Channel, Send Messages and Embed Links** (the report carries an
    embed) in the channel picked for its `cto_report:<domain>` key at

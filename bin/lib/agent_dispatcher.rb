@@ -67,6 +67,8 @@ module AgentMailbox
   #   each tick:  reap finished runs (complete, or release; usage limit → refund + pause
   #               until the reset; a failed or raised run → pause FAILURE_PAUSE; signed out → ClaudeAuth::PAUSE)
   #               renew leases older than RENEW_EVERY, never past RUN_DEADLINE
+  #               pulse "typing…" for each live Discord run every TYPING_EVERY, up to
+  #               TYPING_CAP after its start (the first pulse goes out as the run starts)
   #               abandon a run past RUN_DEADLINE (release it, free the slot)
   #               ping the board every PING_EVERY, and on the same beat re-read the
   #               code fingerprint: a new digest seen on two checks in a row stops
@@ -100,8 +102,17 @@ module AgentMailbox
     # on two checks in a row before the dispatcher restarts, so a checkout read
     # half-way through a branch move cannot start a restart loop.
     CODE_CHECK_EVERY = PING_EVERY
+    # "typing…" in the message's channel while its run lives (AgentMessageTypingJob
+    # on the board). Discord shows a pulse for about ten seconds, so one goes out
+    # as the run starts and every TYPING_EVERY after, which leaves the busy loop's
+    # few seconds of slack before the indicator would fade. TYPING_CAP is the
+    # board's own cap (AgentMessage::TYPING_CAP): past it no pulse is asked for.
+    TYPING_EVERY = 7
+    TYPING_CAP = 180
 
-    Run = Struct.new(:message, :thread, :started_at, :renewed_at, keyword_init: true)
+    # typed_at: the last pulse asked for (nil: none yet). typing: false once the
+    # board said no (or failed): that run is never pulsed again.
+    Run = Struct.new(:message, :thread, :started_at, :renewed_at, :typed_at, :typing, keyword_init: true)
 
     attr_reader :worker, :runs, :paused_until, :pause_reason
 
@@ -188,6 +199,7 @@ module AgentMailbox
       now = @clock.call
       reap
       renew_due(now)
+      type_due(now)
       ping(now) if @last_ping.nil? || now - @last_ping >= PING_EVERY
       check_code(now) if @fingerprint && !@stopping && now - @last_code_check >= CODE_CHECK_EVERY
       return if @stopping
@@ -223,6 +235,7 @@ module AgentMailbox
         reap
         now = @clock.call
         renew_due(now)
+        type_due(now)
         ping(now, state: "stopping") if @last_ping.nil? || now - @last_ping >= PING_EVERY
         @sleeper.call(1) unless @runs.empty?
       end
@@ -297,7 +310,10 @@ module AgentMailbox
         Thread.current.report_on_exception = false
         responder.respond(message, context: context)
       end
-      @runs << Run.new(message: message, thread: thread, started_at: now, renewed_at: now)
+      run = Run.new(message: message, thread: thread, started_at: now, renewed_at: now,
+                    typing: message["channel"] == "discord")
+      @runs << run
+      pulse_typing(run, now)
     end
 
     def reap
@@ -392,6 +408,45 @@ module AgentMailbox
         log "renew ##{run.message['id']} refused: #{e.message}"
         run.renewed_at = now
       end
+    end
+
+    # Every live run whose last pulse is TYPING_EVERY old gets another, until
+    # TYPING_CAP after its start. A finished run is reaped before this runs, so
+    # typing stops with the run.
+    def type_due(now)
+      @runs.each do |run|
+        next unless run.typing
+        next if run.typed_at && now - run.typed_at < TYPING_EVERY
+
+        pulse_typing(run, now)
+      end
+    end
+
+    # Best effort: typing never holds up an answer. The board answering anything
+    # but "queued" (capped, not answered, not Discord), refusing, or the call
+    # raising anything at all stops this run's pulses; the answer goes on. Ids
+    # and error classes only in the log.
+    def pulse_typing(run, now)
+      return unless run.typing
+
+      if now - run.started_at > TYPING_CAP
+        run.typing = false
+        return
+      end
+      run.typed_at = now
+      verdict = @client.typing(run.message["id"], worker: @worker).dig("meta", "typing")
+      return if verdict == "queued"
+
+      run.typing = false
+      log "typing for ##{run.message['id']} stopped (#{verdict || 'no verdict'})"
+    rescue ApiError => e
+      run.typing = false
+      log "typing for ##{run.message['id']} refused: #{e.message}"
+    rescue StandardError => e
+      # Anything else (a dropped connection, a client without #typing) must not
+      # reach the main loop: typing is the one call here that is never needed.
+      run.typing = false
+      log "typing for ##{run.message['id']} failed (#{e.class})"
     end
 
     def ping(now, state: nil)

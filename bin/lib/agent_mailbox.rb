@@ -58,6 +58,12 @@ module AgentMailbox
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/renew", { "worker" => worker })
     end
 
+    # One "typing…" pulse for a held message (AgentMessageTypingJob on the
+    # board). meta.typing says "queued" or why not.
+    def typing(id, worker:)
+      call(:post, "/api/v1/agent_messages/#{Integer(id)}/typing", { "worker" => worker })
+    end
+
     # bin/dispatcher's minute ping (AgentDispatcher on the board).
     def ping(payload)
       call(:post, "/api/v1/agent_dispatchers/ping", payload)

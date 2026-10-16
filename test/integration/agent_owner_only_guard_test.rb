@@ -55,6 +55,21 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
     assert_nil claim_over_http("mac-1")
   end
 
+  test "[unit] a stranger's held message never shows typing; Alex's claimed one does" do
+    held = ingest(2201, author: STRANGER)
+    assert_no_enqueued_jobs(only: AgentMessageTypingJob) do
+      post typing_api_v1_agent_message_url(held), params: { worker: "mac-1" }, headers: @shared, as: :json
+    end
+    assert_response :conflict, "a held message is never claimed, so nobody holds it to type for"
+
+    mine = ingest(2202, author: ALEX)
+    assert_equal mine.id, claim_over_http("mac-1")["id"]
+    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1" ]) do
+      post typing_api_v1_agent_message_url(mine), params: { worker: "mac-1" }, headers: @shared, as: :json
+    end
+    assert_equal "queued", response.parsed_body.dig("meta", "typing")
+  end
+
   test "the admin page shows a held message with a Release button, and releasing it makes it claimable" do
     held = ingest(2101, author: STRANGER)
 

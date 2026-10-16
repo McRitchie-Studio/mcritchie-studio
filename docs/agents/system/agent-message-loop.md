@@ -22,6 +22,8 @@ Discord guild ──Gateway push (MESSAGE_CREATE)──┐
                                               │ (lease 10 min, renewed every 3 while the answer runs)
                                               ▼
                      one read-only action + headless Claude (no tools), at most 5 at once
+                                              │ while it runs: "typing…" every 7s, up to 3 min
+                                              │ (POST …/:id/typing → AgentMessageTypingJob, the reply's bot)
                                               │ complete
                                               ▼
                        AgentMessageReplyJob ──▶ one Discord reply: the soul's own bot
@@ -38,6 +40,7 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Inbound, push | `AgentMessages::DiscordGateway` (a thread in the Solid Queue scheduler process on the worker dyno, `config/initializers/agent_message_gateway.rb`), protocol state in `AgentMessages::GatewaySession`, leader lock `AgentMessages::GatewayLeaderLock` → `AgentMessages::DiscordIngest` |
 | Inbound, backstop | `AgentMessageDiscordPollJob` (Solid Queue, `config/recurring.yml`, every 10 minutes) → `AgentMessages::DiscordPoll` → `AgentMessages::DiscordIngest` |
 | Outbound | `AgentMessageReplyJob` → `AgentMessages::DiscordBot#post_reply`, as the soul's own bot (`DISCORD_BOT_TOKEN_<SOUL>`) or the shared bot (below, "Which bot replies") |
+| Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
 | Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
 | Dispatcher health | `POST /api/v1/agent_dispatchers/ping` → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents` |
@@ -705,6 +708,95 @@ cd ~/.agents/mailbox/xan && claude --resume <session_id>
 
 Resuming is for an operator reading a run. The answer path never resumes.
 
+## Typing: the bot shows it is answering
+
+Step 1 of real-time Discord agents (Alex, 2026-10-16; the plan is
+`.agents/epics/domain-agents.md`, "Real-time"). While an answer runs, the bot
+that will post the reply shows "typing…" in the message's channel or thread.
+
+- **Who drives it.** `bin/dispatcher`, because only it knows a run is alive. A
+  hub loop keyed on `status == claimed` would keep typing for a dead
+  dispatcher's message until its 10-minute lease lapsed.
+  Discord shows one typing pulse for about ten seconds, or until that bot posts.
+  The dispatcher asks the board for a pulse as the run starts (right after the
+  claim and the context read), then every `TYPING_EVERY` (7 seconds) while the
+  run's thread lives, for at most `TYPING_CAP` (180 seconds) after it started.
+  The ask is `POST /api/v1/agent_messages/:id/typing { worker }`.
+- **Why the board sends it.** The bot tokens live on the hub, not on the Mac, and
+  the reply's bot choice is the hub's (`AgentMessages::BotSelector`). The
+  endpoint only queues `AgentMessageTypingJob`, so a slow Discord never holds the
+  dispatcher's main loop, and the job calls `POST /channels/{id}/typing`.
+- **The same bot as the reply.** The soul's own bot when
+  `DISCORD_BOT_TOKEN_<SOUL>` is set, else the shared bot. A 401/403 from the
+  soul's bot falls back to the shared bot in the same call and records one
+  `typing_bot_refused` event (the ENV name only), so later pulses skip the soul's
+  bot. A soul's bot the reply job already found refused (`reply_bot_refused`) is
+  skipped as well. A typing refusal never changes the reply's own choice. With no
+  token, nothing types.
+- **Only for answers that will come.** The board re-checks every pulse
+  (`AgentMessage#typing_refusal`): the message is `claimed` by that worker, it is
+  a Discord message, its sender is answered (`AgentMessages::Answerers`, or a hold
+  an admin released), and the claim is under `AgentMessage::TYPING_CAP` old. A
+  held or unrouted message is never claimed, so it never types. Anyone but the
+  holder gets 409 `NOT_HOLDER`; a quiet "no" is a 200 whose `meta.typing` says
+  `not_discord`, `not_answered` or `capped`, and the dispatcher stops pulsing
+  that run on any answer but `queued`.
+- **How it stops.** The dispatcher reaps a finished run before it pulses, so
+  pulses end with the run, whatever the end: the reply, a failed or raised run, a
+  usage limit, a signed-out CLI, a give-back. The last pulse fades within ten
+  seconds; Discord has no call to cancel it, and a posted reply clears it at once.
+  An answer that takes longer than three minutes stops typing at the cap and
+  posts without it. A pause with runs in flight can stretch one gap to about 12
+  seconds (the paused loop sleeps up to 5).
+- **Best effort.** A Discord error on a pulse (a 429, a 5xx, a timeout) is logged
+  by class and dropped, never retried: the next pulse is seconds away. Any
+  error on the ask stops that run's typing and logs one id-only line
+  (`typing for #N refused: …` from the board, `typing for #N failed (<Class>)`
+  for anything else); the answer goes on.
+- **Rate limits.** Discord does not publish a fixed number for the typing route;
+  it buckets per channel and reports the bucket in `X-RateLimit-*` headers, under
+  the bot's global 50 requests per second. One pulse per 7 seconds per channel,
+  at most 5 runs (one per thread), is under 1 request per second for the whole
+  bot. This was reasoned from Discord's documented model, not measured against
+  Discord: the Mac holds no bot token, and the tests stub the HTTP.
+
+### Streaming (next step, not built)
+
+The answer still arrives whole: `claude -p --output-format json`, then one post.
+Streaming it (post early, then edit as text arrives) is designed here and not
+built, because it would weaken two guarantees today's path keeps:
+
+1. **The sections never post.** The notes section and the PROPOSAL block are cut
+   from the FINAL text, by the worker and again by the board in `complete!`
+   (`AgentMailbox::NoteBlock`, `AgentMailbox::ProposalBlock`, loose patterns).
+   A streamed edit would show a section, or half of its delimiter, before the cut
+   could see it.
+2. **Status is read only from fields the model cannot write** (`ClaudeRun`: exit
+   status, `is_error`, `api_error_status`). Text streamed before the `result`
+   event arrives could post a model-written "usage limit reached" as an answer,
+   or the text of a run that then ends `is_error`.
+
+The design, for the step that builds it:
+
+- Run `claude -p --output-format stream-json --verbose --include-partial-messages`;
+  the Responder reads the NDJSON on its thread and keeps a draft buffer from the
+  model's `text_delta` events only, never from `result`.
+- A **safe prefix**: the draft shows text only up to the first line that could
+  start a section under the loose patterns (a held-back tail), so a section never
+  appears even half-formed.
+- A board-mediated **draft**: `POST /api/v1/agent_messages/:id/draft { worker, text }`
+  from the dispatcher's main loop (it stays the only board caller), at most one
+  every 1.5 seconds per message. A job posts the first draft (with its own nonce)
+  and then PATCHes that message, under Discord's per-channel edit bucket. The draft
+  starts after about 200 characters or 3 seconds, and typing covers the time before.
+- **The final word stays the board's.** `complete!` cuts the sections as today,
+  and the reply job EDITS the draft to the cut text (the confirm line included)
+  instead of posting a new message; a separate `draft_external_id` keeps the
+  once-only `reply_external_id` rule intact. Over 2,000 characters, the edit holds
+  the first part and the rest posts as a follow-up.
+- **Failure deletes the draft.** A run whose envelope ends `is_error` (a usage
+  limit, a signed-out CLI, a failure) deletes the draft and is handled as today.
+
 ## Setup
 
 Nothing reads Discord until a bot token is set. The code ships inert.
@@ -761,6 +853,10 @@ side is encoded with real database concurrency:
 The dispatcher's loop (claims, the cap, renewal, the usage-limit refund and
 pause, a graceful stop) is `test/integration/agent_dispatcher_loop_test.rb`; the
 long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
+Typing is `test/integration/agent_dispatcher_typing_test.rb` (pulses, then the
+reply as the same bot; stop on failure and at the cap) and
+`test/jobs/agent_message_typing_job_test.rb` (the bot choice, the fallback, the
+guard and the unanswered audiences).
 
 ## Observing
 
@@ -771,7 +867,8 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
   the Discord reply, and the timeline: received, routed or unrouted, claimed,
   lease_renewed, lease_expired, released (with `code` and `attempt_refunded` on
   a usage-limit give-back), dead_lettered, completed, reply_bot_refused (the
-  soul's own bot was refused; an `ErrorLog` row says why), and reply_posted
+  soul's own bot was refused; an `ErrorLog` row says why), typing_bot_refused
+  (the soul's own bot could not show typing; the shared bot typed), and reply_posted
   (with `via`), reply_skipped or reply_failed. The row's `reply_status` (queued, posted,
   skipped when no bot token is set, failed when the job's five tries are spent)
   is the Reply column.
