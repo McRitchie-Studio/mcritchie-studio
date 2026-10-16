@@ -73,6 +73,8 @@ class ClientPipelineTest < ActiveSupport::TestCase
     assert_equal "Security maintenance", scrub.title("Rotate HEALTH_TOKEN_TURF_MONSTER")
     assert_equal "Security maintenance", scrub.title("Move the Stripe API key to 1Password")
     assert_equal "Security maintenance", scrub.title("Refile credentials for payouts")
+    assert_equal "Security maintenance", scrub.title("Rotate Mainnet Admin Key"), "a key or signer title is a credential title"
+    assert_equal "Security maintenance", scrub.title("Mainnet Signer Records Rotation")
     assert_equal "the team reviews the scoring change", scrub.title("Carl reviews the scoring change")
     assert_equal "Share a modal with a shared component", scrub.title("Share a modal with Cyvasse")
     assert_equal "Turf Monster live board", scrub.title("Turf Monster live board"), "the app's own name stays"

@@ -91,7 +91,7 @@ module ClientPipeline
   class Scrubber
     URL = %r{\b(?:https?|wss?|file)://\S+|\blocalhost(?::\d+)?\S*|\b127\.0\.0\.1(?::\d+)?\S*}i
     PATH = %r{(?:~|/Users|/home|/private|/tmp|/var)/\S+|\S*\.worktrees/\S*}
-    CREDENTIAL = /credential|password|passphrase|secret|token|api[\s_-]?key|private[\s_-]?key|1password|\bop:\/\/|keypair|seed phrase|\b[A-Z][A-Z0-9]*_(?:KEY|TOKEN|SECRET)\b/i
+    CREDENTIAL = /credential|password|passphrase|secret|token|api[\s_-]?key|private[\s_-]?key|1password|\bop:\/\/|keypair|\bkeys?\b|\bsign(?:er|ers|ing)\b|seed phrase|\b[A-Z][A-Z0-9]*_(?:KEY|TOKEN|SECRET)\b/i
     CREDENTIAL_TITLE = "Security maintenance".freeze
 
     def initialize(app)
