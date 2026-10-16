@@ -237,7 +237,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
   private
 
-  attr_accessor :admin_enabled, :logged_in_enabled
+  attr_accessor :admin_enabled, :logged_in_enabled, :current_user
 
   def admin?
     !!admin_enabled
@@ -309,4 +309,31 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def error_logs_path = "/error_logs"
   def admin_agent_messages_path = "/admin/agent_messages"
   def admin_report_destinations_path = "/admin/report_destinations"
+  # [component] The owner section (AppOwnership.sidebar_links): first in the
+  # sidebar, one app and one CTO by name, two of each as Applications and Agents,
+  # absent for a signed-in user who owns nothing and for a visitor.
+  test "[component] an owner's sidebar opens with their app and CTO by name, or Applications and Agents for two" do
+    owner = User.create!(email: "sidebar-owner@example.com", name: "Sidebar Owner", role: "viewer")
+    cyvasse = App.create!(slug: "cyvasse", name: "Cyvasse", emoji: "🐉", color: "#DC2626", position: 5)
+    AppMembership.create!(app: apps(:turf_monster), user: owner)
+    self.admin_enabled = false
+    self.logged_in_enabled = true
+    self.current_user = owner
+
+    first = sidebar_link_sections.first
+    assert_equal "Your apps", first.fetch(:title)
+    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Turf", "/agents/turf-monster/settings" ] ],
+                 first.fetch(:links).map { |link| [ link.fetch(:label), link.fetch(:href) ] }
+    assert first.fetch(:links).all? { |link| link[:hover_emoji].present? }
+
+    AppMembership.create!(app: cyvasse, user: owner)
+    assert_equal [ "Applications", "Agents" ], sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }
+
+    self.current_user = User.create!(email: "sidebar-none@example.com", name: "No Apps", role: "viewer")
+    assert_equal [ "NFL", "Services", "Apps" ], sidebar_link_sections.map { |section| section.fetch(:title) }
+
+    self.logged_in_enabled = false
+    self.current_user = nil
+    refute sidebar_link_sections.any? { |section| section.fetch(:title) == "Your apps" }
+  end
 end
