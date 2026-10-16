@@ -71,7 +71,9 @@ A message answered at the cap (below) carries no tokens and is not counted.
   (`Meter#public_used`, shown on the meter as its own line) and never consume the
   allowance, so a stranger cannot exhaust what the client pays for (Alex,
   2026-10-16). Once the client's allowance is spent, a public message is still
-  answered with the cap reply. Owner and team answers are in the totals but never
+  refused, with a plain line ("I can't answer right now. Please try again after
+  Nov 1.") that carries no meter, price or upgrade; a public answer never ends
+  with the 80% notice either. The meter is the owner's, never the public's. Owner and team answers are in the totals but never
   metered and never capped. An answer from before this release has no `audience`
   and is not metered (only the owner was answered then).
 - **An admin lifts the cap** on the app page (admin only): a tier select and a

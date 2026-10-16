@@ -96,5 +96,11 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     assert_select ".am-dispatcher[data-live=true] .am-chip", "paused"
     assert_select ".am-dispatcher[data-live=true]", /paused until .* \(usage_limit\)/
     assert_select ".am-dispatcher[data-live=false] .am-chip", "silent"
+    assert_select "[data-test='dispatcher-role']", 0, "a primary carries no role chip"
+
+    # [component] A registered standby is named, with its domains.
+    AgentDispatcher.where(worker_id: "dispatcher-alex-mac-1-abc").update_all(role: "standby", standby_domains: %w[mcritchie_studio])
+    get admin_agent_messages_path
+    assert_select ".am-dispatcher[data-live=true] [data-test='dispatcher-role']", "standby · mcritchie_studio"
   end
 end
