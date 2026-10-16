@@ -161,4 +161,15 @@ class ReportDestinationsBotTest < ActiveSupport::TestCase
       end
     end
   end
+
+  test "[unit] a CTO report posts through its soul bot even when the shared token is unset" do
+    configure!(TURF_KEY)
+    fake = fake_discord
+    with_fake_discord(fake) do
+      with_env("DISCORD_AGENT_BOT_TOKEN", nil) do
+        with_soul_tokens(TURF_ENV => TURF_TOKEN) { assert_equal :posted, deliver.status }
+      end
+    end
+    assert_equal [ "Bot #{TURF_TOKEN}" ], fake.posts.map { |p| p[:auth] }
+  end
 end

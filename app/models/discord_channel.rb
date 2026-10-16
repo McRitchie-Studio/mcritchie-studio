@@ -1,4 +1,4 @@
-# One Discord channel or active thread the agents' bot can see, mirrored by
+# One Discord channel or active thread the shared agents' bot can see, mirrored by
 # DiscordChannelSyncJob (docs/agents/system/report-destinations.md). Ids are
 # Discord snowflakes, kept as strings. A channel the sync stops seeing is
 # archived, never deleted, so a ReportDestination pointing at it never dangles.
