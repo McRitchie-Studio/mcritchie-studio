@@ -281,7 +281,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000500) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.index ["user_id"], name: "index_agent_people_on_user_id", unique: true
-    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying, 'team'::character varying, 'client'::character varying, 'public'::character varying]::text[])", name: "agent_people_role_known"
+    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying::text, 'team'::character varying::text, 'client'::character varying::text, 'public'::character varying::text])", name: "agent_people_role_known"
   end
 
   create_table "agent_person_identities", force: :cascade do |t|
