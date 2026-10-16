@@ -171,10 +171,16 @@ Then apply it where it is used from the item itself
 (`op read 'op://<vault>/<item>/<field>' | …`), never from a copy.
 
 **Fallback, only when the app is out of reach** (the value must go straight into
-a command on his machine): hand him `read -rs T` (`-r` keeps a backslash
-intact; without it `read` corrupts silently) and the apply command with `$T`
-where the value goes, and keep `T` set until section 6's read-back has
-digested it. Transcript and history then hold the literal `$T`, never the value.
+a command on his machine), hand him this two-step for HIS terminal:
+
+```bash
+read -rs T       # he pastes the secret, screen stays blank (-r: a backslash
+                 # in the token survives; without it read corrupts silently)
+# then the apply command, interpolating $T where the value goes
+```
+
+Keep `T` set until section 6's read-back has digested it. Transcript and history
+then hold the literal `$T`, never the value.
 
 For the reverse direction (a value he must paste into a UI), put it on his
 clipboard (`printf '%s' "$VALUE" | pbcopy`) and clear the clipboard after
