@@ -15,7 +15,8 @@ module AgentMailbox
   # ONE SOUL, ONE CATALOG. Only a domain's `soul` (its front door) has a
   # catalog. Another soul mapped to the domain under `souls:` gets the domain's
   # doc and nothing it can propose. A proposal is checked against the
-  # proposing soul's OWN domain, so Xan cannot propose a Turf query.
+  # proposing soul's OWN domain, so Avi cannot propose a Turf query (and Xan,
+  # mapped to a domain with no catalog, proposes nothing).
   #
   # THE AUDIENCE GATE is AgentMailbox::Audience (bin/lib/agent_audience.rb):
   # requesting a kind needs Audience#may?(:propose_<kind>) AND the capability's

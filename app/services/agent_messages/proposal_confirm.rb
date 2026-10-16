@@ -11,8 +11,9 @@ module AgentMessages
   #   role) → stored `held` with a `confirm_refused` event. Nothing posts, nothing runs.
   #   proposal past expires_at → `expired`; the reply says so.
   #   the word replies to a proposal that is no longer open (superseded, run,
-  #   dropped) → nothing changes; the reply says so. A reply to a specific
-  #   proposal's message never confirms a different one.
+  #   dropped) → nothing changes; the reply says so (still running, already
+  #   ran, or nothing ran). A reply to a specific proposal's message never
+  #   confirms a different one.
   #   go      → `confirmed`; AgentProposalJob runs it and posts the result.
   #   no      → `rejected`; the reply says it was dropped.
   #   change: → `rejected` (change requested) and the message goes to the soul
@@ -30,6 +31,14 @@ module AgentMessages
     EXPIRED_TEXT = "That proposal expired after 24 hours, so nothing ran. Ask again and I will offer it fresh.".freeze
     DROPPED_TEXT = "Dropped. Nothing will run.".freeze
     CLOSED_TEXT = "That proposal is no longer open, so nothing ran. Reply to the newest one, or ask again.".freeze
+    # A word on a proposal already confirmed: it IS running (or ran), so "nothing
+    # ran" would be false. The word changes nothing either way.
+    RUNNING_TEXT = "That proposal is already confirmed and running. Its result will post in this thread.".freeze
+    RAN_TEXT = "That proposal already ran; its result is above. Nothing ran a second time.".freeze
+    # A word on a confirmed proposal whose run went quiet past the claim's TTL: the
+    # word re-queues it (the job's claim guard keeps it to one run).
+    RETRY_TEXT = "That proposal was confirmed but its run went quiet, so I am starting it again. " \
+                 "Its result will post in this thread.".freeze
 
     # [:go] / [:no] / [:change, "the change"] / nil.
     def self.intent(content)
@@ -53,7 +62,8 @@ module AgentMessages
       audience = AgentProposal.audience_for(person)
       return refused!(attrs, person, source, audience) unless audience.may?(:confirm_proposal)
       return expired!(attrs, source) if @proposal.expired?(@now)
-      return answered!(attrs, source, CLOSED_TEXT, nil, "proposal_closed", @intent.first.to_s) unless @proposal.status == "proposed"
+      return stalled!(attrs, source) if @intent.first == :go && stalled?
+      return answered!(attrs, source, closed_text, nil, "proposal_closed", @intent.first.to_s) unless @proposal.status == "proposed"
 
       case @intent.first
       when :go then go!(attrs, source)
@@ -114,5 +124,32 @@ module AgentMessages
     end
 
     def settler(message) = "person:#{message.person_id}"
+
+    # Confirmed, and neither claimed nor confirmed within the job's claim TTL: its
+    # run died or its job was lost. (The job's own recheck covers a death after
+    # the claim; this covers anything that recheck missed.)
+    def stalled?
+      return false unless @proposal.status == "confirmed"
+
+      stamp = @proposal.result.to_h["claimed_at"].presence
+      since = stamp ? Time.zone.parse(stamp.to_s) : @proposal.settled_at
+      since.nil? || since <= @now - AgentProposalJob::CLAIM_TTL
+    rescue ArgumentError
+      true
+    end
+
+    def stalled!(attrs, source)
+      message, = answered!(attrs, source, RETRY_TEXT, nil, "proposal_closed", "#{@intent.first}: rerun")
+      [ message, [ [ AgentMessageReplyJob, message.id ], [ AgentProposalJob, @proposal.id ] ] ]
+    end
+
+    # The reply to a word on a proposal that is not open, true to its status.
+    def closed_text
+      case @proposal.status
+      when "confirmed" then RUNNING_TEXT
+      when "executed" then RAN_TEXT
+      else CLOSED_TEXT
+      end
+    end
   end
 end

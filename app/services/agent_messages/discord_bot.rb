@@ -9,7 +9,12 @@ module AgentMessages
   # (docs/agents/system/agent-message-loop.md).
   #
   # The token is DISCORD_AGENT_BOT_TOKEN (1Password `agents.discord.xan`, field
-  # `bot-token`). It is sent only in the Authorization header and never logged.
+  # `bot-token`): the SHARED bot, the one reader and the default writer. A soul
+  # with its own Discord app replies through it instead when
+  # DISCORD_BOT_TOKEN_<SOUL> is set (`soul_token`, e.g. DISCORD_BOT_TOKEN_AVI,
+  # DISCORD_BOT_TOKEN_TURF_MONSTER, DISCORD_BOT_TOKEN_TYRION). A token is sent
+  # only in the Authorization header: never logged, never in an exception
+  # message, and `inspect` redacts it.
   #
   # `transport` is the one seam tests replace: a callable taking
   # (method, url, headers, body) and returning [status, body_string]. No test
@@ -21,7 +26,13 @@ module AgentMessages
     CONTENT_LIMIT = 2000
     PAGE_LIMIT = 100
 
+    # The per-soul reply token's ENV prefix; the soul slug, upcased, completes it.
+    SOUL_TOKEN_PREFIX = "DISCORD_BOT_TOKEN_".freeze
+
     Error = Class.new(StandardError)
+    # 401 or 403: a bad token, a bot not in the guild, or a missing channel
+    # permission. Retrying the same bot cannot help.
+    Unauthorized = Class.new(Error)
     class RateLimited < Error
       attr_reader :retry_after
 
@@ -35,6 +46,19 @@ module AgentMessages
 
     def self.token = ENV[TOKEN_ENV].to_s.strip.presence
     def self.configured? = !token.nil?
+
+    # The ENV name holding `soul`'s own bot token: DISCORD_BOT_TOKEN_TURF_MONSTER
+    # for turf_monster. Only letters, digits and underscores survive.
+    def self.soul_token_env(soul)
+      "#{SOUL_TOKEN_PREFIX}#{soul.to_s.upcase.gsub(/[^A-Z0-9]+/, '_')}"
+    end
+
+    # `soul`'s own bot token, or nil when its var is absent or blank.
+    def self.soul_token(soul)
+      return nil if soul.blank?
+
+      ENV[soul_token_env(soul)].to_s.strip.presence
+    end
 
     def initialize(token: self.class.token, transport: self.class.transport)
       raise Error, "#{TOKEN_ENV} is not set" if token.blank?
@@ -142,6 +166,10 @@ module AgentMessages
       JSON.parse(body)
     end
 
+    # Never print the token: a bot in a log line, an error report or a console
+    # shows its class and nothing else.
+    def inspect = "#<#{self.class.name} token=[REDACTED]>"
+
     def self.clip(text)
       text = text.to_s
       return text if ReleaseNotes::DiscordClient.discord_length(text) <= CONTENT_LIMIT
@@ -171,8 +199,15 @@ module AgentMessages
         retry_after = (JSON.parse(body.to_s)["retry_after"] rescue nil)
         raise RateLimited, retry_after
       end
-      raise Error, "Discord refused to #{what}: HTTP #{status} #{body.to_s[0, 300]}"
+      detail = "Discord refused to #{what}: HTTP #{status} #{redact(body.to_s)[0, 300]}"
+      raise Unauthorized, detail if [ 401, 403 ].include?(status)
+
+      raise Error, detail
     end
+
+    # Belt and braces: Discord's error bodies do not echo the token, but nothing
+    # this class raises may carry it even if one did.
+    def redact(text) = @token.present? ? text.gsub(@token, "[REDACTED]") : text
 
     def net_http(method, url, headers, body)
       uri = URI(url)
