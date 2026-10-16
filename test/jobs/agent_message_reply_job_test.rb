@@ -237,6 +237,29 @@ class AgentMessageReplyJobTest < ActiveJob::TestCase
     assert_equal "posted", message.reload.reply_status
   end
 
+  # Only a refusal falls back: a timeout may have posted already, and the shared
+  # bot's nonce cannot dedupe a message the soul's bot created.
+  test "[unit] a soul bot timeout retries the SAME bot and nonce, never the shared bot" do
+    message = completed_message
+    posts = []
+    transport = lambda do |method, url, headers, body|
+      posts << [ headers["Authorization"], JSON.parse(body)["nonce"] ]
+      raise AgentMessages::DiscordBot::Error, "Discord unreachable: Net::ReadTimeout" if posts.size == 1
+
+      recording_transport([]).call(method, url, headers, body)
+    end
+    with_tokens do
+      with_transport(transport) do
+        assert_raises(AgentMessages::DiscordBot::Error) { AgentMessageReplyJob.new.perform(message.id) }
+        AgentMessageReplyJob.new.perform(message.id)
+      end
+    end
+    nonce = "agentmsg-#{message.id}"
+    assert_equal [ [ "Bot #{AVI_TOKEN}", nonce ], [ "Bot #{AVI_TOKEN}", nonce ] ], posts
+    assert_not message.reload.events.exists?(kind: "reply_bot_refused")
+    assert_equal "soul_bot", message.events.last.detail["via"]
+  end
+
   test "[unit] refused with no shared bot set: failed and recorded, never dropped silently" do
     message = completed_message
     with_tokens(shared: nil) do
