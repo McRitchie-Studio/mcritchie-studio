@@ -9,7 +9,8 @@
 #   Reply-To     team@mcritchie.studio, so the next turn comes back through the inbound
 #   Subject      "Re: <subject>"
 #   In-Reply-To  the answered mail's Message-ID; References its References plus it
-#   Message-ID   reply_message_id(message), so a reply to this answer can name it
+#   Message-ID   reply_message_id(message), stored as reply_external_id, so a
+#                reply to this answer can name it
 #   Auto-Submitted: auto-replied (RFC 3834), and X-McRitchie-Agent: <soul>, which
 #                AgentMessages::EmailLoopGuard reads so we never answer ourselves
 #
@@ -17,7 +18,9 @@
 class AgentReplyMailer < ApplicationMailer
   REFERENCES_KEPT = 20
 
-  def self.reply_message_id(message) = "agentmsg-#{message.id}.#{message.reply_nonce.presence || 'reply'}@mcritchie.studio"
+  # Stable across outbox retries (it is rendered again on each try): the row's id
+  # and its creation second, so two databases' row 12 do not share one id.
+  def self.reply_message_id(message) = "agentmsg-#{message.id}.#{message.created_at.to_i}@mcritchie.studio"
 
   def self.subject_for(subject)
     base = subject.to_s.strip

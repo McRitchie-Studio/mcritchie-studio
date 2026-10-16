@@ -818,7 +818,7 @@ row's `reply_nonce` as Resend's idempotency key.
 | Reply-To | `team@mcritchie.studio`, so the next turn comes back through the inbound |
 | Subject | `Re: <subject>` |
 | In-Reply-To, References | the answered mail's Message-ID; its References plus that id (20 kept) |
-| Message-ID | `agentmsg-<id>.<nonce>@mcritchie.studio`, stored as `reply_external_id`. If Resend replaces it, the thread still joins through References |
+| Message-ID | `agentmsg-<id>.<created second>@mcritchie.studio`, stored as `reply_external_id`. If Resend replaces it, the thread still joins through References |
 | Auto-Submitted, X-McRitchie-Agent | `auto-replied` and the soul, so no auto-responder answers us and we never answer ourselves |
 
 The body is plain text: the answer with markdown bold removed, then a `-- `
