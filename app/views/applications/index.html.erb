@@ -1,0 +1,25 @@
+<%# /applications: the apps this viewer owns (every app for an admin), each with its CTO. docs/agents/system/app-owners.md %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="applications-page">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Applications</h1>
+    <p class="text-secondary mt-2">
+      <%= AppOwnership.admin?(current_user) ? "Every app on the platform. Owners see only their own." : "The apps you own. Open one to see its health and its CTO." %>
+    </p>
+  </div>
+
+  <div class="grid gap-3">
+    <% @apps.each do |app| %>
+      <% cto = @ctos[app.slug] %>
+      <div class="card p-4 flex items-center gap-3 min-w-0" data-test="application-row" data-app="<%= app.slug %>">
+        <%= render "applications/app_badge", app: app %>
+        <div class="min-w-0 flex-1">
+          <%= link_to app.name, application_path(app.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
+          <% if app.description.present? %><p class="text-secondary text-sm truncate"><%= app.description %></p><% end %>
+        </div>
+        <% if cto %>
+          <%= link_to "CTO: #{cto.display_name}", settings_agent_path(cto.slug), class: "btn btn-secondary btn-sm shrink-0", data: { test: "application-cto-link" } %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</section>

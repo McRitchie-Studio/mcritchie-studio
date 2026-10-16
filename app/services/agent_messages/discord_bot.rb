@@ -113,6 +113,18 @@ module AgentMessages
       JSON.parse(body)
     end
 
+    # Show the bot as typing in `channel_id` (POST /channels/{id}/typing, 204, no
+    # body). Discord shows the indicator for about ten seconds, or until the bot
+    # posts a message there, so a caller that wants it held re-sends it; the
+    # agent mailbox does that every few seconds while an answer runs
+    # (AgentMessageTypingJob). Raises like every call here: Unauthorized on
+    # 401/403, RateLimited on 429.
+    def trigger_typing(channel_id)
+      status, body = request(:post, "/channels/#{channel_id}/typing")
+      check!(status, body, "show typing in channel #{channel_id}")
+      true
+    end
+
     # Post a standalone message (no reply reference) into `channel_id`: the floor
     # alert's ops notice. Same once-guard as a reply (nonce + enforce_nonce), and
     # it pings nobody: allowed_mentions parses nothing.
@@ -214,7 +226,8 @@ module AgentMessages
       klass = method == :post ? Net::HTTP::Post : Net::HTTP::Get
       req = klass.new(uri)
       headers.each { |k, v| req[k] = v }
-      req.body = body if body
+      # A POST with no payload (typing) still says Content-Length: 0.
+      req.body = body || "" if body || method == :post
       res = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 15) { |http| http.request(req) }
       [ res.code.to_i, res.body.to_s ]
     rescue SocketError, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e

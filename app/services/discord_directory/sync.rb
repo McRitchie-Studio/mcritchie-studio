@@ -16,6 +16,14 @@ module DiscordDirectory
   # be read, it falls back to true for every message kind (text, announcement,
   # thread), and the summary says so.
   #
+  # `postable_souls` lists the CTO souls (config/cto_reports.yml) whose OWN bot,
+  # DISCORD_BOT_TOKEN_<SOUL>, can post a report there: VIEW_CHANNEL, SEND_MESSAGES
+  # (or SEND_MESSAGES_IN_THREADS) and EMBED_LINKS, read as that bot's member
+  # roles against the same overwrites. No permissive fallback here: a soul bot
+  # whose membership cannot be read (not in the guild, a bad token) is offered no
+  # channel, and the summary says so. The owner's channel picker reads this
+  # column (docs/agents/system/app-owners.md), so a page load never calls Discord.
+  #
   # A guild whose channel list cannot be read is left exactly as it was. A guild
   # whose thread list cannot be read still syncs its channels, and archives no
   # thread.
@@ -46,10 +54,24 @@ module DiscordDirectory
       (config.dig("discord", "guilds") || {}).keys.map(&:to_s)
     end
 
-    def initialize(bot: AgentMessages::DiscordBot.new, guild_ids: self.class.guild_ids, clock: -> { Time.current })
+    # soul => DiscordBot for each CTO soul whose own token is set. The tokens
+    # stay inside the bots.
+    def self.soul_bots(config = CtoReport.config)
+      souls = config.values.filter_map { |row| row.is_a?(Hash) ? row["soul"].to_s.presence : nil }.uniq
+      souls.filter_map do |soul|
+        token = AgentMessages::DiscordBot.soul_token(soul)
+        [ soul, AgentMessages::DiscordBot.new(token: token) ] if token
+      end.to_h
+    end
+
+    def initialize(bot: AgentMessages::DiscordBot.new, guild_ids: self.class.guild_ids, clock: -> { Time.current },
+                   soul_bots: self.class.soul_bots)
       @bot = bot
       @guild_ids = guild_ids
       @clock = clock
+      @soul_bots = soul_bots
+      @roles = {}
+      @soul_user_ids = {}
     end
 
     def call
@@ -78,10 +100,11 @@ module DiscordDirectory
         nil
       end
       permissions = permissions_for(guild_id, summary)
+      soul_permissions = soul_permissions_for(guild_id, summary)
 
       by_id = channels.index_by { |c| c["id"].to_s }
-      rows = channels.filter_map { |c| row(guild_id, c, by_id, permissions, now) }
-      rows += Array(threads).filter_map { |t| row(guild_id, t, by_id, permissions, now) }
+      rows = channels.filter_map { |c| row(guild_id, c, by_id, permissions, soul_permissions, now) }
+      rows += Array(threads).filter_map { |t| row(guild_id, t, by_id, permissions, soul_permissions, now) }
 
       DiscordChannel.transaction do
         DiscordChannel.upsert_all(rows, unique_by: %i[guild_external_id external_id]) if rows.any?
@@ -92,7 +115,7 @@ module DiscordDirectory
       summary.upserted += rows.size
     end
 
-    def row(guild_id, channel, by_id, permissions, now)
+    def row(guild_id, channel, by_id, permissions, soul_permissions, now)
       kind = KIND_BY_TYPE[channel["type"].to_i]
       return nil unless kind
 
@@ -106,6 +129,7 @@ module DiscordDirectory
         category_name: category_name(kind, channel, parent, by_id),
         position: channel["position"],
         postable: postable?(kind, channel, parent, permissions),
+        postable_souls: soul_permissions.select { |_soul, perms| postable?(kind, channel, parent, perms, embeds: true) }.keys.sort,
         archived_at: nil,
         synced_at: now
       }
@@ -120,7 +144,7 @@ module DiscordDirectory
       nil
     end
 
-    def postable?(kind, channel, parent, permissions)
+    def postable?(kind, channel, parent, permissions, embeds: false)
       return false unless DiscordChannel::MESSAGE_KINDS.include?(kind)
       return false if kind == "thread" && channel.dig("thread_metadata", "locked")
       return true if permissions.nil? # roles unreadable: the documented fallback
@@ -130,20 +154,34 @@ module DiscordDirectory
         # not say whether the bot is one, so it is not offered.
         return false if channel["type"].to_i == PRIVATE_THREAD
 
-        permissions.can_post?(parent&.dig("permission_overwrites"), thread: true)
+        permissions.can_post?(parent&.dig("permission_overwrites"), thread: true, embeds: embeds)
       else
-        permissions.can_post?(channel["permission_overwrites"])
+        permissions.can_post?(channel["permission_overwrites"], embeds: embeds)
       end
     end
 
     def permissions_for(guild_id, summary)
       @bot_user_id ||= @bot.current_user["id"].to_s
       member = @bot.guild_member(guild_id, @bot_user_id)
-      Permissions.new(guild_id: guild_id, roles: @bot.guild_roles(guild_id),
+      Permissions.new(guild_id: guild_id, roles: guild_roles(guild_id),
                       member_role_ids: member["roles"], user_id: @bot_user_id)
     rescue AgentMessages::DiscordBot::Error => e
       summary.notes << "guild #{guild_id}: permissions unreadable (#{e.message[0, 120]}), every message channel marked postable"
       nil
+    end
+
+    def guild_roles(guild_id) = (@roles[guild_id] ||= @bot.guild_roles(guild_id))
+
+    # soul => Permissions for each soul bot that can read its own membership.
+    def soul_permissions_for(guild_id, summary)
+      @soul_bots.each_with_object({}) do |(soul, bot), map|
+        user_id = (@soul_user_ids[soul] ||= bot.current_user["id"].to_s)
+        member = bot.guild_member(guild_id, user_id)
+        map[soul] = Permissions.new(guild_id: guild_id, roles: guild_roles(guild_id),
+                                    member_role_ids: member["roles"], user_id: user_id)
+      rescue AgentMessages::DiscordBot::Error => e
+        summary.notes << "guild #{guild_id}: #{soul}'s own bot cannot read its membership (#{e.message[0, 120]}), so it is offered no channel"
+      end
     end
   end
 end

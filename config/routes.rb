@@ -410,8 +410,21 @@ Rails.application.routes.draw do
   # The cross-session, filterable activity feed reimagined under the agents surface.
   # `collection` so /agents/activities routes to #activities instead of #show
   # (param :slug would otherwise swallow "activities" as an agent slug).
+  # App owners (docs/agents/system/app-owners.md): an owner's apps and their
+  # CTOs' settings. Signed-in (AdminWall::SIGNED_IN); each action answers 404
+  # unless the viewer owns that app or is an admin.
+  resources :applications, only: [:index, :show], param: :slug do
+    member { get :health }
+  end
+
   resources :agents, only: [:index, :show], param: :slug do
+    member do
+      get :settings, to: "agent_settings#show"
+      patch :settings, to: "agent_settings#update"
+    end
     collection do
+      # /agents/settings: the CTOs an owner may set (before :show swallows "settings").
+      get :settings, to: "agent_settings#index"
       get :activities
       # The activity feed's session-filter list is its OWN endpoint so the heavy
       # cross-session scan (session_filter_options) lazy-loads into the sidebar's
@@ -738,6 +751,7 @@ Rails.application.routes.draw do
           post :complete
           post :release
           post :renew
+          post :typing
         end
       end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).

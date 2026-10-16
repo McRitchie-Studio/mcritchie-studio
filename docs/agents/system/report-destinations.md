@@ -53,6 +53,12 @@ key has a card with:
 `updated_by`). Until a channel is saved, every `deliver` for that key answers
 `:not_configured` and posts nothing.
 
+**App owners pick their CTO's channel too.** An app's owner sets the same row for
+their own `cto_report:<domain>` key at `/agents/:slug/settings`, from a picker
+holding only the channels that CTO's bot can post in
+([`app-owners.md`](app-owners.md)). This page and that one write one row; the last
+save wins.
+
 **The channel directory.** `discord_channels` mirrors every channel and active
 thread of each guild listed under `discord.guilds` in `config/agent_routes.yml`.
 It holds the name, kind, category, position and postable, and whether the channel
@@ -71,6 +77,10 @@ is archived.
   destination on an archived or no-longer-postable channel answers
   `:not_configured` until the sync sees it postable again or Alex picks another.
   The page keeps it selected, marked unavailable, so a Save does not clear it.
+- **Per CTO bot.** `postable_souls` lists the CTO souls whose own bot
+  (`DISCORD_BOT_TOKEN_<SOUL>` set) has View Channel, Send Messages and Embed Links
+  there, read on the same sync. The owner's picker reads it
+  ([`app-owners.md`](app-owners.md)).
 - **Inert without the token.** With `DISCORD_AGENT_BOT_TOKEN` unset the sync logs
   one line and reads nothing.
 

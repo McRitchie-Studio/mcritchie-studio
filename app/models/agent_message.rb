@@ -54,6 +54,13 @@ class AgentMessage < ApplicationRecord
   # message alive forever.
   MAX_REFUNDS = 3
 
+  # How long after a claim the replying bot may still show "typing…"
+  # (AgentMessageTypingJob). bin/dispatcher re-sends typing every few seconds
+  # while its run lives; past this the board refuses another pulse, so a wedged
+  # run can never type forever. Shorter than a long answer may take: such an
+  # answer types for three minutes and then posts without it.
+  TYPING_CAP = 180
+
   # Caps on what a worker reports about its Claude run (complete!'s `run`).
   RUN_LIMITS = { claude_session_id: 100, claude_cwd: 500, reasoning: 20_000 }.freeze
   RUN_META_KEYS = %w[thinking_tokens output_tokens num_turns duration_ms model reasoning_source].freeze
@@ -372,6 +379,23 @@ class AgentMessage < ApplicationRecord
 
   def record!(kind, actor: nil, detail: {})
     events.create!(kind: kind, actor: actor, detail: detail, created_at: Time.current)
+  end
+
+  # Why the bot must NOT show typing for this message now, or nil when it may.
+  # Typing is a promise that an answer is coming, so it is shown only for a
+  # Discord message `worker` holds the claim on (a claim is taken only for a
+  # message the board will answer) whose sender is still answered
+  # (AgentMessages::Answerers, or a hold an admin released), and only within
+  # TYPING_CAP of the claim. "not_holder" is the caller's error; the rest are
+  # quiet skips.
+  def typing_refusal(worker:, now: Time.current, answerers: AgentMessages::Answerers.current)
+    worker = worker.to_s.strip
+    return "not_holder" unless status == "claimed" && worker.present? && claimed_by == worker
+    return "not_discord" unless channel == "discord" && channel_ref.present?
+    return "not_answered" unless hold_released_at.present? || answerers.allowed?(person)
+    return "capped" if claimed_at.nil? || now - claimed_at > TYPING_CAP
+
+    nil
   end
 
   def unrouted? = status == "unrouted"

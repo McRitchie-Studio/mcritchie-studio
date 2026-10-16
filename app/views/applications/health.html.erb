@@ -1,0 +1,31 @@
+<%# The health frame for /applications/:slug: counts only, from the central health report, for the day ending at the last 07:00 Denver. %>
+<%= turbo_frame_tag "application-health" do %>
+  <% if @health.nil? %>
+    <p class="text-secondary" data-test="application-health" data-state="not_reported">This app is not in the daily health report.</p>
+  <% elsif @health.not_wired? %>
+    <p class="text-secondary" data-test="application-health" data-state="not_wired">Not connected yet: the hub holds no health token for this app.</p>
+  <% elsif @health.unreachable? %>
+    <p class="text-warning-ink" data-test="application-health" data-state="unreachable">Could not read the health report just now. The next try is within 15 minutes.</p>
+  <% else %>
+    <% category = @health.category %>
+    <div class="space-y-2" data-test="application-health" data-state="<%= category %>">
+      <% case category %>
+      <% when :errors %>
+        <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40">Errors to look at</span>
+      <% when :activity %>
+        <span class="badge text-xs bg-success/10 text-success-ink border-success/40">Healthy, with activity</span>
+      <% else %>
+        <span class="badge text-xs bg-success/10 text-success-ink border-success/40">Healthy and quiet</span>
+      <% end %>
+      <ul class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <% Array(@health.sections).each do |section| %>
+          <li class="rounded-md border border-subtle bg-inset px-3 py-2" data-test="application-health-section" data-key="<%= section[:key] %>">
+            <span class="block text-muted text-xs"><%= section[:title] %></span>
+            <span class="block font-semibold text-heading"><%= section[:failure].present? ? "unreadable" : section[:count] %></span>
+          </li>
+        <% end %>
+      </ul>
+      <p class="text-muted text-xs">The day ending <%= @ending.in_time_zone(DailyAppReport::ZONE).strftime("%a %b %-d, %-l:%M %p %Z") %>.</p>
+    </div>
+  <% end %>
+<% end %>

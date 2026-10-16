@@ -263,6 +263,41 @@ module Api
         assert_equal "dead", statuses.last
         assert_equal AgentMessage::MAX_REFUNDS, message.reload.usage_refunds
       end
+
+      # --- typing (bin/dispatcher's pulse) -----------------------------------
+
+      test "typing queues one pulse for the holder, 409s anyone else, and says capped past the cap" do
+        message = agent_message!
+        post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
+
+        assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1" ]) do
+          post typing_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
+        end
+        assert_response :success
+        assert_equal "queued", response.parsed_body.dig("meta", "typing")
+
+        assert_no_enqueued_jobs(only: AgentMessageTypingJob) do
+          post typing_api_v1_agent_message_url(message), params: { worker: "d2" }, headers: @shared, as: :json
+        end
+        assert_response :conflict
+        assert_equal "NOT_HOLDER", response.parsed_body["error_code"]
+
+        travel_to(message.reload.claimed_at + AgentMessage::TYPING_CAP + 1) do
+          assert_no_enqueued_jobs(only: AgentMessageTypingJob) do
+            post typing_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
+          end
+        end
+        assert_response :success
+        assert_equal "capped", response.parsed_body.dig("meta", "typing")
+      end
+
+      test "typing for a message nobody claimed is refused and queues nothing" do
+        message = agent_message!
+        assert_no_enqueued_jobs(only: AgentMessageTypingJob) do
+          post typing_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
+        end
+        assert_response :conflict
+      end
     end
   end
 end

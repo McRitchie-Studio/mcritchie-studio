@@ -1,0 +1,28 @@
+<%# /agents/settings: the CTOs this viewer may set (every CTO for an admin). docs/agents/system/app-owners.md %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="agent-settings-index">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Agents</h1>
+    <p class="text-secondary mt-2">Each app's CTO. Open one to choose where its daily report posts.</p>
+  </div>
+
+  <div class="grid gap-3">
+    <% @ctos.each do |cto| %>
+      <% app = @apps[cto.app_slug] %>
+      <% destination = @destinations[cto.report_key] %>
+      <div class="card p-4 flex items-center gap-3 min-w-0" data-test="agent-settings-row" data-agent="<%= cto.slug %>">
+        <%= render "applications/cto_avatar", cto: cto %>
+        <div class="min-w-0 flex-1">
+          <%= link_to cto.display_name, settings_agent_path(cto.slug), class: "font-semibold text-heading hover:underline", data: { test: "agent-settings-link" } %>
+          <p class="text-secondary text-sm truncate">
+            <%= app ? "#{app.name}'s CTO" : "CTO" %> ·
+            <% if destination&.discord_channel && destination.enabled? %>
+              reports to <%= destination.discord_channel.display_name %>
+            <% else %>
+              no daily report yet
+            <% end %>
+          </p>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</section>
