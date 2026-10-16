@@ -81,6 +81,25 @@ class CtoReportTest < ActiveSupport::TestCase
     assert_equal 1, fetcher.calls.size
   end
 
+  test "[integration] each report carries its own domain's answers in the window, and only those" do
+    turf_answer = AgentMessage.create!(channel: "discord", external_id: "cto-usage-1", channel_ref: "c", thread_key: "t1",
+                                       soul_slug: "turf_monster", status: "completed", completed_at: ENDING - 2.hours,
+                                       content: "x", run_meta: { "input_tokens" => 40, "output_tokens" => 2, "duration_ms" => 1_500 })
+    AgentMessage.create!(channel: "discord", external_id: "cto-usage-2", channel_ref: "c", thread_key: "t2",
+                         soul_slug: "turf_monster", status: "completed", completed_at: ENDING - 2.days, content: "x",
+                         run_meta: { "input_tokens" => 999 })
+    fetcher = FakeFetcher.new(@turf.production_url => health_body(signups: 2))
+    capture_deliveries do |calls|
+      CtoReport.run(ending: ENDING, fetcher: fetcher, env: { "HEALTH_TOKEN_TURF_MONSTER" => "t" }, logger: logger_into([]),
+                    entries: entries)
+      turf = calls.find { |c| c[:key] == "cto_report:turf_monster" }[:content]
+      hub = calls.find { |c| c[:key] == "cto_report:mcritchie_studio" }[:content]
+      assert_includes turf, "Agent usage, the day: 1 answer, 42 tokens (in 40 · cache read 0 · cache write 0 · out 2), $0.00, avg 1.5s."
+      assert_includes hub, "Agent usage, the day: no answers."
+    end
+    assert turf_answer.persisted?
+  end
+
   test "[unit] the shared memo: an app the combined report already read is not fetched again" do
     fetcher = FakeFetcher.new({})
     read = DailyAppReport.from_json(@turf, health_body(errors: 3, groups: [ [ "Foo", "x", 3 ] ]))

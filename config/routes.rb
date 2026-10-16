@@ -414,7 +414,13 @@ Rails.application.routes.draw do
   # CTOs' settings. Signed-in (AdminWall::SIGNED_IN); each action answers 404
   # unless the viewer owns that app or is an admin.
   resources :applications, only: [:index, :show], param: :slug do
-    member { get :health }
+    member do
+      get :health
+      # CTO usage (docs/agents/system/agent-usage.md): the meter as JSON, and
+      # the admin's tier and cap-lift form.
+      get :usage
+      patch :usage_cap
+    end
   end
 
   resources :agents, only: [:index, :show], param: :slug do

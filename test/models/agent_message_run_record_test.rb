@@ -18,6 +18,20 @@ class AgentMessageRunRecordTest < ActiveSupport::TestCase
     assert_equal({ claude_session_id: nil, claude_cwd: nil, reasoning: nil, run_meta: {} }, AgentMessage.run_record(nil))
   end
 
+  test "a numeric run key keeps only a finite, non-negative number; audience is the board's stamp" do
+    record = AgentMessage.run_record(
+      "run_meta" => { "input_tokens" => "999999", "output_tokens" => -5, "total_cost_usd" => 0.02,
+                      "cache_read_tokens" => Float::INFINITY, "audience" => "owner" }
+    )
+    assert_equal({ "total_cost_usd" => 0.02 }, record[:run_meta])
+
+    person = AgentPerson.create!(display_name: "C", role: "client", client_domain: "turf_monster")
+    message = agent_message!(soul: "xan", person: person)
+    AgentMessage.claim!(soul: "xan", worker: "w1")
+    message.reload.complete!(worker: "w1", response_text: "hi", run: { run_meta: { "audience" => "owner", "output_tokens" => 3 } })
+    assert_equal({ "output_tokens" => 3, "audience" => "client" }, message.reload.run_meta)
+  end
+
   test "complete! stores the run, and the resume line quotes the folder and refuses an odd session id" do
     message = agent_message!(soul: "xan")
     AgentMessage.claim!(soul: "xan", worker: "w1")

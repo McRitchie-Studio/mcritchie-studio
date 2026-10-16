@@ -13,7 +13,7 @@ module AgentProposals
   # Counts only, as the daily app report: no names or emails, and error
   # classes without their messages.
   module Queries
-    NAMES = %w[board_status recently_shipped release_status app_health].freeze
+    NAMES = %w[board_status recently_shipped release_status app_health usage].freeze
     # The accepted → release → main ladder, in order (Task::DEPLOY_STAGES before shipped).
     LADDER_STAGES = %w[submitted reviewed assembled].freeze
     SHIPPED_LISTED = 15
@@ -34,6 +34,7 @@ module AgentProposals
       when "recently_shipped" then recently_shipped(days: params.fetch("days", 7).to_i, now: now)
       when "release_status" then release_status
       when "app_health" then app_health(app, days: params.fetch("days", 1).to_i, fetcher: fetcher, env: env, now: now)
+      when "usage" then usage(app, now: now)
       end
     end
 
@@ -76,6 +77,21 @@ module AgentProposals
       shipped_at = last && (last.shipped_at || last.created_at)
       last_line = last ? " Last shipped: `#{last.slug}` (#{shipped_at.in_time_zone(DailyAppReport::ZONE).strftime('%b %-d')})." : ""
       "#{now_line} Ladder: #{ladder}.#{last_line}"
+    end
+
+    # The domain's CTO usage this month and today, and the app's allowance
+    # (AgentUsage, docs/agents/system/agent-usage.md). Every answer counts in the
+    # totals; only client and public answers count against the allowance. The
+    # suggestion and its price are the meter's, from config, never the model's.
+    def usage(slug, now:)
+      app = App.find_by(slug: slug.to_s)
+      raise Unavailable, "#{slug.inspect} has no app record" unless app
+
+      meter = AgentUsage.meter(app, now: now)
+      today = AgentUsage.daily(meter.domain, days: 1, now: now).last&.last || AgentUsage::Totals.zero
+      month = now.in_time_zone(AgentUsage::ZONE).strftime("%B")
+      "#{app.name} agent usage, #{month} so far: #{AgentUsage.totals_line(meter.totals)} " \
+        "Today: #{AgentUsage.totals_line(today)} #{AgentUsage.allowance_line(meter)}"
     end
 
     # Signups and errors summed over `days` daily health-report windows (each

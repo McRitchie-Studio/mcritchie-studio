@@ -304,6 +304,21 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     assert_nil AgentMailbox::ClaudeRun.parse("plain stub text", 0, "").session_id
   end
 
+  test "the run summary carries every token kind, the CLI's cost and the model; a non-number is left out" do
+    full = ENVELOPE.merge("total_cost_usd" => 0.0421,
+                          "usage" => { "input_tokens" => 9, "cache_read_input_tokens" => 18_000,
+                                       "cache_creation_input_tokens" => 2_400, "output_tokens" => 310,
+                                       "output_tokens_details" => { "thinking_tokens" => 120 } })
+    meta = AgentMailbox::ClaudeRun.parse(JSON.generate(full), 0, "").meta
+
+    assert_equal({ "input_tokens" => 9, "cache_read_tokens" => 18_000, "cache_creation_tokens" => 2_400,
+                   "output_tokens" => 310, "thinking_tokens" => 120, "total_cost_usd" => 0.0421, "num_turns" => 1,
+                   "duration_ms" => 2030, "model" => "claude-opus-5-5" }, meta)
+    assert_equal meta.keys.sort, (meta.keys & AgentMessage::RUN_META_KEYS).sort, "every key the worker sends is one the board keeps"
+    bad = AgentMailbox::ClaudeRun.parse(JSON.generate(full.merge("total_cost_usd" => nil)), 0, "").meta
+    refute bad.key?("total_cost_usd")
+  end
+
   test "the transcript's thinking text is the reasoning; redacted or absent thinking says which" do
     home = Dir.mktmpdir("claude-home")
     dir = File.join(home, "projects", "-Users-x--agents-mailbox-xan")

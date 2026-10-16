@@ -61,9 +61,21 @@ class AgentMessage < ApplicationRecord
   # answer types for three minutes and then posts without it.
   TYPING_CAP = 180
 
+  # Candidates a single claim may answer with the usage-cap reply before it
+  # gives up for this call (the next claim carries on).
+  MAX_CAP_SKIPS = 10
+
   # Caps on what a worker reports about its Claude run (complete!'s `run`).
   RUN_LIMITS = { claude_session_id: 100, claude_cwd: 500, reasoning: 20_000 }.freeze
-  RUN_META_KEYS = %w[thinking_tokens output_tokens num_turns duration_ms model reasoning_source].freeze
+  # The run summary the worker reports (AgentMailbox::ClaudeRun.meta), the
+  # usage meter's source (AgentUsage, docs/agents/system/agent-usage.md). The
+  # NUMERIC keys keep a number only, so a worker cannot plant text where the
+  # rollup sums. `audience` is never the worker's: complete! stamps it from the
+  # sender's role on the board, and the meter counts only client and public
+  # rows against an app's allowance.
+  RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
+                        total_cost_usd num_turns duration_ms].freeze
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -166,9 +178,27 @@ class AgentMessage < ApplicationRecord
 
     soul = soul.first if soul.one?
 
-    transaction do
+    capped = []
+    result = transaction do
       dead_letter_exhausted!(now: now)
-      message = claimable(soul: soul, now: now, channel: channel).lock("FOR UPDATE SKIP LOCKED").first
+      message = nil
+      gate = nil
+      # THE USAGE GATE (AgentUsage.gate, docs/agents/system/agent-usage.md),
+      # before a run starts: a client or public message whose app is at its
+      # monthly allowance is answered here, in code, with the cap reply, and
+      # the next candidate is tried. Owner and team are never capped.
+      MAX_CAP_SKIPS.times do
+        candidate = claimable(soul: soul, now: now, channel: channel).lock("FOR UPDATE SKIP LOCKED").first
+        break unless candidate
+
+        gate = AgentUsage.gate(candidate, now: now)
+        unless gate.stop?
+          message = candidate
+          break
+        end
+        candidate.usage_capped!(gate.meter, now: now)
+        capped << candidate.id
+      end
       next ClaimResult.new(message: nil, reason: "nothing_waiting") unless message
 
       reclaim = message.status == "claimed"
@@ -181,8 +211,38 @@ class AgentMessage < ApplicationRecord
       message.record!("claimed", actor: actor || message.soul_slug,
                                  detail: { "worker" => worker, "attempt" => message.attempts,
                                            "lease_expires_at" => message.lease_expires_at.iso8601 })
+      if gate&.warn?
+        message.record!("usage_warned", actor: "system",
+                                        detail: { "percent" => gate.meter.percent, "app" => gate.meter.app_slug,
+                                                  "attempt" => message.attempts })
+      end
       ClaimResult.new(message: message, reason: "claimed")
     end
+    capped.each { |id| AgentMessageReplyJob.perform_later(id) }
+    result
+  end
+
+  # Answered in code at the usage cap (AgentUsage.cap_reply): completed with no
+  # run, a `usage_capped` event, the reply queued by the caller after commit.
+  # run_meta carries no tokens, only the audience and the cap mark, so the
+  # rollup neither meters nor counts it as an answered message.
+  def usage_capped!(meter, now: Time.current)
+    update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
+            response_text: AgentUsage.cap_reply(meter), action_summary: "usage cap",
+            reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
+            run_meta: { "audience" => usage_audience, "usage_capped" => true })
+    record!("usage_capped", actor: "system",
+                            detail: { "app" => meter.app_slug, "used" => meter.used, "allowance" => meter.allowance,
+                                      "suggestion" => meter.suggestion&.as_json }.compact)
+  end
+
+  # The notice a warned answer ends with, when its current claim was warned.
+  def usage_warning_line(now: Time.current)
+    warned = events.reorder(id: :desc).find_by(kind: "usage_warned")
+    return nil unless warned && warned.detail["attempt"].to_i == attempts
+
+    gate = AgentUsage.gate(self, now: now)
+    gate.meter && !gate.meter.unlimited? ? AgentUsage.warn_line(gate.meter) : nil
   end
 
   # An admin's explicit act (the Release button on /admin/agent_messages/:id,
@@ -269,10 +329,13 @@ class AgentMessage < ApplicationRecord
       update!(status: "completed", completed_at: now, lease_expires_at: nil,
               response_text: response_text.to_s, action_summary: action_summary.presence,
               reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
-              **self.class.run_record(run))
+              **usage_stamped(self.class.run_record(run)))
       stored = Array(notes).any? ? AgentPersonNote.record_from!(self, notes, now: now) : []
       if (offered = AgentProposal.record_from!(self, proposal, now: now))
         update!(response_text: "#{self.response_text}\n\n#{offered.confirm_text}")
+      end
+      if (warning = usage_warning_line(now: now))
+        update!(response_text: "#{self.response_text}\n\n#{warning}")
       end
       record!("completed", actor: actor || soul_slug,
                            detail: { "worker" => worker, "action_summary" => action_summary.presence,
@@ -364,9 +427,18 @@ class AgentMessage < ApplicationRecord
     run = (run || {}).to_h.transform_keys(&:to_sym)
     record = RUN_LIMITS.to_h { |key, cap| [ key, run[key].to_s.strip.presence&.slice(0, cap) ] }
     meta = (run[:run_meta] || {}).to_h.transform_keys(&:to_s).slice(*RUN_META_KEYS)
-    record[:run_meta] = meta.select { |_, v| v.is_a?(String) || v.is_a?(Numeric) }
+    record[:run_meta] = meta.select { |k, v| RUN_META_NUMERIC.include?(k) ? numeric?(v) : (v.is_a?(String) || v.is_a?(Numeric)) }
                             .transform_values { |v| v.is_a?(String) ? v[0, 200] : v }
     record
+  end
+
+  # A finite, non-negative number: what the usage rollup may sum.
+  def self.numeric?(value) = value.is_a?(Numeric) && value.to_f.finite? && !value.negative?
+
+  # The audience the usage meter files this answer under: the sender's role as
+  # the board knows it now (AgentPerson#role), public for a row with no person.
+  def usage_audience
+    person&.role.presence || "public"
   end
 
   # The ready line that reopens this answer's Claude session, or nil.
@@ -443,6 +515,11 @@ class AgentMessage < ApplicationRecord
     return if person_id.present? || author_ref.blank?
 
     self.person = AgentPerson.resolve!(platform: platform, external_id: author_ref, display_name: author_name)
+  end
+
+  # The run record with the board's own audience stamp on its run_meta.
+  def usage_stamped(record)
+    record.merge(run_meta: record[:run_meta].merge("audience" => usage_audience))
   end
 
   def holder_refusal(verb)

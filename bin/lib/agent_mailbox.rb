@@ -207,8 +207,9 @@ module AgentMailbox
   #               usage-limit and signed-out matchers ever read.
   #   api_status  the envelope's api_error_status (429 on a rate or usage limit).
   #   session_id  the envelope's session_id, so an operator can `claude --resume` it.
-  #   meta        a few envelope numbers: usage.output_tokens_details.thinking_tokens,
-  #               usage.output_tokens, num_turns, duration_ms, the modelUsage model.
+  #   meta        the run summary: input, cache read and cache write tokens, output
+  #               and thinking tokens, total_cost_usd, num_turns, duration_ms, and
+  #               the modelUsage model (the usage meter's source).
   #
   # The envelope carries NO reasoning text: `claude -p --output-format json`
   # reports thinking only as a token count. The text, when the model's thinking
@@ -242,11 +243,20 @@ module AgentMailbox
       id.match?(/\A[0-9A-Za-z-]{8,100}\z/) ? id : nil
     end
 
+    # The run's full summary, every number the envelope reports about cost
+    # (docs/agents/system/agent-usage.md): the four token kinds (fresh input,
+    # cache reads, cache writes, output, with thinking counted inside output),
+    # the CLI's own total_cost_usd, the wall time and the model. Scalars only;
+    # a field the envelope lacks is left out, never guessed.
     def self.meta(env)
       usage = env["usage"].is_a?(Hash) ? env["usage"] : {}
       models = env["modelUsage"].is_a?(Hash) ? env["modelUsage"].keys : []
-      { "thinking_tokens" => usage.dig("output_tokens_details", "thinking_tokens"),
-        "output_tokens" => usage["output_tokens"], "num_turns" => env["num_turns"],
+      { "input_tokens" => usage["input_tokens"],
+        "cache_read_tokens" => usage["cache_read_input_tokens"],
+        "cache_creation_tokens" => usage["cache_creation_input_tokens"],
+        "output_tokens" => usage["output_tokens"],
+        "thinking_tokens" => usage.dig("output_tokens_details", "thinking_tokens"),
+        "total_cost_usd" => env["total_cost_usd"], "num_turns" => env["num_turns"],
         "duration_ms" => env["duration_ms"], "model" => models.first }
         .select { |_, v| v.is_a?(Numeric) || v.is_a?(String) }
     end

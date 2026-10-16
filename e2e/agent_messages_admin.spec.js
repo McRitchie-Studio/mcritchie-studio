@@ -37,7 +37,9 @@ test("filter the inbox by soul and status, then open a message's timeline", asyn
 
   // The answered message: its timeline, ending in the Discord reply.
   await page.goto("/admin/agent_messages?status=completed");
-  await rows(page).first().getByRole("link", { name: /e2e release green/ }).click();
+  // Filtered by its text, not taken first: other specs' seeds (e2e/app_usage_meter.spec.js)
+  // add completed rows of their own, newer than this one.
+  await rows(page).filter({ hasText: /e2e release green/ }).first().getByRole("link", { name: /e2e release green/ }).click();
   await expect(page.getByRole("heading", { name: /Message \d+/ })).toBeVisible();
   await expect(page.locator("#am-status")).toHaveText("completed");
   const kinds = await page.locator("#am-timeline li").evaluateAll((els) => els.map((el) => el.dataset.kind));

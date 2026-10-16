@@ -8,7 +8,8 @@
 # of an app the viewer does not own does not exist for them.
 #
 #   index   /agents/settings: the CTOs the viewer may set; 404 when none
-#   show    name, avatar, app, the report channel and its on/off switch
+#   show    name, avatar, app, the report channel and its on/off switch, and the
+#           app's usage meter (AgentUsage)
 #   update  saves the channel and switch; the channel must be one the picker
 #           offers (AppOwnership.report_channels), checked here, not trusted
 #
@@ -30,6 +31,7 @@ class AgentSettingsController < ApplicationController
     @channels = AppOwnership.report_channels(@cto).to_a
     @parent_names = DiscordChannel.where(external_id: @channels.filter_map(&:parent_external_id)).pluck(:external_id, :name).to_h
     @last_delivery = ReportDelivery.where(report_key: @cto.report_key).newest_first.first
+    @meter = AgentUsage.meter(@app)
   end
 
   def update

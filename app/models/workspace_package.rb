@@ -129,6 +129,9 @@ class WorkspacePackage
   end
 
   attr_reader :key, :name, :tagline, :price_monthly, :price_label, :comp, :highlights, :cta
+  # The monthly CTO token allowance (config `cto_monthly_tokens`): a positive
+  # integer, or nil for unlimited (AgentUsage, docs/agents/system/agent-usage.md).
+  attr_reader :cto_monthly_tokens
 
   def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
@@ -144,7 +147,12 @@ class WorkspacePackage
     @card_group_names = Array(attrs["card_groups"])
     @lanes = (attrs["lanes"] || {}).transform_values { |value| value || {} }
     @annual_discount_percent = annual_discount_percent.to_i
+    tokens = attrs["cto_monthly_tokens"]
+    @cto_monthly_tokens = tokens.is_a?(Integer) && tokens.positive? ? tokens : nil
   end
+
+  # The CTO usage settings (config `cto_usage`): warn_percent and topup.
+  def self.cto_usage = config["cto_usage"] || {}
 
   def self.config = YAML.safe_load_file(CONFIG)
 

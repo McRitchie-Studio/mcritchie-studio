@@ -44,6 +44,20 @@ class CtoReport::MessageTest < ActiveSupport::TestCase
     assert_includes text, "0 shipped in the window. No release in flight."
   end
 
+  test "[unit] the usage line sits above the signature; no usage, no line" do
+    usage = AgentUsage::Totals.new(messages: 3, input_tokens: 30, cache_read_tokens: 12_000, cache_creation_tokens: 900,
+                                   output_tokens: 420, thinking_tokens: 100, cost_usd: 0.1234, duration_ms: 9_000, timed: 3)
+    text = CtoReport::Message.new(entry: turf, ending: ENDING, health: health(turf, health_body), usage: usage).content
+    lines = text.lines.map(&:chomp)
+
+    assert_equal "Agent usage, the day: 3 answers, 13,350 tokens (in 30 · cache read 12,000 · cache write 900 · out 420), " \
+                 "$0.12, avg 3.0s.", lines[-2]
+    assert_equal "— Turf", lines[-1]
+    quiet = CtoReport::Message.new(entry: turf, ending: ENDING, health: health(turf, health_body), usage: AgentUsage::Totals.zero).content
+    assert_includes quiet, "Agent usage, the day: no answers."
+    refute_includes build_message(turf, health(turf, health_body)).content, "Agent usage"
+  end
+
   test "[unit] only the hub carries a board line" do
     refute_includes build_message(turf, health(turf, health_body(signups: 2))).content, "On the board"
   end

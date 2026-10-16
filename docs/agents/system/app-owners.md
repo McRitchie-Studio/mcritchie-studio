@@ -58,10 +58,12 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 | Path | What it shows |
 |------|---------------|
 | `/applications` | The visible apps, each with its CTO |
-| `/applications/:slug` | Name, emoji and colour, health, the CTO card; owners listed for admins |
+| `/applications/:slug` | Name, emoji and colour, health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
 | `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app |
+| `/applications/:slug/usage` | The usage meter as JSON |
+| `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
 | `/agents/settings` | The visible CTOs and where each one reports |
-| `/agents/:slug/settings` | The CTO's name, avatar and app, and its report setting |
+| `/agents/:slug/settings` | The CTO's name, avatar and app, its report setting, and the app's usage meter |
 
 `/agents/:slug` stays the admin soul page (tasks, activities, docs); owners get
 the separate settings page.
@@ -73,6 +75,11 @@ hyphenated (`turf_monster` → `turf-monster`).
 **Health** comes from the central health report (`DailyAppReport.health_for`) for
 the day ending at the last 07:00 Denver. The page shows counts only. An app with
 no `HEALTH_TOKEN_<SLUG>` reads "not connected" and is never fetched.
+
+**Usage** is the CTO's answers this month, measured from each answer's run
+summary, against the monthly allowance of the app's package tier. Only client
+and public answers count against it. The allowances ship blank (unlimited) until
+Alex prices them. Detail: [`agent-usage.md`](agent-usage.md).
 
 ## The report channel
 

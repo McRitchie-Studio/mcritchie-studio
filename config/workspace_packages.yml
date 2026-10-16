@@ -30,6 +30,8 @@
 #   tagline         the one-line promise on its card
 #   price_monthly   0 renders "Free"; a number "$N/month"; blank renders `price_label`
 #                   ("Custom"), or "Pricing coming soon" without one
+#   cto_monthly_tokens  the app's monthly CTO token allowance; blank = unlimited
+#                   (see `cto_usage` below)
 #   comp            the real client the tier was worked back from. Internal: the
 #                   cards do not name clients; the admin SOP map does
 #   card_groups     the card_lanes groups this card shows, in order
@@ -89,6 +91,26 @@
 billing:
   annual_discount_percent: 10
 
+# The CTO usage meter (docs/agents/system/agent-usage.md; Phase 7 of
+# .agents/epics/domain-agents.md). Each package's `cto_monthly_tokens` is the
+# app's monthly CTO allowance: the tokens its clients' and the public's answers
+# may use in a calendar month (America/Denver), summed from each answer's run
+# summary (input + cache read + cache write + output). Blank (~) is UNLIMITED:
+# Mr. McRitchie's default of 2026-10-16 is caps present but off until he prices
+# them. Owner and team answers never count and are never capped.
+#
+#   warn_percent  a reply past this share of the allowance carries a notice
+#   topup         a token top-up offered when no higher package has a bigger
+#                 allowance; both blank = not offered (the reply says "talk to us")
+#
+# Prices come only from here and each package's price_monthly: the model never
+# names one (AgentUsage::Suggestion).
+cto_usage:
+  warn_percent: 80
+  topup:
+    tokens: ~
+    price: ~
+
 # The Google Calendar appointment page the Enterprise "Book a call" opens, in a
 # new tab. Blank until Mr. McRitchie supplies it: the button then opens the
 # studio's own booking calendar (Studio.booking_url, config/initializers/studio.rb) in the
@@ -147,6 +169,7 @@ packages:
     name: Vibe
     tagline: A real app built by our agents, live at your-app.mcritchie.studio.
     price_monthly: 0
+    cto_monthly_tokens: ~
     comp: 10and5
     card_groups: [Application]
     lanes:
@@ -158,6 +181,7 @@ packages:
     name: Builder
     tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
+    cto_monthly_tokens: ~
     comp: Cyvasse
     card_groups: [Application, Marketing]
     lanes:
@@ -169,6 +193,7 @@ packages:
     name: Pro
     tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
+    cto_monthly_tokens: ~
     comp: Commercial Welding
     card_groups: [Application, Marketing, Agents]
     lanes:
@@ -184,6 +209,7 @@ packages:
     name: Team
     tagline: "Your founding team: a CTO and a CMO."
     price_monthly: 900
+    cto_monthly_tokens: ~
     comp: Turf Monster
     featured: true
     card_groups: [Application, Marketing, Agents]
@@ -207,6 +233,7 @@ packages:
     talk_to_us: true
     tagline: Need more apps, white label or custom connectors? Talk to us.
     price_label: Custom
+    cto_monthly_tokens: ~
     comp: McRitchie Industries
     highlights:
       - More than one app, and more than one domain

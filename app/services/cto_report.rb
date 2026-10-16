@@ -11,7 +11,8 @@
 # DETERMINISTIC. The voice is a fixed per-soul template (CtoReport::Voice); every
 # number comes from code: the app's health report (DailyAppReport.health_for)
 # and, for the hub, the board's stage counts, the tasks shipped in the window
-# and the release in flight. No model call. Counts only: no names or emails.
+# and the release in flight, and one usage line: the CTO domain's answers in
+# the window (AgentUsage). No model call. Counts only: no names or emails.
 #
 # Skips, each a log line and never an error: an app with no
 # HEALTH_TOKEN_<SLUG> (not wired), a destination with no channel or turned off
@@ -108,7 +109,7 @@ module CtoReport
     end
 
     board = entry.hub? ? board_facts(ending) : nil
-    message = Message.new(entry: entry, ending: ending, health: health, board: board).to_h
+    message = Message.new(entry: entry, ending: ending, health: health, board: board, usage: usage_for(entry, ending)).to_h
     result = ReportDestinations.deliver(entry.report_key, **message, idempotency_key: key)
     log_result(logger, key, result)
     ReportDeliveryJob.set(wait: 1.minute).perform_later(entry.report_key, **message, idempotency_key: key) if result.status == :failed
@@ -133,6 +134,13 @@ module CtoReport
       shipped: Task.where(stage: %w[shipped archived], completed_at: (ending - 1.day)..ending).count,
       release: release && { stage: (release.current_stage || release.state).to_s, tasks: release.tasks.count }
     )
+  end
+
+  # The CTO's own answers in the 24 hours ending `ending` (AgentUsage), or nil
+  # for a domain no routed soul answers for (no usage line then).
+  def usage_for(entry, ending)
+    souls = AgentUsage.souls_for(entry.domain)
+    souls.any? ? AgentUsage.totals(souls: souls, from: ending - 1.day, to: ending) : nil
   end
 
   def log_result(logger, key, result)

@@ -249,6 +249,29 @@ gateway is failing before READY, so read the worker log's
 | **Unrouted**: a reply to a kept message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
 | **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's event says why: `held`, the owner-only guard (the sender's role is not one `config/agent_answerers.yml` answers, owner only today), or `confirm_refused`, a non-owner's `go`, `no` or `change:` on an open proposal (only the owner confirms). No claim will ever take either ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
 
+## Standby on a second machine (designed, not built)
+
+Phase 7 plans a standby dispatcher on Alex's work machine that takes over a
+domain's warm session when this Mac's lease lapses
+([loop doc](../../../system/agent-message-loop.md), "Warm sessions (next step,
+not built)"). **None of it runs yet.** Until it ships, the rule above stands:
+one dispatcher, and never a second copy. When it ships, the setup is:
+
+1. On the work machine: clone the hub to `/Users/<user>/projects/mcritchie-studio`,
+   `bundle install`, and sign the `claude` CLI in to the same claude.ai account
+   (`claude` once, interactively). The dispatcher bills that subscription; it
+   carries no API key.
+2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
+   with no new secret.
+3. Register it as `standby` for the warm domains on the board (admin, on
+   `/admin/agent_messages`). A standby claims nothing while the primary pings.
+4. `bin/dispatcher install` there, as on this Mac. Verify with
+   `bin/dispatcher status` on both: the primary `live`, the standby `standby`.
+5. Test a failover: `bin/dispatcher uninstall` on the primary, post `@Avi ping`
+   in `lobster-tank`, and expect the standby to answer within about 5 minutes
+   (the lease's lapse) from the last checkpoint. Reinstall the primary; it
+   takes the session back only after the standby's turn completes.
+
 ## Uninstall
 
 ```bash

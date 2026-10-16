@@ -37,12 +37,12 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
   def test_the_catalog_is_the_souls_own_and_filtered_by_audience
     avi = @registry.catalog("avi", audience: @owner).map { |c| c["capability"] }
     turf = @registry.catalog("turf_monster", audience: @owner).map { |c| c["capability"] }
-    assert_equal %w[board_status recently_shipped release_status task], avi
-    assert_equal %w[signups_and_errors task], turf
+    assert_equal %w[board_status recently_shipped release_status usage task], avi
+    assert_equal %w[signups_and_errors usage task], turf
     assert_empty @registry.catalog("xan", audience: @owner), "xan has no catalog"
-    assert_equal %w[board_status recently_shipped release_status task],
+    assert_equal %w[board_status recently_shipped release_status usage task],
                  @registry.catalog("avi", audience: @team).map { |c| c["capability"] }
-    assert_equal %w[task], @registry.catalog("turf_monster", audience: @team).map { |c| c["capability"] },
+    assert_equal %w[usage task], @registry.catalog("turf_monster", audience: @team).map { |c| c["capability"] },
                  "signups are owner-only"
     assert_empty @registry.catalog("avi", audience: @public)
     joined = @registry.catalog("avi", audience: @owner).inspect + @registry.catalog("turf_monster", audience: @owner).inspect

@@ -51,4 +51,11 @@ LADDER_TIER = "Tier set by Mr. McRitchie 2026-10-12 (Pro and Team replaced Growt
   client.update!(attrs)
 end
 
+# Each client's package is its app's CTO usage tier (apps.package_tier,
+# docs/agents/system/agent-usage.md) until someone sets one: filled only where
+# blank, so a tier set by hand is never overwritten. Internal stacks have none.
+StackClient.where.not(tier: StackClient::INTERNAL).find_each do |client|
+  App.where(slug: client.slug, package_tier: nil).update_all(package_tier: client.tier)
+end
+
 puts "  #{StackClient.count} clients"

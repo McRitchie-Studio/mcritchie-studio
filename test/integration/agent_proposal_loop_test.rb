@@ -134,7 +134,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
       text = "I can read the release ladder.\n===PROPOSAL===\n" \
              '{"kind": "ask", "capability": "release_status", "params": {}, "summary": "The release ladder now"}'
       message, catalog = perform_enqueued_jobs { answer("avi", text) }
-      assert_equal %w[board_status recently_shipped release_status task], catalog
+      assert_equal %w[board_status recently_shipped release_status usage task], catalog
       assert_includes @posts.last["content"], "> Runs: ask `release_status` (no params)"
       proposal = AgentProposal.sole
 
@@ -196,7 +196,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
         text = "I can pull that.\n===PROPOSAL===\n" \
                '{"kind": "ask", "capability": "signups_and_errors", "params": {"days": 7}, "summary": "Signups and errors, 7 days"}'
         message, catalog = perform_enqueued_jobs { answer("turf_monster", text) }
-        assert_equal %w[signups_and_errors task], catalog
+        assert_equal %w[signups_and_errors usage task], catalog
         assert @posts.last["content"].start_with?("**Turf** · I can pull that.")
 
         # Alex's reply pings the shared bot that posted Turf's answer; the thread keeps Turf.
