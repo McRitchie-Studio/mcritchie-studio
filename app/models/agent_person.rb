@@ -111,8 +111,8 @@ class AgentPerson < ApplicationRecord
   # the id is someone else's, the facts it said belong with them too: left
   # behind, the old person would keep "facts" that were never about them, and
   # every soul would keep telling them so. A note the new person already has (same
-  # fingerprint) is dropped from the old person instead of duplicated; the new
-  # person is then pruned to MAX_PER_PERSON. Notes with no source message (carried
+  # domain and fingerprint) is dropped from the old person instead of duplicated; the new
+  # person is then pruned to MAX_PER_PERSON per domain. Notes with no source message (carried
   # over from the old table) cannot be attributed and stay where they are.
   def link_identity!(platform:, external_id:, display_name: nil, reassign: false)
     platform = platform.to_s.strip
@@ -140,11 +140,11 @@ class AgentPerson < ApplicationRecord
   # Notes held by OTHER people whose source message is in `messages` come here.
   def move_notes_from!(messages)
     moving = AgentPersonNote.where(source_message_id: messages.select(:id)).where.not(agent_person_id: id)
-                            .order(:id).pluck(:id, :fingerprint)
+                            .order(:id).pluck(:id, :domain, :fingerprint)
     return if moving.empty?
 
-    seen = notes.pluck(:fingerprint).to_set
-    keep, drop = moving.partition { |_, print| seen.add?(print) }
+    seen = notes.pluck(:domain, :fingerprint).to_set
+    keep, drop = moving.partition { |_, domain, print| seen.add?([ domain, print ]) }
     AgentPersonNote.where(id: drop.map(&:first)).delete_all if drop.any?
     AgentPersonNote.where(id: keep.map(&:first)).update_all(agent_person_id: id, updated_at: Time.current)
     AgentPersonNote.prune!(self)
