@@ -3,10 +3,21 @@
 # picks each one's channel at /admin/report_destinations (Ops → Report
 # destinations). A key that is not listed here raises ArgumentError on deliver.
 #
-#   <report_key>:            # snake_case, stable: callers pass it verbatim
+#   <report_key>:            # snake_case (a `family:<name>` colon form is fine), stable: callers pass it verbatim
 #     label: Short name      # the row's title on the page
 #     description: One line  # what the report is and who sends it
 reports:
   daily_app_report:
     label: Daily application report
     description: Morning CTO summary
+  # The per-app CTO morning reports (CtoReport, config/cto_reports.yml): one
+  # key per app, so each can post to its own channel.
+  cto_report:mcritchie_studio:
+    label: McRitchie Studio CTO report
+    description: Avi's morning report on McRitchie Studio (health, board, release)
+  cto_report:turf_monster:
+    label: Turf Monster CTO report
+    description: Turf's morning report on Turf Monster's health
+  cto_report:cyvasse:
+    label: Cyvasse CTO report
+    description: Tyrion's morning report on Cyvasse's health

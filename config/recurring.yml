@@ -27,6 +27,8 @@ production:
   # ending 07:00 Denver, in ONE Discord message under the report key
   # daily_app_report (Alex picks the channel at /admin/report_destinations).
   # Satellites are read over HTTP with HEALTH_TOKEN_<SLUG>; the hub in-process.
+  # The same run then posts each app's own CTO report (CtoReport,
+  # cto_report:<domain>), reusing those reads.
   # See DailyAppReportJob and docs/agents/system/daily-app-report.md.
   daily_app_report:
     class: DailyAppReportJob

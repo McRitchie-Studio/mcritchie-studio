@@ -26,12 +26,17 @@ reports:
     description: Morning CTO summary
 ```
 
-- The key is snake_case and stable: callers pass it verbatim.
+- The key is snake_case and stable: callers pass it verbatim. A family of keys
+  may use a colon (`cto_report:turf_monster`).
 - `label` is the card's title on the page; `description` is one line on what the
   report is.
 - A key that is not registered raises `ArgumentError` on `deliver`.
 
-Registered today: `daily_app_report` (Daily application report: morning CTO summary).
+Registered today: `daily_app_report` (Daily application report: morning CTO summary),
+and one per-app CTO report per app with a CTO: `cto_report:mcritchie_studio`,
+`cto_report:turf_monster`, `cto_report:cyvasse`
+([`daily-app-report.md`](daily-app-report.md#per-app-cto-reports)). A key may carry
+a colon (`cto_report:<domain>`); it stays one path segment on the page's Save.
 
 ## 2. Alex picks the channel
 

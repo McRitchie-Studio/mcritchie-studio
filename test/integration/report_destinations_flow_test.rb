@@ -41,4 +41,21 @@ class ReportDestinationsFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='last-delivery-link'][href='#{first.url}']"
     end
   end
+
+  test "[integration] each CTO report key has its own card, and a key with a colon saves through the page" do
+    log_in_as(admin)
+    reports = channel!
+
+    get admin_report_destinations_path
+    %w[cto_report:mcritchie_studio cto_report:turf_monster cto_report:cyvasse].each do |key|
+      assert_select "[data-report-key='#{key}']"
+    end
+
+    patch admin_report_destination_path(report_key: "cto_report:turf_monster"),
+          params: { report_destination: { discord_channel_id: reports.id, enabled: "1" } }
+    assert_redirected_to admin_report_destinations_path
+    destination = ReportDestination.find_by!(report_key: "cto_report:turf_monster")
+    assert_equal [ reports, true ], [ destination.discord_channel, destination.enabled? ]
+    assert_nil ReportDestination.find_by(report_key: "cto_report:cyvasse")
+  end
 end
