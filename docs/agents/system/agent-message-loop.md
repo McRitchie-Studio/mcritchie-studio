@@ -274,7 +274,7 @@ of its answer. Two pieces build the memory:
 |-------|------|--------|--------|
 | GENERAL | Who the soul is, who it is speaking with, and that audience's rules | `docs/agents/agents/<soul>/role.md` for owner and team (`public.md`, else one line, for anyone else); the rules from the `agent-communication` SOP | 6,000 (rules 3,000) |
 | DOMAIN | The business it answers for | `config/agent_domains.yml` maps soul → domain → doc (`docs/agents/domains/`); no mapping, a missing doc, or an `internal: true` domain for a client or the public is an empty layer | 4,000 |
-| USER | The notes about the sender, from every channel and every soul, each with its date and source | `agent_person_notes` for the message's person | 2,000 |
+| USER | The notes about the sender, from every channel, each with its date and source: every soul's for an owner or team sender, the answering soul's domain's only for a client or the public ("Whose memory") | `agent_person_notes` for the message's person (`AgentPersonNote.visible_for`) | 2,000 |
 | PERSON | The sender's earlier exchanges with this soul on every channel, each labeled with its place | `agent_messages` by `(soul_slug, person_id)`: the summary, then the recent turns | 9,000 (summary 3,000) |
 | THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
 
