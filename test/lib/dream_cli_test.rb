@@ -829,6 +829,19 @@ class DreamCliTest < Minitest::Test
     assert_includes out, "already carries that ruling (click)"
   end
 
+  def test_unit_approvals_shows_a_chat_rulings_quote_and_a_drop
+    approvals = [ { "dream_slug" => "a", "dream_home" => "carl", "approved_at" => "2026-10-16T01:00:00Z",
+                    "approved_by" => "alex", "via" => "chat", "clearance" => "yes approve it", "file_status" => "proposed" } ]
+    retirements = [ { "dream_slug" => "b", "dream_home" => "carl", "retired_at" => "2026-10-16T01:00:00Z", "retired_by" => "alex",
+                      "ruling" => "drop", "via" => "click", "file_status" => "proposed" } ]
+
+    out, _err, code = card_cli("approvals", approvals: approvals, retirements: retirements)
+
+    assert_equal 0, code
+    assert_includes out, "`a` · carl · approved 2026-10-16 by alex in chat: \"yes approve it\" · file reads proposed"
+    assert_includes out, "`b` · carl · dropped 2026-10-16 by alex · file reads proposed"
+  end
+
   def test_unit_rulings_take_exact_arguments
     [ %w[approve], %w[approve x], %w[approve x --clearance], %w[drop x --why y], %w[retire ../x --clearance a\ b\ c] ].each do |argv|
       out, _err, code = card_cli(*argv)

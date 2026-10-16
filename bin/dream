@@ -232,17 +232,23 @@ class DreamCli
     @out.puts("## Pending dream approvals (#{rows.size})")
     rows.each do |row|
       @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · approved #{row["approved_at"].to_s[0, 10]} " \
-                "by #{row["approved_by"] || "unknown"} · file reads #{row["file_status"]}")
+                "by #{row["approved_by"] || "unknown"}#{chat_note(row)} · file reads #{row["file_status"]}")
     end
     @out.puts("## Pending dream retirements (#{retirements.size})")
     retirements.each do |row|
-      @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · retired #{row["retired_at"].to_s[0, 10]} " \
-                "by #{row["retired_by"] || "unknown"} · file reads #{row["file_status"]}")
+      verb = row["ruling"] == "drop" ? "dropped" : "retired"
+      @out.puts("`#{row["dream_slug"]}` · #{row["dream_home"]} · #{verb} #{row["retired_at"].to_s[0, 10]} " \
+                "by #{row["retired_by"] || "unknown"}#{chat_note(row)} · file reads #{row["file_status"]}")
     end
     unless (rows + retirements).empty?
       @out.puts("Write them into the files: bin/dream apply-approvals, in one batch task desk.")
     end
     OK
+  end
+
+  # " in chat: \"<his words>\"" for a chat ruling, else "".
+  def chat_note(row)
+    row["via"] == "chat" ? " in chat: #{row["clearance"].to_s.inspect}" : ""
   end
 
   # Flips each pending approval's file in this desk and rewrites the index. A row

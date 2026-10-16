@@ -7,8 +7,10 @@ module Api
     # `bin/dream apply-approvals` (docs/agents/modules/dream.md, Act 3).
     #
     # Read-only, bearer-gated like the other agent reads. There is deliberately no
-    # create: an approval is Alex's word, given only through DreamsController#approve
-    # behind his signed-in admin session, so no agent token can make one.
+    # create here: an approval is Alex's word, given by his click
+    # (DreamsController#approve, behind his signed-in admin session) or in chat,
+    # which a session records with his verbatim words through POST
+    # /api/v1/dream_rulings (DreamRuling). No agent token approves on its own.
     #
     # The read reconciles first: a row whose deployed file already reads approved is
     # stamped applied and drops out. `file_status` is what the deployed file reads.

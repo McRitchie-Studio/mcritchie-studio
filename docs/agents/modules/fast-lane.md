@@ -180,6 +180,8 @@ No single write sets both:
 bin/task create --agent avi           → assignee avi     · authors NOT STAMPED
 bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
 bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
+bin/task begin --title …  (no --agent) → assignee unset   · authors ["pokemon"]  (or the acting soul)
+bin/task begin <slug>     (no --agent) → kept if on record, else ["pokemon"]      (or the acting soul)
 ```
 
 Every row above reaches the author set through `--actor` — both `begin` forms
