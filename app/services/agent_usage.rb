@@ -125,6 +125,15 @@ module AgentUsage
     (souls + [ front ]).compact.map(&:to_s).uniq
   end
 
+  # The souls and channel_ref a no-domain app is metered on: a client app's one
+  # `client_cto` (AppCto row), or a configured CTO (config/cto_reports.yml, e.g.
+  # Cyvasse's tyrion) that serves no domain, each on THAT app's rows only. [[], nil]
+  # for an app with neither.
+  def undomained_souls(app_slug)
+    cto = AppOwnership.cto_for_app(app_slug)
+    cto ? [ [ cto.soul ], app_slug.to_s ] : [ [], nil ]
+  end
+
   def month_range(now = Time.current)
     local = now.in_time_zone(ZONE)
     [ local.beginning_of_month, local.end_of_month ]
@@ -163,9 +172,8 @@ module AgentUsage
     start, finish = month_range(now)
     souls = souls_for(domain, registry: registry)
     ref = nil
-    if domain.nil? && AppCto.exists?(app_slug: app.slug)
-      souls = [ AppCto::SOUL ]
-      ref = app.slug
+    if domain.nil?
+      souls, ref = undomained_souls(app.slug)
     end
     package = app.package_tier.present? ? WorkspacePackage.find(app.package_tier) : nil
     allowance = allowance_for(app)
@@ -176,6 +184,35 @@ module AgentUsage
               totals: souls.empty? ? Totals.zero : totals(souls: souls, from: start, to: now, ref: ref),
               capped_count: allowance.nil? ? 0 : capped_count(souls, start, now, ref: ref),
               period_start: start, period_end: finish, now: now, warn_percent: warn_percent)
+  end
+
+  # The meter an APP OWNER's answers are held to (AgentMessages::Answerers
+  # #app_owner_thread?): the app's own meter, and when its tier names no
+  # allowance, config/agent_answerers.yml `app_owners.default_monthly_tokens`.
+  # An admin's lift still removes the cap. Their answers are stamped audience
+  # `client`, so they count in `used` like any client's.
+  def owner_meter(app, now: Time.current, registry: self.registry, answerers: AgentMessages::Answerers.current)
+    base = meter(app, now: now, registry: registry)
+    fallback = answerers.app_owners&.default_monthly_tokens
+    return base if base.lifted || !base.unlimited? || fallback.nil?
+
+    start, = month_range(now)
+    souls, ref = base.domain.nil? ? undomained_souls(app.slug) : [ souls_for(base.domain, registry: registry), nil ]
+    base.dup.tap do |m|
+      m.allowance = fallback
+      m.capped_count = capped_count(souls, start, now, ref: ref)
+    end
+  end
+
+  # The meter a chat page shows `user` for `app`: the owner meter when the
+  # app-owner rule answers them there, else the app's meter.
+  def chat_meter(app, user:, soul:, now: Time.current, answerers: AgentMessages::Answerers.current)
+    person = user && AgentMessages::WebIngest.existing_person(user)
+    # The same people the rule answers: no person yet (their first message makes
+    # a public one), or a public or client person. Owner and team never.
+    eligible = person.nil? || AgentMessages::Answerers::APP_OWNER_ROLES.include?(person.role)
+    owner = user && eligible && answerers.app_owner_user?(user, app_slug: app.slug, soul: soul)
+    owner ? owner_meter(app, now: now, answerers: answerers) : meter(app, now: now)
   end
 
   # The check before a run is claimed. Owner and team senders are never capped
@@ -190,16 +227,30 @@ module AgentUsage
   def gate(message, now: Time.current, registry: self.registry, meters: nil)
     return Gate.new(state: :ok) if UNCAPPED_AUDIENCES.include?(message.usage_audience)
 
-    app_slug = if message.soul_slug == AppCto::SOUL
+    # An app owner's own thread names its app in channel_ref (set by WebIngest
+    # from the route), whether or not the CTO serves a domain (Cyvasse's does not).
+    owner_row = AgentMessages::Answerers.current.app_owner_thread?(message)
+    app_slug = if owner_row || message.soul_slug == AppCto::SOUL
                  message.channel_ref
                else
                  domain = registry.domain_key_for(message.soul_slug) || registry.front_door(message.soul_slug)&.dig("key")
                  domain && registry.domains.dig(domain, "app")
                end
     app = app_slug && App.find_by(slug: app_slug)
-    return Gate.new(state: :ok) unless app && allowance_for(app)
+    return Gate.new(state: :ok) unless app
 
-    meter = meters ? (meters[app.slug] ||= meter(app, now: now, registry: registry)) : meter(app, now: now, registry: registry)
+    if owner_row
+      read = -> { owner_meter(app, now: now, registry: registry) }
+      key = "owner:#{app.slug}"
+    else
+      return Gate.new(state: :ok) unless allowance_for(app)
+
+      read = -> { meter(app, now: now, registry: registry) }
+      key = app.slug
+    end
+    meter = meters ? (meters[key] ||= read.call) : read.call
+    return Gate.new(state: :ok) if meter.unlimited?
+
     state = if meter.capped? then :stop
     elsif meter.warn? then :warn
     else :ok

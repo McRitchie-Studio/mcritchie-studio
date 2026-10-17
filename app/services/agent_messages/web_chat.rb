@@ -110,9 +110,15 @@ module AgentMessages
       return unless app
 
       Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: METER_TARGET, partial: "applications/usage_meter",
-                                                                     locals: { meter: AgentUsage.meter(app).without_cost })
+                                                                     locals: { meter: meter_for(message, app).without_cost })
     rescue StandardError => e
       log(e, message, "meter")
+    end
+
+    # The meter the thread's reader sees: the owner meter on an app owner's
+    # own thread (Answerers#app_owner_thread?), else the app's.
+    def meter_for(message, app)
+      Answerers.current.app_owner_thread?(message) ? AgentUsage.owner_meter(app) : AgentUsage.meter(app)
     end
 
     def turn_id(message) = "cto-chat-turn-#{message.id}"

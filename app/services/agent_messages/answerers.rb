@@ -22,6 +22,17 @@ module AgentMessages
   # prefix is pinned to BuildIntake::THREAD_PREFIX at load, so a config typo can
   # never open a wider set of threads. The caps are BuildIntake::Caps, enforced
   # where those rows are written (BuildIntake::Ingest).
+  #
+  # APP OWNERS are the second exception (`app_owners:` in the same file; Alex,
+  # 2026-10-17): an app's CTO answers a person who OWNS that app, on that app's
+  # web CTO thread and nowhere else (app_owner_thread?). Every fact it reads is
+  # one code wrote: the row's channel (web), its channel_ref (the app, set by
+  # WebIngest from the route), its thread key (web:<app>:<user id>, built by
+  # WebChat.thread_key), its soul (the app's CTO, AppOwnership.cto_for_app), the
+  # person's hub user, and that user's AppMembership. Nothing the message text
+  # carries. The owner is answered as a CLIENT of the app (audience_for), never
+  # as the owner or team, and within the app's usage meter (AgentUsage.owner_meter),
+  # which WebIngest checks before a message is stored as answerable.
   class Answerers
     PATH = Rails.root.join("config/agent_answerers.yml")
 
@@ -31,15 +42,23 @@ module AgentMessages
     PublicIntake = Struct.new(:soul, :thread_prefix, :turns_per_request, :signed_in_turns_per_request,
                               :per_ip_per_hour, :daily_total, keyword_init: true)
     INTAKE_CAPS = %w[turns_per_request signed_in_turns_per_request per_ip_per_hour daily_total].freeze
+    # The app-owner block, checked. default_monthly_tokens caps an owner's
+    # answers when the app's tier names no cto_monthly_tokens.
+    AppOwners = Struct.new(:default_monthly_tokens, keyword_init: true)
+    # The roles the app-owner exception answers, as a client. It never applies to
+    # an owner or team person: they are answered, or held, by their role alone
+    # (answered_roles), and spoken to as that role. A team-role app owner is held
+    # on their own thread while the list answers owner only.
+    APP_OWNER_ROLES = %w[public client].freeze
 
-    attr_reader :roles, :public_intake
+    attr_reader :roles, :public_intake, :app_owners
 
     class << self
       def load(path = PATH)
         config = YAML.safe_load_file(path, aliases: false)
         raise Invalid, "#{path} must hold answered_roles: [ ... ]" unless config.is_a?(Hash) && config.key?("answered_roles")
 
-        new(config["answered_roles"], public_intake: config["public_intake"])
+        new(config["answered_roles"], public_intake: config["public_intake"], app_owners: config["app_owners"])
       end
 
       # The process's list, read once. Tests swap it with `current=` and `reset!`.
@@ -50,7 +69,7 @@ module AgentMessages
       def reset! = @current = nil
     end
 
-    def initialize(roles, public_intake: nil)
+    def initialize(roles, public_intake: nil, app_owners: nil)
       raise Invalid, "answered_roles must be a list, got #{roles.inspect}" unless roles.is_a?(Array)
 
       @roles = roles.map(&:to_s).uniq
@@ -58,6 +77,16 @@ module AgentMessages
       raise Invalid, "unknown role(s) #{unknown.join(', ')}; roles are #{AgentPerson::ROLES.join(', ')}" if unknown.any?
 
       @public_intake = public_intake.nil? ? nil : self.class.intake_config(public_intake)
+      @app_owners = app_owners.nil? ? nil : self.class.app_owners_config(app_owners)
+    end
+
+    def self.app_owners_config(raw)
+      raise Invalid, "app_owners must be a map" unless raw.is_a?(Hash)
+
+      tokens = raw["default_monthly_tokens"]
+      raise Invalid, "app_owners.default_monthly_tokens must be a positive integer" unless tokens.is_a?(Integer) && tokens.positive?
+
+      AppOwners.new(default_monthly_tokens: tokens)
     end
 
     def self.intake_config(raw)
@@ -79,11 +108,63 @@ module AgentMessages
     end
 
     # Whether `person` is answered. With a `message`, a row public intake covers
-    # (intake?) is answered whoever wrote it; a row with no person never is.
+    # (intake?) is answered whoever wrote it, and an app owner's row on their own
+    # app's CTO thread (app_owner_thread?) is answered; a row with no person never is.
     def allowed?(person, message: nil)
       return false if person.blank?
 
-      roles.include?(person.role) || (message.present? && intake?(message))
+      roles.include?(person.role) || (message.present? && (intake?(message) || app_owner_thread?(message, person)))
+    end
+
+    # Whether `person` is answered by their ROLE alone, with no exception.
+    def role_answered?(person) = person.present? && roles.include?(person.role)
+
+    # THE APP-OWNER RULE. True only when every one of these holds:
+    #   - the exception is on (config has app_owners:)
+    #   - the person's role is public or client (owner and team are their role)
+    #   - the row is on the web channel
+    #   - its thread key is exactly web:<channel_ref>:<the person's hub user id>
+    #   - its soul is that app's CTO (AppOwnership.cto_for_app)
+    #   - that user owns that app (AppMembership owner)
+    # So another app's thread, Discord, email, /build, an app the person does not
+    # own, or another user's thread on an app they do own are all false.
+    # `message` is an AgentMessage, or anything with channel, channel_ref,
+    # thread_key and soul_slug (WebIngest passes an unsaved probe).
+    def app_owner_thread?(message, person = message.person)
+      return false unless app_owners && person && APP_OWNER_ROLES.include?(person.role) && person.user_id
+      return false unless message.channel.to_s == "web"
+
+      app_slug = message.channel_ref.to_s
+      return false if app_slug.empty? || message.thread_key.to_s != WebChat.thread_key(app_slug, person.user_id)
+
+      self.class.owns_app_cto?(person.user_id, app_slug, message.soul_slug)
+    end
+
+    # Whether hub user `user_id` owns `app_slug` and `soul` is that app's CTO.
+    def self.owns_app_cto?(user_id, app_slug, soul)
+      return false if soul.blank? || AppOwnership.cto_for_app(app_slug)&.soul != soul.to_s
+
+      user_slug = User.where(id: user_id).pick(:slug)
+      user_slug.present? && AppMembership.owners.exists?(user_slug: user_slug, app_slug: app_slug.to_s)
+    end
+
+    # Whether `user` would be answered on `app_slug`'s CTO thread by the app-owner
+    # rule, before they have a person (a new owner's first message makes one).
+    def app_owner_user?(user, app_slug:, soul:)
+      app_owners.present? && user.present? && self.class.owns_app_cto?(user.id, app_slug, soul)
+    end
+
+    # The audience a message is answered as ({"role", "client_domain"}): the
+    # person's own (AgentPerson.audience_for), except on an app-owner thread,
+    # where a public or client person is a CLIENT of that app, domain the app slug
+    # underscored. Never higher than client: the exception grants no owner or team
+    # action, and a `go` from them is still refused (confirm_proposal is the
+    # owner's). nil person: the public.
+    def audience_for(message, person = message.person)
+      base = AgentPerson.audience_for(person)
+      return base unless person && app_owner_thread?(message, person)
+
+      { "role" => "client", "client_domain" => message.channel_ref.to_s.tr("-", "_") }
     end
 
     # The soul that answers public intake, or nil when there is none.
@@ -105,7 +186,8 @@ module AgentMessages
     # Why a message from `person` is held, for its `held` event.
     def held_reason(person)
       role = person&.role || "none"
-      "sender's role (#{role}) is not answered; config/agent_answerers.yml answers #{roles.join(', ').presence || 'nobody'}"
+      line = "sender's role (#{role}) is not answered; config/agent_answerers.yml answers #{roles.join(', ').presence || 'nobody'}"
+      app_owners ? "#{line} (and an app's owner on that app's own CTO chat only)" : line
     end
 
     # The guard as SQL, for AgentMessage.claimable: a proc from a table alias to
@@ -124,6 +206,7 @@ module AgentMessages
       lambda do |table|
         clause = "#{table}.hold_released_at IS NOT NULL OR #{table}.person_id IN " \
                  "(SELECT agent_people.id FROM agent_people WHERE agent_people.role IN (#{list}))"
+        clause += " OR #{app_owner_sql(table)}" if app_owners
         if intake
           prefix = intake.thread_prefix
           clause += " OR (#{table}.person_id IS NOT NULL AND #{table}.channel = 'web' " \
@@ -132,6 +215,35 @@ module AgentMessages
         end
         "(#{clause})"
       end
+    end
+
+    private
+
+    # The SQL twin of app_owner_thread?: the person is public or client and has a
+    # hub user who owns the row's app; the thread key is exactly
+    # web:<channel_ref>:<that user's id>; the soul is that app's CTO, a configured
+    # one (config/cto_reports.yml) or, for an app it does not name, client_cto
+    # with an app_ctos row.
+    def app_owner_sql(table)
+      conn = ActiveRecord::Base.connection
+      # Read once per Answerers (per process, as the yml): the claim polls.
+      configured = @configured_ctos ||= CtoReport.config.values
+                                                 .select { |row| row.is_a?(Hash) && row["app"].present? && row["soul"].present? }
+      pairs = configured.map { |row| "(#{conn.quote(row['soul'].to_s)}, #{conn.quote(row['app'].to_s)})" }
+      apps = configured.map { |row| conn.quote(row["app"].to_s) }
+      soul = "(#{table}.soul_slug = #{conn.quote(AppCto::SOUL)} " \
+             "AND EXISTS (SELECT 1 FROM app_ctos WHERE app_ctos.app_slug = #{table}.channel_ref)" \
+             "#{apps.any? ? " AND #{table}.channel_ref NOT IN (#{apps.join(', ')})" : ''})"
+      soul = "((#{table}.soul_slug, #{table}.channel_ref) IN (#{pairs.join(', ')}) OR #{soul})" if pairs.any?
+      roles = APP_OWNER_ROLES.map { |r| conn.quote(r) }.join(", ")
+      "(#{table}.channel = 'web' AND #{soul} AND EXISTS (" \
+        "SELECT 1 FROM agent_people owner_people " \
+        "INNER JOIN users owner_users ON owner_users.id = owner_people.user_id " \
+        "INNER JOIN app_memberships owner_memberships ON owner_memberships.user_slug = owner_users.slug " \
+        "AND owner_memberships.role = 'owner' " \
+        "WHERE owner_people.id = #{table}.person_id AND owner_people.role IN (#{roles}) " \
+        "AND owner_memberships.app_slug = #{table}.channel_ref " \
+        "AND #{table}.thread_key = 'web:' || owner_memberships.app_slug || ':' || owner_users.id::text))"
     end
   end
 end

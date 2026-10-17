@@ -96,7 +96,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
     assert_equal "held", theirs.status
     assert_equal "xan", theirs.soul_slug, "a held row keeps its soul, for the admin page and a release"
     held = theirs.events.find { |e| e.kind == "held" }
-    assert_equal "sender's role (public) is not answered; config/agent_answerers.yml answers owner", held.detail["reason"]
+    assert_equal "sender's role (public) is not answered; config/agent_answerers.yml answers owner (and an app's owner on that app's own CTO chat only)", held.detail["reason"]
     assert_equal theirs.person_id, held.detail["person_id"]
     assert_nil mine.events.find { |e| e.kind == "held" }
   end

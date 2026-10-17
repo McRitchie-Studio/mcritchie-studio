@@ -62,7 +62,11 @@ class AgentProposal < ApplicationRecord
     def record_from!(message, raw, now: Time.current)
       return nil if raw.nil?
 
-      verdict = registry.validate(soul: message.soul_slug, audience: audience_for(message.person), proposal: raw)
+      # The audience the answer was given as (MemoryBundle#audience): an app
+      # owner on their own CTO thread is that app's client, a /build turn the public.
+      bundle_audience = AgentMessages::MemoryBundle.new(message).audience
+      audience = AgentMailbox::Audience.new(role: bundle_audience["role"], client_domain: bundle_audience["client_domain"])
+      verdict = registry.validate(soul: message.soul_slug, audience: audience, proposal: raw)
       unless verdict.ok?
         message.record!("proposal_refused", actor: "board",
                                             detail: { "reason" => verdict.reason.to_s[0, 300],

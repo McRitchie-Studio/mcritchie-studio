@@ -149,8 +149,10 @@ class AgentMessage < ApplicationRecord
   #
   # THE OWNER-ONLY GUARD (AgentMessages::Answerers) is enforced here, on the
   # server, not only at ingest: a row is claimable only when its person's role is
-  # one config/agent_answerers.yml answers (owner only today) or an admin released
-  # its hold (hold_released_at).
+  # one config/agent_answerers.yml answers (owner only today), an admin released
+  # its hold (hold_released_at), or one of the file's two exceptions holds: a
+  # /build row for the intake soul, or an app owner's row on their own app's
+  # CTO thread (Answerers#app_owner_thread?, its SQL twin in sql_guard).
   # A row with no person is never claimable. A row that fails the guard is not
   # "open" for the two wait rules either, so a stranger's message that is somehow
   # `received` cannot hold a thread back forever; `held` rows are never open.
@@ -465,7 +467,11 @@ class AgentMessage < ApplicationRecord
 
   # The audience the usage meter files this answer under: the sender's role as
   # the board knows it now (AgentPerson#role), public for a row with no person.
+  # On an app owner's own CTO thread (AgentMessages::Answerers#app_owner_thread?)
+  # a public or client person is that app's client: metered against its allowance.
   def usage_audience
+    return "client" if AgentMessages::Answerers.current.app_owner_thread?(self)
+
     person&.role.presence || "public"
   end
 

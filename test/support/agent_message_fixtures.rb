@@ -14,6 +14,11 @@ module AgentMessageFixtures
     def public_intake = nil
     def public_intake_soul = nil
     def intake?(_message) = false
+    def app_owners = nil
+    def role_answered?(_person) = true
+    def app_owner_thread?(_message, _person = nil) = false
+    def app_owner_user?(_user, app_slug:, soul:) = false
+    def audience_for(message, person = message.person) = AgentPerson.audience_for(person)
     def sql_guard = ->(_table) { "TRUE" }
   end
 

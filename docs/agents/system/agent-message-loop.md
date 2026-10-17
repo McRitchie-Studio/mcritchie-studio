@@ -143,7 +143,7 @@ never handed to a worker. Among several mentioned souls, the one written first
 wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
 work; the config lists either.
 
-**Held: the agents answer only the owner.** `config/agent_answerers.yml` lists
+**Held: the agents answer the owner, with two narrow exceptions.** `config/agent_answerers.yml` lists
 the ROLES the agents answer (below, "Audience"); today it is `owner` alone, so
 Alex is answered because his `agent_people` row is the owner, and so is every
 identity linked to him. A routed message from anyone whose role is not listed
@@ -162,6 +162,25 @@ answer** on its page (admin only, a form post) or run
 again. To answer a sender for good, give them an answered role
 (`bin/rails agent_people:role`); to answer a whole role, add it to the yml and
 deploy. What the agent may then say to them is the audience's rules.
+
+**The app-owner exception** (Alex, 2026-10-17; `app_owners:` in the same yml,
+`AgentMessages::Answerers#app_owner_thread?`). An app's CTO, ours from
+`config/cto_reports.yml` or a client app's `client_cto`, answers a `public` or
+`client` person whose hub user owns that app (`AppMembership` owner), on that app's
+web CTO thread and nowhere else. The rule reads only what code wrote: the row is
+`web`, its thread key is exactly `web:<channel_ref>:<the person's user id>`, its soul
+is that app's CTO (`AppOwnership.cto_for_app`), and the membership is read at the
+moment of the check. The same person stays `held` on another app's thread, on
+Discord, by email, and on an app they do not own. The claim's SQL guard carries
+the same rule. They are answered as that app's `client` (`Answerers#audience_for`,
+`MemoryBundle#audience`): no read action, no internal context, the client catalog,
+and a `go` from them is still refused (`confirm_proposal` is the owner's). Their
+answers are metered as `client`, against `AgentUsage.owner_meter`: the tier's
+`cto_monthly_tokens`, else `app_owners.default_monthly_tokens` (1,000,000 by
+default, while every tier is blank), unless an admin lifted the cap. At the cap,
+`WebIngest` stores the message already answered with `AgentUsage.cap_reply` and
+no model runs. An owner or team person is answered by their role, never by this
+rule. Remove the block to hold app owners again.
 
 **Claim.** `POST /api/v1/agent_messages/claim {soul | souls[], worker, wait?}`
 runs one transaction. It first dead-letters exhausted leases, then selects the oldest
@@ -912,13 +931,14 @@ operator already linked to that user (`agent_people.user_id`; Alex's
 `alex@mcritchie.studio` is the owner's, by `AgentPerson.seed_owner!`), else a new
 `public` person for the user. It is never matched by name. The audience is that
 person's role, exactly as on Discord and email, so the same envelope, rules,
-catalog and usage gate apply. **App ownership grants no agent authority**: an app
-owner who is not the platform owner is a `public` person, and their message is
-`held` until an operator gives the person an answered role
-(`bin/rails agent_people:role`), as a Discord message from them would be. The
-page tells them so. Giving the `owner` audience to a customer would print "Alex
-McRitchie, the owner" and the internal role doc into their answers; the scoped
-app-owner audience is Phase 6 of `.agents/epics/domain-agents.md`, design only.
+catalog and usage gate apply. **An app owner is answered here as that app's
+client**: an owner who is not the platform owner is a `public` person, answered on
+this app's thread by the app-owner exception ("Held" above), as a `client` of the
+app, capped by the owner meter, and `held` everywhere else, as a Discord message
+from them would be. Ownership never grants the `owner` audience: that would print
+"Alex McRitchie, the owner" and the internal role doc into their answers. When the
+exception is off, the page tells them their messages wait for an admin
+(`CtoChatsController#answered?` asks the same rule).
 Alex owns each app through a different hub account, so each of
 `AgentPerson::OWNER_HUB_EMAILS` (alex@mcritchie.studio, alex@turfmonster.media,
 amcritchie@gmail.com) is a `web` identity of the owner's person, linked by the

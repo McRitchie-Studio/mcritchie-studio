@@ -47,7 +47,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end
 
-  test "the handover is the one claimable turn: the dispatcher answers it although the client's role is not answered" do
+  test "the handover is claimable although the client's role is not answered; their own next words are answered as the app's owner" do
     handover = launch.handover
 
     assert_equal [ handover ], AgentMessage.claimable(soul: "client_cto").to_a
@@ -56,7 +56,10 @@ class AppLaunchTest < ActiveSupport::TestCase
 
     follow_up = AgentMessages::WebIngest.new(user: users(:viewer), cto: AppOwnership.cto_for_app("pawsome"))
                                         .call("Can it take payments?", client_id: "client-0001")
-    assert_equal "held", follow_up.status, "the client's own words are still held by role"
+    assert_equal "received", follow_up.status, "the app-owner rule answers the owner on their own app's chat"
+    assert_nil follow_up.hold_released_at, "answered by the rule, not by a release"
+    assert_equal "client", follow_up.usage_audience
+    assert_equal "public", follow_up.person.role, "their role is unchanged, so Discord and email still hold them"
   end
 
   test "a failure anywhere in the launch leaves no app, owner, CTO, task, handover or claim" do

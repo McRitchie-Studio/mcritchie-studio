@@ -9,11 +9,15 @@ class WebIngestTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
   setup do
+    # The shipped answerers, read fresh: another test may have swapped them.
+    AgentMessages::Answerers.current = AgentMessages::Answerers.load
     @alex_person = AgentPerson.seed_owner!
     @alex = users(:alex)
     @owner = User.create!(email: "owner@turf.example", name: "Turf Owner", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: @owner)
   end
+
+  teardown { AgentMessages::Answerers.reset! }
 
   def cto(app_slug) = AppOwnership.cto_for_app(app_slug)
 
@@ -44,22 +48,39 @@ class WebIngestTest < ActiveSupport::TestCase
     assert_equal "web:mcritchie-studio:#{@alex.id}", studio.thread_key
   end
 
-  test "an app owner who is not the platform owner gets their own public person and is held, not answered" do
+  test "an app owner who is not the platform owner is answered on their own app's thread, as its client" do
+    message = ingest(@owner, "Hi Turf")
+
+    assert_equal "received", message.status
+    assert_equal "public", message.person.role, "the rule answers them; it never raises their role"
+    assert_equal @owner, message.person.user
+    assert_equal [ "received", "routed" ], message.events.map(&:kind)
+    assert_equal message, AgentMessage.claimable(soul: "turf_monster").first
+    assert_equal "client", message.usage_audience, "metered against the app's allowance"
+  end
+
+  test "the same owner is held on an app they do not own" do
+    message = ingest(@owner, "Hi Avi", app: "mcritchie-studio")
+
+    assert_equal "held", message.status
+    assert_match(/not answered/, message.events.last.detail["reason"])
+    assert_nil AgentMessage.claimable(soul: "avi").first
+  end
+
+  test "with no app_owners block the owner is held again" do
+    AgentMessages::Answerers.current = AgentMessages::Answerers.new([ "owner" ])
     message = ingest(@owner, "Hi Turf")
 
     assert_equal "held", message.status
-    assert_equal "public", message.person.role, "app ownership grants no agent authority (Phase 6 is design only)"
-    assert_equal @owner, message.person.user
-    assert_equal [ "received", "routed", "held" ], message.events.map(&:kind)
-    assert_match(/not answered/, message.events.last.detail["reason"])
     assert_nil AgentMessage.claimable(soul: "turf_monster").first
   end
 
-  test "once an operator gives that person an answered role their next message is answered, as on Discord" do
-    first = ingest(@owner, "one")
+  test "once an operator gives a non-owner an answered role their next message is answered, as on Discord" do
+    first = ingest(@owner, "one", app: "mcritchie-studio")
+    assert_equal "held", first.status
     first.person.set_role!("owner")
 
-    assert_equal "received", ingest(@owner, "two").status
+    assert_equal "received", ingest(@owner, "two", app: "mcritchie-studio").status
   end
 
   test "the same client id stores one row; another thread's client id never returns that thread's row" do

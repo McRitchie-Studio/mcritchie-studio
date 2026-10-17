@@ -46,6 +46,9 @@ soul the `souls:` map in `config/agent_domains.yml` gives that domain. A client 
 built through `/build` has no domain: its answers are the one `client_cto` soul's in
 THAT app's chat (`channel_ref`, the `ref:` filter), never another client app's, and the
 gate reads the app from the message's `channel_ref` ([`client-cto.md`](client-cto.md)).
+A configured CTO that serves no domain (Cyvasse's `tyrion`, `config/cto_reports.yml`)
+is metered the same way: its own soul's answers on THAT app's rows (`channel_ref`), and
+on an app owner's thread the gate takes the app from `channel_ref` too.
 
 - `AgentUsage.totals(souls:, from:, to:)`: answers, each token kind, cost and
   average duration. Each sum reads a key only where it holds a JSON number.
@@ -96,6 +99,15 @@ the app that the soul's domain serves (`app:` in `config/agent_domains.yml`):
 | unlimited, or under `warn_percent` (80) | claimed as usual |
 | at or past 80% | claimed, with a `usage_warned` event; `complete!` ends the reply with a code-written line: `_85% of this app's monthly agent allowance is used. Pro ($500/month) raises it._` |
 | at or past 100% | **not claimed and not run**: the board completes the message itself with the cap reply (`AgentUsage.cap_reply`), records `usage_capped`, queues the reply, and takes the next candidate (up to 10 per claim) |
+
+**An app owner's own chat** (the app-owner exception, `app_owners:` in
+`config/agent_answerers.yml`) is held to `AgentUsage.owner_meter`: the app's meter,
+with `app_owners.default_monthly_tokens` (1,000,000, a conservative default chosen
+with the feature, not a price) as the allowance when the tier names none, and no cap
+under an admin's lift. Their answers are stamped `client`, so they count in `used`.
+`WebIngest` checks it before storing: at the cap the message is stored already
+answered with the cap reply. The gate above checks the same meter at the claim, and
+the chat page shows it.
 
 A capped message is completed, never skipped, so it cannot sit `received` and
 keep a long-poll busy. The cap reply says the allowance is used, when it resets,

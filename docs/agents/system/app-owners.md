@@ -45,6 +45,11 @@ exist for them and an unannounced app's slug never leaks. The routes are in
 (`AppOwnership.manage_app?`). `test/integration/app_owners_flow_test.rb` proves
 it per page and for the write.
 
+**The CTO answers its app's owner** in that app's chat (`/applications/:slug/chat`)
+and nowhere else, as the app's client and within the app's usage meter: the
+app-owner exception in [`agent-message-loop.md`](agent-message-loop.md) ("Held").
+An admin who does not own the app is answered by their own role, never by it.
+
 ## The sidebar
 
 Owners get a **Your apps** section at the top of the link sidebar
