@@ -17,14 +17,15 @@ require_relative "agent_domain_registry"
 module AgentMailbox
   # The souls config/agent_routes.yml routes, read without Rails. The board's
   # AgentMessages::Routes#souls is the same rule (every soul a guild lists, plus
-  # each channel override's non-empty default_soul); this copy exists because bin/ runs
-  # without the app loaded.
+  # each channel override's non-empty default_soul, plus the web chat's CTOs under
+  # `web: souls:`); this copy exists because bin/ runs without the app loaded.
   def self.routed_souls(path = File.join(REPO_ROOT, "config/agent_routes.yml"))
     config = YAML.safe_load_file(path, aliases: false) || {}
     guilds = (config.dig("discord", "guilds") || {}).values.compact
     souls = guilds.flat_map { |g| (g["souls"] || {}).keys.map(&:to_s) }
     defaults = guilds.flat_map { |g| (g["channels"] || {}).values.compact.map { |c| c["default_soul"].to_s } }
-    (souls + defaults).map(&:strip).reject(&:empty?).uniq
+    web = Array((config["web"] || {})["souls"]).map(&:to_s)
+    (souls + defaults + web).map(&:strip).reject(&:empty?).uniq
   end
 
   # A digest of the code the running dispatcher is made of: the entry script,
@@ -134,6 +135,9 @@ module AgentMailbox
     # board's own cap (AgentMessage::TYPING_CAP): past it no pulse is asked for.
     TYPING_EVERY = 7
     TYPING_CAP = 180
+    # The channels whose reader shows typing (the board's AgentMessage::TYPING_CHANNELS):
+    # Discord through the replying bot, the web chat over its Turbo stream.
+    TYPING_CHANNELS = %w[discord web].freeze
 
     # typed_at: the last pulse asked for (nil: none yet). typing: false once the
     # board said no (or failed): that run is never pulsed again.
@@ -379,7 +383,7 @@ module AgentMailbox
         warm ? responder.respond(message, context: context, warm: warm) : responder.respond(message, context: context)
       end
       run = Run.new(message: message, thread: thread, started_at: now, renewed_at: now,
-                    typing: message["channel"] == "discord", warm: warm)
+                    typing: TYPING_CHANNELS.include?(message["channel"]), warm: warm)
       @runs << run
       pulse_typing(run, now)
     end

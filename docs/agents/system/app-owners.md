@@ -64,6 +64,7 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 | `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app |
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
+| `/applications/:slug/chat` | `GET` and `POST`: the viewer's own live chat with the app's CTO, with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |
 | `/agents/settings` | The visible CTOs and where each one reports |
 | `/agents/:slug/settings` | The CTO's name, avatar and app, its report setting, and the app's usage meter |
 
@@ -113,4 +114,6 @@ channel is in the McRitchie Studio guild, so an owner sees our internal channels
 ## What a setting can never do
 
 A setting here changes where a CTO posts. It gives the CTO no tool, capability or
-credential, and it never reaches another app's row.
+credential, and it never reaches another app's row. Owning an app does not make
+its CTO answer you as the owner either: the chat's audience is your agent
+person's role, set by an operator, as on Discord.

@@ -28,15 +28,20 @@ require Rails.root.join("bin/lib/agent_proposal_block").to_s
 class AgentMessage < ApplicationRecord
   # discord: DiscordIngest. email: AgentMessages::EmailIngest, from the team@
   # Resend inbound after desk capture; its envelope (from, subject, Message-ID,
-  # References, the trust verdict) lives in `envelope`.
-  CHANNELS = %w[discord email].freeze
+  # References, the trust verdict) lives in `envelope`. web: AgentMessages::WebIngest,
+  # from a signed-in app owner's or admin's chat with the app's CTO on
+  # /applications/:slug/chat (docs/agents/system/agent-message-loop.md, "Web chat").
+  CHANNELS = %w[discord email web].freeze
+  # The channels whose reader shows "typing…" while an answer runs: Discord
+  # through the replying bot, the web chat over its Turbo stream. Email has none.
+  TYPING_CHANNELS = %w[discord web].freeze
   STATUSES = %w[received claimed completed dead unrouted held].freeze
   # Statuses a thread waits on: an older message in one of these holds the
   # thread's newer messages back, so a conversation is answered in order.
   OPEN_STATUSES = %w[received claimed].freeze
   # alias and name are email's (AgentMessages::EmailRoutes): a CTO's own address,
-  # or a CTO named in a mail to team@.
-  ROUTED_BY = %w[user role thread default none alias name].freeze
+  # or a CTO named in a mail to team@. chat is the web chat's: the app's CTO.
+  ROUTED_BY = %w[user role thread default none alias name chat].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
@@ -466,7 +471,7 @@ class AgentMessage < ApplicationRecord
 
   # Why the bot must NOT show typing for this message now, or nil when it may.
   # Typing is a promise that an answer is coming, so it is shown only for a
-  # Discord message `worker` holds the claim on (a claim is taken only for a
+  # Discord or web-chat message (TYPING_CHANNELS) `worker` holds the claim on (a claim is taken only for a
   # message the board will answer) whose sender is still answered
   # (AgentMessages::Answerers, or a hold an admin released), and only within
   # TYPING_CAP of the claim. "not_holder" is the caller's error; the rest are
@@ -474,7 +479,7 @@ class AgentMessage < ApplicationRecord
   def typing_refusal(worker:, now: Time.current, answerers: AgentMessages::Answerers.current)
     worker = worker.to_s.strip
     return "not_holder" unless status == "claimed" && worker.present? && claimed_by == worker
-    return "not_discord" unless channel == "discord" && channel_ref.present?
+    return "not_typing_channel" unless TYPING_CHANNELS.include?(channel) && channel_ref.present?
     return "not_answered" unless hold_released_at.present? || answerers.allowed?(person)
     return "capped" if claimed_at.nil? || now - claimed_at > TYPING_CAP
 
@@ -482,6 +487,7 @@ class AgentMessage < ApplicationRecord
   end
 
   def email? = channel == "email"
+  def web? = channel == "web"
 
   def unrouted? = status == "unrouted"
   def held? = status == "held"

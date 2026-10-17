@@ -422,6 +422,9 @@ Rails.application.routes.draw do
       # the admin's tier and cap-lift form.
       get :usage
       patch :usage_cap
+      # The live chat with the app's CTO (docs/agents/system/agent-message-loop.md, "Web chat").
+      get :chat, to: "cto_chats#show"
+      post :chat, to: "cto_chats#create"
     end
   end
 

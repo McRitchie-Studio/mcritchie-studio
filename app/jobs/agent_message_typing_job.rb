@@ -6,6 +6,10 @@
 # (POST /api/v1/agent_messages/:id/typing), so typing lasts as long as the run
 # and stops with it: on the reply, a failure, a usage limit or a give-back.
 #
+# THE WEB CHAT has no bot: its pulse is a Turbo Stream broadcast to the sender's
+# open chat (AgentMessages::WebChat.broadcast_typing), which shows "<CTO> is
+# typing…" and fades it on its own a few seconds after the last pulse.
+#
 # BEST EFFORT, NEVER IN THE WAY. A pulse is re-checked here
 # (AgentMessage#typing_refusal: still claimed by that worker, a Discord message,
 # a sender the board answers, within TYPING_CAP of the claim) and dropped when it
@@ -28,6 +32,7 @@ class AgentMessageTypingJob < ApplicationJob
   def perform(message_id, worker)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.typing_refusal(worker: worker)
+    return AgentMessages::WebChat.broadcast_typing(message) if message.web?
 
     skip_soul = message.events.exists?(kind: [ REFUSED_EVENT, AgentMessageReplyJob::REFUSED_EVENT ])
     AgentMessages::BotSelector.post(message.soul_slug, skip_soul: skip_soul,

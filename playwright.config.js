@@ -121,6 +121,10 @@ if (!externalBaseURL) {
       // headroom; the spec reads the live value back from data-fresh-window-ms
       // and budgets its expiry wait from it, so this number is spelled ONCE.
       FRESH_DEPLOY_WINDOW_MS: "20000",
+      // The CTO web chat's two jobs (typing pulse, answer delivery) run in process,
+      // so e2e/cto_web_chat.spec.js sees typing and the answer stream in live
+      // (config/initializers/e2e_web_chat_jobs.rb; the test adapter only records them).
+      E2E_WEB_CHAT_JOBS: "1",
       // Deterministic CI check counts for the board's CI progress bars (feature:
       // visual-ci-progress-bars), keyed by the SHAs e2e/seed.rb assigns to the demo
       // task branch + the release-branch CI run — so the reader folds real numbers

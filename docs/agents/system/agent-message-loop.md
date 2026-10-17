@@ -4,7 +4,9 @@
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
 the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
 same answer path). Discord came first; since Phase 4 an email to a CTO on team@
-is answered by email too (below, "Email"). Two domain front doors are routed,
+is answered by email too (below, "Email"), and since Phase 7 an app's owner or an
+admin can chat with the app's CTO on McRitchie Studio itself (below, "Web chat").
+Two domain front doors are routed,
 Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
 owner to confirm by reply (below, "Proposals and confirm"). Xan stays routed as a
@@ -796,7 +798,7 @@ never claimable. The trust verdict is kept in the row's `envelope`
 **The audience gate is Discord's.** A routed email from a role
 `config/agent_answerers.yml` does not answer (today everyone but the owner) is
 stored `held` with a `held` event; the claim guard holds it again on the server.
-Email has no typing pulse (`typing_refusal` answers `not_discord`).
+Email has no typing pulse (`typing_refusal` answers `not_typing_channel`).
 
 **Loop safety** (`AgentMessages::EmailLoopGuard`), checked before anything is
 stored; guarded mail stays a desk capture only:
@@ -858,7 +860,7 @@ signature with the soul's name. The prompt tells the model it is writing a
 plain-text email. The model still runs with no tools.
 
 **Serving email.** `bin/dispatcher run` serves every channel by default
-(`--channel all|discord|email` narrows it); `bin/heartbeat <soul> --channel email`
+(`--channel all|discord|email|web` narrows it); `bin/heartbeat <soul> --channel email`
 answers one by hand. Observe with `/admin/agent_messages?channel=email` or
 `bin/agent-inbox list --channel email`.
 
@@ -870,6 +872,120 @@ relay path, read one real raw's header order (`bin/mail desk <id> --save DIR`,
 headers only): the trusted verdict must sit in SES's trace block. Tests:
 `test/services/agent_messages/email_trust_test.rb`, `email_routes_test.rb`,
 `email_ingest_test.rb`, and `test/integration/agent_email_loop_test.rb`.
+
+## Web chat: the CTOs answer on McRitchie Studio (Phase 7, step 3)
+
+Alex, 2026-10-16: "when you're speaking with your agent via website, discord or
+email they respond in real time." A signed-in app owner (`app_memberships`) or an
+admin opens `/applications/:slug/chat` (the **Chat** button on the app's page and
+on its CTO's settings page) and talks with that app's CTO: Avi, Turf or Tyrion.
+Each message is a new CHANNEL of this same loop, not a second loop: a `web`
+`AgentMessage`, claimed, answered with no tools and delivered exactly once.
+
+```text
+/applications/:slug/chat ─POST─▶ CtoChatsController ─▶ AgentMessages::WebIngest ─▶ agent_messages (channel web)
+bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMessageTypingJob ─▶ WebChat.broadcast_typing ─┐
+                               └▶ answer (claude -p --tools "") ─▶ complete ─▶ AgentMessageReplyJob ─▶ WebChat.deliver! ─┤
+                                         the page's Turbo stream (CtoChatChannel, ActionCable on Redis) ◀──────────────┘
+```
+
+| Piece | Where |
+|-------|-------|
+| The page and the post | `CtoChatsController`, `app/views/cto_chats/`, `app/javascript/cto_chat.js`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
+| Inbound | `AgentMessages::WebIngest` |
+| Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |
+| Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
+
+**Nothing in the request picks the soul.** The CTO is the app's, from
+`config/cto_reports.yml`, and only when the `web:` block lists it; a CTO not listed
+has no chat and the page says so. The thread is `web:<app slug>:<user id>`, so
+history persists per user per app, and the THREAD layer and the proposal scope
+never cross users or apps. `channel_ref` is the app slug and `guild_id` is nil.
+
+**The person and the audience.** The session vouches for the hub USER, the way
+Discord vouches for an author id. The message's person is the user's `web`
+identity (`AgentPersonIdentity`, external id the user id), else the person an
+operator already linked to that user (`agent_people.user_id`; Alex's
+`alex@mcritchie.studio` is the owner's, by `AgentPerson.seed_owner!`), else a new
+`public` person for the user. It is never matched by name. The audience is that
+person's role, exactly as on Discord and email, so the same envelope, rules,
+catalog and usage gate apply. **App ownership grants no agent authority**: an app
+owner who is not the platform owner is a `public` person, and their message is
+`held` until an operator gives the person an answered role
+(`bin/rails agent_people:role`), as a Discord message from them would be. The
+page tells them so. Giving the `owner` audience to a customer would print "Alex
+McRitchie, the owner" and the internal role doc into their answers; the scoped
+app-owner audience is Phase 6 of `.agents/epics/domain-agents.md`, design only.
+Alex owns each app through a different hub account, so each of
+`AgentPerson::OWNER_HUB_EMAILS` (alex@mcritchie.studio, alex@turfmonster.media,
+amcritchie@gmail.com) is a `web` identity of the owner's person, linked by the
+`LinkOwnerWebIdentities` migration and `AgentPerson.seed_owner!`; his chat is
+answered as the owner from any of them. Link any other account by hand:
+`bin/rails agent_people:link PERSON=<id> PLATFORM=web EXTERNAL_ID=<user id>`.
+
+**Before any model**, as on Discord: a message that is exactly `go`, `no` or
+`change: …` in a thread with a proposal is handled by
+`AgentMessages::ProposalConfirm`. The whole Change flow runs in the chat: the
+CTO's answer may end with a PROPOSAL, the reply shows the confirm line (the
+capability and its params), the owner's `go` in the same web thread opens a
+`designed` task, and the answer to the go carries its link. The task's
+`devops.source_thread` is the app's chat page (`/applications/<slug>/chat`) and its
+description says "Requested in the <slug> web chat" and links the message's admin
+page. A `go` in another web thread, or from a person who may not confirm, changes
+nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
+messages in a thread within an hour the next is `held` with a `rate_limited`
+event. A message is at most 4,000 characters, the prompt's message budget. The
+form carries a client id per send, so a double submit stores one row.
+
+**Real time.** The page subscribes with `turbo_stream_from <stream>, channel:
+CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
+
+- **Typing** reuses the dispatcher's pulse unchanged (above, "Typing"): the run's
+  first pulse, then one every 7 seconds, capped at 3 minutes, checked by
+  `typing_refusal`. For a web row `AgentMessageTypingJob` broadcasts "Turf is
+  typing…" into the page's typing slot instead of calling a bot. The page fades it
+  `WebChat::TYPING_FADE` (12) seconds after the last pulse, so a run that dies
+  stops typing within seconds, and drops a pulse older than an answer already
+  shown.
+- **The answer** is delivered by `AgentMessageReplyJob` through
+  `WebChat.deliver!`: under the row lock it is marked posted once
+  (`reply_external_id` `web:<id>`, a `reply_posted` event `via: web_chat`), then
+  the turn is replaced in place, typing is cleared and the usage meter redrawn.
+  The answer is on the row before any broadcast, so a failed broadcast (an
+  `ErrorLog` row) loses nothing: the page shows it on its next load.
+- **Streaming** is not built, for the two reasons in "Streaming" below: the
+  sections are cut from the final text, and status is read only from the
+  envelope. The web chat gets typing and a live append; a streamed draft would
+  follow that design and broadcast drafts on this stream.
+
+**The meter** is the app's usage meter (`applications/_usage_meter`,
+[`agent-usage.md`](agent-usage.md)) in tokens: the page passes
+`AgentUsage.meter(app).without_cost`, so no viewer of the chat sees dollars, and
+the public never reaches the page.
+
+**Who may listen.** `/cable` admits any signed-in user with a current session
+token (`ApplicationCable::Connection`; before this it admitted admins only).
+What a socket may hear is each channel's check: `Turbo::StreamsChannel`, which
+carries the ops streams (the deployments board, the activity feed), stays admins
+only (`ApplicationCable::TurboStreamsAdminOnly`, prepended by
+`config/initializers/turbo_streams_admin_only.rb`); `CtoChatChannel` admits only
+the user its stream names, while they may manage that app; and every
+`ApplicationCable::Channel` refuses a non-admin unless it overrides `authorized?`.
+
+**The dispatcher** serves the web chat by default: `AgentMailbox.routed_souls`
+reads the `web:` block too, which is how Tyrion, whom no guild routes (he answers
+Discord through OpenClaw), is answered in the chat; `--channel web` narrows a
+dispatcher to it. Its typing applies to `TYPING_CHANNELS` (discord, web). A
+running dispatcher picks the change up by itself on the next ship (it restarts on
+a new digest of its files and `config/agent_routes.yml`).
+
+**Observe** with `/admin/agent_messages?channel=web` or `bin/agent-inbox list
+--channel web`; a web row's place label is `[web]`, and the prompt tells the model
+its reply renders as Markdown in the chat. Tests:
+`test/services/agent_messages/web_ingest_test.rb`, `web_chat_test.rb`,
+`test/channels/cto_chat_channel_test.rb`, `test/controllers/cto_chats_controller_test.rb`,
+`test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
+`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket).
 
 ## Viewing a run
 
@@ -927,11 +1043,11 @@ that will post the reply shows "typing…" in the message's channel or thread.
   token, nothing types.
 - **Only for answers that will come.** The board re-checks every pulse
   (`AgentMessage#typing_refusal`): the message is `claimed` by that worker, it is
-  a Discord message, its sender is answered (`AgentMessages::Answerers`, or a hold
+  a Discord or web-chat message (`AgentMessage::TYPING_CHANNELS`), its sender is answered (`AgentMessages::Answerers`, or a hold
   an admin released), and the claim is under `AgentMessage::TYPING_CAP` old. A
   held or unrouted message is never claimed, so it never types. Anyone but the
   holder gets 409 `NOT_HOLDER`; a quiet "no" is a 200 whose `meta.typing` says
-  `not_discord`, `not_answered` or `capped`, and the dispatcher stops pulsing
+  `not_typing_channel`, `not_answered` or `capped`, and the dispatcher stops pulsing
   that run on any answer but `queued`.
 - **How it stops.** The dispatcher reaps a finished run before it pulses, so
   pulses end with the run, whatever the end: the reply, a failed or raised run, a
@@ -1236,8 +1352,9 @@ guard and the unanswered audiences).
 
 ## Limits of phase 1
 
-- Discord and email only. Email reaches a CTO only through the team@ Resend
-  inbound, and is trusted only by the topmost SES verdict ("Email"). The gateway stores a Discord message within seconds; while it is down
+- Discord, email and the web chat only. Email reaches a CTO only through the team@ Resend
+  inbound, and is trusted only by the topmost SES verdict ("Email"). The web chat
+  answers whole messages, with typing but no streaming ("Web chat"). The gateway stores a Discord message within seconds; while it is down
   (a deploy, a reconnect, a stood-down leader) the backstop catches up within 10
   minutes, so an answer takes the Claude run plus, at worst, that.
 - One gateway connection, unsharded. That holds below 2,500 guilds; past it

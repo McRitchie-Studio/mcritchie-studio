@@ -1,0 +1,10 @@
+<%# locals: (cto_name:, at:) %>
+<%# One typing pulse (AgentMessages::WebChat.broadcast_typing). The page fades it TYPING_FADE seconds after the last one, and drops it when a newer answer is already shown. %>
+<div class="flex items-center gap-2 py-2 text-xs text-muted" data-test="cto-chat-typing" data-typing-at="<%= (at.to_f * 1000).to_i %>">
+  <span class="flex gap-1" aria-hidden="true">
+    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"></span>
+    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:150ms]"></span>
+    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:300ms]"></span>
+  </span>
+  <span><%= cto_name %> is typing…</span>
+</div>

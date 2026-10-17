@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/heartbeat <soul> --channel discord|email [--once] [--worker ID] [--dry-run]
+# bin/heartbeat <soul> --channel discord|email|web [--once] [--worker ID] [--dry-run]
 #
 # One soul's pass over the agent mailbox (docs/agents/system/agent-message-loop.md):
 # claim the oldest message routed to <soul>, take the soul's ONE read-only action
@@ -26,7 +26,7 @@ require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_mailbox"
 
-USAGE = "Usage: bin/heartbeat <soul> --channel discord|email [--once] [--worker ID] [--dry-run]"
+USAGE = "Usage: bin/heartbeat <soul> --channel discord|email|web [--once] [--worker ID] [--dry-run]"
 
 # Every argument is accounted for BEFORE the first claim: `--help` prints this and
 # exits, and an unknown argument refuses, so a probe never claims a message.
@@ -40,8 +40,8 @@ if soul.empty? || parsed.positionals.size > 1 || worker&.strip&.empty?
   warn USAGE
   exit 2
 end
-unless %w[discord email].include?(channel)
-  warn "bin/heartbeat: --channel is discord or email (got #{channel.inspect}); nothing was claimed."
+unless %w[discord email web].include?(channel)
+  warn "bin/heartbeat: --channel is discord, email or web (got #{channel.inspect}); nothing was claimed."
   exit 2
 end
 

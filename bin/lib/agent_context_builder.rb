@@ -331,11 +331,16 @@ module AgentMailbox
     end
 
     # How the message reached the soul. An email answer is mailed back as plain
-    # text, so the model is told not to write markdown for it.
+    # text, so the model is told not to write markdown for it. A web-chat answer
+    # renders as Markdown in the chat on McRitchie Studio.
     def arrival
-      if @message["channel"].to_s == "email"
+      case @message["channel"].to_s
+      when "email"
         "someone sent you by email; your reply is mailed back to them as a plain-text email " \
           "(no markdown, no greeting line needed, no signature: one is added)"
+      when "web"
+        "someone sent you in the web chat on McRitchie Studio; your reply appears in that chat " \
+          "and renders as Markdown (keep it short, as in a chat)"
       else
         "someone posted to you in #{@message['channel'].to_s.capitalize}"
       end
