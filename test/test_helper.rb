@@ -246,6 +246,7 @@ require_relative "support/session_env"
 # killed test that committed — cannot reach a test. See test/support/test_database_purge.rb
 # and the standing invariant in test/integration/test_database_hermeticity_test.rb.
 require_relative "support/test_database_purge"
+require_relative "support/test_storage_roots"
 TestDatabasePurge.purge!
 
 # TestDatabaseLeakGuard — keep it empty DURING the run, and NAME the test that
@@ -349,7 +350,14 @@ module ActiveSupport
     # load-time purge above (base DB, parent process) never touches. Purge inside each
     # worker too, so the "starts empty" guarantee holds in every process that runs a
     # test, not just the single-process local path. No-op when workers <= 1.
-    parallelize_setup { TestDatabasePurge.purge! }
+    #
+    # Each worker also gets its own Active Storage disk (tmp/storage/worker-<n>): the
+    # databases were already per-worker, the disk was not, and two workers writing
+    # one key clobbered each other. See test/support/test_storage_roots.rb.
+    parallelize_setup do |worker|
+      TestDatabasePurge.purge!
+      TestStorageRoots.isolate!(worker)
+    end
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
