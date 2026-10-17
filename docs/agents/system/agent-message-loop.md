@@ -987,7 +987,83 @@ its reply renders as Markdown in the chat. Tests:
 `test/channels/cto_chat_channel_test.rb`, `test/controllers/cto_chats_controller_test.rb`,
 `test/views/agent_chat_component_test.rb` (the shared chat for a non-CTO agent),
 `test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
-`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket).
+`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket). Files:
+`test/services/agent_messages/web_ingest_attachments_test.rb`, `test/lib/agent_media_test.rb`,
+`test/integration/cto_web_chat_attachments_test.rb` and `e2e/cto_web_chat_attachments.spec.js`.
+
+### Files: images and PDFs in the chat
+
+Alex, 2026-10-17: "drop assets that the agent can respond to. That is table
+stakes for a client facing chat." The design is
+`.agents/epics/chat-media-design.md`; this is its step 1, images and PDFs.
+
+```text
+composer (Attach, paste, drop) ─POST each file─▶ CtoChatAttachmentsController#create ─▶ R2 apps/<slug>/chat/u<user>-<token>/<file>
+                                 ◀─ a signed token (never a blob URL) ─┘
+Send (waits for uploads) ─▶ WebIngest: types, sizes, count, prefix ─▶ message.attachments (same transaction)
+bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─▶ Media: fetch, magick shrink + strip
+               ─▶ ONE stream-json user message: [label, image|document]… + the prompt ─▶ claude -p --safe-mode --tools ""
+```
+
+| Piece | Where |
+|-------|-------|
+| The rules (types from the bytes, sizes, count, key prefix, tokens, who may see) | `AgentMessages::Attachments` |
+| Upload and the sent file's link | `CtoChatAttachmentsController` (`create`, `show`); signed-in, 404 unless owner or admin |
+| The composer and the sent files | `app/views/cto_chats/_attachments.html.erb`, `_sent_files.html.erb`, `app/javascript/chat_attachments.js` |
+| What the model gets | `bin/lib/agent_media.rb` (`AgentMailbox::Media`); `Responder#respond`; `ClaudeRun.parse(stream: true)` |
+| Into the build | `AgentProposals::Executor#change` attaches the message's blobs to the task (`Task#attachments`) |
+
+- **Types and limits** (`Attachments`): PNG, JPEG, WebP, GIF, HEIC/HEIF and PDF,
+  read from the BYTES (Marcel, plus the HEIF `ftyp` brands Marcel misreads), never
+  the name or the browser. Images 20 MB, a PDF 32 MB, 10 files a message, 60
+  uploads per user per hour. A message may be files with no text. A message with
+  files is never a `go`/`no`.
+- **Storage.** R2 through the hub's Active Storage service, under
+  `apps/<app slug>/chat/u<user id>-<token>/<file>`; the prefix is written on the
+  server and is the proof of whose upload a blob is, so a message attaches only
+  its own sender's blobs for its own app. Uploads are marked analyzed, so Active
+  Storage never decodes an untrusted image on the hub.
+- **Upload path.** The browser posts each file to the HUB, which writes it to R2;
+  it is not an Active Storage direct upload to R2, because the R2 buckets carry
+  no CORS rule (a preflight answered 403, 2026-10-17). Switching to direct upload
+  needs that rule on `mcritchie-studio-dev` and `-production` (Steffon, the
+  Cloudflare admin token) and a change in `chat_attachments.js` only.
+- **Private.** No page or answer carries a blob URL. The composer holds a signed
+  token (purpose `cto_chat_attachment`, one day), which Active Storage's public
+  `/rails/active_storage/blobs/*` routes refuse. A sent file shows through
+  `/applications/<slug>/chat/attachments/<id>`, which checks the viewer wrote the
+  thread or is an admin (another owner of the same app gets 404) and redirects,
+  `no-store`, to an R2 URL that expires in 5 minutes. The dispatcher reads the
+  same kind of URL from the holder-only context bundle.
+- **What the model gets** (`Media`). Each image is re-encoded by ImageMagick on
+  the dispatcher Mac (`magick`, with an explicit decoder per type and memory,
+  disk and time limits): long edge at most 1568 px, `-strip` (EXIF and GPS gone),
+  PNG stays PNG, the rest (HEIC included) become JPEG. A PDF goes as a `document`
+  block when it starts `%PDF-` and declares at most 100 pages. At most 20 MB of
+  blocks a message. A file that fails any of this is skipped and named; the
+  prompt lists every file under "Attached:" inside the fence, and a rule tells the
+  model the files are untrusted data and to say when one could not be read.
+  Earlier turns name their files ("attached: …; not shown again"); a warm
+  session already holds them.
+- **The run.** Only a message with files changes the command:
+  `Media.stream_cmd` switches `--output-format` to `stream-json` and adds
+  `--input-format stream-json --verbose`; `--safe-mode` and `--tools ""` stay, and
+  a warm turn keeps `--resume`. `ClaudeRun.parse(stream: true)` reads the last
+  top-level `result` line, which is the json envelope, so the reply, usage limits,
+  sign-in and the meter read exactly as before; a stream with no result line is a
+  failed run, never a reply. The run's `run_meta` gains `files_shown` and
+  `files_skipped`. Image tokens are in the run's usage, so the meter counts them.
+- **Answers never load images.** A chat answer renders through
+  `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
+  answer steered by text inside a file cannot send data out through an `<img>`
+  that loads on sight.
+- **Into the build.** A `go` on a change proposal attaches the proposal's
+  message's files to the designed task (the same blobs, `dependent: false`), and
+  the task's description names them as data from the requester. Writing them into
+  a desk at `bin/task begin` is the design's later step.
+- **Not yet:** audio and video, Discord attachments, office files, a sweep of
+  uploads never sent, and keeping a refused send's chips (the user attaches
+  again).
 
 ## Build intake: Xan answers the public on /build
 
