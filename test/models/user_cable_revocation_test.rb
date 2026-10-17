@@ -1,7 +1,7 @@
 require "test_helper"
 
-# /cable checks admin and the session token only at CONNECT
-# (app/channels/application_cable/connection.rb), so a socket opened before a
+# /cable checks the session token only at CONNECT, and the board streams check
+# admin only at SUBSCRIBE (app/channels/application_cable/), so a socket opened before a
 # revocation would keep streaming board HTML until it reconnected. User drops the
 # user's remote connections after commit whenever their token rotates, they lose
 # admin, or the row is destroyed. The disconnect travels on the connection's
