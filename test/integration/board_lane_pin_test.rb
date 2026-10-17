@@ -92,21 +92,29 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
     assert_includes header.text, Task::STAGE_LABELS.fetch("shipped")
     assert_select "[data-test='stage-header'][data-stage='shipped'] [data-stage-count='shipped']", 1
   end
-  # board-lane-header-overlap. Where the measured scroller DOES come on, a sticky
-  # header is offset by its top from the scroller's own edge, down over its cards,
-  # so the stylesheet unpins every header while the lane row says it scrolls. And
-  # the six-lane floor is 13rem: at 13.5rem the six overflowed every window from
-  # 1400 to 1439px.
-  test "the stylesheet unpins the lane headers while the lanes scroll sideways" do
-    css = Rails.root.join("app/assets/tailwind/application.css").read
-    assert_match(/\[data-test="kanban-lanes"\]\[data-lane-scroll="true"\] \[data-test="stage-header"\] \{\s*position: static;/, css)
+  # board-lane-header-overlap, then board-lanes-by-board-width. Where the measured
+  # scroller DOES come on, a sticky header is offset by its top from the scroller's
+  # own edge, down over its cards, so every header stands down while the lane row
+  # says it scrolls — through a group variant keyed on the row's own state, never a
+  # stylesheet rule keyed on test ids.
+  test "the lane headers unpin while the lanes scroll sideways, by a semantic variant" do
     lanes = css_select("[data-test='kanban-lanes']").first
     assert_equal "laneScroll", lanes[":data-lane-scroll"], "the lane row publishes its scroller state"
+    assert_includes lanes["class"].split, "group/lanes"
+
+    css_select("[data-test='stage-header']").each do |header|
+      assert_includes header["class"].split, "group-data-[lane-scroll=true]/lanes:static"
+    end
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_no_match(/\[data-test="kanban-lanes"\]/, css, "the stopgap rule keyed on test ids is gone")
   end
 
-  test "the six-lane board's lane floor fits six lanes from 1400px" do
+  # The lane count is asked of the BOARD: six 13rem lanes and five 1rem gaps are 83rem,
+  # and the row collapses below exactly that, whatever the window or its scrollbar.
+  test "the six-lane board collapses by the board's width, from the lanes' own floor" do
     lanes = css_select("[data-test='kanban-lanes'] > div")
     assert_equal Task::DEPLOYMENTS_BOARD_STAGES.size, lanes.size
     lanes.each { |lane| assert_includes lane["class"].split, "sm:min-w-[13rem]" }
+    assert_includes css_select("[data-test='kanban-lanes']").first["class"].split, "@container/lanes"
   end
 end
