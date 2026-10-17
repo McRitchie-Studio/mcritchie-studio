@@ -77,6 +77,8 @@ module AgentMessages
 
     # Stores one upload for `user` in `app_slug`'s chat and returns the blob.
     # The type is read from the bytes; the size from the file. Raises Refused.
+    # Marked analyzed, so Active Storage never runs its image analyzer on an
+    # untrusted upload on the hub: only the dispatcher's ImageMagick decodes it.
     def upload!(io:, filename:, app_slug:, user:, now: Time.current)
       raise Refused.new("Attach a file first.", code: "ATTACHMENT_MISSING") if io.nil?
       if uploads_since(user.id, now - UPLOAD_WINDOW) >= UPLOAD_LIMIT
@@ -88,7 +90,8 @@ module AgentMessages
       check!(content_type: content_type, byte_size: io.size, filename: filename)
       ActiveStorage::Blob.create_and_upload!(io: io, filename: filename, content_type: content_type, identify: false,
                                              key: key_for(app_slug, user.id, filename),
-                                             metadata: { "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
+                                             metadata: { "analyzed" => true, "identified" => true,
+                                                         "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
     end
 
     # HEIF's ISO-BMFF brands (an iPhone writes `heic`, an editor `heix` or
