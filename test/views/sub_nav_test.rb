@@ -58,15 +58,18 @@ class SubNavTest < ActionView::TestCase
     assert_select %(a[href="#{deployments_path}"] span[title="0 assembled"].text-muted), text: "0"
   end
 
-  test "[component] board_views shows Tasks below 1400px only on the Deploy board" do
+  test "[component] board_views shows Tasks only while the Deploy board is too narrow for six lanes" do
     render_nav :board_views, current: :deployments, counts: { building: 1 }
     tasks_link = css_select(%(a[href="#{tasks_path}"])).first
-    assert_includes tasks_link["class"].split, "min-[1400px]:hidden"
+    assert_equal "boardNarrow", tasks_link["x-show"], "keyed on the board's container query, not the window"
+    assert_equal "display: none", tasks_link["style"]
+    assert_not_includes tasks_link["class"].split, "min-[1400px]:hidden"
     assert_select %(a[href="#{tasks_path}"] span[title="1 building"]), text: "1"
 
     render_nav :board_views, current: :stages, counts: {}
     stages_tasks_link = css_select(%(a[href="#{tasks_path}"])).last
-    assert_not_includes stages_tasks_link["class"].split, "min-[1400px]:hidden"
+    assert_nil stages_tasks_link["x-show"], "no board on /stages, so nothing hides the link"
+    assert_nil stages_tasks_link["style"]
     assert_select %(a[href="#{tasks_path}"] span[title="0 building"]), minimum: 1
   end
 

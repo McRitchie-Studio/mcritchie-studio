@@ -24,7 +24,8 @@ require "test_helper"
 # the reason stops being true. A stale entry (one that matched nothing) fails too.
 #
 # WHAT IT CANNOT SEE: nesting across files (a sticky partial rendered inside another
-# file's scroller) and markup a Ruby helper emits (`tag.div class: "sticky"`). It reads
+# file's scroller), markup a Ruby helper emits (`tag.div class: "sticky"`), and overflow
+# or sticky set by a stylesheet class (.hb-scroll, .pkg-matrix-wrap, .pl-colhd). It reads
 # one template at a time, with ERB tags stripped, so both branches of a conditional count.
 class StickyScrollAncestorLintTest < ActiveSupport::TestCase
   VIEWS = Rails.root.join("app/views")

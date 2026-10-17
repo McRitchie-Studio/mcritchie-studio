@@ -21,8 +21,9 @@ const { scrollToBoardBottom, gotoBoard, headerClearance, pinReading, expectLanes
 //     or under the nav.
 //
 // A WIDE VIEWPORT, like the other Deployments specs: the six-lane board collapses its
-// upstream lanes below 1400px, and the lane row only drops its scroller — the thing that
-// lets the headers pin at all — when the lanes fit without one.
+// upstream lanes while the board is narrower than six (a container query), and the lane
+// row only drops its scroller — the thing that lets the headers pin at all — when the
+// lanes fit without one.
 test.use({ viewport: { width: 1600, height: 800 } });
 
 test("the lane headers pin under the site header while cards scroll beneath", async ({
@@ -51,7 +52,8 @@ test("the lane headers pin under the site header while cards scroll beneath", as
           const tops = Array.from(document.querySelectorAll("[data-test='stage-header']"))
             .filter((el) => el.getBoundingClientRect().width > 0)
             .map((el) => Math.round(el.getBoundingClientRect().top));
-          return tops.every((t) => Math.abs(t - navBottom) <= 2);
+          // An empty list would pass `every`; no visible header is no pin.
+          return tops.length > 0 && tops.every((t) => Math.abs(t - navBottom) <= 2);
         }),
       { message: "every lane header settles on the site header's bottom edge" }
     )
