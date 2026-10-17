@@ -1,4 +1,4 @@
-// The chat composer's files (app/views/cto_chats/_attachments.html.erb; the rules
+// The chat composer's files (app/views/agent_chats/_attachments.html.erb; the rules
 // are the server's, AgentMessages::Attachments, and these checks only spare a
 // round trip). A file arrives by the Attach button, a paste into the form, or a
 // drop anywhere on the page, and uploads AT ONCE, one request per file, to the
@@ -262,7 +262,7 @@ document.addEventListener("submit", (event) => {
   event.target.dataset.chatAttachmentsHeld = "1";
 }, true);
 
-// Enter sends a files-only message too (cto_chat.js sends only when there is text).
+// Enter sends a files-only message too (agent_chat.js sends only when there is text).
 document.addEventListener("keydown", (event) => {
   const input = event.target;
   if (!(input instanceof HTMLTextAreaElement) || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
@@ -273,3 +273,16 @@ document.addEventListener("keydown", (event) => {
     input.form.requestSubmit();
   }
 });
+
+// A form drawn by the server (the page, or the form a refused send re-renders)
+// may already hold ready chips: the text box is then not required.
+function syncAll() { document.querySelectorAll(ROOT).forEach(syncRequired); }
+document.addEventListener("turbo:load", syncAll);
+document.addEventListener("turbo:before-stream-render", (event) => {
+  const original = event.detail.render;
+  event.detail.render = async (stream) => {
+    await original(stream);
+    syncAll();
+  };
+});
+syncAll();

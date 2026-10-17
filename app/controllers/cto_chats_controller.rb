@@ -58,7 +58,8 @@ class CtoChatsController < ApplicationController
   def refused(error)
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: replace_form(error: error.message, text: params.dig(:cto_chat, :text).to_s),
+        render turbo_stream: replace_form(error: error.message, text: params.dig(:cto_chat, :text).to_s,
+                                          tokens: attachment_tokens),
                status: :unprocessable_content
       end
       format.html { redirect_to chat_application_path(@app.slug), alert: error.message, status: :see_other }
@@ -70,14 +71,20 @@ class CtoChatsController < ApplicationController
                                                                  locals: { message: message, agent_name: @cto.display_name })
   end
 
-  def replace_form(error: nil, text: "")
+  def replace_form(error: nil, text: "", tokens: [])
     turbo_stream.replace(FORM_ID, partial: "agent_chats/form",
-                                  locals: composer_locals(error: error, text: text).merge(agent_name: @cto.display_name))
+                                  locals: composer_locals(error: error, text: text, tokens: tokens)
+                                    .merge(agent_name: @cto.display_name))
   end
 
   # The shared composer's locals (agent_chats/_form) for this app's CTO chat.
-  def composer_locals(error: nil, text: "")
-    { url: chat_application_path(@app.slug), scope: :cto_chat, id: FORM_ID, error: error, text: text }
+  # `attachments` fills the form's attachments slot: where files upload, and the
+  # files a REFUSED send carried (`tokens`), re-rendered as ready chips so the
+  # owner fixes the message without attaching them again.
+  def composer_locals(error: nil, text: "", tokens: [])
+    { url: chat_application_path(@app.slug), scope: :cto_chat, id: FORM_ID, error: error, text: text,
+      attachments: { upload_url: chat_attachments_application_path(@app.slug),
+                     held: AgentMessages::Attachments.held(tokens, app_slug: @app.slug, user: current_user) } }
   end
 
   # Whether the agents answer this user's person now (config/agent_answerers.yml),

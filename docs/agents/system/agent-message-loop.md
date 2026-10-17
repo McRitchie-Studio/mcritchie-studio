@@ -1009,7 +1009,7 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 |-------|-------|
 | The rules (types from the bytes, sizes, count, key prefix, tokens, who may see) | `AgentMessages::Attachments` |
 | Upload and the sent file's link | `CtoChatAttachmentsController` (`create`, `show`); signed-in, 404 unless owner or admin |
-| The composer and the sent files | `app/views/cto_chats/_attachments.html.erb`, `_sent_files.html.erb`, `app/javascript/chat_attachments.js` |
+| The composer and the sent files | the shared chat's attachments slot: `app/views/agent_chats/_attachments_slot.html.erb` renders `_attachments` (and `_attachment_chip`) when the composer locals carry `attachments`; `_sent_files.html.erb`; `app/javascript/chat_attachments.js` |
 | What the model gets | `bin/lib/agent_media.rb` (`AgentMailbox::Media`); `Responder#respond`; `ClaudeRun.parse(stream: true)` |
 | Into the build | `AgentProposals::Executor#change` attaches the message's blobs to the task (`Task#attachments`) |
 
@@ -1057,13 +1057,15 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
   answer steered by text inside a file cannot send data out through an `<img>`
   that loads on sight.
+- **A refused send keeps its files.** The re-rendered form draws the send's
+  still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
+  text or removes a file and sends again.
 - **Into the build.** A `go` on a change proposal attaches the proposal's
   message's files to the designed task (the same blobs, `dependent: false`), and
   the task's description names them as data from the requester. Writing them into
   a desk at `bin/task begin` is the design's later step.
 - **Not yet:** audio and video, Discord attachments, office files, a sweep of
-  uploads never sent, and keeping a refused send's chips (the user attaches
-  again).
+  and uploads never sent.
 
 ## Build intake: Xan answers the public on /build
 

@@ -12,7 +12,7 @@ pin "scroll_tab_stop"
 pin "logo_gallery"
 pin "logo_editor"
 pin "logo_download"
-# The chat composer's files (app/views/cto_chats/_attachments.html.erb).
+# The chat composer's files (app/views/agent_chats/_attachments.html.erb).
 pin "chat_attachments"
 pin "dreams_filter"
 # chart.js is the self-contained jsDelivr/esm.sh "auto" bundle (auto-registers

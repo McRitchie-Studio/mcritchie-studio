@@ -143,6 +143,18 @@ module AgentMessages
       end
     end
 
+    # The files a refused send carried, to show again as ready chips: [[token,
+    # blob]] for each token that still names an unsent blob of this user's in
+    # this app (the first MAX_FILES + 1, so a too-many refusal still shows why).
+    # Lenient on purpose: it only redraws; WebIngest checks every rule at send.
+    def held(tokens, app_slug:, user:)
+      prefix = key_prefix(app_slug, user.id)
+      Array(tokens).map(&:to_s).reject(&:blank?).uniq.first(MAX_FILES + 1).filter_map do |token|
+        blob = ActiveStorage::Blob.find_signed(token, purpose: TOKEN_PURPOSE)
+        [ token, blob ] if blob&.key.to_s.start_with?(prefix) && !blob.attachments.exists?
+      end
+    end
+
     # Whether `user` may see `attachment`: it is on a web chat message in
     # `app_slug`'s chat, and the user wrote it or is an admin.
     def visible_to?(attachment, app_slug:, user:)

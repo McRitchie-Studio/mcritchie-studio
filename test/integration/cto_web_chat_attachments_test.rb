@@ -209,6 +209,30 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
     assert_equal 0, AgentMessage.count
   end
 
+  test "[integration] a refused send re-renders the form with its files as ready chips, so they are not lost" do
+    log_in_as(@alex)
+    tokens = Array.new(11) { upload["token"] }
+
+    send_with_files("all of them", tokens)
+    assert_response :unprocessable_content
+    stream = Nokogiri::HTML(response.body)
+    chips = stream.css("[data-test='cto-chat-chip'][data-state='done']")
+    assert_equal 11, chips.size, "every file the refused send carried comes back"
+    assert_equal tokens, stream.css("input[type='hidden'][name='cto_chat[attachments][]']").map { |i| i["value"] }
+    assert_equal "probe.png", chips.first.at_css("[data-test='cto-chat-chip-name']").text
+
+    # Remove one (the browser drops its chip and field) and the same tokens send.
+    send_with_files("ten of them", tokens.first(10))
+    assert_response :success
+    assert_equal 10, AgentMessage.sole.attachments.count
+
+    # A token of someone else's never comes back as a chip.
+    log_in_as(@co_owner)
+    post chat_application_path("turf-monster"), params: { cto_chat: { text: "", attachments: [ tokens.last ] } }, as: :turbo_stream
+    assert_response :unprocessable_content
+    assert_empty Nokogiri::HTML(response.body).css("[data-test='cto-chat-chip']")
+  end
+
   test "[integration] a go on a change proposal copies the message's files onto the designed task" do
     turf_alex = User.create!(email: "alex@turfmonster.media", name: "Alex", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: turf_alex)
