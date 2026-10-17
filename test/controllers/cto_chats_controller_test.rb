@@ -7,11 +7,14 @@ require "test_helper"
 # and CTO settings pages.
 class CtoChatsControllerTest < ActionDispatch::IntegrationTest
   setup do
+    AgentMessages::Answerers.current = AgentMessages::Answerers.load
     AgentPerson.seed_owner!
     @alex = users(:alex)
     @owner = User.create!(email: "owner@turf.example", name: "Turf Owner", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: @owner)
   end
+
+  teardown { AgentMessages::Answerers.reset! }
 
   def ingest(user, text) = AgentMessages::WebIngest.new(user: user, cto: AppOwnership.cto_for_app("turf-monster")).call(text)
 

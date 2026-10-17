@@ -9,11 +9,15 @@ class WebIngestTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
   setup do
+    # The shipped answerers, read fresh: another test may have swapped them.
+    AgentMessages::Answerers.current = AgentMessages::Answerers.load
     @alex_person = AgentPerson.seed_owner!
     @alex = users(:alex)
     @owner = User.create!(email: "owner@turf.example", name: "Turf Owner", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: @owner)
   end
+
+  teardown { AgentMessages::Answerers.reset! }
 
   def cto(app_slug) = AppOwnership.cto_for_app(app_slug)
 
