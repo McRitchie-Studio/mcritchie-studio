@@ -30,7 +30,7 @@
       <label for="app_request_<%= BrowserProof::HONEYPOT_FIELD %>">Leave this field empty</label>
       <input type="text" name="app_request[<%= BrowserProof::HONEYPOT_FIELD %>]" id="app_request_<%= BrowserProof::HONEYPOT_FIELD %>" tabindex="-1" autocomplete="off" data-test="build-honeypot">
     </div>
-    <input type="hidden" name="app_request[<%= BrowserProof::PROOF_FIELD %>]" data-proof="<%= build_proof %>"
+    <input type="hidden" name="app_request[<%= BrowserProof::PROOF_FIELD %>]" data-proof="<%= BrowserProof.new(BuildController::PROOF_PURPOSE).issue %>"
            x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="build-proof">
     <div class="relative rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors">
       <%= f.label :prompt, "Tell Xan what you want to build", class: "sr-only" %>

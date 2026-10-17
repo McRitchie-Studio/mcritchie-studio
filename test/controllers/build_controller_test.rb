@@ -1,15 +1,25 @@
 require "test_helper"
 
 # [integration] The /build funnel through real requests: a signed-out visitor's
-# prompt survives the sign-in detour (by the magic link's return_to AND by the
-# Google path that always lands on the home page), claiming a name queues the
-# build, and a draft is only ever visible to the account that finished it.
+# first message opens the chat with Xan, the draft survives the sign-in detour
+# (by the magic link's return_to AND by the Google path that always lands on the
+# home page), Build my app on a finished checklist queues the build, and a draft
+# is only ever visible to the account that finished it. The chat itself:
+# test/integration/build_intake_flow_test.rb.
 class BuildControllerTest < ActionDispatch::IntegrationTest
   PROMPT = "A league site with schedules, scores and standings".freeze
 
   def send_prompt(text = PROMPT)
     post build_path, params: { app_request: { prompt: text } }
     AppRequest.recent.first
+  end
+
+  # The four taps, written as BuildIntake::Choice would write them.
+  def complete_intake!(draft, subdomain: "league-hub")
+    draft.reload.update!(answers: { "idea" => "A league site" }, cto_name: "Coach", cto_avatar: "harbor", subdomain: subdomain,
+                         palette: { "name" => "Pitch",
+                                    "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                                    "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } })
   end
 
   def sign_in_through_email_link(user, return_to)
@@ -27,15 +37,16 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]']"
   end
 
-  test "sending a prompt signed out saves a draft and asks the visitor to register" do
+  test "sending a prompt signed out saves a draft and opens the chat with Xan, no sign-in yet" do
     draft = send_prompt
 
     assert_redirected_to build_request_path(draft.token)
     assert draft.draft?
     assert_nil draft.user
     follow_redirect!
-    assert_select "[data-test='build-register']"
-    assert_select "[data-test='build-echo']", text: PROMPT
+    assert_select "[data-test='build-chat-page']"
+    assert_select "[data-test='build-register']", 0
+    assert_select "[data-test='cto-chat-sent']", text: PROMPT
   end
 
   test "the signed-out composer gets JSON back: the draft's token and path, for the sign-in modal" do
@@ -51,7 +62,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Prompt/, response.parsed_body["error"])
   end
 
-  test "the prompt survives an emailed sign-in link and lands on the name step" do
+  test "the draft survives an emailed sign-in link and lands back in the chat" do
     draft = send_prompt
     user = users(:viewer)
 
@@ -59,7 +70,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to build_request_path(draft.token)
     follow_redirect!
 
-    assert_select "[data-test='build-claim']"
+    assert_select "[data-test='build-chat-page']"
     assert_equal user, draft.reload.user, "signing in attaches the draft to its finisher"
   end
 
@@ -74,10 +85,11 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_response :success, "the forward happens once, not on every visit home"
   end
 
-  test "claiming a name queues the build and shows the status page" do
+  test "Build my app on a finished checklist queues the build and shows the status page" do
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
 
     assert_difference -> { Task.count }, 1 do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
@@ -95,16 +107,18 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
   end
 
-  test "a refused name re-renders the name step with the reason, and queues nothing" do
+  test "a refused name re-renders the chat with the reason, and queues nothing" do
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
 
     assert_no_difference -> { Task.count } do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "www" } }
     end
     assert_response :unprocessable_entity
-    assert_select "[data-test='build-errors']", text: /reserved/
+    assert_match(/reserved/, flash[:alert])
+    assert_select "[data-test='build-chat-page']"
     assert draft.reload.draft?
   end
 
@@ -132,6 +146,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     assert draft.reload.queued?
 

@@ -24,7 +24,6 @@
 class BuildController < ApplicationController
   before_action :load_request, only: %i[show update message turns choose]
   before_action :require_admin, only: :index
-  helper_method :build_proof
 
   # Public forms that write rows: bounded per IP, so they cannot fill a table or
   # run up the agents' bill (BuildIntake::Caps bounds the answers themselves).
@@ -209,9 +208,6 @@ class BuildController < ApplicationController
   end
 
   private
-
-  # The signed render time the opening composer carries (BrowserProof).
-  def build_proof = BrowserProof.new(PROOF_PURPOSE).issue
 
   # Why the first message looks like a bot's, or nil. A signed-in visitor has
   # already proved more than a browser.
