@@ -37,6 +37,17 @@ class Release
       config
     end
 
+    # THE TEST SEAM: run the block with `trains` (the normalized shape) as the config,
+    # then restore whatever was loaded. config/release_trains.yml lists no train until
+    # task C, so a test of the routing names the trains it routes to.
+    def with_config(trains)
+      saved = @config
+      @config = normalize(trains)
+      yield
+    ensure
+      @config = saved
+    end
+
     # Parse a trains file into the normalized shape. Raises on a malformed entry
     # rather than routing around it: a train config nobody can read must not quietly
     # send an app's tasks to the hub.

@@ -104,15 +104,16 @@ subagents are for **read** fan-out. Narrate with `bin/agent-activity start/next/
 bin/release prepare --yes
 ```
 
-**Release trains.** `config/release_trains.yml` gives some apps their own train
-(today: `turf-monster`). A task naming only that app's repos rides its train; every
-other task (a gem, the hub, app plus engine, app plus hub) rides the hub. A bare
-`prepare` runs the hub train and holds the app train's tasks. Run an app train with
-`bin/release prepare --yes --train <app>`, then `bin/release ship --train <app>`: it
-sweeps, promotes and deploys only that app's repo, and refuses before the promote
-when that repo's `accepted` carries a hub-train task's merge (ship the hub first). A
-repo rides one active train at a time; `Release#add` refuses the second. Design:
-`/Users/alex/projects/.agents/epics/release-trains-design.md`.
+**Release trains.** `config/release_trains.yml` can give an app its own train. It
+lists **none until task C**, so today every task rides the hub and a bare `prepare`
+is the whole sweep (`--train <app>` is refused as unknown). Once an app is listed, a
+task naming only that app's repos rides its train; every other task (a gem, the hub,
+app plus engine, app plus hub) rides the hub, and a bare `prepare` holds the app
+train's tasks. An app train runs with `bin/release prepare --yes --train <app>`, then
+`bin/release ship --train <app>`. A repo rides one active train at a time: the sweep
+HOLDS a task naming a repo another train's active release holds (`⚠ HELD <slug>:
+names <repo> (held by the <train> train's active release <rel>)`) before any
+promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 
 `prepare` owns the whole act:
 

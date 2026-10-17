@@ -49,6 +49,16 @@ class Release
       }
     end
 
+    # [{ "repo", "train", "slug" }] for every repo another train's ACTIVE release
+    # holds (a member names it): the read bin/release takes BEFORE the promote, so the
+    # sweep HOLDS a candidate naming one of these repos instead of promoting its
+    # `accepted` and then failing at Release#add (release-trains-design.md §2).
+    def repos_held_by_other_trains(train = Release::DEFAULT_TRAIN)
+      Release.held_repos(except_train: train).map do |repo, release|
+        { "repo" => repo, "train" => release.train, "slug" => release.slug }
+      end
+    end
+
     # The default for sweep_candidates' / straggler_tasks' `release`: "the train's
     # current release", told apart from an explicit nil (no active release).
     CURRENT_RELEASE = Object.new.freeze

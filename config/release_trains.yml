@@ -15,8 +15,13 @@
 # Schema, per train (the key is the train slug, kebab-case, never "hub"):
 #   repos: [repo, ...]   the repos this train promotes, records and deploys.
 #
-# Task C adds a `standing_grant` entry per train for the nightly ship. Until then a
-# listed train ships only by hand: `bin/release prepare --train <slug>`, then
-# `bin/release ship --train <slug>` under the usual production authority.
-turf-monster:
-  repos: [turf-monster]
+# ROUTING IS OFF UNTIL TASK C. No train is listed, so every task rides the hub and a
+# plain `bin/release` behaves exactly as it did before trains; `--train <app>` is
+# refused as unknown. Task C lists the first app train together with its
+# `standing_grant` (the nightly ship), and before it does it must teach the hub to
+# record any other-train task whose code a hub promote carries, plus
+# production-deploy, full-cycle and `bin/release status` the second train. The entry
+# it will add looks like this:
+#
+# turf-monster:
+#   repos: [turf-monster]

@@ -35,12 +35,32 @@ class ReleaseCliTrainTest < ReleaseCliHarness
     end
   RUBY
 
+  # config/release_trains.yml lists no train until task C, so a test of an app train
+  # injects one: the trains file is required and its config set BEFORE bin/release
+  # loads, so bin/release's own require of it is a no-op and RELEASE_TRAINS / TRAIN
+  # read the injected config.
+  TRAINS_RB = File.expand_path("../../app/models/release/trains.rb", __dir__)
+  TURF_TRAINS = { "turf-monster" => { "repos" => [ "turf-monster" ] } }.freeze
+
+  def with_trains(trains = TURF_TRAINS)
+    %(require #{TRAINS_RB.inspect}; ) +
+      %(Release::Trains.instance_variable_set(:@config, Release::Trains.normalize(#{trains.inspect})); )
+  end
+
+  def run_cli_trains(argv, call:, setup: "", trains: TURF_TRAINS)
+    run_ruby(%(#{with_trains(trains)}ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call}))
+  end
+
+  def eval_trains(argv, expr, trains: TURF_TRAINS)
+    run_ruby(%(#{with_trains(trains)}ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; print(#{expr})))
+  end
+
   def promoted_repos(out)
     out.scan(/^→ promote accepted → release in (\S+):/).flatten
   end
 
   def test_turf_train_dry_run_sweeps_and_promotes_only_turf
-    out = run_cli(["--dry-run", "--train", "turf-monster"], call: "prepare", setup: TRAIN_STUB)
+    out = run_cli_trains(["--dry-run", "--train", "turf-monster"], call: "prepare", setup: TRAIN_STUB)
 
     assert_includes out, "· turf-monster train"
     assert_equal [ "turf-monster" ], promoted_repos(out), "only the train's own repo is promoted"
@@ -54,7 +74,7 @@ class ReleaseCliTrainTest < ReleaseCliHarness
   end
 
   def test_turf_train_snippets_carry_the_board_guard
-    out = run_cli(["--dry-run", "--train", "turf-monster"], call: "prepare", setup: TRAIN_STUB)
+    out = run_cli_trains(["--dry-run", "--train", "turf-monster"], call: "prepare", setup: TRAIN_STUB)
 
     sent = out.lines.grep(/\ASENT /)
     refute_empty sent
@@ -65,7 +85,7 @@ class ReleaseCliTrainTest < ReleaseCliHarness
   end
 
   def test_hub_dry_run_holds_the_turf_only_task_and_sends_pre_train_ruby
-    out = run_cli(["--dry-run"], call: "prepare", setup: TRAIN_STUB)
+    out = run_cli_trains(["--dry-run"], call: "prepare", setup: TRAIN_STUB)
 
     assert_includes out, "⚠ HELD turf-only: rides the turf-monster train"
     assert_includes out, "`bin/release prepare --train turf-monster`"
@@ -92,19 +112,75 @@ class ReleaseCliTrainTest < ReleaseCliHarness
   end
 
   def test_turf_sweep_write_snippet_names_the_train
-    ruby = eval_with_argv(["--train", "turf-monster"], %(batch_sweep_with_plan_ruby(["a"], "rel-x")))
+    ruby = eval_trains(["--train", "turf-monster"], %(batch_sweep_with_plan_ruby(["a"], "rel-x")))
     assert_includes ruby, 'Release.open!(slug: "rel-x", train: "turf-monster") if Release.current("turf-monster").nil?'
     assert_includes ruby, 'Release::Conductor.sweep!(Task.find_by!(slug: s), train: "turf-monster")'
     assert_includes ruby, 'r = Release.current_or_open!("turf-monster")'
-    assert_equal "__forming__:turf-monster", eval_with_argv(["--train", "turf-monster"], "forming_slug")
+    assert_equal "__forming__:turf-monster", eval_trains(["--train", "turf-monster"], "forming_slug")
   end
 
   def test_unknown_or_bare_train_is_refused_before_dispatch
-    status = ->(argv) { eval_with_argv(argv, "begin; refuse_bad_train!; 'ran'; rescue SystemExit => e; e.status; end") }
-    assert_equal "1", status.call(["--train", "nope"])
-    assert_equal "1", status.call(["--train"])
-    assert_equal "ran", status.call(["--train", "turf-monster"])
-    assert_equal "ran", status.call([])
+    probe = "begin; refuse_bad_train!; 'ran'; rescue SystemExit => e; e.status; end"
+    assert_equal "1", eval_trains(["--train", "nope"], probe)
+    assert_equal "1", eval_trains(["--train"], probe)
+    assert_equal "ran", eval_trains(["--train", "turf-monster"], probe)
+    assert_equal "ran", eval_with_argv([], probe)
+    assert_equal "1", eval_with_argv(["--train", "turf-monster"], probe),
+                 "the real config lists no train until task C, so --train turf-monster is unknown"
+  end
+
+  # With the REAL config (no train listed until task C) a plain run is today's: the
+  # turf-only task rides the hub, nothing is held for a train, every repo promotes.
+  def test_real_config_hub_dry_run_routes_nothing_off_the_hub
+    out = run_cli(["--dry-run"], call: "prepare", setup: TRAIN_STUB)
+
+    refute_includes out, "⚠ HELD"
+    assert_equal %w[turf-monster mcritchie-studio studio-engine], promoted_repos(out)
+    assert_includes out, "3 task(s) would sweep"
+  end
+
+  # [integration] EXCLUSIVITY BEFORE THE PROMOTE. A turf-monster train release is
+  # active and holds turf; a hub prepare whose queue carries a turf-monster +
+  # studio-engine task HOLDS it (with the holding train and release named) and never
+  # promotes turf — instead of promoting turf's `accepted` under the turf candidate
+  # and then failing at Release#add.
+  HELD_STUB = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      $stdout.puts("SENT " + train_guarded(ruby))
+      if ruby.include?("sweep_candidates")
+        mk = lambda do |slug, repos|
+          { "slug" => slug, "stage" => "reviewed", "merged" => "accepted", "kind" => "app",
+            "pr_url" => "https://github.com/McRitchie-Studio/#{repos.first}/pull/1", "repo" => repos.first, "repos" => repos,
+            "pr_urls" => repos.to_h { |r| [ r, "https://github.com/McRitchie-Studio/#{r}/pull/1" ] } }
+        end
+        { "tasks" => [ mk.call("hub-task", [ "mcritchie-studio" ]), mk.call("turf-engine", %w[turf-monster studio-engine]) ],
+          "release" => nil,
+          "held_repos" => [ { "repo" => "turf-monster", "train" => "turf-monster", "slug" => "rel-turf-monster-20261016-ab" } ],
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      else
+        {}
+      end
+    end
+  RUBY
+
+  def test_hub_prepare_holds_a_task_whose_repo_an_active_turf_release_holds
+    out = run_cli_trains(["--dry-run"], call: "prepare", setup: HELD_STUB)
+
+    assert_includes out, "⚠ HELD turf-engine: names turf-monster (held by the turf-monster train's active release " \
+                         "rel-turf-monster-20261016-ab)"
+    assert_equal [ "mcritchie-studio" ], promoted_repos(out), "turf (and the held task's engine) is never promoted"
+    assert_includes out, "1 task(s) would sweep"
+    assert_includes out, "Release::Conductor.repos_held_by_other_trains : [])",
+                    "the hub reads the held repos with a respond_to? guard and no train argument"
+  end
+
+  def test_merge_refuses_a_named_task_whose_repo_another_train_holds_before_any_promote
+    stub = HELD_STUB.sub('if ruby.include?("sweep_candidates")', 'if ruby.include?("sweep_candidates") || ruby.include?("screen_merge")')
+    out = run_cli_trains(["--dry-run"], setup: stub,
+                         call: "ARGV.replace(['turf-engine']); begin; merge; rescue SystemExit => e; puts 'ABORT ' + e.message.to_s; end")
+
+    assert_includes out, "ABORT ✗ merge refused 1 task(s) naming a repo another train's active release holds"
+    refute_includes out, "promote accepted → release"
   end
 
   # [integration] The app-train accepted guard, live (no --dry-run): turf's `accepted`
@@ -124,7 +200,7 @@ class ReleaseCliTrainTest < ReleaseCliHarness
   end
 
   def foreign_guard(log)
-    run_cli(["--train", "turf-monster"], setup: foreign_stub(log),
+    run_cli_trains(["--train", "turf-monster"], setup: foreign_stub(log),
             call: "begin; refuse_foreign_accepted_work!; puts 'PASSED'; rescue SystemExit => e; puts 'ABORT ' + e.message.to_s; end")
   end
 

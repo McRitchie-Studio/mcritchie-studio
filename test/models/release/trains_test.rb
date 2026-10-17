@@ -39,21 +39,27 @@ class Release::TrainsTest < ActiveSupport::TestCase
   end
 
   test "[unit] Task#release_train reads the task's release repos" do
-    assert_equal "turf-monster", task_naming([ "turf-monster" ]).release_train
-    assert_equal "hub", task_naming(%w[turf-monster studio-engine]).release_train
-    assert_equal "hub", task_naming([ "mcritchie-studio" ]).release_train
+    Release::Trains.with_config(TRAINS) do
+      assert_equal "turf-monster", task_naming([ "turf-monster" ]).release_train
+      assert_equal "hub", task_naming(%w[turf-monster studio-engine]).release_train
+      assert_equal "hub", task_naming([ "mcritchie-studio" ]).release_train
+    end
   end
 
   test "[unit] Task#release_train is a reader; the retired devops release_train key is still refused" do
-    assert_raises(ArgumentError) { Task.normalize_devops_metadata("release_train" => "rel-x", "kind" => "feature") }
-    assert_equal "turf-monster", task_naming([ "turf-monster" ]).release_train
+    Release::Trains.with_config(TRAINS) do
+      assert_raises(ArgumentError) { Task.normalize_devops_metadata("release_train" => "rel-x", "kind" => "feature") }
+      assert_equal "turf-monster", task_naming([ "turf-monster" ]).release_train
+    end
   end
 
   test "[unit] Task#release_train counts a repo carried only by a PR url" do
-    task = Task.create!(title: "train via pr url", stage: "reviewed",
-                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ "turf-monster" ],
-                                                  "pr_urls" => { "studio-engine" => "https://github.com/McRitchie-Studio/studio-engine/pull/3" } } })
-    assert_equal "hub", task.release_train, "the engine PR makes it an app-plus-engine task"
+    Release::Trains.with_config(TRAINS) do
+      task = Task.create!(title: "train via pr url", stage: "reviewed",
+                          metadata: { "devops" => { "shape" => "backend", "repositories" => [ "turf-monster" ],
+                                                    "pr_urls" => { "studio-engine" => "https://github.com/McRitchie-Studio/studio-engine/pull/3" } } })
+      assert_equal "hub", task.release_train, "the engine PR makes it an app-plus-engine task"
+    end
   end
 
   # --- config ----------------------------------------------------------------------
@@ -69,21 +75,30 @@ class Release::TrainsTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Trains.normalize([ "turf-monster" ]) }
   end
 
-  test "[unit] the real config lists only three-rung apps, each on one train, never a gem" do
-    trains = Release::Trains.load_file(Release::Trains::CONFIG_PATH)
-    assert_includes trains.keys, "turf-monster"
-    repos = trains.values.flat_map { |entry| entry["repos"] }
-    assert_equal repos.uniq, repos, "a repo belongs to at most one listed train"
-    repos.each do |repo|
+  test "[unit] the real config lists no train until task C, so everything rides the hub" do
+    assert_equal({}, Release::Trains.load_file(Release::Trains::CONFIG_PATH))
+    assert_equal "hub", Release::Trains.train_for([ "turf-monster" ], Release::Trains.load_file(Release::Trains::CONFIG_PATH))
+    train, error = Release::Trains.take_flag(%w[prepare --train turf-monster], Release::Trains.load_file(Release::Trains::CONFIG_PATH))
+    assert_nil train
+    assert_match(/unknown release train "turf-monster"/, error, "--train turf-monster is refused until task C lists it")
+  end
+
+  test "[unit] the commented example entry is a valid train on a three-rung app" do
+    lines = File.read(Release::Trains::CONFIG_PATH).lines
+    example = lines.drop_while { |line| !line.start_with?("# turf-monster:") }.map { |line| line.sub(/\A# ?/, "") }.join
+    trains = Release::Trains.normalize(YAML.safe_load(example))
+    assert_equal({ "turf-monster" => { "repos" => [ "turf-monster" ] } }, trains)
+    trains.values.flat_map { |entry| entry["repos"] }.each do |repo|
       assert Release::Repos.app?(repo), "#{repo} must be an app in the Release::Repos registry"
       refute Release::Repos.gem?(repo), "#{repo}: gems publish only on the hub train"
-      assert_equal "three-rung", Release::Repos.ladder(repo), "#{repo} must walk accepted → release → main"
+      assert_equal "three-rung", Release::Repos.ladder(repo)
     end
   end
 
-  test "[unit] the real config carries no standing grant yet (task C adds them)" do
-    raw = YAML.safe_load_file(Release::Trains::CONFIG_PATH)
-    raw.each_value { |entry| assert_equal [ "repos" ], entry.keys }
+  test "[unit] with_config swaps the config for the block and restores it" do
+    before = Release::Trains.config
+    Release::Trains.with_config(TRAINS) { assert_equal "turf-monster", Release::Trains.train_for([ "turf-monster" ]) }
+    assert_equal before, Release::Trains.config
   end
 
   # --- --train ---------------------------------------------------------------------

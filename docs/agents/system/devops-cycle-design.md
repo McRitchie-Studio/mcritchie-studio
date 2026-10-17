@@ -270,10 +270,13 @@ to `"hub"`, so every caller that passes none reads exactly what it read before.
 Hub slugs keep `rel-YYYYMMDD-hex`; any other train's are `rel-<train>-YYYYMMDD-hex`.
 Task B of the release-trains design
 (`/Users/alex/projects/.agents/epics/release-trains-design.md`) routes work to per-app
-trains: `config/release_trains.yml` lists them, `Task#release_train` names the train a
+trains: `config/release_trains.yml` lists them (none until task C, so routing is off
+and every task rides the hub), `Task#release_train` names the train a
 task rides (an app's own only when every repo it names is that app's; otherwise the
 hub), `Release::Conductor.sweep_candidates(train:)` holds another train's tasks under
-`other_train`, `Release#add` refuses a repo another active train holds, and
+`other_train`, the sweep holds a task naming a repo another active train holds before
+the promote (`Release::Conductor.repos_held_by_other_trains`; `Release#add` refuses
+the same at record time), and
 `bin/release --train <slug>` drives one train (default `hub`, whose board snippets are
 the pre-train ones). An app train forms under the claim sentinel `__forming__:<train>`;
 the hub keeps `__forming__`. Neither `releases.train` nor the `Task#release_train`

@@ -953,8 +953,20 @@ class Release < ApplicationRecord
     wanted = task.release_repos
     return {} if wanted.empty?
 
-    Release.active.where.not(train: train).where.not(id: id).includes(:tasks).each_with_object({}) do |other, held|
-      (other.tasks.flat_map(&:release_repos) & wanted).each { |repo| held[repo] ||= other }
+    Release.held_repos(except_train: train, except_id: id).each_with_object({}) do |(repo, other), held|
+      held[repo] = other if wanted.include?(repo)
+    end
+  end
+
+  # { repo => release } for every repo a member of an ACTIVE release names, on every
+  # train but `except_train` (and never the release `except_id`). The one read behind
+  # Release#add's refusal and the sweep's pre-promote hold
+  # (Release::Conductor.repos_held_by_other_trains), so the two cannot disagree.
+  def self.held_repos(except_train:, except_id: nil)
+    scope = active.where.not(train: except_train.to_s).includes(:tasks).order(:created_at)
+    scope = scope.where.not(id: except_id) if except_id
+    scope.each_with_object({}) do |other, held|
+      other.tasks.flat_map(&:release_repos).uniq.each { |repo| held[repo] ||= other }
     end
   end
 

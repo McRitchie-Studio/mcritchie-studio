@@ -5,9 +5,18 @@ require "test_helper"
 # Per-app release trains, record side (release-trains-design.md §2, task B): the
 # conductor sweeps one train at a time, Release#add keeps a repo on one active train,
 # and the forming claim and live reads scope by train. config/release_trains.yml lists
-# turf-monster, so a task naming only turf-monster rides the turf-monster train.
+# no train until task C, so each test injects one (Release::Trains config seam): a
+# task naming only turf-monster rides the turf-monster train.
 class Release::TrainRoutingTest < ActiveSupport::TestCase
   TURF = "turf-monster"
+  TRAINS = { TURF => { "repos" => [ TURF ] } }.freeze
+
+  setup do
+    @saved_trains = Release::Trains.instance_variable_get(:@config)
+    Release::Trains.instance_variable_set(:@config, Release::Trains.normalize(TRAINS))
+  end
+
+  teardown { Release::Trains.instance_variable_set(:@config, @saved_trains) }
 
   def task_on(label, repos:, stage: "reviewed", merged: nil)
     Task.create!(title: "train routing #{label} task", stage: stage, merged: merged,
@@ -124,6 +133,24 @@ class Release::TrainRoutingTest < ActiveSupport::TestCase
 
     both = task_on("turf plus engine", repos: [ TURF, "studio-engine" ])
     assert_equal hub_rel.slug, hub_rel.add(both).release_slug
+  end
+
+  test "[unit] repos_held_by_other_trains names each repo another train's active release holds" do
+    turf_rel = Release.open!(train: TURF)
+    turf_rel.add(task_on("turf member", repos: [ TURF ]))
+    Release.open!.add(task_on("hub member", repos: [ "mcritchie-studio" ]))
+
+    assert_equal [ { "repo" => TURF, "train" => TURF, "slug" => turf_rel.slug } ],
+                 Release::Conductor.repos_held_by_other_trains
+    assert_equal [ "mcritchie-studio" ], Release::Conductor.repos_held_by_other_trains(TURF).map { |h| h["repo"] }
+  end
+
+  test "[unit] with no trains configured nothing routes off the hub" do
+    Release::Trains.instance_variable_set(:@config, {})
+    turf = task_on("turf unrouted", repos: [ TURF ])
+    assert_equal "hub", turf.release_train
+    assert_includes Release::Conductor.sweep_candidates["reviewed"].map(&:slug), turf.slug
+    assert_empty Release::Conductor.sweep_candidates["other_train"]
   end
 
   # --- claims ----------------------------------------------------------------------

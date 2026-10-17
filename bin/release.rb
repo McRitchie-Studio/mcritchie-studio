@@ -1295,6 +1295,16 @@ def refuse_bad_train!
   exit 1
 end
 
+# `held = [...]` — the repos ANOTHER train's active release holds, read in the same
+# board call as the sweep's candidates so the plan can HOLD a task naming one BEFORE
+# the promote (release-trains-design.md §2). respond_to?-guarded: a board that
+# predates the read has no other train, so it answers [] there.
+def held_repos_ruby
+  arg = hub_train? ? "" : "(#{TRAIN.inspect})"
+  "held = (Release::Conductor.respond_to?(:repos_held_by_other_trains) ? " \
+    "Release::Conductor.repos_held_by_other_trains#{arg} : []); "
+end
+
 # The snippet as it is sent for TRAIN: unchanged on the hub, guarded on any other.
 def train_guarded(ruby) = hub_train? ? ruby : TRAIN_BOARD_GUARD + ruby
 
@@ -1866,7 +1876,8 @@ def batch_resolve_ruby(slugs, override: false)
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "cur = #{rel_current}; " \
-  "puts({ tasks: rows, screen: screen, release: (cur ? { slug: cur.slug } : nil) }.to_json)"
+  "#{held_repos_ruby}" \
+  "puts({ tasks: rows, screen: screen, release: (cur ? { slug: cur.slug } : nil), held_repos: held }.to_json)"
 end
 
 # The one-shot write snippet that sweeps EVERY slug in a SINGLE `heroku run` — N
@@ -2351,7 +2362,8 @@ def merge
   #    trains (Release::Conductor.sweep! takes it onto TRAIN's release the same way).
   #    The hard rule still holds there: Release#add refuses a repo another active
   #    train holds.
-  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS))
+  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS),
+                                    held_repos: resolved["held_repos"] || [])
 
   # 2-bis. PARKED-REPO REFUSAL — first, because SweepPlan partitions a parked row out
   #     before anything else, so it sits in NO other list: without this abort `merge`
@@ -2361,6 +2373,15 @@ def merge
     abort!("merge refused #{plan['parked'].size} task(s) naming a parked repo — the conductor sweeps " \
            "three-rung repos only, so NOTHING was promoted or recorded: " \
            "#{plan['parked'].map { |entry| Release::SweepPlan.parked_hold_line(entry) }.join(' ')}")
+  end
+
+  # 2-ter. REPO HELD BY ANOTHER TRAIN — refused HERE, before the promote: promoting
+  #     would push that repo's `accepted` under the other train's candidate, and
+  #     Release#add would then refuse the member anyway.
+  if plan["repo_held"].any?
+    abort!("merge refused #{plan['repo_held'].size} task(s) naming a repo another train's active release " \
+           "holds — NOTHING was promoted or recorded: " \
+           "#{plan['repo_held'].map { |entry| Release::SweepPlan.repo_held_line(entry) }.join(' ')}")
   end
 
   # 2a. MULTI-REPO COVERAGE REFUSAL — prepare's step 3a, on the path prepare itself
@@ -2492,7 +2513,8 @@ def sweep_detect_ruby(only_slugs)
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "r = #{rel_current}; " \
-  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
+  "#{held_repos_ruby}" \
+  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen, held_repos: held }.to_json)"
 end
 
 # The one-shot SWEEP write for prepare: open the candidate if none is active
@@ -3733,7 +3755,8 @@ def prepare
   #    A candidate riding ANOTHER release train (config/release_trains.yml) is held the
   #    same way, on its own `⚠ HELD` line naming the train that sweeps it.
   plan = Release::SweepPlan.compute(cands, parked: Release::Ladder.parked(RELEASE_REPOS),
-                                    train: TRAIN, trains: RELEASE_TRAINS, riding: active && active["slug"])
+                                    train: TRAIN, trains: RELEASE_TRAINS, riding: active && active["slug"],
+                                    held_repos: detect["held_repos"] || [])
 
   # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
   #     see it: nothing has been claimed, promoted, recorded or deployed yet. A
@@ -3754,6 +3777,7 @@ def prepare
   end
 
   plan["parked"].each { |entry| say("  #{Release::SweepPlan.parked_hold_line(entry)}") }
+  plan["repo_held"].each { |entry| say("  #{Release::SweepPlan.repo_held_line(entry)}") }
   plan["other_train"].each { |entry| say("  #{Release::SweepPlan.other_train_hold_line(entry, TRAIN)}") }
   held = plan["held"]
   held.each do |s|
@@ -3894,7 +3918,8 @@ def prepare
   #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
   #    --dry-run (the promotion previewed above; nothing recorded).
   landed = plan["sweep"]
-  left_reviewed = held + plan["parked"].map { |entry| entry["slug"] } + plan["other_train"].map { |entry| entry["slug"] }
+  left_reviewed = held + plan["parked"].map { |entry| entry["slug"] } + plan["repo_held"].map { |entry| entry["slug"] } +
+                  plan["other_train"].map { |entry| entry["slug"] }
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")

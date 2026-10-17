@@ -350,6 +350,25 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
     assert_equal [ "turf-legacy" ], plan["other_train"].map { |e| e["slug"] }
   end
 
+  test "[unit] a row naming a repo another train's active release holds is held BEFORE the promote" do
+    rows = [ train_row("turf-engine", %w[turf-monster studio-engine]), train_row("hub-task", [ "mcritchie-studio" ]) ]
+    held = [ { "repo" => "turf-monster", "train" => "turf-monster", "slug" => "rel-turf-monster-20261016-ab" } ]
+
+    plan = Release::SweepPlan.compute(rows, held_repos: held)
+
+    assert_equal [ "hub-task" ], plan["sweep"], "the held task is never recorded, so its repos never join the promote"
+    assert_equal [ "turf-engine" ], plan["repo_held"].map { |e| e["slug"] }
+    line = Release::SweepPlan.repo_held_line(plan["repo_held"].first)
+    assert_match(/\A⚠ HELD turf-engine: names turf-monster \(held by the turf-monster train's active release rel-turf-monster-20261016-ab\)/, line)
+    assert_includes line, "left `reviewed`"
+  end
+
+  test "[unit] no held repos holds nothing" do
+    plan = Release::SweepPlan.compute([ train_row("turf-engine", %w[turf-monster studio-engine]) ])
+    assert_equal [ "turf-engine" ], plan["sweep"]
+    assert_empty plan["repo_held"]
+  end
+
   test "[unit] no train applies no train filter (a bare partition)" do
     plan = Release::SweepPlan.compute([ train_row("turf-only", [ "turf-monster" ]) ])
     assert_equal [ "turf-only" ], plan["sweep"]
