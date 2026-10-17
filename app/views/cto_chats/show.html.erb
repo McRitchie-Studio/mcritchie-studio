@@ -1,11 +1,12 @@
 <%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The chat itself is the shared agent_chats component. docs/agents/system/agent-message-loop.md ("Web chat") %>
 <section class="max-w-3xl mx-auto px-4 py-6 sm:py-10 space-y-4" data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>">
-  <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent do %>
+  <% subtitle = capture do %>
     <p class="text-secondary text-sm">
       CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "cto-chat-app-link" } %>.
       An AI agent: it answers here, proposes, and runs nothing without your <span class="font-semibold">go</span>.
     </p>
   <% end %>
+  <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, subtitle: subtitle %>
 
   <% if @available %>
     <details class="card p-3 text-sm group" data-test="cto-chat-usage" open>

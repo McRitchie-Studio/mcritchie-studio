@@ -152,8 +152,9 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/show"
     button = css_select("[data-test='build-my-app']").first
     assert_equal "true", button["data-enabled"]
-    assert_includes button["@click"], "$store.modals.open('auth'"
-    assert_includes button["@click"], "/build/#{row.token}", "the emailed link returns to this chat"
+    props = JSON.parse(button["data-build-sign-in"])
+    assert_equal "/build/#{row.token}", props["returnTo"], "the sign-in modal's emailed link returns to this chat"
+    assert_includes props["subtitle"], "client-portal.mcritchie.studio"
     assert_select "[data-test='build-check-cto-portrait'][src*='cto_portraits/harbor']"
     assert_select "[data-test='build-check-address-value']", text: "client-portal.mcritchie.studio"
   end

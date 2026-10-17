@@ -9,7 +9,7 @@
     <% BuildIntake::STEPS.each do |step| %>
       <li class="flex items-center gap-2 min-w-0 rounded-lg border px-2.5 py-2 text-sm <%= done[step] ? 'border-primary/40 bg-primary/5' : 'border-subtle' %>"
           data-test="build-check-<%= step %>" data-done="<%= done[step] %>">
-        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold <%= done[step] ? 'bg-primary text-white' : 'border border-subtle text-muted' %>" aria-hidden="true">
+        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold <%= done[step] ? 'bg-primary text-white' : 'border border-subtle text-muted' %>" aria-hidden="true">
           <%= done[step] ? "✓" : BuildIntake::STEPS.index(step) + 1 %>
         </span>
         <span class="min-w-0 flex-1">
@@ -42,8 +42,8 @@
     <% elsif !logged_in? %>
       <% modal_props = { returnTo: build_request_path(request_row.token), title: "Create your free account",
                          subtitle: "Sign in and we'll start building #{request_row.host}." } %>
-      <button type="button" class="btn btn-primary w-full" data-test="build-my-app" data-enabled="true" data-signs-in="true" x-data
-              @click="$store.modals.open('auth', <%= modal_props.to_json %>)">Build my app</button>
+      <button type="button" class="btn btn-primary w-full" data-test="build-my-app" data-enabled="true" data-signs-in="true"
+              data-build-sign-in="<%= modal_props.to_json %>">Build my app</button>
       <p class="mt-2 text-xs text-muted text-center">Free. We'll ask you to sign in first.</p>
     <% else %>
       <%= form_with url: build_request_path(request_row.token), method: :patch, data: { turbo: false } do |f| %>

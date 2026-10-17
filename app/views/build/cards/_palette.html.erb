@@ -16,10 +16,10 @@
         <% BuildIntake::Card::MODES.each do |mode| %>
           <% c = palette[mode] %>
           <div class="rounded-xl p-2.5 min-w-0 border border-subtle" style="background-color: <%= c["surface"] %>; color: <%= c["text"] %>" data-mode="<%= mode %>">
-            <p class="text-[11px] font-bold leading-tight truncate">Your app</p>
-            <p class="text-[10px] opacity-80 leading-tight"><%= mode.capitalize %> mode</p>
+            <p class="text-2xs font-bold leading-tight truncate">Your app</p>
+            <p class="text-3xs opacity-80 leading-tight"><%= mode.capitalize %> mode</p>
             <div class="mt-2 flex items-center gap-1.5">
-              <span class="rounded-md px-2 py-0.5 text-[10px] font-semibold" style="background-color: <%= c["primary"] %>; color: <%= BuildIntake::Contrast.ink_on(c["primary"]) %>">Button</span>
+              <span class="rounded-md px-2 py-0.5 text-3xs font-semibold" style="background-color: <%= c["primary"] %>; color: <%= BuildIntake::Contrast.ink_on(c["primary"]) %>">Button</span>
               <span class="h-2.5 w-2.5 rounded-full" style="background-color: <%= c["accent"] %>"></span>
             </div>
           </div>
