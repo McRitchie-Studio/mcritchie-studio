@@ -430,6 +430,10 @@ Rails.application.routes.draw do
       # The live chat with the app's CTO (docs/agents/system/agent-message-loop.md, "Web chat").
       get :chat, to: "cto_chats#show"
       post :chat, to: "cto_chats#create"
+      # Its files (AgentMessages::Attachments): the composer's upload, and a sent file's expiring link.
+      post "chat/attachments", to: "cto_chat_attachments#create", as: :chat_attachments
+      get "chat/attachments/:attachment_id", to: "cto_chat_attachments#show", as: :chat_attachment,
+                                             constraints: { attachment_id: /\d+/ }
     end
   end
 

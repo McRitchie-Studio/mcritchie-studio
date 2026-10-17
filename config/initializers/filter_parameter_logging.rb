@@ -39,3 +39,11 @@ Rails.application.config.filter_parameters += [
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/facts"
   end
 ]
+
+# A redirect to a SIGNED storage URL logs as "Redirected to [FILTERED]": the URL
+# carries the object key and a live signature (CtoChatAttachmentsController#show
+# sends a chat file's 5-minute R2 link), and a log line outlives both the link
+# and the reader's right to it. Strings match anywhere in the location.
+Rails.application.config.filter_redirect += [
+  "r2.cloudflarestorage.com", "X-Amz-Signature", "/rails/active_storage/disk/"
+]

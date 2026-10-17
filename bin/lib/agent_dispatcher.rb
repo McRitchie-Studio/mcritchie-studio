@@ -123,7 +123,7 @@ module AgentMailbox
     # each with TERM then KILL on timeout, plus a margin. Past it the lease is no
     # longer renewed and the run is abandoned (its message given back, its slot
     # freed), so a wedged run cannot hold a message forever.
-    RUN_DEADLINE = Responder::ACTION_TIMEOUT + Responder::CLAUDE_TIMEOUT + (2 * KILL_GRACE) + 60
+    RUN_DEADLINE = Responder::ACTION_TIMEOUT + Media::DEADLINE + Responder::CLAUDE_TIMEOUT + (2 * KILL_GRACE) + 60
     # The code fingerprint is re-read on the ping beat. A new digest must be seen
     # on two checks in a row before the dispatcher restarts, so a checkout read
     # half-way through a branch move cannot start a restart loop.
@@ -162,9 +162,12 @@ module AgentMailbox
     def initialize(client:, souls:, channel: "discord", worker: nil, cap: CAP, claude_cmd: Responder::DEFAULT_CLAUDE_CMD,
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
                    repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil,
-                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil)
+                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil, media: nil)
       raise ArgumentError, "no souls to serve" if souls.empty?
 
+      # The files a message carries are fetched and converted on the run's
+      # thread (Media::Preparer): R2 downloads and ImageMagick, never a board call.
+      @media = media
       @client = client
       @souls = souls
       @channel = channel
@@ -390,7 +393,7 @@ module AgentMailbox
 
     def responder_for(soul)
       Responder.new(soul: soul, claude_cmd: @claude_cmd, runner: @runner, repo_root: @repo_root, clock: @clock,
-                    mailbox_home: @mailbox_home, claude_home: @claude_home)
+                    mailbox_home: @mailbox_home, claude_home: @claude_home, media: @media)
     end
 
     def reap

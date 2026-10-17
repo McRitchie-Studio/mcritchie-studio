@@ -112,6 +112,46 @@ module StorageBackend
       "response_checksum_validation" => "when_required" }
   end
 
+  # THE CHAT'S PRIVATE SERVICE (`chat_private`, AgentMessages::Attachments). The
+  # hub bucket above has a PUBLIC custom domain (R2_PUBLIC_URL) that serves any
+  # key to anyone, so a chat file stored there is public the moment its key is
+  # known. Chat files live in their own bucket pair with NO public domain:
+  #
+  #   bucket  mcritchie-studio-chat-production (production)
+  #           mcritchie-studio-chat-dev        (QA and local desks)
+  #   env     CHAT_R2_ACCESS_KEY_ID, CHAT_R2_SECRET_ACCESS_KEY: that pair's
+  #           bucket-scoped keys (1Password r2.mcritchie-studio-chat, made by
+  #           Steffon's bucket-provision act); the endpoint is R2_ENDPOINT
+  #
+  # UNSET IS NOT AN ERROR, in any environment: chat attachments are simply OFF
+  # (chat_private_configured? false; the composer hides Attach and the server
+  # refuses files), and the service is built on UNCONFIGURED so nothing can
+  # reach a real bucket. Text chat is unchanged. Tests use a Disk service.
+  CHAT_PRIVATE_SERVICE = "chat_private"
+  CHAT_ENV = %w[CHAT_R2_ACCESS_KEY_ID CHAT_R2_SECRET_ACCESS_KEY].freeze
+
+  def chat_private_bucket(qa: Studio.qa_environment?, production: Rails.env.production?)
+    production && !qa ? "mcritchie-studio-chat-production" : "mcritchie-studio-chat-dev"
+  end
+
+  # Whether the private chat bucket's keys (and the R2 endpoint) are set.
+  def chat_private_configured?(env = ENV)
+    (CHAT_ENV + %w[R2_ENDPOINT]).all? { |name| !env[name].to_s.strip.empty? }
+  end
+
+  # The `chat_private` service config/storage.yml renders: the private pair when
+  # configured, else the same shape on UNCONFIGURED (never strict, never a raise).
+  def chat_private_service(env = ENV, bucket: chat_private_bucket)
+    live = chat_private_configured?(env)
+    { "service" => ACTIVE_STORAGE_SERVICE,
+      "endpoint" => live ? env["R2_ENDPOINT"].strip : UNCONFIGURED.fetch("R2_ENDPOINT"),
+      "access_key_id" => live ? env["CHAT_R2_ACCESS_KEY_ID"].strip : UNCONFIGURED.fetch("R2_ACCESS_KEY_ID"),
+      "secret_access_key" => live ? env["CHAT_R2_SECRET_ACCESS_KEY"].strip : UNCONFIGURED.fetch("R2_SECRET_ACCESS_KEY"),
+      "region" => "auto", "bucket" => bucket,
+      "request_checksum_calculation" => "when_required",
+      "response_checksum_validation" => "when_required" }
+  end
+
   # Everything a boot needs, checked in one place and called at the foot of this
   # file. config/storage.yml is rendered lazily (a rake task such as the release
   # phase's db:migrate never renders it), so without this a bad value passed the

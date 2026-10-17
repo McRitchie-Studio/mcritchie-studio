@@ -987,7 +987,111 @@ its reply renders as Markdown in the chat. Tests:
 `test/channels/cto_chat_channel_test.rb`, `test/controllers/cto_chats_controller_test.rb`,
 `test/views/agent_chat_component_test.rb` (the shared chat for a non-CTO agent),
 `test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
-`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket).
+`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket). Files:
+`test/services/agent_messages/web_ingest_attachments_test.rb`, `test/lib/agent_media_test.rb`,
+`test/integration/cto_web_chat_attachments_test.rb` and `e2e/cto_web_chat_attachments.spec.js`.
+
+### Files: images and PDFs in the chat
+
+Alex, 2026-10-17: "drop assets that the agent can respond to. That is table
+stakes for a client facing chat." The design is
+`.agents/epics/chat-media-design.md`; this is its step 1, images and PDFs.
+
+```text
+composer (Attach, paste, drop) ─POST each file─▶ CtoChatAttachmentsController#create ─▶ R2 apps/<slug>/chat/u<user>-<token>/<file>
+                                 ◀─ a signed token (never a blob URL) ─┘
+Send (waits for uploads) ─▶ WebIngest: types, sizes, count, prefix ─▶ message.attachments (same transaction)
+bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─▶ Media: fetch, magick shrink + strip
+               ─▶ ONE stream-json user message: [label, image|document]… + the prompt ─▶ claude -p --safe-mode --tools ""
+```
+
+| Piece | Where |
+|-------|-------|
+| The rules (types from the bytes, sizes, count, key prefix, tokens, who may see) | `AgentMessages::Attachments` |
+| Upload and the sent file's link | `CtoChatAttachmentsController` (`create`, `show`); signed-in, 404 unless owner or admin |
+| The composer and the sent files | the shared chat's attachments slot: `app/views/agent_chats/_attachments_slot.html.erb` renders `_attachments` (and `_attachment_chip`) when the composer locals carry `attachments`; `_sent_files.html.erb`; `app/javascript/chat_attachments.js` |
+| What the model gets | `bin/lib/agent_media.rb` (`AgentMailbox::Media`); `Responder#respond`; `ClaudeRun.parse(stream: true)` |
+| Into the build | `AgentProposals::Executor#change` attaches the message's blobs to the task (`Task#attachments`) |
+
+- **Types and limits** (`Attachments`): PNG, JPEG, WebP, GIF, HEIC/HEIF and PDF,
+  read from the BYTES (Marcel, plus the HEIF `ftyp` brands Marcel misreads), never
+  the name or the browser. Images 20 MB, a PDF 32 MB, 10 files a message, 60
+  uploads per user per hour. A message may be files with no text. A message with
+  files is never a `go`/`no`.
+- **Storage: a PRIVATE bucket, and OFF until it exists.** Chat files go to the
+  `chat_private` Active Storage service (`has_many_attached :attachments,
+  service: :chat_private` on `AgentMessage` and `Task`), never the hub's bucket:
+  that one has a public custom domain (`assets.mcritchie.studio`, `assets-dev`)
+  that serves any key to anyone, so a file there is public once its key leaks
+  (Carl's review, 2026-10-17). `chat_private` is its own R2 pair with NO public
+  domain, built by `StorageBackend.chat_private_service`:
+
+  | | |
+  |---|---|
+  | Buckets | `mcritchie-studio-chat-production` (production), `mcritchie-studio-chat-dev` (QA and desks); location `enam`; the `expire-trash-3d` lifecycle rule (StudioTrashS3 moves deletes under `trash/`); NO custom domain, NO r2.dev URL |
+  | Env (per Heroku app, and `.env.development`) | `CHAT_R2_ACCESS_KEY_ID`, `CHAT_R2_SECRET_ACCESS_KEY`: the pair's bucket-scoped keys (prod pair on production, dev pair on QA and desks). The endpoint is the existing `R2_ENDPOINT` |
+  | 1Password | `r2.mcritchie-studio-chat` in `studio-agents`, made by Steffon's [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) act with app `mcritchie-studio-chat` |
+  | Switch on | Alex's yes, then bucket-provision, then set the two vars; no deploy needed beyond the config restart |
+
+  While the two variables are unset (`StorageBackend.chat_private_configured?`
+  false; the default), `Attachments.enabled?` is false: the composer has no
+  Attach, an upload or a send with files is refused (`ATTACHMENTS_OFF`, "Attaching
+  files is not switched on for this chat yet."), and text chat is unchanged. The
+  service is then built on the unreachable placeholder host, never a real bucket,
+  and a missing key never fails a boot. The test suite uses a Disk service.
+- **Keys.** Each object key is `apps/<app slug>/chat/u<user id>-<token>/<file>`;
+  the prefix is written on the server and is the proof of whose upload a blob is,
+  so a message attaches only its own sender's blobs for its own app. Uploads are
+  marked analyzed, so Active Storage never decodes an untrusted image on the hub.
+- **Logs.** `config.filter_redirect` (config/initializers/filter_parameter_logging.rb)
+  logs a redirect to a signed storage URL (`r2.cloudflarestorage.com`,
+  `X-Amz-Signature`, the Disk service's path) as `Redirected to [FILTERED]`, so a
+  file's key and live signature never reach a log line.
+- **Upload path.** The browser posts each file to the HUB, which writes it to R2;
+  it is not an Active Storage direct upload to R2, because the R2 buckets carry
+  no CORS rule (a preflight answered 403, 2026-10-17). Switching to direct upload
+  needs that rule on the chat buckets (Steffon, the Cloudflare admin token) and a change in `chat_attachments.js` only.
+- **Private.** No page or answer carries a blob URL. The composer holds a signed
+  token (purpose `cto_chat_attachment`, one day), which Active Storage's public
+  `/rails/active_storage/blobs/*` routes refuse. A sent file shows through
+  `/applications/<slug>/chat/attachments/<id>`, which checks the viewer wrote the
+  thread or is an admin (another owner of the same app gets 404) and redirects,
+  `no-store`, to an R2 URL that expires in 5 minutes. The dispatcher reads the
+  same kind of URL from the holder-only context bundle.
+- **What the model gets** (`Media`). Each image is re-encoded by ImageMagick on
+  the dispatcher Mac (`magick`, with an explicit decoder per type and memory,
+  disk and time limits): long edge at most 1568 px, `-strip` (EXIF and GPS gone),
+  PNG stays PNG, the rest (HEIC included) become JPEG. A PDF goes as a `document`
+  block when it starts `%PDF-` and declares at most 100 pages. At most 20 MB of
+  blocks a message. A file that fails any of this is skipped and named; the
+  prompt lists every file under "Attached:" inside the fence, and a rule tells the
+  model the files are untrusted data and to say when one could not be read.
+  Earlier turns name their files ("attached: …; not shown again"); a warm
+  session already holds them.
+- **The run.** Only a message with files changes the command:
+  `Media.stream_cmd` switches `--output-format` to `stream-json` and adds
+  `--input-format stream-json --verbose`; `--safe-mode` and `--tools ""` stay, and
+  a warm turn keeps `--resume`. `ClaudeRun.parse(stream: true)` reads the last
+  top-level `result` line, which is the json envelope, so the reply, usage limits,
+  sign-in and the meter read exactly as before; a stream with no result line is a
+  failed run, never a reply. The run's `run_meta` gains `files_shown` and
+  `files_skipped`. Image tokens are in the run's usage, so the meter counts them.
+- **Answers never load images.** A chat answer renders through
+  `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
+  answer steered by text inside a file cannot send data out through an `<img>`
+  that loads on sight.
+- **A failed upload holds the send.** A send waiting on uploads does not go
+  when one fails, and a send with a failed chip on it is stopped: the chip stays,
+  red, with its reason, and the composer says to remove it or attach it again.
+- **A refused send keeps its files.** The re-rendered form draws the send's
+  still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
+  text or removes a file and sends again.
+- **Into the build.** A `go` on a change proposal attaches the proposal's
+  message's files to the designed task (the same blobs, `dependent: false`), and
+  the task's description names them as data from the requester. Writing them into
+  a desk at `bin/task begin` is the design's later step.
+- **Not yet:** audio and video, Discord attachments, office files, a sweep of
+  and uploads never sent.
 
 ## Build intake: Xan answers the public on /build
 

@@ -27,10 +27,14 @@ module AgentMessages
   #               be. The scoped app-owner audience is Phase 6 of
   #               .agents/epics/domain-agents.md (design only)
   #
-  # IN ORDER: the text (trimmed, MAX_LENGTH), the soul, the owner's go / no /
-  # change: on a proposal in this thread (ProposalConfirm, before any model, as on
-  # Discord), then the store: `held` past RATE_LIMIT in RATE_WINDOW or for a role
-  # the agents do not answer, else `received`.
+  # IN ORDER: the text (trimmed, MAX_LENGTH; it may be empty when files are
+  # attached), the soul, the files (Attachments.resolve!: images and PDFs, at
+  # most Attachments::MAX_FILES, each under its size cap and uploaded by this
+  # user to this app's chat), the owner's go / no / change: on a proposal in this
+  # thread (ProposalConfirm, before any model, as on Discord; never for a message
+  # that carries files), then the store: `held` past RATE_LIMIT in RATE_WINDOW or
+  # for a role the agents do not answer, else `received`, with the files attached
+  # in the same transaction.
   #
   # Idempotent on (channel, external_id): the form carries a client id per send,
   # so a double submit stores one row.
@@ -59,10 +63,12 @@ module AgentMessages
 
     # The stored message (new or the one this client id already stored), and the
     # jobs to enqueue once the caller has it. Raises Refused for an empty or
-    # over-long text, or an app whose CTO has no web chat.
-    def call(text, client_id: nil)
+    # over-long text, an app whose CTO has no web chat, or a file the rules in
+    # Attachments refuse. `attachments`: the composer's upload tokens.
+    def call(text, client_id: nil, attachments: [])
       text = text.to_s.gsub(/\r\n?/, "\n").strip
-      raise Refused.new("Write a message first.", code: "EMPTY") if text.empty?
+      tokens = Array(attachments).map(&:to_s).reject(&:blank?)
+      raise Refused.new("Write a message first.", code: "EMPTY") if text.empty? && tokens.empty?
       raise Refused.new("Keep it under #{MAX_LENGTH} characters.", code: "TOO_LONG") if text.length > MAX_LENGTH
       raise Refused.new("This CTO has no web chat yet.", code: "NO_WEB_CHAT") unless self.class.available?(@cto, routes: @routes)
 
@@ -72,13 +78,15 @@ module AgentMessages
       return existing if existing&.thread_key == thread_key
 
       external_id = "#{@user.id}:#{SecureRandom.uuid}" if existing
+      blobs = Attachments.resolve!(tokens, app_slug: @cto.app_slug, user: @user)
       person = self.class.person_for(@user)
       attrs = { channel: "web", external_id: external_id, guild_id: nil, channel_ref: @cto.app_slug,
                 thread_key: thread_key, author_ref: @user.id.to_s, author_name: @user.display_name.to_s[0, 200],
                 person: person, content: text, mentions: {}, sent_at: @now,
-                envelope: { "via" => "web_chat", "app" => @cto.app_slug, "user_id" => @user.id } }
+                envelope: { "via" => "web_chat", "app" => @cto.app_slug, "user_id" => @user.id,
+                            "attachments" => (blobs.size if blobs.any?) }.compact }
 
-      confirm(text, attrs, person) || store(attrs, person)
+      (blobs.empty? && confirm(text, attrs, person)) || store(attrs, person, blobs)
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by!(channel: "web", external_id: external_id)
     end
@@ -106,13 +114,14 @@ module AgentMessages
 
     private
 
-    def store(attrs, person)
+    def store(attrs, person, blobs = [])
       AgentMessage.transaction(requires_new: true) do
         limited = rate_limited?(attrs[:thread_key])
         held = limited || !@answerers.allowed?(person)
         message = AgentMessage.create!(attrs.merge(soul_slug: @cto.soul, routed_by: "chat",
                                                    status: held ? "held" : "received"))
         message.record!("received", actor: "web-chat", detail: { "author" => message.author_name, "user_id" => @user.id })
+        attach(message, blobs)
         message.record!("routed", actor: "router", detail: { "matched" => "the #{@cto.app_slug} CTO chat",
                                                              "soul" => @cto.soul, "routed_by" => "chat" })
         if limited
@@ -138,6 +147,17 @@ module AgentMessages
       end
       jobs.each { |job, id| job.perform_later(id) }
       message
+    end
+
+    # The files, on the message, before the dispatcher can claim it (same
+    # transaction). Recorded by kind and size, never by content.
+    def attach(message, blobs)
+      return if blobs.empty?
+
+      message.attachments.attach(blobs)
+      message.record!("attached", actor: "web-chat",
+                                  detail: { "files" => blobs.size, "bytes" => blobs.sum(&:byte_size),
+                                            "kinds" => blobs.map { |b| Attachments.kind(b.content_type) }.tally })
     end
 
     def rate_limited?(thread_key)

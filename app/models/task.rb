@@ -220,6 +220,14 @@ class Task < ApplicationRecord
   # The per-task review claim (TaskReviewClaim): at most one live pr-review session.
   has_one :review_claim, class_name: "TaskReviewClaim",
           foreign_key: :task_slug, primary_key: :slug, dependent: :destroy
+  # The files a client sent with the request a `go` turned into this task
+  # (AgentProposals::Executor): the SAME blobs as the chat message's, referenced,
+  # never copied. dependent: false, because the message owns them (they live as
+  # long as its thread); removing the task leaves them. Writing them into a desk
+  # at task begin is a later step (.agents/epics/chat-media-design.md, flow 5).
+  # Same private service as the message's, so the copy never lands in the hub's
+  # public bucket.
+  has_many_attached :attachments, dependent: false, service: AgentMessages::Attachments::SERVICE
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

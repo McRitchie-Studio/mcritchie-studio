@@ -1,0 +1,23 @@
+<%# locals: (message:) %>
+<%# The files a sent turn carries (AgentMessages::Attachments). Each opens through the hub, which checks the viewer and redirects to an R2 link that expires in minutes; nothing here is a blob URL. Images a browser draws show as pictures, the rest (HEIC, PDF) as named chips. Renders in broadcasts too, so paths, never URL helpers. %>
+<% if message.attachments.attached? %>
+  <ul class="self-end max-w-[85%] flex flex-wrap justify-end gap-2" data-test="cto-chat-sent-files" aria-label="Files sent">
+    <% message.attachments.each do |attachment| %>
+      <% blob = attachment.blob %>
+      <li class="min-w-0" data-test="cto-chat-sent-file" data-kind="<%= AgentMessages::Attachments.kind(blob.content_type) %>">
+        <% if AgentMessages::Attachments.previewable?(blob) %>
+          <a href="<%= AgentMessages::Attachments.path(message, attachment) %>" target="_blank" rel="noopener" class="block">
+            <img src="<%= AgentMessages::Attachments.path(message, attachment) %>" alt="<%= blob.filename %>" loading="lazy"
+                 class="h-24 w-24 sm:h-28 sm:w-28 object-cover rounded-xl border border-subtle bg-inset">
+          </a>
+        <% else %>
+          <a href="<%= AgentMessages::Attachments.path(message, attachment) %>" target="_blank" rel="noopener"
+             class="flex items-center gap-2 max-w-[16rem] rounded-xl border border-subtle bg-surface px-3 py-2 text-sm text-heading hover:border-primary">
+            <span class="shrink-0 text-xs font-semibold text-muted"><%= blob.content_type == "application/pdf" ? "PDF" : "IMG" %></span>
+            <span class="truncate"><%= blob.filename %></span>
+          </a>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
