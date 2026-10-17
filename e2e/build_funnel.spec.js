@@ -4,7 +4,8 @@
 // The promise only a browser can prove: a SIGNED-OUT visitor talks to Xan, taps
 // the intake cards Xan sends (CTO, colors, address), watches the checklist fill
 // and Build my app light up, and only THEN signs in; the emailed link returns to
-// the same chat, and Build queues the app. The spec plays the dispatcher through
+// the same chat, and Build my app launches the app and moves the page to the new
+// CTO's chat, where the CTO's greeting streams in. The spec plays the dispatcher through
 // the real mailbox API (claim, complete with an intake card), and the page,
 // which has no /cable socket signed out, picks each answer up by polling. Mobile
 // width and both themes are measured on the way.
@@ -60,7 +61,7 @@ async function say(page, text) {
   await expect(page.locator("[data-test='build-turn']", { hasText: text })).toHaveCount(1);
 }
 
-test("a signed-out visitor completes the intake cards, sees Build my app light up, then signs in and it is queued", async ({ page, browser }) => {
+test("a signed-out visitor completes the intake cards, sees Build my app light up, signs in, and the page becomes the new CTO's chat", async ({ page, browser }) => {
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
@@ -164,9 +165,46 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   await expect(onboarding).toBeHidden();
   await expect(page.locator("[data-test='build-turn']", { hasText: idea })).toHaveCount(1);
 
+  // Build my app: the page moves to the new CTO's chat (a Turbo visit with a view
+  // transition), wearing Ref's portrait and the Pitch colours, with Xan's handover first.
   await page.getByRole("button", { name: "Build my app" }).click();
-  await expect(page.locator("[data-test='build-request']")).toHaveAttribute("data-status", "queued");
-  await expect(page.locator("[data-test='build-host']")).toHaveText(`${address}.mcritchie.studio`);
+  await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
+  await expect(page.getByRole("heading", { name: "Chat with Ref" })).toBeVisible();
+  const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
+  await expect(head.locator("[data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
+  await expect(handover).toContainText("Meet Ref, your CTO. I'll hand you over.");
+  await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
+
+  // The dispatcher answers the handover as client_cto; the greeting streams in live.
+  const worker = `e2e-cto-${Date.now()}`;
+  let greeted;
+  for (let i = 0; i < 10 && !greeted; i += 1) {
+    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["client_cto"], worker, channel: "web" } });
+    const message = (await claimed.json()).data;
+    expect(message, "the handover is claimable").toBeTruthy();
+    const mine = message.channel_ref === address;
+    const text = mine ? "Hi Jordan, I'm **Ref**. First we build live standings, then you see them on a preview link." : "ok";
+    await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: text } });
+    if (mine) greeted = message;
+  }
+  expect(greeted.content).toBe("Meet Ref, your CTO. I'll hand you over.");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Ref.");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Ref");
+
+  // Both themes: the head wears that mode's primary, and the handover, the
+  // greeting and the head read. A phone fits.
+  await eachTheme(page, async (theme) => {
+    await expect(head).toHaveCSS("border-top-color", theme === "dark" ? "rgb(74, 222, 128)" : "rgb(21, 128, 61)");
+    for (const selector of ["[data-test='cto-chat-handover'] p", "[data-test='cto-chat-reply'] p", "[data-test='cto-chat-head'] h1"]) {
+      const measured = await page.evaluate(CONTRAST, selector);
+      expect(measured.length, `${theme}: ${selector} renders`).toBeGreaterThan(0);
+      for (const m of measured) expect(m.ratio, `${theme}: ${selector} "${m.text}"`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
+    }
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const chatOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(chatOverflow, "the CTO chat fits at 390px").toBeLessThanOrEqual(0);
   expect(pageErrors, report()).toHaveLength(0);
 });
 
