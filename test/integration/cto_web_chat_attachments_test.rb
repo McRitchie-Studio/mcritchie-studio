@@ -54,7 +54,7 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
       fetched << url
       encoded = URI.parse(url).path[%r{/rails/active_storage/disk/([^/]+)/}, 1]
       key = ActiveStorage.verifier.verified(encoded, purpose: :blob_key)&.with_indifferent_access&.dig(:key)
-      key && ActiveStorage::Blob.service.download(key)
+      key && ActiveStorage::Blob.services.fetch(:chat_private).download(key)
     end
   end
 
@@ -171,6 +171,51 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
     assert_match %r{/rails/active_storage/disk/}, response.location
     get chat_attachment_application_path("mcritchie-studio", attachment.id)
     assert_response :not_found, "the file is shown only under the app whose chat it is in"
+  end
+
+  test "[integration] chat files OFF (no private bucket keys): no Attach on the page, uploads and files refused, text sends" do
+    log_in_as(@alex)
+    token = upload["token"]
+    AgentMessages::Attachments.enabled_override = false
+
+    get chat_application_path("turf-monster")
+    assert_select "[data-chat-attachments]", 0
+    assert_select "[data-test='cto-chat-input']", 1
+
+    body = upload
+    assert_response :unprocessable_content
+    assert_equal "ATTACHMENTS_OFF", body["error_code"]
+    send_with_files("look at this", [ token ])
+    assert_response :unprocessable_content
+    assert_includes response.body, "Attaching files is not switched on for this chat yet."
+    send_with_files("just text", [])
+    assert_response :success
+    assert_equal [ "just text" ], AgentMessage.pluck(:content)
+
+    AgentMessages::Attachments.enabled_override = true
+    get chat_application_path("turf-monster")
+    assert_select "[data-chat-attachments] [data-test='cto-chat-attach']", 1
+  ensure
+    AgentMessages::Attachments.enabled_override = nil
+  end
+
+  test "[integration] the signed redirect never reaches the log" do
+    log_in_as(@alex)
+    send_with_files("", [ upload["token"] ])
+    attachment = AgentMessage.find_by!(channel: "web").attachments.sole
+    io = StringIO.new
+    previous = ActionController::Base.logger
+    ActionController::Base.logger = ActiveSupport::Logger.new(io)
+
+    get chat_attachment_application_path("turf-monster", attachment.id)
+    assert_response :redirect
+    assert_includes io.string, "Redirected to [FILTERED]"
+    assert_not_includes io.string, attachment.blob.key
+    assert_not_includes io.string, "/rails/active_storage/disk/"
+    assert(%w[r2.cloudflarestorage.com X-Amz-Signature].all? { |s| Rails.application.config.filter_redirect.include?(s) },
+           "an R2 presigned URL is filtered too")
+  ensure
+    ActionController::Base.logger = previous
   end
 
   test "[integration] Active Storage's stock direct upload is closed to everyone" do

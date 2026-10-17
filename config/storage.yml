@@ -30,3 +30,16 @@ local:
 <% StorageBackend.active_storage_services(buckets).each do |name, config| %>
 <%= name %>: <%= config.to_json %>
 <% end %>
+
+# `chat_private`: the CTO web chat's files (AgentMessages::Attachments), in their
+# own R2 bucket pair with NO public domain (StorageBackend.chat_private_service:
+# buckets mcritchie-studio-chat-production / -dev, keys CHAT_R2_ACCESS_KEY_ID and
+# CHAT_R2_SECRET_ACCESS_KEY). Unset keys turn chat attachments off; they never
+# fail a boot. The test suite stores them on disk.
+<% if Rails.env.test? %>
+chat_private:
+  service: Disk
+  root: <%= Rails.root.join("tmp/storage_chat_private") %>
+<% else %>
+chat_private: <%= StorageBackend.chat_private_service.to_json %>
+<% end %>

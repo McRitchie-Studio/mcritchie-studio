@@ -25,6 +25,40 @@ class WebIngestAttachmentsTest < ActiveSupport::TestCase
 
   def refusal(&) = assert_raises(A::Refused, &)
 
+  teardown { A.enabled_override = nil }
+
+  test "chat files live on the PRIVATE service, on the message and on the task it becomes" do
+    assert_equal :chat_private, AgentMessage.reflect_on_attachment(:attachments).options[:service_name]
+    assert_equal :chat_private, Task.reflect_on_attachment(:attachments).options[:service_name]
+    assert_equal "chat_private", upload_sample(@alex, "png").service_name
+    assert_not_equal ActiveStorage::Blob.service.name.to_s, "chat_private", "the hub's default (public-domain) bucket is another service"
+  end
+
+  test "OFF while the private bucket has no keys: uploads and files refused, text unchanged" do
+    token = sample_token(@alex, "png")
+    A.enabled_override = false
+
+    assert_equal "ATTACHMENTS_OFF", refusal { upload_sample(@alex, "png") }.code
+    error = refusal { ingest("look", [ token ]) }
+    assert_equal [ "ATTACHMENTS_OFF", A::OFF_MESSAGE ], [ error.code, error.message ]
+    assert_equal [], A.held([ token ], app_slug: "turf-monster", user: @alex)
+    assert_equal "received", ingest("just text", []).status, "text chat is unchanged"
+  end
+
+  test "the switch reads the private service's keys: all three set is on, any missing is off, and off never boots a real bucket" do
+    keys = { "CHAT_R2_ACCESS_KEY_ID" => "id", "CHAT_R2_SECRET_ACCESS_KEY" => "secret", "R2_ENDPOINT" => "https://acct.r2.cloudflarestorage.com" }
+    assert StorageBackend.chat_private_configured?(keys)
+    keys.each_key { |name| assert_not StorageBackend.chat_private_configured?(keys.merge(name => " ")), "#{name} blank" }
+
+    on = StorageBackend.chat_private_service(keys, bucket: "mcritchie-studio-chat-dev")
+    assert_equal %w[https://acct.r2.cloudflarestorage.com id secret mcritchie-studio-chat-dev], on.values_at("endpoint", "access_key_id", "secret_access_key", "bucket")
+    off = StorageBackend.chat_private_service({ "R2_ENDPOINT" => "https://acct.r2.cloudflarestorage.com" }, bucket: "b")
+    assert_equal "https://#{StorageBackend::UNCONFIGURED_HOST}", off["endpoint"], "off builds on the unreachable placeholder"
+    assert_equal "mcritchie-studio-chat-production", StorageBackend.chat_private_bucket(qa: false, production: true)
+    assert_equal "mcritchie-studio-chat-dev", StorageBackend.chat_private_bucket(qa: true, production: true)
+    assert_equal "mcritchie-studio-chat-dev", StorageBackend.chat_private_bucket(qa: false, production: false)
+  end
+
   test "every allowed type is read from its bytes and stored under the app's chat prefix for its uploader" do
     expected = { "png" => "image/png", "jpg" => "image/jpeg", "webp" => "image/webp", "gif" => "image/gif",
                  "heic" => "image/heic", "pdf" => "application/pdf" }

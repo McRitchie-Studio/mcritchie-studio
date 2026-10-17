@@ -225,7 +225,9 @@ class Task < ApplicationRecord
   # never copied. dependent: false, because the message owns them (they live as
   # long as its thread); removing the task leaves them. Writing them into a desk
   # at task begin is a later step (.agents/epics/chat-media-design.md, flow 5).
-  has_many_attached :attachments, dependent: false
+  # Same private service as the message's, so the copy never lands in the hub's
+  # public bucket.
+  has_many_attached :attachments, dependent: false, service: AgentMessages::Attachments::SERVICE
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

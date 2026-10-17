@@ -7,9 +7,11 @@
 // (data-field-name), and removing the chip removes the field.
 //
 // Send waits for the uploads: a submit while any is in flight is held and
-// re-sent the moment the last one settles. A message may be files with no text,
-// so the text box is required only while no file is attached. A failed upload
-// keeps its chip, marked, with the server's reason, and is never sent.
+// re-sent the moment the last one settles, unless one FAILED: then nothing is
+// sent, the failed chip stays (red, with the server's reason) and the composer
+// says to remove it or attach it again. A submit with a failed chip on it is
+// stopped the same way. A message may be files with no text, so the text box is
+// required only while a file is attached or uploading.
 //
 // Imported by application.js on every page, once per load; every listener is
 // delegated on document and does nothing where there is no composer.
@@ -45,7 +47,7 @@ function syncRequired(root) {
   const form = root.closest("form");
   const input = form?.querySelector("textarea");
   if (!input) return;
-  const ready = chips(root).some((chip) => chip.dataset.state === "done" || chip.dataset.state === "uploading");
+  const ready = chips(root).length > 0;
   input.required = !ready;
   const send = form.querySelector("[type='submit']");
   if (send) send.toggleAttribute("aria-busy", uploading(root));
@@ -105,7 +107,7 @@ function chipFor(file) {
 
   const remove = document.createElement("button");
   remove.type = "button";
-  remove.className = "shrink-0 rounded px-1 text-muted hover:text-heading";
+  remove.className = "shrink-0 inline-flex items-center justify-center min-w-6 min-h-6 rounded text-base leading-none text-muted hover:text-heading";
   remove.dataset.chatAttachmentRemove = "";
   remove.dataset.test = "cto-chat-chip-remove";
   remove.setAttribute("aria-label", `Remove ${file.name || "file"}`);
@@ -116,6 +118,8 @@ function chipFor(file) {
 
 function fail(root, chip, text) {
   chip.dataset.state = "failed";
+  // Swap, not add: with both on the chip the stylesheet's order would decide.
+  chip.classList.remove("border-subtle");
   chip.classList.add("border-danger");
   chip.querySelector("progress")?.remove();
   const note = chip.querySelector("[data-test='cto-chat-chip-error']");
@@ -137,15 +141,23 @@ function done(root, chip, token) {
   settle(root);
 }
 
-// After any upload settles: re-send a held submit once nothing is in flight.
+const FAILED_HOLD = "A file did not upload. Remove it or attach it again, then send.";
+
+function failed(root) { return chips(root).some((chip) => chip.dataset.state === "failed"); }
+
+// After any upload settles: re-send a held submit once nothing is in flight,
+// unless an upload failed; then the send stays unsent and says why.
 function settle(root) {
   syncRequired(root);
   if (uploading(root)) return;
   const form = root.closest("form");
-  if (form?.dataset.chatAttachmentsHeld === "1") {
-    delete form.dataset.chatAttachmentsHeld;
-    form.requestSubmit();
+  if (form?.dataset.chatAttachmentsHeld !== "1") return;
+  delete form.dataset.chatAttachmentsHeld;
+  if (failed(root)) {
+    showError(root, FAILED_HOLD);
+    return;
   }
+  form.requestSubmit();
 }
 
 function upload(root, file, chip) {
@@ -253,13 +265,15 @@ document.addEventListener("drop", (event) => {
   addFiles(root, event.dataTransfer.files);
 });
 
-// Send waits for uploads: hold the submit, and settle() re-sends it.
+// Send waits for uploads: hold the submit, and settle() re-sends it. A failed
+// chip stops the send outright.
 document.addEventListener("submit", (event) => {
   const root = rootIn(event.target);
-  if (!root || !uploading(root)) return;
+  if (!root || (!uploading(root) && !failed(root))) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  event.target.dataset.chatAttachmentsHeld = "1";
+  if (uploading(root)) event.target.dataset.chatAttachmentsHeld = "1";
+  else showError(root, FAILED_HOLD);
 }, true);
 
 // Enter sends a files-only message too (agent_chat.js sends only when there is text).
@@ -268,7 +282,7 @@ document.addEventListener("keydown", (event) => {
   if (!(input instanceof HTMLTextAreaElement) || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
   const root = rootIn(input.form);
   if (!root || input.value.trim() !== "") return;
-  if (chips(root).some((chip) => chip.dataset.state === "done" || chip.dataset.state === "uploading")) {
+  if (chips(root).some((chip) => ["done", "uploading", "failed"].includes(chip.dataset.state))) {
     event.preventDefault();
     input.form.requestSubmit();
   }

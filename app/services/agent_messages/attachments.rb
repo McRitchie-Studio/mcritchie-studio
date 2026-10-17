@@ -13,8 +13,16 @@ module AgentMessages
   #   UPLOAD_LIMIT uploads per user per UPLOAD_WINDOW, across every app, on top
   #               of the message rate limit (WebIngest::RATE_LIMIT)
   #
-  # WHERE THEY LIVE: R2, through the hub's Active Storage service, under
-  # `apps/<app slug>/chat/u<user id>-<token>/<file>`. The key is written here on
+  # WHERE THEY LIVE: R2, on the PRIVATE Active Storage service SERVICE
+  # (`chat_private`: its own bucket pair with no public domain,
+  # StorageBackend.chat_private_service), never the hub's bucket, whose public
+  # custom domain serves any key to anyone. Keys are
+  # `apps/<app slug>/chat/u<user id>-<token>/<file>`.
+  #
+  # OFF UNTIL THAT BUCKET EXISTS: enabled? is false while the private service has
+  # no keys (StorageBackend.chat_private_configured?). Then the composer shows no
+  # Attach, an upload and a message with files are refused (ATTACHMENTS_OFF),
+  # and text chat is unchanged. The key is written here on
   # the server, so the prefix is also the proof of whose upload a blob is: a
   # message may attach only blobs under ITS app's and ITS sender's prefix.
   #
@@ -46,9 +54,26 @@ module AgentMessages
     ACCEPT = ".png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.pdf,#{TYPES.keys.join(',')}".freeze
     LABELS = { "image" => "an image", "pdf" => "a PDF" }.freeze
 
+    SERVICE = :chat_private
+    OFF_MESSAGE = "Attaching files is not switched on for this chat yet.".freeze
+
     Refused = WebIngest::Refused
 
+    # nil: read the configuration (the test suite's Disk service is always on);
+    # true/false: a test pins it.
+    mattr_accessor :enabled_override, default: nil
+
     module_function
+
+    def enabled?
+      return enabled_override unless enabled_override.nil?
+
+      Rails.env.test? || StorageBackend.chat_private_configured?
+    end
+
+    def refuse_when_off!
+      raise Refused.new(OFF_MESSAGE, code: "ATTACHMENTS_OFF") unless enabled?
+    end
 
     def kind(content_type) = TYPES[content_type.to_s]
     def previewable?(blob) = PREVIEWABLE.include?(blob.content_type.to_s)
@@ -80,6 +105,7 @@ module AgentMessages
     # Marked analyzed, so Active Storage never runs its image analyzer on an
     # untrusted upload on the hub: only the dispatcher's ImageMagick decodes it.
     def upload!(io:, filename:, app_slug:, user:, now: Time.current)
+      refuse_when_off!
       raise Refused.new("Attach a file first.", code: "ATTACHMENT_MISSING") if io.nil?
       if uploads_since(user.id, now - UPLOAD_WINDOW) >= UPLOAD_LIMIT
         raise Refused.new("That is a lot of files in an hour. Try again later.", code: "ATTACHMENT_RATE_LIMITED")
@@ -89,6 +115,7 @@ module AgentMessages
       content_type = sniff(io)
       check!(content_type: content_type, byte_size: io.size, filename: filename)
       ActiveStorage::Blob.create_and_upload!(io: io, filename: filename, content_type: content_type, identify: false,
+                                             service_name: SERVICE,
                                              key: key_for(app_slug, user.id, filename),
                                              metadata: { "analyzed" => true, "identified" => true,
                                                          "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
@@ -128,12 +155,14 @@ module AgentMessages
     def resolve!(tokens, app_slug:, user:)
       tokens = Array(tokens).map(&:to_s).reject(&:blank?).uniq
       return [] if tokens.empty?
+
+      refuse_when_off!
       raise Refused.new("Attach at most #{MAX_FILES} files to one message.", code: "ATTACHMENT_TOO_MANY") if tokens.size > MAX_FILES
 
       prefix = key_prefix(app_slug, user.id)
       tokens.map do |token|
         blob = ActiveStorage::Blob.find_signed(token, purpose: TOKEN_PURPOSE)
-        unless blob&.key.to_s.start_with?(prefix)
+        unless blob&.key.to_s.start_with?(prefix) && blob.service_name.to_s == SERVICE.to_s
           raise Refused.new("A file you attached has expired. Attach it again.", code: "ATTACHMENT_INVALID")
         end
         raise Refused.new("#{blob.filename} is already on a message.", code: "ATTACHMENT_USED") if blob.attachments.exists?
@@ -148,6 +177,8 @@ module AgentMessages
     # this app (the first MAX_FILES + 1, so a too-many refusal still shows why).
     # Lenient on purpose: it only redraws; WebIngest checks every rule at send.
     def held(tokens, app_slug:, user:)
+      return [] unless enabled?
+
       prefix = key_prefix(app_slug, user.id)
       Array(tokens).map(&:to_s).reject(&:blank?).uniq.first(MAX_FILES + 1).filter_map do |token|
         blob = ActiveStorage::Blob.find_signed(token, purpose: TOKEN_PURPOSE)

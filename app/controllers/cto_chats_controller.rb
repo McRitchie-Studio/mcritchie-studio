@@ -83,8 +83,16 @@ class CtoChatsController < ApplicationController
   # owner fixes the message without attaching them again.
   def composer_locals(error: nil, text: "", tokens: [])
     { url: chat_application_path(@app.slug), scope: :cto_chat, id: FORM_ID, error: error, text: text,
-      attachments: { upload_url: chat_attachments_application_path(@app.slug),
-                     held: AgentMessages::Attachments.held(tokens, app_slug: @app.slug, user: current_user) } }
+      attachments: attachments_locals(tokens) }
+  end
+
+  # The attachments slot's locals, or nil (no Attach at all) while chat files
+  # are off (AgentMessages::Attachments.enabled?: the private bucket has no keys).
+  def attachments_locals(tokens)
+    return nil unless AgentMessages::Attachments.enabled?
+
+    { upload_url: chat_attachments_application_path(@app.slug),
+      held: AgentMessages::Attachments.held(tokens, app_slug: @app.slug, user: current_user) }
   end
 
   # Whether the agents answer this user's person now (config/agent_answerers.yml),

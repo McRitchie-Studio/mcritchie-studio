@@ -108,7 +108,8 @@ class AgentMessage < ApplicationRecord
   # private R2 objects under apps/<app>/chat/, shown only to the thread's owner
   # and admins (CtoChatAttachmentsController) and read by the dispatcher through
   # the holder-only context bundle.
-  has_many_attached :attachments
+  # On the PRIVATE service (no public domain), never the hub's bucket.
+  has_many_attached :attachments, service: AgentMessages::Attachments::SERVICE
 
   before_create :resolve_person
 

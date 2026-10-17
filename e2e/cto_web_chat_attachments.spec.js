@@ -53,7 +53,18 @@ test("the owner drops an image on the chat, sees its chip, sends it, and the ans
   const bad = page.locator("[data-test='cto-chat-chip']", { hasText: "notes.txt" });
   await expect(bad).toHaveAttribute("data-state", "failed");
   await expect(bad.locator("[data-test='cto-chat-chip-error']")).toContainText("not an image or a PDF");
+  await expect(bad).toHaveClass(/border-danger/);
+  await expect(bad).not.toHaveClass(/border-subtle/);
+  // A send with a failed file on it does not go: the composer says why.
+  await page.locator("[data-test='cto-chat-input']").fill("with a broken file");
+  await page.locator("[data-test='cto-chat-input']").press("Enter");
+  await expect(page.locator("[data-test='cto-chat-attach-error']")).toContainText("A file did not upload");
+  await expect(page.locator("[data-test='cto-chat-turn']", { hasText: "with a broken file" })).toHaveCount(0);
+  const removeBox = await bad.locator("[data-test='cto-chat-chip-remove']").boundingBox();
+  expect(removeBox.width).toBeGreaterThanOrEqual(24);
+  expect(removeBox.height).toBeGreaterThanOrEqual(24);
   await bad.locator("[data-test='cto-chat-chip-remove']").click();
+  await page.locator("[data-test='cto-chat-input']").fill("");
   await expect(bad).toHaveCount(0);
 
   await dropFiles(page, [{ name: "probe.png", type: "image/png", bytes: PNG }]);
