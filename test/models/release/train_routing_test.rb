@@ -81,28 +81,13 @@ class Release::TrainRoutingTest < ActiveSupport::TestCase
     assert_equal "hub", release.train
   end
 
-  test "[unit] sweep! refuses another train's task named through an explicit door, before any write" do
-    turf = task_on("turf named", repos: [ TURF ], merged: "accepted")
-
-    error = assert_raises(ArgumentError) { Release::Conductor.sweep!(turf) }
-    assert_match(/rides the turf-monster train, not hub: sweep it with `bin\/release prepare --train turf-monster`/, error.message)
-    assert_nil Release.current, "the refusal opened no hub release"
-    assert_nil turf.reload.release_slug
-  end
-
-  test "[unit] sweep! override is the audited escape hatch past the train backstop" do
-    turf = task_on("turf override", repos: [ TURF ], merged: "accepted")
-    release = Release::Conductor.sweep!(turf, override: true)
-    assert_equal "hub", release.train
-  end
-
   test "[unit] a member already riding the hub release stays on it after its app gets a train" do
     hub_rel = Release.open!
     turf = task_on("turf legacy member", repos: [ TURF ])
     turf.update_columns(release_slug: hub_rel.slug)
 
     assert_includes Release::Conductor.sweep_candidates["reviewed"].map(&:slug), turf.slug
-    assert_equal hub_rel.slug, Release::Conductor.sweep!(turf).slug
+    refute_includes Release::Conductor.sweep_candidates["other_train"].map(&:slug), turf.slug
   end
 
   # --- repo exclusivity ------------------------------------------------------------

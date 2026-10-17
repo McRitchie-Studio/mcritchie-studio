@@ -110,20 +110,10 @@ class Release
     #
     # `train:` is the train whose release the task joins (default: the hub, exactly
     # as before trains). Release#add refuses a task whose repo another active train
-    # holds.
+    # holds. sweep! does NOT refuse a task routed to another train: the sweep read
+    # (sweep_candidates) and bin/release's plan hold those, while a slug an operator
+    # NAMES (curate!'s task_slugs) is curation, exactly as before trains.
     def sweep!(task, override: false, train: Release::DEFAULT_TRAIN)
-      # THE TRAIN BACKSTOP for the explicit doors (`bin/release merge`, curate!'s
-      # --task list): sweep_candidates already holds another train's task, but a
-      # named slug skips that read. Checked before anything opens or records. A
-      # task already attached to this train's current release keeps riding it, and
-      # `override` is the audited escape hatch.
-      riding = task.release_slug.present? && task.release_slug == Release.current(train)&.slug
-      if !override && !riding && task.release_train != train
-        rides = task.release_train
-        raise ArgumentError, "task #{task.slug} rides the #{rides} train, not #{train}: sweep it with " \
-                             "`bin/release prepare#{rides == Release::DEFAULT_TRAIN ? '' : " --train #{rides}"}`"
-      end
-
       release = Release.current_or_open!(train)
       stamp_session_mascot(release)
       # The first sweep IS the start of assembly — record it so the stage

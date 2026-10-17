@@ -1862,7 +1862,7 @@ def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
   "t ? { slug: t.slug, pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, stage: t.stage, " \
-  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } " \
+  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "cur = #{rel_current}; " \
@@ -2347,9 +2347,11 @@ def merge
   #    with no merged stamp — review never landed its feat PR on `accepted`). For
   #    this EXPLICIT command a held task is a HARD abort: the operator named it and
   #    there is no code on `accepted` to promote — silently dropping it would lie.
-  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS),
-                                    train: TRAIN, trains: RELEASE_TRAINS,
-                                    riding: (resolved["release"] || {})["slug"])
+  #    No train filter: a slug the operator NAMES is curation, exactly as before
+  #    trains (Release::Conductor.sweep! takes it onto TRAIN's release the same way).
+  #    The hard rule still holds there: Release#add refuses a repo another active
+  #    train holds.
+  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS))
 
   # 2-bis. PARKED-REPO REFUSAL — first, because SweepPlan partitions a parked row out
   #     before anything else, so it sits in NO other list: without this abort `merge`
@@ -2359,15 +2361,6 @@ def merge
     abort!("merge refused #{plan['parked'].size} task(s) naming a parked repo — the conductor sweeps " \
            "three-rung repos only, so NOTHING was promoted or recorded: " \
            "#{plan['parked'].map { |entry| Release::SweepPlan.parked_hold_line(entry) }.join(' ')}")
-  end
-
-  # 2-ter. OTHER-TRAIN REFUSAL — the same reason one rule over: a task riding another
-  #     release train (config/release_trains.yml) sits in no other list, so merge would
-  #     drop it silently. The operator named it; say which train sweeps it.
-  if plan["other_train"].any?
-    abort!("merge refused #{plan['other_train'].size} task(s) riding another release train — NOTHING was " \
-           "promoted or recorded: " \
-           "#{plan['other_train'].map { |entry| Release::SweepPlan.other_train_hold_line(entry, TRAIN) }.join(' ')}")
   end
 
   # 2a. MULTI-REPO COVERAGE REFUSAL — prepare's step 3a, on the path prepare itself
