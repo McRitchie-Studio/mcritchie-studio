@@ -769,9 +769,10 @@ Rails.application.routes.draw do
           post :acquire
           post :renew
           post :checkpoint
-          get :checkpoint, action: :download
+          post :checkpoint_read, action: :download
           post :release
           post :consolidate
+          post :fault
         end
       end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
