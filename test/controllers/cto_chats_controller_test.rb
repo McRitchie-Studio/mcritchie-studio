@@ -39,7 +39,6 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form#cto-chat-form[action='#{chat_application_path('turf-monster')}'] textarea[maxlength='#{AgentMessages::WebIngest::MAX_LENGTH}']"
     assert_select "form#cto-chat-form input[type='hidden'][name='cto_chat[client_id]']"
     assert_select "[data-test='cto-chat-unanswered']", 0, "the owner is answered"
-    assert_select "script[type='module']", text: /import "cto_chat"/
   end
 
   test "[component] an owner the CTO does not answer yet is told so, and a held turn says it waits for an admin" do

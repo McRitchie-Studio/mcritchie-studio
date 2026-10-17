@@ -9,8 +9,9 @@
 //     a pulse older than an answer already shown is dropped at once;
 //   - Enter sends, Shift+Enter is a new line, and the composer keeps focus.
 //
-// Imported once per page load; every listener is delegated on document, so a
-// Turbo visit back to the chat needs no re-binding.
+// Imported by application.js on every page, once per load; every listener is
+// delegated on document and does nothing where there is no chat, so a Turbo
+// visit to or back to the chat needs no re-binding.
 const LOG = "[data-cto-chat-scroll]";
 const TYPING = "cto-chat-typing";
 let fadeTimer = null;
