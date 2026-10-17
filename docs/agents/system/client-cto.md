@@ -67,11 +67,13 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
   owner of two client apps never hears one CTO recall the other's chat.
 - **Audience.** A sender the board knows only as `public` who owns the app (an
   `AppMembership` owner) is heard as that app's `client`, so the CTO may talk about their
-  own project. This changes what the CTO may SAY, never who is answered.
-- **Who is answered.** Unchanged: `config/agent_answerers.yml` answers `owner` only, so a
-  client's own messages are `held` until an operator answers clients there or releases
-  each one. The handover is the exception, because code wrote it: it carries
-  `hold_released_at` (actor `app-launch`).
+  own project.
+- **Who is answered.** The app's owner, on that app's chat only, by the app-owner
+  exception (`app_owners:` in `config/agent_answerers.yml`;
+  [`agent-message-loop.md`](agent-message-loop.md), "Held"), as the app's client and
+  within its owner meter. Anyone else, and the owner anywhere else, is `held`. The
+  handover is released by code, because code wrote it: it carries `hold_released_at`
+  (actor `app-launch`).
 - **Tools.** None, as every mailbox soul: `claude -p --safe-mode --tools ""`. No read
   action, no proposal catalog, no warm session.
 - **Usage.** `AgentUsage.meter(app)` counts the `client_cto` answers in that app's chat

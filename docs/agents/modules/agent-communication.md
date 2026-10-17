@@ -73,10 +73,13 @@ A person with no row, a row with no role, or a board that sends no audience is
 **Who is answered at all** is a separate gate: `config/agent_answerers.yml` lists
 the answered roles, `owner` alone today. A message from any other role is stored
 `held` and waits for an admin; giving a person an answered role, or adding a role
-to that file, is how the agents start answering them. The one exception is
-public intake: on a `/build` chat thread (`web:build:<token>`) Xan answers anyone,
+to that file, is how the agents start answering them. There are two exceptions.
+Public intake: on a `/build` chat thread (`web:build:<token>`) Xan answers anyone,
 capped, with no actions (`public_intake:` in the same file;
-`docs/agents/system/agent-message-loop.md`, "Build intake").
+`docs/agents/system/agent-message-loop.md`, "Build intake"). App owners: an app's
+CTO answers a person who owns that app on that app's web CTO thread
+(`web:<app>:<user id>`) only, as that app's `client`, within the app's usage
+meter (`app_owners:` in the same file; `docs/agents/system/agent-message-loop.md`, "Held").
 
 ## What the audience changes
 
