@@ -26,7 +26,8 @@ class ApplicationsController < ApplicationController
     raise ActiveRecord::RecordNotFound, "no visible apps" if @apps.empty?
 
     ctos = AppOwnership.ctos
-    @ctos = @apps.to_h { |app| [ app.slug, AppOwnership.cto_for_app(app.slug, ctos: ctos) ] }
+    client_ctos = AppCto.for_apps(@apps.map(&:slug))
+    @ctos = @apps.to_h { |app| [ app.slug, AppOwnership.cto_for_app(app.slug, ctos: ctos, client_ctos: client_ctos) ] }
   end
 
   def show

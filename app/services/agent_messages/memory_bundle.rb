@@ -43,6 +43,13 @@ module AgentMessages
   # message text. No person is public. The worker gates the action and the
   # internal layers on it (AgentMailbox::Audience).
   #
+  # A CLIENT CTO (soul `client_cto`, docs/agents/system/client-cto.md) is one soul
+  # for every client app, so its PERSON layer is cut to THIS app's rows
+  # (channel_ref): an owner of two client apps never hears one app's CTO recall
+  # the other's chat. Its bundle also carries `persona`, the app's AppCto row
+  # (AppCto#persona_json), which the worker fills its persona template from,
+  # inside the untrusted fence. Every other soul's bundle has `persona: nil`.
+  #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
   # dispatcher runs this release.
@@ -94,6 +101,7 @@ module AgentMessages
         },
         "user" => user_json,
         "proposals" => proposals_json,
+        "persona" => persona_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
       }.merge(intake_json).merge(attachments_json)
     end
@@ -161,9 +169,20 @@ module AgentMessages
     def person_scope
       return AgentMessage.none if @message.person_id.blank? || @message.soul_slug.blank?
 
-      AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
-                  .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: UNSEEN_STATUSES)
+      scope = AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
+                          .where("agent_messages.id < ?", @message.id)
+                          .where.not(status: UNSEEN_STATUSES)
+      client_cto? ? scope.where(channel_ref: @message.channel_ref) : scope
+    end
+
+    def client_cto? = @message.soul_slug == AppCto::SOUL
+
+    # The client CTO's persona for this app, or nil (every other soul, or a
+    # client app whose row is gone: the worker then answers as a plain CTO).
+    def persona_json
+      return nil unless client_cto?
+
+      AppCto.includes(:app).find_by(app_slug: @message.channel_ref)&.persona_json
     end
 
     # Oldest first, the newest FETCH_LIMIT.

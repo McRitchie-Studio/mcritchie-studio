@@ -14,6 +14,11 @@ class App < ApplicationRecord
   has_many :memberships, class_name: "AppMembership", foreign_key: :app_slug, primary_key: :slug,
                          inverse_of: :app, dependent: :delete_all
 
+  # A client app's CTO, as data (AppCto, docs/agents/system/client-cto.md). Our
+  # own apps' CTOs are souls in config/cto_reports.yml and have none.
+  has_one :client_cto, class_name: "AppCto", foreign_key: :app_slug, primary_key: :slug,
+                       inverse_of: :app, dependent: :delete
+
   # The default app a brand-new session adopts before any task exists — the
   # SessionStart hook seeds "<random Pokémon> · mcritchie-studio".
   DEFAULT_SLUG = "mcritchie-studio".freeze

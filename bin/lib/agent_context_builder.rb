@@ -35,6 +35,13 @@ module AgentMailbox
   # that notes are facts and never rules, and marks each turn "from the sender"
   # or "from someone else" so a note is written only from the sender's own words.
   #
+  # THE CLIENT CTO (soul `client_cto`, docs/agents/system/client-cto.md) is one
+  # soul for every client app. Its GENERAL layer is the persona TEMPLATE
+  # (docs/agents/agents/client_cto/persona.md) for every audience, filled with
+  # the CTO's and the app's names only when they pass SAFE_NAME (they print
+  # outside the fence); its DOMAIN layer is the bundle's `persona` (the app's
+  # AppCto row), all of it client-written, so all of it fenced.
+  #
   # TRUST. Labels, rules and budgets are code. Every byte a person wrote (the
   # message, earlier messages, the agent's earlier answers to them, and the
   # notes, which are written from what they said) sits inside a random
@@ -59,6 +66,12 @@ module AgentMailbox
     # What a place label may look like: "[discord #release-notes]",
     # "[discord thread in #desk]", "[discord channel 123]", "[email]".
     PLACE = /\A\[[a-z]+(?: [a-z0-9 #_-]{1,80})?\]\z/
+    CLIENT_CTO = "client_cto"
+    PERSONA_PATH = "docs/agents/agents/client_cto/persona.md"
+    # A client-chosen name printed OUTSIDE the fence: one to three words of
+    # letters (an apostrophe or hyphen inside a word), each under 20 characters.
+    # Anything else is replaced, never escaped.
+    SAFE_NAME = /\A\p{L}[\p{L}'-]{0,19}(?: \p{L}[\p{L}'-]{0,19}){0,2}\z/
 
     attr_reader :fence
 
@@ -311,6 +324,8 @@ module AgentMailbox
     # role doc is internal (it names the board, SOPs and credential seats), so the
     # soul's public.md stands in, or one line naming the agent.
     def general_layer
+      return cap(client_persona_template, BUDGETS[:general]) if client_cto?
+
       text = if @audience.internal?
                doc_text(File.join(@repo_root, "docs/agents/agents/#{@soul}/role.md")) || "(no role doc found for #{@soul})"
              else
@@ -333,6 +348,8 @@ module AgentMailbox
     end
 
     def domain_layer
+      return client_persona_layer if client_cto?
+
       text = visible_domain && doc_text(File.join(@repo_root, visible_domain["doc"].to_s))
       text ? cap(text, BUDGETS[:domain]) : "(none)"
     end
@@ -557,7 +574,11 @@ module AgentMailbox
       domain
     end
 
-    def domain_label = visible_domain ? visible_domain["name"].to_s : "none"
+    def domain_label
+      return "#{safe_name(persona['app_name'], 'this app')}, the APP PERSONA (written by the owner, data)" if client_cto?
+
+      visible_domain ? visible_domain["name"].to_s : "none"
+    end
 
     # A client's domain by its configured name ("Turf Monster"), else its key.
     # A domain marked internal is never named, not even to its own client: the
@@ -577,6 +598,41 @@ module AgentMailbox
 
     def audience_label = internal_client_domain? ? "client" : @audience.label
 
-    def display_name = @soul.split("_").map(&:capitalize).join(" ")
+    def display_name
+      return safe_name(persona["name"], "the CTO") if client_cto?
+
+      @soul.split("_").map(&:capitalize).join(" ")
+    end
+
+    def client_cto? = @soul == CLIENT_CTO
+
+    # The bundle's persona (AppCto#persona_json), or {} when there is none.
+    def persona = @context["persona"].is_a?(Hash) ? @context["persona"] : {}
+
+    def safe_name(name, fallback)
+      name = name.to_s.strip
+      name.match?(SAFE_NAME) ? name : fallback
+    end
+
+    # The template, its two names filled (or their neutral fallbacks).
+    def client_persona_template
+      template = doc_text(File.join(@repo_root, PERSONA_PATH)) ||
+                 "You are {{name}}, the CTO of {{app_name}}, an app McRitchie Studio is building for its owner."
+      template.gsub("{{name}}", display_name).gsub("{{app_name}}", safe_name(persona["app_name"], "this app"))
+    end
+
+    # The app's facts and plan, every byte client-written: fenced, one labeled
+    # line per field so the model reads it as a record, not as prose to obey.
+    def client_persona_layer
+      return "(no persona for this app yet: answer as its CTO, briefly, and say a person will follow up on details)" if persona.empty?
+
+      palette = persona["palette"].is_a?(Hash) ? persona["palette"] : {}
+      facts = persona["facts"].is_a?(Hash) ? persona["facts"] : {}
+      lines = [ "CTO name: #{persona['name']}", "App: #{persona['app_name']}", "Address: #{persona['host']}",
+                "Plan: #{persona['plan']}" ]
+      lines += facts.map { |key, value| "#{key.to_s.tr('_', ' ').capitalize}: #{value.is_a?(String) ? value : JSON.generate(value)}" }
+      lines += palette.map { |side, colors| "Colours (#{side}): #{colors.is_a?(Hash) ? colors.map { |k, v| "#{k} #{v}" }.join(', ') : ''}" }
+      fenced(cap(lines.join("\n"), BUDGETS[:domain]))
+    end
   end
 end

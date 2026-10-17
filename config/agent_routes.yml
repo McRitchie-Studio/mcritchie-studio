@@ -144,5 +144,11 @@ email:
 # Xan is listed for the /build intake chat (BuildIntake::Ingest), which is not a
 # CTO chat: no app's CTO is Xan, so listing him opens no /applications chat. It
 # makes bin/dispatcher serve his web rows even if he leaves the Discord routes.
+#
+# `client_cto` is the ONE soul every client app's chat routes to: its persona is
+# filled per app from that app's AppCto row (docs/agents/system/client-cto.md).
+# It reads no guild and has no email route. Listing it here is what makes
+# bin/dispatcher serve it (a running dispatcher restarts itself when this file
+# changes: AgentMailbox::CodeFingerprint).
 web:
-  souls: [avi, turf_monster, tyrion, xan]
+  souls: [avi, turf_monster, tyrion, xan, client_cto]
