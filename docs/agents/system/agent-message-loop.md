@@ -1018,16 +1018,39 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   the name or the browser. Images 20 MB, a PDF 32 MB, 10 files a message, 60
   uploads per user per hour. A message may be files with no text. A message with
   files is never a `go`/`no`.
-- **Storage.** R2 through the hub's Active Storage service, under
-  `apps/<app slug>/chat/u<user id>-<token>/<file>`; the prefix is written on the
-  server and is the proof of whose upload a blob is, so a message attaches only
-  its own sender's blobs for its own app. Uploads are marked analyzed, so Active
-  Storage never decodes an untrusted image on the hub.
+- **Storage: a PRIVATE bucket, and OFF until it exists.** Chat files go to the
+  `chat_private` Active Storage service (`has_many_attached :attachments,
+  service: :chat_private` on `AgentMessage` and `Task`), never the hub's bucket:
+  that one has a public custom domain (`assets.mcritchie.studio`, `assets-dev`)
+  that serves any key to anyone, so a file there is public once its key leaks
+  (Carl's review, 2026-10-17). `chat_private` is its own R2 pair with NO public
+  domain, built by `StorageBackend.chat_private_service`:
+
+  | | |
+  |---|---|
+  | Buckets | `mcritchie-studio-chat-production` (production), `mcritchie-studio-chat-dev` (QA and desks); location `enam`; the `expire-trash-3d` lifecycle rule (StudioTrashS3 moves deletes under `trash/`); NO custom domain, NO r2.dev URL |
+  | Env (per Heroku app, and `.env.development`) | `CHAT_R2_ACCESS_KEY_ID`, `CHAT_R2_SECRET_ACCESS_KEY`: the pair's bucket-scoped keys (prod pair on production, dev pair on QA and desks). The endpoint is the existing `R2_ENDPOINT` |
+  | 1Password | `r2.mcritchie-studio-chat` in `studio-agents`, made by Steffon's [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) act with app `mcritchie-studio-chat` |
+  | Switch on | Alex's yes, then bucket-provision, then set the two vars; no deploy needed beyond the config restart |
+
+  While the two variables are unset (`StorageBackend.chat_private_configured?`
+  false; the default), `Attachments.enabled?` is false: the composer has no
+  Attach, an upload or a send with files is refused (`ATTACHMENTS_OFF`, "Attaching
+  files is not switched on for this chat yet."), and text chat is unchanged. The
+  service is then built on the unreachable placeholder host, never a real bucket,
+  and a missing key never fails a boot. The test suite uses a Disk service.
+- **Keys.** Each object key is `apps/<app slug>/chat/u<user id>-<token>/<file>`;
+  the prefix is written on the server and is the proof of whose upload a blob is,
+  so a message attaches only its own sender's blobs for its own app. Uploads are
+  marked analyzed, so Active Storage never decodes an untrusted image on the hub.
+- **Logs.** `config.filter_redirect` (config/initializers/filter_parameter_logging.rb)
+  logs a redirect to a signed storage URL (`r2.cloudflarestorage.com`,
+  `X-Amz-Signature`, the Disk service's path) as `Redirected to [FILTERED]`, so a
+  file's key and live signature never reach a log line.
 - **Upload path.** The browser posts each file to the HUB, which writes it to R2;
   it is not an Active Storage direct upload to R2, because the R2 buckets carry
   no CORS rule (a preflight answered 403, 2026-10-17). Switching to direct upload
-  needs that rule on `mcritchie-studio-dev` and `-production` (Steffon, the
-  Cloudflare admin token) and a change in `chat_attachments.js` only.
+  needs that rule on the chat buckets (Steffon, the Cloudflare admin token) and a change in `chat_attachments.js` only.
 - **Private.** No page or answer carries a blob URL. The composer holds a signed
   token (purpose `cto_chat_attachment`, one day), which Active Storage's public
   `/rails/active_storage/blobs/*` routes refuse. A sent file shows through
@@ -1057,6 +1080,9 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
   answer steered by text inside a file cannot send data out through an `<img>`
   that loads on sight.
+- **A failed upload holds the send.** A send waiting on uploads does not go
+  when one fails, and a send with a failed chip on it is stopped: the chip stays,
+  red, with its reason, and the composer says to remove it or attach it again.
 - **A refused send keeps its files.** The re-rendered form draws the send's
   still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
   text or removes a file and sends again.
