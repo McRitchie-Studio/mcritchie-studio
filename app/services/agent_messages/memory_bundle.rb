@@ -119,13 +119,19 @@ module AgentMessages
     # AgentMailbox::DomainRegistry, filtered by the sender's audience, which the
     # board resolves from the person's role), and the thread's newest proposal,
     # so a `change: …` is answered with the offer it changes in view. A soul
-    # that is no domain's front door gets an empty catalog.
+    # that is no domain's front door gets an empty catalog. `last` carries, from
+    # code, whether it was offered to this sender (`own`) and on which message
+    # (`source_message_id`): a warm turn takes it only from a shown own turn
+    # (AgentMailbox::WarmSession.eligible?).
     def proposals_json
       audience = AgentProposal.audience_for(person)
       last = AgentProposal.in_thread(@message).where("agent_proposals.created_at <= ?", @message.created_at)
                           .order(id: :desc).first
       { "catalog" => AgentProposal.registry.catalog(@message.soul_slug, audience: audience),
-        "last" => last&.as_context_json }
+        "last" => last && last.as_context_json.merge(
+          "own" => last.person_id.present? && last.person_id == @message.person_id,
+          "source_message_id" => last.source_message_id
+        ) }
     end
 
     def person_scope

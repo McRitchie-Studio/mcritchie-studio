@@ -6,8 +6,9 @@ module Api
   module V1
     # [integration] The warm-session lease over HTTP: the shared token or an
     # admin session only; acquire, a 409 for a second holder, the checkpoint
-    # round trip (holder-only), consolidation and release; and a standby's
-    # claim answered empty while a primary pings.
+    # round trip (holder-only, lease key required), consolidation and release;
+    # the shared token plus the holder's name reads nothing; a fault report;
+    # and a standby's claim answered empty while a primary pings.
     class AgentDomainSessionsControllerTest < ActionDispatch::IntegrationTest
       DOMAIN = "mcritchie_studio".freeze
 
@@ -42,6 +43,8 @@ module Api
         post path("acquire"), params: { worker: "w1" }, headers: @shared, as: :json
         assert_response :success
         assert_equal "w1", response.parsed_body.dig("data", "holder")
+        key = response.parsed_body.dig("meta", "lease_key")
+        assert key.present?, "the take answers its key once"
 
         post path("acquire"), params: { worker: "w2" }, headers: @shared, as: :json
         assert_response :conflict
@@ -49,33 +52,84 @@ module Api
         assert_equal "w1", response.parsed_body.dig("meta", "holder")
 
         data = Zlib.gzip("{\"type\":\"user\"}\n")
-        post path("checkpoint"), params: { worker: "w1", session_id: "sess-0001", turns: 1, context_tokens: 900,
-                                           data: Base64.strict_encode64(data) }, headers: @shared, as: :json
+        post path("checkpoint"), params: { worker: "w1", lease_key: key, session_id: "sess-0001", turns: 1,
+                                           context_tokens: 900, data: Base64.strict_encode64(data) },
+                                 headers: @shared, as: :json
         assert_response :success
         assert_equal [ "sess-0001", 1 ], response.parsed_body["data"].values_at("claude_session_id", "turns")
 
-        get path("checkpoint"), params: { worker: "w2" }, headers: @shared
+        post path("checkpoint_read"), params: { worker: "w2", lease_key: key }, headers: @shared, as: :json
         assert_response :conflict, "the transcript is the holder's only"
-        get path("checkpoint"), params: { worker: "w1" }, headers: @shared
+        post path("checkpoint_read"), params: { worker: "w1", lease_key: key }, headers: @shared, as: :json
         assert_response :success
         assert_equal data, Base64.strict_decode64(response.parsed_body.dig("data", "data"))
 
-        post path("checkpoint"), params: { worker: "w1", session_id: "sess-0002", data: "%%%" }, headers: @shared, as: :json
+        post path("checkpoint"), params: { worker: "w1", lease_key: key, session_id: "sess-0002", data: "%%%" },
+                                 headers: @shared, as: :json
         assert_response :unprocessable_entity
 
         assert_no_difference -> { ErrorLog.count } do
-          post path("consolidate"), params: { worker: "w2", text: "x" }, headers: @shared, as: :json
+          post path("consolidate"), params: { worker: "w2", lease_key: key, text: "x" }, headers: @shared, as: :json
         end
         assert_response :conflict
-        post path("consolidate"), params: { worker: "w1", text: "Notes.", source_session_id: "sess-0001" },
+        post path("consolidate"), params: { worker: "w1", lease_key: key, text: "Notes.", source_session_id: "sess-0001" },
                                   headers: @shared, as: :json
         assert_response :success
         assert_equal 2, response.parsed_body.dig("data", "generation")
         assert_equal "Notes.", response.parsed_body.dig("data", "seed_summary")
 
-        post path("release"), params: { worker: "w1" }, headers: @shared, as: :json
+        post path("release"), params: { worker: "w1", lease_key: key }, headers: @shared, as: :json
         assert_response :success
         assert_nil response.parsed_body.dig("data", "holder")
+      end
+
+      # Steffon/Carl: the shared token is in every agent shell, the worker name
+      # is caller-asserted, and GET index names the holder. That is no longer a
+      # way into a transcript.
+      test "the shared token plus the holder's name from index reads and writes nothing" do
+        post path("acquire"), params: { worker: "w1" }, headers: @shared, as: :json
+        key = response.parsed_body.dig("meta", "lease_key")
+        post path("checkpoint"), params: { worker: "w1", lease_key: key, session_id: "sess-0001", turns: 1,
+                                           context_tokens: 1, data: Base64.strict_encode64(Zlib.gzip("owner\n")) },
+                                 headers: @shared, as: :json
+        assert_response :success
+
+        get api_v1_agent_domain_sessions_url, headers: @shared
+        listed = response.parsed_body["data"].first
+        holder = listed["holder"]
+        assert_equal "w1", holder
+        assert_not response.body.include?(key), "index never shows the key"
+
+        post path("checkpoint_read"), params: { worker: holder }, headers: @shared, as: :json
+        assert_response :conflict
+        assert_equal "NOT_HOLDER", response.parsed_body["error_code"]
+        assert_not response.body.include?(Base64.strict_encode64(Zlib.gzip("owner\n")))
+        post path("checkpoint_read"), params: { worker: holder, lease_key: "guess" }, headers: @shared, as: :json
+        assert_response :conflict
+
+        post path("acquire"), params: { worker: holder }, headers: @shared, as: :json
+        assert_response :conflict, "naming the holder does not renew its live lease or mint a key"
+        assert_nil response.parsed_body.dig("meta", "lease_key")
+        %w[renew release consolidate fault].each do |verb|
+          post path(verb), params: { worker: holder, text: "x", fault: "restore_failed" }, headers: @shared, as: :json
+          assert_response :conflict, verb
+        end
+        get path("checkpoint"), params: { worker: holder }, headers: @shared
+        assert_response :not_found, "the GET read (a key in a URL) is gone"
+        assert_equal "w1", AgentDomainSession.find_by!(domain: DOMAIN).holder
+      end
+
+      test "the holder's fault report is stored on the row and in ErrorLog" do
+        post path("acquire"), params: { worker: "w1" }, headers: @shared, as: :json
+        key = response.parsed_body.dig("meta", "lease_key")
+        assert_difference -> { ErrorLog.count }, 1 do
+          post path("fault"), params: { worker: "w1", lease_key: key, fault: "checkpoint_failed",
+                                        detail: "AgentMailbox::ApiError 500" }, headers: @shared, as: :json
+        end
+        assert_response :success
+        assert_equal "checkpoint_failed: AgentMailbox::ApiError 500", response.parsed_body.dig("data", "last_fault")
+        post path("fault"), params: { worker: "w1", lease_key: key, fault: "free text" }, headers: @shared, as: :json
+        assert_response :unprocessable_entity
       end
 
       test "a standby's claim is empty while a primary pings, without a long poll" do

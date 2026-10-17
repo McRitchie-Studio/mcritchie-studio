@@ -1107,8 +1107,16 @@ this).
 `config/agent_domains.yml`), for owner and team senders only. A client's or the
 public's message, a released hold, and any helper soul mapped to the domain stay
 one run per message, so untrusted text never persists in a session
-(`WarmSession.eligible?`, from the board's audience in the bundle). Later: one
-session per (domain, user).
+(`WarmSession.eligible?`, from the board's audience in the bundle). Every text a
+warm prompt carries must be the sender's own, so these answer cold too: a thread
+holding any turn that is not the sender's (`own`, set on the board); a message,
+or an own earlier turn, carrying quoted or forwarded material
+(`WarmSession.quotes?`: a `>` line, an "On … wrote:" line, a forwarded or
+original-message banner, a From: header followed by Sent:/Date:); and a thread
+whose newest proposal was not offered to this sender on a turn the prompt shows
+(the bundle's `proposals.last.own` and `source_message_id`). A verbatim paste
+with no such marker cannot be told from the sender's own words and is treated as
+theirs. Later: one session per (domain, user).
 
 **The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`
 (literally `true`; anything else is off), and optionally `consolidate_at` (an
@@ -1119,15 +1127,35 @@ that turning it on is a reviewed deploy, not a click.
 `agent_sessions`, which are the builder sessions), one row per domain: `holder`,
 `lease_expires_at` (5 minutes), `heartbeat_at`, `claude_session_id` (the head),
 `generation`, `turns`, `context_tokens`, the `checkpoint` (an Active Storage
-attachment: the gzipped transcript, at most 4 MB) and `checkpointed_at`. The lease
-lives on the row, as `AgentMessage`'s does: a holder that dies loses it when it
-lapses, with no sweeper. The dispatcher renews it on its minute ping. Every write
-is holder-checked (409 `NOT_HOLDER`), and a lapsed holder's late checkpoint or
-consolidation is refused (409 `LEASE_LAPSED`). The endpoints, under
-`/api/v1/agent_domain_sessions/:domain/`: `acquire`, `renew`, `checkpoint` (POST
-uploads, GET restores, holder only), `release`, `consolidate`. They take the
-shared token or an admin session; a soul's own session reaches none of them,
-because a checkpoint is owner and team conversation text.
+attachment: the gzipped transcript, at most 4 MB), `checkpointed_at`,
+`lease_key_digest`, and the last reported fault (`last_fault`, `last_fault_at`).
+The lease lives on the row, as `AgentMessage`'s does: a holder that dies loses it
+when it lapses, with no sweeper. The dispatcher renews it on its minute ping.
+Every write is holder-checked (409 `NOT_HOLDER`), and a lapsed holder's late
+checkpoint or consolidation is refused (409 `LEASE_LAPSED`). The endpoints, under
+`/api/v1/agent_domain_sessions/:domain/`, all POST: `acquire`, `renew`,
+`checkpoint` (upload), `checkpoint_read` (restore), `release`, `consolidate` and
+`fault`. They take the shared token or an admin session; a soul's own session
+reaches none of them, because a checkpoint is owner and team conversation text.
+
+**The lease key.** The shared token is in every agent shell, the worker name is
+the caller's word, and `GET` index shows the holder's name, so a name opens
+nothing. The acquire that takes a lease mints a random key and answers it once
+(`meta.lease_key`); the board keeps only its SHA-256. Every holder call, the
+checkpoint read included, presents it in the request body (never a URL), and a
+wrong or missing key reads as `NOT_HOLDER`. A live lease the caller holds by name
+but not by key is `LEASE_HELD`, so a process that lost its key (a crash) waits
+out the 5-minute lease like any other worker. Release and reset clear the key.
+Not admin-session-only: the standby restoring a checkpoint is a dispatcher, which
+holds only the shared token. The remaining reach is a lease that is free or
+lapsed: whoever takes it gets its transcript, which is the takeover itself, and
+the row and log name the taker.
+
+**Checkpoint storage.** The board uploads the blob before the row says
+checkpointed (`ActiveStorage::Blob.create_and_upload!` inside the holder's lock,
+not `attach(io:)`, which uploads after commit). An upload that fails rolls the row
+back to its previous, readable checkpoint and answers 500 (ErrorLog through
+`rescue_and_log`), so the row never names a blob storage never received.
 
 **A turn** (`AgentMailbox::Dispatcher#warm_turn`, all board calls on the main loop):
 
@@ -1136,9 +1164,12 @@ because a checkpoint is owner and team conversation text.
 2. When the message is eligible and no warm turn is already running on that
    domain here, it acquires the lease. Another live holder answers 409
    `LEASE_HELD`: the message is answered per message, never queued.
-3. When this machine's transcript of the head is missing or older than
-   `checkpointed_at` (and is not the checkpoint this process wrote), it downloads
-   the checkpoint and writes it under the soul folder's Claude project folder.
+3. Unless the local transcript is the one THIS PROCESS last checkpointed or
+   restored in this lease (same head, same `checkpointed_at`, same SHA-256), it
+   downloads the checkpoint and writes it under the soul folder's Claude project
+   folder, 0600 in a 0700 folder. No clock is compared: a file's mtime is this
+   machine's clock and `checkpointed_at` the board's, and a machine that lost
+   the lease mid-turn can hold a newer-looking file that is not the session.
 4. It runs `claude -p --safe-mode --tools "" --output-format json --resume <id>`:
    the cold command plus `--resume`, the same allow-listed environment, the
    envelope read by the same status rules (`ClaudeRun`). A domain's first turn,
@@ -1158,7 +1189,13 @@ because a checkpoint is owner and team conversation text.
    deleted.
 7. A failed run, a failed checkpoint, or a checkpoint that will not restore drops
    the lease; the message's own handling is today's. The fallback is always the
-   cold path.
+   cold path. A failed checkpoint or restore is also reported to the board
+   (`fault`: one of `checkpoint_failed` or `restore_failed` and the error's class,
+   never its text), which keeps it on the row and records it in ErrorLog; the next
+   good checkpoint clears it. The dispatcher log says `CHECKPOINT FAILED`.
+8. Giving a lease up (a release, a handback, a refused renew, a stop, a
+   consolidation) removes the transcripts this process held for it, so a standby
+   keeps no copy of the owner's conversation once it hands back.
 
 **The standby.** A second dispatcher (Alex's work machine) is registered on the
 board as `standby` for a list of warm domains: `agent_dispatchers.role` and
@@ -1192,20 +1229,23 @@ cache reads, which the meter shows as such. Owner and team turns are never
 metered against an allowance.
 
 **Observing.** `bin/rails agent_dispatchers:sessions` (each domain's lease, head,
-checkpoint size and any handback), `agent_dispatchers:list` (each row's role),
+checkpoint size, any handback and the last fault), `agent_dispatchers:list` (each row's role),
 and `GET /api/v1/agent_domain_sessions`. The dispatcher log says `warm <domain>:`
 for every lease event (took, restored, checkpointed, consolidating, released and
 why); it never logs message text.
 
 **Tests.** `test/models/agent_domain_session_test.rb` (acquire, renew, lapse,
-takeover, handback, the late checkpoint, consolidation),
+takeover, handback, the late checkpoint, consolidation, the lease key, the
+upload that fails, faults),
 `test/integration/agent_domain_session_race_test.rb` (two acquirers on real
 connections), `test/models/agent_dispatcher_standby_test.rb` (the role, the claim
 scope, the floor alert), `test/lib/agent_warm_session_test.rb` (eligibility, the
 trigger, the transcript round trip, the per-turn prompt, the flag-off path) and
 `test/integration/agent_dispatcher_warm_test.rb` (a resumed turn and its
 checkpoint, a standby resuming after a lapse, handback between turns, a client
-kept one-shot, consolidation, flag off).
+kept one-shot, consolidation, flag off, a newer-looking local file never
+resumed, transcripts removed with the lease, a failed checkpoint reported, a
+quoted owner message kept cold).
 
 ## Setup
 

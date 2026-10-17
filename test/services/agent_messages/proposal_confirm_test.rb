@@ -86,6 +86,11 @@ class ProposalConfirmTest < ActiveSupport::TestCase
     assert_equal "rejected", @proposal.reload.status
     bundle = AgentMessages::MemoryBundle.new(message).bundle
     assert_equal @proposal.id, bundle.dig("proposals", "last", "id")
+    # Code-set, for the warm gate (AgentMailbox::WarmSession.own_proposal?).
+    assert_equal [ true, @source.id ], bundle.dig("proposals", "last").values_at("own", "source_message_id")
+    @proposal.update!(person: AgentPerson.create!(display_name: "Someone", role: "public"))
+    assert_equal false, AgentMessages::MemoryBundle.new(message).bundle.dig("proposals", "last", "own"),
+                 "a proposal offered to another person is not the sender's own"
   end
 
   test "a go with no open proposal in the thread is routed as usual" do

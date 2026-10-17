@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
 require "stringio"
 require "zlib"
@@ -45,16 +46,69 @@ module AgentMailbox
     TEXT
 
     # Will a warm session answer this message? Code-only: the board's audience
-    # in the context bundle, never anything the message says.
+    # and `own` flags in the context bundle, and the shape of the text, never
+    # anything the message claims. Every text a warm turn's prompt carries must
+    # be the sender's own words, because the session persists it:
+    #
+    #   the sender     owner or team (the board's audience), not a released hold
+    #   the message    carries no quoted or forwarded material (#quotes?): a team
+    #                  member quoting a public post would plant it in the session
+    #   THREAD         every earlier turn is the sender's own (`own`, set on the
+    #                  board), and none of those quotes either
+    #   PROPOSAL       the thread's newest proposal (model-written, printed in the
+    #                  catalog block) is absent, or was offered on one of those
+    #                  shown own turns (`own` and `source_message_id`, set on the
+    #                  board): one from an older, omitted turn, or offered to
+    #                  someone else, could carry another sender's text
+    #
+    # A verbatim paste with no quote or forward marker is indistinguishable from
+    # the sender's own words, and is treated as theirs.
     def self.eligible?(message, context)
       return false if message.is_a?(Hash) && !message["hold_released_at"].to_s.empty?
+      return false if message.is_a?(Hash) && quotes?(message["content"])
 
       return false unless AUDIENCES.include?(Audience.from_context(context).role)
 
       # THREAD carries every earlier turn, whoever wrote it: one not the sender's
       # own (a client's, the public's) would persist in the session, so answer cold.
       thread = context.is_a?(Hash) ? context["thread"] : nil
-      Array(thread.is_a?(Hash) ? thread["turns"] : nil).all? { |turn| turn.is_a?(Hash) && turn["own"] == true }
+      turns = Array(thread.is_a?(Hash) ? thread["turns"] : nil)
+      return false unless turns.all? { |turn| turn.is_a?(Hash) && turn["own"] == true && !quotes?(turn["content"]) }
+
+      own_proposal?(context, turns)
+    end
+
+    # Lines that mark quoted or forwarded material: a quote prefix (a Discord
+    # blockquote, an email reply's `>`), an email client's "On ... wrote:" line
+    # or a forwarded/original-message banner, or a From: header followed by a
+    # Sent:/Date: line. A false hit only answers the message cold.
+    QUOTE_LINES = [
+      /\A\s*>/,
+      /wrote:\s*\z/i,
+      /\A\s*-{2,}\s*(?:Original|Forwarded) Message\s*-{2,}\s*\z/i,
+      /\A\s*-{5,} ?Forwarded message ?-{5,}\s*\z/i,
+      /\A\s*Begin forwarded message:?\s*\z/i
+    ].freeze
+
+    def self.quotes?(text)
+      lines = text.to_s.gsub("\r\n", "\n").split("\n")
+      lines.each_with_index.any? do |line, i|
+        QUOTE_LINES.any? { |re| line.match?(re) } ||
+          (line.match?(/\A\s*From:\s.+/i) && lines[i + 1].to_s.match?(/\A\s*(?:Sent|Date):\s/i))
+      end
+    end
+
+    # The bundle's newest proposal may ride a warm turn only when it is the
+    # sender's own and was offered on a turn the prompt shows. A board that
+    # predates the flags sends neither, and the turn goes cold.
+    def self.own_proposal?(context, turns)
+      proposals = context.is_a?(Hash) ? context["proposals"] : nil
+      last = proposals.is_a?(Hash) ? proposals["last"] : nil
+      return true if last.nil?
+      return false unless last.is_a?(Hash) && last["own"] == true
+
+      source = last["source_message_id"]
+      !source.nil? && turns.any? { |turn| turn["id"] == source }
     end
 
     # The tokens one turn's context held: input + cache read + cache write.
@@ -94,21 +148,43 @@ module AgentMailbox
 
     # Write a checkpoint back as `session_id`'s transcript under this cwd's
     # folder, so `claude --resume` finds it. Raises on a corrupt checkpoint.
+    # Owner and team text, so it is written as Claude writes its own: the file
+    # 0600, a folder this makes 0700. The dispatcher removes it when it gives
+    # the lease up (#discard).
     def self.restore!(session_id, gzipped, cwd:, claude_home:)
       raise ArgumentError, "not a Claude session id" unless session_id.to_s.match?(SESSION_ID)
 
       dir = project_dir(cwd, claude_home: claude_home)
-      FileUtils.mkdir_p(dir)
+      FileUtils.mkdir_p(dir, mode: 0o700)
       path = File.join(dir, "#{session_id}.jsonl")
       tmp = "#{path}.restoring"
       text = Zlib::GzipReader.new(StringIO.new(gzipped.b)).read(RESTORE_LIMIT + 1).to_s
       raise ArgumentError, "checkpoint expands past #{RESTORE_LIMIT} bytes" if text.bytesize > RESTORE_LIMIT
 
-      File.binwrite(tmp, text)
+      FileUtils.rm_f(tmp)
+      File.open(tmp, File::WRONLY | File::CREAT | File::EXCL | File::BINARY, 0o600) { |f| f.write(text) }
+      File.chmod(0o600, tmp)
       File.rename(tmp, path)
       path
     ensure
       FileUtils.rm_f(tmp) if tmp && File.exist?(tmp)
+    end
+
+    # The transcript's SHA-256: what the dispatcher checkpointed or restored, so
+    # it resumes a local file only while it is byte for byte that one.
+    def self.digest(path) = Digest::SHA256.file(path).hexdigest
+
+    # Remove transcripts this dispatcher holds for a session it no longer
+    # leases. Only plain files whose name is a session id; never raises.
+    def self.discard(paths)
+      Array(paths).compact.uniq.count do |path|
+        next false unless File.basename(path.to_s, ".jsonl").match?(SESSION_ID) && File.file?(path)
+
+        File.delete(path)
+        true
+      rescue SystemCallError
+        false
+      end
     end
   end
 end

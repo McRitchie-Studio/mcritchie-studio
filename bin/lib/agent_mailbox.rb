@@ -99,31 +99,48 @@ module AgentMailbox
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/release", body)
     end
 
-    # The warm-session lease per domain (AgentDomainSession on the board).
-    def domain_acquire(domain, worker:) = call(:post, domain_path(domain, "acquire"), { "worker" => worker })
-    def domain_renew(domain, worker:) = call(:post, domain_path(domain, "renew"), { "worker" => worker })
-    def domain_release(domain, worker:) = call(:post, domain_path(domain, "release"), { "worker" => worker })
+    # The warm-session lease per domain (AgentDomainSession on the board). The
+    # acquire that takes a lease answers its key once (meta.lease_key); every
+    # other call presents it, in the body, never in a URL.
+    def domain_acquire(domain, worker:, lease_key: nil)
+      call(:post, domain_path(domain, "acquire"), lease_body(worker, lease_key))
+    end
+
+    def domain_renew(domain, worker:, lease_key:) = call(:post, domain_path(domain, "renew"), lease_body(worker, lease_key))
+    def domain_release(domain, worker:, lease_key:) = call(:post, domain_path(domain, "release"), lease_body(worker, lease_key))
 
     # `data`: the gzipped transcript (WarmSession.pack), sent base64.
-    def domain_checkpoint(domain, worker:, session_id:, data:, turns:, context_tokens:)
+    def domain_checkpoint(domain, worker:, lease_key:, session_id:, data:, turns:, context_tokens:)
       call(:post, domain_path(domain, "checkpoint"),
-           { "worker" => worker, "session_id" => session_id, "turns" => turns, "context_tokens" => context_tokens,
-             "data" => [ data ].pack("m0") })
+           lease_body(worker, lease_key).merge("session_id" => session_id, "turns" => turns,
+                                               "context_tokens" => context_tokens, "data" => [ data ].pack("m0")))
     end
 
     # The checkpoint's gzipped bytes and the session it is, for the holder.
-    def domain_checkpoint_read(domain, worker:)
-      data = call(:get, path(domain_path(domain, "checkpoint"), worker: worker))["data"] || {}
+    def domain_checkpoint_read(domain, worker:, lease_key:)
+      data = call(:post, domain_path(domain, "checkpoint_read"), lease_body(worker, lease_key))["data"] || {}
       [ data["session_id"], data["data"].to_s.unpack1("m0") ]
     end
 
-    def domain_consolidate(domain, worker:, text:, source_session_id:, turns_covered:, context_tokens:)
+    def domain_consolidate(domain, worker:, lease_key:, text:, source_session_id:, turns_covered:, context_tokens:)
       call(:post, domain_path(domain, "consolidate"),
-           { "worker" => worker, "text" => text, "source_session_id" => source_session_id,
-             "turns_covered" => turns_covered, "context_tokens" => context_tokens })
+           lease_body(worker, lease_key).merge("text" => text, "source_session_id" => source_session_id,
+                                               "turns_covered" => turns_covered, "context_tokens" => context_tokens))
+    end
+
+    # The holder's report that a checkpoint or restore failed: `fault` one of
+    # AgentDomainSession::FAULTS, `detail` an error class and code, never text.
+    def domain_fault(domain, worker:, lease_key:, fault:, detail: nil)
+      call(:post, domain_path(domain, "fault"), lease_body(worker, lease_key).merge("fault" => fault, "detail" => detail))
     end
 
     private
+
+    def lease_body(worker, lease_key)
+      body = { "worker" => worker }
+      body["lease_key"] = lease_key unless lease_key.to_s.empty?
+      body
+    end
 
     def domain_path(domain, verb)
       raise ArgumentError, "unsafe domain #{domain.inspect}" unless domain.to_s.match?(/\A[a-z][a-z0-9_]{0,40}\z/)

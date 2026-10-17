@@ -186,7 +186,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_010000) do
     t.string "handback_requested_by"
     t.datetime "heartbeat_at"
     t.string "holder"
+    t.string "last_fault"
+    t.datetime "last_fault_at"
     t.datetime "lease_expires_at"
+    t.string "lease_key_digest"
     t.integer "turns", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["domain"], name: "index_agent_domain_sessions_on_domain", unique: true

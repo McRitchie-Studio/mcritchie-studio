@@ -264,7 +264,10 @@ OK to install on the work machine. The setup:
    (`claude` once, interactively). The dispatcher bills that subscription; it
    carries no API key.
 2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
-   with no new secret.
+   with no new secret. That token alone reads no transcript: each lease call
+   also carries the lease key the board answers the acquire that took it, held
+   only in the dispatcher's memory, so a dispatcher that crashed holding a lease waits out its own
+   old lease (5 minutes) before it is warm again.
 3. Let it ping once so the board knows its host: `bin/dispatcher run` in a
    terminal for a minute, then Ctrl-C. Until step 4 it is a primary, so do this
    while this Mac's dispatcher is paused or stopped, never alongside it.
@@ -279,14 +282,17 @@ OK to install on the work machine. The setup:
    `lobster-tank`, and expect the standby to answer, its log reading
    `warm mcritchie_studio: restored the checkpoint of …`. Reinstall the primary;
    the standby releases the lease after its turn (`lease released (the primary is
-   back)`), and the primary's next turn restores the standby's checkpoint.
+   back)`), and the primary's next turn restores the standby's checkpoint. The
+   standby's log then reads `removed N local transcript(s)`: it keeps no copy
+   of the owner's conversation once it hands back.
    `bin/rails agent_dispatchers:sessions` shows the holder at each step.
 
 | Symptom | Look | Fix |
 |---------|------|-----|
 | The standby answers while the primary is up | `agent_dispatchers:list`: is the primary's row `role=primary` and pinging? | A primary registered as standby by mistake: `ROLE=primary` for its host |
 | Warm answers fell back to one run per message | The log: `warm <domain>: another dispatcher holds the lease` or `lease released (<why>)` | Expected during a handback or a failed turn. A lease stuck on a dead holder lapses in 5 minutes |
-| `the checkpoint would not restore` | `agent_dispatchers:sessions`: checkpoint size and head | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
+| `CHECKPOINT FAILED` in the log, or `FAULT checkpoint_failed` in `agent_dispatchers:sessions` | ErrorLog (`warm session <domain>`), then storage (R2) health | The answer went out; the session falls back to the board's last good checkpoint and the next good checkpoint clears the fault. Repeated faults mean storage is refusing uploads |
+| `the checkpoint would not restore`, or `FAULT restore_failed` | `agent_dispatchers:sessions`: checkpoint size, head and the fault; ErrorLog | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
 
 ## Uninstall
 
