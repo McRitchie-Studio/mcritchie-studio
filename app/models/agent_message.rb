@@ -324,7 +324,8 @@ class AgentMessage < ApplicationRecord
   # worker's parsed `proposal` wins; else the one the board found. It is then
   # VALIDATED here (AgentProposal.record_from!): accepted, it is stored and the
   # reply gains the confirm line; refused, it is an event and the reply is
-  # posted without it. The block itself never posts.
+  # posted without it. The block itself never posts. On a /build thread the
+  # block is an intake card instead (BuildIntake::Card.record_from!).
   def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil,
                 proposal: nil)
     worker = worker.to_s.strip
@@ -347,7 +348,11 @@ class AgentMessage < ApplicationRecord
               reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
               **usage_stamped(self.class.run_record(run)))
       stored = Array(notes).any? ? AgentPersonNote.record_from!(self, notes, now: now) : []
-      if (offered = AgentProposal.record_from!(self, proposal, now: now))
+      # A /build thread takes intake cards only (BuildIntake::Card): checked and
+      # stored on this row for the chat to render, never an AgentProposal.
+      if BuildIntake.thread?(thread_key)
+        BuildIntake::Card.record_from!(self, proposal)
+      elsif (offered = AgentProposal.record_from!(self, proposal, now: now))
         update!(response_text: "#{self.response_text}\n\n#{offered.confirm_text}")
       end
       if (warning = usage_warning_line(now: now))
@@ -480,7 +485,7 @@ class AgentMessage < ApplicationRecord
     worker = worker.to_s.strip
     return "not_holder" unless status == "claimed" && worker.present? && claimed_by == worker
     return "not_typing_channel" unless TYPING_CHANNELS.include?(channel) && channel_ref.present?
-    return "not_answered" unless hold_released_at.present? || answerers.allowed?(person)
+    return "not_answered" unless hold_released_at.present? || answerers.allowed?(person, message: self)
     return "capped" if claimed_at.nil? || now - claimed_at > TYPING_CAP
 
     nil

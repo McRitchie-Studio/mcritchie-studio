@@ -2,9 +2,10 @@
 
 require "test_helper"
 
-# [component] The /build views in isolation: the chat-style composer, and the
-# request page's three states — register (signed out), claim a name (signed in,
-# draft), and the status page once queued.
+# [component] The /build views in isolation: the opening composer (the first
+# message to Xan, bot-shielded), the draft page (the chat with Xan and its
+# checklist, the same signed in or out; an admin also gets the name step), the
+# intake cards, and the status page once queued.
 class BuildViewTest < ActionView::TestCase
   include ApplicationHelper
 
@@ -13,14 +14,19 @@ class BuildViewTest < ActionView::TestCase
     view.define_singleton_method(:current_user) { user }
   end
 
-  test "signed out, the composer opens the sign-in modal instead of leaving the page" do
+  test "the composer is the first message to Xan: a plain post, with the bot shield" do
     signed_in(nil)
     @draft = nil
     @examples = []
     render template: "build/new"
 
-    assert_select "[data-test='build-form'][x-data='buildComposer(false)']"
-    assert_includes rendered, "Alpine.store('modals').open('auth'"
+    assert_select "[data-test='build-form'][action='/build'][method='post']"
+    assert_select "[data-test='build-form'] input[name='app_request[client_id]']"
+    assert_select "[data-test='build-honeypot'][name='app_request[leave_blank]'][tabindex='-1']"
+    proof = css_select("[data-test='build-proof']").first
+    assert proof["data-proof"].present?, "the signed render time rides in a data attribute"
+    assert_includes proof["x-init"], ".reverse()", "only the page's script writes it in, reversed"
+    refute_includes rendered, "Alpine.store('modals').open('auth'", "sign-in waits for Build my app"
   end
 
   test "the gallery lists live examples under the prompt" do
@@ -99,15 +105,6 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-gallery']", 0
   end
 
-  test "the composer reuses its draft on a repeat Enter" do
-    signed_in(nil)
-    @draft = nil
-    @examples = []
-    render template: "build/new"
-
-    assert_includes rendered, "this.draft.prompt === this.prompt.trim()"
-  end
-
   test "the composer: a labelled prompt, Enter-to-send, a send button and examples" do
     signed_in(nil)
     @draft = nil
@@ -115,24 +112,51 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/new"
 
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]"
-    assert_select "label.sr-only", text: "Describe your app"
-    assert_select "[data-test='build-send'][aria-label='Send']"
+    assert_select "label.sr-only", text: "Tell Xan what you want to build"
+    assert_select "[data-test='build-send'][aria-label='Send to Xan']"
     assert_includes rendered, "@keydown.enter", "Enter must send the prompt"
     assert_select "[data-test='build-examples'] button", 4
   end
 
-  test "signed out, a draft opens the standard sign-in modal and echoes their prompt" do
+  def chat_assigns(request_row)
+    @app_request = request_row
+    @messages = BuildIntake.history(request_row.token)
+    @xan = nil
+    view.define_singleton_method(:composer_locals) do |error: nil, text: ""|
+      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Xan", error: error, text: text }
+    end
+  end
+
+  test "signed out, a draft is the chat with Xan and a checklist whose Build waits" do
     signed_in(nil)
-    @app_request = AppRequest.create!(prompt: "A client portal")
+    chat_assigns(AppRequest.create!(prompt: "A client portal"))
     render template: "build/show"
 
-    assert_select "[data-test='build-echo']", text: "A client portal"
-    register = css_select("[data-test='build-register']").first
-    assert_includes register["x-init"], "$store.modals.open('auth'", "sign-in is the modal, not an inline form"
-    assert_includes register["x-init"], build_request_path(@app_request.token), "the emailed link must return to this draft"
-    assert_select "[data-test='build-register'] form", 0, "no inline sign-in form"
-    assert_select "[data-test='build-open-auth']", 1
-    assert_select "[data-test='build-claim']", 0
+    assert_select "[data-test='build-chat-page'][data-build-chat-poll-url='/build/#{@app_request.token}/turns']"
+    assert_select "[data-test='agent-chat-header'][data-agent-name='Xan']"
+    assert_select "form#build-chat-form[action='/build/#{@app_request.token}/messages'] textarea[name='build_chat[text]']"
+    %w[idea cto colors address].each { |step| assert_select "[data-test='build-check-#{step}'][data-done='false']" }
+    assert_select "[data-test='build-my-app'][disabled][data-enabled='false']"
+    assert_select "[data-test='build-claim']", 0, "no name step for a visitor"
+    assert_select "[data-test='build-register']", 0, "no sign-in before Build"
+  end
+
+  test "a complete checklist lights Build: sign-in signed out, the claim form signed in" do
+    palette = { "name" => "Pitch",
+                "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
+    row = AppRequest.create!(prompt: "A client portal", answers: { "idea" => "A portal" }, cto_name: "Nova",
+                             cto_avatar: "harbor", palette: palette, subdomain: "client-portal")
+    signed_in(nil)
+    chat_assigns(row)
+    render template: "build/show"
+    button = css_select("[data-test='build-my-app']").first
+    assert_equal "true", button["data-enabled"]
+    props = JSON.parse(button["data-build-sign-in"])
+    assert_equal "/build/#{row.token}", props["returnTo"], "the sign-in modal's emailed link returns to this chat"
+    assert_includes props["subtitle"], "client-portal.mcritchie.studio"
+    assert_select "[data-test='build-check-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='build-check-address-value']", text: "client-portal.mcritchie.studio"
   end
 
   test "the auth modal card: Google, an email field, and returnTo passed to the magic link" do
@@ -143,9 +167,9 @@ class BuildViewTest < ActionView::TestCase
     assert_includes rendered, "window.postMagicLink(this.email, this.props.returnTo)"
   end
 
-  test "signed in, a draft asks for a name on the parent domain" do
+  test "an admin's draft also offers the name step, to queue a showcase without the checklist" do
     signed_in(users(:alex))
-    @app_request = AppRequest.create!(prompt: "A client portal", user: users(:alex))
+    chat_assigns(AppRequest.create!(prompt: "A client portal", user: users(:alex)))
     render template: "build/show"
 
     field = css_select("[data-test='build-claim'] input[data-test='build-subdomain']").first
@@ -155,7 +179,8 @@ class BuildViewTest < ActionView::TestCase
     assert_nil field["placeholder"], "no static placeholder: the examples are typed into it"
     assert_equal "placeholderText", field[":placeholder"]
     assert_equal "onInput($el)", field["@input"], "input is cleaned as it is typed"
-    assert_equal "focusWhenClear($el)", field["x-effect"], "focus lands once the modals close"
+    assert_nil field["x-effect"], "the chat composer keeps the focus"
+    assert_select "[data-test='build-admin-claim'] [data-test='build-claim']", 1
     assert_includes rendered, ".mcritchie.studio"
     AppRequest::EXAMPLE_NAMES.each { |example| assert_includes rendered, example }
     assert_includes rendered, ".slice(0, 3)", "three examples are sampled per visit"

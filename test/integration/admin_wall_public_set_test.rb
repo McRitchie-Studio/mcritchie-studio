@@ -11,7 +11,7 @@ require "test_helper"
 class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
   # Every controller#action a visitor may reach. Nothing else is public.
   EXPECTED_PUBLIC = %w[
-    build#check build#create build#new build#show
+    build#check build#choose build#create build#message build#new build#show build#turns
     contact_submissions#create contact_submissions#new
     contracts#index
     depth_charts#show

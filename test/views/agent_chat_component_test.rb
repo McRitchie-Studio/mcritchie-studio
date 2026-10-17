@@ -64,9 +64,9 @@ class AgentChatComponentTest < ActionView::TestCase
     assert_select "[data-test='cto-chat-typing'][data-typing-at='#{(Time.utc(2026, 10, 17, 9).to_f * 1000).to_i}']", text: /Xan is typing…/
   end
 
-  test "[component] the header shows the heading agent's portrait and name, with the block as its subtitle" do
+  test "[component] the header shows the heading agent's portrait and name, with the subtitle local under it" do
     xan = AgentStub.new(slug: "xan", name: "Xan", avatar: "https://img.test/xan.png", avatar_color: "#6366f1", avatar_initials: "X")
-    render("agent_chats/header", name: "Xan", agent: xan) { tag.p("Your guide to a new app.", data: { test: "subtitle" }) }
+    render("agent_chats/header", name: "Xan", agent: xan, subtitle: tag.p("Your guide to a new app.", data: { test: "subtitle" }))
 
     assert_select "[data-test='agent-chat-header'][data-agent-name='Xan']" do
       assert_select "img[src='https://img.test/xan.png']"
@@ -76,12 +76,12 @@ class AgentChatComponentTest < ActionView::TestCase
   end
 
   test "[component] the header swaps agents: ready portrait markup wins, and with no agent a plain circle stands in" do
-    render("agent_chats/header", name: "Nova", heading: "Meet Nova", portrait: tag.img(src: "/nova.png", alt: "", data: { test: "portrait" })) { "" }
+    render("agent_chats/header", name: "Nova", heading: "Meet Nova", portrait: tag.img(src: "/nova.png", alt: "", data: { test: "portrait" }))
     assert_select "[data-test='agent-chat-header'][data-agent-name='Nova'] [data-test='portrait'][src='/nova.png']"
     assert_select "h1", text: "Meet Nova"
 
     @rendered = ActionView::OutputBuffer.new
-    render("agent_chats/header", name: "Nova") { "" }
+    render("agent_chats/header", name: "Nova") # no block: the header never yields (a yield would print the layout body again)
     assert_select "[data-test='agent-chat-header'] span[aria-hidden='true']", text: "🤖"
     assert_select "h1", text: "Chat with Nova"
   end

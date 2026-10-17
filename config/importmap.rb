@@ -5,6 +5,7 @@ pin "@hotwired/turbo-rails", to: "turbo.min.js"
 pin "dropping_text"
 pin "alex_chat"
 pin "agent_chat"
+pin "build_chat"
 pin "cto_chat", to: "agent_chat.js" # the old name, kept import-compatible
 pin "depth_chart"
 pin "scroll_tab_stop"

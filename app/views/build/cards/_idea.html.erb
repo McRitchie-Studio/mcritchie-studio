@@ -1,0 +1,22 @@
+<%# locals: (card:, message:, request_row:) %>
+<%# The idea card: Xan's sharpened restatement, for the visitor to confirm with one tap (BuildIntake::Choice "idea", read from the stored card). %>
+<% chosen = request_row.answers.is_a?(Hash) && request_row.answers["idea"] == card["idea"] %>
+<div class="rounded-2xl border <%= chosen ? 'border-primary' : 'border-subtle' %> bg-surface p-3 sm:p-4" data-test="build-card-idea" data-chosen="<%= chosen %>">
+  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Your idea</p>
+  <p class="text-heading font-semibold break-words"><%= card["idea"] %></p>
+  <dl class="mt-2 grid gap-1 text-sm">
+    <% if card["audience"] %>
+      <div class="flex gap-2"><dt class="text-muted shrink-0">For</dt><dd class="text-body break-words min-w-0"><%= card["audience"] %></dd></div>
+    <% end %>
+    <% if card["day_one"] %>
+      <div class="flex gap-2"><dt class="text-muted shrink-0">Day one</dt><dd class="text-body break-words min-w-0"><%= card["day_one"] %></dd></div>
+    <% end %>
+  </dl>
+  <%= form_with url: build_request_intake_path(request_row.token), method: :patch, class: "mt-3" do %>
+    <%= hidden_field_tag :field, "idea" %>
+    <%= hidden_field_tag :message_id, message.id %>
+    <button type="submit" class="btn <%= chosen ? 'btn-secondary' : 'btn-primary' %> btn-sm" data-test="build-choose-idea">
+      <%= chosen ? "Confirmed" : "That's it" %>
+    </button>
+  <% end %>
+</div>

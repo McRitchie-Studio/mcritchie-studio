@@ -241,4 +241,27 @@ class AppRequestTest < ActiveSupport::TestCase
 
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
+
+  test "the intake fields hold the card rules, and the checklist reads them" do
+    palette = { "name" => "Pitch",
+                "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
+    request_row = AppRequest.create!(prompt: "A league site")
+    assert_equal({ "idea" => false, "cto" => false, "colors" => false, "address" => false }, request_row.intake_checklist)
+    assert_equal "idea", request_row.next_intake_step
+
+    refute request_row.update(cto_name: "R2D2"), "a CTO name is letters"
+    refute request_row.reload.update(cto_avatar: "pikachu"), "a portrait is a registry key or an upload ref"
+    refute request_row.reload.update(palette: palette.deep_merge("dark" => { "text" => "#1e293b" })), "dark text must read on its surface"
+    refute request_row.reload.update(answers: { "idea" => "x", "admin" => true }), "answers take the idea fields only"
+
+    request_row.reload.update!(answers: { "idea" => "A league site" }, cto_name: "Coach", cto_avatar: "harbor",
+                               palette: palette, subdomain: "league-hub")
+    assert request_row.intake_complete?
+    assert_nil request_row.next_intake_step
+    request_row.queue!("league-hub")
+    context = Task.find_by!(slug: request_row.task_slug).metadata.dig("devops", "agent_context")
+    assert_includes context, "CTO: Coach (portrait harbor)"
+    assert_includes context, "Palette Pitch: light"
+  end
 end

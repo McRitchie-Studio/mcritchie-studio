@@ -4,6 +4,8 @@ import "dropping_text"
 import "alex_chat"
 // The shared agent web chat (first page: /applications/:slug/chat): delegated listeners, inert on every other page.
 import "agent_chat"
+// The /build chat with Xan: polls for answers while one is pending, inert on every other page.
+import "build_chat"
 import "depth_chart"
 import "scroll_tab_stop"
 import "logo_gallery"

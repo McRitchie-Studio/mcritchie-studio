@@ -10,7 +10,10 @@ module AgentMessageFixtures
     def person_ids = []
     def roles = AgentPerson::ROLES
     def held_reason(_person) = "unguarded"
-    def allowed?(_person) = true
+    def allowed?(_person, message: nil) = true
+    def public_intake = nil
+    def public_intake_soul = nil
+    def intake?(_message) = false
     def sql_guard = ->(_table) { "TRUE" }
   end
 

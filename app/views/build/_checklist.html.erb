@@ -1,0 +1,56 @@
+<%# locals: (request_row:) %>
+<%# The checklist beside the /build chat: Idea, CTO, Colors, Address, each filled by a tap on a card (BuildIntake::Choice), and Build my app, lit only when all four are set. Signed out, Build opens the standard sign-in modal, whose link returns here; signed in, it claims and queues (BuildController#update). Replaced by every tap and every poll. %>
+<% done = request_row.intake_checklist %>
+<% labels = { "idea" => "Idea", "cto" => "CTO", "colors" => "Colors", "address" => "Address" } %>
+<% complete = request_row.intake_complete? %>
+<div id="build-checklist" class="card p-3 sm:p-4" data-test="build-checklist" data-complete="<%= complete %>">
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Your app</h2>
+  <ol class="grid grid-cols-2 lg:grid-cols-1 gap-2">
+    <% BuildIntake::STEPS.each do |step| %>
+      <li class="flex items-center gap-2 min-w-0 rounded-lg border px-2.5 py-2 text-sm <%= done[step] ? 'border-primary/40 bg-primary/5' : 'border-subtle' %>"
+          data-test="build-check-<%= step %>" data-done="<%= done[step] %>">
+        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold <%= done[step] ? 'bg-primary text-white' : 'border border-subtle text-muted' %>" aria-hidden="true">
+          <%= done[step] ? "✓" : BuildIntake::STEPS.index(step) + 1 %>
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block font-semibold text-heading leading-tight"><%= labels[step] %><span class="sr-only"><%= done[step] ? ", set" : ", not set" %></span></span>
+          <span class="block truncate text-xs text-muted" data-test="build-check-<%= step %>-value">
+            <% if step == "idea" %><%= done[step] ? request_row.answers["idea"] : "Tell Xan about it" %>
+            <% elsif step == "cto" %><%= done[step] ? request_row.cto_name : "Pick a name" %>
+            <% elsif step == "colors" %><%= done[step] ? request_row.palette["name"] : "Pick a palette" %>
+            <% else %><%= done[step] ? request_row.host : "Pick a name" %>
+            <% end %>
+          </span>
+        </span>
+        <% if step == "cto" && done[step] && (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
+          <%= image_tag path, alt: "", class: "h-7 w-7 shrink-0 rounded-full", data: { test: "build-check-cto-portrait" } %>
+        <% elsif step == "colors" && done[step] %>
+          <span class="flex shrink-0 -space-x-1" aria-hidden="true">
+            <% %w[primary accent].each do |role| %>
+              <span class="h-4 w-4 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("light", role) %>"></span>
+            <% end %>
+          </span>
+        <% end %>
+      </li>
+    <% end %>
+  </ol>
+
+  <div class="mt-3" data-test="build-cta">
+    <% if !complete %>
+      <button type="button" class="btn btn-primary w-full" disabled data-test="build-my-app" data-enabled="false">Build my app</button>
+      <p class="mt-2 text-xs text-muted text-center">Lights up when all four are set.</p>
+    <% elsif !logged_in? %>
+      <% modal_props = { returnTo: build_request_path(request_row.token), title: "Create your free account",
+                         subtitle: "Sign in and we'll start building #{request_row.host}." } %>
+      <button type="button" class="btn btn-primary w-full" data-test="build-my-app" data-enabled="true" data-signs-in="true"
+              data-build-sign-in="<%= modal_props.to_json %>">Build my app</button>
+      <p class="mt-2 text-xs text-muted text-center">Free. We'll ask you to sign in first.</p>
+    <% else %>
+      <%= form_with url: build_request_path(request_row.token), method: :patch, data: { turbo: false } do |f| %>
+        <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
+        <button type="submit" class="btn btn-primary w-full" data-test="build-my-app" data-enabled="true">Build my app</button>
+      <% end %>
+      <p class="mt-2 text-xs text-muted text-center">Claims <span class="font-mono"><%= request_row.host %></span> and starts the build.</p>
+    <% end %>
+  </div>
+</div>

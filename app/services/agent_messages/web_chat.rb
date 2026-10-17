@@ -48,7 +48,7 @@ module AgentMessages
     end
 
     def broadcast_turn(message, append: false)
-      options = { partial: "agent_chats/turn", locals: { message: message, agent_name: cto_name(message) } }
+      options = { partial: "agent_chats/turn", locals: { message: message, agent_name: agent_name(message) } }
       if append
         Turbo::StreamsChannel.broadcast_append_to(stream_for(message), target: MESSAGES_TARGET, **options)
       else
@@ -60,10 +60,13 @@ module AgentMessages
     end
 
     def broadcast_typing(message, now: Time.current)
+      # A /build thread's page shows typing from the poll instead (deliver! above).
+      return false if BuildIntake.thread?(message.thread_key)
+
       # UPDATE, not replace: the slot (#cto-chat-typing, which carries the fade)
       # stays on the page, and only its contents change.
       Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: TYPING_TARGET, partial: "agent_chats/typing",
-                                                                     locals: { agent_name: cto_name(message), at: now })
+                                                                     locals: { agent_name: agent_name(message), at: now })
       true
     rescue StandardError => e
       log(e, message, "typing")
@@ -82,6 +85,11 @@ module AgentMessages
         true
       end
       return false unless delivered
+      # A /build thread (BuildIntake) is delivered by the mark alone: its page
+      # POLLS (BuildController#turns, app/javascript/build_chat.js) because a
+      # signed-out visitor has no /cable socket (ApplicationCable::Connection
+      # admits signed-in users only), so a broadcast would reach nobody.
+      return true if BuildIntake.thread?(message.thread_key)
 
       broadcast_turn(message)
       clear_typing(message)
@@ -109,10 +117,16 @@ module AgentMessages
 
     def turn_id(message) = "cto-chat-turn-#{message.id}"
 
-    def cto_name(message)
+    # The heading agent's name, from the row's own soul, whichever agent that
+    # is (a CTO, or Xan on a /build thread): the domain's reply_name, else the
+    # Agent's name, else the slug titleized. Nothing here assumes a CTO.
+    def agent_name(message)
       AgentProposal.registry.reply_name(message.soul_slug) || Agent.find_by(slug: message.soul_slug.to_s.tr("_", "-"))&.name ||
         message.soul_slug.to_s.titleize
     end
+
+    # The pre-component name, kept for any caller still using it.
+    def cto_name(message) = agent_name(message)
 
     def log(error, message, what)
       Rails.logger.warn("[agent-messages] web chat #{what} broadcast for message #{message.id} failed: #{error.class}")

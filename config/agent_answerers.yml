@@ -13,3 +13,24 @@
 # takes effect on deploy. Roles: owner, team, client, public.
 answered_roles:
   - owner
+
+# PUBLIC INTAKE (.agents/epics/build-with-xan-design.md; AgentMessages::Answerers
+# #intake?). The one exception to the roles above: on /build, `soul` answers
+# ANYONE, signed out included, but only on threads whose key starts with
+# `thread_prefix` (web:build:<request token>, written only by BuildIntake::Ingest),
+# and only within the caps below (BuildIntake::Caps), which the ingest enforces
+# before a message is stored as answerable. Past a cap the visitor reads a line
+# from code asking them to sign in. Nothing here gives the public any action: the
+# soul's read action is the owner's and team's (AgentMailbox::Audience), and on a
+# build thread the board takes only `intake` cards from a proposal block.
+public_intake:
+  soul: xan
+  thread_prefix: "web:build:"
+  # Answers per request: signed out, then signed in (the signed-in cap only
+  # bounds cost; the signed-out one is the "sign in to keep going" line).
+  turns_per_request: 12
+  signed_in_turns_per_request: 40
+  # Answers per visitor IP (hashed, never stored raw) per hour, across requests.
+  per_ip_per_hour: 20
+  # Signed-out answers across ALL public intake per Denver day.
+  daily_total: 400

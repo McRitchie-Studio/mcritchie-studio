@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Orchid, a placeholder CTO portrait">
+  <circle cx="80" cy="80" r="80" fill="#f5d0fe"/>
+  <path d="M30 160 C32 126 56 112 80 112 C104 112 128 126 130 160Z" fill="#a21caf"/>
+  <rect x="70" y="98" width="20" height="18" rx="6" fill="#e0ac69"/>
+  <path d="M44 74 C40 34 120 34 116 74 L118 118 L104 118 L104 72 C98 58 62 58 56 72 L56 118 L42 118Z" fill="#1f2937"/>
+  <ellipse cx="80" cy="78" rx="31" ry="34" fill="#e0ac69"/>
+  <path d="M50 70 C52 46 108 46 110 70 C98 58 62 58 50 70Z" fill="#1f2937"/>
+  <circle cx="68" cy="76" r="3.5" fill="#1f2937"/>
+  <circle cx="92" cy="76" r="3.5" fill="#1f2937"/>
+  <path d="M70 92 Q80 100 90 92" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="51" cy="88" r="3" fill="#facc15"/>
+</svg>

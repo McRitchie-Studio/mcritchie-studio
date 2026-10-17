@@ -1,21 +1,46 @@
-# /build — the McRitchie Studio app funnel. A visitor describes an app, signs
-# in, claims a free <name>.mcritchie.studio, and the build is queued for an
-# agent. Nothing is generated here; builds are asynchronous.
+# /build — the McRitchie Studio app funnel, as a chat with Xan
+# (.agents/epics/build-with-xan-design.md; BuildIntake). A visitor tells Xan
+# what they want to build; Xan asks for the idea, a CTO, colors and an address,
+# one card at a time, and the visitor's taps fill a checklist. Build my app asks
+# for sign-in only then, claims the subdomain and queues the build for an agent.
+# Nothing is generated here; builds are asynchronous.
 #
-#   GET   /build                   the prompt
-#   POST  /build                   send the prompt → a draft (no account needed)
+#   GET   /build                   the opening question
+#   POST  /build                   the first message → a draft and Xan's thread
+#                                  (no account needed; bot-shielded)
 #   GET   /build/check?subdomain=  live availability, JSON
 #   GET   /build/requests          admin: every requested app, filterable by status
-#   GET   /build/:token            the draft: sign in, then claim a subdomain;
+#   GET   /build/:token            a draft: the chat with Xan and the checklist;
 #                                  once queued, the request's status page
-#   PATCH /build/:token            claim the subdomain and queue the build
+#   POST  /build/:token/messages   one more message to Xan
+#   GET   /build/:token/turns      the poll: pending turns and the checklist,
+#                                  as Turbo Streams (no /cable socket signed out)
+#   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice)
+#   PATCH /build/:token            Build my app: claim the subdomain and queue
+#
+# WHO MAY USE A DRAFT is whoever holds its secret token until it belongs to an
+# account, then that account (or an admin, to read). load_request is the gate
+# for every action that names a token.
 class BuildController < ApplicationController
-  before_action :load_request, only: %i[show update]
+  before_action :load_request, only: %i[show update message turns choose]
   before_action :require_admin, only: :index
 
-  # A public form that writes a row: bounded, so it cannot be used to fill the table.
+  # Public forms that write rows: bounded per IP, so they cannot fill a table or
+  # run up the agents' bill (BuildIntake::Caps bounds the answers themselves).
   rate_limit to: 10, within: 1.minute, only: :create, with: -> { redirect_to build_path, alert: "Too many requests — try again in a minute." }
+  rate_limit to: 12, within: 1.minute, only: :message, with: -> { head :too_many_requests }
+  rate_limit to: 30, within: 1.minute, only: :choose, with: -> { head :too_many_requests }
+  rate_limit to: 120, within: 1.minute, only: :turns, with: -> { head :too_many_requests }
   rate_limit to: 60, within: 1.minute, only: :check
+
+  # The first message's browser proof (BrowserProof, the /contact defence): a
+  # signed render time the page's script writes in. A person types an idea in
+  # more than two seconds; an example chip still takes a click and a send.
+  PROOF_PURPOSE = :build_chat
+  PROOF_MIN_SECONDS = 2
+  # The answers the page asks the poll about at most, newest first.
+  POLL_LIMIT = 10
+  FORM_ID = "build-chat-form".freeze
 
   # Every app requested through the funnel, newest first. ?status= narrows it;
   # the default hides drafts (a prompt whose sender never signed in) behind
@@ -42,8 +67,24 @@ class BuildController < ApplicationController
   end
 
   def create
-    request_row = AppRequest.new(prompt: params.dig(:app_request, :prompt), user: (current_user if logged_in?))
-    unless request_row.save
+    # A bot that fills the hidden field gets the page back, and nothing is stored.
+    return redirect_to(build_path, status: :see_other) if params.dig(:app_request, BrowserProof::HONEYPOT_FIELD).present?
+
+    text = params.dig(:app_request, :prompt)
+    request_row = AppRequest.new(prompt: text, user: (current_user if logged_in?))
+    saved = rescue_and_log(target: request_row) do
+      AppRequest.transaction do
+        next false unless request_row.save
+
+        BuildIntake::Ingest.new(request: request_row, user: (current_user if logged_in?), ip: request.remote_ip)
+                           .call(text, client_id: params.dig(:app_request, :client_id), bot_reason: bot_reason)
+        true
+      end
+    rescue BuildIntake::Ingest::Refused => e
+      request_row.errors.add(:prompt, e.message)
+      false
+    end
+    unless saved
       message = request_row.errors.full_messages.to_sentence
       respond_to do |format|
         format.json { render json: { error: message }, status: :unprocessable_entity }
@@ -59,38 +100,105 @@ class BuildController < ApplicationController
     # not this email's reader.
     EmailEvents::Results.record!(session.delete(:email_ref), "requested_app", source: "app") if session[:email_ref]
     respond_to do |format|
-      # The composer asks for JSON when the visitor is signed out: it stays on
-      # the page and opens the sign-in modal, whose emailed link returns to `path`.
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
-      format.html { redirect_to build_request_path(request_row.token) }
+      format.html { redirect_to build_request_path(request_row.token), status: :see_other }
     end
   end
 
   def show
-    return unless logged_in? && @app_request.draft?
-
-    unless @app_request.claimable_by?(current_user)
-      redirect_to build_path, alert: "That draft belongs to another account."
-      return
+    if logged_in? && @app_request.draft?
+      unless @app_request.claimable_by?(current_user)
+        redirect_to build_path, alert: "That draft belongs to another account."
+        return
+      end
+      # An admin opening an unsigned draft from /build/requests only reads it;
+      # attaching it would lock the visitor out of their own chat. Anyone else
+      # signing in ADOPTS the draft and its thread with Xan.
+      @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
+      session.delete(:build_draft_token)
     end
-    # An admin opening an unsigned draft from /build/requests only reads it;
-    # attaching it would lock the visitor out of their own prompt.
-    @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
-    session.delete(:build_draft_token)
+    load_chat if @app_request.draft?
   end
 
+  # One more message to Xan, from the chat's composer.
+  def message
+    return redirect_to(build_request_path(@app_request.token), status: :see_other) unless @app_request.draft?
+
+    outcome = rescue_and_log(target: @app_request) do
+      BuildIntake::Ingest.new(request: @app_request, user: (current_user if logged_in?), ip: request.remote_ip)
+                         .call(params.dig(:build_chat, :text), client_id: params.dig(:build_chat, :client_id))
+    rescue BuildIntake::Ingest::Refused => e
+      e
+    end
+    if outcome.is_a?(BuildIntake::Ingest::Refused)
+      return respond_to do |format|
+        format.turbo_stream do
+          render turbo_stream: replace_form(error: outcome.message, text: params.dig(:build_chat, :text).to_s),
+                 status: :unprocessable_content
+        end
+        format.html { redirect_to build_request_path(@app_request.token), alert: outcome.message, status: :see_other }
+      end
+    end
+
+    respond_to do |format|
+      format.turbo_stream { render turbo_stream: [ append_turn(outcome), replace_form ] }
+      format.html { redirect_to build_request_path(@app_request.token), status: :see_other }
+    end
+  end
+
+  # The page's poll while an answer is pending: the turns it names (this
+  # thread's only) re-rendered, and the checklist. Turbo Streams, read by
+  # app/javascript/build_chat.js.
+  def turns
+    ids = params[:ids].to_s.split(",").filter_map { |id| id[/\A\d{1,18}\z/]&.to_i }.first(POLL_LIMIT)
+    rows = AgentMessage.where(id: ids, channel: "web", thread_key: BuildIntake.thread_key(@app_request.token)).order(:id)
+    streams = rows.map { |row| turbo_stream.replace("build-turn-#{row.id}", partial: "build/turn", locals: { message: row, request_row: @app_request }) }
+    render turbo_stream: streams + [ replace_checklist ]
+  end
+
+  # A tap on an intake card: the only write to an intake field.
+  def choose
+    error = nil
+    rescue_and_log(target: @app_request) do
+      BuildIntake::Choice.new(@app_request).apply!(params[:field].to_s, params)
+    rescue BuildIntake::Choice::Refused => e
+      error = e.message
+      @app_request.reload
+    end
+    card = AgentMessage.find_by(id: params[:message_id].to_s[/\A\d{1,18}\z/], channel: "web",
+                                thread_key: BuildIntake.thread_key(@app_request.token))
+    respond_to do |format|
+      format.turbo_stream do
+        streams = [ replace_checklist ]
+        streams << turbo_stream.replace("build-turn-#{card.id}", partial: "build/turn", locals: { message: card, request_row: @app_request, error: error }) if card
+        render turbo_stream: streams, status: error ? :unprocessable_content : :ok
+      end
+      format.html { redirect_to build_request_path(@app_request.token), alert: error, status: :see_other }
+    end
+  end
+
+  # Build my app. Asks for sign-in (the page opens it; this answers a
+  # signed-out post by sending them back), needs the whole checklist (an admin
+  # may queue a showcase straight from a name), then claims and queues through
+  # AppRequest#queue!, as before. client-cto-from-intake swaps what it starts.
   def update
     unless logged_in? && @app_request.claimable_by?(current_user) && @app_request.draft?
       redirect_to build_request_path(@app_request.token)
       return
     end
+    name = params.dig(:app_request, :subdomain).presence || @app_request.subdomain
+    unless @app_request.intake_complete? || current_user.admin?
+      redirect_to build_request_path(@app_request.token), alert: "Finish the checklist first.", status: :see_other
+      return
+    end
     @app_request.user ||= current_user
-    @app_request.queue!(params.dig(:app_request, :subdomain))
+    @app_request.queue!(name)
     redirect_to build_request_path(@app_request.token), notice: "Your app is in the build queue."
   rescue ActiveRecord::RecordInvalid => e
     @app_request.status = "draft"
     @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)
     flash.now[:alert] = @app_request.errors.full_messages.to_sentence.presence || e.message
+    load_chat
     render :show, status: :unprocessable_entity
   end
 
@@ -100,6 +208,41 @@ class BuildController < ApplicationController
   end
 
   private
+
+  # Why the first message looks like a bot's, or nil. A signed-in visitor has
+  # already proved more than a browser.
+  def bot_reason
+    return nil if logged_in?
+
+    BrowserProof.new(PROOF_PURPOSE, min_seconds: PROOF_MIN_SECONDS).reason(params.dig(:app_request, BrowserProof::PROOF_FIELD))
+  end
+
+  def load_chat
+    @messages = BuildIntake.history(@app_request.token)
+    @xan = Agent.find_by(slug: BuildIntake.soul)
+  end
+
+  def append_turn(message)
+    turbo_stream.append(AgentMessages::WebChat::MESSAGES_TARGET, partial: "build/turn",
+                                                                 locals: { message: message, request_row: @app_request })
+  end
+
+  def replace_form(error: nil, text: "")
+    turbo_stream.replace(FORM_ID, partial: "agent_chats/form",
+                                  locals: composer_locals(error: error, text: text))
+  end
+
+  def replace_checklist
+    turbo_stream.replace("build-checklist", partial: "build/checklist", locals: { request_row: @app_request })
+  end
+
+  helper_method :composer_locals
+
+  # The shared composer's locals (agent_chats/_form) for this request's chat.
+  def composer_locals(error: nil, text: "")
+    { url: build_request_messages_path(@app_request.token), scope: :build_chat, id: FORM_ID,
+      agent_name: "Xan", error: error, text: text }
+  end
 
   def load_request
     @app_request = AppRequest.find_by(token: params[:token])

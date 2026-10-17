@@ -1,0 +1,43 @@
+<%# locals: (card:, message:, request_row:) %>
+<%# The colors card: up to three palettes Xan proposed, each already contrast-checked in light AND dark (BuildIntake::Card). Swatches, then a small live preview of the app in each mode, drawn with the palette's own (normalized hex) colours. "Use this" taps it (by index, from the stored card); "More like this" asks Xan for another three. %>
+<div class="grid gap-3" data-test="build-card-palette">
+  <% card["palettes"].each_with_index do |palette, index| %>
+    <% chosen = request_row.palette.present? && request_row.palette == palette %>
+    <div class="rounded-2xl border <%= chosen ? 'border-primary' : 'border-subtle' %> bg-surface p-3" data-test="build-palette" data-chosen="<%= chosen %>">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <p class="font-semibold text-heading truncate"><%= palette["name"] %></p>
+        <span class="flex gap-1 shrink-0" aria-label="Swatches">
+          <% BuildIntake::Card::ROLES.each do |role| %>
+            <span class="h-5 w-5 rounded-full border border-subtle" style="background-color: <%= palette.dig("light", role) %>" title="<%= role %> <%= palette.dig("light", role) %>" data-test="build-swatch"></span>
+          <% end %>
+        </span>
+      </div>
+      <div class="grid grid-cols-2 gap-2" data-test="build-palette-preview">
+        <% BuildIntake::Card::MODES.each do |mode| %>
+          <% c = palette[mode] %>
+          <div class="rounded-xl p-2.5 min-w-0 border border-subtle" style="background-color: <%= c["surface"] %>; color: <%= c["text"] %>" data-mode="<%= mode %>">
+            <p class="text-2xs font-bold leading-tight truncate">Your app</p>
+            <p class="text-3xs opacity-80 leading-tight"><%= mode.capitalize %> mode</p>
+            <div class="mt-2 flex items-center gap-1.5">
+              <span class="rounded-md px-2 py-0.5 text-3xs font-semibold" style="background-color: <%= c["primary"] %>; color: <%= BuildIntake::Contrast.ink_on(c["primary"]) %>">Button</span>
+              <span class="h-2.5 w-2.5 rounded-full" style="background-color: <%= c["accent"] %>"></span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
+          <%= hidden_field_tag :field, "palette" %>
+          <%= hidden_field_tag :message_id, message.id %>
+          <%= hidden_field_tag :index, index %>
+          <button type="submit" class="btn <%= chosen ? 'btn-secondary' : 'btn-primary' %> btn-sm" data-test="build-choose-palette"><%= chosen ? "Chosen" : "Use this" %></button>
+        <% end %>
+        <%= form_with url: build_request_messages_path(request_row.token), scope: :build_chat do |f| %>
+          <%= f.hidden_field :client_id, value: SecureRandom.uuid %>
+          <%= f.hidden_field :text, value: "More palettes like #{palette['name']}, please." %>
+          <button type="submit" class="btn btn-secondary btn-sm" data-test="build-more-like">More like this</button>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

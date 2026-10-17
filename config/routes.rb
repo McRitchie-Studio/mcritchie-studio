@@ -26,6 +26,11 @@ Rails.application.routes.draw do
   get   "build/requests", to: "build#index", as: :build_requests
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
+  # The /build chat with Xan (BuildIntake): a message, the poll for answers, and
+  # a tap on an intake card.
+  post  "build/:token/messages", to: "build#message", as: :build_request_messages
+  get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
+  patch "build/:token/intake",   to: "build#choose",  as: :build_request_intake
   # The public contact form, which is also the SMS opt-in page carriers review.
   get  "contact", to: "contact_submissions#new", as: :contact_form
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`

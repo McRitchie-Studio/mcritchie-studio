@@ -34,8 +34,10 @@ module AdminWall
 
   # controller_path => actions any visitor may reach that are not site pages.
   PUBLIC_ACTIONS = {
-    # The customer funnel's writes and its live subdomain probe.
-    "build" => %w[create check],
+    # The customer funnel's writes and its live subdomain probe, and the chat
+    # with Xan before sign-in: a message, the answer poll and a card tap. Each
+    # is gated past the wall by the request's secret token (BuildController#load_request).
+    "build" => %w[create check message turns choose],
     "contact_submissions" => %w[create],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.
     "unsubscribes" => %w[show create resubscribe],

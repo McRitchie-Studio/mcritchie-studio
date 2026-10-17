@@ -75,6 +75,13 @@ class AppRequest < ApplicationRecord
   # Admins are exempt: Mr. McRitchie seeds the App Builder with showcase builds
   # (his legacy apps) through the same funnel, and those are not customers.
   validate :one_free_app_per_account, if: -> { user && !user.admin? && tier == "vibe" && HOLDING.include?(status) }
+  # The intake fields (/build as a chat with Xan, BuildIntake). Only a visitor's
+  # tap writes them (BuildIntake::Choice), and each is held here to the same
+  # rules the card was, so no path can store a value a card could not show.
+  validates :cto_name, format: { with: BuildIntake::Card::NAME, message: "must be 2 to 24 letters" }, allow_nil: true
+  validate :cto_avatar_is_storable, if: -> { cto_avatar.present? }
+  validate :palette_is_readable, if: -> { palette.present? }
+  validate :answers_are_text
 
   before_validation :normalize
   before_validation -> { self.token ||= SecureRandom.urlsafe_base64(18) }, on: :create
@@ -119,6 +126,20 @@ class AppRequest < ApplicationRecord
 
   def draft? = status == "draft"
 
+  # The checklist beside the /build chat: which of BuildIntake::STEPS are set.
+  def intake_checklist
+    { "idea" => answers.is_a?(Hash) && answers["idea"].present?,
+      "cto" => cto_name.present? && cto_avatar.present?,
+      "colors" => palette.present?,
+      "address" => subdomain.present? }
+  end
+
+  # Build my app lights up only when all four are set.
+  def intake_complete? = intake_checklist.values.all?
+
+  # The first unset step, in the order Xan asks, or nil when all are set.
+  def next_intake_step = BuildIntake::STEPS.find { |step| !intake_checklist[step] }
+
   def queued? = status == "queued"
 
   def url = subdomain.present? ? "https://#{subdomain}.#{PARENT_DOMAIN}" : nil
@@ -151,7 +172,7 @@ class AppRequest < ApplicationRecord
         metadata: { "devops" => {
           "kind" => "feature",
           "acceptance" => [ "#{host} serves the app the requester described", footer_criterion ],
-          "agent_context" => "Prompt from the requester, verbatim:\n\n#{prompt}\n\n" \
+          "agent_context" => "Prompt from the requester, verbatim:\n\n#{prompt}\n\n#{intake_context}" \
                              "Subdomain reserved: #{host}. Tier: #{tier}. App request token: #{token}." \
                              "#{showcase? ? ' SHOWCASE build: an example of what the App Builder delivers, submitted by an admin.' : ''}" \
                              "\n\n#{BUILDER_POINTER}"
@@ -170,6 +191,40 @@ class AppRequest < ApplicationRecord
   def footer_criterion = "#{host}'s home page renders the site footer (#{FOOTER_SELECTOR})"
 
   private
+
+  # What the intake chat settled, for the builder's card: empty for a request
+  # made before /build became a chat.
+  def intake_context
+    lines = []
+    lines << "Sharpened idea: #{answers['idea']}" if answers.is_a?(Hash) && answers["idea"].present?
+    lines << "For: #{answers['audience']}" if answers.is_a?(Hash) && answers["audience"].present?
+    lines << "Day one: #{answers['day_one']}" if answers.is_a?(Hash) && answers["day_one"].present?
+    lines << "CTO: #{cto_name} (portrait #{cto_avatar})" if cto_name.present?
+    if palette.present?
+      lines << "Palette #{palette['name']}: light #{palette['light'].to_json}, dark #{palette['dark'].to_json}"
+    end
+    lines.empty? ? "" : "#{lines.join("\n")}\n\n"
+  end
+
+  def cto_avatar_is_storable
+    errors.add(:cto_avatar, "is not a known portrait") unless BuildIntake::Portraits.storable?(cto_avatar)
+  end
+
+  def palette_is_readable
+    verdict = BuildIntake::Card.palette(palette)
+    errors.add(:palette, verdict.reason) unless verdict.ok?
+  end
+
+  def answers_are_text
+    return errors.add(:answers, "must be a map") unless answers.is_a?(Hash)
+
+    unknown = answers.keys - BuildIntake::Card::TEXT_LIMITS.keys
+    errors.add(:answers, "has unknown field(s) #{unknown.join(', ')}") if unknown.any?
+    BuildIntake::Card::TEXT_LIMITS.each do |key, limit|
+      value = answers[key]
+      errors.add(:answers, "#{key} must be text under #{limit} characters") unless value.nil? || (value.is_a?(String) && value.length <= limit)
+    end
+  end
 
   def normalize
     self.prompt = prompt.to_s.strip.presence
