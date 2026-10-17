@@ -53,6 +53,20 @@ class ClientPipelineFlowTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[integration] a multi-repo task reads Shared platform work to the owner and as written to an admin" do
+    Task.create!(title: "Cyvasse and Turf share a modal", stage: "submitted",
+                 metadata: { "devops" => { "repositories" => %w[turf-monster cyvasse] } })
+
+    log_in_as(@owner)
+    get pipeline_application_path("turf-monster")
+    assert_select "[data-test='pipeline-lane'][data-lane='review'] [data-test='pipeline-card-title']", text: "Shared platform work"
+    refute_includes css_select("[data-test='pipeline-page']").to_html, "share a modal"
+
+    log_in_as(users(:alex))
+    get pipeline_application_path("turf-monster")
+    assert_select "[data-test='pipeline-lane'][data-lane='review'] [data-test='pipeline-card-title']", text: "Cyvasse and Turf share a modal"
+  end
+
   test "[integration] a stranger and another app's owner get 404; a visitor signs in; an unannounced app is a 404 to its owner" do
     get pipeline_application_path("turf-monster")
     assert_redirected_to login_path
