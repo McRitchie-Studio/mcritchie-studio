@@ -25,7 +25,7 @@ class CtoChatsController < ApplicationController
   def show
     @available = AgentMessages::WebIngest.available?(@cto)
     @messages = AgentMessages::WebChat.history(@app.slug, current_user.id)
-    @meter = AgentUsage.meter(@app).without_cost
+    @meter = AgentUsage.chat_meter(@app, user: current_user, soul: @cto.soul).without_cost
     @stream = AgentMessages::WebChat.stream_name(@app.slug, current_user.id)
     @answered = answered?
   end
@@ -95,13 +95,20 @@ class CtoChatsController < ApplicationController
       held: AgentMessages::Attachments.held(tokens, app_slug: @app.slug, user: current_user) }
   end
 
-  # Whether the agents answer this user's person now (config/agent_answerers.yml),
-  # read without creating one: a user with no web identity and no linked person
-  # is the public until their first message makes them one.
+  # Whether the agents answer this user's messages HERE now
+  # (config/agent_answerers.yml), read without creating a person: their role,
+  # or the app-owner rule on this app's thread (Answerers#app_owner_thread?). A
+  # user with no person yet is answered here only as this app's owner: their
+  # first message makes a public person linked to their user, which the rule
+  # answers on this thread.
   def answered?
-    identity = AgentPersonIdentity.find_by(platform: "web", external_id: current_user.id.to_s)
-    person = identity&.person || AgentPerson.find_by(user_id: current_user.id)
-    AgentMessages::Answerers.current.allowed?(person)
+    answerers = AgentMessages::Answerers.current
+    person = AgentMessages::WebIngest.existing_person(current_user)
+    return answerers.app_owner_user?(current_user, app_slug: @app.slug, soul: @cto.soul) if person.nil?
+
+    probe = AgentMessage.new(channel: "web", channel_ref: @app.slug, soul_slug: @cto.soul,
+                             thread_key: AgentMessages::WebChat.thread_key(@app.slug, current_user.id))
+    answerers.allowed?(person, message: probe)
   end
 
   def load_app_and_cto

@@ -465,7 +465,11 @@ class AgentMessage < ApplicationRecord
 
   # The audience the usage meter files this answer under: the sender's role as
   # the board knows it now (AgentPerson#role), public for a row with no person.
+  # On an app owner's own CTO thread (AgentMessages::Answerers#app_owner_thread?)
+  # a public or client person is that app's client: metered against its allowance.
   def usage_audience
+    return "client" if AgentMessages::Answerers.current.app_owner_thread?(self)
+
     person&.role.presence || "public"
   end
 

@@ -52,8 +52,15 @@ module AgentMessages
   # And its audience: a sender the board knows only as `public` who OWNS the app
   # (an AppMembership owner, a server-side fact, never the message's) is that
   # app's client, scoped to it (`client_domain` the app slug, underscored), so
-  # the CTO may talk about their own project. Their answering is unchanged: the
-  # owner-only guard reads the person's role, not this.
+  # the CTO may talk about their own project.
+  #
+  # AN APP OWNER on their own app's CTO thread (Answerers#app_owner_thread?,
+  # any CTO, ours or a client's) is answered there, and is that app's client
+  # (Answerers#audience_for): never higher, so no read action, no internal
+  # context, only the domain's notes, and the proposal catalog a client sees.
+  # The audience is the same one the notes, the catalog and the proposal check
+  # (AgentProposal.record_from!) read, so no layer answers a higher role than
+  # the rules the worker prints.
   #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
@@ -94,7 +101,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
-        "audience" => audience_json,
+        "audience" => audience,
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
@@ -110,6 +117,11 @@ module AgentMessages
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
       }.merge(intake_json).merge(attachments_json)
     end
+
+    # The audience this message is answered as ({"role", "client_domain"}). See
+    # THE AUDIENCE above. Public: AgentProposal.record_from! checks a proposal
+    # against the same audience the catalog offered.
+    def audience = @audience ||= audience_json
 
     private
 
@@ -146,7 +158,7 @@ module AgentMessages
     def visible_notes
       return [] unless person
 
-      role = AgentPerson.audience_for(audience_person)["role"]
+      role = audience["role"]
       AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
                      .includes(:source_message).order(:noted_at, :id).to_a
                      .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
@@ -161,7 +173,7 @@ module AgentMessages
     # (`source_message_id`): a warm turn takes it only from a shown own turn
     # (AgentMailbox::WarmSession.eligible?).
     def proposals_json
-      audience = AgentProposal.audience_for(audience_person)
+      audience = AgentMailbox::Audience.new(role: self.audience["role"], client_domain: self.audience["client_domain"])
       last = AgentProposal.in_thread(@message).where("agent_proposals.created_at <= ?", @message.created_at)
                           .order(id: :desc).first
       { "catalog" => AgentProposal.registry.catalog(@message.soul_slug, audience: audience),
@@ -183,7 +195,7 @@ module AgentMessages
     def client_cto? = @message.soul_slug == AppCto::SOUL
 
     def audience_json
-      base = AgentPerson.audience_for(audience_person)
+      base = audience_person ? Answerers.current.audience_for(@message, audience_person) : AgentPerson.audience_for(nil)
       return base unless client_cto? && base["role"] == "public" && app_owner?
 
       base.merge("role" => "client", "client_domain" => @message.channel_ref.to_s.tr("-", "_"))

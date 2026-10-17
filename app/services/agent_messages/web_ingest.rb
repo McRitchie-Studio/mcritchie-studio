@@ -19,13 +19,15 @@ module AgentMessages
   #               user id), else the person an operator already linked to this
   #               user (agent_people.user_id: Alex's hub user is the owner's),
   #               else a new `public` person for the user. Never matched by name
-  #   the audience that person's role, exactly as on Discord and email. App
-  #               OWNERSHIP grants no agent authority: an owner who is not the
-  #               platform owner is answered once an operator gives their person
-  #               an answered role (config/agent_answerers.yml), and until then
-  #               their message is `held`, as a Discord message from them would
-  #               be. The scoped app-owner audience is Phase 6 of
-  #               .agents/epics/domain-agents.md (design only)
+  #   answered?   the person's role (config/agent_answerers.yml), exactly as on
+  #               Discord and email, OR the app-owner rule
+  #               (Answerers#app_owner_thread?): a person whose hub user owns
+  #               THIS app is answered on THIS thread, as a client of the app.
+  #               Anyone else is `held`, and so is that owner on any other
+  #               app's thread, on Discord, and by email
+  #   the cap     a message answered only by the app-owner rule, while the
+  #               app's owner meter (AgentUsage.owner_meter) is spent, is
+  #               stored ALREADY ANSWERED with AgentUsage.cap_reply: no model runs
   #
   # IN ORDER: the text (trimmed, MAX_LENGTH; it may be empty when files are
   # attached), the soul, the files (Attachments.resolve!: images and PDFs, at
@@ -95,6 +97,14 @@ module AgentMessages
     def self.available?(cto, routes: Routes.current) = cto.present? && routes.web_soul?(cto.soul)
 
     # The person a web message from `user` is from. See THE PERSON above.
+    # The person a web message from `user` would be from, read without making
+    # one: nil until their first message (see THE PERSON above).
+    def self.existing_person(user)
+      return nil unless user
+
+      AgentPersonIdentity.find_by(platform: "web", external_id: user.id.to_s)&.person || AgentPerson.find_by(user_id: user.id)
+    end
+
     def self.person_for(user, attempt: 1)
       external_id = user.id.to_s
       identity = AgentPersonIdentity.find_by(platform: "web", external_id: external_id)
@@ -115,9 +125,11 @@ module AgentMessages
     private
 
     def store(attrs, person, blobs = [])
-      AgentMessage.transaction(requires_new: true) do
+      capped = AgentMessage.transaction(requires_new: true) do
         limited = rate_limited?(attrs[:thread_key])
-        held = limited || !@answerers.allowed?(person)
+        probe = AgentMessage.new(attrs.merge(soul_slug: @cto.soul))
+        owner_only = !@answerers.role_answered?(person) && @answerers.app_owner_thread?(probe, person)
+        held = limited || !@answerers.allowed?(person, message: probe)
         message = AgentMessage.create!(attrs.merge(soul_slug: @cto.soul, routed_by: "chat",
                                                    status: held ? "held" : "received"))
         message.record!("received", actor: "web-chat", detail: { "author" => message.author_name, "user_id" => @user.id })
@@ -129,8 +141,19 @@ module AgentMessages
                                           detail: { "limit" => RATE_LIMIT, "window_minutes" => (RATE_WINDOW / 60).to_i })
         end
         message.record!("held", actor: "answerers", detail: { "reason" => @answerers.held_reason(person), "person_id" => person&.id }.compact) if held && !limited
-        message
+        meter = owner_only && !held ? owner_meter : nil
+        message.usage_capped!(meter, now: @now) if meter&.capped?
+        [ message, meter&.capped? ]
       end
+      message, was_capped = capped
+      AgentMessageReplyJob.perform_later(message.id) if was_capped
+      message
+    end
+
+    # The app's owner meter (AgentUsage.owner_meter), or nil with no App row.
+    def owner_meter
+      app = App.find_by(slug: @cto.app_slug)
+      app && AgentUsage.owner_meter(app, now: @now, answerers: @answerers)
     end
 
     # The owner's word on a proposal in this thread (ProposalConfirm), or nil.
