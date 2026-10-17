@@ -184,7 +184,8 @@ module AgentMessages
     # Why a message from `person` is held, for its `held` event.
     def held_reason(person)
       role = person&.role || "none"
-      "sender's role (#{role}) is not answered; config/agent_answerers.yml answers #{roles.join(', ').presence || 'nobody'}"
+      line = "sender's role (#{role}) is not answered; config/agent_answerers.yml answers #{roles.join(', ').presence || 'nobody'}"
+      app_owners ? "#{line} (and an app's owner on that app's own CTO chat only)" : line
     end
 
     # The guard as SQL, for AgentMessage.claimable: a proc from a table alias to

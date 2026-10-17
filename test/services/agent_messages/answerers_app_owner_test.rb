@@ -167,6 +167,26 @@ class AnswerersAppOwnerTest < ActiveSupport::TestCase
     end
   end
 
+  test "with a priced tier the claim's gate caps an owner row already received, with the client's cap line" do
+    @turf.update!(package_tier: "builder", cto_cap_lifted_at: nil)
+    packages = [ WorkspacePackage.new({ "key" => "builder", "name" => "Builder", "price_monthly" => 100, "cto_monthly_tokens" => 1_000 }) ]
+    spent = row(status: "completed")
+    spent.update_columns(completed_at: 1.minute.ago, run_meta: { "input_tokens" => 1_000, "audience" => "client" })
+    waiting = row
+    assert_equal 1_000, AgentUsage.meter(@turf).used, "the owner's answers count against the allowance, as a client's"
+
+    WorkspacePackage.stub(:all, packages) do
+      WorkspacePackage.stub(:find, ->(key) { packages.find { |p| p.key == key } }) do
+        result = AgentMessage.claim!(soul: "turf_monster", worker: "w1")
+        assert_nil result.message
+      end
+    end
+    waiting.reload
+    assert_equal "completed", waiting.status
+    assert_match(/used its monthly agent allowance/, waiting.response_text)
+    assert_equal "client", waiting.run_meta["audience"]
+  end
+
   test "the config refuses a malformed app_owners block" do
     assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "owner" ], app_owners: { "default_monthly_tokens" => 0 }) }
     assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "owner" ], app_owners: "yes") }
