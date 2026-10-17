@@ -286,7 +286,8 @@ OK to install on the work machine. The setup:
 |---------|------|-----|
 | The standby answers while the primary is up | `agent_dispatchers:list`: is the primary's row `role=primary` and pinging? | A primary registered as standby by mistake: `ROLE=primary` for its host |
 | Warm answers fell back to one run per message | The log: `warm <domain>: another dispatcher holds the lease` or `lease released (<why>)` | Expected during a handback or a failed turn. A lease stuck on a dead holder lapses in 5 minutes |
-| `the checkpoint would not restore` | `agent_dispatchers:sessions`: checkpoint size and head | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
+| `CHECKPOINT FAILED` in the log, or `FAULT checkpoint_failed` in `agent_dispatchers:sessions` | ErrorLog (`warm session <domain>`), then storage (R2) health | The answer went out; the session falls back to the board's last good checkpoint and the next good checkpoint clears the fault. Repeated faults mean storage is refusing uploads |
+| `the checkpoint would not restore`, or `FAULT restore_failed` | `agent_dispatchers:sessions`: checkpoint size, head and the fault; ErrorLog | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
 
 ## Uninstall
 

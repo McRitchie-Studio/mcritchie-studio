@@ -53,6 +53,8 @@ class AgentDispatchersRakeTest < ActiveSupport::TestCase
     row = taken.row
     row.checkpoint!(worker: "mac-1", lease_key: taken.lease_key, session_id: "sess-0001", data: Zlib.gzip("x"), turns: 3, context_tokens: 9)
     assert_match(/#{DOMAIN} gen=1 turns=3 .*held by mac-1/, run_task("agent_dispatchers:sessions", {}))
+    row.fault!(worker: "mac-1", lease_key: taken.lease_key, fault: "restore_failed", detail: "Zlib::GzipFile::Error")
+    assert_match(/FAULT restore_failed: Zlib::GzipFile::Error @/, run_task("agent_dispatchers:sessions", {}))
 
     run_task("agent_dispatchers:reset_session", { "DOMAIN" => DOMAIN })
     row.reload
