@@ -90,6 +90,13 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
   # a NameError the instant that line executes (only surfaced by the subprocess CLI
   # test). The sentinel value comes from ReleaseClaimCli::FORMING_SLUG, defined in the
   # standalone CLI bin/release requires.
+  # The per-train sentinel (release-trains-design.md §2): every claim site reads
+  # `forming_slug`, the train's sentinel from the standalone CLI — the bare
+  # FORMING_SLUG on the hub, `__forming__:<train>` on an app train.
+  test "bin/release's forming sentinel is the train's, read from the standalone CLI" do
+    assert_match(/^def forming_slug = ReleaseClaimCli\.forming_slug\(TRAIN\)$/, File.read(RELEASE_RB))
+  end
+
   test "bin/release.rb references NO Rails-model constant (it runs standalone, without Rails)" do
     src = File.read(RELEASE_RB)
     refute_match(/ReleaseConductorClaim/, src,
@@ -104,7 +111,7 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert prepare, "prepare must be defined"
 
     # A fresh create has no real slug at 2c, so it falls back to the FORMING sentinel.
-    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, prepare,
+    assert_match(/assembler_slug = forming_slug if assembler_slug\.empty\?/, prepare,
                  "a blank slug at 2c must fall back to the FORMING sentinel so the promote is still guarded")
     # FIX B: the hand-off runs only for a REAL created release, never the rel-pending fallback.
     assert_match(/if result\["slug"\]\.to_s\.strip != ""/, prepare,
@@ -115,7 +122,7 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     promote          = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos, label: slug\)/ }
     rel_slug_resolve = lines.index { |l| l =~ /rel_slug = result\["slug"\] \|\| slug \|\| "rel-pending"/ }
     real_acquire     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", rel_slug/ }
-    handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG\)/ }
+    handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: forming_slug\)/ }
     repos_print      = lines.index { |l| l =~ /say\("  release #\{rel_slug\}/ }
     record_event     = lines.index { |l| l =~ /record_release_event\(rel_slug, "assemble_release", "started"\)/ }
 
@@ -179,12 +186,12 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     promote  = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos\)/ }
     sweep    = lines.index { |l| l =~ /batch_sweep_ruby\(swept/ }
     real     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", result\["slug"\]\)/ }
-    handoff  = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG\)/ }
+    handoff  = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: forming_slug\)/ }
     ensure_i = lines.index { |l| l =~ /^  ensure$/ }
     release  = lines.index { |l| l =~ /^\s*release_conductor_claim!$/ }
 
     assert [acquire, promote, sweep, real, handoff, ensure_i, release].all?, "all merge claim anchors must be present"
-    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, merge,
+    assert_match(/assembler_slug = forming_slug if assembler_slug\.empty\?/, merge,
                  "merge falls back to the FORMING sentinel when there is no active release")
     assert acquire < promote, "the assembler claim is held BEFORE the irreversible promote"
     assert promote < sweep, "promote then sweep! (the record that resolves the real slug)"
@@ -212,7 +219,7 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     release  = lines.rindex { |l| l =~ /^\s*release_conductor_claim!$/ }
 
     assert [resolve, acquire, begin_i, detach, ensure_i, release].all?, "all eject claim anchors must be present"
-    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, eject,
+    assert_match(/assembler_slug = forming_slug if assembler_slug\.empty\?/, eject,
                  "eject falls back to the FORMING sentinel when there is no active release")
     assert resolve < acquire,
            "the active release is resolved by a MINIMAL, STABLE read (slug/state) BEFORE the claim"

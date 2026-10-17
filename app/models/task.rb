@@ -1324,6 +1324,14 @@ class Task < ApplicationRecord
     ([ release_repo ] + release_pr_urls.keys + devops_repositories).compact_blank.uniq
   end
 
+  # The release train this task rides (release-trains-design.md §2): an app's own
+  # train only when every repo it names belongs to that train in
+  # config/release_trains.yml, else the hub. So a gem task, hub plus engine, app plus
+  # engine and app plus hub all ride "hub", where gems publish producer-first.
+  def release_train
+    Release::Trains.train_for(release_repos)
+  end
+
   # The primary repo, the unit classified as gem or app: parsed from the PR url,
   # else the gem repo named (for `library`), else the first repository. Not the
   # release identity of a multi-repo task; see #release_repos.

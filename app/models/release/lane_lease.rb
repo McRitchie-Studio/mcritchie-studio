@@ -119,7 +119,11 @@ class Release
     end
 
     def release_name(release_slug)
-      release_slug.to_s == ReleaseConductorClaim::FORMING_SLUG ? "the next release" : release_slug.to_s
+      slug = release_slug.to_s
+      return "the next release" if slug == ReleaseConductorClaim::FORMING_SLUG
+
+      train = slug.delete_prefix("#{ReleaseConductorClaim::FORMING_SLUG}:")
+      train == slug ? slug : "the next #{train} release"
     end
 
     # --- the production grant ---------------------------------------------------

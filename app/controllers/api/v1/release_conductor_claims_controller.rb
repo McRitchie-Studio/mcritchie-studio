@@ -58,12 +58,15 @@ module Api
       # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
       # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
       # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
-      # holder: <info>|null }.
+      # holder: <info>|null }. An optional `train=<slug>` narrows the read to one
+      # release train; without it every train counts, which is what the reclaim guard
+      # needs (a ship on any train pins the shared workspaces).
       def live
         role = claim_params[:role]
+        train = params[:train].to_s.strip.presence
         render_data({
-          "live"   => ReleaseConductorClaim.any_live?(role: role),
-          "holder" => ReleaseConductorClaim.live_holder(role: role)
+          "live"   => ReleaseConductorClaim.any_live?(role: role, train: train),
+          "holder" => ReleaseConductorClaim.live_holder(role: role, train: train)
         })
       end
 

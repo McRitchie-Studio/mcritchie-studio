@@ -11,7 +11,8 @@ class Release < ApplicationRecord
 
   # Workflow 2 — Deploy. A Release is a singleton per TRAIN: at most one is active
   # (assembling/assembled) on each train at a time. Every release today rides the
-  # "hub" train (DEFAULT_TRAIN); per-app trains are release-trains-design.md task B. It carries `reviewed` tasks onto a
+  # "hub" train (DEFAULT_TRAIN) unless config/release_trains.yml routes a task to an
+  # app's own train (Task#release_train; release-trains-design.md task B). It carries `reviewed` tasks onto a
   # disposable release branch, through QA, and to production.
   #   assembling → assembled → shipped   (+ abandoned)
   # The git/merge-queue mechanics live in the conductor tooling (a later task);
@@ -900,6 +901,17 @@ class Release < ApplicationRecord
       raise ArgumentError, "task #{task.slug} is not sweepable (stage: #{task.stage})"
     end
 
+    # ONE TRAIN PER REPO (release-trains-design.md §2). The promote moves ALL of a
+    # repo's `accepted`, so two active releases must never share a repo: refuse a task
+    # naming a repo a member of ANOTHER train's active release already names. Checked
+    # before any write, like the stage check above; `override` does not bypass it,
+    # because no audit trail makes a double promote safe.
+    if (held = repos_held_by_other_trains(task)).any?
+      named = held.map { |repo, rel| "#{repo} (#{rel.train} train, #{rel.slug})" }.join(", ")
+      raise ArgumentError, "task #{task.slug} names #{named}: another train's active release holds " \
+                           "that repo, and a repo rides one train at a time. Ship or abandon that release first."
+    end
+
     # On the durable `release` branch a PR can merge AFTER we've assembled (QA'd)
     # the candidate. That late sweep must re-open the RC so it re-assembles and
     # re-QAs before shipping — so absorb an assembled state by reopening, rather
@@ -933,6 +945,29 @@ class Release < ApplicationRecord
     # it further UP the ladder if it already places the merge there, never down.
     Release.refresh_merged_cache(task)
     task
+  end
+
+  # { repo => release } for each repo `task` names that a member of another train's
+  # ACTIVE release already names. Empty when no other train is active.
+  def repos_held_by_other_trains(task)
+    wanted = task.release_repos
+    return {} if wanted.empty?
+
+    Release.held_repos(except_train: train, except_id: id).each_with_object({}) do |(repo, other), held|
+      held[repo] = other if wanted.include?(repo)
+    end
+  end
+
+  # { repo => release } for every repo a member of an ACTIVE release names, on every
+  # train but `except_train` (and never the release `except_id`). The one read behind
+  # Release#add's refusal and the sweep's pre-promote hold
+  # (Release::Conductor.repos_held_by_other_trains), so the two cannot disagree.
+  def self.held_repos(except_train:, except_id: nil)
+    scope = active.where.not(train: except_train.to_s).includes(:tasks).order(:created_at)
+    scope = scope.where.not(id: except_id) if except_id
+    scope.each_with_object({}) do |other, held|
+      other.tasks.flat_map(&:release_repos).uniq.each { |repo| held[repo] ||= other }
+    end
   end
 
   # Every member in + tests check out → the RC is complete.

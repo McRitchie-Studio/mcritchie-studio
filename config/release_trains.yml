@@ -1,0 +1,27 @@
+# Per-app release trains: which repos ride their own release instead of the hub's.
+# Read by Release::Trains (Task#release_train, Release::Conductor's sweep filter,
+# Release#add's repo exclusivity) and by bin/release (`--train <slug>`, the sweep's
+# HELD lines). Design: .agents/epics/release-trains-design.md §2.
+#
+# THE HUB TRAIN IS IMPLICIT. It is never listed here: every task that does not
+# route to a listed train rides "hub" (Release::DEFAULT_TRAIN), including every
+# task that names a gem, hub plus engine, app plus engine, and app plus hub.
+# Gems publish only on the hub train, which publishes them producer-first.
+#
+# A task routes to a listed train only when EVERY repo it names is one of that
+# train's `repos`. A repo belongs to at most one listed train, and a listed repo
+# must be a three-rung app in config/release_repos.yml (release_trains_test).
+#
+# Schema, per train (the key is the train slug, kebab-case, never "hub"):
+#   repos: [repo, ...]   the repos this train promotes, records and deploys.
+#
+# ROUTING IS OFF UNTIL TASK C. No train is listed, so every task rides the hub and a
+# plain `bin/release` behaves exactly as it did before trains; `--train <app>` is
+# refused as unknown. Task C lists the first app train together with its
+# `standing_grant` (the nightly ship), and before it does it must teach the hub to
+# record any other-train task whose code a hub promote carries, plus
+# production-deploy, full-cycle and `bin/release status` the second train. The entry
+# it will add looks like this:
+#
+# turf-monster:
+#   repos: [turf-monster]
