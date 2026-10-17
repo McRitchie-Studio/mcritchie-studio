@@ -12,7 +12,9 @@
 # ghcr.io/mcritchie-studio/<name>:<tag>. The source is tried on ECR Public first and
 # Docker Hub second, round after round with a growing pause, so one throttled
 # registry cannot fail the copy. The package is linked to this repo by the push
-# itself, so the hub's CI token reads it with `packages: read`.
+# itself, so the hub's CI token reads it with `packages: read`. The packages are
+# public (mirrors of public official images, nothing secret), so a satellite's CI,
+# turf-monster's among them, pulls them with its own run token too.
 #
 # WHEN. On a push that edits this file (any branch, so the copy exists before the
 # CI that pulls it), weekly to pick up the upstream patch release, and by hand.
@@ -46,10 +48,12 @@ jobs:
     timeout-minutes: 30
     env:
       # One `<name>:<tag>` per line, from the official library. 17 is production's
-      # Postgres major (the hub's CI default); 18 is what cyvasse and moms-app pin.
+      # Postgres major (the hub's CI default); 18 is what cyvasse and moms-app pin;
+      # redis:8 is turf-monster's Redis service (its ci.yml and devnet-nightly.yml).
       IMAGES: |
         postgres:17
         postgres:18
+        redis:8
       TARGET: ghcr.io/mcritchie-studio
     steps:
       - name: Copy each image to ghcr.io

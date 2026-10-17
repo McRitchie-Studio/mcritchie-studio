@@ -112,6 +112,19 @@ class CiServiceImagesTest < Minitest::Test
     assert on.key?("schedule") && on.key?("workflow_dispatch")
   end
 
+  # Satellites pull from the same mirror: turf-monster's ci.yml and devnet-nightly.yml
+  # start Postgres and Redis service containers from ghcr.io/mcritchie-studio, and
+  # cyvasse and moms-app pin Postgres 18. A row dropped here leaves that pull with no
+  # package behind it, so every row a consumer needs is held, one by one.
+  CONSUMER_ROWS = %w[postgres:17 postgres:18 redis:8].freeze
+
+  def test_the_mirror_copies_every_row_a_consumer_pulls
+    CONSUMER_ROWS.each do |row|
+      assert_includes mirrored, row, "mirror-ci-images.yml no longer copies #{row}, which a consumer CI pulls"
+    end
+    assert mirrored.all? { |row| row.match?(/\A[a-z0-9-]+:\d+\z/) }, "every mirror row is `<name>:<major>`: #{mirrored.inspect}"
+  end
+
   def test_no_image_anywhere_in_the_workflow_is_an_anonymous_pull
     assert_empty anonymous_pulls(File.read(WORKFLOW))
     assert_empty anonymous_pulls(as_run)
