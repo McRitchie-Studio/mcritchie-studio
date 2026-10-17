@@ -3,6 +3,15 @@ require "application_system_test_case"
 # E2E happy path: the app filter actually hides and restores cards in a real
 # browser. Toggling an app chip hides its cards; toggling it again restores them.
 class BoardAppFilterSystemTest < ApplicationSystemTestCase
+  # The cards ride the Designed lane, which collapses while the BOARD is too narrow for
+  # six lanes (a container query, board-lanes-by-board-width). At the default 1400px
+  # window, headless Chrome's classic scrollbar leaves the board under the 83rem six
+  # lanes need, so this test widens the window rather than depend on scrollbar style.
+  WIDE_WINDOW = [ 1600, 1400 ].freeze
+
+  setup { page.driver.browser.manage.window.resize_to(*WIDE_WINDOW) }
+  teardown { page.driver.browser.manage.window.resize_to(*ApplicationSystemTestCase::SCREEN_SIZE) }
+
   test "toggling an app chip hides then restores its cards" do
     rolio = Task.create!(
       title: "rolio e2e card task", stage: "designed",
